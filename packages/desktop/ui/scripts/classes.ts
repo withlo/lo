@@ -1,18 +1,55 @@
-// Finds Tailwind's bracketed arbitrary values (`text-[11px]`, `[&_svg]:size-12`, `bg-[#fff]`) in
-// source files, except for those in `allowed`. Lo's theme holds only its tokens, so a value
-// outside them is a bracket away; check-classes.ts keeps it out.
+// Finds Tailwind's arbitrary values (`text-[11px]`, `p-(--lo-tabbar-h)`, `[&_svg]:size-12`,
+// `[mask-type:luminance]`) in source files, except for those in `allowed`. Lo's theme holds only
+// its tokens, so a value outside them is a bracket away; check-classes.ts keeps it out.
 
+import { resolve } from 'node:path';
+
+import { Scanner } from '@tailwindcss/oxide';
 import { parseSync } from 'oxc-parser';
 
-/** Bracketed classes allowed anyway, each with the reason. None yet. */
+/** Classes allowed anyway, each with the reason. None yet. */
 export const allowed: ReadonlyMap<string, string> = new Map();
 
 /**
- * A class with an arbitrary value (`text-[11px]`), property (`[mask-type:luminance]`) or variant
- * (`[&_svg]:size-12`), after any variants. A class can't hold a space, so prose such as
- * `notes [1]` and TypeScript such as `[key: string]` never match.
+ * Where an arbitrary value can sit in a class, whatever comes before it (`!p-[17px]`,
+ * `*:p-[19px]`, `[&>*]:p-[2px]`, `hover:[mask-type:luminance]`):
+ *
+ * - a value after a dash, or after a word and a slash: `text-[11px]`, `p-(--lo-tabbar-h)`,
+ *   `bg-fg/[.5]`;
+ * - a property: `[mask-type:luminance]`;
+ * - a variant: `[&_svg]:size-12`.
+ *
+ * A property or variant opens the class or follows a variant's colon, an `!` or some markup, but
+ * never a word, bracket or slash, so code such as `items[0]` and addresses such as `//[::1]:8080`
+ * don't match, and nor does prose such as `notes [1]`, since a class holds no space.
  */
-const arbitrary = /^(?:[\w-]*:)*(?:[\w-]+-\[[^\s\]]+\]|\[[a-z][\w-]*:[^\s\]]+\]|\[[^\s\]]+\]:)/;
+const arbitrary = new RegExp(
+  [
+    String.raw`-\[[^\s\]]+\]|(?<=[\w\])])/\[[^\s\]]+\]`,
+    String.raw`-\([^\s)]+\)|(?<=[\w\])])/\([^\s)]+\)`,
+    String.raw`(?<![\w\])/])\[[a-z][\w-]*:[^\s\]]+\]`,
+    String.raw`(?<![\w\])/])\[[^\s\]]+\]:\S`,
+  ].join('|'),
+);
+
+/** The words of a text, which a class can't hold a space or, in markup, a quote or `<` inside. */
+const words = /[^\s"'`<]+/g;
+
+/** Source files whose strings are read as JavaScript, so only strings count, not code. */
+const scripts = /\.[cm]?[jt]sx?$/;
+
+/**
+ * The files in a folder that Tailwind reads classes from: all but what it leaves out (what
+ * `.gitignore` names, `node_modules`, binary files, lock files and stylesheets), whatever their
+ * type, so a class in an `.html` file counts as much as one in a `.tsx`.
+ */
+export function sourceFiles(folder: string): string[] {
+  const scanner = new Scanner({
+    sources: [{ base: resolve(folder), pattern: '**/*', negated: false }],
+  });
+  // Tailwind lists stylesheets to watch them, but reads no classes from them.
+  return scanner.files.filter((file) => !file.endsWith('.css')).toSorted();
+}
 
 export interface Finding {
   file: string;
@@ -48,13 +85,20 @@ function strings(file: string, source: string): { text: string; start: number }[
   return found;
 }
 
-/** The arbitrary classes in one file's source. */
-export function findArbitrary(file: string, source: string): Finding[] {
+/**
+ * The arbitrary classes in one file's source. A script's strings are read, since a class can only
+ * be one of them; any other file is read as text, as Tailwind does.
+ */
+export function findArbitrary(
+  file: string,
+  source: string,
+  allow: ReadonlyMap<string, string> = allowed,
+): Finding[] {
   const lineOf = (offset: number) => source.slice(0, offset).split('\n').length;
-  return strings(file, source).flatMap(({ text, start }) =>
-    text
-      .split(/\s+/)
-      .filter((token) => arbitrary.test(token) && !allowed.has(token))
-      .map((className) => ({ file, line: lineOf(start), className })),
+  const texts = scripts.test(file) ? strings(file, source) : [{ text: source, start: 0 }];
+  return texts.flatMap(({ text, start }) =>
+    [...text.matchAll(words)]
+      .filter(([token]) => arbitrary.test(token) && !allow.has(token))
+      .map((word) => ({ file, line: lineOf(start + word.index), className: word[0] })),
   );
 }

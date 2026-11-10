@@ -9,7 +9,7 @@ import { isMainThread } from 'node:worker_threads';
 import type { MessagePortMain } from 'electron';
 
 import { answer, idOf } from './host.ts';
-import { pool, poolSize } from './pool.ts';
+import { memoryCap, pool, poolSize } from './pool.ts';
 import { largestHeap, loadRunners, type Runner } from './runners.ts';
 import testing from './testing.ts';
 import { work, workers } from './worker.ts';
@@ -24,10 +24,12 @@ const found = import.meta.glob<Runner>('../features/*/background/index.ts', {
 const runners = [...loadRunners(found), ...(process.env.LO_TEST_JOBS === '1' ? [testing] : [])];
 
 if (isMainThread) {
-  // Jobs wait for a worker: one per core, as many as fit under the process's memory cap.
+  // Jobs wait for a worker: one per core, as many as fit under the process's memory cap. Main sets
+  // the cap in the process's environment, so without a valid one this throws, which reports it and
+  // stops the process, and main starts it again.
   const size = poolSize({
     cores: availableParallelism(),
-    memoryCap: Number(process.env.LO_BACKGROUND_MEMORY_CAP_MB) * 1024 ** 2,
+    memoryCap: memoryCap(process.env.LO_BACKGROUND_MEMORY_CAP_MB),
     jobHeap: largestHeap(runners) * 1024 ** 2,
   });
   const execute = pool(workers(new URL(import.meta.url)), size);

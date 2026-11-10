@@ -1,22 +1,17 @@
 #!/usr/bin/env node
-// Fails on Tailwind's bracketed arbitrary values in the given folders' source files.
+// Fails on Tailwind's arbitrary values (`text-[11px]`, `p-(--lo-tabbar-h)`, `[&>*]:p-4`) in the
+// files of the given folders that Tailwind reads classes from, whatever their type.
 //
 //   node scripts/check-classes.ts src [more folders]
 
-import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { relative } from 'node:path';
 
-import { findArbitrary } from './classes.ts';
-
-function sources(folder: string): string[] {
-  return readdirSync(folder, { withFileTypes: true, recursive: true })
-    .filter((entry) => entry.isFile() && /\.[cm]?[jt]sx?$/.test(entry.name))
-    .map((entry) => join(entry.parentPath, entry.name));
-}
+import { findArbitrary, sourceFiles } from './classes.ts';
 
 const findings = process.argv
   .slice(2)
-  .flatMap(sources)
+  .flatMap(sourceFiles)
   .flatMap((file) => findArbitrary(file, readFileSync(file, 'utf8')));
 for (const { file, line, className } of findings) {
   console.error(`${relative(process.cwd(), file)}:${line}: ${className} uses an arbitrary value.`);
