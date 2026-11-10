@@ -50,6 +50,8 @@ export type GitErrorDetail =
   | { kind: 'diskFull' }
   /** A name or ID that can't be used, such as a branch name git refuses. */
   | { kind: 'invalid'; what: string; value: string }
+  /** A git command wrote more than `limit` bytes, so Lo stopped it. */
+  | { kind: 'tooLarge'; command: string; limit: number }
   /** A git command failed for a reason none of the others covers. */
   | { kind: 'git'; command: string; message: string }
   /** Reading or writing the cache failed. */
@@ -131,6 +133,8 @@ function describe(detail: GitErrorDetail): string {
       return 'the disk is full';
     case 'invalid':
       return `\`${detail.value}\` isn't a valid ${detail.what}`;
+    case 'tooLarge':
+      return `\`${detail.command}\` wrote more than ${detail.limit} bytes, so Lo stopped it`;
     case 'git':
       return `\`${detail.command}\` failed: ${detail.message}`;
     case 'io':

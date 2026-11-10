@@ -6,7 +6,7 @@
 import { access, appendFile, mkdir, mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
-import { delimiter, isAbsolute, join } from 'node:path';
+import { delimiter, dirname, isAbsolute, join } from 'node:path';
 
 import { type Environment, inheritedEnvironment } from './environment.ts';
 import { Git, Runner } from './git.ts';
@@ -71,8 +71,9 @@ export function defaultPlaces(platform: NodeJS.Platform): Places {
 
 /**
  * Finds git: on a Mac, Apple's first when the Command Line Tools are installed, then each `git` on
- * `PATH`, then the system's usual folders. The first new enough wins. Without one, it says why,
- * naming the first git that was too old if there was one.
+ * `PATH`, then the system's usual folders. The first new enough wins. A git that someone besides
+ * its owner, or root, could have changed is passed over. Without one, it says why, naming the
+ * first git that was too old if there was one.
  */
 export async function findGit(options: FindOptions): Promise<GitStatus> {
   const places = options.places ?? defaultPlaces(options.platform);
@@ -95,7 +96,7 @@ export async function findGit(options: FindOptions): Promise<GitStatus> {
     const real = await realpath(candidate).catch(() => undefined);
     if (real === undefined || real === stub || tried.has(real)) continue;
     tried.add(real);
-    if (!(await isExecutableFile(candidate))) continue;
+    if (!(await isExecutableFile(candidate)) || !(await isTrustworthy(candidate, real))) continue;
     const status = await check(candidate, inherited, options.platform);
     if (status.status === 'found') return status;
     if (status.status === 'tooOld') tooOld ??= status;
@@ -211,6 +212,12 @@ async function runLimited(
   }
 }
 
+/**
+ * What git 2.41.1, 2.42.2, 2.43.4 and 2.44.1, and the distributions' gits patched alike, say when
+ * `GIT_NO_LAZY_FETCH` stops them downloading a missing object.
+ */
+const LAZY_FETCH_WARNING = 'warning: lazy fetching disabled; some objects may not be available';
+
 /** An object ID no repository has. */
 const MISSING_OBJECT = `${'0'.repeat(39)}1`;
 
@@ -239,7 +246,9 @@ export async function lazyFetchIsOff(git: Git): Promise<boolean> {
       .command({ gitDir: clone })
       .arg('cat-file', '-e', MISSING_OBJECT)
       .finish();
-    return finished.code === 1 && finished.stderr.trim() === '';
+    // The maintenance releases that brought the variable to older lines say so once, on stderr.
+    const said = finished.stderr.trim();
+    return finished.code === 1 && (said === '' || said === LAZY_FETCH_WARNING);
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
@@ -258,6 +267,24 @@ async function hasCommandLineTools(
   const folder = finished?.stdout.toString('utf8').trim() ?? '';
   if (finished?.code !== 0 || !isAbsolute(folder)) return false;
   return isExecutableFile(join(folder, 'usr', 'bin', 'git'));
+}
+
+/**
+ * Whether only its owner, or the system, can have changed the git at `candidate`, which is `real`
+ * once links are followed: owned by root or this user, writable by its owner alone, and in folders
+ * nobody else can write to, where another user could swap it for something else.
+ */
+async function isTrustworthy(candidate: string, real: string): Promise<boolean> {
+  try {
+    for (const folder of new Set([dirname(candidate), dirname(real)])) {
+      if (((await stat(folder)).mode & 0o002) !== 0) return false;
+    }
+    const file = await stat(real);
+    const owner = file.uid === 0 || file.uid === process.getuid?.();
+    return owner && (file.mode & 0o022) === 0;
+  } catch {
+    return false;
+  }
 }
 
 async function isExecutableFile(path: string): Promise<boolean> {

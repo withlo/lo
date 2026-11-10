@@ -31,6 +31,12 @@ export interface Finished extends Exit {
   readonly stderr: string;
 }
 
+/**
+ * The most output a command may write unless it says otherwise: far more than any listing or file
+ * Lo reads, and little enough that a command can't take all of the app's memory.
+ */
+export const OUTPUT_LIMIT = 256 * 1024 * 1024;
+
 /** How much of a child's stderr is kept: the end, which says why it stopped. */
 export const STDERR_KEPT = 64 * 1024;
 
@@ -142,17 +148,35 @@ export class Child {
   /**
    * Writes `input` to the child's stdin and ends it, while its output is read, and waits for it to
    * finish. A command that answers each line as it reads it, such as `cat-file --batch-check`,
-   * would otherwise fill its output pipe and stop reading.
+   * would otherwise fill its output pipe and stop reading. Past `maxBytes` of output, it stops
+   * the child and fails as `tooLarge`.
    */
-  async finish(input?: Uint8Array | string, signal?: AbortSignal): Promise<Finished> {
+  async finish(
+    input?: Uint8Array | string,
+    options: { signal?: AbortSignal | undefined; maxBytes?: number | undefined } = {},
+  ): Promise<Finished> {
+    const { signal, maxBytes = OUTPUT_LIMIT } = options;
     const chunks: Buffer[] = [];
-    this.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
+    let length = 0;
+    let tooLarge = false;
+    this.stdout.on('data', (chunk: Buffer) => {
+      length += chunk.length;
+      if (length > maxBytes) {
+        tooLarge = true;
+        this.stop();
+        return;
+      }
+      chunks.push(chunk);
+    });
     const stop = () => this.stop();
     signal?.addEventListener('abort', stop, { once: true });
     if (signal?.aborted) stop();
     try {
       this.stdin?.end(input);
       const exit = await this.exited;
+      if (tooLarge) {
+        throw new GitError({ kind: 'tooLarge', command: this.display, limit: maxBytes });
+      }
       return { ...exit, stdout: Buffer.concat(chunks), stderr: this.#stderr };
     } finally {
       signal?.removeEventListener('abort', stop);

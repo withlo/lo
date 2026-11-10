@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, symlinkSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
 import { describe, expect, test } from 'vitest';
@@ -144,4 +144,71 @@ test('refuses a git that would download what a clone lacks without being asked',
   if (status.status !== 'tooOld') return;
   expect(status.message).toContain('GIT_NO_LAZY_FETCH');
   expect(status.message).toContain(eager);
+});
+
+/** What the May 2024 maintenance releases say when they don't download a missing object. */
+const WARNING = 'warning: lazy fetching disabled; some objects may not be available';
+
+/** A line of shell that prints `text` on stderr when git runs `cat-file`. */
+function says(text: string): string {
+  return `case " $* " in *" cat-file "*) echo '${text}' >&2;; esac`;
+}
+
+test('takes a maintenance release that says lazy fetching is off', async () => {
+  const dir = tempFolder();
+  // As 2.43.4 does: it honors the variable, and says so on stderr.
+  const maintenance = wrappedGit(join(dir, 'git'), { version: '2.43.4', before: says(WARNING) });
+  const other = wrappedGit(join(dir, 'git-other'), {
+    version: '2.43.4',
+    before: says('warning: something else'),
+  });
+  const twice = wrappedGit(join(dir, 'git-twice'), {
+    version: '2.43.4',
+    before: `${says(WARNING)}\n${says('error: and more')}`,
+  });
+
+  const found = await gitAt(maintenance, { env, platform });
+  expect(found.status === 'found' && found.git.version).toEqual({ major: 2, minor: 43, patch: 4 });
+  // Only that line, alone.
+  expect(await gitAt(other, { env, platform })).toMatchObject({ check: 'lazyFetch' });
+  expect(await gitAt(twice, { env, platform })).toMatchObject({ check: 'lazyFetch' });
+});
+
+describe('passes over a git someone else could have changed', () => {
+  test.each([
+    ['a git others may write to', 0o700, 0o777],
+    ['a git its group may write to', 0o700, 0o775],
+    ['a git in a folder anyone may write to', 0o777, 0o755],
+    ['a git in a folder anyone may write to, sticky as /tmp is', 0o1777, 0o755],
+  ])('%s', async (_, folderMode, fileMode) => {
+    const dir = tempFolder();
+    const bin = join(dir, 'bin');
+    mkdirSync(bin);
+    const git = wrappedGit(join(bin, 'git'));
+    chmodSync(git, fileMode);
+    chmodSync(bin, folderMode);
+    const options = { env: { PATH: bin }, platform, places: { folders: [] } };
+
+    expect((await findGit(options)).status).toBe('missing');
+
+    chmodSync(git, 0o755);
+    chmodSync(bin, 0o755);
+    expect((await findGit(options)).status).toBe('found');
+  });
+
+  test('a link to a git in a folder anyone may write to', async () => {
+    const dir = tempFolder();
+    const [bin, open] = [join(dir, 'bin'), join(dir, 'open')];
+    mkdirSync(bin);
+    mkdirSync(open);
+    const git = wrappedGit(join(open, 'git'));
+    symlinkSync(git, join(bin, 'git'));
+    chmodSync(open, 0o777);
+    const options = { env: { PATH: bin }, platform, places: { folders: [] } };
+
+    expect((await findGit(options)).status).toBe('missing');
+
+    chmodSync(open, 0o755);
+    expect((await findGit(options)).status).toBe('found');
+  });
 });

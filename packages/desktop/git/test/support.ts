@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { gitProgram } from '@lo/testing/git';
 import { onTestFinished } from 'vitest';
 
-import type { Environment } from '../src/environment.ts';
+import { type Environment, GITHUB } from '../src/environment.ts';
 import { findGit } from '../src/find.ts';
 import { type Git, Runner, type RunnerSettings } from '../src/git.ts';
 
@@ -31,12 +31,25 @@ export async function foundGit(env: Environment = process.env): Promise<Git> {
  */
 export async function runnerIn(
   folder: string,
-  settings: Partial<RunnerSettings> & { git?: Git | undefined } = {},
+  options: {
+    git?: Git | undefined;
+    log?: RunnerSettings['log'];
+    /** Where fetches go. Anything but GitHub, and any `config`, takes the test-only settings. */
+    remote?: string | undefined;
+    config?: string[] | undefined;
+  } = {},
 ): Promise<Runner> {
   const home = join(folder, 'home');
   mkdirSync(home, { recursive: true });
-  const git = settings.git ?? (await foundGit());
-  return new Runner(git, { home, ceiling: folder, ...settings });
+  const git = options.git ?? (await foundGit());
+  const { remote, config } = options;
+  const ownSettings = (remote === undefined || remote === GITHUB) && config === undefined;
+  return new Runner(git, {
+    home,
+    ceiling: folder,
+    log: options.log,
+    test: ownSettings ? undefined : { remote, config },
+  });
 }
 
 /** Writes an executable shell script at `path`. */

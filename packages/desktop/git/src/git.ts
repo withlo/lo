@@ -10,7 +10,7 @@ import {
   type Remote,
 } from './environment.ts';
 import { streamRecords } from './records.ts';
-import { Child, type Finished } from './spawn.ts';
+import { Child, type Finished, OUTPUT_LIMIT } from './spawn.ts';
 import type { Token } from './token.ts';
 import { formatVersion, type GitVersion } from './version.ts';
 
@@ -46,17 +46,32 @@ export interface Fetching {
   readonly proxy?: string | undefined;
 }
 
-export interface RunnerSettings extends Folders {
-  /** Where fetches go: GitHub, unless a test serves its own repositories. */
-  readonly remote?: string | undefined;
-  /** Gets a line for each git that fails. Lines carry the command, never its environment. */
-  readonly log?: ((line: string) => void) | undefined;
+/**
+ * What a build run from source allows its tests, and nothing else ever does: main sets it only
+ * when the app isn't packaged.
+ */
+export interface TestSettings {
   /**
-   * More `name=value` settings for every git, after Lo's own, so they win. Only tests set them,
-   * to show what a guard stops.
+   * Where fetches go instead of GitHub: a server on this machine, over `https:` or `http:`, or a
+   * `file:` folder of repositories.
    */
+  readonly remote?: string | undefined;
+  /** More `name=value` settings for every git, after Lo's own, so they win. */
   readonly config?: readonly string[] | undefined;
 }
+
+export interface RunnerSettings extends Folders {
+  /** Gets a line for each git that fails. Lines carry the command, never its environment. */
+  readonly log?: ((line: string) => void) | undefined;
+  /** What only tests may change. Without it, git fetches from GitHub with Lo's settings alone. */
+  readonly test?: TestSettings | undefined;
+}
+
+/**
+ * The variables a command may set for itself: where git writes its trace, and how much of it.
+ * Every other variable is Lo's to set or drop, since each could turn a guard off.
+ */
+export const COMMAND_VARIABLES = ['GIT_TRACE2_EVENT', 'GIT_TRACE2_EVENT_BRIEF'] as const;
 
 /** Runs git commands for one cache: in its home folder, under its ceiling, against its remote. */
 export class Runner {
@@ -66,7 +81,8 @@ export class Runner {
 
   constructor(git: Git, settings: RunnerSettings) {
     this.git = git;
-    this.remote = parseRemote(settings.remote ?? GITHUB);
+    const { test } = settings;
+    this.remote = parseRemote(test?.remote ?? GITHUB, { test: test !== undefined });
     this.#settings = settings;
   }
 
@@ -85,6 +101,11 @@ export interface RunOptions {
   readonly what?: string | undefined;
   /** Stops git, and everything it started, when it's aborted. */
   readonly signal?: AbortSignal | undefined;
+  /**
+   * The most output git may write, past which Lo stops it and fails as `tooLarge`:
+   * {@link OUTPUT_LIMIT} unless it says otherwise.
+   */
+  readonly maxBytes?: number | undefined;
 }
 
 /**
@@ -133,10 +154,13 @@ export class GitCommand {
   }
 
   /**
-   * Sets a variable for this git alone, such as where git writes its trace. Lo's own variables win
-   * over it, so it can't turn a guard off. Logs and errors never show it.
+   * Sets one of {@link COMMAND_VARIABLES} for this git alone, such as where git writes its trace.
+   * Logs and errors never show it.
    */
   env(name: string, value: string): this {
+    if (!(COMMAND_VARIABLES as readonly string[]).includes(name)) {
+      throw new Error(`${name} isn't a variable a git command may set`);
+    }
     this.#env[name] = value;
     return this;
   }
@@ -159,7 +183,7 @@ export class GitCommand {
     const fetching = this.#fetching;
     // A token that can't be given to git safely isn't given at all: git signs in as nobody.
     const token = fetching?.token?.usable ? fetching.token : undefined;
-    const config = (this.#settings.config ?? []).flatMap((setting) => ['-c', setting]);
+    const config = (this.#settings.test?.config ?? []).flatMap((setting) => ['-c', setting]);
     const env = gitEnvironment(
       this.#git.inherited,
       this.#settings,
@@ -185,7 +209,7 @@ export class GitCommand {
   async finish(input?: Uint8Array | string, options: RunOptions = {}): Promise<Finished> {
     const started = Date.now();
     const child = this.start({ input: input !== undefined });
-    const finished = await child.finish(input, options.signal);
+    const finished = await child.finish(input, options);
     if (finished.code !== 0) {
       const status = finished.code ?? String(finished.signal);
       this.#settings.log?.(
@@ -216,7 +240,7 @@ export class GitCommand {
     let done = false;
     try {
       child.stdin?.end(input);
-      yield* streamRecords(child.stdout);
+      yield* streamRecords(limited(child.stdout, options.maxBytes ?? OUTPUT_LIMIT, this.display));
       const exit = await child.exited;
       done = true;
       if (options.signal?.aborted) throw options.signal.reason;
@@ -231,6 +255,20 @@ export class GitCommand {
         await child.exited.catch(() => undefined);
       }
     }
+  }
+}
+
+/** `chunks`, failing as `tooLarge` once they add up to more than `limit` bytes. */
+async function* limited(
+  chunks: AsyncIterable<Uint8Array>,
+  limit: number,
+  command: string,
+): AsyncGenerator<Uint8Array> {
+  let length = 0;
+  for await (const chunk of chunks) {
+    length += chunk.byteLength;
+    if (length > limit) throw new GitError({ kind: 'tooLarge', command, limit });
+    yield chunk;
   }
 }
 

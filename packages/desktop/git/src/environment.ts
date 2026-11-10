@@ -16,8 +16,8 @@
  *   are off anyway: Lo fetches each repository by its canonical name.
  * - Every git but a fetch runs with lazy fetching off (`GIT_NO_LAZY_FETCH`), so reading the
  *   clone never reaches the network: a missing object is an error, not a download.
- * - No hooks, no file system monitor, no attributes (not the user's file, and not a repository's
- *   own `.gitattributes`), no replace refs, no submodules, and literal pathspecs.
+ * - No hooks, no file system monitor, no attributes (not the system's or the user's files, and not
+ *   a repository's own `.gitattributes`), no replace refs, no submodules, and literal pathspecs.
  * - Nothing a server offers sends git to another host: no bundle URIs, promisor remotes or
  *   packfile URIs.
  * - Only the remote's protocol, HTTPS, and no address that carries a password.
@@ -77,7 +77,7 @@ export const CREDENTIAL_HELPER =
 export interface Remote {
   /** The address repositories are under, as `<base>/<owner>/<repo>.git`: `https://github.com`. */
   readonly base: string;
-  /** git's name for the transport it takes: `https`, or for tests `http` or `file`. */
+  /** git's name for the transport it takes: `https`, or in tests `http` or `file`. */
   readonly protocol: 'https' | 'http' | 'file';
   /** The address the credential helper answers for: the base's scheme, host and port. */
   readonly origin: string | undefined;
@@ -86,11 +86,16 @@ export interface Remote {
 /** GitHub, which Lo fetches every repository from. */
 export const GITHUB = 'https://github.com';
 
+/** The hosts a test's server may be on: this machine. */
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
 /**
- * The remote at `base`: any `https:` address, or for tests an `http:` server on this machine or a
- * `file:` folder. An address with a user, a password, a query or a fragment is refused.
+ * The remote at `base`. It's GitHub, `https://github.com` exactly, since the credential helper
+ * answers for whatever address the remote has. Only with `test`, which a packaged build never
+ * sets, may it be a server on this machine, over `https:` or `http:`, or a `file:` folder. An
+ * address with a user, a password, a path, a query or a fragment is refused.
  */
-export function parseRemote(base: string): Remote {
+export function parseRemote(base: string, options: { test?: boolean } = {}): Remote {
   const url = URL.parse(base);
   // An address's user and password never reach an error.
   const shown = base.replace(/\/\/[^/@]*@/, '//<redacted>@');
@@ -98,20 +103,18 @@ export function parseRemote(base: string): Remote {
   if (!url || url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') {
     throw refuse();
   }
-  const trimmed = base.replace(/\/+$/, '');
-  switch (url.protocol) {
-    case 'https:':
-      return { base: trimmed, protocol: 'https', origin: url.origin };
-    case 'http:': {
-      const local = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
-      if (!local) throw refuse();
-      return { base: trimmed, protocol: 'http', origin: url.origin };
-    }
-    case 'file:':
-      return { base: trimmed, protocol: 'file', origin: undefined };
-    default:
-      throw refuse();
+  if (url.protocol === 'https:' && url.host === 'github.com' && url.pathname === '/') {
+    return { base: GITHUB, protocol: 'https', origin: GITHUB };
   }
+  if (!options.test) throw refuse();
+  const trimmed = base.replace(/\/+$/, '');
+  if (url.protocol === 'file:') return { base: trimmed, protocol: 'file', origin: undefined };
+  const local = LOOPBACK.has(url.hostname) && url.pathname === '/';
+  if (local && url.protocol === 'https:')
+    return { base: url.origin, protocol: 'https', origin: url.origin };
+  if (local && url.protocol === 'http:')
+    return { base: url.origin, protocol: 'http', origin: url.origin };
+  throw refuse();
 }
 
 /**
@@ -198,6 +201,8 @@ export function gitEnvironment(
     GIT_CEILING_DIRECTORIES: folders.ceiling,
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: devNull,
+    // Nor the system's attributes, such as `/etc/gitattributes`.
+    GIT_ATTR_NOSYSTEM: '1',
     GIT_TERMINAL_PROMPT: '0',
     GIT_NO_REPLACE_OBJECTS: '1',
     GIT_LITERAL_PATHSPECS: '1',

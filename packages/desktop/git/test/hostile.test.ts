@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { git, gitProgram } from '@lo/testing/git';
 import { expect, test } from 'vitest';
 
+import { GITHUB } from '../src/environment.ts';
 import { gitAt } from '../src/find.ts';
 import { type Location, Runner } from '../src/git.ts';
 import { failureOf, script, tempFolder } from './support.ts';
@@ -111,7 +112,11 @@ function hostile(): Hostile {
 async function runner(context: Hostile, remote = `file://${context.dir}`): Promise<Runner> {
   const status = await gitAt(gitProgram(), { env: context.env, platform: process.platform });
   if (status.status !== 'found') throw new Error(`no git: ${status.status}`);
-  return new Runner(status.git, { home: context.home, ceiling: context.dir, remote });
+  return new Runner(status.git, {
+    home: context.home,
+    ceiling: context.dir,
+    test: remote === GITHUB ? undefined : { remote },
+  });
 }
 
 /** The hostile programs that ran. */

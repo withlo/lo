@@ -21,25 +21,29 @@ export function splitRecords(output: Uint8Array, separator = NUL): Buffer[] {
   return records;
 }
 
-/** {@link splitRecords}, as the output streams in: each record as soon as its separator does. */
+/**
+ * {@link splitRecords}, as the output streams in: each record as soon as its separator does. Each
+ * chunk is scanned once, and a record that spans chunks is joined once, when it ends, so the time
+ * it takes grows with the output's length alone.
+ */
 export async function* streamRecords(
   chunks: AsyncIterable<Uint8Array>,
   separator = NUL,
 ): AsyncGenerator<Buffer> {
-  let pending: Buffer = Buffer.alloc(0);
+  // The start of the record being read, from the chunks before this one.
+  let pending: Buffer[] = [];
   for await (const chunk of chunks) {
-    const piece = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-    let bytes = pending.length === 0 ? piece : Buffer.concat([pending, piece]);
+    const bytes = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
     let start = 0;
     for (;;) {
       const end = bytes.indexOf(separator, start);
       if (end === -1) break;
-      yield bytes.subarray(start, end);
+      const piece = bytes.subarray(start, end);
+      yield pending.length === 0 ? piece : Buffer.concat([...pending, piece]);
+      pending = [];
       start = end + 1;
     }
-    bytes = bytes.subarray(start);
-    // A copy, so a long output's records don't keep every chunk they came in alive.
-    pending = Buffer.from(bytes);
+    if (start < bytes.length) pending.push(bytes.subarray(start));
   }
-  if (pending.length > 0) yield pending;
+  if (pending.length > 0) yield Buffer.concat(pending);
 }

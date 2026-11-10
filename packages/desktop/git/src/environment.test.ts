@@ -40,7 +40,12 @@ describe('gitEnvironment', () => {
 
   test('keeps a read from downloading, and gives it no token or proxy', () => {
     const env = gitEnvironment({ PATH: '/usr/bin' }, folders, remote, undefined);
-    expect(env).toMatchObject({ GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: 'https' });
+    expect(env).toMatchObject({
+      GIT_NO_LAZY_FETCH: '1',
+      GIT_ALLOW_PROTOCOL: 'https',
+      GIT_ATTR_NOSYSTEM: '1',
+      GIT_CONFIG_NOSYSTEM: '1',
+    });
     expect(Object.keys(env).filter((name) => /token|proxy/i.test(name))).toEqual([]);
   });
 
@@ -59,33 +64,53 @@ describe('gitEnvironment', () => {
 });
 
 describe('parseRemote', () => {
-  test('takes any https address, and for tests a server on this machine or a folder', () => {
-    expect(parseRemote('https://github.com/')).toEqual({
-      base: 'https://github.com',
+  test('takes GitHub alone, and with the test-only setting a server on this machine or a folder', () => {
+    const github = { base: 'https://github.com', protocol: 'https', origin: 'https://github.com' };
+    expect(parseRemote('https://github.com')).toEqual(github);
+    expect(parseRemote('https://github.com/')).toEqual(github);
+    const testing = { test: true };
+    expect(parseRemote('https://github.com', testing)).toEqual(github);
+    expect(parseRemote('http://127.0.0.1:8080', testing).protocol).toBe('http');
+    expect(parseRemote('http://localhost:8080', testing).origin).toBe('http://localhost:8080');
+    expect(parseRemote('https://127.0.0.1:1', testing)).toEqual({
+      base: 'https://127.0.0.1:1',
       protocol: 'https',
-      origin: 'https://github.com',
+      origin: 'https://127.0.0.1:1',
     });
-    expect(parseRemote('http://127.0.0.1:8080').protocol).toBe('http');
-    expect(parseRemote('http://localhost:8080').origin).toBe('http://localhost:8080');
-    expect(parseRemote('file:///tmp/remotes')).toEqual({
+    expect(parseRemote('file:///tmp/remotes', testing)).toEqual({
       base: 'file:///tmp/remotes',
       protocol: 'file',
       origin: undefined,
     });
   });
 
+  // The credential helper answers for whatever address the remote has.
   test.each([
+    'https://github.com.evil.dev',
+    'https://github.com:8443',
+    'https://user@github.com',
+    'https://example.com',
+    'https://github.com/owner',
+    'http://127.0.0.1:8080',
+    'https://127.0.0.1:1',
+    'file:///tmp/remotes',
+  ])('refuses %j without the test-only setting', (base) => {
+    expect(() => parseRemote(base)).toThrow("isn't a valid remote address");
+  });
+
+  test.each([
+    'https://github.com.evil.dev',
     'http://github.com',
     'http://192.168.1.2:8080',
+    'http://127.0.0.1:8080/elsewhere',
     'ssh://git@github.com/a/b.git',
     'git://github.com',
     'https://x-access-token:secret@github.com',
-    'https://user@github.com',
     'https://github.com/?a=b',
     'github.com',
     '',
-  ])('refuses %j', (base) => {
-    expect(() => parseRemote(base)).toThrow("isn't a valid remote address");
+  ])('refuses %j even with it', (base) => {
+    expect(() => parseRemote(base, { test: true })).toThrow("isn't a valid remote address");
   });
 
   test('never repeats a password it refuses', () => {

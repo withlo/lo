@@ -137,3 +137,51 @@ test('an aborted run stops git', async () => {
 
   await expect(listing).rejects.toThrow('no longer needed');
 });
+
+test('a git that writes more than its cap is stopped, and says so', async () => {
+  const { dir, repo, lo } = await bare();
+  const big = gitBytes(
+    dir,
+    ['--git-dir', repo, 'hash-object', '-w', '--stdin'],
+    Buffer.alloc(3 << 20, 'x'),
+  )
+    .toString('utf8')
+    .trim();
+  const show = () => lo.command({ gitDir: repo }).arg('cat-file', 'blob', big);
+
+  expect(await show().run(undefined, { maxBytes: 4 << 20 })).toHaveLength(3 << 20);
+  const error: unknown = await show()
+    .run(undefined, { maxBytes: 1 << 20 })
+    .catch((caught: unknown) => caught);
+  expect(error instanceof GitError && error.detail).toEqual({
+    kind: 'tooLarge',
+    command: `git cat-file blob ${big}`,
+    limit: 1 << 20,
+  });
+  const streamed = async () => {
+    const records = [];
+    for await (const record of show().records(undefined, { maxBytes: 1 << 20 }))
+      records.push(record);
+    return records;
+  };
+  await expect(streamed()).rejects.toThrow(`wrote more than ${1 << 20} bytes, so Lo stopped it`);
+});
+
+test('a command sets only the variables for git’s trace', async () => {
+  const lo = await runnerIn(tempFolder());
+  const command = lo.command('none').arg('version');
+
+  command.env('GIT_TRACE2_EVENT', '/dev/null').env('GIT_TRACE2_EVENT_BRIEF', '1');
+  for (const name of [
+    'GIT_EXEC_PATH',
+    'GIT_CONFIG_COUNT',
+    'GIT_SSL_NO_VERIFY',
+    'GIT_TRACE2_ENV_VARS',
+    'GIT_ALLOW_PROTOCOL',
+    'LO_GIT_TOKEN',
+    'PATH',
+  ]) {
+    expect(() => command.env(name, '1')).toThrow(`${name} isn't a variable a git command may set`);
+  }
+  expect((await command.run()).toString('utf8')).toMatch(/^git version /);
+});

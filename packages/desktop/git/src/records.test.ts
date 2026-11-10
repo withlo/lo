@@ -28,3 +28,19 @@ test('streams records across chunks cut anywhere', async () => {
     expect(text(records), `chunks of ${size}`).toEqual(['first', 'second record', '', 'third']);
   }
 });
+
+test('streams a record of 64 MB in time that grows with its length alone', async () => {
+  const size = 64 * 1024 * 1024;
+  const chunk = Buffer.alloc(64 * 1024, 'x');
+  async function* chunks() {
+    for (let at = 0; at < size; at += chunk.length) yield chunk;
+    yield Buffer.from([0, 0x79]);
+  }
+  const started = performance.now();
+
+  const records: Buffer[] = [];
+  for await (const record of streamRecords(chunks())) records.push(record);
+
+  expect(performance.now() - started).toBeLessThan(500);
+  expect(records.map((record) => record.length)).toEqual([size, 1]);
+});

@@ -2,11 +2,11 @@
 // Lo's making, with the token only on a fetch, and the token in nothing else.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { inspect } from 'node:util';
 
-import { FakeServer, git } from '@lo/testing/git';
+import { FakeServer, git, GitHttpServer, RepoServer } from '@lo/testing/git';
 import { expect, onTestFinished, test, vi } from 'vitest';
 
 import { GitError } from '../src/errors.ts';
@@ -43,6 +43,7 @@ const OWN = [
   'GIT_CEILING_DIRECTORIES',
   'GIT_CONFIG_NOSYSTEM',
   'GIT_CONFIG_GLOBAL',
+  'GIT_ATTR_NOSYSTEM',
   'GIT_TERMINAL_PROMPT',
   'GIT_NO_REPLACE_OBJECTS',
   'GIT_LITERAL_PATHSPECS',
@@ -138,4 +139,39 @@ test('the token stays out of logs, errors and git’s own trace', async () => {
   ]) {
     expect(shown).not.toContain(SECRET);
   }
+});
+
+/** Every file under `folder`, following no links. */
+function filesUnder(folder: string): string[] {
+  return readdirSync(folder, { recursive: true, encoding: 'utf8' })
+    .map((name) => join(folder, name))
+    .filter((path) => lstatSync(path).isFile());
+}
+
+test('the token stays out of the clone a fetch writes, and its settings', async () => {
+  const server = new RepoServer();
+  onTestFinished(() => server.remove());
+  const remote = server.repo('owner', 'repo');
+  remote.write('a.txt', 'a\n').commit('first');
+  remote.publish('refs/heads/main');
+  const http = await GitHttpServer.start(server.remotes, SECRET);
+  onTestFinished(() => http.close());
+  const dir = tempFolder();
+  const lo = await runnerIn(dir, { remote: http.url });
+  const clone = join(dir, 'clone.git');
+  await lo.command('none').arg('init', '-q', '--bare', '--template=').path(clone).run();
+  await lo
+    .command({ gitDir: clone })
+    .arg('config', 'remote.origin.url', `${http.url}/owner/repo.git`)
+    .run();
+
+  await lo
+    .command({ gitDir: clone }, { fetching: { token: new Token(SECRET) } })
+    .arg('fetch', '--filter=blob:none', 'origin', '+refs/heads/main:refs/lo/main')
+    .run(undefined, { what: 'owner/repo' });
+
+  expect(http.signedInWith()).toContain(SECRET);
+  const files = filesUnder(dir);
+  expect(files).toContain(join(clone, 'config'));
+  expect(files.filter((file) => readFileSync(file).includes(SECRET))).toEqual([]);
 });
