@@ -43,13 +43,13 @@ export function startBackground(settings: BackgroundSettings): Background {
   const start = () => {
     startedAt = Date.now();
     // Only what it needs from the environment, so no token in it reaches the process.
-    const process = utilityProcess.fork(backgroundEntry, [], {
+    const started = utilityProcess.fork(backgroundEntry, [], {
       serviceName: 'Lo background',
       env: settings.testJobs ? { LO_TEST_JOBS: '1' } : {},
       stdio: 'inherit',
     });
-    child = process;
-    process.once('exit', (code) => {
+    child = started;
+    started.once('exit', (code) => {
       child = undefined;
       if (stopped) return;
       attempt = nextAttempt(attempt, Date.now() - startedAt);

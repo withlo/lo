@@ -197,6 +197,26 @@ The database is SQLite through Node's built-in `node:sqlite`, in `lo.db` in the 
 mode, foreign keys enforced, defensive. `src/main/database.ts` is the only module that uses
 `node:sqlite`; everything else goes through its `Database`.
 
+### The background process
+
+Pure work, such as parsing, highlighting and diffing, runs in one background process, an Electron
+utility process the window talks to directly over a MessagePort that main hands both of them. It has
+Node, so it gets nothing from main's environment, no tokens, and never reads files or the network
+for the window.
+
+- A feature's jobs are a contract in `jobs.ts`, exported as `contract` (`defineJobs`: each job's
+  input schema and reply type, held to the same rules as `contract.ts`), and their code in
+  `background/index.ts` (`defineRunner`, the default export), found by `import.meta.glob`. The
+  window runs them through `jobs(contract)`.
+- The process checks every message and each job's input before it runs. Each job runs on a worker
+  thread of its own, under a deadline and a cap on its JavaScript heap (10 s and 256 MB unless the
+  job sets its own), and fails as `timeout` or `memory` past either.
+- Main watches the process's memory and restarts it past 2 GB, since memory outside the heap
+  (WebAssembly's) can't be capped any other way. After any exit it starts again, waiting longer
+  after each quick failure; the window gets a new port, and jobs it had sent fail as `restarted`.
+- A build run from source with `LO_TEST_JOBS=1` adds the smoke test's jobs, and takes another cap
+  from `LO_BACKGROUND_MEMORY_CAP_MB`. A packaged build ignores both.
+
 ## Generated files
 
 Generated files are committed, and each project that makes them has a `codegen` target. Never edit
