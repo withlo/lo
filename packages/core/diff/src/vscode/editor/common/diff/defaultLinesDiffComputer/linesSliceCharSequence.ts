@@ -174,6 +174,29 @@ export class LinesSliceCharSequence implements ISequence {
     return new OffsetRange(start, end);
   }
 
+  // Lo: like `findWordContaining`, with every letter, digit and mark, and `_`, in words.
+  public findUnicodeWordContaining(offset: number): OffsetRange | undefined {
+    if (offset < 0 || offset >= this.elements.length) {
+      return undefined;
+    }
+
+    if (!isUnicodeWordChar(this.elements[offset])) {
+      return undefined;
+    }
+
+    let start = offset;
+    while (start > 0 && isUnicodeWordChar(this.elements[start - 1])) {
+      start--;
+    }
+
+    let end = offset;
+    while (end < this.elements.length && isUnicodeWordChar(this.elements[end])) {
+      end++;
+    }
+
+    return new OffsetRange(start, end);
+  }
+
   /** fooBar has the two sub-words foo and bar */
   public findSubWordContaining(offset: number): OffsetRange | undefined {
     if (offset < 0 || offset >= this.elements.length) {
@@ -226,6 +249,16 @@ export class LinesSliceCharSequence implements ISequence {
       this.elements.length;
     return new OffsetRange(start, end);
   }
+}
+
+const unicodeWordChar = /[\p{L}\p{N}\p{M}_]/u;
+
+// Lo: a UTF-16 code unit that's a letter, digit or mark, or `_`.
+function isUnicodeWordChar(charCode: number): boolean {
+  if (charCode < 0x80) {
+    return isWordChar(charCode) || charCode === 0x5f;
+  }
+  return unicodeWordChar.test(String.fromCharCode(charCode));
 }
 
 function isWordChar(charCode: number): boolean {

@@ -8,6 +8,7 @@ export {
   type FileDiff,
   type Hunk,
   lineWords,
+  type LineEndings,
   type Lines,
   linesOf,
   type RowBlock,

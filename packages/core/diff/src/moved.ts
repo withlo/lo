@@ -113,9 +113,9 @@ export interface EditedLine {
 }
 
 /** The moves among a PR's changes, with lookups by line. */
-export class Moves {
+export class Moves<M extends Move = Move> {
   /** Every move, ordered by where it lands: by file, then by line. */
-  readonly all: readonly Move[];
+  readonly all: readonly M[];
   /** Indices into `all`, by where they came from. */
   readonly #byFrom: number[];
 
@@ -134,7 +134,7 @@ export class Moves {
   }
 
   /** Lookups over moves that `find` found, such as ones sent from another thread. */
-  constructor(moves: readonly Move[]) {
+  constructor(moves: readonly M[]) {
     this.all = moves.toSorted((a, b) => compareKeys(a.to, b.to));
     this.#byFrom = this.all
       .map((_, index) => index)
@@ -142,7 +142,7 @@ export class Moves {
   }
 
   /** The move that deleted line `line`, by its old number, of the file at index `file` is in. */
-  ofDeleted(file: number, line: number): Move | undefined {
+  ofDeleted(file: number, line: number): M | undefined {
     const after = partitionPoint(this.#byFrom, (index) =>
       atOrBefore(this.all[index]!.from, file, line),
     );
@@ -151,7 +151,7 @@ export class Moves {
   }
 
   /** The move that added line `line`, by its new number, of the file at index `file` is in. */
-  ofAdded(file: number, line: number): Move | undefined {
+  ofAdded(file: number, line: number): M | undefined {
     const after = partitionPoint(this.all, (moved) => atOrBefore(moved.to, file, line));
     const moved = after > 0 ? this.all[after - 1] : undefined;
     return moved && contains(moved.to, file, line) ? moved : undefined;
@@ -469,7 +469,7 @@ class Finder {
    * The added lines that line up with deleted lines `seed.delta` away, from the start of both runs
    * to their end.
    */
-  lane(seed: Seed): { start: number; end: number } {
+  band(seed: Seed): { start: number; end: number } {
     const old = this.old.runs[seed.oldRun]!;
     const added = this.new.runs[seed.newRun]!;
     return {
@@ -487,14 +487,14 @@ class Finder {
    * `maxEditsInARow` edited lines in a row, or the end of either run.
    */
   walk(seed: Seed): { start: number; end: number } {
-    const lane = this.lane(seed);
+    const band = this.band(seed);
     let start = seed.new;
-    for (let at = seed.new - 1; at >= lane.start; at--) {
+    for (let at = seed.new - 1; at >= band.start; at--) {
       if (this.same(at, seed.delta)) start = at;
       else if (start - at > maxEditsInARow) break;
     }
     let end = seed.new + 1;
-    for (let at = seed.new + 1; at < lane.end; at++) {
+    for (let at = seed.new + 1; at < band.end; at++) {
       if (this.same(at, seed.delta)) end = at + 1;
       else if (at + 1 - end > maxEditsInARow) break;
     }

@@ -1,8 +1,9 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, expectTypeOf, test, vi } from 'vitest';
 
 import { Moves } from './moved.ts';
-import { changedLines, diffPullRequest } from './pull.ts';
+import { changedLines, diffPullRequest, findMoves, type MovedBlock } from './pull.ts';
 import { diffText } from './file.ts';
+import { DefaultLinesDiffComputer } from './vscode/editor/common/diff/defaultLinesDiffComputer/defaultLinesDiffComputer.ts';
 
 const helper = [
   'function total(items: Item[]): number {',
@@ -47,9 +48,84 @@ describe('diffPullRequest', () => {
 
   test('gives plain data, which another thread can read back', () => {
     const copy = structuredClone(diff);
+    const moves = new Moves(copy.moves);
 
     expect(copy).toEqual(diff);
-    expect(new Moves(copy.moves).ofAdded(1, 2)).toEqual(diff.moves[0]);
+    expect(moves.ofAdded(1, 2)).toEqual(diff.moves[0]);
+    expectTypeOf(moves.ofAdded(1, 2)).toEqualTypeOf<MovedBlock | undefined>();
+  });
+
+  test('finds no moves in a file whose diff came out coarse', () => {
+    // A long file with every third line edited, which the budget cuts short, and a new file that
+    // copies a function the edits didn't touch.
+    const helperAt = Array.from({ length: 30_000 }, (_, index) =>
+      index % 3 === 2 ? `edited ${index}` : `line ${index}`,
+    );
+    const big = [...helper, ...helperAt.map((line, index) => (index % 3 === 2 ? 'x' : line))];
+    const result = diffPullRequest(
+      [
+        { path: 'big.ts', old: [...helper, ...helperAt].join('\n'), new: big.join('\n') },
+        { path: 'copy.ts', old: undefined, new: helper.join('\n') },
+      ],
+      { budget: 1 },
+    );
+
+    expect(result.files[0]?.approximate).toBe(true);
+    expect(result.moves).toEqual([]);
+  });
+
+  test('goes on past a file whose diff failed', () => {
+    const spy = vi
+      .spyOn(DefaultLinesDiffComputer.prototype, 'computeDiff')
+      .mockImplementationOnce(() => {
+        throw new Error('Assertion Failed');
+      });
+    try {
+      const result = diffPullRequest([
+        { path: 'a.ts', old: 'a\nb\n', new: 'a\nc\n' },
+        { path: 'b.ts', old: 'a\nb\n', new: 'a\nc\n' },
+      ]);
+
+      expect(result.files.map(({ approximate }) => approximate)).toEqual([true, false]);
+      expect(result.files[1]?.changes).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe('findMoves', () => {
+  test('highlights edited lines whole once its budget is spent', () => {
+    const moved = [...helper.slice(0, 3), '  return sum + shipping + tax(sum, region);', '}'];
+    const files = [
+      {
+        path: 'a.ts',
+        deleted: helper.map((text, index) => ({ number: index + 1, text })),
+        added: [],
+      },
+      {
+        path: 'b.ts',
+        deleted: [],
+        added: moved.map((text, index) => ({ number: index + 1, text })),
+      },
+    ];
+    // The clock reads past the deadline from the first edit on.
+    let now = 0;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (now += 10_000));
+    try {
+      const [block] = findMoves(files, { budget: 1000 });
+
+      expect(block?.words).toEqual({
+        old: [{ line: 4, from: 0, to: helper[3]!.length }],
+        new: [{ line: 4, from: 0, to: moved[3]!.length }],
+      });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test('refuses a negative budget', () => {
+    expect(() => findMoves([], { budget: -1 })).toThrow(RangeError);
   });
 });
 
@@ -65,6 +141,15 @@ describe('changedLines', () => {
       oldPath: 'a.ts',
       deleted: [{ number: 2, text: 'b' }],
       added: [{ number: 2, text: 'x' }],
+    });
+  });
+
+  test('gives no lines for a coarse diff', () => {
+    const diff = { ...diffText('a\n', 'b\n'), approximate: true };
+
+    expect(changedLines({ path: 'a.ts', old: 'a\n', new: 'b\n' }, diff)).toMatchObject({
+      deleted: [],
+      added: [],
     });
   });
 });

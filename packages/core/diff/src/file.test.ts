@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
-import { diffLines, diffText, linesOf, rowCount, rowOf, splitLines } from './file.ts';
+import { diffLines, diffText, linesOf, lineWords, rowCount, rowOf, splitLines } from './file.ts';
+import { DefaultLinesDiffComputer } from './vscode/editor/common/diff/defaultLinesDiffComputer/defaultLinesDiffComputer.ts';
 
 /** Lines `line 1` to `line count`. */
 function numbered(count: number): string[] {
@@ -8,8 +9,12 @@ function numbered(count: number): string[] {
 }
 
 describe('splitLines', () => {
-  test('splits at every kind of line break', () => {
-    expect(splitLines('a\r\nb\rc\nd')).toEqual(['a', 'b', 'c', 'd']);
+  test('splits at each line break, leaving out the \\r of a \\r\\n', () => {
+    expect(splitLines('a\r\nb\nc')).toEqual(['a', 'b', 'c']);
+  });
+
+  test('keeps a \\r on its own in its line, as git does', () => {
+    expect(splitLines('a\rb\nc')).toEqual(['a\rb', 'c']);
   });
 
   test('ends the last line at a final line break', () => {
@@ -43,6 +48,37 @@ describe('diffText', () => {
     ]);
   });
 
+  test('extends a change to the whole word in any script, with underscores', () => {
+    const [accent] = diffText('const café = 1;\n', 'const cafè = 1;\n').changes;
+    const [snake] = diffText('foo_bar();\n', 'foo_baz();\n').changes;
+
+    expect(accent?.oldWords).toEqual([{ line: 1, from: 6, to: 10 }]);
+    expect(snake?.oldWords).toEqual([{ line: 1, from: 0, to: 7 }]);
+    expect(snake?.newWords).toEqual([{ line: 1, from: 0, to: 7 }]);
+  });
+
+  test('never splits a character people see', () => {
+    // An emoji is two UTF-16 units, and a family of emoji joined is one character.
+    const [emoji] = diffText('x \u{1F600} y\n', 'x \u{1F601} y\n').changes;
+    const [joined] = diffText(
+      'a \u{1F469}\u200D\u{1F4BB} b\n',
+      'a \u{1F469}\u200D\u{1F52C} b\n',
+    ).changes;
+    const [accent] = diffText('(e\u0301)\n', '(e\u0300)\n').changes;
+
+    expect(emoji?.oldWords).toEqual([{ line: 1, from: 2, to: 4 }]);
+    expect(emoji?.newWords).toEqual([{ line: 1, from: 2, to: 4 }]);
+    expect(joined?.newWords).toEqual([{ line: 1, from: 2, to: 7 }]);
+    expect(accent?.newWords).toEqual([{ line: 1, from: 1, to: 3 }]);
+  });
+
+  test('never splits a character in a moved line’s words', () => {
+    expect(lineWords('x \u{1F600} y', 'x \u{1F601} y')).toEqual({
+      old: [{ line: 1, from: 2, to: 4 }],
+      new: [{ line: 1, from: 2, to: 4 }],
+    });
+  });
+
   test('highlights no words in a line that changed completely', () => {
     const [change] = diffText('one\ntwo\n', 'uno\ndos\n').changes;
 
@@ -65,8 +101,82 @@ describe('diffText', () => {
     expect(diffText('  a\n', 'a\n', { whitespace: false }).changes).toEqual([]);
   });
 
-  test('doesn’t compare line breaks', () => {
-    expect(diffText('a\r\nb\r\n', 'a\nb\n').changes).toEqual([]);
+  test('changes a line whose ending alone changed', () => {
+    const diff = diffText('a\r\nb\r\nc\r\n', 'a\r\nb\nc\r\n');
+
+    expect(diff.changes).toEqual([
+      { old: { start: 2, end: 3 }, new: { start: 2, end: 3 }, oldWords: [], newWords: [] },
+    ]);
+    expect(diff.lineEndings).toEqual({ old: 'crlf', new: 'mixed' });
+  });
+
+  test('changes every line when a file’s line endings change', () => {
+    const diff = diffText('a\r\nb\r\n', 'a\nb\n');
+
+    expect(diff.changes).toEqual([
+      { old: { start: 1, end: 3 }, new: { start: 1, end: 3 }, oldWords: [], newWords: [] },
+    ]);
+    expect(diff.lineEndings).toEqual({ old: 'crlf', new: 'lf' });
+  });
+
+  test('can leave out changes of line endings with whitespace', () => {
+    expect(diffText('a\r\nb\r\n', 'a\nb\n', { whitespace: false }).changes).toEqual([]);
+  });
+
+  test('counts lines as git does, with a \\r on its own inside a line', () => {
+    const diff = diffText('a\rb\nc\n', 'a\rb\nd\n');
+
+    expect(diff.oldLineCount).toBe(2);
+    expect(diff.changes[0]?.new).toEqual({ start: 2, end: 3 });
+  });
+
+  test('treats a single blank line as a line, not as an empty file', () => {
+    expect(diffText('\n', '\nfoo\n').changes).toEqual([
+      { old: { start: 2, end: 2 }, new: { start: 2, end: 3 }, oldWords: [], newWords: [] },
+    ]);
+    expect(diffText('\nfoo\n', 'foo\n').changes).toEqual([
+      { old: { start: 1, end: 2 }, new: { start: 1, end: 1 }, oldWords: [], newWords: [] },
+    ]);
+    expect(diffText('\n', 'foo\n').changes).toHaveLength(1);
+    expect(diffText('\n', '\n').changes).toEqual([]);
+  });
+
+  test('finds the change in a last line that holds a NUL', () => {
+    const diff = diffText('a\nb', 'a\nb\0\n');
+
+    expect(diff.changes.map(({ old, new: added }) => [old, added])).toEqual([
+      [
+        { start: 2, end: 3 },
+        { start: 2, end: 3 },
+      ],
+    ]);
+  });
+
+  test('comes out whole when VS Code’s diff fails, so other files go on', () => {
+    const spy = vi
+      .spyOn(DefaultLinesDiffComputer.prototype, 'computeDiff')
+      .mockImplementationOnce(() => {
+        throw new Error('Assertion Failed');
+      });
+    try {
+      const diff = diffText('a\nb\n', 'a\nc\n');
+
+      expect(diff.approximate).toBe(true);
+      expect(diff.changes).toEqual([
+        { old: { start: 1, end: 3 }, new: { start: 1, end: 3 }, oldWords: [], newWords: [] },
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('takes a budget of 0 as no limit, and refuses a negative one', () => {
+    const old = Array.from({ length: 500 }, (_, index) => `old ${index}`);
+    const added = Array.from({ length: 500 }, (_, index) => `new ${index}`);
+
+    expect(diffLines(old, added, { budget: 0 }).approximate).toBe(false);
+    expect(() => diffLines(old, added, { budget: -1 })).toThrow(RangeError);
+    expect(() => diffLines(old, added, { budget: Number.NaN })).toThrow(RangeError);
   });
 
   test('changes the last line when only one side ends with a line break', () => {

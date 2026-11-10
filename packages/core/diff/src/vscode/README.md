@@ -17,7 +17,8 @@ The code is VS Code's, apart from these changes. Lines that differ in behavior a
 - A failed check throws at once, where VS Code reports it later, so a caller can fall back for that
   one file.
 - `extendToWords` extends every partly changed word to the whole word, as `extendToSubwords` does
-  for subwords.
+  for subwords. Its words are made of any letter, digit or mark, and `_`, while VS Code's own word
+  heuristics keep their ASCII words.
 - The dynamic-programming diff reads the clock once a row instead of once a cell, which took about
   half the time of a large pull request's diffs.
 

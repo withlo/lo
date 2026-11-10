@@ -1,6 +1,7 @@
 // A whole pull request's diff: each file's diff, and the code moved within and between files.
 
 import {
+  defaultBudget,
   diffText,
   type DiffOptions,
   type FileDiff,
@@ -50,7 +51,10 @@ export function diffPullRequest(
   return { files: diffs, moves: findMoves(changes, options) };
 }
 
-/** A file's deleted and added lines, from its diff, as `findMoves` reads them. */
+/**
+ * A file's deleted and added lines, from its diff, as `findMoves` reads them. An approximate diff
+ * gives none, since its changes can hold lines that didn't change, which would show as moved.
+ */
 export function changedLines(
   file: Pick<FileVersions, 'path' | 'oldPath'> & {
     old: string | readonly string[] | undefined;
@@ -62,7 +66,7 @@ export function changedLines(
   const added = toLines(file.new);
   const deleted: Line[] = [];
   const addedLines: Line[] = [];
-  for (const change of diff.changes) {
+  for (const change of diff.approximate ? [] : diff.changes) {
     for (let number = change.old.start; number < change.old.end; number++) {
       deleted.push({ number, text: old[number - 1] ?? '' });
     }
@@ -85,22 +89,31 @@ function byNumber(lines: readonly Line[]): Map<number, string> {
 
 /**
  * Finds the code moved among every file's changed lines, and the words that changed in each moved
- * line that was edited on the way.
+ * line that was edited on the way. `options.budget` is the time all those words may take, after
+ * which each edited line that's left is highlighted whole.
  */
 export function findMoves(
   files: readonly FileChanges[],
   options: Pick<DiffOptions, 'budget'> = {},
 ): MovedBlock[] {
+  const budget = options.budget ?? defaultBudget;
+  if (!(budget >= 0)) throw new RangeError(`A diff's budget can't be ${budget}.`);
+  const deadline = budget === 0 ? Infinity : Date.now() + budget;
   const deleted = files.map((file) => byNumber(file.deleted));
   const added = files.map((file) => byNumber(file.added));
   return Moves.find(files).all.map((moved) => {
     const words: MovedBlock['words'] = { old: [], new: [] };
     for (const edit of moved.edits) {
-      const found = lineWords(
-        deleted[moved.from.file]!.get(edit.old) ?? '',
-        added[moved.to.file]!.get(edit.new) ?? '',
-        options,
-      );
+      const oldLine = deleted[moved.from.file]!.get(edit.old) ?? '';
+      const newLine = added[moved.to.file]!.get(edit.new) ?? '';
+      const left = deadline - Date.now();
+      const found =
+        left > 0
+          ? lineWords(oldLine, newLine, { budget: left === Infinity ? 0 : Math.ceil(left) })
+          : {
+              old: oldLine === '' ? [] : [{ line: 1, from: 0, to: oldLine.length }],
+              new: newLine === '' ? [] : [{ line: 1, from: 0, to: newLine.length }],
+            };
       words.old.push(...found.old.map((range) => ({ ...range, line: edit.old })));
       words.new.push(...found.new.map((range) => ({ ...range, line: edit.new })));
     }

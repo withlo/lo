@@ -299,13 +299,13 @@ export class DefaultLinesDiffComputer implements ILinesDiffComputer {
     }
 
     // Lo: extends every partly changed word to the whole word, as `extendToSubwords` does for
-    // subwords.
+    // subwords, counting every letter, digit and mark, and `_`, as part of a word.
     if (options.extendToWords) {
       diffs = extendDiffsToEntireWordIfAppropriate(
         slice1,
         slice2,
         diffs,
-        (seq, idx) => seq.findWordContaining(idx),
+        (seq, idx) => seq.findUnicodeWordContaining(idx),
         true,
       );
       if (check) {
