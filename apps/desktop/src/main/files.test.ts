@@ -54,6 +54,7 @@ describe('serveFile', () => {
     const response = await get('lo-app://app/index.html', 'POST');
     expect(response.status).toBe(405);
     expect(response.headers.get('allow')).toBe('GET, HEAD');
+    expect(response.headers.get('content-security-policy')).toBe("default-src 'none'");
   });
 
   // Out of the folder, written plainly, percent-encoded and through a symlink.
@@ -82,6 +83,8 @@ describe('serveFile', () => {
     'lo-app://app/%E0%A4%A.js',
     'lo-app://app/index.html%00.js',
   ])('refuses %s', async (url) => {
-    expect((await get(url)).status).toBe(404);
+    const response = await get(url);
+    expect(response.status).toBe(404);
+    expect(response.headers.get('content-security-policy')).toBe("default-src 'none'");
   });
 });

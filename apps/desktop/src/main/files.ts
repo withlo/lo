@@ -18,27 +18,30 @@ const contentTypes: Record<string, string> = {
 
 /**
  * Answers a request on Lo's scheme with a file from `root`, the window's build folder, adding
- * `headers` to the response. Only a GET or HEAD for a file inside `root`, on Lo's own host and of a
- * type the window loads, is answered; anything else gets a 404 (or a 405 for another method). A path
- * that leaves `root`, written plainly, percent-encoded or through a symlink, never resolves.
+ * `headers` to every response, refusals included. Only a GET or HEAD for a file inside `root`, on
+ * Lo's own host and of a type the window loads, is answered; anything else gets a 404 (or a 405
+ * for another method). A path that leaves `root`, written plainly, percent-encoded or through a
+ * symlink, never resolves.
  */
 export async function serveFile(
   request: { method: string; url: string },
   root: string,
   headers: Readonly<Record<string, string>>,
 ): Promise<Response> {
+  const refuse = (status: number, extra: Record<string, string> = {}) =>
+    new Response(null, { status, headers: { ...headers, ...extra } });
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    return new Response(null, { status: 405, headers: { allow: 'GET, HEAD' } });
+    return refuse(405, { allow: 'GET, HEAD' });
   }
   const file = await locate(request.url, root);
   const type = file && contentTypes[extname(file)];
-  if (!file || !type) return new Response(null, { status: 404 });
+  if (!file || !type) return refuse(404);
 
   let body: Buffer | null = null;
   try {
     if (request.method === 'GET') body = await readFile(file);
   } catch {
-    return new Response(null, { status: 404 });
+    return refuse(404);
   }
   return new Response(body, {
     headers: { ...headers, 'content-type': type, 'x-content-type-options': 'nosniff' },
