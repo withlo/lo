@@ -38,9 +38,11 @@ export class Token {
   constructor(value: string) {
     const trimmed = value.trim();
     if (!TOKEN_CHARACTERS.test(trimmed)) {
+      // Such a token can never work, so it's refused as GitHub refuses a bad one: whoever holds
+      // it signs in again.
       throw new GithubError({
-        kind: 'tokenUnavailable',
-        message: 'it holds characters a GitHub token never has',
+        kind: 'unauthorized',
+        message: 'the token holds characters a GitHub token never has',
       });
     }
     this.#value = trimmed;

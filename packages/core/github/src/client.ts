@@ -431,7 +431,13 @@ export class GithubClient {
   async getStored<T>(path: string, read: Read<T>): Promise<{ value: T; changed: boolean }> {
     const url = this.url(path);
     const store = this.#store;
-    const kept = await attempt(() => store?.get(url));
+    let kept = await attempt(() => store?.get(url));
+    if (kept && !isHeaderValue(kept.etag)) {
+      // An ETag that can't go in a header would fail every read the same way: it's dropped, and
+      // the read made in full.
+      await attempt(() => store?.delete(url));
+      kept = undefined;
+    }
     if (kept) {
       const response = await this.send('GET', url, { condition: { ifNoneMatch: kept.etag } });
       if (response.status !== 304)
@@ -535,6 +541,11 @@ export class GithubClient {
       scopes: parseScopes(response.header('x-oauth-scopes')),
     };
   }
+}
+
+/** Whether `value` can be a header's value: no line breaks, no NUL, and nothing past Latin-1. */
+function isHeaderValue(value: string): boolean {
+  return /^[\t\x20-\x7e\x80-\xff]*$/.test(value);
 }
 
 /** What `call` answers, or nothing when it fails, whether it throws or rejects. */
