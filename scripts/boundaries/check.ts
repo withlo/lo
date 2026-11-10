@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { isBuiltin } from 'node:module';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
 import { importsOf, ParseError, type Import } from './imports.ts';
 
@@ -29,6 +29,16 @@ const platformFolders = [
   { folder: 'packages/desktop/', tag: 'platform:desktop' },
 ];
 
+/** The folders whose projects, and every project inside them, are MIT-licensed. */
+const mitFolders = ['packages/core/markdown', 'packages/core/artifact', 'skill'];
+
+const dependencyFields = [
+  'dependencies',
+  'optionalDependencies',
+  'peerDependencies',
+  'devDependencies',
+] as const;
+
 const sourceFile = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 /** Dependencies, build output and test data. Folders starting with a dot are skipped too. */
 const skippedFolders = new Set(['node_modules', 'dist', 'fixtures']);
@@ -42,19 +52,43 @@ type Target =
   | { kind: 'project'; project: Project }
   | { kind: 'node' }
   | { kind: 'electron' }
+  /** A module chosen at run time. */
+  | { kind: 'computed' }
   | { kind: 'other' };
 
+const node: Target = { kind: 'node' };
+const electron: Target = { kind: 'electron' };
+const computed: Target = { kind: 'computed' };
+const other: Target = { kind: 'other' };
+
+/** Where a dependency alias points: another package's name, or a folder. */
+type Alias = { name: string } | { path: string };
+
+interface Manifest {
+  text: string;
+  json: Record<string, unknown>;
+}
+
 /**
- * Checks every project's tags, and every import in every project's source files, against the
- * workspace's boundary rules. `projects` comes from Nx; the files are read from disk.
+ * Checks every project's tags, `package.json` and source files against the workspace's boundary
+ * rules. `projects` comes from Nx; everything else is read from disk.
  */
 export function checkBoundaries(workspaceRoot: string, projects: readonly Project[]): Violation[] {
-  const violations = checkTags(workspaceRoot, projects);
+  // Real paths throughout, so that a path through a symlink lands in the folder it points to.
+  const root = realpathSync(workspaceRoot);
+  const violations = checkTags(root, projects);
   const byPackage = new Map(projects.map((project) => [project.packageName, project]));
   const roots = new Set(projects.map((project) => project.root));
+  const manifests = new Map(projects.map((project) => [project, readManifest(root, project)]));
+  const aliases = new Map(
+    projects.map((project) => [
+      project,
+      aliasesOf(manifests.get(project), join(root, project.root)),
+    ]),
+  );
 
   const projectAt = (path: string): Project | undefined => {
-    const where = toSlashes(relative(workspaceRoot, path));
+    const where = toSlashes(relative(root, path));
     let found: Project | undefined;
     for (const project of projects) {
       const inside = where === project.root || where.startsWith(`${project.root}/`);
@@ -63,30 +97,53 @@ export function checkBoundaries(workspaceRoot: string, projects: readonly Projec
     return found;
   };
 
-  const resolveImport = (from: string, { specifier, types }: Import): Target => {
+  /** A package name and subpath, as `owner`'s dependencies resolve it. */
+  const resolvePackage = (specifier: string, owner: Project | undefined): Target => {
+    const parts = specifier.split('/');
+    const length = specifier.startsWith('@') ? 2 : 1;
+    const name = parts.slice(0, length).join('/');
+    const alias = owner && aliases.get(owner)?.get(name);
+    if (alias && 'path' in alias) return resolvePath(join(alias.path, ...parts.slice(length)));
+    const real = alias?.name ?? name;
+    if (real === 'electron' || real.startsWith('@electron/')) return electron;
+    const project = byPackage.get(real);
+    return project ? { kind: 'project', project } : other;
+  };
+
+  /** A path, followed through symlinks. One that runs through `node_modules` names a package. */
+  const resolvePath = (path: string): Target => {
+    const parts = toSlashes(realPath(path)).split('/');
+    const modules = parts.lastIndexOf('node_modules');
+    if (modules !== -1) {
+      const owner = projectAt(parts.slice(0, modules).join('/'));
+      return resolvePackage(parts.slice(modules + 1).join('/'), owner);
+    }
+    const project = projectAt(parts.join('/'));
+    return project ? { kind: 'project', project } : other;
+  };
+
+  const resolveSpecifier = (specifier: string, folder: string, owner: Project): Target => {
+    // `#name` resolves through the package's `imports`, which is checked on its own.
+    if (specifier.startsWith('#')) return other;
     const path = specifier.replace(/[?#].*$/, '');
-    if (types) {
-      if (path === 'node') return { kind: 'node' };
-      if (path === 'electron') return { kind: 'electron' };
-      return { kind: 'other' };
+    if (path.startsWith('.') || path.startsWith('/')) return resolvePath(resolve(folder, path));
+    if (path.startsWith('node:') || isBuiltin(path)) return node;
+    return resolvePackage(path, owner);
+  };
+
+  const resolveImport = (found: Import, file: string, owner: Project): Target => {
+    if (found.computed) return computed;
+    if (found.types) {
+      if (found.specifier === 'node') return node;
+      return found.specifier === 'electron' ? electron : other;
     }
-    if (path.startsWith('.') || path.startsWith('/')) {
-      const project = projectAt(resolve(dirname(from), path));
-      return project ? { kind: 'project', project } : { kind: 'other' };
-    }
-    if (path.startsWith('node:') || isBuiltin(path)) return { kind: 'node' };
-    if (path === 'electron' || path.startsWith('electron/') || path.startsWith('@electron/')) {
-      return { kind: 'electron' };
-    }
-    const parts = path.split('/');
-    const packageName = path.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
-    const project = byPackage.get(packageName);
-    return project ? { kind: 'project', project } : { kind: 'other' };
+    return resolveSpecifier(found.specifier, dirname(file), owner);
   };
 
   for (const project of projects) {
-    for (const file of sourceFiles(join(workspaceRoot, project.root), project.root, roots)) {
-      const path = toSlashes(relative(workspaceRoot, file));
+    const folder = join(root, project.root);
+    for (const file of sourceFiles(folder, project.root, roots)) {
+      const path = toSlashes(relative(root, file));
       const test = isTest(path.slice(project.root.length + 1));
       let imports: Import[];
       try {
@@ -100,75 +157,113 @@ export function checkBoundaries(workspaceRoot: string, projects: readonly Projec
         continue;
       }
       for (const found of imports) {
-        const message = problem(project, test, resolveImport(file, found), found.specifier);
-        if (message) violations.push({ where: `${path}:${found.line}`, message });
+        const reason = problem(project, test, resolveImport(found, file, project));
+        if (!reason) continue;
+        const verb = found.computed ? 'loads' : 'imports';
+        violations.push({
+          where: `${path}:${found.line}`,
+          message: `${verb} ${found.specifier}: ${reason}.`,
+        });
+      }
+    }
+
+    const manifest = manifests.get(project);
+    if (!manifest) continue;
+    const at = (key: string) => `${project.root}/package.json:${lineOfKey(manifest.text, key)}`;
+    for (const field of dependencyFields) {
+      for (const [name, spec] of Object.entries(objectAt(manifest.json, field))) {
+        const reason = problem(project, field === 'devDependencies', resolvePackage(name, project));
+        if (!reason) continue;
+        violations.push({
+          where: at(name),
+          message: `lists "${name}": ${JSON.stringify(spec)} in ${field}: ${reason}.`,
+        });
+      }
+    }
+    for (const field of ['imports', 'exports'] as const) {
+      for (const [key, target] of mappings(manifest.json[field])) {
+        // A pattern's `*` stands for one path segment.
+        const reason = problem(
+          project,
+          false,
+          resolveSpecifier(target.replaceAll('*', 'x'), folder, project),
+        );
+        if (!reason) continue;
+        violations.push({
+          where: at(key),
+          message: `maps "${key}" to "${target}" in ${field}: ${reason}.`,
+        });
       }
     }
   }
   return violations.toSorted((a, b) => a.where.localeCompare(b.where, 'en', { numeric: true }));
 }
 
-function problem(
-  from: Project,
-  test: boolean,
-  target: Target,
-  specifier: string,
-): string | undefined {
+/** Why `from` may not use `target`, or nothing when it may. Tests may also use Node and testing. */
+function problem(from: Project, test: boolean, target: Target): string | undefined {
+  const core = from.tags.includes(CORE);
   if (target.kind === 'project') {
     const to = target.project;
     if (to === from) return undefined;
-    if (to.root.startsWith('apps/')) {
-      return `imports the app ${to.name} (${specifier}). Nothing imports an app.`;
-    }
-    if (to.root === 'testing') {
-      if (test) return undefined;
-      return `imports testing (${specifier}). Only tests do: *.test.* files and the test/ and e2e/ folders.`;
-    }
-    if (from.tags.includes(CORE) && !to.tags.includes(CORE)) {
-      return `imports ${to.name} (${specifier}), which isn't a core project. Core projects import only core projects.`;
+    if (to.root.startsWith('apps/')) return `that's the app ${to.name}, and nothing imports an app`;
+    if (to.root === 'testing') return test ? undefined : `that's testing, which only tests use`;
+    if (core && !to.tags.includes(CORE)) {
+      return `${to.name} isn't a core project, and core projects import only core projects`;
     }
     if (from.tags.includes(MIT) && !to.tags.includes(MIT)) {
-      return `imports ${to.name} (${specifier}), which isn't MIT-licensed. MIT projects import only MIT projects, so they stay MIT.`;
+      return `${to.name} isn't MIT-licensed, and MIT projects import only MIT projects, so they stay MIT`;
     }
     return undefined;
   }
-  if (!from.tags.includes(CORE)) return undefined;
-  if (target.kind === 'electron') {
-    return `imports ${specifier}. Core projects run anywhere, so they can't use Electron.`;
-  }
+  if (!core) return undefined;
+  if (target.kind === 'electron') return `core projects run anywhere, so they can't use Electron`;
   if (target.kind === 'node' && !test) {
-    return `imports ${specifier}, a Node built-in. Core projects run anywhere, so only their tests can use Node.`;
+    return `that's a Node built-in, and core projects run anywhere, so only their tests use Node`;
+  }
+  if (target.kind === 'computed') {
+    return `the module is chosen at run time, so its boundaries can't be checked. Core projects load modules by name`;
   }
   return undefined;
 }
 
-function checkTags(workspaceRoot: string, projects: readonly Project[]): Violation[] {
+function checkTags(root: string, projects: readonly Project[]): Violation[] {
   const violations: Violation[] = [];
-  for (const { root, tags } of projects) {
+  for (const project of projects) {
+    const { tags } = project;
+    const where = project.root;
     const platforms = tags.filter((tag) => tag.startsWith('platform:'));
-    const expected = platformFolders.find(({ folder }) => `${root}/`.startsWith(folder));
+    const expected = platformFolders.find(({ folder }) => `${where}/`.startsWith(folder));
     if (expected && (platforms.length !== 1 || platforms[0] !== expected.tag)) {
       violations.push({
-        where: root,
+        where,
         message: `is in ${expected.folder}, so it takes the tag ${expected.tag}${tagsNote(platforms)}.`,
       });
     }
     if (!expected && platforms.length > 0) {
       violations.push({
-        where: root,
+        where,
         message: `has ${platforms.join(', ')}, but only projects in ${platformFolders.map(({ folder }) => folder).join(' and ')} take a platform tag.`,
       });
     }
     for (const license of tags.filter((tag) => tag.startsWith('license:') && tag !== MIT)) {
       violations.push({
-        where: root,
+        where,
         message: `has ${license}, but the only license tag is ${MIT}. Projects without it are GPL-3.0.`,
       });
     }
-    if (tags.includes(MIT) && !existsSync(join(workspaceRoot, root, 'LICENSE'))) {
+    const mitFolder = mitFolders.find(
+      (folder) => where === folder || where.startsWith(`${folder}/`),
+    );
+    if (mitFolder && !tags.includes(MIT)) {
       violations.push({
-        where: root,
-        message: `is tagged ${MIT}, so it needs the MIT license in its own LICENSE file.`,
+        where,
+        message: `is in ${mitFolder}, which is MIT-licensed, so it takes the tag ${MIT}.`,
+      });
+    }
+    if ((mitFolder || tags.includes(MIT)) && !existsSync(join(root, where, 'LICENSE'))) {
+      violations.push({
+        where,
+        message: `is MIT-licensed, so it needs the MIT license in its own LICENSE file.`,
       });
     }
   }
@@ -177,6 +272,96 @@ function checkTags(workspaceRoot: string, projects: readonly Project[]): Violati
 
 function tagsNote(platforms: readonly string[]): string {
   return platforms.length === 0 ? ', and has none' : `, not ${platforms.join(', ')}`;
+}
+
+function readManifest(root: string, project: Project): Manifest | undefined {
+  const path = join(root, project.root, 'package.json');
+  if (!existsSync(path)) return undefined;
+  const text = readFileSync(path, 'utf8');
+  return { text, json: asObject(JSON.parse(text)) };
+}
+
+/**
+ * The dependencies a package imports under another name: `npm:` and `workspace:` aliases, and
+ * `link:`, `file:` and `workspace:` paths.
+ */
+function aliasesOf(manifest: Manifest | undefined, folder: string): Map<string, Alias> {
+  const aliases = new Map<string, Alias>();
+  for (const field of dependencyFields) {
+    for (const [name, spec] of Object.entries(objectAt(manifest?.json, field))) {
+      if (typeof spec !== 'string') continue;
+      const alias = aliasOf(spec, folder);
+      if (alias) aliases.set(name, alias);
+    }
+  }
+  return aliases;
+}
+
+function aliasOf(spec: string, folder: string): Alias | undefined {
+  const packageName = /^((?:@[^/@]+\/)?[^/@]+)(@|$)/;
+  if (spec.startsWith('npm:')) {
+    const name = packageName.exec(spec.slice('npm:'.length))?.[1];
+    return name ? { name } : undefined;
+  }
+  for (const protocol of ['link:', 'file:']) {
+    if (spec.startsWith(protocol)) return { path: resolve(folder, spec.slice(protocol.length)) };
+  }
+  if (spec.startsWith('workspace:')) {
+    const rest = spec.slice('workspace:'.length);
+    if (rest.startsWith('.') || rest.startsWith('/')) return { path: resolve(folder, rest) };
+    const match = packageName.exec(rest);
+    // `workspace:*` and `workspace:^1.0.0` keep the dependency's own name.
+    return match?.[2] === '@' && match[1] ? { name: match[1] } : undefined;
+  }
+  return undefined;
+}
+
+/** Every target in an `imports` or `exports` field, with the key it's under. */
+function* mappings(value: unknown, key = '.'): Generator<[string, string]> {
+  if (typeof value === 'string') {
+    yield [key, value];
+  } else if (Array.isArray(value)) {
+    for (const item of value) yield* mappings(item, key);
+  } else if (value && typeof value === 'object') {
+    for (const [name, inner] of Object.entries(value)) {
+      // Keys that start with `.` or `#` are paths; the others are conditions under the same path.
+      yield* mappings(inner, name.startsWith('.') || name.startsWith('#') ? name : key);
+    }
+  }
+}
+
+function objectAt(
+  value: Record<string, unknown> | undefined,
+  key: string,
+): Record<string, unknown> {
+  return asObject(value?.[key]);
+}
+
+function asObject(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function lineOfKey(text: string, key: string): number {
+  const quoted = JSON.stringify(key);
+  const index = text.indexOf(quoted);
+  return index === -1 ? 1 : text.slice(0, index).split('\n').length;
+}
+
+/** The real path of `path`'s deepest existing folder, with the rest of `path` after it. */
+function realPath(path: string): string {
+  const missing: string[] = [];
+  let existing = path;
+  while (!existsSync(existing)) {
+    const parent = dirname(existing);
+    if (parent === existing) return path;
+    missing.unshift(basename(existing));
+    existing = parent;
+  }
+  return join(realpathSync(existing), ...missing);
 }
 
 /** The project's source files, leaving out projects nested inside it. */

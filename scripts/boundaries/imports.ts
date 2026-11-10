@@ -1,11 +1,14 @@
-import { parseSync, Visitor, type Expression, type StringLiteral } from 'oxc-parser';
+import { parseSync, Visitor, type Argument, type Expression, type StringLiteral } from 'oxc-parser';
 
 /** A module a file refers to, and the line it does so on. */
 export interface Import {
+  /** The module's name or path, or for a computed one, the expression's source. */
   specifier: string;
   line: number;
   /** From `/// <reference types="…" />`, which names a types package rather than a module. */
   types?: true;
+  /** `import()` or `require()` of an expression, so the module is only known at run time. */
+  computed?: true;
 }
 
 /** A file that doesn't parse, so its imports can't be listed. */
@@ -20,9 +23,10 @@ export class ParseError extends Error {
 
 /**
  * Lists every module a JavaScript or TypeScript file refers to: imports and re-exports (type-only
- * ones too), dynamic `import()` with a literal path, `require()`, `import x = require()`,
- * `import('x')` types and `/// <reference types="x" />`. Throws a `ParseError` for a file that
- * doesn't parse.
+ * ones too), `import()` and `require()`, `import x = require()`, `import('x')` types and
+ * `/// <reference types="x" />`. A string, or a template literal without substitutions, names its
+ * module; any other argument to `import()` or `require()` is listed as computed. Throws a
+ * `ParseError` for a file that doesn't parse.
  */
 export function importsOf(filename: string, source: string): Import[] {
   const result = parseSync(filename, source);
@@ -48,17 +52,27 @@ export function importsOf(filename: string, source: string): Import[] {
   const add = (literal: StringLiteral | null | undefined) => {
     if (literal) found.push({ specifier: literal.value, line: lineOf(literal.start) });
   };
+  const load = (argument: Argument | Expression) => {
+    const name = nameOf(argument);
+    if (name === undefined) {
+      const specifier = source.slice(argument.start, argument.end);
+      found.push({ specifier, line: lineOf(argument.start), computed: true });
+    } else {
+      found.push({ specifier: name, line: lineOf(argument.start) });
+    }
+  };
+
   new Visitor({
     ImportDeclaration: (node) => add(node.source),
     ExportNamedDeclaration: (node) => add(node.source),
     ExportAllDeclaration: (node) => add(node.source),
-    ImportExpression: (node) => add(literalOf(node.source)),
+    ImportExpression: (node) => load(node.source),
     TSImportType: (node) => add(node.source),
     TSExternalModuleReference: (node) => add(node.expression),
     CallExpression: (node) => {
       const [argument] = node.arguments;
       if (node.callee.type === 'Identifier' && node.callee.name === 'require' && argument) {
-        if (argument.type !== 'SpreadElement') add(literalOf(argument));
+        load(argument);
       }
     },
   }).visit(result.program);
@@ -73,7 +87,12 @@ export function importsOf(filename: string, source: string): Import[] {
   return found.toSorted((a, b) => a.line - b.line);
 }
 
-function literalOf(expression: Expression): StringLiteral | undefined {
-  if (expression.type === 'Literal' && typeof expression.value === 'string') return expression;
+/** The module a string, or a template literal without substitutions, names. */
+function nameOf(argument: Argument | Expression): string | undefined {
+  if (argument.type === 'Literal' && typeof argument.value === 'string') return argument.value;
+  if (argument.type === 'TemplateLiteral' && argument.expressions.length === 0) {
+    const [quasi] = argument.quasis;
+    return quasi?.value.cooked ?? quasi?.value.raw;
+  }
   return undefined;
 }
