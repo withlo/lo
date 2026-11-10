@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { openDatabase, type Database } from './database.ts';
-import { migrate, readMigrations } from './migrations.ts';
+import { fts5Content, migrate, readMigrations } from './migrations.ts';
 import { StartupError } from './startup.ts';
 
 // Made-up features' migrations, keyed by path as import.meta.glob finds them.
@@ -217,6 +217,11 @@ describe('migrate', () => {
       'CREATE TABLE notes_entries (id INTEGER PRIMARY KEY) STRICT; CREATE TRIGGER notes_t AFTER INSERT ON notes_entries BEGIN INSERT INTO notes_later VALUES (1); DELETE FROM pins_pins; END;',
       'no such table: main.notes_later',
     ],
+    [
+      "a full-text table over another feature's table",
+      "CREATE VIRTUAL TABLE notes_search USING fts5(id, content='pins_pins', content_rowid='id');",
+      'makes notes_search read its rows from pins_pins',
+    ],
     ['another database', "ATTACH ':memory:' AS other;", 'tried ATTACH'],
     [
       'a pragma that changes the connection',
@@ -302,6 +307,8 @@ describe('migrate', () => {
         INSERT INTO notes_docs VALUES ('["a", "b"]');
         CREATE TABLE notes_words AS SELECT value AS word FROM notes_docs, json_each(notes_docs.body);
         CREATE VIRTUAL TABLE notes_search USING fts5(body);
+        CREATE VIRTUAL TABLE notes_over_docs USING fts5(body, content = 'notes_docs');
+        CREATE VIRTUAL TABLE notes_contentless USING fts5(body, content='');
         INSERT INTO notes_search (body) VALUES ('review the diff'), ('merge the stack');
         CREATE TABLE notes_found AS SELECT body FROM notes_search WHERE notes_search MATCH 'diff';
         CREATE VIEW notes_logins AS SELECT login FROM notes_people;
@@ -346,5 +353,29 @@ describe('migrate', () => {
     expect(() => migrate(db, broken)).toThrow('incomplete input');
     expect(tables(db)).toEqual(['migrations', 'notes_entries']);
     expect(recorded(db)).toEqual([{ feature: 'notes', number: 1, file: '001-notes.sql' }]);
+  });
+});
+
+describe('fts5Content', () => {
+  it.each([
+    ["CREATE VIRTUAL TABLE t USING fts5(body, content='pins_pins')", 'pins_pins'],
+    ['CREATE VIRTUAL TABLE t USING fts5(body, content="pins_pins", content_rowid=id)', 'pins_pins'],
+    [
+      'create virtual table t using FTS5 (body, tokenize = "porter ascii", CONTENT = [pins pins])',
+      'pins pins',
+    ],
+    ['CREATE VIRTUAL TABLE t USING fts5(body, content=pins_pins)', 'pins_pins'],
+    ["CREATE VIRTUAL TABLE t USING fts5(body, content='it''s')", "it's"],
+    ["CREATE VIRTUAL TABLE t USING fts5(body, content='')", ''],
+  ])('finds the content table in %s', (sql, content) => {
+    expect(fts5Content(sql)).toBe(content);
+  });
+
+  it.each([
+    'CREATE VIRTUAL TABLE t USING fts5(body)',
+    "CREATE VIRTUAL TABLE t USING fts5(body, tokenize = 'content=x')",
+    'CREATE TABLE t (content TEXT)',
+  ])('finds none in %s', (sql) => {
+    expect(fts5Content(sql)).toBe(undefined);
   });
 });
