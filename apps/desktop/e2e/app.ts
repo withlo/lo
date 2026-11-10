@@ -42,7 +42,7 @@ export function appEnvironment(data: string): Record<string, string> {
 type LaunchOptions = NonNullable<Parameters<typeof electron.launch>[0]>;
 
 interface Fixtures {
-  /** Extra options for starting Lo, for tests that need it started differently. */
+  /** Extra options for starting Lo, for tests that need it started differently. Its `env` adds to Lo's. */
   launch: LaunchOptions;
   /** Lo, started on an empty data folder with Chromium's sandbox on. */
   app: ElectronApplication;
@@ -53,12 +53,13 @@ interface Fixtures {
 export const test = base.extend<Fixtures>({
   launch: [{}, { option: true }],
   app: async ({ launch }, use) => {
+    const { env, ...options } = launch;
     const app = await electron.launch({
       args: [appFolder],
-      env: appEnvironment(dataFolder()),
+      env: { ...appEnvironment(dataFolder()), ...env },
       // Playwright turns the sandbox off on Linux unless asked; Lo must run with it.
       chromiumSandbox: true,
-      ...launch,
+      ...options,
     });
     await use(app);
     await app.close();

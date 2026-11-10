@@ -186,10 +186,13 @@ jobs:
       - name: Let Chromium's sandbox run
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      # e2e depends on build, so this builds each app it tests first.
+      # e2e depends on build, so this builds each app it tests first. One virtual display serves the
+      # whole run: by default Xvfb resets when its last client leaves, and a copy of Lo starting
+      # just then finds no display.
       - name: Build and run the smoke test
         run: >-
-          xvfb-run -a pnpm nx affected -t e2e --base="$BASE_SHA" --head=HEAD --output-style=static
+          xvfb-run -a -s '-screen 0 1920x1080x24 -noreset' pnpm nx affected -t e2e
+          --base="$BASE_SHA" --head=HEAD --output-style=static
 
       - name: Keep the smoke test's results
         if: failure()

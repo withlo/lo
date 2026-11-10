@@ -91,7 +91,7 @@ test('the page loads with its content security policy and no violations', async 
   page.on('console', (message) => messages.push(message.text()));
   page.on('pageerror', (error) => messages.push(error.message));
   await page.reload();
-  await expect(page.locator('header.strip')).toBeVisible();
+  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
 
   const header = await page.evaluate(async () =>
     (await fetch('/index.html')).headers.get('content-security-policy'),
@@ -284,7 +284,7 @@ test('spellcheck is off', async ({ app, page }) => {
   // The page can't see spellcheck run: macOS checks words through the system in the background,
   // with no sign to the page, and Linux would first download a dictionary, which the window's
   // proxy stops. So this reads the session's switch, which covers every page in it.
-  await expect(page.locator('header.strip')).toBeVisible();
+  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
   const enabled = await app.evaluate(({ session }) =>
     session.fromPartition('persist:window').isSpellCheckerEnabled(),
   );

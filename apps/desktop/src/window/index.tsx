@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
 
+import { listenForBackground } from './background.ts';
 import { startFeatures } from './features.ts';
 import { Window } from './Window.tsx';
 
@@ -16,6 +17,8 @@ if (navigator.platform.startsWith('Linux')) {
   document.documentElement.dataset.loFrame = 'custom';
 }
 
+// Main hands the window a port to the background process as soon as the page loads.
+listenForBackground();
 startFeatures();
 
 const root = document.getElementById('root');

@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.background.json",
+  "compilerOptions": {
+    "outDir": ".tsbuild/background",
+    "types": ["node", "vite/client"]
+  },
+  "include": ["src/background/**/*.ts", "src/features/*/background/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/test/**"],
+  "references": [
+    {
+      "path": "./tsconfig.shared.json"
+    }
+  ]
+}

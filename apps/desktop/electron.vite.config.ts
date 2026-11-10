@@ -1,7 +1,30 @@
 import { fileURLToPath } from 'node:url';
 
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
+import type { Plugin } from 'vite';
+
+/** The fonts' licenses, shipped beside the window's files as the SIL Open Font License asks. */
+function fontLicenses(): Plugin {
+  const ui = createRequire(createRequire(import.meta.url).resolve('@lo/ui/styles.css'));
+  const licenses = {
+    'licenses/host-grotesk.txt': '@fontsource-variable/host-grotesk/LICENSE',
+    'licenses/fragment-mono.txt': '@fontsource/fragment-mono/LICENSE',
+  };
+  return {
+    name: 'lo:font-licenses',
+    apply: 'build',
+    generateBundle() {
+      for (const [fileName, license] of Object.entries(licenses)) {
+        this.emitFile({ type: 'asset', fileName, source: readFileSync(ui.resolve(license)) });
+      }
+    },
+  };
+}
 
 export default defineConfig({
   main: {
@@ -25,7 +48,7 @@ export default defineConfig({
   },
   renderer: {
     root: 'src/window',
-    plugins: [react()],
+    plugins: [react(), tailwindcss(), fontLicenses()],
     build: {
       outDir: 'dist/window',
       rolldownOptions: {

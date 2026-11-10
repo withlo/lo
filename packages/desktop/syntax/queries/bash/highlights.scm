@@ -1,0 +1,169 @@
+; From Zed (https://github.com/zed-industries/zed), crates/grammars/src/bash/highlights.scm
+; at c84af5b99cbc366d675064e52b23664a015b6e35. Copyright Zed Industries, Inc. GPL-3.0-or-later.
+
+[
+  (string)
+  (raw_string)
+  (heredoc_body)
+  (heredoc_start)
+  (heredoc_end)
+  (ansi_c_string)
+  (word)
+] @string
+
+(variable_name) @variable
+
+[
+  "export"
+  "function"
+  "unset"
+  "local"
+  "declare"
+] @keyword
+
+[
+  "case"
+  "do"
+  "done"
+  "elif"
+  "else"
+  "esac"
+  "fi"
+  "for"
+  "if"
+  "in"
+  "select"
+  "then"
+  "until"
+  "while"
+] @keyword.control
+
+(comment) @comment
+
+; Shebang
+((program
+  .
+  (comment) @keyword.directive)
+  (#match? @keyword.directive "^#![ \t]*/"))
+
+(function_definition
+  name: (word) @function)
+
+(command_name
+  (word) @function)
+
+[
+  (file_descriptor)
+  (number)
+] @number
+
+(regex) @string.regex
+
+[
+  (command_substitution)
+  (process_substitution)
+  (expansion)
+] @embedded
+
+[
+  "$"
+  "&&"
+  "||"
+  ">"
+  "<<"
+  ">>"
+  ">&"
+  ">&-"
+  "<"
+  "|"
+  ":"
+  "//"
+  "/"
+  "%"
+  "%%"
+  "#"
+  "##"
+  "+="
+  "-="
+  "*="
+  "/="
+  "%="
+  "**="
+  "<<="
+  ">>="
+  "&="
+  "^="
+  "|="
+  "="
+  "=~"
+  "=="
+  "!="
+  "-o"
+  "-a"
+  "^"
+  "&"
+  "<="
+  ">="
+  "+"
+  "-"
+  "*"
+  "**"
+  "!"
+  "++"
+  "--"
+  "~"
+  "?"
+] @operator
+
+(test_operator) @keyword.operator
+
+";" @punctuation.delimiter
+
+[
+  "("
+  ")"
+  "{"
+  "}"
+  "["
+  "]"
+] @punctuation.bracket
+
+(test_command
+  [
+    "[["
+    "]]"
+  ] @punctuation.bracket)
+
+(compound_statement
+  [
+    "(("
+    "))"
+  ] @punctuation.bracket)
+
+(simple_expansion
+  "$" @punctuation.special)
+
+(expansion
+  "${" @punctuation.special
+  "}" @punctuation.special) @embedded
+
+(command_substitution
+  "$(" @punctuation.special
+  ")" @punctuation.special)
+
+(arithmetic_expansion
+  [
+    "$(("
+    "$["
+    "))"
+    "]"
+  ] @punctuation.special)
+
+((command
+  (_) @constant)
+  (#match? @constant "^-"))
+
+(case_item
+  value: (_) @string.regex)
+
+(special_variable_name) @variable.special

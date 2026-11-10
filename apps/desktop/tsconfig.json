@@ -3,10 +3,16 @@
   "files": [],
   "references": [
     {
+      "path": "../../packages/desktop/ui"
+    },
+    {
       "path": "./tsconfig.shared.json"
     },
     {
       "path": "./tsconfig.main.json"
+    },
+    {
+      "path": "./tsconfig.background.json"
     },
     {
       "path": "./tsconfig.preload.json"

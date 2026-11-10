@@ -5,8 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 import { app, type BrowserWindow, dialog, session, type Session } from 'electron';
 
+import { startBackground, type Background } from './background.ts';
 import { openDatabase } from './database.ts';
-import { dataFolder, devServer } from './environment.ts';
+import { backgroundSettings, dataFolder, devServer } from './environment.ts';
 import { loadFeatures, type Feature } from './features.ts';
 import { serveFeatures } from './ipc.ts';
 import { migrate } from './migrations.ts';
@@ -36,6 +37,7 @@ const env = process.env;
 const folder = dataFolder({ packaged: app.isPackaged, appData: app.getPath('appData'), env });
 if (folder) app.setPath('userData', folder);
 const dev = devServer({ packaged: app.isPackaged, env });
+const backgroundOptions = backgroundSettings({ packaged: app.isPackaged, env });
 
 // One Lo per data folder. A second launch hands over to the first and quits.
 if (app.requestSingleInstanceLock()) {
@@ -46,6 +48,7 @@ if (app.requestSingleInstanceLock()) {
 
 function start(): void {
   let windowSession: Session | undefined;
+  let background: Background | undefined;
   let window: BrowserWindow | undefined;
 
   /** Shows the window, opening it if it's closed. Nothing opens until its session is secured. */
@@ -53,6 +56,7 @@ function start(): void {
     if (!windowSession) return;
     if (!window) {
       window = openWindow(windowSession, dev?.href ?? windowUrl);
+      background?.attach(window.webContents);
       window.once('closed', () => (window = undefined));
     }
     if (window.isMinimized()) window.restore();
@@ -78,6 +82,8 @@ function start(): void {
       migrate(database, migrations);
       app.once('will-quit', () => database.close());
       serveFeatures(features, database, dev);
+      background = startBackground(backgroundOptions);
+      app.once('will-quit', () => background?.stop());
       windowSession = secured;
       show();
     })
