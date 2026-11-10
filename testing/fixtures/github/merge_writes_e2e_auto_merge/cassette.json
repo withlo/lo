@@ -1,5 +1,5 @@
 {
-  "description": "Auto-merge on rozed-dev/e2e as rozed-bot, where \"Allow auto-merge\" is off: turned on for E4's passing pull request, waiting on an approval, and for rozed-bot's open e9b pull request, which nothing blocks, turned off where it isn't on, and turned on expecting another head",
+  "description": "Auto-merge on rozed-dev/e2e as rozed-bot, where \"Allow auto-merge\" is off: turned on for the passing pull request into e4/gated, waiting on an approval, and for rozed-bot's open e9b pull request, which nothing blocks, turned off where it isn't on, and turned on expecting another head",
   "recorded_at": "2026-11-08T11:01:16Z",
   "repo": "rozed-dev/e2e",
   "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674",

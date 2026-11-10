@@ -1836,10 +1836,10 @@
                     "source": {
                       "__typename": "PullRequest",
                       "number": 37,
-                      "title": "feat(github): read review threads, your pending review and the timeline",
-                      "url": "https://github.com/scornz/lo/pull/37",
+                      "title": "Link to cli/cli#13057",
+                      "url": "https://github.com/rozed-dev/playground/pull/37",
                       "repository": {
-                        "nameWithOwner": "scornz/lo"
+                        "nameWithOwner": "rozed-dev/playground"
                       }
                     }
                   }

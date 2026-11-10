@@ -1,5 +1,5 @@
 {
-  "description": "Merges GitHub refuses on rozed-dev/e2e as rozed-bot, each followed until it ended: E4's draft, conflict, passing (waiting on an approval) and failing pull requests on e4/gated, E1's closed #14, a pull request that doesn't exist, a UUID GitHub never gave, and a merge into a queue on e9b/base, which has none",
+  "description": "Merges GitHub refuses on rozed-dev/e2e as rozed-bot, each followed until it ended: the draft, conflicting, passing (waiting on an approval) and failing pull requests into e4/gated, the closed #14, a pull request that doesn't exist, a UUID GitHub never gave, and a merge into a queue on e9b/base, which has none",
   "recorded_at": "2026-11-08T11:01:14Z",
   "repo": "rozed-dev/e2e",
   "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674",

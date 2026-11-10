@@ -37,7 +37,7 @@
               "__typename": "User",
               "login": "rozed-bot"
             },
-            "body": "Fixture E1 (revisions). Three normal pushes, r1 to r3, each changing `e1/a.txt` or `e1/b.txt`, and rozed-bot's COMMENT review on r2. `push-r4` adds r4, touching both files, `rebase-r5` moves `main` and rebases this PR on GitHub, and `push-r6` adds r6 after the rebase. Made by the test organization's setup script.",
+            "body": "Fixture E1 (revisions). Three normal pushes, r1 to r3, each changing `e1/a.txt` or `e1/b.txt`, and rozed-bot's COMMENT review on r2. `push-r4` adds r4, touching both files, `rebase-r5` moves `main` and rebases this PR on GitHub, and `push-r6` adds r6 after the rebase.",
             "createdAt": "2026-11-06T19:27:51Z",
             "lastEditedAt": null,
             "timelineEvents": {

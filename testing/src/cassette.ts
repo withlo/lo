@@ -258,9 +258,22 @@ export function sha256(bytes: Uint8Array | string): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+/**
+ * The folder of the cassette `name` in {@link fixturesDir}. A name is letters, digits, `_` and
+ * `-`, so it can't point anywhere else.
+ */
+export function cassetteDir(name: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(name)) {
+    throw new Error(
+      `${JSON.stringify(name)} isn't a cassette's name: use letters, digits, _ and -`,
+    );
+  }
+  return join(fixturesDir, name);
+}
+
 /** Reads the cassette `name` from {@link fixturesDir}. */
 export function cassette(name: string): Cassette {
-  return readCassette(join(fixturesDir, name));
+  return readCassette(cassetteDir(name));
 }
 
 /** Reads a cassette's folder: `cassette.json` and its interactions, in file-name order. */

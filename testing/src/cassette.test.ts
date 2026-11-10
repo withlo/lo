@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   canonicalJson,
+  cassetteDir,
   normalizeQuery,
   queryHash,
   recordedKey,
@@ -89,6 +90,13 @@ describe('keys', () => {
       'GET https://api.github.com/x?a=1',
     );
   });
+});
+
+test("a cassette's name can't point outside the fixtures", () => {
+  expect(cassetteDir('graphql_viewer').endsWith('/fixtures/github/graphql_viewer')).toBe(true);
+  for (const name of ['..', '../x', 'a/b', '', '.hidden', 'a\\b']) {
+    expect(() => cassetteDir(name)).toThrow("isn't a cassette's name");
+  }
 });
 
 describe('query hashes', () => {

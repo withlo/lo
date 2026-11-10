@@ -37,7 +37,7 @@
               "__typename": "User",
               "login": "rozed-bot"
             },
-            "body": "**A test fixture for Lo's trust handling, not code to run or merge.**\n\nIts files try to run code, or steer a language server, when the pull request is checked out and opened:\n\n- `.cargo/config.toml` sets a `rustc-wrapper`;\n- `.zed/settings.json` points rust-analyzer, gopls, vtsls and basedpyright at another binary;\n- `node_modules/typescript/lib/tsserver.js` is a workspace TypeScript server;\n- `.venv/`, which `pyrightconfig.json` names, is a virtual environment whose interpreter is a script;\n- `e8/pinned/rust-toolchain.toml` and `go.mod` name toolchains that don't exist.\n\nThe only script any of them would run is `e8/evil.sh`, which creates one empty marker file, `$TMPDIR/lo-e8-<name>`, and nothing else: no network, no deletes, no reads. Lo passes while no marker appears. The toolchain files can only make rustup or go try a download, so they leave no marker; `e8/README.md` lists each file and its marker, and says how a check sees the toolchains.\n\nIt targets `e8/base`, which holds only what `main` held when E8 was made, so merging it can't put these files on `main`.\n\nMade by the test organization's setup script.",
+            "body": "**A test fixture for Lo's trust handling, not code to run or merge.**\n\nIts files try to run code, or steer a language server, when the pull request is checked out and opened:\n\n- `.cargo/config.toml` sets a `rustc-wrapper`;\n- `.zed/settings.json` points rust-analyzer, gopls, vtsls and basedpyright at another binary;\n- `node_modules/typescript/lib/tsserver.js` is a workspace TypeScript server;\n- `.venv/`, which `pyrightconfig.json` names, is a virtual environment whose interpreter is a script;\n- `e8/pinned/rust-toolchain.toml` and `go.mod` name toolchains that don't exist.\n\nThe only script any of them would run is `e8/evil.sh`, which creates one empty marker file, `$TMPDIR/lo-e8-<name>`, and nothing else: no network, no deletes, no reads. Lo passes while no marker appears. The toolchain files can only make rustup or go try a download, so they leave no marker; `e8/README.md` lists each file and its marker, and says how a check sees the toolchains.\n\nIt targets `e8/base`, which holds only what `main` held when E8 was made, so merging it can't put these files on `main`.",
             "createdAt": "2026-11-07T02:15:03Z",
             "lastEditedAt": "2026-11-07T02:53:24Z",
             "timelineEvents": {
@@ -81,10 +81,10 @@
                     "source": {
                       "__typename": "PullRequest",
                       "number": 36,
-                      "title": "test: script the code, moves and large-PR fixtures on rozed-dev/e2e",
-                      "url": "https://github.com/scornz/lo/pull/36",
+                      "title": "Link to rozed-dev/e2e#19",
+                      "url": "https://github.com/rozed-dev/playground/pull/36",
                       "repository": {
-                        "nameWithOwner": "scornz/lo"
+                        "nameWithOwner": "rozed-dev/playground"
                       }
                     }
                   }

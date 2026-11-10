@@ -8,10 +8,10 @@
 // refuses any write a scenario doesn't declare. testing/README.md has the details.
 
 import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { fixturesDir } from '../src/cassette.ts';
+import { cassetteDir } from '../src/cassette.ts';
 import { checkRecordingAccount, isScenario, Recorder } from '../src/record.ts';
 
 const [module, ...names] = process.argv.slice(2);
@@ -45,6 +45,8 @@ if (unknown.length > 0) {
   console.error(`${module} has no scenario named ${unknown.join(', ')}.`);
   process.exit(2);
 }
+// Each cassette's folder is emptied before it's recorded, so every name is checked first.
+const dirs = new Map(scenarios.map((scenario) => [scenario, cassetteDir(scenario.name)]));
 
 for (const scenario of scenarios) {
   if (scenario.writes && !writes) {
@@ -53,7 +55,7 @@ for (const scenario of scenarios) {
   }
   const recorder = new Recorder({
     fetch,
-    dir: join(fixturesDir, scenario.name),
+    dir: dirs.get(scenario) ?? cassetteDir(scenario.name),
     secrets: [token],
     writes: scenario.writes ?? false,
   });

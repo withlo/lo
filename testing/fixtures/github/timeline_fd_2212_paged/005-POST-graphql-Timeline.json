@@ -63,10 +63,10 @@
                     "source": {
                       "__typename": "PullRequest",
                       "number": 13,
-                      "title": "feat(repo_cache): keep a partial clone of each repository",
-                      "url": "https://github.com/scornz/lo/pull/13",
+                      "title": "Link to sharkdp/fd#2212",
+                      "url": "https://github.com/rozed-dev/playground/pull/13",
                       "repository": {
-                        "nameWithOwner": "scornz/lo"
+                        "nameWithOwner": "rozed-dev/playground"
                       }
                     }
                   }

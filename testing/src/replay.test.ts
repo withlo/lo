@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import { queryHash, type Interaction } from './cassette.ts';
 import { replayFetch } from './fetch.ts';
@@ -57,6 +57,28 @@ test.fails('an unexpected request fails the test even when the code catches it',
   );
   await fetch('https://api.github.com/other').catch(() => undefined);
   expect(fetch.seen).toHaveLength(1);
+});
+
+// Under test.concurrent, each test passes its own context, so a failure is its test's alone.
+describe('under test.concurrent', () => {
+  test.concurrent.fails('an unexpected request fails the test that made it', async (context) => {
+    const fetch = replayFetch(
+      new Replay('t', [interaction('GET', 'https://api.github.com/user', 200, '')]),
+      context,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await fetch('https://api.github.com/other').catch(() => undefined);
+    expect(fetch.replay.failures).toHaveLength(1);
+  });
+
+  test.concurrent('and not the test beside it', async (context) => {
+    const fetch = replayFetch(
+      new Replay('t', [interaction('GET', 'https://api.github.com/user', 200, '')]),
+      context,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await fetch('https://api.github.com/user')).status).toBe(200);
+  });
 });
 
 test('a missed write prints the body it sent', async () => {

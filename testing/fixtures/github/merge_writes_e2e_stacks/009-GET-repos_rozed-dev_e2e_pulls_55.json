@@ -119,7 +119,7 @@
             "site_admin": false
           },
           "html_url": "https://github.com/rozed-dev/e2e",
-          "description": "End-to-end test fixtures for rozed",
+          "description": "End-to-end test fixtures",
           "fork": false,
           "url": "https://api.github.com/repos/rozed-dev/e2e",
           "forks_url": "https://api.github.com/repos/rozed-dev/e2e/forks",
@@ -248,7 +248,7 @@
             "site_admin": false
           },
           "html_url": "https://github.com/rozed-dev/e2e",
-          "description": "End-to-end test fixtures for rozed",
+          "description": "End-to-end test fixtures",
           "fork": false,
           "url": "https://api.github.com/repos/rozed-dev/e2e",
           "forks_url": "https://api.github.com/repos/rozed-dev/e2e/forks",

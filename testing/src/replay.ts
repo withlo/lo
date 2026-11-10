@@ -43,6 +43,8 @@ export class Replay {
   readonly name: string;
   /** Every request received so far, in order. */
   readonly seen: SeenRequest[] = [];
+  /** Every request it couldn't answer, in order: each also threw. */
+  readonly failures: ReplayError[] = [];
   readonly #byKey = new Map<string, Interaction[]>();
 
   constructor(name: string, interactions: Iterable<Interaction>) {
@@ -85,6 +87,15 @@ export class Replay {
 
   /** Answers a request with the next response recorded for it. */
   answer(request: SeenRequest): Response {
+    try {
+      return this.#answer(request);
+    } catch (error) {
+      if (error instanceof ReplayError) this.failures.push(error);
+      throw error;
+    }
+  }
+
+  #answer(request: SeenRequest): Response {
     this.seen.push(request);
     const key = requestKey(request.method, request.url, request.body, {
       ifNoneMatch: request.headers.get('if-none-match'),

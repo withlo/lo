@@ -1,5 +1,5 @@
 {
-  "description": "The files of rozed-dev/e2e's #18 (E6), #20 (E9) and #22 (E12), each with GitHub's patch: the test organization's setup script writes both sides of each, so Lo's own patches can be compared with these",
+  "description": "The files of rozed-dev/e2e's #18 (code), #20 (moved code) and #22 (many languages), each with GitHub's patch, to compare with the patches Lo makes from both sides of each",
   "recorded_at": "2026-11-07T05:17:13Z",
   "repo": "rozed-dev/e2e",
   "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674"

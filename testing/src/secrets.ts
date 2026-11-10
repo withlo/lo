@@ -13,7 +13,20 @@ import { isObject, parseJson, type Json } from './cassette.ts';
 const TOKEN_PATTERN =
   /gh[opsur](?:_|%5[Ff])[A-Za-z0-9]{36,}|github(?:_|%5[Ff])pat(?:_|%5[Ff])(?:[A-Za-z0-9]|_|%5[Ff]){50,}/;
 
-const CREDENTIAL_WORDS = ['token', 'secret', 'password', 'jwt'];
+/** An `Authorization` header's value, written as a header or a JSON field. */
+const AUTHORIZATION = /\bauthorization["']?\s*[:=]\s*["']?(?:token|bearer|basic)\s+[^\s"']{8,}/i;
+
+/** A bearer token, wherever it's written. */
+const BEARER = /\bbearer\s+[A-Za-z0-9._~+/-]{16,}=*/i;
+
+/** A 40-digit hex token, the shape of GitHub's older tokens, beside a key that names a credential. */
+const HEX_TOKEN =
+  /(?:token|secret|password|passwd|api[_-]?key|access[_-]?key|auth)\w*["']?\s*[:=]\s*["']?[0-9a-f]{40}(?![0-9a-f])/i;
+
+/** A JSON web token: three base64url parts, the first two JSON objects. */
+const JWT = /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/;
+
+const CREDENTIAL_WORDS = ['token', 'secret', 'password', 'jwt', 'authorization'];
 
 /**
  * Whether a JSON field named `key` holds a credential, whatever its value looks like: a token
@@ -125,10 +138,13 @@ export function findToken(
   if (needles.flatMap(base64Forms).some((form) => unwrapped.includes(form))) {
     return 'the recording token, in base64';
   }
-  // Latin-1 maps each byte to one character, so the pattern sees the bytes as they are.
-  if (TOKEN_PATTERN.test(haystack.toString('latin1'))) {
-    return 'something shaped like a GitHub token';
-  }
+  // Latin-1 maps each byte to one character, so the patterns see the bytes as they are.
+  const latin1 = haystack.toString('latin1');
+  if (TOKEN_PATTERN.test(latin1)) return 'something shaped like a GitHub token';
+  if (AUTHORIZATION.test(latin1)) return 'an authorization header';
+  if (BEARER.test(latin1)) return 'a bearer token';
+  if (HEX_TOKEN.test(latin1)) return 'a 40-digit hex token beside a key that names a credential';
+  if (JWT.test(latin1)) return 'a JSON web token';
   return undefined;
 }
 
