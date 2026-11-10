@@ -16,7 +16,7 @@
  * hunks.
  */
 
-import { lineInBase, lineInHead, type Hunk } from '@lo/github';
+import type { Hunk } from '@lo/github';
 
 import { Line, Lines } from '../threads.ts';
 import type { Screen } from './place.ts';
@@ -36,8 +36,8 @@ function placed(hunk: Hunk): Placed {
   const old: number[] = [];
   const added: number[] = [];
   for (const [at, line] of hunk.lines.entries()) {
-    if (lineInBase(line)) old.push(at);
-    if (lineInHead(line)) added.push(at);
+    if (line.kind !== 'added') old.push(at);
+    if (line.kind !== 'deleted') added.push(at);
   }
   return { oldStart: hunk.old.start + 1, newStart: hunk.new.start + 1, old, new: added };
 }
