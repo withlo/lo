@@ -18,3 +18,6 @@ testing/fixtures/
 # GitHub's GraphQL schema, as vendored, and the types generated from it.
 packages/core/github/graphql/schema.graphql
 packages/core/github/src/generated/
+
+# The grammars' sources, which the syntax package's build fetches.
+packages/desktop/syntax/.cache/

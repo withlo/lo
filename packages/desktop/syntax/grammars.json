@@ -1,0 +1,61 @@
+{
+  "grammars": [
+    {
+      "name": "bash",
+      "repo": "tree-sitter/tree-sitter-bash",
+      "commit": "a06c2e4415e9bc0346c6b86d401879ffb44058f7",
+      "path": ".",
+      "sha256": "f0270796c32f9acfc180e6068d6bef6614b983107b679a247fb63b200c6346e7"
+    },
+    {
+      "name": "go",
+      "repo": "zed-industries/tree-sitter-go",
+      "commit": "6862a49e3c5a7567a6c576420e9a8f944e198a85",
+      "path": ".",
+      "sha256": "3f919359f23163fe78fbb9e33892ea912d7c6312fc986017702ddeb85288b4f1"
+    },
+    {
+      "name": "json",
+      "repo": "tree-sitter/tree-sitter-json",
+      "commit": "ee35a6ebefcef0c5c416c0d1ccec7370cfca5a24",
+      "path": ".",
+      "sha256": "564e489724cbcf9b4563cd758a7fb7f355f896b11127819ae9e8ef71e7c15e60"
+    },
+    {
+      "name": "markdown",
+      "repo": "zed-industries/tree-sitter-markdown",
+      "commit": "b596e737286780d7bfa9fcddceaeeb754574b352",
+      "path": "tree-sitter-markdown",
+      "sha256": "ac8176c8a6da787198744999a6b27c2b473cac3c4889417ff0f851acdb26c4d8"
+    },
+    {
+      "name": "markdown_inline",
+      "repo": "zed-industries/tree-sitter-markdown",
+      "commit": "b596e737286780d7bfa9fcddceaeeb754574b352",
+      "path": "tree-sitter-markdown-inline",
+      "sha256": "f76e9e3f1b886bab1d49a937f927471abd8f1434ad26fae033f84983b7bc2a41"
+    },
+    {
+      "name": "tsx",
+      "repo": "zed-industries/tree-sitter-typescript",
+      "commit": "e2c53597d6a5d9cf7bbe8dccde576fe1e46c5899",
+      "path": "tsx",
+      "sha256": "64494d09c4ad73c284c22cf7dac9d47c3668c4699591d0c35b522f96de440aed"
+    },
+    {
+      "name": "typescript",
+      "repo": "zed-industries/tree-sitter-typescript",
+      "commit": "e2c53597d6a5d9cf7bbe8dccde576fe1e46c5899",
+      "path": "typescript",
+      "sha256": "358f8507f248110d1d537d67a199b3521fdd5fabc22014ed0c1a2e3a0f0be051"
+    },
+    {
+      "name": "yaml",
+      "repo": "zed-industries/tree-sitter-yaml",
+      "commit": "baff0b51c64ef6a1fb1f8390f3ad6015b83ec13a",
+      "path": ".",
+      "patches": ["yaml-serialize.patch"],
+      "sha256": "1437eb7b0256c04e1e4a0262a56fe5c79125fef4dc65c6db756bf74e5092a6b1"
+    }
+  ]
+}

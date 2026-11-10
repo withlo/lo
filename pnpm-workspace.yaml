@@ -15,3 +15,4 @@ packages:
 allowBuilds:
   lefthook: true
   nx: false
+  tree-sitter-cli: true

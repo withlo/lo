@@ -1,0 +1,53 @@
+{
+  "name": "@lo/syntax",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "lint": "oxlint",
+    "test": "vitest run --root ../../.. --project @lo/syntax"
+  },
+  "dependencies": {
+    "web-tree-sitter": "0.27.2"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "0.27.2"
+  },
+  "nx": {
+    "name": "syntax",
+    "tags": [
+      "platform:desktop"
+    ],
+    "targets": {
+      "build": {
+        "inputs": [
+          "{projectRoot}/grammars.json",
+          "{projectRoot}/scripts/build.ts",
+          "{projectRoot}/patches/**/*",
+          "{projectRoot}/package.json"
+        ],
+        "outputs": [
+          "{projectRoot}/dist"
+        ]
+      },
+      "test": {
+        "dependsOn": [
+          "build"
+        ],
+        "inputs": [
+          "default",
+          "^production",
+          "{workspaceRoot}/vitest.config.ts",
+          "{workspaceRoot}/design/css/code.css",
+          {
+            "dependentTasksOutputFiles": "**/*.wasm"
+          }
+        ]
+      }
+    }
+  }
+}
