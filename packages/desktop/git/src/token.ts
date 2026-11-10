@@ -30,6 +30,10 @@ export class Token {
     return true;
   }
 
+  equals(other: Token): boolean {
+    return this.#value === other.#value;
+  }
+
   toString(): string {
     return 'Token(redacted)';
   }

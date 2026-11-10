@@ -1,3 +1,4 @@
+export { Cache, type CacheOptions, type OpenOptions, type ProxySource } from './cache.ts';
 export * from './errors.ts';
 export {
   defaultPlaces,
@@ -8,9 +9,17 @@ export {
   installAdvice,
   type Places,
 } from './find.ts';
-export { Git } from './git.ts';
+export { Git, type TestSettings } from './git.ts';
 export * from './limits.ts';
 export * from './oid.ts';
 export * from './progress.ts';
+export {
+  type FetchedPull,
+  type HeadSource,
+  type Overview,
+  type OverviewFile,
+  type PullRequestRefs,
+  Repo,
+} from './repo.ts';
 export * from './token.ts';
 export * from './version.ts';
