@@ -1,0 +1,9 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.vscode.json" },
+    { "path": "./tsconfig.lib.json" },
+    { "path": "./tsconfig.test.json" }
+  ]
+}
