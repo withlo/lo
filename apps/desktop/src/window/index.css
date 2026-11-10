@@ -1,0 +1,32 @@
+@import '@lo/design/css/index.css';
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* On Linux the system's controls sit over the end of the strip, and the overlay's geometry says
+   where they start. */
+:root[data-lo-platform][data-lo-frame='custom'] {
+  --lo-window-inset-end: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+
+.strip {
+  flex: none;
+  height: var(--lo-tabbar-h);
+  padding-inline: var(--lo-window-inset-start) var(--lo-window-inset-end);
+  background: var(--lo-bg);
+  app-region: drag;
+}
+
+.body {
+  flex: 1;
+}

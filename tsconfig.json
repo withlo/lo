@@ -9,6 +9,9 @@
       "path": "./apps/perf"
     },
     {
+      "path": "./apps/desktop"
+    },
+    {
       "path": "./testing"
     }
   ]

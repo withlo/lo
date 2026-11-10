@@ -125,6 +125,37 @@ Unit tests are `*.test.ts` files beside the code, run by Vitest. The root `vites
 project per package. Nx runs one project's tests at a time, and Vitest uses two workers, or all of a
 CI runner's cores.
 
+## The desktop app
+
+`apps/desktop` is Lo's Electron app. `src/main/` is the main process, `src/window/` the window and
+`src/platform/` the code that differs between macOS and Linux.
+
+```sh
+pnpm nx run desktop:dev    # run it with hot reloading
+pnpm nx run desktop:start  # build it, then run the build
+pnpm nx run desktop:e2e    # build it, then run its smoke test
+```
+
+- The `electron` package downloads Electron's binary the first time it's needed.
+  `pnpm --filter @lo/desktop exec install-electron` fetches it ahead of time.
+- A build run from source keeps its data in its own folder (`Lo Dev`, beside an installed Lo's), or
+  in `LO_USER_DATA_DIR` when that's set. A packaged build ignores both.
+- Code that doesn't call Electron goes in its own module, with unit tests beside it. The smoke test
+  in `e2e/` drives the built app with Playwright, each test on an empty data folder, and covers what
+  needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`.
+
+The window shows untrusted content, so it's locked down, and the smoke test shows each guard
+holding:
+
+- It runs in Chromium's sandbox, with context isolation and without Node.
+- It loads only Lo's own files, from the `lo-app:` scheme, never from `file:`. Its content security
+  policy, sent as a header, allows no inline scripts or styles and nothing from elsewhere.
+- Its session cancels every request outside `lo-app:` and refuses every permission. It can't
+  navigate away or open other windows.
+
+`src/main/policy.ts` holds these rules. Loosen one only for a stated reason, with a test that shows
+the new limit.
+
 ## Generated files
 
 Generated files are committed, and each project that makes them has a `codegen` target. Never edit

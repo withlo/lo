@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.window.json",
+  "compilerOptions": {
+    "outDir": ".tsbuild/window",
+    "types": ["vite/client"]
+  },
+  "include": ["src/window/**/*.ts", "src/window/**/*.tsx"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}
