@@ -1,22 +1,32 @@
 import { z } from 'zod';
 import { describe, expect, it, vi } from 'vitest';
 
+import { openDatabase } from './database.ts';
 import { createRouter, defineFeature, loadFeatures, type Feature } from './features.ts';
+import { migrate } from './migrations.ts';
 import { contract as notes } from './test/features/notes/contract.ts';
 
-// Found the way main finds the real features, from a folder of made-up ones.
+// Found the way main finds the real features and their migrations, from a folder of made-up ones.
 const found = import.meta.glob<Feature>('./test/features/*/main/index.ts', {
   eager: true,
+  import: 'default',
+});
+const migrations = import.meta.glob<string>('./test/features/*/migrations/*.sql', {
+  eager: true,
+  query: '?raw',
   import: 'default',
 });
 
 function router() {
   const sent: [string, unknown][] = [];
   const log = vi.fn<(message: string, error: unknown) => void>();
+  const database = openDatabase(':memory:');
+  migrate(database, migrations);
   const routes = createRouter(loadFeatures(found), {
     isAllowedSender: (address) => address === 'lo-app://app/index.html',
     send: (channel, value) => sent.push([channel, value]),
     log,
+    database,
   });
   routes.start();
   const ask = (channel: string, input?: unknown) =>
@@ -57,18 +67,21 @@ describe('createRouter', () => {
     ]);
   });
 
-  it('answers a request and pushes on its topic', async () => {
+  it('answers from its own tables, made by its own migration, and pushes on its topic', async () => {
     const { ask, sent } = router();
-    const before = await ask('notes.count');
+    expect(await ask('notes.count')).toEqual({ ok: true, value: 0 });
     expect(await ask('notes.add', { text: 'Read the diff' })).toEqual({
       ok: true,
-      value: { id: expect.any(Number) },
+      value: { id: 1 },
     });
-    expect(await ask('notes.count')).toEqual({
-      ok: true,
-      value: before.ok ? Number(before.value) + 1 : NaN,
-    });
-    expect(sent).toEqual([['notes.changed', before.ok ? Number(before.value) + 1 : NaN]]);
+    expect(await ask('notes.add', { text: 'Approve it' })).toEqual({ ok: true, value: { id: 2 } });
+    expect(await ask('notes.remove', { id: 1 })).toEqual({ ok: true, value: null });
+    expect(await ask('notes.count')).toEqual({ ok: true, value: 1 });
+    expect(sent).toEqual([
+      ['notes.changed', 1],
+      ['notes.changed', 2],
+      ['notes.changed', 1],
+    ]);
   });
 
   it("refuses input that doesn't match the contract, without repeating it", async () => {
@@ -129,6 +142,7 @@ describe('createRouter', () => {
       isAllowedSender: () => true,
       send: (...message) => sent.push(message),
       log: () => {},
+      database: openDatabase(':memory:'),
     });
     expect(() => routes.start()).toThrow(z.ZodError);
     expect(sent).toEqual([]);

@@ -172,10 +172,24 @@ the window find them with `import.meta.glob`.
   topic main pushes, with its schema. Channels are named `<feature>.<name>`.
 - `main/index.ts` exports `defineFeature(contract, { handlers, start })` by default: a handler for
   every request, and optionally a `start` that runs before the window opens, to publish on the
-  feature's topics. A handler throws an `IpcError` for a failure the window should see; any other
-  error is logged and reaches the window only as `internal`.
+  feature's topics. Both get the feature's context: `publish` and `database`. A handler throws an
+  `IpcError` for a failure the window should see; any other error is logged and reaches the window
+  only as `internal`.
+- `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
+  startup, before any handler can be asked anything, each feature's new migrations run in order,
+  each in a transaction, and are recorded with their SHA-256.
+  - A feature's tables, indexes, views and triggers are named `<feature>_…`. A migration that
+    touches another feature's, or makes a foreign key to one, is rolled back, so features apply in
+    any order. Cleanup across features (an account removed, say) goes through main.
+  - Never edit a migration once it has run: Lo refuses to start on a database where one has changed.
+    Add a new one instead.
+  - Lo also refuses a database holding a migration it doesn't have, which a newer Lo wrote.
 - `window/index.ts` exports a `WindowFeature` by default. The window calls main through
   `client(contract)`, whose methods and types come from the contract.
+
+The database is SQLite through Node's built-in `node:sqlite`, in `lo.db` in the data folder: WAL
+mode, foreign keys enforced, defensive. `src/main/database.ts` is the only module that uses
+`node:sqlite`; everything else goes through its `Database`.
 
 ## Generated files
 
