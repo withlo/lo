@@ -174,13 +174,19 @@ test('takes a maintenance release that says lazy fetching is off', async () => {
   expect(await gitAt(twice, { env, platform })).toMatchObject({ check: 'lazyFetch' });
 });
 
-describe('passes over a git someone else could have changed', () => {
+describe('passes over a git someone else could change, and says so', () => {
   test.each([
-    ['a git others may write to', 0o700, 0o777],
-    ['a git its group may write to', 0o700, 0o775],
-    ['a git in a folder anyone may write to', 0o777, 0o755],
-    ['a git in a folder anyone may write to, sticky as /tmp is', 0o1777, 0o755],
-  ])('%s', async (_, folderMode, fileMode) => {
+    ['a git others may write to', 0o700, 0o777, 'other users can change it'],
+    ['a git its group may write to', 0o700, 0o775, 'other users can change it'],
+    ['a git in a folder its group may write to', 0o775, 0o755, 'other users can change {bin}'],
+    ['a git in a folder anyone may write to', 0o777, 0o755, 'other users can change {bin}'],
+    [
+      'a git in a folder anyone may write to, sticky as /tmp is',
+      0o1777,
+      0o755,
+      'other users can change {bin}',
+    ],
+  ])('%s', async (_, folderMode, fileMode, reason) => {
     const dir = tempFolder();
     const bin = join(dir, 'bin');
     mkdirSync(bin);
@@ -189,10 +195,33 @@ describe('passes over a git someone else could have changed', () => {
     chmodSync(bin, folderMode);
     const options = { env: { PATH: bin }, platform, places: { folders: [] } };
 
-    expect((await findGit(options)).status).toBe('missing');
+    expect(await findGit(options)).toMatchObject({
+      status: 'missing',
+      message: `Lo found git at ${git}, but ${reason.replace('{bin}', bin)}, so Lo won't run it.`,
+    });
 
     chmodSync(git, 0o755);
     chmodSync(bin, 0o755);
+    expect((await findGit(options)).status).toBe('found');
+  });
+
+  test('a git whose folder sits in a folder anyone may write to, unless it’s sticky', async () => {
+    const dir = tempFolder();
+    const open = join(dir, 'open');
+    const bin = join(open, 'bin');
+    mkdirSync(bin, { recursive: true });
+    wrappedGit(join(bin, 'git'));
+    // Anyone could move `bin` aside and put another in its place.
+    chmodSync(open, 0o777);
+    const options = { env: { PATH: bin }, platform, places: { folders: [] } };
+
+    expect(await findGit(options)).toMatchObject({
+      status: 'missing',
+      message: expect.stringContaining(`other users can change ${open}`),
+    });
+
+    // Sticky, nobody else can move what's this user's in it, as in /tmp.
+    chmodSync(open, 0o1777);
     expect((await findGit(options)).status).toBe('found');
   });
 
@@ -206,7 +235,10 @@ describe('passes over a git someone else could have changed', () => {
     chmodSync(open, 0o777);
     const options = { env: { PATH: bin }, platform, places: { folders: [] } };
 
-    expect((await findGit(options)).status).toBe('missing');
+    expect(await findGit(options)).toMatchObject({
+      status: 'missing',
+      message: expect.stringContaining(`other users can change ${open}`),
+    });
 
     chmodSync(open, 0o755);
     expect((await findGit(options)).status).toBe('found');

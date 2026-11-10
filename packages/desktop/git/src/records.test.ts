@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { splitRecords, streamRecords } from './records.ts';
 
@@ -29,18 +29,32 @@ test('streams records across chunks cut anywhere', async () => {
   }
 });
 
-test('streams a record of 64 MB in time that grows with its length alone', async () => {
-  const size = 64 * 1024 * 1024;
+/** The bytes copied while streaming one record of `size` bytes, arriving in pipe-sized chunks. */
+async function copiedFor(size: number): Promise<number> {
   const chunk = Buffer.alloc(64 * 1024, 'x');
   async function* chunks() {
     for (let at = 0; at < size; at += chunk.length) yield chunk;
     yield Buffer.from([0, 0x79]);
   }
-  const started = performance.now();
+  const concat = vi.spyOn(Buffer, 'concat');
+  try {
+    const lengths: number[] = [];
+    for await (const record of streamRecords(chunks())) lengths.push(record.length);
+    expect(lengths).toEqual([size, 1]);
+    return concat.mock.calls.reduce(
+      (copied, [list]) => copied + list.reduce((sum, piece) => sum + piece.length, 0),
+      0,
+    );
+  } finally {
+    concat.mockRestore();
+  }
+}
 
-  const records: Buffer[] = [];
-  for await (const record of streamRecords(chunks())) records.push(record);
+test('streams a record in work that grows with its length alone', async () => {
+  const half = await copiedFor(32 * 1024 * 1024);
+  const whole = await copiedFor(64 * 1024 * 1024);
 
-  expect(performance.now() - started).toBeLessThan(500);
-  expect(records.map((record) => record.length)).toEqual([size, 1]);
+  // Each byte is copied once, when its record ends: twice the record, twice the copying. The one
+  // more is the last record's, `y`.
+  expect([half, whole]).toEqual([32 * 1024 * 1024 + 1, 64 * 1024 * 1024 + 1]);
 });

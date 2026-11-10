@@ -3,10 +3,10 @@
  * remembered between calls, so asking again finds a git installed since.
  */
 
-import { access, appendFile, mkdir, mkdtemp, realpath, rm, stat } from 'node:fs/promises';
+import { access, appendFile, lstat, mkdir, mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
-import { delimiter, dirname, isAbsolute, join } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join } from 'node:path';
 
 import { type Environment, inheritedEnvironment } from './environment.ts';
 import { Git, Runner } from './git.ts';
@@ -72,8 +72,8 @@ export function defaultPlaces(platform: NodeJS.Platform): Places {
 /**
  * Finds git: on a Mac, Apple's first when the Command Line Tools are installed, then each `git` on
  * `PATH`, then the system's usual folders. The first new enough wins. A git that someone besides
- * its owner, or root, could have changed is passed over. Without one, it says why, naming the
- * first git that was too old if there was one.
+ * this user or root could change is passed over. Without one, it says why: the first git that was
+ * too old, else the first passed over, else that there's none.
  */
 export async function findGit(options: FindOptions): Promise<GitStatus> {
   const places = options.places ?? defaultPlaces(options.platform);
@@ -92,16 +92,27 @@ export async function findGit(options: FindOptions): Promise<GitStatus> {
 
   const tried = new Set<string>();
   let tooOld: GitStatus | undefined;
+  // A git that others could change, which is passed over, and said so when it's the only one.
+  let passedOver: GitStatus | undefined;
   for (const candidate of candidates) {
     const real = await realpath(candidate).catch(() => undefined);
     if (real === undefined || real === stub || tried.has(real)) continue;
     tried.add(real);
-    if (!(await isExecutableFile(candidate)) || !(await isTrustworthy(candidate, real))) continue;
+    if (!(await isExecutableFile(candidate))) continue;
+    const distrusted = await distrustProgram(candidate, real);
+    if (distrusted !== undefined) {
+      passedOver ??= {
+        status: 'missing',
+        message: `Lo found git at ${candidate}, but ${distrusted}, so Lo won't run it.`,
+        install: installAdvice(options.platform),
+      };
+      continue;
+    }
     const status = await check(candidate, inherited, options.platform);
     if (status.status === 'found') return status;
     if (status.status === 'tooOld') tooOld ??= status;
   }
-  return tooOld ?? missing(options.platform);
+  return tooOld ?? passedOver ?? missing(options.platform);
 }
 
 /** The git at `program`, if it runs and is new enough: for a git the user named. */
@@ -270,20 +281,43 @@ async function hasCommandLineTools(
 }
 
 /**
- * Whether only its owner, or the system, can have changed the git at `candidate`, which is `real`
- * once links are followed: owned by root or this user, writable by its owner alone, and in folders
- * nobody else can write to, where another user could swap it for something else.
+ * Why someone besides this user and root could change the git at `candidate`, which is `real` once
+ * links are followed, or `undefined` when nobody else can. The file, the link to it and every
+ * folder above either must be owned by root or this user. The file and the folders it and the
+ * link are in must be writable by their owner alone. A folder further up may be writable by
+ * others only when it's sticky, as `/tmp` is, so that nobody else can move what's in it.
  */
-async function isTrustworthy(candidate: string, real: string): Promise<boolean> {
+async function distrustProgram(candidate: string, real: string): Promise<string | undefined> {
+  const user = process.getuid?.();
+  const ours = (uid: number) => uid === 0 || uid === user;
   try {
-    for (const folder of new Set([dirname(candidate), dirname(real)])) {
-      if (((await stat(folder)).mode & 0o002) !== 0) return false;
-    }
     const file = await stat(real);
-    const owner = file.uid === 0 || file.uid === process.getuid?.();
-    return owner && (file.mode & 0o022) === 0;
-  } catch {
-    return false;
+    if (!ours(file.uid)) return 'another user owns it';
+    if ((file.mode & 0o022) !== 0) return 'other users can change it';
+    for (const path of new Set([
+      real,
+      join(await realpath(dirname(candidate)), basename(candidate)),
+    ])) {
+      let child = path;
+      for (let folder = dirname(path); ; folder = dirname(folder)) {
+        const info = await stat(folder);
+        if (!ours(info.uid)) return `another user owns ${folder}`;
+        const othersMayWrite = (info.mode & 0o022) !== 0;
+        if (othersMayWrite) {
+          const nearest = child === path;
+          const sticky = (info.mode & 0o1000) !== 0;
+          const childOwner = (await lstat(child)).uid;
+          if (nearest || !sticky || !ours(childOwner)) {
+            return `other users can change ${folder}`;
+          }
+        }
+        if (folder === dirname(folder)) break;
+        child = folder;
+      }
+    }
+    return undefined;
+  } catch (error) {
+    return `it can't be checked (${error instanceof Error ? error.message : String(error)})`;
   }
 }
 
