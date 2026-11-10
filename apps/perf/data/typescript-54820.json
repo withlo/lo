@@ -1,0 +1,3117 @@
+{
+  "repo": "microsoft/TypeScript",
+  "number": 54820,
+  "base": "08b2566e5b1beee5ff011d3e786ddd68ca81cbcc",
+  "head": "7baf5d77c85bce4523770d79e9f40bce93bfc320",
+  "files": [
+    { "path": ".dprint.jsonc", "status": "added", "additions": 55, "deletions": 0 },
+    { "path": ".eslintplugin.js", "status": "modified", "additions": 3, "deletions": 3 },
+    { "path": ".eslintrc.json", "status": "modified", "additions": 1, "deletions": 27 },
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 7
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/config.yml",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 15
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/feature_request.yml",
+      "status": "modified",
+      "additions": 23,
+      "deletions": 23
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/lib_change.yml",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 13
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/module_resolution.yml",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 6
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/other.yml",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 4
+    },
+    {
+      "path": ".github/codeql/codeql-configuration.yml",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": ".github/workflows/accept-baselines-fix-lints.yaml",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 15
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "status": "modified",
+      "additions": 184,
+      "deletions": 160
+    },
+    {
+      "path": ".github/workflows/codeql.yml",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": ".github/workflows/ensure-related-repos-run-crons.yml",
+      "status": "modified",
+      "additions": 32,
+      "deletions": 32
+    },
+    {
+      "path": ".github/workflows/error-deltas-watchdog.yaml",
+      "status": "modified",
+      "additions": 20,
+      "deletions": 20
+    },
+    {
+      "path": ".github/workflows/new-release-branch.yaml",
+      "status": "modified",
+      "additions": 29,
+      "deletions": 29
+    },
+    {
+      "path": ".github/workflows/nightly.yaml",
+      "status": "modified",
+      "additions": 22,
+      "deletions": 22
+    },
+    {
+      "path": ".github/workflows/release-branch-artifact.yaml",
+      "status": "modified",
+      "additions": 26,
+      "deletions": 26
+    },
+    {
+      "path": ".github/workflows/rich-navigation.yml",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": ".github/workflows/scorecard.yml",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 5
+    },
+    {
+      "path": ".github/workflows/set-version.yaml",
+      "status": "modified",
+      "additions": 35,
+      "deletions": 35
+    },
+    {
+      "path": ".github/workflows/sync-branch.yaml",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 16
+    },
+    {
+      "path": ".github/workflows/sync-wiki.yml",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 13
+    },
+    {
+      "path": ".github/workflows/twoslash-repros.yaml",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 13
+    },
+    {
+      "path": ".github/workflows/update-lkg.yml",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 13
+    },
+    {
+      "path": ".github/workflows/update-package-lock.yaml",
+      "status": "modified",
+      "additions": 33,
+      "deletions": 33
+    },
+    { "path": ".vscode/extensions.json", "status": "modified", "additions": 2, "deletions": 1 },
+    {
+      "path": ".vscode/settings.template.json",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 0
+    },
+    { "path": "Herebyfile.mjs", "status": "modified", "additions": 66, "deletions": 44 },
+    { "path": "package-lock.json", "status": "modified", "additions": 153, "deletions": 0 },
+    { "path": "package.json", "status": "modified", "additions": 2, "deletions": 0 },
+    {
+      "path": "scripts/browserIntegrationTest.mjs",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 2
+    },
+    { "path": "scripts/build/findUpDir.mjs", "status": "modified", "additions": 8, "deletions": 2 },
+    { "path": "scripts/build/options.mjs", "status": "modified", "additions": 10, "deletions": 12 },
+    {
+      "path": "scripts/build/projects.mjs",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 11
+    },
+    { "path": "scripts/build/tests.mjs", "status": "modified", "additions": 15, "deletions": 6 },
+    { "path": "scripts/build/utils.mjs", "status": "modified", "additions": 21, "deletions": 14 },
+    {
+      "path": "scripts/checkModuleFormat.mjs",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 7
+    },
+    {
+      "path": "scripts/checkPackageSize.mjs",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 2
+    },
+    {
+      "path": "scripts/configurePrerelease.mjs",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 3
+    },
+    { "path": "scripts/dtsBundler.mjs", "status": "modified", "additions": 28, "deletions": 8 },
+    {
+      "path": "scripts/eslint/rules/argument-trivia.cjs",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 11
+    },
+    {
+      "path": "scripts/eslint/rules/debug-assert.cjs",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 7
+    },
+    {
+      "path": "scripts/eslint/rules/jsdoc-format.cjs",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 63
+    },
+    {
+      "path": "scripts/eslint/rules/no-double-space.cjs",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 72
+    },
+    {
+      "path": "scripts/eslint/rules/no-in-operator.cjs",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "scripts/eslint/rules/no-keywords.cjs",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 5
+    },
+    {
+      "path": "scripts/eslint/rules/no-type-assertion-whitespace.cjs",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 42
+    },
+    {
+      "path": "scripts/eslint/rules/object-literal-surrounding-space.cjs",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 71
+    },
+    {
+      "path": "scripts/eslint/rules/only-arrow-functions.cjs",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 4
+    },
+    {
+      "path": "scripts/eslint/rules/simple-indent.cjs",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 68
+    },
+    {
+      "path": "scripts/eslint/rules/type-operator-spacing.cjs",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 43
+    },
+    {
+      "path": "scripts/eslint/tests/argument-trivia.test.cjs",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "scripts/eslint/tests/debug-assert.test.cjs",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "scripts/eslint/tests/no-double-space.test.cjs",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 154
+    },
+    {
+      "path": "scripts/eslint/tests/no-keywords.test.cjs",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3
+    },
+    {
+      "path": "scripts/eslint/tests/no-type-assertion-whitespace.test.cjs",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 39
+    },
+    {
+      "path": "scripts/eslint/tests/object-literal-surrounding-space.test.cjs",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 49
+    },
+    {
+      "path": "scripts/eslint/tests/simple-indent.test.cjs",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 333
+    },
+    {
+      "path": "scripts/eslint/tests/type-operator-spacing.test.cjs",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 45
+    },
+    { "path": "scripts/failed-tests.cjs", "status": "modified", "additions": 2, "deletions": 2 },
+    {
+      "path": "scripts/find-unused-diganostic-messages.mjs",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 3
+    },
+    {
+      "path": "scripts/generateLocalizedDiagnosticMessages.mjs",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 5
+    },
+    { "path": "scripts/link-hooks.mjs", "status": "modified", "additions": 5, "deletions": 3 },
+    {
+      "path": "scripts/open-cherry-pick-pr.mjs",
+      "status": "modified",
+      "additions": 21,
+      "deletions": 18
+    },
+    { "path": "scripts/open-user-pr.mjs", "status": "modified", "additions": 10, "deletions": 7 },
+    {
+      "path": "scripts/perf-result-post.mjs",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 6
+    },
+    {
+      "path": "scripts/post-vsts-artifact-comment.mjs",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 5
+    },
+    {
+      "path": "scripts/processDiagnosticMessages.mjs",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 3
+    },
+    { "path": "scripts/produceLKG.mjs", "status": "modified", "additions": 3, "deletions": 1 },
+    {
+      "path": "scripts/regenerate-unicode-identifier-parts.mjs",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 1
+    },
+    {
+      "path": "scripts/request-pr-review.mjs",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 4
+    },
+    {
+      "path": "scripts/update-experimental-branches.mjs",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 6
+    },
+    {
+      "path": "src/cancellationToken/cancellationToken.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3
+    },
+    { "path": "src/compiler/binder.ts", "status": "modified", "additions": 74, "deletions": 66 },
+    { "path": "src/compiler/builder.ts", "status": "modified", "additions": 102, "deletions": 92 },
+    {
+      "path": "src/compiler/builderState.ts",
+      "status": "modified",
+      "additions": 29,
+      "deletions": 17
+    },
+    {
+      "path": "src/compiler/checker.ts",
+      "status": "modified",
+      "additions": 2535,
+      "deletions": 1930
+    },
+    {
+      "path": "src/compiler/commandLineParser.ts",
+      "status": "modified",
+      "additions": 134,
+      "deletions": 146
+    },
+    { "path": "src/compiler/core.ts", "status": "modified", "additions": 25, "deletions": 25 },
+    { "path": "src/compiler/corePublic.ts", "status": "modified", "additions": 3, "deletions": 3 },
+    { "path": "src/compiler/debug.ts", "status": "modified", "additions": 150, "deletions": 79 },
+    { "path": "src/compiler/emitter.ts", "status": "modified", "additions": 141, "deletions": 107 },
+    {
+      "path": "src/compiler/factory/baseNodeFactory.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/compiler/factory/emitHelpers.ts",
+      "status": "modified",
+      "additions": 100,
+      "deletions": 99
+    },
+    {
+      "path": "src/compiler/factory/nodeConverters.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 8
+    },
+    {
+      "path": "src/compiler/factory/nodeFactory.ts",
+      "status": "modified",
+      "additions": 740,
+      "deletions": 641
+    },
+    {
+      "path": "src/compiler/factory/parenthesizerRules.ts",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 11
+    },
+    {
+      "path": "src/compiler/factory/utilities.ts",
+      "status": "modified",
+      "additions": 77,
+      "deletions": 70
+    },
+    {
+      "path": "src/compiler/factory/utilitiesPublic.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/compiler/moduleNameResolver.ts",
+      "status": "modified",
+      "additions": 63,
+      "deletions": 70
+    },
+    {
+      "path": "src/compiler/moduleSpecifiers.ts",
+      "status": "modified",
+      "additions": 86,
+      "deletions": 72
+    },
+    { "path": "src/compiler/parser.ts", "status": "modified", "additions": 284, "deletions": 224 },
+    { "path": "src/compiler/path.ts", "status": "modified", "additions": 6, "deletions": 4 },
+    { "path": "src/compiler/perfLogger.ts", "status": "modified", "additions": 0, "deletions": 1 },
+    { "path": "src/compiler/performance.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    {
+      "path": "src/compiler/performanceCore.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 7
+    },
+    { "path": "src/compiler/program.ts", "status": "modified", "additions": 157, "deletions": 134 },
+    {
+      "path": "src/compiler/resolutionCache.ts",
+      "status": "modified",
+      "additions": 71,
+      "deletions": 49
+    },
+    { "path": "src/compiler/scanner.ts", "status": "modified", "additions": 32, "deletions": 31 },
+    { "path": "src/compiler/semver.ts", "status": "modified", "additions": 48, "deletions": 26 },
+    { "path": "src/compiler/sourcemap.ts", "status": "modified", "additions": 41, "deletions": 30 },
+    {
+      "path": "src/compiler/symbolWalker.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 3
+    },
+    { "path": "src/compiler/sys.ts", "status": "modified", "additions": 93, "deletions": 76 },
+    { "path": "src/compiler/tracing.ts", "status": "modified", "additions": 8, "deletions": 11 },
+    {
+      "path": "src/compiler/transformer.ts",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 12
+    },
+    {
+      "path": "src/compiler/transformers/classFields.ts",
+      "status": "modified",
+      "additions": 206,
+      "deletions": 169
+    },
+    {
+      "path": "src/compiler/transformers/classThis.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 16
+    },
+    {
+      "path": "src/compiler/transformers/declarations.ts",
+      "status": "modified",
+      "additions": 170,
+      "deletions": 135
+    },
+    {
+      "path": "src/compiler/transformers/declarations/diagnostics.ts",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 14
+    },
+    {
+      "path": "src/compiler/transformers/destructuring.ts",
+      "status": "modified",
+      "additions": 32,
+      "deletions": 21
+    },
+    {
+      "path": "src/compiler/transformers/es2015.ts",
+      "status": "modified",
+      "additions": 360,
+      "deletions": 316
+    },
+    {
+      "path": "src/compiler/transformers/es2016.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 11
+    },
+    {
+      "path": "src/compiler/transformers/es2017.ts",
+      "status": "modified",
+      "additions": 62,
+      "deletions": 57
+    },
+    {
+      "path": "src/compiler/transformers/es2018.ts",
+      "status": "modified",
+      "additions": 134,
+      "deletions": 107
+    },
+    {
+      "path": "src/compiler/transformers/es2019.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/compiler/transformers/es2020.ts",
+      "status": "modified",
+      "additions": 23,
+      "deletions": 16
+    },
+    {
+      "path": "src/compiler/transformers/es2021.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 10
+    },
+    {
+      "path": "src/compiler/transformers/esDecorators.ts",
+      "status": "modified",
+      "additions": 100,
+      "deletions": 93
+    },
+    {
+      "path": "src/compiler/transformers/esnext.ts",
+      "status": "modified",
+      "additions": 42,
+      "deletions": 37
+    },
+    {
+      "path": "src/compiler/transformers/generators.ts",
+      "status": "modified",
+      "additions": 149,
+      "deletions": 151
+    },
+    {
+      "path": "src/compiler/transformers/jsx.ts",
+      "status": "modified",
+      "additions": 30,
+      "deletions": 27
+    },
+    {
+      "path": "src/compiler/transformers/legacyDecorators.ts",
+      "status": "modified",
+      "additions": 75,
+      "deletions": 57
+    },
+    {
+      "path": "src/compiler/transformers/module/esnextAnd2015.ts",
+      "status": "modified",
+      "additions": 33,
+      "deletions": 28
+    },
+    {
+      "path": "src/compiler/transformers/module/module.ts",
+      "status": "modified",
+      "additions": 273,
+      "deletions": 236
+    },
+    {
+      "path": "src/compiler/transformers/module/node.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/compiler/transformers/module/system.ts",
+      "status": "modified",
+      "additions": 114,
+      "deletions": 105
+    },
+    {
+      "path": "src/compiler/transformers/namedEvaluation.ts",
+      "status": "modified",
+      "additions": 36,
+      "deletions": 23
+    },
+    {
+      "path": "src/compiler/transformers/taggedTemplate.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 7
+    },
+    {
+      "path": "src/compiler/transformers/ts.ts",
+      "status": "modified",
+      "additions": 134,
+      "deletions": 118
+    },
+    {
+      "path": "src/compiler/transformers/typeSerializer.ts",
+      "status": "modified",
+      "additions": 43,
+      "deletions": 58
+    },
+    {
+      "path": "src/compiler/transformers/utilities.ts",
+      "status": "modified",
+      "additions": 37,
+      "deletions": 25
+    },
+    { "path": "src/compiler/tsbuild.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    {
+      "path": "src/compiler/tsbuildPublic.ts",
+      "status": "modified",
+      "additions": 198,
+      "deletions": 177
+    },
+    { "path": "src/compiler/types.ts", "status": "modified", "additions": 349, "deletions": 406 },
+    {
+      "path": "src/compiler/utilities.ts",
+      "status": "modified",
+      "additions": 408,
+      "deletions": 359
+    },
+    {
+      "path": "src/compiler/utilitiesPublic.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 10
+    },
+    {
+      "path": "src/compiler/visitorPublic.ts",
+      "status": "modified",
+      "additions": 573,
+      "deletions": 308
+    },
+    { "path": "src/compiler/watch.ts", "status": "modified", "additions": 84, "deletions": 70 },
+    {
+      "path": "src/compiler/watchPublic.ts",
+      "status": "modified",
+      "additions": 128,
+      "deletions": 110
+    },
+    {
+      "path": "src/compiler/watchUtilities.ts",
+      "status": "modified",
+      "additions": 68,
+      "deletions": 52
+    },
+    {
+      "path": "src/deprecatedCompat/5.0/identifierProperties.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 5
+    },
+    {
+      "path": "src/deprecatedCompat/deprecate.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/deprecatedCompat/deprecations.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 6
+    },
+    {
+      "path": "src/executeCommandLine/executeCommandLine.ts",
+      "status": "modified",
+      "additions": 65,
+      "deletions": 62
+    },
+    { "path": "src/harness/client.ts", "status": "modified", "additions": 48, "deletions": 44 },
+    {
+      "path": "src/harness/collectionsImpl.ts",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 6
+    },
+    { "path": "src/harness/compilerImpl.ts", "status": "modified", "additions": 9, "deletions": 8 },
+    {
+      "path": "src/harness/documentsUtil.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 2
+    },
+    {
+      "path": "src/harness/evaluatorImpl.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 12
+    },
+    { "path": "src/harness/fakesHosts.ts", "status": "modified", "additions": 18, "deletions": 9 },
+    { "path": "src/harness/findUpDir.ts", "status": "modified", "additions": 4, "deletions": 3 },
+    {
+      "path": "src/harness/fourslashImpl.ts",
+      "status": "modified",
+      "additions": 362,
+      "deletions": 303
+    },
+    {
+      "path": "src/harness/fourslashInterfaceImpl.ts",
+      "status": "modified",
+      "additions": 62,
+      "deletions": 64
+    },
+    {
+      "path": "src/harness/harnessGlobals.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    { "path": "src/harness/harnessIO.ts", "status": "modified", "additions": 40, "deletions": 36 },
+    {
+      "path": "src/harness/harnessLanguageService.ts",
+      "status": "modified",
+      "additions": 157,
+      "deletions": 76
+    },
+    {
+      "path": "src/harness/harnessUtils.ts",
+      "status": "modified",
+      "additions": 36,
+      "deletions": 35
+    },
+    {
+      "path": "src/harness/incrementalUtils.ts",
+      "status": "modified",
+      "additions": 29,
+      "deletions": 21
+    },
+    { "path": "src/harness/runnerbase.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    {
+      "path": "src/harness/sourceMapRecorder.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 2
+    },
+    { "path": "src/harness/typeWriter.ts", "status": "modified", "additions": 7, "deletions": 5 },
+    { "path": "src/harness/util.ts", "status": "modified", "additions": 2, "deletions": 1 },
+    { "path": "src/harness/vfsUtil.ts", "status": "modified", "additions": 53, "deletions": 34 },
+    { "path": "src/jsTyping/jsTyping.ts", "status": "modified", "additions": 8, "deletions": 8 },
+    { "path": "src/lib/decorators.d.ts", "status": "modified", "additions": 3, "deletions": 6 },
+    { "path": "src/lib/dom.iterable.d.ts", "status": "modified", "additions": 0, "deletions": 2 },
+    {
+      "path": "src/lib/es2015.collection.d.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 2
+    },
+    { "path": "src/lib/es2015.core.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    {
+      "path": "src/lib/es2015.iterable.d.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 5
+    },
+    { "path": "src/lib/es2015.promise.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/lib/es2015.symbol.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    {
+      "path": "src/lib/es2016.array.include.d.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    { "path": "src/lib/es2016.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/lib/es2016.full.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/lib/es2017.full.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/lib/es2017.intl.d.ts", "status": "modified", "additions": 11, "deletions": 12 },
+    { "path": "src/lib/es2017.object.d.ts", "status": "modified", "additions": 3, "deletions": 3 },
+    {
+      "path": "src/lib/es2018.asynciterable.d.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    { "path": "src/lib/es2018.full.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/lib/es2018.intl.d.ts", "status": "modified", "additions": 1, "deletions": 2 },
+    { "path": "src/lib/es2018.promise.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/lib/es2018.regexp.d.ts", "status": "modified", "additions": 5, "deletions": 5 },
+    { "path": "src/lib/es2019.array.d.ts", "status": "modified", "additions": 14, "deletions": 18 },
+    { "path": "src/lib/es2019.intl.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/lib/es2019.object.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/lib/es2020.bigint.d.ts", "status": "modified", "additions": 7, "deletions": 7 },
+    { "path": "src/lib/es2020.date.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/lib/es2020.intl.d.ts", "status": "modified", "additions": 11, "deletions": 13 },
+    { "path": "src/lib/es2020.promise.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/lib/es2021.intl.d.ts", "status": "modified", "additions": 5, "deletions": 6 },
+    { "path": "src/lib/es2021.promise.d.ts", "status": "modified", "additions": 3, "deletions": 3 },
+    { "path": "src/lib/es2021.weakref.d.ts", "status": "modified", "additions": 2, "deletions": 2 },
+    { "path": "src/lib/es2022.error.d.ts", "status": "modified", "additions": 2, "deletions": 2 },
+    { "path": "src/lib/es2022.intl.d.ts", "status": "modified", "additions": 1, "deletions": 2 },
+    {
+      "path": "src/lib/es2022.sharedmemory.d.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    { "path": "src/lib/es2023.array.d.ts", "status": "modified", "additions": 61, "deletions": 61 },
+    { "path": "src/lib/es5.d.ts", "status": "modified", "additions": 74, "deletions": 88 },
+    {
+      "path": "src/lib/esnext.disposable.d.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 10
+    },
+    { "path": "src/lib/esnext.full.d.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/lib/esnext.intl.d.ts", "status": "modified", "additions": 7, "deletions": 7 },
+    { "path": "src/lib/scripthost.d.ts", "status": "modified", "additions": 1, "deletions": 4 },
+    {
+      "path": "src/lib/webworker.importscripts.d.ts",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 1
+    },
+    {
+      "path": "src/server/editorServices.ts",
+      "status": "modified",
+      "additions": 270,
+      "deletions": 209
+    },
+    {
+      "path": "src/server/moduleSpecifierCache.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/server/packageJsonCache.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 1
+    },
+    { "path": "src/server/project.ts", "status": "modified", "additions": 145, "deletions": 172 },
+    { "path": "src/server/protocol.ts", "status": "modified", "additions": 12, "deletions": 18 },
+    { "path": "src/server/scriptInfo.ts", "status": "modified", "additions": 39, "deletions": 23 },
+    {
+      "path": "src/server/scriptVersionCache.ts",
+      "status": "modified",
+      "additions": 19,
+      "deletions": 16
+    },
+    { "path": "src/server/session.ts", "status": "modified", "additions": 210, "deletions": 174 },
+    { "path": "src/server/types.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/server/typingsCache.ts", "status": "modified", "additions": 7, "deletions": 5 },
+    {
+      "path": "src/server/utilitiesPublic.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 4
+    },
+    {
+      "path": "src/services/breakpoints.ts",
+      "status": "modified",
+      "additions": 31,
+      "deletions": 20
+    },
+    {
+      "path": "src/services/callHierarchy.ts",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 18
+    },
+    {
+      "path": "src/services/classifier.ts",
+      "status": "modified",
+      "additions": 99,
+      "deletions": 58
+    },
+    {
+      "path": "src/services/classifier2020.ts",
+      "status": "modified",
+      "additions": 25,
+      "deletions": 10
+    },
+    {
+      "path": "src/services/codeFixProvider.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/services/codefixes/addConvertToUnknownForNonOverlappingTypes.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 6
+    },
+    {
+      "path": "src/services/codefixes/addEmptyExportDeclaration.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "src/services/codefixes/addMissingAsync.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 3
+    },
+    {
+      "path": "src/services/codefixes/addMissingAwait.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 11
+    },
+    {
+      "path": "src/services/codefixes/addMissingConst.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 7
+    },
+    {
+      "path": "src/services/codefixes/addMissingDeclareProperty.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 2
+    },
+    {
+      "path": "src/services/codefixes/addNameToNamelessParameter.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 1
+    },
+    {
+      "path": "src/services/codefixes/addOptionalPropertyUndefined.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 5
+    },
+    {
+      "path": "src/services/codefixes/annotateWithTypeFromJSDoc.ts",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 6
+    },
+    {
+      "path": "src/services/codefixes/convertConstToLet.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/services/codefixes/convertFunctionToEs6Class.ts",
+      "status": "modified",
+      "additions": 19,
+      "deletions": 23
+    },
+    {
+      "path": "src/services/codefixes/convertLiteralTypeToMappedType.ts",
+      "status": "modified",
+      "additions": 20,
+      "deletions": 14
+    },
+    {
+      "path": "src/services/codefixes/convertToAsyncFunction.ts",
+      "status": "modified",
+      "additions": 32,
+      "deletions": 22
+    },
+    {
+      "path": "src/services/codefixes/convertToEsModule.ts",
+      "status": "modified",
+      "additions": 24,
+      "deletions": 20
+    },
+    {
+      "path": "src/services/codefixes/convertToMappedObjectType.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 6
+    },
+    {
+      "path": "src/services/codefixes/convertToTypeOnlyExport.ts",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 5
+    },
+    {
+      "path": "src/services/codefixes/convertToTypeOnlyImport.ts",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 8
+    },
+    {
+      "path": "src/services/codefixes/convertTypedefToType.ts",
+      "status": "modified",
+      "additions": 26,
+      "deletions": 22
+    },
+    {
+      "path": "src/services/codefixes/correctQualifiedNameToIndexedAccessType.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 9
+    },
+    {
+      "path": "src/services/codefixes/disableJsDiagnostics.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 4
+    },
+    {
+      "path": "src/services/codefixes/fixAddMissingConstraint.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/services/codefixes/fixAddMissingMember.ts",
+      "status": "modified",
+      "additions": 29,
+      "deletions": 21
+    },
+    {
+      "path": "src/services/codefixes/fixAddMissingNewOperator.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 2
+    },
+    {
+      "path": "src/services/codefixes/fixAddModuleReferTypeMissingTypeof.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 2
+    },
+    {
+      "path": "src/services/codefixes/fixAddVoidToPromise.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "src/services/codefixes/fixAwaitInSyncFunction.ts",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 7
+    },
+    {
+      "path": "src/services/codefixes/fixClassDoesntImplementInheritedAbstractMember.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 2
+    },
+    {
+      "path": "src/services/codefixes/fixClassIncorrectlyImplementsInterface.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/services/codefixes/fixClassSuperMustPrecedeThisAccess.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 5
+    },
+    {
+      "path": "src/services/codefixes/fixConstructorForDerivedNeedSuperCall.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 2
+    },
+    {
+      "path": "src/services/codefixes/fixEnableJsxFlag.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 5
+    },
+    {
+      "path": "src/services/codefixes/fixExpectedComma.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 7
+    },
+    {
+      "path": "src/services/codefixes/fixExtendsInterfaceBecomesImplements.ts",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 7
+    },
+    {
+      "path": "src/services/codefixes/fixForgottenThisPropertyAccess.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 4
+    },
+    {
+      "path": "src/services/codefixes/fixImplicitThis.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 3
+    },
+    {
+      "path": "src/services/codefixes/fixImportNonExportedMember.ts",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 9
+    },
+    {
+      "path": "src/services/codefixes/fixIncorrectNamedTupleSyntax.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3
+    },
+    {
+      "path": "src/services/codefixes/fixInvalidImportSyntax.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 8
+    },
+    {
+      "path": "src/services/codefixes/fixInvalidJsxCharacters.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3
+    },
+    {
+      "path": "src/services/codefixes/fixJSDocTypes.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 8
+    },
+    {
+      "path": "src/services/codefixes/fixMissingCallParentheses.ts",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 5
+    },
+    {
+      "path": "src/services/codefixes/fixModuleAndTargetOptions.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/services/codefixes/fixNaNEquality.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 5
+    },
+    {
+      "path": "src/services/codefixes/fixNoPropertyAccessFromIndexSignature.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 4
+    },
+    {
+      "path": "src/services/codefixes/fixOverrideModifier.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 7
+    },
+    {
+      "path": "src/services/codefixes/fixPropertyAssignment.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 3
+    },
+    {
+      "path": "src/services/codefixes/fixPropertyOverrideAccessor.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 7
+    },
+    {
+      "path": "src/services/codefixes/fixReturnTypeInAsyncFunction.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 10
+    },
+    {
+      "path": "src/services/codefixes/fixSpelling.ts",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 10
+    },
+    {
+      "path": "src/services/codefixes/fixStrictClassInitialization.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "src/services/codefixes/fixUnmatchedParameter.ts",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 9
+    },
+    {
+      "path": "src/services/codefixes/fixUnreachableCode.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/services/codefixes/fixUnusedIdentifier.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 15
+    },
+    {
+      "path": "src/services/codefixes/generateAccessors.ts",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 17
+    },
+    {
+      "path": "src/services/codefixes/helpers.ts",
+      "status": "modified",
+      "additions": 53,
+      "deletions": 32
+    },
+    {
+      "path": "src/services/codefixes/importFixes.ts",
+      "status": "modified",
+      "additions": 143,
+      "deletions": 93
+    },
+    {
+      "path": "src/services/codefixes/inferFromUsage.ts",
+      "status": "modified",
+      "additions": 20,
+      "deletions": 19
+    },
+    {
+      "path": "src/services/codefixes/requireInTs.ts",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 10
+    },
+    {
+      "path": "src/services/codefixes/returnValueCorrect.ts",
+      "status": "modified",
+      "additions": 38,
+      "deletions": 34
+    },
+    {
+      "path": "src/services/codefixes/splitTypeOnlyImport.ts",
+      "status": "modified",
+      "additions": 24,
+      "deletions": 13
+    },
+    {
+      "path": "src/services/codefixes/useDefaultImport.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 4
+    },
+    {
+      "path": "src/services/codefixes/wrapJsxInFragment.ts",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 5
+    },
+    {
+      "path": "src/services/completions.ts",
+      "status": "modified",
+      "additions": 354,
+      "deletions": 245
+    },
+    {
+      "path": "src/services/documentHighlights.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 7
+    },
+    {
+      "path": "src/services/documentRegistry.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 8
+    },
+    {
+      "path": "src/services/exportInfoMap.ts",
+      "status": "modified",
+      "additions": 22,
+      "deletions": 14
+    },
+    {
+      "path": "src/services/findAllReferences.ts",
+      "status": "modified",
+      "additions": 157,
+      "deletions": 114
+    },
+    {
+      "path": "src/services/formatting/formatting.ts",
+      "status": "modified",
+      "additions": 90,
+      "deletions": 104
+    },
+    {
+      "path": "src/services/formatting/formattingContext.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 3
+    },
+    {
+      "path": "src/services/formatting/formattingScanner.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/services/formatting/rule.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 1
+    },
+    {
+      "path": "src/services/formatting/rules.ts",
+      "status": "modified",
+      "additions": 40,
+      "deletions": 23
+    },
+    {
+      "path": "src/services/formatting/rulesMap.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3
+    },
+    {
+      "path": "src/services/formatting/smartIndenter.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 17
+    },
+    {
+      "path": "src/services/getEditsForFileRename.ts",
+      "status": "modified",
+      "additions": 25,
+      "deletions": 26
+    },
+    {
+      "path": "src/services/goToDefinition.ts",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 16
+    },
+    {
+      "path": "src/services/importTracker.ts",
+      "status": "modified",
+      "additions": 23,
+      "deletions": 11
+    },
+    { "path": "src/services/inlayHints.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/services/jsDoc.ts", "status": "modified", "additions": 24, "deletions": 17 },
+    {
+      "path": "src/services/navigationBar.ts",
+      "status": "modified",
+      "additions": 47,
+      "deletions": 39
+    },
+    {
+      "path": "src/services/organizeImports.ts",
+      "status": "modified",
+      "additions": 39,
+      "deletions": 30
+    },
+    {
+      "path": "src/services/patternMatcher.ts",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 14
+    },
+    { "path": "src/services/preProcess.ts", "status": "modified", "additions": 12, "deletions": 8 },
+    {
+      "path": "src/services/refactorProvider.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 3
+    },
+    {
+      "path": "src/services/refactors/addOrRemoveBracesToArrowFunction.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 7
+    },
+    {
+      "path": "src/services/refactors/convertArrowFunctionOrFunctionExpression.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 6
+    },
+    {
+      "path": "src/services/refactors/convertExport.ts",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 9
+    },
+    {
+      "path": "src/services/refactors/convertImport.ts",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 12
+    },
+    {
+      "path": "src/services/refactors/convertOverloadListToSingleSignature.ts",
+      "status": "modified",
+      "additions": 21,
+      "deletions": 16
+    },
+    {
+      "path": "src/services/refactors/convertParamsToDestructuredObject.ts",
+      "status": "modified",
+      "additions": 42,
+      "deletions": 23
+    },
+    {
+      "path": "src/services/refactors/convertStringOrTemplateLiteral.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 16
+    },
+    {
+      "path": "src/services/refactors/convertToOptionalChainExpression.ts",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 14
+    },
+    {
+      "path": "src/services/refactors/extractSymbol.ts",
+      "status": "modified",
+      "additions": 97,
+      "deletions": 82
+    },
+    {
+      "path": "src/services/refactors/extractType.ts",
+      "status": "modified",
+      "additions": 24,
+      "deletions": 14
+    },
+    {
+      "path": "src/services/refactors/generateGetAccessorAndSetAccessor.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/services/refactors/helpers.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 2
+    },
+    {
+      "path": "src/services/refactors/inferFunctionReturnType.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 4
+    },
+    {
+      "path": "src/services/refactors/inlineVariable.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 7
+    },
+    {
+      "path": "src/services/refactors/moveToFile.ts",
+      "status": "modified",
+      "additions": 70,
+      "deletions": 57
+    },
+    {
+      "path": "src/services/refactors/moveToNewFile.ts",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 7
+    },
+    { "path": "src/services/rename.ts", "status": "modified", "additions": 10, "deletions": 7 },
+    { "path": "src/services/services.ts", "status": "modified", "additions": 56, "deletions": 55 },
+    { "path": "src/services/shims.ts", "status": "modified", "additions": 93, "deletions": 86 },
+    {
+      "path": "src/services/signatureHelp.ts",
+      "status": "modified",
+      "additions": 47,
+      "deletions": 25
+    },
+    {
+      "path": "src/services/smartSelection.ts",
+      "status": "modified",
+      "additions": 25,
+      "deletions": 22
+    },
+    { "path": "src/services/sourcemaps.ts", "status": "modified", "additions": 4, "deletions": 3 },
+    {
+      "path": "src/services/stringCompletions.ts",
+      "status": "modified",
+      "additions": 71,
+      "deletions": 49
+    },
+    {
+      "path": "src/services/suggestionDiagnostics.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 12
+    },
+    {
+      "path": "src/services/symbolDisplay.ts",
+      "status": "modified",
+      "additions": 33,
+      "deletions": 27
+    },
+    {
+      "path": "src/services/textChanges.ts",
+      "status": "modified",
+      "additions": 35,
+      "deletions": 30
+    },
+    { "path": "src/services/transpile.ts", "status": "modified", "additions": 5, "deletions": 5 },
+    { "path": "src/services/types.ts", "status": "modified", "additions": 15, "deletions": 13 },
+    {
+      "path": "src/services/utilities.ts",
+      "status": "modified",
+      "additions": 140,
+      "deletions": 98
+    },
+    {
+      "path": "src/testRunner/compilerRunner.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 10
+    },
+    {
+      "path": "src/testRunner/parallel/host.ts",
+      "status": "modified",
+      "additions": 33,
+      "deletions": 23
+    },
+    {
+      "path": "src/testRunner/parallel/shared.ts",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 4
+    },
+    {
+      "path": "src/testRunner/parallel/worker.ts",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 7
+    },
+    {
+      "path": "src/testRunner/projectsRunner.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 18
+    },
+    { "path": "src/testRunner/runner.ts", "status": "modified", "additions": 6, "deletions": 7 },
+    {
+      "path": "src/testRunner/unittests/asserts.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/testRunner/unittests/builder.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 3
+    },
+    {
+      "path": "src/testRunner/unittests/canWatch.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 3
+    },
+    {
+      "path": "src/testRunner/unittests/config/commandLineParsing.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 16
+    },
+    {
+      "path": "src/testRunner/unittests/config/configurationExtension.ts",
+      "status": "modified",
+      "additions": 78,
+      "deletions": 74
+    },
+    {
+      "path": "src/testRunner/unittests/config/convertCompilerOptionsFromJson.ts",
+      "status": "modified",
+      "additions": 83,
+      "deletions": 60
+    },
+    {
+      "path": "src/testRunner/unittests/config/convertTypeAcquisitionFromJson.ts",
+      "status": "modified",
+      "additions": 50,
+      "deletions": 64
+    },
+    {
+      "path": "src/testRunner/unittests/config/helpers.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "src/testRunner/unittests/config/matchFiles.ts",
+      "status": "modified",
+      "additions": 854,
+      "deletions": 509
+    },
+    {
+      "path": "src/testRunner/unittests/config/showConfig.ts",
+      "status": "modified",
+      "additions": 19,
+      "deletions": 17
+    },
+    {
+      "path": "src/testRunner/unittests/config/tsconfigParsing.ts",
+      "status": "modified",
+      "additions": 57,
+      "deletions": 53
+    },
+    {
+      "path": "src/testRunner/unittests/config/tsconfigParsingWatchOptions.ts",
+      "status": "modified",
+      "additions": 45,
+      "deletions": 41
+    },
+    {
+      "path": "src/testRunner/unittests/customTransforms.ts",
+      "status": "modified",
+      "additions": 54,
+      "deletions": 56
+    },
+    {
+      "path": "src/testRunner/unittests/debugDeprecation.ts",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 12
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/arraySpread.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/asyncGenerator.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 7
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/autoAccessors.ts",
+      "status": "modified",
+      "additions": 32,
+      "deletions": 14
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/awaitUsingDeclarations.ts",
+      "status": "modified",
+      "additions": 234,
+      "deletions": 112
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/destructuring.ts",
+      "status": "modified",
+      "additions": 35,
+      "deletions": 14
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/esDecorators.ts",
+      "status": "modified",
+      "additions": 20,
+      "deletions": 16
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/esDecoratorsMetadata.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 1
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/externalModules.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 5
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/forAwaitOf.ts",
+      "status": "modified",
+      "additions": 55,
+      "deletions": 22
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/forOf.ts",
+      "status": "modified",
+      "additions": 36,
+      "deletions": 17
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/generator.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 4
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/superInStaticInitializer.ts",
+      "status": "modified",
+      "additions": 41,
+      "deletions": 17
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/updateExpressionInModule.ts",
+      "status": "modified",
+      "additions": 53,
+      "deletions": 37
+    },
+    {
+      "path": "src/testRunner/unittests/evaluation/usingDeclarations.ts",
+      "status": "modified",
+      "additions": 245,
+      "deletions": 118
+    },
+    {
+      "path": "src/testRunner/unittests/factory.ts",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 1
+    },
+    {
+      "path": "src/testRunner/unittests/helpers.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 6
+    },
+    {
+      "path": "src/testRunner/unittests/helpers/baseline.ts",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 15
+    },
+    {
+      "path": "src/testRunner/unittests/helpers/contents.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 2
+    },
+    {
+      "path": "src/testRunner/unittests/helpers/extends.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 3
+    },
+    {
+      "path": "src/testRunner/unittests/helpers/libraryResolution.ts",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 8
+    },
+    {
+      "path": "src/testRunner/unittests/helpers/node10Result.ts",
+      "status": "modified",
+      "additions": 43,
+      "deletions": 29
+    },
+    {
+      "path": "src/testRunner/unittests/helpers/solutionBuilder.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 11
+    },
+    {
+      "path": "src/testRunner/unittests/helpers/tsc.ts",
+      "status": "modified",
+      "additions": 68,
+      "deletions": 44
+    },
+    {
+      "path": "src/testRunner/unittests/helpers/tscWatch.ts",
+      "status": "modified",
+      "additions": 32,
+      "deletions": 23
+    },
+    {
+      "path": "src/testRunner/unittests/helpers/tsserver.ts",
+      "status": "modified",
+      "additions": 57,
+      "deletions": 46
+    },
+    {
+      "path": "src/testRunner/unittests/helpers/vfs.ts",
+      "status": "modified",
+      "additions": 38,
+      "deletions": 14
+    },
+    {
+      "path": "src/testRunner/unittests/helpers/virtualFileSystemWithWatch.ts",
+      "status": "modified",
+      "additions": 32,
+      "deletions": 21
+    },
+    {
+      "path": "src/testRunner/unittests/incrementalParser.ts",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 20
+    },
+    {
+      "path": "src/testRunner/unittests/jsDocParsing.ts",
+      "status": "modified",
+      "additions": 190,
+      "deletions": 117
+    },
+    {
+      "path": "src/testRunner/unittests/jsonParserRecovery.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 4
+    },
+    {
+      "path": "src/testRunner/unittests/moduleResolution.ts",
+      "status": "modified",
+      "additions": 84,
+      "deletions": 67
+    },
+    {
+      "path": "src/testRunner/unittests/parsePseudoBigInt.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 5
+    },
+    {
+      "path": "src/testRunner/unittests/paths.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 4
+    },
+    {
+      "path": "src/testRunner/unittests/printer.ts",
+      "status": "modified",
+      "additions": 219,
+      "deletions": 185
+    },
+    {
+      "path": "src/testRunner/unittests/programApi.ts",
+      "status": "modified",
+      "additions": 23,
+      "deletions": 15
+    },
+    {
+      "path": "src/testRunner/unittests/publicApi.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 9
+    },
+    {
+      "path": "src/testRunner/unittests/reuseProgramStructure.ts",
+      "status": "modified",
+      "additions": 54,
+      "deletions": 47
+    },
+    {
+      "path": "src/testRunner/unittests/services/cancellableLanguageServiceOperations.ts",
+      "status": "modified",
+      "additions": 23,
+      "deletions": 15
+    },
+    {
+      "path": "src/testRunner/unittests/services/colorization.ts",
+      "status": "modified",
+      "additions": 52,
+      "deletions": 231
+    },
+    {
+      "path": "src/testRunner/unittests/services/convertToAsyncFunction.ts",
+      "status": "modified",
+      "additions": 692,
+      "deletions": 321
+    },
+    {
+      "path": "src/testRunner/unittests/services/documentRegistry.ts",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 1
+    },
+    {
+      "path": "src/testRunner/unittests/services/extract/constants.ts",
+      "status": "modified",
+      "additions": 186,
+      "deletions": 94
+    },
+    {
+      "path": "src/testRunner/unittests/services/extract/functions.ts",
+      "status": "modified",
+      "additions": 277,
+      "deletions": 123
+    },
+    {
+      "path": "src/testRunner/unittests/services/extract/helpers.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 8
+    },
+    {
+      "path": "src/testRunner/unittests/services/extract/ranges.ts",
+      "status": "modified",
+      "additions": 169,
+      "deletions": 86
+    },
+    {
+      "path": "src/testRunner/unittests/services/extract/symbolWalker.ts",
+      "status": "modified",
+      "additions": 36,
+      "deletions": 26
+    },
+    {
+      "path": "src/testRunner/unittests/services/hostNewLineSupport.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 6
+    },
+    {
+      "path": "src/testRunner/unittests/services/languageService.ts",
+      "status": "modified",
+      "additions": 31,
+      "deletions": 29
+    },
+    {
+      "path": "src/testRunner/unittests/services/organizeImports.ts",
+      "status": "modified",
+      "additions": 288,
+      "deletions": 339
+    },
+    {
+      "path": "src/testRunner/unittests/services/preProcessFile.ts",
+      "status": "modified",
+      "additions": 566,
+      "deletions": 567
+    },
+    {
+      "path": "src/testRunner/unittests/services/textChanges.ts",
+      "status": "modified",
+      "additions": 37,
+      "deletions": 31
+    },
+    {
+      "path": "src/testRunner/unittests/services/transpile.ts",
+      "status": "modified",
+      "additions": 268,
+      "deletions": 238
+    },
+    {
+      "path": "src/testRunner/unittests/services/utilities.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 2
+    },
+    {
+      "path": "src/testRunner/unittests/transform.ts",
+      "status": "modified",
+      "additions": 231,
+      "deletions": 177
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/amdModulesWithOut.ts",
+      "status": "modified",
+      "additions": 21,
+      "deletions": 12
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/clean.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 8
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/commandLine.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 7
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/configFileErrors.ts",
+      "status": "modified",
+      "additions": 30,
+      "deletions": 19
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/configFileExtends.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 9
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/containerOnlyReferenced.ts",
+      "status": "modified",
+      "additions": 24,
+      "deletions": 22
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/declarationEmit.ts",
+      "status": "modified",
+      "additions": 43,
+      "deletions": 39
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/demo.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 15
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/emitDeclarationOnly.ts",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 4
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/emptyFiles.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 1
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/exitCodeOnBogusFile.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 2
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/extends.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 3
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/fileDelete.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 7
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/graphOrdering.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 6
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/inferredTypeFromTransitiveModule.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 9
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/javascriptProjectEmit.ts",
+      "status": "modified",
+      "additions": 42,
+      "deletions": 37
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/lateBoundSymbol.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/libraryResolution.ts",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 2
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/moduleResolution.ts",
+      "status": "modified",
+      "additions": 51,
+      "deletions": 45
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/moduleSpecifiers.ts",
+      "status": "modified",
+      "additions": 39,
+      "deletions": 31
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/noEmit.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 8
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/noEmitOnError.ts",
+      "status": "modified",
+      "additions": 45,
+      "deletions": 13
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/outFile.ts",
+      "status": "modified",
+      "additions": 112,
+      "deletions": 74
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/outputPaths.ts",
+      "status": "modified",
+      "additions": 58,
+      "deletions": 51
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/publicApi.ts",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 7
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/referencesWithRootDirInParent.ts",
+      "status": "modified",
+      "additions": 27,
+      "deletions": 15
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/resolveJsonModule.ts",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 6
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/roots.ts",
+      "status": "modified",
+      "additions": 54,
+      "deletions": 46
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/sample.ts",
+      "status": "modified",
+      "additions": 155,
+      "deletions": 81
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuild/transitiveReferences.ts",
+      "status": "modified",
+      "additions": 19,
+      "deletions": 11
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuildWatch/configFileErrors.ts",
+      "status": "modified",
+      "additions": 38,
+      "deletions": 24
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuildWatch/demo.ts",
+      "status": "modified",
+      "additions": 30,
+      "deletions": 16
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuildWatch/libraryResolution.ts",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 2
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuildWatch/moduleResolution.ts",
+      "status": "modified",
+      "additions": 167,
+      "deletions": 160
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuildWatch/noEmit.ts",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 13
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuildWatch/noEmitOnError.ts",
+      "status": "modified",
+      "additions": 29,
+      "deletions": 17
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuildWatch/programUpdates.ts",
+      "status": "modified",
+      "additions": 244,
+      "deletions": 170
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuildWatch/projectsBuilding.ts",
+      "status": "modified",
+      "additions": 39,
+      "deletions": 35
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuildWatch/publicApi.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 13
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuildWatch/reexport.ts",
+      "status": "modified",
+      "additions": 25,
+      "deletions": 17
+    },
+    {
+      "path": "src/testRunner/unittests/tsbuildWatch/watchEnvironment.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 14
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/cancellationToken.ts",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 16
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/composite.ts",
+      "status": "modified",
+      "additions": 32,
+      "deletions": 27
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/declarationEmit.ts",
+      "status": "modified",
+      "additions": 31,
+      "deletions": 28
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/extends.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 3
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/forceConsistentCasingInFileNames.ts",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 6
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/incremental.ts",
+      "status": "modified",
+      "additions": 221,
+      "deletions": 178
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/libraryResolution.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 3
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/listFilesOnly.ts",
+      "status": "modified",
+      "additions": 20,
+      "deletions": 15
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/moduleResolution.ts",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 5
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/projectReferences.ts",
+      "status": "modified",
+      "additions": 31,
+      "deletions": 27
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/projectReferencesConfig.ts",
+      "status": "modified",
+      "additions": 158,
+      "deletions": 137
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/redirect.ts",
+      "status": "modified",
+      "additions": 28,
+      "deletions": 25
+    },
+    {
+      "path": "src/testRunner/unittests/tsc/runWithoutArgs.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 4
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/consoleClearing.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 4
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/emit.ts",
+      "status": "modified",
+      "additions": 95,
+      "deletions": 91
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/emitAndErrorUpdates.ts",
+      "status": "modified",
+      "additions": 88,
+      "deletions": 70
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/extends.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 3
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/forceConsistentCasingInFileNames.ts",
+      "status": "modified",
+      "additions": 140,
+      "deletions": 123
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/incremental.ts",
+      "status": "modified",
+      "additions": 51,
+      "deletions": 42
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/libraryResolution.ts",
+      "status": "modified",
+      "additions": 35,
+      "deletions": 25
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/moduleResolution.ts",
+      "status": "modified",
+      "additions": 259,
+      "deletions": 227
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/nodeNextWatch.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 14
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/programUpdates.ts",
+      "status": "modified",
+      "additions": 443,
+      "deletions": 352
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/projectsWithReferences.ts",
+      "status": "modified",
+      "additions": 228,
+      "deletions": 213
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/resolutionCache.ts",
+      "status": "modified",
+      "additions": 141,
+      "deletions": 123
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/resolveJsonModuleWithIncremental.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 9
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/sourceOfProjectReferenceRedirect.ts",
+      "status": "modified",
+      "additions": 33,
+      "deletions": 21
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/watchApi.ts",
+      "status": "modified",
+      "additions": 95,
+      "deletions": 76
+    },
+    {
+      "path": "src/testRunner/unittests/tscWatch/watchEnvironment.ts",
+      "status": "modified",
+      "additions": 130,
+      "deletions": 122
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/applyChangesToOpenFiles.ts",
+      "status": "modified",
+      "additions": 32,
+      "deletions": 32
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/autoImportProvider.ts",
+      "status": "modified",
+      "additions": 31,
+      "deletions": 28
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/auxiliaryProject.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/cachingFileSystemInformation.ts",
+      "status": "modified",
+      "additions": 71,
+      "deletions": 55
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/cancellationToken.ts",
+      "status": "modified",
+      "additions": 27,
+      "deletions": 25
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/compileOnSave.ts",
+      "status": "modified",
+      "additions": 141,
+      "deletions": 141
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/completions.ts",
+      "status": "modified",
+      "additions": 22,
+      "deletions": 20
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/completionsIncomplete.ts",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 12
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/configFileSearch.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 10
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/configuredProjects.ts",
+      "status": "modified",
+      "additions": 171,
+      "deletions": 158
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/declarationFileMaps.ts",
+      "status": "modified",
+      "additions": 32,
+      "deletions": 30
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/documentRegistry.ts",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 10
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/duplicatePackages.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/dynamicFiles.ts",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 15
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/events/largeFileReferenced.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 4
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/events/projectLanguageServiceState.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 9
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/events/projectLoading.ts",
+      "status": "modified",
+      "additions": 25,
+      "deletions": 24
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/events/projectUpdatedInBackground.ts",
+      "status": "modified",
+      "additions": 47,
+      "deletions": 39
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/exportMapCache.ts",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 16
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/extends.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 2
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/externalProjects.ts",
+      "status": "modified",
+      "additions": 95,
+      "deletions": 95
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/findAllReferences.ts",
+      "status": "modified",
+      "additions": 37,
+      "deletions": 33
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/forceConsistentCasingInFileNames.ts",
+      "status": "modified",
+      "additions": 20,
+      "deletions": 20
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/formatSettings.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 6
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/getApplicableRefactors.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/getEditsForFileRename.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/getFileReferences.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 4
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/getMoveToRefactoringFileSuggestions.ts",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 14
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/goToDefinition.ts",
+      "status": "modified",
+      "additions": 28,
+      "deletions": 25
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/importHelpers.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 3
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/inconsistentErrorInEditor.ts",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 12
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/inferredProjects.ts",
+      "status": "modified",
+      "additions": 33,
+      "deletions": 33
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/inlayHints.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 11
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/jsdocTag.ts",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 18
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/languageService.ts",
+      "status": "modified",
+      "additions": 19,
+      "deletions": 12
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/libraryResolution.ts",
+      "status": "modified",
+      "additions": 51,
+      "deletions": 37
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/maxNodeModuleJsDepth.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 4
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/metadataInResponse.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 8
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/moduleResolution.ts",
+      "status": "modified",
+      "additions": 34,
+      "deletions": 15
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/moduleSpecifierCache.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 7
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/navTo.ts",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 18
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/occurences.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 4
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/openFile.ts",
+      "status": "modified",
+      "additions": 24,
+      "deletions": 24
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/packageJsonInfo.ts",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 12
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/partialSemanticServer.ts",
+      "status": "modified",
+      "additions": 20,
+      "deletions": 20
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/plugins.ts",
+      "status": "modified",
+      "additions": 39,
+      "deletions": 36
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/pluginsAsync.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 10
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/projectErrors.ts",
+      "status": "modified",
+      "additions": 93,
+      "deletions": 93
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/projectReferenceCompileOnSave.ts",
+      "status": "modified",
+      "additions": 251,
+      "deletions": 249
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/projectReferenceErrors.ts",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 14
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/projectReferences.ts",
+      "status": "modified",
+      "additions": 280,
+      "deletions": 243
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/projectReferencesSourcemap.ts",
+      "status": "modified",
+      "additions": 275,
+      "deletions": 240
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/projects.ts",
+      "status": "modified",
+      "additions": 201,
+      "deletions": 195
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/projectsWithReferences.ts",
+      "status": "modified",
+      "additions": 19,
+      "deletions": 16
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/refactors.ts",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 13
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/reload.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 10
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/reloadProjects.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 17
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/rename.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 17
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/resolutionCache.ts",
+      "status": "modified",
+      "additions": 63,
+      "deletions": 62
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/session.ts",
+      "status": "modified",
+      "additions": 73,
+      "deletions": 56
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/skipLibCheck.ts",
+      "status": "modified",
+      "additions": 32,
+      "deletions": 30
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/smartSelection.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 6
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/symLinks.ts",
+      "status": "modified",
+      "additions": 31,
+      "deletions": 27
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/symlinkCache.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 8
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/syntacticServer.ts",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 15
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/syntaxOperations.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 7
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/telemetry.ts",
+      "status": "modified",
+      "additions": 19,
+      "deletions": 16
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/textStorage.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 8
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/typeAquisition.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 8
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/typeOnlyImportChains.ts",
+      "status": "modified",
+      "additions": 28,
+      "deletions": 28
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/typeReferenceDirectives.ts",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 12
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/typingsInstaller.ts",
+      "status": "modified",
+      "additions": 753,
+      "deletions": 265
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/versionCache.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src/testRunner/unittests/tsserver/watchEnvironment.ts",
+      "status": "modified",
+      "additions": 61,
+      "deletions": 61
+    },
+    {
+      "path": "src/testRunner/unittests/typeParameterIsPossiblyReferenced.ts",
+      "status": "modified",
+      "additions": 28,
+      "deletions": 28
+    },
+    { "path": "src/tsc/tsc.ts", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "src/tsserver/common.ts", "status": "modified", "additions": 3, "deletions": 1 },
+    {
+      "path": "src/tsserver/nodeServer.ts",
+      "status": "modified",
+      "additions": 19,
+      "deletions": 17
+    },
+    { "path": "src/tsserver/server.ts", "status": "modified", "additions": 2, "deletions": 4 },
+    {
+      "path": "src/typescript/typescript.ts",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 5
+    },
+    {
+      "path": "src/typingsInstaller/nodeTypingsInstaller.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 3
+    },
+    {
+      "path": "src/typingsInstallerCore/typingsInstaller.ts",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 8
+    },
+    {
+      "path": "tests/baselines/reference/api/typescript.d.ts",
+      "status": "modified",
+      "additions": 339,
+      "deletions": 117
+    },
+    {
+      "path": "tests/baselines/reference/goToTypeDefinition_arrayType.baseline.jsonc",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    }
+  ],
+  "threads": [
+    {
+      "path": ".vscode/settings.template.json",
+      "side": "right",
+      "line": 8,
+      "outdated": true,
+      "comments": [62, 141]
+    },
+    {
+      "path": "src/compiler/parser.ts",
+      "side": "right",
+      "line": 500,
+      "outdated": true,
+      "comments": [67]
+    },
+    {
+      "path": "src/compiler/parser.ts",
+      "side": "right",
+      "line": 6531,
+      "outdated": true,
+      "comments": [168, 21]
+    },
+    {
+      "path": "src/compiler/parser.ts",
+      "side": "right",
+      "line": 7636,
+      "outdated": true,
+      "comments": [150, 237]
+    },
+    {
+      "path": "src/compiler/parser.ts",
+      "side": "right",
+      "line": 7839,
+      "outdated": true,
+      "comments": [170]
+    },
+    {
+      "path": "src/compiler/parser.ts",
+      "side": "right",
+      "line": 8636,
+      "outdated": true,
+      "comments": [45]
+    },
+    {
+      "path": "src/compiler/parser.ts",
+      "side": "right",
+      "line": 8819,
+      "outdated": true,
+      "comments": [69, 380, 145, 120]
+    },
+    {
+      "path": "src/compiler/builderState.ts",
+      "side": "right",
+      "line": 39,
+      "outdated": true,
+      "comments": [88, 254, 69]
+    },
+    {
+      "path": "src/compiler/builderState.ts",
+      "side": "right",
+      "line": 505,
+      "comments": [29, 161, 123, 70]
+    },
+    {
+      "path": "src/compiler/commandLineParser.ts",
+      "side": "right",
+      "line": 3131,
+      "comments": [103, 136, 91]
+    },
+    {
+      "path": "src/compiler/checker.ts",
+      "side": "right",
+      "line": 2378,
+      "outdated": true,
+      "comments": [121]
+    },
+    { "path": "src/compiler/checker.ts", "side": "left", "line": 1143, "comments": [115] },
+    {
+      "path": "src/compiler/binder.ts",
+      "side": "right",
+      "line": 1001,
+      "outdated": true,
+      "comments": [42]
+    },
+    {
+      "path": "src/compiler/binder.ts",
+      "side": "right",
+      "line": 2301,
+      "outdated": true,
+      "comments": [378, 366]
+    },
+    { "path": "src/compiler/binder.ts", "side": "right", "line": 3715, "comments": [134] },
+    {
+      "path": "src/compiler/builder.ts",
+      "side": "right",
+      "line": 703,
+      "comments": [59, 88, 58, 93]
+    },
+    { "path": "src/compiler/builder.ts", "side": "right", "line": 867, "comments": [21] },
+    { "path": "src/compiler/builder.ts", "side": "right", "line": 1900, "comments": [42] },
+    { "path": "src/compiler/core.ts", "side": "right", "line": 355, "comments": [83] },
+    { "path": "src/compiler/corePublic.ts", "side": "right", "line": 57, "comments": [177] },
+    {
+      "path": "src/compiler/checker.ts",
+      "side": "right",
+      "line": 6322,
+      "outdated": true,
+      "comments": [148]
+    },
+    {
+      "path": "src/compiler/visitorPublic.ts",
+      "side": "right",
+      "line": 623,
+      "outdated": true,
+      "comments": [197]
+    },
+    {
+      "path": "src/compiler/transformer.ts",
+      "side": "right",
+      "line": 75,
+      "outdated": true,
+      "comments": [109]
+    },
+    {
+      "path": "src/compiler/factory/nodeFactory.ts",
+      "side": "right",
+      "line": 7172,
+      "comments": [95]
+    },
+    {
+      "path": "src/compiler/program.ts",
+      "side": "right",
+      "line": 4330,
+      "outdated": true,
+      "comments": [114, 134]
+    },
+    {
+      "path": "src/compiler/resolutionCache.ts",
+      "side": "right",
+      "line": 236,
+      "outdated": true,
+      "comments": [173]
+    },
+    {
+      "path": "scripts/eslint/rules/no-double-space.cjs",
+      "side": "right",
+      "line": 24,
+      "outdated": true,
+      "comments": [119, 164, 200]
+    },
+    { "path": "dprint.json", "side": "right", "outdated": true, "comments": [225] },
+    {
+      "path": "scripts/dtsBundler.mjs",
+      "side": "right",
+      "line": 420,
+      "outdated": true,
+      "comments": [337, 32, 90, 118, 21, 260, 37]
+    },
+    { "path": "package.json", "side": "right", "line": 64, "outdated": true, "comments": [270] },
+    { "path": "src/compiler/builder.ts", "side": "right", "line": 181, "comments": [41] },
+    {
+      "path": "src/compiler/moduleSpecifiers.ts",
+      "side": "right",
+      "line": 708,
+      "outdated": true,
+      "comments": [93]
+    },
+    {
+      "path": "src/compiler/moduleSpecifiers.ts",
+      "side": "right",
+      "line": 711,
+      "outdated": true,
+      "comments": [192]
+    },
+    {
+      "path": "src/compiler/semver.ts",
+      "side": "right",
+      "line": 327,
+      "outdated": true,
+      "comments": [221, 1687]
+    },
+    {
+      "path": "src/compiler/watchPublic.ts",
+      "side": "right",
+      "line": 427,
+      "outdated": true,
+      "comments": [28]
+    },
+    {
+      "path": ".dprint.jsonc",
+      "side": "right",
+      "line": 50,
+      "outdated": true,
+      "comments": [474, 43, 212, 101]
+    },
+    {
+      "path": "tests/baselines/reference/goToTypeDefinition_arrayType.baseline.jsonc",
+      "side": "right",
+      "line": 201,
+      "outdated": true,
+      "comments": [127]
+    },
+    {
+      "path": "src/compiler/moduleNameResolver.ts",
+      "side": "right",
+      "line": 2235,
+      "outdated": true,
+      "comments": [179]
+    },
+    { "path": "src/compiler/builder.ts", "side": "right", "line": 1070, "comments": [69, 178] },
+    {
+      "path": "src/compiler/resolutionCache.ts",
+      "side": "right",
+      "line": 789,
+      "outdated": true,
+      "comments": [55, 1266, 2797, 134, 173, 2477]
+    },
+    {
+      "path": ".vscode/settings.template.json",
+      "side": "right",
+      "line": 7,
+      "comments": [37, 90, 120, 12, 83]
+    }
+  ]
+}

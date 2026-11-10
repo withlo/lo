@@ -1,0 +1,4425 @@
+{
+  "repo": "kubernetes/kubernetes",
+  "number": 125488,
+  "base": "815efa2baae6457c6a7643a48f385d1fd29ccbb8",
+  "head": "d11b58efe651d5d20851bc1c34f65ceae291080a",
+  "files": [
+    {
+      "path": "api/api-rules/violation_exceptions.list",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 7
+    },
+    {
+      "path": "api/discovery/aggregated_v2.json",
+      "status": "modified",
+      "additions": 21,
+      "deletions": 61
+    },
+    {
+      "path": "api/discovery/aggregated_v2beta1.json",
+      "status": "modified",
+      "additions": 21,
+      "deletions": 61
+    },
+    { "path": "api/discovery/apis.json", "status": "modified", "additions": 4, "deletions": 4 },
+    {
+      "path": "api/discovery/apis__resource.k8s.io.json",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 4
+    },
+    {
+      "path": "api/discovery/apis__resource.k8s.io__v1alpha3.json",
+      "previousPath": "api/discovery/apis__resource.k8s.io__v1alpha2.json",
+      "status": "renamed",
+      "additions": 22,
+      "deletions": 56
+    },
+    {
+      "path": "api/openapi-spec/swagger.json",
+      "status": "modified",
+      "additions": 912,
+      "deletions": 2641
+    },
+    {
+      "path": "api/openapi-spec/v3/api__v1_openapi.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__admissionregistration.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__admissionregistration.k8s.io__v1alpha1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__admissionregistration.k8s.io__v1beta1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__apiextensions.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__apiregistration.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__apps__v1_openapi.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__autoscaling__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__autoscaling__v2_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__batch__v1_openapi.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__certificates.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__certificates.k8s.io__v1alpha1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__coordination.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__discovery.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__events.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__flowcontrol.apiserver.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__flowcontrol.apiserver.k8s.io__v1beta3_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__internal.apiserver.k8s.io__v1alpha1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__networking.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__networking.k8s.io__v1beta1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__node.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__policy__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__rbac.authorization.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__resource.k8s.io__v1alpha3_openapi.json",
+      "previousPath": "api/openapi-spec/v3/apis__resource.k8s.io__v1alpha2_openapi.json",
+      "status": "renamed",
+      "additions": 2220,
+      "deletions": 5328
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__scheduling.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__storage.k8s.io__v1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__storage.k8s.io__v1alpha1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "api/openapi-spec/v3/apis__storagemigration.k8s.io__v1alpha1_openapi.json",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 7
+    },
+    {
+      "path": "cmd/kube-controller-manager/app/core.go",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3
+    },
+    { "path": "hack/lib/init.sh", "status": "modified", "additions": 1, "deletions": 1 },
+    { "path": "hack/update-codegen.sh", "status": "modified", "additions": 1, "deletions": 1 },
+    {
+      "path": "pkg/api/testing/defaulting_test.go",
+      "status": "modified",
+      "additions": 66,
+      "deletions": 52
+    },
+    { "path": "pkg/apis/core/types.go", "status": "modified", "additions": 7, "deletions": 0 },
+    {
+      "path": "pkg/apis/core/v1/zz_generated.conversion.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 0
+    },
+    {
+      "path": "pkg/apis/core/validation/validation.go",
+      "status": "modified",
+      "additions": 27,
+      "deletions": 1
+    },
+    {
+      "path": "pkg/apis/core/validation/validation_test.go",
+      "status": "modified",
+      "additions": 50,
+      "deletions": 0
+    },
+    {
+      "path": "pkg/apis/resource/fuzzer/fuzzer.go",
+      "status": "modified",
+      "additions": 29,
+      "deletions": 9
+    },
+    {
+      "path": "pkg/apis/resource/install/install.go",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3
+    },
+    {
+      "path": "pkg/apis/resource/install/install_test.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "pkg/apis/resource/namedresources.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 112
+    },
+    {
+      "path": "pkg/apis/resource/register.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 6
+    },
+    {
+      "path": "pkg/apis/resource/structured/namedresources/validation/validation.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 178
+    },
+    {
+      "path": "pkg/apis/resource/structured/namedresources/validation/validation_test.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 188
+    },
+    {
+      "path": "pkg/apis/resource/types.go",
+      "status": "modified",
+      "additions": 755,
+      "deletions": 373
+    },
+    {
+      "path": "pkg/apis/resource/v1alpha2/zz_generated.conversion.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 1749
+    },
+    {
+      "path": "pkg/apis/resource/v1alpha3/conversion.go",
+      "previousPath": "pkg/apis/resource/v1alpha2/conversion.go",
+      "status": "renamed",
+      "additions": 3,
+      "deletions": 2
+    },
+    {
+      "path": "pkg/apis/resource/v1alpha3/defaults.go",
+      "previousPath": "pkg/apis/resource/v1alpha2/defaults.go",
+      "status": "renamed",
+      "additions": 8,
+      "deletions": 4
+    },
+    {
+      "path": "pkg/apis/resource/v1alpha3/defaults_test.go",
+      "previousPath": "pkg/apis/resource/v1alpha2/defaults_test.go",
+      "status": "renamed",
+      "additions": 31,
+      "deletions": 20
+    },
+    {
+      "path": "pkg/apis/resource/v1alpha3/doc.go",
+      "previousPath": "pkg/apis/resource/v1alpha2/doc.go",
+      "status": "renamed",
+      "additions": 4,
+      "deletions": 4
+    },
+    {
+      "path": "pkg/apis/resource/v1alpha3/register.go",
+      "previousPath": "pkg/apis/resource/v1alpha2/register.go",
+      "status": "renamed",
+      "additions": 4,
+      "deletions": 4
+    },
+    {
+      "path": "pkg/apis/resource/v1alpha3/zz_generated.conversion.go",
+      "status": "added",
+      "additions": 1287,
+      "deletions": 0
+    },
+    {
+      "path": "pkg/apis/resource/v1alpha3/zz_generated.defaults.go",
+      "previousPath": "pkg/apis/resource/v1alpha2/zz_generated.defaults.go",
+      "status": "renamed",
+      "additions": 19,
+      "deletions": 13
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "status": "modified",
+      "additions": 490,
+      "deletions": 336
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation_deviceclass_test.go",
+      "status": "added",
+      "additions": 247,
+      "deletions": 0
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation_resourceclaim_test.go",
+      "status": "modified",
+      "additions": 196,
+      "deletions": 318
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation_resourceclaimparameters_test.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 306
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation_resourceclaimtemplate_test.go",
+      "status": "modified",
+      "additions": 26,
+      "deletions": 131
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation_resourceclass_test.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 301
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation_resourceclassparameters_test.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 313
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation_resourceslice_test.go",
+      "status": "modified",
+      "additions": 33,
+      "deletions": 20
+    },
+    {
+      "path": "pkg/apis/resource/zz_generated.deepcopy.go",
+      "status": "modified",
+      "additions": 298,
+      "deletions": 509
+    },
+    {
+      "path": "pkg/controller/resourceclaim/controller.go",
+      "status": "modified",
+      "additions": 37,
+      "deletions": 44
+    },
+    {
+      "path": "pkg/controller/resourceclaim/controller_test.go",
+      "status": "modified",
+      "additions": 88,
+      "deletions": 165
+    },
+    {
+      "path": "pkg/controlplane/apiserver/aggregator.go",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "pkg/controlplane/apiserver/options/validation.go",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 0
+    },
+    {
+      "path": "pkg/controlplane/instance.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "pkg/features/kube_features.go",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 1
+    },
+    {
+      "path": "pkg/generated/openapi/zz_generated.openapi.go",
+      "status": "modified",
+      "additions": 605,
+      "deletions": 899
+    },
+    {
+      "path": "pkg/kubeapiserver/authorizer/config.go",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3
+    },
+    {
+      "path": "pkg/kubectl/.import-restrictions",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "pkg/kubelet/apis/podresources/server_v1_test.go",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 3
+    },
+    {
+      "path": "pkg/kubelet/cm/container_manager_linux.go",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 13
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/claiminfo.go",
+      "status": "modified",
+      "additions": 41,
+      "deletions": 70
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/claiminfo_test.go",
+      "status": "modified",
+      "additions": 129,
+      "deletions": 257
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/manager.go",
+      "status": "modified",
+      "additions": 59,
+      "deletions": 87
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/manager_test.go",
+      "status": "modified",
+      "additions": 391,
+      "deletions": 987
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/plugin/client.go",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 5
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/plugin/client_test.go",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 5
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/plugin/plugin.go",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 7
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/state/checkpoint.go",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 59
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/state/state_checkpoint.go",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 36
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/state/state_checkpoint_test.go",
+      "status": "modified",
+      "additions": 117,
+      "deletions": 121
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/state/zz_generated.deepcopy.go",
+      "status": "modified",
+      "additions": 53,
+      "deletions": 20
+    },
+    { "path": "pkg/kubelet/cm/dra/types.go", "status": "modified", "additions": 0, "deletions": 2 },
+    {
+      "path": "pkg/kubelet/cm/dra/zz_generated.deepcopy.go",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 19
+    },
+    {
+      "path": "pkg/kubelet/container/runtime.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 1
+    },
+    {
+      "path": "pkg/printers/internalversion/printers.go",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 88
+    },
+    {
+      "path": "pkg/registry/resource/deviceclass/storage/storage.go",
+      "previousPath": "pkg/registry/resource/resourceclass/storage/storage.go",
+      "status": "renamed",
+      "additions": 11,
+      "deletions": 11
+    },
+    {
+      "path": "pkg/registry/resource/deviceclass/storage/storage_test.go",
+      "previousPath": "pkg/registry/resource/resourceclass/storage/storage_test.go",
+      "status": "renamed",
+      "additions": 21,
+      "deletions": 14
+    },
+    {
+      "path": "pkg/registry/resource/deviceclass/strategy.go",
+      "status": "added",
+      "additions": 109,
+      "deletions": 0
+    },
+    {
+      "path": "pkg/registry/resource/deviceclass/strategy_test.go",
+      "status": "added",
+      "additions": 197,
+      "deletions": 0
+    },
+    {
+      "path": "pkg/registry/resource/podschedulingcontext/strategy.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "pkg/registry/resource/resourceclaim/storage/storage_test.go",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 6
+    },
+    {
+      "path": "pkg/registry/resource/resourceclaim/strategy.go",
+      "status": "modified",
+      "additions": 47,
+      "deletions": 6
+    },
+    {
+      "path": "pkg/registry/resource/resourceclaim/strategy_test.go",
+      "status": "modified",
+      "additions": 268,
+      "deletions": 37
+    },
+    {
+      "path": "pkg/registry/resource/resourceclaimparameters/storage/storage.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 57
+    },
+    {
+      "path": "pkg/registry/resource/resourceclaimparameters/storage/storage_test.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 145
+    },
+    {
+      "path": "pkg/registry/resource/resourceclaimparameters/strategy.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 103
+    },
+    {
+      "path": "pkg/registry/resource/resourceclaimparameters/strategy_test.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 81
+    },
+    {
+      "path": "pkg/registry/resource/resourceclaimtemplate/storage/storage_test.go",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 7
+    },
+    {
+      "path": "pkg/registry/resource/resourceclaimtemplate/strategy.go",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3
+    },
+    {
+      "path": "pkg/registry/resource/resourceclaimtemplate/strategy_test.go",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 6
+    },
+    {
+      "path": "pkg/registry/resource/resourceclass/strategy.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 75
+    },
+    {
+      "path": "pkg/registry/resource/resourceclass/strategy_test.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 81
+    },
+    {
+      "path": "pkg/registry/resource/resourceclassparameters/storage/storage.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 57
+    },
+    {
+      "path": "pkg/registry/resource/resourceclassparameters/storage/storage_test.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 145
+    },
+    {
+      "path": "pkg/registry/resource/resourceclassparameters/strategy.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 103
+    },
+    {
+      "path": "pkg/registry/resource/resourceclassparameters/strategy_test.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 81
+    },
+    {
+      "path": "pkg/registry/resource/resourceslice/storage/storage_test.go",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 5
+    },
+    {
+      "path": "pkg/registry/resource/resourceslice/strategy.go",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 7
+    },
+    {
+      "path": "pkg/registry/resource/resourceslice/strategy_test.go",
+      "status": "modified",
+      "additions": 19,
+      "deletions": 16
+    },
+    {
+      "path": "pkg/registry/resource/rest/storage_resource.go",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 30
+    },
+    {
+      "path": "pkg/scheduler/eventhandlers.go",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 22
+    },
+    {
+      "path": "pkg/scheduler/eventhandlers_test.go",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 20
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/dynamicresources.go",
+      "status": "modified",
+      "additions": 273,
+      "deletions": 524
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/dynamicresources_test.go",
+      "status": "modified",
+      "additions": 343,
+      "deletions": 605
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/structured/namedresources/namedresourcesmodel.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 153
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/structured/namedresources/namedresourcesmodel_test.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 327
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/structuredparameters.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 248
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/structuredparameters_test.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 1257
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/feature/feature.go",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 0
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/registry.go",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 0
+    },
+    {
+      "path": "pkg/scheduler/framework/types.go",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 15
+    },
+    { "path": "pkg/scheduler/scheduler.go", "status": "modified", "additions": 1, "deletions": 1 },
+    {
+      "path": "pkg/scheduler/scheduler_test.go",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 20
+    },
+    {
+      "path": "pkg/scheduler/testing/wrappers.go",
+      "status": "modified",
+      "additions": 40,
+      "deletions": 194
+    },
+    {
+      "path": "plugin/pkg/admission/noderestriction/admission.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "plugin/pkg/admission/noderestriction/admission_test.go",
+      "status": "modified",
+      "additions": 49,
+      "deletions": 2
+    },
+    {
+      "path": "plugin/pkg/auth/authorizer/node/graph_populator.go",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 6
+    },
+    {
+      "path": "plugin/pkg/auth/authorizer/node/node_authorizer.go",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "plugin/pkg/auth/authorizer/node/node_authorizer_test.go",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 11
+    },
+    {
+      "path": "plugin/pkg/auth/authorizer/rbac/bootstrappolicy/policy.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "staging/publishing/import-restrictions.yaml",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/core/v1/generated.pb.go",
+      "status": "modified",
+      "additions": 1036,
+      "deletions": 995
+    },
+    {
+      "path": "staging/src/k8s.io/api/core/v1/generated.proto",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/core/v1/types.go",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/core/v1/types_swagger_doc_generated.go",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 2
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha2/generated.proto",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 749
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha2/namedresources.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 127
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha2/types.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 739
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha2/types_swagger_doc_generated.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 395
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/doc.go",
+      "previousPath": "staging/src/k8s.io/api/resource/v1alpha2/doc.go",
+      "status": "renamed",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/generated.pb.go",
+      "previousPath": "staging/src/k8s.io/api/resource/v1alpha2/generated.pb.go",
+      "status": "renamed",
+      "additions": 3059,
+      "deletions": 4661
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/generated.proto",
+      "status": "added",
+      "additions": 912,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/register.go",
+      "previousPath": "staging/src/k8s.io/api/resource/v1alpha2/register.go",
+      "status": "renamed",
+      "additions": 4,
+      "deletions": 11
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "status": "added",
+      "additions": 1048,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types_swagger_doc_generated.go",
+      "status": "added",
+      "additions": 404,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/zz_generated.deepcopy.go",
+      "previousPath": "staging/src/k8s.io/api/resource/v1alpha2/zz_generated.deepcopy.go",
+      "status": "renamed",
+      "additions": 300,
+      "deletions": 499
+    },
+    {
+      "path": "staging/src/k8s.io/api/roundtrip_test.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1.DaemonSet.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1.DaemonSet.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1.DaemonSet.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1.Deployment.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1.Deployment.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1.Deployment.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1.ReplicaSet.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1.ReplicaSet.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1.ReplicaSet.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1.StatefulSet.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1.StatefulSet.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1.StatefulSet.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta1.Deployment.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta1.Deployment.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta1.Deployment.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta1.StatefulSet.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta1.StatefulSet.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta1.StatefulSet.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta2.DaemonSet.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta2.DaemonSet.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta2.DaemonSet.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta2.Deployment.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta2.Deployment.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta2.Deployment.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta2.ReplicaSet.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta2.ReplicaSet.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta2.ReplicaSet.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta2.StatefulSet.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta2.StatefulSet.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/apps.v1beta2.StatefulSet.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/batch.v1.CronJob.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/batch.v1.CronJob.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/batch.v1.CronJob.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/batch.v1.Job.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/batch.v1.Job.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/batch.v1.Job.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/batch.v1beta1.CronJob.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/batch.v1beta1.CronJob.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/batch.v1beta1.CronJob.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/core.v1.Pod.json",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 6
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/core.v1.Pod.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/core.v1.Pod.yaml",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/core.v1.PodStatusResult.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/core.v1.PodStatusResult.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/core.v1.PodStatusResult.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/core.v1.PodTemplate.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/core.v1.PodTemplate.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/core.v1.PodTemplate.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/core.v1.ReplicationController.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/core.v1.ReplicationController.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/core.v1.ReplicationController.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/extensions.v1beta1.DaemonSet.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/extensions.v1beta1.DaemonSet.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/extensions.v1beta1.DaemonSet.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/extensions.v1beta1.Deployment.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/extensions.v1beta1.Deployment.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/extensions.v1beta1.Deployment.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/extensions.v1beta1.ReplicaSet.json",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/extensions.v1beta1.ReplicaSet.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/extensions.v1beta1.ReplicaSet.yaml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.PodSchedulingContext.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 62
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClaim.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClaimParameters.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 84
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClaimParameters.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClaimParameters.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 58
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClaimTemplate.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 99
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClaimTemplate.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClaimTemplate.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 74
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClass.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 78
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClass.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 53
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClassParameters.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 75
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClassParameters.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClassParameters.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 52
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceSlice.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceSlice.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 52
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.Status.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 28
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.Status.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.Status.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 21
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.DeviceClass.json",
+      "previousPath": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClaimParameters.json",
+      "status": "renamed",
+      "additions": 39,
+      "deletions": 27
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.DeviceClass.pb",
+      "previousPath": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.ResourceClass.pb",
+      "status": "renamed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.DeviceClass.yaml",
+      "previousPath": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.PodSchedulingContext.yaml",
+      "status": "renamed",
+      "additions": 27,
+      "deletions": 10
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.PodSchedulingContext.json",
+      "previousPath": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.PodSchedulingContext.json",
+      "status": "renamed",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.PodSchedulingContext.pb",
+      "previousPath": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.PodSchedulingContext.pb",
+      "status": "renamed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.PodSchedulingContext.yaml",
+      "previousPath": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.PodSchedulingContext.yaml",
+      "status": "renamed",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.ResourceClaim.json",
+      "previousPath": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClaim.json",
+      "status": "renamed",
+      "additions": 70,
+      "deletions": 46
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.ResourceClaim.pb",
+      "status": "added",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.ResourceClaim.yaml",
+      "previousPath": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClaim.yaml",
+      "status": "renamed",
+      "additions": 49,
+      "deletions": 39
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.ResourceClaimTemplate.json",
+      "previousPath": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClaimTemplate.json",
+      "status": "renamed",
+      "additions": 47,
+      "deletions": 7
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.ResourceClaimTemplate.pb",
+      "previousPath": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.ResourceClaimTemplate.pb",
+      "status": "renamed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.ResourceClaimTemplate.yaml",
+      "previousPath": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClaimTemplate.yaml",
+      "status": "renamed",
+      "additions": 28,
+      "deletions": 7
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.ResourceSlice.json",
+      "previousPath": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceSlice.json",
+      "status": "renamed",
+      "additions": 47,
+      "deletions": 24
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.ResourceSlice.pb",
+      "previousPath": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha2.ResourceClass.pb",
+      "status": "renamed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/HEAD/resource.k8s.io.v1alpha3.ResourceSlice.yaml",
+      "previousPath": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceSlice.yaml",
+      "status": "renamed",
+      "additions": 31,
+      "deletions": 18
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/apps.v1.DaemonSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/apps.v1.Deployment.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/apps.v1.ReplicaSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/apps.v1.StatefulSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/apps.v1beta1.Deployment.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/apps.v1beta1.StatefulSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/apps.v1beta2.DaemonSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/apps.v1beta2.Deployment.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/apps.v1beta2.ReplicaSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/apps.v1beta2.StatefulSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/batch.v1.CronJob.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/batch.v1.Job.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/batch.v1beta1.CronJob.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/core.v1.Pod.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/core.v1.PodStatusResult.after_roundtrip.pb",
+      "status": "added",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/core.v1.PodTemplate.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/core.v1.ReplicationController.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/extensions.v1beta1.DaemonSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/extensions.v1beta1.Deployment.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/extensions.v1beta1.ReplicaSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.PodSchedulingContext.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.ResourceClaim.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 100
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.ResourceClaim.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.ResourceClaim.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 66
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.ResourceClaimTemplate.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 99
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.ResourceClaimTemplate.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 74
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.ResourceClass.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 77
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.ResourceClass.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 52
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.Status.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 28
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.Status.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.29.0/resource.k8s.io.v1alpha2.Status.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 21
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/apps.v1.DaemonSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/apps.v1.Deployment.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/apps.v1.ReplicaSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/apps.v1.StatefulSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/apps.v1beta1.Deployment.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/apps.v1beta1.StatefulSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/apps.v1beta2.DaemonSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/apps.v1beta2.Deployment.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/apps.v1beta2.ReplicaSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/apps.v1beta2.StatefulSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/batch.v1.CronJob.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/batch.v1.Job.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/batch.v1beta1.CronJob.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/core.v1.Pod.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/core.v1.PodStatusResult.after_roundtrip.pb",
+      "status": "added",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/core.v1.PodTemplate.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/core.v1.ReplicationController.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/extensions.v1beta1.DaemonSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/extensions.v1beta1.Deployment.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/extensions.v1beta1.ReplicaSet.after_roundtrip.pb",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.PodSchedulingContext.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 62
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.PodSchedulingContext.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.PodSchedulingContext.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 43
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClaim.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 140
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClaim.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClaim.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 92
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClaimParameters.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClaimParameters.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 58
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClaimTemplate.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClass.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 78
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClass.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClass.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 53
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClassParameters.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 75
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClassParameters.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceClassParameters.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 52
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceSlice.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 75
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.ResourceSlice.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.Status.json",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 28
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.Status.pb",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/resource.k8s.io.v1alpha2.Status.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 21
+    },
+    {
+      "path": "staging/src/k8s.io/apiserver/pkg/cel/types.go",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/cli-runtime/artifacts/openapi/swagger-with-shared-parameters.json",
+      "status": "modified",
+      "additions": 49,
+      "deletions": 49
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/core/v1/resourceclaim.go",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 1
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/internal/internal.go",
+      "status": "modified",
+      "additions": 221,
+      "deletions": 247
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/allocationresult.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 66
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/allocationresultmodel.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 39
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/driverallocationresult.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 52
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/driverrequests.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 66
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/namedresourcesattribute.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 100
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/namedresourcesattributevalue.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 97
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/namedresourcesfilter.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 39
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/namedresourcesinstance.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 53
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/namedresourcesintslice.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 41
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/namedresourcesrequest.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 39
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/namedresourcesresources.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 44
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/namedresourcesstringslice.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 41
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceclaimparameters.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 278
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceclaimparametersreference.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 57
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceclaimspec.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 61
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceclass.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 281
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceclassparameters.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 283
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceclassparametersreference.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 66
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourcefilter.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 48
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourcefiltermodel.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 39
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourcehandle.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 57
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourcemodel.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 39
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourcerequest.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 52
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourcerequestmodel.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 39
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/structuredresourcehandle.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 75
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/allocationresult.go",
+      "status": "added",
+      "additions": 61,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/basicdevice.go",
+      "status": "added",
+      "additions": 65,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/celdeviceselector.go",
+      "status": "added",
+      "additions": 39,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/device.go",
+      "previousPath": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/namedresourcesallocationresult.go",
+      "status": "renamed",
+      "additions": 17,
+      "deletions": 8
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/deviceallocationconfiguration.go",
+      "status": "added",
+      "additions": 63,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/deviceallocationresult.go",
+      "status": "added",
+      "additions": 58,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/deviceattribute.go",
+      "status": "added",
+      "additions": 66,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/deviceclaim.go",
+      "status": "added",
+      "additions": 72,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/deviceclaimconfiguration.go",
+      "status": "added",
+      "additions": 50,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/deviceclass.go",
+      "status": "added",
+      "additions": 253,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/deviceclassconfiguration.go",
+      "status": "added",
+      "additions": 39,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/deviceclassspec.go",
+      "status": "added",
+      "additions": 71,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/deviceconfiguration.go",
+      "status": "added",
+      "additions": 39,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/deviceconstraint.go",
+      "status": "added",
+      "additions": 54,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/devicerequest.go",
+      "status": "added",
+      "additions": 93,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/devicerequestallocationresult.go",
+      "status": "added",
+      "additions": 66,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/deviceselector.go",
+      "status": "added",
+      "additions": 39,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/opaquedeviceconfiguration.go",
+      "previousPath": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/vendorparameters.go",
+      "status": "renamed",
+      "additions": 12,
+      "deletions": 12
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/podschedulingcontext.go",
+      "previousPath": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/podschedulingcontext.go",
+      "status": "renamed",
+      "additions": 8,
+      "deletions": 8
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/podschedulingcontextspec.go",
+      "previousPath": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/podschedulingcontextspec.go",
+      "status": "renamed",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/podschedulingcontextstatus.go",
+      "previousPath": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/podschedulingcontextstatus.go",
+      "status": "renamed",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/resourceclaim.go",
+      "previousPath": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceclaim.go",
+      "status": "renamed",
+      "additions": 8,
+      "deletions": 8
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/resourceclaimconsumerreference.go",
+      "previousPath": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceclaimconsumerreference.go",
+      "status": "renamed",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/resourceclaimschedulingstatus.go",
+      "previousPath": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceclaimschedulingstatus.go",
+      "status": "renamed",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/resourceclaimspec.go",
+      "status": "added",
+      "additions": 48,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/resourceclaimstatus.go",
+      "previousPath": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceclaimstatus.go",
+      "status": "renamed",
+      "additions": 1,
+      "deletions": 10
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/resourceclaimtemplate.go",
+      "previousPath": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceclaimtemplate.go",
+      "status": "renamed",
+      "additions": 8,
+      "deletions": 8
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/resourceclaimtemplatespec.go",
+      "previousPath": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceclaimtemplatespec.go",
+      "status": "renamed",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/resourcepool.go",
+      "status": "added",
+      "additions": 57,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/resourceslice.go",
+      "previousPath": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha2/resourceslice.go",
+      "status": "renamed",
+      "additions": 13,
+      "deletions": 31
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/resource/v1alpha3/resourceslicespec.go",
+      "status": "added",
+      "additions": 93,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/applyconfigurations/utils.go",
+      "status": "modified",
+      "additions": 65,
+      "deletions": 77
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/informers/generic.go",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 16
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/informers/resource/interface.go",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 6
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/informers/resource/v1alpha2/resourceclaimparameters.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 90
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/informers/resource/v1alpha2/resourceclassparameters.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 90
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/informers/resource/v1alpha3/deviceclass.go",
+      "previousPath": "staging/src/k8s.io/client-go/informers/resource/v1alpha2/resourceclass.go",
+      "status": "renamed",
+      "additions": 22,
+      "deletions": 22
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/informers/resource/v1alpha3/interface.go",
+      "previousPath": "staging/src/k8s.io/client-go/informers/resource/v1alpha2/interface.go",
+      "status": "renamed",
+      "additions": 8,
+      "deletions": 22
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/informers/resource/v1alpha3/podschedulingcontext.go",
+      "previousPath": "staging/src/k8s.io/client-go/informers/resource/v1alpha2/podschedulingcontext.go",
+      "status": "renamed",
+      "additions": 10,
+      "deletions": 10
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/informers/resource/v1alpha3/resourceclaim.go",
+      "previousPath": "staging/src/k8s.io/client-go/informers/resource/v1alpha2/resourceclaim.go",
+      "status": "renamed",
+      "additions": 10,
+      "deletions": 10
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/informers/resource/v1alpha3/resourceclaimtemplate.go",
+      "previousPath": "staging/src/k8s.io/client-go/informers/resource/v1alpha2/resourceclaimtemplate.go",
+      "status": "renamed",
+      "additions": 10,
+      "deletions": 10
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/informers/resource/v1alpha3/resourceslice.go",
+      "previousPath": "staging/src/k8s.io/client-go/informers/resource/v1alpha2/resourceslice.go",
+      "status": "renamed",
+      "additions": 10,
+      "deletions": 10
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/clientset.go",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 8
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/fake/clientset_generated.go",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 5
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/fake/register.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/scheme/register.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/fake/fake_resourceclaimparameters.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 160
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/fake/fake_resourceclass.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 151
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/fake/fake_resourceclassparameters.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 160
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/resourceclaimparameters.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 69
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/resourceclass.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 69
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/resourceclassparameters.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 69
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/deviceclass.go",
+      "status": "added",
+      "additions": 69,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/doc.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/doc.go",
+      "status": "renamed",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/fake/doc.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/fake/doc.go",
+      "status": "renamed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/fake/fake_deviceclass.go",
+      "status": "added",
+      "additions": 151,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/fake/fake_podschedulingcontext.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/fake/fake_podschedulingcontext.go",
+      "status": "renamed",
+      "additions": 32,
+      "deletions": 32
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/fake/fake_resource_client.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/fake/fake_resource_client.go",
+      "status": "renamed",
+      "additions": 11,
+      "deletions": 19
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/fake/fake_resourceclaim.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/fake/fake_resourceclaim.go",
+      "status": "renamed",
+      "additions": 32,
+      "deletions": 32
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/fake/fake_resourceclaimtemplate.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/fake/fake_resourceclaimtemplate.go",
+      "status": "renamed",
+      "additions": 26,
+      "deletions": 26
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/fake/fake_resourceslice.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/fake/fake_resourceslice.go",
+      "status": "renamed",
+      "additions": 26,
+      "deletions": 26
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/generated_expansion.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/generated_expansion.go",
+      "status": "renamed",
+      "additions": 3,
+      "deletions": 7
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/podschedulingcontext.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/podschedulingcontext.go",
+      "status": "renamed",
+      "additions": 16,
+      "deletions": 16
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/resource_client.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/resource_client.go",
+      "status": "renamed",
+      "additions": 26,
+      "deletions": 36
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/resourceclaim.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/resourceclaim.go",
+      "status": "renamed",
+      "additions": 16,
+      "deletions": 16
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/resourceclaimtemplate.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/resourceclaimtemplate.go",
+      "status": "renamed",
+      "additions": 14,
+      "deletions": 14
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha3/resourceslice.go",
+      "previousPath": "staging/src/k8s.io/client-go/kubernetes/typed/resource/v1alpha2/resourceslice.go",
+      "status": "renamed",
+      "additions": 14,
+      "deletions": 14
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/listers/resource/v1alpha2/resourceclaimparameters.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 70
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/listers/resource/v1alpha2/resourceclassparameters.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 70
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/listers/resource/v1alpha3/deviceclass.go",
+      "previousPath": "staging/src/k8s.io/client-go/listers/resource/v1alpha2/resourceclass.go",
+      "status": "renamed",
+      "additions": 15,
+      "deletions": 15
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/listers/resource/v1alpha3/expansion_generated.go",
+      "previousPath": "staging/src/k8s.io/client-go/listers/resource/v1alpha2/expansion_generated.go",
+      "status": "renamed",
+      "additions": 5,
+      "deletions": 21
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/listers/resource/v1alpha3/podschedulingcontext.go",
+      "previousPath": "staging/src/k8s.io/client-go/listers/resource/v1alpha2/podschedulingcontext.go",
+      "status": "renamed",
+      "additions": 9,
+      "deletions": 9
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/listers/resource/v1alpha3/resourceclaim.go",
+      "previousPath": "staging/src/k8s.io/client-go/listers/resource/v1alpha2/resourceclaim.go",
+      "status": "renamed",
+      "additions": 9,
+      "deletions": 9
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/listers/resource/v1alpha3/resourceclaimtemplate.go",
+      "previousPath": "staging/src/k8s.io/client-go/listers/resource/v1alpha2/resourceclaimtemplate.go",
+      "status": "renamed",
+      "additions": 9,
+      "deletions": 9
+    },
+    {
+      "path": "staging/src/k8s.io/client-go/listers/resource/v1alpha3/resourceslice.go",
+      "previousPath": "staging/src/k8s.io/client-go/listers/resource/v1alpha2/resourceslice.go",
+      "status": "renamed",
+      "additions": 6,
+      "deletions": 6
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/cel/compile.go",
+      "status": "added",
+      "additions": 295,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/cel/compile_test.go",
+      "status": "added",
+      "additions": 212,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/cel/semver.go",
+      "previousPath": "staging/src/k8s.io/dynamic-resource-allocation/structured/namedresources/cel/semver.go",
+      "status": "renamed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/cel/semver_test.go",
+      "previousPath": "staging/src/k8s.io/dynamic-resource-allocation/structured/namedresources/cel/semver_test.go",
+      "status": "renamed",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/cel/semverlib.go",
+      "previousPath": "staging/src/k8s.io/dynamic-resource-allocation/structured/namedresources/cel/semverlib.go",
+      "status": "renamed",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/controller/controller.go",
+      "status": "modified",
+      "additions": 74,
+      "deletions": 153
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/controller/controller_test.go",
+      "status": "modified",
+      "additions": 79,
+      "deletions": 257
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/kubeletplugin/draplugin.go",
+      "status": "modified",
+      "additions": 19,
+      "deletions": 7
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/resourceclaim/resourceclaim.go",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 97
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/resourceclaim/resourceclaim_test.go",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 5
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/resourceslice/resourceslicecontroller.go",
+      "previousPath": "staging/src/k8s.io/dynamic-resource-allocation/resourceslice/noderesources.go",
+      "status": "renamed",
+      "additions": 167,
+      "deletions": 130
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/allocator.go",
+      "status": "added",
+      "additions": 844,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/allocator_test.go",
+      "status": "added",
+      "additions": 951,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/doc.go",
+      "status": "added",
+      "additions": 18,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/namedresources/cel/compile.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 243
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/namedresources/cel/compile_test.go",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 155
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/pools.go",
+      "status": "added",
+      "additions": 131,
+      "deletions": 0
+    },
+    {
+      "path": "staging/src/k8s.io/kubelet/pkg/apis/dra/v1alpha4/api.pb.go",
+      "status": "modified",
+      "additions": 433,
+      "deletions": 64
+    },
+    {
+      "path": "staging/src/k8s.io/kubelet/pkg/apis/dra/v1alpha4/api.proto",
+      "status": "modified",
+      "additions": 20,
+      "deletions": 3
+    },
+    {
+      "path": "staging/src/k8s.io/kubelet/pkg/apis/podresources/v1/api.pb.go",
+      "status": "modified",
+      "additions": 213,
+      "deletions": 102
+    },
+    {
+      "path": "staging/src/k8s.io/kubelet/pkg/apis/podresources/v1/api.proto",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 2
+    },
+    { "path": "test/e2e/dra/deploy.go", "status": "modified", "additions": 89, "deletions": 56 },
+    { "path": "test/e2e/dra/dra.go", "status": "modified", "additions": 844, "deletions": 792 },
+    {
+      "path": "test/e2e/dra/kind-classic-dra.yaml",
+      "status": "added",
+      "additions": 45,
+      "deletions": 0
+    },
+    { "path": "test/e2e/dra/kind.yaml", "status": "modified", "additions": 2, "deletions": 1 },
+    {
+      "path": "test/e2e/dra/test-driver/README.md",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3
+    },
+    {
+      "path": "test/e2e/dra/test-driver/app/controller.go",
+      "status": "modified",
+      "additions": 75,
+      "deletions": 105
+    },
+    {
+      "path": "test/e2e/dra/test-driver/app/kubeletplugin.go",
+      "status": "modified",
+      "additions": 170,
+      "deletions": 158
+    },
+    {
+      "path": "test/e2e/dra/test-driver/deploy/example/admin-access-policy.yaml",
+      "status": "added",
+      "additions": 71,
+      "deletions": 0
+    },
+    {
+      "path": "test/e2e/dra/test-driver/deploy/example/broken-resourceclass.yaml",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "test/e2e/dra/test-driver/deploy/example/deviceclass.yaml",
+      "status": "added",
+      "additions": 8,
+      "deletions": 0
+    },
+    {
+      "path": "test/e2e/dra/test-driver/deploy/example/plugin-permissions.yaml",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 18
+    },
+    {
+      "path": "test/e2e/dra/test-driver/deploy/example/pod-external.yaml",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "test/e2e/dra/test-driver/deploy/example/pod-inline-multiple.yaml",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "test/e2e/dra/test-driver/deploy/example/pod-inline.yaml",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "test/e2e/dra/test-driver/deploy/example/pod-shared.yaml",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "test/e2e/dra/test-driver/deploy/example/resourceclaim.yaml",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 14
+    },
+    {
+      "path": "test/e2e/dra/test-driver/deploy/example/resourceclass.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 7
+    },
+    {
+      "path": "test/e2e/feature/feature.go",
+      "status": "modified",
+      "additions": 22,
+      "deletions": 1
+    },
+    {
+      "path": "test/e2e_node/dra_test.go",
+      "status": "modified",
+      "additions": 128,
+      "deletions": 79
+    },
+    {
+      "path": "test/integration/apiserver/apply/reset_fields_test.go",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 6
+    },
+    {
+      "path": "test/integration/apiserver/apply/status_test.go",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "path": "test/integration/apiserver/cel/authorizerselector/helper.go",
+      "status": "modified",
+      "additions": 21,
+      "deletions": 12
+    },
+    {
+      "path": "test/integration/auth/node_test.go",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 13
+    },
+    {
+      "path": "test/integration/etcd/data.go",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 19
+    },
+    {
+      "path": "test/integration/scheduler/scheduler_test.go",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 24
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/dra/another-resourceclaimtemplate.yaml",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 2
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/dra/another-resourceclass.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 5
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/dra/claim-template.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 7
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/dra/deviceclass-structured.yaml",
+      "status": "added",
+      "additions": 8,
+      "deletions": 0
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/dra/deviceclass.yaml",
+      "status": "added",
+      "additions": 4,
+      "deletions": 0
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/dra/resourceclaim-structured.yaml",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 6
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/dra/resourceclaim.yaml",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 2
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/dra/resourceclaimparameters.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 10
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/dra/resourceclaimtemplate-structured.yaml",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 6
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/dra/resourceclaimtemplate.yaml",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 2
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/dra/resourceclass-structured.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 6
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/dra/resourceclass.yaml",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 5
+    },
+    {
+      "path": "test/integration/scheduler_perf/config/performance-config.yaml",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 20
+    },
+    {
+      "path": "test/integration/scheduler_perf/dra.go",
+      "status": "modified",
+      "additions": 19,
+      "deletions": 17
+    },
+    {
+      "path": "test/integration/scheduler_perf/util.go",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "test/integration/util/util.go",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 5
+    }
+  ],
+  "threads": [
+    {
+      "path": "pkg/apis/resource/types.go",
+      "side": "right",
+      "line": 399,
+      "outdated": true,
+      "comments": [353]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/plugin/client.go",
+      "side": "right",
+      "line": 56,
+      "outdated": true,
+      "comments": [203, 289, 164]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/plugin/plugin.go",
+      "side": "right",
+      "line": 38,
+      "outdated": true,
+      "comments": [59]
+    },
+    {
+      "path": "pkg/apis/resource/types.go",
+      "side": "right",
+      "line": 915,
+      "comments": [431, 197, 283]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/plugin/client.go",
+      "side": "right",
+      "line": 93,
+      "outdated": true,
+      "comments": [97, 432]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 425,
+      "outdated": true,
+      "comments": [799, 2176, 1833, 213]
+    },
+    {
+      "path": "staging/src/k8s.io/api/core/v1/types.go",
+      "side": "right",
+      "line": 3939,
+      "outdated": true,
+      "comments": [71, 338]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 41,
+      "outdated": true,
+      "comments": [421, 445, 866, 189, 237, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 45,
+      "outdated": true,
+      "comments": [327, 309, 2289, 152]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 43,
+      "outdated": true,
+      "comments": [156, 19]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 51,
+      "outdated": true,
+      "comments": [19, 5]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 53,
+      "outdated": true,
+      "comments": [495, 298]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 56,
+      "outdated": true,
+      "comments": [99, 8]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 85,
+      "outdated": true,
+      "comments": [51, 265, 244, 7, 173, 114, 399, 12]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 90,
+      "outdated": true,
+      "comments": [14, 3]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 94,
+      "outdated": true,
+      "comments": [44, 23]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 105,
+      "outdated": true,
+      "comments": [21, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 112,
+      "outdated": true,
+      "comments": [69, 26]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 120,
+      "outdated": true,
+      "comments": [28, 169, 20, 58]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 125,
+      "outdated": true,
+      "comments": [40, 3]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 130,
+      "outdated": true,
+      "comments": [54, 3]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 138,
+      "outdated": true,
+      "comments": [120, 954, 1582, 142, 541, 1135, 100]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 159,
+      "outdated": true,
+      "comments": [19, 613, 72, 228, 45]
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/cel/compile.go",
+      "side": "right",
+      "line": 92,
+      "outdated": true,
+      "comments": [315, 63, 244, 126]
+    },
+    {
+      "path": "pkg/apis/resource/types.go",
+      "side": "right",
+      "line": 537,
+      "outdated": true,
+      "comments": [98]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 171,
+      "comments": [255, 235, 5]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 190,
+      "outdated": true,
+      "comments": [73, 71, 31, 153, 64, 1159]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 196,
+      "outdated": true,
+      "comments": [
+        351, 208, 796, 525, 347, 932, 351, 500, 2012, 390, 1218, 156, 1751, 148, 775, 204
+      ]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 288,
+      "outdated": true,
+      "comments": [398, 6]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 301,
+      "outdated": true,
+      "comments": [46, 3]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 305,
+      "outdated": true,
+      "comments": [79, 3]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 312,
+      "outdated": true,
+      "comments": [395, 46]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 317,
+      "outdated": true,
+      "comments": [80, 36, 113, 175]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 313,
+      "outdated": true,
+      "comments": [325, 637, 5]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 358,
+      "outdated": true,
+      "comments": [55, 153]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 369,
+      "outdated": true,
+      "comments": [235, 40]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 389,
+      "outdated": true,
+      "comments": [141, 3]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 397,
+      "outdated": true,
+      "comments": [168, 6]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 403,
+      "outdated": true,
+      "comments": [196, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 416,
+      "outdated": true,
+      "comments": [163, 132, 110, 137, 201]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 409,
+      "outdated": true,
+      "comments": [580, 292, 88, 129]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 423,
+      "outdated": true,
+      "comments": [111, 8, 394, 209, 302, 223]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 426,
+      "outdated": true,
+      "comments": [14, 3]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 426,
+      "outdated": true,
+      "comments": [72, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 436,
+      "outdated": true,
+      "comments": [53, 432, 171, 15]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 460,
+      "outdated": true,
+      "comments": [503, 467, 142, 634, 128, 174]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 467,
+      "outdated": true,
+      "comments": [2094, 66, 504, 139, 175, 160, 165, 220, 86, 155]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 516,
+      "outdated": true,
+      "comments": [10, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 513,
+      "outdated": true,
+      "comments": [377, 32, 128]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 510,
+      "outdated": true,
+      "comments": [
+        1028, 91, 421, 1689, 1225, 602, 2450, 1181, 3241, 63, 293, 896, 308, 1771, 4966, 1075, 248,
+        34, 96
+      ]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 369,
+      "outdated": true,
+      "comments": [51, 327, 89, 349, 70]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 525,
+      "outdated": true,
+      "comments": [196, 420, 70, 124]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 546,
+      "outdated": true,
+      "comments": [44, 187]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 573,
+      "outdated": true,
+      "comments": [16, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 561,
+      "outdated": true,
+      "comments": [8, 143, 26, 6]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 527,
+      "outdated": true,
+      "comments": [8]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 424,
+      "outdated": true,
+      "comments": [32, 6]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 616,
+      "comments": [699, 95, 43]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 670,
+      "outdated": true,
+      "comments": [148, 410, 143]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 741,
+      "outdated": true,
+      "comments": [15, 141, 7]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 682,
+      "outdated": true,
+      "comments": [73, 348, 123, 312]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 825,
+      "comments": [63, 11]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 978,
+      "comments": [13, 281, 106, 99, 230]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 33,
+      "outdated": true,
+      "comments": [477, 550]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 45,
+      "outdated": true,
+      "comments": [187, 42]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 73,
+      "outdated": true,
+      "comments": [163, 566, 84]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 74,
+      "comments": [129, 127]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 94,
+      "outdated": true,
+      "comments": [41, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 172,
+      "comments": [107, 754, 644, 351, 432, 487, 152, 50, 96, 1106, 375]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 181,
+      "comments": [61, 6]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 101,
+      "outdated": true,
+      "comments": [20, 3]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 108,
+      "outdated": true,
+      "comments": [20, 3]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 238,
+      "outdated": true,
+      "comments": [55, 108]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 319,
+      "outdated": true,
+      "comments": [93, 176, 62]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 355,
+      "outdated": true,
+      "comments": [82, 6]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 359,
+      "outdated": true,
+      "comments": [16, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 391,
+      "comments": [10, 6]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 427,
+      "outdated": true,
+      "comments": [387, 188, 147]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 467,
+      "outdated": true,
+      "comments": [40, 87]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 46,
+      "comments": [228, 187, 21]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 543,
+      "comments": [138, 255]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 530,
+      "outdated": true,
+      "comments": [137, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 546,
+      "outdated": true,
+      "comments": [9, 3]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 540,
+      "outdated": true,
+      "comments": [50, 5]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 454,
+      "comments": [14, 108]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 673,
+      "comments": [22, 86]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 742,
+      "comments": [168, 99]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 767,
+      "comments": [83, 87]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 906,
+      "outdated": true,
+      "comments": [53, 116]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 933,
+      "outdated": true,
+      "comments": [29, 115]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 682,
+      "outdated": true,
+      "comments": [43, 75, 49]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 118,
+      "outdated": true,
+      "comments": [646, 191, 193, 32, 40, 5]
+    },
+    { "path": "pkg/apis/resource/types.go", "side": "right", "line": 348, "comments": [67, 162] },
+    { "path": "pkg/apis/core/types.go", "side": "right", "line": 2464, "comments": [151, 165] },
+    { "path": "pkg/apis/resource/types.go", "side": "right", "line": 98, "comments": [87, 57] },
+    {
+      "path": "pkg/apis/resource/types.go",
+      "side": "right",
+      "line": 364,
+      "comments": [213, 99, 192]
+    },
+    {
+      "path": "pkg/apis/resource/types.go",
+      "side": "right",
+      "line": 395,
+      "outdated": true,
+      "comments": [110, 197]
+    },
+    {
+      "path": "pkg/apis/resource/types.go",
+      "side": "right",
+      "line": 398,
+      "outdated": true,
+      "comments": [489, 93]
+    },
+    {
+      "path": "pkg/apis/resource/types.go",
+      "side": "right",
+      "line": 578,
+      "outdated": true,
+      "comments": [83, 212, 251]
+    },
+    { "path": "pkg/apis/resource/types.go", "side": "right", "line": 775, "comments": [202, 96] },
+    {
+      "path": "pkg/apis/resource/types.go",
+      "side": "right",
+      "line": 784,
+      "comments": [189, 242, 250, 490, 609, 251]
+    },
+    {
+      "path": "pkg/apis/resource/types.go",
+      "side": "right",
+      "line": 920,
+      "outdated": true,
+      "comments": [57]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 131,
+      "outdated": true,
+      "comments": [37, 135]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "comments": [133, 103, 46, 59]
+    },
+    {
+      "path": "pkg/controller/resourceclaim/controller.go",
+      "side": "right",
+      "line": 868,
+      "comments": [100, 218]
+    },
+    {
+      "path": "pkg/kubelet/cm/container_manager_linux.go",
+      "side": "right",
+      "line": 968,
+      "outdated": true,
+      "comments": [106, 114, 102]
+    },
+    {
+      "path": "pkg/kubelet/cm/container_manager_linux.go",
+      "side": "right",
+      "line": 979,
+      "outdated": true,
+      "comments": [61, 186, 244, 166, 302, 240, 164, 615, 122, 1549, 413, 243]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/claiminfo.go",
+      "side": "right",
+      "line": 53,
+      "outdated": true,
+      "comments": [105, 15]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/claiminfo.go",
+      "side": "right",
+      "line": 61,
+      "outdated": true,
+      "comments": [84]
+    },
+    {
+      "path": "pkg/kubelet/cm/container_manager_linux.go",
+      "side": "right",
+      "line": 664,
+      "comments": [175, 101, 26]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/manager.go",
+      "side": "left",
+      "line": 194,
+      "comments": [115, 221, 228, 116, 226, 93]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/manager.go",
+      "side": "right",
+      "line": 366,
+      "outdated": true,
+      "comments": [252, 209, 256, 492, 293, 220]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/plugin/client.go",
+      "side": "right",
+      "line": 62,
+      "outdated": true,
+      "comments": [36, 139, 83, 178, 85]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/plugin/plugin.go",
+      "side": "right",
+      "line": 79,
+      "outdated": true,
+      "comments": [133, 75]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/plugin/plugin.go",
+      "side": "right",
+      "line": 158,
+      "outdated": true,
+      "comments": [57]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/plugin/plugins_store.go",
+      "side": "right",
+      "line": 55,
+      "outdated": true,
+      "comments": [89]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 90,
+      "comments": [367, 416, 217, 126, 529, 6, 5]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 279,
+      "comments": [542, 295, 346, 307, 25, 152]
+    },
+    {
+      "path": "pkg/apis/resource/types.go",
+      "side": "right",
+      "line": 77,
+      "outdated": true,
+      "comments": [162, 175, 750, 94, 419, 198]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 385,
+      "outdated": true,
+      "comments": [18, 6]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 397,
+      "outdated": true,
+      "comments": [83, 190, 5]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 207,
+      "outdated": true,
+      "comments": [27, 6]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 253,
+      "outdated": true,
+      "comments": [153, 114, 11]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 395,
+      "comments": [
+        3425, 209, 28, 338, 355, 57, 733, 239, 118, 2665, 190, 805, 312, 567, 554, 671, 38, 129,
+        4145, 27, 903, 319, 3
+      ]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 214,
+      "comments": [347, 1423, 366, 620, 599, 825, 274, 192, 154, 3847, 194, 37]
+    },
+    {
+      "path": "pkg/apis/resource/types.go",
+      "side": "right",
+      "line": 93,
+      "comments": [316, 320, 240, 312, 128, 245, 1042, 43]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 345,
+      "comments": [264, 89, 20]
+    },
+    {
+      "path": "pkg/apis/resource/types.go",
+      "side": "right",
+      "line": 325,
+      "comments": [349, 276, 738, 347, 132, 453]
+    },
+    {
+      "path": "pkg/registry/resource/deviceclass/strategy.go",
+      "side": "right",
+      "line": 2,
+      "outdated": true,
+      "comments": [9, 67]
+    },
+    {
+      "path": "pkg/api/testing/defaulting_test.go",
+      "side": "right",
+      "line": 240,
+      "comments": [214, 98, 327, 347]
+    },
+    {
+      "path": "pkg/api/testing/defaulting_test.go",
+      "side": "right",
+      "line": 211,
+      "comments": [57, 135, 293]
+    },
+    {
+      "path": "pkg/apis/core/validation/validation.go",
+      "side": "right",
+      "line": 6763,
+      "comments": [257, 259, 185, 33, 2520, 116, 89, 167, 165]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 68,
+      "comments": [96, 133]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 147,
+      "outdated": true,
+      "comments": [36, 4]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 316,
+      "comments": [77, 374]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 332,
+      "comments": [39, 6]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 572,
+      "comments": [58, 73, 58, 14]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 636,
+      "comments": [45, 4]
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/dynamicresources.go",
+      "side": "right",
+      "line": 827,
+      "comments": [178, 447, 84]
+    },
+    {
+      "path": "pkg/apis/resource/fuzzer/fuzzer.go",
+      "side": "right",
+      "line": 33,
+      "outdated": true,
+      "comments": [176, 510, 285, 28]
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/dynamicresources.go",
+      "side": "right",
+      "line": 755,
+      "outdated": true,
+      "comments": [30, 6]
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/dynamicresources.go",
+      "side": "right",
+      "line": 758,
+      "outdated": true,
+      "comments": [30, 6]
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/dynamicresources.go",
+      "side": "right",
+      "comments": [290]
+    },
+    {
+      "path": "pkg/kubelet/cm/devicemanager/topology_hints_test.go",
+      "side": "left",
+      "line": 443,
+      "outdated": true,
+      "comments": [113, 57]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/manager.go",
+      "side": "right",
+      "line": 235,
+      "outdated": true,
+      "comments": [234, 59]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/manager.go",
+      "side": "right",
+      "line": 430,
+      "outdated": true,
+      "comments": [35]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/state/checkpoint.go",
+      "side": "right",
+      "outdated": true,
+      "comments": [374, 81, 472]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/state/state_checkpoint.go",
+      "side": "right",
+      "line": 82,
+      "outdated": true,
+      "comments": [33]
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/kubeletplugin/draplugin.go",
+      "side": "right",
+      "line": 67,
+      "outdated": true,
+      "comments": [99]
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/resourceslice/resourceslicecontroller.go",
+      "side": "right",
+      "outdated": true,
+      "comments": [86, 243]
+    },
+    {
+      "path": "staging/src/k8s.io/kubelet/pkg/apis/dra/v1alpha4/api.proto",
+      "side": "right",
+      "line": 68,
+      "outdated": true,
+      "comments": [51]
+    },
+    {
+      "path": "staging/src/k8s.io/kubelet/pkg/apis/dra/v1alpha4/api.proto",
+      "side": "right",
+      "line": 88,
+      "outdated": true,
+      "comments": [320]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 42,
+      "outdated": true,
+      "comments": [32, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 120,
+      "outdated": true,
+      "comments": [61, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 173,
+      "outdated": true,
+      "comments": [25, 3]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 195,
+      "outdated": true,
+      "comments": [252, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/kubelet/pkg/apis/dra/v1alpha4/api.proto",
+      "side": "right",
+      "line": 88,
+      "comments": [608]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/state/state_checkpoint.go",
+      "side": "right",
+      "line": 66,
+      "comments": [342]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 195,
+      "comments": [250, 162, 101, 575, 276]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 203,
+      "outdated": true,
+      "comments": [39, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/allocator.go",
+      "side": "right",
+      "line": 152,
+      "comments": [107]
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/allocator.go",
+      "side": "right",
+      "line": 129,
+      "comments": [246]
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/allocator.go",
+      "side": "right",
+      "line": 164,
+      "comments": [34, 280]
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/allocator.go",
+      "side": "right",
+      "line": 179,
+      "comments": [355, 329, 286]
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/allocator.go",
+      "side": "right",
+      "line": 292,
+      "comments": [1708, 933, 166]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 220,
+      "comments": [1642, 667, 531]
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/allocator.go",
+      "side": "right",
+      "line": 250,
+      "comments": [120]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 434,
+      "outdated": true,
+      "comments": [154, 139]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 706,
+      "comments": [74, 120]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 910,
+      "outdated": true,
+      "comments": [73, 4]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 201,
+      "comments": [1243, 388, 148, 871, 1279, 430]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 481,
+      "comments": [315, 188, 27, 19]
+    },
+    {
+      "path": "pkg/apis/resource/fuzzer/fuzzer.go",
+      "side": "right",
+      "line": 32,
+      "outdated": true,
+      "comments": [457, 431, 1339]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 44,
+      "outdated": true,
+      "comments": [94, 32, 69, 77, 14]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 45,
+      "comments": [94, 32, 229, 331, 312]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 512,
+      "comments": [33, 340, 181, 395, 479, 170]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 61,
+      "outdated": true,
+      "comments": [208, 183]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 569,
+      "comments": [33, 6]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 99,
+      "outdated": true,
+      "comments": [96, 8]
+    },
+    {
+      "path": "staging/src/k8s.io/api/resource/v1alpha3/types.go",
+      "side": "right",
+      "line": 156,
+      "comments": [10, 6]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 546,
+      "outdated": true,
+      "comments": [167, 27, 5]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 549,
+      "outdated": true,
+      "comments": [186, 131, 144, 98, 203, 609, 64]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 532,
+      "outdated": true,
+      "comments": [36, 95]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 556,
+      "outdated": true,
+      "comments": [59, 68]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 557,
+      "outdated": true,
+      "comments": [63, 64, 72]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 558,
+      "outdated": true,
+      "comments": [243, 220]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 596,
+      "comments": [235, 7]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 615,
+      "comments": [50, 288]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 645,
+      "outdated": true,
+      "comments": [85, 16]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 663,
+      "outdated": true,
+      "comments": [311, 416]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 679,
+      "outdated": true,
+      "comments": [51, 4]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 685,
+      "outdated": true,
+      "comments": [58, 92]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 574,
+      "outdated": true,
+      "comments": [27, 186, 120, 16]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 682,
+      "outdated": true,
+      "comments": [34, 4]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 677,
+      "outdated": true,
+      "comments": [37, 4]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 693,
+      "outdated": true,
+      "comments": [37, 4]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 415,
+      "comments": [79, 573, 86, 3]
+    },
+    { "path": "pkg/apis/resource/types.go", "side": "right", "line": 119, "comments": [1812, 22] },
+    {
+      "path": "pkg/kubelet/checkpointmanager/errors/errors.go",
+      "side": "right",
+      "line": 33,
+      "outdated": true,
+      "comments": [100, 35, 221, 132]
+    },
+    {
+      "path": "pkg/kubelet/cm/container_manager_linux.go",
+      "side": "right",
+      "line": 978,
+      "outdated": true,
+      "comments": [157, 150, 779, 469]
+    },
+    {
+      "path": "pkg/kubelet/cm/container_manager_linux.go",
+      "side": "right",
+      "line": 967,
+      "outdated": true,
+      "comments": [52, 4]
+    },
+    {
+      "path": "pkg/kubelet/cm/cpumanager/state/checkpoint.go",
+      "side": "right",
+      "line": 115,
+      "outdated": true,
+      "comments": [94, 3, 83]
+    },
+    {
+      "path": "pkg/kubelet/cm/dra/manager.go",
+      "side": "right",
+      "line": 366,
+      "outdated": true,
+      "comments": [78, 3, 358, 230]
+    },
+    {
+      "path": "pkg/kubelet/apis/podresources/server_v1_test.go",
+      "side": "right",
+      "line": 900,
+      "comments": [98, 73, 233, 91, 90, 99]
+    },
+    {
+      "path": "staging/src/k8s.io/kubelet/pkg/apis/podresources/v1/api.proto",
+      "side": "right",
+      "line": 86,
+      "comments": [135, 134]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 79,
+      "comments": [110, 81]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 145,
+      "outdated": true,
+      "comments": [89, 4]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 142,
+      "comments": [732, 31, 51]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 152,
+      "outdated": true,
+      "comments": [42, 545, 143]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 256,
+      "comments": [50, 224]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 385,
+      "outdated": true,
+      "comments": [20, 4]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 498,
+      "comments": [57, 79]
+    },
+    {
+      "path": "pkg/apis/resource/validation/validation.go",
+      "side": "right",
+      "line": 418,
+      "comments": [1469, 1033]
+    },
+    {
+      "path": "test/e2e_node/dra_test.go",
+      "side": "right",
+      "line": 426,
+      "outdated": true,
+      "comments": [448, 311, 480, 104, 884]
+    },
+    {
+      "path": "test/e2e_node/dra_test.go",
+      "side": "right",
+      "line": 90,
+      "outdated": true,
+      "comments": [65, 169, 200, 105, 108, 297, 304, 475]
+    },
+    {
+      "path": "staging/src/k8s.io/api/testdata/v1.30.0/apps.v1.DaemonSet.after_roundtrip.pb",
+      "side": "right",
+      "outdated": true,
+      "comments": [66, 160, 376, 277, 446, 50, 421, 202, 961, 521, 38, 52, 176, 949]
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/dynamicresources.go",
+      "side": "right",
+      "line": 892,
+      "comments": [74, 561, 152, 109]
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/dynamicresources.go",
+      "side": "right",
+      "line": 948,
+      "outdated": true,
+      "comments": [162, 23]
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/dynamicresources.go",
+      "side": "right",
+      "line": 945,
+      "outdated": true,
+      "comments": [271, 74]
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/dynamicresources.go",
+      "side": "right",
+      "line": 104,
+      "outdated": true,
+      "comments": [268, 1185, 207, 9570, 339]
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/dynamicresources.go",
+      "side": "right",
+      "line": 814,
+      "comments": [33, 88]
+    },
+    {
+      "path": "pkg/scheduler/framework/plugins/dynamicresources/dynamicresources.go",
+      "side": "right",
+      "line": 833,
+      "comments": [69, 548]
+    },
+    {
+      "path": "staging/src/k8s.io/kubelet/pkg/apis/dra/v1alpha4/api.proto",
+      "side": "right",
+      "comments": [226, 5]
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/namedresources/cel/compile.go",
+      "side": "left",
+      "comments": [10480]
+    },
+    {
+      "path": "staging/src/k8s.io/dynamic-resource-allocation/structured/namedresources/cel/compile.go",
+      "side": "left",
+      "line": 120,
+      "comments": [117, 66]
+    }
+  ]
+}
