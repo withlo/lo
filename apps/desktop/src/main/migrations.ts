@@ -114,7 +114,13 @@ export function migrate(database: Database, files: Readonly<Record<string, strin
         database.restrict(allow, () => {
           try {
             database.exec(migration.sql);
-            compileTriggersAndViews(database, migration.feature, before, schema(database));
+            compileTriggersAndViews(
+              database,
+              migration.feature,
+              before,
+              schema(database),
+              () => refused !== undefined,
+            );
           } catch (error) {
             if (!refused) throw error;
             const { action, first, source } = refused;
@@ -150,6 +156,11 @@ function sha256(text: string): string {
   return createHash('sha256').update(text.replace(/\r\n?/g, '\n')).digest('hex');
 }
 
+/** Text to match literally in a regular expression. */
+function escape(text: string): string {
+  return text.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** A name as an SQL identifier. */
 function quote(name: string): string {
   return `"${name.replaceAll('"', '""')}"`;
@@ -160,6 +171,7 @@ const schemaTables = new Set(['sqlite_master', 'sqlite_schema', 'sqlite_temp_mas
 
 /** Pragmas that only read: the schema, or (SQLite checks a column it adds) the data. */
 const readOnlyPragmas = new Set([
+  'data_version',
   'quick_check',
   'table_info',
   'table_xinfo',
@@ -169,10 +181,20 @@ const readOnlyPragmas = new Set([
   'foreign_key_list',
 ]);
 
+/** Table-valued functions that read only what they're given, such as a JSON column's value. */
+const tableFunctions = new Set(['json_each', 'json_tree', 'jsonb_each', 'jsonb_tree']);
+
+/** The virtual-table modules a feature may use: full-text search. */
+const virtualTableModules = new Set(['fts5']);
+
 /** What a feature's migration may do: anything to its own objects, and nothing else. */
 function owns(feature: string): (action: Action) => boolean {
   const prefix = `${feature}_`;
   const own = (name: string | null) => name !== null && name.startsWith(prefix);
+  // SQLite's index for a UNIQUE or non-integer primary key: sqlite_autoindex_<table>_<n>.
+  const ownIndex = (index: string | null, table: string | null) =>
+    own(table) &&
+    (own(index) || new RegExp(`^sqlite_autoindex_${escape(table ?? '')}_\\d+$`).test(index ?? ''));
   return ({ action, first, second, database }) => {
     const main = database === null || database === 'main';
     switch (action) {
@@ -183,6 +205,7 @@ function owns(feature: string): (action: Action) => boolean {
       case 'READ':
         return (
           (main && own(first)) ||
+          (first !== null && tableFunctions.has(first)) ||
           (first !== null && schemaTables.has(first)) ||
           // A read-only pragma used as a table, such as pragma_quick_check.
           (first !== null && readOnlyPragmas.has(first.replace(/^pragma_/, '')))
@@ -202,6 +225,11 @@ function owns(feature: string): (action: Action) => boolean {
         return main && own(first);
       case 'CREATE_INDEX':
       case 'DROP_INDEX':
+        return main && ownIndex(first, second);
+      case 'CREATE_VTABLE':
+      case 'DROP_VTABLE':
+        // FTS5 makes its shadow tables, named <table>_data and so on, as the feature's own.
+        return main && own(first) && second !== null && virtualTableModules.has(second);
       case 'CREATE_TRIGGER':
       case 'DROP_TRIGGER':
         return main && own(first) && own(second);
@@ -210,8 +238,8 @@ function owns(feature: string): (action: Action) => boolean {
       case 'PRAGMA':
         return first !== null && readOnlyPragmas.has(first.toLowerCase());
       default:
-        // Transactions and savepoints, ATTACH and DETACH, anything temporary, virtual tables,
-        // ANALYZE, and whatever SQLite adds later.
+        // Transactions and savepoints, ATTACH and DETACH, anything temporary, ANALYZE, and
+        // whatever SQLite adds later.
         return false;
     }
   };
@@ -227,6 +255,7 @@ function compileTriggersAndViews(
   feature: string,
   before: Map<string, SchemaObject>,
   after: Map<string, SchemaObject>,
+  refused: () => boolean,
 ): void {
   const fired = new Set<string>();
   for (const [name, object] of after) {
@@ -234,16 +263,25 @@ function compileTriggersAndViews(
     if (object.type === 'view') database.compile(`SELECT * FROM ${quote(name)} LIMIT 0`);
     if (object.type === 'trigger') fired.add(object.table);
   }
+  // A statement a trigger can't fire on fails for its own reasons (a view takes only the changes
+  // its INSTEAD OF triggers handle); only the authorizer's refusals count here.
+  const attempt = (sql: string) => {
+    try {
+      database.compile(sql);
+    } catch (error) {
+      if (refused()) throw error;
+    }
+  };
   for (const table of fired) {
     const columns = database
       .prepare(`PRAGMA table_info(${quote(table)})`)
       .all()
       .map((row) => quote(String(row.name)));
-    database.compile(`INSERT INTO ${quote(table)} DEFAULT VALUES`);
-    database.compile(`DELETE FROM ${quote(table)}`);
+    attempt(`INSERT INTO ${quote(table)} DEFAULT VALUES`);
+    attempt(`DELETE FROM ${quote(table)}`);
     if (columns.length > 0) {
       const set = columns.map((column) => `${column} = ${column}`).join(', ');
-      database.compile(`UPDATE ${quote(table)} SET ${set}`);
+      attempt(`UPDATE ${quote(table)} SET ${set}`);
     }
   }
 }

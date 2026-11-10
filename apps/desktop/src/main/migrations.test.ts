@@ -197,6 +197,21 @@ describe('migrate', () => {
       'CREATE TEMP TABLE notes_scratch (id INTEGER);',
       'tried INSERT on sqlite_temp_master',
     ],
+    [
+      'a full-text table it doesn’t own',
+      'CREATE VIRTUAL TABLE search USING fts5(body);',
+      'tried CREATE_VTABLE on search',
+    ],
+    [
+      "an INSTEAD OF trigger that reaches another feature's table",
+      'CREATE VIEW notes_v AS SELECT 1 AS one; CREATE TRIGGER notes_t INSTEAD OF INSERT ON notes_v BEGIN DELETE FROM pins_pins; END;',
+      'tried DELETE on pins_pins in notes_t',
+    ],
+    [
+      "json_each over another feature's table",
+      'CREATE TABLE notes_copy AS SELECT value FROM pins_pins, json_each(pins_pins.id);',
+      'tried READ on pins_pins',
+    ],
     ['another database', "ATTACH ':memory:' AS other;", 'tried ATTACH'],
     [
       'a pragma that changes the connection',
@@ -267,6 +282,40 @@ describe('migrate', () => {
       { text: 'row 2' },
       { text: 'row 3' },
     ]);
+  });
+
+  it('lets a migration use keys, JSON, full-text search and INSTEAD OF triggers on its own tables', () => {
+    const db = database();
+    migrate(db, pins);
+    const own = {
+      ...pins,
+      '../features/notes/migrations/001-notes.sql': `
+        CREATE TABLE notes_people (id INTEGER PRIMARY KEY, login TEXT NOT NULL UNIQUE) STRICT;
+        CREATE TABLE notes_settings (key TEXT PRIMARY KEY, value TEXT) STRICT;
+        CREATE TABLE notes_marks (person INTEGER, file TEXT, PRIMARY KEY (person, file)) WITHOUT ROWID, STRICT;
+        CREATE TABLE notes_docs (body TEXT NOT NULL) STRICT;
+        INSERT INTO notes_docs VALUES ('["a", "b"]');
+        CREATE TABLE notes_words AS SELECT value AS word FROM notes_docs, json_each(notes_docs.body);
+        CREATE VIRTUAL TABLE notes_search USING fts5(body);
+        INSERT INTO notes_search (body) VALUES ('review the diff'), ('merge the stack');
+        CREATE TABLE notes_found AS SELECT body FROM notes_search WHERE notes_search MATCH 'diff';
+        CREATE VIEW notes_logins AS SELECT login FROM notes_people;
+        CREATE TRIGGER notes_add_login INSTEAD OF INSERT ON notes_logins BEGIN
+          INSERT INTO notes_people (login) VALUES (NEW.login);
+        END;
+        INSERT INTO notes_logins (login) VALUES ('scornz');
+      `,
+    };
+    expect(migrate(db, own).map((migration) => migration.file)).toEqual(['001-notes.sql']);
+    expect(db.prepare('SELECT word FROM notes_words').all()).toEqual([
+      { word: 'a' },
+      { word: 'b' },
+    ]);
+    expect(db.prepare('SELECT body FROM notes_found').all()).toEqual([{ body: 'review the diff' }]);
+    expect(db.prepare('SELECT login FROM notes_people').all()).toEqual([{ login: 'scornz' }]);
+    expect(() =>
+      db.prepare("INSERT INTO notes_settings VALUES ('a', '1'), ('a', '2')").run(),
+    ).toThrow('UNIQUE constraint failed');
   });
 
   it('hashes a migration with its line endings made LF', () => {
