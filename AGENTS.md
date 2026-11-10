@@ -150,8 +150,9 @@ holding:
 - It runs in Chromium's sandbox, with context isolation and without Node.
 - It loads only Lo's own files, from the `lo-app:` scheme, never from `file:`. Its content security
   policy, sent as a header, allows no inline scripts or styles and nothing from elsewhere.
-- Its session cancels every request outside `lo-app:` and refuses every permission. It can't
-  navigate away or open other windows.
+- Its session cancels every request outside `lo-app:`. WebRTC, which sends nothing the session can
+  cancel, may use only the session's proxy, which leads nowhere. Every permission and every download
+  is refused. It can't navigate away, follow a redirect, open other windows or attach a webview.
 
 `src/main/policy.ts` holds these rules. Loosen one only for a stated reason, with a test that shows
 the new limit.

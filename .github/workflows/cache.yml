@@ -1,6 +1,6 @@
-# Saves pnpm's store and Electron's binary from main. A cache saved on a pull request's or the merge queue's ref is only
-# visible to that ref, while one saved on main is visible to every pull request, so the other
-# workflows only restore it.
+# Saves pnpm's store and Electron's binary from main. A cache saved on a pull request's or the
+# merge queue's ref is only visible to that ref, while one saved on main is visible to every pull
+# request, so the other workflows only restore it.
 name: cache
 
 on:

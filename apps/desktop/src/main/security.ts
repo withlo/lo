@@ -4,6 +4,7 @@ import { serveFile } from './files.ts';
 import {
   appScheme,
   contentSecurityPolicy,
+  deadProxy,
   isAllowedNavigation,
   isAllowedRequest,
 } from './policy.ts';
@@ -22,11 +23,13 @@ export function registerScheme(): void {
 }
 
 /**
- * Locks down the session the window runs in: its files come from `root` over Lo's scheme with the
- * content security policy as a header, every request outside them is cancelled, every permission
- * is refused, and spellcheck is off, so Linux never downloads dictionaries.
+ * Locks down the session the window runs in. Its files come from `root` over Lo's scheme, with the
+ * content security policy as a header. Every request outside them is cancelled, and whatever
+ * could still reach the network without a request, such as WebRTC, goes through a proxy that leads
+ * nowhere. Every permission and every download is refused, and spellcheck is off, so Linux never
+ * downloads dictionaries.
  */
-export function secureSession(session: Session, root: string, dev?: URL): void {
+export async function secureSession(session: Session, root: string, dev?: URL): Promise<void> {
   const headers = { 'content-security-policy': contentSecurityPolicy() };
   session.protocol.handle(appScheme, (request) => serveFile(request, root, headers));
 
@@ -42,24 +45,29 @@ export function secureSession(session: Session, root: string, dev?: URL): void {
       });
     });
   }
+  await session.setProxy({ mode: 'fixed_servers', ...deadProxy(dev) });
 
   session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.setPermissionCheckHandler(() => false);
   session.setDevicePermissionHandler(() => false);
+  session.on('will-download', (event) => event.preventDefault());
   session.setSpellCheckerEnabled(false);
 }
 
 /**
  * Keeps every web contents where it is: no new windows, no navigation or redirect away from the
- * page Lo loaded, and no webviews. Run for every web contents as it's created.
+ * page Lo loaded, no webviews, and WebRTC only through the session's proxy. Run for every web
+ * contents as it's created.
  */
 export function secureContents(contents: WebContents, dev?: URL): void {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  const stay = (event: { url: string; preventDefault(): void }) => {
+  // Announced for every frame's navigation, the page's included, before anything else is.
+  contents.on('will-frame-navigate', (event) => {
     if (!isAllowedNavigation(event.url, dev)) event.preventDefault();
-  };
-  contents.on('will-navigate', stay);
-  contents.on('will-frame-navigate', stay);
-  contents.on('will-redirect', stay);
+  });
+  contents.on('will-redirect', (event) => {
+    if (!isAllowedNavigation(event.url, dev)) event.preventDefault();
+  });
   contents.on('will-attach-webview', (event) => event.preventDefault());
+  contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
 }
