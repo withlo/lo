@@ -1,0 +1,53 @@
+# One review thread comment, and its thread, as GitHub has them now (`docs/design.md`, "Comments").
+# Lo reads it before it edits or deletes your comment, since nothing it polls sees an edit made
+# elsewhere, and after an edit or delete whose answer was lost, to see whether GitHub took it. A
+# comment that's gone answers NOT_FOUND.
+query ReviewComment($comment: ID!, $thread: ID!) {
+  rateLimit {
+    cost
+    limit
+    remaining
+    used
+    resetAt
+  }
+  comment: node(id: $comment) {
+    __typename
+    ... on PullRequestReviewComment {
+      id
+      # Null for a deleted account.
+      author {
+        __typename
+        login
+      }
+      body
+      state
+      lastEditedAt
+      # Who changed the text last; null when nobody did, or for a deleted account.
+      editor {
+        __typename
+        login
+      }
+      viewerDidAuthor
+      viewerCanUpdate
+      viewerCanDelete
+      viewerCannotUpdateReasons
+      # The review it's in, and how many comments that holds: for a pending comment, your
+      # pending review's count, which deleting it lowers.
+      pullRequestReview {
+        state
+        comments {
+          totalCount
+        }
+      }
+    }
+  }
+  thread: node(id: $thread) {
+    __typename
+    ... on PullRequestReviewThread {
+      isResolved
+      comments {
+        totalCount
+      }
+    }
+  }
+}

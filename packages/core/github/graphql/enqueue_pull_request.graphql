@@ -1,0 +1,24 @@
+# Adds a pull request to its base branch's merge queue, as "Merge when ready" does on a pull request
+# that's ready, only while its head is `expectedHeadOid`, the head on screen. `jump` puts it at the
+# front, which takes permission to bypass the branch's rules.
+mutation EnqueuePullRequest($pullRequestId: ID!, $expectedHeadOid: GitObjectID!, $jump: Boolean!) {
+  enqueuePullRequest(
+    input: { pullRequestId: $pullRequestId, expectedHeadOid: $expectedHeadOid, jump: $jump }
+  ) {
+    mergeQueueEntry {
+      id
+      position
+      state
+      jump
+      solo
+      enqueuedAt
+      estimatedTimeToMerge
+      headCommit {
+        oid
+      }
+      pullRequest {
+        number
+      }
+    }
+  }
+}

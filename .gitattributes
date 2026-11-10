@@ -4,3 +4,8 @@ design/css/type.css linguist-generated=true
 
 # Recorded GitHub responses: collapsed in GitHub's diffs.
 testing/fixtures/** linguist-generated=true
+
+# GitHub's GraphQL schema, vendored by scripts/update-github-schema.ts, and the query types
+# generated from it.
+packages/core/github/graphql/schema.graphql linguist-generated=true
+packages/core/github/src/generated/** linguist-generated=true

@@ -1,0 +1,38 @@
+# Turns on auto-merge, so GitHub merges the pull request with `mergeMethod` once nothing blocks it,
+# only while its head is `expectedHeadOid`, the head on screen. On a branch with a merge queue
+# it's "Merge when ready": GitHub adds the pull request to the queue instead, with the queue's
+# method and message. The method is always sent: GitHub's default is a merge commit.
+mutation EnablePullRequestAutoMerge(
+  $pullRequestId: ID!
+  $mergeMethod: PullRequestMergeMethod!
+  $expectedHeadOid: GitObjectID!
+  $commitHeadline: String
+  $commitBody: String
+) {
+  enablePullRequestAutoMerge(
+    input: {
+      pullRequestId: $pullRequestId
+      mergeMethod: $mergeMethod
+      expectedHeadOid: $expectedHeadOid
+      commitHeadline: $commitHeadline
+      commitBody: $commitBody
+    }
+  ) {
+    pullRequest {
+      number
+      headRefOid
+      state
+      isInMergeQueue
+      autoMergeRequest {
+        mergeMethod
+        enabledAt
+        enabledBy {
+          __typename
+          login
+        }
+        commitHeadline
+        commitBody
+      }
+    }
+  }
+}

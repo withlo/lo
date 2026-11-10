@@ -1,0 +1,30 @@
+# Types for every query in graphql/, from GitHub's schema: `pnpm nx run github:codegen`.
+schema: graphql/schema.graphql
+documents: graphql/!(schema).graphql
+generates:
+  src/generated/graphql.ts:
+    plugins:
+      - typescript-operations
+      - typed-document-node
+    config:
+      documentMode: string
+      enumType: string-literal
+      strictScalars: true
+      scalars:
+        Base64String: string
+        BigInt: string
+        CustomPropertyValue: string | string[]
+        Date: string
+        DateTime: string
+        GitObjectID: string
+        GitRefname: string
+        GitSSHRemote: string
+        GitTimestamp: string
+        HTML: string
+        ID: string
+        PreciseDateTime: string
+        URI: string
+        X509Certificate: string
+      useTypeImports: true
+      avoidOptionals: true
+      skipTypename: true

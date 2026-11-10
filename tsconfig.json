@@ -13,6 +13,9 @@
     },
     {
       "path": "./testing"
+    },
+    {
+      "path": "./packages/core/github"
     }
   ]
 }

@@ -1,0 +1,21 @@
+# Turns auto-merge off, or "Merge when ready" on a branch with a merge queue.
+mutation DisablePullRequestAutoMerge($pullRequestId: ID!) {
+  disablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
+    pullRequest {
+      number
+      headRefOid
+      state
+      isInMergeQueue
+      autoMergeRequest {
+        mergeMethod
+        enabledAt
+        enabledBy {
+          __typename
+          login
+        }
+        commitHeadline
+        commitBody
+      }
+    }
+  }
+}

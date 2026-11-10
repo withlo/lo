@@ -13,3 +13,7 @@ LICENSE
 
 # Recorded GitHub responses, kept exactly as recorded.
 testing/fixtures/
+
+# GitHub's GraphQL schema, as vendored, and the types generated from it.
+packages/core/github/graphql/schema.graphql
+packages/core/github/src/generated/
