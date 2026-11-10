@@ -11,23 +11,30 @@ export type ReplayFetch = typeof globalThis.fetch & {
 
 /** A test's own hooks: the context Vitest passes a test function. */
 export interface TestHooks {
-  onTestFinished(fn: () => void): void;
+  onTestFinished(fn: () => void | Promise<void>): void;
 }
 
 /**
  * A `fetch` that answers from the cassette `cassette` in `testing/fixtures/github`, or from a
  * {@link Replay}, for code that takes `fetch` as a parameter.
  *
- * A request the cassette can't answer rejects, and it also fails the test once the test ends,
- * even when the code under test catches the rejection as it would a network error. Made inside a
- * test, it belongs to that test; under `test.concurrent`, pass the test's context as `test`, so
- * each test checks its own requests. One that fails after its test ended fails the run instead.
- * Made outside any test, such as in a `beforeAll`, nothing checks it: look at `replay.failures`.
+ * A request the cassette can't answer rejects, and it also fails a test, even when the code under
+ * test catches the rejection as it would a network error:
+ *
+ * - Made inside a test, it belongs to that test, which checks its requests when it ends, waiting
+ *   for any still being answered. Under `test.concurrent`, pass the test's context as `test`, so
+ *   each test checks its own.
+ * - Made outside any test, at a module's top or in a `beforeAll`, each failure fails the test
+ *   running when it happens.
+ * - A failure with no test to fail, such as one after its test ended, fails the run instead.
  */
 export function replayFetch(cassette: string | Replay, test?: TestHooks): ReplayFetch {
   const replay = typeof cassette === 'string' ? Replay.cassette(cassette) : cassette;
+  const pending = new Set<Promise<unknown>>();
   let ended = false;
-  const check = (): void => {
+
+  const check = async (): Promise<void> => {
+    await Promise.allSettled(pending);
     ended = true;
     const [first, ...rest] = replay.failures;
     if (first === undefined) return;
@@ -37,28 +44,46 @@ export function replayFetch(cassette: string | Replay, test?: TestHooks): Replay
       replay.failures.map((error) => error.message).join('\n\n'),
     );
   };
+  let owned: boolean;
   if (test) {
     test.onTestFinished(check);
+    owned = true;
   } else {
-    try {
-      onTestFinished(check);
-    } catch {
-      // Not inside a test: nothing to fail but the request.
-    }
+    owned = whenTestFinishes(check);
   }
 
-  const fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    try {
-      return await replay.respond(new Request(input, init));
-    } catch (error) {
-      if (ended && error instanceof ReplayError) {
-        // Its test already ended, so there's no test to fail: fail the run, rather than lose it.
-        setTimeout(() => {
-          throw error;
-        });
-      }
+  /** Makes sure a test, or else the run, fails for `error`. */
+  const fail = (error: ReplayError): void => {
+    // A replay made in a test is checked when its test ends.
+    if (owned && !ended) return;
+    if (!owned && whenTestFinishes(() => Promise.reject(error))) return;
+    // No test is left to fail: fail the run, rather than lose it.
+    setTimeout(() => {
       throw error;
+    });
+  };
+
+  const fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const answer = replay.respond(new Request(input, init));
+    pending.add(answer);
+    try {
+      return await answer;
+    } catch (error) {
+      if (error instanceof ReplayError) fail(error);
+      throw error;
+    } finally {
+      pending.delete(answer);
     }
   };
   return Object.assign(fetch, { replay, seen: replay.seen });
+}
+
+/** Runs `check` when the running test finishes. Says whether a test was running. */
+function whenTestFinishes(check: () => Promise<void>): boolean {
+  try {
+    onTestFinished(check);
+    return true;
+  } catch {
+    return false;
+  }
 }

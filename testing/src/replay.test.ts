@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'vitest';
+import { beforeAll, describe, expect, test } from 'vitest';
 
 import { queryHash, type Interaction } from './cassette.ts';
-import { replayFetch } from './fetch.ts';
+import { replayFetch, type ReplayFetch } from './fetch.ts';
 import { nearestKey, Replay } from './replay.ts';
 
 function interaction(method: string, url: string, status: number, body: string): Interaction {
@@ -57,6 +57,45 @@ test.fails('an unexpected request fails the test even when the code catches it',
   );
   await fetch('https://api.github.com/other').catch(() => undefined);
   expect(fetch.seen).toHaveLength(1);
+});
+
+// Made at the top of a module, outside any test.
+const atTop = replayFetch(
+  new Replay('t', [interaction('GET', 'https://api.github.com/user', 200, '')]),
+);
+
+test.fails(
+  'an unexpected request fails the test running it, from a fetch made at the top',
+  async () => {
+    await atTop('https://api.github.com/other').catch(() => undefined);
+    expect(atTop.replay.failures).toHaveLength(1);
+  },
+);
+
+describe('from a fetch made in a beforeAll', () => {
+  let shared: ReplayFetch;
+  beforeAll(() => {
+    shared = replayFetch(
+      new Replay('t', [interaction('GET', 'https://api.github.com/user', 200, '')]),
+    );
+  });
+
+  test.fails('an unexpected request fails the test running it', async () => {
+    await shared('https://api.github.com/other').catch(() => undefined);
+    expect(shared.replay.failures).toHaveLength(1);
+  });
+
+  test('and not the next test', async () => {
+    expect((await shared('https://api.github.com/user')).status).toBe(200);
+  });
+});
+
+test.fails('a request still being answered when its test ends fails the test', () => {
+  const fetch = replayFetch(
+    new Replay('t', [interaction('GET', 'https://api.github.com/user', 200, '')]),
+  );
+  void fetch('https://api.github.com/other').catch(() => undefined);
+  expect(fetch.replay.failures).toHaveLength(0);
 });
 
 // Under test.concurrent, each test passes its own context, so a failure is its test's alone.
