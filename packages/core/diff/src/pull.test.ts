@@ -85,6 +85,38 @@ describe('diffPullRequest', () => {
     expect(result.files.map(({ changes }) => changes.length)).toEqual([1, 1]);
   });
 
+  test('highlights a moved line whole when its words can\u2019t be found', () => {
+    // The real diff, taken before the spy replaces it.
+    const computer = new DefaultLinesDiffComputer();
+    const real = computer.computeDiff.bind(computer);
+    const spy = vi
+      .spyOn(DefaultLinesDiffComputer.prototype, 'computeDiff')
+      .mockImplementation((old, added, options) => {
+        // Only a moved line's diff fails: the files' diffs have more lines.
+        if (old.length === 1 && added.length === 1) throw new Error('Assertion Failed');
+        return real(old, added, options);
+      });
+    try {
+      const result = diffPullRequest([
+        { path: 'src/cart.ts', old: [...helper, ''].join('\n'), new: '' },
+        {
+          path: 'src/pricing.ts',
+          old: undefined,
+          new: [...helper.slice(0, 3), '  return sum + shipping + tax(sum, region);', '}', ''].join(
+            '\n',
+          ),
+        },
+      ]);
+
+      expect(result.moves[0]?.words).toEqual({
+        old: [{ line: 4, from: 0, to: helper[3]!.length }],
+        new: [{ line: 4, from: 0, to: '  return sum + shipping + tax(sum, region);'.length }],
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test('goes on past a file whose diff failed', () => {
     const spy = vi
       .spyOn(DefaultLinesDiffComputer.prototype, 'computeDiff')
