@@ -1,0 +1,234 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "ReviewThreads",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 23,
+      "first": 100,
+      "after": null
+    },
+    "query_sha256": "89476c194892866c84d28316d05a62244432d190b6b0fce18fc3df748b08fb5d"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4989",
+      "x-ratelimit-reset": "1794201720",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "11"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4989,
+          "used": 11,
+          "resetAt": "2026-11-09T05:22:00Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "reviewThreads": {
+              "totalCount": 4,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wOVQwNDoyMzozM1rOtSDojQ=="
+              },
+              "nodes": [
+                {
+                  "id": "PRRT_kwDOVleUfc61GDrr",
+                  "path": "e11/review.txt",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 10,
+                  "startLine": 10,
+                  "originalLine": 10,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wOVQwMDo0NTozNlrPAAAAAQy6gMY="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABDLqAxg",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Lo L7 check: a comment, so the review isn't empty.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-09T00:45:36Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4508516550",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        },
+                        "originalCommit": {
+                          "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc61GDzx",
+                  "path": "e11/review.txt",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 10,
+                  "startLine": 10,
+                  "originalLine": 10,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wOVQwMDo0NTo1MlrPAAAAAQy6hAw="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABDLqEDA",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Lo L7 check: a comment, so the review isn't empty.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-09T00:45:52Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4508517388",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        },
+                        "originalCommit": {
+                          "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc61GEOM",
+                  "path": "e11/review.txt",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 10,
+                  "startLine": 10,
+                  "originalLine": 10,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wOVQwMDo0NjozOVrPAAAAAQy6juI="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABDLqO4g",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Lo L7 check: a comment, so the review isn't empty.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-09T00:46:39Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4508520162",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        },
+                        "originalCommit": {
+                          "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc61IOiN",
+                  "path": "e11/review.txt",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 30,
+                  "startLine": 30,
+                  "originalLine": 30,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wOVQwNDoyMzozM1rPAAAAAQzIYmY="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABDMhiZg",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture E11: the thread of a review submitted since.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-09T04:23:33Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4509426278",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        },
+                        "originalCommit": {
+                          "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

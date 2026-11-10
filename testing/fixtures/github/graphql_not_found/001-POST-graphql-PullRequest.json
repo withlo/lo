@@ -1,0 +1,46 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequest",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "does-not-exist",
+      "number": 1,
+      "filesFirst": 100,
+      "filesAfter": null
+    },
+    "query_sha256": "faebcf58d69c5e012ebe96425bca46ad442d8bf907b11b029049c26d755fc48b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4999",
+      "x-ratelimit-reset": "1793961351",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "1"
+    },
+    "body": {
+      "data": {
+        "repository": null
+      },
+      "errors": [
+        {
+          "type": "NOT_FOUND",
+          "path": [
+            "repository"
+          ],
+          "locations": [
+            {
+              "line": 9,
+              "column": 3
+            }
+          ],
+          "message": "Could not resolve to a Repository with the name 'rozed-dev/does-not-exist'."
+        }
+      ]
+    }
+  }
+}

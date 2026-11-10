@@ -1,0 +1,96 @@
+{
+  "description": "Merges GitHub refuses on rozed-dev/e2e as rozed-bot, each followed until it ended: E4's draft, conflict, passing (waiting on an approval) and failing pull requests on e4/gated, E1's closed #14, a pull request that doesn't exist, a UUID GitHub never gave, and a merge into a queue on e9b/base, which has none",
+  "recorded_at": "2026-11-08T11:01:14Z",
+  "repo": "rozed-dev/e2e",
+  "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674",
+  "setup": {
+    "run": 1,
+    "merged": {
+      "number": 42,
+      "node_id": "PR_kwDOVleUfc8AAAABNpXB2A",
+      "branch": "e9b/merge-1",
+      "head": "1c320a8fdea55a1322333aa89b2fe7a52bd49e20"
+    },
+    "moved": {
+      "number": 43,
+      "node_id": "PR_kwDOVleUfc8AAAABNpXDlQ",
+      "branch": "e9b/moved-1",
+      "head": "1f987b98175bf5da8ffe0d2f3cf8ac3378481f11"
+    },
+    "stale": "4e6e667c0250335bed15d71a69668fdd0f47503d",
+    "open": {
+      "number": 44,
+      "node_id": "PR_kwDOVleUfc8AAAABNpXE0g",
+      "branch": "e9b/open-1",
+      "head": "f6e96befd3667ee10bfb9b8652ad55906ec3e2c6"
+    },
+    "stack": [
+      {
+        "number": 45,
+        "node_id": "PR_kwDOVleUfc8AAAABNpXGDA",
+        "branch": "e9b/s1-1",
+        "head": "3169220d288a3f6c59b5968f711e7f58126fa4db"
+      },
+      {
+        "number": 46,
+        "node_id": "PR_kwDOVleUfc8AAAABNpXG9w",
+        "branch": "e9b/s2-1",
+        "head": "35ee35bb68f02bd9f592c1e0d5438a590f6f5a2e"
+      },
+      {
+        "number": 47,
+        "node_id": "PR_kwDOVleUfc8AAAABNpXIDw",
+        "branch": "e9b/s3-1",
+        "head": "a76cc8a71a455b2c9b9bee4298655ca3da8f1df8"
+      }
+    ],
+    "draft": {
+      "number": 29,
+      "node_id": "PR_kwDOVleUfc8AAAABNolPXg",
+      "branch": "e4/draft",
+      "head": "fe4c78943a327fa540c09a96b23ed225bf0a0b5e"
+    },
+    "conflict": {
+      "number": 28,
+      "node_id": "PR_kwDOVleUfc8AAAABNolORg",
+      "branch": "e4/conflict",
+      "head": "086ad740bb1d738c91d74151dcdbb8ebf6e28ba9"
+    },
+    "passing": {
+      "number": 25,
+      "node_id": "PR_kwDOVleUfc8AAAABNolKGQ",
+      "branch": "e4/passing",
+      "head": "5f0ff60de032350873bec50c84c9e92f3640a9db"
+    },
+    "failing": {
+      "number": 26,
+      "node_id": "PR_kwDOVleUfc8AAAABNolLoQ",
+      "branch": "e4/failing",
+      "head": "caddf537f55698add79dc540a9fecea7b62fb1bc"
+    },
+    "closed": {
+      "number": 14,
+      "node_id": "PR_kwDOVleUfc8AAAABNY2OYw",
+      "branch": "e1/revisions-3",
+      "head": "adb72084443c6beb0255b01e8d78e6f68eb7d211"
+    },
+    "queue_slow": {
+      "number": 40,
+      "node_id": "PR_kwDOVleUfc8AAAABNpDSoQ",
+      "branch": "e4/queue-2",
+      "head": "640b349783abc975e9d82808a3f33a59a10a90b7"
+    },
+    "queue_pass": {
+      "number": 41,
+      "node_id": "PR_kwDOVleUfc8AAAABNpDUXg",
+      "branch": "e4/queue-pass-2",
+      "head": "920809a9ad9f7e16c616a4fc4c5f5b526bd96e09"
+    },
+    "queue_fail": {
+      "number": 36,
+      "node_id": "PR_kwDOVleUfc8AAAABNo81KA",
+      "branch": "e4/queue-fail",
+      "head": "e334820658aed00ba43e08c203bd481e0431aa07"
+    }
+  }
+}

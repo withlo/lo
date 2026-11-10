@@ -1,0 +1,6 @@
+{
+  "description": "e4/queued's merge queue, then what decides whether E4's pull requests into e4/queued can merge (E4, the merge states), as rozed-bot, which opened them and administers rozed-dev/e2e, read only. e4/queued's ruleset, with no bypass actors, requires a merge queue (squash) and the ci check from GitHub Actions, and no approval. #34: ci failed on its first attempt and passed when the same workflow run was run again, on the same commit; GitHub says CLEAN. #50: the queue series' slow one, #51: its passing one, #36: its fail-in-queue one, each ready for the queue, which is empty",
+  "recorded_at": "2026-11-08T13:30:54Z",
+  "repo": "rozed-dev/e2e",
+  "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674"
+}

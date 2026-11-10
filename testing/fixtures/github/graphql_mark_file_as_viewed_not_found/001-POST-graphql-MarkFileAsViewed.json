@@ -1,0 +1,43 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "MarkFileAsViewed",
+    "variables": {
+      "pullRequestId": "PR_kwDOVk6v9M8AAAAAAAAAAA",
+      "path": "README.md"
+    },
+    "query_sha256": "eba9329207f27e86618447f15d486d755c69191e8d4528f99335ec218a88ce6d"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4998",
+      "x-ratelimit-reset": "1793980445",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "2"
+    },
+    "body": {
+      "data": {
+        "markFileAsViewed": null
+      },
+      "errors": [
+        {
+          "type": "NOT_FOUND",
+          "path": [
+            "markFileAsViewed"
+          ],
+          "locations": [
+            {
+              "line": 4,
+              "column": 3
+            }
+          ],
+          "message": "Could not resolve to a node with the global id of 'PR_kwDOVk6v9M8AAAAAAAAAAA'."
+        }
+      ]
+    }
+  }
+}

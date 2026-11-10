@@ -1,0 +1,24 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/stacks",
+    "body_sha256": "8496b237caf4b24f89dc5b12f6a198fd65adc3471451e0768e1850633302096a"
+  },
+  "response": {
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4963",
+      "x-ratelimit-reset": "1794142087",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "37"
+    },
+    "body": {
+      "message": "Pull requests must form a stack, where each PR's base ref is the previous PR's head ref",
+      "documentation_url": "https://docs.github.com/rest/pulls/stacks#create-a-pull-request-stack",
+      "status": "422"
+    }
+  }
+}

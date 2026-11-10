@@ -1,0 +1,32 @@
+{
+  "request": {
+    "method": "PATCH",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/52",
+    "body_sha256": "c57fddcbc74bc09b35020786e60ecc8493033468a99cec7960cd4e2f1334072f"
+  },
+  "response": {
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4957",
+      "x-ratelimit-reset": "1794142087",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "43"
+    },
+    "body": {
+      "message": "Validation Failed",
+      "errors": [
+        {
+          "message": "Proposed base branch 'e9b/does-not-exist' was not found",
+          "resource": "PullRequest",
+          "field": "base",
+          "code": "invalid"
+        }
+      ],
+      "documentation_url": "https://docs.github.com/rest/pulls/pulls#update-a-pull-request",
+      "status": "422"
+    }
+  }
+}

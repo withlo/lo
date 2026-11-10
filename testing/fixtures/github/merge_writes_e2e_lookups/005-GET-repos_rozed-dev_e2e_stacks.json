@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/stacks?pull_request=29"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"649dc5c69e2d1ca2da9d3eb81cb51ed70f13575188f120eef14b40c6862603a2\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4995",
+      "x-ratelimit-reset": "1794154941",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "5"
+    },
+    "body": []
+  }
+}

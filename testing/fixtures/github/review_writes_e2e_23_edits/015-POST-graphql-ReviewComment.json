@@ -1,0 +1,63 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "ReviewComment",
+    "variables": {
+      "comment": "PRRC_kwDOVleUfc8AAAABDS324g",
+      "thread": "PRRT_kwDOVleUfc61YAln"
+    },
+    "query_sha256": "deb080fbc9303856335b2b46188101e005c63af244908404be8dd0ce21d51e6c"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4921",
+      "x-ratelimit-reset": "1794247211",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "79"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4921,
+          "used": 79,
+          "resetAt": "2026-11-09T18:00:11Z"
+        },
+        "comment": {
+          "__typename": "PullRequestReviewComment",
+          "id": "PRRC_kwDOVleUfc8AAAABDS324g",
+          "author": {
+            "__typename": "User",
+            "login": "rozed-bot"
+          },
+          "body": "Fixture E11: a reply posted at once, to edit.",
+          "state": "SUBMITTED",
+          "lastEditedAt": null,
+          "editor": null,
+          "viewerDidAuthor": true,
+          "viewerCanUpdate": true,
+          "viewerCanDelete": true,
+          "viewerCannotUpdateReasons": [],
+          "pullRequestReview": {
+            "state": "COMMENTED",
+            "comments": {
+              "totalCount": 1
+            }
+          }
+        },
+        "thread": {
+          "__typename": "PullRequestReviewThread",
+          "isResolved": false,
+          "comments": {
+            "totalCount": 2
+          }
+        }
+      }
+    }
+  }
+}

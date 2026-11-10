@@ -1,0 +1,44 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "EnablePullRequestAutoMerge",
+    "variables": {
+      "pullRequestId": "PR_kwDOVleUfc8AAAABNpDSoQ",
+      "mergeMethod": "SQUASH",
+      "expectedHeadOid": "640b349783abc975e9d82808a3f33a59a10a90b7"
+    },
+    "query_sha256": "b446a8a215866f99da0f814d24c1ab46fe21f9af68ce691482e9a905e5ed85a9"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4976",
+      "x-ratelimit-reset": "1794138848",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "24"
+    },
+    "body": {
+      "data": {
+        "enablePullRequestAutoMerge": null
+      },
+      "errors": [
+        {
+          "type": "UNPROCESSABLE",
+          "path": [
+            "enablePullRequestAutoMerge"
+          ],
+          "locations": [
+            {
+              "line": 12,
+              "column": 3
+            }
+          ],
+          "message": "Auto merge is not allowed for this repository"
+        }
+      ]
+    }
+  }
+}

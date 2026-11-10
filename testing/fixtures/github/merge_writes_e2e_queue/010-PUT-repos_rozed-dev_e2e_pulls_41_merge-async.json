@@ -1,0 +1,26 @@
+{
+  "request": {
+    "method": "PUT",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/41/merge-async",
+    "body_sha256": "1e1dd25cebbb3aedf9e513685dbd37c2517f3eb9f9531ff5f26a395274b4b0a3"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"2db2059f7158b1a457dc65a57c2e8309f9c3b59a8a1b877d51fac742f243e5dd\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4908",
+      "x-ratelimit-reset": "1794138370",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "92"
+    },
+    "body": {
+      "status": "enqueued",
+      "details": {
+        "message": "Pull request is already in the merge queue."
+      }
+    }
+  }
+}
