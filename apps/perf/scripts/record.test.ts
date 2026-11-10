@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { describe, expect, onTestFinished, test } from 'vitest';
 
@@ -19,40 +19,57 @@ function home(files: Record<string, string>): string {
   return folder;
 }
 
+/** Each source's file name and what reading it gives: its token or its error. */
+function read(sources: ReturnType<typeof tokenSources>): [string, string][] {
+  return sources.map(({ file, read: readIt }) => {
+    try {
+      return [basename(file), readIt()];
+    } catch (error) {
+      return [basename(file), error instanceof Error ? error.message : String(error)];
+    }
+  });
+}
+
 describe('tokenSources', () => {
   test('tries the OAuth token first, then the one in bot.env', () => {
     const folder = home({
       'oauth-token': `${fakeToken}\n`,
       'bot.env': `ROZED_BOT_TOKEN='ghp_${'Z'.repeat(36)}'\n`,
     });
-    expect(tokenSources({}, folder).map(({ token }) => token)).toEqual([
-      fakeToken,
-      `ghp_${'Z'.repeat(36)}`,
+    expect(read(tokenSources({}, folder))).toEqual([
+      ['oauth-token', fakeToken],
+      ['bot.env', `ghp_${'Z'.repeat(36)}`],
     ]);
   });
 
-  test('reads bot.env alone when there’s no OAuth token', () => {
+  test('reads bot.env alone when there\u2019s no OAuth token', () => {
     const folder = home({ 'bot.env': `OTHER=1\nexport ROZED_BOT_TOKEN=${fakeToken}\n` });
-    expect(tokenSources({}, folder)).toEqual([
-      { file: join(folder, '.config/rozed-dev/bot.env'), token: fakeToken },
-    ]);
+    expect(read(tokenSources({}, folder))).toEqual([['bot.env', fakeToken]]);
+  });
+
+  test('reads a good OAuth token even when bot.env is broken', () => {
+    const folder = home({ 'oauth-token': fakeToken, 'bot.env': 'not a token\n' });
+    const [oauth, bot] = tokenSources({}, folder);
+
+    expect(oauth?.read()).toBe(fakeToken);
+    expect(() => bot?.read()).toThrow(/bot\.env doesn't hold a GitHub token\.$/);
   });
 
   test('uses only the file LO_FIXTURE_TOKEN_FILE names', () => {
     const folder = home({ 'oauth-token': `ghp_${'Z'.repeat(36)}`, mine: fakeToken });
     const file = join(folder, '.config/rozed-dev/mine');
-    expect(tokenSources({ LO_FIXTURE_TOKEN_FILE: file }, folder)).toEqual([
-      { file, token: fakeToken },
+    expect(read(tokenSources({ LO_FIXTURE_TOKEN_FILE: file }, folder))).toEqual([
+      ['mine', fakeToken],
     ]);
   });
 
   test('refuses a file that holds no token, without repeating what it holds', () => {
-    const folder = home({ 'oauth-token': 'hunter2 is my password' });
-    expect(() => tokenSources({}, folder)).toThrow(/doesn't hold a GitHub token\.$/);
-    expect(() => tokenSources({}, folder)).not.toThrow(/hunter2/);
+    const [source] = tokenSources({}, home({ 'oauth-token': 'hunter2 is my password' }));
+    expect(() => source?.read()).toThrow(/doesn't hold a GitHub token\.$/);
+    expect(() => source?.read()).not.toThrow(/hunter2/);
   });
 
-  test('fails when there’s no token anywhere', () => {
+  test('fails when there\u2019s no token anywhere', () => {
     expect(() => tokenSources({}, home({}))).toThrow(/LO_FIXTURE_TOKEN_FILE/);
   });
 });

@@ -1,0 +1,17 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://uploads.github.com/user-attachments/assets?name=lo-photo.jpg&content_type=image%2Fjpeg&repository_id=1448580221",
+    "body_sha256": "e7878cfd0bfadec4fb62bbefaa891f11eb7da342b912f2f12f520f6bada0ddd8"
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"1d8c88a801d62808b966a9ec7e2e675b3a55269566a5972d7e41ff3e12e0cbe0\""
+    },
+    "body": {
+      "url": "https://github.com/user-attachments/assets/05b0af2e-1a62-4af8-9dcb-1fce7a11e593"
+    }
+  }
+}

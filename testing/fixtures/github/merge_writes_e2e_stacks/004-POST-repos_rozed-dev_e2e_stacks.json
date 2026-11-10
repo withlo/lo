@@ -1,0 +1,24 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/stacks",
+    "body_sha256": "60ca33749417fd202218ad1c59dc675e1b76ea68e770f262c138cb7cb8570e04"
+  },
+  "response": {
+    "status": 422,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4964",
+      "x-ratelimit-reset": "1794142087",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "36"
+    },
+    "body": {
+      "message": "Pull requests #53, #54 are already part of a stack",
+      "documentation_url": "https://docs.github.com/rest/pulls/stacks#create-a-pull-request-stack",
+      "status": "422"
+    }
+  }
+}

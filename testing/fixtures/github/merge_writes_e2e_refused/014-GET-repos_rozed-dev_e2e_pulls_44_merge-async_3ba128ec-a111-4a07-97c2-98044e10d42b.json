@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/44/merge-async/3ba128ec-a111-4a07-97c2-98044e10d42b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"6d9fde8a47f7cd1f50426730977dec3b42e258012ca48d7649836f0deca21535\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4911",
+      "x-ratelimit-reset": "1794138370",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "89"
+    },
+    "body": {
+      "status": "failed",
+      "details": {
+        "message": "Cannot perform a merge queue merge for a branch with no merge queue"
+      }
+    }
+  }
+}

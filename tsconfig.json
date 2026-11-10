@@ -12,6 +12,9 @@
       "path": "./apps/desktop"
     },
     {
+      "path": "./testing"
+    },
+    {
       "path": "./packages/core/diff"
     }
   ]

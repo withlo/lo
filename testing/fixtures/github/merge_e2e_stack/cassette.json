@@ -1,0 +1,6 @@
+{
+  "description": "Layers of rozed-dev/e2e's GitHub stacks, rozed-bot's own, as rozed-bot, which administers e2e, read only: stack #73 into e9e/2/base holds #71 (e9e/2/a, the bottom) and #72 (e9e/2/b, on e9e/2/a); #69 is the top of stack #70 into e9e/1/base, which merged with its layers #67 and #68. Neither base has protection or rulesets",
+  "recorded_at": "2026-11-09T01:20:57Z",
+  "repo": "rozed-dev/e2e",
+  "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674"
+}

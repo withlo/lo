@@ -60,6 +60,20 @@ describe('Manifest', () => {
     },
   );
 
+  test.each(['../perf', './perf', 'owner/..', 'owner/.', 'a.b/repo', 'owner/repo/extra', 'owner'])(
+    'refuses the repo %j',
+    (repo) => {
+      expect(Manifest.safeParse({ ...manifest, repo }).success).toBe(false);
+    },
+  );
+
+  test.each(['kubernetes/kubernetes', 'microsoft/TypeScript', 'some-org/.github'])(
+    'accepts the repo %j',
+    (repo) => {
+      expect(Manifest.safeParse({ ...manifest, repo }).success).toBe(true);
+    },
+  );
+
   test('refuses a shortened commit', () => {
     expect(Manifest.safeParse({ ...manifest, base: 'abc1234' }).success).toBe(false);
   });
@@ -73,6 +87,11 @@ describe('countTokens', () => {
     `github_pat_${'A1b2_'.repeat(16)}`,
   ])('finds %s', (token) => {
     expect(countTokens(`{"path": "${token}"}`)).toBe(1);
+  });
+
+  test('finds one stuck to other characters', () => {
+    expect(countTokens(`x_ghp_${'A1b2'.repeat(9)}`)).toBe(1);
+    expect(countTokens(`abcgithub_pat_${'A1b2_'.repeat(16)}xyz`)).toBe(1);
   });
 
   test('ignores words that only start like one', () => {

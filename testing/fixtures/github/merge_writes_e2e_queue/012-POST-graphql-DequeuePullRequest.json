@@ -1,0 +1,42 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "DequeuePullRequest",
+    "variables": {
+      "id": "PR_kwDOVleUfc8AAAABNpXE0g"
+    },
+    "query_sha256": "5a6df31496ce0cb85a8aefad61f97767a8075fa3533e3cdb86e27811b6e88a4a"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4969",
+      "x-ratelimit-reset": "1794138848",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "31"
+    },
+    "body": {
+      "data": {
+        "dequeuePullRequest": null
+      },
+      "errors": [
+        {
+          "type": "UNPROCESSABLE",
+          "path": [
+            "dequeuePullRequest"
+          ],
+          "locations": [
+            {
+              "line": 3,
+              "column": 3
+            }
+          ],
+          "message": "No merge queue found for branch 'e9b/base'"
+        }
+      ]
+    }
+  }
+}

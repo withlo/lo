@@ -1,0 +1,23 @@
+{
+  "name": "@lo/testing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
+  },
+  "scripts": {
+    "lint": "oxlint",
+    "test": "vitest run --root .. --project @lo/testing"
+  },
+  "dependencies": {
+    "graphql": "16.15.0"
+  },
+  "peerDependencies": {
+    "vitest": "5.1.0"
+  },
+  "nx": {
+    "name": "testing"
+  }
+}

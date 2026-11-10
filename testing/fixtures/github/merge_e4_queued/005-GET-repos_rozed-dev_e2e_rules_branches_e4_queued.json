@@ -1,0 +1,52 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/rules/branches/e4/queued?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"da3b340e82760f882593aa0bafaf9fac624abd48f8f93e987ad001faa2aec278\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4763",
+      "x-ratelimit-reset": "1794145688",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "237"
+    },
+    "body": [
+      {
+        "type": "merge_queue",
+        "parameters": {
+          "merge_method": "SQUASH",
+          "max_entries_to_build": 5,
+          "min_entries_to_merge": 1,
+          "max_entries_to_merge": 5,
+          "min_entries_to_merge_wait_minutes": 0,
+          "grouping_strategy": "ALLGREEN",
+          "check_response_timeout_minutes": 60
+        },
+        "ruleset_source_type": "Repository",
+        "ruleset_source": "rozed-dev/e2e",
+        "ruleset_id": 26792031
+      },
+      {
+        "type": "required_status_checks",
+        "parameters": {
+          "strict_required_status_checks_policy": false,
+          "do_not_enforce_on_create": false,
+          "required_status_checks": [
+            {
+              "context": "ci",
+              "integration_id": 15368
+            }
+          ]
+        },
+        "ruleset_source_type": "Repository",
+        "ruleset_source": "rozed-dev/e2e",
+        "ruleset_id": 26792031
+      }
+    ]
+  }
+}

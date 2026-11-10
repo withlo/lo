@@ -38,23 +38,26 @@ const account = 'rozed-bot';
 
 const tokenFormat = /^(?:gh[opsu]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)$/;
 
-/** A place the test account's token is kept, and the token read from it. */
+/** A place the test account's token is kept. */
 export interface TokenSource {
   file: string;
-  token: string;
+  /** Reads the token, or fails naming the file, never what's in it. */
+  read: () => string;
 }
 
 /**
- * The test account's tokens, in the order to try them: the file `LO_FIXTURE_TOKEN_FILE` names
- * alone when it's set, else `~/.config/rozed-dev/oauth-token`, then `ROZED_BOT_TOKEN` in
- * `~/.config/rozed-dev/bot.env`. Errors name the file, never what's in it.
+ * Where the test account's tokens are, in the order to try them: the file `LO_FIXTURE_TOKEN_FILE`
+ * names alone when it's set, else `~/.config/rozed-dev/oauth-token`, then `ROZED_BOT_TOKEN` in
+ * `~/.config/rozed-dev/bot.env`. Each is read only when it's tried, so one that's broken doesn't
+ * stop the others.
  */
 export function tokenSources(
   env: NodeJS.ProcessEnv = process.env,
   home = homedir(),
 ): TokenSource[] {
   const folder = join(home, '.config', 'rozed-dev');
-  if (env.LO_FIXTURE_TOKEN_FILE) return [readToken(env.LO_FIXTURE_TOKEN_FILE)];
+  const named = env.LO_FIXTURE_TOKEN_FILE;
+  if (named) return [{ file: named, read: () => readToken(named) }];
   const sources = [
     { file: join(folder, 'oauth-token') },
     { file: join(folder, 'bot.env'), variable: 'ROZED_BOT_TOKEN' },
@@ -62,11 +65,11 @@ export function tokenSources(
   if (sources.length === 0) {
     throw new Error('No token found: set LO_FIXTURE_TOKEN_FILE to a file holding one.');
   }
-  return sources.map(({ file, variable }) => readToken(file, variable));
+  return sources.map(({ file, variable }) => ({ file, read: () => readToken(file, variable) }));
 }
 
 /** The token in `file`, or in the line that sets `variable` in it. */
-function readToken(file: string, variable?: string): TokenSource {
+function readToken(file: string, variable?: string): string {
   let token: string | undefined = readFileSync(file, 'utf8').trim();
   if (variable) {
     token = token
@@ -78,7 +81,7 @@ function readToken(file: string, variable?: string): TokenSource {
       .replace(/^(['"])(.*)\1$/, '$2');
   }
   if (!token || !tokenFormat.test(token)) throw new Error(`${file} doesn't hold a GitHub token.`);
-  return { file, token };
+  return token;
 }
 
 const RestFile = z.object({
@@ -348,7 +351,14 @@ async function main(names: readonly string[]): Promise<void> {
 
   // Before anything else: whose token this is. One GitHub no longer accepts gives way to the next.
   let signedIn: { github: ReturnType<typeof client>; token: string } | undefined;
-  for (const { file, token } of tokenSources()) {
+  for (const { file, read } of tokenSources()) {
+    let token: string;
+    try {
+      token = read();
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      continue;
+    }
     const github = client(token);
     let login: string;
     try {

@@ -1,0 +1,134 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/stacks",
+    "body_sha256": "60ca33749417fd202218ad1c59dc675e1b76ea68e770f262c138cb7cb8570e04"
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"8a5c3040ce39bc5439f9a026e7d15f7e510c9119c826d1191254fb2e2b459ea1\"",
+      "location": "https://api.github.com/repos/rozed-dev/e2e/stacks/59",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4965",
+      "x-ratelimit-reset": "1794142087",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "35"
+    },
+    "body": {
+      "id": 3212239,
+      "number": 59,
+      "node_id": "PRS_kwDOVleUfc4AMQPP",
+      "url": "https://api.github.com/repos/rozed-dev/e2e/stacks/59",
+      "base": {
+        "ref": "e9b/base"
+      },
+      "open": true,
+      "created_at": "2026-11-08T12:12:27Z",
+      "pull_requests": [
+        {
+          "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/53",
+          "id": 5211196558,
+          "number": 53,
+          "head": {
+            "ref": "e9b/s1-2",
+            "sha": "a1a6c087ff0522ddd2caa430b94e6dfbebc53f4a",
+            "repo": {
+              "id": 1448580221,
+              "url": "https://api.github.com/repos/rozed-dev/e2e",
+              "name": "e2e"
+            }
+          },
+          "base": {
+            "ref": "e9b/base",
+            "sha": "125fb1b9f1045d3dea6512f2ccf114e713c71025",
+            "repo": {
+              "id": 1448580221,
+              "url": "https://api.github.com/repos/rozed-dev/e2e",
+              "name": "e2e"
+            }
+          },
+          "node_id": "PR_kwDOVleUfc8AAAABNpyMjg",
+          "title": "Fixture 9b: s1 (run 2)",
+          "state": "open",
+          "merged_at": null,
+          "draft": false,
+          "html_url": "https://github.com/rozed-dev/e2e/pull/53",
+          "user": {
+            "login": "rozed-bot",
+            "id": 353226052,
+            "node_id": "U_kgDOFQ3NRA",
+            "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/rozed-bot",
+            "html_url": "https://github.com/rozed-bot",
+            "followers_url": "https://api.github.com/users/rozed-bot/followers",
+            "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+            "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+            "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+            "repos_url": "https://api.github.com/users/rozed-bot/repos",
+            "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+            "type": "User",
+            "user_view_type": "public",
+            "site_admin": false
+          }
+        },
+        {
+          "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/54",
+          "id": 5211196841,
+          "number": 54,
+          "head": {
+            "ref": "e9b/s2-2",
+            "sha": "1aec7d8e3e0962d55fc496008b38d93ab58049f9",
+            "repo": {
+              "id": 1448580221,
+              "url": "https://api.github.com/repos/rozed-dev/e2e",
+              "name": "e2e"
+            }
+          },
+          "base": {
+            "ref": "e9b/s1-2",
+            "sha": "a1a6c087ff0522ddd2caa430b94e6dfbebc53f4a",
+            "repo": {
+              "id": 1448580221,
+              "url": "https://api.github.com/repos/rozed-dev/e2e",
+              "name": "e2e"
+            }
+          },
+          "node_id": "PR_kwDOVleUfc8AAAABNpyNqQ",
+          "title": "Fixture 9b: s2 (run 2)",
+          "state": "open",
+          "merged_at": null,
+          "draft": false,
+          "html_url": "https://github.com/rozed-dev/e2e/pull/54",
+          "user": {
+            "login": "rozed-bot",
+            "id": 353226052,
+            "node_id": "U_kgDOFQ3NRA",
+            "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/rozed-bot",
+            "html_url": "https://github.com/rozed-bot",
+            "followers_url": "https://api.github.com/users/rozed-bot/followers",
+            "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+            "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+            "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+            "repos_url": "https://api.github.com/users/rozed-bot/repos",
+            "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+            "type": "User",
+            "user_view_type": "public",
+            "site_admin": false
+          }
+        }
+      ]
+    }
+  }
+}

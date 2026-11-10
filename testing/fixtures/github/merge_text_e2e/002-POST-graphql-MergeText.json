@@ -1,0 +1,42 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "MergeText",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 16
+    },
+    "query_sha256": "0dccfcecf8588c9b58e1fd7fedf7a078d97785281636f811bd35981d2283b29c"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4960",
+      "x-ratelimit-reset": "1794146317",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "40"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4960,
+          "used": 40,
+          "resetAt": "2026-11-08T13:58:37Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "headRefOid": "cb401b2913e1d74dc351adf1b300e0dbc6890ca1",
+            "squashTitle": "E1: revisions (#16)",
+            "squashMessage": "* test(e1): r1 adds a.txt and b.txt\n\n* test(e1): r2 changes a.txt\n\n* test(e1): r3 changes b.txt\n\n* test(e1): r4 changes a.txt and b.txt\n\n---------\n\nCo-authored-by: rozed-bot <353226052+rozed-bot@users.noreply.github.com>"
+          }
+        }
+      }
+    }
+  }
+}

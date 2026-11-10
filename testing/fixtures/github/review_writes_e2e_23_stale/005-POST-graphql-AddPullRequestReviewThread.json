@@ -1,0 +1,47 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "AddPullRequestReviewThread",
+    "variables": {
+      "pullRequestReviewId": "PRR_kwDOVleUfc8AAAABWv8USw",
+      "path": "e11/review.txt",
+      "body": "Fixture E11: a thread for a pending review deleted since.",
+      "subjectType": "LINE",
+      "line": 10,
+      "side": "RIGHT"
+    },
+    "query_sha256": "115fddc08da5886538ee84a326c80d99fdcd6b7f48686eaa53a11fef67f5824c"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4942",
+      "x-ratelimit-reset": "1794201713",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "58"
+    },
+    "body": {
+      "data": {
+        "addPullRequestReviewThread": null
+      },
+      "errors": [
+        {
+          "type": "NOT_FOUND",
+          "path": [
+            "addPullRequestReviewThread"
+          ],
+          "locations": [
+            {
+              "line": 15,
+              "column": 3
+            }
+          ],
+          "message": "Could not resolve to a node with the global id of 'PRR_kwDOVleUfc8AAAABWv8USw'."
+        }
+      ]
+    }
+  }
+}

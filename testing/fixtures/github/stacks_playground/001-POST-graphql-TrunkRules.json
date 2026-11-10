@@ -1,0 +1,39 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "TrunkRules",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "playground"
+    },
+    "query_sha256": "e77162dc0cafdf28d13ee51470c023490cbf0327322caa0f38d69e11401807c4"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4980",
+      "x-ratelimit-reset": "1794024620",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "20"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4980,
+          "used": 20,
+          "resetAt": "2026-11-07T04:10:20Z"
+        },
+        "repository": {
+          "rulesets": {
+            "nodes": []
+          }
+        }
+      }
+    }
+  }
+}
