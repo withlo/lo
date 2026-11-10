@@ -1,0 +1,25 @@
+# Git hooks, installed by `pnpm install` (the `prepare` script runs `lefthook install`).
+# Docs: https://lefthook.dev/configuration/
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: pnpm exec commitlint --edit {1}
+
+pre-commit:
+  piped: true
+  jobs:
+    - name: block-main-commit
+      run: scripts/hooks/block-main-commit.sh
+    # Formats only the staged files. CI checks the whole repo with `pnpm format:check`. Prettier
+    # refuses symlinks named on its command line.
+    - name: prettier
+      run: pnpm exec prettier --write --ignore-unknown {staged_files}
+      file_types: [not symlink]
+      stage_fixed: true
+
+pre-push:
+  jobs:
+    - name: block-main-push
+      run: scripts/hooks/block-main-push.sh
+      use_stdin: true

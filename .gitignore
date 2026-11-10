@@ -1,0 +1,12 @@
+node_modules/
+.DS_Store
+
+# Nx's cache and workspace data.
+.nx/
+
+# TypeScript's declarations and build info, from `tsc -b`.
+.tsbuild/
+*.tsbuildinfo
+
+# Build output.
+dist/

@@ -1,0 +1,12 @@
+# Kept as drawn: the brand's files and their README.
+brand/
+
+# The design system's CSS: hand-aligned rules, which stylelint checks, and the files generated from
+# tokens.json.
+design/css/
+
+# GitHub turns every newline in a PR description into a line break.
+.github/pull_request_template.md
+
+pnpm-lock.yaml
+LICENSE

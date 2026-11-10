@@ -1,0 +1,50 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "useDaemonProcess": false,
+  "neverConnectToCloud": true,
+  "analytics": false,
+  "cacheDirectory": ".nx/cache",
+  "defaultBase": "main",
+  "sync": {
+    "applyChanges": true
+  },
+  "namedInputs": {
+    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "sharedGlobals": ["{workspaceRoot}/tsconfig.base.json", "{workspaceRoot}/tsconfig.*.json"],
+    "production": [
+      "default",
+      "!{projectRoot}/**/*.test.ts?(x)",
+      "!{projectRoot}/test/**/*",
+      "!{projectRoot}/e2e/**/*",
+      "!{projectRoot}/vitest.config.ts"
+    ]
+  },
+  "plugins": [
+    {
+      "plugin": "@nx/js/typescript",
+      "options": {
+        "typecheck": { "targetName": "typecheck" },
+        "build": false
+      }
+    }
+  ],
+  "targetDefaults": {
+    "lint": {
+      "cache": true,
+      "inputs": ["default", "^production", "{workspaceRoot}/.oxlintrc.json"]
+    },
+    "test": {
+      "cache": true,
+      "inputs": ["default", "^production", "{workspaceRoot}/vitest.config.ts"]
+    },
+    "build": {
+      "cache": true,
+      "dependsOn": ["^build"],
+      "inputs": ["production", "^production"],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "codegen": {
+      "cache": true
+    }
+  }
+}

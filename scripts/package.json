@@ -1,0 +1,17 @@
+{
+  "name": "@lo/scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "oxlint",
+    "test": "vitest run --root .. --project @lo/scripts"
+  },
+  "dependencies": {
+    "@nx/devkit": "24.0.5",
+    "oxc-parser": "0.158.0"
+  },
+  "nx": {
+    "name": "scripts"
+  }
+}
