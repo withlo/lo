@@ -250,19 +250,21 @@ export type ViewedFileComparison =
 
 /**
  * The note on a file GitHub says changed since it was viewed: since when it changed, which is what
- * the diff shows of it when the comparison goes up to the latest revision. `comparison` is the
- * file's, or nothing for any other file, which gets no note. `viewedAt` is the head this computer
- * recorded when the file was marked viewed, and `label` names a revision by its head, such as
- * `r2`, or nothing for a commit no revision has.
+ * the diff shows of it when the comparison goes up to the latest revision. `state` is the file's
+ * mark on GitHub: only a file whose mark a push dismissed gets a note. `comparison` is the file's,
+ * as the revisions module works it out. `viewedAt` is the head this computer recorded when the
+ * file was marked viewed, and `label` names a revision by its head, such as `r2`, or nothing for a
+ * commit no revision has.
  */
 export function changedSinceViewed(
+  state: FileViewedState | undefined,
   comparison: ViewedFileComparison | undefined,
   viewedAt: string | undefined,
   label: (head: string) => string | undefined,
 ): string | undefined {
   const since = (from: string, when: string): string =>
     `Changed since ${when} in ${label(from) ?? from.slice(0, 7)}.`;
-  if (comparison === undefined) return undefined;
+  if (state !== 'DISMISSED' || comparison === undefined) return undefined;
   switch (comparison.kind) {
     // The comparison starts from an earlier revision when that one is gone; the note still names
     // the one the file was viewed in.

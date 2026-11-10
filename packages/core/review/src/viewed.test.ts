@@ -294,28 +294,45 @@ function label(head: string): string | undefined {
 
 test('a file that changed since it was viewed says since when', () => {
   // Viewed in r1, and reviewed in r2 since: what changed since r1.
-  expect(changedSinceViewed({ kind: 'sinceViewed', from: 'a1', to: 'a3' }, 'a1', label)).toBe(
-    'Changed since you viewed it in r1.',
-  );
+  expect(
+    changedSinceViewed('DISMISSED', { kind: 'sinceViewed', from: 'a1', to: 'a3' }, 'a1', label),
+  ).toBe('Changed since you viewed it in r1.');
   // Without a usable record, viewed elsewhere or recorded at the latest revision: since the last
   // review, or with none, since it was viewed.
   expect(
-    changedSinceViewed({ kind: 'sinceLastReview', from: 'a2', to: 'a3' }, undefined, label),
+    changedSinceViewed(
+      'DISMISSED',
+      { kind: 'sinceLastReview', from: 'a2', to: 'a3' },
+      undefined,
+      label,
+    ),
   ).toBe('Changed since your last review in r2.');
-  expect(changedSinceViewed({ kind: 'full' }, 'a3', label)).toBe('Changed since it was viewed.');
+  expect(changedSinceViewed('DISMISSED', { kind: 'full' }, 'a3', label)).toBe(
+    'Changed since it was viewed.',
+  );
   // A commit no revision has goes by its short SHA.
   expect(
-    changedSinceViewed({ kind: 'sinceLastReview', from: 'c7f30e9b1a5d', to: 'a3' }, 'ffff', label),
+    changedSinceViewed(
+      'DISMISSED',
+      { kind: 'sinceLastReview', from: 'c7f30e9b1a5d', to: 'a3' },
+      'ffff',
+      label,
+    ),
   ).toBe('Changed since your last review in c7f30e9.');
 });
 
 test('the note names the revision the file was viewed in even when its gone', () => {
   // r2 was force-pushed away, so the comparison starts from r1.
-  expect(changedSinceViewed({ kind: 'sinceViewed', from: 'a1', to: 'a3' }, 'a2', label)).toBe(
-    'Changed since you viewed it in r2.',
-  );
+  expect(
+    changedSinceViewed('DISMISSED', { kind: 'sinceViewed', from: 'a1', to: 'a3' }, 'a2', label),
+  ).toBe('Changed since you viewed it in r2.');
 });
 
 test('other files say nothing', () => {
-  expect(changedSinceViewed(undefined, 'a1', label)).toBeUndefined();
+  const comparison = { kind: 'sinceViewed', from: 'a1', to: 'a3' } as const;
+  for (const state of [undefined, 'VIEWED', 'UNVIEWED'] as const) {
+    expect(changedSinceViewed(state, comparison, 'a1', label)).toBeUndefined();
+  }
+  // Nor does a file changed since viewed that has no comparison.
+  expect(changedSinceViewed('DISMISSED', undefined, 'a1', label)).toBeUndefined();
 });
