@@ -2,10 +2,15 @@
 // recorded as (feature, number) with each file's SHA-256, so features number theirs without
 // colliding. A feature's tables are its own: named `<feature>_…`, never touching another
 // feature's, so features can apply in any order. Cleanup across features goes through main.
+//
+// SQLite's authorizer holds a migration to that while it runs: it may read and write only its
+// feature's tables, and can't end the transaction, attach a database, set a pragma or make
+// anything temporary. Its triggers and views are compiled before it's recorded, so one whose body
+// reaches another feature's table fails too.
 
 import { createHash } from 'node:crypto';
 
-import type { Database, Row } from './database.ts';
+import type { Action, Database, Row } from './database.ts';
 import { StartupError } from './startup.ts';
 
 export interface Migration {
@@ -98,7 +103,29 @@ export function migrate(database: Database, files: Readonly<Record<string, strin
       if (!known.has(key(migration))) continue;
       database.transaction(() => {
         const before = schema(database);
-        database.exec(migration.sql);
+        const where = `${migration.feature}'s migration ${migration.file}`;
+        const allowed = owns(migration.feature);
+        let refused: Action | undefined;
+        const allow = (action: Action) => {
+          if (allowed(action)) return true;
+          refused ??= action;
+          return false;
+        };
+        database.restrict(allow, () => {
+          try {
+            database.exec(migration.sql);
+            compileTriggersAndViews(database, migration.feature, before, schema(database));
+          } catch (error) {
+            if (!refused) throw error;
+            const { action, first, source } = refused;
+            const what = `${action}${first === null ? '' : ` on ${first}`}`;
+            const from = source === null ? '' : ` in ${source}`;
+            throw new Error(`${where} tried ${what}${from}, which a migration may not do.`, {
+              cause: error,
+            });
+          }
+        });
+        if (!database.inTransaction) throw new Error(`${where} ended its own transaction.`);
         checkOwnership(database, migration, before, schema(database));
         record.run(
           migration.feature,
@@ -118,8 +145,107 @@ function key({ feature, number }: { feature: string; number: number }): string {
   return `${feature} ${number}`;
 }
 
+/** The file's hash, with its line endings made LF, so a checkout's line endings don't count. */
 function sha256(text: string): string {
-  return createHash('sha256').update(text).digest('hex');
+  return createHash('sha256').update(text.replace(/\r\n?/g, '\n')).digest('hex');
+}
+
+/** A name as an SQL identifier. */
+function quote(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`;
+}
+
+/** SQLite's own schema tables, which it reads and writes itself while a migration changes it. */
+const schemaTables = new Set(['sqlite_master', 'sqlite_schema', 'sqlite_temp_master']);
+
+/** Pragmas that only read: the schema, or (SQLite checks a column it adds) the data. */
+const readOnlyPragmas = new Set([
+  'quick_check',
+  'table_info',
+  'table_xinfo',
+  'index_list',
+  'index_info',
+  'index_xinfo',
+  'foreign_key_list',
+]);
+
+/** What a feature's migration may do: anything to its own objects, and nothing else. */
+function owns(feature: string): (action: Action) => boolean {
+  const prefix = `${feature}_`;
+  const own = (name: string | null) => name !== null && name.startsWith(prefix);
+  return ({ action, first, second, database }) => {
+    const main = database === null || database === 'main';
+    switch (action) {
+      case 'SELECT':
+      case 'FUNCTION':
+      case 'RECURSIVE':
+        return true;
+      case 'READ':
+        return (
+          (main && own(first)) ||
+          (first !== null && schemaTables.has(first)) ||
+          // A read-only pragma used as a table, such as pragma_quick_check.
+          (first !== null && readOnlyPragmas.has(first.replace(/^pragma_/, '')))
+        );
+      case 'UPDATE':
+        return (main && own(first)) || (first !== null && schemaTables.has(first));
+      case 'INSERT':
+      case 'DELETE':
+        return (main && own(first)) || first === 'sqlite_master';
+      case 'CREATE_TABLE':
+        // SQLite makes sqlite_sequence for the first AUTOINCREMENT table.
+        return main && (own(first) || first === 'sqlite_sequence');
+      case 'DROP_TABLE':
+      case 'CREATE_VIEW':
+      case 'DROP_VIEW':
+      case 'REINDEX':
+        return main && own(first);
+      case 'CREATE_INDEX':
+      case 'DROP_INDEX':
+      case 'CREATE_TRIGGER':
+      case 'DROP_TRIGGER':
+        return main && own(first) && own(second);
+      case 'ALTER_TABLE':
+        return first === 'main' && own(second);
+      case 'PRAGMA':
+        return first !== null && readOnlyPragmas.has(first.toLowerCase());
+      default:
+        // Transactions and savepoints, ATTACH and DETACH, anything temporary, virtual tables,
+        // ANALYZE, and whatever SQLite adds later.
+        return false;
+    }
+  };
+}
+
+/**
+ * Compiles a statement that would fire each trigger the migration made or changed, and a query of
+ * each such view, so their bodies meet the authorizer: SQLite checks them when they're used, not
+ * when they're made.
+ */
+function compileTriggersAndViews(
+  database: Database,
+  feature: string,
+  before: Map<string, SchemaObject>,
+  after: Map<string, SchemaObject>,
+): void {
+  const fired = new Set<string>();
+  for (const [name, object] of after) {
+    if (before.get(name)?.sql === object.sql || !name.startsWith(`${feature}_`)) continue;
+    if (object.type === 'view') database.compile(`SELECT * FROM ${quote(name)} LIMIT 0`);
+    if (object.type === 'trigger') fired.add(object.table);
+  }
+  for (const table of fired) {
+    const columns = database
+      .prepare(`PRAGMA table_info(${quote(table)})`)
+      .all()
+      .map((row) => quote(String(row.name)));
+    database.compile(`INSERT INTO ${quote(table)} DEFAULT VALUES`);
+    database.compile(`DELETE FROM ${quote(table)}`);
+    if (columns.length > 0) {
+      const set = columns.map((column) => `${column} = ${column}`).join(', ');
+      database.compile(`UPDATE ${quote(table)} SET ${set}`);
+    }
+  }
 }
 
 function appliedRows(database: Database): Row[] {

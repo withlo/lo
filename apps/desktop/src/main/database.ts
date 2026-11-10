@@ -16,13 +16,39 @@ export interface Statement {
   all(...values: Value[]): Row[];
 }
 
+/**
+ * Something SQL asks SQLite to do, as its authorizer sees it while compiling a statement: the
+ * action (`READ`, `INSERT`, `CREATE_TABLE`, `PRAGMA` and so on, SQLite's names without `SQLITE_`)
+ * and its two arguments (often a table and a column), the database it's in (`main`, `temp`), and
+ * the trigger or view it comes from, if any.
+ */
+export interface Action {
+  action: string;
+  first: string | null;
+  second: string | null;
+  database: string | null;
+  source: string | null;
+}
+
 export interface Database {
   /** Runs SQL that returns nothing, which may hold several statements: a migration, say. */
   exec(sql: string): void;
   /** A prepared statement, kept for the next time the same SQL comes. */
   prepare(sql: string): Statement;
-  /** Runs `work` in a transaction, committed if it returns and rolled back if it throws. */
+  /** Compiles SQL without running or keeping it, so whatever checks compiling apply. */
+  compile(sql: string): void;
+  /**
+   * Runs `work` in a transaction, committed if it returns and rolled back if it throws. The work
+   * must be synchronous: a transaction can't stay open across an `await`.
+   */
   transaction<T>(work: () => T): T;
+  /** Whether a transaction is open. */
+  readonly inTransaction: boolean;
+  /**
+   * Runs `work` with every statement compiled meanwhile checked against `allow`: an action it
+   * refuses makes the statement fail to compile.
+   */
+  restrict<T>(allow: (action: Action) => boolean, work: () => T): T;
   close(): void;
 }
 
@@ -58,8 +84,18 @@ export function openDatabase(path: string): Database {
     return prepared;
   };
 
+  // SQLite's names for the authorizer's actions, by number.
+  const actions = new Map<number, string>();
+  for (const [name, code] of Object.entries(sqlite.constants)) {
+    const action = /^SQLITE_([A-Z_]+)$/.exec(name)?.[1];
+    if (action && !/^(?:OK|DENY|IGNORE|CHANGESET_.*)$/.test(action)) actions.set(code, action);
+  }
+
   return {
     exec: (sql) => db.exec(sql),
+    compile(sql) {
+      db.prepare(sql);
+    },
     prepare(sql) {
       const prepared = statement(sql);
       return {
@@ -73,11 +109,32 @@ export function openDatabase(path: string): Database {
       db.exec('BEGIN IMMEDIATE');
       try {
         const result = work();
+        if (isThenable(result)) {
+          throw new TypeError(
+            "A transaction's work must be synchronous: it would be committed before it finished.",
+          );
+        }
         db.exec('COMMIT');
         return result;
       } catch (error) {
-        db.exec('ROLLBACK');
+        // Work that ended the transaction itself has nothing left to roll back.
+        if (db.isTransaction) db.exec('ROLLBACK');
         throw error;
+      }
+    },
+    get inTransaction() {
+      return db.isTransaction;
+    },
+    restrict(allow, work) {
+      db.setAuthorizer((code, first, second, database, source) => {
+        const action = actions.get(code) ?? String(code);
+        const allowed = allow({ action, first, second, database, source });
+        return allowed ? sqlite.constants.SQLITE_OK : sqlite.constants.SQLITE_DENY;
+      });
+      try {
+        return work();
+      } finally {
+        db.setAuthorizer(null);
       }
     },
     close() {
@@ -85,4 +142,13 @@ export function openDatabase(path: string): Database {
       db.close();
     },
   };
+}
+
+function isThenable(value: unknown): boolean {
+  return (
+    (typeof value === 'object' || typeof value === 'function') &&
+    value !== null &&
+    'then' in value &&
+    typeof value.then === 'function'
+  );
 }

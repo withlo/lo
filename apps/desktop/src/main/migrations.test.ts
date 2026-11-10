@@ -127,40 +127,160 @@ describe('migrate', () => {
     expect(recorded(db)).toHaveLength(3);
   });
 
+  // Each run as notes' first migration, on a database where pins' table holds a row.
   it.each([
-    ['a table without its prefix', 'CREATE TABLE entries (id INTEGER) STRICT;', 'touches entries'],
     [
-      "another feature's table",
-      'CREATE TABLE pins_extra (id INTEGER) STRICT;',
-      'touches pins_extra',
+      'a table without its prefix',
+      'CREATE TABLE entries (id INTEGER) STRICT;',
+      'tried CREATE_TABLE on entries',
     ],
-    ["another feature's table, dropped", 'DROP TABLE pins_pins;', 'touches pins_pins'],
+    [
+      'a table named for another feature',
+      'CREATE TABLE pins_extra (id INTEGER) STRICT;',
+      'tried CREATE_TABLE on pins_extra',
+    ],
+    ["another feature's table, dropped", 'DROP TABLE pins_pins;', 'tried DROP_TABLE on pins_pins'],
     [
       "another feature's table, changed",
       'ALTER TABLE pins_pins ADD COLUMN note TEXT;',
-      'touches pins_pins',
+      'tried ALTER_TABLE',
     ],
     [
       "an index on another feature's table",
       'CREATE INDEX notes_pins ON pins_pins (id);',
-      'touches notes_pins',
+      'tried CREATE_INDEX on notes_pins',
     ],
     [
-      "a reference to another feature's table",
+      "a foreign key to another feature's table",
       'CREATE TABLE notes_pinned (pin INTEGER REFERENCES pins_pins (id)) STRICT;',
       'refer to pins_pins',
     ],
-  ])('rolls back a migration that touches %s', (_case, sql, message) => {
+    [
+      'a rename to a name it doesn’t own',
+      'CREATE TABLE notes_a (id INTEGER) STRICT; ALTER TABLE notes_a RENAME TO pins_a;',
+      'touches pins_a',
+    ],
+    [
+      'a commit, to escape its transaction',
+      'COMMIT; DROP TABLE pins_pins;',
+      'tried TRANSACTION on COMMIT',
+    ],
+    ['a savepoint', 'SAVEPOINT here; RELEASE here;', 'tried SAVEPOINT'],
+    ['the record of migrations', 'DELETE FROM migrations;', 'tried DELETE on migrations'],
+    [
+      "a row in another feature's table",
+      'INSERT INTO pins_pins DEFAULT VALUES;',
+      'tried INSERT on pins_pins',
+    ],
+    [
+      "a copy of another feature's table",
+      'CREATE TABLE notes_copy AS SELECT * FROM pins_pins;',
+      'tried READ on pins_pins',
+    ],
+    [
+      "a trigger that reaches another feature's table",
+      'CREATE TABLE notes_entries (id INTEGER PRIMARY KEY) STRICT; CREATE TRIGGER notes_t AFTER INSERT ON notes_entries BEGIN DELETE FROM pins_pins; END;',
+      'tried DELETE on pins_pins in notes_t',
+    ],
+    [
+      "a view over another feature's table",
+      'CREATE VIEW notes_v AS SELECT * FROM pins_pins;',
+      'tried READ on pins_pins in notes_v',
+    ],
+    [
+      'a temporary trigger',
+      'CREATE TEMP TRIGGER notes_t AFTER INSERT ON pins_pins BEGIN SELECT 1; END;',
+      'tried CREATE_TEMP_TRIGGER',
+    ],
+    [
+      'a temporary table',
+      'CREATE TEMP TABLE notes_scratch (id INTEGER);',
+      'tried INSERT on sqlite_temp_master',
+    ],
+    ['another database', "ATTACH ':memory:' AS other;", 'tried ATTACH'],
+    [
+      'a pragma that changes the connection',
+      'PRAGMA ignore_check_constraints = ON;',
+      'tried PRAGMA on ignore_check_constraints',
+    ],
+    [
+      'a pragma that turns off foreign keys',
+      'PRAGMA foreign_keys = OFF;',
+      'tried PRAGMA on foreign_keys',
+    ],
+  ])('rolls back a migration that tries %s', (_case, sql, message) => {
     const db = database();
     migrate(db, pins);
-    const before = tables(db);
+    db.prepare('INSERT INTO pins_pins DEFAULT VALUES').run();
+    const before = {
+      tables: tables(db),
+      schema: db.prepare('SELECT sql FROM sqlite_schema ORDER BY name').all(),
+    };
     const files = { ...pins, '../features/notes/migrations/001-notes.sql': sql };
     expect(() => migrate(db, files)).toThrow(message);
-    expect(tables(db)).toEqual(before);
-    expect(
-      db.prepare("SELECT sql FROM sqlite_schema WHERE name = 'pins_pins'").get()?.sql,
-    ).not.toContain('note');
+    expect(db.inTransaction).toBe(false);
+    expect(tables(db)).toEqual(before.tables);
+    expect(db.prepare('SELECT sql FROM sqlite_schema ORDER BY name').all()).toEqual(before.schema);
+    expect(db.prepare('SELECT count(*) AS rows FROM pins_pins').get()).toEqual({ rows: 1 });
     expect(recorded(db)).toEqual([{ feature: 'pins', number: 1, file: '001-pins.sql' }]);
+    expect(db.prepare('PRAGMA ignore_check_constraints').get()).toEqual({
+      ignore_check_constraints: 0,
+    });
+    expect(db.prepare('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 });
+    // SQLite opens its temp schema itself when a table is renamed; nothing else is attached.
+    const attached = db
+      .prepare('PRAGMA database_list')
+      .all()
+      .map((row) => row.name);
+    expect(attached.filter((name) => name !== 'temp')).toEqual(['main']);
+  });
+
+  it('lets a migration do whatever it likes with its own tables', () => {
+    const db = database();
+    const own = {
+      '../features/notes/migrations/001-notes.sql': `
+        CREATE TABLE notes_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL DEFAULT (lower('X'))) STRICT;
+        CREATE INDEX notes_by_text ON notes_entries (text);
+        INSERT INTO notes_entries (text) VALUES ('first'), ('second');
+        UPDATE notes_entries SET text = upper(text) WHERE id = 1;
+        DELETE FROM notes_entries WHERE id = 2;
+        ALTER TABLE notes_entries ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE notes_entries RENAME COLUMN pinned TO starred;
+        CREATE TABLE notes_counts (total INTEGER NOT NULL) STRICT;
+        INSERT INTO notes_counts VALUES (0);
+        CREATE TRIGGER notes_count AFTER INSERT ON notes_entries BEGIN
+          UPDATE notes_counts SET total = total + 1;
+        END;
+        CREATE VIEW notes_starred AS SELECT * FROM notes_entries WHERE starred = 1;
+        WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 3)
+          INSERT INTO notes_entries (text) SELECT 'row ' || i FROM n;
+        PRAGMA table_info(notes_entries);
+        DROP INDEX notes_by_text;
+        REINDEX notes_entries;
+      `,
+    };
+    expect(migrate(db, own).map((migration) => migration.file)).toEqual(['001-notes.sql']);
+    expect(db.prepare('SELECT total FROM notes_counts').get()).toEqual({ total: 3 });
+    expect(db.prepare('SELECT text FROM notes_entries ORDER BY id').all()).toEqual([
+      { text: 'FIRST' },
+      { text: 'row 1' },
+      { text: 'row 2' },
+      { text: 'row 3' },
+    ]);
+  });
+
+  it('hashes a migration with its line endings made LF', () => {
+    const db = database();
+    const lf = {
+      '../features/notes/migrations/001-notes.sql':
+        'CREATE TABLE notes_a (id INTEGER);\nCREATE TABLE notes_b (id INTEGER);\n',
+    };
+    const crlf = {
+      '../features/notes/migrations/001-notes.sql':
+        'CREATE TABLE notes_a (id INTEGER);\r\nCREATE TABLE notes_b (id INTEGER);\r\n',
+    };
+    migrate(db, lf);
+    expect(migrate(db, crlf)).toEqual([]);
   });
 
   it('rolls back a migration that fails, keeping the ones before it', () => {

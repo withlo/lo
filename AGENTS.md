@@ -180,11 +180,14 @@ the window find them with `import.meta.glob`.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.
-  - A feature's tables, indexes, views and triggers are named `<feature>_…`. A migration that
-    touches another feature's, or makes a foreign key to one, is rolled back, so features apply in
-    any order. Cleanup across features (an account removed, say) goes through main.
-  - Never edit a migration once it has run: Lo refuses to start on a database where one has changed.
-    Add a new one instead.
+  - A feature's tables, indexes, views and triggers are named `<feature>_…`. While a migration runs,
+    SQLite's authorizer lets it read and write only its feature's tables: it can't touch another
+    feature's, end its transaction, attach a database, set a pragma or make anything temporary, and
+    its triggers and views are compiled so their bodies are held to the same. Foreign keys to
+    another feature's tables are refused too. So features apply in any order, and cleanup across
+    features (an account removed, say) goes through main.
+  - Never edit a migration once it has run: Lo refuses to start on a database where one has changed
+    (line endings aside). Add a new one instead.
   - Lo also refuses a database holding a migration it doesn't have, which a newer Lo wrote.
 - `window/index.ts` exports a `WindowFeature` by default. The window calls main through
   `client(contract)`, whose methods and types come from the contract.

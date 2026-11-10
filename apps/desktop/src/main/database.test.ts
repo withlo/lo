@@ -88,6 +88,38 @@ describe('openDatabase', () => {
     expect(database.prepare('SELECT name FROM things').all()).toEqual([{ name: 'kept' }]);
   });
 
+  it('refuses work that returns a promise, and rolls it back', () => {
+    const database = memory();
+    database.exec('CREATE TABLE things (name TEXT NOT NULL) STRICT');
+    expect(() =>
+      database.transaction(() => {
+        database.prepare('INSERT INTO things (name) VALUES (?)').run('dropped');
+        return Promise.resolve();
+      }),
+    ).toThrow('must be synchronous');
+    expect(database.inTransaction).toBe(false);
+    expect(database.prepare('SELECT count(*) AS rows FROM things').get()).toEqual({ rows: 0 });
+  });
+
+  it('checks statements compiled while restricted, and only then', () => {
+    const database = memory();
+    database.exec('CREATE TABLE things (name TEXT) STRICT');
+    const seen: string[] = [];
+    database.restrict(
+      ({ action, first }) => {
+        seen.push(`${action} ${first}`);
+        return action !== 'INSERT';
+      },
+      () => {
+        database.compile('SELECT name FROM things');
+        expect(() => database.compile("INSERT INTO things VALUES ('x')")).toThrow('not authorized');
+      },
+    );
+    expect(seen).toContain('READ things');
+    expect(seen).toContain('INSERT things');
+    database.compile("INSERT INTO things VALUES ('x')");
+  });
+
   it("refuses a transaction inside another, since they don't nest", () => {
     const database = memory();
     expect(() => database.transaction(() => database.transaction(() => 1))).toThrow('already open');
