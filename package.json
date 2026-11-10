@@ -1,0 +1,43 @@
+{
+  "name": "lo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.22.2",
+      "onFail": "download"
+    },
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.18.0",
+      "onFail": "download"
+    }
+  },
+  "scripts": {
+    "prepare": "lefthook install",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:boundaries": "node scripts/check-boundaries.ts",
+    "check:generated": "sh scripts/check-generated.sh",
+    "check:symlinks": "sh scripts/check-symlinks.sh"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "21.2.4",
+    "@commitlint/config-conventional": "21.2.4",
+    "@nx/js": "24.0.5",
+    "@types/node": "24.19.2",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "lefthook": "2.2.2",
+    "nx": "24.0.5",
+    "oxlint": "1.93.0",
+    "oxlint-tsgolint": "7.0.2006",
+    "prettier": "3.9.10",
+    "stylelint": "18.0.0",
+    "stylelint-config-recommended": "19.0.0",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vite": "8.3.7",
+    "vitest": "5.1.0"
+  }
+}

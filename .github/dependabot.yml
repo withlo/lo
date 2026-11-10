@@ -1,0 +1,31 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # pnpm installs only versions published at least a day ago (its minimumReleaseAge).
+    cooldown:
+      default-days: 2
+    # Packages that release together, and must match, move together.
+    groups:
+      nx:
+        patterns: ['nx', '@nx/*']
+      commitlint:
+        patterns: ['@commitlint/*']
+      oxlint:
+        patterns: ['oxlint', 'oxlint-tsgolint']
+      stylelint:
+        patterns: ['stylelint', 'stylelint-config-*']
+    # Titles like "chore(deps): bump vitest from x to y" pass commitlint and pr-title.
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope

@@ -1,0 +1,163 @@
+name: ci
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # nx.json turns both off too. These also cover any token in the environment.
+  NX_DAEMON: 'false'
+  NX_NO_CLOUD: 'true'
+  # The commits a pull request or a merge queue entry adds, between these two.
+  BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+
+jobs:
+  # Changes that only touch docs, the brand's files, agent files or the license skip the check job,
+  # which runs Nx and the repo checks. ci-ok passes when it's skipped. Formatting is checked either
+  # way. scripts/changes.sh has the list.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      check: ${{ steps.filter.outputs.check }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Decide whether the check job runs
+        id: filter
+        run: sh scripts/changes.sh "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+  commitlint:
+    name: commitlint
+    # Dependabot's commit bodies break commitlint's line-length limits. Its PR title, which becomes
+    # the squash commit, is still checked by pr-title. The merge queue's commits are PR titles.
+    if:
+      github.event_name == 'pull_request' && github.event.pull_request.user.login !=
+      'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Installs the Node and pnpm that package.json's devEngines pins, then the dependencies. Jobs
+      # here only restore pnpm's store; cache.yml saves it from main, where every pull request
+      # can read it.
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          cache: true
+          save-cache: false
+          require-lockfile: true
+
+      - name: Lint the PR's commits
+        run: pnpm exec commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+
+  symlinks:
+    name: symlinks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the agent symlinks
+        run: sh scripts/check-symlinks.sh
+
+  # ubuntu-latest ships shellcheck.
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the repo's shell scripts
+        run: |
+          shellcheck --version
+          shellcheck scripts/*.sh scripts/hooks/*.sh brand/icon/build.sh
+
+  format:
+    name: format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          cache: true
+          save-cache: false
+          require-lockfile: true
+
+      - name: Check formatting
+        run: pnpm format:check
+
+  check:
+    name: check
+    needs: changes
+    if: needs.changes.outputs.check == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # The whole history, so Nx can compare against the base.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          cache: true
+          save-cache: false
+          require-lockfile: true
+
+      - name: Check the TypeScript project references
+        run: pnpm nx sync:check
+
+      # Against the checked-out commit: the pull request merged into its base, or the queue entry.
+      - name: Lint, type check, test and build what changed
+        run: >-
+          pnpm nx affected -t lint typecheck test build --base="$BASE_SHA" --head=HEAD
+          --output-style=static
+
+      - name: Check the boundaries
+        run: pnpm check:boundaries
+
+      - name: Check that generated files are current
+        run: pnpm check:generated
+
+  # The one check to require besides pr-title, so adding jobs never changes the ruleset. Skipped
+  # jobs pass.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [changes, commitlint, symlinks, shellcheck, format, check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "Job results: $RESULTS"
+          exit 1

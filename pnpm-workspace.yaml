@@ -1,0 +1,17 @@
+# Where packages live. The folder says where a package runs: packages/core/ anywhere,
+# packages/desktop/ only in the desktop app.
+packages:
+  - apps/*
+  - packages/core/*
+  - packages/desktop/*
+  - skill
+  - skill/checker
+  - testing
+  - design
+  - scripts
+
+# pnpm runs a dependency's install script only when it's allowed here. lefthook's installs its
+# binary. Nx's only updates its Nx Cloud client, which this repo doesn't use.
+allowBuilds:
+  lefthook: true
+  nx: false

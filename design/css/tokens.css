@@ -1,0 +1,389 @@
+/* Lo — generated from tokens.json */
+/* Do not edit. Change design/tokens.json and run: node design/scripts/build.mjs */
+
+:root,
+[data-theme="dark"] {
+  --lo-ink: #15161d; /* Brand ink. The dark ground and the mark on light grounds. Fixed in both themes. */
+  --lo-chalk: #fbf8f2; /* Brand chalk. The light ground and the mark on dark grounds. Fixed in both themes. */
+  --lo-powder: #a5c5e9; /* Brand accent on dark. Use lo-accent in components; this one is fixed. */
+  --lo-powder-deep: #0664b2; /* Brand accent on light. Use lo-accent in components; this one is fixed. */
+  --lo-stone: #a7a398; /* Secondary text on ink. Use lo-fg-muted in components. */
+  --lo-umber: #66625a; /* Secondary text on chalk. Use lo-fg-muted in components. */
+  --lo-mark: var(--lo-chalk); /* The mark, wordmark and lockup. Chalk on dark, ink on light. Never the accent or any other color. */
+  --lo-bg: #15161d; /* Ground: the middle view, every code view, the tab strip, the page behind figures. */
+  --lo-bg-chrome: #1b1c23; /* Chrome: PR header, left and right panels, status bar, the active tab, file headers. */
+  --lo-bg-chrome-inactive: #181920; /* Chrome when the window is in the background. */
+  --lo-bg-raised: #21222a; /* Threads, cards and anything that sits on chrome or ground as its own object. */
+  --lo-bg-overlay: #25262e; /* Hover cards, menus and other popovers. */
+  --lo-bg-well: #15161d; /* Inputs and segmented-control tracks set into chrome. */
+  --lo-bg-element: #25262e; /* Resting fill of buttons and selected segments. */
+  --lo-bg-element-hover: #2c2d35; /* Button fill on hover. */
+  --lo-bg-element-press: #34353d; /* Button fill while pressed; done walkthrough steps. */
+  --lo-hover: #fbf8f20f; /* Ghost hover on rows, tabs and icon buttons. Translucent so it works on any surface. */
+  --lo-press: #fbf8f21f; /* Ghost press; skeleton shimmer peak. */
+  --lo-selected: #fbf8f217; /* Ghost selection, such as a toggled icon button. */
+  --lo-current: #a5c5e91c; /* The thing on screen: the file in the diff, the layer, the current walkthrough step, a glossary target. */
+  --lo-current-strong: #a5c5e92e; /* Halo around current balls (stack rail, overview marker, outline). */
+  --lo-scrim: #0a0b0fb3; /* Behind dialogs. */
+  --lo-border: #2c2e36; /* Default hairline: cards, threads, panel splits, file boundaries. */
+  --lo-border-subtle: #23242b; /* Quiet dividers inside a surface: thread heads, header bottoms, indent guides. */
+  --lo-border-strong: #3b3c45; /* Control outlines: buttons, keys, unviewed rings, the stack rail. */
+  --lo-rule: #33353d; /* Brand rule color, for long horizontal rules on documents. */
+  --lo-fg: #fbf8f2; /* Primary text and icons on lo-bg, lo-bg-chrome, lo-bg-raised and lo-bg-overlay. */
+  --lo-fg-muted: #a7a398; /* Secondary text and meta on every surface: times, counts, labels, path folders. */
+  --lo-fg-subtle: #96938d; /* Placeholders, twisties, separators. */
+  --lo-fg-dim: #8a8780; /* Unchanged files beside changed ones in the tree, pending checks. Still 4.5:1 on chrome. */
+  --lo-fg-disabled: #6b6c74; /* Disabled text only. Below 4.5:1 on purpose. */
+  --lo-fg-accent: #a5c5e9; /* Accent text: links, the current step, labels of overview notes. */
+  --lo-icon: #d7d4ce; /* Icons on chrome at full strength. */
+  --lo-icon-muted: #a7a398; /* File and folder icons, secondary icons. */
+  --lo-accent: #a5c5e9; /* Powder. The only accent: focus, cursor, selection, links, the main button, what is on screen. */
+  --lo-accent-hover: #bbd8f9; /* Main button on hover. */
+  --lo-accent-press: #8fb3dc; /* Main button while pressed. */
+  --lo-on-accent: #15161d; /* Text and icons on lo-accent fills. */
+  --lo-accent-soft: #a5c5e91f; /* Tint behind accent text: pressed chips, hovered terms, figure parts. */
+  --lo-accent-line: #a5c5e980; /* Accent hairlines: term underlines, overview marker rails, pressed chip outlines. */
+  --lo-focus: #a5c5e9; /* The focus ring edge. Never used for anything but focus. */
+  --lo-focus-glow: #a5c5e94d; /* The soft halo outside the focus ring (Lo Glow). */
+  --lo-link: #a5c5e9; /* Links in prose and comments. */
+  --lo-link-hover: #bbd8f9; /* Links on hover. */
+  --lo-success: #51c672; /* Passing checks, approvals, success messages: text and icons. */
+  --lo-success-bg: #132419; /* Passing checks, approvals, success messages: fills behind success text. */
+  --lo-success-border: #24462c; /* Passing checks, approvals, success messages: outlines of success tags, banners and chips. */
+  --lo-warning: #e1a536; /* Warnings, running checks, out-of-date notices, pending comments: text and icons. */
+  --lo-warning-bg: #2c210e; /* Warnings, running checks, out-of-date notices, pending comments: fills behind warning text. */
+  --lo-warning-border: #543e1a; /* Warnings, running checks, out-of-date notices, pending comments: outlines of warning tags, banners and chips. */
+  --lo-danger: #ea6a66; /* Errors, failed checks, refusals, destructive buttons: text and icons. */
+  --lo-danger-bg: #2f1919; /* Errors, failed checks, refusals, destructive buttons: fills behind danger text. */
+  --lo-danger-border: #5d2d2b; /* Errors, failed checks, refusals, destructive buttons: outlines of danger tags, banners and chips. */
+  --lo-info: #a5c5e9; /* Information banners and notes, overview explanations in the diff: text and icons. */
+  --lo-info-bg: #182431; /* Information banners and notes, overview explanations in the diff: fills behind info text. */
+  --lo-info-border: #2e445c; /* Information banners and notes, overview explanations in the diff: outlines of info tags, banners and chips. */
+  --lo-state-open: #51c672; /* Open PRs (GitHub green): pill text, tab dots, icons. */
+  --lo-state-open-bg: #132419; /* Open PRs (GitHub green): pill fill. */
+  --lo-state-open-border: #24462c; /* Open PRs (GitHub green): pill outline. */
+  --lo-state-draft: #a7a398; /* Draft PRs: pill text, tab dots, icons. */
+  --lo-state-draft-bg: #fbf8f20f; /* Draft PRs: pill fill. */
+  --lo-state-draft-border: #3b3c45; /* Draft PRs: pill outline. */
+  --lo-state-merged: #b38bdd; /* Merged PRs (GitHub purple): pill text, tab dots, icons. */
+  --lo-state-merged-bg: #251d33; /* Merged PRs (GitHub purple): pill fill. */
+  --lo-state-merged-border: #43335c; /* Merged PRs (GitHub purple): pill outline. */
+  --lo-state-closed: #ea6a66; /* Closed PRs (GitHub red): pill text, tab dots, icons. */
+  --lo-state-closed-bg: #2f1919; /* Closed PRs (GitHub red): pill fill. */
+  --lo-state-closed-border: #5d2d2b; /* Closed PRs (GitHub red): pill outline. */
+  --lo-review-approved: #51c672; /* Approved reviews. */
+  --lo-review-changes: #ea6a66; /* Changes requested. */
+  --lo-review-required: #e1a536; /* Review required. */
+  --lo-check-pass: #51c672; /* Checks passed. */
+  --lo-check-fail: #ea6a66; /* Checks failed. */
+  --lo-check-running: #e1a536; /* Checks running. */
+  --lo-check-pending: #8a8780; /* Checks that haven't reported (hollow ring). */
+  --lo-queue: #b38bdd; /* Merge queue states and the queue dot. */
+  --lo-change-added: #51c672; /* The A mark on added files. */
+  --lo-change-modified: #e1a536; /* The M mark on modified files. */
+  --lo-change-deleted: #ea6a66; /* The D mark on deleted files. */
+  --lo-change-renamed: #a5c5e9; /* The R mark on renamed files. */
+  --lo-change-generated: #8a8780; /* Generated files and lockfiles. */
+  --lo-diff-add-fg: #51c672; /* The + sign and line numbers on added lines. */
+  --lo-diff-add-bg: #132419; /* Whole added lines. */
+  --lo-diff-add-word: #0d3921; /* Changed words inside added lines. */
+  --lo-diff-add-gutter: #17301f; /* Line-number gutter on added lines. */
+  --lo-diff-del-fg: #ea6a66; /* The − sign and line numbers on removed lines. */
+  --lo-diff-del-bg: #2f1919; /* Whole removed lines. */
+  --lo-diff-del-word: #4d1f22; /* Changed words inside removed lines. */
+  --lo-diff-del-gutter: #3a1e1e; /* Line-number gutter on removed lines. */
+  --lo-diff-moved-fg: #a5c5e9; /* Moved-code labels, the move sign and its line numbers. */
+  --lo-diff-moved-bg: #182431; /* Lines of a moved block. */
+  --lo-diff-moved-border: #2e445c; /* Top edge of a moved block's label. */
+  --lo-diff-moved-edit: #2a4466; /* Edits inside a moved block, the only part highlighted. */
+  --lo-diff-hunk-bg: #191f27; /* GitHub hunk headers (@@ … @@), before the local copy is ready. */
+  --lo-diff-hunk-fg: #9598a5; /* Text of hunk headers and collapsed ranges. */
+  --lo-diff-filler: #fbf8f209; /* Aligned empty space on the side of a diff with no lines. */
+  --lo-diff-filler-stripe: #fbf8f20d; /* The hatch over lo-diff-filler. */
+  --lo-diff-collapsed-bg: #1b1c23; /* Collapsed unchanged code. */
+  --lo-diff-file-header-bg: #1b1c23; /* Sticky file headers in the diff. */
+  --lo-code-bg: #15161d; /* Every CodeMirror view. */
+  --lo-code-fg: #ece9e4; /* Default code text on lo-code-bg and every diff fill. */
+  --lo-code-gutter: #6b6c74; /* Line numbers. Below 4.5:1 on purpose: incidental. */
+  --lo-code-gutter-active: #c6c4be; /* The cursor line's number. */
+  --lo-code-gutter-hover: #a7a398; /* A hovered line number. */
+  --lo-code-active-line: #fbf8f20a; /* The cursor line while the view has focus. */
+  --lo-code-highlight-line: #a5c5e914; /* Lines a walkthrough step or a link points at. */
+  --lo-code-selection: #a5c5e93d; /* Text selection in code and prose. */
+  --lo-code-line-selected: #a5c5e924; /* Lines picked with v. */
+  --lo-code-cursor: #a5c5e9; /* The text cursor and Vim's block cursor. */
+  --lo-code-on-cursor: #15161d; /* The character under the block cursor. */
+  --lo-code-match: #ffe49c3d; /* Search matches. */
+  --lo-code-match-current: #ffe49c70; /* The current search match. */
+  --lo-code-match-ring: #ffe49c; /* Outline of the current search match. */
+  --lo-code-indent-guide: #21222a; /* Indent guides. */
+  --lo-code-indent-guide-active: #3b3c45; /* The indent guide of the cursor's block. */
+  --lo-code-invisible: #3b3c45; /* Whitespace markers when shown. */
+  --lo-code-bracket: #a5c5e926; /* Matching brackets and occurrences of the word under the cursor. */
+  --lo-code-hint: #8d92a2; /* Inline type hints. */
+  --lo-code-hint-bg: #21222a; /* Fill behind inline type hints. */
+  --lo-syn-keyword: #fe8d9d; /* Syntax: @keyword, labels, preprocessor. */
+  --lo-syn-operator: #fe8d9d; /* Syntax: @operator. */
+  --lo-syn-function: #7cd06a; /* Syntax: @function, methods, CSS selectors. */
+  --lo-syn-attribute: #7cd06a; /* Syntax: @attribute, decorators, GraphQL directives. */
+  --lo-syn-string: #ffe49c; /* Syntax: @string, regex, literals. */
+  --lo-syn-escape: #b38bdd; /* Syntax: @string.escape, symbols. */
+  --lo-syn-type: #5acfd0; /* Syntax: @type, enums. */
+  --lo-syn-constructor: #5acfd0; /* Syntax: @constructor. */
+  --lo-syn-namespace: #5acfd0; /* Syntax: @namespace. */
+  --lo-syn-constant: #b38bdd; /* Syntax: @constant, enum variants. */
+  --lo-syn-number: #b38bdd; /* Syntax: @number. */
+  --lo-syn-boolean: #b38bdd; /* Syntax: @boolean. */
+  --lo-syn-variable: #ece9e4; /* Syntax: @variable. */
+  --lo-syn-property: #ece9e4; /* Syntax: @property. */
+  --lo-syn-parameter: #e6a376; /* Syntax: @variable.parameter, italic. */
+  --lo-syn-special: #b38bdd; /* Syntax: @variable.special (this, self), italic. */
+  --lo-syn-punctuation: #afb1b9; /* Syntax: @punctuation. */
+  --lo-syn-comment: #9598a5; /* Syntax: @comment, italic. */
+  --lo-syn-tag: #fe8d9d; /* Syntax: @tag. */
+  --lo-syn-link: #5acfd0; /* Syntax: @link_text. */
+  --lo-syn-title: #fe8d9d; /* Syntax: @title, bold. */
+  --fig-paper: #15161d; /* Figure ground. Lo draws it behind every figure; agents leave the background empty. */
+  --fig-panel: #1f2028; /* Neutral box fill in figures. */
+  --fig-ink: #ece9e4; /* Primary text and strokes in figures. */
+  --fig-muted: #a7a398; /* Secondary text and leader lines in figures. */
+  --fig-line: #3b3c45; /* Hairlines, grids and box outlines in figures. */
+  --fig-blue: #a5c5e9; /* Figures: what this PR adds or changes. Text and strokes. */
+  --fig-blue-soft: #182431; /* Figures: box fill under fig-blue text and strokes. */
+  --fig-aqua: #5acfd0; /* Figures: a neutral category. Text and strokes. */
+  --fig-aqua-soft: #112a2e; /* Figures: box fill under fig-aqua text and strokes. */
+  --fig-green: #51c672; /* Figures: added, allowed, passing. Text and strokes. */
+  --fig-green-soft: #132419; /* Figures: box fill under fig-green text and strokes. */
+  --fig-amber: #e1a536; /* Figures: changed, waiting, warning. Text and strokes. */
+  --fig-amber-soft: #2c210e; /* Figures: box fill under fig-amber text and strokes. */
+  --fig-red: #ea6a66; /* Figures: removed, refused, failing. Text and strokes. */
+  --fig-red-soft: #2f1919; /* Figures: box fill under fig-red text and strokes. */
+  --fig-violet: #b38bdd; /* Figures: a neutral category. Text and strokes. */
+  --fig-violet-soft: #251d33; /* Figures: box fill under fig-violet text and strokes. */
+  --lo-avatar-1: #a5c5e9; /* Avatar initials, hue 1, while the image loads. */
+  --lo-avatar-1-bg: #22344a; /* Avatar fill, hue 1. */
+  --lo-avatar-2: #5acfd0; /* Avatar initials, hue 2, while the image loads. */
+  --lo-avatar-2-bg: #173a3d; /* Avatar fill, hue 2. */
+  --lo-avatar-3: #b38bdd; /* Avatar initials, hue 3, while the image loads. */
+  --lo-avatar-3-bg: #35294a; /* Avatar fill, hue 3. */
+  --lo-avatar-4: #7cd06a; /* Avatar initials, hue 4, while the image loads. */
+  --lo-avatar-4-bg: #1f3a1a; /* Avatar fill, hue 4. */
+  --lo-avatar-5: #e6a376; /* Avatar initials, hue 5, while the image loads. */
+  --lo-avatar-5-bg: #45301f; /* Avatar fill, hue 5. */
+  --lo-avatar-6: #fe8d9d; /* Avatar initials, hue 6, while the image loads. */
+  --lo-avatar-6-bg: #4a2229; /* Avatar fill, hue 6. */
+  --lo-shadow-pop: 0 0 0 1px #2C2E36, 0 10px 28px -6px #0A0B0FCC, 0 2px 6px #0A0B0F66; /* Popovers, hover cards, menus. */
+  --lo-shadow-dialog: 0 0 0 1px #33353D, 0 24px 64px -12px #000000E6; /* Dialogs. */
+  --lo-shadow-sticky: 0 1px 0 #2C2E36, 0 6px 12px -8px #0A0B0F99; /* A sticky file header once the diff scrolls under it. */
+}
+
+[data-theme="light"] {
+  --lo-mark: var(--lo-ink);
+  --lo-bg: #fbf8f2;
+  --lo-bg-chrome: #f4f1e9;
+  --lo-bg-chrome-inactive: #f7f4ed;
+  --lo-bg-raised: #fefcf9;
+  --lo-bg-overlay: #fefcf9;
+  --lo-bg-well: #fefcf9;
+  --lo-bg-element: #e9e6de;
+  --lo-bg-element-hover: #e1ded5;
+  --lo-bg-element-press: #d8d4cb;
+  --lo-hover: #15161d0d;
+  --lo-press: #15161d1a;
+  --lo-selected: #15161d13;
+  --lo-current: #0664b214;
+  --lo-current-strong: #0664b21f;
+  --lo-scrim: #15161d59;
+  --lo-border: #e1ded8;
+  --lo-border-subtle: #ece9e4;
+  --lo-border-strong: #d1cdc7;
+  --lo-rule: #e1ded8;
+  --lo-fg: #15161d;
+  --lo-fg-muted: #66625a;
+  --lo-fg-subtle: #66635c;
+  --lo-fg-dim: #716d66;
+  --lo-fg-disabled: #a7a49e;
+  --lo-fg-accent: #0664b2;
+  --lo-icon: #313239;
+  --lo-icon-muted: #66625a;
+  --lo-accent: #0664b2;
+  --lo-accent-hover: #0a5a9c;
+  --lo-accent-press: #084c84;
+  --lo-on-accent: #fbf8f2;
+  --lo-accent-soft: #0664b21a;
+  --lo-accent-line: #0664b273;
+  --lo-focus: #0664b2;
+  --lo-focus-glow: #0664b23d;
+  --lo-link: #0664b2;
+  --lo-link-hover: #084c84;
+  --lo-success: #0a7e3a;
+  --lo-success-bg: #dff8e6;
+  --lo-success-border: #b1dfb9;
+  --lo-warning: #8f5d04;
+  --lo-warning-bg: #ffedd8;
+  --lo-warning-border: #f2c997;
+  --lo-danger: #ba3538;
+  --lo-danger-bg: #ffebea;
+  --lo-danger-border: #fcc0bb;
+  --lo-info: #0664b2;
+  --lo-info-bg: #e3ecf7;
+  --lo-info-border: #bad4f2;
+  --lo-state-open: #0a7e3a;
+  --lo-state-open-bg: #dff8e6;
+  --lo-state-open-border: #b1dfb9;
+  --lo-state-draft: #66625a;
+  --lo-state-draft-bg: #15161d0d;
+  --lo-state-draft-border: #d1cdc7;
+  --lo-state-merged: #6c329f;
+  --lo-state-merged-bg: #efe6f8;
+  --lo-state-merged-border: #d6c2ec;
+  --lo-state-closed: #ba3538;
+  --lo-state-closed-bg: #ffebea;
+  --lo-state-closed-border: #fcc0bb;
+  --lo-review-approved: #0a7e3a;
+  --lo-review-changes: #ba3538;
+  --lo-review-required: #8f5d04;
+  --lo-check-pass: #0a7e3a;
+  --lo-check-fail: #ba3538;
+  --lo-check-running: #8f5d04;
+  --lo-check-pending: #716d66;
+  --lo-queue: #6c329f;
+  --lo-change-added: #0a7e3a;
+  --lo-change-modified: #8f5d04;
+  --lo-change-deleted: #ba3538;
+  --lo-change-renamed: #0664b2;
+  --lo-change-generated: #716d66;
+  --lo-diff-add-fg: #0a7e3a;
+  --lo-diff-add-bg: #dff8e6;
+  --lo-diff-add-word: #bceecc;
+  --lo-diff-add-gutter: #cff2da;
+  --lo-diff-del-fg: #ba3538;
+  --lo-diff-del-bg: #ffebea;
+  --lo-diff-del-word: #ffd3d2;
+  --lo-diff-del-gutter: #ffdddb;
+  --lo-diff-moved-fg: #0664b2;
+  --lo-diff-moved-bg: #e3ecf7;
+  --lo-diff-moved-border: #bad4f2;
+  --lo-diff-moved-edit: #c3d8f1;
+  --lo-diff-hunk-bg: #e3ecf7;
+  --lo-diff-hunk-fg: #706961;
+  --lo-diff-filler: #15161d06;
+  --lo-diff-filler-stripe: #15161d0b;
+  --lo-diff-collapsed-bg: #f4f1e9;
+  --lo-diff-file-header-bg: #f4f1e9;
+  --lo-code-bg: #fbf8f2;
+  --lo-code-fg: #15161d;
+  --lo-code-gutter: #898680;
+  --lo-code-gutter-active: #313239;
+  --lo-code-gutter-hover: #66625a;
+  --lo-code-active-line: #15161d09;
+  --lo-code-highlight-line: #0664b212;
+  --lo-code-selection: #0664b233;
+  --lo-code-line-selected: #0664b21c;
+  --lo-code-cursor: #0664b2;
+  --lo-code-on-cursor: #fbf8f2;
+  --lo-code-match: #f4c85566;
+  --lo-code-match-current: #f4c855b3;
+  --lo-code-match-ring: #8f5d04;
+  --lo-code-indent-guide: #eae7e1;
+  --lo-code-indent-guide-active: #cac7c0;
+  --lo-code-invisible: #cac7c0;
+  --lo-code-bracket: #0664b21a;
+  --lo-code-hint: #6f6961;
+  --lo-code-hint-bg: #f4f1e9;
+  --lo-syn-keyword: #be1253;
+  --lo-syn-operator: #be1253;
+  --lo-syn-function: #0a6b1d;
+  --lo-syn-attribute: #0a6b1d;
+  --lo-syn-string: #6b4f03;
+  --lo-syn-escape: #6c329f;
+  --lo-syn-type: #026991;
+  --lo-syn-constructor: #026991;
+  --lo-syn-namespace: #026991;
+  --lo-syn-constant: #6c329f;
+  --lo-syn-number: #6c329f;
+  --lo-syn-boolean: #6c329f;
+  --lo-syn-variable: #15161d;
+  --lo-syn-property: #15161d;
+  --lo-syn-parameter: #a24702;
+  --lo-syn-special: #6c329f;
+  --lo-syn-punctuation: #53555c;
+  --lo-syn-comment: #706961;
+  --lo-syn-tag: #be1253;
+  --lo-syn-link: #026991;
+  --lo-syn-title: #be1253;
+  --fig-paper: #fbf8f2;
+  --fig-panel: #f1eee6;
+  --fig-ink: #15161d;
+  --fig-muted: #66625a;
+  --fig-line: #d1cdc7;
+  --fig-blue: #0664b2;
+  --fig-blue-soft: #e3ecf7;
+  --fig-aqua: #026991;
+  --fig-aqua-soft: #ddf0f5;
+  --fig-green: #0a7e3a;
+  --fig-green-soft: #dff8e6;
+  --fig-amber: #8f5d04;
+  --fig-amber-soft: #ffedd8;
+  --fig-red: #ba3538;
+  --fig-red-soft: #ffebea;
+  --fig-violet: #6c329f;
+  --fig-violet-soft: #efe6f8;
+  --lo-avatar-1: #0664b2;
+  --lo-avatar-1-bg: #d9e6f5;
+  --lo-avatar-2: #026991;
+  --lo-avatar-2-bg: #d3ecf2;
+  --lo-avatar-3: #6c329f;
+  --lo-avatar-3-bg: #eaddf6;
+  --lo-avatar-4: #0a6b1d;
+  --lo-avatar-4-bg: #d6f1d6;
+  --lo-avatar-5: #a24702;
+  --lo-avatar-5-bg: #fbe3d2;
+  --lo-avatar-6: #be1253;
+  --lo-avatar-6-bg: #fadbe3;
+  --lo-shadow-pop: 0 0 0 1px #E1DED8, 0 10px 28px -8px #15161D2E, 0 2px 6px #15161D14;
+  --lo-shadow-dialog: 0 0 0 1px #D1CDC7, 0 24px 64px -16px #15161D47;
+  --lo-shadow-sticky: 0 1px 0 #E1DED8, 0 6px 12px -10px #15161D33;
+}
+
+:root {
+  /* spacing */
+  --lo-sp-2: 2px; /* Hairline gaps: inside key sequences, between tab bar items. */
+  --lo-sp-4: 4px; /* Icon to label inside small controls; meta row gaps. */
+  --lo-sp-6: 6px; /* Icon to label in buttons; tree row gaps. */
+  --lo-sp-8: 8px; /* Gaps between controls; panel insets. */
+  --lo-sp-12: 12px; /* Card and thread padding; header gaps. */
+  --lo-sp-16: 16px; /* Panel side padding; dialog gaps. */
+  --lo-sp-20: 20px; /* Overview figure padding. */
+  --lo-sp-24: 24px; /* Space between overview blocks. */
+  --lo-sp-32: 32px; /* Section breathing room in documents. */
+  --lo-sp-40: 40px; /* Overview side padding. */
+  --lo-sp-48: 48px; /* Space above overview sections. */
+  --lo-sp-64: 64px; /* Empty-state and welcome layouts. */
+  /* radius */
+  --lo-r-xs: 3px; /* Keys, inline code, tags. */
+  --lo-r-sm: 6px; /* Buttons, inputs, tree rows, menus items. */
+  --lo-r-md: 9px; /* Threads, cards, popovers, code blocks, figures, the active tab's top and its flares. */
+  --lo-r-lg: 12px; /* The middle sheet's top corners, dialogs. */
+  --lo-r-pill: 999px; /* Segmented controls, chips, state pills, avatars. */
+  /* size */
+  --lo-tabbar-h: 38px; /* Height of the tab strip. */
+  --lo-header-h: 80px; /* Height of the PR header (two rows). */
+  --lo-statusbar-h: 26px; /* Height of the status bar. */
+  --lo-panel-left-w: 300px; /* Default width of the left panel (stack and files). */
+  --lo-panel-right-w: 340px; /* Default width of the threads panel. */
+  --lo-row-h: 24px; /* Rows in the tree and in lists. */
+  --lo-control-h: 28px; /* Buttons and inputs. */
+  --lo-control-h-sm: 22px; /* Small buttons and toolbar controls. */
+  --lo-file-header-h: 38px; /* Sticky file headers in the diff. */
+  --lo-window-inset-start: 78px; /* Space before the first tab: 78px for the macOS traffic lights, 0 on Linux. */
+  --lo-window-inset-end: 0px; /* Space after the last tab: 0, or the system controls' width in a frameless Linux window. */
+  --lo-code-size: 12.5px; /* Code in every CodeMirror view. */
+  --lo-code-line: 20px; /* Code line height. Fixed so both sides of a diff share one row grid. */
+  --lo-code-size-small: 12px; /* Code in comments, suggestions and hover cards. */
+  --lo-code-line-small: 18px; /* Line height of small code. */
+  --lo-code-inline-size: 0.88em; /* Inline code inside prose, relative to the text. */
+  --lo-read-measure: 680px; /* Widest line of reading text in overviews. */
+  --font-ui: "Host Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Cantarell, "Noto Sans", sans-serif;
+  --font-mono: "Fragment Mono", ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", monospace;
+}

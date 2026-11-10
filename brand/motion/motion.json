@@ -1,0 +1,1986 @@
+{
+  "about": "The meld: at rest the L and the o are one rounded triangle. As the o leaves it takes its mass with it: the corner drains like a pool, a liquid neck stretches and snaps, and the ball overshoots and settles in the socket. Times are in seconds and match the preview SVGs in this folder. Each key's ease applies to the segment that ends at that key.",
+  "coordinates": {
+    "units": "The same units as logo/mark.svg, whose viewBox is 12 12 76 76. Mark previews use viewBox 0 0 100 100; lockup previews use 0 0 193 100, the same placement as logo/lockup.svg plus a 12-unit margin.",
+    "axis": "h is distance from the socket centre along the outward diagonal (1, -1)/sqrt(2). A ball at h sits at (56 + h/sqrt(2), 44 - h/sqrt(2))."
+  },
+  "geometry": {
+    "lShape": "M12 21A9 9 0 0 1 30 21V44A26 26 0 0 0 56 70H79A9 9 0 0 1 79 88H20Q12 88 12 80Z",
+    "socketCentre": [
+      56,
+      44
+    ],
+    "socketRadius": 26,
+    "ballAtRest": {
+      "h": 12.7279,
+      "centre": [
+        65,
+        35
+      ],
+      "radius": 21
+    },
+    "triangleFill": "The fill that turns the L into a rounded triangle: points with x >= 27.4, y <= 72.6 and x - y <= 12.728, and, where x < 56 and y > 44, within 28.6 of the socket centre. Its edges tuck under the L. Its area roughly equals the ball's, so mass looks conserved.",
+    "pool": "The triangle fill clipped to h <= level. \"full\" is the hypotenuse (h = 0.515); \"empty\" is the socket wall (h = -26) or below.",
+    "ball": "An ellipse at (x, y) with radii rx, ry, rotated by angle degrees (rx lies along the angle). The default -45 points rx outward along the axis.",
+    "neck": "Two thin concave cones on the axis, drawn only into the goo layer, never as crisp shapes. Back cone: base 3 units inside the ball's back edge with the given half-width, tip backLength behind that edge. Pool cone: base 3 units inside the pool surface, tip poolLength in front of it. Each side is a quadratic curve whose control point sits halfway along at 0.45 of the half-width. null means no neck."
+  },
+  "goo": {
+    "how": "Blur the pool, balls and neck together, then threshold the alpha so overlapping blurs fuse into one liquid outline. Draw crisp copies of the L, pool and balls on top so edges stay sharp; the neck shows only where it fuses.",
+    "blurSigma": 4.2,
+    "alphaThreshold": "alpha' = clamp(48 * alpha - 26), an edge at about 0.54",
+    "svg": "The previews' filter: feGaussianBlur with stdDeviation blurSigma, then feColorMatrix with the alpha row 0 0 0 48 -26."
+  },
+  "easing": {
+    "linear": [
+      0,
+      0,
+      1,
+      1
+    ],
+    "inOut": [
+      0.45,
+      0,
+      0.55,
+      1
+    ],
+    "in": [
+      0.6,
+      0,
+      0.9,
+      0.5
+    ],
+    "out": [
+      0.2,
+      0.7,
+      0.3,
+      1
+    ]
+  },
+  "rules": [
+    "One color, the same as the static mark. The accent never appears in motion either.",
+    "Each animation plays once and ends on the static mark or lockup, except the meld loop, which repeats while something loads.",
+    "The fades at the start and end of the preview files exist only so the previews loop. Leave them out in the app.",
+    "When Reduce Motion is on, show the static mark or lockup and skip the animation."
+  ],
+  "animations": {
+    "unmeld": {
+      "use": "App launch",
+      "files": [
+        "unmeld-chalk.svg",
+        "unmeld-ink.svg"
+      ],
+      "starts": 0.55,
+      "settled": 1.92,
+      "previewLoop": 4.2,
+      "tracks": {
+        "pool": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "level": "full"
+          },
+          {
+            "t": 0.55,
+            "ease": "linear",
+            "level": "full"
+          },
+          {
+            "t": 0.85,
+            "ease": "linear",
+            "level": -1.2
+          },
+          {
+            "t": 1.06,
+            "ease": "in",
+            "level": -9.0
+          },
+          {
+            "t": 1.22,
+            "ease": "linear",
+            "level": -18.0
+          },
+          {
+            "t": 1.31,
+            "ease": "linear",
+            "level": -24.0
+          },
+          {
+            "t": 1.37,
+            "ease": "out",
+            "level": "empty"
+          },
+          {
+            "t": 4.2,
+            "ease": "linear",
+            "level": "empty"
+          }
+        ],
+        "neck": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "neck": null
+          },
+          {
+            "t": 1.06,
+            "ease": "in",
+            "neck": null
+          },
+          {
+            "t": 1.22,
+            "ease": "linear",
+            "neck": {
+              "ball": "b1",
+              "backLength": 3,
+              "backHalfWidth": 6,
+              "poolLength": 3,
+              "poolHalfWidth": 7
+            }
+          },
+          {
+            "t": 1.31,
+            "ease": "linear",
+            "neck": {
+              "ball": "b1",
+              "backLength": 9,
+              "backHalfWidth": 6.5,
+              "poolLength": 8,
+              "poolHalfWidth": 7.5
+            }
+          },
+          {
+            "t": 1.37,
+            "ease": "out",
+            "neck": {
+              "ball": "b1",
+              "backLength": 2,
+              "backHalfWidth": 5,
+              "poolLength": 1.5,
+              "poolHalfWidth": 5.5
+            }
+          },
+          {
+            "t": 1.48,
+            "ease": "out",
+            "neck": null
+          },
+          {
+            "t": 4.2,
+            "ease": "linear",
+            "neck": null
+          }
+        ],
+        "b1": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "x": 50.34,
+            "y": 49.66,
+            "rx": 8.0,
+            "ry": 8.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.55,
+            "ease": "linear",
+            "x": 50.34,
+            "y": 49.66,
+            "rx": 8.0,
+            "ry": 8.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.85,
+            "ease": "linear",
+            "x": 48.22,
+            "y": 51.78,
+            "rx": 16.5,
+            "ry": 16.5,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.06,
+            "ease": "in",
+            "x": 57.06,
+            "y": 42.94,
+            "rx": 20.28,
+            "ry": 18.91,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.22,
+            "ease": "linear",
+            "x": 62.01,
+            "y": 37.99,
+            "rx": 23.16,
+            "ry": 18.25,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.31,
+            "ease": "linear",
+            "x": 64.84,
+            "y": 35.16,
+            "rx": 23.52,
+            "ry": 18.9,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.37,
+            "ease": "out",
+            "x": 66.75,
+            "y": 33.25,
+            "rx": 22.47,
+            "ry": 19.74,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.48,
+            "ease": "out",
+            "x": 67.88,
+            "y": 32.12,
+            "rx": 19.74,
+            "ry": 22.26,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.7,
+            "ease": "out",
+            "x": 64.41,
+            "y": 35.59,
+            "rx": 21.63,
+            "ry": 20.37,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.92,
+            "ease": "out",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 4.2,
+            "ease": "linear",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          }
+        ]
+      }
+    },
+    "meldLoop": {
+      "use": "Loading; repeats for as long as the wait lasts",
+      "files": [
+        "meld-loop-chalk.svg",
+        "meld-loop-ink.svg"
+      ],
+      "loop": 2.8,
+      "tracks": {
+        "pool": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "level": "empty"
+          },
+          {
+            "t": 0.4,
+            "ease": "out",
+            "level": "empty"
+          },
+          {
+            "t": 0.62,
+            "ease": "in",
+            "level": -23.0
+          },
+          {
+            "t": 0.74,
+            "ease": "out",
+            "level": -7.0
+          },
+          {
+            "t": 0.84,
+            "ease": "inOut",
+            "level": "full"
+          },
+          {
+            "t": 1.28,
+            "ease": "linear",
+            "level": "full"
+          },
+          {
+            "t": 1.48,
+            "ease": "linear",
+            "level": -1.2
+          },
+          {
+            "t": 1.64,
+            "ease": "in",
+            "level": -9.0
+          },
+          {
+            "t": 1.77,
+            "ease": "linear",
+            "level": -18.0
+          },
+          {
+            "t": 1.85,
+            "ease": "linear",
+            "level": -24.0
+          },
+          {
+            "t": 1.9,
+            "ease": "out",
+            "level": "empty"
+          },
+          {
+            "t": 2.8,
+            "ease": "linear",
+            "level": "empty"
+          }
+        ],
+        "neck": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "neck": null
+          },
+          {
+            "t": 0.4,
+            "ease": "out",
+            "neck": null
+          },
+          {
+            "t": 0.62,
+            "ease": "in",
+            "neck": {
+              "ball": "b1",
+              "backLength": 2.5,
+              "backHalfWidth": 6,
+              "poolLength": 4,
+              "poolHalfWidth": 7
+            }
+          },
+          {
+            "t": 0.74,
+            "ease": "out",
+            "neck": null
+          },
+          {
+            "t": 1.64,
+            "ease": "in",
+            "neck": null
+          },
+          {
+            "t": 1.77,
+            "ease": "linear",
+            "neck": {
+              "ball": "b1",
+              "backLength": 3,
+              "backHalfWidth": 6,
+              "poolLength": 3,
+              "poolHalfWidth": 7
+            }
+          },
+          {
+            "t": 1.85,
+            "ease": "linear",
+            "neck": {
+              "ball": "b1",
+              "backLength": 8.5,
+              "backHalfWidth": 6.5,
+              "poolLength": 7.5,
+              "poolHalfWidth": 7.5
+            }
+          },
+          {
+            "t": 1.9,
+            "ease": "out",
+            "neck": {
+              "ball": "b1",
+              "backLength": 2,
+              "backHalfWidth": 5,
+              "poolLength": 1.5,
+              "poolHalfWidth": 5.5
+            }
+          },
+          {
+            "t": 2.0,
+            "ease": "out",
+            "neck": null
+          },
+          {
+            "t": 2.8,
+            "ease": "linear",
+            "neck": null
+          }
+        ],
+        "b1": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.22,
+            "ease": "linear",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.4,
+            "ease": "out",
+            "x": 66.75,
+            "y": 33.25,
+            "rx": 20.16,
+            "ry": 21.84,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.62,
+            "ease": "in",
+            "x": 57.06,
+            "y": 42.94,
+            "rx": 23.1,
+            "ry": 19.32,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.74,
+            "ease": "out",
+            "x": 52.46,
+            "y": 47.54,
+            "rx": 16.0,
+            "ry": 16.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.84,
+            "ease": "inOut",
+            "x": 51.4,
+            "y": 48.6,
+            "rx": 12.5,
+            "ry": 12.5,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.94,
+            "ease": "inOut",
+            "x": 49.64,
+            "y": 50.36,
+            "rx": 9.0,
+            "ry": 9.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.28,
+            "ease": "linear",
+            "x": 49.64,
+            "y": 50.36,
+            "rx": 9.0,
+            "ry": 9.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.48,
+            "ease": "linear",
+            "x": 48.22,
+            "y": 51.78,
+            "rx": 16.5,
+            "ry": 16.5,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.64,
+            "ease": "in",
+            "x": 57.06,
+            "y": 42.94,
+            "rx": 20.28,
+            "ry": 18.91,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.77,
+            "ease": "linear",
+            "x": 62.01,
+            "y": 37.99,
+            "rx": 23.16,
+            "ry": 18.25,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.85,
+            "ease": "linear",
+            "x": 64.84,
+            "y": 35.16,
+            "rx": 23.52,
+            "ry": 18.9,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.9,
+            "ease": "out",
+            "x": 66.61,
+            "y": 33.39,
+            "rx": 22.47,
+            "ry": 19.74,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.0,
+            "ease": "out",
+            "x": 67.6,
+            "y": 32.4,
+            "rx": 19.95,
+            "ry": 22.05,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.2,
+            "ease": "out",
+            "x": 64.49,
+            "y": 35.51,
+            "rx": 21.42,
+            "ry": 20.58,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.4,
+            "ease": "out",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.8,
+            "ease": "linear",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          }
+        ]
+      }
+    },
+    "kiss": {
+      "use": "Approved, or another small confirmation",
+      "files": [
+        "kiss-chalk.svg",
+        "kiss-ink.svg"
+      ],
+      "starts": 0.35,
+      "settled": 1.5,
+      "previewLoop": 2.6,
+      "tracks": {
+        "pool": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "level": "empty"
+          },
+          {
+            "t": 0.5,
+            "ease": "out",
+            "level": "empty"
+          },
+          {
+            "t": 0.7,
+            "ease": "in",
+            "level": -23.0
+          },
+          {
+            "t": 0.8,
+            "ease": "out",
+            "level": -21.0
+          },
+          {
+            "t": 0.96,
+            "ease": "inOut",
+            "level": -24.0
+          },
+          {
+            "t": 1.05,
+            "ease": "linear",
+            "level": "empty"
+          },
+          {
+            "t": 2.6,
+            "ease": "linear",
+            "level": "empty"
+          }
+        ],
+        "neck": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "neck": null
+          },
+          {
+            "t": 0.8,
+            "ease": "out",
+            "neck": null
+          },
+          {
+            "t": 0.96,
+            "ease": "inOut",
+            "neck": {
+              "ball": "b1",
+              "backLength": 4.5,
+              "backHalfWidth": 6.5,
+              "poolLength": 4.5,
+              "poolHalfWidth": 7.5
+            }
+          },
+          {
+            "t": 1.05,
+            "ease": "linear",
+            "neck": {
+              "ball": "b1",
+              "backLength": 2,
+              "backHalfWidth": 5,
+              "poolLength": 1.5,
+              "poolHalfWidth": 5.5
+            }
+          },
+          {
+            "t": 1.15,
+            "ease": "out",
+            "neck": null
+          },
+          {
+            "t": 2.6,
+            "ease": "linear",
+            "neck": null
+          }
+        ],
+        "b1": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.35,
+            "ease": "linear",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.5,
+            "ease": "out",
+            "x": 66.61,
+            "y": 33.39,
+            "rx": 20.37,
+            "ry": 21.63,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.7,
+            "ease": "in",
+            "x": 53.74,
+            "y": 46.26,
+            "rx": 19.95,
+            "ry": 22.05,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.8,
+            "ease": "out",
+            "x": 53.17,
+            "y": 46.83,
+            "rx": 18.9,
+            "ry": 22.68,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.96,
+            "ease": "inOut",
+            "x": 60.24,
+            "y": 39.76,
+            "rx": 23.52,
+            "ry": 18.9,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.05,
+            "ease": "linear",
+            "x": 65.55,
+            "y": 34.45,
+            "rx": 22.47,
+            "ry": 19.74,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.15,
+            "ease": "out",
+            "x": 66.82,
+            "y": 33.18,
+            "rx": 19.95,
+            "ry": 22.05,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.33,
+            "ease": "out",
+            "x": 64.56,
+            "y": 35.44,
+            "rx": 21.42,
+            "ry": 20.58,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.5,
+            "ease": "out",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.6,
+            "ease": "linear",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          }
+        ]
+      }
+    },
+    "lockupUnmeld": {
+      "use": "Lockup intro, the quiet one",
+      "files": [
+        "lockup-unmeld-chalk.svg",
+        "lockup-unmeld-ink.svg"
+      ],
+      "starts": 0.55,
+      "settled": 1.98,
+      "previewLoop": 4.6,
+      "tracks": {
+        "pool": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "level": "full"
+          },
+          {
+            "t": 0.55,
+            "ease": "linear",
+            "level": "full"
+          },
+          {
+            "t": 0.85,
+            "ease": "linear",
+            "level": -1.2
+          },
+          {
+            "t": 1.06,
+            "ease": "in",
+            "level": -9.0
+          },
+          {
+            "t": 1.22,
+            "ease": "linear",
+            "level": -18.0
+          },
+          {
+            "t": 1.31,
+            "ease": "linear",
+            "level": -24.0
+          },
+          {
+            "t": 1.37,
+            "ease": "out",
+            "level": "empty"
+          },
+          {
+            "t": 4.6,
+            "ease": "linear",
+            "level": "empty"
+          }
+        ],
+        "neck": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "neck": null
+          },
+          {
+            "t": 1.06,
+            "ease": "in",
+            "neck": null
+          },
+          {
+            "t": 1.22,
+            "ease": "linear",
+            "neck": {
+              "ball": "b1",
+              "backLength": 3,
+              "backHalfWidth": 6,
+              "poolLength": 3,
+              "poolHalfWidth": 7
+            }
+          },
+          {
+            "t": 1.31,
+            "ease": "linear",
+            "neck": {
+              "ball": "b1",
+              "backLength": 9,
+              "backHalfWidth": 6.5,
+              "poolLength": 8,
+              "poolHalfWidth": 7.5
+            }
+          },
+          {
+            "t": 1.37,
+            "ease": "out",
+            "neck": {
+              "ball": "b1",
+              "backLength": 2,
+              "backHalfWidth": 5,
+              "poolLength": 1.5,
+              "poolHalfWidth": 5.5
+            }
+          },
+          {
+            "t": 1.48,
+            "ease": "out",
+            "neck": null
+          },
+          {
+            "t": 4.6,
+            "ease": "linear",
+            "neck": null
+          }
+        ],
+        "b1": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "x": 50.34,
+            "y": 49.66,
+            "rx": 8.0,
+            "ry": 8.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.55,
+            "ease": "linear",
+            "x": 50.34,
+            "y": 49.66,
+            "rx": 8.0,
+            "ry": 8.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.85,
+            "ease": "linear",
+            "x": 48.22,
+            "y": 51.78,
+            "rx": 16.5,
+            "ry": 16.5,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.06,
+            "ease": "in",
+            "x": 57.06,
+            "y": 42.94,
+            "rx": 20.28,
+            "ry": 18.91,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.22,
+            "ease": "linear",
+            "x": 62.01,
+            "y": 37.99,
+            "rx": 23.16,
+            "ry": 18.25,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.31,
+            "ease": "linear",
+            "x": 64.84,
+            "y": 35.16,
+            "rx": 23.52,
+            "ry": 18.9,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.37,
+            "ease": "out",
+            "x": 66.75,
+            "y": 33.25,
+            "rx": 22.47,
+            "ry": 19.74,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.48,
+            "ease": "out",
+            "x": 67.88,
+            "y": 32.12,
+            "rx": 19.74,
+            "ry": 22.26,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.7,
+            "ease": "out",
+            "x": 64.41,
+            "y": 35.59,
+            "rx": 21.63,
+            "ry": 20.37,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.92,
+            "ease": "out",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 4.6,
+            "ease": "linear",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          }
+        ]
+      },
+      "name": {
+        "note": "The name sits behind a clip at x >= 93 and slides out from under the mark.",
+        "translateX": [
+          {
+            "t": 0,
+            "ease": "linear",
+            "value": -26
+          },
+          {
+            "t": 1.32,
+            "ease": "linear",
+            "value": -26
+          },
+          {
+            "t": 1.98,
+            "ease": "out",
+            "value": 0
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "ease": "linear",
+            "value": 0
+          },
+          {
+            "t": 1.32,
+            "ease": "linear",
+            "value": 0
+          },
+          {
+            "t": 1.72,
+            "ease": "inOut",
+            "value": 1
+          }
+        ]
+      }
+    },
+    "lockupEcho": {
+      "use": "Lockup intro, where the name repeats the move",
+      "files": [
+        "lockup-echo-chalk.svg",
+        "lockup-echo-ink.svg"
+      ],
+      "starts": 0.55,
+      "settled": 2.95,
+      "previewLoop": 5.4,
+      "tracks": {
+        "pool": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "level": "full"
+          },
+          {
+            "t": 0.55,
+            "ease": "linear",
+            "level": "full"
+          },
+          {
+            "t": 0.85,
+            "ease": "linear",
+            "level": -1.2
+          },
+          {
+            "t": 1.06,
+            "ease": "in",
+            "level": -9.0
+          },
+          {
+            "t": 1.22,
+            "ease": "linear",
+            "level": -18.0
+          },
+          {
+            "t": 1.31,
+            "ease": "linear",
+            "level": -24.0
+          },
+          {
+            "t": 1.37,
+            "ease": "out",
+            "level": "empty"
+          },
+          {
+            "t": 5.4,
+            "ease": "linear",
+            "level": "empty"
+          }
+        ],
+        "neck": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "neck": null
+          },
+          {
+            "t": 1.06,
+            "ease": "in",
+            "neck": null
+          },
+          {
+            "t": 1.22,
+            "ease": "linear",
+            "neck": {
+              "ball": "b1",
+              "backLength": 3,
+              "backHalfWidth": 6,
+              "poolLength": 3,
+              "poolHalfWidth": 7
+            }
+          },
+          {
+            "t": 1.31,
+            "ease": "linear",
+            "neck": {
+              "ball": "b1",
+              "backLength": 9,
+              "backHalfWidth": 6.5,
+              "poolLength": 8,
+              "poolHalfWidth": 7.5
+            }
+          },
+          {
+            "t": 1.37,
+            "ease": "out",
+            "neck": {
+              "ball": "b1",
+              "backLength": 2,
+              "backHalfWidth": 5,
+              "poolLength": 1.5,
+              "poolHalfWidth": 5.5
+            }
+          },
+          {
+            "t": 1.48,
+            "ease": "out",
+            "neck": null
+          },
+          {
+            "t": 5.4,
+            "ease": "linear",
+            "neck": null
+          }
+        ],
+        "b1": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "x": 50.34,
+            "y": 49.66,
+            "rx": 8.0,
+            "ry": 8.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.55,
+            "ease": "linear",
+            "x": 50.34,
+            "y": 49.66,
+            "rx": 8.0,
+            "ry": 8.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.85,
+            "ease": "linear",
+            "x": 48.22,
+            "y": 51.78,
+            "rx": 16.5,
+            "ry": 16.5,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.06,
+            "ease": "in",
+            "x": 57.06,
+            "y": 42.94,
+            "rx": 20.28,
+            "ry": 18.91,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.22,
+            "ease": "linear",
+            "x": 62.01,
+            "y": 37.99,
+            "rx": 23.16,
+            "ry": 18.25,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.31,
+            "ease": "linear",
+            "x": 64.84,
+            "y": 35.16,
+            "rx": 23.52,
+            "ry": 18.9,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.37,
+            "ease": "out",
+            "x": 66.75,
+            "y": 33.25,
+            "rx": 22.47,
+            "ry": 19.74,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.48,
+            "ease": "out",
+            "x": 67.88,
+            "y": 32.12,
+            "rx": 19.74,
+            "ry": 22.26,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.7,
+            "ease": "out",
+            "x": 64.41,
+            "y": 35.59,
+            "rx": 21.63,
+            "ry": 20.37,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.92,
+            "ease": "out",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 5.4,
+            "ease": "linear",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          }
+        ]
+      },
+      "name": {
+        "note": "Values for the name are in font units (scale 0.072381 to mark units). The L rises from below; the o grows out of the L's inner corner, scaling about its own centre (772, -248). The name gets its own goo pass while the o buds.",
+        "lTranslateY": [
+          {
+            "t": 0,
+            "ease": "linear",
+            "value": 70
+          },
+          {
+            "t": 1.72,
+            "ease": "linear",
+            "value": 70
+          },
+          {
+            "t": 2.08,
+            "ease": "out",
+            "value": 0
+          }
+        ],
+        "lOpacity": [
+          {
+            "t": 0,
+            "ease": "linear",
+            "value": 0
+          },
+          {
+            "t": 1.72,
+            "ease": "linear",
+            "value": 0
+          },
+          {
+            "t": 2.0,
+            "ease": "inOut",
+            "value": 1
+          }
+        ],
+        "oTranslate": [
+          {
+            "t": 0,
+            "ease": "linear",
+            "value": [
+              -585,
+              139
+            ]
+          },
+          {
+            "t": 2.05,
+            "ease": "linear",
+            "value": [
+              -585,
+              139
+            ]
+          },
+          {
+            "t": 2.42,
+            "ease": "in",
+            "value": [
+              -250,
+              40
+            ]
+          },
+          {
+            "t": 2.68,
+            "ease": "out",
+            "value": [
+              22,
+              -4
+            ]
+          },
+          {
+            "t": 2.9,
+            "ease": "inOut",
+            "value": [
+              0,
+              0
+            ]
+          }
+        ],
+        "oScale": [
+          {
+            "t": 0,
+            "ease": "linear",
+            "value": [
+              0,
+              0
+            ]
+          },
+          {
+            "t": 2.05,
+            "ease": "linear",
+            "value": [
+              0,
+              0
+            ]
+          },
+          {
+            "t": 2.42,
+            "ease": "in",
+            "value": [
+              0.62,
+              0.62
+            ]
+          },
+          {
+            "t": 2.68,
+            "ease": "out",
+            "value": [
+              1.05,
+              0.97
+            ]
+          },
+          {
+            "t": 2.9,
+            "ease": "inOut",
+            "value": [
+              1,
+              1
+            ]
+          }
+        ],
+        "gooBlurSigma": [
+          {
+            "t": 0,
+            "ease": "linear",
+            "value": 0
+          },
+          {
+            "t": 2.0,
+            "ease": "linear",
+            "value": 0
+          },
+          {
+            "t": 2.12,
+            "ease": "inOut",
+            "value": 3.2
+          },
+          {
+            "t": 2.62,
+            "ease": "linear",
+            "value": 3.2
+          },
+          {
+            "t": 2.95,
+            "ease": "inOut",
+            "value": 0
+          }
+        ]
+      }
+    },
+    "handoff": {
+      "use": "Splash screen and the getlo.dev hero",
+      "files": [
+        "lockup-handoff-chalk.svg",
+        "lockup-handoff-ink.svg"
+      ],
+      "starts": 0.55,
+      "settled": 3.82,
+      "previewLoop": 5.4,
+      "note": "Ball b1 unmelds, flies on a parabola (apex y = 22) and lands as the name's o. The landing kicks the name's L up, the solid ball is swapped for the o glyph, and the glyph's counter opens. Then the corner refills and pops ball b2 with the same timing as the launch.",
+      "tracks": {
+        "pool": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "level": "full"
+          },
+          {
+            "t": 0.55,
+            "ease": "linear",
+            "level": "full"
+          },
+          {
+            "t": 0.85,
+            "ease": "linear",
+            "level": -1.2
+          },
+          {
+            "t": 1.06,
+            "ease": "in",
+            "level": -9.0
+          },
+          {
+            "t": 1.22,
+            "ease": "linear",
+            "level": -18.0
+          },
+          {
+            "t": 1.31,
+            "ease": "linear",
+            "level": -24.0
+          },
+          {
+            "t": 1.37,
+            "ease": "out",
+            "level": "empty"
+          },
+          {
+            "t": 2.45,
+            "ease": "linear",
+            "level": "empty"
+          },
+          {
+            "t": 2.55,
+            "ease": "in",
+            "level": -20.0
+          },
+          {
+            "t": 2.75,
+            "ease": "out",
+            "level": -1.2
+          },
+          {
+            "t": 2.96,
+            "ease": "in",
+            "level": -9.0
+          },
+          {
+            "t": 3.12,
+            "ease": "linear",
+            "level": -18.0
+          },
+          {
+            "t": 3.21,
+            "ease": "linear",
+            "level": -24.0
+          },
+          {
+            "t": 3.27,
+            "ease": "out",
+            "level": "empty"
+          },
+          {
+            "t": 5.4,
+            "ease": "linear",
+            "level": "empty"
+          }
+        ],
+        "neck": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "neck": null
+          },
+          {
+            "t": 1.06,
+            "ease": "in",
+            "neck": null
+          },
+          {
+            "t": 1.22,
+            "ease": "linear",
+            "neck": {
+              "ball": "b1",
+              "backLength": 3,
+              "backHalfWidth": 6,
+              "poolLength": 3,
+              "poolHalfWidth": 7
+            }
+          },
+          {
+            "t": 1.31,
+            "ease": "linear",
+            "neck": {
+              "ball": "b1",
+              "backLength": 9,
+              "backHalfWidth": 6.5,
+              "poolLength": 8,
+              "poolHalfWidth": 7.5
+            }
+          },
+          {
+            "t": 1.37,
+            "ease": "out",
+            "neck": {
+              "ball": "b1",
+              "backLength": 2,
+              "backHalfWidth": 5,
+              "poolLength": 1.5,
+              "poolHalfWidth": 5.5
+            }
+          },
+          {
+            "t": 1.48,
+            "ease": "out",
+            "neck": null
+          },
+          {
+            "t": 2.96,
+            "ease": "in",
+            "neck": null
+          },
+          {
+            "t": 3.12,
+            "ease": "linear",
+            "neck": {
+              "ball": "b2",
+              "backLength": 3,
+              "backHalfWidth": 6,
+              "poolLength": 3,
+              "poolHalfWidth": 7
+            }
+          },
+          {
+            "t": 3.21,
+            "ease": "linear",
+            "neck": {
+              "ball": "b2",
+              "backLength": 9,
+              "backHalfWidth": 6.5,
+              "poolLength": 8,
+              "poolHalfWidth": 7.5
+            }
+          },
+          {
+            "t": 3.27,
+            "ease": "out",
+            "neck": {
+              "ball": "b2",
+              "backLength": 2,
+              "backHalfWidth": 5,
+              "poolLength": 1.5,
+              "poolHalfWidth": 5.5
+            }
+          },
+          {
+            "t": 3.38,
+            "ease": "out",
+            "neck": null
+          },
+          {
+            "t": 5.4,
+            "ease": "linear",
+            "neck": null
+          }
+        ],
+        "b1": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "x": 50.34,
+            "y": 49.66,
+            "rx": 8.0,
+            "ry": 8.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.55,
+            "ease": "linear",
+            "x": 50.34,
+            "y": 49.66,
+            "rx": 8.0,
+            "ry": 8.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 0.85,
+            "ease": "linear",
+            "x": 48.22,
+            "y": 51.78,
+            "rx": 16.5,
+            "ry": 16.5,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.06,
+            "ease": "in",
+            "x": 57.06,
+            "y": 42.94,
+            "rx": 20.28,
+            "ry": 18.91,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.22,
+            "ease": "linear",
+            "x": 62.01,
+            "y": 37.99,
+            "rx": 23.16,
+            "ry": 18.25,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.31,
+            "ease": "linear",
+            "x": 64.84,
+            "y": 35.16,
+            "rx": 23.52,
+            "ry": 18.9,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.37,
+            "ease": "out",
+            "x": 66.75,
+            "y": 33.25,
+            "rx": 22.47,
+            "ry": 19.74,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 1.47,
+            "ease": "linear",
+            "x": 82.54,
+            "y": 25.25,
+            "rx": 21.73,
+            "ry": 19.87,
+            "angle": -19.51,
+            "opacity": 1
+          },
+          {
+            "t": 1.57,
+            "ease": "linear",
+            "x": 98.33,
+            "y": 22.06,
+            "rx": 21.42,
+            "ry": 19.58,
+            "angle": -2.85,
+            "opacity": 1
+          },
+          {
+            "t": 1.67,
+            "ease": "linear",
+            "x": 114.11,
+            "y": 23.68,
+            "rx": 21.11,
+            "ry": 19.3,
+            "angle": 14.29,
+            "opacity": 1
+          },
+          {
+            "t": 1.77,
+            "ease": "linear",
+            "x": 129.9,
+            "y": 30.11,
+            "rx": 20.79,
+            "ry": 19.01,
+            "angle": 29.21,
+            "opacity": 1
+          },
+          {
+            "t": 1.87,
+            "ease": "linear",
+            "x": 145.69,
+            "y": 41.34,
+            "rx": 20.48,
+            "ry": 18.72,
+            "angle": 40.82,
+            "opacity": 1
+          },
+          {
+            "t": 1.97,
+            "ease": "linear",
+            "x": 161.48,
+            "y": 57.38,
+            "rx": 19.97,
+            "ry": 18.62,
+            "angle": 40.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.06,
+            "ease": "out",
+            "x": 161.48,
+            "y": 59.68,
+            "rx": 21.5,
+            "ry": 16.9,
+            "angle": 0.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.16,
+            "ease": "inOut",
+            "x": 161.48,
+            "y": 57.38,
+            "rx": 19.2,
+            "ry": 18.82,
+            "angle": 0.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.22,
+            "ease": "linear",
+            "x": 161.48,
+            "y": 57.38,
+            "rx": 19.2,
+            "ry": 18.82,
+            "angle": 0.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.24,
+            "ease": "linear",
+            "x": 161.48,
+            "y": 57.38,
+            "rx": 19.2,
+            "ry": 18.82,
+            "angle": 0.0,
+            "opacity": 0
+          }
+        ],
+        "b2": [
+          {
+            "t": 0.0,
+            "ease": "inOut",
+            "x": 35.49,
+            "y": 64.51,
+            "rx": 0.0,
+            "ry": 0.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.45,
+            "ease": "linear",
+            "x": 35.49,
+            "y": 64.51,
+            "rx": 0.0,
+            "ry": 0.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.55,
+            "ease": "in",
+            "x": 35.49,
+            "y": 64.51,
+            "rx": 3.0,
+            "ry": 3.0,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.75,
+            "ease": "out",
+            "x": 48.22,
+            "y": 51.78,
+            "rx": 16.5,
+            "ry": 16.5,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 2.96,
+            "ease": "in",
+            "x": 57.06,
+            "y": 42.94,
+            "rx": 20.28,
+            "ry": 18.91,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 3.12,
+            "ease": "linear",
+            "x": 62.01,
+            "y": 37.99,
+            "rx": 23.16,
+            "ry": 18.25,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 3.21,
+            "ease": "linear",
+            "x": 64.84,
+            "y": 35.16,
+            "rx": 23.52,
+            "ry": 18.9,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 3.27,
+            "ease": "out",
+            "x": 66.75,
+            "y": 33.25,
+            "rx": 22.47,
+            "ry": 19.74,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 3.38,
+            "ease": "out",
+            "x": 67.88,
+            "y": 32.12,
+            "rx": 19.74,
+            "ry": 22.26,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 3.6,
+            "ease": "inOut",
+            "x": 64.41,
+            "y": 35.59,
+            "rx": 21.63,
+            "ry": 20.37,
+            "angle": -45.0,
+            "opacity": 1
+          },
+          {
+            "t": 3.82,
+            "ease": "inOut",
+            "x": 65.0,
+            "y": 35.0,
+            "rx": 21.0,
+            "ry": 21.0,
+            "angle": -45.0,
+            "opacity": 1
+          }
+        ]
+      },
+      "name": {
+        "note": "Values in font units. The L scales up from its baseline; the o glyph appears under the ball and its counter (the hole) scales open about (772, -248).",
+        "lScaleY": [
+          {
+            "t": 0,
+            "ease": "linear",
+            "value": 0
+          },
+          {
+            "t": 1.97,
+            "ease": "linear",
+            "value": 0
+          },
+          {
+            "t": 2.13,
+            "ease": "out",
+            "value": 1.12
+          },
+          {
+            "t": 2.25,
+            "ease": "inOut",
+            "value": 0.96
+          },
+          {
+            "t": 2.36,
+            "ease": "inOut",
+            "value": 1
+          }
+        ],
+        "oOpacity": [
+          {
+            "t": 0,
+            "ease": "linear",
+            "value": 0
+          },
+          {
+            "t": 2.14,
+            "ease": "linear",
+            "value": 0
+          },
+          {
+            "t": 2.2,
+            "ease": "linear",
+            "value": 1
+          }
+        ],
+        "counterScale": [
+          {
+            "t": 0,
+            "ease": "linear",
+            "value": 0
+          },
+          {
+            "t": 2.2,
+            "ease": "linear",
+            "value": 0
+          },
+          {
+            "t": 2.4,
+            "ease": "out",
+            "value": 1.14
+          },
+          {
+            "t": 2.52,
+            "ease": "inOut",
+            "value": 0.95
+          },
+          {
+            "t": 2.62,
+            "ease": "inOut",
+            "value": 1
+          }
+        ]
+      }
+    }
+  }
+}

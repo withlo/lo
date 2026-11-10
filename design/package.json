@@ -1,0 +1,29 @@
+{
+  "name": "@lo/design",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tokens.json": "./tokens.json",
+    "./css/*": "./css/*"
+  },
+  "scripts": {
+    "codegen": "node scripts/build.mjs",
+    "lint": "oxlint && stylelint css"
+  },
+  "nx": {
+    "name": "design",
+    "targets": {
+      "codegen": {
+        "inputs": [
+          "{projectRoot}/tokens.json",
+          "{projectRoot}/scripts/build.mjs"
+        ],
+        "outputs": [
+          "{projectRoot}/css/tokens.css",
+          "{projectRoot}/css/type.css"
+        ]
+      }
+    }
+  }
+}
