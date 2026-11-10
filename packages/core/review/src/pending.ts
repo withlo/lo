@@ -130,18 +130,21 @@ export interface FileCommentBody {
   subject_type: 'file';
 }
 
-/** What to send GitHub: a GraphQL mutation's variables, or a REST request's body. */
-export type Mutation =
-  /**
-   * `addPullRequestReview` with no `event`, which starts your pending review, recorded on
-   * `commitOID`. A line comment goes in its `threads`, on that commit's lines: the only way to put
-   * a pending thread on a revision older than the latest head.
-   *
-   * Without one, it starts an empty review, for a file-level comment or a reply, which can't go in
-   * `threads`. It starts on the latest head, where a file-level thread goes anyway, so approving
-   * the latest revision isn't refused later. Once it's accepted, {@link YourReview.add} plans the
-   * comment's own mutation.
-   */
+/**
+ * What to send GitHub: a GraphQL mutation's variables, or a REST request's body, with the head it
+ * was planned against.
+ */
+export type Mutation = /**
+ * `addPullRequestReview` with no `event`, which starts your pending review, recorded on
+ * `commitOID`. A line comment goes in its `threads`, on that commit's lines: the only way to put
+ * a pending thread on a revision older than the latest head.
+ *
+ * Without one, it starts an empty review, for a file-level comment or a reply, which can't go in
+ * `threads`. It starts on the latest head, where a file-level thread goes anyway, so approving
+ * the latest revision isn't refused later. Once it's accepted, {@link YourReview.add} plans the
+ * comment's own mutation.
+ */
+(
   | { kind: 'startReview'; variables: AddPullRequestReviewMutationVariables }
   /**
    * `addPullRequestReviewThread` to your pending review, with `subjectType: FILE` for a
@@ -169,7 +172,17 @@ export type Mutation =
    * `addPullRequestReview` with `event` and the summary as `body`, or none: a review with no
    * comments, submitted at once.
    */
-  | { kind: 'review'; variables: AddPullRequestReviewMutationVariables };
+  | { kind: 'review'; variables: AddPullRequestReviewMutationVariables }
+) & {
+  /**
+   * The pull request's latest head (`headRefOid`) when it was planned. GitHub puts a thread added
+   * to a pending review on whatever head is current when it gets it, which can be a later one if
+   * someone pushed since Lo last looked, and that head's line may hold different code. The sender
+   * compares the comment's `commit.oid` in GitHub's answer with this, and undoes or flags one that
+   * landed on another head.
+   */
+  readonly head: string;
+};
 
 /**
  * Whether accepting `mutation` sends the comment it was planned for, so the comment's draft can
@@ -302,17 +315,18 @@ export class YourReview {
     const pending = this.#pending;
     if (!pending) {
       if (comment.kind === 'thread' && comment.lines !== undefined) {
-        return this.#addReview('startReview', on, undefined, undefined, comment);
+        return this.#addReview('startReview', on, head, undefined, undefined, comment);
       }
-      return this.#addReview('startReview', head, undefined, undefined);
+      return this.#addReview('startReview', head, head, undefined, undefined);
     }
     switch (comment.kind) {
       case 'thread':
         if (comment.lines !== undefined && on !== head) return { refusal: 'notLatest', head };
-        return { kind: 'addThread', variables: threadVariables(pending.id, comment) };
+        return { kind: 'addThread', head, variables: threadVariables(pending.id, comment) };
       case 'reply':
         return {
           kind: 'addReply',
+          head,
           variables: {
             pullRequestReviewThreadId: comment.thread,
             body: comment.body,
@@ -334,22 +348,24 @@ export class YourReview {
       return 'refusal' in added ? added : { mutation: added, pending: true };
     }
     if (isBlank(comment.body)) return { refusal: 'blank' };
-    return { mutation: this.#postNow(on, comment), pending: false };
+    return { mutation: this.#postNow(on, head, comment), pending: false };
   }
 
-  #postNow(on: string, comment: NewComment): Mutation {
+  #postNow(on: string, head: string, comment: NewComment): Mutation {
     switch (comment.kind) {
       case 'thread':
         if (comment.lines !== undefined) {
-          return this.#addReview('postThread', on, 'COMMENT', undefined, comment);
+          return this.#addReview('postThread', on, head, 'COMMENT', undefined, comment);
         }
         return {
           kind: 'postFileComment',
+          head,
           body: { commit_id: on, path: comment.path, body: comment.body, subject_type: 'file' },
         };
       case 'reply':
         return {
           kind: 'postReply',
+          head,
           variables: {
             pullRequestReviewThreadId: comment.thread,
             body: comment.body,
@@ -426,12 +442,18 @@ export class YourReview {
 
   /**
    * What submitting sends: your pending review with `event` and the summary `body`, or a review of
-   * revision `on`, the right column's, when you have no pending review. A blank summary sends
-   * none, so a summary written for the pending review on GitHub's page stays. Approving or
-   * requesting changes with a pending review recorded on another revision than `on` is refused: a
-   * review records the commit you looked at.
+   * revision `on`, the right column's, when you have no pending review. `head` is the pull
+   * request's latest head (`headRefOid`). A blank summary sends none, so a summary written for the
+   * pending review on GitHub's page stays. Approving or requesting changes with a pending review
+   * recorded on another revision than `on` is refused: a review records the commit you looked at.
    */
-  submit(event: ReviewEvent, body: string, own: boolean, on: string): Mutation | ReviewRefusal {
+  submit(
+    event: ReviewEvent,
+    body: string,
+    own: boolean,
+    on: string,
+    head: string,
+  ): Mutation | ReviewRefusal {
     if (!reviewChoices(own).includes(event)) return { refusal: 'ownPullRequest' };
     const pending = this.#pending;
     if (pending && event !== 'COMMENT' && pending.commit !== on) {
@@ -442,23 +464,29 @@ export class YourReview {
       return { refusal: 'nothingToSubmit' };
     }
     const summary = blank ? undefined : body;
-    if (!pending) return this.#addReview('review', on, event, summary);
+    if (!pending) return this.#addReview('review', on, head, event, summary);
     return {
       kind: 'submitReview',
+      head,
       variables: { pullRequestReviewId: pending.id, event, body: summary },
     };
   }
 
-  /** `addPullRequestReview` on `commit`, as `kind`, with the line comment `thread` if any. */
+  /**
+   * `addPullRequestReview` on `commit`, as `kind`, with the line comment `thread` if any, planned
+   * with the pull request at `head`.
+   */
   #addReview(
     kind: 'startReview' | 'postThread' | 'review',
     commit: string,
+    head: string,
     event: ReviewEvent | undefined,
     body: string | undefined,
     thread?: NewThread,
   ): Mutation {
     return {
       kind,
+      head,
       variables: {
         pullRequestId: this.pullRequestId,
         commitOID: commit,

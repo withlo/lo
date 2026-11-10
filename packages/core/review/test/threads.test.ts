@@ -377,6 +377,7 @@ test('alice reviews r3 and approves', () => {
   const start = planned(review.add(screen.right, R3, first));
   expect(start).toEqual({
     kind: 'startReview',
+    head: R3,
     variables: {
       pullRequestId: PULL,
       commitOID: R3,
@@ -430,9 +431,10 @@ test('alice reviews r3 and approves', () => {
   expect(dialog.choices).toEqual(['COMMENT', 'APPROVE', 'REQUEST_CHANGES']);
   expect(dialog.pendingComments).toBe(4);
   expect([dialog.on, dialog.onScreen]).toEqual([R3, true]);
-  const submit = planned(review.submit('APPROVE', '', false, R3));
+  const submit = planned(review.submit('APPROVE', '', false, R3, R3));
   expect(submit).toEqual({
     kind: 'submitReview',
+    head: R3,
     variables: { pullRequestReviewId: 'PRR_kwDOAbc', event: 'APPROVE', body: undefined },
   });
   review.accepted(submit);
@@ -444,9 +446,10 @@ test('bob can only comment on his own pull request', () => {
   const dialog = review.submitDialog('bob', true, R3);
 
   expect(dialog.choices).toEqual(['COMMENT']);
-  expect(review.submit('APPROVE', 'Ship it', true, R3)).toEqual({ refusal: 'ownPullRequest' });
-  expect(review.submit('COMMENT', 'Ready for another look.', true, R3)).toEqual({
+  expect(review.submit('APPROVE', 'Ship it', true, R3, R3)).toEqual({ refusal: 'ownPullRequest' });
+  expect(review.submit('COMMENT', 'Ready for another look.', true, R3, R3)).toEqual({
     kind: 'review',
+    head: R3,
     variables: {
       pullRequestId: PULL,
       commitOID: R3,
@@ -464,6 +467,7 @@ test('without a pending review c posts on the revision on screen', () => {
   expect(new YourReview(PULL).post(screen.right, R3, rename)).toEqual({
     mutation: {
       kind: 'postThread',
+      head: R3,
       variables: {
         pullRequestId: PULL,
         commitOID: R2,
@@ -508,6 +512,7 @@ test('carol starts her review with a comment on a file', () => {
   const start = planned(review.add(screen.right, R3, comment));
   expect(start).toEqual({
     kind: 'startReview',
+    head: R3,
     variables: {
       pullRequestId: PULL,
       commitOID: R3,
@@ -525,6 +530,7 @@ test('carol starts her review with a comment on a file', () => {
   const add = planned(review.add(screen.right, R3, comment));
   expect(add).toEqual({
     kind: 'addThread',
+    head: R3,
     variables: {
       pullRequestReviewId: 'PRR_carol',
       path: 'README.md',
@@ -562,7 +568,7 @@ test('a comment github refuses keeps its draft and is not counted', () => {
   // Refused, so not accepted: the review stays empty, and an empty Comment isn't sent.
   expect(review.pendingComments).toBe(0);
   expect(drafts.get(key)).toBe('Still applies on r3.');
-  expect(review.submit('COMMENT', '', false, R3)).toEqual({ refusal: 'nothingToSubmit' });
+  expect(review.submit('COMMENT', '', false, R3, R3)).toEqual({ refusal: 'nothingToSubmit' });
   // Sending it again plans the same reply.
   expect(review.add(R3, R3, reply)).toEqual(answer);
 
@@ -580,6 +586,7 @@ test('c on a file posts a file comment on the revision on screen', () => {
   expect(new YourReview(PULL).post(screen.right, R3, readme('Mention the new flag.'))).toEqual({
     mutation: {
       kind: 'postFileComment',
+      head: R3,
       body: {
         commit_id: R2,
         path: 'README.md',
@@ -603,6 +610,7 @@ test('erin comments on r2 after r3 was pushed', () => {
   const start = planned(review.add(R2, R3, nit(11)));
   expect(start).toEqual({
     kind: 'startReview',
+    head: R3,
     variables: {
       pullRequestId: PULL,
       commitOID: R2,
@@ -629,11 +637,11 @@ test('erin comments on r2 after r3 was pushed', () => {
   expect(planned(review.add(R3, R3, nit(12))).kind).toBe('addThread');
 
   // The review is recorded on r2, so it approves r2 only while r2 is on screen.
-  expect(review.submit('APPROVE', '', false, R3)).toEqual({
+  expect(review.submit('APPROVE', '', false, R3, R3)).toEqual({
     refusal: 'otherRevision',
     reviewOn: R2,
   });
-  expect(planned(review.submit('APPROVE', '', false, R2)).kind).toBe('submitReview');
+  expect(planned(review.submit('APPROVE', '', false, R2, R3)).kind).toBe('submitReview');
 });
 
 /** Alice's draft on line `line` of r2. */

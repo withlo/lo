@@ -62,6 +62,7 @@ function draft(body: string): DraftPullRequestReviewThread {
 function startReview(commit: string, body?: string): Mutation {
   return {
     kind: 'startReview',
+    head: HEAD,
     variables: {
       pullRequestId: PULL,
       commitOID: commit,
@@ -75,6 +76,7 @@ function startReview(commit: string, body?: string): Mutation {
 function addThread(body: string): Mutation {
   return {
     kind: 'addThread',
+    head: HEAD,
     variables: {
       pullRequestReviewId: 'PRR_1',
       path: 'src/parse.rs',
@@ -91,6 +93,7 @@ function addThread(body: string): Mutation {
 function addFileThread(body: string): Mutation {
   return {
     kind: 'addThread',
+    head: HEAD,
     variables: {
       pullRequestReviewId: 'PRR_1',
       path: 'README.md',
@@ -107,6 +110,7 @@ function addFileThread(body: string): Mutation {
 function addReply(body: string): Mutation {
   return {
     kind: 'addReply',
+    head: HEAD,
     variables: { pullRequestReviewThreadId: 'PRRT_9', body, pullRequestReviewId: 'PRR_1' },
   };
 }
@@ -114,6 +118,7 @@ function addReply(body: string): Mutation {
 function postThread(commit: string, body: string): Mutation {
   return {
     kind: 'postThread',
+    head: HEAD,
     variables: {
       pullRequestId: PULL,
       commitOID: commit,
@@ -127,17 +132,23 @@ function postThread(commit: string, body: string): Mutation {
 function postReply(body: string): Mutation {
   return {
     kind: 'postReply',
+    head: HEAD,
     variables: { pullRequestReviewThreadId: 'PRRT_9', body, pullRequestReviewId: undefined },
   };
 }
 
 function submitReview(event: ReviewEvent, body?: string): Mutation {
-  return { kind: 'submitReview', variables: { pullRequestReviewId: 'PRR_1', event, body } };
+  return {
+    kind: 'submitReview',
+    head: HEAD,
+    variables: { pullRequestReviewId: 'PRR_1', event, body },
+  };
 }
 
 function review(commit: string, event: ReviewEvent, body?: string): Mutation {
   return {
     kind: 'review',
+    head: HEAD,
     variables: { pullRequestId: PULL, commitOID: commit, event, body, threads: undefined },
   };
 }
@@ -212,7 +223,7 @@ test('an empty review whose first comment failed has nothing to submit', () => {
   planned(yours.add('a3', HEAD, reply('Agreed.')));
 
   expect(yours.pendingComments).toBe(0);
-  expect(yours.submit('COMMENT', '', false, 'a3')).toEqual({ refusal: 'nothingToSubmit' });
+  expect(yours.submit('COMMENT', '', false, 'a3', HEAD)).toEqual({ refusal: 'nothingToSubmit' });
 });
 
 test('a new thread joins a pending review on any revision from the latest head', () => {
@@ -270,6 +281,7 @@ test('c on a file posts a file comment through rest', () => {
   expect(none().post('a2', HEAD, file('Needs a changelog entry.'))).toEqual({
     mutation: {
       kind: 'postFileComment',
+      head: HEAD,
       body: {
         commit_id: 'a2',
         path: 'README.md',
@@ -296,6 +308,7 @@ test('every mutation but an empty start or a submission sends the comment', () =
   expect(
     sends({
       kind: 'postFileComment',
+      head: HEAD,
       body: { commit_id: 'a3', path: 'README.md', body: 'Agreed.', subject_type: 'file' },
     }),
   ).toBe(true);
@@ -337,7 +350,7 @@ test('c adds to the pending review when there is one', () => {
 
 test('submitting sends the pending review and ends it', () => {
   const yours = pending('a3', 2);
-  const submit = planned(yours.submit('APPROVE', '', false, 'a3'));
+  const submit = planned(yours.submit('APPROVE', '', false, 'a3', HEAD));
 
   expect(submit).toEqual(submitReview('APPROVE'));
   yours.accepted(submit);
@@ -349,10 +362,10 @@ test('a blank summary sends none and a written one is sent as it is', () => {
   // GitHub wipes a summary written on its page for an empty one, and keeps it for none.
   const yours = pending('a3', 1);
   for (const blank of ['', ' \n\t']) {
-    expect(yours.submit('COMMENT', blank, false, 'a3')).toEqual(submitReview('COMMENT'));
-    expect(none().submit('APPROVE', blank, false, 'a3')).toEqual(review('a3', 'APPROVE'));
+    expect(yours.submit('COMMENT', blank, false, 'a3', HEAD)).toEqual(submitReview('COMMENT'));
+    expect(none().submit('APPROVE', blank, false, 'a3', HEAD)).toEqual(review('a3', 'APPROVE'));
   }
-  expect(yours.submit('APPROVE', ' Ship it. ', false, 'a3')).toEqual(
+  expect(yours.submit('APPROVE', ' Ship it. ', false, 'a3', HEAD)).toEqual(
     submitReview('APPROVE', ' Ship it. '),
   );
 });
@@ -362,16 +375,16 @@ test('approving or requesting changes needs the pending reviews revision on scre
   const yours = pending('a3', 1);
   const otherRevision = { refusal: 'otherRevision', reviewOn: 'a3' };
 
-  expect(yours.submit('APPROVE', '', false, 'a2')).toEqual(otherRevision);
-  expect(yours.submit('REQUEST_CHANGES', 'Wait.', false, 'a2')).toEqual(otherRevision);
+  expect(yours.submit('APPROVE', '', false, 'a2', HEAD)).toEqual(otherRevision);
+  expect(yours.submit('REQUEST_CHANGES', 'Wait.', false, 'a2', HEAD)).toEqual(otherRevision);
   // A comment approves nothing, so it's sent from any revision.
-  expect(yours.submit('COMMENT', '', false, 'a2')).toEqual(submitReview('COMMENT'));
+  expect(yours.submit('COMMENT', '', false, 'a2', HEAD)).toEqual(submitReview('COMMENT'));
   // Your own pull request's refusal comes first.
-  expect(yours.submit('APPROVE', '', true, 'a2')).toEqual({ refusal: 'ownPullRequest' });
+  expect(yours.submit('APPROVE', '', true, 'a2', HEAD)).toEqual({ refusal: 'ownPullRequest' });
 });
 
 test('without a pending review submitting reviews the revision on screen', () => {
-  expect(none().submit('REQUEST_CHANGES', 'Needs tests.', false, 'a3')).toEqual(
+  expect(none().submit('REQUEST_CHANGES', 'Needs tests.', false, 'a3', HEAD)).toEqual(
     review('a3', 'REQUEST_CHANGES', 'Needs tests.'),
   );
 });
@@ -381,11 +394,11 @@ test('your own pull request offers only comment', () => {
   expect(reviewChoices(false)).toEqual(['COMMENT', 'APPROVE', 'REQUEST_CHANGES']);
 
   const yours = pending('a3', 1);
-  expect(yours.submit('APPROVE', '', true, 'a3')).toEqual({ refusal: 'ownPullRequest' });
-  expect(yours.submit('REQUEST_CHANGES', 'Wait.', true, 'a3')).toEqual({
+  expect(yours.submit('APPROVE', '', true, 'a3', HEAD)).toEqual({ refusal: 'ownPullRequest' });
+  expect(yours.submit('REQUEST_CHANGES', 'Wait.', true, 'a3', HEAD)).toEqual({
     refusal: 'ownPullRequest',
   });
-  expect(yours.submit('COMMENT', '', true, 'a3')).not.toHaveProperty('refusal');
+  expect(yours.submit('COMMENT', '', true, 'a3', HEAD)).not.toHaveProperty('refusal');
 });
 
 test('a comment or request for changes needs a summary or a pending comment', () => {
@@ -393,14 +406,14 @@ test('a comment or request for changes needs a summary or a pending comment', ()
   const empty = pending('a3', 0);
   const some = pending('a3', 1);
 
-  expect(some.submit('COMMENT', ' \n', false, 'a3')).toEqual(submitReview('COMMENT'));
+  expect(some.submit('COMMENT', ' \n', false, 'a3', HEAD)).toEqual(submitReview('COMMENT'));
   for (const event of ['COMMENT', 'REQUEST_CHANGES'] as const) {
-    expect(nothing.submit(event, ' ', false, 'a3')).toEqual({ refusal: 'nothingToSubmit' });
-    expect(empty.submit(event, '', false, 'a3')).toEqual({ refusal: 'nothingToSubmit' });
-    expect(nothing.submit(event, 'Looks off.', false, 'a3')).not.toHaveProperty('refusal');
-    expect(some.submit(event, '', false, 'a3')).not.toHaveProperty('refusal');
+    expect(nothing.submit(event, ' ', false, 'a3', HEAD)).toEqual({ refusal: 'nothingToSubmit' });
+    expect(empty.submit(event, '', false, 'a3', HEAD)).toEqual({ refusal: 'nothingToSubmit' });
+    expect(nothing.submit(event, 'Looks off.', false, 'a3', HEAD)).not.toHaveProperty('refusal');
+    expect(some.submit(event, '', false, 'a3', HEAD)).not.toHaveProperty('refusal');
   }
-  expect(nothing.submit('APPROVE', '', false, 'a3')).not.toHaveProperty('refusal');
+  expect(nothing.submit('APPROVE', '', false, 'a3', HEAD)).not.toHaveProperty('refusal');
 });
 
 test('the submit dialog shows the count the account and the revision', () => {
@@ -424,11 +437,11 @@ test('a pending review whose commit github lost is on no revision', () => {
   const yours = new YourReview(PULL, { id: 'PRR_1', commit: undefined, comments: 1 });
   const dialog = yours.submitDialog('alice', false, 'a3');
   expect([dialog.on, dialog.onScreen]).toEqual([undefined, false]);
-  expect(yours.submit('APPROVE', '', false, 'a3')).toEqual({
+  expect(yours.submit('APPROVE', '', false, 'a3', HEAD)).toEqual({
     refusal: 'otherRevision',
     reviewOn: undefined,
   });
-  expect(yours.submit('COMMENT', '', false, 'a3')).not.toHaveProperty('refusal');
+  expect(yours.submit('COMMENT', '', false, 'a3', HEAD)).not.toHaveProperty('refusal');
 });
 
 test('the submit dialog says when the pending review is on another revision', () => {
@@ -464,6 +477,7 @@ test('a range from the base sends its starts side', () => {
   };
   expect(none().add('a3', HEAD, range)).toEqual({
     kind: 'startReview',
+    head: HEAD,
     variables: {
       pullRequestId: PULL,
       commitOID: 'a3',
@@ -505,4 +519,39 @@ test('a pending review on a lost commit is on no revision', () => {
   const yours = new YourReview(PULL, lost);
   const head = 'c7f30e9b1a5d7c3e9f1b5d7a3c9e1f5b7d3a9c62';
   expect(yours.submitDialog('alice', false, head).onScreen).toBe(false);
+});
+
+test('every plan carries the head it was planned against', () => {
+  // r4 was pushed while r3 is on screen: GitHub puts a thread added to a pending review on r4, so
+  // the sender checks where the comment landed against the head each plan assumed.
+  const latest = 'a4';
+  const yours = pending('a3', 1);
+  const plans = [
+    none().add('a3', latest, thread('Off by one?')),
+    none().add('a3', latest, file('Needs a changelog entry.')),
+    yours.add(latest, latest, thread('And here.')),
+    yours.add('a3', latest, file('Needs a changelog entry.')),
+    yours.add('a3', latest, reply('Agreed.')),
+    none().post('a3', latest, thread('Off by one?')),
+    none().post('a3', latest, file('Needs a changelog entry.')),
+    none().post('a3', latest, reply('Agreed.')),
+    yours.post('a1', latest, reply('Agreed.')),
+    yours.submit('COMMENT', '', false, 'a3', latest),
+    none().submit('APPROVE', '', false, 'a3', latest),
+  ].map((plan) => ('mutation' in plan ? plan.mutation : planned(plan)));
+
+  expect(plans.map((plan) => plan.kind)).toEqual([
+    'startReview',
+    'startReview',
+    'addThread',
+    'addThread',
+    'addReply',
+    'postThread',
+    'postFileComment',
+    'postReply',
+    'addReply',
+    'submitReview',
+    'review',
+  ]);
+  expect(plans.map((plan) => plan.head)).toEqual(plans.map(() => latest));
 });
