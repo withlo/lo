@@ -90,7 +90,7 @@ test('e9s threads show on the moved line and the line only the old side has', as
 
   expect(operations(fetch)).toEqual(['ReviewThreads', 'PendingReview']);
   // rozed-bot submitted its review, so it has nothing pending.
-  expect(pending).toBeUndefined();
+  expect(pending).toEqual({ kind: 'read', review: undefined });
 });
 
 function e2e20(): PullRef {

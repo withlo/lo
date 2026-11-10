@@ -21,18 +21,27 @@ type PendingReviews = NonNullable<
 export type ViewerPendingReview = NonNullable<NonNullable<PendingReviews['nodes']>[number]>;
 
 /**
- * The pending review the user with login `login` has on `pull`, or nothing when they have none.
+ * What GitHub's answer says of the signed-in user's pending review: `review`, or none; or that
+ * it's unknown, when GitHub left the review out or answered with an error about it. GitHub keeps
+ * at most one pending review per person, and refuses a second, so an unknown one is never taken
+ * for none.
+ */
+export type PendingReviewRead =
+  { kind: 'read'; review: ViewerPendingReview | undefined } | { kind: 'unknown'; why: string };
+
+/**
+ * The pending review the user with login `login` has on `pull`, or none, or that it's unknown.
  * `login` is the signed-in user's: nobody else's pending review can be read. An error that leaves
- * out the reviews, rather than a field of one, fails the read, so it's never taken for having
- * none.
+ * out the reviews fails the read; a review GitHub leaves out as a null, or any error about one,
+ * makes it unknown.
  */
 export async function pendingReview(
   client: GithubClient,
   pull: PullRef,
   login: string,
-): Promise<ViewerPendingReview | undefined> {
+): Promise<PendingReviewRead> {
   const { owner, name } = pull.repo;
-  const { data } = await client.graphqlWithErrors(
+  const { data, errors } = await client.graphqlWithErrors(
     PendingReviewDocument,
     { owner, name, number: pull.number, login },
     3,
@@ -42,6 +51,13 @@ export async function pendingReview(
   if (!found.reviews) {
     throw new GithubError({ kind: 'decode', message: "GitHub didn't list the pending reviews" });
   }
-  // GitHub leaves out a review it can't show, as a null.
-  return found.reviews.nodes?.find((node) => node !== null) ?? undefined;
+  if (errors.length > 0) {
+    return { kind: 'unknown', why: errors.map((error) => error.message).join('; ') };
+  }
+  const nodes = found.reviews.nodes ?? [];
+  // GitHub leaves out a review it can't show as a null: there is one, and Lo can't see it.
+  if (nodes.includes(null)) {
+    return { kind: 'unknown', why: 'GitHub left out a pending review it could not show' };
+  }
+  return { kind: 'read', review: nodes.find((node) => node !== null) ?? undefined };
 }

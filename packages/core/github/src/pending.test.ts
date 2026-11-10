@@ -48,19 +48,28 @@ test('your pending review is read by your login', async () => {
     commit: { oid: '5a48d2255817f0f19dfdfc3168925f0cdb85c630' },
     comments: { totalCount: 4 },
   };
-  // A review GitHub can't show comes as a null, and is passed over.
-  const read = await pendingReview(answering(reviews([null, review])), PULL, 'rozed-bot');
-  expect(read).toEqual(review);
+  const read = await pendingReview(answering(reviews([review])), PULL, 'rozed-bot');
+  expect(read).toEqual({ kind: 'read', review });
 });
 
 test('without a pending review there is none', async () => {
-  expect(await pendingReview(answering(reviews([])), PULL, 'rozed-bot')).toBeUndefined();
+  expect(await pendingReview(answering(reviews([])), PULL, 'rozed-bot')).toEqual({
+    kind: 'read',
+    review: undefined,
+  });
+});
+
+test('a pending review github leaves out is unknown', async () => {
+  // GitHub keeps one pending review per person: a null in its place is one Lo can't see, and
+  // taken for none, it would start a second, which GitHub refuses.
+  const read = await pendingReview(answering(reviews([null])), PULL, 'rozed-bot');
+  expect(read.kind).toBe('unknown');
 });
 
 test('a pending review on a commit github lost has none', async () => {
   const review = { id: 'PRR_1', commit: null, comments: { totalCount: 1 } };
   const read = await pendingReview(answering(reviews([review])), PULL, 'rozed-bot');
-  expect(read?.commit).toBeNull();
+  expect(read.kind === 'read' && read.review?.commit).toBeNull();
 });
 
 test('a pull request github cant find is not found', async () => {
@@ -94,8 +103,9 @@ test('reviews missing without an error are an answer lo cant read', async () => 
   expect(error.detail.kind).toBe('decode');
 });
 
-test('an error in one review keeps the read', async () => {
-  // A field below a review is the review's own: the rest of the answer still holds.
+test('an error about the review makes it unknown', async () => {
+  // Whether the error nulled a field or the review itself, the answer can't be trusted to say
+  // there's none.
   const review = { id: 'PRR_1', commit: null, comments: { totalCount: 2 } };
   const body = {
     ...reviews([review]),
@@ -107,6 +117,16 @@ test('an error in one review keeps the read', async () => {
       },
     ],
   };
-  const read = await pendingReview(answering(body), PULL, 'rozed-bot');
-  expect(read?.id).toBe('PRR_1');
+  expect(await pendingReview(answering(body), PULL, 'rozed-bot')).toEqual({
+    kind: 'unknown',
+    why: 'Resource not accessible by integration',
+  });
+  const nulled = {
+    ...reviews([null]),
+    errors: [{ path: ['repository', 'pullRequest', 'reviews', 'nodes', 0], message: 'Timeout' }],
+  };
+  expect(await pendingReview(answering(nulled), PULL, 'rozed-bot')).toEqual({
+    kind: 'unknown',
+    why: 'Timeout',
+  });
 });

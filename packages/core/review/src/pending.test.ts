@@ -13,6 +13,7 @@ import {
   type NewThread,
   type PendingReview,
   type ReviewEvent,
+  yourReview,
 } from './pending.ts';
 
 /** The pull request's node ID. */
@@ -554,4 +555,28 @@ test('every plan carries the head it was planned against', () => {
     'review',
   ]);
   expect(plans.map((plan) => plan.head)).toEqual(plans.map(() => latest));
+});
+
+test('a pending review github left out plans nothing', () => {
+  // A review started now would be refused if one is pending, and adding to one needs its id.
+  const unknown = yourReview(PULL, { kind: 'unknown', why: 'Something went wrong' });
+  const refused = { refusal: 'pendingUnknown' };
+
+  expect(unknown.known).toBe(false);
+  for (const comment of [thread('Off by one?'), file('Needs a changelog entry.'), reply('Ok.')]) {
+    expect(unknown.add('a3', HEAD, comment)).toEqual(refused);
+    expect(unknown.post('a3', HEAD, comment)).toEqual(refused);
+  }
+  for (const event of ['COMMENT', 'APPROVE', 'REQUEST_CHANGES'] as const) {
+    expect(unknown.submit(event, 'Looks good.', false, 'a3', HEAD)).toEqual(refused);
+  }
+  // A read that says which review you have, or none, plans as usual.
+  const read = yourReview(PULL, {
+    kind: 'read',
+    review: { id: 'PRR_1', commit: { oid: 'a2' }, comments: { totalCount: 1 } },
+  });
+  expect(read.pending).toEqual({ id: 'PRR_1', commit: 'a2', comments: 1 });
+  expect(
+    yourReview(PULL, { kind: 'read', review: undefined }).add('a3', HEAD, thread('Hm.')),
+  ).toEqual(startReview('a3', 'Hm.'));
 });

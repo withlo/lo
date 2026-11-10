@@ -43,6 +43,7 @@ import type {
   AddPullRequestReviewThreadMutationVariables,
   AddPullRequestReviewThreadReplyMutationVariables,
   DraftPullRequestReviewThread,
+  PendingReviewRead,
   SubmitPullRequestReviewMutationVariables,
   ViewerPendingReview,
 } from '@lo/github';
@@ -99,6 +100,16 @@ export function pendingReviewFrom(
   };
 }
 
+/**
+ * Your review of the pull request with node ID `pullRequestId`, from `@lo/github`'s read of your
+ * pending review: one that plans nothing when the read couldn't say whether you have one.
+ */
+export function yourReview(pullRequestId: string, read: PendingReviewRead): YourReview {
+  return read.kind === 'unknown'
+    ? YourReview.unknown(pullRequestId)
+    : new YourReview(pullRequestId, pendingReviewFrom(read.review));
+}
+
 /** A new thread, on lines of the right column's revision or on a file. */
 export interface NewThread {
   readonly kind: 'thread';
@@ -134,55 +145,56 @@ export interface FileCommentBody {
  * What to send GitHub: a GraphQL mutation's variables, or a REST request's body, with the head it
  * was planned against.
  */
-export type Mutation = /**
- * `addPullRequestReview` with no `event`, which starts your pending review, recorded on
- * `commitOID`. A line comment goes in its `threads`, on that commit's lines: the only way to put
- * a pending thread on a revision older than the latest head.
- *
- * Without one, it starts an empty review, for a file-level comment or a reply, which can't go in
- * `threads`. It starts on the latest head, where a file-level thread goes anyway, so approving
- * the latest revision isn't refused later. Once it's accepted, {@link YourReview.add} plans the
- * comment's own mutation.
- */
-(
-  | { kind: 'startReview'; variables: AddPullRequestReviewMutationVariables }
+export type Mutation =
   /**
-   * `addPullRequestReviewThread` to your pending review, with `subjectType: FILE` for a
-   * file-level comment. GitHub puts the thread on the pull request's current head. It refuses a
-   * line outside the diff by returning `thread: null` without an error, which isn't an acceptance.
+   * `addPullRequestReview` with no `event`, which starts your pending review, recorded on
+   * `commitOID`. A line comment goes in its `threads`, on that commit's lines: the only way to put
+   * a pending thread on a revision older than the latest head.
+   *
+   * Without one, it starts an empty review, for a file-level comment or a reply, which can't go in
+   * `threads`. It starts on the latest head, where a file-level thread goes anyway, so approving
+   * the latest revision isn't refused later. Once it's accepted, {@link YourReview.add} plans the
+   * comment's own mutation.
    */
-  | { kind: 'addThread'; variables: AddPullRequestReviewThreadMutationVariables }
-  /** `addPullRequestReviewThreadReply` to a thread, in your pending review. */
-  | { kind: 'addReply'; variables: AddPullRequestReviewThreadReplyMutationVariables }
-  /** `addPullRequestReview` with `event: COMMENT` and the line comment in `threads`: one comment, posted at once. */
-  | { kind: 'postThread'; variables: AddPullRequestReviewMutationVariables }
-  /**
-   * REST's file-level comment ({@link FileCommentBody}), posted at once:
-   * `addPullRequestReview`'s threads can't be file-level.
-   */
-  | { kind: 'postFileComment'; body: FileCommentBody }
-  /** `addPullRequestReviewThreadReply` with no `pullRequestReviewId`: a reply, posted at once. */
-  | { kind: 'postReply'; variables: AddPullRequestReviewThreadReplyMutationVariables }
-  /**
-   * `submitPullRequestReview` with the summary as `body`. No `body` keeps a summary written for
-   * the pending review on GitHub's page; an empty one would wipe it (checked against GitHub).
-   */
-  | { kind: 'submitReview'; variables: SubmitPullRequestReviewMutationVariables }
-  /**
-   * `addPullRequestReview` with `event` and the summary as `body`, or none: a review with no
-   * comments, submitted at once.
-   */
-  | { kind: 'review'; variables: AddPullRequestReviewMutationVariables }
-) & {
-  /**
-   * The pull request's latest head (`headRefOid`) when it was planned. GitHub puts a thread added
-   * to a pending review on whatever head is current when it gets it, which can be a later one if
-   * someone pushed since Lo last looked, and that head's line may hold different code. The sender
-   * compares the comment's `commit.oid` in GitHub's answer with this, and undoes or flags one that
-   * landed on another head.
-   */
-  readonly head: string;
-};
+  (
+    | { kind: 'startReview'; variables: AddPullRequestReviewMutationVariables }
+    /**
+     * `addPullRequestReviewThread` to your pending review, with `subjectType: FILE` for a
+     * file-level comment. GitHub puts the thread on the pull request's current head. It refuses a
+     * line outside the diff by returning `thread: null` without an error, which isn't an acceptance.
+     */
+    | { kind: 'addThread'; variables: AddPullRequestReviewThreadMutationVariables }
+    /** `addPullRequestReviewThreadReply` to a thread, in your pending review. */
+    | { kind: 'addReply'; variables: AddPullRequestReviewThreadReplyMutationVariables }
+    /** `addPullRequestReview` with `event: COMMENT` and the line comment in `threads`: one comment, posted at once. */
+    | { kind: 'postThread'; variables: AddPullRequestReviewMutationVariables }
+    /**
+     * REST's file-level comment ({@link FileCommentBody}), posted at once:
+     * `addPullRequestReview`'s threads can't be file-level.
+     */
+    | { kind: 'postFileComment'; body: FileCommentBody }
+    /** `addPullRequestReviewThreadReply` with no `pullRequestReviewId`: a reply, posted at once. */
+    | { kind: 'postReply'; variables: AddPullRequestReviewThreadReplyMutationVariables }
+    /**
+     * `submitPullRequestReview` with the summary as `body`. No `body` keeps a summary written for
+     * the pending review on GitHub's page; an empty one would wipe it (checked against GitHub).
+     */
+    | { kind: 'submitReview'; variables: SubmitPullRequestReviewMutationVariables }
+    /**
+     * `addPullRequestReview` with `event` and the summary as `body`, or none: a review with no
+     * comments, submitted at once.
+     */
+    | { kind: 'review'; variables: AddPullRequestReviewMutationVariables }
+  ) & {
+    /**
+     * The pull request's latest head (`headRefOid`) when it was planned. GitHub puts a thread added
+     * to a pending review on whatever head is current when it gets it, which can be a later one if
+     * someone pushed since Lo last looked, and that head's line may hold different code. The sender
+     * compares the comment's `commit.oid` in GitHub's answer with this, and undoes or flags one that
+     * landed on another head.
+     */
+    readonly head: string;
+  };
 
 /**
  * Whether accepting `mutation` sends the comment it was planned for, so the comment's draft can
@@ -226,6 +238,11 @@ export interface Posting {
 export type ReviewRefusal =
   /** The comment is blank, which GitHub refuses. */
   | { refusal: 'blank' }
+  /**
+   * GitHub's answer didn't say whether you have a pending review. Starting one would be refused if
+   * you do, and adding to one needs its id, so nothing is planned until it's read again.
+   */
+  | { refusal: 'pendingUnknown' }
   /**
    * The right column shows a revision older than the latest head, `head`, but a new line comment
    * would join your pending review, and GitHub puts the threads it adds to one on the latest head.
@@ -284,11 +301,28 @@ export class YourReview {
   /** The pull request's node ID, its `id`, which `addPullRequestReview` takes. */
   readonly pullRequestId: string;
   #pending: PendingReview | undefined;
+  /** Whether GitHub said whether you have a pending review. */
+  #known = true;
 
   /** Your review of the pull request with node ID `pullRequestId`, from your pending review on GitHub. */
   constructor(pullRequestId: string, pending?: PendingReview) {
     this.pullRequestId = pullRequestId;
     this.#pending = pending;
+  }
+
+  /**
+   * Your review when GitHub's answer didn't say whether you have a pending review: it refuses
+   * every comment and submission, with `pendingUnknown`.
+   */
+  static unknown(pullRequestId: string): YourReview {
+    const review = new YourReview(pullRequestId);
+    review.#known = false;
+    return review;
+  }
+
+  /** Whether it's known whether you have a pending review. */
+  get known(): boolean {
+    return this.#known;
   }
 
   /** Your pending review, if you have one. */
@@ -312,6 +346,7 @@ export class YourReview {
    */
   add(on: string, head: string, comment: NewComment): Mutation | ReviewRefusal {
     if (isBlank(comment.body)) return { refusal: 'blank' };
+    if (!this.#known) return { refusal: 'pendingUnknown' };
     const pending = this.#pending;
     if (!pending) {
       if (comment.kind === 'thread' && comment.lines !== undefined) {
@@ -348,6 +383,7 @@ export class YourReview {
       return 'refusal' in added ? added : { mutation: added, pending: true };
     }
     if (isBlank(comment.body)) return { refusal: 'blank' };
+    if (!this.#known) return { refusal: 'pendingUnknown' };
     return { mutation: this.#postNow(on, head, comment), pending: false };
   }
 
@@ -455,6 +491,7 @@ export class YourReview {
     head: string,
   ): Mutation | ReviewRefusal {
     if (!reviewChoices(own).includes(event)) return { refusal: 'ownPullRequest' };
+    if (!this.#known) return { refusal: 'pendingUnknown' };
     const pending = this.#pending;
     if (pending && event !== 'COMMENT' && pending.commit !== on) {
       return { refusal: 'otherRevision', reviewOn: pending.commit };
