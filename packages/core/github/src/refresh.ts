@@ -126,6 +126,8 @@ export interface TokenAnswer {
   refreshTokenExpiresIn?: number | undefined;
   error?: string | undefined;
   errorDescription?: string | undefined;
+  /** A page in GitHub's docs about the error. */
+  errorUri?: string | undefined;
   /** With `slow_down`: the new shortest gap between polls, in seconds. */
   interval?: number | undefined;
 }
@@ -149,6 +151,7 @@ export function readTokenAnswer(body: string): TokenAnswer | undefined {
     refreshTokenExpiresIn: seconds(json['refresh_token_expires_in']),
     error: text(json['error']),
     errorDescription: text(json['error_description']),
+    errorUri: text(json['error_uri']),
     interval: seconds(json['interval']),
   };
 }
@@ -207,24 +210,59 @@ export async function refreshGrant(options: WebOptions, refresh: Token): Promise
 }
 
 /**
- * GitHub's `error`s that refuse a renewal for good: the refresh token is wrong, expired or used, or
- * the user or GitHub took Lo's access away. Only signing in again gets a token.
+ * The `error`s GitHub's docs give for renewing a token ("Generating a user access token for a
+ * GitHub App", its Troubleshooting section, and "Authorizing OAuth apps"): the refresh token is wrong
+ * or expired, the grant type or client ID is wrong, or the user hasn't verified their email. Trying
+ * the same refresh token again fixes none of them. The docs' `redirect_uri_mismatch` and
+ * `bad_verification_code` are about what a renewal doesn't send.
  */
-const REFUSALS: ReadonlySet<string> = new Set([
+const DOCUMENTED_REFUSALS: ReadonlySet<string> = new Set([
   'bad_refresh_token',
-  'invalid_grant',
-  'unauthorized_client',
-  'access_denied',
+  'unsupported_grant_type',
   'incorrect_client_credentials',
-  'invalid_client',
+  'unverified_user_email',
+]);
+
+/** OAuth's `error`s that say to try again later. */
+const TRANSIENT: ReadonlySet<string> = new Set([
+  'slow_down',
+  'temporarily_unavailable',
+  'server_error',
 ]);
 
 /**
- * What a renewal's answer says, with a token's expiry counted from `now`. Only GitHub's own refusal
- * of the refresh token, its JSON `error`, is `refused`, since that signs the account out and
- * forgets the refresh token. Anything else may come from something in the way, such as a proxy
- * that wants a password (a 407, or a bare 401), a firewall (403) or a redirect to a login page, or
- * from GitHub not answering (5xx, 429), or answering in a way Lo doesn't know: GitHub didn't say
+ * Why GitHub refused to renew for good, or nothing when `answer` isn't such a refusal.
+ *
+ * A refusal signs the account out and forgets its refresh token, so it must be GitHub's own word,
+ * not a proxy's, an auth gateway's or a captive portal's, which can answer with JSON of their own.
+ * So an `error` is a refusal only when its code is one GitHub documents for a renewal, or when its
+ * `error_uri` is a page on `https://docs.github.com`, which nothing in the way would link to. A
+ * description alone, or a relative link, could come from anything. OAuth's codes for trying again
+ * later aren't refusals, whatever comes with them.
+ */
+function refusalOf(answer: TokenAnswer): string | undefined {
+  const { error } = answer;
+  if (error === undefined || error === '' || TRANSIENT.has(error)) return undefined;
+  if (!DOCUMENTED_REFUSALS.has(error) && !inGithubDocs(answer.errorUri)) return undefined;
+  return answer.errorDescription?.trim() || error;
+}
+
+/** Whether `uri` is an absolute address of a page in GitHub's docs, `https://docs.github.com/…`. */
+function inGithubDocs(uri: string | undefined): boolean {
+  if (uri === undefined || !uri.startsWith('https://docs.github.com/')) return false;
+  try {
+    const url = new URL(uri);
+    return url.protocol === 'https:' && url.hostname === 'docs.github.com' && url.port === '';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What a renewal's answer says, with a token's expiry counted from `now`. Only GitHub's own
+ * refusal of the refresh token is `refused` ({@link refusalOf}). Anything else may come from
+ * something in the way, such as a proxy that wants a password (a 407, or a bare 401), a firewall
+ * (403) or a redirect to a login page, or from GitHub not answering (5xx, 429): GitHub didn't say
  * the refresh token is no good, so it's `unavailable` and kept.
  */
 export function parseRefresh(status: number, body: string, now: number): Grant {
@@ -236,11 +274,10 @@ export function parseRefresh(status: number, body: string, now: number): Grant {
   }
   const grant = status === 200 ? grantFrom(answer, now) : undefined;
   if (grant) return grant;
-  const { error } = answer;
-  if (error !== undefined && REFUSALS.has(error)) {
-    throw new RenewalError('refused', answer.errorDescription ?? error);
-  }
+  const refused = refusalOf(answer);
+  if (refused !== undefined) throw new RenewalError('refused', refused);
   if (status !== 200) throw new RenewalError('unavailable', httpError(status, body));
+  const { error } = answer;
   if (error !== undefined) throw new RenewalError('unavailable', answer.errorDescription ?? error);
   throw new RenewalError('unavailable', "GitHub's answer had neither a token nor an error");
 }
