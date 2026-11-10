@@ -321,3 +321,35 @@ describe('hunks', () => {
     ]);
   });
 });
+
+describe('a file built to break the diff', () => {
+  test('holds every private-use character and still diffs a missing final line break', () => {
+    let every = '';
+    for (let code = 0xe000; code <= 0xf8ff; code++) every += String.fromCharCode(code);
+    const old = `${every}\na\nb`;
+    const added = `${every}\na\nb\n`;
+
+    const started = performance.now();
+    const diff = diffText(old, added);
+    const elapsed = performance.now() - started;
+
+    expect(diff.approximate).toBe(false);
+    expect(diff.changes.map(({ old: o, new: n }) => [o, n])).toEqual([
+      [
+        { start: 3, end: 4 },
+        { start: 3, end: 4 },
+      ],
+    ]);
+    expect(elapsed).toBeLessThan(process.env.CI ? 3000 : 1000);
+  });
+
+  test('joins word ranges that land in one character people see', () => {
+    // Two edits inside one family emoji widen to the same range.
+    const [change] = diffText(
+      'x \u{1F468}‍\u{1F469}‍\u{1F467} y\n',
+      'x \u{1F468}‍\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F467} y\n',
+    ).changes;
+
+    expect(change?.newWords).toEqual([{ line: 1, from: 2, to: 16 }]);
+  });
+});
