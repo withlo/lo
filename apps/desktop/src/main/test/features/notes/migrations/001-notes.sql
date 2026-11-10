@@ -1,0 +1,4 @@
+CREATE TABLE notes_entries (
+  id INTEGER PRIMARY KEY,
+  text TEXT NOT NULL
+) STRICT;

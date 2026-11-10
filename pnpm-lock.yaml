@@ -264,6 +264,8 @@ importers:
 
   design: {}
 
+  packages/core/diff: {}
+
   packages/core/github:
     dependencies:
       '@graphql-typed-document-node/core':

@@ -1,0 +1,2033 @@
+[
+  {
+    "name": "bracket-aligning",
+    "ignoreTrimWhitespace": false,
+    "original": "/*---------------------------------------------------------------------------------------------\n *  Copyright (c) Microsoft Corporation. All rights reserved.\n *  Licensed under the MIT License. See License.txt in the project root for license information.\n *--------------------------------------------------------------------------------------------*/\n\nimport { CompareResult } from 'vs/base/common/arrays';\nimport { autorun, derived } from 'vs/base/common/observable';\nimport { IModelDeltaDecoration, MinimapPosition, OverviewRulerLane } from 'vs/editor/common/model';\nimport { localize } from 'vs/nls';\nimport { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';\nimport { LineRange } from 'vs/workbench/contrib/mergeEditor/browser/model/lineRange';\nimport { applyObservableDecorations, join } from 'vs/workbench/contrib/mergeEditor/browser/utils';\nimport { handledConflictMinimapOverViewRulerColor, unhandledConflictMinimapOverViewRulerColor } from 'vs/workbench/contrib/mergeEditor/browser/view/colors';\nimport { CodeEditorView } from './codeEditorView';\n\nexport class ResultCodeEditorView extends CodeEditorView {\n\tprivate readonly decorations = derived('result.decorations', reader => {\n\t\tconst viewModel = this.viewModel.read(reader);\n\t\tif (!viewModel) {\n\t\t\treturn [];\n\t\t}\n\t\tconst model = viewModel.model;\n\t\tconst result = new Array<IModelDeltaDecoration>();\n\n\t\tconst baseRangeWithStoreAndTouchingDiffs = join(\n\t\t\tmodel.modifiedBaseRanges.read(reader),\n\t\t\tmodel.resultDiffs.read(reader),\n\t\t\t(baseRange, diff) => baseRange.baseRange.touches(diff.inputRange)\n\t\t\t\t? CompareResult.neitherLessOrGreaterThan\n\t\t\t\t: LineRange.compareByStart(\n\t\t\t\t\tbaseRange.baseRange,\n\t\t\t\t\tdiff.inputRange\n\t\t\t\t)\n\t\t);\n\n\t\tconst activeModifiedBaseRange = viewModel.activeModifiedBaseRange.read(reader);\n\n\t\tfor (const m of baseRangeWithStoreAndTouchingDiffs) {\n\t\t\tconst modifiedBaseRange = m.left;\n\n\t\t\tif (modifiedBaseRange) {\n\t\t\t\tconst range = model.getRangeInResult(modifiedBaseRange.baseRange, reader).toInclusiveRange();\n\t\t\t\tif (range) {\n\t\t\t\t\tconst blockClassNames = ['merge-editor-block'];\n\t\t\t\t\tconst isHandled = model.isHandled(modifiedBaseRange).read(reader);\n\t\t\t\t\tif (isHandled) {\n\t\t\t\t\t\tblockClassNames.push('handled');\n\t\t\t\t\t}\n\t\t\t\t\tif (modifiedBaseRange === activeModifiedBaseRange) {\n\t\t\t\t\t\tblockClassNames.push('focused');\n\t\t\t\t\t}\n\t\t\t\t\tblockClassNames.push('result');\n\n\t\t\t\t\tresult.push({\n\t\t\t\t\t\trange,\n\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\tisWholeLine: true,\n\t\t\t\t\t\t\tblockClassName: blockClassNames.join(' '),\n\t\t\t\t\t\t\tdescription: 'Result Diff',\n\t\t\t\t\t\t\tminimap: {\n\t\t\t\t\t\t\t\tposition: MinimapPosition.Gutter,\n\t\t\t\t\t\t\t\tcolor: { id: isHandled ? handledConflictMinimapOverViewRulerColor : unhandledConflictMinimapOverViewRulerColor },\n\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\toverviewRuler: {\n\t\t\t\t\t\t\t\tposition: OverviewRulerLane.Center,\n\t\t\t\t\t\t\t\tcolor: { id: isHandled ? handledConflictMinimapOverViewRulerColor : unhandledConflictMinimapOverViewRulerColor },\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfor (const diff of m.rights) {\n\t\t\t\tconst range = diff.outputRange.toInclusiveRange();\n\t\t\t\tif (range) {\n\t\t\t\t\tresult.push({\n\t\t\t\t\t\trange,\n\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\tclassName: `merge-editor-diff result`,\n\t\t\t\t\t\t\tdescription: 'Merge Editor',\n\t\t\t\t\t\t\tisWholeLine: true,\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tif (diff.rangeMappings) {\n\t\t\t\t\tfor (const d of diff.rangeMappings) {\n\t\t\t\t\t\tresult.push({\n\t\t\t\t\t\t\trange: d.outputRange,\n\t\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\t\tclassName: `merge-editor-diff-word result`,\n\t\t\t\t\t\t\t\tdescription: 'Merge Editor'\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t\treturn result;\n\t});\n\n\tconstructor(\n\t\t@IInstantiationService instantiationService: IInstantiationService\n\t) {\n\t\tsuper(instantiationService);\n\n\t\tthis._register(applyObservableDecorations(this.editor, this.decorations));\n\n\n\t\tthis._register(autorun('update remainingConflicts label', reader => {\n\t\t\tconst model = this.model.read(reader);\n\t\t\tif (!model) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tconst count = model.unhandledConflictsCount.read(reader);\n\n\t\t\tthis.htmlElements.detail.innerText = count === 1\n\t\t\t\t? localize(\n\t\t\t\t\t'mergeEditor.remainingConflicts',\n\t\t\t\t\t'{0} Conflict Remaining',\n\t\t\t\t\tcount\n\t\t\t\t)\n\t\t\t\t: localize(\n\t\t\t\t\t'mergeEditor.remainingConflict',\n\t\t\t\t\t'{0} Conflicts Remaining ',\n\t\t\t\t\tcount\n\t\t\t\t);\n\n\t\t}));\n\t}\n}\n",
+    "modified": "/*---------------------------------------------------------------------------------------------\n *  Copyright (c) Microsoft Corporation. All rights reserved.\n *  Licensed under the MIT License. See License.txt in the project root for license information.\n *--------------------------------------------------------------------------------------------*/\n\nimport { CompareResult } from 'vs/base/common/arrays';\nimport { autorun, derived } from 'vs/base/common/observable';\nimport { IModelDeltaDecoration, MinimapPosition, OverviewRulerLane } from 'vs/editor/common/model';\nimport { localize } from 'vs/nls';\nimport { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';\nimport { LineRange } from 'vs/workbench/contrib/mergeEditor/browser/model/lineRange';\nimport { applyObservableDecorations, join } from 'vs/workbench/contrib/mergeEditor/browser/utils';\nimport { handledConflictMinimapOverViewRulerColor, unhandledConflictMinimapOverViewRulerColor } from 'vs/workbench/contrib/mergeEditor/browser/view/colors';\nimport { CodeEditorView } from './codeEditorView';\n\nexport class ResultCodeEditorView extends CodeEditorView {\n\tprivate readonly decorations = derived('result.decorations', reader => {\n\t\tconst viewModel = this.viewModel.read(reader);\n\t\tif (!viewModel) {\n\t\t\treturn [];\n\t\t}\n\t\tconst model = viewModel.model;\n\t\tconst result = new Array<IModelDeltaDecoration>();\n\n\t\tconst baseRangeWithStoreAndTouchingDiffs = join(\n\t\t\tmodel.modifiedBaseRanges.read(reader),\n\t\t\tmodel.resultDiffs.read(reader),\n\t\t\t(baseRange, diff) => baseRange.baseRange.touches(diff.inputRange)\n\t\t\t\t? CompareResult.neitherLessOrGreaterThan\n\t\t\t\t: LineRange.compareByStart(\n\t\t\t\t\tbaseRange.baseRange,\n\t\t\t\t\tdiff.inputRange\n\t\t\t\t)\n\t\t);\n\n\t\tconst activeModifiedBaseRange = viewModel.activeModifiedBaseRange.read(reader);\n\n\t\tfor (const m of baseRangeWithStoreAndTouchingDiffs) {\n\t\t\tconst modifiedBaseRange = m.left;\n\n\t\t\tif (modifiedBaseRange) {\n\t\t\t\tconst range = model.getRangeInResult(modifiedBaseRange.baseRange, reader).toInclusiveRange();\n\t\t\t\tif (range) {\n\t\t\t\t\tconst blockClassNames = ['merge-editor-block'];\n\t\t\t\t\tconst isHandled = model.isHandled(modifiedBaseRange).read(reader);\n\t\t\t\t\tif (isHandled) {\n\t\t\t\t\t\tblockClassNames.push('handled');\n\t\t\t\t\t}\n\t\t\t\t\tif (modifiedBaseRange === activeModifiedBaseRange) {\n\t\t\t\t\t\tblockClassNames.push('focused');\n\t\t\t\t\t}\n\t\t\t\t\tblockClassNames.push('result');\n\n\t\t\t\t\tresult.push({\n\t\t\t\t\t\trange,\n\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\tisWholeLine: true,\n\t\t\t\t\t\t\tblockClassName: blockClassNames.join(' '),\n\t\t\t\t\t\t\tdescription: 'Result Diff',\n\t\t\t\t\t\t\tminimap: {\n\t\t\t\t\t\t\t\tposition: MinimapPosition.Gutter,\n\t\t\t\t\t\t\t\tcolor: { id: isHandled ? handledConflictMinimapOverViewRulerColor : unhandledConflictMinimapOverViewRulerColor },\n\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\toverviewRuler: {\n\t\t\t\t\t\t\t\tposition: OverviewRulerLane.Center,\n\t\t\t\t\t\t\t\tcolor: { id: isHandled ? handledConflictMinimapOverViewRulerColor : unhandledConflictMinimapOverViewRulerColor },\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t}\n\n\n\t\t\tif (!modifiedBaseRange || modifiedBaseRange.isConflicting) {\n\t\t\t\tfor (const diff of m.rights) {\n\t\t\t\t\tconst range = diff.outputRange.toInclusiveRange();\n\t\t\t\t\tif (range) {\n\t\t\t\t\t\tresult.push({\n\t\t\t\t\t\t\trange,\n\t\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\t\tclassName: `merge-editor-diff result`,\n\t\t\t\t\t\t\t\tdescription: 'Merge Editor',\n\t\t\t\t\t\t\t\tisWholeLine: true,\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\n\t\t\t\t\tif (diff.rangeMappings) {\n\t\t\t\t\t\tfor (const d of diff.rangeMappings) {\n\t\t\t\t\t\t\tresult.push({\n\t\t\t\t\t\t\t\trange: d.outputRange,\n\t\t\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\t\t\tclassName: `merge-editor-diff-word result`,\n\t\t\t\t\t\t\t\t\tdescription: 'Merge Editor'\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t\treturn result;\n\t});\n\n\tconstructor(\n\t\t@IInstantiationService instantiationService: IInstantiationService\n\t) {\n\t\tsuper(instantiationService);\n\n\t\tthis._register(applyObservableDecorations(this.editor, this.decorations));\n\n\n\t\tthis._register(autorun('update remainingConflicts label', reader => {\n\t\t\tconst model = this.model.read(reader);\n\t\t\tif (!model) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tconst count = model.unhandledConflictsCount.read(reader);\n\n\t\t\tthis.htmlElements.detail.innerText = count === 1\n\t\t\t\t? localize(\n\t\t\t\t\t'mergeEditor.remainingConflicts',\n\t\t\t\t\t'{0} Conflict Remaining',\n\t\t\t\t\tcount\n\t\t\t\t)\n\t\t\t\t: localize(\n\t\t\t\t\t'mergeEditor.remainingConflict',\n\t\t\t\t\t'{0} Conflicts Remaining ',\n\t\t\t\t\tcount\n\t\t\t\t);\n\n\t\t}));\n\t}\n}\n",
+    "diffs": [
+      {
+        "originalRange": "[73,85)",
+        "modifiedRange": "[73,87)",
+        "innerChanges": [
+          {
+            "originalRange": "[73,1 -> 73,1]",
+            "modifiedRange": "[73,1 -> 75,1]"
+          },
+          {
+            "originalRange": "[73,1 -> 73,1]",
+            "modifiedRange": "[75,1 -> 75,2]"
+          },
+          {
+            "originalRange": "[74,1 -> 74,1]",
+            "modifiedRange": "[76,1 -> 76,2]"
+          },
+          {
+            "originalRange": "[75,1 -> 75,1]",
+            "modifiedRange": "[77,1 -> 77,2]"
+          },
+          {
+            "originalRange": "[76,1 -> 76,1]",
+            "modifiedRange": "[78,1 -> 78,2]"
+          },
+          {
+            "originalRange": "[77,1 -> 77,1]",
+            "modifiedRange": "[79,1 -> 79,2]"
+          },
+          {
+            "originalRange": "[78,1 -> 78,1]",
+            "modifiedRange": "[80,1 -> 80,2]"
+          },
+          {
+            "originalRange": "[79,1 -> 79,1]",
+            "modifiedRange": "[81,1 -> 81,2]"
+          },
+          {
+            "originalRange": "[80,1 -> 80,1]",
+            "modifiedRange": "[82,1 -> 82,2]"
+          },
+          {
+            "originalRange": "[81,1 -> 81,1]",
+            "modifiedRange": "[83,1 -> 83,2]"
+          },
+          {
+            "originalRange": "[82,1 -> 82,1]",
+            "modifiedRange": "[84,1 -> 84,2]"
+          },
+          {
+            "originalRange": "[83,1 -> 83,1]",
+            "modifiedRange": "[85,1 -> 85,2]"
+          },
+          {
+            "originalRange": "[84,1 -> 84,1]",
+            "modifiedRange": "[86,1 -> 86,2]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[86,95)",
+        "modifiedRange": "[88,98)",
+        "innerChanges": [
+          {
+            "originalRange": "[86,1 -> 86,1]",
+            "modifiedRange": "[88,1 -> 88,2]"
+          },
+          {
+            "originalRange": "[87,1 -> 87,1]",
+            "modifiedRange": "[89,1 -> 89,2]"
+          },
+          {
+            "originalRange": "[88,1 -> 88,1]",
+            "modifiedRange": "[90,1 -> 90,2]"
+          },
+          {
+            "originalRange": "[89,1 -> 89,1]",
+            "modifiedRange": "[91,1 -> 91,2]"
+          },
+          {
+            "originalRange": "[90,1 -> 90,1]",
+            "modifiedRange": "[92,1 -> 92,2]"
+          },
+          {
+            "originalRange": "[91,1 -> 91,1]",
+            "modifiedRange": "[93,1 -> 93,2]"
+          },
+          {
+            "originalRange": "[92,1 -> 92,1]",
+            "modifiedRange": "[94,1 -> 94,2]"
+          },
+          {
+            "originalRange": "[93,1 -> 93,1]",
+            "modifiedRange": "[95,1 -> 95,2]"
+          },
+          {
+            "originalRange": "[94,1 -> 94,1]",
+            "modifiedRange": "[96,1 -> 96,2]"
+          },
+          {
+            "originalRange": "[95,1 -> 95,1]",
+            "modifiedRange": "[97,1 -> 98,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "class-replacement",
+    "ignoreTrimWhitespace": false,
+    "original": "/*---------------------------------------------------------------------------------------------\n *  Copyright (c) Microsoft Corporation. All rights reserved.\n *  Licensed under the MIT License. See License.txt in the project root for license information.\n *--------------------------------------------------------------------------------------------*/\n\nimport * as arrays from 'vs/base/common/arrays';\nimport { IdleDeadline, runWhenIdle } from 'vs/base/common/async';\nimport { BugIndicatingError, onUnexpectedError } from 'vs/base/common/errors';\nimport { Disposable, MutableDisposable } from 'vs/base/common/lifecycle';\nimport { setTimeout0 } from 'vs/base/common/platform';\nimport { StopWatch } from 'vs/base/common/stopwatch';\nimport { countEOL } from 'vs/editor/common/core/eolCounter';\nimport { Position } from 'vs/editor/common/core/position';\nimport { IRange } from 'vs/editor/common/core/range';\nimport { StandardTokenType } from 'vs/editor/common/encodedTokenAttributes';\nimport { EncodedTokenizationResult, IBackgroundTokenizationStore, IBackgroundTokenizer, ILanguageIdCodec, IState, ITokenizationSupport, TokenizationRegistry } from 'vs/editor/common/languages';\nimport { nullTokenizeEncoded } from 'vs/editor/common/languages/nullTokenize';\nimport { ITextModel } from 'vs/editor/common/model';\nimport { TextModel } from 'vs/editor/common/model/textModel';\nimport { TokenizationTextModelPart } from 'vs/editor/common/model/tokenizationTextModelPart';\nimport { IModelContentChangedEvent, IModelLanguageChangedEvent } from 'vs/editor/common/textModelEvents';\nimport { ContiguousMultilineTokensBuilder } from 'vs/editor/common/tokens/contiguousMultilineTokensBuilder';\nimport { LineTokens } from 'vs/editor/common/tokens/lineTokens';\n\nconst enum Constants {\n\tCHEAP_TOKENIZATION_LENGTH_LIMIT = 2048\n}\n\n/**\n * An array that avoids being sparse by always\n * filling up unused indices with a default value.\n */\nexport class ContiguousGrowingArray<T> {\n\n\tprivate _store: T[] = [];\n\n\tconstructor(\n\t\tprivate readonly _default: T\n\t) { }\n\n\tpublic get(index: number): T {\n\t\tif (index < this._store.length) {\n\t\t\treturn this._store[index];\n\t\t}\n\t\treturn this._default;\n\t}\n\n\tpublic set(index: number, value: T): void {\n\t\twhile (index >= this._store.length) {\n\t\t\tthis._store[this._store.length] = this._default;\n\t\t}\n\t\tthis._store[index] = value;\n\t}\n\n\t// TODO have `replace` instead of `delete` and `insert`\n\tpublic delete(deleteIndex: number, deleteCount: number): void {\n\t\tif (deleteCount === 0 || deleteIndex >= this._store.length) {\n\t\t\treturn;\n\t\t}\n\t\tthis._store.splice(deleteIndex, deleteCount);\n\t}\n\n\tpublic insert(insertIndex: number, insertCount: number): void {\n\t\tif (insertCount === 0 || insertIndex >= this._store.length) {\n\t\t\treturn;\n\t\t}\n\t\tconst arr: T[] = [];\n\t\tfor (let i = 0; i < insertCount; i++) {\n\t\t\tarr[i] = this._default;\n\t\t}\n\t\tthis._store = arrays.arrayInsert(this._store, insertIndex, arr);\n\t}\n}\n\n/**\n * Stores the states at the start of each line and keeps track of which lines\n * must be re-tokenized. Also uses state equality to quickly validate lines\n * that don't need to be re-tokenized.\n *\n * For example, when typing on a line, the line gets marked as needing to be tokenized.\n * Once the line is tokenized, the end state is checked for equality against the begin\n * state of the next line. If the states are equal, tokenization doesn't need to run\n * again over the rest of the file. If the states are not equal, the next line gets marked\n * as needing to be tokenized.\n */\nexport class TokenizationStateStore {\n\trequestTokens(startLineNumber: number, endLineNumberExclusive: number): void {\n\t\tfor (let lineNumber = startLineNumber; lineNumber < endLineNumberExclusive; lineNumber++) {\n\t\t\tthis._stateStore.markMustBeTokenized(lineNumber - 1);\n\t\t}\n\t}\n}\n",
+    "modified": "/*---------------------------------------------------------------------------------------------\n *  Copyright (c) Microsoft Corporation. All rights reserved.\n *  Licensed under the MIT License. See License.txt in the project root for license information.\n *--------------------------------------------------------------------------------------------*/\n\nimport * as arrays from 'vs/base/common/arrays';\nimport { IdleDeadline, runWhenIdle } from 'vs/base/common/async';\nimport { BugIndicatingError, onUnexpectedError } from 'vs/base/common/errors';\nimport { Disposable, MutableDisposable } from 'vs/base/common/lifecycle';\nimport { setTimeout0 } from 'vs/base/common/platform';\nimport { StopWatch } from 'vs/base/common/stopwatch';\nimport { countEOL } from 'vs/editor/common/core/eolCounter';\nimport { Position } from 'vs/editor/common/core/position';\nimport { IRange } from 'vs/editor/common/core/range';\nimport { StandardTokenType } from 'vs/editor/common/encodedTokenAttributes';\nimport { EncodedTokenizationResult, IBackgroundTokenizationStore, IBackgroundTokenizer, ILanguageIdCodec, IState, ITokenizationSupport, TokenizationRegistry } from 'vs/editor/common/languages';\nimport { nullTokenizeEncoded } from 'vs/editor/common/languages/nullTokenize';\nimport { ITextModel } from 'vs/editor/common/model';\nimport { TextModel } from 'vs/editor/common/model/textModel';\nimport { TokenizationTextModelPart } from 'vs/editor/common/model/tokenizationTextModelPart';\nimport { IModelContentChangedEvent, IModelLanguageChangedEvent } from 'vs/editor/common/textModelEvents';\nimport { ContiguousMultilineTokensBuilder } from 'vs/editor/common/tokens/contiguousMultilineTokensBuilder';\nimport { LineTokens } from 'vs/editor/common/tokens/lineTokens';\n\nconst enum Constants {\n\tCHEAP_TOKENIZATION_LENGTH_LIMIT = 2048\n}\n\nexport class TokenizationStateStore2 {\n\tpublic invalidateEndState(lineNumber: number): void;\n\n\tpublic getEndState(lineNumber: number): IState;\n\n\tpublic setEndState(lineNumber: number, state: IState): boolean { }\n\n\tpublic getFirstInvalidEndStateLineNumber(): number | undefined {\n\t}\n\n\tpublic applyEdits(range: IRange, eolCount: number): void {\n\t}\n}\n\n/**\n * Stores the states at the start of each line and keeps track of which lines\n * must be re-tokenized. Also uses state equality to quickly validate lines\n * that don't need to be re-tokenized.\n *\n * For example, when typing on a line, the line gets marked as needing to be tokenized.\n * Once the line is tokenized, the end state is checked for equality against the begin\n * state of the next line. If the states are equal, tokenization doesn't need to run\n * again over the rest of the file. If the states are not equal, the next line gets marked\n * as needing to be tokenized.\n */\nexport class TokenizationStateStore {\n\trequestTokens(startLineNumber: number, endLineNumberExclusive: number): void {\n\t\tfor (let lineNumber = startLineNumber; lineNumber < endLineNumberExclusive; lineNumber++) {\n\t\t\tthis._stateStore.markMustBeTokenized(lineNumber - 1);\n\t\t}\n\t}\n}\n",
+    "diffs": [
+      {
+        "originalRange": "[29,61)",
+        "modifiedRange": "[29,37)",
+        "innerChanges": [
+          {
+            "originalRange": "[29,1 -> 61,1]",
+            "modifiedRange": "[29,1 -> 37,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[63,72)",
+        "modifiedRange": "[39,40)",
+        "innerChanges": [
+          {
+            "originalRange": "[63,9 -> 63,48]",
+            "modifiedRange": "[39,9 -> 39,43]"
+          },
+          {
+            "originalRange": "[64,1 -> 72,1]",
+            "modifiedRange": "[40,1 -> 40,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "deletion",
+    "ignoreTrimWhitespace": false,
+    "original": "import { Link, List, Separator, Stack } from '@fluentui/react';\nimport { View } from '../../layout/layout';\n\nexport const OtherToolsView = () => {\n\treturn (\n\t\t<View title='Other Tools'>\n\t\t\t<Stack grow={true} verticalFill={true}>\n\t\t\t\t<Stack.Item>\n\t\t\t\t\t<List\n\t\t\t\t\t\titems={[\n\t\t\t\t\t\t\t{ name: 'VS Code Standup (Redomond)', href: 'https://vscode-standup.azurewebsites.net' },\n\t\t\t\t\t\t\t{ name: 'VS Code Standup (Zurich)', href: 'http://stand.azurewebsites.net/' },\n\t\t\t\t\t\t\t{},\n\t\t\t\t\t\t\t{ name: 'VS Code Errors', href: 'https://vscode-errors.azurewebsites.net' },\n\t\t\t\t\t\t\t{ name: 'VS Code GDPR', href: 'https://github.com/microsoft/vscode-gdpr-tooling' },\n\t\t\t\t\t\t]}\n\t\t\t\t\t\tonRenderCell={(item) => {\n\t\t\t\t\t\t\tif (!item?.name) {\n\t\t\t\t\t\t\t\treturn <Separator></Separator>\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn <div style={{ marginBottom: 12 }}><Link href={item!.href} target='_blank'>{item!.name}</Link></div>\n\t\t\t\t\t\t}}\n\t\t\t\t\t>\n\t\t\t\t\t</List>\n\t\t\t\t</Stack.Item>\n\t\t\t</Stack>\n\t\t</View>\n\t);\n}",
+    "modified": "",
+    "diffs": [
+      {
+        "originalRange": "[1,30)",
+        "modifiedRange": "[1,2)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,1 -> 29,2 EOL]",
+            "modifiedRange": "[1,1 -> 1,1 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "equals",
+    "ignoreTrimWhitespace": false,
+    "original": "hello\nworld",
+    "modified": "hello\nworld",
+    "diffs": []
+  },
+  {
+    "name": "false-positive-move",
+    "ignoreTrimWhitespace": false,
+    "original": "includeIssuesWithoutMilestone: boolean = false,\n): Promise<ItemsResponseResult<MilestoneModel>> {\n\tconst milestones: ItemsResponseResult<MilestoneModel> = await this.fetchPagedData<MilestoneModel>(\n\t\toptions,\n\t\t'milestoneIssuesKey',\n\t\tPagedDataType.Milestones,\n\t\tPRType.All\n\t);\n\tif (includeIssuesWithoutMilestone) {\n\t\tconst additionalIssues: ItemsResponseResult<Issue> = await this.fetchPagedData<Issue>(\n\t\t\toptions,\n\t\t\t'noMilestoneIssuesKey',\n\t\t\tPagedDataType.IssuesWithoutMilestone,\n\t\t\tPRType.All\n\t\t);\n\t\tmilestones.items.push({\n\t\t\tmilestone: {\n\t\t\t\tcreatedAt: new Date(0).toDateString(),\n\t\t\t\tid: '',\n\t\t\t\ttitle: NO_MILESTONE,\n\t\t\t},\n\t\t\tissues: await Promise.all(additionalIssues.items.map(async (issue) => {\n\t\t\t\tconst githubRepository = await this.getRepoForIssue(issue);\n\t\t\t\treturn new IssueModel(githubRepository, githubRepository.remote, issue);\n\t\t\t})),\n\t\t});\n\t}\n\treturn milestones;\n}",
+    "modified": "includeIssuesWithoutMilestone: boolean = false,\n): Promise<ItemsResponseResult<MilestoneModel>> {\n\ttry {\n\t\tconst milestones: ItemsResponseResult<MilestoneModel> = await this.fetchPagedData<MilestoneModel>(\n\t\t\toptions,\n\t\t\t'milestoneIssuesKey',\n\t\t\tPagedDataType.Milestones,\n\t\t\tPRType.All\n\t\t);\n\t\tif (includeIssuesWithoutMilestone) {\n\t\t\tconst additionalIssues: ItemsResponseResult<Issue> = await this.fetchPagedData<Issue>(\n\t\t\t\toptions,\n\t\t\t\t'noMilestoneIssuesKey',\n\t\t\t\tPagedDataType.IssuesWithoutMilestone,\n\t\t\t\tPRType.All\n\t\t\t);\n\t\t\tmilestones.items.push({\n\t\t\t\tmilestone: {\n\t\t\t\t\tcreatedAt: new Date(0).toDateString(),\n\t\t\t\t\tid: '',\n\t\t\t\t\ttitle: NO_MILESTONE,\n\t\t\t\t},\n\t\t\t\tissues: await Promise.all(additionalIssues.items.map(async (issue) => {\n\t\t\t\t\tconst githubRepository = await this.getRepoForIssue(issue);\n\t\t\t\t\treturn new IssueModel(githubRepository, githubRepository.remote, issue);\n\t\t\t\t})),\n\t\t\t});\n\t\t}\n\t\treturn milestones;\n\t} catch (e) {\n\t\tLogger.error(`Error fetching milestone issues: ${e instanceof Error ? e.message : e}`, FolderRepositoryManager.ID);\n\t\treturn { hasMorePages: false, hasUnsearchedRepositories: false, items: [] };\n\t}\n}\n",
+    "diffs": [
+      {
+        "originalRange": "[3,29)",
+        "modifiedRange": "[3,34)",
+        "innerChanges": [
+          {
+            "originalRange": "[3,1 -> 3,1]",
+            "modifiedRange": "[3,1 -> 4,1]"
+          },
+          {
+            "originalRange": "[3,1 -> 3,1]",
+            "modifiedRange": "[4,1 -> 4,2]"
+          },
+          {
+            "originalRange": "[4,1 -> 4,1]",
+            "modifiedRange": "[5,1 -> 5,2]"
+          },
+          {
+            "originalRange": "[5,1 -> 5,1]",
+            "modifiedRange": "[6,1 -> 6,2]"
+          },
+          {
+            "originalRange": "[6,1 -> 6,1]",
+            "modifiedRange": "[7,1 -> 7,2]"
+          },
+          {
+            "originalRange": "[7,1 -> 7,1]",
+            "modifiedRange": "[8,1 -> 8,2]"
+          },
+          {
+            "originalRange": "[8,1 -> 8,1]",
+            "modifiedRange": "[9,1 -> 9,2]"
+          },
+          {
+            "originalRange": "[9,1 -> 9,1]",
+            "modifiedRange": "[10,1 -> 10,2]"
+          },
+          {
+            "originalRange": "[10,1 -> 10,1]",
+            "modifiedRange": "[11,1 -> 11,2]"
+          },
+          {
+            "originalRange": "[11,1 -> 11,1]",
+            "modifiedRange": "[12,1 -> 12,2]"
+          },
+          {
+            "originalRange": "[12,1 -> 12,1]",
+            "modifiedRange": "[13,1 -> 13,2]"
+          },
+          {
+            "originalRange": "[13,1 -> 13,1]",
+            "modifiedRange": "[14,1 -> 14,2]"
+          },
+          {
+            "originalRange": "[14,1 -> 14,1]",
+            "modifiedRange": "[15,1 -> 15,2]"
+          },
+          {
+            "originalRange": "[15,1 -> 15,1]",
+            "modifiedRange": "[16,1 -> 16,2]"
+          },
+          {
+            "originalRange": "[16,1 -> 16,1]",
+            "modifiedRange": "[17,1 -> 17,2]"
+          },
+          {
+            "originalRange": "[17,1 -> 17,1]",
+            "modifiedRange": "[18,1 -> 18,2]"
+          },
+          {
+            "originalRange": "[18,1 -> 18,1]",
+            "modifiedRange": "[19,1 -> 19,2]"
+          },
+          {
+            "originalRange": "[19,1 -> 19,1]",
+            "modifiedRange": "[20,1 -> 20,2]"
+          },
+          {
+            "originalRange": "[20,1 -> 20,1]",
+            "modifiedRange": "[21,1 -> 21,2]"
+          },
+          {
+            "originalRange": "[21,1 -> 21,1]",
+            "modifiedRange": "[22,1 -> 22,2]"
+          },
+          {
+            "originalRange": "[22,1 -> 22,1]",
+            "modifiedRange": "[23,1 -> 23,2]"
+          },
+          {
+            "originalRange": "[23,1 -> 23,1]",
+            "modifiedRange": "[24,1 -> 24,2]"
+          },
+          {
+            "originalRange": "[24,1 -> 24,1]",
+            "modifiedRange": "[25,1 -> 25,2]"
+          },
+          {
+            "originalRange": "[25,1 -> 25,1]",
+            "modifiedRange": "[26,1 -> 26,2]"
+          },
+          {
+            "originalRange": "[26,1 -> 26,1]",
+            "modifiedRange": "[27,1 -> 27,2]"
+          },
+          {
+            "originalRange": "[27,1 -> 27,1]",
+            "modifiedRange": "[28,1 -> 28,2]"
+          },
+          {
+            "originalRange": "[28,1 -> 28,1]",
+            "modifiedRange": "[29,1 -> 29,2]"
+          },
+          {
+            "originalRange": "[29,1 -> 29,1]",
+            "modifiedRange": "[30,1 -> 34,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[30,30)",
+        "modifiedRange": "[35,36)",
+        "innerChanges": [
+          {
+            "originalRange": "[29,2 -> 29,2 EOL]",
+            "modifiedRange": "[34,2 -> 35,1 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "fuzzy-matching",
+    "ignoreTrimWhitespace": false,
+    "original": "\nconsole.log(1)\nconsole.log(2)\nconsole.log(3)\nconsole.log(4)\nconsole.log(5)\nconsole.log(6)\nconsole.log(7)\n",
+    "modified": "console.log(1);\nconsole.log(2);\nconsole.log(3);\nconsole.log(4);\n\nconsole.log(5);\nconsole.log(6);\nconsole.log(7);\n\n",
+    "diffs": [
+      {
+        "originalRange": "[1,9)",
+        "modifiedRange": "[1,10)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,1 -> 2,1]",
+            "modifiedRange": "[1,1 -> 1,1]"
+          },
+          {
+            "originalRange": "[2,15 -> 2,15 EOL]",
+            "modifiedRange": "[1,15 -> 1,16 EOL]"
+          },
+          {
+            "originalRange": "[3,15 -> 3,15 EOL]",
+            "modifiedRange": "[2,15 -> 2,16 EOL]"
+          },
+          {
+            "originalRange": "[4,15 -> 4,15 EOL]",
+            "modifiedRange": "[3,15 -> 3,16 EOL]"
+          },
+          {
+            "originalRange": "[5,15 -> 5,15 EOL]",
+            "modifiedRange": "[4,15 -> 5,1 EOL]"
+          },
+          {
+            "originalRange": "[6,15 -> 6,15 EOL]",
+            "modifiedRange": "[6,15 -> 6,16 EOL]"
+          },
+          {
+            "originalRange": "[7,15 -> 7,15 EOL]",
+            "modifiedRange": "[7,15 -> 7,16 EOL]"
+          },
+          {
+            "originalRange": "[8,15 -> 8,15 EOL]",
+            "modifiedRange": "[8,15 -> 9,1 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "import-shifting",
+    "ignoreTrimWhitespace": false,
+    "original": "import { RuntimeMode } from './runtimeMode';\nimport { PromiseQueue } from './telemetry';\nimport { TestNotificationSender, TestUrlOpener } from './testHelpers';\n",
+    "modified": "import { RuntimeMode } from './runtimeMode';\nimport { PromiseQueue, TestPromiseQueue } from './telemetry';\nimport { TestNotificationSender, TestUrlOpener } from './testHelpers';\n",
+    "diffs": [
+      {
+        "originalRange": "[2,3)",
+        "modifiedRange": "[2,3)",
+        "innerChanges": [
+          {
+            "originalRange": "[2,22 -> 2,22]",
+            "modifiedRange": "[2,22 -> 2,40]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "indentation",
+    "ignoreTrimWhitespace": false,
+    "original": "export function lineRangeMappingFromRangeMappings(alignments: RangeMapping[]): LineRangeMapping[] {\n\tconst changes: LineRangeMapping[] = [];\n\tfor (const g of group(\n\t\talignments,\n\t\t(a1, a2) =>\n\t\t\t(a2.originalRange.startLineNumber - (a1.originalRange.endLineNumber - (a1.originalRange.endColumn > 1 ? 0 : 1)) <= 1)\n\t\t\t|| (a2.modifiedRange.startLineNumber - (a1.modifiedRange.endLineNumber - (a1.modifiedRange.endColumn > 1 ? 0 : 1)) <= 1)\n\t)) {\n\t\tconst first = g[0];\n\t\tconst last = g[g.length - 1];\n\n\t\tchanges.push(new LineRangeMapping(\n\t\t\tnew LineRange(\n\t\t\t\tfirst.originalRange.startLineNumber,\n\t\t\t\tlast.originalRange.endLineNumber + (last.originalRange.endColumn > 1 || last.modifiedRange.endColumn > 1 ? 1 : 0)\n\t\t\t),\n\t\t\tnew LineRange(\n\t\t\t\tfirst.modifiedRange.startLineNumber,\n\t\t\t\tlast.modifiedRange.endLineNumber + (last.originalRange.endColumn > 1 || last.modifiedRange.endColumn > 1 ? 1 : 0)\n\t\t\t),\n\t\t\tg\n\t\t));\n\t}\n\n\tassertFn(() => {\n\t\treturn checkAdjacentItems(changes,\n\t\t\t(m1, m2) => m2.originalRange.startLineNumber - m1.originalRange.endLineNumberExclusive === m2.modifiedRange.startLineNumber - m1.modifiedRange.endLineNumberExclusive &&\n\t\t\t\t// There has to be an unchanged line in between (otherwise both diffs should have been joined)\n\t\t\t\tm1.originalRange.endLineNumberExclusive < m2.originalRange.startLineNumber &&\n\t\t\t\tm1.modifiedRange.endLineNumberExclusive < m2.modifiedRange.startLineNumber,\n\t\t);\n\t});\n\n\n\treturn changes;\n}",
+    "modified": "export function lineRangeMappingFromRangeMappings(alignments: RangeMapping[]): LineRangeMapping[] {\n\tconst changes: LineRangeMapping[] = [];\n\tfor (const g of group(\n\t\talignments,\n\t\t(a1, a2) =>\n\t\t\t(a2.originalRange.startLineNumber - (a1.originalRange.endLineNumber - (a1.originalRange.endColumn > 1 ? 0 : 1)) <= 1)\n\t\t\t|| (a2.modifiedRange.startLineNumber - (a1.modifiedRange.endLineNumber - (a1.modifiedRange.endColumn > 1 ? 0 : 1)) <= 1)\n\t)) {\n\t\tif (true) {\n\t\t\tconst first = g[0];\n\t\t\tconst last = g[g.length - 1];\n\n\t\t\tchanges.push(new LineRangeMapping(\n\t\t\t\tnew LineRange(\n\t\t\t\t\tfirst.originalRange.startLineNumber,\n\t\t\t\t\tlast.originalRange.endLineNumber + (last.originalRange.endColumn > 1 || last.modifiedRange.endColumn > 1 ? 1 : 0)\n\t\t\t\t),\n\t\t\t\tnew LineRange(\n\t\t\t\t\tfirst.modifiedRange.startLineNumber,\n\t\t\t\t\tlast.modifiedRange.endLineNumber + (last.originalRange.endColumn > 1 || last.modifiedRange.endColumn > 1 ? 1 : 0)\n\t\t\t\t),\n\t\t\t\tg\n\t\t\t));\n\t\t}\n\t}\n\n\tassertFn(() => {\n\t\treturn checkAdjacentItems(changes,\n\t\t\t(m1, m2) => m2.originalRange.startLineNumber - m1.originalRange.endLineNumberExclusive === m2.modifiedRange.startLineNumber - m1.modifiedRange.endLineNumberExclusive &&\n\t\t\t\t// There has to be an unchanged line in between (otherwise both diffs should have been joined)\n\t\t\t\tm1.originalRange.endLineNumberExclusive < m2.originalRange.startLineNumber &&\n\t\t\t\tm1.modifiedRange.endLineNumberExclusive < m2.modifiedRange.startLineNumber,\n\t\t);\n\t});\n\n\n\treturn changes;\n}",
+    "diffs": [
+      {
+        "originalRange": "[9,11)",
+        "modifiedRange": "[9,12)",
+        "innerChanges": [
+          {
+            "originalRange": "[9,1 -> 9,1]",
+            "modifiedRange": "[9,1 -> 10,1]"
+          },
+          {
+            "originalRange": "[9,1 -> 9,1]",
+            "modifiedRange": "[10,1 -> 10,2]"
+          },
+          {
+            "originalRange": "[10,1 -> 10,1]",
+            "modifiedRange": "[11,1 -> 11,2]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[12,23)",
+        "modifiedRange": "[13,25)",
+        "innerChanges": [
+          {
+            "originalRange": "[12,1 -> 12,1]",
+            "modifiedRange": "[13,1 -> 13,2]"
+          },
+          {
+            "originalRange": "[13,1 -> 13,1]",
+            "modifiedRange": "[14,1 -> 14,2]"
+          },
+          {
+            "originalRange": "[14,1 -> 14,1]",
+            "modifiedRange": "[15,1 -> 15,2]"
+          },
+          {
+            "originalRange": "[15,1 -> 15,1]",
+            "modifiedRange": "[16,1 -> 16,2]"
+          },
+          {
+            "originalRange": "[16,1 -> 16,1]",
+            "modifiedRange": "[17,1 -> 17,2]"
+          },
+          {
+            "originalRange": "[17,1 -> 17,1]",
+            "modifiedRange": "[18,1 -> 18,2]"
+          },
+          {
+            "originalRange": "[18,1 -> 18,1]",
+            "modifiedRange": "[19,1 -> 19,2]"
+          },
+          {
+            "originalRange": "[19,1 -> 19,1]",
+            "modifiedRange": "[20,1 -> 20,2]"
+          },
+          {
+            "originalRange": "[20,1 -> 20,1]",
+            "modifiedRange": "[21,1 -> 21,2]"
+          },
+          {
+            "originalRange": "[21,1 -> 21,1]",
+            "modifiedRange": "[22,1 -> 22,2]"
+          },
+          {
+            "originalRange": "[22,1 -> 22,1]",
+            "modifiedRange": "[23,1 -> 23,2]"
+          },
+          {
+            "originalRange": "[23,1 -> 23,1]",
+            "modifiedRange": "[24,1 -> 25,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "intra-block-align",
+    "ignoreTrimWhitespace": false,
+    "original": "console.log(1);\nconsole.log(2);\nconsole.log(3);\nconsole.log(4);\n",
+    "modified": "console.log(1)\nconsole.log(2)\nconsole.log(4)\n",
+    "diffs": [
+      {
+        "originalRange": "[1,5)",
+        "modifiedRange": "[1,4)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,15 -> 1,16 EOL]",
+            "modifiedRange": "[1,15 -> 1,15 EOL]"
+          },
+          {
+            "originalRange": "[2,15 -> 3,16 EOL]",
+            "modifiedRange": "[2,15 -> 2,15 EOL]"
+          },
+          {
+            "originalRange": "[4,15 -> 4,16 EOL]",
+            "modifiedRange": "[3,15 -> 3,15 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "invalid-diff-bug",
+    "ignoreTrimWhitespace": false,
+    "original": "const API = require('../src/api');\n\ndescribe('API', () => {\n  let api;\n  let database;\n\n  beforeAll(() => {\n    database = {\n      getAllBooks: jest.fn(),\n      getBooksByAuthor: jest.fn(),\n      getBooksByTitle: jest.fn(),\n    };\n    api = new API(database);\n  });\n\n  describe('GET /books', () => {\n    it('should return all books', async () => {\n      const mockBooks = [{ title: 'Book 1' }, { title: 'Book 2' }];\n      database.getAllBooks.mockResolvedValue(mockBooks);\n\n      const req = {};\n      const res = {\n        json: jest.fn(),\n      };\n\n      await api.register({\n        get: (path, handler) => {\n          if (path === '/books') {\n            handler(req, res);\n          }\n        },\n      });\n\n      expect(database.getAllBooks).toHaveBeenCalled();\n      expect(res.json).toHaveBeenCalledWith(mockBooks);\n    });\n  });\n\n  describe('GET /books/author/:author', () => {\n    it('should return books by author', async () => {\n      const mockAuthor = 'John Doe';\n      const mockBooks = [{ title: 'Book 1', author: mockAuthor }, { title: 'Book 2', author: mockAuthor }];\n      database.getBooksByAuthor.mockResolvedValue(mockBooks);\n\n      const req = {\n        params: {\n          author: mockAuthor,\n        },\n      };\n      const res = {\n        json: jest.fn(),\n      };\n\n      await api.register({\n        get: (path, handler) => {\n          if (path === `/books/author/${mockAuthor}`) {\n            handler(req, res);\n          }\n        },\n      });\n\n      expect(database.getBooksByAuthor).toHaveBeenCalledWith(mockAuthor);\n      expect(res.json).toHaveBeenCalledWith(mockBooks);\n    });\n  });\n\n  describe('GET /books/title/:title', () => {\n    it('should return books by title', async () => {\n      const mockTitle = 'Book 1';\n      const mockBooks = [{ title: mockTitle, author: 'John Doe' }];\n      database.getBooksByTitle.mockResolvedValue(mockBooks);\n\n      const req = {\n        params: {\n          title: mockTitle,\n        },\n      };\n      const res = {\n        json: jest.fn(),\n      };\n\n      await api.register({\n        get: (path, handler) => {\n          if (path === `/books/title/${mockTitle}`) {\n            handler(req, res);\n          }\n        },\n      });\n\n      expect(database.getBooksByTitle).toHaveBeenCalledWith(mockTitle);\n      expect(res.json).toHaveBeenCalledWith(mockBooks);\n    });\n  });\n});\n",
+    "modified": "const request = require('supertest');\nconst API = require('../src/api');\n\ndescribe('API', () => {\n  let api;\n  let database;\n\n  beforeAll(() => {\n    database = {\n      getAllBooks: jest.fn(),\n      getBooksByAuthor: jest.fn(),\n      getBooksByTitle: jest.fn(),\n    };\n    api = new API(database);\n  });\n\n  describe('GET /books', () => {\n    it('should return all books', async () => {\n      const mockBooks = [{ title: 'Book 1' }, { title: 'Book 2' }];\n      database.getAllBooks.mockResolvedValue(mockBooks);\n\n      const response = await request(api.app).get('/books');\n\n      expect(database.getAllBooks).toHaveBeenCalled();\n      expect(response.status).toBe(200);\n      expect(response.body).toEqual(mockBooks);\n    });\n  });\n\n  describe('GET /books/author/:author', () => {\n    it('should return books by author', async () => {\n      const mockAuthor = 'John Doe';\n      const mockBooks = [{ title: 'Book 1', author: mockAuthor }, { title: 'Book 2', author: mockAuthor }];\n      database.getBooksByAuthor.mockResolvedValue(mockBooks);\n\n      const response = await request(api.app).get(`/books/author/${mockAuthor}`);\n\n      expect(database.getBooksByAuthor).toHaveBeenCalledWith(mockAuthor);\n      expect(response.status).toBe(200);\n      expect(response.body).toEqual(mockBooks);\n    });\n  });\n\n  describe('GET /books/title/:title', () => {\n    it('should return books by title', async () => {\n      const mockTitle = 'Book 1';\n      const mockBooks = [{ title: mockTitle, author: 'John Doe' }];\n      database.getBooksByTitle.mockResolvedValue(mockBooks);\n\n      const response = await request(api.app).get(`/books/title/${mockTitle}`);\n\n      expect(database.getBooksByTitle).toHaveBeenCalledWith(mockTitle);\n      expect(response.status).toBe(200);\n      expect(response.body).toEqual(mockBooks);\n    });\n  });\n});\n",
+    "diffs": [
+      {
+        "originalRange": "[1,1)",
+        "modifiedRange": "[1,2)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,1 -> 1,1]",
+            "modifiedRange": "[1,1 -> 2,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[21,33)",
+        "modifiedRange": "[22,23)",
+        "innerChanges": [
+          {
+            "originalRange": "[21,1 -> 22,1]",
+            "modifiedRange": "[22,1 -> 22,1]"
+          },
+          {
+            "originalRange": "[22,13 -> 26,6]",
+            "modifiedRange": "[22,13 -> 22,23]"
+          },
+          {
+            "originalRange": "[26,13 -> 26,13]",
+            "modifiedRange": "[22,30 -> 22,38]"
+          },
+          {
+            "originalRange": "[26,17 -> 33,1 EOL]",
+            "modifiedRange": "[22,42 -> 23,1 EOL]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[35,36)",
+        "modifiedRange": "[25,27)",
+        "innerChanges": [
+          {
+            "originalRange": "[35,14 -> 35,44]",
+            "modifiedRange": "[25,14 -> 26,36]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[45,61)",
+        "modifiedRange": "[36,37)",
+        "innerChanges": [
+          {
+            "originalRange": "[45,1 -> 54,6]",
+            "modifiedRange": "[36,1 -> 36,23]"
+          },
+          {
+            "originalRange": "[54,13 -> 54,13]",
+            "modifiedRange": "[36,30 -> 36,38]"
+          },
+          {
+            "originalRange": "[54,17 -> 55,9]",
+            "modifiedRange": "[36,42 -> 36,47]"
+          },
+          {
+            "originalRange": "[55,12 -> 56,24]",
+            "modifiedRange": "[36,50 -> 36,51]"
+          },
+          {
+            "originalRange": "[56,54 -> 60,9]",
+            "modifiedRange": "[36,81 -> 36,81]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[63,64)",
+        "modifiedRange": "[39,41)",
+        "innerChanges": [
+          {
+            "originalRange": "[63,14 -> 63,44]",
+            "modifiedRange": "[39,14 -> 40,36]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[73,89)",
+        "modifiedRange": "[50,51)",
+        "innerChanges": [
+          {
+            "originalRange": "[73,1 -> 82,6]",
+            "modifiedRange": "[50,1 -> 50,23]"
+          },
+          {
+            "originalRange": "[82,13 -> 82,13]",
+            "modifiedRange": "[50,30 -> 50,38]"
+          },
+          {
+            "originalRange": "[82,17 -> 83,9]",
+            "modifiedRange": "[50,42 -> 50,47]"
+          },
+          {
+            "originalRange": "[83,12 -> 84,24]",
+            "modifiedRange": "[50,50 -> 50,51]"
+          },
+          {
+            "originalRange": "[84,52 -> 88,9]",
+            "modifiedRange": "[50,79 -> 50,79]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[91,92)",
+        "modifiedRange": "[53,55)",
+        "innerChanges": [
+          {
+            "originalRange": "[91,14 -> 91,44]",
+            "modifiedRange": "[53,14 -> 54,36]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "invalid-ranges",
+    "ignoreTrimWhitespace": false,
+    "original": "",
+    "modified": "Tempor duis sunt laborum aliqua id eu irure.\nConsequat aliquip excepteur.\nAdipisicing incididunt do magn.\n",
+    "diffs": [
+      {
+        "originalRange": "[1,2)",
+        "modifiedRange": "[1,5)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,1 -> 1,1 EOL]",
+            "modifiedRange": "[1,1 -> 4,1 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "issue-131091",
+    "ignoreTrimWhitespace": false,
+    "original": "{\n\tif (A) {\n\t\tif (B) {\n\t\t\tdoit\n\t\t}\n\t}\n}\nC\nX\n",
+    "modified": "{\n\tif (A && B) {\n\t\tdoit\n\t}\n}\nC\nY\n",
+    "diffs": [
+      {
+        "originalRange": "[2,6)",
+        "modifiedRange": "[2,4)",
+        "innerChanges": [
+          {
+            "originalRange": "[2,7 -> 3,7]",
+            "modifiedRange": "[2,7 -> 2,11]"
+          },
+          {
+            "originalRange": "[4,1 -> 4,2]",
+            "modifiedRange": "[3,1 -> 3,1]"
+          },
+          {
+            "originalRange": "[5,1 -> 6,1]",
+            "modifiedRange": "[4,1 -> 4,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[9,10)",
+        "modifiedRange": "[7,8)",
+        "innerChanges": [
+          {
+            "originalRange": "[9,1 -> 9,2 EOL]",
+            "modifiedRange": "[7,1 -> 7,2 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "issue-185779",
+    "ignoreTrimWhitespace": false,
+    "original": "\n\tprivate doAddView(view: IView<TLayoutContext>, size: number | Sizing, index = this.viewItems.length, skipLayout?: boolean): void {\n\t\tif (this.state !== State.Idle) {\n\t\t\tthrow new Error('Cant modify splitview');\n\t\t}\n\n\t\tthis.state = State.Busy;\n\n\t\t// Add view\n\t\tconst container = $('.split-view-view');\n\n\t\tif (index === this.viewItems.length) {\n\t\t\tthis.viewContainer.appendChild(container);\n\t\t} else {\n\t\t\tthis.viewContainer.insertBefore(container, this.viewContainer.children.item(index));\n\t\t}\n\n\t\tconst onChangeDisposable = view.onDidChange(size => this.onViewChange(item, size));\n\t\tconst containerDisposable = toDisposable(() => this.viewContainer.removeChild(container));\n\t\tconst disposable = combinedDisposable(onChangeDisposable, containerDisposable);\n\n\t\tlet viewSize: ViewItemSize;\n\n\t\tif (typeof size === 'number') {\n\t\t\tviewSize = size;\n\t\t} else if (size.type === 'split') {\n\t\t\tviewSize = this.getViewSize(size.index) / 2;\n\t\t} else if (size.type === 'invisible') {\n\t\t\tviewSize = { cachedVisibleSize: size.cachedVisibleSize };\n\t\t} else {\n\t\t\tviewSize = view.minimumSize;\n\t\t}\n\n\t\tconst item = this.orientation === Orientation.VERTICAL\n\t\t\t? new VerticalViewItem(container, view, viewSize, disposable)\n\t\t\t: new HorizontalViewItem(container, view, viewSize, disposable);\n\n\t\tthis.viewItems.splice(index, 0, item);\n\n",
+    "modified": "\n\tprivate doAddView(view: IView<TLayoutContext>, size: number | Sizing, index = this.viewItems.length, skipLayout?: boolean): void {\n\t\tif (this.state !== State.Idle) {\n\t\t\tthrow new Error('Cant modify splitview');\n\t\t}\n\n\t\tthis.state = State.Busy;\n\n\t\t// Add view\n\t\tconst container = $('.split-view-view');\n\n\t\tif (index === this.viewItems.length) {\n\t\t\tthis.viewContainer.appendChild(container);\n\t\t} else {\n\t\t\tthis.viewContainer.insertBefore(container, this.viewContainer.children.item(index));\n\t\t}\n\n\t\tconst onChangeDisposable = view.onDidChange(size => this.onViewChange(item, size));\n\t\tconst containerDisposable = toDisposable(() => this.viewContainer.removeChild(container));\n\t\tconst disposable = combinedDisposable(onChangeDisposable, containerDisposable);\n\n\t\tlet viewSize: ViewItemSize;\n\n\t\tif (typeof size === 'number') {\n\t\t\tviewSize = size;\n\t\t} else {\n\t\t\tif (size.type === 'auto') {\n\t\t\t\tif (this.areViewsDistributed()) {\n\t\t\t\t\tsize = { type: 'distribute' };\n\t\t\t\t} else {\n\t\t\t\t\tsize = { type: 'split', index: size.index };\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tif (size.type === 'split') {\n\t\t\t\tviewSize = this.getViewSize(size.index) / 2;\n\t\t\t} else if (size.type === 'invisible') {\n\t\t\t\tviewSize = { cachedVisibleSize: size.cachedVisibleSize };\n\t\t\t} else {\n\t\t\t\tviewSize = view.minimumSize;\n\t\t\t}\n\t\t}\n\n\t\tconst item = this.orientation === Orientation.VERTICAL\n\t\t\t? new VerticalViewItem(container, view, viewSize, disposable)\n\t\t\t: new HorizontalViewItem(container, view, viewSize, disposable);\n\n\t\tthis.viewItems.splice(index, 0, item);\n\n",
+    "diffs": [
+      {
+        "originalRange": "[26,32)",
+        "modifiedRange": "[26,42)",
+        "innerChanges": [
+          {
+            "originalRange": "[26,10 -> 26,10]",
+            "modifiedRange": "[26,10 -> 35,4]"
+          },
+          {
+            "originalRange": "[27,1 -> 27,1]",
+            "modifiedRange": "[36,1 -> 36,2]"
+          },
+          {
+            "originalRange": "[28,1 -> 28,1]",
+            "modifiedRange": "[37,1 -> 37,2]"
+          },
+          {
+            "originalRange": "[29,1 -> 29,1]",
+            "modifiedRange": "[38,1 -> 38,2]"
+          },
+          {
+            "originalRange": "[30,1 -> 30,1]",
+            "modifiedRange": "[39,1 -> 39,2]"
+          },
+          {
+            "originalRange": "[31,1 -> 31,1]",
+            "modifiedRange": "[40,1 -> 40,2]"
+          },
+          {
+            "originalRange": "[32,1 -> 32,1]",
+            "modifiedRange": "[41,1 -> 42,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "issue-201713",
+    "ignoreTrimWhitespace": false,
+    "original": "const deletedCodeLineBreaksComputer = !renderSideBySide ? this._editors.modified._getViewModel()?.createLineBreaksComputer() : undefined;\nif (deletedCodeLineBreaksComputer) {\n\tfor (const a of alignmentsVal) {\n\t\tif (a.diff) {\n\t\t\tfor (let i = a.originalRange.startLineNumber; i < a.originalRange.endLineNumberExclusive; i++) {\n\t\t\t\tdeletedCodeLineBreaksComputer?.addRequest(this._editors.original.getModel()!.getLineContent(i), null, null);\n\t\t\t}\n\t\t}\n\t}\n}\n\nconst lineBreakData = deletedCodeLineBreaksComputer?.finalize() ?? [];\nlet lineBreakDataIdx = 0;",
+    "modified": "const deletedCodeLineBreaksComputer = !renderSideBySide ? this._editors.modified._getViewModel()?.createLineBreaksComputer() : undefined;\nif (deletedCodeLineBreaksComputer) {\n\tconst originalModel = this._editors.original.getModel()!;\n\tfor (const a of alignmentsVal) {\n\t\tif (a.diff) {\n\t\t\tfor (let i = a.originalRange.startLineNumber; i < a.originalRange.endLineNumberExclusive; i++) {\n\t\t\t\t// `i` can be out of bound when the diff has not been updated yet.\n\t\t\t\t// In this case, we do an early return.\n\t\t\t\t// TODO@hediet: Fix this by applying the edit directly to the diff model, so that the diff is always valid.\n\t\t\t\tif (i > originalModel.getLineCount()) {\n\t\t\t\t\treturn { orig: origViewZones, mod: modViewZones };\n\t\t\t\t}\n\t\t\t\tdeletedCodeLineBreaksComputer?.addRequest(originalModel.getLineContent(i), null, null);\n\t\t\t}\n\t\t}\n\t}\n}\n\nconst lineBreakData = deletedCodeLineBreaksComputer?.finalize() ?? [];\nlet lineBreakDataIdx = 0;",
+    "diffs": [
+      {
+        "originalRange": "[3,3)",
+        "modifiedRange": "[3,4)",
+        "innerChanges": [
+          {
+            "originalRange": "[3,1 -> 3,1]",
+            "modifiedRange": "[3,1 -> 4,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[6,7)",
+        "modifiedRange": "[7,14)",
+        "innerChanges": [
+          {
+            "originalRange": "[6,1 -> 6,34]",
+            "modifiedRange": "[7,1 -> 13,34]"
+          },
+          {
+            "originalRange": "[6,47 -> 6,61]",
+            "modifiedRange": "[13,47 -> 13,47]"
+          },
+          {
+            "originalRange": "[6,69 -> 6,73]",
+            "modifiedRange": "[13,55 -> 13,55]"
+          },
+          {
+            "originalRange": "[6,78 -> 6,81]",
+            "modifiedRange": "[13,60 -> 13,60]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "issue-202147-trimws",
+    "ignoreTrimWhitespace": true,
+    "original": "\n\n\t\titem.row!.domNode.classList.toggle('drop-target', item.dropTarget);\n\t}\n\n\na\nx\na\na\na",
+    "modified": "\n\n\t\titem.row!.domNode.classList.toggle('drop-target', item.dropTarget !== false);\n\t\tif (typeof item.dropTarget !== 'boolean') {\n\t\t\titem.row!.domNode.classList.toggle('drop-target-start', item.dropTarget.first);\n\t\t}\n\t}\n\n\na\nx\na\na\n",
+    "diffs": [
+      {
+        "originalRange": "[3,4)",
+        "modifiedRange": "[3,7)",
+        "innerChanges": [
+          {
+            "originalRange": "[3,68 -> 4,1]",
+            "modifiedRange": "[3,68 -> 7,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[11,12)",
+        "modifiedRange": "[14,15)",
+        "innerChanges": [
+          {
+            "originalRange": "[11,1 -> 11,2 EOL]",
+            "modifiedRange": "[14,1 -> 14,1 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "issue-204948",
+    "ignoreTrimWhitespace": false,
+    "original": "    \"@babel/types\" \"^7.22.15\"\n\n\"@babel/traverse@^7.23.9\":\n  version \"7.23.9\"\n  resolved \"https://registry.yarnpkg.com/@babel/traverse/-/traverse-7.23.7.tgz#9a7bf285c928cb99b5ead19c3b1ce5b310c9c305\"\n  integrity sha512-tY3mM8rH9jM0YHFGyfC0/xf+SB5eKUu7HPj7/k3fpi9dAlsMc5YbQvDi0Sh2QTPXqMhyaAtzAr807TIyfQrmyg==\n  dependencies:\n    \"@babel/code-frame\" \"^7.23.5\"\n    \"@babel/generator\" \"^7.23.6\"",
+    "modified": "    \"@babel/types\" \"^7.22.15\"\n\n\"@babel/traverse@^7.23.9\":\n  version \"7.23.9\"\n  resolved \"https://registry.yarnpkg.com/@babel/traverse/-/traverse-7.23.7.tgz#9a7bf285c928cb99b5ead19c3b1ce5b310c9c305\"\n  integrity sha512-I/4UJ9vs90OkBtY6iiiTORVMyIhJ4kAVmsKo9KFc8UOxMeUfi2hvtIBsET5u9GizXE6/GFSuKCTNfgCswuEjRg==\n  dependencies:\n    \"@babel/code-frame\" \"^7.23.5\"\n    \"@babel/generator\" \"^7.23.6\"",
+    "diffs": [
+      {
+        "originalRange": "[6,7)",
+        "modifiedRange": "[6,7)",
+        "innerChanges": [
+          {
+            "originalRange": "[6,20 -> 7,1]",
+            "modifiedRange": "[6,20 -> 7,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "issue-214049",
+    "ignoreTrimWhitespace": false,
+    "original": "hello world; \ny",
+    "modified": "hello world;\n// new line\ny",
+    "diffs": [
+      {
+        "innerChanges": [
+          {
+            "modifiedRange": "[1,13 -> 1,13 EOL]",
+            "originalRange": "[1,13 -> 1,14 EOL]"
+          },
+          {
+            "modifiedRange": "[2,1 -> 3,1]",
+            "originalRange": "[2,1 -> 2,1]"
+          }
+        ],
+        "modifiedRange": "[1,3)",
+        "originalRange": "[1,2)"
+      }
+    ]
+  },
+  {
+    "name": "just-whitespace",
+    "ignoreTrimWhitespace": false,
+    "original": "console.log('foo'); ",
+    "modified": "console.log('foo');",
+    "diffs": [
+      {
+        "originalRange": "[1,2)",
+        "modifiedRange": "[1,2)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,20 -> 1,21 EOL]",
+            "modifiedRange": "[1,20 -> 1,20 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "method-splitting",
+    "ignoreTrimWhitespace": false,
+    "original": "class Test {\n    public getDecorationsViewportData(viewRange: Range): IDecorationsViewportData {\n\t\treturn null!;\n\t}\n\n\tpublic getInlineDecorationsOnLine(lineNumber: number): InlineDecoration[] {\n\t\tconst range = new Range(lineNumber, this._linesCollection.getViewLineMinColumn(lineNumber), lineNumber, this._linesCollection.getViewLineMaxColumn(lineNumber));\n\t\treturn this._getDecorationsInRange(range).inlineDecorations[0];\n\t}\n\n\tprivate _getDecorationsInRange(viewRange: Range): IDecorationsViewportData {\n\t\tconst modelDecorations = this._linesCollection.getDecorationsInRange(viewRange, this.editorId, filterValidationDecorations(this.configuration.options));\n\t\tconst startLineNumber = viewRange.startLineNumber;\n\t\tconst endLineNumber = viewRange.endLineNumber;\n\n\t\tconst decorationsInViewport: ViewModelDecoration[] = [];\n\t\tlet decorationsInViewportLen = 0;\n\t\tconst inlineDecorations: InlineDecoration[][] = [];\n\t\tfor (let j = startLineNumber; j <= endLineNumber; j++) {\n\t\t\tinlineDecorations[j - startLineNumber] = [];\n\t\t}\n\n\t\tfor (let i = 0, len = modelDecorations.length; i < len; i++) {\n\t\t\tconst modelDecoration = modelDecorations[i];\n\t\t\tconst decorationOptions = modelDecoration.options;\n\n\t\t\tif (!isModelDecorationVisible(this.model, modelDecoration)) {\n\t\t\t\tcontinue;\n\t\t\t}\n\n\t\t\tconst viewModelDecoration = this._getOrCreateViewModelDecoration(modelDecoration);\n\t\t\tconst viewRange = viewModelDecoration.range;\n\n\t\t\tdecorationsInViewport[decorationsInViewportLen++] = viewModelDecoration;\n\n\t\t\tif (decorationOptions.inlineClassName) {\n\t\t\t\tconst inlineDecoration = new InlineDecoration(viewRange, decorationOptions.inlineClassName, decorationOptions.inlineClassNameAffectsLetterSpacing ? InlineDecorationType.RegularAffectingLetterSpacing : InlineDecorationType.Regular);\n\t\t\t\tconst intersectedStartLineNumber = Math.max(startLineNumber, viewRange.startLineNumber);\n\t\t\t\tconst intersectedEndLineNumber = Math.min(endLineNumber, viewRange.endLineNumber);\n\t\t\t\tfor (let j = intersectedStartLineNumber; j <= intersectedEndLineNumber; j++) {\n\t\t\t\t\tinlineDecorations[j - startLineNumber].push(inlineDecoration);\n\t\t\t\t}\n\t\t\t}\n\t\t\tif (decorationOptions.beforeContentClassName) {\n\t\t\t\tif (startLineNumber <= viewRange.startLineNumber && viewRange.startLineNumber <= endLineNumber) {\n\t\t\t\t\tconst inlineDecoration = new InlineDecoration(\n\t\t\t\t\t\tnew Range(viewRange.startLineNumber, viewRange.startColumn, viewRange.startLineNumber, viewRange.startColumn),\n\t\t\t\t\t\tdecorationOptions.beforeContentClassName,\n\t\t\t\t\t\tInlineDecorationType.Before\n\t\t\t\t\t);\n\t\t\t\t\tinlineDecorations[viewRange.startLineNumber - startLineNumber].push(inlineDecoration);\n\t\t\t\t}\n\t\t\t}\n\t\t\tif (decorationOptions.afterContentClassName) {\n\t\t\t\tif (startLineNumber <= viewRange.endLineNumber && viewRange.endLineNumber <= endLineNumber) {\n\t\t\t\t\tconst inlineDecoration = new InlineDecoration(\n\t\t\t\t\t\tnew Range(viewRange.endLineNumber, viewRange.endColumn, viewRange.endLineNumber, viewRange.endColumn),\n\t\t\t\t\t\tdecorationOptions.afterContentClassName,\n\t\t\t\t\t\tInlineDecorationType.After\n\t\t\t\t\t);\n\t\t\t\t\tinlineDecorations[viewRange.endLineNumber - startLineNumber].push(inlineDecoration);\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\n\t\treturn {\n\t\t\tdecorations: decorationsInViewport,\n\t\t\tinlineDecorations: inlineDecorations\n\t\t};\n\t}\n}",
+    "modified": "class Test {\n    public getDecorationsViewportData(viewRange: Range): IDecorationsViewportData {\n\t\treturn null!;\n\t}\n\n\tprivate _getDecorationsViewportData(viewportRange: Range, onlyMinimapDecorations: boolean): IDecorationsViewportData {\n\t\tconst modelDecorations = this._linesCollection.getDecorationsInRange(viewportRange, this.editorId, filterValidationDecorations(this.configuration.options), onlyMinimapDecorations);\n\n\t\tconst startLineNumber = viewportRange.startLineNumber;\n\t\tconst endLineNumber = viewportRange.endLineNumber;\n\n\t\tconst decorationsInViewport: ViewModelDecoration[] = [];\n\t\tlet decorationsInViewportLen = 0;\n\t\tconst inlineDecorations: InlineDecoration[][] = [];\n\t\tfor (let j = startLineNumber; j <= endLineNumber; j++) {\n\t\t\tinlineDecorations[j - startLineNumber] = [];\n\t\t}\n\n\t\tfor (let i = 0, len = modelDecorations.length; i < len; i++) {\n\t\t\tconst modelDecoration = modelDecorations[i];\n\t\t\tconst decorationOptions = modelDecoration.options;\n\n\t\t\tif (!isModelDecorationVisible(this.model, modelDecoration)) {\n\t\t\t\tcontinue;\n\t\t\t}\n\n\t\t\tconst viewModelDecoration = this._getOrCreateViewModelDecoration(modelDecoration);\n\t\t\tconst viewRange = viewModelDecoration.range;\n\n\t\t\tdecorationsInViewport[decorationsInViewportLen++] = viewModelDecoration;\n\n\t\t\tif (decorationOptions.inlineClassName) {\n\t\t\t\tconst inlineDecoration = new InlineDecoration(viewRange, decorationOptions.inlineClassName, decorationOptions.inlineClassNameAffectsLetterSpacing ? InlineDecorationType.RegularAffectingLetterSpacing : InlineDecorationType.Regular);\n\t\t\t\tconst intersectedStartLineNumber = Math.max(startLineNumber, viewRange.startLineNumber);\n\t\t\t\tconst intersectedEndLineNumber = Math.min(endLineNumber, viewRange.endLineNumber);\n\t\t\t\tfor (let j = intersectedStartLineNumber; j <= intersectedEndLineNumber; j++) {\n\t\t\t\t\tinlineDecorations[j - startLineNumber].push(inlineDecoration);\n\t\t\t\t}\n\t\t\t}\n\t\t\tif (decorationOptions.beforeContentClassName) {\n\t\t\t\tif (startLineNumber <= viewRange.startLineNumber && viewRange.startLineNumber <= endLineNumber) {\n\t\t\t\t\tconst inlineDecoration = new InlineDecoration(\n\t\t\t\t\t\tnew Range(viewRange.startLineNumber, viewRange.startColumn, viewRange.startLineNumber, viewRange.startColumn),\n\t\t\t\t\t\tdecorationOptions.beforeContentClassName,\n\t\t\t\t\t\tInlineDecorationType.Before\n\t\t\t\t\t);\n\t\t\t\t\tinlineDecorations[viewRange.startLineNumber - startLineNumber].push(inlineDecoration);\n\t\t\t\t}\n\t\t\t}\n\t\t\tif (decorationOptions.afterContentClassName) {\n\t\t\t\tif (startLineNumber <= viewRange.endLineNumber && viewRange.endLineNumber <= endLineNumber) {\n\t\t\t\t\tconst inlineDecoration = new InlineDecoration(\n\t\t\t\t\t\tnew Range(viewRange.endLineNumber, viewRange.endColumn, viewRange.endLineNumber, viewRange.endColumn),\n\t\t\t\t\t\tdecorationOptions.afterContentClassName,\n\t\t\t\t\t\tInlineDecorationType.After\n\t\t\t\t\t);\n\t\t\t\t\tinlineDecorations[viewRange.endLineNumber - startLineNumber].push(inlineDecoration);\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\n\t\treturn {\n\t\t\tdecorations: decorationsInViewport,\n\t\t\tinlineDecorations: inlineDecorations\n\t\t};\n\t}\n}",
+    "diffs": [
+      {
+        "originalRange": "[6,15)",
+        "modifiedRange": "[6,11)",
+        "innerChanges": [
+          {
+            "originalRange": "[6,1 -> 11,49]",
+            "modifiedRange": "[6,1 -> 6,91]"
+          },
+          {
+            "originalRange": "[12,76 -> 12,76]",
+            "modifiedRange": "[7,76 -> 7,80]"
+          },
+          {
+            "originalRange": "[12,153 -> 12,153]",
+            "modifiedRange": "[7,157 -> 7,181]"
+          },
+          {
+            "originalRange": "[13,1 -> 13,1]",
+            "modifiedRange": "[8,1 -> 9,1]"
+          },
+          {
+            "originalRange": "[13,31 -> 13,31]",
+            "modifiedRange": "[9,31 -> 9,35]"
+          },
+          {
+            "originalRange": "[14,29 -> 14,29]",
+            "modifiedRange": "[10,29 -> 10,33]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "minimal-diff-character",
+    "ignoreTrimWhitespace": false,
+    "original": "import * as path from 'path';\nimport { Command } from 'vscode';\nimport * as nls from 'vscode-nls';\n\n\"()()()()()()()()()()()()()\"",
+    "modified": "import * as path from 'path';\nimport { Command, commands } from 'vscode';\nimport * as nls from 'vscode-nls';\n\n\"Gallicum()est()divisa()in()partres()tres()quarum()unam()est()()()()()()()()()()()()\"",
+    "diffs": [
+      {
+        "originalRange": "[2,3)",
+        "modifiedRange": "[2,3)",
+        "innerChanges": [
+          {
+            "originalRange": "[2,17 -> 2,17]",
+            "modifiedRange": "[2,17 -> 2,27]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[5,6)",
+        "modifiedRange": "[5,6)",
+        "innerChanges": [
+          {
+            "originalRange": "[5,2 -> 5,4]",
+            "modifiedRange": "[5,2 -> 5,61]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "move-1",
+    "ignoreTrimWhitespace": false,
+    "original": "/*---------------------------------------------------------------------------------------------\n *  Copyright (c) Microsoft Corporation. All rights reserved.\n *  Licensed under the MIT License. See License.txt in the project root for license information.\n *--------------------------------------------------------------------------------------------*/\n\nimport * as arrays from 'vs/base/common/arrays';\nimport { IdleDeadline, runWhenIdle } from 'vs/base/common/async';\nimport { BugIndicatingError, onUnexpectedError } from 'vs/base/common/errors';\nimport { Disposable, MutableDisposable } from 'vs/base/common/lifecycle';\nimport { setTimeout0 } from 'vs/base/common/platform';\nimport { StopWatch } from 'vs/base/common/stopwatch';\nimport { countEOL } from 'vs/editor/common/core/eolCounter';\nimport { Position } from 'vs/editor/common/core/position';\nimport { IRange } from 'vs/editor/common/core/range';\nimport { StandardTokenType } from 'vs/editor/common/encodedTokenAttributes';\nimport { EncodedTokenizationResult, IBackgroundTokenizationStore, IBackgroundTokenizer, ILanguageIdCodec, IState, ITokenizationSupport, TokenizationRegistry } from 'vs/editor/common/languages';\nimport { nullTokenizeEncoded } from 'vs/editor/common/languages/nullTokenize';\nimport { ITextModel } from 'vs/editor/common/model';\nimport { TextModel } from 'vs/editor/common/model/textModel';\nimport { TokenizationTextModelPart } from 'vs/editor/common/model/tokenizationTextModelPart';\nimport { IModelContentChangedEvent, IModelLanguageChangedEvent } from 'vs/editor/common/textModelEvents';\nimport { ContiguousMultilineTokensBuilder } from 'vs/editor/common/tokens/contiguousMultilineTokensBuilder';\nimport { LineTokens } from 'vs/editor/common/tokens/lineTokens';\n\nconst enum Constants {\n\tCHEAP_TOKENIZATION_LENGTH_LIMIT = 2048\n}\n\n/**\n * An array that avoids being sparse by always\n * filling up unused indices with a default value.\n */\nexport class ContiguousGrowingArray<T> {\n\n\tprivate _store: T[] = [];\n\n\tconstructor(\n\t\tprivate readonly _default: T\n\t) { }\n\n\tpublic get(index: number): T {\n\t\tif (index < this._store.length) {\n\t\t\treturn this._store[index];\n\t\t}\n\t\treturn this._default;\n\t}\n\n\tpublic set(index: number, value: T): void {\n\t\twhile (index >= this._store.length) {\n\t\t\tthis._store[this._store.length] = this._default;\n\t\t}\n\t\tthis._store[index] = value;\n\t}\n\n\t// TODO have `replace` instead of `delete` and `insert`\n\tpublic delete(deleteIndex: number, deleteCount: number): void {\n\t\tif (deleteCount === 0 || deleteIndex >= this._store.length) {\n\t\t\treturn;\n\t\t}\n\t\tthis._store.splice(deleteIndex, deleteCount);\n\t}\n\n\tpublic insert(insertIndex: number, insertCount: number): void {\n\t\tif (insertCount === 0 || insertIndex >= this._store.length) {\n\t\t\treturn;\n\t\t}\n\t\tconst arr: T[] = [];\n\t\tfor (let i = 0; i < insertCount; i++) {\n\t\t\tarr[i] = this._default;\n\t\t}\n\t\tthis._store = arrays.arrayInsert(this._store, insertIndex, arr);\n\t}\n}\n\n/**\n * Stores the states at the start of each line and keeps track of which lines\n * must be re-tokenized. Also uses state equality to quickly validate lines\n * that don't need to be re-tokenized.\n *\n * For example, when typing on a line, the line gets marked as needing to be tokenized.\n * Once the line is tokenized, the end state is checked for equality against the begin\n * state of the next line. If the states are equal, tokenization doesn't need to run\n * again over the rest of the file. If the states are not equal, the next line gets marked\n * as needing to be tokenized.\n */\nexport class TokenizationStateStore {\n\trequestTokens(startLineNumber: number, endLineNumberExclusive: number): void {\n\t\tfor (let lineNumber = startLineNumber; lineNumber < endLineNumberExclusive; lineNumber++) {\n\t\t\tthis._stateStore.markMustBeTokenized(lineNumber - 1);\n\t\t}\n\t}\n}\n",
+    "modified": "/*---------------------------------------------------------------------------------------------\n *  Copyright (c) Microsoft Corporation. All rights reserved.\n *  Licensed under the MIT License. See License.txt in the project root for license information.\n *--------------------------------------------------------------------------------------------*/\n\nimport * as arrays from 'vs/base/common/arrays';\nimport { IdleDeadline, runWhenIdle } from 'vs/base/common/async';\nimport { BugIndicatingError, onUnexpectedError } from 'vs/base/common/errors';\nimport { Disposable, MutableDisposable } from 'vs/base/common/lifecycle';\nimport { setTimeout0 } from 'vs/base/common/platform';\nimport { StopWatch } from 'vs/base/common/stopwatch';\nimport { countEOL } from 'vs/editor/common/core/eolCounter';\nimport { Position } from 'vs/editor/common/core/position';\nimport { IRange } from 'vs/editor/common/core/range';\nimport { StandardTokenType } from 'vs/editor/common/encodedTokenAttributes';\nimport { EncodedTokenizationResult, IBackgroundTokenizationStore, IBackgroundTokenizer, ILanguageIdCodec, IState, ITokenizationSupport, TokenizationRegistry } from 'vs/editor/common/languages';\nimport { nullTokenizeEncoded } from 'vs/editor/common/languages/nullTokenize';\nimport { ITextModel } from 'vs/editor/common/model';\nimport { TextModel } from 'vs/editor/common/model/textModel';\nimport { TokenizationTextModelPart } from 'vs/editor/common/model/tokenizationTextModelPart';\nimport { IModelContentChangedEvent, IModelLanguageChangedEvent } from 'vs/editor/common/textModelEvents';\nimport { ContiguousMultilineTokensBuilder } from 'vs/editor/common/tokens/contiguousMultilineTokensBuilder';\nimport { LineTokens } from 'vs/editor/common/tokens/lineTokens';\n\n/**\n * An array that avoids being sparse by always\n * filling up unused indices with a default value.\n */\nexport class ContiguousGrowingArray<T> {\n\n\tprivate _store: T[] = [];\n\n\tconstructor(\n\t\tprivate readonly _default: T\n\t) { }\n\n\tpublic get(index: number): T {\n\t\tif (index < this._store.length) {\n\t\t\treturn this._store[index];\n\t\t}\n\t\treturn this._default;\n\t}\n\n\tpublic set(index: number, value: T): void {\n\t\twhile (index >= this._store.length) {\n\t\t\tthis._store[this._store.length] = this._default;\n\t\t}\n\t\tthis._store[index] = value;\n\t}\n\n\t// TODO have `replace` instead of `delete` and `insert`\n\tpublic delete(deleteIndex: number, deleteCount: number): void {\n\t\tif (deleteCount === 0 || deleteIndex >= this._store.length) {\n\t\t\treturn;\n\t\t}\n\t\tthis._store.splice(deleteIndex, deleteCount);\n\t}\n\n\tpublic insert(insertIndex: number, insertCount: number): void {\n\t\tif (insertCount === 0 || insertIndex >= this._store.length) {\n\t\t\treturn;\n\t\t}\n\t\tconst arr: T[] = [];\n\t\tfor (let i = 0; i < insertCount; i++) {\n\t\t\tarr[i] = this._default;\n\t\t}\n\t\tthis._store = arrays.arrayInsert(this._store, insertIndex, arr);\n\t}\n}\n\nconst enum Constants {\n\tCHEAP_TOKENIZATION_LENGTH_LIMIT = 1024\n}\n\n/**\n * Stores the states at the start of each line and keeps track of which lines\n * must be re-tokenized. Also uses state equality to quickly validate lines\n * that don't need to be re-tokenized.\n *\n * For example, when typing on a line, the line gets marked as needing to be tokenized.\n * Once the line is tokenized, the end state is checked for equality against the begin\n * state of the next line. If the states are equal, tokenization doesn't need to run\n * again over the rest of the file. If the states are not equal, the next line gets marked\n * as needing to be tokenized.\n */\nexport class TokenizationStateStore {\n\trequestTokens(startLineNumber: number, endLineNumberExclusive: number): void {\n\t\tfor (let lineNumber = startLineNumber; lineNumber < endLineNumberExclusive; lineNumber++) {\n\t\t\tthis._stateStore.markMustBeTokenized(lineNumber - 1);\n\t\t}\n\t}\n}\n",
+    "diffs": [
+      {
+        "originalRange": "[24,28)",
+        "modifiedRange": "[24,24)",
+        "innerChanges": [
+          {
+            "originalRange": "[24,1 -> 28,1 EOL]",
+            "modifiedRange": "[24,1 -> 24,1 EOL]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[74,74)",
+        "modifiedRange": "[70,74)",
+        "innerChanges": [
+          {
+            "originalRange": "[74,1 -> 74,1 EOL]",
+            "modifiedRange": "[70,1 -> 74,1 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "noise-1",
+    "ignoreTrimWhitespace": false,
+    "original": "this._sash = derivedWithStore('sash', (reader, store) => {\n\tconst showSash = this._options.renderSideBySide.read(reader);\n\tthis.elements.root.classList.toggle('side-by-side', showSash);\n\tif (!showSash) { return undefined; }\n\tconst result = store.add(new DiffEditorSash(\n\t\tthis._options,\n\t\tthis.elements.root,\n\t\t{\n\t\t\theight: this._rootSizeObserver.height,\n\t\t\twidth: this._rootSizeObserver.width.map((w, reader) => w - (this._options.renderOverviewRuler.read(reader) ? OverviewRulerPart.ENTIRE_DIFF_OVERVIEW_WIDTH : 0)),\n\t\t}\n\t));\n\tstore.add(autorun('setBoundarySashes', reader => {\n\t\tconst boundarySashes = this._boundarySashes.read(reader);\n\t\tif (boundarySashes) {\n\t\t\tresult.setBoundarySashes(boundarySashes);\n\t\t}\n\t}));\n\treturn result;\n});\nthis._register(keepAlive(this._sash, true));\n\nthis._register(autorunWithStore2('UnchangedRangesFeature', (reader, store) => {\n\tthis.unchangedRangesFeature = store.add(new (readHotReloadableExport(UnchangedRangesFeature, reader))(this._editors, this._diffModel, this._options));\n}));\n\nthis._register(autorunWithStore2('DiffEditorDecorations', (reader, store) => {\n\tstore.add(new (readHotReloadableExport(DiffEditorDecorations, reader))(this._editors, this._diffModel, this._options));\n}));\nthis._register(autorunWithStore2('ViewZoneManager', (reader, store) => {\n\tstore.add(this._instantiationService.createInstance(\n\t\treadHotReloadableExport(ViewZoneManager, reader),\n\t\tthis._editors,\n\t\tthis._diffModel,\n\t\tthis._options,\n\t\tthis,\n\t\t() => this.unchangedRangesFeature.isUpdatingViewZones,\n\t));\n}));\n\nthis._register(autorunWithStore2('OverviewRulerPart', (reader, store) => {\n\tstore.add(this._instantiationService.createInstance(readHotReloadableExport(OverviewRulerPart, reader), this._editors,\n\t\tthis.elements.root,\n\t\tthis._diffModel,\n\t\tthis._rootSizeObserver.width,\n\t\tthis._rootSizeObserver.height,\n\t\tthis._layoutInfo.map(i => i.modifiedEditor),\n\t\tthis._options,\n\t));\n}));\n\nthis._reviewPane = this._register(this._instantiationService.createInstance(DiffReview2, this));\nthis.elements.root.appendChild(this._reviewPane.domNode.domNode);\nthis.elements.root.appendChild(this._reviewPane.actionBarContainer.domNode);\nreviewPaneObservable.set(this._reviewPane, undefined);\n\nthis._createDiffEditorContributions();\n",
+    "modified": "this._sash = derivedWithStore('sash', (reader, store) => {\n\tconst showSash = this._options.renderSideBySide.read(reader);\n\tthis.elements.root.classList.toggle('side-by-side', showSash);\n\tif (!showSash) { return undefined; }\n\tconst result = store.add(new DiffEditorSash(\n\t\tthis._options,\n\t\tthis.elements.root,\n\t\t{\n\t\t\theight: this._rootSizeObserver.height,\n\t\t\twidth: this._rootSizeObserver.width.map((w, reader) => w - (this._options.renderOverviewRuler.read(reader) ? OverviewRulerPart.ENTIRE_DIFF_OVERVIEW_WIDTH : 0)),\n\t\t}\n\t));\n\tstore.add(autorun('setBoundarySashes', reader => {\n\t\tconst boundarySashes = this._boundarySashes.read(reader);\n\t\tif (boundarySashes) {\n\t\t\tresult.setBoundarySashes(boundarySashes);\n\t\t}\n\t}));\n\treturn result;\n});\nthis._register(keepAlive(this._sash, true));\n\nthis._register(autorunWithStore2('UnchangedRangesFeature', (reader, store) => {\n\tthis.unchangedRangesFeature = store.add(new (readHotReloadableExport(UnchangedRangesFeature, reader))(this._editors, this._diffModel, this._options));\n}));\n\nthis._register(autorunWithStore2('DiffEditorDecorations', (reader, store) => {\n\tstore.add(new (readHotReloadableExport(DiffEditorDecorations, reader))(this._editors, this._diffModel, this._options));\n}));\nthis._register(autorunWithStore2('ViewZoneManager', (reader, store) => {\n\tstore.add(this._instantiationService.createInstance(\n\t\treadHotReloadableExport(ViewZoneManager, reader),\n\t\tthis._editors,\n\t\tthis._diffModel,\n\t\tthis._options,\n\t\tthis,\n\t\t() => this.unchangedRangesFeature.isUpdatingViewZones,\n\t));\n}));\n\nthis._register(autorunWithStore2('OverviewRulerPart', (reader, store) => {\n\tstore.add(this._instantiationService.createInstance(readHotReloadableExport(OverviewRulerPart, reader), this._editors,\n\t\tthis.elements.root,\n\t\tthis._diffModel,\n\t\tthis._rootSizeObserver.width,\n\t\tthis._rootSizeObserver.height,\n\t\tthis._layoutInfo.map(i => i.modifiedEditor),\n\t\tthis._options,\n\t));\n}));\n\nthis._register(autorunWithStore2('_accessibleDiffViewer', (reader, store) => {\n\tthis._accessibleDiffViewer = store.add(this._register(this._instantiationService.createInstance(\n\t\treadHotReloadableExport(AccessibleDiffViewer, reader),\n\t\tthis.elements.accessibleDiffViewer,\n\t\tthis._accessibleDiffViewerVisible,\n\t\tthis._rootSizeObserver.width,\n\t\tthis._rootSizeObserver.height,\n\t\tthis._diffModel.map((m, r) => m?.diff.read(r)?.mappings.map(m => m.lineRangeMapping)),\n\t\tthis._editors,\n\t)));\n}));\nconst visibility = this._accessibleDiffViewerVisible.map<CSSStyle['visibility']>(v => v ? 'hidden' : 'visible');\nthis._register(applyStyle(this.elements.modified, { visibility }));\nthis._register(applyStyle(this.elements.original, { visibility }));\n\nthis._createDiffEditorContributions();\n",
+    "diffs": [
+      {
+        "originalRange": "[52,56)",
+        "modifiedRange": "[52,66)",
+        "innerChanges": [
+          {
+            "originalRange": "[52,7 -> 52,20]",
+            "modifiedRange": "[52,7 -> 53,41]"
+          },
+          {
+            "originalRange": "[52,77 -> 56,1 EOL]",
+            "modifiedRange": "[53,98 -> 66,1 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "noise-2",
+    "ignoreTrimWhitespace": false,
+    "original": "\nconst maxPersistedSessions = 25;\n\nexport class ChatService extends Disposable implements IChatService {\n\n\tprivate async _sendRequestAsync(model: ChatModel, provider: IChatProvider, message: string | IChatReplyFollowup, usedSlashCommand?: ISlashCommand): Promise<void> {\n\t\tconst request = model.addRequest(message);\n\n\t\tconst resolvedCommand = typeof message === 'string' && message.startsWith('/') ? await this.handleSlashCommand(model.sessionId, message) : message;\n\n\t\tlet gotProgress = false;\n\t\tconst requestType = typeof message === 'string' ?\n\t\t\t(message.startsWith('/') ? 'slashCommand' : 'string') :\n\t\t\t'followup';\n\n\t\tconst rawResponsePromise = createCancelablePromise<void>(async token => {\n\t\t\tconst progressCallback = (progress: IChatProgress) => {\n\t\t\t\tif (token.isCancellationRequested) {\n\t\t\t\t\treturn;\n\t\t\t\t}\n\n\t\t\t\tgotProgress = true;\n\t\t\t\tif ('content' in progress) {\n\t\t\t\t\tthis.trace('sendRequest', `Provider returned progress for session ${model.sessionId}, ${progress.content.length} chars`);\n\t\t\t\t} else {\n\t\t\t\t\tthis.trace('sendRequest', `Provider returned id for session ${model.sessionId}, ${progress.requestId}`);\n\t\t\t\t}\n\n\t\t\t\tmodel.acceptResponseProgress(request, progress);\n\t\t\t};\n\n\t\t\tconst stopWatch = new StopWatch(false);\n\t\t\ttoken.onCancellationRequested(() => {\n\t\t\t\tthis.trace('sendRequest', `Request for session ${model.sessionId} was cancelled`);\n\t\t\t\tthis.telemetryService.publicLog2<ChatProviderInvokedEvent, ChatProviderInvokedClassification>('interactiveSessionProviderInvoked', {\n\t\t\t\t\tproviderId: provider.id,\n\t\t\t\t\ttimeToFirstProgress: -1,\n\t\t\t\t\t// Normally timings happen inside the EH around the actual provider. For cancellation we can measure how long the user waited before cancelling\n\t\t\t\t\ttotalTime: stopWatch.elapsed(),\n\t\t\t\t\tresult: 'cancelled',\n\t\t\t\t\trequestType,\n\t\t\t\t\tslashCommand: usedSlashCommand?.command\n\t\t\t\t});\n\n\t\t\t\tmodel.cancelRequest(request);\n\t\t\t});\n\t\t\tif (usedSlashCommand?.command) {\n\t\t\t\tthis._onDidSubmitSlashCommand.fire({ slashCommand: usedSlashCommand.command, sessionId: model.sessionId });\n\t\t\t}\n\t\t\tlet rawResponse = await provider.provideReply({ session: model.session!, message: resolvedCommand }, progressCallback, token);\n\t\t\tif (token.isCancellationRequested) {\n\t\t\t\treturn;\n\t\t\t} else {\n\t\t\t\tif (!rawResponse) {\n\t\t\t\t\tthis.trace('sendRequest', `Provider returned no response for session ${model.sessionId}`);\n\t\t\t\t\trawResponse = { session: model.session!, errorDetails: { message: localize('emptyResponse', \"Provider returned null response\") } };\n\t\t\t\t}\n\n\t\t\t\tconst result = rawResponse.errorDetails?.responseIsFiltered ? 'filtered' :\n\t\t\t\t\trawResponse.errorDetails && gotProgress ? 'errorWithOutput' :\n\t\t\t\t\t\trawResponse.errorDetails ? 'error' :\n\t\t\t\t\t\t\t'success';\n\t\t\t\tthis.telemetryService.publicLog2<ChatProviderInvokedEvent, ChatProviderInvokedClassification>('interactiveSessionProviderInvoked', {\n\t\t\t\t\tproviderId: provider.id,\n\t\t\t\t\ttimeToFirstProgress: rawResponse.timings?.firstProgress ?? 0,\n\t\t\t\t\ttotalTime: rawResponse.timings?.totalElapsed ?? 0,\n\t\t\t\t\tresult,\n\t\t\t\t\trequestType,\n\t\t\t\t\tslashCommand: usedSlashCommand?.command\n\t\t\t\t});\n\t\t\t\tmodel.setResponse(request, rawResponse);\n\t\t\t\tthis.trace('sendRequest', `Provider returned response for session ${model.sessionId}`);\n\n\t\t\t\t// TODO refactor this or rethink the API https://github.com/microsoft/vscode-copilot/issues/593\n\t\t\t\tif (provider.provideFollowups) {\n\t\t\t\t\tPromise.resolve(provider.provideFollowups(model.session!, CancellationToken.None)).then(followups => {\n\t\t\t\t\t\tmodel.setFollowups(request, withNullAsUndefined(followups));\n\t\t\t\t\t\tmodel.completeResponse(request);\n\t\t\t\t\t});\n\t\t\t\t} else {\n\t\t\t\t\tmodel.completeResponse(request);\n\t\t\t\t}\n\t\t\t}\n\t\t});\n\t\tthis._pendingRequests.set(model.sessionId, rawResponsePromise);\n\t\trawResponsePromise.finally(() => {\n\t\t\tthis._pendingRequests.delete(model.sessionId);\n\t\t});\n\t\treturn rawResponsePromise;\n\t}\n}\n",
+    "modified": "\nconst maxPersistedSessions = 25;\n\nexport class ChatService extends Disposable implements IChatService {\n\n\tprivate async _sendRequestAsync(model: ChatModel, provider: IChatProvider, message: string | IChatReplyFollowup, usedSlashCommand?: ISlashCommand): Promise<void> {\n\t\tconst request = model.addRequest(message);\n\n\t\tconst resolvedCommand = typeof message === 'string' && message.startsWith('/') ? await this.handleSlashCommand(model.sessionId, message) : message;\n\n\t\tlet gotProgress = false;\n\t\tconst requestType = typeof message === 'string' ?\n\t\t\t(message.startsWith('/') ? 'slashCommand' : 'string') :\n\t\t\t'followup';\n\n\t\tconst rawResponsePromise = createCancelablePromise<void>(async token => {\n\t\t\tconst progressCallback = (progress: IChatProgress) => {\n\t\t\t\tif (token.isCancellationRequested) {\n\t\t\t\t\treturn;\n\t\t\t\t}\n\n\t\t\t\tgotProgress = true;\n\t\t\t\tif ('content' in progress) {\n\t\t\t\t\tthis.trace('sendRequest', `Provider returned progress for session ${model.sessionId}, ${progress.content.length} chars`);\n\t\t\t\t} else {\n\t\t\t\t\tthis.trace('sendRequest', `Provider returned id for session ${model.sessionId}, ${progress.requestId}`);\n\t\t\t\t}\n\n\t\t\t\tmodel.acceptResponseProgress(request, progress);\n\t\t\t};\n\n\t\t\tconst stopWatch = new StopWatch(false);\n\t\t\ttoken.onCancellationRequested(() => {\n\t\t\t\tthis.trace('sendRequest', `Request for session ${model.sessionId} was cancelled`);\n\t\t\t\tthis.telemetryService.publicLog2<ChatProviderInvokedEvent, ChatProviderInvokedClassification>('interactiveSessionProviderInvoked', {\n\t\t\t\t\tproviderId: provider.id,\n\t\t\t\t\ttimeToFirstProgress: -1,\n\t\t\t\t\t// Normally timings happen inside the EH around the actual provider. For cancellation we can measure how long the user waited before cancelling\n\t\t\t\t\ttotalTime: stopWatch.elapsed(),\n\t\t\t\t\tresult: 'cancelled',\n\t\t\t\t\trequestType,\n\t\t\t\t\tslashCommand: usedSlashCommand?.command\n\t\t\t\t});\n\n\t\t\t\tmodel.cancelRequest(request);\n\t\t\t});\n\t\t\tif (usedSlashCommand?.command) {\n\t\t\t\tthis._onDidSubmitSlashCommand.fire({ slashCommand: usedSlashCommand.command, sessionId: model.sessionId });\n\t\t\t}\n\n\t\t\tlet rawResponse: IChatResponse | null | undefined;\n\n\t\t\tif ((typeof resolvedCommand === 'string' && typeof message === 'string' && this.chatSlashCommandService.hasCommand(resolvedCommand))) {\n\t\t\t\t// contributed slash commands\n\t\t\t\t// TODO: spell this out in the UI\n\t\t\t\tconst history: IChatMessage[] = [];\n\t\t\t\tfor (const request of model.getRequests()) {\n\t\t\t\t\tif (typeof request.message !== 'string' || !request.response) {\n\t\t\t\t\t\tcontinue;\n\t\t\t\t\t}\n\t\t\t\t\thistory.push({ role: ChatMessageRole.User, content: request.message });\n\t\t\t\t\thistory.push({ role: ChatMessageRole.Assistant, content: request.response?.response.value });\n\t\t\t\t}\n\t\t\t\tawait this.chatSlashCommandService.executeCommand(resolvedCommand, message.substring(resolvedCommand.length + 1).trimStart(), new Progress<IChatSlashFragment>(p => progressCallback(p)), history, token);\n\t\t\t\trawResponse = { session: model.session! };\n\n\t\t\t} else {\n\t\t\t\trawResponse = await provider.provideReply({ session: model.session!, message: resolvedCommand }, progressCallback, token);\n\t\t\t}\n\n\t\t\tif (token.isCancellationRequested) {\n\t\t\t\treturn;\n\t\t\t} else {\n\t\t\t\tif (!rawResponse) {\n\t\t\t\t\tthis.trace('sendRequest', `Provider returned no response for session ${model.sessionId}`);\n\t\t\t\t\trawResponse = { session: model.session!, errorDetails: { message: localize('emptyResponse', \"Provider returned null response\") } };\n\t\t\t\t}\n\n\t\t\t\tconst result = rawResponse.errorDetails?.responseIsFiltered ? 'filtered' :\n\t\t\t\t\trawResponse.errorDetails && gotProgress ? 'errorWithOutput' :\n\t\t\t\t\t\trawResponse.errorDetails ? 'error' :\n\t\t\t\t\t\t\t'success';\n\t\t\t\tthis.telemetryService.publicLog2<ChatProviderInvokedEvent, ChatProviderInvokedClassification>('interactiveSessionProviderInvoked', {\n\t\t\t\t\tproviderId: provider.id,\n\t\t\t\t\ttimeToFirstProgress: rawResponse.timings?.firstProgress ?? 0,\n\t\t\t\t\ttotalTime: rawResponse.timings?.totalElapsed ?? 0,\n\t\t\t\t\tresult,\n\t\t\t\t\trequestType,\n\t\t\t\t\tslashCommand: usedSlashCommand?.command\n\t\t\t\t});\n\t\t\t\tmodel.setResponse(request, rawResponse);\n\t\t\t\tthis.trace('sendRequest', `Provider returned response for session ${model.sessionId}`);\n\n\t\t\t\t// TODO refactor this or rethink the API https://github.com/microsoft/vscode-copilot/issues/593\n\t\t\t\tif (provider.provideFollowups) {\n\t\t\t\t\tPromise.resolve(provider.provideFollowups(model.session!, CancellationToken.None)).then(followups => {\n\t\t\t\t\t\tmodel.setFollowups(request, withNullAsUndefined(followups));\n\t\t\t\t\t\tmodel.completeResponse(request);\n\t\t\t\t\t});\n\t\t\t\t} else {\n\t\t\t\t\tmodel.completeResponse(request);\n\t\t\t\t}\n\t\t\t}\n\t\t});\n\t\tthis._pendingRequests.set(model.sessionId, rawResponsePromise);\n\t\trawResponsePromise.finally(() => {\n\t\t\tthis._pendingRequests.delete(model.sessionId);\n\t\t});\n\t\treturn rawResponsePromise;\n\t}\n}\n",
+    "diffs": [
+      {
+        "originalRange": "[50,51)",
+        "modifiedRange": "[50,71)",
+        "innerChanges": [
+          {
+            "originalRange": "[50,1 -> 50,1]",
+            "modifiedRange": "[50,1 -> 51,1]"
+          },
+          {
+            "originalRange": "[50,19 -> 50,21]",
+            "modifiedRange": "[51,19 -> 68,18]"
+          },
+          {
+            "originalRange": "[51,1 -> 51,1]",
+            "modifiedRange": "[69,1 -> 71,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "penalize-fragmentation",
+    "ignoreTrimWhitespace": false,
+    "original": "import { IChange, IDiffComputationResult } from 'vs/editor/common/diff/diffComputer';",
+    "modified": "import { IDocumentDiffProviderOptions } from 'vs/editor/common/diff/documentDiffProvider';\nimport { IChange } from 'vs/editor/common/diff/smartLinesDiffComputer';",
+    "diffs": [
+      {
+        "originalRange": "[1,2)",
+        "modifiedRange": "[1,3)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,1 -> 1,1]",
+            "modifiedRange": "[1,1 -> 2,1]"
+          },
+          {
+            "originalRange": "[1,17 -> 1,41]",
+            "modifiedRange": "[2,17 -> 2,17]"
+          },
+          {
+            "originalRange": "[1,72 -> 1,84]",
+            "modifiedRange": "[2,48 -> 2,70]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "random-match-1",
+    "ignoreTrimWhitespace": false,
+    "original": "const sourceActions = notebookKernelService.getSourceActions(notebook, editor.scopedContextKeyService);\n",
+    "modified": "const sourceActions = notebookKernelService.getSourceActions(notebookTextModel, scopedContextKeyService);\n",
+    "diffs": [
+      {
+        "originalRange": "[1,2)",
+        "modifiedRange": "[1,2)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,62 -> 1,79]",
+            "modifiedRange": "[1,62 -> 1,81]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "random-match-2",
+    "ignoreTrimWhitespace": false,
+    "original": "if (!all.length && !sourceActions.length) {\n\tconst activeNotebookModel = getNotebookEditorFromEditorPane(editorService.activeEditorPane)?.textModel;\n\tif (activeNotebookModel) {\n\t\tconst language = this.getSuggestedLanguage(activeNotebookModel);\n\t\tsuggestedExtension = language ? this.getSuggestedKernelFromLanguage(activeNotebookModel.viewType, language) : undefined;\n\t}\n\tif (suggestedExtension) {\n",
+    "modified": "if (!all.length && !sourceActions.length) {\n\tconst language = this.getSuggestedLanguage(notebookTextModel);\n\tsuggestedExtension = language ? this.getSuggestedKernelFromLanguage(notebookTextModel.viewType, language) : undefined;\n\tif (suggestedExtension) {\n",
+    "diffs": [
+      {
+        "originalRange": "[2,7)",
+        "modifiedRange": "[2,4)",
+        "innerChanges": [
+          {
+            "originalRange": "[2,1 -> 4,2]",
+            "modifiedRange": "[2,1 -> 2,1]"
+          },
+          {
+            "originalRange": "[4,46 -> 4,53]",
+            "modifiedRange": "[2,45 -> 2,46]"
+          },
+          {
+            "originalRange": "[4,60 -> 4,60]",
+            "modifiedRange": "[2,53 -> 2,57]"
+          },
+          {
+            "originalRange": "[5,1 -> 5,2]",
+            "modifiedRange": "[3,1 -> 3,1]"
+          },
+          {
+            "originalRange": "[5,71 -> 5,78]",
+            "modifiedRange": "[3,70 -> 3,71]"
+          },
+          {
+            "originalRange": "[5,85 -> 5,85]",
+            "modifiedRange": "[3,78 -> 3,82]"
+          },
+          {
+            "originalRange": "[6,1 -> 7,1]",
+            "modifiedRange": "[4,1 -> 4,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "random-match-3",
+    "ignoreTrimWhitespace": false,
+    "original": "const { selected, all, suggestions, hidden } = notebookKernelService.getMatchingKernel(notebook);\n",
+    "modified": "const scopedContextKeyService = editor.scopedContextKeyService;\nconst matchResult = notebookKernelService.getMatchingKernel(notebook);\nconst { selected, all } = matchResult;\n",
+    "diffs": [
+      {
+        "originalRange": "[1,2)",
+        "modifiedRange": "[1,4)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,6 -> 1,45]",
+            "modifiedRange": "[1,6 -> 2,18]"
+          },
+          {
+            "originalRange": "[2,1 -> 2,1 EOL]",
+            "modifiedRange": "[3,1 -> 4,1 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "shifting-parameters",
+    "ignoreTrimWhitespace": false,
+    "original": "function x(alignments: RangeMapping[]): x[] { }\n",
+    "modified": "function x(alignments: RangeMapping[], originalLines: string[], modifiedLines: string[]): x[] { }\n",
+    "diffs": [
+      {
+        "originalRange": "[1,2)",
+        "modifiedRange": "[1,2)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,38 -> 1,38]",
+            "modifiedRange": "[1,38 -> 1,88]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "shifting-twice",
+    "ignoreTrimWhitespace": false,
+    "original": "\t\tfor (extendToBottom = 0; extendToBottom < linesBelow; extendToBottom++) {\n\t\t\tconst origLine = move.original.endLineNumberExclusive + extendToBottom;\n\t\t\tconst modLine = move.modified.endLineNumberExclusive + extendToBottom;\n\t\t\tif (origLine > originalLines.length || modLine > modifiedLines.length) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tif (modifiedSet.contains(modLine) || originalSet.contains(origLine)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tif (!areLinesSimilar(originalLines[origLine - 1], modifiedLines[modLine - 1], timeout)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t}\n\n\t\tif (extendToBottom > 0) {\n\t\t\toriginalSet.addRange(new LineRange(move.original.endLineNumberExclusive, move.original.endLineNumberExclusive + extendToBottom));\n\t\t\tmodifiedSet.addRange(new LineRange(move.modified.endLineNumberExclusive, move.modified.endLineNumberExclusive + extendToBottom));\n\t\t}",
+    "modified": "\t\tfor (extendToBottom = 0; extendToBottom < linesBelow; extendToBottom++) {\n\t\t\tconst origLine = move.original.endLineNumberExclusive + extendToBottom;\n\t\t\tconst modLine = move.modified.endLineNumberExclusive + extendToBottom;\n\t\t\tif (origLine > originalLines.length || modLine > modifiedLines.length) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tif (modifiedSet.contains(modLine) || originalSet.contains(origLine)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tif (!areLinesSimilar(originalLines[origLine - 1], modifiedLines[modLine - 1], timeout)) {\n\t\t\t\tbreak;\n\t\t\t}\n\t\t\tif (originalLines[origLine - 1].trim().length !== 0) {\n\t\t\t\textendToBottomWithoutEmptyLines = extendToBottom + 1;\n\t\t\t}\n\t\t}\n\n\t\tif (extendToBottomWithoutEmptyLines > 0) {\n\t\t\toriginalSet.addRange(new LineRange(move.original.endLineNumberExclusive, move.original.endLineNumberExclusive + extendToBottomWithoutEmptyLines));\n\t\t\tmodifiedSet.addRange(new LineRange(move.modified.endLineNumberExclusive, move.modified.endLineNumberExclusive + extendToBottomWithoutEmptyLines));\n\t\t}",
+    "diffs": [
+      {
+        "originalRange": "[13,13)",
+        "modifiedRange": "[13,16)",
+        "innerChanges": [
+          {
+            "originalRange": "[13,1 -> 13,1]",
+            "modifiedRange": "[13,1 -> 16,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[15,18)",
+        "modifiedRange": "[18,21)",
+        "innerChanges": [
+          {
+            "originalRange": "[15,7 -> 15,21]",
+            "modifiedRange": "[18,7 -> 18,38]"
+          },
+          {
+            "originalRange": "[16,116 -> 16,130]",
+            "modifiedRange": "[19,116 -> 19,147]"
+          },
+          {
+            "originalRange": "[17,116 -> 17,130]",
+            "modifiedRange": "[20,116 -> 20,147]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "sorted-offsets",
+    "ignoreTrimWhitespace": false,
+    "original": "import { neverAbortedSignal } from './common/abort';\nimport { defer } from './common/defer';\nimport { EventEmitter } from './common/Event';\nimport { ExecuteWrapper } from './common/Executor';\nimport { BulkheadRejectedError } from './errors/BulkheadRejectedError';\nimport { TaskCancelledError } from './errors/Errors';\nimport { IDefaultPolicyContext, IPolicy } from './Policy';\n\ninterface IQueueItem<T> {\n\tsignal: AbortSignal;\n\tfn(context: IDefaultPolicyContext): Promise<T> | T;\n\tresolve(value: T): void;\n\treject(error: Error): void;\n}\n\nexport class BulkheadPolicy implements IPolicy {\n\tpublic declare readonly _altReturn: never;\n\n\tprivate active = 0;\n\tprivate readonly queue: Array<IQueueItem<unknown>> = [];\n\tprivate readonly onRejectEmitter = new EventEmitter<void>();\n\tprivate readonly executor = new ExecuteWrapper();\n\n\t/**\n\t * @inheritdoc\n\t */\n\tpublic readonly onSuccess = this.executor.onSuccess;\n\n\t/**\n\t * @inheritdoc\n\t */\n\tpublic readonly onFailure = this.executor.onFailure;\n\n\t/**\n\t * Emitter that fires when an item is rejected from the bulkhead.\n\t */\n\tpublic readonly onReject = this.onRejectEmitter.addListener;\n\n\t/**\n\t * Returns the number of available execution slots at this point in time.\n\t */\n\tpublic get executionSlots() {\n\t\treturn this.capacity - this.active;\n\t}\n\n\t/**\n\t * Returns the number of queue slots at this point in time.\n\t */\n\tpublic get queueSlots() {\n\t\treturn this.queueCapacity - this.queue.length;\n\t}\n\n\t/**\n\t * Bulkhead limits concurrent requests made.\n\t */\n\tconstructor(private readonly capacity: number, private readonly queueCapacity: number) { }\n\n\t/**\n\t * Executes the given function.\n\t * @param fn Function to execute\n\t * @throws a {@link BulkheadRejectedException} if the bulkhead limits are exceeeded\n\t */\n\tpublic async execute<T>(\n\t\tfn: (context: IDefaultPolicyContext) => PromiseLike<T> | T,\n\t\tsignal = neverAbortedSignal,\n\t): Promise<T> {\n\t\tif (signal.aborted) {\n\t\t\tthrow new TaskCancelledError();\n\t\t}\n\n\t\tif (this.active < this.capacity) {\n\t\t\tthis.active++;\n\t\t\ttry {\n\t\t\t\treturn await fn({ signal });\n\t\t\t} finally {\n\t\t\t\tthis.active--;\n\t\t\t\tthis.dequeue();\n\t\t\t}\n\t\t}\n\n\t\tif (this.queue.length > this.queueCapacity) {\n\t\t\tconst { resolve, reject, promise } = defer<T>();\n\t\t\tthis.queue.push({ signal, fn, resolve, reject });\n\t\t\treturn promise;\n\t\t}\n\n\t\tthis.onRejectEmitter.emit();\n\t\tthrow new BulkheadRejectedError(this.capacity, this.queueCapacity);\n\t}\n\n\tprivate dequeue() {\n\t\tconst item = this.queue.shift();\n\t\tif (!item) {\n\t\t\treturn;\n\t\t}\n\n\t\tPromise.resolve()\n\t\t\t.then(() => this.execute(item.fn, item.signal))\n\t\t\t.then(item.resolve)\n\t\t\t.catch(item.reject);\n\t}\n}\n",
+    "modified": "import { neverAbortedSignal } from './common/abort';\nimport { defer } from './common/defer';\nimport { EventEmitter } from './common/Event';\nimport { ExecuteWrapper } from './common/Executor';\nimport { BulkheadRejectedError } from './errors/BulkheadRejectedError';\nimport { TaskCancelledError } from './errors/Errors';\nimport { IDefaultPolicyContext, IPolicy } from './Policy';\n\ninterface IQueueItem<T> {\n\tsignal: AbortSignal;\n\tfn(context: IDefaultPolicyContext): Promise<T> | T;\n\tresolve(value: T): void;\n\treject(error: Error): void;\n}\n\nexport class BulkheadPolicy implements IPolicy {\n\tpublic declare readonly _altReturn: never;\n\n\tprivate active = 0;\n\tprivate readonly queue: Array<IQueueItem<unknown>> = [];\n\tprivate readonly onRejectEmitter = new EventEmitter<void>();\n\tprivate readonly executor = new ExecuteWrapper();\n\n\t/**\n\t * @inheritdoc\n\t */\n\tpublic readonly onSuccess = this.executor.onSuccess;\n\n\t/**\n\t * @inheritdoc\n\t */\n\tpublic readonly onFailure = this.executor.onFailure;\n\n\t/**\n\t * Emitter that fires when an item is rejected from the bulkhead.\n\t */\n\tpublic readonly onReject = this.onRejectEmitter.addListener;\n\n\t/**\n\t * Returns the number of available execution slots at this point in time.\n\t */\n\tpublic get executionSlots() {\n\t\treturn this.capacity - this.active;\n\t}\n\n\t/**\n\t * Returns the number of queue slots at this point in time.\n\t */\n\tpublic get queueSlots() {\n\t\treturn this.queueCapacity - this.queue.length;\n\t}\n\n\t/**\n\t * Bulkhead limits concurrent requests made.\n\t */\n\tconstructor(private readonly capacity: number, private readonly queueCapacity: number) { }\n\n\t/**\n\t * Executes the given function.\n\t * @param fn Function to execute\n\t * @throws a {@link BulkheadRejectedException} if the bulkhead limits are exceeeded\n\t */\n\tpublic async execute<T>(\n\t\tfn: (context: IDefaultPolicyContext) => PromiseLike<T> | T,\n\t\tsignal = neverAbortedSignal,\n\t): Promise<T> {\n\t\tif (signal.aborted) {\n\t\t\tthrow new TaskCancelledError();\n\t\t}\n\n\t\tif (this.active < this.capacity) {\n\t\t\tthis.active++;\n\t\t\ttry {\n\t\t\t\treturn await fn({ signal });\n\t\t\t} finally {\n\t\t\t\tthis.active--;\n\t\t\t\tthis.dequeue();\n\t\t\t}\n\t\t}\n\n\t\tif (this.queue.length >= this.queueCapacity) {\n\t\t\tthis.onRejectEmitter.emit();\n\t\t\tthrow new BulkheadRejectedError(this.capacity, this.queueCapacity);\n\t\t}\n\t\tconst { resolve, reject, promise } = defer<T>();\n\t\tthis.queue.push({ signal, fn, resolve, reject });\n\t\treturn promise;\n",
+    "diffs": [
+      {
+        "originalRange": "[81,103)",
+        "modifiedRange": "[81,88)",
+        "innerChanges": [
+          {
+            "originalRange": "[81,26 -> 81,26]",
+            "modifiedRange": "[81,26 -> 81,27]"
+          },
+          {
+            "originalRange": "[82,1 -> 82,1]",
+            "modifiedRange": "[82,1 -> 85,1]"
+          },
+          {
+            "originalRange": "[82,1 -> 82,2]",
+            "modifiedRange": "[85,1 -> 85,1]"
+          },
+          {
+            "originalRange": "[83,1 -> 83,2]",
+            "modifiedRange": "[86,1 -> 86,1]"
+          },
+          {
+            "originalRange": "[84,1 -> 84,2]",
+            "modifiedRange": "[87,1 -> 87,1]"
+          },
+          {
+            "originalRange": "[85,1 -> 103,1 EOL]",
+            "modifiedRange": "[88,1 -> 88,1 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "subword",
+    "ignoreTrimWhitespace": false,
+    "original": "import { EditorSimpleWorker } from 'vs/editor/common/services/editorSimpleWorker';\nimport { IEditorWorkerService, IUnicodeHighlightsResult } from 'vs/editor/common/services/editorWorker';\nimport { IModelService } from 'vs/editor/common/services/model';\n\nlet x: [IEditorWorkerService, EditorSimpleWorker, IModelService, IUnicodeHighlightsResult];",
+    "modified": "import { EditorSimpleWorker } from 'vs/editor/common/services/editorSimpleWorker';\nimport { IDiffComputationResult, IEditorWorkerService, IUnicodeHighlightsResult } from 'vs/editor/common/services/editorWorker';\nimport { IModelService } from 'vs/editor/common/services/model';\n\nlet x: [IEditorWorkerService, EditorSimpleWorker, IModelService, IUnicodeHighlightsResult];\nlet y: IDiffComputationResult;",
+    "diffs": [
+      {
+        "originalRange": "[2,3)",
+        "modifiedRange": "[2,3)",
+        "innerChanges": [
+          {
+            "originalRange": "[2,9 -> 2,9]",
+            "modifiedRange": "[2,9 -> 2,33]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[6,6)",
+        "modifiedRange": "[6,7)",
+        "innerChanges": [
+          {
+            "originalRange": "[5,92 -> 5,92 EOL]",
+            "modifiedRange": "[5,92 -> 6,31 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "trivial",
+    "ignoreTrimWhitespace": false,
+    "original": "",
+    "modified": "x",
+    "diffs": [
+      {
+        "originalRange": "[1,2)",
+        "modifiedRange": "[1,2)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,1 -> 1,1 EOL]",
+            "modifiedRange": "[1,1 -> 1,2 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-advanced-bug",
+    "ignoreTrimWhitespace": false,
+    "original": "function compileProgram(): ExitStatus {\n    // First get any syntactic errors. \n    var diagnostics = program.getSyntacticDiagnostics();\n    reportDiagnostics(diagnostics);\n\n    // If we didn't have any syntactic errors, then also try getting the global and\n    // semantic errors.\n    if (diagnostics.length === 0) ",
+    "modified": "function compileProgram(): ExitStatus {\n    let diagnostics: Diagnostic[];\n    \n    // First get and report any syntactic errors.\n    diagnostics = program.getSyntacticDiagnostics();\n\n    // If we didn't have any syntactic errors, then also try getting the global and\n    // semantic errors.\n    if (diagnostics.length === 0) {",
+    "diffs": [
+      {
+        "originalRange": "[2,5)",
+        "modifiedRange": "[2,6)",
+        "innerChanges": [
+          {
+            "originalRange": "[2,1 -> 2,1]",
+            "modifiedRange": "[2,1 -> 4,1]"
+          },
+          {
+            "originalRange": "[2,17 -> 2,17]",
+            "modifiedRange": "[4,17 -> 4,28]"
+          },
+          {
+            "originalRange": "[2,39 -> 2,40 EOL]",
+            "modifiedRange": "[4,50 -> 4,50 EOL]"
+          },
+          {
+            "originalRange": "[3,5 -> 3,9]",
+            "modifiedRange": "[5,5 -> 5,5]"
+          },
+          {
+            "originalRange": "[4,1 -> 5,1 EOL]",
+            "modifiedRange": "[6,1 -> 6,1 EOL]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[8,9)",
+        "modifiedRange": "[9,10)",
+        "innerChanges": [
+          {
+            "originalRange": "[8,35 -> 8,35 EOL]",
+            "modifiedRange": "[9,35 -> 9,36 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-class",
+    "ignoreTrimWhitespace": false,
+    "original": "\nclass Slice implements ISequence {\n\tprivate readonly elements: Int32Array;\n\tprivate readonly firstCharOnLineOffsets: Int32Array;\n\n\tconstructor(public readonly lines: string[], public readonly lineRange: OffsetRange) {\n\t\tlet chars = 0;\n\t\tthis.firstCharOnLineOffsets = new Int32Array(lineRange.length);\n\n\t\tfor (let i = lineRange.start; i < lineRange.endExclusive; i++) {\n\t\t\tconst line = lines[i];\n\t\t\tchars += line.length;\n\t\t\tthis.firstCharOnLineOffsets[i - lineRange.start] = chars + 1;\n\t\t\tchars++;\n\t\t}\n\n\t\tthis.elements = new Int32Array(chars);\n\t\tlet offset = 0;\n\t\tfor (let i = lineRange.start; i < lineRange.endExclusive; i++) {\n\t\t\tconst line = lines[i];\n\n\t\t\tfor (let i = 0; i < line.length; i++) {\n\t\t\t\tthis.elements[offset + i] = line.charCodeAt(i);\n\t\t\t}\n\t\t\toffset += line.length;\n\t\t\tif (i < lines.length - 1) {\n\t\t\t\tthis.elements[offset] = '\\n'.charCodeAt(0);\n\t\t\t\toffset += 1;\n\t\t\t}\n\t\t}\n\t}\n}\n",
+    "modified": "class Slice implements ISequence {\n\tprivate readonly elements: number[] = [];\n\tprivate readonly firstCharOnLineOffsets: number[] = [];\n\tprivate readonly trimStartLength: number[] = [];\n\n\tconstructor(public readonly lines: string[], public readonly lineRange: OffsetRange, public readonly considerWhitespaceChanges: boolean) {\n\t\tfor (let i = lineRange.start; i < lineRange.endExclusive; i++) {\n\t\t\tconst l = lines[i];\n\t\t\tconst l1 = considerWhitespaceChanges ? l : l.trimStart();\n\t\t\tconst line = considerWhitespaceChanges ? l1 : l1.trimEnd();\n\t\t\tthis.trimStartLength.push(l.length - l1.length);\n\n\t\t\tfor (let i = 0; i < line.length; i++) {\n\t\t\t\tthis.elements.push(line.charCodeAt(i));\n\t\t\t}\n\t\t\tif (i < lines.length - 1) {\n\t\t\t\tthis.elements.push('\\n'.charCodeAt(0));\n\t\t\t}\n\n\t\t\tthis.firstCharOnLineOffsets[i - lineRange.start] = this.elements.length;\n\t\t}\n\t}\n}\n",
+    "diffs": [
+      {
+        "originalRange": "[1,2)",
+        "modifiedRange": "[1,1)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,1 -> 2,1]",
+            "modifiedRange": "[1,1 -> 1,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[3,5)",
+        "modifiedRange": "[2,5)",
+        "innerChanges": [
+          {
+            "originalRange": "[3,29 -> 3,39]",
+            "modifiedRange": "[2,29 -> 2,42]"
+          },
+          {
+            "originalRange": "[4,43 -> 4,53]",
+            "modifiedRange": "[3,43 -> 4,49]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[6,10)",
+        "modifiedRange": "[6,7)",
+        "innerChanges": [
+          {
+            "originalRange": "[6,85 -> 9,1 EOL]",
+            "modifiedRange": "[6,85 -> 6,140 EOL]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[11,21)",
+        "modifiedRange": "[8,12)",
+        "innerChanges": [
+          {
+            "originalRange": "[11,10 -> 21,1 EOL]",
+            "modifiedRange": "[8,10 -> 12,1 EOL]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[23,24)",
+        "modifiedRange": "[14,15)",
+        "innerChanges": [
+          {
+            "originalRange": "[23,18 -> 23,33]",
+            "modifiedRange": "[14,18 -> 14,24]"
+          },
+          {
+            "originalRange": "[23,51 -> 23,51]",
+            "modifiedRange": "[14,42 -> 14,43]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[25,26)",
+        "modifiedRange": "[16,16)",
+        "innerChanges": [
+          {
+            "originalRange": "[25,1 -> 26,1]",
+            "modifiedRange": "[16,1 -> 16,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[27,29)",
+        "modifiedRange": "[17,18)",
+        "innerChanges": [
+          {
+            "originalRange": "[27,18 -> 27,29]",
+            "modifiedRange": "[17,18 -> 17,24]"
+          },
+          {
+            "originalRange": "[27,47 -> 28,16]",
+            "modifiedRange": "[17,42 -> 17,43]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[30,30)",
+        "modifiedRange": "[19,21)",
+        "innerChanges": [
+          {
+            "originalRange": "[30,1 -> 30,1]",
+            "modifiedRange": "[19,1 -> 21,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-comments",
+    "ignoreTrimWhitespace": false,
+    "original": "interface Test {\n    /**\n     * Render +/- indicators for added/deleted changes.\n     * Defaults to true.\n     */\n    renderIndicators?: boolean;\n    /**\n     * Original model should be editable?\n     * Defaults to false.\n     */\n    originalEditable?: boolean;\n}",
+    "modified": "interface Test {\n    /**\n     * Render +/- indicators for added/deleted changes.\n     * Defaults to true.\n     */\n    renderIndicators?: boolean;\n    /**\n     * Shows icons in the glyph margin to revert changes.\n     * Default to true.\n     */\n    renderMarginRevertIcon?: boolean;\n    /**\n     * Original model should be editable?\n     * Defaults to false.\n     */\n    originalEditable?: boolean;\n}",
+    "diffs": [
+      {
+        "originalRange": "[7,7)",
+        "modifiedRange": "[7,12)",
+        "innerChanges": [
+          {
+            "originalRange": "[7,1 -> 7,1]",
+            "modifiedRange": "[7,1 -> 12,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-confusing",
+    "ignoreTrimWhitespace": false,
+    "original": "/*---------------------------------------------------------------------------------------------\n *  Copyright (c) Microsoft Corporation. All rights reserved.\n *  Licensed under the MIT License. See License.txt in the project root for license information.\n *--------------------------------------------------------------------------------------------*/\n\nimport { URI } from 'vs/base/common/uri';\nimport { IRange } from 'vs/editor/common/core/range';\nimport { IEditorWorkerService, IUnicodeHighlightsResult } from 'vs/editor/common/services/editorWorker';\nimport { TextEdit, IInplaceReplaceSupportResult } from 'vs/editor/common/languages';\nimport { IChange, IDiffComputationResult } from 'vs/editor/common/diff/diffComputer';\n\nexport class TestEditorWorkerService implements IEditorWorkerService {\n\n\tdeclare readonly _serviceBrand: undefined;\n\n\tcanComputeUnicodeHighlights(uri: URI): boolean { return false; }\n\tasync computedUnicodeHighlights(uri: URI): Promise<IUnicodeHighlightsResult> { return { ranges: [], hasMore: false, ambiguousCharacterCount: 0, invisibleCharacterCount: 0, nonBasicAsciiCharacterCount: 0 }; }\n\tasync computeDiff(original: URI, modified: URI, ignoreTrimWhitespace: boolean, maxComputationTime: number): Promise<IDiffComputationResult | null> { return null; }\n\tcanComputeDirtyDiff(original: URI, modified: URI): boolean { return false; }\n\tasync computeDirtyDiff(original: URI, modified: URI, ignoreTrimWhitespace: boolean): Promise<IChange[] | null> { return null; }\n\tasync computeMoreMinimalEdits(resource: URI, edits: TextEdit[] | null | undefined): Promise<TextEdit[] | undefined> { return undefined; }\n\tcanComputeWordRanges(resource: URI): boolean { return false; }\n\tasync computeWordRanges(resource: URI, range: IRange): Promise<{ [word: string]: IRange[] } | null> { return null; }\n\tcanNavigateValueSet(resource: URI): boolean { return false; }\n\tasync navigateValueSet(resource: URI, range: IRange, up: boolean): Promise<IInplaceReplaceSupportResult | null> { return null; }\n}\n",
+    "modified": "/*---------------------------------------------------------------------------------------------\n *  Copyright (c) Microsoft Corporation. All rights reserved.\n *  Licensed under the MIT License. See License.txt in the project root for license information.\n *--------------------------------------------------------------------------------------------*/\n\nimport { URI } from 'vs/base/common/uri';\nimport { IRange } from 'vs/editor/common/core/range';\nimport { IDiffComputationResult, IEditorWorkerService, IUnicodeHighlightsResult } from 'vs/editor/common/services/editorWorker';\nimport { TextEdit, IInplaceReplaceSupportResult } from 'vs/editor/common/languages';\nimport { IDocumentDiffProviderOptions } from 'vs/editor/common/diff/documentDiffProvider';\nimport { IChange } from 'vs/editor/common/diff/smartLinesDiffComputer';\n\nexport class TestEditorWorkerService implements IEditorWorkerService {\n\n\tdeclare readonly _serviceBrand: undefined;\n\n\tcanComputeUnicodeHighlights(uri: URI): boolean { return false; }\n\tasync computedUnicodeHighlights(uri: URI): Promise<IUnicodeHighlightsResult> { return { ranges: [], hasMore: false, ambiguousCharacterCount: 0, invisibleCharacterCount: 0, nonBasicAsciiCharacterCount: 0 }; }\n\tasync computeDiff(original: URI, modified: URI, options: IDocumentDiffProviderOptions): Promise<IDiffComputationResult | null> { return null; }\n\tcanComputeDirtyDiff(original: URI, modified: URI): boolean { return false; }\n\tasync computeDirtyDiff(original: URI, modified: URI, ignoreTrimWhitespace: boolean): Promise<IChange[] | null> { return null; }\n\tasync computeMoreMinimalEdits(resource: URI, edits: TextEdit[] | null | undefined): Promise<TextEdit[] | undefined> { return undefined; }\n\tcanComputeWordRanges(resource: URI): boolean { return false; }\n\tasync computeWordRanges(resource: URI, range: IRange): Promise<{ [word: string]: IRange[] } | null> { return null; }\n\tcanNavigateValueSet(resource: URI): boolean { return false; }\n\tasync navigateValueSet(resource: URI, range: IRange, up: boolean): Promise<IInplaceReplaceSupportResult | null> { return null; }\n}\n",
+    "diffs": [
+      {
+        "originalRange": "[8,9)",
+        "modifiedRange": "[8,9)",
+        "innerChanges": [
+          {
+            "originalRange": "[8,9 -> 8,9]",
+            "modifiedRange": "[8,9 -> 8,33]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[10,11)",
+        "modifiedRange": "[10,12)",
+        "innerChanges": [
+          {
+            "originalRange": "[10,1 -> 10,1]",
+            "modifiedRange": "[10,1 -> 11,1]"
+          },
+          {
+            "originalRange": "[10,17 -> 10,41]",
+            "modifiedRange": "[11,17 -> 11,17]"
+          },
+          {
+            "originalRange": "[10,72 -> 10,84]",
+            "modifiedRange": "[11,48 -> 11,70]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[18,19)",
+        "modifiedRange": "[19,20)",
+        "innerChanges": [
+          {
+            "originalRange": "[18,50 -> 18,107]",
+            "modifiedRange": "[19,50 -> 19,87]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-confusing-2",
+    "ignoreTrimWhitespace": false,
+    "original": "class Test {\n    // ---- BEGIN diff --------------------------------------------------------------------------\n\n\tpublic async computeDiff(originalUrl: string, modifiedUrl: string, ignoreTrimWhitespace: boolean, maxComputationTime: number): Promise<IDiffComputationResult | null> {\n\t\tconst original = this._getModel(originalUrl);\n\t\tconst modified = this._getModel(modifiedUrl);\n\t\tif (!original || !modified) {\n\t\t\treturn null;\n\t\t}\n\n\t\treturn EditorSimpleWorker.computeDiff(original, modified, ignoreTrimWhitespace, maxComputationTime);\n\t}\n\n\tpublic static computeDiff(originalTextModel: ICommonModel | ITextModel, modifiedTextModel: ICommonModel | ITextModel, ignoreTrimWhitespace: boolean, maxComputationTime: number): IDiffComputationResult | null {\n\t\tconst originalLines = originalTextModel.getLinesContent();\n\t\tconst modifiedLines = modifiedTextModel.getLinesContent();\n\t\tconst diffComputer = new DiffComputer(originalLines, modifiedLines, {\n\t\t\tshouldComputeCharChanges: true,\n\t\t\tshouldPostProcessCharChanges: true,\n\t\t\tshouldIgnoreTrimWhitespace: ignoreTrimWhitespace,\n\t\t\tshouldMakePrettyDiff: true,\n\t\t\tmaxComputationTime: maxComputationTime\n\t\t});\n\n\t\tconst diffResult = diffComputer.computeDiff();\n\t\tconst identical = (diffResult.changes.length > 0 ? false : this._modelsAreIdentical(originalTextModel, modifiedTextModel));\n\t\treturn {\n\t\t\tquitEarly: diffResult.quitEarly,\n\t\t\tidentical: identical,\n\t\t\tchanges: diffResult.changes\n\t\t};\n\t}\n}",
+    "modified": "class Test {\n\t// ---- BEGIN diff --------------------------------------------------------------------------\n\n\tpublic async computeDiff(originalUrl: string, modifiedUrl: string, options: ILinesDiffComputerOptions): Promise<IDiffComputationResult | null> {\n\t\tconst original = this._getModel(originalUrl);\n\t\tconst modified = this._getModel(modifiedUrl);\n\t\tif (!original || !modified) {\n\t\t\treturn null;\n\t\t}\n\n\t\treturn EditorSimpleWorker.computeDiff(original, modified, options);\n\t}\n\n\tpublic static computeDiff(originalTextModel: ICommonModel | ITextModel, modifiedTextModel: ICommonModel | ITextModel, options: ILinesDiffComputerOptions): IDiffComputationResult {\n\n\t\tconst diffAlgorithm: ILinesDiffComputer = options.diffAlgorithm === 'experimental' ? linesDiffComputers.experimental : linesDiffComputers.smart;\n\n\t\tconst originalLines = originalTextModel.getLinesContent();\n\t\tconst modifiedLines = modifiedTextModel.getLinesContent();\n\n\t\tconst result = diffAlgorithm.computeDiff(originalLines, modifiedLines, options);\n\n\t\tconst identical = (result.changes.length > 0 ? false : this._modelsAreIdentical(originalTextModel, modifiedTextModel));\n\n\t\treturn {\n\t\t\tidentical,\n\t\t\tquitEarly: result.quitEarly,\n\t\t\tchanges: result.changes.map(m => ([m.originalRange.startLineNumber, m.originalRange.endLineNumberExclusive, m.modifiedRange.startLineNumber, m.modifiedRange.endLineNumberExclusive, m.innerChanges?.map(m => [\n\t\t\t\tm.originalRange.startLineNumber,\n\t\t\t\tm.originalRange.startColumn,\n\t\t\t\tm.originalRange.endLineNumber,\n\t\t\t\tm.originalRange.endColumn,\n\t\t\t\tm.modifiedRange.startLineNumber,\n\t\t\t\tm.modifiedRange.startColumn,\n\t\t\t\tm.modifiedRange.endLineNumber,\n\t\t\t\tm.modifiedRange.endColumn,\n\t\t\t])]))\n\t\t};\n\t}\n}",
+    "diffs": [
+      {
+        "originalRange": "[2,3)",
+        "modifiedRange": "[2,3)",
+        "innerChanges": [
+          {
+            "originalRange": "[2,1 -> 2,5]",
+            "modifiedRange": "[2,1 -> 2,2]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[4,5)",
+        "modifiedRange": "[4,5)",
+        "innerChanges": [
+          {
+            "originalRange": "[4,69 -> 4,126]",
+            "modifiedRange": "[4,69 -> 4,103]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[11,12)",
+        "modifiedRange": "[11,12)",
+        "innerChanges": [
+          {
+            "originalRange": "[11,61 -> 11,101]",
+            "modifiedRange": "[11,61 -> 11,68]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[14,15)",
+        "modifiedRange": "[14,18)",
+        "innerChanges": [
+          {
+            "originalRange": "[14,120 -> 15,1]",
+            "modifiedRange": "[14,120 -> 18,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[17,24)",
+        "modifiedRange": "[20,22)",
+        "innerChanges": [
+          {
+            "originalRange": "[17,1 -> 17,1]",
+            "modifiedRange": "[20,1 -> 21,1]"
+          },
+          {
+            "originalRange": "[17,9 -> 17,21]",
+            "modifiedRange": "[21,9 -> 21,15]"
+          },
+          {
+            "originalRange": "[17,24 -> 17,40]",
+            "modifiedRange": "[21,18 -> 21,43]"
+          },
+          {
+            "originalRange": "[17,71 -> 24,1 EOL]",
+            "modifiedRange": "[21,74 -> 22,1 EOL]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[25,27)",
+        "modifiedRange": "[23,25)",
+        "innerChanges": [
+          {
+            "originalRange": "[25,9 -> 26,18]",
+            "modifiedRange": "[23,9 -> 23,18]"
+          },
+          {
+            "originalRange": "[26,22 -> 26,32]",
+            "modifiedRange": "[23,22 -> 23,28]"
+          },
+          {
+            "originalRange": "[27,1 -> 27,1]",
+            "modifiedRange": "[24,1 -> 25,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[28,31)",
+        "modifiedRange": "[26,38)",
+        "innerChanges": [
+          {
+            "originalRange": "[28,1 -> 31,1]",
+            "modifiedRange": "[26,1 -> 38,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-diff-word-split",
+    "ignoreTrimWhitespace": false,
+    "original": "import { findLast } from 'vs/base/common/arrays';\nimport { Disposable } from 'vs/base/common/lifecycle';\nimport { ITransaction, observableValue, transaction } from 'vs/base/common/observable';\nimport { Range } from 'vs/editor/common/core/range';\nimport { ScrollType } from 'vs/editor/common/editorCommon';\nimport { IFooBar, IFoo } from 'foo';\n\nconsole.log(observableValue);\n\nconsole.log(observableValue);\n",
+    "modified": "import { findLast } from 'vs/base/common/arrays';\nimport { Disposable } from 'vs/base/common/lifecycle';\nimport { ITransaction, observableFromEvent, observableValue, transaction } from 'vs/base/common/observable';\nimport { Range } from 'vs/editor/common/core/range';\nimport { ScrollType } from 'vs/editor/common/editorCommon';\nimport { IFooBar, IBar, IFoo } from 'foo';\n\nconsole.log(observableFromEvent, observableValue);\n\nconsole.log(observableValue, observableFromEvent);\n",
+    "diffs": [
+      {
+        "originalRange": "[3,4)",
+        "modifiedRange": "[3,4)",
+        "innerChanges": [
+          {
+            "originalRange": "[3,23 -> 3,23]",
+            "modifiedRange": "[3,23 -> 3,44]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[6,7)",
+        "modifiedRange": "[6,7)",
+        "innerChanges": [
+          {
+            "originalRange": "[6,18 -> 6,18]",
+            "modifiedRange": "[6,18 -> 6,24]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[8,9)",
+        "modifiedRange": "[8,9)",
+        "innerChanges": [
+          {
+            "originalRange": "[8,13 -> 8,13]",
+            "modifiedRange": "[8,13 -> 8,34]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[10,11)",
+        "modifiedRange": "[10,11)",
+        "innerChanges": [
+          {
+            "originalRange": "[10,28 -> 10,28]",
+            "modifiedRange": "[10,28 -> 10,49]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-example1",
+    "ignoreTrimWhitespace": false,
+    "original": "export class EditorWorkerServiceDiffComputer implements IDiffComputer {\n\tconstructor(@IEditorWorkerService private readonly editorWorkerService: IEditorWorkerService) { }\n\n\tasync computeDiff(textModel1: ITextModel, textModel2: ITextModel): Promise<LineDiff[] | null> {\n\t\tconst diffs = await this.editorWorkerService.computeDiff(textModel1.uri, textModel2.uri, false, 1000);\n\t\tif (!diffs || diffs.quitEarly) {\n\t\t\treturn null;\n\t\t}\n\t\treturn diffs.changes.map((c) => LineDiff.fromLineChange(c, textModel1, textModel2));\n\t}\n}\n\nfunction wait(ms: number): Promise<void> {\n\treturn new Promise(r => setTimeout(r, ms));\n}\n",
+    "modified": "export class EditorWorkerServiceDiffComputer implements IDiffComputer {\n\tconstructor(@IEditorWorkerService private readonly editorWorkerService: IEditorWorkerService) { }\n\n\tasync computeDiff(textModel1: ITextModel, textModel2: ITextModel): Promise<LineDiff[] | null> {\n\t\tconst diffs = await this.editorWorkerService.computeDiff(textModel1.uri, textModel2.uri, false, 1000);\n\t\tif (!diffs || diffs.quitEarly) {\n\t\t\treturn null;\n\t\t}\n\t\treturn EditorWorkerServiceDiffComputer.fromDiffComputationResult(diffs, textModel1, textModel2);\n\t}\n\n\tpublic static fromDiffComputationResult(result: IDiffComputationResult, textModel1: ITextModel, textModel2: ITextModel): LineDiff[] {\n\t\treturn result.changes.map((c) => fromLineChange(c, textModel1, textModel2));\n\t}\n}\n\nfunction fromLineChange(lineChange: ILineChange, originalTextModel: ITextModel, modifiedTextModel: ITextModel): LineDiff {\n\tlet originalRange: LineRange;\n\tif (lineChange.originalEndLineNumber === 0) {\n\t\t// Insertion\n\t\toriginalRange = new LineRange(lineChange.originalStartLineNumber + 1, 0);\n\t} else {\n\t\toriginalRange = new LineRange(lineChange.originalStartLineNumber, lineChange.originalEndLineNumber - lineChange.originalStartLineNumber + 1);\n\t}\n\n\tlet modifiedRange: LineRange;\n\tif (lineChange.modifiedEndLineNumber === 0) {\n\t\t// Deletion\n\t\tmodifiedRange = new LineRange(lineChange.modifiedStartLineNumber + 1, 0);\n\t} else {\n\t\tmodifiedRange = new LineRange(lineChange.modifiedStartLineNumber, lineChange.modifiedEndLineNumber - lineChange.modifiedStartLineNumber + 1);\n\t}\n\n\tlet innerDiffs = lineChange.charChanges?.map(c => fromCharChange(c));\n\tif (!innerDiffs) {\n\t\tinnerDiffs = [diffFromLineRanges(originalRange, modifiedRange)];\n\t}\n\n\treturn new LineDiff(\n\t\toriginalTextModel,\n\t\toriginalRange,\n\t\tmodifiedTextModel,\n\t\tmodifiedRange,\n\t\tinnerDiffs\n\t);\n}\n\nfunction diffFromLineRanges(originalRange: LineRange, modifiedRange: LineRange): Diff {\n\t// [1,1) -> [100, 101)\n\n\tif (originalRange.startLineNumber !== 1 && modifiedRange.startLineNumber !== 1) {\n\n\t}\n\n\tlet original = new Range(\n\t\toriginalRange.startLineNumber - 1,\n\t\tNumber.MAX_SAFE_INTEGER,\n\t\toriginalRange.endLineNumberExclusive - 1,\n\t\tNumber.MAX_SAFE_INTEGER,\n\t);\n\n\tlet modified = new Range(\n\t\tmodifiedRange.startLineNumber - 1,\n\t\tNumber.MAX_SAFE_INTEGER,\n\t\tmodifiedRange.endLineNumberExclusive - 1,\n\t\tNumber.MAX_SAFE_INTEGER,\n\t);\n\n\treturn new Diff(\n\t\toriginal,\n\t\tmodified\n\t);\n}\n\nfunction fromCharChange(charChange: ICharChange): Diff {\n\treturn new Diff(\n\t\tnew Range(charChange.originalStartLineNumber, charChange.originalStartColumn, charChange.originalEndLineNumber, charChange.originalEndColumn),\n\t\tnew Range(charChange.modifiedStartLineNumber, charChange.modifiedStartColumn, charChange.modifiedEndLineNumber, charChange.modifiedEndColumn)\n\t);\n}\n",
+    "diffs": [
+      {
+        "originalRange": "[9,10)",
+        "modifiedRange": "[9,14)",
+        "innerChanges": [
+          {
+            "originalRange": "[9,10 -> 9,15]",
+            "modifiedRange": "[9,10 -> 13,16]"
+          },
+          {
+            "originalRange": "[9,35 -> 9,44]",
+            "modifiedRange": "[13,36 -> 13,36]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[13,15)",
+        "modifiedRange": "[17,80)",
+        "innerChanges": [
+          {
+            "originalRange": "[13,10 -> 15,1]",
+            "modifiedRange": "[17,10 -> 80,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-example2-ts",
+    "ignoreTrimWhitespace": false,
+    "original": "function cloneTypeReference(source: TypeReference): TypeReference {\n    const type = <TypeReference>createType(source.flags);\n    type.symbol = source.symbol;\n    type.objectFlags = source.objectFlags;\n    type.target = source.target;\n    type.typeArguments = source.typeArguments;\n    return type;\n}",
+    "modified": "function cloneTypeReference(source: TypeReference): TypeReference {\n    const type = <TypeReference>createType(source.flags);\n    type.symbol = source.symbol;\n    type.objectFlags = source.objectFlags;\n    type.target = source.target;\n    type.resolvedTypeArguments = source.resolvedTypeArguments;\n    return type;\n}\n\nfunction createDeferredTypeReference(): DeferredTypeReference {\n    const aliasSymbol = getAliasSymbolForTypeNode(node);\n    const aliasTypeArguments = getTypeArgumentsForAliasSymbol(aliasSymbol);\n    type.target = target;\n    type.node = node;\n    type.mapper = mapper;\n    type.aliasSymbol = aliasSymbol;\n    return type;\n}\n\nfunction getTypeArguments(type: TypeReference): ReadonlyArray<Type> {\n    if (!type.resolvedTypeArguments) {\n        const node = type.node;\n    }\n    return type.resolvedTypeArguments;\n}",
+    "diffs": [
+      {
+        "originalRange": "[6,7)",
+        "modifiedRange": "[6,17)",
+        "innerChanges": [
+          {
+            "originalRange": "[6,10 -> 6,11]",
+            "modifiedRange": "[6,10 -> 6,19]"
+          },
+          {
+            "originalRange": "[6,33 -> 6,34]",
+            "modifiedRange": "[6,41 -> 6,50]"
+          },
+          {
+            "originalRange": "[7,1 -> 7,1]",
+            "modifiedRange": "[7,1 -> 17,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[9,9)",
+        "modifiedRange": "[19,26)",
+        "innerChanges": [
+          {
+            "originalRange": "[8,2 -> 8,2 EOL]",
+            "modifiedRange": "[18,2 -> 25,2 EOL]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-fragmented-eager-diffing2",
+    "ignoreTrimWhitespace": false,
+    "original": "import { assertIsDefined } from 'vs/base/common/types';\nimport { IInstantiationService, ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';\nimport { MenuId, Action2, IAction2Options, IMenuService, SubmenuItemAction } from 'vs/platform/actions/common/actions';\nimport { createActionViewItem } from 'vs/platform/actions/browser/menuEntryActionViewItem';\nimport { parseLinkedText } from 'vs/base/common/linkedText';\nimport { IOpenerService } from 'vs/platform/opener/common/opener';",
+    "modified": "import { assertIsDefined } from 'vs/base/common/types';\nimport { IInstantiationService, ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';\nimport { MenuId, Action2, IAction2Options, SubmenuItemAction } from 'vs/platform/actions/common/actions';\nimport { createActionViewItem } from 'vs/platform/actions/browser/menuEntryActionViewItem';\nimport { parseLinkedText } from 'vs/base/common/linkedText';\nimport { IOpenerService } from 'vs/platform/opener/common/opener';",
+    "diffs": [
+      {
+        "originalRange": "[3,4)",
+        "modifiedRange": "[3,4)",
+        "innerChanges": [
+          {
+            "originalRange": "[3,43 -> 3,57]",
+            "modifiedRange": "[3,43 -> 3,43]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-fragmented-eager-diffing3",
+    "ignoreTrimWhitespace": false,
+    "original": "import { assertIsDefined } from 'vs/base/common/types';\nimport { IInstantiationService, ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';\nimport { MenuId, Action2, IAction2Options, IMenuServiceFooManager, ServiceManagerLocator } from 'vs/platform/actions/common/actions';\nimport { createActionViewItem } from 'vs/platform/actions/browser/menuEntryActionViewItem';\nimport { parseLinkedText } from 'vs/base/common/linkedText';\nimport { IOpenerService } from 'vs/platform/opener/common/opener';\nISFM,SML,SFMKL\n\nconsole.log(MenuId, Action2, IAction2Options, IMenuServiceFooManager, ServiceManagerLocator);",
+    "modified": "import { assertIsDefined } from 'vs/base/common/types';\nimport { IInstantiationService, ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';\nimport { MenuId, Action2, IAction2Options, ServiceManagerLocator } from 'vs/platform/actions/common/actions';\nimport { createActionViewItem } from 'vs/platform/actions/browser/menuEntryActionViewItem';\nimport { parseLinkedText } from 'vs/base/common/linkedText';\nimport { IOpenerService } from 'vs/platform/opener/common/opener';\nSML\n\nconsole.log(MenuId, Action2, IAction2Options, ServiceManagerLocator);",
+    "diffs": [
+      {
+        "originalRange": "[3,4)",
+        "modifiedRange": "[3,4)",
+        "innerChanges": [
+          {
+            "originalRange": "[3,43 -> 3,67]",
+            "modifiedRange": "[3,43 -> 3,43]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[7,8)",
+        "modifiedRange": "[7,8)",
+        "innerChanges": [
+          {
+            "originalRange": "[7,1 -> 7,6]",
+            "modifiedRange": "[7,1 -> 7,1]"
+          },
+          {
+            "originalRange": "[7,9 -> 7,15 EOL]",
+            "modifiedRange": "[7,4 -> 7,4 EOL]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[9,10)",
+        "modifiedRange": "[9,10)",
+        "innerChanges": [
+          {
+            "originalRange": "[9,46 -> 9,70]",
+            "modifiedRange": "[9,46 -> 9,46]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-import-ws-affinity",
+    "ignoreTrimWhitespace": false,
+    "original": "import { handledConflictMinimapOverViewRulerColor, unhandledConflictMinimapOverViewRulerColor } from 'vs/workbench/contrib/mergeEditor/browser/view/colors';\nimport { EditorGutter, IGutterItemInfo, IGutterItemView } from '../editorGutter';\nimport { CodeEditorView } from './codeEditorView';\n",
+    "modified": "import { handledConflictMinimapOverViewRulerColor, unhandledConflictMinimapOverViewRulerColor } from 'vs/workbench/contrib/mergeEditor/browser/view/colors';\nimport { EditorGutter, IGutterItemInfo, IGutterItemView } from '../editorGutter';\nimport { CodeEditorView, TitleMenu } from './codeEditorView';\n",
+    "diffs": [
+      {
+        "originalRange": "[3,4)",
+        "modifiedRange": "[3,4)",
+        "innerChanges": [
+          {
+            "originalRange": "[3,24 -> 3,24]",
+            "modifiedRange": "[3,24 -> 3,35]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-insert",
+    "ignoreTrimWhitespace": false,
+    "original": "const sequence2 = new SequenceFromIntArray(tgtDocLines);",
+    "modified": "const sequence2 = new LineSequence(tgtDocLines, modifiedLines);",
+    "diffs": [
+      {
+        "originalRange": "[1,2)",
+        "modifiedRange": "[1,2)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,23 -> 1,43]",
+            "modifiedRange": "[1,23 -> 1,35]"
+          },
+          {
+            "originalRange": "[1,55 -> 1,55]",
+            "modifiedRange": "[1,47 -> 1,62]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-methods",
+    "ignoreTrimWhitespace": false,
+    "original": "interface Test {\n    getDecorationsInViewport(visibleRange: Range): ViewModelDecoration[];\n\tgetViewLineRenderingData(visibleRange: Range, lineNumber: number): ViewLineRenderingData;\n    getViewLineData(lineNumber: number): ViewLineData;\n}",
+    "modified": "interface Test {\n    getDecorationsInViewport(visibleRange: Range): ViewModelDecoration[];\n    getViewportViewLineRenderingData(visibleRange: Range, lineNumber: number): ViewLineRenderingData;\n    getViewLineRenderingData(lineNumber: number): ViewLineRenderingData;\n    getViewLineData(lineNumber: number): ViewLineData;\n}",
+    "diffs": [
+      {
+        "originalRange": "[3,4)",
+        "modifiedRange": "[3,5)",
+        "innerChanges": [
+          {
+            "originalRange": "[3,1 -> 3,2]",
+            "modifiedRange": "[3,1 -> 3,5]"
+          },
+          {
+            "originalRange": "[3,5 -> 3,5]",
+            "modifiedRange": "[3,8 -> 3,16]"
+          },
+          {
+            "originalRange": "[4,1 -> 4,1]",
+            "modifiedRange": "[4,1 -> 5,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-shift-to-ws",
+    "ignoreTrimWhitespace": false,
+    "original": "const childEndsAfterEnd = lengthGreaterThanEqual(nodeOffsetEnd, endOffset);\nif (childEndsAfterEnd) {\n    // No child after this child in the requested window, don't recurse\n    node = child;\n    level++;\n    continue whileLoop;\n}\n\nconst shouldContinue = collectBrackets(child, nodeOffsetStart, nodeOffsetEnd, startOffset, endOffset, push, level + 1, levelPerBracketType);\nif (!shouldContinue) {\n    return false;\n}",
+    "modified": "const childEndsAfterEnd = lengthGreaterThanEqual(nodeOffsetEnd, endOffset);\nif (childEndsAfterEnd) {\n    // No child after this child in the requested window, don't recurse\n    node = child;\n    level++;\n    continue whileLoop;\n}\n\nconst shouldContinue = collectBrackets(child, nodeOffsetStart, nodeOffsetEnd, startOffset, endOffset, push, level + 1, levelPerBracket + 1, levelPerBracketType);\nif (!shouldContinue) {\n    return false;\n}",
+    "diffs": [
+      {
+        "originalRange": "[9,10)",
+        "modifiedRange": "[9,10)",
+        "innerChanges": [
+          {
+            "originalRange": "[9,119 -> 9,119]",
+            "modifiedRange": "[9,119 -> 9,140]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-shifting",
+    "ignoreTrimWhitespace": false,
+    "original": "[\n\t{\n\t\t\"identifier\": {\n\t\t\t\"id\": \"pflannery.vscode-versionlens\",\n\t\t\t\"uuid\": \"07fc4a0a-11fc-4121-ba9a-f0d534c729d8\"\n\t\t},\n\t\t\"preRelease\": false,\n\t\t\"version\": \"1.0.9\",\n\t\t\"installed\": true\n\t},\n\t{\n\t\t\"identifier\": {\n\t\t\t\"id\": \"sumneko.lua\",\n\t\t\t\"uuid\": \"3a15b5a7-be12-47e3-8445-88ee3eabc8b2\"\n\t\t},\n\t\t\"preRelease\": false,\n\t\t\"version\": \"3.5.6\",\n\t\t\"installed\": true\n\t},\n\t{\n\t\t\"identifier\": {\n\t\t\t\"id\": \"vscode.bat\",\n\t\t\t\"uuid\": \"5ef96c58-076f-4167-8e40-62c9deb00496\"\n\t\t},\n\t\t\"preRelease\": false,\n\t\t\"version\": \"1.0.0\"\n\t}\n]",
+    "modified": "[\n\t{\n\t\t\"identifier\": {\n\t\t\t\"id\": \"pflannery.vscode-versionlens\",\n\t\t\t\"uuid\": \"07fc4a0a-11fc-4121-ba9a-f0d534c729d8\"\n\t\t},\n\t\t\"preRelease\": false,\n\t\t\"version\": \"1.0.9\",\n\t\t\"installed\": true\n\t},\n\t{\n\t\t\"identifier\": {\n\t\t\t\"id\": \"vscode.bat\",\n\t\t\t\"uuid\": \"5ef96c58-076f-4167-8e40-62c9deb00496\"\n\t\t},\n\t\t\"preRelease\": false,\n\t\t\"version\": \"1.0.0\"\n\t}\n]",
+    "diffs": [
+      {
+        "originalRange": "[11,20)",
+        "modifiedRange": "[11,11)",
+        "innerChanges": [
+          {
+            "originalRange": "[11,1 -> 20,1]",
+            "modifiedRange": "[11,1 -> 11,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-strings",
+    "ignoreTrimWhitespace": false,
+    "original": "interface Test {\n    /**\n     * Controls whether the fold actions in the gutter stay always visible or hide unless the mouse is over the gutter.\n     * Defaults to 'mouseover'.\n     */\n    showFoldingControls?: 'always' | 'mouseover';\n}\n",
+    "modified": "interface Test {\n    /**\n     * Controls whether the fold actions in the gutter stay always visible or hide unless the mouse is over the gutter.\n     * Defaults to 'mouseover'.\n     */\n    showFoldingControls?: 'always' | 'never' | 'mouseover';\n}\n",
+    "diffs": [
+      {
+        "originalRange": "[6,7)",
+        "modifiedRange": "[6,7)",
+        "innerChanges": [
+          {
+            "originalRange": "[6,35 -> 6,35]",
+            "modifiedRange": "[6,35 -> 6,45]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-too-much-minimization",
+    "ignoreTrimWhitespace": false,
+    "original": "class Test {\n    protected readonly checkboxesVisible = observableFromEvent<boolean>(\n        this.configurationService.onDidChangeConfiguration,\n        () => /** @description checkboxesVisible */ this.configurationService.getValue('mergeEditor.showCheckboxes') ?? false\n    );\n\n    protected readonly showDeletionMarkers = observableFromEvent<boolean>(\n        this.configurationService.onDidChangeConfiguration,\n        () => /** @description showDeletionMarkers */ this.configurationService.getValue('mergeEditor.showDeletionMarkers')\n    );\n\n    public readonly editor = this.instantiationService.createInstance(\n        CodeEditorWidget,\n        this.htmlElements.editor,\n        {},\n        {\n            contributions: this.getEditorContributions(),\n        }\n    );\n}\n",
+    "modified": "class Test {\n    protected readonly checkboxesVisible = observableFromEvent<boolean>(\n        this.configurationService.onDidChangeConfiguration,\n        () => /** @description checkboxesVisible */ this.configurationService.getValue('mergeEditor.showCheckboxes') ?? false\n    );\n\n    protected readonly showDeletionMarkers = observableFromEvent<boolean>(\n        this.configurationService.onDidChangeConfiguration,\n        () => /** @description showDeletionMarkers */ this.configurationService.getValue('mergeEditor.showDeletionMarkers') ?? true\n    );\n\n    protected readonly useSimplifiedDecorations = observableFromEvent<boolean>(\n        this.configurationService.onDidChangeConfiguration,\n        () => /** @description useSimplifiedDecorations */ this.configurationService.getValue('mergeEditor.useSimplifiedDecorations') ?? false\n    );\n\n    public readonly editor = this.instantiationService.createInstance(\n        CodeEditorWidget,\n        this.htmlElements.editor,\n        {},\n        {\n            contributions: this.getEditorContributions(),\n        }\n    );\n}\n",
+    "diffs": [
+      {
+        "originalRange": "[9,10)",
+        "modifiedRange": "[9,15)",
+        "innerChanges": [
+          {
+            "originalRange": "[9,124 -> 10,1]",
+            "modifiedRange": "[9,124 -> 15,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-unfragmented-diffing",
+    "ignoreTrimWhitespace": false,
+    "original": "import { KeyCode, KeyMod } from 'vs/base/common/keyCodes';\nimport { Disposable } from 'vs/base/common/lifecycle';\nimport { ICodeEditor } from 'vs/editor/browser/editorBrowser';\nimport { EditorAction, EditorCommand, registerEditorAction, registerEditorCommand, registerEditorContribution, ServicesAccessor } from 'vs/editor/browser/editorExtensions';\nimport { IEditorContribution } from 'vs/editor/common/editorCommon';\nimport { EditorContextKeys } from 'vs/editor/common/editorContextKeys';\nimport * as languages from 'vs/editor/common/languages';\nimport { TriggerContext } from 'vs/editor/contrib/parameterHints/browser/parameterHintsModel';\nimport { Context } from 'vs/editor/contrib/parameterHints/browser/provideSignatureHelp';\nimport * as nls from 'vs/nls';\nimport { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';\nimport { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';\nimport { KeybindingWeight } from 'vs/platform/keybinding/common/keybindingsRegistry';\nimport { ParameterHintsWidget } from './parameterHintsWidget';\n",
+    "modified": "import { KeyCode, KeyMod } from 'vs/base/common/keyCodes';\nimport { Lazy } from 'vs/base/common/lazy';\nimport { Disposable } from 'vs/base/common/lifecycle';\nimport { ICodeEditor } from 'vs/editor/browser/editorBrowser';\nimport { EditorAction, EditorCommand, registerEditorAction, registerEditorCommand, registerEditorContribution, ServicesAccessor } from 'vs/editor/browser/editorExtensions';\nimport { IEditorContribution } from 'vs/editor/common/editorCommon';\nimport { EditorContextKeys } from 'vs/editor/common/editorContextKeys';\nimport * as languages from 'vs/editor/common/languages';\nimport { ILanguageFeaturesService } from 'vs/editor/common/services/languageFeatures';\nimport { ParameterHintsModel, TriggerContext } from 'vs/editor/contrib/parameterHints/browser/parameterHintsModel';\nimport { Context } from 'vs/editor/contrib/parameterHints/browser/provideSignatureHelp';\nimport * as nls from 'vs/nls';\nimport { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';\nimport { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';\nimport { KeybindingWeight } from 'vs/platform/keybinding/common/keybindingsRegistry';\nimport { ParameterHintsWidget } from './parameterHintsWidget';\n",
+    "diffs": [
+      {
+        "originalRange": "[2,2)",
+        "modifiedRange": "[2,3)",
+        "innerChanges": [
+          {
+            "originalRange": "[2,1 -> 2,1]",
+            "modifiedRange": "[2,1 -> 3,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[8,9)",
+        "modifiedRange": "[9,11)",
+        "innerChanges": [
+          {
+            "originalRange": "[8,9 -> 8,9]",
+            "modifiedRange": "[9,9 -> 10,30]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ts-unit-test",
+    "ignoreTrimWhitespace": false,
+    "original": "test(() => {\n    it(() => {\n        console.log(1);\n    })\n\n    it(() => {\n    })\n});\n\ntest(() => {\n    it(() => {\n        console.log(1);\n    })\n\n    it(() => {\n    })\n});",
+    "modified": "test(() => {\n    it(() => {\n        console.log(1);\n    })\n\n    it(() => {\n2        console.log(2);\n    })\n\n    it(() => {\n    \n    })\n});\n\ntest(() => {\n    it(() => {\n        console.log(1);\n    })\n\n    it(() => {\n    })\n\n    it(() => {\n    \n    })\n});",
+    "diffs": [
+      {
+        "originalRange": "[7,7)",
+        "modifiedRange": "[7,12)",
+        "innerChanges": [
+          {
+            "originalRange": "[7,1 -> 7,1]",
+            "modifiedRange": "[7,1 -> 12,1]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[17,17)",
+        "modifiedRange": "[22,26)",
+        "innerChanges": [
+          {
+            "originalRange": "[17,1 -> 17,1]",
+            "modifiedRange": "[22,1 -> 26,1]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "word-shared-letters",
+    "ignoreTrimWhitespace": false,
+    "original": "// test case 1:\n{\n\tconst abc = 1;\n}\n\n// test case 2:\n{\n\tconst private = 1;\n}\n\n// test case 3:\n{\n\tconst abc1 = 1;\n}\n\n// test case 4:\n{\n\tconst index = 1;\n}\n\n// test case 5:\n{\n\tconst InlineDecoration = 1;\n}\n\n// test case 6:\n{\n\tconst _getDecorationsInRange = 1;\n}\n\n// test case 7:\n{\n\tconst lord = 1;\n}\n\n// test case 8:\n{\n\tconst abc1 = 1;\n}\n\n// test case 1:\n{\n\t// hello world\n}\n\n// test case 2:\n{\n\t// optimizeSequenceDiffs\n}\n\n// test case 3:\n{\n\tconst optequffs = 1;\n}\n\n// test case 4:\n{\n\tconst abc = 1;\n}\n\n// test case 5:\n{\n\tconst abc = 1;\n}\n\n// test case 6:\n{\n\tconst abc = 1;\n}\n\n// test case 7:\n{\n\tconst abc = 1;\n}\n\n// test case 8:\n{\n\tconst abc = 1;\n}\n",
+    "modified": "// test case 1:\n{\n\tconst asciiLower = 1;\n}\n\n// test case 2:\n{\n\tconst protected = 1;\n}\n\n// test case 3:\n{\n\tconst abc2 = 1;\n}\n\n// test case 4:\n{\n\tconst undefined = 1;\n}\n\n// test case 5:\n{\n\tconst IDecorationsViewportData = 1;\n}\n\n// test case 6:\n{\n\tconst configuration = 1;\n}\n\n// test case 7:\n{\n\tconst helloWorld = 1;\n}\n\n// test case 8:\n{\n\tconst abc1 = 1;\n}\n\n// test case 1:\n{\n\t// helwor\n}\n\n// test case 2:\n{\n\t// optimize Sequence Diffs\n}\n\n// test case 3:\n{\n\tconst optimize Sequence Diffs = 1;\n}\n\n// test case 4:\n{\n\tconst abc = 1;\n}\n\n// test case 5:\n{\n\tconst abc = 1;\n}\n\n// test case 6:\n{\n\tconst abc = 1;\n}\n\n// test case 7:\n{\n\tconst abc = 1;\n}\n\n// test case 8:\n{\n\tconst abc = 1;\n}\n",
+    "diffs": [
+      {
+        "originalRange": "[3,4)",
+        "modifiedRange": "[3,4)",
+        "innerChanges": [
+          {
+            "originalRange": "[3,8 -> 3,11]",
+            "modifiedRange": "[3,8 -> 3,18]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[8,9)",
+        "modifiedRange": "[8,9)",
+        "innerChanges": [
+          {
+            "originalRange": "[8,8 -> 8,15]",
+            "modifiedRange": "[8,8 -> 8,17]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[13,14)",
+        "modifiedRange": "[13,14)",
+        "innerChanges": [
+          {
+            "originalRange": "[13,11 -> 13,12]",
+            "modifiedRange": "[13,11 -> 13,12]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[18,19)",
+        "modifiedRange": "[18,19)",
+        "innerChanges": [
+          {
+            "originalRange": "[18,8 -> 18,13]",
+            "modifiedRange": "[18,8 -> 18,17]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[23,24)",
+        "modifiedRange": "[23,24)",
+        "innerChanges": [
+          {
+            "originalRange": "[23,8 -> 23,24]",
+            "modifiedRange": "[23,8 -> 23,32]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[28,29)",
+        "modifiedRange": "[28,29)",
+        "innerChanges": [
+          {
+            "originalRange": "[28,8 -> 28,30]",
+            "modifiedRange": "[28,8 -> 28,21]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[33,34)",
+        "modifiedRange": "[33,34)",
+        "innerChanges": [
+          {
+            "originalRange": "[33,8 -> 33,12]",
+            "modifiedRange": "[33,8 -> 33,18]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[43,44)",
+        "modifiedRange": "[43,44)",
+        "innerChanges": [
+          {
+            "originalRange": "[43,8 -> 43,11]",
+            "modifiedRange": "[43,8 -> 43,8]"
+          },
+          {
+            "originalRange": "[43,14 -> 43,16 EOL]",
+            "modifiedRange": "[43,11 -> 43,11 EOL]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[48,49)",
+        "modifiedRange": "[48,49)",
+        "innerChanges": [
+          {
+            "originalRange": "[48,13 -> 48,13]",
+            "modifiedRange": "[48,13 -> 48,14]"
+          },
+          {
+            "originalRange": "[48,21 -> 48,21]",
+            "modifiedRange": "[48,22 -> 48,23]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[53,54)",
+        "modifiedRange": "[53,54)",
+        "innerChanges": [
+          {
+            "originalRange": "[53,8 -> 53,17]",
+            "modifiedRange": "[53,8 -> 53,31]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ws-alignment",
+    "ignoreTrimWhitespace": false,
+    "original": "import { Stack, Text } from '@fluentui/react';\nimport { View } from '../../layout/layout';\n\nexport const WelcomeView = () => {\n\treturn (\n\t\t<View title='VS Code Tools'>\n\t\t\t<Stack grow={true} verticalFill={true}>\n\t\t\t\t<Stack.Item>\n\t\t\t\t\t<Text>\n\t\t\t\t\t\tWelcome to the VS Code Tools application.\n\t\t\t\t\t</Text>\n\t\t\t\t</Stack.Item>\n\t\t\t</Stack>\n\t\t</View>\n\t);\n}\n",
+    "modified": "import { Nav } from '@fluentui/react';\nimport { View } from '../../layout/layout';\n\nexport const WelcomeView = () => {\n\treturn (\n\t\t<View title='VS Code Tools'>\n\t\t\t<Nav\n\t\t\t\tgroups={[\n\t\t\t\t\t{\n\t\t\t\t\t\tlinks: [\n\t\t\t\t\t\t\t{ name: 'VS Code Standup (Redmond)', url: 'https://vscode-standup.azurewebsites.net', icon: 'JoinOnlineMeeting', target: '_blank' },\n\t\t\t\t\t\t\t{ name: 'VS Code Standup (Zurich)', url: 'https://stand.azurewebsites.net/', icon: 'JoinOnlineMeeting', target: '_blank' },\n\t\t\t\t\t\t\t{ name: 'VS Code Errors', url: 'https://errors.code.visualstudio.com', icon: 'ErrorBadge', target: '_blank' },\n\t\t\t\t\t\t]\n\t\t\t\t\t}\n\t\t\t\t]}>\n\t\t\t</Nav>\n\t\t</View>\n\t);\n}\n",
+    "diffs": [
+      {
+        "originalRange": "[1,2)",
+        "modifiedRange": "[1,2)",
+        "innerChanges": [
+          {
+            "originalRange": "[1,10 -> 1,21]",
+            "modifiedRange": "[1,10 -> 1,13]"
+          }
+        ]
+      },
+      {
+        "originalRange": "[7,14)",
+        "modifiedRange": "[7,18)",
+        "innerChanges": [
+          {
+            "originalRange": "[7,1 -> 13,1]",
+            "modifiedRange": "[7,1 -> 17,1]"
+          },
+          {
+            "originalRange": "[13,6 -> 13,11]",
+            "modifiedRange": "[17,6 -> 17,9]"
+          }
+        ]
+      }
+    ]
+  }
+]

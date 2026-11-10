@@ -1,0 +1,9 @@
+{
+  "extends": "../../../tsconfig.core.json",
+  "compilerOptions": {
+    "outDir": ".tsbuild/vscode",
+    // VS Code's code is written without this check.
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["src/vscode/**/*.ts"]
+}
