@@ -95,12 +95,19 @@ A package's folder says where it runs, and its Nx tags (`"nx": { "tags": [...] }
 
 - a project in `packages/core/` is tagged `platform:core`, one in `packages/desktop/` is tagged
   `platform:desktop`, and no other project has a platform tag;
+- projects in `packages/core/markdown`, `packages/core/artifact` and `skill/` are tagged
+  `license:mit`, and every `license:mit` project carries the MIT license in its own `LICENSE`;
 - core projects import only core projects, and use no Node built-in, Electron or child process
   (their tests may use Node);
-- `license:mit` projects import only `license:mit` projects, and carry the MIT license in their own
-  `LICENSE`;
+- core projects load modules by name: an `import()` or `require()` of anything but a literal fails;
+- `license:mit` projects import only `license:mit` projects;
 - nothing imports an app;
-- only tests import `testing/`. Tests are `*.test.*` files and anything in `test/` or `e2e/`.
+- only tests import `testing/`. Tests are `*.test.*` files and anything in `test/` or `e2e/`, and
+  `testing` belongs in `devDependencies`.
+
+The same rules apply to what a project's `package.json` lists in its dependencies, aliases included,
+and to what its `imports` and `exports` fields point to. Paths are followed through symlinks and
+`node_modules` to the package they reach.
 
 oxlint also stops core code from reaching for `process`, `Buffer`, `window`, `document` and other
 globals of a particular platform. To share code across a boundary, move it into a package on the
@@ -109,7 +116,8 @@ right side; don't loosen the rules.
 ## Tests
 
 Unit tests are `*.test.ts` files beside the code, run by Vitest. The root `vitest.config.ts` has one
-project per package and caps Vitest at two workers.
+project per package. Nx runs one project's tests at a time, and Vitest uses two workers, or all of a
+CI runner's cores.
 
 ## Generated files
 
