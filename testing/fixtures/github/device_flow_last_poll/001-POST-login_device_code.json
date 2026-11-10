@@ -2,7 +2,7 @@
   "request": {
     "method": "POST",
     "url": "https://github.com/login/device/code",
-    "body": "client_id=Ov23liBORqwRdiPzqsPP&scope=repo+read%3Aorg+workflow"
+    "body": "client_id=Ov23liBORqwRdiPzqsPP&scope=repo+read%3Aorg+workflow+offline_access"
   },
   "response": {
     "status": 200,

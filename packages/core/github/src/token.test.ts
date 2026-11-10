@@ -39,7 +39,7 @@ test("a token can't hold a line break or anything else a token never has", () =>
     } catch (error) {
       thrown = error;
     }
-    expect(thrown instanceof GithubError && thrown.detail.kind).toBe('tokenUnavailable');
+    expect(thrown instanceof GithubError && thrown.detail.kind).toBe('unauthorized');
     const said =
       thrown instanceof Error ? [thrown.message, thrown.stack, String(thrown.cause)] : [];
     expect(said.filter((text) => text?.includes('abc') || text?.includes('gho_a'))).toEqual([]);

@@ -434,3 +434,18 @@ test('a store that throws, or keeps an answer that no longer reads, is gone arou
     changed: true,
   });
 });
+
+test('a kept ETag that cannot go in a header is dropped, and the read made in full', async () => {
+  const url = 'https://api.github.com/repos/o/r/pulls/1';
+  for (const etag of ['W/"a\u0000b"', 'W/"é…"', 'W/"a\r\nb"']) {
+    const fetch = replay(['GET', url, 200, { etag: 'W/"2"' }, '{"n":2}']);
+    const store = new MemoryStore();
+    store.answers.set(url, { etag, body: '{"n":1}' });
+    const account = new GithubClient({ fetch, token: new Token('gho_FAKE'), store });
+    expect(await account.getStored('/repos/o/r/pulls/1', json)).toEqual({
+      value: { n: 2 },
+      changed: true,
+    });
+    expect(store.answers.get(url)?.etag).toBe('W/"2"');
+  }
+});
