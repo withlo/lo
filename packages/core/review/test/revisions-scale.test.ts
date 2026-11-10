@@ -37,7 +37,11 @@ function timed(
   const unnumbered = [...revisions]
     .filter((revision) => revisions.number(revision.head) === undefined)
     .map((revision) => revision.head);
-  return { count: revisions.length, unnumbered, elapsed: performance.now() - start };
+  const elapsed = performance.now() - start;
+  process.stderr.write(
+    `revisions scale: ${records.length} records took ${elapsed.toFixed(1)} ms\n`,
+  );
+  return { count: revisions.length, unnumbered, elapsed };
 }
 
 /** Every head, as the current commits. */
