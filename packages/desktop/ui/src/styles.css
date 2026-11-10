@@ -1,0 +1,64 @@
+/* Lo's styles for everything React renders: the design system's CSS, the fonts, and Tailwind's
+   utilities on Lo's tokens (theme.css). The window imports this one file. */
+
+@layer theme, base, components, utilities;
+
+/* The design system's variables, themes and element defaults sit under the utilities. */
+@import '@lo/design/css/index.css' layer(base);
+@import './fonts.css';
+@import 'tailwindcss/utilities.css' layer(utilities);
+@import './theme.css';
+
+/* Classes in ui's components; the window's own are found from its stylesheet. */
+@source './';
+
+/* Where Tailwind can't reach. */
+
+/* The window is dragged by its tab strip, but not by the controls on it. */
+@utility drag {
+  app-region: drag;
+}
+@utility no-drag {
+  app-region: no-drag;
+}
+
+/* A hollow ball, as the design draws "not yet": a ring in the current color. */
+@utility hollow {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px currentcolor;
+}
+
+/* The concave flares where the selected tab meets the strip: the mark's socket curve. */
+@utility tab-flares {
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    width: var(--lo-r-md);
+    height: var(--lo-r-md);
+    pointer-events: none;
+  }
+  &::before {
+    left: calc(var(--lo-r-md) * -1);
+    background: radial-gradient(
+      circle at 0 0,
+      transparent calc(var(--lo-r-md) - 0.5px),
+      var(--lo-bg-chrome) var(--lo-r-md)
+    );
+  }
+  &::after {
+    right: calc(var(--lo-r-md) * -1);
+    background: radial-gradient(
+      circle at 100% 0,
+      transparent calc(var(--lo-r-md) - 0.5px),
+      var(--lo-bg-chrome) var(--lo-r-md)
+    );
+  }
+}
+
+/* On Linux the system's window controls sit over the end of the strip, and the overlay's geometry
+   says where they start. */
+:root[data-lo-platform][data-lo-frame='custom'] {
+  --lo-window-inset-end: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}

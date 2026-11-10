@@ -16,7 +16,7 @@ function rows(path: string, sql: string): unknown[] {
 }
 
 test('the database opens on a fresh data folder, with its migrations table', async ({ page }) => {
-  await expect(page.locator('header.strip')).toBeVisible();
+  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
   const file = join(dataFolder(), 'lo.db');
   expect(rows(file, 'PRAGMA journal_mode')).toEqual([{ journal_mode: 'wal' }]);
   expect(rows(file, "SELECT name FROM sqlite_schema WHERE type = 'table'")).toEqual([

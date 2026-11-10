@@ -92,7 +92,7 @@ test("a page that isn't Lo's gets nothing from main, even with the bridge", asyn
   app,
   page,
 }) => {
-  await expect(page.locator('header.strip')).toBeVisible();
+  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
   // A window with Lo's preload, on a page that isn't Lo's.
   const reply: unknown = await app.evaluate(
     async ({ BrowserWindow, session }, preload) => {

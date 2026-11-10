@@ -223,6 +223,25 @@ files or the network for the window.
   connection to it, and takes another cap from `LO_BACKGROUND_MEMORY_CAP_MB`. A packaged build
   ignores both.
 
+## The interface
+
+Lo's React components live in `packages/desktop/ui` (`@lo/ui`), ported from the design system's
+guidelines one at a time, as features need them. They're styled with Tailwind CSS on Lo's tokens;
+the window imports `@lo/ui/styles.css`, which brings the design system's CSS, the fonts and the
+utilities.
+
+- The Tailwind theme (`src/theme.css`) is generated from `design/tokens.json`
+  (`pnpm nx run ui:codegen`). Tailwind's own palette and sizes are off, so the utilities are Lo's
+  tokens: colors (`bg-bg-chrome`, `text-fg-muted`), radii, shadows, named sizes (`h-tabbar-h`), type
+  styles (`text-ui`, `read-body`, `code-text`, each the whole font shorthand), and one pixel per
+  spacing step (`gap-8`). The font families are `font-sans` and `font-code`.
+- Bracketed arbitrary values (`text-[11px]`) fail lint, in `ui` and in the app. Where Tailwind can't
+  reach, add a utility to `src/styles.css` with `@utility`, reading `var(--lo-*)`.
+- Variants go through `cva` from `class-variance-authority`. Prettier sorts the classes.
+- The fonts, Host Grotesk and Fragment Mono, are bundled as files (never `data:` addresses, which
+  the content security policy blocks), and their licenses ship beside the window's files.
+- Screenshot baselines are made on Linux only, in `apps/desktop/e2e/snapshots/`.
+
 ## Generated files
 
 Generated files are committed, and each project that makes them has a `codegen` target. Never edit
