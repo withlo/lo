@@ -103,9 +103,8 @@ test('reviews missing without an error are an answer lo cant read', async () => 
   expect(error.detail.kind).toBe('decode');
 });
 
-test('an error about the review makes it unknown', async () => {
-  // Whether the error nulled a field or the review itself, the answer can't be trusted to say
-  // there's none.
+test('an error in one review keeps the read', async () => {
+  // A field below a review is the review's own: the rest of the answer still holds.
   const review = { id: 'PRR_1', commit: null, comments: { totalCount: 2 } };
   const body = {
     ...reviews([review]),
@@ -117,15 +116,23 @@ test('an error about the review makes it unknown', async () => {
       },
     ],
   };
-  expect(await pendingReview(answering(body), PULL, 'rozed-bot')).toEqual({
-    kind: 'unknown',
-    why: 'Resource not accessible by integration',
-  });
+  expect(await pendingReview(answering(body), PULL, 'rozed-bot')).toEqual({ kind: 'read', review });
+});
+
+test('a pending review an error nulled is unknown', async () => {
   const nulled = {
     ...reviews([null]),
     errors: [{ path: ['repository', 'pullRequest', 'reviews', 'nodes', 0], message: 'Timeout' }],
   };
   expect(await pendingReview(answering(nulled), PULL, 'rozed-bot')).toEqual({
+    kind: 'unknown',
+    why: 'Timeout',
+  });
+  const unlisted = {
+    data: { repository: { pullRequest: { reviews: { nodes: null } } } },
+    errors: [{ path: ['repository', 'pullRequest', 'reviews', 'nodes'], message: 'Timeout' }],
+  };
+  expect(await pendingReview(answering(unlisted), PULL, 'rozed-bot')).toEqual({
     kind: 'unknown',
     why: 'Timeout',
   });

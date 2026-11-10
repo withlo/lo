@@ -22,9 +22,8 @@ export type ViewerPendingReview = NonNullable<NonNullable<PendingReviews['nodes'
 
 /**
  * What GitHub's answer says of the signed-in user's pending review: `review`, or none; or that
- * it's unknown, when GitHub left the review out or answered with an error about it. GitHub keeps
- * at most one pending review per person, and refuses a second, so an unknown one is never taken
- * for none.
+ * it's unknown, when GitHub left the review out. GitHub keeps at most one pending review per
+ * person, and refuses a second, so an unknown one is never taken for none.
  */
 export type PendingReviewRead =
   { kind: 'read'; review: ViewerPendingReview | undefined } | { kind: 'unknown'; why: string };
@@ -32,8 +31,8 @@ export type PendingReviewRead =
 /**
  * The pending review the user with login `login` has on `pull`, or none, or that it's unknown.
  * `login` is the signed-in user's: nobody else's pending review can be read. An error that leaves
- * out the reviews fails the read; a review GitHub leaves out as a null, or any error about one,
- * makes it unknown.
+ * out the reviews fails the read. A review GitHub leaves out as a null, or a list of them it leaves
+ * out, makes it unknown; an error in one of a review's fields leaves the rest of it read.
  */
 export async function pendingReview(
   client: GithubClient,
@@ -51,13 +50,11 @@ export async function pendingReview(
   if (!found.reviews) {
     throw new GithubError({ kind: 'decode', message: "GitHub didn't list the pending reviews" });
   }
-  if (errors.length > 0) {
-    return { kind: 'unknown', why: errors.map((error) => error.message).join('; ') };
-  }
-  const nodes = found.reviews.nodes ?? [];
+  const nodes = found.reviews.nodes;
   // GitHub leaves out a review it can't show as a null: there is one, and Lo can't see it.
-  if (nodes.includes(null)) {
-    return { kind: 'unknown', why: 'GitHub left out a pending review it could not show' };
+  if (nodes == null || nodes.includes(null)) {
+    const why = errors.map((error) => error.message).join('; ');
+    return { kind: 'unknown', why: why || 'GitHub left out a pending review it could not show' };
   }
   return { kind: 'read', review: nodes.find((node) => node !== null) ?? undefined };
 }
