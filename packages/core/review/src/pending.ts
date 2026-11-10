@@ -187,11 +187,12 @@ export type Mutation =
     | { kind: 'review'; variables: AddPullRequestReviewMutationVariables }
   ) & {
     /**
-     * The pull request's latest head (`headRefOid`) when it was planned. GitHub puts a thread added
-     * to a pending review on whatever head is current when it gets it, which can be a later one if
-     * someone pushed since Lo last looked, and that head's line may hold different code. The sender
-     * compares the comment's `commit.oid` in GitHub's answer with this, and undoes or flags one that
-     * landed on another head.
+     * The pull request's latest head (`headRefOid`) when it was planned. For an `addThread`, GitHub
+     * picks the commit: it puts the thread on whatever head is current when it gets it, which can
+     * be a later one if someone pushed since Lo last looked, and that head's line may hold
+     * different code. The sender compares the thread's `commit.oid` in GitHub's answer with this,
+     * and undoes or flags one that landed on another head. Every other mutation names its commit,
+     * as a review started on an older revision does, or has no lines.
      */
     readonly head: string;
   };
@@ -240,7 +241,8 @@ export type ReviewRefusal =
   | { refusal: 'blank' }
   /**
    * GitHub's answer didn't say whether you have a pending review. Starting one would be refused if
-   * you do, and adding to one needs its id, so nothing is planned until it's read again.
+   * you do, and adding to one needs its id, so nothing that does either is planned until it's read
+   * again. A reply posted at once (`C`) starts no review, so it's still planned.
    */
   | { refusal: 'pendingUnknown' }
   /**
@@ -311,8 +313,8 @@ export class YourReview {
   }
 
   /**
-   * Your review when GitHub's answer didn't say whether you have a pending review: it refuses
-   * every comment and submission, with `pendingUnknown`.
+   * Your review when GitHub's answer didn't say whether you have a pending review: it refuses every
+   * comment and submission but a reply posted at once, with `pendingUnknown`.
    */
   static unknown(pullRequestId: string): YourReview {
     const review = new YourReview(pullRequestId);
@@ -383,7 +385,7 @@ export class YourReview {
       return 'refusal' in added ? added : { mutation: added, pending: true };
     }
     if (isBlank(comment.body)) return { refusal: 'blank' };
-    if (!this.#known) return { refusal: 'pendingUnknown' };
+    if (!this.#known && comment.kind !== 'reply') return { refusal: 'pendingUnknown' };
     return { mutation: this.#postNow(on, head, comment), pending: false };
   }
 

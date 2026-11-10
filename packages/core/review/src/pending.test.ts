@@ -524,7 +524,7 @@ test('a pending review on a lost commit is on no revision', () => {
 
 test('every plan carries the head it was planned against', () => {
   // r4 was pushed while r3 is on screen: GitHub puts a thread added to a pending review on r4, so
-  // the sender checks where the comment landed against the head each plan assumed.
+  // the sender checks where an added thread landed against the head its plan assumed.
   const latest = 'a4';
   const yours = pending('a3', 1);
   const plans = [
@@ -557,7 +557,7 @@ test('every plan carries the head it was planned against', () => {
   expect(plans.map((plan) => plan.head)).toEqual(plans.map(() => latest));
 });
 
-test('a pending review github left out plans nothing', () => {
+test('a pending review github left out plans nothing but a reply posted at once', () => {
   // A review started now would be refused if one is pending, and adding to one needs its id.
   const unknown = yourReview(PULL, { kind: 'unknown', why: 'Something went wrong' });
   const refused = { refusal: 'pendingUnknown' };
@@ -565,8 +565,15 @@ test('a pending review github left out plans nothing', () => {
   expect(unknown.known).toBe(false);
   for (const comment of [thread('Off by one?'), file('Needs a changelog entry.'), reply('Ok.')]) {
     expect(unknown.add('a3', HEAD, comment)).toEqual(refused);
+  }
+  for (const comment of [thread('Off by one?'), file('Needs a changelog entry.')]) {
     expect(unknown.post('a3', HEAD, comment)).toEqual(refused);
   }
+  // A reply posted at once starts no review, so it can't be a second one.
+  expect(unknown.post('a3', HEAD, reply('Ok.'))).toEqual({
+    mutation: postReply('Ok.'),
+    pending: false,
+  });
   for (const event of ['COMMENT', 'APPROVE', 'REQUEST_CHANGES'] as const) {
     expect(unknown.submit(event, 'Looks good.', false, 'a3', HEAD)).toEqual(refused);
   }
