@@ -1,0 +1,356 @@
+/* ==========================================================================
+   Lo UI overview — the explanation an agent wrote, rendered by Lo's own
+   blocks: text, terms, code, figures, walkthroughs, tabs, folds, glossary.
+   The layout assumes nothing about which sections exist or their order.
+   ========================================================================== */
+
+.lo-ov {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  height: 100%;
+  overflow: auto;
+  background: var(--lo-bg);
+  scroll-padding-top: 24px;
+}
+@container lo-middle (width < 980px) {
+  .lo-ov { grid-template-columns: minmax(0, 1fr); }
+  .lo-ov__toc { display: none; }
+}
+
+/* Outline: the sections in the order the writer chose */
+.lo-ov__toc {
+  position: sticky; top: 0; align-self: start;
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 30px 8px 24px 16px;
+}
+.lo-toc__label {
+  padding: 0 8px 8px;
+  font: var(--lo-text-label); letter-spacing: var(--lo-track-label); text-transform: uppercase;
+  color: var(--lo-fg-muted);
+}
+.lo-toc__item {
+  display: flex; align-items: center; gap: 9px;
+  min-height: 26px; padding: 0 8px;
+  border-radius: var(--lo-r-sm);
+  font: 500 13px/17px var(--lo-font-ui);
+  color: var(--lo-fg-muted);
+  text-decoration: none;
+}
+.lo-app .lo-toc__item:hover { background: var(--lo-hover); color: var(--lo-fg); text-decoration: none; }
+.lo-toc__item::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; flex: none;
+  box-shadow: inset 0 0 0 1.25px var(--lo-fg-dim);
+}
+.lo-toc__item[aria-current="true"] { color: var(--lo-fg); }
+.lo-toc__item[aria-current="true"]::before { background: var(--lo-accent); box-shadow: 0 0 0 3px var(--lo-current-strong); }
+.lo-toc__item .lo-count { margin-left: auto; }
+.lo-toc__foot { margin-top: 14px; padding: 12px 8px 0; border-top: 1px solid var(--lo-border-subtle); }
+.lo-toc__foot .lo-hints { flex-direction: column; align-items: flex-start; gap: 6px; }
+
+/* The document */
+.lo-ov__article { min-width: 0; max-width: 896px; padding: 26px 40px 120px 20px; }
+
+.lo-ov-byline {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px;
+  font: var(--lo-text-small); color: var(--lo-fg-muted);
+}
+.lo-ov-byline strong { color: var(--lo-fg); font-weight: 600; }
+.lo-ov-byline .lo-commit { font: 400 11.5px/1 var(--lo-font-mono); color: var(--lo-fg); }
+.lo-ov-byline__end { margin-left: auto; display: flex; gap: 6px; }
+
+/* "Written for r3. The PR is at r5." */
+.lo-ov-stale {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 12px;
+  margin-top: 16px;
+  padding: 11px 12px 11px 14px;
+  border-radius: var(--lo-r-md);
+  background: var(--lo-warning-bg);
+  box-shadow: inset 0 0 0 1px var(--lo-warning-border);
+  max-width: var(--lo-read-measure);
+}
+.lo-ov-stale > .lo-i { grid-row: span 2; color: var(--lo-warning); }
+.lo-ov-stale__title { font: 600 13.5px/19px var(--lo-font-ui); color: var(--lo-fg); }
+.lo-ov-stale__sub { grid-column: 2; font: var(--lo-text-small); color: var(--lo-fg-muted); }
+.lo-ov-stale__actions { grid-column: 3; grid-row: 1 / span 2; display: flex; gap: 6px; }
+
+/* Prose */
+.lo-prose { font: var(--lo-read-body); color: var(--lo-fg); }
+.lo-prose > * + * { margin-top: 14px; }
+.lo-prose :where(p, ul, ol, h2, h3, h4, table, dl) { max-width: var(--lo-read-measure); }
+.lo-prose h2 {
+  font: var(--lo-read-h2);
+  letter-spacing: var(--lo-track-tight);
+  text-wrap: balance;
+  margin-top: 52px;
+  scroll-margin-top: 24px;
+}
+.lo-prose h2:first-child { margin-top: 30px; }
+.lo-prose h2 + * { margin-top: 12px; }
+.lo-prose h3 { font: var(--lo-read-h3); letter-spacing: -0.01em; margin-top: 34px; text-wrap: balance; }
+.lo-prose h3 + * { margin-top: 8px; }
+.lo-prose .lo-lead { font: var(--lo-read-lead); letter-spacing: -0.003em; }
+.lo-prose :where(ul, ol) { padding-left: 22px; }
+.lo-prose li + li { margin-top: 6px; }
+.lo-prose li::marker { color: var(--lo-fg-subtle); }
+.lo-prose strong { font-weight: 650; }
+.lo-prose :where(a) { color: var(--lo-link); text-decoration: underline; text-decoration-color: var(--lo-accent-line); text-underline-offset: 3px; }
+.lo-prose :where(a):focus-visible { box-shadow: var(--lo-ring); border-radius: 2px; text-decoration: none; }
+.lo-prose :where(code) {
+  font-family: var(--lo-font-mono); font-size: var(--lo-code-inline-size);
+  padding: 1px 5px; border-radius: var(--lo-r-xs);
+  background: var(--lo-hover); box-shadow: inset 0 0 0 1px var(--lo-border-subtle);
+}
+.lo-prose table { width: 100%; border-collapse: collapse; font: 400 13.5px/20px var(--lo-font-ui); }
+.lo-prose th {
+  padding: 0 16px 8px 0; text-align: left;
+  font: var(--lo-text-label); letter-spacing: var(--lo-track-label); text-transform: uppercase;
+  color: var(--lo-fg-muted);
+  border-bottom: 1px solid var(--lo-border);
+}
+.lo-prose td { padding: 9px 16px 9px 0; border-bottom: 1px solid var(--lo-border-subtle); vertical-align: top; }
+.lo-prose :where(th, td).n { text-align: right; font-variant-numeric: tabular-nums; }
+.lo-prose :where(th, td):last-child { padding-right: 0; }
+
+/* A defined term: dotted underline, definition on hover or focus */
+.lo-term {
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: var(--lo-accent-line);
+  text-underline-offset: 4px;
+  border-radius: 3px;
+  cursor: help;
+}
+.lo-term:hover, .lo-term.is-active { color: var(--lo-fg-accent); text-decoration-color: var(--lo-accent); background: var(--lo-accent-soft); }
+.lo-term:focus-visible { box-shadow: var(--lo-ring); text-decoration: none; }
+
+/* Every block can take keyboard focus (]b / [b) */
+.lo-block { position: relative; margin-top: 22px; border-radius: var(--lo-r-md); max-width: 100%; }
+.lo-prose > .lo-block + p, .lo-prose > .lo-block + ul { margin-top: 22px; }
+.lo-block.is-focused { box-shadow: 0 0 0 1.5px var(--lo-focus), 0 0 0 5px var(--lo-focus-glow); }
+.lo-block__hints {
+  position: absolute; z-index: 2; bottom: -13px; right: 12px;
+  display: none; align-items: center; gap: 12px;
+  height: 26px; padding: 0 10px;
+  border-radius: var(--lo-r-pill);
+  background: var(--lo-bg-overlay);
+  box-shadow: var(--lo-shadow-pop);
+  font: var(--lo-text-small); color: var(--lo-fg-muted);
+}
+.lo-block.is-focused > .lo-block__hints { display: flex; }
+
+
+/* --------------------------------------------------------------------------
+   Code block: the real code at the overview's commit, as a diff
+   -------------------------------------------------------------------------- */
+.lo-codeblock {
+  border-radius: var(--lo-r-md);
+  background: var(--lo-code-bg);
+  box-shadow: 0 0 0 1px var(--lo-border);
+  overflow: hidden;
+}
+.lo-codeblock__head {
+  display: flex; align-items: center; gap: 8px;
+  height: 36px; padding: 0 6px 0 12px;
+  background: var(--lo-bg-chrome);
+  border-bottom: 1px solid var(--lo-border-subtle);
+  font: var(--lo-text-small); color: var(--lo-fg-muted);
+  white-space: nowrap;
+}
+.lo-codeblock__path { font: 400 12px/1 var(--lo-font-mono); color: var(--lo-fg-muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.lo-codeblock__path b { color: var(--lo-fg); font-weight: 400; }
+.lo-codeblock__lines { font: 400 11.5px/1 var(--lo-font-mono); color: var(--lo-fg-muted); flex: none; }
+.lo-codeblock__actions { margin-left: auto; display: flex; align-items: center; gap: 2px; flex: none; }
+.lo-codeblock__flag {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 7px 12px;
+  background: var(--lo-warning-bg);
+  border-bottom: 1px solid var(--lo-warning-border);
+  font: var(--lo-text-small); color: var(--lo-fg);
+}
+.lo-codeblock__flag > .lo-i { color: var(--lo-warning); }
+.lo-codeblock__flag a { margin-left: auto; }
+.lo-codeblock__body { padding: 4px 0; }
+.lo-codeblock__body .lo-thread { margin-left: 108px; }
+.lo-codeblock .lo-ln.is-stale { color: var(--lo-warning) !important; box-shadow: inset 2px 0 0 var(--lo-warning); }
+.lo-codeblock__msg {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 16px 16px 18px;
+  font: 400 13.5px/20px var(--lo-font-ui); color: var(--lo-fg-muted);
+  background: var(--lo-bg);
+}
+.lo-codeblock__msg strong { color: var(--lo-fg); font-weight: 600; }
+.lo-codeblock__msg .lo-i { margin-top: 2px; }
+.lo-codeblock__msg .lo-btn { margin-top: 10px; }
+.lo-codeblock--missing .lo-codeblock__msg .lo-i { color: var(--lo-fg-muted); }
+.lo-codeblock--unresolved { box-shadow: 0 0 0 1px var(--lo-danger-border); }
+.lo-codeblock--unresolved .lo-codeblock__msg .lo-i { color: var(--lo-danger); }
+.lo-codeblock--unresolved .lo-codeblock__path b { text-decoration: line-through; text-decoration-color: var(--lo-danger); }
+/* A plain fenced block: drawn as a note, never as real code */
+.lo-codeblock--illustration {
+  background: var(--lo-bg-chrome);
+  box-shadow: none;
+  border: 1px dashed var(--lo-border-strong);
+}
+.lo-codeblock--illustration .lo-codeblock__head { background: transparent; border-bottom: 1px dashed var(--lo-border); }
+.lo-codeblock--illustration pre {
+  margin: 0; padding: 12px 16px 14px;
+  font: 400 var(--lo-code-size)/var(--lo-code-line) var(--lo-font-mono);
+  color: var(--lo-code-fg);
+  overflow-x: auto;
+  user-select: text;
+}
+
+
+/* --------------------------------------------------------------------------
+   Figure: a sanitized SVG or image, parts linked to code, terms or sections
+   -------------------------------------------------------------------------- */
+.lo-figure { margin: 0; }
+.lo-figure__frame {
+  position: relative;
+  padding: 18px 20px;
+  border-radius: var(--lo-r-md);
+  background: var(--fig-paper);
+  box-shadow: 0 0 0 1px var(--lo-border-subtle);
+  color: var(--fig-ink);
+}
+.lo-figure__frame > svg:not(.lo-i) { display: block; width: 100%; height: auto; font-family: var(--fig-font); overflow: visible; }
+/* Agents write font-family="monospace" for code; Lo maps it to Fragment Mono */
+.lo-figure__frame > svg:not(.lo-i) [font-family="monospace"] { font-family: var(--fig-mono); }
+.lo-figure figcaption { margin-top: 10px; font: 400 13px/19px var(--lo-font-ui); color: var(--lo-fg-muted); max-width: var(--lo-read-measure); }
+.lo-figure figcaption b { color: var(--lo-fg); font-weight: 600; }
+/* Lo wraps each linked part in <g class="lo-fig-link" tabindex="0"> and adds a
+   hit rectangle, so hover and focus look the same whatever the agent drew. */
+.lo-fig-link { cursor: pointer; outline: none; }
+.lo-fig-hit { fill: transparent; stroke: transparent; stroke-width: 2; rx: 9px; }
+.lo-fig-link:hover .lo-fig-hit,
+.lo-fig-link.is-hover .lo-fig-hit { stroke: var(--lo-accent); fill: var(--lo-accent-soft); }
+.lo-fig-link:focus-visible .lo-fig-hit,
+.lo-fig-link.is-focused .lo-fig-hit { stroke: var(--lo-focus); stroke-width: 2.5; fill: var(--lo-accent-soft); filter: drop-shadow(0 0 4px var(--lo-focus-glow)); }
+.lo-figpreview { position: absolute; width: 420px; padding: 0; overflow: hidden; }
+.lo-figpreview .lo-line { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.lo-figpreview__head {
+  display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px;
+  border-bottom: 1px solid var(--lo-border-subtle);
+  font: 400 11.5px/1 var(--lo-font-mono); color: var(--lo-fg-muted);
+}
+.lo-figpreview__head b { color: var(--lo-fg); font-weight: 400; }
+.lo-figpreview__foot { display: flex; gap: 12px; padding: 6px 10px; border-top: 1px solid var(--lo-border-subtle); }
+.lo-figpreview .lo-uni { background: var(--lo-bg-overlay); font-size: 12px; line-height: 18px; grid-template-columns: 40px minmax(0, 1fr); }
+.lo-figpreview .lo-uni > * { min-height: 18px; }
+.lo-figure--broken .lo-figure__frame {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 16px;
+  background: var(--lo-bg-chrome);
+  box-shadow: none;
+  border: 1px dashed var(--lo-border-strong);
+  font: 400 13.5px/20px var(--lo-font-ui); color: var(--lo-fg-muted);
+}
+.lo-figure--broken .lo-figure__frame strong { color: var(--lo-fg); font-weight: 600; }
+
+
+/* --------------------------------------------------------------------------
+   Walkthrough: numbered steps, a code view that follows the current one
+   -------------------------------------------------------------------------- */
+.lo-walk { border-radius: var(--lo-r-md); box-shadow: 0 0 0 1px var(--lo-border); overflow: hidden; background: var(--lo-bg-chrome); }
+.lo-walk__head {
+  display: flex; align-items: center; gap: 10px;
+  height: 38px; padding: 0 6px 0 14px;
+  border-bottom: 1px solid var(--lo-border-subtle);
+  font: var(--lo-text-small); color: var(--lo-fg-muted);
+}
+.lo-walk__title { font: 600 13px/1 var(--lo-font-ui); color: var(--lo-fg); }
+.lo-walk__nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.lo-walk__body { display: grid; grid-template-columns: minmax(0, 290px) minmax(0, 1fr); }
+@container lo-middle (width < 900px) { .lo-walk__body { grid-template-columns: minmax(0, 1fr); } }
+.lo-walk__steps { list-style: none; margin: 0; padding: 8px; counter-reset: step; border-right: 1px solid var(--lo-border-subtle); }
+.lo-walk__step {
+  counter-increment: step;
+  display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px;
+  padding: 8px 10px 9px 8px;
+  border-radius: var(--lo-r-sm);
+  font: 400 13.5px/20px var(--lo-font-ui);
+  color: var(--lo-fg-muted);
+}
+.lo-walk__step + .lo-walk__step { margin-top: 2px; }
+.lo-walk__step::before {
+  content: counter(step);
+  display: grid; place-items: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--lo-border-strong);
+  font: 600 11.5px/1 var(--lo-font-ui); color: var(--lo-fg-muted);
+}
+.lo-walk__step:hover { background: var(--lo-hover); }
+.lo-walk__step.is-done::before { box-shadow: none; background: var(--lo-bg-element-press); color: var(--lo-fg); }
+.lo-walk__step[aria-current="step"] { background: var(--lo-current); color: var(--lo-fg); }
+.lo-walk__step[aria-current="step"]::before { background: var(--lo-accent); color: var(--lo-on-accent); box-shadow: none; }
+.lo-walk__step code { font-family: var(--lo-font-mono); font-size: var(--lo-code-inline-size); }
+.lo-walk__code { min-width: 0; background: var(--lo-code-bg); }
+.lo-walk__codehead {
+  display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px;
+  border-bottom: 1px solid var(--lo-border-subtle);
+  font: 400 11.5px/1 var(--lo-font-mono); color: var(--lo-fg-muted);
+}
+.lo-walk__codehead b { color: var(--lo-fg); font-weight: 400; }
+.lo-walk-hl { background-image: linear-gradient(var(--lo-code-highlight-line), var(--lo-code-highlight-line)); }
+.lo-walk-hl.lo-ln { color: var(--lo-fg-accent); box-shadow: inset 2px 0 0 var(--lo-accent); }
+
+
+/* --------------------------------------------------------------------------
+   Tabs and folds
+   -------------------------------------------------------------------------- */
+.lo-tabs { border-radius: var(--lo-r-md); box-shadow: 0 0 0 1px var(--lo-border); overflow: hidden; }
+.lo-tabs__list { display: flex; gap: 4px; padding: 0 8px; background: var(--lo-bg-chrome); border-bottom: 1px solid var(--lo-border-subtle); }
+.lo-tabs__tab {
+  position: relative;
+  height: 36px; padding: 0 10px;
+  font: 500 13px/36px var(--lo-font-ui);
+  color: var(--lo-fg-muted);
+}
+.lo-tabs__tab:hover { color: var(--lo-fg); }
+.lo-tabs__tab[aria-selected="true"] { color: var(--lo-fg); }
+.lo-tabs__tab[aria-selected="true"]::after {
+  content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px;
+  height: 2px; border-radius: 2px 2px 0 0; background: var(--lo-accent);
+}
+.lo-tabs__tab:focus-visible { box-shadow: var(--lo-ring-inset); border-radius: var(--lo-r-sm); }
+.lo-tabs__panel { padding: 14px 16px 16px; background: var(--lo-bg); }
+.lo-tabs__panel > * + * { margin-top: 12px; }
+
+.lo-fold { border-top: 1px solid var(--lo-border-subtle); border-bottom: 1px solid var(--lo-border-subtle); max-width: var(--lo-read-measure); }
+.lo-fold + .lo-fold { margin-top: 0; border-top: 0; }
+.lo-fold > summary {
+  list-style: none;
+  display: flex; align-items: center; gap: 10px;
+  min-height: 42px; padding: 0 6px;
+  border-radius: var(--lo-r-sm);
+  font: 600 14px/20px var(--lo-font-ui);
+  color: var(--lo-fg);
+  cursor: default;
+}
+.lo-fold > summary::-webkit-details-marker { display: none; }
+.lo-fold > summary:hover { background: var(--lo-hover); }
+.lo-fold > summary:focus-visible { box-shadow: var(--lo-ring-inset); }
+.lo-fold > summary .lo-i { color: var(--lo-fg-subtle); transition: transform var(--lo-dur-fast) var(--lo-ease-out); }
+.lo-fold[open] > summary .lo-i { transform: rotate(90deg); }
+.lo-fold__kind { margin-left: auto; font: var(--lo-text-label); letter-spacing: var(--lo-track-label); text-transform: uppercase; color: var(--lo-fg-muted); }
+.lo-fold__body { padding: 2px 6px 16px 32px; }
+.lo-fold__body > * + * { margin-top: 10px; }
+
+
+/* --------------------------------------------------------------------------
+   Glossary
+   -------------------------------------------------------------------------- */
+.lo-glossary {
+  display: grid;
+  grid-template-columns: minmax(120px, 190px) minmax(0, 1fr);
+  border-top: 1px solid var(--lo-border);
+}
+.lo-glossary dt, .lo-glossary dd { padding: 10px 0; border-bottom: 1px solid var(--lo-border-subtle); }
+.lo-glossary dt { padding-right: 16px; font: 600 14px/21px var(--lo-font-ui); }
+.lo-glossary dt code { font-weight: 400; }
+.lo-glossary dd { margin: 0; font: 400 14px/21px var(--lo-font-ui); color: var(--lo-fg); }
+.lo-glossary .is-target { background: var(--lo-current); }
+.lo-glossary dt.is-target { box-shadow: -8px 0 0 var(--lo-current); }

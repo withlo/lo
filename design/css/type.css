@@ -1,0 +1,22 @@
+/* Lo type — generated from tokens.json. Do not edit. */
+
+:root {
+  /* Interface */
+  --lo-text-display: 800 40px/44px var(--lo-font-ui); /* Welcome screen headline only. */
+  --lo-text-heading: 800 24px/30px var(--lo-font-ui); /* Empty states, dialog titles. */
+  --lo-text-title: 700 18px/24px var(--lo-font-ui); /* The PR title in the header. */
+  --lo-text-ui-strong: 600 13px/18px var(--lo-font-ui); /* Emphasis inside interface text. */
+  --lo-text-ui: 400 13px/18px var(--lo-font-ui); /* The default for buttons, menus, banners and most chrome. */
+  --lo-text-small: 400 12px/16px var(--lo-font-ui); /* Meta, tree rows, status bar, header second row. */
+  --lo-text-micro: 500 11px/14px var(--lo-font-ui); /* Counts, tags, key labels. */
+  --lo-text-label: 600 11px/14px var(--lo-font-ui); /* Panel and section labels. Always uppercase. */
+  /* Reading */
+  --lo-read-h2: 800 22px/28px var(--lo-font-ui); /* Overview section headings. */
+  --lo-read-h3: 700 16px/22px var(--lo-font-ui); /* Headings inside a section. */
+  --lo-read-lead: 400 17px/27px var(--lo-font-ui); /* The tl;dr paragraph. */
+  --lo-read-body: 400 15px/24px var(--lo-font-ui); /* Overview prose, the PR description in the timeline. */
+  --lo-read-comment: 400 13.5px/21px var(--lo-font-ui); /* Review comments and replies. */
+  /* Code */
+  --lo-code-text: 400 12.5px/20px var(--lo-font-mono); /* Every code view. */
+  --lo-code-small: 400 12px/18px var(--lo-font-mono); /* Code in comments and hover cards. */
+}

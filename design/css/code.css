@@ -1,0 +1,382 @@
+/* ==========================================================================
+   Lo UI code — the CodeMirror 6 theme for every code view (the diff, the
+   whole-file view, the peek, the comment box), Lo's diff decorations, and
+   the chrome around the diff: comparison notes and file headers.
+
+   Selectors start with .lo-app so they outrank CodeMirror's base theme
+   (style-mod classes are two classes deep; the selection rule is four).
+   Lo's decorations use .lo-* classes; the same classes style the read-only
+   renderer at the end of this file, which is the fallback the design doc
+   names if CodeMirror can't hold up on a large PR.
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   Editor
+   -------------------------------------------------------------------------- */
+.lo-app .cm-editor {
+  background: var(--lo-code-bg);
+  color: var(--lo-code-fg);
+  font-family: var(--lo-font-mono);
+  font-size: var(--lo-code-size);
+}
+.lo-app .cm-editor.cm-focused { outline: none; }
+.lo-app .cm-editor .cm-scroller { font-family: inherit; line-height: var(--lo-code-line); }
+.lo-app .cm-editor .cm-content { padding: 4px 0; caret-color: var(--lo-code-cursor); }
+.lo-app .cm-editor .cm-line { padding: 0 16px 0 8px; }
+.lo-app .cm-editor .cm-gutters {
+  background: var(--lo-code-bg);
+  color: var(--lo-code-gutter);
+  border-right: 0;
+}
+.lo-app .cm-editor .cm-lineNumbers .cm-gutterElement {
+  min-width: 40px;
+  padding: 0 8px 0 10px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.lo-app .cm-editor .cm-lineNumbers .cm-gutterElement:hover { color: var(--lo-code-gutter-hover); }
+.lo-app .cm-editor.cm-focused .cm-activeLine { background-color: var(--lo-code-active-line); }
+.lo-app .cm-editor.cm-focused .cm-activeLineGutter { background-color: var(--lo-code-active-line); color: var(--lo-code-gutter-active); }
+.lo-app .cm-editor:not(.cm-focused) .cm-activeLine,
+.lo-app .cm-editor:not(.cm-focused) .cm-activeLineGutter { background-color: transparent; }
+
+/* Selection and cursors */
+.lo-app .cm-editor .cm-selectionBackground,
+.lo-app .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground { background: var(--lo-code-selection); }
+.lo-app .cm-editor .cm-cursor,
+.lo-app .cm-editor .cm-dropCursor { border-left: 2px solid var(--lo-code-cursor); }
+/* Vim's block cursor (@replit/codemirror-vim). Hollow when the view isn't focused. */
+.lo-app .cm-editor .cm-fat-cursor,
+.lo-fat-cursor {
+  background: var(--lo-code-cursor);
+  color: var(--lo-code-on-cursor);
+  border-radius: 2px;
+  outline: none;
+  box-shadow: 0 0 0 1px var(--lo-code-cursor), 0 0 10px var(--lo-focus-glow);
+}
+.lo-app .cm-editor:not(.cm-focused) .cm-fat-cursor,
+.lo-fat-cursor.is-blurred {
+  background: transparent;
+  color: inherit !important;
+  box-shadow: inset 0 0 0 1.5px var(--lo-code-cursor);
+}
+.lo-app .cm-editor .cm-matchingBracket { background: var(--lo-code-bracket); outline: 1px solid var(--lo-accent-line); border-radius: 2px; }
+.lo-app .cm-editor .cm-nonmatchingBracket { color: var(--lo-danger); }
+.lo-app .cm-editor .cm-selectionMatch { background: var(--lo-code-bracket); }
+
+/* Search: every match, and the current one */
+.lo-app .cm-editor .cm-searchMatch,
+.lo-match { background: var(--lo-code-match); border-radius: 2px; }
+.lo-app .cm-editor .cm-searchMatch-selected,
+.lo-match.is-current { background: var(--lo-code-match-current); box-shadow: 0 0 0 1px var(--lo-code-match-ring); }
+
+/* Panels docked in an editor (Vim's command line, search) */
+.lo-app .cm-editor .cm-panels { background: var(--lo-bg-chrome); color: var(--lo-fg); }
+.lo-app .cm-editor .cm-panels-bottom { border-top: 1px solid var(--lo-border); }
+.lo-app .cm-editor .cm-vim-panel { padding: 0 10px; font: 400 12px/24px var(--lo-font-mono); }
+.lo-app .cm-editor .cm-vim-panel input { color: var(--lo-fg); font: inherit; }
+
+/* Tooltips: type hovers, overview marker notes */
+.lo-app .cm-tooltip {
+  background: var(--lo-bg-overlay);
+  color: var(--lo-fg);
+  border: 0;
+  border-radius: var(--lo-r-md);
+  box-shadow: var(--lo-shadow-pop);
+  font: var(--lo-text-ui);
+}
+.lo-app .cm-tooltip-hover { padding: 10px 12px; max-width: 560px; }
+.lo-app .cm-tooltip .cm-tooltip-arrow { display: none; }
+
+/* Inline type hints (off by default) */
+.lo-inlay {
+  display: inline-block;
+  margin: 0 2px; padding: 0 4px;
+  border-radius: var(--lo-r-xs);
+  background: var(--lo-code-hint-bg);
+  color: var(--lo-code-hint);
+  font: italic 400 11px/16px var(--lo-font-mono);
+  vertical-align: 1px;
+}
+
+
+/* --------------------------------------------------------------------------
+   Syntax. tree-sitter capture names with dots turned to dashes:
+   @variable.parameter → .lo-syn-variable-parameter
+   -------------------------------------------------------------------------- */
+.lo-syn-keyword, .lo-syn-label, .lo-syn-preproc, .lo-syn-selector-pseudo, .lo-syn-punctuation-special, .lo-syn-punctuation-list_marker { color: var(--lo-syn-keyword); }
+.lo-syn-operator { color: var(--lo-syn-operator); }
+.lo-syn-function, .lo-syn-function-method, .lo-syn-selector { color: var(--lo-syn-function); }
+.lo-syn-attribute { color: var(--lo-syn-attribute); }
+.lo-syn-string, .lo-syn-string-regex, .lo-syn-string-special, .lo-syn-text-literal { color: var(--lo-syn-string); }
+.lo-syn-string-escape, .lo-syn-string-special-symbol { color: var(--lo-syn-escape); }
+.lo-syn-type, .lo-syn-type-builtin, .lo-syn-enum { color: var(--lo-syn-type); }
+.lo-syn-constructor { color: var(--lo-syn-constructor); }
+.lo-syn-namespace { color: var(--lo-syn-namespace); }
+.lo-syn-constant, .lo-syn-constant-builtin, .lo-syn-variant { color: var(--lo-syn-constant); }
+.lo-syn-number { color: var(--lo-syn-number); }
+.lo-syn-boolean { color: var(--lo-syn-boolean); }
+.lo-syn-variable { color: var(--lo-syn-variable); }
+.lo-syn-property { color: var(--lo-syn-property); }
+.lo-syn-variable-parameter { color: var(--lo-syn-parameter); font-style: italic; }
+.lo-syn-variable-special { color: var(--lo-syn-special); font-style: italic; }
+.lo-syn-punctuation, .lo-syn-punctuation-bracket, .lo-syn-punctuation-delimiter { color: var(--lo-syn-punctuation); }
+.lo-syn-comment, .lo-syn-comment-doc { color: var(--lo-syn-comment); font-style: italic; }
+.lo-syn-tag { color: var(--lo-syn-tag); }
+.lo-syn-title { color: var(--lo-syn-title); font-weight: 700; }
+.lo-syn-link_text { color: var(--lo-syn-link); }
+.lo-syn-link_uri { color: var(--lo-syn-string); }
+.lo-syn-emphasis { font-style: italic; }
+.lo-syn-emphasis-strong { font-weight: 700; }
+
+/* The comment box highlights Markdown with Lezer's classHighlighter */
+.lo-app .tok-heading { color: var(--lo-syn-title); font-weight: 700; }
+.lo-app .tok-emphasis { font-style: italic; }
+.lo-app .tok-strong { font-weight: 700; }
+.lo-app .tok-link { color: var(--lo-syn-link); }
+.lo-app .tok-url { color: var(--lo-syn-string); }
+.lo-app .tok-meta, .lo-app .tok-punctuation { color: var(--lo-syn-punctuation); }
+.lo-app .tok-keyword { color: var(--lo-syn-keyword); }
+.lo-app .tok-string, .lo-app .tok-string2 { color: var(--lo-syn-string); }
+.lo-app .tok-comment { color: var(--lo-syn-comment); font-style: italic; }
+.lo-app .tok-monospace { color: var(--lo-syn-string); }
+
+
+/* --------------------------------------------------------------------------
+   Diff decorations. CodeMirror's merge classes and Lo's own share each rule.
+   -------------------------------------------------------------------------- */
+/* Whole lines */
+.lo-app .cm-merge-a .cm-changedLine,
+.lo-app .cm-deletedChunk,
+.lo-line-del { background-color: var(--lo-diff-del-bg); }
+.lo-app .cm-merge-b .cm-changedLine,
+.lo-app .cm-inlineChangedLine,
+.lo-line-add { background-color: var(--lo-diff-add-bg); }
+
+/* Changed words */
+.lo-app .cm-merge-a .cm-changedText,
+.lo-app .cm-deletedChunk .cm-deletedText,
+.lo-word-del { background: var(--lo-diff-del-word); border-radius: 2px; text-decoration: none; }
+.lo-app .cm-merge-b .cm-changedText,
+.lo-app .cm-inlineChangedLine .cm-changedText,
+.lo-word-add { background: var(--lo-diff-add-word); border-radius: 2px; }
+
+/* Gutters on changed lines */
+.lo-app .cm-merge-a .cm-changedLineGutter,
+.lo-app .cm-deletedLineGutter { background: var(--lo-diff-del-fg); }
+.lo-app .cm-merge-b .cm-changedLineGutter { background: var(--lo-diff-add-fg); }
+.lo-gutter-del { background-color: var(--lo-diff-del-gutter); color: var(--lo-diff-del-fg) !important; }
+.lo-gutter-add { background-color: var(--lo-diff-add-gutter); color: var(--lo-diff-add-fg) !important; }
+.lo-sign { text-align: center; user-select: none; }
+.lo-sign--del::before { content: "\2212"; color: var(--lo-diff-del-fg); }
+.lo-sign--add::before { content: "+"; color: var(--lo-diff-add-fg); }
+.lo-sign--move::before { content: "\21C4"; color: var(--lo-diff-moved-fg); }
+
+/* The other side of a thread, a widget or an added run: aligned empty space */
+.lo-app .cm-mergeSpacer,
+.lo-spacer {
+  background-color: var(--lo-diff-filler);
+  background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--lo-diff-filler-stripe) 6px 7px);
+}
+
+/* Unchanged code, collapsed; expands in place */
+.lo-app .cm-collapsedLines,
+.lo-collapsed {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 28px; padding: 0 12px;
+  background: var(--lo-diff-collapsed-bg);
+  color: var(--lo-fg-muted);
+  font: var(--lo-text-small);
+  box-shadow: inset 0 1px 0 var(--lo-border-subtle), inset 0 -1px 0 var(--lo-border-subtle);
+  cursor: default;
+  user-select: none;
+}
+.lo-app .cm-collapsedLines::before,
+.lo-app .cm-collapsedLines::after { content: none; }
+.lo-app .cm-collapsedLines:hover,
+.lo-collapsed:hover { background: var(--lo-bg-element); color: var(--lo-fg); }
+.lo-collapsed .lo-collapsed__range { font: 400 11px/1 var(--lo-font-mono); color: var(--lo-diff-hunk-fg); }
+.lo-collapsed .lo-collapsed__action { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+
+/* GitHub's hunk header, shown before the local copy is ready */
+.lo-hunk {
+  background: var(--lo-diff-hunk-bg);
+  color: var(--lo-diff-hunk-fg);
+  font: 400 11.5px/var(--lo-code-line) var(--lo-font-mono);
+}
+
+/* Lines picked with v, and their gutters */
+.lo-line-selected,
+.lo-gutter-selected { background-image: linear-gradient(var(--lo-code-line-selected), var(--lo-code-line-selected)); }
+.lo-gutter-selected { color: var(--lo-fg-accent) !important; }
+
+/* Moved code: the block shows as a move, only the edits inside highlighted */
+.lo-moved { background-color: var(--lo-diff-moved-bg); }
+.lo-moved-edit { background: var(--lo-diff-moved-edit); border-radius: 2px; }
+.lo-gutter-moved { background-color: var(--lo-diff-moved-bg); color: var(--lo-diff-moved-fg) !important; }
+.lo-movedlabel {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 26px; padding: 0 12px;
+  background: var(--lo-diff-moved-bg);
+  box-shadow: inset 0 1px 0 var(--lo-diff-moved-border);
+  color: var(--lo-diff-moved-fg);
+  font: 500 12px/16px var(--lo-font-ui);
+}
+.lo-movedlabel a { font: 400 11.5px/16px var(--lo-font-mono); color: var(--lo-fg); text-decoration: underline; text-decoration-color: var(--lo-diff-moved-border); text-underline-offset: 3px; }
+.lo-movedlabel .lo-muted { font-weight: 400; }
+
+/* Overview markers: a ball on the first line the overview explains, a rail
+   down the rest. Opening one shows the explanation under the range. */
+.lo-ovgutter { position: relative; user-select: none; }
+.lo-ov-marker {
+  position: absolute; left: 50%; top: calc(var(--lo-code-line) / 2);
+  width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--lo-accent);
+  box-shadow: 0 0 0 3px var(--lo-current-strong);
+}
+.lo-ov-marker.is-open { box-shadow: 0 0 0 3px var(--lo-current-strong), 0 0 10px var(--lo-focus-glow); }
+.lo-ov-range::before {
+  content: ""; position: absolute; left: 50%; top: 0; bottom: 0;
+  width: 2px; margin-left: -1px; border-radius: 1px;
+  background: var(--lo-accent-line);
+}
+.lo-ov-range.is-first::before { top: calc(var(--lo-code-line) / 2); }
+.lo-ov-range.is-last::before { bottom: calc(var(--lo-code-line) / 2); }
+.lo-ovnote {
+  margin: 4px 14px 10px 12px;
+  max-width: 760px;
+  padding: 10px 14px 10px;
+  border-radius: var(--lo-r-md);
+  background: var(--lo-info-bg);
+  box-shadow: 0 0 0 1px var(--lo-info-border);
+  font: 400 13.5px/21px var(--lo-font-ui);
+  color: var(--lo-fg);
+  user-select: text;
+}
+.lo-ovnote__label {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+  font: var(--lo-text-label); letter-spacing: var(--lo-track-label); text-transform: uppercase;
+  color: var(--lo-fg-accent);
+}
+.lo-ovnote__label .lo-ov-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lo-accent); }
+.lo-ovnote__foot { display: flex; align-items: center; gap: 12px; margin-top: 8px; font: var(--lo-text-small); color: var(--lo-fg-muted); }
+.lo-ovnote code { font-family: var(--lo-font-mono); font-size: var(--lo-code-inline-size); }
+
+
+/* --------------------------------------------------------------------------
+   The diff view: every file in one scroll
+   -------------------------------------------------------------------------- */
+.lo-diff { height: 100%; overflow: auto; background: var(--lo-bg); }
+
+/* Notes on the comparison, at the top of the scroll */
+.lo-diffnote {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  min-height: 38px; padding: 6px 16px;
+  font: var(--lo-text-small); color: var(--lo-fg-muted);
+  border-bottom: 1px solid var(--lo-border-subtle);
+}
+.lo-diffnote strong { color: var(--lo-fg); font-weight: 600; }
+.lo-diffnote .lo-revbtn { height: 22px; }
+.lo-diffnote__item { display: inline-flex; align-items: center; gap: 6px; }
+.lo-diffnote__item + .lo-diffnote__item::before { content: ""; width: 3px; height: 3px; border-radius: 50%; background: var(--lo-fg-subtle); margin-right: 4px; }
+.lo-diffnote__end { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.lo-diffnote--warn { background: var(--lo-warning-bg); color: var(--lo-fg); border-bottom-color: var(--lo-warning-border); }
+.lo-diffnote--warn > .lo-i { color: var(--lo-warning); }
+.lo-diffnote--info { background: var(--lo-info-bg); color: var(--lo-fg); border-bottom-color: var(--lo-info-border); }
+.lo-diffnote--info > .lo-i { color: var(--lo-info); }
+
+/* One file */
+.lo-file + .lo-file { border-top: 1px solid var(--lo-border); }
+.lo-filehead {
+  position: sticky; top: 0; z-index: var(--lo-z-sticky);
+  display: flex; align-items: center; gap: 8px;
+  height: var(--lo-file-header-h);
+  padding: 0 8px 0 10px;
+  background: var(--lo-diff-file-header-bg);
+  box-shadow: inset 0 -1px 0 var(--lo-border-subtle);
+  font: var(--lo-text-small);
+  color: var(--lo-fg-muted);
+  white-space: nowrap;
+}
+.lo-filehead.is-stuck { box-shadow: var(--lo-shadow-sticky); }
+.lo-filehead.is-focused { box-shadow: var(--lo-ring-inset); }
+.lo-filehead__toggle { display: grid; place-items: center; width: 20px; height: 20px; border-radius: var(--lo-r-xs); color: var(--lo-fg-subtle); flex: none; }
+.lo-filehead__toggle:hover { background: var(--lo-hover); color: var(--lo-fg); }
+.lo-filehead__toggle.is-closed .lo-i { transform: rotate(-90deg); }
+.lo-path {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  font: 400 12px/1 var(--lo-font-mono);
+  color: var(--lo-fg-muted);
+  direction: ltr;
+  user-select: text;
+}
+.lo-path b { color: var(--lo-fg); font-weight: 400; }
+.lo-filehead.is-viewed .lo-path b { color: var(--lo-fg-muted); }
+.lo-path--old { color: var(--lo-fg-subtle); text-decoration: line-through; text-decoration-color: var(--lo-fg-disabled); flex-shrink: 3; }
+.lo-stat { display: inline-flex; gap: 6px; font: 500 11px/1 var(--lo-font-mono); flex: none; }
+.lo-stat .add { color: var(--lo-diff-add-fg); }
+.lo-stat .del { color: var(--lo-diff-del-fg); }
+.lo-filehead__end { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
+
+/* The viewed toggle in a file header */
+.lo-viewed {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 24px; padding: 0 6px 0 8px;
+  border-radius: var(--lo-r-sm);
+  box-shadow: inset 0 0 0 1px var(--lo-border);
+  font: 500 12px/1 var(--lo-font-ui); color: var(--lo-fg-muted);
+}
+.lo-viewed:hover { background: var(--lo-hover); color: var(--lo-fg); }
+.lo-viewed[aria-pressed="true"] { color: var(--lo-fg-muted); box-shadow: none; background: var(--lo-hover); }
+
+/* A file that isn't shown as a diff: generated, too large, binary, no changes */
+.lo-fileskip {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 40px; padding: 8px 16px 8px 40px;
+  font: var(--lo-text-small); color: var(--lo-fg-muted);
+  background: var(--lo-bg);
+}
+.lo-fileskip strong { color: var(--lo-fg); font-weight: 600; }
+
+
+/* --------------------------------------------------------------------------
+   Read-only renderer — rows on a grid so both sides share each row's
+   height. Side by side: [overview][number][sign][code] per side.
+   -------------------------------------------------------------------------- */
+.lo-sbs,
+.lo-uni {
+  display: grid;
+  font: 400 var(--lo-code-size)/var(--lo-code-line) var(--lo-font-mono);
+  color: var(--lo-code-fg);
+  background: var(--lo-code-bg);
+}
+.lo-sbs { grid-template-columns: 14px 46px 16px minmax(0, 1fr) 14px 46px 16px minmax(0, 1fr); }
+.lo-uni { grid-template-columns: 14px 46px 46px 16px minmax(0, 1fr); }
+.lo-sbs > *, .lo-uni > * { min-height: var(--lo-code-line); }
+.lo-ln {
+  padding: 0 8px 0 4px; text-align: right;
+  color: var(--lo-code-gutter);
+  font-size: 11.5px;
+  user-select: none;
+}
+.lo-ln.is-active { color: var(--lo-code-gutter-active); }
+/* Wrapped lines continue four columns past the line's own indent. --ind is
+   the count of leading spaces; in CodeMirror, set it with a line decoration
+   (attributes: { style: "--ind: 6" }) on lines that wrap. */
+.lo-sbs .lo-line,
+.lo-uni .lo-line {
+  --hang: calc((var(--ind, 0) + 4) * 1ch);
+  padding: 0 16px 0 calc(6px + var(--hang));
+  text-indent: calc(var(--hang) * -1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.lo-side-b { box-shadow: inset 1px 0 0 var(--lo-border); }
+.lo-sbs .lo-span-a { grid-column: 1 / 5; }
+.lo-sbs .lo-span-b { grid-column: 5 / 9; box-shadow: inset 1px 0 0 var(--lo-border); }
+.lo-sbs .lo-span-all, .lo-uni .lo-span-all { grid-column: 1 / -1; }
+.lo-uni .lo-span-widget { grid-column: 1 / -1; padding-left: 122px; }
+.lo-line-active { background-image: linear-gradient(var(--lo-code-active-line), var(--lo-code-active-line)); }

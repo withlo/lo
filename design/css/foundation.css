@@ -1,0 +1,53 @@
+/* ==========================================================================
+   Lo foundation — the tokens tokens.json can't hold: color scheme, focus
+   rings, font aliases, tracking, motion, layers and platform insets.
+   Hand-written. Every color and length lives in tokens.json.
+   ========================================================================== */
+
+:root,
+[data-theme="dark"] { color-scheme: dark; }
+[data-theme="light"] { color-scheme: light; }
+
+/* Declared on every themed element so a pinned theme resolves its own focus color */
+:root,
+[data-theme] {
+  /* Lo Glow: a crisp Powder edge with a soft halo. Lists use the inset ring. */
+  --lo-ring: 0 0 0 1.5px var(--lo-focus), 0 0 0 4px var(--lo-focus-glow);
+  --lo-ring-inset: inset 0 0 0 1.5px var(--lo-focus);
+}
+
+:root {
+  /* Fonts. tokens.json names the stacks --font-ui and --font-mono. Ship the
+     faces with the app (fontsource packages or files in the bundle); the app
+     never loads fonts from the network. */
+  --lo-font-ui: var(--font-ui);
+  --lo-font-mono: var(--font-mono);
+  --fig-font: var(--lo-font-ui);
+  --fig-mono: var(--lo-font-mono);
+
+  /* Tracking */
+  --lo-track-tight: -0.015em;    /* titles and headings */
+  --lo-track-wordmark: -0.02em;  /* only where the name is set as a word */
+  --lo-track-label: 0.06em;      /* uppercase labels */
+
+  /* Motion: the brand's curves. Things arriving use out, things settling
+     use in-out. Nothing waits on an animation. */
+  --lo-ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
+  --lo-ease-in: cubic-bezier(0.6, 0, 0.9, 0.5);
+  --lo-ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --lo-dur-fast: 90ms;
+  --lo-dur: 160ms;
+  --lo-dur-slow: 260ms;
+
+  /* Layers */
+  --lo-z-sticky: 10;
+  --lo-z-popover: 50;
+  --lo-z-dialog: 100;
+  --lo-z-toast: 200;
+}
+
+/* Platforms. Set data-lo-platform="linux" on <html> on Linux, and
+   data-lo-frame="custom" for a frameless window whose system controls sit
+   over the end of the tab strip. */
+[data-lo-platform="linux"] { --lo-window-inset-start: 0px; }
+[data-lo-platform="linux"][data-lo-frame="custom"] { --lo-window-inset-end: 108px; }

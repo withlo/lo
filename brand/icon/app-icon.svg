@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Lo">
+  <title>Lo</title>
+  <!--
+    Lo's app icon: the chalk mark on an ink body, on macOS's 1024 px app icon grid. The body is
+    824 px with 100 px around it, with the corners macOS 26 and later draw. The mark is 5.92 px per
+    unit (450 px): centered, it and its clear space (one ball radius, 21 units, on every side) would
+    fill the largest square that fits inside the body. It sits 9 px up and right of center
+    instead, about half way to its center of mass, which balances the L's heavier corner, and still
+    keeps more than its clear space from the body's edge. Rules: brand/README.md.
+    brand/icon/build.sh rebuilds the iconset, Lo.icns and the Icon Composer layer from this file.
+  -->
+  <path id="body" fill="#15161D" d="M426.1 100H597.9C735.1 100 798.47 100 861.23 162.77C924 225.53 924 288.9 924 426.1V597.9C924 735.1 924 798.47 861.23 861.23C798.47 924 735.1 924 597.9 924H426.1C288.9 924 225.53 924 162.77 861.23C100 798.47 100 735.1 100 597.9V426.1C100 288.9 100 225.53 162.77 162.77C225.53 100 288.9 100 426.1 100Z"/>
+  <g id="mark" fill="#FBF8F2" transform="translate(296 278) scale(5.92) translate(-12 -12)">
+    <path d="M12 21A9 9 0 0 1 30 21V44A26 26 0 0 0 56 70H79A9 9 0 0 1 79 88H20Q12 88 12 80Z"/>
+    <circle cx="65" cy="35" r="21"/>
+  </g>
+</svg>
