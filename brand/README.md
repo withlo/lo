@@ -5,7 +5,7 @@
   <img alt="Lo" src="logo/lockup-chalk.svg" height="56">
 </picture>
 
-The mark, the wordmark, the app icon, the few colors and type settings around them, how the mark moves, and the app's color theme. There are no components here on purpose.
+The mark, the wordmark, the app icon, the few colors and type settings around them, and how the mark moves. There are no components here on purpose: the interface's colors, type and components are in [`design/`](../design/README.md).
 
 Paths in this file are relative to this folder, `brand/`. From the repository's root, they start with `brand/`: `logo/mark.svg` is `brand/logo/mark.svg`.
 
@@ -13,7 +13,7 @@ Paths in this file are relative to this folder, `brand/`. From the repository's 
 
 Write it **Lo**, always with a capital L, wherever people read it. A lowercase l looks like a capital I in most sans-serif fonts, so "lo" reads as "Io".
 
-Lowercase `lo` appears only as code, such as the terminal command, the Homebrew name, the repo and `lo://` links. "The name" in [`CLAUDE.md`](../CLAUDE.md#the-name) has the full list.
+Lowercase `lo` appears only as code, such as the terminal command, the Homebrew name, the repo and `lo://` links. "The name" in [`AGENTS.md`](../AGENTS.md#the-name) has the full list.
 
 ## The mark
 
@@ -80,7 +80,7 @@ After changing `icon/app-icon.svg`, rebuild the rest on a Mac and commit them to
 brand/icon/build.sh
 ```
 
-**macOS 26 and later** redraw app icons in their own glass style. On macOS 27, from a plain `Lo.icns`, macOS lifts the mark off the square and shades it with a gradient, an edge highlight and a shadow, which the mark's rules don't allow. An icon that doesn't fill the square, such as a mark on transparent, goes in a gray square instead. [`icon/Lo.icon`](icon/Lo.icon/) turns those effects off (`icon.json`), so the mark stays flat, and keeps the square ink in dark mode; macOS still adds a thin edge to the square. Its layer, `icon/Lo.icon/Assets/mark.svg`, is made by `build.sh`. `script/bundle-mac` compiles it with `actool` (Xcode 26 and later) into the app's `Contents/Resources/Assets.car`, which `Info.plist`'s `CFBundleIconName` names, and copies `Lo.icns` beside it for older macOS, which reads `CFBundleIconFile`; `script/check-bundle` fails an app without both.
+**macOS 26 and later** redraw app icons in their own glass style. On macOS 27, from a plain `Lo.icns`, macOS lifts the mark off the square and shades it with a gradient, an edge highlight and a shadow, which the mark's rules don't allow. An icon that doesn't fill the square, such as a mark on transparent, goes in a gray square instead. [`icon/Lo.icon`](icon/Lo.icon/) turns those effects off (`icon.json`), so the mark stays flat, and keeps the square ink in dark mode; macOS still adds a thin edge to the square. Its layer, `icon/Lo.icon/Assets/mark.svg`, is made by `build.sh`. The Mac build compiles it with `actool` (Xcode 26 and later) into the app's `Contents/Resources/Assets.car`, which `Info.plist`'s `CFBundleIconName` names, and ships `Lo.icns` beside it for older macOS, which reads `CFBundleIconFile`. The app needs both.
 
 ## Where each asset goes
 
@@ -94,7 +94,6 @@ brand/icon/build.sh
 | GitHub sign-in | The mark alone, chalk on ink: `logo/png/mark-chalk-512.png` with the badge background set to `#15161D`; GitHub shows the name beside it |
 | Menu bar | `logo/mark-black.svg` as a template image (see "To come") |
 | Window titles | The name as text, no mark |
-| The app's color theme | `themes/lo-glow.json`, with Lo Glow Dark and Lo Glow Light (see "App theme") |
 
 Where the reader's theme isn't known, use the dark version: chalk on ink. A Markdown header that follows the reader's theme, and falls back to dark, from the repository's root (this file uses the same paths without `brand/`):
 
@@ -127,7 +126,7 @@ The same values are in [`tokens/brand.css`](tokens/brand.css) (CSS custom proper
 - **Host Grotesk** for text, at weights 400 to 800.
 - **Fragment Mono** for code.
 
-This is the same pairing as scornz, so the two brands feel related. Both fonts are free under the SIL Open Font License, from Google Fonts ([Host Grotesk](https://fonts.google.com/specimen/Host+Grotesk), [Fragment Mono](https://fonts.google.com/specimen/Fragment+Mono)). Use them for the README, getlo.dev (planned) and the sign-in screen. GitHub sets a README's text in its own fonts, so there the banner's wordmark carries the type. Inside the app, the system font keeps Lo feeling native.
+Both fonts are free under the SIL Open Font License, from Google Fonts ([Host Grotesk](https://fonts.google.com/specimen/Host+Grotesk), [Fragment Mono](https://fonts.google.com/specimen/Fragment+Mono)). Use them for the README, getlo.dev (planned) and the sign-in screen. GitHub sets a README's text in its own fonts, so there the banner's wordmark carries the type. The app uses both too, and ships them itself; [`design/README.md`](../design/README.md) has the interface's type scale.
 
 | Style | Size / line height | Weight |
 | --- | --- | --- |
@@ -157,7 +156,7 @@ Each preview comes in chalk (for dark backgrounds) and ink (for light ones). The
 - Each animation plays once and ends on the static mark or lockup. The meld loop is the only one that repeats.
 - When Reduce Motion is on, show the static mark or lockup and skip the animation.
 
-**Rebuilding it natively.** [`motion/motion.json`](motion/motion.json) has everything needed to rebuild these in the app: the geometry of the triangle and the socket, every keyframe for the pool, ball and neck, and the easing curves. The liquid look comes from blurring the shapes together and then cutting the blur off at a hard alpha threshold, with crisp copies of the shapes drawn on top. In SwiftUI, a `Canvas` with a blur filter followed by an alpha-threshold filter does this; a small Metal shader also works.
+**Rebuilding it in the app.** [`motion/motion.json`](motion/motion.json) has everything needed to rebuild these in the app: the geometry of the triangle and the socket, every keyframe for the pool, ball and neck, and the easing curves. The liquid look comes from blurring the shapes together and then cutting the blur off at a hard alpha threshold, with crisp copies of the shapes drawn on top. The previews do this with an SVG filter, `feGaussianBlur` followed by an `feColorMatrix` that thresholds the alpha, and the app can use the same filter.
 
 Easing curves, also in [`tokens/brand.css`](tokens/brand.css) and [`tokens/brand.json`](tokens/brand.json):
 
@@ -166,26 +165,6 @@ Easing curves, also in [`tokens/brand.css`](tokens/brand.css) and [`tokens/brand
 | In-out | `0.45, 0, 0.55, 1` | Swelling, settling |
 | In | `0.6, 0, 0.9, 0.5` | The pull before the snap |
 | Out | `0.2, 0.7, 0.3, 1` | The snap, the landing, the overshoot |
-
-## App theme
-
-[`themes/lo-glow.json`](themes/lo-glow.json) is the default theme for the app, as a Zed theme file with two themes in it: **Lo Glow Dark** and **Lo Glow Light**. It covers the whole interface, not just the code: panels, tabs, buttons, focus rings, search matches, selection, status colors, the terminal and syntax highlighting.
-
-- **Chrome.** Panels, tab bars, the title bar and the status bar use a step lighter than the ground (`#1B1C23` on dark, `#F4F1E9` on light). The code area and the active tab sit on the ground itself, ink or chalk.
-- **Accent.** Powder is the only accent: focus rings, the cursor, selection, links and the main button. `#A5C5E9` on dark, `#0664B2` on light.
-- **Syntax.** Glow: pink keywords and operators, green functions, yellow strings, aqua types, violet constants, orange parameters. Parameters and comments are italic.
-- **Diffs.** Whole added and removed lines use `created.background` and `deleted.background`. Changed words within them use `version_control.word_added` and `version_control.word_deleted`. The `+` and `−` markers and the gutter use `created` and `deleted`.
-- **Status.** Errors red, warnings and modified files amber, success green, info Powder.
-
-Every syntax color reaches at least 4.5:1 contrast on plain, added and removed lines, changed words included. Text, muted text, placeholders and status colors reach 4.5:1 on the surfaces they sit on. None of the syntax colors is taken from Monokai or Monokai Pro.
-
-If a part of Lo draws something the theme has no key for, use these:
-
-| Thing | Dark | Light |
-| --- | --- | --- |
-| Diff hunk header (`@@ … @@`) | background `#191F27`, text `#9598A5` | background `#E3ECF7`, text `#706961` |
-| File header above a diff | `editor.subheader.background` | `editor.subheader.background` |
-| Text on the main button | `#15161D` | `#FBF8F2` |
 
 ## To come
 

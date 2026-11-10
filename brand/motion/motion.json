@@ -28,7 +28,7 @@
     "how": "Blur the pool, balls and neck together, then threshold the alpha so overlapping blurs fuse into one liquid outline. Draw crisp copies of the L, pool and balls on top so edges stay sharp; the neck shows only where it fuses.",
     "blurSigma": 4.2,
     "alphaThreshold": "alpha' = clamp(48 * alpha - 26), an edge at about 0.54",
-    "native": "In SwiftUI, a Canvas with a blur filter followed by an alpha threshold filter (GraphicsContext.Filter.alphaThreshold) gives the same effect; a small Metal shader also works."
+    "svg": "The previews' filter: feGaussianBlur with stdDeviation blurSigma, then feColorMatrix with the alpha row 0 0 0 48 -26."
   },
   "easing": {
     "linear": [
