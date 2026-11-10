@@ -1,11 +1,13 @@
-// The window's only way to main: `window.lo`, with `invoke` and `subscribe` and nothing else. The
-// page can't reach Electron or Node through it: names are checked before anything is sent, and
-// a listener gets only the pushed value, never Electron's event.
+// The window's only way to main: `window.lo`, with `invoke` and `subscribe` and nothing else, and
+// the port to the background process. The page can't reach Electron or Node through them: names
+// are checked before anything is sent, and a listener gets only the pushed value, never Electron's
+// event.
 
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 
 import type { Bridge } from '../ipc/bridge.ts';
 import { channelName, isResult, type Result } from '../ipc/contract.ts';
+import { handOver, isHandOver } from '../ipc/jobs.ts';
 
 const unavailable = (channel: unknown): Result<never> => ({
   ok: false,
@@ -43,3 +45,10 @@ const bridge: Bridge = {
 };
 
 contextBridge.exposeInMainWorld('lo', bridge);
+
+// News of the background process from main: a port to it, sent each time the page loads and after
+// each restart, or word that it stopped. A MessagePort can't cross the bridge, so it all goes to
+// the page as a window message.
+ipcRenderer.on(handOver, (event, message: unknown) => {
+  if (isHandOver(message)) window.postMessage(message, window.location.origin, event.ports);
+});

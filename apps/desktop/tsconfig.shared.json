@@ -3,6 +3,6 @@
   "compilerOptions": {
     "outDir": ".tsbuild/shared"
   },
-  "include": ["src/ipc/**/*.ts", "src/features/*/contract.ts"],
+  "include": ["src/ipc/**/*.ts", "src/features/*/contract.ts", "src/features/*/jobs.ts"],
   "exclude": ["src/**/*.test.ts"]
 }

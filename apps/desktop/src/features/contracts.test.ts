@@ -2,9 +2,14 @@ import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 
 import type { Contract } from '../ipc/contract.ts';
+import type { JobContract } from '../ipc/jobs.ts';
 
-// Every feature's contract, found the way main and the window find features.
+// Every feature's contract, and every contract for its jobs, found the way the app finds them.
 const contracts = import.meta.glob<Contract>('./*/contract.ts', {
+  eager: true,
+  import: 'contract',
+});
+const jobContracts = import.meta.glob<JobContract>('./*/jobs.ts', {
   eager: true,
   import: 'contract',
 });
@@ -70,4 +75,16 @@ describe("every feature's contract", () => {
       expect(loose).toEqual([]);
     },
   );
+});
+
+describe("every feature's jobs", () => {
+  // Features may have no jobs, so this one test covers however many there are.
+  it('refuse keys they don’t name', () => {
+    const loose = Object.values(jobContracts).flatMap((contract) =>
+      Object.entries(contract.jobs).flatMap(([name, spec]) =>
+        looseObjects(spec.input).map((where) => `${contract.group}.${name}: ${where}`),
+      ),
+    );
+    expect(loose).toEqual([]);
+  });
 });

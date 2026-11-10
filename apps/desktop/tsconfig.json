@@ -9,6 +9,9 @@
       "path": "./tsconfig.main.json"
     },
     {
+      "path": "./tsconfig.background.json"
+    },
+    {
       "path": "./tsconfig.preload.json"
     },
     {

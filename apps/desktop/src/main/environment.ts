@@ -42,3 +42,43 @@ export function devServer(options: { packaged: boolean; env: Environment }): URL
   }
   return url;
 }
+
+/** The background process's settings. */
+export interface BackgroundSettings {
+  /** Whether it offers the smoke test's jobs. */
+  testJobs: boolean;
+  /** The memory, in bytes, past which main restarts it. */
+  memoryCap: number;
+}
+
+/**
+ * The background process's settings. Its memory cap is 2 GB. A build run from source offers the
+ * smoke test's jobs with `LO_TEST_JOBS=1`, and takes another cap from `LO_BACKGROUND_MEMORY_CAP_MB`
+ * so the test can pass it without taking 2 GB. A packaged build ignores both.
+ */
+export function backgroundSettings(options: {
+  packaged: boolean;
+  env: Environment;
+}): BackgroundSettings {
+  const settings = { testJobs: false, memoryCap: 2 * 1024 ** 3 };
+  if (options.packaged) return settings;
+  const cap = options.env.LO_BACKGROUND_MEMORY_CAP_MB;
+  if (cap !== undefined && !/^[1-9]\d*$/.test(cap)) {
+    throw new Error(
+      `LO_BACKGROUND_MEMORY_CAP_MB must be a whole number of megabytes, not "${cap}".`,
+    );
+  }
+  return {
+    testJobs: options.env.LO_TEST_JOBS === '1',
+    memoryCap: cap === undefined ? settings.memoryCap : Number(cap) * 1024 ** 2,
+  };
+}
+
+/**
+ * The background process's whole environment. Electron passes main's on to a utility process
+ * unless it's given a map with something in it, so this always has a marker, plus the switch for
+ * the test jobs when they're on: nothing of main's, and so no token, reaches the process.
+ */
+export function backgroundEnvironment(settings: BackgroundSettings): Record<string, string> {
+  return { LO_BACKGROUND: '1', ...(settings.testJobs ? { LO_TEST_JOBS: '1' } : {}) };
+}
