@@ -263,13 +263,16 @@ function compileTriggersAndViews(
     if (object.type === 'view') database.compile(`SELECT * FROM ${quote(name)} LIMIT 0`);
     if (object.type === 'trigger') fired.add(object.table);
   }
-  // A statement a trigger can't fire on fails for its own reasons (a view takes only the changes
-  // its INSTEAD OF triggers handle); only the authorizer's refusals count here.
+  // A view takes only the changes its INSTEAD OF triggers handle, so a statement it has no trigger
+  // for fails, and that alone is let pass. Any other failure, such as a trigger that names a table
+  // that doesn't exist yet, keeps the trigger's body from being checked, so it fails the migration.
   const attempt = (sql: string) => {
     try {
       database.compile(sql);
     } catch (error) {
-      if (refused()) throw error;
+      const unhandledByView =
+        error instanceof Error && /^cannot modify .+ because it is a view$/.test(error.message);
+      if (refused() || !unhandledByView) throw error;
     }
   };
   for (const table of fired) {
