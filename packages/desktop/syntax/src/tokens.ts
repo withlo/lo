@@ -52,14 +52,16 @@ export type Token = (typeof tokens)[number];
 const numbers = new Map<string, number>(tokens.map((token, index) => [token, index]));
 
 /**
- * Captures that are meant to have no style: whole paragraphs and JSX text, which keep the plain
- * text color, and markup Lo doesn't style. Captures starting with `_` only feed predicates.
+ * Captures that are meant to have no style, by their full names: whole paragraphs and JSX text,
+ * which keep the plain text color, and markup Lo doesn't style. Captures starting with `_` only
+ * feed predicates.
  */
 export const unstyled: ReadonlySet<string> = new Set([
   'embedded',
   'nested',
-  'strikethrough',
+  'strikethrough.markup',
   'text',
+  'text.jsx',
 ]);
 
 /**

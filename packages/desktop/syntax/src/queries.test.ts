@@ -71,7 +71,7 @@ describe('the queries', () => {
       .map(([language, , source]) => [language, source]),
   )('%s captures only names with a token or meant to have none', (_, source) => {
     const missing = capturesOf(source).filter(
-      (name) => tokenOf(name) === undefined && !unstyled.has(name.split('.')[0]!),
+      (name) => tokenOf(name) === undefined && !unstyled.has(name),
     );
     expect(missing).toEqual([]);
   });

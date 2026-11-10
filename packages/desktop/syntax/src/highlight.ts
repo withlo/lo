@@ -21,23 +21,58 @@ export interface HighlightOptions {
   timeout?: number;
   /** The longest text to highlight, in UTF-16 code units. A longer file isn't parsed at all. */
   maxLength?: number;
+  /** The deepest nesting to highlight. A file nested deeper isn't parsed at all. */
+  maxDepth?: number;
 }
 
 export type Highlight =
   | { tokens: Uint32Array }
-  /** Not highlighted: too long to parse, or parsing ran out of time. */
-  | { skipped: 'too-long' | 'timed-out' };
+  /**
+   * Not highlighted: too long or nested too deeply to parse safely, out of time, or failed, after
+   * which the highlighter can't be used again.
+   */
+  | { skipped: 'too-long' | 'too-deep' | 'timed-out' | 'failed' };
 
 /** Two seconds: enough for a 50,000-line file. */
 export const defaultTimeout = 2000;
 
-/** About 4 million UTF-16 code units, some 4 MB of code. */
-export const defaultMaxLength = 1 << 22;
+/**
+ * Three million UTF-16 code units: room for TypeScript's 2.84-million-character `checker.ts`, which
+ * takes half a second and 55 MB of WebAssembly memory to highlight. Dense JSON of 3.4 million took
+ * 1.2 seconds and 200 MB.
+ */
+export const defaultMaxLength = 3_000_000;
+
+/**
+ * A hundred levels of brackets, Markdown quotes, or YAML and Markdown indentation. Code rarely goes
+ * past twenty. Deeper, each step of a query takes longer, YAML's scanner outgrows the state it can
+ * save, and nested Markdown quotes take gigabytes to parse.
+ */
+export const defaultMaxDepth = 100;
+
+/** WebAssembly memory past which a highlighter should be replaced: it never shrinks. */
+export const memoryCeiling = 256 * 1024 * 1024;
+
+/** The part of WebAssembly's API this needs, which the background process's types leave out. */
+declare const WebAssembly: {
+  Memory: new (descriptor: { initial: number; maximum: number }) => {
+    readonly buffer: ArrayBuffer;
+  };
+};
+
+/**
+ * The one WebAssembly memory every highlighter in this thread parses in, capped at 512 MB, so a
+ * parse that runs away fails instead of taking the machine's memory.
+ */
+const memory = new WebAssembly.Memory({ initial: 512, maximum: 8192 });
 
 let initialized: Promise<void> | undefined;
 
 /** How deep injections nest: Markdown's inline text, and the code in Markdown's code blocks. */
-const maxDepth = 3;
+const maxInjectionDepth = 3;
+
+/** How much text one step of a query covers, between checks of the deadline. */
+const queryStep = 1 << 16;
 
 interface Compiled {
   language: Language;
@@ -53,10 +88,15 @@ interface Capture {
   priority: number;
 }
 
-/** Highlights text in every language in `languages`. Make one per worker thread. */
+/**
+ * Highlights text in every language in `languages`. Make one per worker thread. WebAssembly
+ * memory is the thread's, so once a highlighter has failed, or its memory has grown past
+ * `memoryCeiling`, it says it isn't `usable`, and its thread should be replaced.
+ */
 export class Highlighter {
   readonly #parser: Parser;
   readonly #compiled: ReadonlyMap<LanguageName, Compiled>;
+  #failed = false;
 
   private constructor(parser: Parser, compiled: ReadonlyMap<LanguageName, Compiled>) {
     this.#parser = parser;
@@ -65,7 +105,7 @@ export class Highlighter {
 
   /** Loads every grammar and compiles every query. A query that doesn't compile fails. */
   static async create(loader: Loader): Promise<Highlighter> {
-    initialized ??= Parser.init();
+    initialized ??= Parser.init({ wasmMemory: memory });
     await initialized;
     const grammars = new Map<string, Language>();
     const compiled = new Map<LanguageName, Compiled>();
@@ -88,15 +128,39 @@ export class Highlighter {
     return new Highlighter(new Parser(), compiled);
   }
 
+  /** How many bytes of WebAssembly memory the thread's highlighters hold. */
+  get memory(): number {
+    return memory.buffer.byteLength;
+  }
+
+  /** Whether the highlighter can go on: it hasn't failed, and its memory is under the ceiling. */
+  get usable(): boolean {
+    return !this.#failed && this.memory <= memoryCeiling;
+  }
+
   /** Highlights `text` as `language`. */
   highlight(language: LanguageName, text: string, options: HighlightOptions = {}): Highlight {
+    if (this.#failed) return { skipped: 'failed' };
     if (text.length > (options.maxLength ?? defaultMaxLength)) return { skipped: 'too-long' };
+    const shape = {
+      quotes: language === 'markdown',
+      indents: language === 'markdown' || language === 'yaml',
+    };
+    if (nestingDepth(text, shape) > (options.maxDepth ?? defaultMaxDepth)) {
+      return { skipped: 'too-deep' };
+    }
     const deadline = performance.now() + (options.timeout ?? defaultTimeout);
     let timedOut = false;
     // Parsing and querying both stop when this returns true.
     const progressCallback = (): boolean => (timedOut ||= performance.now() > deadline);
     const captures: Capture[] = [];
-    this.#collect(language, text, [], 0, progressCallback, captures);
+    try {
+      this.#collect(language, text, [], 0, progressCallback, captures);
+    } catch {
+      // A failure in WebAssembly can leave its memory broken, so nothing more runs in it.
+      this.#failed = true;
+      return { skipped: 'failed' };
+    }
     if (timedOut) return { skipped: 'timed-out' };
     return { tokens: resolve(captures) };
   }
@@ -124,19 +188,27 @@ export class Highlighter {
       const options = { progressCallback };
       // Injected text wins over the text it sits in, deeper injections over shallower ones.
       const base = depth * 1_000_000;
-      for (const capture of compiled.highlights.captures(tree.rootNode, options)) {
-        const token = tokenOf(capture.name);
-        const { startIndex, endIndex } = capture.node;
-        if (token !== undefined && endIndex > startIndex) {
-          out.push({
-            from: startIndex,
-            to: endIndex,
-            token,
-            priority: base + capture.patternIndex,
-          });
+      const { startIndex: from, endIndex: to } = tree.rootNode;
+      // A step at a time, checking the deadline between steps. A node that spans steps is taken
+      // in the step it starts in.
+      for (let start = from; start < to && !progressCallback(); start += queryStep) {
+        const end = Math.min(start + queryStep, to);
+        const step = { ...options, startIndex: start, endIndex: end };
+        for (const capture of compiled.highlights.captures(tree.rootNode, step)) {
+          const token = tokenOf(capture.name);
+          const { startIndex, endIndex } = capture.node;
+          if (startIndex < start && start > from) continue;
+          if (token !== undefined && endIndex > startIndex) {
+            out.push({
+              from: startIndex,
+              to: endIndex,
+              token,
+              priority: base + capture.patternIndex,
+            });
+          }
         }
       }
-      if (!compiled.injections || depth + 1 >= maxDepth) return;
+      if (!compiled.injections || depth + 1 >= maxInjectionDepth || progressCallback()) return;
       for (const [language, injected] of injectionsOf(
         compiled.injections,
         tree.rootNode,
@@ -148,6 +220,46 @@ export class Highlighter {
       tree.delete();
     }
   }
+}
+
+/**
+ * How deeply `text` nests: its deepest brackets, and with `shape`, its deepest run of Markdown
+ * quotes or indentation, in levels of two spaces, at the start of a line.
+ */
+export function nestingDepth(text: string, shape: { quotes: boolean; indents: boolean }): number {
+  let deepest = 0;
+  let brackets = 0;
+  let lineStart = true;
+  let indent = 0;
+  let quotes = 0;
+  for (let at = 0; at < text.length; at++) {
+    const code = text.charCodeAt(at);
+    if (code === 10) {
+      lineStart = true;
+      indent = 0;
+      quotes = 0;
+      continue;
+    }
+    if (lineStart) {
+      if (code === 32 || code === 9) {
+        indent += code === 9 ? 4 : 1;
+        continue;
+      }
+      if (code === 62 && shape.quotes) {
+        quotes++;
+        continue;
+      }
+      lineStart = false;
+      deepest = Math.max(deepest, quotes, shape.indents ? indent >> 1 : 0);
+    }
+    if (code === 40 || code === 91 || code === 123) {
+      brackets++;
+      if (brackets > deepest) deepest = brackets;
+    } else if ((code === 41 || code === 93 || code === 125) && brackets > 0) {
+      brackets--;
+    }
+  }
+  return deepest;
 }
 
 /**

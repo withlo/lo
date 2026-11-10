@@ -1,7 +1,11 @@
-import { beforeAll, describe, expect, test } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-import { diskLoader } from './disk.ts';
-import { Highlighter, resolve } from './highlight.ts';
+import { Language, Parser } from 'web-tree-sitter';
+import { beforeAll, describe, expect, test, vi } from 'vitest';
+
+import { diskLoader, packageFolder } from './disk.ts';
+import { Highlighter, nestingDepth, resolve } from './highlight.ts';
 import { languageOfPath, type LanguageName } from './languages.ts';
 import { tokenOf, tokens } from './tokens.ts';
 
@@ -112,6 +116,78 @@ describe('Highlighter', () => {
     });
     // The parser recovers for the next file.
     expect(stretches('typescript', 'let a;\n')).toContain('let:keyword');
+  });
+});
+
+/** YAML indented one space more on each of 260 lines: about 33 KB. */
+const deepYaml = Array.from({ length: 260 }, (_, index) => `${' '.repeat(index)}k${index}:`).join(
+  '\n',
+);
+
+describe('hostile files', () => {
+  test('the patched YAML grammar parses past the scanner\u2019s saved state, then goes on', async () => {
+    await Highlighter.create(diskLoader());
+    const parser = new Parser();
+    const wasm = readFileSync(join(packageFolder, 'dist', 'grammars', 'yaml.wasm'));
+    parser.setLanguage(await Language.load(wasm));
+    // Editing and parsing again saves and restores the scanner's state at every step.
+    const tree = parser.parse(deepYaml)!;
+    expect(parser.parse(`${deepYaml}\nend: 1\n`, tree)?.rootNode.type).toBe('stream');
+    tree.delete();
+    parser.delete();
+
+    expect(stretches('yaml', 'name: ci\n')).toContain('name:property');
+  });
+
+  test.each([
+    ['yaml', 'YAML indented 260 levels', deepYaml],
+    ['markdown', 'a Markdown code block of that YAML', `\`\`\`yaml\n${deepYaml}\n\`\`\`\n`],
+    ['yaml', 'a megabyte of nested flow collections', '[{'.repeat(500_000)],
+    ['markdown', 'a megabyte of nested quotes', `${'>'.repeat(200)} x\n`.repeat(5000)],
+    ['json', 'brackets nested past the limit', `${'['.repeat(150)}${']'.repeat(150)}`],
+  ] as const)('skips %s: %s', (language, _, text) => {
+    const started = performance.now();
+
+    expect(highlighter.highlight(language, text)).toEqual({ skipped: 'too-deep' });
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
+  test('leave the memory where it was, and a normal file highlights after them', () => {
+    const before = highlighter.memory;
+    for (const [language, text] of [
+      ['yaml', deepYaml],
+      ['markdown', `${'>'.repeat(200)} x\n`.repeat(5000)],
+      ['yaml', '[{'.repeat(500_000)],
+    ] as const) {
+      highlighter.highlight(language, text);
+    }
+
+    expect(highlighter.memory).toBe(before);
+    expect(highlighter.usable).toBe(true);
+    expect(stretches('typescript', 'let a;\n')).toContain('let:keyword');
+  });
+
+  test('a failure in WebAssembly stops the highlighter for good', async () => {
+    const fresh = await Highlighter.create(diskLoader());
+    const parse = vi.spyOn(Parser.prototype, 'parse').mockImplementationOnce(() => {
+      throw new Error('memory access out of bounds');
+    });
+    try {
+      expect(fresh.highlight('typescript', 'let a;\n')).toEqual({ skipped: 'failed' });
+      expect(fresh.usable).toBe(false);
+      expect(fresh.highlight('typescript', 'let a;\n')).toEqual({ skipped: 'failed' });
+    } finally {
+      parse.mockRestore();
+    }
+  });
+});
+
+describe('nestingDepth', () => {
+  test('counts brackets, and with the shape, quotes and indentation', () => {
+    expect(nestingDepth('f([{a}])', { quotes: false, indents: false })).toBe(3);
+    expect(nestingDepth('> > > deep\n', { quotes: true, indents: false })).toBe(3);
+    expect(nestingDepth('a:\n      b: 1\n', { quotes: false, indents: true })).toBe(3);
+    expect(nestingDepth('a:\n      b: 1\n', { quotes: false, indents: false })).toBe(0);
   });
 });
 

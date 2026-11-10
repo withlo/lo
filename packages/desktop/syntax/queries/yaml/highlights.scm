@@ -1,3 +1,6 @@
+; From Zed (https://github.com/zed-industries/zed), crates/grammars/src/yaml/highlights.scm
+; at c84af5b99cbc366d675064e52b23664a015b6e35. Copyright Zed Industries, Inc. GPL-3.0-or-later.
+
 (boolean_scalar) @boolean
 
 (null_scalar) @constant.builtin

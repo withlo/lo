@@ -54,7 +54,8 @@
       "repo": "zed-industries/tree-sitter-yaml",
       "commit": "baff0b51c64ef6a1fb1f8390f3ad6015b83ec13a",
       "path": ".",
-      "sha256": "a2a731951a7a7d5bf9880857b09602057feb46b11d510d303f3a2795733bce2c"
+      "patches": ["yaml-serialize.patch"],
+      "sha256": "1437eb7b0256c04e1e4a0262a56fe5c79125fef4dc65c6db756bf74e5092a6b1"
     }
   ]
 }
