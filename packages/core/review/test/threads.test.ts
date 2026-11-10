@@ -460,6 +460,42 @@ test('bob can only comment on his own pull request', () => {
   });
 });
 
+test('a pending review started before a push keeps its revision', () => {
+  // Alice started a review on r2; Bob then pushed r3.
+  const review = new YourReview(PULL, { id: 'PRR_kwDOAbc', commit: R2, comments: 2 });
+  const screen = Screen.between(R2, R3);
+  const commentable = CommentableLines.inDiff(screen, PatchHunk.parse(PATCH));
+
+  // Between revisions, only the right column takes comments. It shows r3, the latest head, where
+  // GitHub puts every thread added to a pending review, so they join the review on r2.
+  expect(commentable.line(Line.left(11))).toBeUndefined();
+  const line11 = commentable.line(Line.right(11));
+  if (line11 === undefined) throw new Error('line 11 takes no comment');
+  const comment = newThread(line11, 'Nit');
+  expect(planned(review.add(screen.right, R3, comment)).kind).toBe('addThread');
+
+  // On r2 itself, a new line comment would land on r3's line 11, so it's refused.
+  expect(review.add(R2, R3, comment)).toEqual({ refusal: 'notLatest', head: R3 });
+
+  // Replies have no lines, so they join it from any revision.
+  const reply: NewComment = { kind: 'reply', thread: 'PRRT_current', body: 'Still applies.' };
+  for (const on of [R1, R2, R3]) {
+    expect(planned(review.add(on, R3, reply)).kind).toBe('addReply');
+  }
+
+  // The dialog says the review is recorded on r2, so it won't approve r3 with it: GitHub would
+  // record approving r2. It still submits it as a comment.
+  const dialog = review.submitDialog('alice', false, R3);
+  expect([dialog.on, dialog.onScreen]).toEqual([R2, false]);
+  expect(review.submit('APPROVE', '', false, R3, R3)).toEqual({
+    refusal: 'otherRevision',
+    reviewOn: R2,
+  });
+  expect(planned(review.submit('COMMENT', '', false, R3, R3)).kind).toBe('submitReview');
+  // On r2, she can approve what she sees.
+  expect(planned(review.submit('APPROVE', '', false, R2, R3)).kind).toBe('submitReview');
+});
+
 test('without a pending review c posts on the revision on screen', () => {
   const screen = Screen.between(R1, R2);
   const rename = newThread(Lines.one(Line.right(11)), 'Nit: rename.');
