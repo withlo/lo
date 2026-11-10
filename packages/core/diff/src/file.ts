@@ -184,10 +184,26 @@ function budgetOf(options: Pick<DiffOptions, 'budget'>): number {
 
 function compute(old: Version, added: Version, options: DiffOptions): FileDiff {
   const budget = budgetOf(options);
+  try {
+    return diffVersions(old, added, budget, options);
+  } catch {
+    // Anything that fails in one file leaves that file whole, so the rest go on.
+    return fileDiff(old, added, whole(old.lines.length, added.lines.length), true, options);
+  }
+}
+
+function diffVersions(
+  old: Version,
+  added: Version,
+  budget: number,
+  options: DiffOptions,
+): FileDiff {
   let changes: Change[];
   let approximate = false;
-  // Lines are compared as git compares them, with their line endings.
-  const marker = markerFor(old, added);
+  // Lines are compared as git compares them, with their line endings. A last line without one
+  // gets a marker, when there's a character neither file holds to mark it with.
+  const differ = old.noNewlineAtEnd !== added.noNewlineAtEnd;
+  const marker = old.noNewlineAtEnd || added.noNewlineAtEnd ? markerFor(old, added) : '';
   const oldDiffed = withEndings(old, marker);
   const newDiffed = withEndings(added, marker);
   const edges = new Graphemes();
@@ -224,6 +240,8 @@ function compute(old: Version, added: Version, options: DiffOptions): FileDiff {
             words(inner.originalRange, result.old, old.lines, edges.of('old'), result.oldWords);
             words(inner.modifiedRange, result.new, added.lines, edges.of('new'), result.newWords);
           }
+          result.oldWords = joinWords(result.oldWords);
+          result.newWords = joinWords(result.newWords);
         }
         return result;
       });
@@ -233,6 +251,24 @@ function compute(old: Version, added: Version, options: DiffOptions): FileDiff {
       changes = whole(old.lines.length, added.lines.length);
     }
   }
+  if (differ && marker === undefined) {
+    // Without a marker, the line without a line break and the line it pairs with change after.
+    changes = withChangedLine(
+      changes,
+      old.noNewlineAtEnd ? 'old' : 'new',
+      old.noNewlineAtEnd ? old.lines.length : added.lines.length,
+    );
+  }
+  return fileDiff(old, added, changes, approximate, options);
+}
+
+function fileDiff(
+  old: Version,
+  added: Version,
+  changes: Change[],
+  approximate: boolean,
+  options: DiffOptions,
+): FileDiff {
   return {
     oldLineCount: old.lines.length,
     newLineCount: added.lines.length,
@@ -243,6 +279,21 @@ function compute(old: Version, added: Version, options: DiffOptions): FileDiff {
     noNewlineAtEnd: { old: old.noNewlineAtEnd, new: added.noNewlineAtEnd },
     lineEndings: { old: old.lineEndings, new: added.lineEndings },
   };
+}
+
+/** `ranges` sorted, with ranges that overlap, repeat or touch on a line joined into one. */
+function joinWords(ranges: WordRange[]): WordRange[] {
+  const sorted = ranges.toSorted((a, b) => a.line - b.line || a.from - b.from);
+  const joined: WordRange[] = [];
+  for (const range of sorted) {
+    const last = joined.at(-1);
+    if (last && last.line === range.line && range.from <= last.to) {
+      last.to = Math.max(last.to, range.to);
+    } else {
+      joined.push({ ...range });
+    }
+  }
+  return joined;
 }
 
 /** Every line of each side as one change, or none when both sides are empty. */
@@ -292,23 +343,76 @@ function blankLineChanges(old: readonly string[], added: readonly string[]): Cha
  * A version's lines as git compares them: with the `\r` of each `\r\n` put back, and `marker` at
  * the end of a last line that has no line break, so it differs from any line that has one.
  */
-function withEndings(version: Version, marker: string): string[] {
+function withEndings(version: Version, marker: string | undefined): string[] {
   return version.lines.map((line, index) => {
     if (version.crlf[index]) return `${line}\r`;
-    if (version.noNewlineAtEnd && index === version.lines.length - 1) return `${line}${marker}`;
+    if (version.noNewlineAtEnd && index === version.lines.length - 1)
+      return `${line}${marker ?? ''}`;
     return line;
   });
 }
 
+/** The first and last characters of Unicode's private use area in the Basic Multilingual Plane. */
+const privateUse = { first: 0xe000, last: 0xf8ff };
+
 /**
  * A character in neither version, from Unicode's private use area: added to a line, it makes the
- * line differ from every line of either file but one with the same addition.
+ * line differ from every line of either file but one with the same addition. `undefined` when the
+ * versions hold every one of them.
  */
-function markerFor(...versions: Version[]): string {
-  for (let code = 0xe000; ; code++) {
-    const marker = String.fromCodePoint(code < 0xf900 ? code : code - 0xf900 + 0xf0000);
-    if (!versions.some(({ lines }) => lines.some((line) => line.includes(marker)))) return marker;
+function markerFor(...versions: Version[]): string | undefined {
+  const seen = new Uint8Array(privateUse.last - privateUse.first + 1);
+  for (const { lines } of versions) {
+    for (const line of lines) {
+      for (let at = 0; at < line.length; at++) {
+        const code = line.charCodeAt(at);
+        if (code >= privateUse.first && code <= privateUse.last) seen[code - privateUse.first] = 1;
+      }
+    }
   }
+  const free = seen.indexOf(0);
+  return free === -1 ? undefined : String.fromCharCode(privateUse.first + free);
+}
+
+/**
+ * `changes`, with line `line` of `side` in a change. When it's unchanged, it and the line it pairs
+ * with become a change, joined to any change they touch.
+ */
+function withChangedLine(changes: Change[], side: 'old' | 'new', line: number): Change[] {
+  const other = side === 'old' ? 'new' : 'old';
+  // Unchanged lines pair one for one, so the partner is as far past the last change before.
+  let partner = line;
+  for (const change of changes) {
+    if (change[side].start <= line && line < change[side].end) return changes;
+    if (change[side].end > line) break;
+    partner = line + change[other].end - change[side].end;
+  }
+  if (line === 0 || partner === 0) return changes;
+  const own = { start: line, end: line + 1 };
+  const paired = { start: partner, end: partner + 1 };
+  const change: Change =
+    side === 'old'
+      ? { old: own, new: paired, oldWords: [], newWords: [] }
+      : { old: paired, new: own, oldWords: [], newWords: [] };
+  const sorted = [...changes, change].toSorted(
+    (a, b) => a.old.start - b.old.start || a.new.start - b.new.start,
+  );
+  const joined: Change[] = [];
+  for (const next of sorted) {
+    const last = joined.at(-1);
+    // Changes that touch on one side touch on both, since unchanged lines pair one for one.
+    if (last && last.old.end === next.old.start && last.new.end === next.new.start) {
+      joined[joined.length - 1] = {
+        old: { start: last.old.start, end: next.old.end },
+        new: { start: last.new.start, end: next.new.end },
+        oldWords: [...last.oldWords, ...next.oldWords],
+        newWords: [...last.newWords, ...next.newWords],
+      };
+    } else {
+      joined.push(next);
+    }
+  }
+  return joined;
 }
 
 /**
@@ -334,7 +438,7 @@ export function lineWords(
       words(inner.modifiedRange, lines1(1), [newLine], edges.of('new'), result.new, true);
     }
   }
-  return result;
+  return { old: joinWords(result.old), new: joinWords(result.new) };
 }
 
 /** Lines 1 to `count`. */

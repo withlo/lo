@@ -74,6 +74,17 @@ describe('diffPullRequest', () => {
     expect(result.moves).toEqual([]);
   });
 
+  test('goes on past a file built to break the diff', () => {
+    let every = '';
+    for (let code = 0xe000; code <= 0xf8ff; code++) every += String.fromCharCode(code);
+    const result = diffPullRequest([
+      { path: 'hostile.txt', old: `${every}\nend`, new: `${every}\nend\n` },
+      { path: 'b.ts', old: 'a\nb\n', new: 'a\nc\n' },
+    ]);
+
+    expect(result.files.map(({ changes }) => changes.length)).toEqual([1, 1]);
+  });
+
   test('goes on past a file whose diff failed', () => {
     const spy = vi
       .spyOn(DefaultLinesDiffComputer.prototype, 'computeDiff')
