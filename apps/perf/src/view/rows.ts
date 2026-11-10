@@ -13,8 +13,11 @@ export interface LineRange {
 
 /** What a file's document lines show. */
 export type FileState =
-  /** Its diff, with unchanged code outside its hunks collapsed, except the lines in `keep`. */
-  | { kind: 'diff'; diff: FileDiff; keep?: Keep | undefined }
+  /**
+   * Its diff, with unchanged code outside its hunks collapsed, except the lines in `keep` and the
+   * runs in `open`.
+   */
+  | { kind: 'diff'; diff: FileDiff; keep?: Keep | undefined; open?: Open | undefined }
   /** One collapsed block: the diff isn't ready, or the file isn't shown as a diff. */
   | { kind: 'collapsed' };
 
@@ -47,6 +50,9 @@ export interface Keep {
   old: ReadonlySet<number>;
   new: ReadonlySet<number>;
 }
+
+/** The collapsed runs opened, by their first old line. */
+export type Open = ReadonlySet<number>;
 
 /**
  * The unchanged runs a file's diff collapses: everything outside its hunks, in file lines, around
@@ -85,6 +91,25 @@ export function collapsedRuns(
   return runs;
 }
 
+/** The runs `collapsedRuns` gives, less those in `open`. */
+export function shownRuns(
+  diff: FileDiff,
+  keep?: Keep,
+  open?: Open,
+): { old: LineRange; new: LineRange }[] {
+  const runs = collapsedRuns(diff, keep);
+  return open && open.size > 0 ? runs.filter((run) => !open.has(run.old.first)) : runs;
+}
+
+/** The run of `runs` with file line `line` on `side`, if there is one. */
+export function runAt<T extends { old: LineRange; new: LineRange }>(
+  runs: readonly T[],
+  side: 'old' | 'new',
+  line: number,
+): T | undefined {
+  return runs.find((run) => run[side].first <= line && line <= run[side].last);
+}
+
 /** A file's rows, header first, from where its lines are and what they show. */
 export function fileRows(old: FileLines, added: FileLines, state: FileState): FileRows {
   const rows = new RowList();
@@ -103,7 +128,7 @@ export function fileRows(old: FileLines, added: FileLines, state: FileState): Fi
     }
     return rows.done();
   }
-  const runs = collapsedRuns(state.diff, state.keep);
+  const runs = shownRuns(state.diff, state.keep, state.open);
   let run = 0;
   for (const block of state.diff.rows) {
     if (block.changed) {

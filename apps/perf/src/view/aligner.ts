@@ -184,7 +184,7 @@ interface Anchor {
 }
 
 /** Rounds of measuring, lining up and restoring the scroll a pass may take to settle. */
-const rounds = 6;
+const rounds = 3;
 
 /** How long after a wheel event over an editor CodeMirror anchors the scroll to it, and more. */
 const wheelAnchoring = 250;

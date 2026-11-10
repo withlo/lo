@@ -49,7 +49,8 @@ This builds the app and the grammars, fetches what's missing, and opens the PR's
 window: both sides of every file in one scroll, each side one CodeMirror editor, with the PR's
 review threads, and made-up ones on the left side, where recorded PRs have few. Each file starts
 collapsed, and fills in as worker threads in a background process diff and highlight it; the moved
-code comes last. A file with more than 5,000 changed lines, or a binary file, stays collapsed.
+code comes last. A file with more than 5,000 changed lines stays out of the documents until `za`
+loads it, and a binary file shows only its header.
 
 The two sides stay level through a spacer pass, which runs only over the rows both editors draw:
 rows with lines on both sides start at the same height on both, so a block of added lines faces
@@ -60,6 +61,28 @@ drawn on one side only, cheaply enough to call every frame; `movement()` says ho
 screen moved since it was last called against what the wheel or a moved cursor asked, to call every
 frame too; `passStats` says what the pass has cost, and `spacers` how many spacers each side holds.
 `window.diffLoaded` is set once everything has arrived.
+
+### Keys
+
+Click a line to give its side focus. The keys are Vim's, from CodeMirror's Vim package, so `j`/`k`,
+counts, `gg`/`G`, `V` and `/` work as in Vim, and these are Lo's:
+
+| Keys      | What they do                                                         |
+| --------- | -------------------------------------------------------------------- |
+| `]c`/`[c` | Next or previous change                                              |
+| `]f`/`[f` | Next or previous file                                                |
+| `]t`/`[t` | Next or previous thread                                              |
+| `Tab`     | The same row on the other side                                       |
+| `zo`/`zc` | Open or close the unchanged lines at the cursor                      |
+| `zR`      | Open every run of unchanged lines in the file                        |
+| `za`      | Load a large file, or close a file into one block and open it again  |
+| `gi`      | The inline layout, one document with deleted lines before added ones |
+| `c`       | A comment box on the line, on either side                            |
+| `yl`      | Copy GitHub's link to the line                                       |
+
+In a comment box, which grows as you type, Vim's keys keep their own meanings. `⌘⏎` adds the comment
+to the thread; `Esc` leaves insert mode, and `Esc` again closes the box and keeps the draft for the
+next `c` on that line.
 
 ## Recording the manifests
 

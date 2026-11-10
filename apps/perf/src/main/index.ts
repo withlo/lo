@@ -9,14 +9,23 @@ import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { app, BrowserWindow, ipcMain, MessageChannelMain, session, utilityProcess } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  ipcMain,
+  MessageChannelMain,
+  session,
+  utilityProcess,
+} from 'electron';
+import { z } from 'zod';
 
 // electron-vite builds each script and gives its path as the import's default.
 // oxlint-disable-next-line import/default
 import backgroundEntry from '../background/index.ts?modulePath';
 // oxlint-disable-next-line import/default
 import workerEntry from '../background/worker.ts?modulePath';
-import type { PullReply, Work } from '../shared/protocol.ts';
+import type { LaterJob, Loaded, PullReply, Work } from '../shared/protocol.ts';
 import { loadPull } from './pull.ts';
 import { pageUrl, registerScheme, secureContents, secureSession } from './security.ts';
 
@@ -53,12 +62,29 @@ app
       serviceName: 'Lo perf background',
       stdio: 'inherit',
     });
-    const { pull, jobs } = await loaded;
+    const { pull, jobs, large } = await loaded;
     const work: Work = { jobs, files: pull.files.length, syntaxFolder, workerEntry };
     background.postMessage(work, [port1]);
 
     ipcMain.handle('perf:pull', (): PullReply => ({ pull, nonce }));
     ipcMain.on('perf:connect', (event) => event.sender.postMessage('perf:port', null, [port2]));
+    // A large file the window loads: its text for the documents, and its job for the background
+    // process, whose result reaches the window over the port like the rest.
+    ipcMain.handle('perf:load', (_event, index: unknown): Loaded => {
+      const job = large.get(z.number().int().parse(index));
+      if (!job) throw new Error(`File ${String(index)} isn't a large file.`);
+      const later: LaterJob = { type: 'job', job };
+      // A utility process, not a window: it has no origin to name.
+      // oxlint-disable-next-line unicorn/require-post-message-target-origin
+      background.postMessage(later);
+      return { old: job.old, new: job.new };
+    });
+    // A link to a line on GitHub, for `yl`.
+    ipcMain.handle('perf:copy', async (_event, text: unknown) => {
+      await clipboard.writeText(
+        z.string().startsWith(`https://github.com/${pull.repo}/`).parse(text),
+      );
+    });
 
     const window = new BrowserWindow({
       title: `${pull.repo}#${pull.number}`,

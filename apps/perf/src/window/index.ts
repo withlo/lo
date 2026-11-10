@@ -1,15 +1,21 @@
 // The harness's page: the diff view of one pull request, filled in as the background process sends
-// each file's diff and highlighting, then the moves.
+// each file's diff and highlighting, then the moves. A large file's lines come from main when it's
+// loaded, and its diff from the background process after them.
 
 import { splitLines } from '@lo/diff';
 
-import type { PullReply, Result } from '../shared/protocol.ts';
-import { DiffView } from '../view/view.ts';
+import type { Loaded, PullReply, Result } from '../shared/protocol.ts';
+import { DiffView, type Place } from '../view/view.ts';
 
 declare global {
   interface Window {
     /** What the preload exposes. */
-    perf: { pull(): Promise<PullReply>; connect(): void };
+    perf: {
+      pull(): Promise<PullReply>;
+      connect(): void;
+      load(file: number): Promise<Loaded>;
+      copy(text: string): Promise<void>;
+    };
   }
 }
 
@@ -31,8 +37,31 @@ const view = new DiffView(
     newLines: file.new === undefined ? [] : splitLines(file.new),
   })),
   pull.threads,
-  { nonce },
+  {
+    nonce,
+    load: (file) => {
+      void window.perf.load(file).then((loaded) => {
+        view.addLines(file, lines(loaded.old), lines(loaded.new));
+      });
+    },
+    copyLink: (place) => {
+      void linkTo(place).then((link) => window.perf.copy(link));
+    },
+  },
 );
+
+function lines(text: string | undefined): string[] {
+  return text === undefined ? [] : splitLines(text);
+}
+
+/** GitHub's link to a line in the pull request's diff: the file's path hashed, and L or R. */
+async function linkTo(place: Place): Promise<string> {
+  const path = pull.files[place.file]!.path;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(path));
+  const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0'));
+  const side = place.side === 'old' ? 'L' : 'R';
+  return `https://github.com/${pull.repo}/pull/${pull.number}/files#diff-${hash.join('')}${side}${place.line}`;
+}
 
 // For the measurements, which drive the page from outside.
 Object.assign(window, { diffView: view });

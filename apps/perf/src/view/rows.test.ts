@@ -1,7 +1,7 @@
 import { diffText } from '@lo/diff';
 import { describe, expect, test } from 'vitest';
 
-import { collapsedRuns, type FileRows, fileRows } from './rows.ts';
+import { collapsedRuns, type FileRows, fileRows, runAt, shownRuns } from './rows.ts';
 
 /** Lines `first` to `last` as `a-b`, `a` for one line, or `.` for none. */
 function side(first: number, last: number): string {
@@ -89,5 +89,43 @@ describe('collapsedRuns', () => {
       { old: { first: 9, last: 21 }, new: { first: 9, last: 21 } },
       { old: { first: 29, last: 30 }, new: { first: 29, last: 30 } },
     ]);
+  });
+});
+
+describe('shownRuns', () => {
+  test('leaves out the runs opened, by their first old line', () => {
+    const old = numbered(30);
+    const diff = diffText(old, old.replace('line 5\n', 'five\n').replace('line 25\n', 'x\n'));
+
+    expect(shownRuns(diff, undefined, new Set([9]))).toEqual([
+      { old: { first: 29, last: 30 }, new: { first: 29, last: 30 } },
+    ]);
+  });
+
+  test('gives rows that show an opened run line by line', () => {
+    const old = numbered(12);
+    const diff = diffText(old, old.replace('line 1\n', 'one\n'));
+    const rows = fileRows(
+      { header: 1, count: 12 },
+      { header: 1, count: 12 },
+      { kind: 'diff', diff, open: new Set([5]) },
+    );
+
+    // A header on document line 1, then the file's lines: the run of lines 5 to 12 is open.
+    expect(describeRows(rows)).toHaveLength(13);
+    expect(describeRows(rows).slice(5, 8)).toEqual(['6 -> 6', '7 -> 7', '8 -> 8']);
+  });
+});
+
+describe('runAt', () => {
+  test('finds the run with a line on either side', () => {
+    const runs = [
+      { old: { first: 3, last: 6 }, new: { first: 5, last: 8 } },
+      { old: { first: 10, last: 12 }, new: { first: 12, last: 14 } },
+    ];
+
+    expect(runAt(runs, 'old', 4)).toBe(runs[0]);
+    expect(runAt(runs, 'new', 12)).toBe(runs[1]);
+    expect(runAt(runs, 'new', 9)).toBeUndefined();
   });
 });

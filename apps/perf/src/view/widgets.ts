@@ -1,7 +1,8 @@
 // The blocks the diff view draws between lines: file headers, with notes on files not shown,
-// collapsed code, threads, the labels on moved code, and the spacers that keep the two sides lined
-// up. A block that starts a row with lines on both sides carries the row's key as `data-row`, as
-// the first line of a row does, so the alignment drawn on screen can be checked row by row.
+// collapsed code and notes in place of lines, threads and the comment boxes in them, the labels on
+// moved code, and the spacers that keep the two sides lined up. A block that starts a row with
+// lines on both sides carries the row's key as `data-row`, as the first line of a row does, so the
+// alignment drawn on screen can be checked row by row.
 
 import { WidgetType } from '@codemirror/view';
 
@@ -150,60 +151,113 @@ export function fillerText(length: number, seed: number): string {
   return text.slice(0, length);
 }
 
-/** A review thread, by its id, with its comments' lengths. */
-export interface ThreadInfo {
-  id: string;
-  comments: readonly number[];
+/** A comment in a thread: its length, for a recorded one, or its text. */
+export type ThreadComment = number | string;
+
+/** What a thread widget needs from the comment box it holds. */
+export interface BoxHost {
+  /** The box's element, which moves into each widget that draws it. */
+  readonly dom: HTMLElement;
+  /** Puts the box in `parent`, keeping its focus. */
+  attach(parent: HTMLElement): void;
 }
 
 /**
- * The review threads under a line, with their comments' lengths: one block for all of a line's
- * threads, for the same reason as a header's note.
+ * A review thread under a line, and the comment box being written there, if there is one: one
+ * block a line, for the same reason as a header's note.
  */
 export class ThreadWidget extends WidgetType {
-  readonly threads: readonly ThreadInfo[];
+  readonly id: string;
+  readonly comments: readonly ThreadComment[];
+  readonly box: BoxHost | undefined;
+  readonly drawing: number;
 
-  constructor(threads: readonly ThreadInfo[]) {
+  /** `drawing` changes when the box must be drawn again, to move it into another editor. */
+  constructor(id: string, comments: readonly ThreadComment[], box?: BoxHost, drawing = 0) {
     super();
-    this.threads = threads;
+    this.id = id;
+    this.comments = comments;
+    this.box = box;
+    this.drawing = drawing;
   }
 
   override eq(other: ThreadWidget): boolean {
     return (
-      other.threads.length === this.threads.length &&
-      other.threads.every((thread, index) => thread.id === this.threads[index]!.id)
+      other.id === this.id &&
+      other.comments.length === this.comments.length &&
+      other.box === this.box &&
+      other.drawing === this.drawing
     );
   }
 
   toDOM(): HTMLElement {
-    const block = element('div', 'lo-diffthreads');
-    for (const { comments } of this.threads) {
-      // The space around the card is padding, not margin: the editor measures a block by its
-      // box, which leaves margins out.
-      const space = element('div', 'lo-diffthread');
-      const thread = element('div', 'lo-diffthread__card');
-      space.append(thread);
-      comments.forEach((length, index) => {
-        const comment = element('div', 'lo-diffthread__comment');
-        comment.append(
-          element('div', 'lo-diffthread__author', index === 0 ? 'reviewer' : 'author'),
-          element('p', 'lo-diffthread__body', fillerText(length, index)),
-        );
-        thread.append(comment);
-      });
-      block.append(space);
-    }
+    // The space around the card is padding, not margin: the editor measures a block by its box,
+    // which leaves margins out.
+    const block = element('div', 'lo-diffthread');
+    const thread = element('div', 'lo-diffthread__card');
+    block.append(thread);
+    this.comments.forEach((comment, index) => {
+      const item = element('div', 'lo-diffthread__comment');
+      const text = typeof comment === 'string' ? comment : fillerText(comment, index);
+      item.append(
+        element(
+          'div',
+          'lo-diffthread__author',
+          typeof comment === 'string' ? 'you' : index === 0 ? 'reviewer' : 'author',
+        ),
+        element('p', 'lo-diffthread__body', text),
+      );
+      thread.append(item);
+    });
+    if (this.box) this.box.attach(thread);
     return block;
   }
 
   /** About 90 characters a line of 20 pixels, plus each comment's author line and padding. */
   override get estimatedHeight(): number {
-    let height = 0;
-    for (const { comments } of this.threads) {
-      height +=
-        16 + comments.reduce((total, length) => total + 38 + Math.ceil(length / 90) * 20, 0);
-    }
-    return height;
+    const comments = this.comments.reduce<number>(
+      (total, comment) =>
+        total + 38 + Math.ceil((typeof comment === 'string' ? comment.length : comment) / 90) * 20,
+      0,
+    );
+    return 16 + comments + (this.box ? this.box.dom.offsetHeight || 60 : 0);
+  }
+
+  /** The box handles its own events. */
+  override ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+/**
+ * A note in place of a file's lines: too many to show, while they load or its diff is worked out,
+ * or while it's closed. Where a file has no lines, its header holds the note.
+ */
+export class FileNoteWidget extends WidgetType {
+  readonly file: number;
+  readonly text: string;
+  readonly paired: boolean;
+
+  /** `paired` when both sides draw it, so it's a row to check the alignment of. */
+  constructor(file: number, text: string, paired: boolean) {
+    super();
+    this.file = file;
+    this.text = text;
+    this.paired = paired;
+  }
+
+  override eq(other: FileNoteWidget): boolean {
+    return other.file === this.file && other.text === this.text && other.paired === this.paired;
+  }
+
+  toDOM(): HTMLElement {
+    const note = element('div', 'lo-collapsed lo-filenote', this.text);
+    if (this.paired) note.dataset.row = `n:${this.file}`;
+    return note;
+  }
+
+  override get estimatedHeight(): number {
+    return 28;
   }
 }
 
