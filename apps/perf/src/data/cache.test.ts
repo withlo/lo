@@ -1,11 +1,17 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-import { cacheFolder, checkGitVersion, fetchPullRequest, repoFolder } from './cache.ts';
+import {
+  cacheFolder,
+  checkGitFolders,
+  fetchPullRequest,
+  lazyFetchIsOff,
+  repoFolder,
+} from './cache.ts';
 import type { Manifest } from './manifest.ts';
 
 const env = {
@@ -156,14 +162,45 @@ describe('fetchPullRequest', () => {
     );
   });
 
-  test('refuses a clone that borrows objects from elsewhere', async () => {
-    const { cache, clone, remote } = await fetched('borrowing');
-    writeFileSync(
-      join(clone, 'objects', 'info', 'alternates'),
-      `${join(upstream, '.git', 'objects')}\n`,
-    );
+  test.each([
+    'commondir',
+    'gitdir',
+    'config.worktree',
+    'info/grafts',
+    'objects/info/alternates',
+    'objects/info/http-alternates',
+  ])('refuses a clone that holds %s', async (file) => {
+    const { cache, clone, remote } = await fetched(`foreign-${file.replaceAll('/', '-')}`);
+    mkdirSync(dirname(join(clone, file)), { recursive: true });
+    writeFileSync(join(clone, file), `${join(folder, 'elsewhere')}\n`);
 
-    await expect(fetchPullRequest(manifest, { cache, remote })).rejects.toThrow(/borrows objects/);
+    await expect(fetchPullRequest(manifest, { cache, remote })).rejects.toThrow(
+      `holds ${file.replaceAll('/', sep)}, which point git elsewhere`,
+    );
+  });
+
+  test('refuses settings from another folder a clone names', async () => {
+    const { cache, clone, remote } = await fetched('borrowed-settings');
+    // Settings in a folder `commondir` names would pass a check of the clone's own config.
+    const elsewhere = join(folder, 'evil');
+    git('init', '--quiet', '--bare', elsewhere);
+    git(`--git-dir=${elsewhere}`, 'config', 'credential.helper', '!touch owned');
+    writeFileSync(join(clone, 'commondir'), `${elsewhere}\n`);
+    // Git run as usual takes them as the clone's.
+    expect(git(`--git-dir=${clone}`, 'config', 'credential.helper')).toBe('!touch owned');
+
+    await expect(fetchPullRequest(manifest, { cache, remote })).rejects.toThrow(/commondir/);
+  });
+
+  test('takes a clone only as its own git folder', async () => {
+    const { clone } = await fetched('common');
+    await expect(checkGitFolders(clone)).resolves.toBeUndefined();
+
+    const elsewhere = join(folder, 'other.git');
+    git('init', '--quiet', '--bare', elsewhere);
+    writeFileSync(join(clone, 'commondir'), `${elsewhere}\n`);
+
+    await expect(checkGitFolders(clone)).rejects.toThrow(/leads git to/);
   });
 
   test('ignores replace refs', async () => {
@@ -219,16 +256,14 @@ describe('repoFolder', () => {
   );
 });
 
-describe('checkGitVersion', () => {
-  test.each(['git version 2.45.0', 'git version 2.54.0 (Apple Git-157)', 'git version 3.0.1'])(
-    'accepts %j',
-    (version) => {
-      expect(() => checkGitVersion(version)).not.toThrow();
-    },
-  );
+describe('lazyFetchIsOff', () => {
+  test('is true when git honors GIT_NO_LAZY_FETCH', async () => {
+    expect(await lazyFetchIsOff()).toBe(true);
+  });
 
-  test.each(['git version 2.44.2', 'git version 1.99.0', 'not git'])('refuses %j', (version) => {
-    expect(() => checkGitVersion(version)).toThrow(/needs git 2\.45 or later/);
+  test('is false when git would fetch a missing object', async () => {
+    // As a git that doesn't know the variable behaves.
+    expect(await lazyFetchIsOff({ GIT_NO_LAZY_FETCH: '0' })).toBe(false);
   });
 });
 

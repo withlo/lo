@@ -4,8 +4,8 @@
 // every object it downloads against its ID, so a manifest's two commit IDs pin all of its text.
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
-import { devNull, homedir } from 'node:os';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { devNull, homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import type { Manifest } from './manifest.ts';
@@ -27,25 +27,60 @@ export function repoFolder(cache: string, repo: string): string {
   return folder;
 }
 
-/** The oldest git that can turn off lazy fetching, with `GIT_NO_LAZY_FETCH`. */
-const oldestGit = [2, 45] as const;
-
-/** Fails unless `version`, as `git --version` prints it, is at least `oldestGit`. */
-export function checkGitVersion(version: string): void {
-  const [, major = '0', minor = '0'] = /(\d+)\.(\d+)/.exec(version) ?? [];
-  const [oldestMajor, oldestMinor] = oldestGit;
-  if (
-    Number(major) < oldestMajor ||
-    (Number(major) === oldestMajor && Number(minor) < oldestMinor)
-  ) {
-    throw new Error(
-      `Fetching needs git ${oldestMajor}.${oldestMinor} or later, which can turn off lazy ` +
-        `fetching, but this is ${version.trim() || 'an unknown git'}.`,
-    );
+/**
+ * Whether git honors `GIT_NO_LAZY_FETCH`, which git 2.45 added and 2024-05 maintenance releases
+ * brought back to older lines. It asks a throwaway clone, whose promisor remote doesn't exist, for
+ * an object it lacks: a git that honors the variable just says the object is missing, and one
+ * that doesn't tries to fetch it and fails loudly. `env` overrides the variables git runs with.
+ */
+export async function lazyFetchIsOff(env: Record<string, string> = {}): Promise<boolean> {
+  const folder = mkdtempSync(join(tmpdir(), 'lo-perf-git-'));
+  try {
+    await run(['init', '--bare', '--quiet', '--template=', folder]);
+    for (const [name, value] of [
+      ['core.repositoryformatversion', '1'],
+      ['extensions.partialclone', 'origin'],
+      ['remote.origin.promisor', 'true'],
+      ['remote.origin.url', `file://${join(folder, 'missing')}`],
+    ] as const) {
+      await run([`--git-dir=${folder}`, 'config', name, value]);
+    }
+    const missing = `${'0'.repeat(39)}1`;
+    const result = await spawnGit([`--git-dir=${folder}`, 'cat-file', '-e', missing], {
+      protocol: 'file',
+      env,
+    });
+    return result.code === 1 && result.stderr.trim() === '';
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
   }
 }
 
 let gitChecked: Promise<void> | undefined;
+
+/** Fails unless git can turn off lazy fetching, so a missing object can't be fetched one by one. */
+async function checkGit(): Promise<void> {
+  if (!(await lazyFetchIsOff())) {
+    const version = (await run(['--version'])).toString('utf8').trim();
+    throw new Error(
+      `Fetching needs a git that honors GIT_NO_LAZY_FETCH: 2.45 or later, or a maintenance ` +
+        `release from May 2024 or later. This is ${version}.`,
+    );
+  }
+}
+
+/**
+ * Files that make git read settings or objects from somewhere else: another repo's folder, other
+ * object stores, or replacement parents. Fetching writes none of them.
+ */
+const foreignFiles = [
+  'commondir',
+  'gitdir',
+  'config.worktree',
+  join('info', 'grafts'),
+  join('objects', 'info', 'alternates'),
+  join('objects', 'info', 'http-alternates'),
+];
 
 /**
  * The settings a clone of ours holds: what `git init` writes, the remote's address, and what a
@@ -68,8 +103,19 @@ const ownSettings = new Set([
   'remote.origin.partialclonefilter',
 ]);
 
-/** Fails unless the clone at `folder` holds only settings this code writes, and no alternates. */
+/**
+ * Fails unless the clone at `folder` is one this code made: none of `foreignFiles`, only settings
+ * this code writes, and git folders that are the clone itself. The `shallow` file this code's
+ * fetches write lists commit IDs only.
+ */
 async function checkClone(folder: string): Promise<void> {
+  const found = foreignFiles.filter((file) => existsSync(join(folder, file)));
+  if (found.length > 0) {
+    throw new Error(
+      `${folder} holds ${found.join(', ')}, which point git elsewhere. Delete the folder and ` +
+        `fetch again.`,
+    );
+  }
   // Read as a plain file, so the clone's own includes aren't followed.
   const names = (await run(['config', '--file', join(folder, 'config'), '--list', '--name-only']))
     .toString('utf8')
@@ -81,8 +127,27 @@ async function checkClone(folder: string): Promise<void> {
         `and fetch again.`,
     );
   }
-  if (existsSync(join(folder, 'objects', 'info', 'alternates'))) {
-    throw new Error(`${folder} borrows objects from elsewhere. Delete the folder and fetch again.`);
+  await checkGitFolders(folder);
+}
+
+/** Fails unless git takes the clone at `folder` itself as both its git folder and common folder. */
+export async function checkGitFolders(folder: string): Promise<void> {
+  const output = await run([
+    `--git-dir=${folder}`,
+    'rev-parse',
+    '--path-format=absolute',
+    '--git-dir',
+    '--git-common-dir',
+  ]);
+  const own = realpathSync(folder);
+  const elsewhere = output
+    .toString('utf8')
+    .split('\n')
+    .filter((line) => line !== '' && realpathSync(line) !== own);
+  if (elsewhere.length > 0) {
+    throw new Error(
+      `${folder} leads git to ${elsewhere.join(', ')}. Delete the folder and fetch again.`,
+    );
   }
 }
 
@@ -119,7 +184,7 @@ export async function fetchPullRequest(
   if (protocol !== 'https' && protocol !== 'file') {
     throw new Error(`${remote} isn't an https: or file: address.`);
   }
-  gitChecked ??= run(['--version']).then((version) => checkGitVersion(version.toString('utf8')));
+  gitChecked ??= checkGit();
   await gitChecked;
   const git = gitIn(folder, protocol);
   if (existsSync(folder)) {
@@ -251,21 +316,41 @@ function gitIn(folder: string, protocol: string): Git {
  * Runs git without the user's or the system's settings, so no credential helper or URL rewrite of
  * theirs takes part. Hooks and replace refs are off, so a clone can't run commands or swap one
  * object for another, and git reaches remotes only over `protocol`. Lazy fetching is off too, so a
- * missing object fails instead of being downloaded on its own. The clone's own settings are
- * checked before any of this runs on it.
+ * missing object fails instead of being downloaded on its own. `checkClone` vets a clone's own
+ * files before any of this runs on it.
  */
 function run(args: readonly string[], input?: string, protocol = 'https'): Promise<Buffer> {
+  return spawnGit(args, { input, protocol }).then(({ code, stdout, stderr }) => {
+    if (code === 0) return stdout;
+    throw new Error(`git ${args.join(' ')} failed (${code}): ${stderr.trim()}`);
+  });
+}
+
+interface GitResult {
+  code: number | null;
+  stdout: Buffer;
+  stderr: string;
+}
+
+function spawnGit(
+  args: readonly string[],
+  options: { input?: string | undefined; protocol: string; env?: Record<string, string> },
+): Promise<GitResult> {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')),
   );
-  Object.assign(env, {
-    GIT_CONFIG_GLOBAL: devNull,
-    GIT_CONFIG_NOSYSTEM: '1',
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_NO_LAZY_FETCH: '1',
-    GIT_NO_REPLACE_OBJECTS: '1',
-    GIT_ALLOW_PROTOCOL: protocol,
-  });
+  Object.assign(
+    env,
+    {
+      GIT_CONFIG_GLOBAL: devNull,
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_NO_LAZY_FETCH: '1',
+      GIT_NO_REPLACE_OBJECTS: '1',
+      GIT_ALLOW_PROTOCOL: options.protocol,
+    },
+    options.env,
+  );
   return new Promise((done, reject) => {
     const child = spawn('git', ['-c', `core.hooksPath=${devNull}`, ...args], {
       env,
@@ -277,12 +362,12 @@ function run(args: readonly string[], input?: string, protocol = 'https'): Promi
     child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
     child.on('error', reject);
     child.on('close', (code) => {
-      if (code === 0) done(Buffer.concat(stdout));
-      else {
-        const message = Buffer.concat(stderr).toString('utf8').trim();
-        reject(new Error(`git ${args.join(' ')} failed (${code}): ${message}`));
-      }
+      done({
+        code,
+        stdout: Buffer.concat(stdout),
+        stderr: Buffer.concat(stderr).toString('utf8'),
+      });
     });
-    child.stdin.end(input);
+    child.stdin.end(options.input);
   });
 }
