@@ -264,6 +264,8 @@ importers:
 
   design: {}
 
+  packages/core/diff: {}
+
   packages/core/github:
     dependencies:
       '@graphql-typed-document-node/core':
@@ -288,6 +290,16 @@ importers:
       graphql:
         specifier: 16.15.0
         version: 16.15.0
+
+  packages/core/review:
+    dependencies:
+      '@lo/github':
+        specifier: workspace:*
+        version: link:../github
+    devDependencies:
+      '@lo/testing':
+        specifier: workspace:*
+        version: link:../../../testing
 
   scripts:
     dependencies:

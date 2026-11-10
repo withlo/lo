@@ -19,6 +19,9 @@
     },
     {
       "path": "./packages/core/diff"
+    },
+    {
+      "path": "./packages/core/review"
     }
   ]
 }
