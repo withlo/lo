@@ -31,6 +31,17 @@ describe('defineContract', () => {
   });
 });
 
+describe('defineContract with names objects already have', () => {
+  it('takes a request named like a property every object inherits', () => {
+    const contract = defineContract('notes', {
+      requests: { toString: { input: z.undefined(), reply: reply<string>() } },
+      topics: { constructor: z.number() },
+    });
+    expect(Object.keys(contract.requests)).toEqual(['toString']);
+    expect(Object.keys(contract.topics)).toEqual(['constructor']);
+  });
+});
+
 describe('channel', () => {
   it('names a channel <feature>.<name>', () => {
     expect(channel('app', 'info')).toBe('app.info');
