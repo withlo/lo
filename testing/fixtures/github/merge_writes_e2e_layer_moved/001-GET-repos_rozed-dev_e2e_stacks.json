@@ -1,0 +1,54 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/stacks?pull_request=57"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"e484cf23083f63c528dadf762aaee4e1cce6f7fcfc87fa89719c82ac3a29967f\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4941",
+      "x-ratelimit-reset": "1794142087",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "59"
+    },
+    "body": [
+      {
+        "id": 3212236,
+        "number": 58,
+        "node_id": "PRS_kwDOVleUfc4AMQPM",
+        "url": "https://api.github.com/repos/rozed-dev/e2e/stacks/58",
+        "base": {
+          "ref": "e9b/base"
+        },
+        "open": true,
+        "created_at": "2026-11-08T12:12:18Z",
+        "pull_requests": [
+          {
+            "number": 56,
+            "state": "open",
+            "draft": false,
+            "merged_at": null,
+            "head": {
+              "ref": "e9b/l1-2",
+              "sha": "117ac0eaad1e66b7b630c1dd40e386ac69ae8965"
+            }
+          },
+          {
+            "number": 57,
+            "state": "open",
+            "draft": false,
+            "merged_at": null,
+            "head": {
+              "ref": "e9b/l2-2",
+              "sha": "1e4574b61767255e15bd76be1f43dd24ffc4aab7"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "MergeText",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 25
+    },
+    "query_sha256": "0dccfcecf8588c9b58e1fd7fedf7a078d97785281636f811bd35981d2283b29c"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4961",
+      "x-ratelimit-reset": "1794146317",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "39"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4961,
+          "used": 39,
+          "resetAt": "2026-11-08T13:58:37Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "headRefOid": "5f0ff60de032350873bec50c84c9e92f3640a9db",
+            "squashTitle": "test(e4): add passing's change, with ci-result pass (#25)",
+            "squashMessage": "Co-authored-by: rozed-bot <353226052+rozed-bot@users.noreply.github.com>"
+          }
+        }
+      }
+    }
+  }
+}

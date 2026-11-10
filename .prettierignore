@@ -10,3 +10,6 @@ design/css/
 
 pnpm-lock.yaml
 LICENSE
+
+# Recorded GitHub responses, kept exactly as recorded.
+testing/fixtures/

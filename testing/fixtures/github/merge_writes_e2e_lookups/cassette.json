@@ -1,0 +1,6 @@
+{
+  "description": "The GitHub stacks holding each of rozed-dev/e2e's #14, #25, #26, #28, #29, #36, #40, #41, #42, #43, #44, #99999 as rozed-bot, read only: the stack lookups Lo makes before merging, enqueuing or turning auto-merge on for the pull requests the merge_writes_e2e merged, moved, refused, queue and auto_merge scenarios write to, which were recorded before Lo made them. None of them was ever in a stack (no stack events in its timeline), so GitHub's answer then was the same",
+  "recorded_at": "2026-11-08T15:22:23Z",
+  "repo": "rozed-dev/e2e",
+  "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674"
+}

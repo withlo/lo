@@ -1,0 +1,6 @@
+{
+  "description": "The squash commit's title and message GitHub's merge button would start with, as rozed-bot, read only, for two of rozed-dev/e2e's pull requests, whose squash settings take the commit's title when there's one commit, else the pull request's, and the commits' messages: #25, of one commit, and the closed #16, of four",
+  "recorded_at": "2026-11-08T13:49:39Z",
+  "repo": "rozed-dev/e2e",
+  "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674"
+}

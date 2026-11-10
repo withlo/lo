@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/57/merge-async/f711a1fe-f445-4fa1-9605-7fa787a2b2e9"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"cbcc390815654ad7dbb3d46eea47c5e8516f2aaab782366e60f1f1796a82872e\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4938",
+      "x-ratelimit-reset": "1794142087",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "62"
+    },
+    "body": {
+      "status": "failed",
+      "details": {
+        "message": "Stack needs to be rebased: PR #57's branch is not a linear descendant of PR #56's branch."
+      }
+    }
+  }
+}

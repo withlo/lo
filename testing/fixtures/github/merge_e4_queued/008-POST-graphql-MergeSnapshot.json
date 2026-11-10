@@ -1,0 +1,221 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "MergeSnapshot",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 36,
+      "login": "rozed-bot"
+    },
+    "query_sha256": "e03fc87c56396b3facbfb3aba9377826eda2551e1a328d5b5ae94017af5474fa"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4889",
+      "x-ratelimit-reset": "1794146106",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "111"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4889,
+          "used": 111,
+          "resetAt": "2026-11-08T13:55:06Z"
+        },
+        "repository": {
+          "isArchived": false,
+          "viewerPermission": "ADMIN",
+          "mergeCommitAllowed": true,
+          "squashMergeAllowed": true,
+          "rebaseMergeAllowed": true,
+          "viewerDefaultMergeMethod": "MERGE",
+          "squashMergeCommitTitle": "COMMIT_OR_PR_TITLE",
+          "squashMergeCommitMessage": "COMMIT_MESSAGES",
+          "pullRequest": {
+            "url": "https://github.com/rozed-dev/e2e/pull/36",
+            "state": "OPEN",
+            "isDraft": false,
+            "locked": false,
+            "mergeable": "MERGEABLE",
+            "mergeStateStatus": "CLEAN",
+            "reviewDecision": null,
+            "headRefOid": "e334820658aed00ba43e08c203bd481e0431aa07",
+            "baseRefName": "e4/queued",
+            "author": {
+              "__typename": "User",
+              "login": "rozed-bot"
+            },
+            "viewerDidAuthor": true,
+            "viewerCanMergeAsAdmin": false,
+            "viewerCanEnableAutoMerge": false,
+            "viewerCanDisableAutoMerge": false,
+            "baseRef": {
+              "target": {
+                "__typename": "Commit",
+                "oid": "f7d754c5716b4913e6b20c54cb8a4b3aac8d5142"
+              },
+              "refUpdateRule": null,
+              "branchProtectionRule": null
+            },
+            "stackEntry": null,
+            "isMergeQueueEnabled": true,
+            "isInMergeQueue": false,
+            "mergeQueueEntry": null,
+            "mergeQueue": {
+              "configuration": {
+                "mergeMethod": "SQUASH"
+              }
+            },
+            "autoMergeRequest": null,
+            "latestOpinionatedReviews": {
+              "totalCount": 0,
+              "nodes": []
+            },
+            "reviewRequests": {
+              "totalCount": 0,
+              "nodes": []
+            },
+            "viewerPendingReview": {
+              "nodes": []
+            },
+            "reviewThreads": {
+              "totalCount": 0,
+              "nodes": []
+            },
+            "statusCheckRollup": {
+              "contexts": {
+                "totalCount": 1,
+                "checkRunCountsByState": [
+                  {
+                    "state": "ACTION_REQUIRED",
+                    "count": 0
+                  },
+                  {
+                    "state": "CANCELLED",
+                    "count": 0
+                  },
+                  {
+                    "state": "COMPLETED",
+                    "count": 0
+                  },
+                  {
+                    "state": "FAILURE",
+                    "count": 0
+                  },
+                  {
+                    "state": "IN_PROGRESS",
+                    "count": 0
+                  },
+                  {
+                    "state": "NEUTRAL",
+                    "count": 0
+                  },
+                  {
+                    "state": "PENDING",
+                    "count": 0
+                  },
+                  {
+                    "state": "QUEUED",
+                    "count": 0
+                  },
+                  {
+                    "state": "SKIPPED",
+                    "count": 0
+                  },
+                  {
+                    "state": "STALE",
+                    "count": 0
+                  },
+                  {
+                    "state": "STARTUP_FAILURE",
+                    "count": 0
+                  },
+                  {
+                    "state": "SUCCESS",
+                    "count": 1
+                  },
+                  {
+                    "state": "TIMED_OUT",
+                    "count": 0
+                  },
+                  {
+                    "state": "WAITING",
+                    "count": 0
+                  }
+                ],
+                "statusContextCountsByState": [
+                  {
+                    "state": "EXPECTED",
+                    "count": 0
+                  },
+                  {
+                    "state": "ERROR",
+                    "count": 0
+                  },
+                  {
+                    "state": "FAILURE",
+                    "count": 0
+                  },
+                  {
+                    "state": "PENDING",
+                    "count": 0
+                  },
+                  {
+                    "state": "SUCCESS",
+                    "count": 0
+                  }
+                ],
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": "MQ"
+                },
+                "nodes": [
+                  {
+                    "__typename": "CheckRun",
+                    "name": "ci",
+                    "status": "COMPLETED",
+                    "conclusion": "SUCCESS",
+                    "detailsUrl": "https://github.com/rozed-dev/e2e/actions/runs/42468639602/job/128693940801",
+                    "url": "https://github.com/rozed-dev/e2e/runs/128693940801",
+                    "isRequired": true
+                  }
+                ]
+              }
+            },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "oid": "e334820658aed00ba43e08c203bd481e0431aa07",
+                    "checkSuites": {
+                      "totalCount": 1,
+                      "nodes": [
+                        {
+                          "status": "COMPLETED",
+                          "app": {
+                            "databaseId": 15368
+                          },
+                          "workflowRun": {
+                            "databaseId": 42468639602
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

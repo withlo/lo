@@ -1,0 +1,101 @@
+{
+  "description": "rozed-bot's run 2 stack of two on rozed-dev/e2e, made by the recorder, whose bottom layer it then pushed to: Lo's merge of the top with the bottom's head as shown, refused before sending, then a merge of the top naming only its own head, followed until it ended, and each layer read",
+  "recorded_at": "2026-11-08T12:13:08Z",
+  "repo": "rozed-dev/e2e",
+  "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674",
+  "setup": {
+    "run": 2,
+    "merged": null,
+    "moved": null,
+    "stale": "125fb1b9f1045d3dea6512f2ccf114e713c71025",
+    "open": {
+      "number": 52,
+      "node_id": "PR_kwDOVleUfc8AAAABNpyLkw",
+      "branch": "e9b/open-2",
+      "head": "1622b419ce215fedcdda9e01d2d6cd963a52cd4f"
+    },
+    "stack": [
+      {
+        "number": 53,
+        "node_id": "PR_kwDOVleUfc8AAAABNpyMjg",
+        "branch": "e9b/s1-2",
+        "head": "a1a6c087ff0522ddd2caa430b94e6dfbebc53f4a"
+      },
+      {
+        "number": 54,
+        "node_id": "PR_kwDOVleUfc8AAAABNpyNqQ",
+        "branch": "e9b/s2-2",
+        "head": "1aec7d8e3e0962d55fc496008b38d93ab58049f9"
+      },
+      {
+        "number": 55,
+        "node_id": "PR_kwDOVleUfc8AAAABNpyO5A",
+        "branch": "e9b/s3-2",
+        "head": "1abeef5d36e43ad600fb34f1565e4e2f443c8c76"
+      }
+    ],
+    "layered": [
+      {
+        "number": 56,
+        "node_id": "PR_kwDOVleUfc8AAAABNpyP_Q",
+        "branch": "e9b/l1-2",
+        "head": "838ed91c0ea70611f5ddcae6ee30bd8e59b10e45"
+      },
+      {
+        "number": 57,
+        "node_id": "PR_kwDOVleUfc8AAAABNpyROQ",
+        "branch": "e9b/l2-2",
+        "head": "1e4574b61767255e15bd76be1f43dd24ffc4aab7"
+      }
+    ],
+    "pushed": "117ac0eaad1e66b7b630c1dd40e386ac69ae8965",
+    "draft": {
+      "number": 29,
+      "node_id": "PR_kwDOVleUfc8AAAABNolPXg",
+      "branch": "e4/draft",
+      "head": "fe4c78943a327fa540c09a96b23ed225bf0a0b5e"
+    },
+    "conflict": {
+      "number": 28,
+      "node_id": "PR_kwDOVleUfc8AAAABNolORg",
+      "branch": "e4/conflict",
+      "head": "086ad740bb1d738c91d74151dcdbb8ebf6e28ba9"
+    },
+    "passing": {
+      "number": 25,
+      "node_id": "PR_kwDOVleUfc8AAAABNolKGQ",
+      "branch": "e4/passing",
+      "head": "5f0ff60de032350873bec50c84c9e92f3640a9db"
+    },
+    "failing": {
+      "number": 26,
+      "node_id": "PR_kwDOVleUfc8AAAABNolLoQ",
+      "branch": "e4/failing",
+      "head": "caddf537f55698add79dc540a9fecea7b62fb1bc"
+    },
+    "closed": {
+      "number": 14,
+      "node_id": "PR_kwDOVleUfc8AAAABNY2OYw",
+      "branch": "e1/revisions-3",
+      "head": "adb72084443c6beb0255b01e8d78e6f68eb7d211"
+    },
+    "queue_slow": {
+      "number": 50,
+      "node_id": "PR_kwDOVleUfc8AAAABNpbuFQ",
+      "branch": "e4/queue-3",
+      "head": "97e5aab8e9bab36e1b6e2f7c731a92c2708bedc4"
+    },
+    "queue_pass": {
+      "number": 51,
+      "node_id": "PR_kwDOVleUfc8AAAABNpbv0Q",
+      "branch": "e4/queue-pass-3",
+      "head": "e7e93c447fc200a62dd200a26b0db5b8d80dce4f"
+    },
+    "queue_fail": {
+      "number": 36,
+      "node_id": "PR_kwDOVleUfc8AAAABNo81KA",
+      "branch": "e4/queue-fail",
+      "head": "e334820658aed00ba43e08c203bd481e0431aa07"
+    }
+  }
+}

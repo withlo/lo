@@ -1,0 +1,17 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://uploads.github.com/user-attachments/assets?name=lo-photo-as-it-was.jpg&content_type=image%2Fjpeg&repository_id=1448580221",
+    "body_sha256": "9a668edefdf2d844602af06dcbf2b13a73c5c4a6749371644e606ac85a936e23"
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"0bb2ade58927a49fb6d933c3773138dcaa8f5a8eac98aaa7adc5aeb6bd74b54e\""
+    },
+    "body": {
+      "url": "https://github.com/user-attachments/assets/fbbd2bf1-7ab8-4c44-9ba0-6b3eec626e93"
+    }
+  }
+}
