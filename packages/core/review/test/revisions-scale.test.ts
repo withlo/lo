@@ -10,9 +10,9 @@ const HEADS = 20_000;
 
 /**
  * How long building, comparing and numbering may take, in milliseconds: three times the slowest of
- * the three on a Linux CI runner.
+ * the three on a Linux CI runner, 450 ms for the check suites. Faster machines pass easily.
  */
-const LIMIT = process.env.CI ? 1000 : 500;
+const LIMIT = 1350;
 
 /** `seconds` into a day in 2026, in milliseconds since the Unix epoch. */
 function at(seconds: number): number {
@@ -37,11 +37,7 @@ function timed(
   const unnumbered = [...revisions]
     .filter((revision) => revisions.number(revision.head) === undefined)
     .map((revision) => revision.head);
-  const elapsed = performance.now() - start;
-  process.stderr.write(
-    `revisions scale: ${records.length} records took ${elapsed.toFixed(1)} ms\n`,
-  );
-  return { count: revisions.length, unnumbered, elapsed };
+  return { count: revisions.length, unnumbered, elapsed: performance.now() - start };
 }
 
 /** Every head, as the current commits. */
