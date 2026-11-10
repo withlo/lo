@@ -263,13 +263,16 @@ function compileTriggersAndViews(
     if (object.type === 'view') database.compile(`SELECT * FROM ${quote(name)} LIMIT 0`);
     if (object.type === 'trigger') fired.add(object.table);
   }
-  // A statement a trigger can't fire on fails for its own reasons (a view takes only the changes
-  // its INSTEAD OF triggers handle); only the authorizer's refusals count here.
+  // A view takes only the changes its INSTEAD OF triggers handle, so a statement it has no trigger
+  // for fails, and that alone is let pass. Any other failure, such as a trigger that names a table
+  // that doesn't exist yet, keeps the trigger's body from being checked, so it fails the migration.
   const attempt = (sql: string) => {
     try {
       database.compile(sql);
     } catch (error) {
-      if (refused()) throw error;
+      const unhandledByView =
+        error instanceof Error && /^cannot modify .+ because it is a view$/.test(error.message);
+      if (refused() || !unhandledByView) throw error;
     }
   };
   for (const table of fired) {
@@ -336,6 +339,13 @@ function checkOwnership(
   }
   for (const [name, object] of after) {
     if (object.type !== 'table' || !name.startsWith(prefix)) continue;
+    // An external-content FTS5 table reads its rows from its content table whenever it's queried.
+    const content = fts5Content(object.sql);
+    if (content && !content.startsWith(prefix)) {
+      throw new Error(
+        `${where} makes ${name} read its rows from ${content}, another feature's table.`,
+      );
+    }
     const references = database
       .prepare('SELECT "table" FROM pragma_foreign_key_list(?)')
       .all(name)
@@ -345,4 +355,66 @@ function checkOwnership(
       throw new Error(`${where} makes ${name} refer to ${elsewhere}, another feature's table.`);
     }
   }
+}
+
+/**
+ * The table an FTS5 table takes its content from (`content=…`), if its SQL makes it one with
+ * external content. Empty for a contentless one, undefined for one that keeps its own.
+ */
+export function fts5Content(sql: string): string | undefined {
+  const using = /^\s*create\s+virtual\s+table\s.+?\susing\s+fts5\s*\(/is.exec(sql);
+  if (!using) return undefined;
+  for (const argument of splitArguments(sql.slice(using[0].length))) {
+    const option = /^\s*content\s*=\s*(.*?)\s*$/is.exec(argument);
+    if (option) return unquote(option[1] ?? '');
+  }
+  return undefined;
+}
+
+/** A virtual table's arguments, split at the commas between them, up to its closing parenthesis. */
+function splitArguments(text: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let depth = 0;
+  let quoting: string | undefined;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index] ?? '';
+    if (quoting) {
+      current += char;
+      if (char === quoting) {
+        // A doubled quoting is an escaped one.
+        if (text[index + 1] === quoting) current += text[++index] ?? '';
+        else quoting = undefined;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '`') quoting = char;
+    else if (char === '[') quoting = ']';
+    else if (char === '(') depth += 1;
+    else if (char === ')') {
+      if (depth === 0) break;
+      depth -= 1;
+    } else if (char === ',' && depth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  return parts;
+}
+
+/** An SQL name or string without its quotes. */
+function unquote(text: string): string {
+  const [first] = text;
+  const closing = first === '[' ? ']' : first;
+  if (
+    (first === "'" || first === '"' || first === '`' || first === '[') &&
+    text.endsWith(closing ?? '')
+  ) {
+    const inner = text.slice(1, -1);
+    return first === '[' ? inner : inner.replaceAll(`${first}${first}`, first);
+  }
+  return text;
 }
