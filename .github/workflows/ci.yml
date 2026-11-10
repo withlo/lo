@@ -22,7 +22,7 @@ env:
 jobs:
   # Changes that only touch docs, the brand's files, agent files or the license skip the check job,
   # which runs Nx and the repo checks. ci-ok passes when it's skipped. Formatting is checked either
-  # way. Markdown elsewhere can be test input, and generated files always run the checks.
+  # way. scripts/changes.sh has the list.
   changes:
     name: changes
     runs-on: ubuntu-latest
@@ -37,33 +37,7 @@ jobs:
 
       - name: Decide whether the check job runs
         id: filter
-        run: |
-          # A separate assignment, so a failing diff fails the step instead of skipping the checks.
-          files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
-          check=false
-          while IFS= read -r file; do
-            [ -n "$file" ] || continue
-            if [ "$(git check-attr linguist-generated -- "$file" | sed 's/.*: //')" = true ]; then
-              echo "$file is generated, so the checks run."
-              check=true
-              break
-            fi
-            case "$file" in
-              docs/* | brand/* | design/*.md | .claude/* | .agents/* | .github/*.md | LICENSE) ;;
-              */*)
-                echo "$file changed, so the checks run."
-                check=true
-                break
-                ;;
-              *.md) ;;
-              *)
-                echo "$file changed, so the checks run."
-                check=true
-                break
-                ;;
-            esac
-          done <<< "$files"
-          echo "check=$check" >> "$GITHUB_OUTPUT"
+        run: sh scripts/changes.sh "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
   commitlint:
     name: commitlint
@@ -80,7 +54,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Installs the Node and pnpm that package.json's devEngines pins, then the dependencies.
+      # Installs the Node and pnpm that package.json's devEngines pins, then the dependencies. Jobs
+      # here only restore pnpm's store; cache.yml saves it from main, where every pull request
+      # can read it.
       - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
         with:
           cache: true
@@ -115,7 +91,7 @@ jobs:
       - name: Check the repo's shell scripts
         run: |
           shellcheck --version
-          shellcheck scripts/*.sh scripts/hooks/*.sh
+          shellcheck scripts/*.sh scripts/hooks/*.sh brand/icon/build.sh
 
   format:
     name: format
@@ -126,10 +102,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # The one job that saves pnpm's store, since it runs on every pull request.
       - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
         with:
           cache: true
+          save-cache: false
           require-lockfile: true
 
       - name: Check formatting
