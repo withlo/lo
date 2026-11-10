@@ -206,20 +206,41 @@ export async function refreshGrant(options: WebOptions, refresh: Token): Promise
   return parseRefresh(answer.status, answer.body, (options.now ?? nowSeconds)());
 }
 
-/** What a renewal's answer says, with a token's expiry counted from `now`. */
+/**
+ * GitHub's `error`s that refuse a renewal for good: the refresh token is wrong, expired or used, or
+ * the user or GitHub took Lo's access away. Only signing in again gets a token.
+ */
+const REFUSALS: ReadonlySet<string> = new Set([
+  'bad_refresh_token',
+  'invalid_grant',
+  'unauthorized_client',
+  'access_denied',
+  'incorrect_client_credentials',
+  'invalid_client',
+]);
+
+/**
+ * What a renewal's answer says, with a token's expiry counted from `now`. Only GitHub's own refusal
+ * of the refresh token, its JSON `error`, is `refused`, since that signs the account out and
+ * forgets the refresh token. Anything else may come from something in the way, such as a proxy
+ * that wants a password (a 407, or a bare 401), a firewall (403) or a redirect to a login page, or
+ * from GitHub not answering (5xx, 429), or answering in a way Lo doesn't know: GitHub didn't say
+ * the refresh token is no good, so it's `unavailable` and kept.
+ */
 export function parseRefresh(status: number, body: string, now: number): Grant {
-  // GitHub's own refusals of a refresh token.
-  if (status === 400 || status === 401) throw new RenewalError('refused', httpError(status, body));
-  // Anything else is something in the way, such as a proxy that wants a password (407), a
-  // firewall (403) or a redirect to a login page, or GitHub not answering (5xx, 429): GitHub never
-  // saw the refresh token, which may still work.
-  if (status !== 200) throw new RenewalError('unavailable', httpError(status, body));
-  const answer = readTokenAnswer(body);
-  if (answer === undefined) throw new RenewalError('unavailable', "GitHub's answer wasn't JSON");
-  const grant = grantFrom(answer, now);
-  if (grant) return grant;
-  if (answer.error !== undefined) {
-    throw new RenewalError('refused', answer.errorDescription ?? answer.error);
+  // GitHub answers a renewal with 200, and may send its refusal with a 400 or 401.
+  const answer = [200, 400, 401].includes(status) ? readTokenAnswer(body) : undefined;
+  if (answer === undefined) {
+    const why = status === 200 ? "GitHub's answer wasn't JSON" : httpError(status, body);
+    throw new RenewalError('unavailable', why);
   }
+  const grant = status === 200 ? grantFrom(answer, now) : undefined;
+  if (grant) return grant;
+  const { error } = answer;
+  if (error !== undefined && REFUSALS.has(error)) {
+    throw new RenewalError('refused', answer.errorDescription ?? error);
+  }
+  if (status !== 200) throw new RenewalError('unavailable', httpError(status, body));
+  if (error !== undefined) throw new RenewalError('unavailable', answer.errorDescription ?? error);
   throw new RenewalError('unavailable', "GitHub's answer had neither a token nor an error");
 }

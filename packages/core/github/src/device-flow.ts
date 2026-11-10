@@ -31,6 +31,13 @@ const DEVICE_CODE_PATH = '/login/device/code';
 /** Where the user enters the code, on GitHub's website. */
 const VERIFICATION_PATH = '/login/device';
 /**
+ * What a sign-in asks for: Lo's scopes, and `offline_access`, for a token that expires with a
+ * refresh token to renew it. Lo's OAuth app predates GitHub's opt-in for expiring tokens, so
+ * without it no sign-in gets a refresh token. GitHub doesn't grant `offline_access` as a scope, so
+ * it isn't in {@link SCOPES}, which a new token's scopes are checked against.
+ */
+const REQUESTED_SCOPES = [...SCOPES, 'offline_access'].join(' ');
+/**
  * Where the user enters the code on github.com. Lo opens this rather than the `verification_uri`
  * GitHub's answer names, so an answer from anything posing as GitHub can't open another page or
  * app.
@@ -187,7 +194,7 @@ export async function requestCodes(options: SignInOptions): Promise<DeviceCodes>
     DEVICE_CODE_PATH,
     [
       ['client_id', CLIENT_ID],
-      ['scope', SCOPES.join(' ')],
+      ['scope', REQUESTED_SCOPES],
     ],
     options.signal,
   );

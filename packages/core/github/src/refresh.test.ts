@@ -66,17 +66,46 @@ test('githubs refusals and failures are told apart', () => {
   expect(refused.message).toBe(
     'GitHub refused to renew the token: The refresh token passed is incorrect or expired.',
   );
-  for (const status of [400, 401]) {
-    expect({ status, kind: refusal(status, '{}').kind }).toEqual({ status, kind: 'refused' });
+  // GitHub's other refusals, with the statuses it may send them with.
+  for (const [status, error] of [
+    [200, 'invalid_grant'],
+    [200, 'unauthorized_client'],
+    [200, 'access_denied'],
+    [200, 'incorrect_client_credentials'],
+    [400, 'bad_refresh_token'],
+    [401, 'bad_refresh_token'],
+  ] as const) {
+    expect({ status, error, kind: refusal(status, `{"error":"${error}"}`).kind }).toEqual({
+      status,
+      error,
+      kind: 'refused',
+    });
   }
   // GitHub can't answer, or something in the way answers instead of it: a redirect to a login
-  // page, a firewall, a proxy that wants a password. None of that refuses the token.
-  for (const status of [502, 429, 301, 302, 307, 403, 404, 407]) {
-    expect({ status, kind: refusal(status, '<html>Unicorn!</html>').kind }).toEqual({
+  // page, a firewall, a proxy that wants a password, or one that answers a bare 400 or 401.
+  // None of that refuses the token.
+  for (const [status, body] of [
+    [400, '{}'],
+    [401, '{}'],
+    [400, ''],
+    [401, '<html>Unauthorized</html>'],
+    [502, '<html>Unicorn!</html>'],
+    [429, '<html>Unicorn!</html>'],
+    [301, '<html>Unicorn!</html>'],
+    [302, '<html>Unicorn!</html>'],
+    [307, '<html>Unicorn!</html>'],
+    [403, '<html>Unicorn!</html>'],
+    [404, '<html>Unicorn!</html>'],
+    [407, '<html>Unicorn!</html>'],
+  ] as const) {
+    expect({ status, body, kind: refusal(status, body).kind }).toEqual({
       status,
+      body,
       kind: 'unavailable',
     });
   }
+  // Nor does an error Lo doesn't know.
+  expect(refusal(200, '{"error":"temporarily_unavailable"}').kind).toBe('unavailable');
   expect(refusal(200, 'not json').kind).toBe('unavailable');
 });
 

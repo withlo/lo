@@ -77,6 +77,10 @@ class GitHub {
   onRefresh: ((refresh: string) => void) | undefined;
   /** Where each request is noted, as `<method> <path> <token>`, and each renewal as `renew <refresh token>`. */
   readonly events: string[];
+  /** The token `gh` gives for `a`, or nothing. */
+  gh: string | undefined;
+  /** How many times `gh` was asked. */
+  ghRuns = 0;
   readonly #held = new Map<string, Promise<void>>();
 
   constructor(events: string[] = []) {
@@ -94,6 +98,13 @@ class GitHub {
 
   readonly fetch: typeof globalThis.fetch = (input, init) =>
     Promise.resolve().then(() => this.#answer(new Request(input, init)));
+
+  /** Asks `gh` for an account's token, as the app reads one from `gh` again. */
+  readonly reread = async (login: string): Promise<Token | undefined> => {
+    this.ghRuns += 1;
+    await Promise.resolve();
+    return login === 'a' && this.gh !== undefined ? new Token(this.gh) : undefined;
+  };
 
   readonly renew = async (refresh: Token): Promise<Grant> => {
     const sent = refresh.expose();
@@ -256,7 +267,13 @@ async function setup(
 
 /** The accounts as Lo reads them as it starts. */
 function load({ github, store, rows }: Omit<Setup, 'accounts'>): Promise<Accounts> {
-  return Accounts.load({ rows, secrets: store, renew: github.renew, fetch: github.fetch });
+  return Accounts.load({
+    rows,
+    secrets: store,
+    renew: github.renew,
+    reread: github.reread,
+    fetch: github.fetch,
+  });
 }
 
 function add(
@@ -413,6 +430,54 @@ test('a 401 from any request signs only that account out', async () => {
   expect(accounts.isSignedOut('a')).toBe(false);
   await a.get(REPO, anything);
   expect(a.token?.expose()).toBe('gho_NEW');
+});
+
+test('a 401 reads a gh accounts token from gh again', async () => {
+  const github = new GitHub();
+  github.sees = ['gho_FRESH'];
+  github.revoked = ['gho_OLD'];
+  github.gh = 'gho_FRESH';
+  const { accounts, store } = await setup(github);
+  await add(accounts, 'a', 'gho_OLD', 'gh');
+  const a = await accounts.client('a');
+
+  // gh's short-lived token expired; gh hands out its renewed one, and the request is sent again
+  // with it.
+  await a.get(REPO, anything);
+  expect(github.ghRuns).toBe(1);
+  expect(a.token?.expose()).toBe('gho_FRESH');
+  expect(store.token('a')).toBe('gho_FRESH');
+  expect(accounts.isSignedOut('a')).toBe(false);
+  // Lo renews nothing of gh's itself.
+  expect(github.refreshed).toEqual([]);
+});
+
+test('requests refused together read gh once', async () => {
+  const github = new GitHub();
+  github.sees = ['gho_FRESH'];
+  github.revoked = ['gho_OLD'];
+  github.gh = 'gho_FRESH';
+  const { accounts } = await setup(github);
+  await add(accounts, 'a', 'gho_OLD', 'gh');
+  const a = await accounts.client('a');
+
+  await Promise.all([a.get(REPO, anything), a.get(REPO, anything)]);
+  expect(github.ghRuns).toBe(1);
+});
+
+test('a gh account is signed out when gh has nothing newer', async () => {
+  const github = new GitHub();
+  github.revoked = ['gho_OLD'];
+  github.gh = 'gho_OLD';
+  const { accounts } = await setup(github);
+  await add(accounts, 'a', 'gho_OLD', 'gh');
+  const a = await accounts.client('a');
+
+  await expect(a.get(REPO, anything)).rejects.toMatchObject(UNAUTHORIZED);
+  expect(accounts.isSignedOut('a')).toBe(true);
+  // Signed out, the next refusal doesn't ask gh again.
+  await expect(a.get(REPO, anything)).rejects.toMatchObject(UNAUTHORIZED);
+  expect(github.ghRuns).toBe(1);
 });
 
 test('a missing token signs the account out', async () => {
@@ -618,18 +683,46 @@ test('a refused token that doesnt expire is deleted', async () => {
   expect(await rows.refused()).toEqual(['a']);
 });
 
+test('a token without a refresh token is used until github refuses it', async () => {
+  const github = new GitHub();
+  github.sees = ['gho_A', 'gho_AGAIN'];
+  const { accounts, store, rows } = await setup(github);
+  // A sign-in GitHub gave no refresh token.
+  await add(accounts, 'a', 'gho_A');
+  const seen = heard(accounts);
+  const a = await accounts.client('a');
+  await a.get(REPO, anything);
+  // Nothing renews it, however long it's used.
+  await advance(2 * EIGHT_HOURS);
+  await a.get(REPO, anything);
+  expect(github.refreshed).toEqual([]);
+  expect(seen).toEqual([]);
+
+  // Once GitHub refuses it, the account is signed out and asks to be signed in again.
+  github.sees = ['gho_AGAIN'];
+  github.revoked = ['gho_A'];
+  await expect(a.get(REPO, anything)).rejects.toMatchObject(UNAUTHORIZED);
+  expect(seen).toEqual([{ kind: 'signedOut', login: 'a', why: 'refused' }]);
+  await expect(accounts.client('a')).rejects.toMatchObject(UNAUTHORIZED);
+  expect(github.refreshed).toEqual([]);
+  expect(store.logins()).toEqual([]);
+  expect(await rows.refused()).toEqual(['a']);
+  // Signing in again works, with the client held from before.
+  await add(accounts, 'a', 'gho_AGAIN');
+  await a.get(REPO, anything);
+});
+
 test('a token stored since isnt deleted with the refused one', async () => {
   const github = new GitHub();
   github.revoked = ['gho_A'];
+  github.gh = 'gho_A';
   const { accounts, store } = await setup(github);
-  await add(accounts, 'a', 'gho_A');
+  await add(accounts, 'a', 'gho_A', 'gh');
   const a = await accounts.client('a');
-  // Another Lo process signs it in again just as this one signs it out.
-  accounts.onEvent((event) => {
-    if (event.kind === 'signedOut') store.kept.set('a', grant('gho_ELSEWHERE'));
-  });
+  // Another Lo process signed it in again, after this one read its token.
+  store.kept.set('a', grant('gho_ELSEWHERE'));
 
-  // Nothing renews the token, so it's signed out here, but the new token stays.
+  // gh has nothing newer, so it's signed out here, but the new token stays.
   await expect(a.get(REPO, anything)).rejects.toMatchObject(UNAUTHORIZED);
   await settle();
   expect(accounts.signedOut('a')).toBe('refused');
@@ -788,13 +881,11 @@ test('a refresh token that cant be read isnt taken for none', async () => {
 test('a sign out that cant read the store leaves it', async () => {
   const github = new GitHub();
   github.revoked = ['gho_A'];
+  github.gh = 'gho_A';
   const { accounts, store, rows } = await setup(github);
-  await add(accounts, 'a', 'gho_A');
+  await add(accounts, 'a', 'gho_A', 'gh');
   const a = await accounts.client('a');
-  // The store locks just as the account is signed out.
-  accounts.onEvent((event) => {
-    if (event.kind === 'signedOut') store.unreadable.add('a');
-  });
+  store.unreadable.add('a');
 
   await expect(a.get(REPO, anything)).rejects.toMatchObject(UNAUTHORIZED);
   await settle();

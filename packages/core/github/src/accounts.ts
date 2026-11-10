@@ -95,6 +95,12 @@ export interface AccountsOptions {
   urls?: Partial<GitHubUrls> | undefined;
   /** The time, in seconds since the Unix epoch: the computer's clock unless said otherwise. */
   now?: (() => number) | undefined;
+  /**
+   * Reads an account imported from `gh` from `gh` again, after GitHub refused its token: `gh`'s
+   * token for the login, or nothing. `gh` renews its own tokens, which last hours, so Lo asks it
+   * rather than renewing them. Without it, a `gh` account GitHub refuses is signed out.
+   */
+  reread?: ((login: string) => Promise<Token | undefined>) | undefined;
 }
 
 /** Why an account is signed out: GitHub refused its token (a `401`), or its token isn't kept any more. */
@@ -153,7 +159,9 @@ type Renewed =
   /** The token doesn't expire, so nothing renews it. */
   | { kind: 'noRefreshToken' }
   /** GitHub, or the store, couldn't be asked. The refresh token may still work. With when the token expires. */
-  | { kind: 'failed'; expiresAt: number | undefined };
+  | { kind: 'failed'; expiresAt: number | undefined }
+  /** A newer token read from `gh` again, and whether the store took it. */
+  | { kind: 'reread'; grant: Grant; saved: boolean };
 
 /** A wait that can be called off. */
 interface Timer {
@@ -173,13 +181,15 @@ interface Check {
  *
  * Each account's grant is kept whole in {@link AccountsOptions.secrets}, under its login in lower
  * case. Its client handles a `401` itself: GitHub refusing a token renews it, if it's one that
- * expires, and otherwise signs the account out ({@link Accounts.refused}). A token that expires is
- * also renewed shortly before it does.
+ * expires, or reads it from `gh` once more, for an account imported from it, and otherwise signs
+ * the account out ({@link Accounts.refused}). A token that expires is also renewed shortly before
+ * it does.
  */
 export class Accounts {
   readonly #rows: AccountRows;
   readonly #secrets: Secrets;
   readonly #renewGrant: (refresh: Token) => Promise<Grant>;
+  readonly #reread: ((login: string) => Promise<Token | undefined>) | undefined;
   readonly #fetch: typeof globalThis.fetch;
   readonly #urls: Partial<GitHubUrls> | undefined;
   readonly #now: () => number;
@@ -217,6 +227,7 @@ export class Accounts {
     this.#rows = options.rows;
     this.#secrets = options.secrets;
     this.#renewGrant = options.renew;
+    this.#reread = options.reread;
     this.#fetch = options.fetch;
     this.#urls = options.urls;
     this.#now = options.now ?? (() => Math.floor(Date.now() / 1000));
@@ -310,7 +321,7 @@ export class Accounts {
       const client = this.#clients.get(login);
       if (client) client.setToken(grant.token);
       else this.#clients.set(login, this.#newClient(account.login, grant.token));
-      this.#renewBy(account.login, grant.refresh?.expiresAt);
+      this.#renewBy(account.login, expiryToRenew(account, grant));
       this.#changed();
       return account;
     });
@@ -377,10 +388,12 @@ export class Accounts {
    *
    * Every client {@link Accounts.client} hands out calls this on a `401`. A token that has been
    * replaced since, by signing in again, by an earlier call or by another Lo process, is answered
-   * with the new one. A token that expires is renewed with its refresh token. If neither gives a
-   * token, the account is signed out, and its grant deleted. If GitHub couldn't be asked for a
-   * renewal, the account stays signed in, and a later refusal asks again, after a wait that grows
-   * each time GitHub can't be asked.
+   * with the new one. A token that expires is renewed with its refresh token. An account imported
+   * from `gh` gets its token from `gh` once more ({@link AccountsOptions.reread}), since `gh`'s
+   * tokens expire within hours and `gh` renews them. If none of that gives a token, the account is
+   * signed out, and its grant deleted. If GitHub couldn't be asked for a renewal, the account
+   * stays signed in, and a later refusal asks again, after a wait that grows each time GitHub
+   * can't be asked.
    */
   refused(login: string, token: Token): Promise<Token | undefined> {
     return this.#renew(login, token, 'refused');
@@ -432,7 +445,7 @@ export class Accounts {
     const { grant } = this.#held.get(lower) ?? this.#hold(lower, stored, true);
     const client = this.#newClient(account.login, grant.token);
     this.#clients.set(lower, client);
-    this.#renewBy(account.login, grant.refresh?.expiresAt);
+    this.#renewBy(account.login, expiryToRenew(account, grant));
     return client;
   }
 
@@ -681,7 +694,14 @@ export class Accounts {
         return undefined;
       }
     }
-    const renewal = this.#renewWithRefresh(account.login, token, why);
+    let renewal: Promise<Token | undefined>;
+    if (account.source === 'gh') {
+      // gh renews its own tokens, and Lo never uses a refresh token of gh's.
+      if (why === 'expiring') return undefined;
+      renewal = this.#rereadFromGh(account.login, token);
+    } else {
+      renewal = this.#renewWithRefresh(account.login, token, why);
+    }
     this.#renewing.set(lower, renewal);
     try {
       return await renewal;
@@ -710,6 +730,30 @@ export class Accounts {
         () => false,
       );
       return this.#renewed(login, stale, why, id, { kind: 'issued', grant: answer.grant, saved });
+    });
+  }
+
+  /**
+   * Reads `stale`, a `gh` account's token, from `gh` again, after GitHub refused it, and stores a
+   * newer one before anything uses it, unless the account was removed or signed in again
+   * meanwhile. The account is signed out when `gh` has nothing newer.
+   */
+  async #rereadFromGh(login: string, stale: Token): Promise<Token | undefined> {
+    const id = this.#held.get(key(login))?.id;
+    const token = await this.#reread?.(login).catch(() => undefined);
+    if (token === undefined || token.isEmpty || token.equals(stale)) {
+      return this.#renewed(login, stale, 'refused', id, { kind: 'refused' });
+    }
+    const grant: Grant = { token };
+    return this.#locked(login, async () => {
+      if (!this.#isCurrent(login, id)) {
+        return this.#renewed(login, stale, 'refused', id, { kind: 'replaced' });
+      }
+      const saved = await this.#secrets.write(key(login), grant).then(
+        () => true,
+        () => false,
+      );
+      return this.#renewed(login, stale, 'refused', id, { kind: 'reread', grant, saved });
     });
   }
 
@@ -795,6 +839,12 @@ export class Accounts {
         if (!renewed.saved) this.#saveFailed(login, held.id, 1);
         return this.#use(login, renewed.grant);
       }
+      case 'reread':
+        // gh holds the token too, and gives it again at the next refusal, so a token the store
+        // refused is saved again only as Lo quits, not on a timer, and nothing warns about it.
+        this.#hold(login, renewed.grant, renewed.saved);
+        if (renewed.saved) this.#cantSaveOver(login);
+        return this.#use(login, renewed.grant);
       case 'stored':
         this.#hold(login, renewed.grant, true);
         this.#cantSaveOver(login);
@@ -826,7 +876,8 @@ export class Accounts {
   #use(login: string, grant: Grant): Token {
     this.#backoffs.delete(key(login));
     this.#clients.get(key(login))?.setToken(grant.token);
-    this.#renewBy(login, grant.refresh?.expiresAt);
+    const account = this.account(login);
+    this.#renewBy(login, account && expiryToRenew(account, grant));
     return grant.token;
   }
 
@@ -951,6 +1002,11 @@ export class Accounts {
 /** The key an account's state is kept under: its login in lower case, since GitHub's logins ignore case. */
 function key(login: string): string {
   return login.toLowerCase();
+}
+
+/** When the account's token expires, to renew it before then: never for one from `gh`, which renews its own. */
+function expiryToRenew(account: Account, grant: Grant): number | undefined {
+  return account.source === 'gh' ? undefined : grant.refresh?.expiresAt;
 }
 
 /** Orders accounts by when they were added, then by login ignoring case. */

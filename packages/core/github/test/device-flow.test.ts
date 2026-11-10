@@ -119,7 +119,7 @@ test('signs in once the code is entered', async () => {
   expect(codes?.url).toBe('https://github.com/login/device/code');
   expect(header(codes, 'accept')).toBe('application/json');
   expect(new TextDecoder().decode(codes?.body)).toBe(
-    'client_id=Ov23liBORqwRdiPzqsPP&scope=repo+read%3Aorg+workflow',
+    'client_id=Ov23liBORqwRdiPzqsPP&scope=repo+read%3Aorg+workflow+offline_access',
   );
   // The token goes only to the API, after the flow.
   const userRequest = seen.at(-1);

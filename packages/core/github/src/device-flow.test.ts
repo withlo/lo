@@ -13,6 +13,7 @@ import {
   type Poll,
 } from './device-flow.ts';
 import { CLIENT_ID } from './errors.ts';
+import { missingScopes, SCOPES } from './user.ts';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -124,7 +125,7 @@ function githubAnswering(codes: Json, polls: readonly Json[]): Replay {
   return new Replay('synthetic', [
     interaction(
       '/login/device/code',
-      `client_id=${CLIENT_ID}&scope=repo+read%3Aorg+workflow`,
+      `client_id=${CLIENT_ID}&scope=repo+read%3Aorg+workflow+offline_access`,
       codes,
     ),
     ...polls.map((poll) =>
@@ -192,6 +193,18 @@ test('lo opens only githubs page', async () => {
     ),
   );
   expect((await requestCodes({ fetch })).verificationUrl).toBe(VERIFICATION_URL);
+});
+
+test('a sign-in asks for a token that renews', async () => {
+  const fetch = replayFetch(
+    githubAnswering({ device_code: 'd', user_code: 'FAKE-1234', expires_in: 899, interval: 5 }, []),
+  );
+  await requestCodes({ fetch });
+  const form = new URLSearchParams(new TextDecoder().decode(fetch.seen[0]?.body));
+  // `offline_access` gets a refresh token with each token.
+  expect(form.get('scope')?.split(' ')).toEqual([...SCOPES, 'offline_access']);
+  // GitHub doesn't grant it as a scope, and a token without it lacks nothing.
+  expect(missingScopes(['read:org', 'repo', 'workflow'])).toEqual([]);
 });
 
 test('missing scopes read well', () => {
