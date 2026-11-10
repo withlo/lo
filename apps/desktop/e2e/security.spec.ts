@@ -1,6 +1,20 @@
 import { readFile } from 'node:fs/promises';
 
+import type { ElectronApplication } from '@playwright/test';
+
 import { expect, test } from './app.ts';
+
+/** Whether a process runs in the operating system's sandbox, not only with the setting on. */
+async function inSandbox(app: ElectronApplication, pid: number): Promise<boolean | undefined> {
+  if (process.platform === 'linux') {
+    return /^Seccomp:\s+2$/m.test(await readFile(`/proc/${pid}/status`, 'utf8'));
+  }
+  return app.evaluate(
+    (electron, renderer) =>
+      electron.app.getAppMetrics().find((metric) => metric.pid === renderer)?.sandboxed,
+    pid,
+  );
+}
 
 const policy =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; " +
@@ -29,20 +43,10 @@ test('the window runs sandboxed, isolated and without Node', async ({ app, page 
     webSecurity: true,
   });
 
-  // The page's process runs in the operating system's sandbox, not only with the setting on.
   const pid = await app.evaluate(
     ({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.webContents.getOSProcessId() ?? 0,
   );
-  if (process.platform === 'linux') {
-    expect(await readFile(`/proc/${pid}/status`, 'utf8')).toMatch(/^Seccomp:\s+2$/m);
-  } else {
-    const sandboxed = await app.evaluate(
-      (electron, renderer) =>
-        electron.app.getAppMetrics().find((metric) => metric.pid === renderer)?.sandboxed,
-      pid,
-    );
-    expect(sandboxed).toBe(true);
-  }
+  expect(await inSandbox(app, pid)).toBe(true);
 
   // Nothing of Node or Electron is reachable from the page.
   expect(
@@ -62,6 +66,18 @@ test('the window runs sandboxed, isolated and without Node', async ({ app, page 
     ipcRenderer: false,
     electron: false,
   });
+});
+
+test('every page runs in the sandbox, even one whose window asks not to', async ({ app }) => {
+  const pid = await app.evaluate(async ({ BrowserWindow, session }) => {
+    const window = new BrowserWindow({
+      show: false,
+      webPreferences: { sandbox: false, session: session.fromPartition('persist:window') },
+    });
+    await window.loadURL('about:blank');
+    return window.webContents.getOSProcessId();
+  });
+  expect(await inSandbox(app, pid)).toBe(true);
 });
 
 test('the page loads with its content security policy and no violations', async ({ page }) => {
@@ -174,6 +190,51 @@ for (const target of ['https://example.com/', 'lo-app://app/index.html?elsewhere
   });
 }
 
+test("the window can't follow a redirect away from a page Lo loads", async ({ app, page }) => {
+  const redirect = await app.evaluateHandle(({ BrowserWindow, session }) => {
+    // Lo's files never redirect, and its scheme can't, so a redirect is made in front of them.
+    session.fromPartition('persist:window').webRequest.onBeforeRequest((details, callback) => {
+      callback(details.url.endsWith('/start') ? { redirectURL: 'https://example.com/' } : {});
+    });
+    const contents = BrowserWindow.getAllWindows()[0]?.webContents;
+    const promise = new Promise<{ url: string; prevented: boolean }>((resolve) => {
+      contents?.once('will-redirect', (event) => {
+        resolve({ url: event.url, prevented: event.defaultPrevented });
+      });
+    });
+    contents?.loadURL('lo-app://app/start').catch(() => {});
+    return { promise };
+  });
+  expect(await redirect.evaluate(({ promise }) => promise)).toEqual({
+    url: 'https://example.com/',
+    prevented: true,
+  });
+  expect(page.url()).toBe('lo-app://app/index.html');
+});
+
+test("a window that allows webviews still can't attach one", async ({ app }) => {
+  const attached = await app.evaluateHandle(async ({ BrowserWindow, session }) => {
+    const window = new BrowserWindow({
+      show: false,
+      webPreferences: { webviewTag: true, session: session.fromPartition('persist:window') },
+    });
+    await window.loadURL('lo-app://app/index.html');
+    const promise = new Promise<boolean>((resolve) => {
+      window.webContents.once('will-attach-webview', (event) => resolve(event.defaultPrevented));
+    });
+    await window.webContents.executeJavaScript(
+      "document.body.append(Object.assign(document.createElement('webview'), { src: 'about:blank' }))",
+    );
+    return { promise };
+  });
+  expect(await attached.evaluate(({ promise }) => promise)).toBe(true);
+  expect(
+    await app.evaluate(({ webContents }) =>
+      webContents.getAllWebContents().some((contents) => contents.getType() === 'webview'),
+    ),
+  ).toBe(false);
+});
+
 test('every permission is refused', async ({ page }) => {
   const answers = await page.evaluate(async () => ({
     notifications: await Notification.requestPermission(),
@@ -182,10 +243,54 @@ test('every permission is refused', async ({ page }) => {
       navigator.geolocation.getCurrentPosition(
         () => resolve('allowed'),
         (error) => resolve(error.code === error.PERMISSION_DENIED ? 'denied' : error.message),
+        // Allowed, it would wait for a position, which a test machine may never have.
+        { timeout: 2000 },
       );
     }),
   }));
   expect(answers).toEqual({ notifications: 'denied', geolocation: 'denied', position: 'denied' });
+});
+
+test('the window downloads nothing', async ({ app, page }) => {
+  // Listens in main after Lo's own listener, so it sees whether Lo stopped each download.
+  const downloads = await app.evaluateHandle(({ session }) => {
+    const seen: { name: string; prevented: boolean }[] = [];
+    session.fromPartition('persist:window').on('will-download', (event, item) => {
+      seen.push({ name: item.getFilename(), prevented: event.defaultPrevented });
+    });
+    return seen;
+  });
+  await page.evaluate(() => {
+    for (const href of ['data:text/plain,echo', URL.createObjectURL(new Blob(['echo']))]) {
+      const link = Object.assign(document.createElement('a'), { href, download: 'run.command' });
+      document.body.append(link);
+      link.click();
+    }
+  });
+  await expect
+    .poll(() => downloads.evaluate((seen) => seen))
+    .toEqual([
+      { name: 'run.command', prevented: true },
+      { name: 'run.command', prevented: true },
+    ]);
+});
+
+test('spellcheck is off', async ({ app, page }) => {
+  await page.evaluate(() => {
+    const box = Object.assign(document.createElement('textarea'), { spellcheck: true });
+    document.body.append(box);
+    box.focus();
+  });
+  await page.keyboard.type('Teh revieew ');
+  const menu = await app.evaluateHandle(({ BrowserWindow }) => ({
+    promise: new Promise<{ word: string; suggestions: string[] }>((resolve) => {
+      BrowserWindow.getAllWindows()[0]?.webContents.once('context-menu', (_event, params) => {
+        resolve({ word: params.misspelledWord, suggestions: params.dictionarySuggestions });
+      });
+    }),
+  }));
+  await page.locator('textarea').click({ button: 'right', position: { x: 12, y: 8 } });
+  expect(await menu.evaluate(({ promise }) => promise)).toEqual({ word: '', suggestions: [] });
 });
 
 test.describe('with the content security policy bypassed', () => {

@@ -58,6 +58,19 @@ export function isAllowedRequest(address: string, dev?: URL): boolean {
 }
 
 /**
+ * The proxy for everything the window's session sends that isn't a request it can cancel, such as
+ * WebRTC: one that leads nowhere, on a port nothing listens on (9, which Chromium refuses as unsafe
+ * besides). Nothing the window loads should use the network. Even this machine's addresses go to
+ * it, except the dev server's under `electron-vite dev`.
+ */
+export function deadProxy(dev?: URL): { proxyRules: string; proxyBypassRules: string } {
+  return {
+    proxyRules: '127.0.0.1:9',
+    proxyBypassRules: dev ? `<-loopback>;${dev.host}` : '<-loopback>',
+  };
+}
+
+/**
  * Whether the window may navigate to an address. It never may: Lo loads its page itself, which
  * isn't a navigation the page asks for. Under `electron-vite dev`, Vite reloads the page after
  * some edits, so the dev server's own pages are allowed there.

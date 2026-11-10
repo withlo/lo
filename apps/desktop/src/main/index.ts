@@ -52,11 +52,12 @@ function start(): void {
 
   app
     .whenReady()
-    .then(() => {
+    .then(async () => {
       // The window gets a session of its own, so its restrictions never reach requests main
       // makes for itself.
-      windowSession = session.fromPartition('persist:window');
-      secureSession(windowSession, windowFiles, dev);
+      const secured = session.fromPartition('persist:window');
+      await secureSession(secured, windowFiles, dev);
+      windowSession = secured;
       show();
     })
     .catch((error: unknown) => {

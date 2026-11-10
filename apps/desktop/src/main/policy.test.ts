@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { contentSecurityPolicy, isAllowedNavigation, isAllowedRequest } from './policy.ts';
+import {
+  contentSecurityPolicy,
+  deadProxy,
+  isAllowedNavigation,
+  isAllowedRequest,
+} from './policy.ts';
 
 const dev = new URL('http://localhost:5173');
 
@@ -59,5 +64,15 @@ describe('isAllowedNavigation', () => {
   it("allows the dev server's own pages under electron-vite dev", () => {
     expect(isAllowedNavigation('http://localhost:5173/', dev)).toBe(true);
     expect(isAllowedNavigation('https://example.com/', dev)).toBe(false);
+  });
+});
+
+describe('deadProxy', () => {
+  it('sends everything to a closed port, this machine included', () => {
+    expect(deadProxy()).toEqual({ proxyRules: '127.0.0.1:9', proxyBypassRules: '<-loopback>' });
+  });
+
+  it('lets the dev server through under electron-vite dev', () => {
+    expect(deadProxy(dev).proxyBypassRules).toBe('<-loopback>;localhost:5173');
   });
 });
