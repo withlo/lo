@@ -133,6 +133,24 @@ jobs:
       - name: Check the TypeScript project references
         run: pnpm nx sync:check
 
+      # Building the syntax package's grammars needs the WebAssembly toolchain its build downloads.
+      # cache.yml saves it from main, so restore it when they're built.
+      - name: Find whether the grammars are built
+        id: grammars
+        run: |
+          affected=$(pnpm nx show projects --affected --json --base="$BASE_SHA" --head=HEAD)
+          if printf '%s' "$affected" | jq -e 'index("syntax") != null' > /dev/null; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.grammars.outputs.build == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/lo/tree-sitter
+          key:
+            tree-sitter-${{ runner.os }}-${{ hashFiles('packages/desktop/syntax/scripts/build.ts')
+            }}
+
       # Against the checked-out commit: the pull request merged into its base, or the queue entry.
       - name: Lint, type check, test and build what changed
         run: >-
