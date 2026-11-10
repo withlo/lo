@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { dataFolder, devServer } from './environment.ts';
+import { backgroundSettings, dataFolder, devServer } from './environment.ts';
 
 describe('dataFolder', () => {
   const appData = '/home/me/.config';
@@ -49,5 +49,36 @@ describe('devServer', () => {
         'on this machine',
       );
     }
+  });
+});
+
+describe('backgroundSettings', () => {
+  const env = { LO_TEST_JOBS: '1', LO_BACKGROUND_MEMORY_CAP_MB: '300' };
+
+  it('caps the process at 2 GB, with no test jobs, by default', () => {
+    expect(backgroundSettings({ packaged: false, env: {} })).toEqual({
+      testJobs: false,
+      memoryCap: 2 * 1024 ** 3,
+    });
+  });
+
+  it('takes test jobs and another cap in an unpackaged build', () => {
+    expect(backgroundSettings({ packaged: false, env })).toEqual({
+      testJobs: true,
+      memoryCap: 300 * 1024 ** 2,
+    });
+  });
+
+  it('ignores both in a packaged build', () => {
+    expect(backgroundSettings({ packaged: true, env })).toEqual({
+      testJobs: false,
+      memoryCap: 2 * 1024 ** 3,
+    });
+  });
+
+  it.each(['0', '-5', '1.5', 'lots'])('refuses a cap of %s', (cap) => {
+    expect(() =>
+      backgroundSettings({ packaged: false, env: { LO_BACKGROUND_MEMORY_CAP_MB: cap } }),
+    ).toThrow('whole number of megabytes');
   });
 });
