@@ -118,32 +118,40 @@ test('githubs refusals and failures are told apart', () => {
 });
 
 test('an unknown error in githubs own shape is refused', () => {
-  // With GitHub's description, or a link into GitHub's docs, an error is GitHub's own word, and
-  // every error GitHub documents for a renewal is for good.
+  // Linking into GitHub's docs, an error is GitHub's own word, and every error GitHub documents
+  // for a renewal is for good. The description, if any, is the message.
+  const docs =
+    'https://docs.github.com/apps/managing-oauth-apps/troubleshooting-oauth-app-access-token-request-errors';
+  expect(refusal(400, `{"error":"account_suspended","error_uri":"${docs}"}`)).toMatchObject({
+    kind: 'refused',
+    message: 'GitHub refused to renew the token: account_suspended',
+  });
   expect(
-    refusal(200, '{"error":"account_suspended","error_description":"The account is suspended."}')
-      .message,
+    refusal(
+      200,
+      `{"error":"account_suspended","error_description":"The account is suspended.","error_uri":"${docs}"}`,
+    ).message,
   ).toBe('GitHub refused to renew the token: The account is suspended.');
+  // A portal's or a gateway's JSON can carry a description and a relative link of its own: only
+  // a documented code or a link into GitHub's docs counts. Nor do OAuth's try-again codes.
   for (const body of [
-    '{"error":"account_suspended","error_uri":"https://docs.github.com/apps/managing-oauth-apps/troubleshooting-oauth-app-access-token-request-errors"}',
-    // As GitHub's docs show it.
-    '{"error":"account_suspended","error_uri":"/apps/managing-oauth-apps/troubleshooting-oauth-app-access-token-request-errors/#incorrect-client-credentials"}',
-  ]) {
-    expect({ body, error: refusal(400, body) }).toMatchObject({
-      body,
-      error: { kind: 'refused', message: 'GitHub refused to renew the token: account_suspended' },
-    });
-  }
-  // Not a link elsewhere, a blank description, or OAuth's codes for trying again later.
-  for (const body of [
+    '{"error":"login_required","error_description":"Sign in to the network to continue."}',
+    '{"error":"login_required","error_uri":"/help/login"}',
+    '{"error":"account_suspended","error_uri":"/apps/managing-oauth-apps/troubleshooting-oauth-app-access-token-request-errors"}',
     '{"error":"account_suspended","error_uri":"https://proxy.example.com/help"}',
     '{"error":"account_suspended","error_uri":"//proxy.example.com/help"}',
-    '{"error":"account_suspended","error_description":" "}',
+    '{"error":"account_suspended","error_uri":"http://docs.github.com/apps"}',
     '{"error":"temporarily_unavailable","error_description":"Try again later."}',
     '{"error":"server_error","error_description":"Something went wrong."}',
-    '{"error":"slow_down","error_description":"Too many requests."}',
+    `{"error":"slow_down","error_uri":"${docs}"}`,
   ]) {
-    expect({ body, kind: refusal(200, body).kind }).toEqual({ body, kind: 'unavailable' });
+    for (const status of [200, 400, 401]) {
+      expect({ body, status, kind: refusal(status, body).kind }).toEqual({
+        body,
+        status,
+        kind: 'unavailable',
+      });
+    }
   }
 });
 

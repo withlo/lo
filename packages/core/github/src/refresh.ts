@@ -233,29 +233,25 @@ const TRANSIENT: ReadonlySet<string> = new Set([
 /**
  * Why GitHub refused to renew for good, or nothing when `answer` isn't such a refusal.
  *
- * A refusal signs the account out and forgets its refresh token, so it must be GitHub's own word.
- * GitHub refuses with a JSON `error`, and in every answer its docs show, with an
- * `error_description` or an `error_uri` into its docs; a proxy, a firewall or a login page in the
- * way doesn't answer like that. So an `error` in that shape is a refusal whatever its code, as
- * none GitHub documents for a renewal is fixed by trying again, and so is a documented code on its
- * own. OAuth's codes for trying again later aren't refusals, in any shape.
+ * A refusal signs the account out and forgets its refresh token, so it must be GitHub's own word,
+ * not a proxy's, an auth gateway's or a captive portal's, which can answer with JSON of their own.
+ * So an `error` is a refusal only when its code is one GitHub documents for a renewal, or when its
+ * `error_uri` is a page on `https://docs.github.com`, which nothing in the way would link to. A
+ * description alone, or a relative link, could come from anything. OAuth's codes for trying again
+ * later aren't refusals, whatever comes with them.
  */
 function refusalOf(answer: TokenAnswer): string | undefined {
   const { error } = answer;
   if (error === undefined || error === '' || TRANSIENT.has(error)) return undefined;
-  const description = answer.errorDescription?.trim() || undefined;
-  const githubs = description !== undefined || inGithubDocs(answer.errorUri);
-  return DOCUMENTED_REFUSALS.has(error) || githubs ? (description ?? error) : undefined;
+  if (!DOCUMENTED_REFUSALS.has(error) && !inGithubDocs(answer.errorUri)) return undefined;
+  return answer.errorDescription?.trim() || error;
 }
 
-/**
- * Whether `uri` is a page in GitHub's docs: on docs.github.com, or a path there, as the examples in
- * GitHub's docs give it.
- */
+/** Whether `uri` is an absolute address of a page in GitHub's docs, `https://docs.github.com/…`. */
 function inGithubDocs(uri: string | undefined): boolean {
-  if (uri === undefined || uri === '') return false;
+  if (uri === undefined || !uri.startsWith('https://docs.github.com/')) return false;
   try {
-    const url = new URL(uri, 'https://docs.github.com');
+    const url = new URL(uri);
     return url.protocol === 'https:' && url.hostname === 'docs.github.com' && url.port === '';
   } catch {
     return false;
