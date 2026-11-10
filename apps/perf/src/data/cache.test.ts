@@ -1,11 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-import { cacheFolder, fetchPullRequest, repoFolder } from './cache.ts';
+import { cacheFolder, checkGitVersion, fetchPullRequest, repoFolder } from './cache.ts';
 import type { Manifest } from './manifest.ts';
 
 const env = {
@@ -115,6 +115,84 @@ describe('fetchPullRequest', () => {
     expect(await fetchPullRequest(manifest, options)).toMatchObject({ blobs: 5, downloaded: 0 });
   });
 
+  /** A clone made by a first fetch, to tamper with. */
+  async function fetched(name: string): Promise<{ cache: string; clone: string; remote: string }> {
+    const cache = join(folder, name);
+    const remote = `file://${upstream}`;
+    await fetchPullRequest(manifest, { cache, remote });
+    return { cache, clone: repoFolder(cache, manifest.repo), remote };
+  }
+
+  test('starts a clone with no hooks of the system\u2019s', async () => {
+    const { clone } = await fetched('fresh');
+
+    const hooks = join(clone, 'hooks');
+    expect(existsSync(hooks) ? readdirSync(hooks) : []).toEqual([]);
+  });
+
+  test('runs none of a clone\u2019s hooks', async () => {
+    const { cache, clone, remote } = await fetched('hooked');
+    // Without the refs, the next fetch writes them again, which would run the hook.
+    git(`--git-dir=${clone}`, 'update-ref', '-d', `refs/perf/${manifest.number}/head`);
+    const ran = join(folder, 'hook-ran');
+    mkdirSync(join(clone, 'hooks'), { recursive: true });
+    const hook = join(clone, 'hooks', 'reference-transaction');
+    writeFileSync(hook, `#!/bin/sh\ntouch '${ran}'\n`, { mode: 0o755 });
+
+    await fetchPullRequest(manifest, { cache, remote });
+    expect(existsSync(ran)).toBe(false);
+
+    // The hook works: git run as usual runs it.
+    git(`--git-dir=${clone}`, 'update-ref', '-d', `refs/perf/${manifest.number}/head`);
+    expect(existsSync(ran)).toBe(true);
+  });
+
+  test('refuses a clone with settings it didn\u2019t write', async () => {
+    const { cache, clone, remote } = await fetched('configured');
+    git(`--git-dir=${clone}`, 'config', 'core.fsmonitor', 'touch /tmp/owned');
+
+    await expect(fetchPullRequest(manifest, { cache, remote })).rejects.toThrow(
+      /settings this code didn't write \(core\.fsmonitor\)/,
+    );
+  });
+
+  test('refuses a clone that borrows objects from elsewhere', async () => {
+    const { cache, clone, remote } = await fetched('borrowing');
+    writeFileSync(
+      join(clone, 'objects', 'info', 'alternates'),
+      `${join(upstream, '.git', 'objects')}\n`,
+    );
+
+    await expect(fetchPullRequest(manifest, { cache, remote })).rejects.toThrow(/borrows objects/);
+  });
+
+  test('ignores replace refs', async () => {
+    const { cache, clone, remote } = await fetched('replaced');
+    // Swapping the head for the base would hide the added file.
+    git(`--git-dir=${clone}`, 'replace', manifest.head, manifest.base);
+
+    const result = await fetchPullRequest(manifest, { cache, remote });
+
+    expect(result.files[0]).toEqual({ path: 'added.txt', head: blob(manifest.head, 'added.txt') });
+  });
+
+  test('fetches over no protocol but https and file', async () => {
+    const options = { cache: join(folder, 'ssh'), remote: 'ssh://example.com/repo.git' };
+
+    await expect(fetchPullRequest(manifest, options)).rejects.toThrow(/isn't an https: or file:/);
+  });
+
+  test('stays inside the cache', async () => {
+    const cache = join(folder, 'inside');
+    const options = { cache, remote: `file://${upstream}` };
+
+    // The manifest's schema refuses these, so they only get here from code.
+    await expect(fetchPullRequest({ ...manifest, repo: '../perf' }, options)).rejects.toThrow(
+      /isn't a repo's owner\/name/,
+    );
+    expect(existsSync(join(folder, 'perf.git'))).toBe(false);
+  });
+
   test('fails when a file isn’t where the manifest says', async () => {
     const files = [
       { path: 'missing.txt', status: 'modified' as const, additions: 1, deletions: 1 },
@@ -125,6 +203,32 @@ describe('fetchPullRequest', () => {
         { cache: join(folder, 'wrong'), remote: `file://${upstream}` },
       ),
     ).rejects.toThrow(/has no missing\.txt/);
+  });
+});
+
+describe('repoFolder', () => {
+  test('is owner/name.git inside the cache', () => {
+    expect(repoFolder('/cache', 'kubernetes/kubernetes')).toBe('/cache/kubernetes/kubernetes.git');
+  });
+
+  test.each(['../perf', '..', 'owner/../../x', '/etc/repo', 'a/b/c', 'owner'])(
+    'refuses %j, which isn\u2019t two levels inside',
+    (repo) => {
+      expect(() => repoFolder('/cache', repo)).toThrow(/isn't a repo's owner\/name/);
+    },
+  );
+});
+
+describe('checkGitVersion', () => {
+  test.each(['git version 2.45.0', 'git version 2.54.0 (Apple Git-157)', 'git version 3.0.1'])(
+    'accepts %j',
+    (version) => {
+      expect(() => checkGitVersion(version)).not.toThrow();
+    },
+  );
+
+  test.each(['git version 2.44.2', 'git version 1.99.0', 'not git'])('refuses %j', (version) => {
+    expect(() => checkGitVersion(version)).toThrow(/needs git 2\.45 or later/);
   });
 });
 

@@ -58,8 +58,11 @@ export const Thread = z.strictObject({
 export type Thread = z.infer<typeof Thread>;
 
 export const Manifest = z.strictObject({
-  /** `owner/name` on GitHub. */
-  repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'owner/name'),
+  /** `owner/name` on GitHub. An owner has only letters, digits and hyphens. */
+  repo: z
+    .string()
+    .regex(/^[A-Za-z0-9-]+\/[\w.-]+$/, 'owner/name')
+    .refine((repo) => !['.', '..'].includes(repo.split('/')[1] ?? ''), 'owner/name'),
   number: z.int().positive(),
   /** The merge base the PR's diff starts from, and the PR's head. */
   base: sha,
@@ -100,7 +103,7 @@ export function manifestNames(folder = dataFolder): string[] {
 }
 
 /** GitHub's token formats: classic, OAuth, app and fine-grained. */
-const tokenShape = /\b(?:gh[opsur]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})/g;
+const tokenShape = /gh[opsur]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}/g;
 
 /** How many things in `text` look like a GitHub token. */
 export function countTokens(text: string): number {
