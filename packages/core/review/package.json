@@ -11,6 +11,7 @@
     "test": "vitest run --root ../../.. --project @lo/review"
   },
   "dependencies": {
+    "@lo/diff": "workspace:*",
     "@lo/github": "workspace:*"
   },
   "devDependencies": {

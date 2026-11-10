@@ -17,7 +17,6 @@ export {
   tooLargeToShow,
   type Collapsed,
 } from './files/display.ts';
-export { diffLines, type Hunk, type LineRange } from './files/diff.ts';
 export { isLockfile, whyGenerated, type Generated } from './files/generated.ts';
 export {
   imageSummary,

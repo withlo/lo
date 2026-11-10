@@ -302,6 +302,9 @@ importers:
 
   packages/core/review:
     dependencies:
+      '@lo/diff':
+        specifier: workspace:*
+        version: link:../diff
       '@lo/github':
         specifier: workspace:*
         version: link:../github

@@ -1,6 +1,6 @@
 /** A file's diff with changes to whitespace alone hidden, as `git diff -w` shows it. */
 
-import { diffLines } from './diff.ts';
+import { diffLines } from '@lo/diff';
 
 /**
  * `base` with each line whose change was only to whitespace replaced by `head`'s line: compared
@@ -8,11 +8,14 @@ import { diffLines } from './diff.ts';
  * ignore: spaces, tabs, carriage returns and line feeds, never other Unicode spaces, which can
  * change what code means. Lines keep their places and their own line endings, so line numbers stay
  * `base`'s, and lines that changed in more than whitespace keep `base`'s text.
+ *
+ * A diff that runs out of time comes out coarser, so more lines keep `base`'s text: it can show a
+ * change to whitespace alone, never hide a real one.
  */
 export function withoutWhitespaceChanges(base: string, head: string): string {
   const baseLines = linesOf(base);
   const headLines = linesOf(head);
-  const hunks = diffLines(baseLines.map(withoutWhitespace), headLines.map(withoutWhitespace));
+  const { changes } = diffLines(baseLines.map(withoutWhitespace), headLines.map(withoutWhitespace));
 
   const text: string[] = [];
   let atBase = 0;
@@ -26,11 +29,12 @@ export function withoutWhitespaceChanges(base: string, head: string): string {
       if (baseLines[atBase]?.endsWith('\n')) text.push('\n');
     }
   };
-  for (const { before, after } of hunks) {
-    matched(before.start);
-    text.push(...baseLines.slice(before.start, before.end));
-    atBase = before.end;
-    atHead = after.end;
+  // The diff numbers lines from 1.
+  for (const change of changes) {
+    matched(change.old.start - 1);
+    text.push(...baseLines.slice(change.old.start - 1, change.old.end - 1));
+    atBase = change.old.end - 1;
+    atHead = change.new.end - 1;
   }
   matched(baseLines.length);
   return text.join('');
