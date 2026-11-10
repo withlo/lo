@@ -20,7 +20,7 @@
     "@graphql-codegen/typed-document-node": "8.0.0",
     "@graphql-codegen/typescript-operations": "7.0.0",
     "@lo/testing": "workspace:*",
-    "graphql": "16.15.0"
+    "graphql": "17.1.0"
   },
   "nx": {
     "name": "github",
