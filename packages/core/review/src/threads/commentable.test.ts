@@ -1,7 +1,8 @@
+import { parsePatch, type Hunk } from '@lo/github';
 import { expect, test } from 'vitest';
 
 import { Line, Lines } from '../threads.ts';
-import { CommentableLines, PatchHunk, PatchError, type CommentRange } from './commentable.ts';
+import { CommentableLines, type CommentRange } from './commentable.ts';
 import { Screen } from './place.ts';
 import { takesSuggestion } from './suggestion.ts';
 
@@ -33,8 +34,8 @@ const PATCH = patch(
   ' ',
 );
 
-function hunks(): PatchHunk[] {
-  return PatchHunk.parse(PATCH);
+function hunks(): Hunk[] {
+  return parsePatch(PATCH).hunks;
 }
 
 function full(): CommentableLines {
@@ -45,17 +46,6 @@ function between(): CommentableLines {
   return CommentableLines.inDiff(Screen.between('a1', 'a2'), hunks());
 }
 
-/** Why `text` doesn't parse. */
-function parseError(text: string): { line: number; reason: string } {
-  try {
-    PatchHunk.parse(text);
-  } catch (error) {
-    if (!(error instanceof PatchError)) throw error;
-    return { line: error.line, reason: error.reason };
-  }
-  throw new Error('the patch parsed');
-}
-
 function ok(lines: Lines): CommentRange {
   return { kind: 'lines', lines };
 }
@@ -63,122 +53,6 @@ function ok(lines: Lines): CommentRange {
 function notCommentable(line: Line): CommentRange {
   return { kind: 'notCommentable', line };
 }
-
-test('a patch parses into its hunks', () => {
-  expect(hunks()).toEqual([
-    PatchHunk.of(1, 1, ['context', 'context', 'removed', 'added', 'context', 'context', 'context']),
-    PatchHunk.of(18, 18, ['context', 'context', 'context', 'added', 'added', 'context', 'context']),
-  ]);
-});
-
-test('git headers and missing newline markers are skipped', () => {
-  const text = patch(
-    'diff --git a/README.md b/README.md',
-    'index 3b18e51..a7c3d2f 100644',
-    '--- a/README.md',
-    '+++ b/README.md',
-    '@@ -1 +1 @@',
-    '-Lo',
-    '\\ No newline at end of file',
-    '+Lo reads pull requests.',
-    '\\ No newline at end of file',
-  );
-
-  expect(PatchHunk.parse(text)).toEqual([PatchHunk.of(1, 1, ['removed', 'added'])]);
-});
-
-function secondFile(line: number): { line: number; reason: string } {
-  return { line, reason: "a second file's diff starts here, and a patch is one file's" };
-}
-
-test('a second files diff is an error', () => {
-  // `git diff` output for two files.
-  const git = patch(
-    'diff --git a/a.rs b/a.rs',
-    '--- a/a.rs',
-    '+++ b/a.rs',
-    '@@ -1 +1 @@',
-    '-a',
-    '+b',
-    'diff --git a/c.rs b/c.rs',
-    '--- a/c.rs',
-    '+++ b/c.rs',
-    '@@ -40,3 +40,4 @@',
-    ' x',
-    '+y',
-    ' z',
-    ' w',
-  );
-  expect(parseError(git)).toEqual(secondFile(7));
-  // A plain unified diff for two files: the next file's `---` and `+++` follow a hunk.
-  const plain = '@@ -1 +1 @@\n-a\n+b\n--- a/c\n+++ b/c\n@@ -4,0 +5 @@\n+d\n';
-  expect(parseError(plain)).toEqual(secondFile(4));
-  // A pure rename has no hunks, so the next file follows its header.
-  const rename = patch(
-    'diff --git a/x.rs b/y.rs',
-    'similarity index 100%',
-    'rename from x.rs',
-    'rename to y.rs',
-    'diff --git a/c.rs b/c.rs',
-    '--- a/c.rs',
-    '+++ b/c.rs',
-    '@@ -1 +1 @@',
-    '-a',
-    '+b',
-  );
-  expect(parseError(rename)).toEqual(secondFile(5));
-});
-
-test('a removed line that looks like a header is a removed line', () => {
-  // `-- a` removed, and `++ b` added: inside a hunk's counted lines, they're lines.
-  const text = '@@ -1,2 +1,2 @@\n--- a\n+++ b\n x\n';
-
-  expect(PatchHunk.parse(text)).toEqual([PatchHunk.of(1, 1, ['removed', 'added', 'context'])]);
-});
-
-test('a new file is one hunk of added lines', () => {
-  const text = '@@ -0,0 +1,2 @@\n+fn main() {}\n+\n';
-
-  expect(PatchHunk.parse(text)).toEqual([PatchHunk.of(0, 1, ['added', 'added'])]);
-});
-
-test('an unchanged line whose space was trimmed is still context', () => {
-  const text = '@@ -1,3 +1,3 @@\n a\n\n-b\n+c\n';
-
-  expect(PatchHunk.parse(text)).toEqual([
-    PatchHunk.of(1, 1, ['context', 'context', 'removed', 'added']),
-  ]);
-});
-
-test('a last blank line whose space was trimmed is still context', () => {
-  const hunk = PatchHunk.of(1, 1, ['removed', 'added', 'context']);
-
-  // Trimmed, with the patch's last newline: as with any other trimmed blank line.
-  expect(PatchHunk.parse('@@ -1,2 +1,2 @@\n-a\n+b\n\n')).toEqual([hunk]);
-  // Trimmed, without it: the patch ends one unchanged line short.
-  expect(PatchHunk.parse('@@ -1,2 +1,2 @@\n-a\n+b\n')).toEqual([hunk]);
-  // GitHub's, untrimmed and without the last newline.
-  expect(PatchHunk.parse('@@ -1,2 +1,2 @@\n-a\n+b\n ')).toEqual([hunk]);
-});
-
-test('a patch that is not a unified diff is an error', () => {
-  expect(parseError('@@ -1,2 +1,2\n a\n')).toEqual({
-    line: 1,
-    reason: "the hunk header isn't `@@ -start,count +start,count @@`",
-  });
-  expect(parseError('@@ -1,3 +1,3 @@\n a\n')).toEqual({
-    line: 2,
-    reason: 'the patch ends inside a hunk',
-  });
-  expect(parseError('@@ -1,2 +1,1 @@\n+a\n+b\n')).toEqual({
-    line: 3,
-    reason: 'the hunk has more lines than its header says',
-  });
-  expect(parseError('@@ -1,2 +1,2 @@\n a\n*b\n')).toEqual({
-    line: 3,
-    reason: 'a hunk line starts with something other than ` `, `-`, `+` or `\\`',
-  });
-});
 
 test('an added line takes a comment on the right', () => {
   expect(full().line(Line.right(3))).toEqual(Lines.one(Line.right(3)));
@@ -216,7 +90,7 @@ test('a range picked in the left column puts its unchanged ends on the right', (
 });
 
 test('ranges over a replaced line between unchanged ones', () => {
-  const replaced = PatchHunk.parse('@@ -1,3 +1,3 @@\n a\n-b\n+c\n d\n');
+  const replaced = parsePatch('@@ -1,3 +1,3 @@\n a\n-b\n+c\n d\n').hunks;
   const lines = CommentableLines.inDiff(Screen.full('a2'), replaced);
 
   expect(lines.range(Line.left(1), Line.right(1))).toEqual(ok(Lines.one(Line.right(1))));
@@ -261,7 +135,7 @@ test('a file with no hunks takes only file comments', () => {
   // Between revisions, a deleted file has no right column.
   const deleted = CommentableLines.inDiff(
     Screen.between('a1', 'a2'),
-    PatchHunk.parse('@@ -1,2 +0,0 @@\n-a\n-b\n'),
+    parsePatch('@@ -1,2 +0,0 @@\n-a\n-b\n').hunks,
   );
   expect(deleted.takesFileComment()).toBe(true);
   expect(deleted.takesLineComment()).toBe(false);

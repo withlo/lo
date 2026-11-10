@@ -12,6 +12,7 @@
 
 import {
   GithubClient,
+  parsePatch,
   PullRef,
   reviewThreads,
   reviewThreadsPaged,
@@ -45,7 +46,7 @@ import {
   threadsFromGithub,
   type CommentState,
 } from '../src/threads.ts';
-import { CommentableLines, PatchHunk } from '../src/threads/commentable.ts';
+import { CommentableLines } from '../src/threads/commentable.ts';
 import { panel, type PanelFilter } from '../src/threads/panel.ts';
 import { place, Screen, type Placement } from '../src/threads/place.ts';
 import { suggestionBlock, takesSuggestion } from '../src/threads/suggestion.ts';
@@ -360,7 +361,7 @@ function commentLines(range: ReturnType<CommentableLines['range']>): Lines {
 
 test('alice reviews r3 and approves', () => {
   const screen = Screen.full(R3);
-  const commentable = CommentableLines.inDiff(screen, PatchHunk.parse(PATCH));
+  const commentable = CommentableLines.inDiff(screen, parsePatch(PATCH).hunks);
   const review = new YourReview(PULL);
   const drafts = new Drafts();
 
@@ -464,7 +465,7 @@ test('a pending review started before a push keeps its revision', () => {
   // Alice started a review on r2; Bob then pushed r3.
   const review = new YourReview(PULL, { id: 'PRR_kwDOAbc', commit: R2, comments: 2 });
   const screen = Screen.between(R2, R3);
-  const commentable = CommentableLines.inDiff(screen, PatchHunk.parse(PATCH));
+  const commentable = CommentableLines.inDiff(screen, parsePatch(PATCH).hunks);
 
   // Between revisions, only the right column takes comments. It shows r3, the latest head, where
   // GitHub puts every thread added to a pending review, so they join the review on r2.
@@ -610,7 +611,7 @@ test('a comment github refuses keeps its draft and is not counted', () => {
 
   // GitHub answers a thread it won't take, such as one whose line left the diff in a push it
   // hadn't seen, with `thread: null` and no error. That's a refusal too.
-  const on = CommentableLines.inDiff(Screen.full(R3), PatchHunk.parse(PATCH)).line(Line.right(13));
+  const on = CommentableLines.inDiff(Screen.full(R3), parsePatch(PATCH).hunks).line(Line.right(13));
   if (!on) throw new Error('line 13 takes no comment');
   expect(planned(review.add(R3, R3, newThread(on, 'Why?'))).kind).toBe('addThread');
   expect(review.pendingComments).toBe(0);
@@ -703,7 +704,7 @@ test('alices drafts on r2 cross bobs push of r3', () => {
 
   // On r3, the app follows each draft's lines from r2, and keeps them where they still take a
   // comment.
-  const r3 = CommentableLines.inDiff(Screen.full(R3), PatchHunk.parse(PATCH));
+  const r3 = CommentableLines.inDiff(Screen.full(R3), parsePatch(PATCH).hunks);
   const moved = (from: ThreadDraftPlace): DraftPlace | undefined => {
     if (from.lines?.end.number !== 11) return undefined;
     const on = r3.line(Line.right(12));
