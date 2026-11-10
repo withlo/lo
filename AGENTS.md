@@ -168,8 +168,10 @@ Each feature is a folder, `src/features/<feature>/`, and nothing outside it list
 the window find them with `import.meta.glob`.
 
 - `contract.ts` defines the feature's contract with `defineContract`: each request's input as a Zod
-  schema (`z.strictObject` for objects, so unknown keys are refused) and its reply's type, and each
-  topic main pushes, with its schema. Channels are named `<feature>.<name>`.
+  schema and its reply's type, and each topic main pushes, with its schema. Channels are named
+  `<feature>.<name>`. Objects in an input are `z.strictObject`, so unknown keys are refused; a test
+  checks every contract. Main and the window both load contracts, so lint keeps Electron, Node and
+  either side's code out of them.
 - `main/index.ts` exports `defineFeature(contract, { handlers, start })` by default: a handler for
   every request, and optionally a `start` that runs before the window opens, to publish on the
   feature's topics. Both get the feature's context: `publish` and `database`. A handler throws an

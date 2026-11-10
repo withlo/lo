@@ -20,6 +20,32 @@
       "rules": {
         "no-restricted-imports": "off"
       }
+    },
+    {
+      "files": ["src/ipc/**", "src/features/*/contract.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "electron",
+                "message": "Contracts are shared by main and the window, so they import neither Electron nor Node."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["electron/*", "node:*"],
+                "message": "Contracts are shared by main and the window, so they import neither Electron nor Node."
+              },
+              {
+                "group": ["**/main/**", "**/window/**", "**/preload/**", "**/platform/**"],
+                "message": "A contract imports only other shared code: src/ipc/ and Zod."
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

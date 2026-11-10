@@ -1,4 +1,6 @@
-import { expect, test } from './app.ts';
+import { join } from 'node:path';
+
+import { appFolder, expect, test } from './app.ts';
 
 test('the page gets invoke and subscribe, and nothing else', async ({ page }) => {
   expect(
@@ -84,4 +86,48 @@ test("app.theme arrives, and the window follows the system's appearance", async 
     await expect.poll(theme).toBe(appearance);
   }
   expect(await pushes.jsonValue()).toEqual(appearances.map((appearance) => [appearance]));
+});
+
+test("a page that isn't Lo's gets nothing from main, even with the bridge", async ({
+  app,
+  page,
+}) => {
+  await expect(page.locator('header.strip')).toBeVisible();
+  // A window with Lo's preload, on a page that isn't Lo's.
+  const reply: unknown = await app.evaluate(
+    async ({ BrowserWindow, session }, preload) => {
+      const window = new BrowserWindow({
+        show: false,
+        webPreferences: { preload, session: session.fromPartition('persist:window') },
+      });
+      await window.loadURL('about:blank');
+      const answer: unknown = await window.webContents.executeJavaScript(
+        "window.lo.invoke('app.info')",
+      );
+      window.destroy();
+      return answer;
+    },
+    join(appFolder, 'dist', 'preload', 'index.cjs'),
+  );
+  expect(reply).toEqual({
+    ok: false,
+    error: { code: 'forbidden', message: "app.info answers only Lo's own page." },
+  });
+});
+
+test("a handler main has outside the features is out of the page's reach", async ({
+  app,
+  page,
+}) => {
+  await app.evaluate(({ ipcMain }) => {
+    for (const channel of ['internal', 'INTERNAL_CHANNEL']) {
+      ipcMain.handle(channel, () => ({ ok: true, value: 'reached' }));
+    }
+  });
+  const replies = await page.evaluate(() =>
+    Promise.all(['internal', 'INTERNAL_CHANNEL'].map((channel) => window.lo.invoke(channel))),
+  );
+  for (const reply of replies) {
+    expect(reply).toMatchObject({ ok: false, error: { code: 'unavailable' } });
+  }
 });

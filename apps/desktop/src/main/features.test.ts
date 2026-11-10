@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { describe, expect, it, vi } from 'vitest';
 
 import { openDatabase } from './database.ts';
+import { defineContract, reply } from '../ipc/contract.ts';
 import { createRouter, defineFeature, loadFeatures, type Feature } from './features.ts';
 import { migrate } from './migrations.ts';
 import { contract as notes } from './test/features/notes/contract.ts';
@@ -46,6 +47,18 @@ describe('loadFeatures', () => {
     );
   });
 
+  it("doesn't take an inherited property for a handler", () => {
+    const contract = defineContract('notes', {
+      requests: { toString: { input: z.undefined(), reply: reply<string>() } },
+      topics: {},
+    });
+    // The type checker takes the inherited toString for one, too.
+    const feature = defineFeature(contract, { handlers: {} });
+    expect(() => loadFeatures({ '../features/notes/main/index.ts': feature })).toThrow(
+      'has no handler for notes.toString',
+    );
+  });
+
   it('refuses a feature missing a handler', () => {
     const feature = defineFeature(notes, {
       // @ts-expect-error A handler for every request is required.
@@ -87,9 +100,9 @@ describe('createRouter', () => {
   it("refuses input that doesn't match the contract, without repeating it", async () => {
     const { ask } = router();
     for (const input of [undefined, { text: '' }, { text: 'hi', extra: 'hunter2' }, 'hunter2']) {
-      const reply = await ask('notes.add', input);
-      expect(reply).toMatchObject({ ok: false, error: { code: 'invalid' } });
-      expect(JSON.stringify(reply)).not.toContain('hunter2');
+      const answer = await ask('notes.add', input);
+      expect(answer).toMatchObject({ ok: false, error: { code: 'invalid' } });
+      expect(JSON.stringify(answer)).not.toContain('hunter2');
     }
     expect(await ask('notes.count', { unexpected: true })).toEqual({
       ok: false,

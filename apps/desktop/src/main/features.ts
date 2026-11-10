@@ -70,7 +70,11 @@ export function loadFeatures(modules: Readonly<Record<string, Feature>>): Featur
       throw new Error(`${path} defines the feature "${name}", but its folder is "${folder}".`);
     }
     for (const request of Object.keys(requests)) {
-      if (typeof feature.handlers[request] !== 'function') {
+      // Its own handler: an inherited property, such as toString, is no handler.
+      if (
+        !Object.hasOwn(feature.handlers, request) ||
+        typeof feature.handlers[request] !== 'function'
+      ) {
         throw new Error(`${path} has no handler for ${channel(name, request)}.`);
       }
     }
@@ -109,7 +113,7 @@ export function createRouter(
 ): Router {
   const context = (contract: Contract): FeatureContext<Contract> => ({
     publish(topic, value) {
-      const schema = contract.topics[topic];
+      const schema = Object.hasOwn(contract.topics, topic) ? contract.topics[topic] : undefined;
       if (!schema) throw new Error(`${contract.feature} has no topic named ${topic}.`);
       options.send(channel(contract.feature, topic), schema.parse(value));
     },
@@ -123,7 +127,7 @@ export function createRouter(
   const contexts = new Map(features.map((feature) => [feature, context(feature.contract)]));
   for (const [{ contract, handlers }, shared] of contexts) {
     for (const [name, spec] of Object.entries(contract.requests)) {
-      const handle = handlers[name];
+      const handle = Object.hasOwn(handlers, name) ? handlers[name] : undefined;
       if (handle) {
         requests.set(channel(contract.feature, name), {
           input: spec.input,
