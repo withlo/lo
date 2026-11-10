@@ -36,3 +36,13 @@ export function pool(execute: Execute, size: number, waitingLimit = 1000): Execu
     });
   };
 }
+
+/**
+ * How many jobs may run at once: one per core, but no more than fit in three quarters of the
+ * process's memory cap at the largest heap any job may use, leaving the rest for the process itself
+ * and for memory outside the heap. Never fewer than one.
+ */
+export function poolSize(options: { cores: number; memoryCap: number; jobHeap: number }): number {
+  const fit = Math.floor((options.memoryCap * 0.75) / options.jobHeap);
+  return Math.max(1, Math.min(options.cores, fit));
+}

@@ -9,8 +9,8 @@ import { isMainThread } from 'node:worker_threads';
 import type { MessagePortMain } from 'electron';
 
 import { answer, idOf } from './host.ts';
-import { pool } from './pool.ts';
-import { loadRunners, type Runner } from './runners.ts';
+import { pool, poolSize } from './pool.ts';
+import { largestHeap, loadRunners, type Runner } from './runners.ts';
 import testing from './testing.ts';
 import { work, workers } from './worker.ts';
 
@@ -24,8 +24,13 @@ const found = import.meta.glob<Runner>('../features/*/background/index.ts', {
 const runners = [...loadRunners(found), ...(process.env.LO_TEST_JOBS === '1' ? [testing] : [])];
 
 if (isMainThread) {
-  // Jobs wait for one of as many workers as the machine has cores.
-  const execute = pool(workers(new URL(import.meta.url)), availableParallelism());
+  // Jobs wait for a worker: one per core, as many as fit under the process's memory cap.
+  const size = poolSize({
+    cores: availableParallelism(),
+    memoryCap: Number(process.env.LO_BACKGROUND_MEMORY_CAP_MB) * 1024 ** 2,
+    jobHeap: largestHeap(runners) * 1024 ** 2,
+  });
+  const execute = pool(workers(new URL(import.meta.url)), size);
   const serve = (port: MessagePortMain) => {
     port.on('message', ({ data }) => {
       answer(runners, execute, data)

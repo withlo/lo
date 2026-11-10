@@ -72,3 +72,13 @@ export function loadRunners(modules: Readonly<Record<string, Runner>>): Runner[]
     return runner;
   });
 }
+
+/** The largest heap, in megabytes, any of these jobs may use. */
+export function largestHeap(runners: readonly Runner[]): number {
+  return Math.max(
+    defaultLimits.memory,
+    ...runners.flatMap((runner) =>
+      Object.values(runner.jobs).map((job) => job.limits?.memory ?? defaultLimits.memory),
+    ),
+  );
+}
