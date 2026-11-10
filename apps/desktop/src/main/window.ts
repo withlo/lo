@@ -42,7 +42,6 @@ export function openWindow(session: Session, url: string): BrowserWindow {
       nodeIntegration: false,
       webSecurity: true,
       webviewTag: false,
-      spellcheck: false,
     },
   });
   window.once('ready-to-show', () => window.show());

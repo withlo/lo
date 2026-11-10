@@ -69,8 +69,8 @@ describe('isAllowedNavigation', () => {
 });
 
 describe('deadProxy', () => {
-  it('sends everything to a closed port, this machine included', () => {
-    expect(deadProxy()).toEqual({ proxyRules: '127.0.0.1:9', proxyBypassRules: '<-loopback>' });
+  it('sends everything to a port nothing can listen on, this machine included', () => {
+    expect(deadProxy()).toEqual({ proxyRules: '127.0.0.1:0', proxyBypassRules: '<-loopback>' });
   });
 
   it('lets the dev server through under electron-vite dev', () => {
