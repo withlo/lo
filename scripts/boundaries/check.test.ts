@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { describe, expect, onTestFinished, test } from 'vitest';
 
-import { checkBoundaries, isTest, type Project, type Violation } from './check.ts';
+import { checkBoundaries, isTest, type Edge, type Project, type Violation } from './check.ts';
 
 function project(root: string, ...tags: string[]): Project {
   const name = root.split('/').at(-1) ?? root;
@@ -48,6 +48,7 @@ interface Workspace {
   /** Symlinks to make, from their path to their target. */
   links?: Record<string, string>;
   projects?: Project[];
+  edges?: Edge[];
   licenses?: boolean;
 }
 
@@ -56,6 +57,7 @@ function checkWorkspace({
   files = {},
   links = {},
   projects = everyProject,
+  edges = [],
   licenses: withLicenses = true,
 }: Workspace): Violation[] {
   const root = mkdtempSync(join(tmpdir(), 'lo-boundaries-'));
@@ -69,7 +71,7 @@ function checkWorkspace({
     mkdirSync(dirname(join(root, path)), { recursive: true });
     symlinkSync(target, join(root, path));
   }
-  return checkBoundaries(root, projects);
+  return checkBoundaries(root, projects, edges);
 }
 
 function check(files: Record<string, string>, projects?: Project[]): Violation[] {
@@ -210,7 +212,7 @@ describe('core projects', () => {
         "imports electron: core projects run anywhere, so they can't use Electron",
       ),
       violation('packages/core/github/src/index.ts:7', 'imports electron: core projects'),
-      violation('packages/core/github/src/index.ts:8', "imports node: that's a Node built-in"),
+      violation('packages/core/github/src/index.ts:8', "references node: that's a Node built-in"),
       violation('packages/core/github/src/index.ts:9', 'imports electron/renderer: core projects'),
       violation('packages/core/github/src/index.ts:10', "imports node:fs: that's a Node built-in"),
       violation('packages/core/github/src/index.ts:11', 'imports electron: core projects'),
@@ -262,7 +264,7 @@ describe('core projects', () => {
       violation('packages/core/review/src/index.ts:1', "imports @lo/git: git isn't a core project"),
       violation(
         'packages/core/review/src/index.ts:2',
-        "imports ../../../desktop/git/src/read.ts: git isn't a core project",
+        "imports ../../../desktop/git/src/read.ts: that leaves review's folder for git",
       ),
       violation(
         'packages/core/review/src/index.ts:3',
@@ -306,7 +308,10 @@ describe('paths through node_modules', () => {
         'packages/core/review/src/index.ts:1',
         "imports ../node_modules/@lo/git/src/index.ts: git isn't a core project",
       ),
-      violation('packages/core/review/src/index.ts:2', 'core projects run anywhere'),
+      violation(
+        'packages/core/review/src/index.ts:2',
+        "imports ../../../../node_modules/electron/index.js: that leaves review's folder for Electron",
+      ),
     ]);
   });
 
@@ -423,7 +428,7 @@ describe('package.json', () => {
     ).toEqual([
       violation(
         'packages/core/review/package.json:5',
-        `maps "./git" to "../../desktop/git/src/index.ts" in exports: git isn't a core project`,
+        `maps "./git" to "../../desktop/git/src/index.ts" in exports: that leaves review's folder for git`,
       ),
       violation(
         'packages/core/review/package.json:8',
@@ -433,6 +438,137 @@ describe('package.json', () => {
         'packages/core/review/package.json:9',
         `maps "#fs" to "node:fs" in imports: that's a Node built-in`,
       ),
+    ]);
+  });
+});
+
+describe('resolution', () => {
+  test("an alias in the root package.json can't carry an import across a boundary", () => {
+    expect(
+      checkWorkspace({
+        files: {
+          'package.json': json({
+            name: 'lo',
+            devDependencies: {
+              gitroot: 'workspace:@lo/git@*',
+              '@lo/github': 'workspace:*',
+              shell: 'npm:electron@45.2.3',
+              typescript: 'npm:@typescript/typescript6@6.0.2',
+              '@typescript/native': 'npm:typescript@7.0.2',
+              vitest: '5.1.0',
+            },
+          }),
+          'packages/desktop/git/src/index.ts': `export const clone = 1;`,
+          'packages/core/github/src/index.ts': `import { clone } from 'gitroot';`,
+        },
+        links: { 'node_modules/gitroot': '../packages/desktop/git' },
+      }),
+    ).toEqual([
+      violation(
+        'package.json:4',
+        `lists "gitroot": "workspace:@lo/git@*" in devDependencies, but the root package.json holds the repo's tooling only`,
+      ),
+      violation(
+        'package.json:5',
+        `lists "@lo/github": "workspace:*" in devDependencies, but the root`,
+      ),
+      violation(
+        'package.json:6',
+        `lists "shell": "npm:electron@45.2.3" in devDependencies, but the root`,
+      ),
+      violation('packages/core/github/src/index.ts:1', "imports gitroot: git isn't a core project"),
+    ]);
+  });
+
+  test("every edge in Nx's project graph keeps the same rules", () => {
+    const edges = [
+      { source: 'github', target: 'git' },
+      { source: 'github', target: 'npm:electron' },
+      { source: 'github', target: 'testing' },
+      { source: 'github', target: 'npm:zod' },
+      { source: 'review', target: 'github' },
+      { source: 'markdown', target: 'npm:@electron/remote@2.1.3' },
+      { source: 'ui', target: 'desktop' },
+      { source: 'checker', target: 'git' },
+    ];
+    expect(checkWorkspace({ edges })).toEqual([
+      violation(
+        'packages/core/github',
+        "depends on git in Nx's project graph: git isn't a core project",
+      ),
+      violation(
+        'packages/core/github',
+        "depends on npm:electron in Nx's project graph: core projects run anywhere",
+      ),
+      violation(
+        'packages/core/markdown',
+        "depends on npm:@electron/remote@2.1.3 in Nx's project graph: core projects",
+      ),
+      violation(
+        'packages/desktop/ui',
+        "depends on desktop in Nx's project graph: that's the app desktop",
+      ),
+      violation('skill/checker', "depends on git in Nx's project graph: git isn't MIT-licensed"),
+    ]);
+  });
+
+  test('reference directives follow the same rules as imports', () => {
+    expect(
+      check({
+        'packages/core/github/src/index.ts': [
+          `/// <reference types="electron" />`,
+          `/// <reference types="@lo/git" />`,
+          `/// <reference path="../../../desktop/git/src/index.d.ts" />`,
+          `/// <reference path="./local.d.ts" />`,
+          `/// <reference types="@lo/review" />`,
+        ].join('\n'),
+      }),
+    ).toEqual([
+      violation(
+        'packages/core/github/src/index.ts:1',
+        'references electron: core projects run anywhere',
+      ),
+      violation(
+        'packages/core/github/src/index.ts:2',
+        "references @lo/git: git isn't a core project",
+      ),
+      violation(
+        'packages/core/github/src/index.ts:3',
+        "references ../../../desktop/git/src/index.d.ts: that leaves github's folder for git",
+      ),
+    ]);
+  });
+
+  test('relative imports stay inside their project, wherever they would land', () => {
+    expect(
+      check({
+        'packages/core/github/src/index.ts': `import { pr } from '../../review/src/index.ts';`,
+        'packages/desktop/git/src/index.ts': `import config from '../../../../vitest.config.ts';`,
+        'skill/install.ts': `import { check } from './checker/src/index.ts';`,
+        'skill/checker/src/index.ts': `import { parse } from './parse.ts';`,
+      }),
+    ).toEqual([
+      violation('packages/core/github/src/index.ts:1', "that leaves github's folder for review"),
+      violation(
+        'packages/desktop/git/src/index.ts:1',
+        "that leaves git's folder for files outside any project",
+      ),
+      violation('skill/install.ts:1', "that leaves skill's folder for checker"),
+    ]);
+  });
+
+  test('no tsconfig sets paths, in a project or at the root', () => {
+    expect(
+      check({
+        'packages/core/github/tsconfig.json': json({
+          compilerOptions: { paths: { '@lo/git': ['../../desktop/git/src/index.ts'] } },
+        }),
+        'packages/core/github/tsconfig.lib.json': json({ compilerOptions: { outDir: '.tsbuild' } }),
+        'tsconfig.base.json': json({ compilerOptions: { strict: true, paths: {} } }),
+      }),
+    ).toEqual([
+      violation('packages/core/github/tsconfig.json:3', 'sets compilerOptions.paths'),
+      violation('tsconfig.base.json:4', 'sets compilerOptions.paths'),
     ]);
   });
 });
@@ -468,7 +604,7 @@ test('nothing imports an app', () => {
     ),
     violation(
       'testing/src/index.ts:1',
-      "imports ../../apps/desktop/src/main/index.ts: that's the app desktop",
+      "imports ../../apps/desktop/src/main/index.ts: that leaves testing's folder for desktop",
     ),
   ]);
 });

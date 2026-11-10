@@ -14,6 +14,12 @@ export interface Project {
   packageName?: string | undefined;
 }
 
+/** An edge in Nx's project graph: project names, or `npm:<package>` for a target outside it. */
+export interface Edge {
+  source: string;
+  target: string;
+}
+
 export interface Violation {
   /** A project's folder, or a file and line, relative to the workspace root. */
   where: string;
@@ -38,6 +44,12 @@ const dependencyFields = [
   'peerDependencies',
   'devDependencies',
 ] as const;
+
+/** The only aliases the root `package.json` may list: TypeScript 6 for Nx, and TypeScript 7. */
+const toolingAliases = new Map([
+  ['typescript', '@typescript/typescript6'],
+  ['@typescript/native', 'typescript'],
+]);
 
 const sourceFile = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 /** Dependencies, build output and test data. Folders starting with a dot are skipped too. */
@@ -70,16 +82,25 @@ interface Manifest {
 }
 
 /**
- * Checks every project's tags, `package.json` and source files against the workspace's boundary
- * rules. `projects` comes from Nx; everything else is read from disk.
+ * Checks every project's tags, `package.json`, tsconfig files and source files, and the edges of
+ * Nx's project graph, against the workspace's boundary rules. Imports resolve the way Node finds
+ * them: through the `node_modules` folders from the importing file up, and through symlinks to
+ * real paths. `projects` and `edges` come from Nx; everything else is read from disk.
  */
-export function checkBoundaries(workspaceRoot: string, projects: readonly Project[]): Violation[] {
+export function checkBoundaries(
+  workspaceRoot: string,
+  projects: readonly Project[],
+  edges: readonly Edge[] = [],
+): Violation[] {
   // Real paths throughout, so that a path through a symlink lands in the folder it points to.
   const root = realpathSync(workspaceRoot);
   const violations = checkTags(root, projects);
   const byPackage = new Map(projects.map((project) => [project.packageName, project]));
+  const byName = new Map(projects.map((project) => [project.name, project]));
   const roots = new Set(projects.map((project) => project.root));
-  const manifests = new Map(projects.map((project) => [project, readManifest(root, project)]));
+  const manifests = new Map(
+    projects.map((project) => [project, readManifest(join(root, project.root, 'package.json'))]),
+  );
   const aliases = new Map(
     projects.map((project) => [
       project,
@@ -87,6 +108,7 @@ export function checkBoundaries(workspaceRoot: string, projects: readonly Projec
     ]),
   );
 
+  /** The project whose folder holds `path`, as written: symlinks aren't followed. */
   const projectAt = (path: string): Project | undefined => {
     const where = toSlashes(relative(root, path));
     let found: Project | undefined;
@@ -97,17 +119,17 @@ export function checkBoundaries(workspaceRoot: string, projects: readonly Projec
     return found;
   };
 
-  /** A package name and subpath, as `owner`'s dependencies resolve it. */
-  const resolvePackage = (specifier: string, owner: Project | undefined): Target => {
-    const parts = specifier.split('/');
-    const length = specifier.startsWith('@') ? 2 : 1;
-    const name = parts.slice(0, length).join('/');
-    const alias = owner && aliases.get(owner)?.get(name);
-    if (alias && 'path' in alias) return resolvePath(join(alias.path, ...parts.slice(length)));
-    const real = alias?.name ?? name;
-    if (real === 'electron' || real.startsWith('@electron/')) return electron;
-    const project = byPackage.get(real);
+  const named = (name: string): Target => {
+    if (name === 'electron' || name.startsWith('@electron/')) return electron;
+    const project = byPackage.get(name);
     return project ? { kind: 'project', project } : other;
+  };
+
+  /** A package that isn't installed, as `owner`'s `package.json` names it. */
+  const declared = (name: string, rest: readonly string[], owner: Project | undefined): Target => {
+    const alias = owner && aliases.get(owner)?.get(name);
+    if (alias && 'path' in alias) return resolvePath(join(alias.path, ...rest));
+    return named(alias?.name ?? name);
   };
 
   /** A path, followed through symlinks. One that runs through `node_modules` names a package. */
@@ -115,29 +137,51 @@ export function checkBoundaries(workspaceRoot: string, projects: readonly Projec
     const parts = toSlashes(realPath(path)).split('/');
     const modules = parts.lastIndexOf('node_modules');
     if (modules !== -1) {
-      const owner = projectAt(parts.slice(0, modules).join('/'));
-      return resolvePackage(parts.slice(modules + 1).join('/'), owner);
+      const { name, rest } = splitPackage(parts.slice(modules + 1).join('/'));
+      return declared(name, rest, projectAt(parts.slice(0, modules).join('/')));
     }
     const project = projectAt(parts.join('/'));
     return project ? { kind: 'project', project } : other;
   };
 
-  const resolveSpecifier = (specifier: string, folder: string, owner: Project): Target => {
-    // `#name` resolves through the package's `imports`, which is checked on its own.
-    if (specifier.startsWith('#')) return other;
-    const path = specifier.replace(/[?#].*$/, '');
-    if (path.startsWith('.') || path.startsWith('/')) return resolvePath(resolve(folder, path));
-    if (path.startsWith('node:') || isBuiltin(path)) return node;
-    return resolvePackage(path, owner);
+  /** A package name and subpath, found the way Node finds it from `folder`. */
+  const resolvePackage = (specifier: string, folder: string, owner: Project): Target => {
+    const { name, rest } = splitPackage(specifier);
+    for (let dir = folder; ; dir = dirname(dir)) {
+      const installed = join(dir, 'node_modules', name);
+      if (existsSync(installed)) return resolvePath(join(installed, ...rest));
+      if (dirname(dir) === dir) break;
+    }
+    return declared(name, rest, owner);
   };
 
-  const resolveImport = (found: Import, file: string, owner: Project): Target => {
-    if (found.computed) return computed;
-    if (found.types) {
-      if (found.specifier === 'node') return node;
-      return found.specifier === 'electron' ? electron : other;
+  /**
+   * Why `owner` may not refer to `specifier` from `folder`, or nothing when it may. A relative
+   * path stays inside the project's folder: projects reach each other by package name.
+   */
+  const verdict = (
+    specifier: string,
+    folder: string,
+    owner: Project,
+    test: boolean,
+    reference?: Import['reference'],
+  ): string | undefined => {
+    if (reference === 'types') {
+      if (specifier === 'node' || specifier === '@types/node') return problem(owner, test, node);
+      return problem(owner, test, resolvePackage(specifier, folder, owner));
     }
-    return resolveSpecifier(found.specifier, dirname(file), owner);
+    // `#name` resolves through the package's `imports`, which is checked on its own.
+    if (specifier.startsWith('#') && reference !== 'path') return undefined;
+    const path = specifier.replace(/[?#].*$/, '');
+    if (reference === 'path' || path.startsWith('.') || path.startsWith('/')) {
+      const absolute = resolve(folder, path);
+      if (projectAt(absolute) !== owner) {
+        return `that leaves ${owner.name}'s folder for ${landing(resolvePath(absolute))}, and projects reach each other only by package name`;
+      }
+      return problem(owner, test, resolvePath(absolute));
+    }
+    if (path.startsWith('node:') || isBuiltin(path)) return problem(owner, test, node);
+    return problem(owner, test, resolvePackage(path, folder, owner));
   };
 
   for (const project of projects) {
@@ -157,22 +201,25 @@ export function checkBoundaries(workspaceRoot: string, projects: readonly Projec
         continue;
       }
       for (const found of imports) {
-        const reason = problem(project, test, resolveImport(found, file, project));
+        const reason = found.computed
+          ? problem(project, test, computed)
+          : verdict(found.specifier, dirname(file), project, test, found.reference);
         if (!reason) continue;
-        const verb = found.computed ? 'loads' : 'imports';
+        const verb = found.computed ? 'loads' : found.reference ? 'references' : 'imports';
         violations.push({
           where: `${path}:${found.line}`,
           message: `${verb} ${found.specifier}: ${reason}.`,
         });
       }
     }
+    violations.push(...checkTsconfigs(folder, `${project.root}/`));
 
     const manifest = manifests.get(project);
     if (!manifest) continue;
-    const at = (key: string) => `${project.root}/package.json:${lineOfKey(manifest.text, key)}`;
+    const at = (key: string) => `${project.root}/package.json:${lineOf(manifest.text, key)}`;
     for (const field of dependencyFields) {
       for (const [name, spec] of Object.entries(objectAt(manifest.json, field))) {
-        const reason = problem(project, field === 'devDependencies', resolvePackage(name, project));
+        const reason = problem(project, field === 'devDependencies', declared(name, [], project));
         if (!reason) continue;
         violations.push({
           where: at(name),
@@ -183,11 +230,7 @@ export function checkBoundaries(workspaceRoot: string, projects: readonly Projec
     for (const field of ['imports', 'exports'] as const) {
       for (const [key, target] of mappings(manifest.json[field])) {
         // A pattern's `*` stands for one path segment.
-        const reason = problem(
-          project,
-          false,
-          resolveSpecifier(target.replaceAll('*', 'x'), folder, project),
-        );
+        const reason = verdict(target.replaceAll('*', 'x'), folder, project, false);
         if (!reason) continue;
         violations.push({
           where: at(key),
@@ -196,6 +239,28 @@ export function checkBoundaries(workspaceRoot: string, projects: readonly Projec
       }
     }
   }
+
+  violations.push(...checkRootManifest(root, byPackage), ...checkTsconfigs(root, ''));
+
+  // A backstop for anything the file checks miss: every edge Nx found keeps the same rules. Nx
+  // doesn't say which file an edge comes from, so tests' allowances apply.
+  for (const { source, target } of edges) {
+    const from = byName.get(source);
+    const project = byName.get(target);
+    if (!from) continue;
+    const to: Target = target.startsWith('npm:')
+      ? named(splitPackage(target.slice('npm:'.length)).name)
+      : project
+        ? { kind: 'project', project }
+        : other;
+    const reason = problem(from, true, to);
+    if (!reason) continue;
+    violations.push({
+      where: from.root,
+      message: `depends on ${target} in Nx's project graph: ${reason}.`,
+    });
+  }
+
   return violations.toSorted((a, b) => a.where.localeCompare(b.where, 'en', { numeric: true }));
 }
 
@@ -224,6 +289,12 @@ function problem(from: Project, test: boolean, target: Target): string | undefin
     return `the module is chosen at run time, so its boundaries can't be checked. Core projects load modules by name`;
   }
   return undefined;
+}
+
+function landing(target: Target): string {
+  if (target.kind === 'project') return target.project.name;
+  if (target.kind === 'electron') return 'Electron';
+  return 'files outside any project';
 }
 
 function checkTags(root: string, projects: readonly Project[]): Violation[] {
@@ -274,8 +345,48 @@ function tagsNote(platforms: readonly string[]): string {
   return platforms.length === 0 ? ', and has none' : `, not ${platforms.join(', ')}`;
 }
 
-function readManifest(root: string, project: Project): Manifest | undefined {
-  const path = join(root, project.root, 'package.json');
+/** The root `package.json` holds the repo's tooling, so it lists no workspace package or alias. */
+function checkRootManifest(
+  root: string,
+  byPackage: ReadonlyMap<string | undefined, Project>,
+): Violation[] {
+  const manifest = readManifest(join(root, 'package.json'));
+  if (!manifest) return [];
+  const violations: Violation[] = [];
+  for (const field of dependencyFields) {
+    for (const [name, spec] of Object.entries(objectAt(manifest.json, field))) {
+      if (typeof spec !== 'string') continue;
+      const alias = aliasOf(spec, root);
+      const tooling =
+        alias !== undefined && 'name' in alias && toolingAliases.get(name) === alias.name;
+      const workspace = byPackage.has(name) || spec.startsWith('workspace:');
+      if (!workspace && (!alias || tooling)) continue;
+      violations.push({
+        where: `package.json:${lineOf(manifest.text, name)}`,
+        message: `lists "${name}": ${JSON.stringify(spec)} in ${field}, but the root package.json holds the repo's tooling only: no workspace package, and no alias besides TypeScript's.`,
+      });
+    }
+  }
+  return violations;
+}
+
+/** `paths` would let an import reach a project without its package name. */
+function checkTsconfigs(folder: string, prefix: string): Violation[] {
+  const violations: Violation[] = [];
+  const files = readdirSync(folder).filter((name) => /^tsconfig.*\.json$/.test(name));
+  for (const name of files.toSorted()) {
+    const text = readFileSync(join(folder, name), 'utf8');
+    const match = /"paths"\s*:/.exec(text);
+    if (!match) continue;
+    violations.push({
+      where: `${prefix}${name}:${text.slice(0, match.index).split('\n').length}`,
+      message: `sets compilerOptions.paths, but projects reach each other only by package name.`,
+    });
+  }
+  return violations;
+}
+
+function readManifest(path: string): Manifest | undefined {
   if (!existsSync(path)) return undefined;
   const text = readFileSync(path, 'utf8');
   return { text, json: asObject(JSON.parse(text)) };
@@ -316,6 +427,15 @@ function aliasOf(spec: string, folder: string): Alias | undefined {
   return undefined;
 }
 
+/** A specifier's package name, without any version, and the path parts after it. */
+function splitPackage(specifier: string): { name: string; rest: string[] } {
+  const parts = specifier.split('/');
+  const length = specifier.startsWith('@') ? 2 : 1;
+  const name = parts.slice(0, length).join('/');
+  const version = name.indexOf('@', 1);
+  return { name: version === -1 ? name : name.slice(0, version), rest: parts.slice(length) };
+}
+
 /** Every target in an `imports` or `exports` field, with the key it's under. */
 function* mappings(value: unknown, key = '.'): Generator<[string, string]> {
   if (typeof value === 'string') {
@@ -345,9 +465,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function lineOfKey(text: string, key: string): number {
-  const quoted = JSON.stringify(key);
-  const index = text.indexOf(quoted);
+/** The line of the first `"key"` in a JSON file's text. */
+function lineOf(text: string, key: string): number {
+  const index = text.indexOf(JSON.stringify(key));
   return index === -1 ? 1 : text.slice(0, index).split('\n').length;
 }
 

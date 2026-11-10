@@ -5,8 +5,8 @@ export interface Import {
   /** The module's name or path, or for a computed one, the expression's source. */
   specifier: string;
   line: number;
-  /** From `/// <reference types="…" />`, which names a types package rather than a module. */
-  types?: true;
+  /** From `/// <reference types="…" />`, which names a types package, or `path="…"`, a file. */
+  reference?: 'types' | 'path';
   /** `import()` or `require()` of an expression, so the module is only known at run time. */
   computed?: true;
 }
@@ -24,7 +24,7 @@ export class ParseError extends Error {
 /**
  * Lists every module a JavaScript or TypeScript file refers to: imports and re-exports (type-only
  * ones too), `import()` and `require()`, `import x = require()`, `import('x')` types and
- * `/// <reference types="x" />`. A string, or a template literal without substitutions, names its
+ * `/// <reference types="x" />` and `path="x"`. A string, or a template literal without substitutions, names its
  * module; any other argument to `import()` or `require()` is listed as computed. Throws a
  * `ParseError` for a file that doesn't parse.
  */
@@ -78,9 +78,10 @@ export function importsOf(filename: string, source: string): Import[] {
   }).visit(result.program);
 
   for (const comment of result.comments) {
-    const reference = /^\/\s*<reference\s+types\s*=\s*["']([^"']+)["']/.exec(comment.value);
-    if (comment.type === 'Line' && reference?.[1]) {
-      found.push({ specifier: reference[1], line: lineOf(comment.start), types: true });
+    const reference = /^\/\s*<reference\s+(types|path)\s*=\s*["']([^"']+)["']/.exec(comment.value);
+    const kind = reference?.[1];
+    if (comment.type === 'Line' && reference?.[2] && (kind === 'types' || kind === 'path')) {
+      found.push({ specifier: reference[2], line: lineOf(comment.start), reference: kind });
     }
   }
 

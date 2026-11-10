@@ -105,9 +105,15 @@ A package's folder says where it runs, and its Nx tags (`"nx": { "tags": [...] }
 - only tests import `testing/`. Tests are `*.test.*` files and anything in `test/` or `e2e/`, and
   `testing` belongs in `devDependencies`.
 
-The same rules apply to what a project's `package.json` lists in its dependencies, aliases included,
-and to what its `imports` and `exports` fields point to. Paths are followed through symlinks and
-`node_modules` to the package they reach.
+Imports resolve the way Node finds them, through `node_modules` and symlinks to the project they
+reach, so a name or path can't disguise where an import goes. The same rules apply to type and path
+references, to what a project's `package.json` lists in its dependencies (aliases included) and
+points to in its `imports` and `exports`, and to every edge in Nx's project graph. Also:
+
+- a relative import stays inside its project's folder; projects reach each other by package name;
+- no tsconfig sets `paths`;
+- the root `package.json` holds the repo's tooling only: no workspace package, and no alias besides
+  TypeScript's two.
 
 oxlint also stops core code from reaching for `process`, `Buffer`, `window`, `document` and other
 globals of a particular platform. To share code across a boundary, move it into a package on the
