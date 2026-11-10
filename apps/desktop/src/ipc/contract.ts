@@ -62,7 +62,7 @@ export function defineContract<
     if (name === 'subscribe') {
       throw new Error(`${feature}: "subscribe" is taken by the window's client.`);
     }
-    if (name in requests && name in topics) {
+    if (Object.hasOwn(requests, name) && Object.hasOwn(topics, name)) {
       throw new Error(`${feature}: "${name}" is both a request and a topic.`);
     }
   }

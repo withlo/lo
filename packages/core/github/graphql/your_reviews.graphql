@@ -1,0 +1,27 @@
+# The signed-in user's latest reviews on a pull request, pending or submitted. After a submission
+# whose answer was lost, Lo looks among them for the review it sent.
+query YourReviews($owner: String!, $name: String!, $number: Int!, $login: String!) {
+  rateLimit {
+    cost
+    limit
+    remaining
+    used
+    resetAt
+  }
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviews(author: $login, last: 20) {
+        nodes {
+          id
+          state
+          body
+          submittedAt
+          # Null once GitHub no longer has the commit.
+          commit {
+            oid
+          }
+        }
+      }
+    }
+  }
+}

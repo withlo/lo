@@ -1,29 +1,27 @@
 import { IpcError } from '../../../../../ipc/contract.ts';
-import { defineFeature, type FeatureContext } from '../../../../features.ts';
+import type { Database } from '../../../../database.ts';
+import { defineFeature } from '../../../../features.ts';
 import { contract } from '../contract.ts';
 
-const notes = new Map<number, string>();
-let context: FeatureContext<typeof contract> | undefined;
+const count = (database: Database) =>
+  Number(database.prepare('SELECT count(*) AS count FROM notes_entries').get()?.count);
 
 export default defineFeature(contract, {
   handlers: {
-    add({ text }) {
-      const id = notes.size + 1;
-      notes.set(id, text);
-      context?.publish('changed', notes.size);
-      return { id };
+    add({ text }, { database, publish }) {
+      const added = database.prepare('INSERT INTO notes_entries (text) VALUES (?)').run(text);
+      publish('changed', count(database));
+      return { id: Number(added.lastInsertRowid) };
     },
-    remove({ id }) {
-      if (!notes.delete(id)) throw new IpcError('missing', `There's no note ${id}.`);
-      context?.publish('changed', notes.size);
+    remove({ id }, { database, publish }) {
+      const removed = database.prepare('DELETE FROM notes_entries WHERE id = ?').run(id);
+      if (!removed.changes) throw new IpcError('missing', `There's no note ${id}.`);
+      publish('changed', count(database));
       return null;
     },
-    count: () => notes.size,
+    count: (_input, { database }) => count(database),
     crash() {
       throw new Error('The secret token is hunter2.');
     },
-  },
-  start(started) {
-    context = started;
   },
 });

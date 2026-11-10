@@ -1,0 +1,36 @@
+# The HTML GitHub renders for a pull request's description, when $description, and for the comments
+# and reviews whose IDs are $ids (`docs/design.md`, "Timeline"). Its images point at GitHub's own
+# hosts: camo, its image proxy, for every other host's, and a signed address for each attachment,
+# valid for a few minutes. Lo loads the timeline's images only from those addresses.
+query RenderedBodies(
+  $owner: String!
+  $name: String!
+  $number: Int!
+  $description: Boolean!
+  $ids: [ID!]!
+) {
+  rateLimit {
+    cost
+    limit
+    remaining
+    used
+    resetAt
+  }
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) @include(if: $description) {
+      bodyHTML
+    }
+  }
+  # Null, with an error, for an ID GitHub no longer has.
+  nodes(ids: $ids) {
+    __typename
+    ... on IssueComment {
+      id
+      bodyHTML
+    }
+    ... on PullRequestReview {
+      id
+      bodyHTML
+    }
+  }
+}

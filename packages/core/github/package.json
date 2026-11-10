@@ -1,0 +1,31 @@
+{
+  "name": "@lo/github",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "codegen": "graphql-codegen --config codegen.yml",
+    "lint": "oxlint --ignore-pattern src/generated",
+    "test": "vitest run --root ../../.. --project @lo/github"
+  },
+  "dependencies": {
+    "@graphql-typed-document-node/core": "3.2.0",
+    "@octokit/openapi-types": "29.0.1"
+  },
+  "devDependencies": {
+    "@graphql-codegen/cli": "8.0.0",
+    "@graphql-codegen/typed-document-node": "8.0.0",
+    "@graphql-codegen/typescript-operations": "7.0.0",
+    "@lo/testing": "workspace:*",
+    "graphql": "16.15.0"
+  },
+  "nx": {
+    "name": "github",
+    "tags": [
+      "platform:core"
+    ]
+  }
+}

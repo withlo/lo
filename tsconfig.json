@@ -15,6 +15,9 @@
       "path": "./testing"
     },
     {
+      "path": "./packages/core/github"
+    },
+    {
       "path": "./packages/core/diff"
     }
   ]

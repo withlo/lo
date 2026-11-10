@@ -168,14 +168,34 @@ Each feature is a folder, `src/features/<feature>/`, and nothing outside it list
 the window find them with `import.meta.glob`.
 
 - `contract.ts` defines the feature's contract with `defineContract`: each request's input as a Zod
-  schema (`z.strictObject` for objects, so unknown keys are refused) and its reply's type, and each
-  topic main pushes, with its schema. Channels are named `<feature>.<name>`.
+  schema and its reply's type, and each topic main pushes, with its schema. Channels are named
+  `<feature>.<name>`. Objects in an input are `z.strictObject`, so unknown keys are refused; a test
+  checks every contract. Main and the window both load contracts, so lint keeps Electron, Node and
+  either side's code out of them.
 - `main/index.ts` exports `defineFeature(contract, { handlers, start })` by default: a handler for
   every request, and optionally a `start` that runs before the window opens, to publish on the
-  feature's topics. A handler throws an `IpcError` for a failure the window should see; any other
-  error is logged and reaches the window only as `internal`.
+  feature's topics. Both get the feature's context: `publish` and `database`. A handler throws an
+  `IpcError` for a failure the window should see; any other error is logged and reaches the window
+  only as `internal`.
+- `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
+  startup, before any handler can be asked anything, each feature's new migrations run in order,
+  each in a transaction, and are recorded with their SHA-256.
+  - A feature's tables, indexes, views and triggers are named `<feature>_…`. While a migration runs,
+    SQLite's authorizer lets it read and write only its feature's tables, which may include FTS5
+    tables, and use `json_each` and the like on them: it can't touch another feature's, end its
+    transaction, attach a database, set a pragma or make anything temporary, and its triggers and
+    views are compiled so their bodies are held to the same. Foreign keys to another feature's
+    tables are refused too. So features apply in any order, and cleanup across features (an account
+    removed, say) goes through main.
+  - Never edit a migration once it has run: Lo refuses to start on a database where one has changed
+    (line endings aside). Add a new one instead.
+  - Lo also refuses a database holding a migration it doesn't have, which a newer Lo wrote.
 - `window/index.ts` exports a `WindowFeature` by default. The window calls main through
   `client(contract)`, whose methods and types come from the contract.
+
+The database is SQLite through Node's built-in `node:sqlite`, in `lo.db` in the data folder: WAL
+mode, foreign keys enforced, defensive. `src/main/database.ts` is the only module that uses
+`node:sqlite`; everything else goes through its `Database`.
 
 ## Generated files
 
