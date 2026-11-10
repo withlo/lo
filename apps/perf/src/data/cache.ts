@@ -27,11 +27,15 @@ export function repoFolder(cache: string, repo: string): string {
   return folder;
 }
 
+/** The warning git's May 2024 maintenance releases print when they skip a lazy fetch. */
+const lazyFetchWarning = /^warning: lazy fetching disabled\b/;
+
 /**
  * Whether git honors `GIT_NO_LAZY_FETCH`, which git 2.45 added and 2024-05 maintenance releases
  * brought back to older lines. It asks a throwaway clone, whose promisor remote doesn't exist, for
- * an object it lacks: a git that honors the variable just says the object is missing, and one
- * that doesn't tries to fetch it and fails loudly. `env` overrides the variables git runs with.
+ * an object it lacks: a git that honors the variable just says the object is missing, or warns
+ * that lazy fetching is off, and one that doesn't tries to fetch it and fails loudly. `env`
+ * overrides the variables git runs with.
  */
 export async function lazyFetchIsOff(env: Record<string, string> = {}): Promise<boolean> {
   const folder = mkdtempSync(join(tmpdir(), 'lo-perf-git-'));
@@ -50,7 +54,9 @@ export async function lazyFetchIsOff(env: Record<string, string> = {}): Promise<
       protocol: 'file',
       env,
     });
-    return result.code === 1 && result.stderr.trim() === '';
+    // Some releases warn once that lazy fetching is off; anything else is a fetch that was tried.
+    const said = result.stderr.split('\n').filter((line) => line.trim() !== '');
+    return result.code === 1 && said.every((line) => lazyFetchWarning.test(line));
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
