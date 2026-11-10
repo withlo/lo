@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { isHandOver, plainDataProblem } from './jobs.ts';
 
-/** An array claiming twenty million entries, with none: what a hostile page can send cheaply. */
+/**
+ * An array claiming the most entries an array can have, with none: what a hostile page can send
+ * cheaply. A check that walked its length wouldn't finish in the test's time.
+ */
 function sparse(): unknown[] {
   const holes: unknown[] = [];
-  holes.length = 20_000_000;
+  holes.length = 4_294_967_295;
   return holes;
 }
 

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -8,7 +9,7 @@ test('the window opens on a fresh data folder', async ({ app, page }) => {
   expect(page.url()).toBe('lo-app://app/index.html');
   expect(await page.title()).toBe('Lo');
   expect(app.windows()).toHaveLength(1);
-  await expect(page.locator('header.strip')).toBeVisible();
+  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
 
   const paths = await app.evaluate((electron) => ({
     data: electron.app.getPath('userData'),
@@ -37,8 +38,46 @@ test('a second launch on the same data folder hands over to the first', async ({
   expect(app.windows()).toEqual([page]);
 });
 
+test('the window opens on an empty tab strip, in both of its fonts', async ({ page }) => {
+  const strip = page.getByRole('tablist', { name: 'Pull requests' });
+  await expect(strip.getByRole('tab')).toHaveCount(0);
+  const open = strip.getByRole('button', { name: 'Open a pull request' });
+  await expect(open).toBeVisible();
+  // Inert until pull requests can be opened.
+  await expect(open).toHaveAttribute('aria-disabled', 'true');
+  expect(
+    await open.evaluate((button) => getComputedStyle(button).getPropertyValue('app-region')),
+  ).toBe('no-drag');
+
+  const fonts = await page.evaluate(async () => {
+    const ui = await document.fonts.load('13px "Host Grotesk"');
+    const mono = await document.fonts.load('12.5px "Fragment Mono"');
+    const files = performance
+      .getEntriesByType('resource')
+      .map((entry) => entry.name)
+      .filter((name) => name.endsWith('.woff2'));
+    return {
+      ui: ui.map((face) => face.status),
+      mono: mono.map((face) => face.status),
+      files: files.every((name) => name.startsWith('lo-app://app/assets/')),
+      family: getComputedStyle(document.body.querySelector('.lo-app') ?? document.body).fontFamily,
+    };
+  });
+  expect(fonts.ui).toContain('loaded');
+  expect(fonts.mono).toContain('loaded');
+  expect(fonts.files).toBe(true);
+  expect(fonts.family).toMatch(/^"Host Grotesk"/);
+  // Their licenses ship with the window's files.
+  for (const font of ['host-grotesk', 'fragment-mono']) {
+    expect(
+      await readFile(join(appFolder, 'dist', 'window', 'licenses', `${font}.txt`), 'utf8'),
+    ).toContain('SIL Open Font License');
+  }
+});
+
 test("the tab strip's row clears the window's controls", async ({ page }) => {
-  const strip = page.locator('header.strip');
+  // The strip's row, which holds the tab list between the window's insets.
+  const strip = page.getByRole('tablist', { name: 'Pull requests' }).locator('..');
   const layout = await strip.evaluate((element) => {
     const style = getComputedStyle(element);
     const overlay = (
@@ -69,4 +108,16 @@ test("the tab strip's row clears the window's controls", async ({ page }) => {
     expect(layout.controls).toBeGreaterThan(0);
     expect(layout.end).toBeCloseTo(layout.controls ?? 0, 0);
   }
+});
+
+test('the empty strip looks as designed', async ({ app, page }) => {
+  // Screenshots differ from system to system, so they're compared on Linux, where CI runs.
+  test.skip(process.platform !== 'linux', 'Compared on Linux only.');
+  await app.evaluate(({ nativeTheme }) => {
+    nativeTheme.themeSource = 'dark';
+  });
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
+  await page.evaluate(() => document.fonts.ready);
+  const strip = page.getByRole('tablist', { name: 'Pull requests' }).locator('..');
+  await expect(strip).toHaveScreenshot('empty-strip.png');
 });

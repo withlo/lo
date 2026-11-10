@@ -167,6 +167,23 @@ describe('hostile files', () => {
     expect(stretches('typescript', 'let a;\n')).toContain('let:keyword');
   });
 
+  test('parses no more injections once out of time', () => {
+    const parse = vi.spyOn(Parser.prototype, 'parse');
+    // The time runs out as the first code block's parse starts.
+    const clock = vi
+      .spyOn(performance, 'now')
+      .mockImplementation(() => (parse.mock.calls.length >= 2 ? 1e9 : 0));
+    try {
+      const text = '```go\nx := 1\n```\n\n'.repeat(50);
+
+      expect(highlighter.highlight('markdown', text)).toEqual({ skipped: 'timed-out' });
+      expect(parse).toHaveBeenCalledTimes(2);
+    } finally {
+      parse.mockRestore();
+      clock.mockRestore();
+    }
+  });
+
   test('a failure in WebAssembly stops the highlighter for good', async () => {
     const fresh = await Highlighter.create(diskLoader());
     const parse = vi.spyOn(Parser.prototype, 'parse').mockImplementationOnce(() => {
@@ -183,11 +200,31 @@ describe('hostile files', () => {
 });
 
 describe('nestingDepth', () => {
-  test('counts brackets, and with the shape, quotes and indentation', () => {
-    expect(nestingDepth('f([{a}])', { quotes: false, indents: false })).toBe(3);
-    expect(nestingDepth('> > > deep\n', { quotes: true, indents: false })).toBe(3);
-    expect(nestingDepth('a:\n      b: 1\n', { quotes: false, indents: true })).toBe(3);
-    expect(nestingDepth('a:\n      b: 1\n', { quotes: false, indents: false })).toBe(0);
+  test('counts brackets, and where the language nests them, quotes and indentation', () => {
+    expect(nestingDepth('f([{a}])', 'typescript')).toBe(3);
+    expect(nestingDepth('> > > deep\n', 'markdown')).toBe(3);
+    expect(nestingDepth('a:\n      b: 1\n', 'yaml')).toBe(3);
+    expect(nestingDepth('a:\n      b: 1\n', 'json')).toBe(0);
+  });
+
+  test.each([
+    [
+      'typescript',
+      'strings, templates and comments',
+      'f(\'(((\', "[[[", `{{{${a}`); // (((\n/* [[[ */ g()',
+    ],
+    ['typescript', 'a regular expression', 'const open = /[([{]+/g;\nreturn /\\(/.test(s)'],
+    ['tsx', 'a regular expression after a JSX element', '<a>{b}</a>;\nx = /[(]/'],
+    ['go', 'a raw string ending in a backslash', 'x := `\\`; f(y)'],
+    ['bash', 'a comment, but not `$#`', 'echo $# ${#a} # (((\n'],
+    ['yaml', 'a comment, and quoted strings', 'a: "(((" # [[[\nb: \'{{{\' [c]\n'],
+    ['json', 'strings', '{"a": "[[[[", "b": "\\"(("}'],
+  ] as const)('skips the brackets in %s: %s', (language, _, text) => {
+    expect(nestingDepth(text, language)).toBe(1);
+  });
+
+  test('counts the brackets around a division', () => {
+    expect(nestingDepth('a / (b / (c))', 'typescript')).toBe(2);
   });
 });
 

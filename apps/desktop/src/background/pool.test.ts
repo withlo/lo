@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Execute } from './host.ts';
-import { pool } from './pool.ts';
+import { memoryCap, pool, poolSize } from './pool.ts';
 import { defaultLimits } from './runners.ts';
 
 /** An execute whose jobs finish when the test says, recording how many ran at once. */
@@ -63,5 +63,66 @@ describe('pool', () => {
       error: { code: 'failed', message: 'bad failed.' },
     });
     expect(await run('good', undefined, defaultLimits)).toEqual({ ok: true, value: 'good' });
+  });
+});
+
+describe('poolSize', () => {
+  const gb = 1024 ** 3;
+  const mb = 1024 ** 2;
+
+  it('takes a core each when their heaps fit under the cap', () => {
+    expect(poolSize({ cores: 4, memoryCap: 2 * gb, jobHeap: 256 * mb })).toBe(4);
+  });
+
+  it('takes fewer when the heaps would pass three quarters of the cap', () => {
+    // 18 cores at 256 MB would be 4.6 GB, past a 2 GB cap.
+    expect(poolSize({ cores: 18, memoryCap: 2 * gb, jobHeap: 256 * mb })).toBe(6);
+  });
+
+  it('always runs at least one job', () => {
+    expect(poolSize({ cores: 8, memoryCap: 200 * mb, jobHeap: 256 * mb })).toBe(1);
+  });
+});
+
+describe('memoryCap', () => {
+  const mb = 1024 ** 2;
+
+  it('turns the megabytes main sets into bytes', () => {
+    expect(memoryCap('2048')).toBe(2048 * mb);
+    expect(memoryCap('200')).toBe(200 * mb);
+    expect(memoryCap('1')).toBe(mb);
+  });
+
+  it('gives a pool a real size, however many cores there are', () => {
+    expect(poolSize({ cores: 4, memoryCap: memoryCap('2048'), jobHeap: 256 * mb })).toBe(4);
+    expect(poolSize({ cores: 4, memoryCap: memoryCap('1'), jobHeap: 256 * mb })).toBe(1);
+  });
+
+  it('refuses a cap that was never set, rather than size a pool from nothing', () => {
+    expect(() => memoryCap(undefined)).toThrow(
+      'The background process needs LO_BACKGROUND_MEMORY_CAP_MB, a whole number of megabytes, and got nothing.',
+    );
+  });
+
+  it.each([
+    '',
+    ' ',
+    '0',
+    '-5',
+    '1.5',
+    '1e3',
+    '0x10',
+    '+5',
+    ' 2048',
+    '2048 ',
+    '2048MB',
+    'lots',
+    'NaN',
+    'Infinity',
+    '9'.repeat(400),
+  ])('refuses a cap of %j', (cap) => {
+    expect(() => memoryCap(cap)).toThrow(
+      `needs LO_BACKGROUND_MEMORY_CAP_MB, a whole number of megabytes, and got ${JSON.stringify(cap)}.`,
+    );
   });
 });

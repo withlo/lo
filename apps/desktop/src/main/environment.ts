@@ -76,9 +76,14 @@ export function backgroundSettings(options: {
 
 /**
  * The background process's whole environment. Electron passes main's on to a utility process
- * unless it's given a map with something in it, so this always has a marker, plus the switch for
- * the test jobs when they're on: nothing of main's, and so no token, reaches the process.
+ * unless it's given a map with something in it, so this always has a marker and the memory cap
+ * (which sizes the process's pool of workers), plus the switch for the test jobs when they're on:
+ * nothing of main's, and so no token, reaches the process.
  */
 export function backgroundEnvironment(settings: BackgroundSettings): Record<string, string> {
-  return { LO_BACKGROUND: '1', ...(settings.testJobs ? { LO_TEST_JOBS: '1' } : {}) };
+  return {
+    LO_BACKGROUND: '1',
+    LO_BACKGROUND_MEMORY_CAP_MB: String(Math.floor(settings.memoryCap / 1024 ** 2)),
+    ...(settings.testJobs ? { LO_TEST_JOBS: '1' } : {}),
+  };
 }

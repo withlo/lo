@@ -66,7 +66,7 @@ test("the window's session sends everything to a proxy nothing can listen on", a
   page,
 }) => {
   // The window opens once its session is secured.
-  await expect(page.locator('header.strip')).toBeVisible();
+  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
   const proxies = await app.evaluate(({ session }) => {
     const windowSession = session.fromPartition('persist:window');
     return Promise.all(

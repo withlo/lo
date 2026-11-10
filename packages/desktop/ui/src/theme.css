@@ -1,0 +1,292 @@
+/* Lo's Tailwind theme, generated from design/tokens.json by scripts/theme.ts. Don't edit it:
+   change the tokens and run `pnpm nx run ui:codegen`. */
+
+@theme inline {
+  --*: initial;
+  /* Spacing is the design system's steps, and its sizes by name: p-8 is 8px, h-tabbar-h is the
+     strip's height, and p-17 is nothing. Zero is no space, not a step: p-0, min-w-0. */
+  --spacing-0: 0px;
+  --spacing-2: var(--lo-sp-2);
+  --spacing-4: var(--lo-sp-4);
+  --spacing-6: var(--lo-sp-6);
+  --spacing-8: var(--lo-sp-8);
+  --spacing-12: var(--lo-sp-12);
+  --spacing-16: var(--lo-sp-16);
+  --spacing-20: var(--lo-sp-20);
+  --spacing-24: var(--lo-sp-24);
+  --spacing-32: var(--lo-sp-32);
+  --spacing-40: var(--lo-sp-40);
+  --spacing-48: var(--lo-sp-48);
+  --spacing-64: var(--lo-sp-64);
+  --spacing-tabbar-h: var(--lo-tabbar-h);
+  --spacing-tab-w: var(--lo-tab-w);
+  --spacing-tab-w-min: var(--lo-tab-w-min);
+  --spacing-header-h: var(--lo-header-h);
+  --spacing-statusbar-h: var(--lo-statusbar-h);
+  --spacing-panel-left-w: var(--lo-panel-left-w);
+  --spacing-panel-right-w: var(--lo-panel-right-w);
+  --spacing-row-h: var(--lo-row-h);
+  --spacing-control-h: var(--lo-control-h);
+  --spacing-control-h-sm: var(--lo-control-h-sm);
+  --spacing-file-header-h: var(--lo-file-header-h);
+  --spacing-window-inset-start: var(--lo-window-inset-start);
+  --spacing-window-inset-end: var(--lo-window-inset-end);
+  --spacing-code-size: var(--lo-code-size);
+  --spacing-code-line: var(--lo-code-line);
+  --spacing-code-size-small: var(--lo-code-size-small);
+  --spacing-code-line-small: var(--lo-code-line-small);
+  --spacing-code-inline-size: var(--lo-code-inline-size);
+  --spacing-read-measure: var(--lo-read-measure);
+  --color-ink: var(--lo-ink);
+  --color-chalk: var(--lo-chalk);
+  --color-powder: var(--lo-powder);
+  --color-powder-deep: var(--lo-powder-deep);
+  --color-stone: var(--lo-stone);
+  --color-umber: var(--lo-umber);
+  --color-mark: var(--lo-mark);
+  --color-bg: var(--lo-bg);
+  --color-bg-chrome: var(--lo-bg-chrome);
+  --color-bg-chrome-inactive: var(--lo-bg-chrome-inactive);
+  --color-bg-raised: var(--lo-bg-raised);
+  --color-bg-overlay: var(--lo-bg-overlay);
+  --color-bg-well: var(--lo-bg-well);
+  --color-bg-element: var(--lo-bg-element);
+  --color-bg-element-hover: var(--lo-bg-element-hover);
+  --color-bg-element-press: var(--lo-bg-element-press);
+  --color-hover: var(--lo-hover);
+  --color-press: var(--lo-press);
+  --color-selected: var(--lo-selected);
+  --color-current: var(--lo-current);
+  --color-current-strong: var(--lo-current-strong);
+  --color-scrim: var(--lo-scrim);
+  --color-border: var(--lo-border);
+  --color-border-subtle: var(--lo-border-subtle);
+  --color-border-strong: var(--lo-border-strong);
+  --color-rule: var(--lo-rule);
+  --color-fg: var(--lo-fg);
+  --color-fg-muted: var(--lo-fg-muted);
+  --color-fg-subtle: var(--lo-fg-subtle);
+  --color-fg-dim: var(--lo-fg-dim);
+  --color-fg-disabled: var(--lo-fg-disabled);
+  --color-fg-accent: var(--lo-fg-accent);
+  --color-icon: var(--lo-icon);
+  --color-icon-muted: var(--lo-icon-muted);
+  --color-accent: var(--lo-accent);
+  --color-accent-hover: var(--lo-accent-hover);
+  --color-accent-press: var(--lo-accent-press);
+  --color-on-accent: var(--lo-on-accent);
+  --color-accent-soft: var(--lo-accent-soft);
+  --color-accent-line: var(--lo-accent-line);
+  --color-focus: var(--lo-focus);
+  --color-focus-glow: var(--lo-focus-glow);
+  --color-link: var(--lo-link);
+  --color-link-hover: var(--lo-link-hover);
+  --color-success: var(--lo-success);
+  --color-success-bg: var(--lo-success-bg);
+  --color-success-border: var(--lo-success-border);
+  --color-warning: var(--lo-warning);
+  --color-warning-bg: var(--lo-warning-bg);
+  --color-warning-border: var(--lo-warning-border);
+  --color-danger: var(--lo-danger);
+  --color-danger-bg: var(--lo-danger-bg);
+  --color-danger-border: var(--lo-danger-border);
+  --color-info: var(--lo-info);
+  --color-info-bg: var(--lo-info-bg);
+  --color-info-border: var(--lo-info-border);
+  --color-state-open: var(--lo-state-open);
+  --color-state-open-bg: var(--lo-state-open-bg);
+  --color-state-open-border: var(--lo-state-open-border);
+  --color-state-draft: var(--lo-state-draft);
+  --color-state-draft-bg: var(--lo-state-draft-bg);
+  --color-state-draft-border: var(--lo-state-draft-border);
+  --color-state-merged: var(--lo-state-merged);
+  --color-state-merged-bg: var(--lo-state-merged-bg);
+  --color-state-merged-border: var(--lo-state-merged-border);
+  --color-state-closed: var(--lo-state-closed);
+  --color-state-closed-bg: var(--lo-state-closed-bg);
+  --color-state-closed-border: var(--lo-state-closed-border);
+  --color-review-approved: var(--lo-review-approved);
+  --color-review-changes: var(--lo-review-changes);
+  --color-review-required: var(--lo-review-required);
+  --color-check-pass: var(--lo-check-pass);
+  --color-check-fail: var(--lo-check-fail);
+  --color-check-running: var(--lo-check-running);
+  --color-check-pending: var(--lo-check-pending);
+  --color-queue: var(--lo-queue);
+  --color-change-added: var(--lo-change-added);
+  --color-change-modified: var(--lo-change-modified);
+  --color-change-deleted: var(--lo-change-deleted);
+  --color-change-renamed: var(--lo-change-renamed);
+  --color-change-generated: var(--lo-change-generated);
+  --color-diff-add-fg: var(--lo-diff-add-fg);
+  --color-diff-add-bg: var(--lo-diff-add-bg);
+  --color-diff-add-word: var(--lo-diff-add-word);
+  --color-diff-add-gutter: var(--lo-diff-add-gutter);
+  --color-diff-del-fg: var(--lo-diff-del-fg);
+  --color-diff-del-bg: var(--lo-diff-del-bg);
+  --color-diff-del-word: var(--lo-diff-del-word);
+  --color-diff-del-gutter: var(--lo-diff-del-gutter);
+  --color-diff-moved-fg: var(--lo-diff-moved-fg);
+  --color-diff-moved-bg: var(--lo-diff-moved-bg);
+  --color-diff-moved-border: var(--lo-diff-moved-border);
+  --color-diff-moved-edit: var(--lo-diff-moved-edit);
+  --color-diff-hunk-bg: var(--lo-diff-hunk-bg);
+  --color-diff-hunk-fg: var(--lo-diff-hunk-fg);
+  --color-diff-filler: var(--lo-diff-filler);
+  --color-diff-filler-stripe: var(--lo-diff-filler-stripe);
+  --color-diff-collapsed-bg: var(--lo-diff-collapsed-bg);
+  --color-diff-file-header-bg: var(--lo-diff-file-header-bg);
+  --color-code-bg: var(--lo-code-bg);
+  --color-code-fg: var(--lo-code-fg);
+  --color-code-gutter: var(--lo-code-gutter);
+  --color-code-gutter-active: var(--lo-code-gutter-active);
+  --color-code-gutter-hover: var(--lo-code-gutter-hover);
+  --color-code-active-line: var(--lo-code-active-line);
+  --color-code-highlight-line: var(--lo-code-highlight-line);
+  --color-code-selection: var(--lo-code-selection);
+  --color-code-line-selected: var(--lo-code-line-selected);
+  --color-code-cursor: var(--lo-code-cursor);
+  --color-code-on-cursor: var(--lo-code-on-cursor);
+  --color-code-match: var(--lo-code-match);
+  --color-code-match-current: var(--lo-code-match-current);
+  --color-code-match-ring: var(--lo-code-match-ring);
+  --color-code-indent-guide: var(--lo-code-indent-guide);
+  --color-code-indent-guide-active: var(--lo-code-indent-guide-active);
+  --color-code-invisible: var(--lo-code-invisible);
+  --color-code-bracket: var(--lo-code-bracket);
+  --color-code-hint: var(--lo-code-hint);
+  --color-code-hint-bg: var(--lo-code-hint-bg);
+  --color-syn-keyword: var(--lo-syn-keyword);
+  --color-syn-operator: var(--lo-syn-operator);
+  --color-syn-function: var(--lo-syn-function);
+  --color-syn-attribute: var(--lo-syn-attribute);
+  --color-syn-string: var(--lo-syn-string);
+  --color-syn-escape: var(--lo-syn-escape);
+  --color-syn-type: var(--lo-syn-type);
+  --color-syn-constructor: var(--lo-syn-constructor);
+  --color-syn-namespace: var(--lo-syn-namespace);
+  --color-syn-constant: var(--lo-syn-constant);
+  --color-syn-number: var(--lo-syn-number);
+  --color-syn-boolean: var(--lo-syn-boolean);
+  --color-syn-variable: var(--lo-syn-variable);
+  --color-syn-property: var(--lo-syn-property);
+  --color-syn-parameter: var(--lo-syn-parameter);
+  --color-syn-special: var(--lo-syn-special);
+  --color-syn-punctuation: var(--lo-syn-punctuation);
+  --color-syn-comment: var(--lo-syn-comment);
+  --color-syn-tag: var(--lo-syn-tag);
+  --color-syn-link: var(--lo-syn-link);
+  --color-syn-title: var(--lo-syn-title);
+  --color--paper: var(--fig-paper);
+  --color--panel: var(--fig-panel);
+  --color--ink: var(--fig-ink);
+  --color--muted: var(--fig-muted);
+  --color--line: var(--fig-line);
+  --color--blue: var(--fig-blue);
+  --color--blue-soft: var(--fig-blue-soft);
+  --color--aqua: var(--fig-aqua);
+  --color--aqua-soft: var(--fig-aqua-soft);
+  --color--green: var(--fig-green);
+  --color--green-soft: var(--fig-green-soft);
+  --color--amber: var(--fig-amber);
+  --color--amber-soft: var(--fig-amber-soft);
+  --color--red: var(--fig-red);
+  --color--red-soft: var(--fig-red-soft);
+  --color--violet: var(--fig-violet);
+  --color--violet-soft: var(--fig-violet-soft);
+  --color-avatar-1: var(--lo-avatar-1);
+  --color-avatar-1-bg: var(--lo-avatar-1-bg);
+  --color-avatar-2: var(--lo-avatar-2);
+  --color-avatar-2-bg: var(--lo-avatar-2-bg);
+  --color-avatar-3: var(--lo-avatar-3);
+  --color-avatar-3-bg: var(--lo-avatar-3-bg);
+  --color-avatar-4: var(--lo-avatar-4);
+  --color-avatar-4-bg: var(--lo-avatar-4-bg);
+  --color-avatar-5: var(--lo-avatar-5);
+  --color-avatar-5-bg: var(--lo-avatar-5-bg);
+  --color-avatar-6: var(--lo-avatar-6);
+  --color-avatar-6-bg: var(--lo-avatar-6-bg);
+  --radius-xs: var(--lo-r-xs);
+  --radius-sm: var(--lo-r-sm);
+  --radius-md: var(--lo-r-md);
+  --radius-lg: var(--lo-r-lg);
+  --radius-pill: var(--lo-r-pill);
+  --shadow-pop: var(--lo-shadow-pop);
+  --shadow-dialog: var(--lo-shadow-dialog);
+  --shadow-sticky: var(--lo-shadow-sticky);
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+  --shadow-ring: var(--lo-ring);
+  --shadow-ring-inset: var(--lo-ring-inset);
+  --ease-in: var(--lo-ease-in);
+  --ease-out: var(--lo-ease-out);
+  --ease-in-out: var(--lo-ease-in-out);
+  --default-transition-duration: var(--lo-dur-fast);
+  --default-transition-timing-function: var(--lo-ease-out);
+  --font-sans: var(--lo-font-ui);
+  --font-code: var(--lo-font-mono);
+}
+
+/* Type styles set the whole font shorthand, as the design system does: text-ui, read-body. */
+@utility text-display {
+  font: var(--lo-text-display);
+}
+
+@utility text-heading {
+  font: var(--lo-text-heading);
+}
+
+@utility text-title {
+  font: var(--lo-text-title);
+}
+
+@utility text-ui-strong {
+  font: var(--lo-text-ui-strong);
+}
+
+@utility text-ui {
+  font: var(--lo-text-ui);
+}
+
+@utility text-small {
+  font: var(--lo-text-small);
+}
+
+@utility text-micro {
+  font: var(--lo-text-micro);
+}
+
+@utility text-label {
+  font: var(--lo-text-label);
+}
+
+@utility read-h2 {
+  font: var(--lo-read-h2);
+}
+
+@utility read-h3 {
+  font: var(--lo-read-h3);
+}
+
+@utility read-lead {
+  font: var(--lo-read-lead);
+}
+
+@utility read-body {
+  font: var(--lo-read-body);
+}
+
+@utility read-comment {
+  font: var(--lo-read-comment);
+}
+
+@utility code-text {
+  font: var(--lo-code-text);
+}
+
+@utility code-small {
+  font: var(--lo-code-small);
+}
