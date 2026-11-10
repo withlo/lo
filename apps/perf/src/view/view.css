@@ -1,0 +1,51 @@
+/* The diff view: two editors side by side in one scroll, which the view itself keeps level. */
+.lo-diffview {
+  display: flex;
+  align-items: flex-start;
+  height: 100%;
+  overflow-y: auto;
+  /* The view anchors the scroll itself, so the browser's anchoring must stay out of it. */
+  overflow-anchor: none;
+}
+.lo-diffview > .cm-editor {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.lo-diffview > .cm-editor + .cm-editor {
+  box-shadow: inset 1px 0 0 var(--lo-border);
+}
+/* The view scrolls, not each editor. */
+.lo-diffview .cm-scroller {
+  overflow: visible;
+}
+
+/* A file header inside a document scrolls with its file. */
+.lo-diffhead {
+  position: static;
+}
+
+.lo-diffthread {
+  padding: 6px 12px 10px 12px;
+}
+.lo-diffthread__card {
+  border-radius: var(--lo-r-md);
+  background: var(--lo-bg-raised);
+  box-shadow: inset 0 0 0 1px var(--lo-border);
+  color: var(--lo-fg);
+  white-space: normal;
+}
+.lo-diffthread__comment {
+  padding: 8px 12px;
+}
+.lo-diffthread__comment + .lo-diffthread__comment {
+  box-shadow: inset 0 1px 0 var(--lo-border-subtle);
+}
+.lo-diffthread__author {
+  margin-bottom: 4px;
+  font: var(--lo-text-small);
+  color: var(--lo-fg-muted);
+}
+.lo-diffthread__body {
+  margin: 0;
+  font: var(--lo-text-ui);
+}

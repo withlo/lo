@@ -257,6 +257,33 @@ export async function fetchPullRequest(
 }
 
 /**
+ * The contents of blobs a fetch put in the cache, by ID, read in one `git cat-file --batch`. The
+ * clone is checked first, as a fetch checks it.
+ */
+export async function readBlobs(
+  repo: string,
+  ids: readonly string[],
+  options: { cache?: string } = {},
+): Promise<Map<string, Uint8Array>> {
+  const folder = repoFolder(options.cache ?? cacheFolder(), repo);
+  await checkClone(folder);
+  const blobs = new Map<string, Uint8Array>();
+  if (ids.length === 0) return blobs;
+  const output = await gitIn(folder, 'https')(['cat-file', '--batch'], `${ids.join('\n')}\n`);
+  // Each object is `<id> <type> <size>\n<contents>\n`.
+  let at = 0;
+  while (at < output.length) {
+    const end = output.indexOf(10, at);
+    const [id = '', type, size] = output.subarray(at, end).toString('latin1').split(' ');
+    if (type !== 'blob') throw new Error(`${repo} has no blob ${id}.`);
+    const length = Number(size);
+    blobs.set(id, output.subarray(end + 1, end + 1 + length));
+    at = end + 1 + length + 1;
+  }
+  return blobs;
+}
+
+/**
  * Finds each file's blobs in the two commits' trees: the old path in the merge base, the new path
  * in the head. Fails when a file isn't where the manifest says, since then the manifest doesn't
  * describe these commits.

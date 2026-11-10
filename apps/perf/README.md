@@ -39,6 +39,23 @@ repos, with git, and needs no token. It keeps one shallow, blobless clone per re
 on the machine shares. The three PRs' files are about 140 MB of text, which git stores in under 20
 MB. Running it again downloads only what's missing.
 
+## Opening a pull request
+
+```sh
+pnpm nx run perf:open -- kubernetes-125488
+```
+
+This builds the app and the grammars, fetches what's missing, and opens the PR's whole diff in one
+window: both sides of every file in one scroll, each side one CodeMirror editor, with the PR's
+review threads, and made-up ones on the left side, where recorded PRs have few. Each file starts
+collapsed, and fills in as worker threads in a background process diff and highlight it; the moved
+code comes last. A file with more than 5,000 changed lines, or a binary file, stays collapsed.
+
+The two sides stay level through a spacer pass, which runs only over the rows both editors draw:
+rows with lines on both sides start at the same height on both, so a block of added lines faces
+empty space. The page sets `window.diffView`, whose `misalignment()` says how far apart the paired
+rows on screen are, for the measurements to read.
+
 ## Recording the manifests
 
 The manifests are committed, so only a maintainer adding or refreshing a PR needs this:
