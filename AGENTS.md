@@ -237,7 +237,9 @@ utilities.
   `lo-sp-*` steps (`gap-8` is `lo-sp-8`, 8 px). There is no multiplier, so a number that isn't a
   step (`p-17`, `max-w-1234`) makes no CSS; zero is allowed (`p-0`, `min-w-0`). The font families
   are `font-sans` and `font-code`.
-- Bracketed arbitrary values (`text-[11px]`) fail lint, in `ui` and in the app. Where Tailwind can't
+- Arbitrary values, bracketed or in parentheses (`text-[11px]`, `!p-[17px]`, `p-(--lo-tabbar-h)`,
+  `[&>*]:p-4`), fail lint wherever they sit in a class, in `ui` and in the app. Lint reads every
+  file Tailwind reads classes from, `.html` and `.md` as well as scripts. Where Tailwind can't
   reach, add a utility to `src/styles.css` with `@utility`, reading `var(--lo-*)`.
 - Variants go through `cva` from `class-variance-authority`. Prettier sorts the classes.
 - The fonts, Host Grotesk and Fragment Mono, are bundled as files (never `data:` addresses, which
