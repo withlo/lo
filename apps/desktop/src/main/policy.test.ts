@@ -5,6 +5,7 @@ import {
   deadProxy,
   isAllowedNavigation,
   isAllowedRequest,
+  isAppPage,
 } from './policy.ts';
 
 const dev = new URL('http://localhost:5173');
@@ -74,5 +75,24 @@ describe('deadProxy', () => {
 
   it('lets the dev server through under electron-vite dev', () => {
     expect(deadProxy(dev).proxyBypassRules).toBe('<-loopback>;localhost:5173');
+  });
+});
+
+describe('isAppPage', () => {
+  it("accepts Lo's own page", () => {
+    expect(isAppPage('lo-app://app/index.html')).toBe(true);
+  });
+
+  it.each(['lo-app://elsewhere/index.html', 'https://example.com/', 'about:blank', 'file:///', ''])(
+    'refuses %s',
+    (address) => {
+      expect(isAppPage(address)).toBe(false);
+    },
+  );
+
+  it("accepts the dev server's pages under electron-vite dev only", () => {
+    expect(isAppPage('http://localhost:5173/', dev)).toBe(true);
+    expect(isAppPage('http://localhost:5173/')).toBe(false);
+    expect(isAppPage('http://localhost:5174/', dev)).toBe(false);
   });
 });

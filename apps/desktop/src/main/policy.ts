@@ -71,6 +71,17 @@ export function deadProxy(dev?: URL): { proxyRules: string; proxyBypassRules: st
 }
 
 /**
+ * Whether a page is Lo's own, so it may send requests to main: the window's page on Lo's scheme, or
+ * the dev server's under `electron-vite dev`.
+ */
+export function isAppPage(address: string, dev?: URL): boolean {
+  const url = URL.parse(address);
+  if (!url) return false;
+  if (url.protocol === `${appScheme}:`) return url.host === appHost;
+  return dev !== undefined && url.origin === dev.origin;
+}
+
+/**
  * Whether the window may navigate to an address. It never may: Lo loads its page itself, which
  * isn't a navigation the page asks for. Under `electron-vite dev`, Vite reloads the page after
  * some edits, so the dev server's own pages are allowed there.

@@ -1,7 +1,7 @@
-import type { BrowserWindowConstructorOptions } from 'electron';
+import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
 
-import { linuxChrome, type Strip } from './linux.ts';
-import { macChrome } from './mac.ts';
+import { linuxChrome, linuxPaint, type Strip } from './linux.ts';
+import { macChrome, macPaint } from './mac.ts';
 
 export type { Strip };
 
@@ -11,4 +11,10 @@ export function windowChrome(
   strip: Strip,
 ): BrowserWindowConstructorOptions {
   return platform === 'darwin' ? macChrome() : linuxChrome(strip);
+}
+
+/** Repaints the window's own colors, behind its page and in its controls, in the strip's colors. */
+export function paintChrome(window: BrowserWindow, platform: NodeJS.Platform, strip: Strip): void {
+  if (platform === 'darwin') macPaint(window, strip.ground);
+  else linuxPaint(window, strip);
 }
