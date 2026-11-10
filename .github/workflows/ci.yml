@@ -145,12 +145,66 @@ jobs:
       - name: Check that generated files are current
         run: pnpm check:generated
 
+  # Builds the desktop app and runs its smoke test: Playwright driving the real app on Linux, with
+  # Chromium's sandbox on, under a virtual display.
+  app:
+    name: app
+    needs: changes
+    if: needs.changes.outputs.check == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # The whole history, so Nx can compare against the base.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          cache: true
+          save-cache: false
+          require-lockfile: true
+
+      # The electron package downloads its binary on first use. cache.yml saves the download from
+      # main.
+      - name: Find Electron's version
+        id: electron
+        run:
+          echo "version=$(jq -r .devDependencies.electron apps/desktop/package.json)" >>
+          "$GITHUB_OUTPUT"
+
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ steps.electron.outputs.version }}
+
+      - name: Install Electron
+        run: pnpm --filter @lo/desktop exec install-electron
+
+      # Ubuntu's AppArmor stops unprivileged user namespaces, which Chromium's sandbox needs.
+      - name: Let Chromium's sandbox run
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      # e2e depends on build, so this builds each app it tests first.
+      - name: Build and run the smoke test
+        run: >-
+          xvfb-run -a pnpm nx affected -t e2e --base="$BASE_SHA" --head=HEAD --output-style=static
+
+      - name: Keep the smoke test's results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-test-results
+          path: apps/desktop/test-results/
+          retention-days: 7
+
   # The one check to require besides pr-title, so adding jobs never changes the ruleset. Skipped
   # jobs pass.
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, commitlint, symlinks, shellcheck, format, check]
+    needs: [changes, commitlint, symlinks, shellcheck, format, check, app]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
