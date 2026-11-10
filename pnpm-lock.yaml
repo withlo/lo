@@ -300,6 +300,19 @@ importers:
         specifier: 16.15.0
         version: 16.15.0
 
+  packages/core/review:
+    dependencies:
+      '@lo/diff':
+        specifier: workspace:*
+        version: link:../diff
+      '@lo/github':
+        specifier: workspace:*
+        version: link:../github
+    devDependencies:
+      '@lo/testing':
+        specifier: workspace:*
+        version: link:../../../testing
+
   packages/desktop/syntax:
     dependencies:
       web-tree-sitter:

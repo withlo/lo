@@ -25,6 +25,9 @@
     },
     {
       "path": "./packages/desktop/ui"
+    },
+    {
+      "path": "./packages/core/review"
     }
   ]
 }

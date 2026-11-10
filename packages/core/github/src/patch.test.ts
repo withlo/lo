@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { parsePatch, PatchError, type HunkLine, type Patch } from './patch.ts';
+import { parsePatch, PatchError, type Hunk, type HunkLine, type Patch } from './patch.ts';
 
 const unchanged = (text: string): HunkLine => ({ kind: 'unchanged', text });
 const deleted = (text: string): HunkLine => ({ kind: 'deleted', text });
@@ -117,4 +117,180 @@ test('an empty patch has no hunks', () => {
     oldMissingNewline: false,
     newMissingNewline: false,
   } satisfies Patch);
+});
+
+/** Lines joined into a patch, each ending with a newline. */
+function joined(...lines: string[]): string {
+  return lines.map((line) => `${line}\n`).join('');
+}
+
+/** The rows `start,count` covers in a hunk header. */
+function headerRows(start: number, count: number) {
+  return count === 0 ? { start, end: start } : { start: start - 1, end: start - 1 + count };
+}
+
+/** A hunk's rows on each side, from `@@ -oldStart +newStart @@`, and its lines' kinds. */
+function expected(oldStart: number, newStart: number, kinds: HunkLine['kind'][]) {
+  const count = (side: HunkLine['kind']) => kinds.filter((kind) => kind !== side).length;
+  return {
+    old: headerRows(oldStart, count('added')),
+    new: headerRows(newStart, count('deleted')),
+    kinds,
+  };
+}
+
+/** The hunks `text` reads into, as {@link expected} gives them. */
+function hunks(text: string) {
+  return parsePatch(text).hunks.map((read: Hunk) => ({
+    old: read.old,
+    new: read.new,
+    kinds: read.lines.map((line) => line.kind),
+  }));
+}
+
+/** Where `text` fails to read, and why. */
+function readError(text: string): { line: number; problem: string } {
+  const { line, problem } = failure(text);
+  return { line, problem };
+}
+
+test('a patch parses into its hunks', () => {
+  // GitHub's patch for a file with two hunks: line 3 edited, and two lines added after line 20.
+  const text = joined(
+    '@@ -1,6 +1,6 @@',
+    ' use std::fmt;',
+    ' ',
+    '-fn parse(input: &str) -> u32 {',
+    '+fn parse(input: &str) -> Option<u32> {',
+    '     let trimmed = input.trim();',
+    '     trimmed.len()',
+    ' }',
+    '@@ -18,5 +18,7 @@ impl Parser {',
+    '     fn next(&mut self) {',
+    '         self.at += 1;',
+    '     }',
+    '+',
+    '+    fn peek(&self) {}',
+    ' }',
+    ' ',
+  );
+  const u = 'unchanged';
+  expect(hunks(text)).toEqual([
+    expected(1, 1, [u, u, 'deleted', 'added', u, u, u]),
+    expected(18, 18, [u, u, u, 'added', 'added', u, u]),
+  ]);
+});
+
+test('git headers and missing newline markers are skipped', () => {
+  const text = joined(
+    'diff --git a/README.md b/README.md',
+    'index 3b18e51..a7c3d2f 100644',
+    '--- a/README.md',
+    '+++ b/README.md',
+    '@@ -1 +1 @@',
+    '-Lo',
+    '\\ No newline at end of file',
+    '+Lo reads pull requests.',
+    '\\ No newline at end of file',
+  );
+
+  expect(hunks(text)).toEqual([expected(1, 1, ['deleted', 'added'])]);
+  // A binary file's diff has a header and no hunks.
+  const binary = joined(
+    'diff --git a/logo.png b/logo.png',
+    'Binary files a/logo.png and b/logo.png differ',
+  );
+  expect(hunks(binary)).toEqual([]);
+});
+
+function secondFile(line: number): { line: number; problem: string } {
+  return { line, problem: "a second file's diff starts here, and a patch is one file's" };
+}
+
+test('a second files diff is an error', () => {
+  // `git diff` output for two files.
+  const git = joined(
+    'diff --git a/a.rs b/a.rs',
+    '--- a/a.rs',
+    '+++ b/a.rs',
+    '@@ -1 +1 @@',
+    '-a',
+    '+b',
+    'diff --git a/c.rs b/c.rs',
+    '--- a/c.rs',
+    '+++ b/c.rs',
+    '@@ -40,3 +40,4 @@',
+    ' x',
+    '+y',
+    ' z',
+    ' w',
+  );
+  expect(readError(git)).toEqual(secondFile(7));
+  // A plain unified diff for two files: the next file's `---` and `+++` follow a hunk.
+  const plain = '@@ -1 +1 @@\n-a\n+b\n--- a/c\n+++ b/c\n@@ -4,0 +5 @@\n+d\n';
+  expect(readError(plain)).toEqual(secondFile(4));
+  // A pure rename has no hunks, so the next file follows its header.
+  const rename = joined(
+    'diff --git a/x.rs b/y.rs',
+    'similarity index 100%',
+    'rename from x.rs',
+    'rename to y.rs',
+    'diff --git a/c.rs b/c.rs',
+    '--- a/c.rs',
+    '+++ b/c.rs',
+    '@@ -1 +1 @@',
+    '-a',
+    '+b',
+  );
+  expect(readError(rename)).toEqual(secondFile(5));
+});
+
+test('a removed line that looks like a header is a removed line', () => {
+  // `-- a` removed, and `++ b` added: inside a hunk's counted lines, they're lines.
+  const text = '@@ -1,2 +1,2 @@\n--- a\n+++ b\n x\n';
+
+  expect(hunks(text)).toEqual([expected(1, 1, ['deleted', 'added', 'unchanged'])]);
+  expect(parsePatch(text).hunks[0]?.lines.map((line) => line.text)).toEqual(['-- a', '++ b', 'x']);
+});
+
+test('a new file is one hunk of added lines', () => {
+  const text = '@@ -0,0 +1,2 @@\n+fn main() {}\n+\n';
+
+  expect(hunks(text)).toEqual([expected(0, 1, ['added', 'added'])]);
+});
+
+test('an unchanged line whose space was trimmed is still context', () => {
+  const text = '@@ -1,3 +1,3 @@\n a\n\n-b\n+c\n';
+
+  expect(hunks(text)).toEqual([expected(1, 1, ['unchanged', 'unchanged', 'deleted', 'added'])]);
+});
+
+test('a last blank line whose space was trimmed is still context', () => {
+  const trimmed = [expected(1, 1, ['deleted', 'added', 'unchanged'])];
+
+  // Trimmed, with the patch's last newline: as with any other trimmed blank line.
+  expect(hunks('@@ -1,2 +1,2 @@\n-a\n+b\n\n')).toEqual(trimmed);
+  // Trimmed, without it: the patch ends one unchanged line short.
+  expect(hunks('@@ -1,2 +1,2 @@\n-a\n+b\n')).toEqual(trimmed);
+  // GitHub's, untrimmed and without the last newline.
+  expect(hunks('@@ -1,2 +1,2 @@\n-a\n+b\n ')).toEqual(trimmed);
+});
+
+test('a patch that is not a unified diff is an error', () => {
+  expect(readError('@@ -1,2 +1,2\n a\n')).toEqual({
+    line: 1,
+    problem: '"@@ -1,2 +1,2" isn\'t a hunk header',
+  });
+  expect(readError('@@ -1,3 +1,3 @@\n a\n')).toEqual({
+    line: 2,
+    problem: 'the patch ends 1 line of the base and 1 of the head short of its last hunk',
+  });
+  expect(readError('@@ -1,2 +1,1 @@\n+a\n+b\n')).toEqual({
+    line: 3,
+    problem: 'the hunk has more lines than its header says',
+  });
+  expect(readError('@@ -1,2 +1,2 @@\n a\n*b\n')).toEqual({
+    line: 3,
+    problem: 'a hunk line starts with "*b"',
+  });
 });
