@@ -66,29 +66,35 @@ test('githubs refusals and failures are told apart', () => {
   expect(refused.message).toBe(
     'GitHub refused to renew the token: The refresh token passed is incorrect or expired.',
   );
-  // GitHub's other refusals, with the statuses it may send them with.
-  for (const [status, error] of [
-    [200, 'invalid_grant'],
-    [200, 'unauthorized_client'],
-    [200, 'access_denied'],
-    [200, 'incorrect_client_credentials'],
-    [400, 'bad_refresh_token'],
-    [401, 'bad_refresh_token'],
-  ] as const) {
-    expect({ status, error, kind: refusal(status, `{"error":"${error}"}`).kind }).toEqual({
-      status,
-      error,
-      kind: 'refused',
-    });
+  // The codes GitHub documents for a renewal refuse it even on their own, with any status GitHub
+  // may send them with.
+  for (const status of [200, 400, 401]) {
+    for (const error of [
+      'bad_refresh_token',
+      'unsupported_grant_type',
+      'incorrect_client_credentials',
+      'unverified_user_email',
+    ]) {
+      expect({ status, error, kind: refusal(status, `{"error":"${error}"}`).kind }).toEqual({
+        status,
+        error,
+        kind: 'refused',
+      });
+    }
   }
   // GitHub can't answer, or something in the way answers instead of it: a redirect to a login
-  // page, a firewall, a proxy that wants a password, or one that answers a bare 400 or 401.
-  // None of that refuses the token.
+  // page, a firewall, a proxy that wants a password, or one that answers a bare 400 or 401, or an
+  // error code GitHub doesn't document, on its own. None of that refuses the token.
   for (const [status, body] of [
     [400, '{}'],
     [401, '{}'],
     [400, ''],
     [401, '<html>Unauthorized</html>'],
+    [401, '{"error":"invalid_token"}'],
+    [200, '{"error":"invalid_grant"}'],
+    [200, '{"error":"temporarily_unavailable"}'],
+    [200, '{}'],
+    [200, 'not json'],
     [502, '<html>Unicorn!</html>'],
     [429, '<html>Unicorn!</html>'],
     [301, '<html>Unicorn!</html>'],
@@ -97,6 +103,11 @@ test('githubs refusals and failures are told apart', () => {
     [403, '<html>Unicorn!</html>'],
     [404, '<html>Unicorn!</html>'],
     [407, '<html>Unicorn!</html>'],
+    // GitHub's own words, but with a status it doesn't answer a renewal with.
+    [
+      403,
+      '{"error":"bad_refresh_token","error_description":"The refresh token passed is incorrect or expired."}',
+    ],
   ] as const) {
     expect({ status, body, kind: refusal(status, body).kind }).toEqual({
       status,
@@ -104,9 +115,36 @@ test('githubs refusals and failures are told apart', () => {
       kind: 'unavailable',
     });
   }
-  // Nor does an error Lo doesn't know.
-  expect(refusal(200, '{"error":"temporarily_unavailable"}').kind).toBe('unavailable');
-  expect(refusal(200, 'not json').kind).toBe('unavailable');
+});
+
+test('an unknown error in githubs own shape is refused', () => {
+  // With GitHub's description, or a link into GitHub's docs, an error is GitHub's own word, and
+  // every error GitHub documents for a renewal is for good.
+  expect(
+    refusal(200, '{"error":"account_suspended","error_description":"The account is suspended."}')
+      .message,
+  ).toBe('GitHub refused to renew the token: The account is suspended.');
+  for (const body of [
+    '{"error":"account_suspended","error_uri":"https://docs.github.com/apps/managing-oauth-apps/troubleshooting-oauth-app-access-token-request-errors"}',
+    // As GitHub's docs show it.
+    '{"error":"account_suspended","error_uri":"/apps/managing-oauth-apps/troubleshooting-oauth-app-access-token-request-errors/#incorrect-client-credentials"}',
+  ]) {
+    expect({ body, error: refusal(400, body) }).toMatchObject({
+      body,
+      error: { kind: 'refused', message: 'GitHub refused to renew the token: account_suspended' },
+    });
+  }
+  // Not a link elsewhere, a blank description, or OAuth's codes for trying again later.
+  for (const body of [
+    '{"error":"account_suspended","error_uri":"https://proxy.example.com/help"}',
+    '{"error":"account_suspended","error_uri":"//proxy.example.com/help"}',
+    '{"error":"account_suspended","error_description":" "}',
+    '{"error":"temporarily_unavailable","error_description":"Try again later."}',
+    '{"error":"server_error","error_description":"Something went wrong."}',
+    '{"error":"slow_down","error_description":"Too many requests."}',
+  ]) {
+    expect({ body, kind: refusal(200, body).kind }).toEqual({ body, kind: 'unavailable' });
+  }
 });
 
 test('a token that doesnt expire has nothing to renew it', () => {
