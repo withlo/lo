@@ -289,6 +289,16 @@ importers:
         specifier: 16.15.0
         version: 16.15.0
 
+  packages/desktop/syntax:
+    dependencies:
+      web-tree-sitter:
+        specifier: 0.27.2
+        version: 0.27.2
+    devDependencies:
+      tree-sitter-cli:
+        specifier: 0.27.2
+        version: 0.27.2
+
   scripts:
     dependencies:
       '@nx/devkit':
@@ -3596,6 +3606,11 @@ packages:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
     engines: {node: '>=8.0'}
 
+  tree-sitter-cli@0.27.2:
+    resolution: {integrity: sha512-uuqW/tbzkGaV5pJeNYI0OwixzpXg3Ozx3XH3DXhnSz8DCrvQp5JACLr4/0y9C5AfmL6irfLoTkvN1338m8UGYw==}
+    engines: {node: '>=12.0.0'}
+    hasBin: true
+
   ts-log@3.0.3:
     resolution: {integrity: sha512-4uxVlS/cbNFeSmZbXgBCq+MRkbck1iW7B2Vqd+gziasf//uZP/HFI2IcoHlyYWFgFRl+5G5iqHe4RvY/h/qUxw==}
     engines: {node: '>=20', npm: '>=10'}
@@ -3757,6 +3772,9 @@ packages:
   web-streams-polyfill@3.3.3:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
     engines: {node: '>= 8'}
+
+  web-tree-sitter@0.27.2:
+    resolution: {integrity: sha512-ZRo86GKI4aOSBAqOrPmCtriExI3xIzu1sNw/V6v3b4QGxrEmO19FGwbMNdyhw3MJLAZIw0xAV0oSpqX361eAyQ==}
 
   whatwg-mimetype@5.0.0:
     resolution: {integrity: sha512-sXcNcHOC51uPGF0P/D4NVtrkjSU2fNsm9iog4ZvZJsL3rjoDAzXZhkm2MWt1y+PUdggKAYVoMAIYcs78wJ51Cw==}
@@ -7103,6 +7121,8 @@ snapshots:
     dependencies:
       is-number: 7.0.0
 
+  tree-sitter-cli@0.27.2: {}
+
   ts-log@3.0.3: {}
 
   tsconfig-paths@4.2.0:
@@ -7212,6 +7232,8 @@ snapshots:
       defaults: 1.0.4
 
   web-streams-polyfill@3.3.3: {}
+
+  web-tree-sitter@0.27.2: {}
 
   whatwg-mimetype@5.0.0: {}
 

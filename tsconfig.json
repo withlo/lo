@@ -16,6 +16,9 @@
     },
     {
       "path": "./packages/core/github"
+    },
+    {
+      "path": "./packages/desktop/syntax"
     }
   ]
 }
