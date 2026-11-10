@@ -127,8 +127,9 @@ CI runner's cores.
 
 ## The desktop app
 
-`apps/desktop` is Lo's Electron app. `src/main/` is the main process, `src/window/` the window and
-`src/platform/` the code that differs between macOS and Linux.
+`apps/desktop` is Lo's Electron app. `src/main/` is the main process, `src/preload/` the window's
+bridge to it, `src/window/` the window, `src/platform/` the code that differs between macOS and
+Linux, and `src/features/` the features.
 
 ```sh
 pnpm nx run desktop:dev    # run it with hot reloading
@@ -153,9 +154,28 @@ holding:
 - Its session cancels every request outside `lo-app:`. WebRTC, which sends nothing the session can
   cancel, may use only the session's proxy, which leads nowhere. Every permission and every download
   is refused. It can't navigate away, follow a redirect, open other windows or attach a webview.
+- Its only way to main is `window.lo`, with `invoke` and `subscribe`. Main answers a request only
+  from Lo's own page, and only once its input matches the feature's contract. A reply is
+  `{ ok: true, value }` or `{ ok: false, error: { code, message } }`, never an error's text or
+  stack.
 
 `src/main/policy.ts` holds these rules. Loosen one only for a stated reason, with a test that shows
 the new limit.
+
+### Features
+
+Each feature is a folder, `src/features/<feature>/`, and nothing outside it lists features: main and
+the window find them with `import.meta.glob`.
+
+- `contract.ts` defines the feature's contract with `defineContract`: each request's input as a Zod
+  schema (`z.strictObject` for objects, so unknown keys are refused) and its reply's type, and each
+  topic main pushes, with its schema. Channels are named `<feature>.<name>`.
+- `main/index.ts` exports `defineFeature(contract, { handlers, start })` by default: a handler for
+  every request, and optionally a `start` that runs before the window opens, to publish on the
+  feature's topics. A handler throws an `IpcError` for a failure the window should see; any other
+  error is logged and reaches the window only as `internal`.
+- `window/index.ts` exports a `WindowFeature` by default. The window calls main through
+  `client(contract)`, whose methods and types come from the contract.
 
 ## Generated files
 

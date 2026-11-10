@@ -1,8 +1,14 @@
 {
   "extends": "../../tsconfig.node.json",
   "compilerOptions": {
-    "outDir": ".tsbuild/main"
+    "outDir": ".tsbuild/main",
+    "types": ["node", "vite/client"]
   },
-  "include": ["src/main/**/*.ts", "src/platform/**/*.ts"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src/main/**/*.ts", "src/platform/**/*.ts", "src/features/*/main/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/test/**"],
+  "references": [
+    {
+      "path": "./tsconfig.shared.json"
+    }
+  ]
 }

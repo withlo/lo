@@ -59,15 +59,26 @@ export function isAllowedRequest(address: string, dev?: URL): boolean {
 
 /**
  * The proxy for everything the window's session sends that isn't a request it can cancel, such as
- * WebRTC: one that leads nowhere, on a port nothing listens on (9, which Chromium refuses as unsafe
- * besides). Nothing the window loads should use the network. Even this machine's addresses go to
- * it, except the dev server's under `electron-vite dev`.
+ * WebRTC: port 0 on this machine, where nothing can ever listen, so every connection through it
+ * fails. Nothing the window loads should use the network. Even this machine's addresses go to it,
+ * except the dev server's under `electron-vite dev`.
  */
 export function deadProxy(dev?: URL): { proxyRules: string; proxyBypassRules: string } {
   return {
-    proxyRules: '127.0.0.1:9',
+    proxyRules: '127.0.0.1:0',
     proxyBypassRules: dev ? `<-loopback>;${dev.host}` : '<-loopback>',
   };
+}
+
+/**
+ * Whether a page is Lo's own, so it may send requests to main: the window's page on Lo's scheme, or
+ * the dev server's under `electron-vite dev`.
+ */
+export function isAppPage(address: string, dev?: URL): boolean {
+  const url = URL.parse(address);
+  if (!url) return false;
+  if (url.protocol === `${appScheme}:`) return url.host === appHost;
+  return dev !== undefined && url.origin === dev.origin;
 }
 
 /**

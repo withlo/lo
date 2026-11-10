@@ -4,6 +4,19 @@ import type { ElectronApplication } from '@playwright/test';
 
 import { expect, test } from './app.ts';
 
+/** Settings of the window's web contents, as Electron reads them back. */
+async function windowSettings(app: ElectronApplication, names: string[]) {
+  return app.evaluate(({ BrowserWindow }, wanted) => {
+    const contents = BrowserWindow.getAllWindows()[0]?.webContents;
+    // Electron reads a web contents' settings back with this method, which its types leave out.
+    const read: unknown = contents && Reflect.get(contents, 'getLastWebPreferences');
+    const all: unknown = typeof read === 'function' ? Reflect.apply(read, contents, []) : {};
+    return Object.fromEntries(
+      wanted.map((name) => [name, all && typeof all === 'object' ? Reflect.get(all, name) : null]),
+    );
+  }, names);
+}
+
 /** Whether a process runs in the operating system's sandbox, not only with the setting on. */
 async function inSandbox(app: ElectronApplication, pid: number): Promise<boolean | undefined> {
   if (process.platform === 'linux') {
@@ -22,20 +35,12 @@ const policy =
   "frame-ancestors 'none'";
 
 test('the window runs sandboxed, isolated and without Node', async ({ app, page }) => {
-  const settings = await app.evaluate(({ BrowserWindow }) => {
-    const contents = BrowserWindow.getAllWindows()[0]?.webContents;
-    // Electron reads a web contents' settings back with this method, which its types leave out.
-    const read: unknown = contents && Reflect.get(contents, 'getLastWebPreferences');
-    const all: unknown = typeof read === 'function' ? Reflect.apply(read, contents, []) : {};
-    const setting = (name: string): unknown =>
-      all && typeof all === 'object' ? Reflect.get(all, name) : undefined;
-    return {
-      sandbox: setting('sandbox'),
-      contextIsolation: setting('contextIsolation'),
-      nodeIntegration: setting('nodeIntegration'),
-      webSecurity: setting('webSecurity'),
-    };
-  });
+  const settings = await windowSettings(app, [
+    'sandbox',
+    'contextIsolation',
+    'nodeIntegration',
+    'webSecurity',
+  ]);
   expect(settings).toEqual({
     sandbox: true,
     contextIsolation: true,
@@ -276,21 +281,14 @@ test('the window downloads nothing', async ({ app, page }) => {
 });
 
 test('spellcheck is off', async ({ app, page }) => {
-  await page.evaluate(() => {
-    const box = Object.assign(document.createElement('textarea'), { spellcheck: true });
-    document.body.append(box);
-    box.focus();
-  });
-  await page.keyboard.type('Teh revieew ');
-  const menu = await app.evaluateHandle(({ BrowserWindow }) => ({
-    promise: new Promise<{ word: string; suggestions: string[] }>((resolve) => {
-      BrowserWindow.getAllWindows()[0]?.webContents.once('context-menu', (_event, params) => {
-        resolve({ word: params.misspelledWord, suggestions: params.dictionarySuggestions });
-      });
-    }),
-  }));
-  await page.locator('textarea').click({ button: 'right', position: { x: 12, y: 8 } });
-  expect(await menu.evaluate(({ promise }) => promise)).toEqual({ word: '', suggestions: [] });
+  // The page can't see spellcheck run: macOS checks words through the system in the background,
+  // with no sign to the page, and Linux would first download a dictionary, which the window's
+  // proxy stops. So this reads the session's switch, which covers every page in it.
+  await expect(page.locator('header.strip')).toBeVisible();
+  const enabled = await app.evaluate(({ session }) =>
+    session.fromPartition('persist:window').isSpellCheckerEnabled(),
+  );
+  expect(enabled).toBe(false);
 });
 
 test.describe('with the content security policy bypassed', () => {
