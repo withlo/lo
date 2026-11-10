@@ -1,0 +1,84 @@
+# What the merge queue view shows of a base branch's queue (`docs/design.md`, "The merge queue"):
+# the queue's settings, and its entries in order, each with the commits the queue tests it on and
+# the checks it runs on them. Null when the branch has no queue. The settings are null for anyone
+# who can't write to the repository. It costs 1 point.
+query QueueView($owner: String!, $name: String!, $branch: String!) {
+  rateLimit {
+    cost
+    limit
+    remaining
+    used
+    resetAt
+  }
+  repository(owner: $owner, name: $name) {
+    viewerPermission
+    mergeQueue(branch: $branch) {
+      url
+      nextEntryEstimatedTimeToMerge
+      configuration {
+        mergeMethod
+        mergingStrategy
+        maximumEntriesToBuild
+      }
+      entries(first: 100) {
+        totalCount
+        nodes {
+          id
+          position
+          state
+          enqueuedAt
+          estimatedTimeToMerge
+          jump
+          solo
+          enqueuer {
+            __typename
+            login
+          }
+          # GitHub builds each entry on the commit the one ahead of it is tested on, from the
+          # branch's tip: the entries built in one chain from the front are tested together.
+          baseCommit {
+            oid
+          }
+          headCommit {
+            oid
+            statusCheckRollup {
+              contexts(first: 50) {
+                nodes {
+                  ...QueueCheck
+                }
+              }
+            }
+          }
+          pullRequest {
+            id
+            number
+            title
+            url
+            headRefOid
+            viewerDidAuthor
+            author {
+              __typename
+              login
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fragment QueueCheck on StatusCheckRollupContext {
+  __typename
+  ... on CheckRun {
+    name
+    status
+    conclusion
+    detailsUrl
+    url
+  }
+  ... on StatusContext {
+    context
+    state
+    targetUrl
+  }
+}

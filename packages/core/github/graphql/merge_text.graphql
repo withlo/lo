@@ -1,0 +1,19 @@
+# The text GitHub's merge button would start a squash commit with, for the viewer: its title and
+# message as the repository's squash settings make them (`docs/design.md`, "Merging"). The merge
+# panel starts its editable squash title and message from them. It costs 1 point.
+query MergeText($owner: String!, $name: String!, $number: Int!) {
+  rateLimit {
+    cost
+    limit
+    remaining
+    used
+    resetAt
+  }
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      headRefOid
+      squashTitle: viewerMergeHeadlineText(mergeType: SQUASH)
+      squashMessage: viewerMergeBodyText(mergeType: SQUASH)
+    }
+  }
+}

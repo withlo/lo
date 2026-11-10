@@ -1,0 +1,62 @@
+# A branch's classic protection and merge queue, for a branch a pull request merges into once its
+# base moves there: the root branch a chain's bottom layer moves onto before it merges, when Lo
+# merges a chain one layer at a time. Its rulesets are read through REST, as for `MergeSnapshot`. It
+# costs 1 point.
+query BranchProtection($owner: String!, $name: String!, $qualified: String!, $branch: String!) {
+  rateLimit {
+    cost
+    limit
+    remaining
+    used
+    resetAt
+  }
+  repository(owner: $owner, name: $name) {
+    ref(qualifiedName: $qualified) {
+      name
+      ...BaseRules
+    }
+    # Null when the branch has no queue. Its configuration is null for anyone who can't write to
+    # the repository: the branch's merge_queue rule says it too.
+    mergeQueue(branch: $branch) {
+      configuration {
+        mergeMethod
+      }
+    }
+  }
+}
+
+# The branch's classic protection, as `MergeSnapshot` reads a base branch's.
+fragment BaseRules on Ref {
+  # Classic branch protection, as anyone who can read the repository sees it.
+  refUpdateRule {
+    requiredApprovingReviewCount
+    requiredStatusCheckContexts
+    requiresCodeOwnerReviews
+    requiresConversationResolution
+    requiresLinearHistory
+    requiresSignatures
+    viewerCanPush
+  }
+  # All of it, which only those who can administer the repository see: null for anyone
+  # else.
+  branchProtectionRule {
+    requiresApprovingReviews
+    requiredApprovingReviewCount
+    requiresCodeOwnerReviews
+    dismissesStaleReviews
+    requireLastPushApproval
+    requiresConversationResolution
+    requiresStatusChecks
+    requiresStrictStatusChecks
+    requiredStatusChecks {
+      context
+      app {
+        databaseId
+      }
+    }
+    requiresLinearHistory
+    requiresCommitSignatures
+    requiresDeployments
+    lockBranch
+  }
+}

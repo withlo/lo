@@ -1,0 +1,20 @@
+# Takes a pull request out of its base branch's merge queue, as "Remove from queue" does.
+mutation DequeuePullRequest($id: ID!) {
+  dequeuePullRequest(input: { id: $id }) {
+    mergeQueueEntry {
+      id
+      position
+      state
+      jump
+      solo
+      enqueuedAt
+      estimatedTimeToMerge
+      headCommit {
+        oid
+      }
+      pullRequest {
+        number
+      }
+    }
+  }
+}

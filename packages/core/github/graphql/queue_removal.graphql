@@ -1,0 +1,61 @@
+# Why a pull request last left its merge queue (`docs/design.md`, "The merge queue"): GitHub's
+# reason, who took it out, and the checks on the commit the queue tested it on, a failed one among
+# them. It costs 1 point.
+query QueueRemoval($owner: String!, $name: String!, $number: Int!) {
+  rateLimit {
+    cost
+    limit
+    remaining
+    used
+    resetAt
+  }
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      number
+      title
+      url
+      state
+      isInMergeQueue
+      timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) {
+        nodes {
+          __typename
+          ... on RemovedFromMergeQueueEvent {
+            createdAt
+            reason
+            actor {
+              __typename
+              login
+            }
+            # The commit the queue tested it on.
+            beforeCommit {
+              oid
+              statusCheckRollup {
+                contexts(first: 50) {
+                  nodes {
+                    ...QueueCheck
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fragment QueueCheck on StatusCheckRollupContext {
+  __typename
+  ... on CheckRun {
+    name
+    status
+    conclusion
+    detailsUrl
+    url
+  }
+  ... on StatusContext {
+    context
+    state
+    targetUrl
+  }
+}
