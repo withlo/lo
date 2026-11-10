@@ -2,7 +2,7 @@
 // whose methods and types come from the group's contract.
 
 import { IpcError, isResult, type InputOf, type ReplyOf } from '../ipc/contract.ts';
-import { handOver, type JobContract, type JobReply } from '../ipc/jobs.ts';
+import { isHandOver, plainDataProblem, type JobContract, type JobReply } from '../ipc/jobs.ts';
 
 /** A port as the window uses it: the browser's MessagePort, or Node's in tests. */
 export interface Port {
@@ -13,56 +13,76 @@ export interface Port {
 }
 
 export interface Connection {
-  /** Runs a job by its full name. Rejects with an `IpcError` if it fails. */
-  run(job: string, input: unknown): Promise<unknown>;
   /**
-   * Takes a new port to the process. Jobs sent on the old one fail as `restarted`, since a new
-   * port means the process started again; jobs sent before any port go out on this one.
+   * Runs a job by its full name. Rejects with an `IpcError`: the process's own, `invalid` for input
+   * that isn't plain data, `restarted` if the process stopped meanwhile, or `unanswered` past
+   * `timeout` milliseconds (a minute unless given).
    */
+  run(job: string, input: unknown, options?: { timeout?: number }): Promise<unknown>;
+  /** Takes a new port to the process. Jobs sent before any port go out on this one. */
   connect(port: Port): void;
+  /** The process stopped: the jobs sent to it fail as `restarted`, and new ones wait for a port. */
+  lose(): void;
+}
+
+interface Waiting {
+  job: string;
+  input: unknown;
+  sent: boolean;
+  timer: ReturnType<typeof setTimeout>;
+  resolve(value: unknown): void;
+  reject(error: Error): void;
 }
 
 export function createConnection(): Connection {
   let port: Port | undefined;
   let next = 1;
-  const waiting = new Map<
-    number,
-    {
-      job: string;
-      input: unknown;
-      sent: boolean;
-      resolve(value: unknown): void;
-      reject(error: Error): void;
-    }
-  >();
+  const waiting = new Map<number, Waiting>();
+
+  const settle = (id: number) => {
+    const job = waiting.get(id);
+    if (job) clearTimeout(job.timer);
+    waiting.delete(id);
+    return job;
+  };
 
   const receive = (reply: unknown) => {
     if (!isJobReply(reply)) return;
-    const job = waiting.get(reply.id);
+    const job = settle(reply.id);
     if (!job) return;
-    waiting.delete(reply.id);
     if (reply.ok) job.resolve(reply.value);
     else job.reject(new IpcError(reply.error.code, reply.error.message));
   };
 
+  const lose = () => {
+    for (const [id, job] of waiting) {
+      if (!job.sent) continue;
+      settle(id);
+      job.reject(new IpcError('restarted', `The background process stopped during ${job.job}.`));
+    }
+    port?.close();
+    port = undefined;
+  };
+
   return {
-    run(job, input) {
+    run(job, input, { timeout = 60_000 } = {}) {
+      // A port drops what it can't send, such as a Blob, and the job would never be answered.
+      const problem = plainDataProblem(input);
+      if (problem) {
+        return Promise.reject(new IpcError('invalid', `${job} takes plain data, but ${problem}.`));
+      }
       const id = next++;
       return new Promise((resolve, reject) => {
-        const sent = port !== undefined;
-        waiting.set(id, { job, input, sent, resolve, reject });
+        const timer = setTimeout(() => {
+          settle(id);
+          reject(new IpcError('unanswered', `${job} got no answer in ${timeout} ms.`));
+        }, timeout);
+        waiting.set(id, { job, input, sent: port !== undefined, timer, resolve, reject });
         port?.postMessage({ id, job, input });
       });
     },
     connect(newPort) {
-      for (const [id, job] of waiting) {
-        if (!job.sent) continue;
-        waiting.delete(id);
-        job.reject(
-          new IpcError('restarted', `The background process restarted during ${job.job}.`),
-        );
-      }
-      port?.close();
+      lose();
       port = newPort;
       port.addEventListener('message', (event) => receive(event.data));
       port.start();
@@ -71,17 +91,28 @@ export function createConnection(): Connection {
         port.postMessage({ id, job: job.job, input: job.input });
       }
     },
+    lose,
   };
 }
 
 /** The window's connection, which takes each port main hands over through the preload. */
 export const background = createConnection();
 
-/** Listens for main's ports. Runs once, as the window starts, so no port is missed. */
+declare global {
+  interface Window {
+    /** The window's connection, for the smoke test, in a build run from source with test jobs. */
+    loBackground?: Connection;
+  }
+}
+
+/** Listens for main's news of the process. Runs once, as the window starts, so none is missed. */
 export function listenForBackground(): void {
   window.addEventListener('message', (event) => {
+    if (event.source !== window || !isHandOver(event.data)) return;
     const [port] = event.ports;
-    if (event.source === window && event.data === handOver && port) background.connect(port);
+    if (event.data.state === 'lost') background.lose();
+    else if (port) background.connect(port);
+    if (event.data.testing) window.loBackground = background;
   });
 }
 

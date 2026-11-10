@@ -2,6 +2,7 @@ import {
   app,
   MessageChannelMain,
   utilityProcess,
+  type MessagePortMain,
   type UtilityProcess,
   type WebContents,
 } from 'electron';
@@ -9,8 +10,8 @@ import {
 // electron-vite builds the process's script and gives its path as this import's default.
 // oxlint-disable-next-line import/default
 import backgroundEntry from '../background/index.ts?modulePath';
-import { handOver } from '../ipc/jobs.ts';
-import type { BackgroundSettings } from './environment.ts';
+import { handOver, type HandOver } from '../ipc/jobs.ts';
+import { backgroundEnvironment, type BackgroundSettings } from './environment.ts';
 import { nextAttempt, pastCap, restartDelay } from './restarts.ts';
 
 export interface Background {
@@ -33,24 +34,35 @@ export function startBackground(settings: BackgroundSettings): Background {
   let restart: NodeJS.Timeout | undefined;
   let stopped = false;
 
+  const tell = (contents: WebContents, state: HandOver['state'], ports: MessagePortMain[] = []) => {
+    const message: HandOver = { type: handOver, state, testing: settings.testJobs };
+    contents.postMessage(handOver, message, ports);
+  };
+
   const connect = (contents: WebContents) => {
     if (!child || contents.isDestroyed()) return;
     const { port1, port2 } = new MessageChannelMain();
     child.postMessage('connect', [port1]);
-    contents.postMessage(handOver, null, [port2]);
+    tell(contents, 'connected', [port2]);
   };
 
   const start = () => {
     startedAt = Date.now();
-    // Only what it needs from the environment, so no token in it reaches the process.
     const started = utilityProcess.fork(backgroundEntry, [], {
       serviceName: 'Lo background',
-      env: settings.testJobs ? { LO_TEST_JOBS: '1' } : {},
+      env: backgroundEnvironment(settings),
       stdio: 'inherit',
     });
     child = started;
+    // A fatal error counts as a crash: the process is stopped, and starts again like any other.
+    started.on('error', (type, location) => {
+      console.error(`The background process failed (${type} at ${location}); stopping it.`);
+      started.kill();
+    });
     started.once('exit', (code) => {
       child = undefined;
+      // The window fails the jobs it had sent now, rather than when the next port arrives.
+      for (const contents of windows) if (!contents.isDestroyed()) tell(contents, 'lost');
       if (stopped) return;
       attempt = nextAttempt(attempt, Date.now() - startedAt);
       const delay = restartDelay(attempt);

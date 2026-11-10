@@ -4,7 +4,7 @@
 import { z } from 'zod';
 
 import type { Result } from '../ipc/contract.ts';
-import { jobPath, type JobReply } from '../ipc/jobs.ts';
+import { jobPath, plainDataProblem, type JobReply } from '../ipc/jobs.ts';
 import { findJob, type Limits, type Runner } from './runners.ts';
 
 const request = z.strictObject({
@@ -18,13 +18,21 @@ export type Execute = (job: string, input: unknown, limits: Limits) => Promise<R
 
 /**
  * Answers a message from the window: the job's result, or why it didn't run. A message without
- * an id to answer under gets no answer.
+ * an id to answer under gets no answer. Before any schema looks at it, the message must be plain
+ * data within limits, so a small message can't expand into a huge check (an array with holes, say).
  */
 export async function answer(
   runners: readonly Runner[],
   execute: Execute,
   message: unknown,
 ): Promise<JobReply | undefined> {
+  const problem = plainDataProblem(message);
+  if (problem) {
+    const id = idOf(message);
+    return id === undefined
+      ? undefined
+      : fail(id, 'invalid', `The job request can't be read: ${problem}.`);
+  }
   const parsed = request.safeParse(message);
   if (!parsed.success) {
     const id = idOf(message);
@@ -45,7 +53,8 @@ function fail(id: number, code: string, message: string): JobReply {
   return { id, ok: false, error: { code, message } };
 }
 
-function idOf(message: unknown): number | undefined {
+/** The id a message asks to be answered under, if it has a usable one. */
+export function idOf(message: unknown): number | undefined {
   if (typeof message !== 'object' || message === null || !('id' in message)) return undefined;
   const { id } = message;
   return typeof id === 'number' && Number.isSafeInteger(id) && id >= 0 ? id : undefined;

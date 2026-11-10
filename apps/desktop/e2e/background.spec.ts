@@ -1,3 +1,7 @@
+import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
+
 import type { ElectronApplication, Page } from '@playwright/test';
 
 import { expect, test } from './app.ts';
@@ -27,9 +31,10 @@ declare global {
 async function catchPorts(app: ElectronApplication, page: Page): Promise<void> {
   await app.context().addInitScript(() => {
     const ports: MessagePort[] = [];
-    window.addEventListener('message', (event) => {
+    window.addEventListener('message', (event: MessageEvent<{ type?: string; state?: string }>) => {
       const [port] = event.ports;
-      if (event.source !== window || event.data !== 'lo:background' || !port) return;
+      const connected = event.data.type === 'lo:background' && event.data.state === 'connected';
+      if (event.source !== window || !connected || !port) return;
       port.start();
       ports.push(port);
     });
@@ -133,19 +138,108 @@ test.describe('with the test jobs', () => {
   });
 });
 
-test.describe('with a token in the environment', () => {
-  test.use({ launch: { env: { LO_TEST_JOBS: '1', GITHUB_TOKEN: 'hunter2' } } });
+/** The background process's environment, read from outside it, as the system reports it. */
+async function backgroundEnvironment(app: ElectronApplication): Promise<string> {
+  await expect.poll(() => backgroundPid(app)).toBeDefined();
+  const pid = await backgroundPid(app);
+  if (process.platform === 'linux') {
+    return (await readFile(`/proc/${pid}/environ`, 'utf8')).replaceAll('\0', '\n');
+  }
+  const { stdout } = await promisify(execFile)('ps', ['eww', '-o', 'command=', '-p', String(pid)]);
+  return stdout;
+}
 
-  test("the process doesn't get main's environment", async ({ app, page }) => {
-    await catchPorts(app, page);
-    const reply = await run(page, 0, { id: 1, job: 'test.environment' });
-    expect(reply).toMatchObject({ id: 1, ok: true });
-    expect(JSON.stringify(reply)).not.toContain('GITHUB_TOKEN');
+test.describe('with a token in main’s environment', () => {
+  test.use({ launch: { env: { GITHUB_TOKEN: 'hunter2', LO_TEST_JOBS: '' } } });
+
+  test('the process gets none of it', async ({ app, page }) => {
+    await page.waitForLoadState('load');
+    const environment = await backgroundEnvironment(app);
+    // The marker shows this is the process's environment, and nothing of main's came with it.
+    expect(environment).toContain('LO_BACKGROUND=1');
+    expect(environment).not.toContain('GITHUB_TOKEN');
+    expect(environment).not.toContain('hunter2');
+    expect(environment).not.toContain('LO_TEST_JOBS');
+  });
+});
+
+test.describe('with a token in main’s environment and the test jobs', () => {
+  test.use({ launch: { env: { GITHUB_TOKEN: 'hunter2', LO_TEST_JOBS: '1' } } });
+
+  test('the process gets only the switch for the test jobs', async ({ app, page }) => {
+    await page.waitForLoadState('load');
+    const environment = await backgroundEnvironment(app);
+    expect(environment).toContain('LO_TEST_JOBS=1');
+    expect(environment).not.toContain('hunter2');
+  });
+});
+
+test.describe('through the window’s own connection', () => {
+  test.use({ launch: { env: { LO_TEST_JOBS: '1' } } });
+
+  test('a job runs, input a port would drop is refused, and many jobs at once wait their turn', async ({
+    app,
+    page,
+  }) => {
+    await expect.poll(() => page.evaluate(() => window.loBackground !== undefined)).toBe(true);
+    expect(await page.evaluate(() => window.loBackground?.run('test.spin', { ms: 10 }))).toBe(10);
+    expect(
+      await page.evaluate(() =>
+        window.loBackground?.run('test.spin', new Blob(['10'])).then(
+          () => 'ran',
+          (error: unknown) => (error instanceof Error && 'code' in error ? error.code : 'thrown'),
+        ),
+      ),
+    ).toBe('invalid');
+
+    // Three jobs per core, each half its deadline: they run a core's worth at a time, so they take
+    // three times as long as one, and none runs out of time waiting.
+    const cores = await app.evaluate(() =>
+      process.getBuiltinModule('node:os').availableParallelism(),
+    );
+    const { answers, seconds } = await page.evaluate(async (count) => {
+      const started = performance.now();
+      const results = await Promise.all(
+        Array.from({ length: count }, async () =>
+          window.loBackground?.run('test.spin', { ms: 500 }),
+        ),
+      );
+      return { answers: results, seconds: (performance.now() - started) / 1000 };
+    }, cores * 3);
+    expect(answers).toEqual(Array.from({ length: cores * 3 }, () => 500));
+    expect(seconds).toBeGreaterThan(1.4);
   });
 });
 
 test.describe('with a low memory cap', () => {
   test.use({ launch: { env: { LO_TEST_JOBS: '1', LO_BACKGROUND_MEMORY_CAP_MB: '200' } } });
+
+  test('the window’s jobs fail as soon as the process is stopped, and run again after', async ({
+    page,
+  }) => {
+    await expect.poll(() => page.evaluate(() => window.loBackground !== undefined)).toBe(true);
+    const outcome = await page.evaluate(async () => {
+      // When the new port arrives, for comparison.
+      const connected: number[] = [];
+      window.addEventListener('message', (event: MessageEvent<{ state?: string }>) => {
+        if (event.data.state === 'connected') connected.push(performance.now());
+      });
+      const code = await window.loBackground
+        ?.run('test.allocate', { mb: 400, where: 'outside', holdMs: 30_000 })
+        .then(
+          () => 'answered',
+          (error: unknown) => (error instanceof Error && 'code' in error ? error.code : 'thrown'),
+        );
+      const failedAt = performance.now();
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      return { code, failedAt, connectedAt: connected[0] };
+    });
+    expect(outcome.code).toBe('restarted');
+    // The job failed when the process stopped, before the new port arrived.
+    expect(outcome.connectedAt).toBeDefined();
+    expect(outcome.failedAt).toBeLessThan(outcome.connectedAt ?? 0);
+    expect(await page.evaluate(() => window.loBackground?.run('test.spin', { ms: 1 }))).toBe(1);
+  });
 
   test('a process past its cap is restarted, and the window gets a new port', async ({
     app,
@@ -175,6 +269,7 @@ test.describe('with a low memory cap', () => {
 
 test("the test jobs don't exist unless asked for", async ({ app, page }) => {
   await catchPorts(app, page);
+  expect(await page.evaluate(() => window.loBackground)).toBe(undefined);
   expect(await run(page, 0, { id: 1, job: 'test.spin', input: { ms: 1 } })).toMatchObject({
     id: 1,
     ok: false,

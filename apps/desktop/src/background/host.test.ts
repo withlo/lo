@@ -9,6 +9,13 @@ function host() {
   return { execute, ask: (message: unknown) => answer([sampleRunner], execute, message) };
 }
 
+/** An array claiming twenty million entries, with none: what a hostile page can send cheaply. */
+function sparse(): unknown[] {
+  const holes: unknown[] = [];
+  holes.length = 20_000_000;
+  return holes;
+}
+
 describe('answer', () => {
   it('runs a job under its limits and answers under its id', async () => {
     const { ask, execute } = host();
@@ -66,6 +73,20 @@ describe('answer', () => {
   ])("doesn't answer %j, which has no id to answer under", async (message) => {
     const { ask, execute } = host();
     expect(await ask(message)).toBe(undefined);
+    expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('answer, before any schema', () => {
+  it('refuses a message that isn’t plain data, under its id', async () => {
+    const { ask, execute } = host();
+    for (const input of [sparse(), new Map([[1, 2]])]) {
+      expect(await ask({ id: 4, job: 'sample.double', input })).toMatchObject({
+        id: 4,
+        ok: false,
+        error: { code: 'invalid' },
+      });
+    }
     expect(execute).not.toHaveBeenCalled();
   });
 });

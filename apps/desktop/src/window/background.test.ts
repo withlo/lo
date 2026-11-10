@@ -1,7 +1,7 @@
 import { MessageChannel, type MessagePort } from 'node:worker_threads';
 
 import { z } from 'zod';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { reply } from '../ipc/contract.ts';
 import { defineJobs } from '../ipc/jobs.ts';
@@ -96,5 +96,42 @@ describe('the background connection', () => {
     port2.postMessage({ id: 99, ok: true, value: 'stray' });
     port2.postMessage({ id: 1, ok: true, value: 2 });
     expect(await answer).toBe(2);
+  });
+});
+
+describe('the background connection, when things go wrong', () => {
+  it('fails the jobs it sent as soon as the process stops, and queues new ones for the next port', async () => {
+    const connection = createConnection();
+    connection.connect(process());
+    const stalled = jobs(contract, connection).stall();
+    connection.lose();
+    await expect(stalled).rejects.toMatchObject({ code: 'restarted' });
+    const later = jobs(contract, connection).double(6);
+    connection.connect(process());
+    expect(await later).toBe(12);
+  });
+
+  it('gives up on a job that gets no answer', async () => {
+    vi.useFakeTimers();
+    try {
+      const connection = createConnection();
+      connection.connect(process());
+      const stalled = connection
+        .run('sample.stall', undefined, { timeout: 5000 })
+        .catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await stalled).toMatchObject({ code: 'unanswered' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refuses input a port would drop, without sending it', async () => {
+    const connection = createConnection();
+    connection.connect(process());
+    await expect(connection.run('sample.double', new Blob(['2']))).rejects.toMatchObject({
+      code: 'invalid',
+      message: 'sample.double takes plain data, but it holds a Blob.',
+    });
   });
 });

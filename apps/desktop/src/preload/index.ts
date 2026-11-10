@@ -7,7 +7,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 
 import type { Bridge } from '../ipc/bridge.ts';
 import { channelName, isResult, type Result } from '../ipc/contract.ts';
-import { handOver } from '../ipc/jobs.ts';
+import { handOver, isHandOver } from '../ipc/jobs.ts';
 
 const unavailable = (channel: unknown): Result<never> => ({
   ok: false,
@@ -46,9 +46,9 @@ const bridge: Bridge = {
 
 contextBridge.exposeInMainWorld('lo', bridge);
 
-// The port to the background process, which main sends each time the page loads and after each
-// restart. A MessagePort can't cross the bridge, so it goes to the page as a window message.
-ipcRenderer.on(handOver, (event) => {
-  const [port] = event.ports;
-  if (port) window.postMessage(handOver, window.location.origin, [port]);
+// News of the background process from main: a port to it, sent each time the page loads and after
+// each restart, or word that it stopped. A MessagePort can't cross the bridge, so it all goes to
+// the page as a window message.
+ipcRenderer.on(handOver, (event, message: unknown) => {
+  if (isHandOver(message)) window.postMessage(message, window.location.origin, event.ports);
 });

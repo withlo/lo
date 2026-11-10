@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { backgroundSettings, dataFolder, devServer } from './environment.ts';
+import { backgroundEnvironment, backgroundSettings, dataFolder, devServer } from './environment.ts';
 
 describe('dataFolder', () => {
   const appData = '/home/me/.config';
@@ -80,5 +80,25 @@ describe('backgroundSettings', () => {
     expect(() =>
       backgroundSettings({ packaged: false, env: { LO_BACKGROUND_MEMORY_CAP_MB: cap } }),
     ).toThrow('whole number of megabytes');
+  });
+});
+
+describe('backgroundEnvironment', () => {
+  it('is never empty, which would hand the process all of main’s', () => {
+    expect(backgroundEnvironment({ testJobs: false, memoryCap: 1 })).toEqual({
+      LO_BACKGROUND: '1',
+    });
+  });
+
+  it('turns the test jobs on only when the settings do', () => {
+    expect(backgroundEnvironment({ testJobs: true, memoryCap: 1 })).toEqual({
+      LO_BACKGROUND: '1',
+      LO_TEST_JOBS: '1',
+    });
+  });
+
+  it('keeps a packaged build’s test jobs off, whatever main’s environment says', () => {
+    const settings = backgroundSettings({ packaged: true, env: { LO_TEST_JOBS: '1' } });
+    expect(backgroundEnvironment(settings)).toEqual({ LO_BACKGROUND: '1' });
   });
 });

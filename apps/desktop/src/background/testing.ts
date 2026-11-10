@@ -1,5 +1,4 @@
-// Jobs for the smoke test only: one that runs as long as it's told, one that takes memory, and one
-// that lists the process's environment.
+// Jobs for the smoke test only: one that runs as long as it's told, and one that takes memory.
 // The process offers them only when main asks, which it does only in a build run from source
 // with LO_TEST_JOBS=1.
 
@@ -10,8 +9,6 @@ import { defineJobs } from '../ipc/jobs.ts';
 import { defineRunner } from './runners.ts';
 
 export const testJobs = defineJobs('test', {
-  /** The names of the variables in the process's environment. */
-  environment: { input: z.undefined(), reply: reply<string[]>() },
   /** Keeps the thread busy for `ms`, as a runaway job would. */
   spin: {
     input: z.strictObject({ ms: z.number().int().min(0).max(60_000) }),
@@ -32,7 +29,6 @@ export const testJobs = defineJobs('test', {
 });
 
 export default defineRunner(testJobs, {
-  environment: { run: () => Object.keys(process.env).toSorted() },
   spin: {
     run({ ms }) {
       const end = Date.now() + ms;
