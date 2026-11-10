@@ -545,16 +545,20 @@ export function removeVeryShortMatchingTextBetweenLongDiffs(
       );
     }
 
-    const fullRange1 = sequence1.extendToFullLines(cur.seq1Range);
-    const prefix = sequence1.getText(new OffsetRange(fullRange1.start, cur.seq1Range.start));
-    if (shouldMarkAsChanged(prefix)) {
-      newDiff = newDiff.deltaStart(-prefix.length);
-    }
-    const suffix = sequence1.getText(
-      new OffsetRange(cur.seq1Range.endExclusive, fullRange1.endExclusive),
-    );
-    if (shouldMarkAsChanged(suffix)) {
-      newDiff = newDiff.deltaEnd(suffix.length);
+    // Lo: only builds the prefix and suffix when the change is long enough to need them. Building
+    // them for every change took time that grew with the square of a long line's length.
+    if (cur.seq1Range.length + cur.seq2Range.length > 100) {
+      const fullRange1 = sequence1.extendToFullLines(cur.seq1Range);
+      const prefix = sequence1.getText(new OffsetRange(fullRange1.start, cur.seq1Range.start));
+      if (shouldMarkAsChanged(prefix)) {
+        newDiff = newDiff.deltaStart(-prefix.length);
+      }
+      const suffix = sequence1.getText(
+        new OffsetRange(cur.seq1Range.endExclusive, fullRange1.endExclusive),
+      );
+      if (shouldMarkAsChanged(suffix)) {
+        newDiff = newDiff.deltaEnd(suffix.length);
+      }
     }
 
     const availableSpace = SequenceDiff.fromOffsetPairs(

@@ -130,6 +130,46 @@ describe('diffText', () => {
     expect(diff.changes[0]?.new).toEqual({ start: 2, end: 3 });
   });
 
+  test('changes a last line that gains or loses its line break, as git does', () => {
+    const appended = diffText('a', 'a\nb\n');
+    const cut = diffText('a\nb\n', 'a');
+
+    expect(appended.changes.map(({ old, new: added }) => [old, added])).toEqual([
+      [
+        { start: 1, end: 2 },
+        { start: 1, end: 3 },
+      ],
+    ]);
+    expect(appended.noNewlineAtEnd).toEqual({ old: true, new: false });
+    expect(cut.changes.map(({ old, new: added }) => [old, added])).toEqual([
+      [
+        { start: 1, end: 3 },
+        { start: 1, end: 2 },
+      ],
+    ]);
+    expect(cut.noNewlineAtEnd).toEqual({ old: false, new: true });
+  });
+
+  test('changes a file whose one line changes its ending', () => {
+    const diff = diffText('\r\n', '\n');
+
+    expect(diff.changes).toHaveLength(1);
+    expect(diff.lineEndings).toEqual({ old: 'crlf', new: 'lf' });
+  });
+
+  test('widens words to characters in time on a long line of many edits', () => {
+    const words = Array.from({ length: 25_000 }, (_, index) => `\u00e9t${index % 10}`);
+    const old = words.join(' ');
+    const added = words.map((word, index) => (index % 10 === 0 ? `\u00e8${word}` : word)).join(' ');
+
+    const started = performance.now();
+    const diff = diffText(old, added);
+    const elapsed = performance.now() - started;
+
+    expect(diff.changes).toHaveLength(1);
+    expect(elapsed).toBeLessThan(process.env.CI ? 3000 : 1000);
+  });
+
   test('treats a single blank line as a line, not as an empty file', () => {
     expect(diffText('\n', '\nfoo\n').changes).toEqual([
       { old: { start: 2, end: 2 }, new: { start: 2, end: 3 }, oldWords: [], newWords: [] },

@@ -21,6 +21,9 @@ The code is VS Code's, apart from these changes. Lines that differ in behavior a
   heuristics keep their ASCII words.
 - The dynamic-programming diff reads the clock once a row instead of once a cell, which took about
   half the time of a large pull request's diffs.
+- The cleanup of short prefixes and suffixes builds a change's line text only for changes long
+  enough to use it. Building it for every change took time that grew with the square of a long
+  line's length.
 
 `test/vscode/fixtures.json` holds VS Code's own fixtures for this diff, and the tests check the copy
 against them. To update the copy, take the same files from a newer release, make the same changes,

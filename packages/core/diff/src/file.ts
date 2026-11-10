@@ -186,18 +186,20 @@ function compute(old: Version, added: Version, options: DiffOptions): FileDiff {
   const budget = budgetOf(options);
   let changes: Change[];
   let approximate = false;
+  // Lines are compared as git compares them, with their line endings.
+  const marker = markerFor(old, added);
+  const oldDiffed = withEndings(old, marker);
+  const newDiffed = withEndings(added, marker);
+  const edges = new Graphemes();
   if (old.lines.length === 0 || added.lines.length === 0) {
     // Added or removed: VS Code's diff expects a line on each side.
     changes = whole(old.lines.length, added.lines.length);
-  } else if (isBlankLine(old.lines) || isBlankLine(added.lines)) {
+  } else if (isBlankLine(oldDiffed) || isBlankLine(newDiffed)) {
     // VS Code's diff takes a single blank line for an empty file.
-    changes = blankLineChanges(old.lines, added.lines);
+    changes = blankLineChanges(oldDiffed, newDiffed);
   } else {
     try {
-      // The `\r` of a line ending is part of the line, as git compares lines.
-      const withEndings = (version: Version): string[] =>
-        version.lines.map((line, index) => (version.crlf[index] ? `${line}\r` : line));
-      const diff = computer.computeDiff(withEndings(old), withEndings(added), {
+      const diff = computer.computeDiff(oldDiffed, newDiffed, {
         ignoreTrimWhitespace: !(options.whitespace ?? true),
         maxComputationTimeMs: budget,
         computeMoves: false,
@@ -219,8 +221,8 @@ function compute(old: Version, added: Version, options: DiffOptions): FileDiff {
         };
         if (!change.original.isEmpty && !change.modified.isEmpty) {
           for (const inner of change.innerChanges ?? []) {
-            words(inner.originalRange, result.old, old.lines, false, result.oldWords);
-            words(inner.modifiedRange, result.new, added.lines, false, result.newWords);
+            words(inner.originalRange, result.old, old.lines, edges.of('old'), result.oldWords);
+            words(inner.modifiedRange, result.new, added.lines, edges.of('new'), result.newWords);
           }
         }
         return result;
@@ -230,9 +232,6 @@ function compute(old: Version, added: Version, options: DiffOptions): FileDiff {
       approximate = true;
       changes = whole(old.lines.length, added.lines.length);
     }
-  }
-  if (old.noNewlineAtEnd !== added.noNewlineAtEnd) {
-    changes = withLastLines(changes, old.lines.length, added.lines.length);
   }
   return {
     oldLineCount: old.lines.length,
@@ -290,34 +289,26 @@ function blankLineChanges(old: readonly string[], added: readonly string[]): Cha
 }
 
 /**
- * `changes`, with each side's last line in a change: when only one side ends with a line break,
- * git shows that line as changed.
+ * A version's lines as git compares them: with the `\r` of each `\r\n` put back, and `marker` at
+ * the end of a last line that has no line break, so it differs from any line that has one.
  */
-function withLastLines(changes: Change[], oldCount: number, newCount: number): Change[] {
-  if (oldCount === 0 || newCount === 0) return changes;
-  const last = changes.at(-1);
-  // Unchanged lines line up one for one, so as many follow the last change on each side.
-  const after = oldCount + 1 - (last?.old.end ?? 1);
-  if (after === 0) return changes;
-  if (last && after === 1) {
-    return [
-      ...changes.slice(0, -1),
-      {
-        ...last,
-        old: { ...last.old, end: last.old.end + 1 },
-        new: { ...last.new, end: last.new.end + 1 },
-      },
-    ];
+function withEndings(version: Version, marker: string): string[] {
+  return version.lines.map((line, index) => {
+    if (version.crlf[index]) return `${line}\r`;
+    if (version.noNewlineAtEnd && index === version.lines.length - 1) return `${line}${marker}`;
+    return line;
+  });
+}
+
+/**
+ * A character in neither version, from Unicode's private use area: added to a line, it makes the
+ * line differ from every line of either file but one with the same addition.
+ */
+function markerFor(...versions: Version[]): string {
+  for (let code = 0xe000; ; code++) {
+    const marker = String.fromCodePoint(code < 0xf900 ? code : code - 0xf900 + 0xf0000);
+    if (!versions.some(({ lines }) => lines.some((line) => line.includes(marker)))) return marker;
   }
-  return [
-    ...changes,
-    {
-      old: { start: oldCount, end: oldCount + 1 },
-      new: { start: newCount, end: newCount + 1 },
-      oldWords: [],
-      newWords: [],
-    },
-  ];
 }
 
 /**
@@ -330,6 +321,7 @@ export function lineWords(
   options: Pick<DiffOptions, 'budget'> = {},
 ): { old: WordRange[]; new: WordRange[] } {
   const result = { old: [] as WordRange[], new: [] as WordRange[] };
+  const edges = new Graphemes();
   const diff = computer.computeDiff([oldLine], [newLine], {
     ignoreTrimWhitespace: true,
     maxComputationTimeMs: budgetOf(options),
@@ -338,8 +330,8 @@ export function lineWords(
   });
   for (const change of diff.changes) {
     for (const inner of change.innerChanges ?? []) {
-      words(inner.originalRange, lines1(1), [oldLine], true, result.old);
-      words(inner.modifiedRange, lines1(1), [newLine], true, result.new);
+      words(inner.originalRange, lines1(1), [oldLine], edges.of('old'), result.old, true);
+      words(inner.modifiedRange, lines1(1), [newLine], edges.of('new'), result.new, true);
     }
   }
   return result;
@@ -359,20 +351,32 @@ function words(
   range: Range,
   within: Lines,
   lines: readonly string[],
-  wholeLines: boolean,
+  edges: (line: number, text: string) => Int32Array | undefined,
   out: WordRange[],
+  wholeLines = false,
 ): void {
   const first = Math.max(range.startLineNumber, within.start);
   const last = Math.min(range.endLineNumber, within.end - 1);
   for (let line = first; line <= last; line++) {
     const text = lines[line - 1] ?? '';
-    const start = line === range.startLineNumber ? range.startColumn - 1 : 0;
-    const end = Math.min(
+    let from = line === range.startLineNumber ? range.startColumn - 1 : 0;
+    let to = Math.min(
       line === range.endLineNumber ? range.endColumn - 1 : text.length,
       text.length,
     );
-    if (end <= start) continue;
-    const [from, to] = graphemes(text, start, end);
+    if (to <= from) continue;
+    // Between two ASCII characters is always an edge between characters people see.
+    const ascii = (at: number): boolean =>
+      at <= 0 ||
+      at >= text.length ||
+      (text.charCodeAt(at - 1) < 0x80 && text.charCodeAt(at) < 0x80);
+    if (!ascii(from) || !ascii(to)) {
+      const lineEdges = edges(line, text);
+      if (lineEdges) {
+        from = lineEdges[partitionPoint(lineEdges, (edge) => edge <= from) - 1] ?? from;
+        to = lineEdges[partitionPoint(lineEdges, (edge) => edge < to)] ?? to;
+      }
+    }
     if (wholeLines || from > 0 || to < text.length) out.push({ line, from, to });
   }
 }
@@ -380,22 +384,27 @@ function words(
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 /**
- * `[from, to)` widened to the edges of the characters people see, so a range never splits a
- * surrogate pair, a letter from its accent, or an emoji sequence.
+ * The edges between the characters people see in each line, worked out once a line, so a word
+ * range never splits a surrogate pair, a letter from its accent, or an emoji sequence.
  */
-function graphemes(text: string, from: number, to: number): [number, number] {
-  // Between two ASCII characters is always such an edge.
-  const ascii = (at: number): boolean => at < 0 || at >= text.length || text.charCodeAt(at) < 0x80;
-  if (ascii(from - 1) && ascii(from) && ascii(to - 1) && ascii(to)) return [from, to];
-  let start = from;
-  let end = to;
-  for (const { index, segment } of segmenter.segment(text)) {
-    const next = index + segment.length;
-    if (index < from && from < next) start = index;
-    if (index < to && to < next) end = next;
-    if (index >= to) break;
+class Graphemes {
+  readonly #lines = { old: new Map<number, Int32Array>(), new: new Map<number, Int32Array>() };
+
+  /** A lookup of one side's lines' edges, by line number. */
+  of(side: 'old' | 'new'): (line: number, text: string) => Int32Array {
+    const cache = this.#lines[side];
+    return (line, text) => {
+      let edges = cache.get(line);
+      if (!edges) {
+        const found = [];
+        for (const { index } of segmenter.segment(text)) found.push(index);
+        found.push(text.length);
+        edges = Int32Array.from(found);
+        cache.set(line, edges);
+      }
+      return edges;
+    };
   }
-  return [start, end];
 }
 
 function rowBlocks(changes: readonly Change[], oldCount: number, newCount: number): RowBlock[] {
@@ -475,7 +484,7 @@ export function linesOf(diff: FileDiff, row: number): { old?: number; new?: numb
 }
 
 /** How many items from the start satisfy `before`, which holds up to some point and not after. */
-function partitionPoint<T>(items: readonly T[], before: (item: T) => boolean): number {
+function partitionPoint<T>(items: ArrayLike<T>, before: (item: T) => boolean): number {
   let low = 0;
   let high = items.length;
   while (low < high) {
