@@ -23,7 +23,9 @@
     {
       "plugin": "@nx/js/typescript",
       "options": {
-        "typecheck": { "targetName": "typecheck" },
+        "typecheck": {
+          "targetName": "typecheck"
+        },
         "build": false
       }
     }
@@ -35,6 +37,7 @@
     },
     "test": {
       "cache": true,
+      "parallelism": false,
       "inputs": ["default", "^production", "{workspaceRoot}/vitest.config.ts"]
     },
     "build": {
