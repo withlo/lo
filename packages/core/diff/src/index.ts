@@ -1,0 +1,36 @@
+export {
+  type Change,
+  defaultBudget,
+  defaultContext,
+  type DiffOptions,
+  diffLines,
+  diffText,
+  type FileDiff,
+  type Hunk,
+  lineWords,
+  type Lines,
+  linesOf,
+  type RowBlock,
+  rowCount,
+  rowOf,
+  splitLines,
+  type WordRange,
+} from './file.ts';
+export {
+  editOfNew,
+  editOfOld,
+  type EditedLine,
+  type FileChanges,
+  type Line,
+  type Move,
+  Moves,
+  type Place,
+} from './moved.ts';
+export {
+  changedLines,
+  diffPullRequest,
+  type FileVersions,
+  findMoves,
+  type MovedBlock,
+  type PullRequestDiff,
+} from './pull.ts';
