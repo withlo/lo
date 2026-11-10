@@ -212,6 +212,11 @@ describe('migrate', () => {
       'CREATE TABLE notes_copy AS SELECT value FROM pins_pins, json_each(pins_pins.id);',
       'tried READ on pins_pins',
     ],
+    [
+      'a trigger that names a table it doesn’t have yet, then reaches another feature’s',
+      'CREATE TABLE notes_entries (id INTEGER PRIMARY KEY) STRICT; CREATE TRIGGER notes_t AFTER INSERT ON notes_entries BEGIN INSERT INTO notes_later VALUES (1); DELETE FROM pins_pins; END;',
+      'no such table: main.notes_later',
+    ],
     ['another database', "ATTACH ':memory:' AS other;", 'tried ATTACH'],
     [
       'a pragma that changes the connection',
