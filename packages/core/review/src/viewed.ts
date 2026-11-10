@@ -8,6 +8,9 @@
 
 import type { FileViewedState, GithubError } from '@lo/github';
 
+import type { Revisions } from './revisions.ts';
+import { viewedFileComparison } from './revisions/viewed.ts';
+
 /** What `e` asked GitHub to do to a file. */
 export interface ViewedToggle {
   readonly path: string;
@@ -236,35 +239,22 @@ function whyWriteFailed(toggle: ViewedToggle, login: string, error: GithubError)
 }
 
 /**
- * What the diff shows of a file GitHub says changed since it was viewed, as the revisions module
- * works it out from the file's mark, the head this computer recorded when it was marked viewed
- * and the commit of your last review. Revisions are named by head, and `to` is the latest.
- */
-export type ViewedFileComparison =
-  /** What changed since the revision this computer recorded when the file was marked viewed. */
-  | { kind: 'sinceViewed'; from: string; to: string }
-  /** What changed since your last review: the file was marked viewed elsewhere, or this computer's record of it is no use. */
-  | { kind: 'sinceLastReview'; from: string; to: string }
-  /** The file's whole diff in the pull request, with no marker to compare from. */
-  | { kind: 'full' };
-
-/**
  * The note on a file GitHub says changed since it was viewed: since when it changed, which is what
  * the diff shows of it when the comparison goes up to the latest revision. `state` is the file's
- * mark on GitHub: only a file whose mark a push dismissed gets a note. `comparison` is the file's,
- * as the revisions module works it out. `viewedAt` is the head this computer recorded when the
- * file was marked viewed, and `label` names a revision by its head, such as `r2`, or nothing for a
- * commit no revision has.
+ * mark on GitHub, `viewedAt` the head this computer recorded when the file was marked viewed, and
+ * `lastReview` the commit of your last review. Nothing for any other file, which gets no note.
  */
 export function changedSinceViewed(
+  revisions: Revisions,
   state: FileViewedState | undefined,
-  comparison: ViewedFileComparison | undefined,
   viewedAt: string | undefined,
-  label: (head: string) => string | undefined,
+  lastReview: string | undefined,
 ): string | undefined {
+  if (state === undefined) return undefined;
+  const comparison = viewedFileComparison(revisions, state, viewedAt, lastReview);
   const since = (from: string, when: string): string =>
-    `Changed since ${when} in ${label(from) ?? from.slice(0, 7)}.`;
-  if (state !== 'DISMISSED' || comparison === undefined) return undefined;
+    `Changed since ${when} in ${revisions.label(from) ?? from.slice(0, 7)}.`;
+  if (comparison === undefined) return undefined;
   switch (comparison.kind) {
     // The comparison starts from an earlier revision when that one is gone; the note still names
     // the one the file was viewed in.

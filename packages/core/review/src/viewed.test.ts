@@ -1,6 +1,8 @@
 import { GithubError, type FileViewedState, type GraphQLError } from '@lo/github';
 import { expect, test } from 'vitest';
 
+import { buildRevisions } from './revisions/build.ts';
+import type { PushRecord, Revisions } from './revisions.ts';
 import { changedSinceViewed, ViewedMarks, writeFailed, type ViewedToggle } from './viewed.ts';
 
 function marks(entries: [string, FileViewedState][]): Map<string, FileViewedState> {
@@ -281,58 +283,53 @@ test('the toast says what failed and why', () => {
   }
 });
 
-/** Revisions r1 to r3, with heads `a1` to `a3`. */
-const LABELS = new Map([
-  ['a1', 'r1'],
-  ['a2', 'r2'],
-  ['a3', 'r3'],
-]);
+/** A normal push from `before` to `after` at `minute`. */
+function pushed(before: string | undefined, after: string, minute: number): PushRecord {
+  return { kind: 'activity', before, after, at: at(minute), forced: false };
+}
 
-function label(head: string): string | undefined {
-  return LABELS.get(head);
+/** Revisions r1 to r3, with heads `a1` to `a3`, each a normal push. */
+function revisions(records: PushRecord[] = []): Revisions {
+  return buildRevisions(
+    [pushed(undefined, 'a1', 10), pushed('a1', 'a2', 20), pushed('a2', 'a3', 30), ...records],
+    ['a1', 'a2', 'a3'],
+    'a3',
+    0,
+  );
 }
 
 test('a file that changed since it was viewed says since when', () => {
-  // Viewed in r1, and reviewed in r2 since: what changed since r1.
-  expect(
-    changedSinceViewed('DISMISSED', { kind: 'sinceViewed', from: 'a1', to: 'a3' }, 'a1', label),
-  ).toBe('Changed since you viewed it in r1.');
+  expect(changedSinceViewed(revisions(), 'DISMISSED', 'a1', 'a2')).toBe(
+    'Changed since you viewed it in r1.',
+  );
   // Without a usable record, viewed elsewhere or recorded at the latest revision: since the last
   // review, or with none, since it was viewed.
-  expect(
-    changedSinceViewed(
-      'DISMISSED',
-      { kind: 'sinceLastReview', from: 'a2', to: 'a3' },
-      undefined,
-      label,
-    ),
-  ).toBe('Changed since your last review in r2.');
-  expect(changedSinceViewed('DISMISSED', { kind: 'full' }, 'a3', label)).toBe(
-    'Changed since it was viewed.',
+  for (const viewedAt of [undefined, 'a3', 'ffff']) {
+    expect(changedSinceViewed(revisions(), 'DISMISSED', viewedAt, 'a2')).toBe(
+      'Changed since your last review in r2.',
+    );
+    expect(changedSinceViewed(revisions(), 'DISMISSED', viewedAt, undefined)).toBe(
+      'Changed since it was viewed.',
+    );
+  }
+  // A reviewed commit that was never pushed has no number, so it goes by its short SHA.
+  const reviewed = revisions([{ kind: 'reviewedCommit', commit: 'c7f30e9b1a5d', at: at(40) }]);
+  expect(changedSinceViewed(reviewed, 'DISMISSED', undefined, 'c7f30e9b1a5d')).toBe(
+    'Changed since your last review in c7f30e9.',
   );
-  // A commit no revision has goes by its short SHA.
-  expect(
-    changedSinceViewed(
-      'DISMISSED',
-      { kind: 'sinceLastReview', from: 'c7f30e9b1a5d', to: 'a3' },
-      'ffff',
-      label,
-    ),
-  ).toBe('Changed since your last review in c7f30e9.');
 });
 
 test('the note names the revision the file was viewed in even when its gone', () => {
-  // r2 was force-pushed away, so the comparison starts from r1.
-  expect(
-    changedSinceViewed('DISMISSED', { kind: 'sinceViewed', from: 'a1', to: 'a3' }, 'a2', label),
-  ).toBe('Changed since you viewed it in r2.');
+  // r2 was force-pushed away, so the comparison would start from r1.
+  const gone = revisions();
+  expect(gone.markUnavailable('a2')).toBe(true);
+  expect(changedSinceViewed(gone, 'DISMISSED', 'a2', undefined)).toBe(
+    'Changed since you viewed it in r2.',
+  );
 });
 
 test('other files say nothing', () => {
-  const comparison = { kind: 'sinceViewed', from: 'a1', to: 'a3' } as const;
   for (const state of [undefined, 'VIEWED', 'UNVIEWED'] as const) {
-    expect(changedSinceViewed(state, comparison, 'a1', label)).toBeUndefined();
+    expect(changedSinceViewed(revisions(), state, 'a1', 'a2')).toBeUndefined();
   }
-  // Nor does a file changed since viewed that has no comparison.
-  expect(changedSinceViewed('DISMISSED', undefined, 'a1', label)).toBeUndefined();
 });
