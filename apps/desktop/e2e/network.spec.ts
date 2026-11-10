@@ -60,3 +60,20 @@ test('WebRTC opens no connection, even over TCP', async ({ page }) => {
   expect(candidates).toEqual([]);
   expect(connections).toBe(0);
 });
+
+test("the window's session sends everything to a proxy nothing can listen on", async ({
+  app,
+  page,
+}) => {
+  // The window opens once its session is secured.
+  await expect(page.locator('header.strip')).toBeVisible();
+  const proxies = await app.evaluate(({ session }) => {
+    const windowSession = session.fromPartition('persist:window');
+    return Promise.all(
+      ['https://example.com/', 'http://127.0.0.1:8080/', 'http://localhost/'].map((url) =>
+        windowSession.resolveProxy(url),
+      ),
+    );
+  });
+  expect(proxies).toEqual(['PROXY 127.0.0.1:0', 'PROXY 127.0.0.1:0', 'PROXY 127.0.0.1:0']);
+});

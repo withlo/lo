@@ -11,6 +11,18 @@ export default defineConfig({
       externalizeDeps: false,
     },
   },
+  preload: {
+    build: {
+      outDir: 'dist/preload',
+      // A sandboxed page's preload is one script with nothing to import, in CommonJS: it can't
+      // load modules, as an ES module or otherwise.
+      externalizeDeps: false,
+      isolatedEntries: true,
+      rolldownOptions: {
+        output: { format: 'cjs', entryFileNames: '[name].cjs' },
+      },
+    },
+  },
   renderer: {
     root: 'src/window',
     plugins: [react()],

@@ -1,4 +1,4 @@
-import type { BrowserWindowConstructorOptions } from 'electron';
+import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
 
 /** The tab strip that the system's window controls are drawn over. */
 export interface Strip {
@@ -20,4 +20,10 @@ export function linuxChrome(strip: Strip): BrowserWindowConstructorOptions {
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: strip.ground, symbolColor: strip.symbols, height: strip.height },
   };
+}
+
+/** Repaints the controls when the strip's colors change. */
+export function linuxPaint(window: BrowserWindow, strip: Strip): void {
+  window.setBackgroundColor(strip.ground);
+  window.setTitleBarOverlay({ color: strip.ground, symbolColor: strip.symbols });
 }

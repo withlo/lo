@@ -5,12 +5,19 @@ import { fileURLToPath } from 'node:url';
 import { app, type BrowserWindow, session, type Session } from 'electron';
 
 import { dataFolder, devServer } from './environment.ts';
+import { loadFeatures, type Feature } from './features.ts';
+import { serveFeatures } from './ipc.ts';
 import { windowUrl } from './policy.ts';
 import { registerScheme, secureContents, secureSession } from './security.ts';
 import { openWindow } from './window.ts';
 
 /** The window's build output, next to this file's. */
 const windowFiles = fileURLToPath(new URL('../window', import.meta.url));
+
+// Every feature folder with a main side. No file lists them.
+const features = loadFeatures(
+  import.meta.glob<Feature>('../features/*/main/index.ts', { eager: true, import: 'default' }),
+);
 
 // Everything up to the lock runs before `ready`, as Electron requires.
 app.enableSandbox();
@@ -57,6 +64,7 @@ function start(): void {
       // makes for itself.
       const secured = session.fromPartition('persist:window');
       await secureSession(secured, windowFiles, dev);
+      serveFeatures(features, dev);
       windowSession = secured;
       show();
     })

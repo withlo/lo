@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.window.json",
+  "compilerOptions": {
+    "outDir": ".tsbuild/preload",
+    "types": ["node"]
+  },
+  "include": ["src/preload/**/*.ts"],
+  "references": [
+    {
+      "path": "./tsconfig.shared.json"
+    }
+  ]
+}

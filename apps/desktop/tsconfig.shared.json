@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.core.json",
+  "compilerOptions": {
+    "outDir": ".tsbuild/shared"
+  },
+  "include": ["src/ipc/**/*.ts", "src/features/*/contract.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}
