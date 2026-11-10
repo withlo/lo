@@ -1,0 +1,79 @@
+import { parseSync, Visitor, type Expression, type StringLiteral } from 'oxc-parser';
+
+/** A module a file refers to, and the line it does so on. */
+export interface Import {
+  specifier: string;
+  line: number;
+  /** From `/// <reference types="…" />`, which names a types package rather than a module. */
+  types?: true;
+}
+
+/** A file that doesn't parse, so its imports can't be listed. */
+export class ParseError extends Error {
+  readonly line: number;
+
+  constructor(message: string, line: number) {
+    super(message);
+    this.line = line;
+  }
+}
+
+/**
+ * Lists every module a JavaScript or TypeScript file refers to: imports and re-exports (type-only
+ * ones too), dynamic `import()` with a literal path, `require()`, `import x = require()`,
+ * `import('x')` types and `/// <reference types="x" />`. Throws a `ParseError` for a file that
+ * doesn't parse.
+ */
+export function importsOf(filename: string, source: string): Import[] {
+  const result = parseSync(filename, source);
+  const lineStarts = [0];
+  for (let i = source.indexOf('\n'); i !== -1; i = source.indexOf('\n', i + 1)) {
+    lineStarts.push(i + 1);
+  }
+  const lineOf = (offset: number): number => {
+    let low = 0;
+    let high = lineStarts.length - 1;
+    while (low < high) {
+      const mid = (low + high + 1) >> 1;
+      if ((lineStarts[mid] ?? 0) <= offset) low = mid;
+      else high = mid - 1;
+    }
+    return low + 1;
+  };
+
+  const [error] = result.errors;
+  if (error) throw new ParseError(error.message, lineOf(error.labels[0]?.start ?? 0));
+
+  const found: Import[] = [];
+  const add = (literal: StringLiteral | null | undefined) => {
+    if (literal) found.push({ specifier: literal.value, line: lineOf(literal.start) });
+  };
+  new Visitor({
+    ImportDeclaration: (node) => add(node.source),
+    ExportNamedDeclaration: (node) => add(node.source),
+    ExportAllDeclaration: (node) => add(node.source),
+    ImportExpression: (node) => add(literalOf(node.source)),
+    TSImportType: (node) => add(node.source),
+    TSExternalModuleReference: (node) => add(node.expression),
+    CallExpression: (node) => {
+      const [argument] = node.arguments;
+      if (node.callee.type === 'Identifier' && node.callee.name === 'require' && argument) {
+        if (argument.type !== 'SpreadElement') add(literalOf(argument));
+      }
+    },
+  }).visit(result.program);
+
+  for (const comment of result.comments) {
+    const reference = /^\/\s*<reference\s+types\s*=\s*["']([^"']+)["']/.exec(comment.value);
+    if (comment.type === 'Line' && reference?.[1]) {
+      found.push({ specifier: reference[1], line: lineOf(comment.start), types: true });
+    }
+  }
+
+  return found.toSorted((a, b) => a.line - b.line);
+}
+
+function literalOf(expression: Expression): StringLiteral | undefined {
+  if (expression.type === 'Literal' && typeof expression.value === 'string') return expression;
+  return undefined;
+}
