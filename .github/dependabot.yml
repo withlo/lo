@@ -17,6 +17,10 @@ updates:
         patterns: ['oxlint', 'oxlint-tsgolint']
       stylelint:
         patterns: ['stylelint', 'stylelint-config-*']
+    # The app runs on the Node its Electron release embeds (24), so Node's types move with Electron.
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     # Titles like "chore(deps): bump vitest from x to y" pass commitlint and pr-title.
     commit-message:
       prefix: chore
