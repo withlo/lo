@@ -1,0 +1,42 @@
+import { expect, test } from 'vitest';
+
+import { base64, findSecret } from './secrets.ts';
+
+test('find secret spots the token and token shapes', () => {
+  const secret = 'not-a-real-token-but-secret';
+  expect(findSecret('xx not-a-real-token-but-secret yy', [secret])).toBe('the recording token');
+  const shaped = `"gho_${'a1'.repeat(18)}"`;
+  expect(findSecret(shaped, [])).toBe('something shaped like a GitHub token');
+  const pat = `github_pat_${'A_'.repeat(30)}`;
+  expect(findSecret(pat, [])).toBeDefined();
+  expect(findSecret('gho_FAKE short', [secret])).toBeUndefined();
+});
+
+test('base64 encodes like everyone else', () => {
+  expect(base64('')).toBe('');
+  expect(base64('f')).toBe('Zg==');
+  expect(base64('fo')).toBe('Zm8=');
+  expect(base64('foo')).toBe('Zm9v');
+  expect(base64('foobar')).toBe('Zm9vYmFy');
+  expect(base64(new Uint8Array([0xfb, 0xff]))).toBe('+/8=');
+});
+
+test('find secret spots the token percent encoded or in base64', () => {
+  const secrets = ['gho_not-a-real-token-but-secret'];
+  // In a URL's query.
+  expect(findSecret('?t=gho%5Fnot-a-real-token-but-secret', secrets)).toBeDefined();
+  expect(findSecret('?t=gho%5fnot-a-real-token-but-secret', secrets)).toBeDefined();
+  // In a file's base64 body, as the contents API returns it: at any offset, with GitHub's line
+  // breaks, escaped in JSON.
+  const missed = ['', 'x', 'xy', 'a longer prefix: ']
+    .map((prefix) => {
+      const file = `${prefix}token = gho_not-a-real-token-but-secret\n`;
+      const lines = base64(file).match(/.{1,60}/g) ?? [];
+      return `{"content":"${lines.join('\\n')}"}`;
+    })
+    .filter((json) => findSecret(json, secrets) === undefined);
+  expect(missed).toEqual([]);
+  // And a token shape, percent-encoded.
+  expect(findSecret(`gho%5F${'a1'.repeat(18)}`, [])).toBeDefined();
+  expect(findSecret('nothing to see', secrets)).toBeUndefined();
+});
