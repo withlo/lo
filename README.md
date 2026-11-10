@@ -7,7 +7,8 @@ Lo is a fast, keyboard-first desktop app for reviewing GitHub pull requests. It'
 read far more code than they write, such as someone reviewing the pull requests their coding agents
 open. It talks to GitHub directly and has no backend of its own.
 
-Lo is in early development, and there's no release yet.
+Lo is in early development, and there's no release yet. To run it from source, see
+[`CONTRIBUTING.md`](CONTRIBUTING.md#running-lo).
 
 ## What it does
 

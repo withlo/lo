@@ -1,4 +1,4 @@
-# Saves pnpm's store from main. A cache saved on a pull request's or the merge queue's ref is only
+# Saves pnpm's store and Electron's binary from main. A cache saved on a pull request's or the merge queue's ref is only
 # visible to that ref, while one saved on main is visible to every pull request, so the other
 # workflows only restore it.
 name: cache
@@ -30,3 +30,44 @@ jobs:
         with:
           cache: true
           require-lockfile: true
+
+  # The binary the electron package downloads, which the app job in ci.yml restores.
+  electron:
+    name: electron
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Find Electron's version
+        id: electron
+        run:
+          echo "version=$(jq -r .devDependencies.electron apps/desktop/package.json)" >>
+          "$GITHUB_OUTPUT"
+
+      - name: Look for this version's download
+        id: cached
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ steps.electron.outputs.version }}
+          lookup-only: true
+
+      - if: steps.cached.outputs.cache-hit != 'true'
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          cache: true
+          save-cache: false
+          require-lockfile: true
+
+      - name: Download Electron
+        if: steps.cached.outputs.cache-hit != 'true'
+        run: pnpm --filter @lo/desktop exec install-electron
+
+      - if: steps.cached.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ steps.electron.outputs.version }}

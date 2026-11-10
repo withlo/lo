@@ -15,6 +15,17 @@ pnpm install
 `package.json` pins Node and pnpm under `devEngines`, and pnpm downloads both. The install also sets
 up the git hooks, which check your commit messages and format staged files.
 
+## Running Lo
+
+```sh
+pnpm nx run desktop:dev    # with hot reloading
+pnpm nx run desktop:start  # the built app
+pnpm nx run desktop:e2e    # its smoke test
+```
+
+A copy run from source keeps its data apart from an installed Lo's. See "The desktop app" in
+[`AGENTS.md`](AGENTS.md#the-desktop-app) for more.
+
 ## Making a change
 
 - Work on a branch and open a pull request against `main`. Pull requests are squash-merged.

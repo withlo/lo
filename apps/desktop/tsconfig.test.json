@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.node.json",
+  "compilerOptions": {
+    "outDir": ".tsbuild/test",
+    "lib": ["ES2024", "DOM"]
+  },
+  "include": ["src/**/*.test.ts", "e2e/**/*.ts", "*.config.ts"],
+  "references": [
+    {
+      "path": "./tsconfig.main.json"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.node.json",
+  "compilerOptions": {
+    "outDir": ".tsbuild/main"
+  },
+  "include": ["src/main/**/*.ts", "src/platform/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}
