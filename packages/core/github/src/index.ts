@@ -31,6 +31,7 @@ export * from './pager.ts';
 export * from './patch.ts';
 export * from './pending.ts';
 export * from './pulls.ts';
+export * from './push-history.ts';
 export * from './queries.ts';
 export * from './rate-limit.ts';
 export { refreshGrant, type WebOptions } from './refresh.ts';
