@@ -1,6 +1,7 @@
 // Writes src/theme.css, Lo's Tailwind theme, from design/tokens.json. Tailwind's own palette and
 // sizes are switched off (`--*: initial`), so the only utilities are Lo's tokens, each reading its
-// `--lo-*` variable, which keeps themes switching through `data-theme`.
+// `--lo-*` variable, which keeps themes switching through `data-theme`. That includes spacing: a
+// spacing utility takes one of the `lo-sp-*` steps or a named size, and nothing else.
 //
 //   pnpm nx run ui:codegen
 
@@ -16,6 +17,7 @@ export interface TokenFile {
   color: { tokens: Token[] };
   radius: { tokens: Token[] };
   shadow: { tokens: Token[] };
+  spacing: { tokens: Token[] };
   size: { tokens: Token[] };
   type: { groups: { styles: { name: string; fontWeight: number | string }[] }[] };
 }
@@ -52,8 +54,14 @@ export function theme(tokens: TokenFile): string {
   const usedWeights = [...new Set(styles.map((style) => String(style.fontWeight)))].toSorted();
   const lines = [
     '  --*: initial;',
-    '  /* One spacing step is a pixel: p-8 is 8px. The sizes below are named. */',
-    '  --spacing: 1px;',
+    // There's no `--spacing` base. With one, Tailwind multiplies it by any number, and p-17 becomes
+    // a utility.
+    "  /* Spacing is the design system's steps, and its sizes by name: p-8 is 8px, h-tabbar-h is the",
+    "     strip's height, and p-17 is nothing. Zero is no space, not a step: p-0, min-w-0. */",
+    '  --spacing-0: 0px;',
+    ...tokens.spacing.tokens.map(
+      ({ name }) => `  --spacing-${bare(name, 'lo-sp-')}: var(--${name});`,
+    ),
     ...tokens.size.tokens.map(({ name }) => `  --spacing-${bare(name)}: var(--${name});`),
     ...tokens.color.tokens.map(({ name }) => `  --color-${bare(name)}: var(--${name});`),
     ...tokens.radius.tokens.map(({ name }) => `  --radius-${bare(name, 'lo-r-')}: var(--${name});`),

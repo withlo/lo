@@ -23,7 +23,7 @@ export interface TabBarProps {
 }
 
 const tab = cva(
-  'relative flex h-30 max-w-280 min-w-120 shrink grow-0 basis-280 items-center gap-7 rounded-t-md ps-11 pe-6 whitespace-nowrap no-drag text-small focus-visible:shadow-ring-inset',
+  'relative mt-8 flex max-w-tab-w min-w-tab-w-min shrink grow-0 basis-tab-w items-center gap-6 rounded-t-md ps-12 pe-6 whitespace-nowrap no-drag text-small focus-visible:shadow-ring-inset',
   {
     variants: {
       selected: {
@@ -56,7 +56,7 @@ export function TabBar({ tabs, selected, onSelect, onClose, onNew }: TabBarProps
       <div
         role="tablist"
         aria-label="Pull requests"
-        className="relative flex h-full min-w-0 items-end gap-2 px-8"
+        className="relative flex h-full min-w-0 gap-2 px-8"
       >
         {tabs.map((item) => (
           <TabItem
@@ -72,7 +72,7 @@ export function TabBar({ tabs, selected, onSelect, onClose, onNew }: TabBarProps
           aria-label="Open a pull request"
           aria-disabled={onNew ? undefined : true}
           onClick={onNew}
-          className="ms-4 grid size-26 place-items-center self-center rounded-sm text-fg-muted no-drag hover:bg-hover hover:text-fg focus-visible:shadow-ring"
+          className="ms-6 grid size-control-h-sm place-items-center self-center rounded-sm text-fg-muted no-drag hover:bg-hover hover:text-fg focus-visible:shadow-ring"
         >
           <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M8 3.25v9.5M3.25 8h9.5" />
@@ -110,7 +110,7 @@ function TabItem({
       <span className={`min-w-0 flex-1 truncate ${selected ? 'font-medium' : ''}`}>{title}</span>
       {stack !== undefined && (
         <span
-          className="inline-flex flex-none items-center gap-3 text-fg-muted text-micro"
+          className="inline-flex flex-none items-center gap-4 text-fg-muted text-micro"
           title={`Stack of ${stack}`}
         >
           <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">

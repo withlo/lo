@@ -368,6 +368,8 @@
   --lo-r-pill: 999px; /* Segmented controls, chips, state pills, avatars. */
   /* size */
   --lo-tabbar-h: 38px; /* Height of the tab strip. */
+  --lo-tab-w: 280px; /* Width a tab grows to, and the widest it gets. */
+  --lo-tab-w-min: 120px; /* Narrowest a tab shrinks to. */
   --lo-header-h: 80px; /* Height of the PR header (two rows). */
   --lo-statusbar-h: 26px; /* Height of the status bar. */
   --lo-panel-left-w: 300px; /* Default width of the left panel (stack and files). */

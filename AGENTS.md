@@ -233,8 +233,10 @@ utilities.
 - The Tailwind theme (`src/theme.css`) is generated from `design/tokens.json`
   (`pnpm nx run ui:codegen`). Tailwind's own palette and sizes are off, so the utilities are Lo's
   tokens: colors (`bg-bg-chrome`, `text-fg-muted`), radii, shadows, named sizes (`h-tabbar-h`), type
-  styles (`text-ui`, `read-body`, `code-text`, each the whole font shorthand), and one pixel per
-  spacing step (`gap-8`). The font families are `font-sans` and `font-code`.
+  styles (`text-ui`, `read-body`, `code-text`, each the whole font shorthand), and spacing from the
+  `lo-sp-*` steps (`gap-8` is `lo-sp-8`, 8 px). There is no multiplier, so a number that isn't a
+  step (`p-17`, `max-w-1234`) makes no CSS; zero is allowed (`p-0`, `min-w-0`). The font families
+  are `font-sans` and `font-code`.
 - Bracketed arbitrary values (`text-[11px]`) fail lint, in `ui` and in the app. Where Tailwind can't
   reach, add a utility to `src/styles.css` with `@utility`, reading `var(--lo-*)`.
 - Variants go through `cva` from `class-variance-authority`. Prettier sorts the classes.

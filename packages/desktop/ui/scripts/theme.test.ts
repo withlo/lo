@@ -6,6 +6,7 @@ const css = theme({
   color: { tokens: [{ name: 'lo-bg-chrome' }, { name: 'lo-fg-muted' }] },
   radius: { tokens: [{ name: 'lo-r-sm' }] },
   shadow: { tokens: [{ name: 'lo-shadow-pop' }] },
+  spacing: { tokens: [{ name: 'lo-sp-4' }, { name: 'lo-sp-12' }] },
   size: { tokens: [{ name: 'lo-tabbar-h' }] },
   type: {
     groups: [
@@ -22,7 +23,12 @@ const css = theme({
 describe('theme', () => {
   it("switches off Tailwind's own theme", () => {
     expect(css).toContain('@theme inline {\n  --*: initial;\n  /*');
-    expect(css).toContain('  --spacing: 1px;');
+  });
+
+  it('gives spacing a name per step and no base to multiply', () => {
+    expect(css).toContain('  --spacing-4: var(--lo-sp-4);');
+    expect(css).toContain('  --spacing-12: var(--lo-sp-12);');
+    expect(css).not.toMatch(/--spacing:/);
   });
 
   it('maps each token onto its --lo-* variable, so themes still switch', () => {

@@ -3,9 +3,24 @@
 
 @theme inline {
   --*: initial;
-  /* One spacing step is a pixel: p-8 is 8px. The sizes below are named. */
-  --spacing: 1px;
+  /* Spacing is the design system's steps, and its sizes by name: p-8 is 8px, h-tabbar-h is the
+     strip's height, and p-17 is nothing. Zero is no space, not a step: p-0, min-w-0. */
+  --spacing-0: 0px;
+  --spacing-2: var(--lo-sp-2);
+  --spacing-4: var(--lo-sp-4);
+  --spacing-6: var(--lo-sp-6);
+  --spacing-8: var(--lo-sp-8);
+  --spacing-12: var(--lo-sp-12);
+  --spacing-16: var(--lo-sp-16);
+  --spacing-20: var(--lo-sp-20);
+  --spacing-24: var(--lo-sp-24);
+  --spacing-32: var(--lo-sp-32);
+  --spacing-40: var(--lo-sp-40);
+  --spacing-48: var(--lo-sp-48);
+  --spacing-64: var(--lo-sp-64);
   --spacing-tabbar-h: var(--lo-tabbar-h);
+  --spacing-tab-w: var(--lo-tab-w);
+  --spacing-tab-w-min: var(--lo-tab-w-min);
   --spacing-header-h: var(--lo-header-h);
   --spacing-statusbar-h: var(--lo-statusbar-h);
   --spacing-panel-left-w: var(--lo-panel-left-w);
