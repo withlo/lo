@@ -125,15 +125,17 @@ export class Child {
     return this.#stderr;
   }
 
-  /** Sends `signal` to the child and every process in its group. */
+  /**
+   * Sends `signal` to the child and every process in its group. It never throws: a group that's
+   * gone has nothing left to stop.
+   */
   stop(signal: NodeJS.Signals = 'SIGKILL'): void {
     const { pid } = this.#child;
     if (pid === undefined) return;
     try {
       process.kill(-pid, signal);
-    } catch (error) {
-      // The group is gone already.
-      if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error;
+    } catch {
+      // The group is gone.
     }
   }
 
