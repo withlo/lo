@@ -39,7 +39,9 @@ says from where.
 
 ## Limits
 
-A file longer than three million characters, or nested more than a hundred levels deep, isn't
-parsed. Parsing and querying stop after two seconds. WebAssembly memory never shrinks, so once a
-highlighter fails or its memory passes 256 MB it says it isn't `usable`, and its worker thread
-should be replaced.
+A file longer than eight million characters, or nested more than a hundred levels deep, isn't
+parsed. Nesting counts brackets outside comments, strings and regular expressions, and Markdown's
+quotes and Markdown's and YAML's indentation. Parsing, querying and the parses of injected languages
+stop after two seconds, or once the WebAssembly memory passes 256 MB. That memory never shrinks, so
+once a highlighter fails or its memory passes 256 MB it says it isn't `usable`, and its worker
+thread should be replaced.
