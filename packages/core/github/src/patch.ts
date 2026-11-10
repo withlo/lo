@@ -1,6 +1,6 @@
 /**
- * Reading a file's patch from GitHub's list of a pull request's files: the hunks of its unified
- * diff, without the `diff --git`, `---` and `+++` lines.
+ * Reading a file's patch: the hunks of its unified diff, from GitHub's list of a pull request's
+ * files, which leaves out the `diff --git`, `---` and `+++` lines, or from `git diff` for one file.
  */
 
 /** Rows of one side of a file, counted from 0: from `start` up to, but not including, `end`. */
@@ -70,10 +70,15 @@ export class PatchError extends Error {
 /** Which side a hunk line was on, for `\ No newline at end of file`. */
 type Side = 'old' | 'new' | 'both';
 
+const SECOND_FILE = "a second file's diff starts here, and a patch is one file's";
+
 /**
  * Reads a patch: hunks that each start with a header such as `@@ -12,7 +12,8 @@ fn main()`. Lines
- * may end in `\r\n`, which reads as `\n`, as Lo's buffers have them. Throws a {@link PatchError}
- * when the patch doesn't add up.
+ * may end in `\r\n`, which reads as `\n`, as Lo's buffers have them. A patch from `git diff` may
+ * start with its header: the `diff` line and the lines under it up to the first hunk, such as
+ * `index`, `rename from` or `Binary files … differ`, or a `---` and `+++` pair, which are skipped.
+ * A second file's header is an error, since its hunks are another file's. Throws a
+ * {@link PatchError} when the patch doesn't add up.
  */
 export function parsePatch(patch: string): Patch {
   const parsed: Patch = { hunks: [], oldMissingNewline: false, newMissingNewline: false };
@@ -82,10 +87,12 @@ export function parsePatch(patch: string): Patch {
   let newLeft = 0;
   // The side the previous line was on.
   let last: Side | undefined;
-  const lines = patch.split('\n');
-  for (const [index, raw] of lines.entries()) {
+  // Which of a file's headers have been read: git's `diff` line, and the `---` and `+++` pair.
+  let diffHeader = false;
+  let fileHeader = false;
+  const lines = patch.split('\n').map((raw) => (raw.endsWith('\r') ? raw.slice(0, -1) : raw));
+  for (const [index, line] of lines.entries()) {
     const number = index + 1;
-    const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
     if (oldLeft === 0 && newLeft === 0) {
       if (line.startsWith('@@ ')) {
         const header = parseHeader(line.slice('@@ '.length));
@@ -107,6 +114,21 @@ export function parsePatch(patch: string): Patch {
       }
       // GitHub's patch has no newline after its last line.
       if (line === '' && index + 1 === lines.length) continue;
+      if (line.startsWith('diff ')) {
+        if (diffHeader || fileHeader || parsed.hunks.length > 0) {
+          throw new PatchError(number, SECOND_FILE);
+        }
+        diffHeader = true;
+        continue;
+      }
+      if (line.startsWith('--- ') && lines[index + 1]?.startsWith('+++ ')) {
+        if (fileHeader || parsed.hunks.length > 0) throw new PatchError(number, SECOND_FILE);
+        fileHeader = true;
+        continue;
+      }
+      // The `+++` line after `---`, and the lines under git's `diff` line.
+      const underHeader = fileHeader ? line.startsWith('+++ ') : diffHeader;
+      if (underHeader && parsed.hunks.length === 0) continue;
       throw new PatchError(
         number,
         parsed.hunks.length === 0
@@ -148,10 +170,14 @@ export function parsePatch(patch: string): Patch {
     const line = lines.length - (lines.length > 1 && patch.endsWith('\n') ? 1 : 0);
     throw new PatchError(
       line,
-      `the patch ends ${oldLeft} lines of the base and ${newLeft} of the head short of its last hunk`,
+      `the patch ends ${lineCount(oldLeft)} of the base and ${newLeft} of the head short of its last hunk`,
     );
   }
   return parsed;
+}
+
+function lineCount(count: number): string {
+  return count === 1 ? '1 line' : `${count} lines`;
 }
 
 /** Notes `\ No newline at end of file` for the side of the line before it. */

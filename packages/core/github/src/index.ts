@@ -29,11 +29,13 @@ export {
 } from './metadata.ts';
 export * from './pager.ts';
 export * from './patch.ts';
+export * from './pending.ts';
 export * from './pulls.ts';
 export * from './queries.ts';
 export * from './rate-limit.ts';
 export { refreshGrant, type WebOptions } from './refresh.ts';
 export * from './refs.ts';
+export * from './threads.ts';
 export * from './timeline.ts';
 export * from './token.ts';
 export * from './user.ts';
