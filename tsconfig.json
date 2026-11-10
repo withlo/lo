@@ -22,6 +22,9 @@
     },
     {
       "path": "./packages/desktop/syntax"
+    },
+    {
+      "path": "./packages/desktop/ui"
     }
   ]
 }

@@ -85,20 +85,22 @@ describe('backgroundSettings', () => {
 
 describe('backgroundEnvironment', () => {
   it('is never empty, which would hand the process all of main’s', () => {
-    expect(backgroundEnvironment({ testJobs: false, memoryCap: 1 })).toEqual({
+    expect(backgroundEnvironment({ testJobs: false, memoryCap: 2 * 1024 ** 3 })).toEqual({
       LO_BACKGROUND: '1',
+      LO_BACKGROUND_MEMORY_CAP_MB: '2048',
     });
   });
 
   it('turns the test jobs on only when the settings do', () => {
-    expect(backgroundEnvironment({ testJobs: true, memoryCap: 1 })).toEqual({
+    expect(backgroundEnvironment({ testJobs: true, memoryCap: 300 * 1024 ** 2 })).toEqual({
       LO_BACKGROUND: '1',
+      LO_BACKGROUND_MEMORY_CAP_MB: '300',
       LO_TEST_JOBS: '1',
     });
   });
 
   it('keeps a packaged build’s test jobs off, whatever main’s environment says', () => {
     const settings = backgroundSettings({ packaged: true, env: { LO_TEST_JOBS: '1' } });
-    expect(backgroundEnvironment(settings)).toEqual({ LO_BACKGROUND: '1' });
+    expect(backgroundEnvironment(settings)).not.toHaveProperty('LO_TEST_JOBS');
   });
 });

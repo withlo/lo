@@ -10,4 +10,7 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   reporter: process.env.CI ? [['list'], ['github']] : 'list',
   timeout: 30_000,
+  // Baselines are made on Linux only, so they carry no system in their names.
+  snapshotPathTemplate: '{testDir}/snapshots/{arg}{ext}',
+  expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.002 } },
 });
