@@ -30,6 +30,8 @@ export { fileKind, type FileKind } from './files/kind.ts';
 export {
   changeLetter,
   FileList,
+  githubChange,
+  githubFileEntry,
   type FileChange,
   type FileEntry,
   type FileOrder,
