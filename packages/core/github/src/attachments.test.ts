@@ -227,3 +227,26 @@ test('a large upload has longer to finish', () => {
   expect(uploadTimeoutMs(0)).toBe(30_000);
   expect(uploadTimeoutMs(100 * 1024 * 1024)).toBe((30 + 400) * 1000);
 });
+
+test('an upload never follows a redirect with the file', async () => {
+  const sent: string[] = [];
+  const fetch: typeof globalThis.fetch = (input, init) => {
+    const request = new Request(input, init);
+    sent.push(request.url);
+    return Promise.resolve(
+      sent.length === 1
+        ? new Response(null, {
+            status: 307,
+            headers: { location: 'https://uploads.github.com/elsewhere' },
+          })
+        : new Response('{"url":"https://github.com/user-attachments/assets/a-1"}', {
+            status: 201,
+          }),
+    );
+  };
+  const client = new GithubClient({ fetch, token: new Token('gho_OLD') });
+  await expect(uploadAttachment(client, 1, prepareAttachment('a.png', PNG))).rejects.toThrow(
+    'GitHub answered 307',
+  );
+  expect(sent).toHaveLength(1);
+});

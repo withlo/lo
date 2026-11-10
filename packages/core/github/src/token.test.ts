@@ -2,6 +2,7 @@ import { inspect } from 'node:util';
 
 import { expect, test } from 'vitest';
 
+import { GithubError } from './errors.ts';
 import { Token } from './token.ts';
 
 test('debug hides the token', () => {
@@ -28,4 +29,19 @@ test('kind comes from the prefix', () => {
   expect(new Token('github_pat_x').kind).toBe('fineGrained');
   expect(new Token('ghu_x').kind).toBe('githubApp');
   expect(new Token('x').kind).toBe('unknown');
+});
+
+test("a token can't hold a line break or anything else a token never has", () => {
+  for (const value of ['gho_abc\ndef', 'gho_abc\r\nx: y', 'gho_a\u0000b', 'gho_a b', 'gho_é']) {
+    let thrown: unknown;
+    try {
+      expect(new Token(value)).toBeUndefined();
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown instanceof GithubError && thrown.detail.kind).toBe('tokenUnavailable');
+    const said =
+      thrown instanceof Error ? [thrown.message, thrown.stack, String(thrown.cause)] : [];
+    expect(said.filter((text) => text?.includes('abc') || text?.includes('gho_a'))).toEqual([]);
+  }
 });

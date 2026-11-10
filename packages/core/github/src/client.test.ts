@@ -349,3 +349,88 @@ test('a redirect is not followed when the request says so', async () => {
   expect(response.status).toBe(307);
   expect(fetch.seen).toHaveLength(1);
 });
+
+test('a header that cannot be sent is refused without saying what it held', async () => {
+  const fetch = replay();
+  const account = new GithubClient({
+    fetch,
+    token: new Token('gho_FAKE'),
+    userAgent: 'lo\r\nx-secret: gho_SECRET',
+  });
+  const error = await account.get('/user', json).catch((thrown: unknown) => thrown);
+  expect(error instanceof GithubError && error.detail.kind).toBe('decode');
+  const said = error instanceof Error ? [error.message, error.stack, String(error.cause)] : [];
+  expect(said.filter((text) => text?.includes('gho_SECRET'))).toEqual([]);
+  expect(fetch.seen).toHaveLength(0);
+});
+
+/** A redirect from `/r<from>` to the next one. */
+function hop(from: number): Canned {
+  return [
+    'GET',
+    `https://api.github.com/r${from}`,
+    301,
+    { location: `https://api.github.com/r${from + 1}` },
+    '',
+  ];
+}
+
+test('no more than three redirects are followed', async () => {
+  const fetch = replay(hop(0), hop(1), hop(2), hop(3), [
+    'GET',
+    'https://api.github.com/r4',
+    200,
+    {},
+    '{}',
+  ]);
+  const error = await client(fetch)
+    .get('/r0', json)
+    .catch((thrown: unknown) => thrown);
+  expect(error instanceof GithubError && error.detail).toMatchObject({ kind: 'api', status: 301 });
+  expect(fetch.seen.map(({ url }) => url)).toEqual([
+    'https://api.github.com/r0',
+    'https://api.github.com/r1',
+    'https://api.github.com/r2',
+    'https://api.github.com/r3',
+  ]);
+});
+
+test('a store that throws, or keeps an answer that no longer reads, is gone around', async () => {
+  const url = 'https://api.github.com/repos/o/r/pulls/1';
+  const fetch = replayFetch(
+    new Replay('test', [
+      {
+        request: { method: 'GET', url, if_none_match: 'W/"1"' },
+        response: { status: 304, headers: { etag: 'W/"1"' } },
+      },
+      {
+        request: { method: 'GET', url },
+        response: { status: 200, headers: { etag: 'W/"2"' }, body: { n: 2 } },
+      },
+    ]),
+  );
+  const store = new MemoryStore();
+  store.answers.set(url, { etag: 'W/"1"', body: 'not JSON' });
+  const account = new GithubClient({ fetch, token: new Token('gho_FAKE'), store });
+  expect(await account.getStored('/repos/o/r/pulls/1', json)).toEqual({
+    value: { n: 2 },
+    changed: true,
+  });
+  expect(store.answers.get(url)).toEqual({ etag: 'W/"2"', body: '{"n":2}' });
+
+  const throwing = new GithubClient({
+    fetch: replay(['GET', url, 200, {}, '{"n":3}']),
+    token: new Token('gho_FAKE'),
+    store: {
+      get: () => {
+        throw new Error('the store is gone');
+      },
+      set: () => Promise.resolve(),
+      delete: () => Promise.resolve(),
+    },
+  });
+  expect(await throwing.getStored('/repos/o/r/pulls/1', json)).toEqual({
+    value: { n: 3 },
+    changed: true,
+  });
+});

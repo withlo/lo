@@ -22,4 +22,10 @@ export class MemoryStore {
     this.answers.set(url, { ...answer });
     return Promise.resolve();
   }
+
+  delete(url: string): Promise<void> {
+    if (this.failing) return Promise.reject(new Error('the store refused the delete'));
+    this.answers.delete(url);
+    return Promise.resolve();
+  }
 }

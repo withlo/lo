@@ -1,3 +1,5 @@
+import { GithubError } from './errors.ts';
+
 /** GitHub's token types, told apart by prefix. */
 export type TokenKind =
   /** `gho_`: an OAuth app's token, which is what Lo's own sign-in and `gh` produce. */
@@ -17,6 +19,9 @@ const PREFIXES: readonly [string, TokenKind][] = [
   ['ghu_', 'githubApp'],
 ];
 
+/** What a token is made of: GitHub's tokens are letters, digits and underscores. */
+const TOKEN_CHARACTERS = /^[A-Za-z0-9_-]*$/;
+
 /**
  * A GitHub token held in memory. Printing it, logging it or turning it into JSON shows only its
  * kind, so it can't end up in a log line or an error message by accident. {@link Token.expose} is
@@ -25,9 +30,20 @@ const PREFIXES: readonly [string, TokenKind][] = [
 export class Token {
   readonly #value: string;
 
-  /** Wraps a token, trimming the whitespace a file or a command's output leaves around it. */
+  /**
+   * Wraps a token, trimming the whitespace a file or a command's output leaves around it. Refuses
+   * anything a token can't hold, such as a line break inside a pasted token, without saying what
+   * it was given.
+   */
   constructor(value: string) {
-    this.#value = value.trim();
+    const trimmed = value.trim();
+    if (!TOKEN_CHARACTERS.test(trimmed)) {
+      throw new GithubError({
+        kind: 'tokenUnavailable',
+        message: 'it holds characters a GitHub token never has',
+      });
+    }
+    this.#value = trimmed;
   }
 
   /** The token itself, for an `Authorization` header or the credential store. */

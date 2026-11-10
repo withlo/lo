@@ -46,6 +46,8 @@ export interface Store {
   get(url: string): Promise<StoredAnswer | undefined>;
   /** Keeps `answer` for `url`, in place of what was kept. */
   set(url: string, answer: StoredAnswer): Promise<void>;
+  /** Forgets what was kept for `url`. */
+  delete(url: string): Promise<void>;
 }
 
 /** An answer kept with its ETag, so a `304` can be answered from it. */
@@ -329,19 +331,31 @@ export class GithubClient {
     body: string | Uint8Array | undefined,
     options: SendOptions,
   ): Promise<RestResponse> {
-    const headers = new Headers({
-      accept: 'application/vnd.github+json',
-      'x-github-api-version': API_VERSION,
-      'user-agent': this.#userAgent,
-    });
-    // A client without an account sends no token; one with an account always sends it, even an
-    // empty one, so GitHub refuses it and the account is signed out rather than read as nobody.
-    if (token !== undefined) headers.set('authorization', `token ${token.expose()}`);
-    if (body !== undefined) headers.set('content-type', options.contentType ?? 'application/json');
-    if (options.condition && 'ifNoneMatch' in options.condition) {
-      headers.set('if-none-match', options.condition.ifNoneMatch);
-    } else if (options.condition && 'ifModifiedSince' in options.condition) {
-      headers.set('if-modified-since', options.condition.ifModifiedSince);
+    let headers: Headers;
+    try {
+      headers = new Headers({
+        accept: 'application/vnd.github+json',
+        'x-github-api-version': API_VERSION,
+        'user-agent': this.#userAgent,
+      });
+      // A client without an account sends no token; one with an account always sends it, even an
+      // empty one, so GitHub refuses it and the account is signed out rather than read as nobody.
+      if (token !== undefined) headers.set('authorization', `token ${token.expose()}`);
+      if (body !== undefined) {
+        headers.set('content-type', options.contentType ?? 'application/json');
+      }
+      if (options.condition && 'ifNoneMatch' in options.condition) {
+        headers.set('if-none-match', options.condition.ifNoneMatch);
+      } else if (options.condition && 'ifModifiedSince' in options.condition) {
+        headers.set('if-modified-since', options.condition.ifModifiedSince);
+      }
+    } catch {
+      // What the header said would be in the error, and it may be the token, so the error is
+      // left behind: nothing of it is kept.
+      throw new GithubError({
+        kind: 'decode',
+        message: "a request's headers held something a header can't, so it wasn't sent",
+      });
     }
     let response: Response;
     let bytes: Uint8Array;
@@ -416,18 +430,31 @@ export class GithubClient {
    */
   async getStored<T>(path: string, read: Read<T>): Promise<{ value: T; changed: boolean }> {
     const url = this.url(path);
-    const kept = await this.#store?.get(url).catch(() => undefined);
-    const response = await this.send('GET', url, {
-      condition: kept ? { ifNoneMatch: kept.etag } : undefined,
-    });
-    if (response.status === 304 && kept) {
-      return { value: parseJson(kept.body, read), changed: false };
+    const store = this.#store;
+    const kept = await attempt(() => store?.get(url));
+    if (kept) {
+      const response = await this.send('GET', url, { condition: { ifNoneMatch: kept.etag } });
+      if (response.status !== 304)
+        return { value: await this.#keep(url, response, read), changed: true };
+      try {
+        return { value: parseJson(kept.body, read), changed: false };
+      } catch {
+        // GitHub keeps answering 304 to that ETag, so a kept answer that no longer reads would
+        // fail every read until the resource changed: it's dropped, and the read made in full.
+        await attempt(() => store?.delete(url));
+      }
     }
+    const response = await this.send('GET', url);
+    return { value: await this.#keep(url, response, read), changed: true };
+  }
+
+  /** `response`'s value, kept with its ETag in the store, if it has one. */
+  async #keep<T>(url: string, response: RestResponse, read: Read<T>): Promise<T> {
+    const value = response.json(read);
     const { etag } = response;
-    if (etag !== undefined) {
-      await this.#store?.set(url, { etag, body: response.text() }).catch(() => undefined);
-    }
-    return { value: response.json(read), changed: true };
+    const store = this.#store;
+    if (etag !== undefined) await attempt(() => store?.set(url, { etag, body: response.text() }));
+    return value;
   }
 
   /** A POST, PUT or PATCH of `body`, already serialized, answered with JSON read by `read`. */
@@ -507,6 +534,15 @@ export class GithubClient {
       user: response.json(unchecked<User>),
       scopes: parseScopes(response.header('x-oauth-scopes')),
     };
+  }
+}
+
+/** What `call` answers, or nothing when it fails, whether it throws or rejects. */
+async function attempt<T>(call: () => Promise<T> | undefined): Promise<T | undefined> {
+  try {
+    return await call();
+  } catch {
+    return undefined;
   }
 }
 
