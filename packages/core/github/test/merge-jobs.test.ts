@@ -628,3 +628,67 @@ test('a failed stack merge says what landed', async () => {
   expect(partly.landed).toEqual([bottom.number]);
   expect(partly.landed).not.toContain(middle.number);
 });
+
+test('stopping ends every running job and asks nothing more', async () => {
+  const recorded = new Recorded();
+  const answers = [recorded.sent, recorded.pending, recorded.merged];
+  const harness = await Harness.create('merge_jobs_stopped', answers);
+  const pull = recorded.pull();
+  const [put, get] = [recorded.put(), recorded.get()];
+
+  expect(await harness.merge(pull, recorded.request())).toBeUndefined();
+  await harness.runUntil(2);
+  expect(harness.state(pull)).toEqual({ kind: 'pending', trouble: undefined });
+  harness.events();
+
+  harness.jobs.stop();
+  // Ended at once, not left pending: Lo doesn't know how it ended, and won't ask.
+  expect(unknown(harness.state(pull), 'stopped')).toEqual({ kind: 'stopped' });
+  expect(harness.events()).toEqual([[pull.number, true]]);
+  // Its wait for the next time to ask ended with it: once the poller stops too, nothing is left.
+  harness.poller.stop();
+  await settle();
+  expect(vi.getTimerCount()).toBe(0);
+  await harness.runUntil(60);
+  expect(harness.requests()).toEqual([
+    [0, LOOKUP],
+    [0, put],
+    [1, get],
+  ]);
+  // Nothing starts again, and what ended stays readable until it's forgotten.
+  expect(harness.jobs.merge(harness.poller, pull, recorded.request())).toEqual({
+    refusal: 'stopped',
+  });
+  expect(harness.jobs.followAgain(pull)).toBe(false);
+  expect(harness.jobs.list()).toHaveLength(1);
+  expect(harness.jobs.forget(pull)).toBe(true);
+});
+
+test('a merge still waiting for its turn when the jobs stop is never sent', async () => {
+  const recorded = new Recorded();
+  const harness = await Harness.create('merge_jobs_stopped_unsent', [
+    recorded.sent,
+    recorded.merged,
+  ]);
+  const pull = recorded.pull();
+  // A read holds the account's queue for 5 seconds.
+  const holding = harness.poller.queue.read(
+    () => new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+  );
+
+  expect(await harness.merge(pull, recorded.request())).toBeUndefined();
+  expect(harness.state(pull)).toEqual({ kind: 'sending' });
+  expect(harness.poller.hasUnfinishedWrites()).toBe(true);
+  harness.jobs.stop();
+  expect(unknown(harness.state(pull), 'stopped')).toEqual({ kind: 'stopped' });
+  await settle();
+  // It left the queue: neither the stack lookup nor the merge is sent once the queue is free.
+  expect(harness.poller.hasUnfinishedWrites()).toBe(false);
+  await harness.runUntil(10);
+  await holding;
+  expect(harness.requests()).toEqual([]);
+  expect(harness.state(pull)).toEqual({
+    kind: 'done',
+    outcome: { kind: 'unknown', unknown: { kind: 'stopped' } },
+  });
+});

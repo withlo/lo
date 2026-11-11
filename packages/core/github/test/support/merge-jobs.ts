@@ -142,7 +142,7 @@ export class Harness {
   async merge(
     pull: PullRef,
     request: MergeRequest,
-  ): Promise<undefined | { refusal: 'alreadyMerging' }> {
+  ): Promise<undefined | { refusal: 'alreadyMerging' | 'stopped' }> {
     const merging = this.jobs.merge(this.poller, pull, request);
     await settle();
     return merging;

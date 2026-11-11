@@ -10,7 +10,7 @@
  *
  * It's one for the whole app, not part of a tab, so a merge goes on being followed when the tab that
  * started it closes, and a tab that opens the pull request again finds it. Each pull request has at
- * most one job at a time.
+ * most one job at a time. {@link MergeJobs.stop} ends them all, as when Lo quits.
  *
  * The merge itself is a write, sent once ({@link GithubError.mayHavePosted}): when its answer is
  * lost, the job ends not knowing (`noAnswer`) rather than sending it again. Asking how it's going is
@@ -58,12 +58,19 @@ export interface JobConfig {
 /** How long GitHub asks to wait after a secondary rate limit that doesn't say: at least a minute. */
 const SECONDARY_WAIT = 60_000;
 
-/** What a job needs of the account's poller: `Poller` is one. */
+/**
+ * What a job needs of the account's poller: `Poller` is one. A request given up on through `signal`
+ * while it waits for its turn is never made.
+ */
 export interface MergePoller {
   readonly login: string;
-  mergeAsync(pull: PullRef, request: MergeRequest): Promise<Submitted | MergeRefusal>;
-  mergeAsyncResult(pull: PullRef, uuid: string): Promise<AsyncMerge>;
-  readOnce<T>(request: (client: GithubClient) => Promise<T>): Promise<T>;
+  mergeAsync(
+    pull: PullRef,
+    request: MergeRequest,
+    signal?: AbortSignal,
+  ): Promise<Submitted | MergeRefusal>;
+  mergeAsyncResult(pull: PullRef, uuid: string, signal?: AbortSignal): Promise<AsyncMerge>;
+  readOnce<T>(request: (client: GithubClient) => Promise<T>, signal?: AbortSignal): Promise<T>;
   changed(target: Target): Promise<void>;
 }
 
@@ -124,6 +131,11 @@ export type Unknown =
   | { kind: 'lost'; error: GithubErrorDetail }
   /** It was still pending when Lo stopped asking ({@link JobConfig.followFor}). */
   | { kind: 'stillPending' }
+  /**
+   * The jobs were stopped before it ended ({@link MergeJobs.stop}). A merge still waiting for its
+   * turn was never sent; one sent may have been taken, and Lo asks nothing more about it.
+   */
+  | { kind: 'stopped' }
   /** GitHub answered a status Lo doesn't know, which is never read as merged. */
   | { kind: 'status'; status: string };
 
@@ -186,6 +198,8 @@ export class MergeJobs {
   readonly #config: JobConfig;
   readonly #jobs = new Map<string, Held>();
   readonly #listeners = new Set<(changed: JobChanged) => void>();
+  /** Aborted by {@link MergeJobs.stop}: gives up every wait, and every request still waiting for its turn. */
+  readonly #stopping = new AbortController();
 
   constructor(config: Partial<JobConfig> = {}) {
     this.#config = {
@@ -217,13 +231,15 @@ export class MergeJobs {
 
   /**
    * Asks GitHub to merge `pull` as `request` says, as `poller`'s account, in its queue, and follows
-   * the merge until it ends. Refused while a job for `pull` is running; an ended one is replaced.
+   * the merge until it ends. Refused while a job for `pull` is running, and once the jobs are
+   * stopped; an ended one is replaced.
    */
   merge(
     poller: MergePoller,
     pull: PullRef,
     request: MergeRequest,
-  ): undefined | { refusal: 'alreadyMerging' } {
+  ): undefined | { refusal: 'alreadyMerging' } | { refusal: 'stopped' } {
+    if (this.#stopping.signal.aborted) return { refusal: 'stopped' };
     const known = this.#jobs.get(pull.key);
     if (known && isRunning(known.job)) return { refusal: 'alreadyMerging' };
     const held: Held = {
@@ -249,9 +265,11 @@ export class MergeJobs {
   /**
    * Asks GitHub again about a merge Lo stopped following without knowing how it ended: it was still
    * pending, GitHub didn't answer about it, or answered a status Lo doesn't know. A read, never the
-   * merge sent again. Answers whether it did: only a job that ended that way, with a UUID, can.
+   * merge sent again. Answers whether it did: only a job that ended that way, with a UUID, can, and
+   * only until the jobs are stopped.
    */
   followAgain(pull: PullRef): boolean {
+    if (this.#stopping.signal.aborted) return false;
     const held = this.#jobs.get(pull.key);
     const state = held?.job.state;
     if (!held || state?.kind !== 'done' || !resumable(state.outcome) || !held.job.uuid)
@@ -270,13 +288,31 @@ export class MergeJobs {
     return true;
   }
 
+  /**
+   * Stops following merges, as when Lo quits: every running job ends at once as `stopped`, and its
+   * pull request and repository are read again, as after any job. Nothing more is sent or asked: a
+   * merge still waiting for its turn in the account's queue is never sent, and every wait ends now.
+   * A request already sent finishes, as a poller's write does once it's sent, and its answer is
+   * dropped. Jobs that ended stay readable, and no merge starts after this.
+   */
+  stop(): void {
+    if (this.#stopping.signal.aborted) return;
+    // First, so a listener that hears a job end can't start another.
+    this.#stopping.abort(new Error('Lo stopped following merges'));
+    for (const held of this.#jobs.values()) {
+      if (!isRunning(held.job)) continue;
+      this.#finish(held, { kind: 'unknown', unknown: { kind: 'stopped' } });
+      void Promise.all([held.poller.changed(held.pullRef), held.poller.changed(held.pullRef.repo)]);
+    }
+  }
+
   #emit(pull: PullRef, done: boolean): void {
     for (const listener of this.#listeners) listener({ pull, done });
   }
 
-  /** Whether `held` is still `pull`'s job. */
+  /** Whether `held` is still `pull`'s job, and still running: not ended, by stopping or otherwise. */
   #current(held: Held): boolean {
-    return this.#jobs.get(held.pullRef.key) === held;
+    return this.#jobs.get(held.pullRef.key) === held && isRunning(held.job);
   }
 
   /**
@@ -285,11 +321,12 @@ export class MergeJobs {
    */
   async #follow(held: Held, request: MergeRequest | undefined): Promise<void> {
     const { poller, pullRef: pull } = held;
+    const { signal } = this.#stopping;
     let ending: Outcome | undefined;
     if (request) {
       let submitted: { ok: true; value: Submitted | MergeRefusal } | { ok: false; error: unknown };
       try {
-        submitted = { ok: true, value: await poller.mergeAsync(pull, request) };
+        submitted = { ok: true, value: await poller.mergeAsync(pull, request, signal) };
       } catch (error) {
         submitted = { ok: false, error };
       }
@@ -300,7 +337,7 @@ export class MergeJobs {
     ending ??= await this.#followUntilDone(held);
     if (ending === undefined) return;
     if (ending.kind === 'failed') {
-      ending = await checkFailed(poller, pull, isStackMerge(held.job.request), ending);
+      ending = await checkFailed(poller, pull, isStackMerge(held.job.request), ending, signal);
     }
     if (!this.#current(held)) return;
     this.#finish(held, ending);
@@ -403,19 +440,24 @@ export class MergeJobs {
    */
   async #followUntilDone(held: Held): Promise<Outcome | undefined> {
     const { firstWait, maxWait, followFor, monotonic } = this.#config;
+    const { signal } = this.#stopping;
     const started = monotonic();
     let wait = firstWait;
     for (;;) {
       const uuid = held.job.uuid;
-      if (!this.#current(held) || !isRunning(held.job) || uuid === undefined) return undefined;
+      if (!this.#current(held) || uuid === undefined) return undefined;
       if (monotonic() - started + wait > followFor) {
         return { kind: 'unknown', unknown: { kind: 'stillPending' } };
       }
-      await new Promise((resolve) => setTimeout(resolve, wait));
+      await delay(wait, signal);
+      if (!this.#current(held)) return undefined;
       wait = Math.min(wait * 2, maxWait);
       let answer: { ok: true; value: AsyncMerge } | { ok: false; error: unknown };
       try {
-        answer = { ok: true, value: await held.poller.mergeAsyncResult(held.pullRef, uuid) };
+        answer = {
+          ok: true,
+          value: await held.poller.mergeAsyncResult(held.pullRef, uuid, signal),
+        };
       } catch (error) {
         answer = { ok: false, error };
       }
@@ -437,6 +479,23 @@ export class MergeJobs {
   }
 }
 
+/** Waits `wait` milliseconds, or until `signal` aborts. */
+function delay(wait: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, wait);
+    signal.addEventListener('abort', done, { once: true });
+  });
+}
+
 function detailOf(error: unknown): GithubErrorDetail {
   return error instanceof GithubError
     ? error.detail
@@ -453,24 +512,32 @@ async function checkFailed(
   pull: PullRef,
   stack: boolean,
   failed: Extract<Outcome, { kind: 'failed' }>,
+  signal: AbortSignal,
 ): Promise<Outcome> {
   let merged;
   try {
-    merged = await poller.readOnce((client) => mergedState(client, pull));
+    merged = await poller.readOnce((client) => mergedState(client, pull), signal);
   } catch {
     return { ...failed, landed: undefined };
   }
   if (isMerged(merged)) {
     return { kind: 'merged', sha: merged.merge_commit_sha, githubSaid: failed.message };
   }
-  return { ...failed, landed: stack ? await landedBelow(poller, pull) : [] };
+  return { ...failed, landed: stack ? await landedBelow(poller, pull, signal) : [] };
 }
 
 /** The layers below `pull` in its GitHub stack that are merged, bottom to top, or nothing when the stack can't be read. */
-async function landedBelow(poller: MergePoller, pull: PullRef): Promise<number[] | undefined> {
+async function landedBelow(
+  poller: MergePoller,
+  pull: PullRef,
+  signal: AbortSignal,
+): Promise<number[] | undefined> {
   let holding;
   try {
-    holding = await poller.readOnce((client) => stacksHolding(client, pull.repo, pull.number));
+    holding = await poller.readOnce(
+      (client) => stacksHolding(client, pull.repo, pull.number),
+      signal,
+    );
   } catch {
     return undefined;
   }

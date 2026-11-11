@@ -121,7 +121,7 @@ export class RequestQueue {
 }
 
 /** The error a request given up on through `signal` fails with: the signal's reason, if it's an error. */
-function abandoned(signal: AbortSignal | undefined): Error {
+export function abandoned(signal: AbortSignal | undefined): Error {
   const reason: unknown = signal?.reason;
   return reason instanceof Error
     ? reason

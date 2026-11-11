@@ -17,6 +17,7 @@ import {
   Polling,
   postComment,
   pr,
+  QUIET,
   recorded,
   useFakeClock,
   wall,
@@ -24,6 +25,7 @@ import {
 } from './support/polling.ts';
 import { GithubError } from '../src/errors.ts';
 import { unchecked } from '../src/json.ts';
+import { directMerge, isRefusal, type MergeRequest } from '../src/merge-writes.ts';
 import { PENDING_REVIEW, REVIEW_THREADS, TIMELINE } from '../src/poll/reads.ts';
 import type { CommentId, ReviewWrite } from '../src/review-writes.ts';
 import type { ReviewThread, ReviewThreadList } from '../src/threads.ts';
@@ -153,10 +155,15 @@ test('a write fetches what it changed again', async () => {
   );
 });
 
-test('a stack write reads each pull request and their repository again', async () => {
-  const r = recorded();
-  // GitHub's answer to making #1 and #2 a stack.
-  const stacked: Interaction = {
+/** `request`, which can't be a refusal for a full SHA. */
+function mergeOf(request: MergeRequest | { refusal: string }): MergeRequest {
+  if (isRefusal(request)) throw new Error(`refused: ${JSON.stringify(request)}`);
+  return request;
+}
+
+/** GitHub's answer to making #1 and #2 a stack. */
+function stacked(r: readonly Interaction[]): Interaction {
+  return {
     request: {
       method: 'POST',
       url: 'https://api.github.com/repos/rozed-dev/playground/stacks',
@@ -174,7 +181,11 @@ test('a stack write reads each pull request and their repository again', async (
            "head":{"ref":"stack-b","sha":"b"}}]}`,
     ).response,
   };
-  const t = await Polling.start('stack_write_invalidates', [...recorded(), stacked]);
+}
+
+test('a stack write reads each pull request and their repository again', async () => {
+  const r = recorded();
+  const t = await Polling.start('stack_write_invalidates', [...recorded(), stacked(r)]);
   void t.poller.watch(pr(2));
   void t.poller.setOpen(pr(1));
   await t.run();
@@ -197,6 +208,131 @@ test('a stack write reads each pull request and their repository again', async (
       [5, 'OpenPullRequests'],
     ),
   );
+});
+
+test('a repository poll that read its list before a stack write doesnt keep it', async () => {
+  const r = recorded();
+  // The open pull requests as GitHub lists them once #1 and #2 are a stack, which leaves the REST
+  // pages, and so their ETags, as they were.
+  const after = withBody(at(r, 5), (body) => {
+    object(body, 'data', 'repository', 'pullRequests', 'nodes', 0)['title'] = 'Stacked';
+  });
+  const t = await Polling.start(
+    'stack_write_mid_poll',
+    [at(r, 3), at(r, 8), at(r, 4), at(r, 9), at(r, 5), after, at(r, 10), stacked(r)],
+    { delay: 1000 },
+  );
+  void t.poller.watch(pr(2));
+  await t.run();
+  // The repository's poll reads its open pull requests (1–3 s); the write is asked for while it
+  // does, and goes before the poll's rulesets.
+  await t.runUntil(2);
+  const write = t.poller.createStack(PLAYGROUND, [1, 2]);
+  await t.run();
+  await t.finish(write);
+  await t.runUntil(15);
+  expect(t.requests()).toEqual(
+    log(
+      [0, 'GET /pulls/2'],
+      [1, 'GET /pulls?state=open&per_page=100'],
+      [2, 'OpenPullRequests'],
+      [3, 'POST /stacks'],
+      [4, 'TrunkRules'],
+      [5, 'GET /pulls/2 (since)'],
+      // Not asked with the ETags the poll read before the write, which GitHub would answer `304`.
+      [6, 'GET /pulls?state=open&per_page=100'],
+      [7, 'OpenPullRequests'],
+    ),
+  );
+  // Only the list read after the write is kept and sent.
+  expect(t.poller.openPullRequests(PLAYGROUND)?.value.pullRequests[0]?.title).toBe('Stacked');
+  expect(t.events().filter((event) => event.startsWith('open PRs'))).toEqual([
+    'open PRs of rozed-dev/playground: 2',
+  ]);
+});
+
+test('a repository poll chosen before a stack write doesnt keep what it reads', async () => {
+  const r = recorded();
+  const after = withBody(at(r, 5), (body) => {
+    object(body, 'data', 'repository', 'pullRequests', 'nodes', 0)['title'] = 'Stacked';
+  });
+  const t = await Polling.start(
+    'stack_write_before_poll',
+    [at(r, 3), at(r, 8), at(r, 4), at(r, 9), at(r, 5), after, at(r, 10), stacked(r)],
+    { delay: 1000 },
+  );
+  void t.poller.watch(pr(2));
+  await t.run();
+  await t.runUntil(120);
+  t.requests();
+  const before = t.poller.openPullRequests(PLAYGROUND)?.value;
+  // At the next round, while #2's poll is in flight (121–122 s), the repository's list is asked for
+  // again, and the write is asked for. The write takes the queue once #2's poll is done; the
+  // repository's poll is chosen then, with the ETags it read before, and waits for the write.
+  await t.runUntil(121.5);
+  t.poller.listAgain(PLAYGROUND);
+  const write = t.poller.createStack(PLAYGROUND, [1, 2]);
+  await t.run();
+  await t.finish(write);
+  await t.runUntil(130);
+  expect(t.requests()).toEqual(
+    log(
+      [121, 'GET /pulls/2 (since)'],
+      [122, 'POST /stacks'],
+      // GitHub's REST pages are the same, so its `304` says nothing about the stack.
+      [123, 'GET /pulls?state=open&per_page=100 (etag)'],
+      [124, 'GET /pulls/2 (since)'],
+      [125, 'GET /pulls?state=open&per_page=100'],
+      [126, 'OpenPullRequests'],
+    ),
+  );
+  expect(before?.pullRequests[0]?.title).not.toBe('Stacked');
+  expect(t.poller.openPullRequests(PLAYGROUND)?.value.pullRequests[0]?.title).toBe('Stacked');
+});
+
+test('a stack write while the cache loads leaves out the etags it held', async () => {
+  const r = recorded();
+  const after = withBody(at(r, 5), (body) => {
+    object(body, 'data', 'repository', 'pullRequests', 'nodes', 0)['title'] = 'Stacked';
+  });
+  const t = await Polling.start('stack_write_while_loading', [
+    at(r, 3),
+    at(r, 8),
+    at(r, 4),
+    at(r, 9),
+    at(r, 5),
+    after,
+    at(r, 10),
+    stacked(r),
+  ]);
+  void t.poller.watch(pr(2));
+  await t.run();
+  await t.runUntil(5);
+  // Lo starts again, and the cache takes three seconds to answer with what it read at once.
+  const get = t.cache.get.bind(t.cache);
+  t.cache.get = async (login, target, name) => {
+    const entry = await get(login, target, name);
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    return entry;
+  };
+  await t.restart();
+  t.requests();
+  void t.poller.watch(pr(2));
+  await t.run();
+  const write = t.poller.createStack(PLAYGROUND, [1, 2]);
+  await t.run();
+  await t.finish(write);
+  await t.runUntil(15);
+  expect(t.requests()).toEqual(
+    log(
+      [5, 'POST /stacks'],
+      [8, 'GET /pulls/2 (since)'],
+      // Not with the ETags the cache held from before the write.
+      [8, 'GET /pulls?state=open&per_page=100'],
+      [8, 'OpenPullRequests'],
+    ),
+  );
+  expect(t.poller.openPullRequests(PLAYGROUND)?.value.pullRequests[0]?.title).toBe('Stacked');
 });
 
 test('a retarget reads the base first in its own turn', async () => {
@@ -275,6 +411,136 @@ test('a write that hits a rate limit pauses polling', async () => {
     until: wall(65),
     reason: { kind: 'secondary' },
   });
+});
+
+/** `POST /issues/1/comments`, answered with GitHub's secondary rate limit, asking for a minute. */
+function limitedComment(r: readonly Interaction[]): Interaction {
+  const limited = comment(r);
+  limited.response = answer(
+    at(r, 0),
+    403,
+    [['retry-after', '60']],
+    '{"message":"You have exceeded a secondary rate limit."}',
+  ).response;
+  return limited;
+}
+
+/** GitHub's answer to #2, `stack-b` on `stack-a`, then to moving it onto `main`. */
+function retargeted(r: readonly Interaction[]): Interaction[] {
+  const read = at(r, 3);
+  const moved: Interaction = {
+    request: {
+      method: 'PATCH',
+      url: 'https://api.github.com/repos/rozed-dev/playground/pulls/2',
+      body: '{"base":"main"}',
+    },
+    response: withBody(read, (body) => {
+      object(body, 'base')['ref'] = 'main';
+    }).response,
+  };
+  return [read, moved];
+}
+
+const FULL_SHA = 'a'.repeat(40);
+
+test('while github asks lo to hold off comments and merges are refused', async () => {
+  const r = recorded();
+  const t = await Polling.start('writes_refused_while_paused', [limitedComment(r)]);
+  // The second waits for the first's turn, in which GitHub asks Lo to hold off.
+  const first = outcome(postComment(t.poller));
+  const second = t.poller.addConversationComment(pr(1), 'PR_1', 'hi');
+  await t.run();
+  expect((await first).ok).toBe(false);
+  expect(await t.finish(second)).toEqual({ refusal: 'paused', until: wall(60) });
+  expect(t.poller.writesHeldUntil()).toBe(wall(60));
+  // Asked for during the pause, none is sent.
+  await t.runUntil(30);
+  const paused = { refusal: 'paused', until: wall(60) };
+  expect(await t.poller.addConversationComment(pr(1), 'PR_1', 'hi')).toEqual(paused);
+  expect(await t.poller.resolveThread(pr(1), 'PRRT_1', true)).toEqual(paused);
+  expect(await t.poller.enqueue(pr(1), 'PR_1', FULL_SHA, false)).toEqual(paused);
+  const merge = mergeOf(directMerge(FULL_SHA, 'SQUASH'));
+  expect(await t.poller.mergeAsync(pr(1), merge)).toEqual(paused);
+  expect(await t.poller.disableAutoMerge(pr(1), 'PR_1')).toEqual(paused);
+  expect(t.requests()).toEqual(log([0, 'POST /issues/1/comments']));
+  expect(t.poller.hasUnfinishedWrites()).toBe(false);
+});
+
+test('while github asks lo to hold off a base branch change waits then goes', async () => {
+  const r = recorded();
+  const t = await Polling.start('retarget_waits_while_paused', [
+    limitedComment(r),
+    ...retargeted(r),
+  ]);
+  const first = outcome(postComment(t.poller));
+  await t.run();
+  expect((await first).ok).toBe(false);
+  await t.runUntil(10);
+  const write = t.poller.retarget(PLAYGROUND, { pr: 2, from: 'stack-a', to: 'main' });
+  await t.runUntil(59);
+  expect(t.poller.hasUnfinishedWrites()).toBe(true);
+  const moving = await t.finish(write);
+  expect('base' in moving ? moving.base.ref : moving).toBe('main');
+  expect(t.requests()).toEqual(
+    log([0, 'POST /issues/1/comments'], [60, 'GET /pulls/2'], [60, 'PATCH /pulls/2']),
+  );
+});
+
+test('a write waiting out a pause is never sent once polling stops', async () => {
+  const r = recorded();
+  const t = await Polling.start('write_waiting_stopped', [limitedComment(r), ...retargeted(r)]);
+  const first = outcome(postComment(t.poller));
+  await t.run();
+  await first;
+  const write = outcome(t.poller.retarget(PLAYGROUND, { pr: 2, from: 'stack-a', to: 'main' }));
+  await t.runUntil(10);
+  t.poller.stop();
+  const stopped = await write;
+  expect(stopped.ok).toBe(false);
+  await t.runUntil(120);
+  expect(t.requests()).toEqual(log([0, 'POST /issues/1/comments']));
+  expect(t.poller.hasUnfinishedWrites()).toBe(false);
+});
+
+test('a comment github finds too fast holds every write for a minute then two', async () => {
+  const r = recorded();
+  const body = {
+    commit_id: FULL_SHA,
+    path: 'a.rs',
+    body: 'Hm.',
+    subject_type: 'file' as const,
+  };
+  const tooFast: Interaction = {
+    request: {
+      method: 'POST',
+      url: 'https://api.github.com/repos/rozed-dev/playground/pulls/1/comments',
+      body: JSON.stringify(body),
+    },
+    response: answer(
+      at(r, 0),
+      422,
+      [],
+      `{"message":"Validation Failed","errors":[{"resource":"PullRequestReviewComment",
+        "code":"unprocessable","field":"data","message":"was submitted too quickly"}]}`,
+    ).response,
+  };
+  const t = await Polling.start('too_fast_holds_writes', [tooFast, ...retargeted(r)]);
+  const write: ReviewWrite = { kind: 'postFileComment', body, head: FULL_SHA };
+  const refused = { refusal: 'tooFast', message: 'was submitted too quickly' };
+  expect(await t.finish(t.poller.sendReview(pr(1), write))).toEqual(refused);
+  // Every write waits a minute: a comment is refused, a base branch change waits for it.
+  expect(t.poller.writesHeldUntil()).toBe(wall(60));
+  expect(await t.poller.sendReview(pr(1), write)).toEqual({ refusal: 'paused', until: wall(60) });
+  const retarget = t.poller.retarget(PLAYGROUND, { pr: 2, from: 'stack-a', to: 'main' });
+  // Polls aren't held: reads aren't content.
+  expect(t.status()).toEqual(QUIET);
+  await t.finish(retarget);
+  expect(t.requests()).toEqual(
+    log([0, 'POST /pulls/1/comments'], [60, 'GET /pulls/2'], [60, 'PATCH /pulls/2']),
+  );
+  // The comment sent again, and turned away again: two minutes this time.
+  expect(await t.finish(t.poller.sendReview(pr(1), write))).toEqual(refused);
+  expect(t.poller.writesHeldUntil()).toBe(wall(180));
 });
 
 // Comments and reviews: what each write reads again, with the review threads, your pending review
