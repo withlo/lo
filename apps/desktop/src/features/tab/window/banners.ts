@@ -37,14 +37,36 @@ export function systemClock(now: number): Clock {
   return { now, time: (at) => format.format(at) };
 }
 
-/** "12 s", "4 minutes", "2 hours": a while, rounded up to what reads well. */
+/** "12 s", "4 minutes", "2 hours": a wait, for what counts down, rounded up. */
 export function span(milliseconds: number): string {
   const seconds = Math.max(1, Math.ceil(milliseconds / 1000));
   if (seconds < 60) return `${seconds} s`;
-  const minutes = Math.ceil(seconds / 60);
-  if (minutes < 60) return minutes === 1 ? 'a minute' : `${minutes} minutes`;
-  const hours = Math.round(minutes / 60);
-  return hours === 1 ? 'an hour' : `${hours} hours`;
+  return whole(Math.ceil(seconds / 60) * 60) ?? `${seconds} s`;
+}
+
+/** How long before `now` `then` was, in words: "just now", "5 minutes ago", "2 hours ago". */
+export function ago(then: number, now: number): string {
+  const said = whole(Math.floor(Math.max(0, now - then) / 1000));
+  return said === undefined ? 'just now' : `${said} ago`;
+}
+
+/** How long after `now` `then` is, in words: "in a moment", "in 5 minutes". */
+export function inWords(then: number, now: number): string {
+  const said = whole(Math.floor(Math.max(0, then - now) / 1000));
+  return said === undefined ? 'in a moment' : `in ${said}`;
+}
+
+/** `seconds` in the largest whole unit, or nothing under a minute. */
+function whole(seconds: number): string | undefined {
+  if (seconds < 60) return undefined;
+  const [count, unit] =
+    seconds < 3_600
+      ? [Math.floor(seconds / 60), 'minute']
+      : seconds < 86_400
+        ? [Math.floor(seconds / 3_600), 'hour']
+        : [Math.floor(seconds / 86_400), 'day'];
+  if (count === 1) return unit === 'hour' ? 'an hour' : `a ${unit}`;
+  return `${count} ${unit}s`;
 }
 
 /** "abc1234": a commit by the start of its ID. */
@@ -126,34 +148,41 @@ export function bannersFor(
         id: 'signedOut',
         tone: 'danger',
         title: `${connection.login} is signed out.`,
-        detail: "GitHub refused Lo's token. Sign in to it again to see what's changed.",
+        detail: `GitHub refused ${connection.login}'s token. Sign in to it again to see what's changed.`,
         actions: [],
       });
       break;
-    case 'rateLimited':
+    case 'rateLimited': {
+      const whose = connection.login === null ? 'without signing in' : `for ${connection.login}`;
       banners.push({
         id: 'rateLimited',
         tone: 'warn',
-        title:
-          connection.login === null
-            ? "GitHub's limit for reading without signing in is used up."
-            : `GitHub's rate limit for ${connection.login} is used up.`,
-        detail: `It resets at ${clock.time(connection.until)}, in ${span(connection.until - clock.now)}. Lo asks again then.`,
+        title: connection.secondary
+          ? 'GitHub asked Lo to slow down.'
+          : `GitHub's rate limit ${whose} is used up.`,
+        detail: `Nothing updates until it resets at ${clock.time(connection.until)}, ${inWords(connection.until, clock.now)}.`,
         actions: [],
       });
       break;
-    case 'offline':
+    }
+    case 'offline': {
+      const saved =
+        connection.savedAt === null
+          ? "Lo can't reach GitHub."
+          : `Showing what Lo saved ${ago(connection.savedAt, clock.now)}.`;
+      const again =
+        connection.retryAt === null
+          ? ''
+          : ` Lo tries again ${inWords(connection.retryAt, clock.now)}.`;
       banners.push({
         id: 'offline',
         tone: 'warn',
         title: "You're offline.",
-        detail:
-          connection.savedAt === null
-            ? "Lo can't reach GitHub, and tries again by itself."
-            : `Showing what Lo saved ${span(clock.now - connection.savedAt)} ago.`,
+        detail: `${saved}${again}`,
         actions: [retry],
       });
       break;
+    }
     case 'live':
     case 'limitLow':
     case undefined:

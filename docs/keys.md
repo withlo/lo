@@ -22,6 +22,19 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | --------------- | ----- | -------- | -------------- |
 | Command palette | `⌘⇧P` | Anywhere | `keys.palette` |
 
+## View
+
+| Action               | Keys    | Where                                                                                  | Command            |
+| -------------------- | ------- | -------------------------------------------------------------------------------------- | ------------------ |
+| Next middle view     | `` ` `` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `tab.nextView`     |
+| Previous middle view | `~`     | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `tab.previousView` |
+
+## Panels
+
+| Action     | Keys | Where                               | Command         |
+| ---------- | ---- | ----------------------------------- | --------------- |
+| Left panel | `⌘\` | Anywhere but `dialog` and `palette` | `tab.leftPanel` |
+
 ## Palettes
 
 | Action               | Keys | Where        | Command        |
@@ -50,6 +63,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Last tab                  | `⌘9`           | Anywhere but `dialog` and `palette`                                                    | `tab.showLast`    |
 | Next tab                  | `⌘⇧]`, `⌃⇥`    | Anywhere but `dialog` and `palette`                                                    | `tab.next`        |
 | Previous tab              | `⌘⇧[`, `⌃⇧⇥`   | Anywhere but `dialog` and `palette`                                                    | `tab.previous`    |
+| Tabs that don’t fit       | `⌘⇧A`          | Anywhere but `dialog` and `palette`                                                    | `tab.more`        |
 | Close tab                 | `⌘W`           | Anywhere but `dialog` and `palette`                                                    | `tab.close`       |
 
 ## Where keys apply
@@ -102,13 +116,15 @@ meanings.
 Code views (`diff`, `file`, `peek` and `box`) run Vim, and Lo leaves Vim's keys to it there, except
 these, which run Lo's command in place of Vim's key:
 
-| Keys             | Action    | Vim's key | Where                                                                | Command        |
-| ---------------- | --------- | --------- | -------------------------------------------------------------------- | -------------- |
-| `?`              | Every key | `?`       | `diff`, `file`, `peek` and `box` (normal and visual)                 | `keys.help`    |
-| `⌃o`             | Back      | `⌃o`      | `diff`, `file` and `peek`                                            | `keys.back`    |
-| `⌃i`             | Forward   | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward` |
-| `Ctrl+Q` (Linux) | Quit Lo   | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `app.quit`     |
-| `Ctrl+W` (Linux) | Close tab | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`    |
+| Keys             | Action               | Vim's key | Where                                                                | Command            |
+| ---------------- | -------------------- | --------- | -------------------------------------------------------------------- | ------------------ |
+| `?`              | Every key            | `?`       | `diff`, `file`, `peek` and `box` (normal and visual)                 | `keys.help`        |
+| `⌃o`             | Back                 | `⌃o`      | `diff`, `file` and `peek`                                            | `keys.back`        |
+| `⌃i`             | Forward              | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`     |
+| `` ` ``          | Next middle view     | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`     |
+| `~`              | Previous middle view | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView` |
+| `Ctrl+Q` (Linux) | Quit Lo              | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `app.quit`         |
+| `Ctrl+W` (Linux) | Close tab            | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`        |
 
 ## The keymap file
 

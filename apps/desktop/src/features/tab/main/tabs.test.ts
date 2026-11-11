@@ -208,6 +208,43 @@ describe('what GitHub says of a pull request', () => {
   });
 });
 
+describe('what a pull request’s tab keeps for main', () => {
+  it('is its account and its repository’s name, kept quietly, and never sent to the window', () => {
+    const on = database();
+    const { tabs, heard } = tabsOn(on);
+    tabs.open(fd);
+    heard.length = 0;
+    expect(tabs.kept('t1')).toEqual({ login: undefined, repository: undefined });
+
+    tabs.remember('t1', { login: 'rozed-bot', repository: 'sharkdp/fd' });
+
+    expect(tabs.kept('t1')).toEqual({ login: 'rozed-bot', repository: 'sharkdp/fd' });
+    expect(heard).toEqual([]);
+    expect(JSON.stringify(tabs.list())).not.toContain('rozed-bot');
+    // It comes back with the tab, and goes with `null`.
+    const after = tabsOn(on).tabs;
+    expect(after.kept('t1')).toEqual({ login: 'rozed-bot', repository: 'sharkdp/fd' });
+    expect(JSON.stringify(after.list())).not.toContain('rozed-bot');
+    after.remember('t1', { login: null });
+    expect(tabsOn(on).tabs.kept('t1')).toEqual({ login: undefined, repository: 'sharkdp/fd' });
+    // A tab that isn't a pull request's keeps nothing.
+    const settings = tabsOn(database()).tabs;
+    settings.open({ kind: 'settings' });
+    settings.remember('t1', { login: 'rozed-bot' });
+    expect(settings.kept('t1')).toEqual({});
+  });
+
+  it('is read back as carefully as any outside value', () => {
+    const on = database();
+    on.prepare(
+      'INSERT INTO tab_tabs (id, position, kind, owner, repo, number, active, login, repository) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)',
+    ).run('fd', 0, 'pull', 'sharkdp', 'fd', 2212, 'not a login!', '../../etc');
+    const tabs = createTabs({ database: on, changed: () => {}, log: () => {} });
+    expect(tabs.kept('fd')).toEqual({ login: undefined, repository: undefined });
+    expect(names(tabs.list())).toEqual(['*fd#2212']);
+  });
+});
+
 describe('restoring the tabs', () => {
   it('brings back every tab in its order, with what GitHub said, and the one on screen', () => {
     const on = database();

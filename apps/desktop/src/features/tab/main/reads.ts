@@ -132,7 +132,12 @@ export function connectionOf(
   if (status.signedOut) return { kind: 'signedOut', login };
   const { rateLimit, offline } = status;
   if (rateLimit.kind === 'paused') {
-    return { kind: 'rateLimited', login, until: Math.max(0, Math.round(rateLimit.until)) };
+    return {
+      kind: 'rateLimited',
+      login,
+      until: Math.max(0, Math.round(rateLimit.until)),
+      secondary: rateLimit.reason.kind === 'secondary',
+    };
   }
   if (offline) {
     return {

@@ -412,7 +412,12 @@ export class PullTab {
       } else if (until !== undefined) {
         this.#scheduleRead(Math.max(0, until - now));
         this.#problem = undefined;
-        this.#anonymousConnection = { kind: 'rateLimited', login: null, until: Math.round(until) };
+        this.#anonymousConnection = {
+          kind: 'rateLimited',
+          login: null,
+          until: Math.round(until),
+          secondary: false,
+        };
         this.#startLocal();
       } else if (error instanceof GithubError && error.isUnauthorized()) {
         // The account is signed out, which its poller says.

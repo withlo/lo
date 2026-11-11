@@ -115,13 +115,19 @@ export type Header = z.output<typeof header>;
 
 /**
  * How what a tab shows stands with GitHub, worst first: the account is signed out, the rate limit
- * is used up, GitHub can't be reached (what's shown is from `savedAt`), or the rate limit is low,
- * so Lo asks less often. `live` when none of these is so.
+ * is used up or GitHub asked Lo to slow down, GitHub can't be reached (what's shown is from
+ * `savedAt`), or the rate limit is low, so Lo asks less often. `live` when none of these is so.
  */
 export const connection = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('live') }),
   z.strictObject({ kind: z.literal('signedOut'), login }),
-  z.strictObject({ kind: z.literal('rateLimited'), login: login.nullable(), until: time }),
+  z.strictObject({
+    kind: z.literal('rateLimited'),
+    login: login.nullable(),
+    until: time,
+    /** Whether GitHub asked Lo to slow down, rather than the limit being used up. */
+    secondary: z.boolean(),
+  }),
   z.strictObject({
     kind: z.literal('offline'),
     savedAt: time.nullable(),

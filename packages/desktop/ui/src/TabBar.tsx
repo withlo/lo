@@ -394,7 +394,7 @@ function TabLabel({ tab: item, selected }: { tab: Tab; selected: boolean }) {
           ) : (
             item.state && <span className={state({ state: item.state })} title={item.state} />
           )}
-          <span className="max-w-1/2 min-w-16 shrink truncate text-fg-muted">{item.repo}</span>
+          <span className="max-w-1/2 min-w-16 shrink truncate text-fg-muted">{item.repo} </span>
           <span className="lo-num flex-none text-fg-muted">#{item.number}</span>
           {isLoading(item) ? (
             <Skeleton className="w-48 min-w-0 shrink" />
