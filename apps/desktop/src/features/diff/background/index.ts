@@ -44,6 +44,15 @@ export default defineRunner(contract, {
     // two seconds a side.
     limits: { deadline: 60_000 },
   },
+  highlight: {
+    async run({ files }) {
+      const highlighter = await Highlighter.create(syntaxLoader());
+      return files.map((file) =>
+        tokensOf(file.path, { old: linesOf(file.old), new: linesOf(file.new) }, highlighter),
+      );
+    },
+    limits: { deadline: 60_000 },
+  },
   moves: {
     run({ files }) {
       return findMoves(
@@ -91,6 +100,11 @@ export function diffFile(
     tokens: tokensOf(file.path, shownSides, options.highlighter),
     changes: changedRunsOf(diff, sides.old, sides.new),
   };
+}
+
+/** Lines joined with `\n`, back as lines; none for `null`. */
+function linesOf(text: string | null): string[] {
+  return text === null ? [] : text.split('\n');
 }
 
 /** Each side highlighted, as its lines are shown: joined with `\n`, as the documents hold them. */

@@ -244,6 +244,13 @@ export function draw(options: DrawOptions): Drawing {
     failed: (id) => pacer.run(() => steady(() => view.loadFailed(id))),
     // Labels at moves' ends change the height of files above the screen too.
     moves: (moves) => pacer.run(() => steady(() => view.setMoves(moves))),
+    tokens: (id, tokens) =>
+      pacer.run(() => {
+        for (const side of ['old', 'new'] as const) {
+          const triples = tokens[side];
+          if (triples) view.setTokens(id, side, triples);
+        }
+      }),
   });
   const stops = [
     setDrawn(tab.id, {

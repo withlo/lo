@@ -18,6 +18,9 @@ export const FILES_PER_JOB = 64;
  */
 export const FAR_LINES = 100_000;
 
+/** The most files one `diff.highlight` job takes. */
+export const HIGHLIGHTS_PER_JOB = 200;
+
 /** The longest a file's diff may take, in milliseconds, before it settles for a coarser one. */
 export const MAX_BUDGET = 20_000;
 
@@ -85,6 +88,25 @@ export const contract = defineJobs('diff', {
       budget: z.number().int().min(0).max(MAX_BUDGET),
     }),
     reply: reply<FileResult[]>(),
+  },
+  /**
+   * Highlights files' sides, as their lines are shown, joined with `\n`: the diff is drawn first,
+   * and its highlighting follows, a batch at a time. `null` for a side with no lines.
+   */
+  highlight: {
+    input: z.strictObject({
+      files: z
+        .array(
+          z.strictObject({
+            path: z.string(),
+            old: z.string().nullable(),
+            new: z.string().nullable(),
+          }),
+        )
+        .min(1)
+        .max(HIGHLIGHTS_PER_JOB),
+    }),
+    reply: reply<{ old?: Uint32Array | undefined; new?: Uint32Array | undefined }[]>(),
   },
   /** The code the pull request moves, among every file's changed lines, files by their place. */
   moves: {

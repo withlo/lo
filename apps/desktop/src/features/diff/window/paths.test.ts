@@ -82,6 +82,7 @@ describe('files with long paths', () => {
           })),
         ),
       moves: () => Promise.resolve([]),
+      highlight: ({ files: highlighted }) => Promise.resolve(highlighted.map(() => ({}))),
       // A left panel that lists only the short paths: the long ones still show, after them.
       order: () => ['z.ts', 'README.md'],
       log: () => undefined,

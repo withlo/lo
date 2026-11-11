@@ -9,7 +9,13 @@ import { splitLines, type FileDiff, type MovedBlock } from '@lo/diff';
 
 import { fileKey } from '../../tree/contract.ts';
 import type { DiffState, FileText, FileVersions, Source } from '../contract.ts';
-import type { ChangedRuns, FileJob, FileResult, Gap } from '../jobs.ts';
+import {
+  HIGHLIGHTS_PER_JOB,
+  type ChangedRuns,
+  type FileJob,
+  type FileResult,
+  type Gap,
+} from '../jobs.ts';
 import { inOrder } from './files.ts';
 import { FileIds } from './ids.ts';
 
@@ -22,6 +28,10 @@ export interface LoaderWork {
     signal: AbortSignal,
   ): Promise<FileResult[]>;
   moves(input: { files: ChangedRuns[] }, signal: AbortSignal): Promise<MovedBlock[]>;
+  highlight(
+    input: { files: { path: string; old: string | null; new: string | null }[] },
+    signal: AbortSignal,
+  ): Promise<{ old?: Uint32Array | undefined; new?: Uint32Array | undefined }[]>;
   /** The order the left panel lists the changed files in, by key, to load them in. */
   order(): readonly string[];
   log(message: string, error: unknown): void;
@@ -69,6 +79,8 @@ export interface Sink {
   /** A file asked for couldn't be loaded. */
   failed(id: string): void;
   moves(moves: readonly Moved[]): void;
+  /** A file's highlighting, which comes after its diff. */
+  tokens(id: string, tokens: Shown['tokens']): void;
 }
 
 /** The files to draw, once every one that shows its lines has them. */
@@ -93,7 +105,9 @@ const BATCH_BYTES = 1024 * 1024;
 /** The most files one batch asks for. */
 const BATCH_FILES = 48;
 /** The batches being diffed at once. */
-const IN_FLIGHT = 4;
+const IN_FLIGHT = 6;
+/** The most text one batch highlights. */
+const HIGHLIGHT_BYTES = 2 * 1024 * 1024;
 /** How long a file's diff may take in a batch, and once it's asked for on its own. */
 const BUDGET = 1000;
 const LOADED_BUDGET = 5000;
@@ -254,7 +268,7 @@ export class Loader {
       return;
     }
     this.#failed.delete(id);
-    void this.#batch(run, [entry], LOADED_BUDGET)
+    void this.#batch(run, [entry], LOADED_BUDGET, true)
       .then(async () => {
         if (run.stopped) return;
         if (this.#shown.get(id)?.from !== run.from) {
@@ -327,7 +341,10 @@ export class Loader {
     const going = new Set<Promise<void>>();
     for (const batch of batches) {
       if (run.stopped) return;
-      const next = this.#batch(run, batch, BUDGET)
+      // Before the view is drawn, the diffs come first and the highlighting after, so it's drawn
+      // sooner; a view already drawn takes both at once, so what it shows isn't left plain.
+      const drawn = this.#ready?.at === run.at && this.#ready.from === run.from;
+      const next = this.#batch(run, batch, BUDGET, drawn)
         .catch((error: unknown) => this.#oneByOne(run, batch, error))
         .finally(() => going.delete(next));
       going.add(next);
@@ -335,7 +352,7 @@ export class Loader {
     }
     await Promise.all(going);
     if (run.stopped) return;
-    await this.#findMoves(run);
+    await Promise.all([this.#findMoves(run), this.#highlight(run)]);
   }
 
   /**
@@ -352,7 +369,7 @@ export class Loader {
         continue;
       }
       try {
-        await this.#batch(run, [entry], BUDGET);
+        await this.#batch(run, [entry], BUDGET, true);
       } catch (alone) {
         if (!run.stopped) this.#fail(run, entry, describe(alone));
       }
@@ -367,7 +384,12 @@ export class Loader {
   }
 
   /** Asks for a batch's texts, then diffs and highlights them, and keeps and gives what came. */
-  async #batch(run: Run, batch: readonly Entry[], budget: number): Promise<void> {
+  async #batch(
+    run: Run,
+    batch: readonly Entry[],
+    budget: number,
+    highlight: boolean,
+  ): Promise<void> {
     const texts = await this.#work.texts({
       at: run.at,
       from: run.from,
@@ -393,7 +415,7 @@ export class Loader {
     if (jobs.length === 0) return;
     const whitespace = this.#whitespace;
     const results = await this.#work.files(
-      { files: jobs.map(({ job }) => job), whitespace, highlight: true, budget },
+      { files: jobs.map(({ job }) => job), whitespace, highlight, budget },
       run.controller.signal,
     );
     if (run.stopped) return;
@@ -473,6 +495,55 @@ export class Loader {
     this.#changed();
   }
 
+  /** Highlights the run's files that came without it, a batch at a time, first files first. */
+  async #highlight(run: Run): Promise<void> {
+    const plain = this.#ordered(run.entries).filter((entry) => {
+      const shown = this.#shown.get(entry.id);
+      return shown?.from === run.from && !shown.tokens.old && !shown.tokens.new;
+    });
+    const going = new Set<Promise<void>>();
+    for (const batch of highlightBatches(plain, (entry) => this.#shown.get(entry.id))) {
+      if (run.stopped) return;
+      const next = this.#highlightBatch(run, batch)
+        .catch((error: unknown) => {
+          if (!run.stopped) this.#work.log('Lo couldn’t highlight part of the diff:', error);
+        })
+        .finally(() => going.delete(next));
+      going.add(next);
+      if (going.size >= IN_FLIGHT) await Promise.race(going);
+    }
+    await Promise.all(going);
+  }
+
+  async #highlightBatch(run: Run, batch: readonly Entry[]): Promise<void> {
+    const files = batch.flatMap((entry) => {
+      const shown = this.#shown.get(entry.id);
+      if (!shown) return [];
+      return [
+        {
+          entry,
+          path: entry.versions.path.text,
+          old: joined(shown.lines.old),
+          new: joined(shown.lines.new),
+        },
+      ];
+    });
+    if (files.length === 0) return;
+    const tokens = await this.#work.highlight(
+      { files: files.map(({ path, old, new: added }) => ({ path, old, new: added })) },
+      run.controller.signal,
+    );
+    if (run.stopped) return;
+    files.forEach(({ entry }, index) => {
+      const kept = this.#shown.get(entry.id);
+      const found = tokens[index];
+      if (!kept || kept.from !== run.from || !found) return;
+      this.#shown.set(entry.id, { ...kept, tokens: found });
+      if (this.#ready?.at === run.at && this.#ready.from === run.from)
+        this.#sink?.tokens(entry.id, found);
+    });
+  }
+
   /** Diffs files again with whitespace shown or hidden, keeping their lines and highlighting. */
   async #rediff(run: Run, entries: readonly Entry[], whitespace: boolean): Promise<void> {
     for (const batch of batchesOf(this.#ordered(entries))) {
@@ -549,6 +620,43 @@ function wants(run: Run, entry: Entry): boolean {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Entries in batches of a few megabytes of lines to highlight, or as many files as a job takes. */
+function highlightBatches(
+  entries: readonly Entry[],
+  shown: (entry: Entry) => Shown | undefined,
+): Entry[][] {
+  const batches: Entry[][] = [];
+  let batch: Entry[] = [];
+  let bytes = 0;
+  for (const entry of entries) {
+    const lines = shown(entry)?.lines;
+    const size = lines ? sizeOf(lines.old) + sizeOf(lines.new) : 0;
+    if (
+      batch.length > 0 &&
+      (batch.length >= HIGHLIGHTS_PER_JOB || bytes + size > HIGHLIGHT_BYTES)
+    ) {
+      batches.push(batch);
+      batch = [];
+      bytes = 0;
+    }
+    batch.push(entry);
+    bytes += size;
+  }
+  if (batch.length > 0) batches.push(batch);
+  return batches;
+}
+
+/** Lines as the documents hold them, joined with `\n`; none for no lines. */
+function joined(lines: readonly string[]): string | null {
+  return lines.length === 0 ? null : lines.join('\n');
+}
+
+function sizeOf(lines: readonly string[]): number {
+  let size = 0;
+  for (const line of lines) size += line.length + 1;
+  return size;
 }
 
 /** Entries in batches of a megabyte or so of text, as main's sizes say, or 48 files at most. */

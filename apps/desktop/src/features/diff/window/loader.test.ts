@@ -80,6 +80,8 @@ function work(order: readonly string[] = []) {
               },
             ],
       ),
+    highlight: ({ files }) =>
+      Promise.resolve(files.map(() => ({ new: Uint32Array.from([0, 1, 1]) }))),
     order: () => order,
     log: () => undefined,
   };
@@ -101,6 +103,8 @@ function sink() {
     diff: (id: string, _diff: FileDiff) => heard.push(`diff ${id}`),
     failed: (id: string) => heard.push(`failed ${id}`),
     moves: (moves) => heard.push(`moves ${moves.length}`),
+    // Highlighting comes as it does: the tests here don't count it.
+    tokens: () => undefined,
   };
   return { made, heard };
 }
@@ -213,6 +217,38 @@ describe('a tab’s diff in the window', () => {
 
     loader.stop();
     expect(signals.map((signal) => signal.aborted)).toEqual([true, true]);
+  });
+
+  it('is ready to draw once the diffs are in, and highlights after, in bigger batches', async () => {
+    const files = Array.from({ length: 60 }, (_, index) => versions(`f${index}.ts`));
+    const { done, asked, list } = work();
+    list(files);
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const highlighted: number[] = [];
+    const loader = new Loader({
+      ...done,
+      highlight: async (input, signal) => {
+        highlighted.push(input.files.length);
+        await held;
+        return done.highlight(input, signal);
+      },
+    });
+    loader.setWhitespace(true);
+    loader.take(state(files));
+    await settle(loader);
+
+    // Ready while the highlighting is still under way, and no diff job highlighted.
+    expect(loader.snapshot().ready).toBeDefined();
+    expect(asked.jobs.every((job) => !job.highlight)).toBe(true);
+    expect(asked.jobs.length).toBe(2);
+    expect(highlighted).toEqual([60]);
+    expect(loader.shown('d0')?.tokens.new).toBe(undefined);
+    release?.();
+    await settle(loader);
+    expect(loader.shown('d59')?.tokens.new).toEqual(Uint32Array.from([0, 1, 1]));
   });
 
   it('gives the same id to a path in every list of the tab, and none to one it hasn’t seen', () => {

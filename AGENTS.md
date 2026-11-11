@@ -475,13 +475,19 @@ order the tree lists them, through `@lo/ui/code`'s diff view.
   kept out as large until `za`, binary, or unchanged. Files are named by their place in the list,
   never by their paths.
 - The window asks for files' texts in batches (`diff.texts`), first files first, and the background
-  process diffs and highlights them (`diff.files`) and finds moved code (`diff.moves`). The view is
-  drawn once every file that shows its lines has them. A new order is a new view, which comes back
-  to the cursor's place.
+  process diffs them (`diff.files`), finds moved code (`diff.moves`) and highlights them
+  (`diff.highlight`). The view is drawn once every file that shows its lines has its diff, and the
+  highlighting follows. A new order, or other files, is a new view, which comes back to what was at
+  the top of the screen. A batch that fails whole is tried a file at a time, and closing the tab
+  cancels its jobs.
 - GitHub's diff is drawn as GitHub gives it: its hunks at their real line numbers, and placeholders
   between them that stay collapsed. Its lines are never diffed again; only the words inside each
-  change are looked for. When the local copy's files are the same ones, each is swapped in place as
-  its diff arrives; otherwise the view is drawn anew once they're all in.
+  change are looked for. A file whose hunks reach past line 100,000 waits for the local copy. When
+  the local copy's files are the same ones, each is swapped in place as its diff arrives, and what
+  was at the top of the screen stays where it is; otherwise the view is drawn anew once they're all
+  in. A file that starts out otherwise in the local copy (generated, large, or no longer either)
+  changes at once if it's off screen, and once it's scrolled away, or the reader opens or closes it,
+  if it isn't.
 - Once the view is drawn, the window says so (`diff.drawn`), and the tab keeps that head on screen,
   even one it took from what it saved: a newer one from GitHub is offered as a newer push.
 - `diff.layout` and `diff.whitespace` are settings; `gi` and `gw` change them.
