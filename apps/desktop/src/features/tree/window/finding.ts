@@ -96,15 +96,11 @@ function watch(tab: string): void {
 /** What to do once the finder has closed and given focus back, as a command run from it needs. */
 let afterClose: (() => void) | undefined;
 
-/** What had focus when the finder opened, which focus goes back to when it closes. */
-let origin: Element | null = null;
-
 /** Opens the finder over the pull request's tab on screen, if there is one. */
 export function openFinder(): void {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return;
   afterClose = undefined;
-  origin = document.activeElement;
   finderStore.setState({ ...closed, open: true, tab: tab.id, repo: tab.repo });
   watch(tab.id);
   search();
@@ -130,10 +126,9 @@ export function closeFinder(then?: () => void): void {
 }
 
 /**
- * The finder has closed: focus goes back to what had it, which the finder places itself, since a
- * palette's own return goes to the first tabbable part of the element, and what had focus may be
- * the middle of the window, which isn't tabbable though it holds tabbable parts. Then it clears what
- * it held, and runs what was waiting.
+ * The finder has closed, and focus is back where it was, or nowhere if that has gone, as when its
+ * tab closed: then it goes to the middle of the window. It clears what the finder held, and runs
+ * what was waiting.
  */
 export function finderClosed(): void {
   const then = afterClose;
@@ -141,11 +136,7 @@ export function finderClosed(): void {
   if (!finderStore.getState().open) {
     listed = [];
     finderStore.setState(closed);
-    const back = origin;
-    origin = null;
-    if (back instanceof HTMLElement && back.isConnected && back !== document.body) {
-      back.focus({ preventScroll: true });
-    } else {
+    if (document.activeElement === null || document.activeElement === document.body) {
       focusMiddle();
     }
   }

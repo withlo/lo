@@ -274,3 +274,31 @@ test('Tab and ⌘⏎ do nothing in the other palettes, and Tab still keeps the k
     await expect(palette).toBeHidden();
   }
 });
+
+test('closing a palette or key help gives focus back to where it was, in a pull request’s tab', async ({
+  page,
+}) => {
+  await shown(page);
+  const overlays = [
+    [`${held}+Shift+p`, 'Command palette'],
+    [`${held}+l`, 'Open a pull request'],
+    [`${held}+p`, 'Go to a file'],
+    ['?', 'Every key'],
+  ] as const;
+  // The middle of the window takes focus without being tabbable, and holds the tree, which is.
+  for (const [where, origin] of [
+    ['the middle', middle(page)],
+    ['the tree', tree(page)],
+  ] as const) {
+    for (const [open, name] of overlays) {
+      await origin.focus();
+      await page.keyboard.press(open);
+      const overlay = page.getByRole('dialog', { name });
+      await expect(overlay).toBeVisible();
+      await expect(origin).not.toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(overlay).toBeHidden();
+      await expect(origin, `${name} from ${where}`).toBeFocused();
+    }
+  }
+});

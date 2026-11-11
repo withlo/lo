@@ -192,7 +192,6 @@ export function Finder() {
         if (!next) closeFinder();
       }}
       onClosed={finderClosed}
-      returnFocus={false}
       label="Go to a file"
       placeholder="Find a file by name"
       keys={keyOf('tree.find')}
