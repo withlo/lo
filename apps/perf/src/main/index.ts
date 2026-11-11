@@ -43,7 +43,7 @@ app
     const loaded = loadPull(name);
     const nonce = randomBytes(18).toString('base64');
     const windowSession = session.fromPartition('perf');
-    secureSession(windowSession, windowFiles, nonce);
+    await secureSession(windowSession, windowFiles, nonce);
     app.on('web-contents-created', (_event, contents) => secureContents(contents));
 
     // The background process starts on the diffs as soon as the files are read. What it sends

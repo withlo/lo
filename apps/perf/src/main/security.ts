@@ -1,6 +1,8 @@
 // What the window may load and do. It runs as the app's window does: sandboxed, in its own
 // JavaScript world, loading only the harness's own files from its own scheme, with a content
-// security policy and nowhere to go.
+// security policy and nowhere to go: every other request is cancelled, whatever could reach the
+// network without one, such as WebRTC, goes through a proxy that leads nowhere, and every
+// permission, device and download is refused.
 
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';
@@ -52,8 +54,17 @@ export function contentSecurityPolicy(nonce: string): string {
   ].join('; ');
 }
 
-/** Serves `root`'s files on the scheme, refuses every other request and every permission. */
-export function secureSession(session: Session, root: string, nonce: string): void {
+/**
+ * The proxy for whatever the window's session sends that isn't a request it can cancel: port 0 on
+ * this machine, where nothing can listen, with this machine's own addresses sent there too.
+ */
+export const deadProxy = { proxyRules: '127.0.0.1:0', proxyBypassRules: '<-loopback>' };
+
+/**
+ * Serves `root`'s files on the scheme, cancels every other request, sends the rest through the
+ * dead proxy, and refuses every permission, device and download.
+ */
+export async function secureSession(session: Session, root: string, nonce: string): Promise<void> {
   const policy = contentSecurityPolicy(nonce);
   session.protocol.handle(scheme, async (request) => {
     const url = new URL(request.url);
@@ -76,13 +87,15 @@ export function secureSession(session: Session, root: string, nonce: string): vo
   session.webRequest.onBeforeRequest((details, callback) => {
     callback({ cancel: !details.url.startsWith(`${scheme}://app/`) });
   });
+  await session.setProxy({ mode: 'fixed_servers', ...deadProxy });
   session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.setPermissionCheckHandler(() => false);
+  session.setDevicePermissionHandler(() => false);
   session.on('will-download', (event) => event.preventDefault());
   session.setSpellCheckerEnabled(false);
 }
 
-/** Keeps a web contents on its page: no new windows, navigation or webviews. */
+/** Keeps a web contents on its page: no new windows, navigation or webviews, WebRTC proxied. */
 export function secureContents(contents: WebContents): void {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   contents.on('will-frame-navigate', (event) => {
@@ -90,4 +103,5 @@ export function secureContents(contents: WebContents): void {
   });
   contents.on('will-redirect', (event) => event.preventDefault());
   contents.on('will-attach-webview', (event) => event.preventDefault());
+  contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
 }
