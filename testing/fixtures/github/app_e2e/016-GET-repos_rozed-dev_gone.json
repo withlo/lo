@@ -1,7 +1,7 @@
 {
   "request": {
     "method": "GET",
-    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/9999"
+    "url": "https://api.github.com/repos/rozed-dev/gone"
   },
   "response": {
     "status": 404,
@@ -9,14 +9,14 @@
       "content-type": "application/json; charset=utf-8",
       "x-github-api-version-selected": "2022-11-28",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4975",
-      "x-ratelimit-reset": "1794408483",
+      "x-ratelimit-remaining": "4973",
+      "x-ratelimit-reset": "1794413460",
       "x-ratelimit-resource": "core",
-      "x-ratelimit-used": "25"
+      "x-ratelimit-used": "27"
     },
     "body": {
       "message": "Not Found",
-      "documentation_url": "https://docs.github.com/rest/pulls/pulls#get-a-pull-request",
+      "documentation_url": "https://docs.github.com/rest/repos/repos#get-a-repository",
       "status": "404"
     }
   }

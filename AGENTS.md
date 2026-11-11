@@ -422,6 +422,33 @@ status bar.
   GitHub's commit IDs, as `LO_GIT_REMOTE`, while the replay server answers from the `app_e2e`
   cassette, recorded from the app itself (`testing/README.md`).
 
+### A pull request's files
+
+The `tree` feature draws a pull request's tab's left panel: the repository's files at the head on
+screen, as a tree, with the files the pull request changes marked, or those alone in review order.
+Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `clone`).
+
+- Once the tab's local copy is ready at the head on screen, main lists the files and what changed
+  from it: the files from the commit's trees, what changed from the merge base with the base branch
+  (renames found, both sides downloaded first, at most 200 MB), and what's generated from the head's
+  `.gitattributes` and the lockfiles `@lo/review` names. Until then it reads GitHub's tree of the
+  head and the pull request's files from the REST API. A tree GitHub lists only in part, or one that
+  couldn't be read, leaves the changed files alone, saying why. What the copy says replaces what
+  GitHub said, and a new head on screen starts again.
+- Up to 20,000 files go to the window whole, on `tree.state`. Past that, main sends the root's
+  entries, and the window asks for each folder's (`tree.folder`) as it opens one. Past 500,000, the
+  tree shows only the changed files.
+- A path travels as its text, with its bytes in hex beside it when they aren't UTF-8, since git
+  stores paths as bytes. The window keys a file by its text, or by a NUL and its bytes for such a
+  path; that key is the file's id in targets and to other features.
+- `tree.find` finds files by name, the changed ones first, 100 at most, matching in chunks so main
+  stays free; a newer search for the same tab stops the one before.
+- Other features reach the tree through its `window/shared.ts`: `fileOrder` and `useFileOrder`, the
+  changed files in the order the panel lists them, which the diff shows them in; `followFile`, which
+  the middle view calls with the file on screen, for the tree to mark and scroll to; and
+  `onShowFile`, through which the diff shows a changed file the tree asks for, and the whole-file
+  view any file. Until a view has asked, `⏎` and "Whole file" say there's nowhere to show the file.
+
 ## The interface
 
 Lo's React components live in `packages/desktop/ui` (`@lo/ui`), ported from the design system's

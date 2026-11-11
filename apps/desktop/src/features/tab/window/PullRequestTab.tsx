@@ -1,5 +1,5 @@
 // A pull request's tab: its header, its banners, the left panel, the middle sheet and the right
-// panel other features fill, and its status bar. Until the tree, the diff and the threads arrive,
+// panel other features fill, and its status bar. Until the diff and the threads arrive,
 // the middle says what's coming.
 
 import { Banner, PRHeader, Spinner, StatusBar, StatusItem, type HeaderConnection } from '@lo/ui';
@@ -193,7 +193,7 @@ function Placeholder({ view }: { view: PullView | undefined }) {
     <div className="grid h-full place-items-center p-32 text-center text-fg-muted text-ui">
       <p className="max-w-read-measure">
         {view?.header
-          ? 'The diff, the file tree and the threads will show here.'
+          ? 'The diff and the threads will show here.'
           : view?.problem
             ? 'Nothing to show yet.'
             : 'Opening the pull request…'}
