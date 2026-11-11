@@ -130,6 +130,9 @@ test('a pending review starts with a line thread and gathers threads and replies
     expect(sent.thread).toBeDefined();
     expect(sent.comment).toBeDefined();
   }
+  // Nobody pushed: GitHub's answer names the head the line thread was written on, the commit the
+  // poller checks a new thread against before it keeps it.
+  expect(seen.range.commit).toBe(seen.head);
   // A range from the base starts on the base's side; GitHub's default would be the head's.
   // A file-level thread has no lines.
   const added = variables(fetch, 'AddPullRequestReviewThread');

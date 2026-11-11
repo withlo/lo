@@ -21,7 +21,7 @@
  * - a deleted comment's review, in the timeline, whose count of comments it shows;
  * - your pending review, when a reply sent to be posted at once joined it, when GitHub's refusal
  *   says it changed elsewhere (a second one refused, something it names gone, or a thread refused
- *   that may have started one);
+ *   that may have started one), or when a thread landed on another head than the one planned;
  * - a comment whose answer was lost, which may be in the threads and your pending review, or in
  *   neither.
  *
@@ -41,7 +41,9 @@ import {
   addConversationComment,
   deleteComment,
   editComment,
+  offHead,
   resolveThread,
+  reviewComment,
   sendReviewWrite,
   type CommentId,
   type ReviewWrite,
@@ -59,6 +61,7 @@ export interface ReviewWriter {
     request: (client: GithubClient) => Promise<T>,
     options?: WriteOptions<T>,
   ): Promise<T>;
+  readOnce<T>(request: (client: GithubClient) => Promise<T>, signal?: AbortSignal): Promise<T>;
   cachedRead<T>(pull: PullRef, kind: ReadKind<T>): { value: T } | undefined;
 }
 
@@ -115,11 +118,17 @@ function heldComment(
  * GitHub made, including a reply that joined a pending review instead of posting; a refusal,
  * including a thread GitHub answered with `null`, comes back as a value.
  *
+ * GitHub puts a line thread added to your pending review on the pull request's head when it gets
+ * it. When that isn't the head the comment was planned on, or GitHub doesn't say which it is
+ * ({@link offHead}), Lo takes the thread back ({@link takeBack}) and refuses the write as
+ * `headMoved`, so the draft stays for the head it was written on. One it can't take back comes
+ * back flagged with where it landed ({@link Sent.landedOn}).
+ *
  * It's never sent again by itself. When it fails in a way that may have posted it anyway
  * ({@link GithubError.mayHavePosted}), the UI compares the draft with your newest comments, as the
  * read-back brings them, before offering to send it again.
  */
-export function sendReview(
+export async function sendReview(
   writer: ReviewWriter,
   pull: PullRef,
   write: ReviewWrite,
@@ -134,29 +143,98 @@ export function sendReview(
   const threads = write.kind === 'startReview' ? write.variables.threads : undefined;
   const namedReview =
     write.kind === 'addThread' || (Array.isArray(threads) ? threads.length > 0 : threads != null);
-  return writer.writeChanging([pull], (client) => sendReviewWrite(client, pull, write), {
-    whilePaused: paused,
-    content: true,
-    again: (result) => {
-      const again = unchecked ? [THREADS] : [];
-      let changedElsewhere: boolean;
-      if (result.ok) {
-        const sent = result.value;
-        if ('refusal' in sent) {
-          changedElsewhere =
-            sent.refusal === 'pendingReviewExists' ||
-            sent.refusal === 'gone' ||
-            (sent.refusal === 'notInDiff' && namedReview);
+  const sent = await writer.writeChanging(
+    [pull],
+    (client) => sendReviewWrite(client, pull, write),
+    {
+      whilePaused: paused,
+      content: true,
+      again: (result) => {
+        const again = unchecked ? [THREADS] : [];
+        let changedElsewhere: boolean;
+        if (result.ok) {
+          const answer = result.value;
+          if ('refusal' in answer) {
+            changedElsewhere =
+              answer.refusal === 'pendingReviewExists' ||
+              answer.refusal === 'gone' ||
+              (answer.refusal === 'notInDiff' && namedReview);
+          } else {
+            changedElsewhere = answer.joinedPending !== undefined || offHead(write, answer);
+          }
         } else {
-          changedElsewhere = sent.joinedPending !== undefined;
+          changedElsewhere =
+            sendsComment && result.error instanceof GithubError && result.error.mayHavePosted();
         }
-      } else {
-        changedElsewhere =
-          sendsComment && result.error instanceof GithubError && result.error.mayHavePosted();
-      }
-      return changedElsewhere ? [...again, PENDING, THREADS] : again;
+        return changedElsewhere ? [...again, PENDING, THREADS] : again;
+      },
     },
-  });
+  );
+  if ('refusal' in sent || !offHead(write, sent)) return sent;
+  return takeBack(writer, pull, sent);
+}
+
+/**
+ * Takes back the line thread `sent`, which GitHub put on another head than the one planned, or on
+ * one it didn't name: deletes its comment, which takes the thread with it, in a write of its own,
+ * held, spaced and paused like any other. Once GitHub says the comment is deleted, or gone, the
+ * write is refused as `headMoved`. When GitHub's answer doesn't say so, or is lost, Lo reads
+ * whether the comment is still there. When it is, when that can't be read, when the delete wasn't
+ * sent (GitHub asked Lo to hold off, or refused it) or there's no comment to delete, the thread
+ * comes back flagged with the head it landed on.
+ */
+async function takeBack(
+  writer: ReviewWriter,
+  pull: PullRef,
+  sent: Sent,
+): Promise<Sent | ReviewWriteRefusal> {
+  const moved: ReviewWriteRefusal = { refusal: 'headMoved', head: sent.commit };
+  const flagged: Sent = { ...sent, landedOn: { head: sent.commit } };
+  const { comment, thread } = sent;
+  if (comment === undefined) return flagged;
+  let deleted: { ok: true; value: undefined | ReviewWriteRefusal } | { ok: false; error: unknown };
+  try {
+    deleted = {
+      ok: true,
+      value: await writer.writeChanging(
+        [pull],
+        (client) => deleteComment(client, { kind: 'thread', id: comment }),
+        { whilePaused: paused, again: () => [PENDING, THREADS] },
+      ),
+    };
+  } catch (error) {
+    deleted = { ok: false, error };
+  }
+  if (deleted.ok) {
+    // Deleted, by GitHub's answer, or gone already.
+    if (deleted.value === undefined || deleted.value.refusal === 'gone') return moved;
+    // Answered with nothing that says it was deleted: it may have been.
+    if (deleted.value.refusal !== 'unexplained') return flagged;
+  } else if (!(deleted.error instanceof GithubError) || !deleted.error.mayHavePosted()) {
+    // Not done: never sent, or refused, as for the rate limit.
+    return flagged;
+  }
+  return (await confirmedGone(writer, comment, thread)) ? moved : flagged;
+}
+
+/**
+ * Whether the comment `comment`, in the thread `thread`, is gone, by a read: true only when GitHub
+ * says it is. A comment that's gone answers "not found".
+ */
+async function confirmedGone(
+  writer: ReviewWriter,
+  comment: string,
+  thread: string | undefined,
+): Promise<boolean> {
+  if (thread === undefined) return false;
+  try {
+    const read = await writer.readOnce((client) => reviewComment(client, comment, thread));
+    if (!read.comment) return true;
+    const { __typename: typename } = read.comment;
+    return typename !== 'PullRequestReviewComment';
+  } catch (error) {
+    return error instanceof GithubError && error.detail.kind === 'notFound';
+  }
 }
 
 /** Resolves the review thread `thread` on `pull`, or with `resolved: false` unresolves it. Never sent again by itself. */

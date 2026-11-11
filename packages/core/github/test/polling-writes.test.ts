@@ -1123,6 +1123,75 @@ test('a write refused because its review changed elsewhere reads it again', asyn
   expect(runs.timeline()).toEqual([]);
 });
 
+test('a thread github put on a newer head reads the threads and your pending review again', async () => {
+  const r = recorded();
+  const pushed = 'b'.repeat(40);
+  /** GitHub's answer to adding a thread on `line`, with its comment `id`, on the newer head. */
+  const onNewerHead = (line: number, id: string) =>
+    mutation(at(r, 1), 'AddPullRequestReviewThread', added(line), {
+      data: {
+        addPullRequestReviewThread: {
+          thread: {
+            id: `PRRT_${line}`,
+            comments: {
+              nodes: [{ id, commit: { oid: pushed }, pullRequestReview: { id: 'PRR_1' } }],
+            },
+          },
+        },
+      },
+    });
+  const deleted = mutation(
+    at(r, 1),
+    'DeletePullRequestReviewComment',
+    { id: 'PRRC_5' },
+    { data: { deletePullRequestReviewComment: { pullRequestReview: { id: 'PRR_1' } } } },
+  );
+  // Answered without saying it was deleted, and still there when Lo reads it.
+  const notDeleted = mutation(
+    at(r, 1),
+    'DeletePullRequestReviewComment',
+    { id: 'PRRC_6' },
+    { data: { deletePullRequestReviewComment: null } },
+  );
+  const stillThere = mutation(
+    at(r, 1),
+    'ReviewComment',
+    { comment: 'PRRC_6', thread: 'PRRT_6' },
+    { data: { comment: { __typename: 'PullRequestReviewComment', id: 'PRRC_6' }, thread: null } },
+  );
+  const answers = [
+    onNewerHead(5, 'PRRC_5'),
+    deleted,
+    onNewerHead(6, 'PRRC_6'),
+    notDeleted,
+    stillThere,
+  ];
+  const { t, runs } = await reviewing('thread_on_newer_head', answers, reviewThreads(1));
+  t.requests();
+
+  // Taken back out and refused: the threads and your pending review are read again after the add,
+  // and again after the delete.
+  let sent = t.poller.sendReview(pr(1), addThread(5));
+  await t.run();
+  await t.runUntil(20);
+  expect(await t.finish(sent)).toEqual({ refusal: 'headMoved', head: pushed });
+  expect([runs.threads, runs.pending]).toEqual([3, 3]);
+  // Left on the newer head when it couldn't be taken back: read again, so the UI shows it there.
+  sent = t.poller.sendReview(pr(1), addThread(6));
+  await t.run();
+  await t.runUntil(30);
+  expect(await t.finish(sent)).toMatchObject({ comment: 'PRRC_6', landedOn: { head: pushed } });
+  expect([runs.threads, runs.pending]).toEqual([5, 5]);
+  const writes = t.requests().filter(([, what]) => /^(Add|Delete|Review)/.test(what));
+  expect(writes.map(([, what]) => what)).toEqual([
+    'AddPullRequestReviewThread',
+    'DeletePullRequestReviewComment',
+    'AddPullRequestReviewThread',
+    'DeletePullRequestReviewComment',
+    'ReviewComment',
+  ]);
+});
+
 /**
  * A comment whose answer was lost may have posted, into your pending review or not: the threads
  * and your pending review are read again, so the UI can look for it there.

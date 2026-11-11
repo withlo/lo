@@ -4,7 +4,7 @@
     "url": "https://api.github.com/graphql",
     "operation": "SubmitPullRequestReview",
     "variables": {
-      "pullRequestReviewId": "PRR_kwDOVleUfc8AAAABWv8USw",
+      "pullRequestReviewId": "PRR_kwDOVleUfc8AAAABXOOIaA",
       "event": "COMMENT",
       "body": "Fixture E11: never submitted."
     },
@@ -15,10 +15,10 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4941",
-      "x-ratelimit-reset": "1794201713",
+      "x-ratelimit-remaining": "4978",
+      "x-ratelimit-reset": "1794371223",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "59"
+      "x-ratelimit-used": "22"
     },
     "body": {
       "data": {
@@ -32,11 +32,11 @@
           ],
           "locations": [
             {
-              "line": 8,
+              "line": 3,
               "column": 3
             }
           ],
-          "message": "Could not resolve to a node with the global id of 'PRR_kwDOVleUfc8AAAABWv8USw'."
+          "message": "Could not resolve to a node with the global id of 'PRR_kwDOVleUfc8AAAABXOOIaA'."
         }
       ]
     }
