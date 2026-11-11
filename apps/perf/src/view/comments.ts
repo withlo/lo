@@ -2,7 +2,7 @@
 // thread there if there is one. It grows as you type. `⌘⏎` adds the comment to the thread; `Esc`
 // leaves insert mode, and `Esc` again closes the box and keeps the draft for the next `c` there.
 
-import { history } from '@codemirror/commands';
+import { history, indentLess, indentMore } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting } from '@codemirror/language';
 import { Prec } from '@codemirror/state';
@@ -10,6 +10,7 @@ import { drawSelection, EditorView, keymap } from '@codemirror/view';
 import { classHighlighter } from '@lezer/highlight';
 import { getCM, Vim, vim } from '@replit/codemirror-vim';
 
+import { forgetJumps } from './jumps.ts';
 import type { Side } from './layout.ts';
 import type { BoxHost } from './widgets.ts';
 
@@ -59,6 +60,14 @@ export class CommentBox implements BoxHost {
         nonce ? EditorView.cspNonce.of(nonce) : [],
         Prec.highest(
           keymap.of([
+            // The box keeps Tab: it indents in insert mode, as in a Markdown list, and does nothing
+            // otherwise, where the browser would move focus out of the box and into the diff.
+            {
+              key: 'Tab',
+              run: (view) => (inserting(view) ? indentMore(view) : true),
+              shift: (view) => (inserting(view) ? indentLess(view) : true),
+              preventDefault: true,
+            },
             {
               key: 'Mod-Enter',
               run: (view) => {
@@ -89,6 +98,10 @@ export class CommentBox implements BoxHost {
       ],
     });
     this.dom.append(hint);
+    // The box sits inside a diff editor's content: no key typed in it goes on to that editor.
+    for (const type of ['keydown', 'keypress', 'keyup', 'beforeinput', 'input'] as const) {
+      this.dom.addEventListener(type, (event) => event.stopPropagation());
+    }
   }
 
   /** The draft so far. */
@@ -117,9 +130,15 @@ export class CommentBox implements BoxHost {
   }
 
   destroy(): void {
+    forgetJumps(this.view);
     this.view.destroy();
     this.dom.remove();
   }
+}
+
+/** Whether Vim in `view` is in insert mode. */
+function inserting(view: EditorView): boolean {
+  return getCM(view)?.state.vim?.insertMode === true;
 }
 
 /** Whether Vim in `view` is in normal mode with nothing typed towards a command. */

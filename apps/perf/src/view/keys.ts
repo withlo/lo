@@ -1,6 +1,7 @@
 // Keys in the diff: Vim's own, from CodeMirror's Vim package, and Lo's. Lo's jumps (`]c`, `]f`,
 // `]t` and their `[` twins) are Vim motions, so counts, visual mode and the jumplist work with
-// them; Vim's keymap is global, but they move only in a diff editor. Lo's actions whose keys Vim
+// them; Vim's keymap is global, but they move only in a diff editor. `Ctrl-o` and `Ctrl-i` walk a
+// jumplist the diff's editors share, so they can go back across to the other side. Lo's actions whose keys Vim
 // uses for editing (`c`, `yl`, `gi`, `zo`, `zc`, `zR`, `za`) and `Tab` go through a handler on
 // diff editors alone, ahead of Vim, so a comment box keeps Vim's meanings.
 
@@ -9,6 +10,7 @@ import { EditorView } from '@codemirror/view';
 import { getCM, Vim } from '@replit/codemirror-vim';
 
 import { idle } from './comments.ts';
+import { addDiffEditor, installJumps, mapJumps, walkJumps } from './jumps.ts';
 
 export type Target = 'change' | 'file' | 'thread';
 
@@ -52,6 +54,7 @@ let motionsDefined = false;
 function defineMotions(): void {
   if (motionsDefined) return;
   motionsDefined = true;
+  installJumps();
   Vim.defineMotion('loJump', (cm, head, motionArgs) => {
     const view: unknown = cm.cm6;
     const keys = view instanceof EditorView ? editors.get(view) : undefined;
@@ -89,7 +92,24 @@ export function diffKeys(keys: DiffKeys): ReturnType<typeof Prec.highest> {
         if (modifiers.has(event.key)) return false;
         const prefix = pending.get(view);
         pending.delete(view);
-        if (event.metaKey || event.ctrlKey || event.altKey) return false;
+        if (event.metaKey || event.ctrlKey || event.altKey) {
+          // A key held back goes to Vim ahead of one with a modifier, as ahead of any other.
+          const cm = getCM(view);
+          if (prefix !== undefined && cm) Vim.handleKey(cm, prefix, 'user');
+          const forward = event.key === 'i' ? true : event.key === 'o' ? false : undefined;
+          if (
+            event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey &&
+            forward !== undefined &&
+            idle(view)
+          ) {
+            event.preventDefault();
+            walkJumps(view, forward);
+            return true;
+          }
+          return false;
+        }
         if (prefix !== undefined) {
           const action = sequences[prefix + event.key];
           if (action) {
@@ -116,6 +136,14 @@ export function diffKeys(keys: DiffKeys): ReturnType<typeof Prec.highest> {
         }
         return false;
       },
+      // A key held back is for this editor alone: it goes when the editor loses focus.
+      blur(_event, view) {
+        pending.delete(view);
+        return false;
+      },
+    }),
+    EditorView.updateListener.of((update) => {
+      if (update.docChanged) mapJumps(update.view, update.changes);
     }),
   ]);
 }
@@ -123,4 +151,5 @@ export function diffKeys(keys: DiffKeys): ReturnType<typeof Prec.highest> {
 /** Tells the keys which editor is a diff editor before any key is typed in it. */
 export function registerDiffEditor(view: EditorView, keys: DiffKeys): void {
   editors.set(view, keys);
+  addDiffEditor(view);
 }

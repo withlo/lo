@@ -39,6 +39,7 @@ import {
 } from './decorations.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
 import { InlineLayout, inlineLines, inlineText } from './inline.ts';
+import { forgetJumps } from './jumps.ts';
 import { type Action, diffKeys, type DiffKeys, registerDiffEditor, type Target } from './keys.ts';
 import { Layout, type Side } from './layout.ts';
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
@@ -396,7 +397,10 @@ export class DiffView {
     document.fonts.removeEventListener('loadingdone', this.#measure);
     this.#aligner.destroy();
     for (const box of this.#boxes.values()) box.destroy();
-    for (const view of this.#editors()) view.destroy();
+    for (const view of this.#editors()) {
+      forgetJumps(view);
+      view.destroy();
+    }
     this.dom.remove();
   }
 
