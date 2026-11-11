@@ -285,6 +285,34 @@ describe('installing the lo command', () => {
     expect(await findCommand(folders, script)).toEqual({ installed: [] });
   });
 
+  it('leaves alone a lo it can’t read, or a folder by that name, and says why', async () => {
+    const at = folder();
+    const folders = { system: join(at, 'system'), user: join(at, 'user') };
+    mkdirSync(folders.system);
+    const unreadable = join(folders.system, 'lo');
+    writeFileSync(unreadable, '#!/bin/sh\necho another lo\n');
+    chmodSync(unreadable, 0o000);
+    let asked = false;
+    const elevate = (): Promise<Elevated> => {
+      asked = true;
+      return Promise.resolve({ kind: 'done' });
+    };
+    const done = await installCommand({ folders, script, elevate });
+    expect(done).toMatchObject({ kind: 'failed' });
+    expect(done.kind === 'failed' ? done.message : '').toContain(
+      `Lo couldn't read ${unreadable} to see whether it wrote it, so it left it as it is`,
+    );
+    expect(asked).toBe(false);
+    chmodSync(unreadable, 0o644);
+    expect(readFileSync(unreadable, 'utf8')).toContain('another lo');
+    expect(existsSync(folders.user)).toBe(false);
+
+    const other = { user: join(at, 'other') };
+    mkdirSync(join(other.user, 'lo'), { recursive: true });
+    expect(await installCommand({ folders: other, script })).toMatchObject({ kind: 'failed' });
+    expect(statSync(join(other.user, 'lo')).isDirectory()).toBe(true);
+  });
+
   it('knows its own, and whether it’s this Lo’s', async () => {
     const at = folder();
     const folders = { user: join(at, 'user') };

@@ -92,14 +92,20 @@ export function isOurs(text: string): boolean {
   return text.split('\n', 3)[1] === MARK;
 }
 
-/** What a file holds, or nothing when there's no file to read. */
-async function contents(path: string): Promise<string | undefined> {
+/** What a file holds, whether there's no file, or why Lo couldn't read it. */
+async function contents(path: string): Promise<Contents> {
   try {
-    return await readFile(path, 'utf8');
-  } catch {
-    return undefined;
+    return { kind: 'text', text: await readFile(path, 'utf8') };
+  } catch (error) {
+    // Only a file that isn't there is absent: one Lo can't read, or a folder, may be anything.
+    const code = error instanceof Error && 'code' in error ? String(error.code) : undefined;
+    return code === 'ENOENT' ? { kind: 'absent' } : { kind: 'unreadable', why: describe(error) };
   }
 }
+
+/** What's at a path Lo might install `lo` at: nothing, a file's text, or what Lo couldn't read. */
+type Contents =
+  { kind: 'absent' } | { kind: 'text'; text: string } | { kind: 'unreadable'; why: string };
 
 /** Where `lo` may be, in the order Lo installs it: the system's folder first, then the person's. */
 export interface Folders {
@@ -115,8 +121,10 @@ export async function findCommand(folders: Folders, script: string): Promise<Com
   for (const folder of [folders.system, folders.user]) {
     if (folder === undefined) continue;
     const path = join(folder, COMMAND);
-    const text = await contents(path);
-    if (text !== undefined && isOurs(text)) installed.push({ path, current: text === script });
+    const found = await contents(path);
+    if (found.kind === 'text' && isOurs(found.text)) {
+      installed.push({ path, current: found.text === script });
+    }
   }
   return { installed };
 }
@@ -148,8 +156,14 @@ export async function installCommand(options: InstallOptions): Promise<Installed
   for (const folder of [folders.system, folders.user]) {
     if (folder === undefined) continue;
     const path = join(folder, COMMAND);
-    const text = await contents(path);
-    if (text !== undefined && !isOurs(text)) return { kind: 'taken', path };
+    const found = await contents(path);
+    if (found.kind === 'unreadable') {
+      return {
+        kind: 'failed',
+        message: `Lo couldn't read ${path} to see whether it wrote it, so it left it as it is: ${found.why}`,
+      };
+    }
+    if (found.kind === 'text' && !isOurs(found.text)) return { kind: 'taken', path };
   }
   const { system, user } = folders;
   if (system !== undefined) {
