@@ -1,6 +1,7 @@
 /**
- * Finding a git Lo can run: one 2.41 or newer that honors `GIT_NO_LAZY_FETCH`. Nothing is
- * remembered between calls, so asking again finds a git installed since.
+ * Finding a git Lo can run: one 2.41 or newer that reads a partial clone without downloading what
+ * it lacks, as `GIT_NO_LAZY_FETCH` asks. Nothing is remembered between calls, so asking again finds
+ * a git installed since.
  */
 
 import { access, appendFile, lstat, mkdir, mkdtemp, realpath, rm, stat } from 'node:fs/promises';
@@ -10,6 +11,7 @@ import { basename, delimiter, dirname, isAbsolute, join } from 'node:path';
 
 import { type Environment, inheritedEnvironment } from './environment.ts';
 import { Git, Runner } from './git.ts';
+import { oidFromOutput } from './oid.ts';
 import { Child, type Finished } from './spawn.ts';
 import {
   compareVersions,
@@ -160,9 +162,8 @@ async function check(
       version,
       check: 'lazyFetch',
       message:
-        `Lo needs a git that can be kept from downloading on its own (GIT_NO_LAZY_FETCH), which ` +
-        `git 2.45 and the May 2024 updates of older versions have, and ${program}, git ` +
-        `${formatVersion(version)}, doesn't.`,
+        `Lo needs a git that can be kept from downloading on its own (GIT_NO_LAZY_FETCH), as ` +
+        `git 2.45 and newer can, and ${program}, git ${formatVersion(version)}, can't.`,
       install,
     };
   }
@@ -230,20 +231,19 @@ async function runLimited(
 }
 
 /**
- * What git 2.41.1, 2.42.2, 2.43.4 and 2.44.1, and the distributions' gits patched alike, say when
- * `GIT_NO_LAZY_FETCH` stops them downloading a missing object.
+ * What a git that honors `GIT_NO_LAZY_FETCH` may say, once, when the variable stops it downloading
+ * a missing object.
  */
 const LAZY_FETCH_WARNING = 'warning: lazy fetching disabled; some objects may not be available';
 
-/** An object ID no repository has. */
-const MISSING_OBJECT = `${'0'.repeat(39)}1`;
-
 /**
- * Whether `git` honors `GIT_NO_LAZY_FETCH`, which git 2.45 added and May 2024's maintenance
- * releases brought to older lines, so asking beats reading its version. It asks a throwaway clone,
- * whose promisor remote doesn't exist, for an object it lacks: a git that honors the variable just
- * says the object is missing, and one that doesn't tries to download it and fails loudly. Neither
- * reaches the network: the remote is a folder, which git may not fetch from.
+ * Whether `git` reads a partial clone without downloading, and says a file the clone lacks is
+ * missing, so asking beats reading its version. It asks a throwaway clone, whose promisor remote
+ * doesn't exist, about a file one of its trees names but it lacks, as a blobless fetch leaves
+ * them. A git that honors `GIT_NO_LAZY_FETCH` just says the file is missing; one that doesn't
+ * tries to download it and fails loudly; and the May 2024 updates of 2.41 to 2.44, which honor the
+ * variable, give up on such a file with a fatal error, which would fail every read of a clone.
+ * None reaches the network: the remote is a folder, which git may not fetch from.
  */
 export async function lazyFetchIsOff(git: Git): Promise<boolean> {
   const folder = await mkdtemp(join(tmpdir(), 'lo-git-'));
@@ -259,11 +259,21 @@ export async function lazyFetchIsOff(git: Git): Promise<boolean> {
       '[core]\n\trepositoryformatversion = 1\n[extensions]\n\tpartialclone = origin\n' +
         `[remote "origin"]\n\turl = "${missingRemote}"\n\tpromisor = true\n`,
     );
-    const finished = await runner
-      .command({ gitDir: clone })
-      .arg('cat-file', '-e', MISSING_OBJECT)
-      .finish();
-    // The maintenance releases that brought the variable to older lines say so once, on stderr.
+    const inClone = () => runner.command({ gitDir: clone });
+    const file = oidFromOutput(await inClone().arg('hash-object', '--stdin').run('probe\n'));
+    // A tree that names the file, in a pack from the promisor remote, without the file.
+    const tree = oidFromOutput(
+      await inClone().arg('mktree', '--missing').run(`100644 blob ${file}\tprobe\n`),
+    );
+    const packs = join(clone, 'objects', 'pack');
+    const written = await inClone()
+      .arg('pack-objects', '--quiet')
+      .path(join(packs, 'pack'))
+      .run(`${tree}\n`);
+    const pack = written.toString('utf8').trim();
+    if (!/^[0-9a-f]+$/.test(pack)) return false;
+    await appendFile(join(packs, `pack-${pack}.promisor`), '');
+    const finished = await inClone().arg('cat-file', '-e', file).finish();
     const said = finished.stderr.trim();
     return finished.code === 1 && (said === '' || said === LAZY_FETCH_WARNING);
   } finally {
