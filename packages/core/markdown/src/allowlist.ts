@@ -481,8 +481,12 @@ export function readValue(kind: SvgValue, text: string): Read | undefined {
       const name = match?.[2];
       return name !== undefined && isName(name) ? { value: name, numbers: 0 } : undefined;
     }
+    default:
+      // Every kind comes from the allowlist, not from a figure.
+      throw new Error(
+        `a kind of SVG value Lo doesn't know: ${JSON.stringify(kind satisfies never)}`,
+      );
   }
-  return undefined;
 }
 
 /** The CSS named colors, which draw as written. */

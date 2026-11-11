@@ -161,6 +161,9 @@ export class Pen {
       case 'z':
         this.to(this.startX, this.startY);
         break;
+      default:
+        // A command from a figure that isn't SVG's: no bound on how long it is.
+        this.length = Infinity;
     }
     this.cubic = cubic;
     this.quadratic = quadratic;
