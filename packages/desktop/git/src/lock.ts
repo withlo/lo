@@ -8,7 +8,8 @@
  * - **A clone's lock** is held while writing to it: a fetch, then the pins it writes, or removing
  *   a checkout and adding it again. git locks single refs and files, not a sequence of commands.
  *   Each open repository also counts as a user of its clone, and cleanup takes a clone only when
- *   it has no users and nobody holds its lock.
+ *   it has no users and nobody holds its lock. Maintenance, such as repacking, which can take
+ *   many minutes, holds the lock giving way: it's told as soon as anyone waits for it, and stops.
  */
 
 import { execFile } from 'node:child_process';
@@ -24,16 +25,36 @@ export const TELL_EVERY = 1000;
 /** Lets go of a lock. Letting go twice does nothing. */
 export type Release = () => void;
 
+/** How a holder that gives way hears that someone waits: what the waiter wants to do. */
+export type GiveWay = (waiter: string) => void;
+
 /** The lock on one clone: one writer at a time, and a count of the repositories open on it. */
 export class CloneLock {
   /** What the holder is doing, such as "fetching pull request #12", while one holds it. */
   #holder: string | undefined;
+  /** How the holder, if it gives way, is told that someone waits. */
+  #giveWay: GiveWay | undefined;
+  /** Whether the holder may remove the clone, or what's in it, having found it unused. */
+  #removing = false;
   readonly #waiting: (() => void)[] = [];
+  /** Those waiting only for a holder that removes to let go. */
+  readonly #waitingForRemoval: (() => void)[] = [];
   #users = 0;
+  readonly #onFree: (() => void) | undefined;
+
+  /** A lock that tells `onFree` whenever its holder lets go with nobody waiting. */
+  constructor(onFree?: () => void) {
+    this.#onFree = onFree;
+  }
 
   /** What the holder is doing, or `undefined` when nobody holds the lock. */
   get holder(): string | undefined {
     return this.#holder;
+  }
+
+  /** Whether the holder took the lock with {@link CloneLock.tryRemove}. */
+  get removing(): boolean {
+    return this.#removing;
   }
 
   /** How many open repositories use the clone. */
@@ -43,49 +64,95 @@ export class CloneLock {
 
   /**
    * Waits for the lock, then holds it to do `what`. While it waits, `progress` hears what the
-   * holder is doing, at once and every `tellEvery` milliseconds.
+   * holder is doing, at once and every `tellEvery` milliseconds, and once `signal` aborts, it
+   * stops waiting and fails with its reason. A holder that gives way is told at once.
    */
   async acquire(
     what: string,
     progress?: (activity: Activity) => void,
-    tellEvery = TELL_EVERY,
+    options: { tellEvery?: number; signal?: AbortSignal | undefined } = {},
   ): Promise<Release> {
+    const { tellEvery = TELL_EVERY, signal } = options;
+    signal?.throwIfAborted();
     if (this.#holder !== undefined) {
       const started = Date.now();
       const tell = () =>
         progress?.({ kind: 'waitingForLock', holder: this.#holder, waited: Date.now() - started });
       tell();
+      this.#giveWay?.(what);
+      this.#giveWay = undefined;
       const timer = setInterval(tell, tellEvery);
       try {
         // Woken in turn, each waiter finds the lock free: the one before let go of it.
         while (this.#holder !== undefined) {
-          await new Promise<void>((resolve) => this.#waiting.push(resolve));
+          if (!(await this.#wait(this.#waiting, signal))) signal?.throwIfAborted();
         }
       } finally {
         clearInterval(timer);
       }
     }
+    return this.#take(what);
+  }
+
+  /** Holds the lock, which is free, to do `what`. */
+  #take(what: string, giveWay?: GiveWay, removing = false): Release {
     this.#holder = what;
+    this.#giveWay = giveWay;
+    this.#removing = removing;
     let released = false;
     return () => {
       if (released) return;
       released = true;
       this.#holder = undefined;
-      this.#waiting.shift()?.();
+      this.#giveWay = undefined;
+      this.#removing = false;
+      for (const wake of this.#waitingForRemoval.splice(0)) wake();
+      const next = this.#waiting.shift();
+      if (next === undefined) this.#onFree?.();
+      else next();
     };
   }
 
-  /** Holds the lock if nobody does, without waiting. */
-  tryAcquire(what: string): Release | undefined {
-    if (this.#holder !== undefined) return undefined;
-    this.#holder = what;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      this.#holder = undefined;
-      this.#waiting.shift()?.();
-    };
+  /**
+   * Waits while the holder removes the clone or what's in it, telling it to give way, for `what`,
+   * if it does; never for any other holder. Once `signal` aborts, it stops waiting and fails with
+   * its reason.
+   */
+  async passRemoval(what: string, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    while (this.#removing) {
+      this.#giveWay?.(what);
+      this.#giveWay = undefined;
+      if (!(await this.#wait(this.#waitingForRemoval, signal))) signal?.throwIfAborted();
+    }
+  }
+
+  /**
+   * Waits in `queue` to be woken, and says so, or until `signal` aborts, when it leaves the queue,
+   * so the next in it is woken in its place.
+   */
+  #wait(queue: (() => void)[], signal: AbortSignal | undefined): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const abort = () => {
+        const at = queue.indexOf(wake);
+        if (at !== -1) queue.splice(at, 1);
+        resolve(false);
+      };
+      const wake = () => {
+        signal?.removeEventListener('abort', abort);
+        resolve(true);
+      };
+      queue.push(wake);
+      signal?.addEventListener('abort', abort, { once: true });
+    });
+  }
+
+  /**
+   * Holds the lock if nobody does, without waiting. With `giveWay`, the holder gives way to anyone
+   * who waits for it, and `giveWay` hears, once, what the first of them wants to do.
+   */
+  tryAcquire(what: string, giveWay?: GiveWay): Release | undefined {
+    return this.#holder === undefined ? this.#take(what, giveWay) : undefined;
   }
 
   /** Counts an open repository as a user until it lets go. */
@@ -100,11 +167,13 @@ export class CloneLock {
   }
 
   /**
-   * Holds the lock for removing the clone, if it has no users and nobody holds it: cleanup never
-   * takes a clone that's open or being written to.
+   * Holds the lock for removing the clone, or what's in it, if it has no users and nobody holds
+   * it: cleanup never takes a clone that's open or being written to. With `giveWay`, as
+   * {@link CloneLock.tryAcquire}.
    */
-  tryRemove(what: string): Release | undefined {
-    return this.#users === 0 ? this.tryAcquire(what) : undefined;
+  tryRemove(what: string, giveWay?: GiveWay): Release | undefined {
+    if (this.#users > 0 || this.#holder !== undefined) return undefined;
+    return this.#take(what, giveWay, true);
   }
 }
 
