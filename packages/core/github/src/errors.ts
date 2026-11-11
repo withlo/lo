@@ -141,6 +141,21 @@ export class GithubError extends Error {
   }
 
   /**
+   * Whether it fails a read made of several requests as a whole: the network, the rate limit and
+   * the token stop every request after it too, and are waited out. Any other error fails only the
+   * part of the read it was about.
+   */
+  stopsTheRead(): boolean {
+    const { kind } = this.detail;
+    return (
+      kind === 'network' ||
+      kind === 'rateLimited' ||
+      kind === 'unauthorized' ||
+      kind === 'tokenUnavailable'
+    );
+  }
+
+  /**
    * Whether GitHub couldn't be reached at all: no connection could be made. A request that
    * connected and then timed out isn't, nor is a TLS failure, a proxy that refused the request, or
    * any answer GitHub gave.
