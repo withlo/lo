@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'vitest';
 
-import { dashCount } from './length.ts';
+import { arcLength, dashCount } from './length.ts';
 import {
   FIGURE_COLORS,
   isSvgAttribute,
@@ -57,6 +57,14 @@ describe('numbers and lengths', () => {
       ]),
     ).toEqual(Array.from({ length: 15 }, () => null));
     expect(read('size', ['-1', '-0.1'])).toEqual([null, null]);
+    // A browser reads numbers as 32-bit floats: one too small for a normal one is 0.
+    expect(read('coordinate', ['1e-38', '1.2e-38', '1e-200', '-1e-45', '1e-7'])).toEqual([
+      '0',
+      '1.2e-38',
+      '0',
+      '0',
+      '1e-7',
+    ]);
     expect(read('opacity', ['0', '1', '0.25', '1.5', '-0.1'])).toEqual([
       '0',
       '1',
@@ -274,19 +282,49 @@ describe('paths', () => {
     );
     expect(readValue('points', '0 0 3 4 3 0')).toMatchObject({ length: 9, closing: 3 });
   });
+
+  test('are measured in 32-bit floats, as a browser keeps their points', () => {
+    // Near a million, a float32 is a sixteenth apart: steps of a hundredth there are a sixteenth.
+    const zigzag = `M999999.03 0${'L999999.04 0L999999.03 0'.repeat(50)}`;
+    expect(readValue('path', zigzag)?.length).toBe(100 / 16);
+    expect(readValue('points', `0 0 ${'999999.03 0 999999.04 0 '.repeat(50)}`)?.length).toBe(
+      999_999 + 99 / 16,
+    );
+  });
+
+  test('an arc with radii too small for a float32 is the straight line a browser draws', () => {
+    for (const d of [
+      'M0 0A1e-200 1e-200 0 0 1 0 999000',
+      'M0 0A1e-200 5 0 0 1 0 999000',
+      'M0 0A5 1e-200 0 0 1 0 999000',
+      'M0 0A1e-40 1e-40 0 0 1 0 999000',
+      'M0 0A1e-200 1000000 45 1 0 0 999000',
+    ]) {
+      expect(readValue('path', d)?.length).toBe(999_000);
+    }
+    // Given radii whose squares underflow, it's no bound at all, rather than a tiny one.
+    expect(arcLength(0, 0, 1e-200, 1e-200, 0, 0, 999_000)).toBe(Infinity);
+    expect(arcLength(0, 0, 1e-200, 5, 30, 0, 999_000)).toBe(Infinity);
+    // As small as a float32 holds, an arc's ellipse is scaled up until it reaches.
+    expect(readValue('path', 'M0 0A1e-30 1e-30 0 0 1 0 999000')?.length).toBeGreaterThan(999_000);
+  });
 });
 
 describe('dashes', () => {
   test('are counted along a length: half as many as the pattern has numbers, each run of their sum', () => {
-    expect(dashCount([1, 1], 10)).toBe(7);
+    // A hundredth more, for a browser's float sums: 5.05 runs of the pattern, and 2 more.
+    expect(dashCount([1, 1], 10)).toBe(8);
     // An odd pattern is repeated: the same count.
-    expect(dashCount([1], 10)).toBe(6);
-    expect(dashCount([0.001, 0.001], 860)).toBe(430_002);
+    expect(dashCount([1], 10)).toBe(7);
+    expect(dashCount([0.001, 0.001], 860)).toBe(434_302);
     expect(dashCount([0, 0], 860)).toBe(0);
     expect(dashCount([1, 1], 0)).toBe(2);
-    // Dashes too small to write are past any cap.
-    expect(dashCount([1e-300], 1)).toBeGreaterThan(1e299);
-    expect(dashCount([1e-320], 1)).toBe(Infinity);
+    // Dashes as small as a float32 holds are past any cap; smaller, they're 0, a solid line.
+    expect(dashCount([1e-30], 1)).toBeGreaterThan(1e29);
+    expect(dashCount([1e-300], 1)).toBe(0);
+    // A length that isn't finite has no end of dashes.
+    expect(dashCount([1, 1], Infinity)).toBe(Infinity);
+    expect(dashCount([1, 1], Number.NaN)).toBe(Infinity);
   });
 });
 

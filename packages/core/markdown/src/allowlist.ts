@@ -299,6 +299,9 @@ export interface Read {
 /** The largest number a value may hold, either side of zero. */
 export const MAX_MAGNITUDE = 1_000_000;
 
+/** The least magnitude of a normal 32-bit float. */
+const LEAST_NORMAL = 2 ** -126;
+
 /** The longest name, an id or a marker's. */
 export const MAX_NAME = 64;
 
@@ -327,7 +330,10 @@ function trimmed(text: string): string {
 function number(text: string): number | undefined {
   if (text.length > 64 || !NUMBER.test(text)) return undefined;
   const value = Number(text);
-  return Number.isFinite(value) && Math.abs(value) <= MAX_MAGNITUDE ? value : undefined;
+  if (!Number.isFinite(value) || Math.abs(value) > MAX_MAGNITUDE) return undefined;
+  // A browser reads SVG's numbers as 32-bit floats, and one too small for a normal one as 0, so a
+  // radius of 1e-200 draws a straight line. It's kept as the 0 it is.
+  return Math.abs(value) < LEAST_NORMAL ? 0 : value;
 }
 
 function written(value: number): string {

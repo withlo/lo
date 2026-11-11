@@ -13,6 +13,7 @@ import {
   githubTree,
   markdownTree,
   plainText,
+  MAX_DIAGNOSTICS,
   sanitizeSvg,
   SVG_LIMITS,
   type SanitizedSvg,
@@ -29,8 +30,9 @@ const COMMENT_LIMIT = 750;
 const OVERVIEW_LIMIT = 1_200;
 const RENDERING_LIMIT = 2_000;
 /**
- * A figure at the caps takes about 30 ms on a laptop, a third of the whole test's 90 ms. On a Linux
- * CI runner the whole test took 540 ms, so some 200 ms to sanitize; this is three times 250 ms.
+ * A figure at the caps takes about 30 ms on a laptop, about a third of its whole test, which also
+ * makes the figure and walks what comes back. On a Linux CI runner the whole test took 670 ms, so
+ * some 220 ms to sanitize; this is three times 250 ms. Each figure's time is printed.
  */
 const FIGURE_LIMIT = 750;
 
@@ -74,15 +76,18 @@ function document(size: number): string {
   return text.slice(0, size);
 }
 
-function timed<T>(make: () => T): { made: T; elapsed: number } {
+/** `make` run once, and how long it took, which is printed, so CI's logs show it. */
+function timed<T>(what: string, make: () => T): { made: T; elapsed: number } {
   const started = performance.now();
   const made = make();
-  return { made, elapsed: performance.now() - started };
+  const elapsed = performance.now() - started;
+  console.info(`${what}: ${elapsed.toFixed(1)} ms`);
+  return { made, elapsed };
 }
 
 test('a 64 KiB comment shows within budget', () => {
   const text = document(65_536);
-  const { made, elapsed } = timed(() =>
+  const { made, elapsed } = timed('a 64 KiB comment', () =>
     markdownTree(text, {
       page: 'https://github.com/octo/repo/pull/1',
       repo: { owner: 'octo', name: 'repo' },
@@ -97,7 +102,9 @@ test('a 64 KiB comment shows within budget', () => {
 test('a 200 KB overview shows within budget', () => {
   const text = document(200_000);
   const limits = { length: 262_144, nodes: 262_144, images: 1_000, addresses: 1_048_576 };
-  const { made, elapsed } = timed(() => markdownTree(text, { breaks: false, limits }));
+  const { made, elapsed } = timed('a 200 KB overview', () =>
+    markdownTree(text, { breaks: false, limits }),
+  );
   expect(made.notes).toEqual([]);
   expect(problems(made, { ...DEFAULT_LIMITS, ...limits })).toEqual([]);
   expect(elapsed, `took ${elapsed} ms for a 200 KB overview`).toBeLessThan(OVERVIEW_LIMIT);
@@ -112,7 +119,7 @@ test('a 1 MiB rendering shows within budget', () => {
   const bytes = new TextEncoder().encode(one).length;
   const html = one.repeat(Math.floor(DEFAULT_LIMITS.html / bytes));
   expect(html.length).toBeGreaterThan(DEFAULT_LIMITS.html * 0.9);
-  const { made, elapsed } = timed(() =>
+  const { made, elapsed } = timed('a 1 MiB rendering', () =>
     githubTree({ html, markdown: '' }, { page: 'https://github.com/rozed-dev/e2e/pull/23' }),
   );
   // Read from the HTML, not the Markdown, and all of it.
@@ -146,12 +153,19 @@ function figureAtCaps(): string {
 test('a figure at the caps sanitizes within budget', () => {
   const text = figureAtCaps();
   expect(text.length).toBeGreaterThan(0.75 * SVG_LIMITS.size);
-  const { made, elapsed } = timed(() => sanitizeSvg(text));
+  const { made, elapsed } = timed('a figure at the caps', () => sanitizeSvg(text));
   expect(made.removed).toEqual([]);
   expect(svgProblems(made)).toEqual([]);
   expect(walkSvg(made).elements).toBeGreaterThan(0.95 * SVG_LIMITS.elements);
   expect(elapsed, `took ${elapsed} ms for a figure at the caps`).toBeLessThan(FIGURE_LIMIT);
 });
+
+/**
+ * A path of one arc from the origin to 999,000 down, with radii `radii` turned `angle` degrees,
+ * dashed every unit: drawn as a straight line when a radius is too small for a float32.
+ */
+const TINY_ARC = (radii: string, angle = 0) =>
+  `<path d="M0 0A${radii} ${angle} 0 1 0 999000" stroke-dasharray="0.5 0.5"/>`;
 
 /** A marker of 63 circles, which draws 127 each time it's drawn. */
 const CIRCLES = `<marker id="m">${'<circle r="1"/>'.repeat(63)}</marker>`;
@@ -254,6 +268,34 @@ const WORST: [string, string, (made: SanitizedSvg) => void][] = [
     refused('drawn'),
   ],
   [
+    'a tiny arc dashed, 4,000 times',
+    `<svg>${TINY_ARC('1e-200 1e-200').repeat(4_000)}</svg>`,
+    refused('drawn'),
+  ],
+  ['one tiny arc dashed', `<svg>${TINY_ARC('1e-200 1e-200')}</svg>`, refused('drawn')],
+  ['an arc with only its x radius tiny', `<svg>${TINY_ARC('1e-200 5')}</svg>`, refused('drawn')],
+  ['an arc with only its y radius tiny', `<svg>${TINY_ARC('5 1e-200')}</svg>`, refused('drawn')],
+  [
+    'an arc with radii a float32 holds only as subnormals',
+    `<svg>${TINY_ARC('1e-40 1e-40')}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'an arc with radii as small as a float32 holds',
+    `<svg>${TINY_ARC('1.2e-38 1.2e-38')}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'an arc with one radius tiny, one huge, and turned',
+    `<svg>${TINY_ARC('1e-200 1000000', 45)}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'a dashed zigzag near a million, where float32 steps are a sixteenth',
+    `<svg><path d="M999999.03 0${'L999999.04 0L999999.03 0'.repeat(1_000)}" stroke-dasharray="0.0005"/></svg>`,
+    refused('drawn'),
+  ],
+  [
     'a figure sized a hundred thousand tall',
     '<svg viewBox="0 0 860 320" width="1" height="100000"><rect/></svg>',
     (made) => {
@@ -271,9 +313,21 @@ const WORST: [string, string, (made: SanitizedSvg) => void][] = [
   ],
 ];
 
-test.each(WORST)('%s is cut down or refused within budget', (_name, text, outcome) => {
+test('an element with 40,000 attributes, each its own, sanitizes within budget', () => {
+  const text = `<svg><rect ${Array.from({ length: 40_000 }, (_, i) => `a${i}="1"`).join(' ')}/></svg>`;
   expect(text.length).toBeLessThanOrEqual(SVG_LIMITS.size);
-  const { made, elapsed } = timed(() => sanitizeSvg(text));
+  const { made, elapsed } = timed('40,000 attributes', () => sanitizeSvg(text));
+  expect(svgProblems(made)).toEqual([]);
+  expect(made.svg?.children).toEqual([
+    { kind: 'element', name: 'rect', attributes: {}, children: [] },
+  ]);
+  expect(made.removed).toHaveLength(MAX_DIAGNOSTICS);
+  expect(elapsed, `took ${elapsed} ms`).toBeLessThan(FIGURE_LIMIT);
+});
+
+test.each(WORST)('%s is cut down or refused within budget', (name, text, outcome) => {
+  expect(text.length).toBeLessThanOrEqual(SVG_LIMITS.size);
+  const { made, elapsed } = timed(name, () => sanitizeSvg(text));
   expect(svgProblems(made)).toEqual([]);
   outcome(made);
   expect(elapsed, `took ${elapsed} ms`).toBeLessThan(FIGURE_LIMIT);

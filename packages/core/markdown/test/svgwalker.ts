@@ -294,10 +294,10 @@ export function walkSvg(result: unknown): SvgWalked {
       problem(where, `names ${name}, which is no marker defined once`);
       continue;
     }
-    drawn += times * (markers.get(target.node) ?? 0);
+    if (times > 0) drawn += times * (markers.get(target.node) ?? 0);
   }
   if (walked.elements > SVG_LIMITS.elements) problem('svg', `has ${walked.elements} elements`);
-  if (drawn > SVG_LIMITS.drawn) problem('svg', `draws ${drawn}, more than ${SVG_LIMITS.drawn}`);
+  if (!(drawn <= SVG_LIMITS.drawn)) problem('svg', `draws ${drawn}, more than ${SVG_LIMITS.drawn}`);
   if (found.length === 0) {
     if (!isDeepStrictEqual(structuredClone(result), result))
       problem('result', "doesn't survive structuredClone");
@@ -320,6 +320,8 @@ function own(value: unknown): number {
  * them broken where a subpath moves; and the arcs' bounds, added separately.
  */
 function pathBound(d: string): number {
+  // As 32-bit floats, as a browser keeps a path's points.
+  const f = Math.fround;
   let length = 0;
   let x = 0;
   let y = 0;
@@ -328,9 +330,9 @@ function pathBound(d: string): number {
   let lastCubic: number[] | undefined;
   let lastQuad: number[] | undefined;
   const line = (nx: number, ny: number) => {
-    length += Math.hypot(nx - x, ny - y);
-    x = nx;
-    y = ny;
+    length += Math.hypot(f(nx) - x, f(ny) - y);
+    x = f(nx);
+    y = f(ny);
   };
   for (const command of d.match(/[MmLlHhVvCcSsQqTtAaZz][^MmLlHhVvCcSsQqTtAaZz]*/g) ?? []) {
     const letter = command[0]!;
@@ -346,8 +348,8 @@ function pathBound(d: string): number {
       let cubic: number[] | undefined;
       let quad: number[] | undefined;
       if (lower === 'm' && g === 0) {
-        x = dx + v[0]!;
-        y = dy + v[1]!;
+        x = f(dx + v[0]!);
+        y = f(dy + v[1]!);
         startX = x;
         startY = y;
       } else if (lower === 'm' || lower === 'l') line(dx + v[0]!, dy + v[1]!);
@@ -357,21 +359,22 @@ function pathBound(d: string): number {
       else if (lower === 'a') {
         const [rx, ry, angle] = [Math.abs(v[0]!), Math.abs(v[1]!), (v[2]! * Math.PI) / 180];
         const [ex, ey] = [dx + v[5]!, dy + v[6]!];
-        if (rx === 0 || ry === 0) length += Math.hypot(ex - x, ey - y);
+        if (rx === 0 || ry === 0) length += Math.hypot(f(ex) - x, f(ey) - y);
         else {
           const hx = (x - ex) / 2;
           const hy = (y - ey) / 2;
           const px = Math.cos(angle) * hx + Math.sin(angle) * hy;
           const py = -Math.sin(angle) * hx + Math.cos(angle) * hy;
           const reach = (px * px) / (rx * rx) + (py * py) / (ry * ry);
-          length += 2 * Math.PI * Math.max(rx, ry) * Math.max(1, Math.sqrt(reach));
+          const bound = 2 * Math.PI * Math.max(rx, ry) * Math.max(1, Math.sqrt(reach));
+          length += Number.isFinite(bound) ? bound : Infinity;
         }
-        x = ex;
-        y = ey;
+        x = f(ex);
+        y = f(ey);
       } else {
         // Curves: through each control point to the end.
         const reflect = (last: number[] | undefined) =>
-          last ? [2 * x - last[0]!, 2 * y - last[1]!] : [x, y];
+          last ? [f(2 * x - last[0]!), f(2 * y - last[1]!)] : [x, y];
         const points: number[] =
           lower === 'c'
             ? v.map((n, i) => n + (i % 2 === 0 ? dx : dy))
@@ -380,8 +383,8 @@ function pathBound(d: string): number {
               : lower === 'q'
                 ? v.map((n, i) => n + (i % 2 === 0 ? dx : dy))
                 : [...reflect(lastQuad), dx + v[0]!, dy + v[1]!];
-        if (lower === 'c' || lower === 's') cubic = points.slice(-4, -2);
-        else quad = points.slice(-4, -2);
+        if (lower === 'c' || lower === 's') cubic = points.slice(-4, -2).map(f);
+        else quad = points.slice(-4, -2).map(f);
         for (let i = 0; i + 1 < points.length; i += 2) line(points[i]!, points[i + 1]!);
       }
       lastCubic = cubic;
@@ -401,7 +404,9 @@ function dashesOf(name: string, attributes: Record<string, unknown>): number | u
   const values = pattern.split(' ').map(Number);
   const period = values.reduce((sum, value) => sum + value, 0);
   const points =
-    typeof attributes['points'] === 'string' ? attributes['points'].split(' ').map(Number) : [];
+    typeof attributes['points'] === 'string'
+      ? attributes['points'].split(' ').map((value) => Math.fround(Number(value)))
+      : [];
   const around = (closed: boolean) => {
     let total = 0;
     const count = points.length / 2 + (closed ? 1 : 0);
@@ -429,7 +434,8 @@ function dashesOf(name: string, attributes: Record<string, unknown>): number | u
               : typeof attributes['d'] === 'string'
                 ? pathBound(attributes['d'])
                 : 0;
-  if (Number.isNaN(length)) return undefined;
+  if (Number.isNaN(length) && typeof attributes['d'] !== 'string') return undefined;
+  if (!Number.isFinite(length)) return Infinity;
   return period > 0 ? Math.ceil((length * values.length) / (2 * period)) + values.length : 0;
 }
 

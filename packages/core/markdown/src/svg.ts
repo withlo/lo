@@ -322,10 +322,11 @@ class Sanitizer {
       const inside = name === 'marker' ? element : marker;
       this.charge(inside, this.cost);
       pushChildren(node, element, depth + 1, inside);
-      if (this.drawn > SVG_LIMITS.drawn) return refused('drawn');
+      if (!(this.drawn <= SVG_LIMITS.drawn)) return refused('drawn');
     }
     this.resolve();
-    if (this.drawn > SVG_LIMITS.drawn) return refused('drawn');
+    // Written so a cost that came out NaN is refused too.
+    if (!(this.drawn <= SVG_LIMITS.drawn)) return refused('drawn');
     const removed = [...this.around, ...this.within, ...this.settled]
       .toSorted((a, b) => a.offset - b.offset)
       .slice(0, MAX_DIAGNOSTICS)
@@ -436,8 +437,9 @@ class Sanitizer {
 
   /** Adds `cost` to what the marker draws each time, or, outside markers, to what's drawn once. */
   private charge(marker: SvgElement | undefined, cost: number): void {
-    if (marker) this.markers.set(marker, (this.markers.get(marker) ?? 0) + cost);
-    else this.drawn += cost;
+    const counted = Number.isNaN(cost) ? Infinity : cost;
+    if (marker) this.markers.set(marker, (this.markers.get(marker) ?? 0) + counted);
+    else this.drawn += counted;
   }
 
   /**
@@ -467,7 +469,8 @@ class Sanitizer {
         continue;
       }
       element.attributes[attribute] = name;
-      this.drawn += times * (this.markers.get(target) ?? 1);
+      // Not drawn at all, it costs nothing, however much it would.
+      if (times > 0) this.drawn += times * (this.markers.get(target) ?? 1);
     }
     this.settled.push(...removed.toSorted((a, b) => a.offset - b.offset).slice(0, MAX_DIAGNOSTICS));
   }
@@ -496,10 +499,13 @@ function removal(
   return made;
 }
 
-/** A length in the element's own units: unitless, in pixels, or 0 when it's left out. */
+/**
+ * A length in the element's own units, unitless or in pixels, as the 32-bit float a browser reads,
+ * or 0 when it's left out.
+ */
 function own(value: string | undefined): number | undefined {
   if (value === undefined) return 0;
-  return /^[\d.e-]+(?:px)?$/.test(value) ? Number.parseFloat(value) : undefined;
+  return /^[\d.e-]+(?:px)?$/.test(value) ? Math.fround(Number.parseFloat(value)) : undefined;
 }
 
 /**
