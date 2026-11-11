@@ -183,8 +183,9 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   the system's keychain: it keeps its data in its own folder (`Lo Dev`), or in `LO_USER_DATA_DIR`
   when that's set, and its key under "Lo Dev Safe Storage". A packaged build is `Lo`, and ignores
   `LO_USER_DATA_DIR`. Such a build reads the keymap file from `config/keymap` in that folder, rather
-  than from `~/.config/lo`, and opens it with the program `LO_KEYMAP_EDITOR` names (an absolute
-  path), if set, in place of the system's text editor, so a test starts no editor.
+  than from `~/.config/lo`, and the settings file from `config/settings.json` the same way, and
+  opens the keymap file with the program `LO_KEYMAP_EDITOR` names (an absolute path), if set, in
+  place of the system's text editor, so a test starts no editor.
 - Code that doesn't call Electron goes in its own module, with unit tests beside it. The smoke test
   in `e2e/` drives the built app with Playwright, each test on an empty data folder, and covers what
   needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`.
@@ -236,6 +237,16 @@ the window find them with `import.meta.glob`.
   about, such as an account removed, is a member of its service. Lo doesn't start while a service in
   a `service.ts` or a feature's `uses` goes unprovided, or while features use each other's services,
   and only the feature a service is named for may provide it.
+- `settings.ts` declares the settings the feature has, each with
+  `defineSetting(key, schema, default, accepts)` from `settings/contract.ts`: a flat key
+  (`diff.layout`), what its value may be as a Zod schema, the value without one, and what it accepts
+  in words. The settings feature reads `settings.json` from the config folder, watches it, reports a
+  value a schema refuses and uses the default, keeps every key no feature declared, and writes the
+  file whole, atomically, only after main has checked the value again. Main reaches the values
+  through the settings feature's `service.ts` (`use(settings).watch(setting, listener)`, which also
+  declares the setting), the window through its `window/shared.ts` (`useSetting`, `changeSetting`),
+  where a feature puts its section of Settings in the `settings.sections` slot with `defineSection`.
+  `docs/settings.md` lists every setting; a test fails when one is missing.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.
