@@ -1,0 +1,9 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "term-undefined", "line": 11 },
+    { "code": "target-term", "line": 12 },
+    { "code": "target-term", "line": 12 },
+    { "code": "term-twice", "line": 19 }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "target-lines", "line": 12 },
+    { "code": "target-lines", "line": 15 },
+    { "code": "target-lines", "line": 18 },
+    { "code": "target-lines", "line": 21 },
+    { "code": "target-path", "line": 24 },
+    { "code": "target-path", "line": 24 },
+    { "code": "target-path", "line": 24 }
+  ]
+}

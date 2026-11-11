@@ -1,0 +1,12 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "term-undefined", "line": 11 },
+    { "code": "target-term", "line": 12 },
+    { "code": "glossary-content", "line": 16 },
+    { "code": "term-twice", "line": 19 },
+    { "code": "term-twice", "line": 21 },
+    { "code": "glossary-item", "line": 22 },
+    { "code": "glossary-item", "line": 23 }
+  ]
+}

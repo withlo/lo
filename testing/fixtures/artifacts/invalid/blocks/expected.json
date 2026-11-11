@@ -1,0 +1,13 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "block-unknown", "line": 13 },
+    { "code": "block-misplaced", "line": 17 },
+    { "code": "block-misplaced", "line": 21 },
+    { "code": "block-content", "line": 26 },
+    { "code": "block-argument", "line": 29 },
+    { "code": "block-argument", "line": 32 },
+    { "code": "block-unopened", "line": 41 },
+    { "code": "block-unclosed", "line": 42 }
+  ]
+}

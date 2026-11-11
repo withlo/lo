@@ -1,0 +1,17 @@
+{
+  "outcome": "shown",
+  "findings": [],
+  "code": [
+    { "line": 13, "state": "resolved" },
+    { "line": 13, "state": "resolved" },
+    { "line": 14, "state": "resolved" },
+    { "line": 14, "state": "resolved" },
+    { "line": 15, "state": "resolved" },
+    { "line": 15, "state": "resolved" },
+    { "line": 16, "state": "resolved" },
+    { "line": 16, "state": "resolved" },
+    { "line": 17, "state": "resolved" },
+    { "line": 18, "state": "resolved" },
+    { "line": 19, "state": "resolved" }
+  ]
+}

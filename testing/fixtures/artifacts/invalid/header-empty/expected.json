@@ -1,0 +1,8 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "format-missing", "line": 1 },
+    { "code": "pr-missing", "line": 1 },
+    { "code": "commit-missing", "line": 1 }
+  ]
+}

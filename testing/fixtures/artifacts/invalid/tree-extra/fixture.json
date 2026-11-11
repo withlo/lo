@@ -1,0 +1,38 @@
+{
+  "entries": [
+    {
+      "path": "README.md",
+      "kind": "file",
+      "size": 10
+    },
+    {
+      "path": "docs/a.md",
+      "kind": "file",
+      "size": 10
+    },
+    {
+      "path": "docs/b/c.md",
+      "kind": "file",
+      "size": 10
+    },
+    {
+      "path": "figures/passwd.svg",
+      "kind": "link",
+      "size": 11
+    },
+    {
+      "path": "figures/module.png",
+      "kind": "submodule"
+    },
+    {
+      "bytes": "666967757265732f6361ff2e737667",
+      "kind": "file",
+      "size": 10
+    },
+    {
+      "path": "Artifact.md",
+      "kind": "file",
+      "size": 10
+    }
+  ]
+}

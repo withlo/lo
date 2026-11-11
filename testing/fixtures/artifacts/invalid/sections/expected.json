@@ -1,0 +1,11 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "tldr-first", "line": 7 },
+    { "code": "title-heading", "line": 7 },
+    { "code": "tldr-twice", "line": 15 },
+    { "code": "term-unused", "line": 21 },
+    { "code": "glossary-twice", "line": 23 },
+    { "code": "section-in-block", "line": 28 }
+  ]
+}
