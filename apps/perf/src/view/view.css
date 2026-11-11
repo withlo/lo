@@ -30,11 +30,18 @@
  * path would, and CodeMirror would then keep the content that wide while the block is drawn, so
  * every line would wrap differently, and move, as it comes and goes.
  */
+.lo-diffview .lo-fileblock,
 .lo-diffview .lo-diffhead,
 .lo-diffview .lo-movedlabel,
 .lo-diffview .lo-collapsed,
-.lo-diffview .lo-diffthreads {
+.lo-diffview .lo-diffthread {
   contain: inline-size;
+}
+/* A file's note looks like collapsed code, but there's nothing under it to open. */
+.lo-filenote,
+.lo-filenote:hover {
+  background: var(--lo-diff-collapsed-bg);
+  color: var(--lo-fg-muted);
 }
 .lo-diffhead .lo-path,
 .lo-movedlabel a {
