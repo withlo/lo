@@ -1,0 +1,104 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/78/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"a41e7fffeb82d1da96c8ac61921e29f086eaaf542c44bdbb6294c48631900c09\"",
+      "last-modified": "Wed, 11 Nov 2026 13:58:00 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4978",
+      "x-ratelimit-reset": "1794413460",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "22"
+    },
+    "body": [
+      {
+        "sha": "1eb423c2049dd10874358903fc4d8b19f31ebed6",
+        "filename": "assets/mark.png",
+        "status": "modified",
+        "additions": 0,
+        "deletions": 0,
+        "changes": 0,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/5530830f535b2947f1b50a184dc58a9c7b2845ad/assets%2Fmark.png",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/5530830f535b2947f1b50a184dc58a9c7b2845ad/assets%2Fmark.png",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/assets%2Fmark.png?ref=5530830f535b2947f1b50a184dc58a9c7b2845ad"
+      },
+      {
+        "sha": "5649df0080b994da27019f070cc0ec38a9d4d027",
+        "filename": "data/numbers.txt",
+        "status": "added",
+        "additions": 5001,
+        "deletions": 0,
+        "changes": 5001,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/5530830f535b2947f1b50a184dc58a9c7b2845ad/data%2Fnumbers.txt",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/5530830f535b2947f1b50a184dc58a9c7b2845ad/data%2Fnumbers.txt",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/data%2Fnumbers.txt?ref=5530830f535b2947f1b50a184dc58a9c7b2845ad"
+      },
+      {
+        "sha": "ecb7c0daf3786ebc707d3ccd80cdf0d345e78f29",
+        "filename": "pnpm-lock.yaml",
+        "status": "modified",
+        "additions": 5,
+        "deletions": 5,
+        "changes": 10,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/5530830f535b2947f1b50a184dc58a9c7b2845ad/pnpm-lock.yaml",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/5530830f535b2947f1b50a184dc58a9c7b2845ad/pnpm-lock.yaml",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/pnpm-lock.yaml?ref=5530830f535b2947f1b50a184dc58a9c7b2845ad",
+        "patch": "@@ -9,14 +9,14 @@ importers:\n   .:\n     dependencies:\n       zod:\n-        specifier: 4.6.6\n-        version: 4.6.6\n+        specifier: 4.6.7\n+        version: 4.6.7\n \n packages:\n \n-  zod@4.6.6:\n-    resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==}\n+  zod@4.6.7:\n+    resolution: {integrity: sha512-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB==}\n \n snapshots:\n \n-  zod@4.6.6: {}\n+  zod@4.6.7: {}"
+      },
+      {
+        "sha": "7ad1a82f8cd6cbb8c2ec4c2ab37f1354f1f11662",
+        "filename": "src/format.ts",
+        "status": "modified",
+        "additions": 3,
+        "deletions": 17,
+        "changes": 20,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/5530830f535b2947f1b50a184dc58a9c7b2845ad/src%2Fformat.ts",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/5530830f535b2947f1b50a184dc58a9c7b2845ad/src%2Fformat.ts",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/src%2Fformat.ts?ref=5530830f535b2947f1b50a184dc58a9c7b2845ad"
+      },
+      {
+        "sha": "c13b48ededc51d1c9372596061e4c1d51c07dc10",
+        "filename": "src/legacy.ts",
+        "status": "removed",
+        "additions": 0,
+        "deletions": 2,
+        "changes": 2,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/dccd782aff9cd7a5088122cd3fb4a515964acee7/src%2Flegacy.ts",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/dccd782aff9cd7a5088122cd3fb4a515964acee7/src%2Flegacy.ts",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/src%2Flegacy.ts?ref=dccd782aff9cd7a5088122cd3fb4a515964acee7",
+        "patch": "@@ -1,2 +0,0 @@\n-/** The old name for `format`, kept for callers that haven't moved. */\n-export { format as render } from './format.ts';"
+      },
+      {
+        "sha": "19b9534c61d2770edffc5532e8257c0d8039b9a5",
+        "filename": "src/parser.ts",
+        "status": "renamed",
+        "additions": 3,
+        "deletions": 2,
+        "changes": 5,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/5530830f535b2947f1b50a184dc58a9c7b2845ad/src%2Fparser.ts",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/5530830f535b2947f1b50a184dc58a9c7b2845ad/src%2Fparser.ts",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/src%2Fparser.ts?ref=5530830f535b2947f1b50a184dc58a9c7b2845ad",
+        "patch": "@@ -4,9 +4,10 @@ export interface Line {\n   readonly text: string;\n }\n \n-/** Splits `input` into lines, on `\\n`. */\n+/** Splits `input` into lines, on `\\n` or `\\r\\n`. Empty input has no lines. */\n export function parse(input: string): Line[] {\n-  return input.split('\\n').map((text, index) => ({ number: index + 1, text }));\n+  if (input === '') return [];\n+  return input.split(/\\r?\\n/).map((text, index) => ({ number: index + 1, text }));\n }\n \n /** The lines of `input` that aren't blank. */",
+        "previous_filename": "src/parse.ts"
+      },
+      {
+        "sha": "698587380a4bf2e8edc2da9b6e63f305cd3ef8a6",
+        "filename": "src/text/wrap.ts",
+        "status": "added",
+        "additions": 15,
+        "deletions": 0,
+        "changes": 15,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/5530830f535b2947f1b50a184dc58a9c7b2845ad/src%2Ftext%2Fwrap.ts",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/5530830f535b2947f1b50a184dc58a9c7b2845ad/src%2Ftext%2Fwrap.ts",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/src%2Ftext%2Fwrap.ts?ref=5530830f535b2947f1b50a184dc58a9c7b2845ad",
+        "patch": "@@ -0,0 +1,15 @@\n+/** `text` broken into lines of at most `width` characters, at spaces. */\n+export function wrap(text: string, width: number): string[] {\n+  const lines: string[] = [];\n+  let line = '';\n+  for (const word of text.split(' ')) {\n+    if (line !== '' && line.length + 1 + word.length > width) {\n+      lines.push(line);\n+      line = word;\n+    } else {\n+      line = line === '' ? word : `${line} ${word}`;\n+    }\n+  }\n+  if (line !== '') lines.push(line);\n+  return lines;\n+}"
+      }
+    ]
+  }
+}

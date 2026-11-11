@@ -88,6 +88,8 @@ declare global {
   interface Window {
     diffView: Probe;
     diffLoaded?: boolean;
+    /** Brings the local copy's files that are waiting, and says how many there were. */
+    perfCopy(): number;
   }
 }
 

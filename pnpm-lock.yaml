@@ -223,6 +223,9 @@ importers:
       '@lo/design':
         specifier: workspace:*
         version: link:../../design
+      '@lo/diff':
+        specifier: workspace:*
+        version: link:../../packages/core/diff
       '@lo/git':
         specifier: workspace:*
         version: link:../../packages/desktop/git
@@ -232,6 +235,9 @@ importers:
       '@lo/review':
         specifier: workspace:*
         version: link:../../packages/core/review
+      '@lo/syntax':
+        specifier: workspace:*
+        version: link:../../packages/desktop/syntax
       '@lo/ui':
         specifier: workspace:*
         version: link:../../packages/desktop/ui

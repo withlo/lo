@@ -4,6 +4,7 @@ export {
   defaultContext,
   type DiffOptions,
   diffLines,
+  diffOfChanges,
   diffText,
   type FileDiff,
   type Hunk,

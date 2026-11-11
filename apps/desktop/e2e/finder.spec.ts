@@ -66,6 +66,9 @@ const finder = (page: Page) => page.getByRole('dialog', { name: 'Go to a file' }
 const field = (page: Page) => finder(page).getByRole('combobox', { name: 'Go to a file' });
 const options = (page: Page) => finder(page).getByRole('option');
 const middle = (page: Page) => page.locator('main[data-lo-middle]');
+/** A file's header in the diff's new side. */
+const diffHeader = (page: Page, path: string) =>
+  page.locator('.lo-diffview .cm-editor').nth(1).locator('.lo-diffhead', { hasText: path });
 
 /** The key of the row the tree's keyboard is on. */
 async function focused(page: Page): Promise<string | null> {
@@ -187,10 +190,9 @@ test('Tab lists only the changed files, and keeps the keyboard in the finder', a
   await expect(middle(page)).toBeFocused();
 });
 
-test('⏎ reveals a changed file in the tree, and says why the diff can’t show it yet', async ({
-  page,
-}) => {
+test('⏎ reveals a changed file in the tree, and the diff shows it', async ({ page }) => {
   await shown(page);
+  await expect(page.locator('.lo-diffview')).toBeVisible();
   // The tree's folders are closed, so the file has to be found there.
   await page.locator('[data-lo-middle]').focus();
   await page.keyboard.press('-');
@@ -208,10 +210,8 @@ test('⏎ reveals a changed file in the tree, and says why the diff can’t show
   await expect(tree(page)).toBeFocused();
   await expect(row(page, 'src/text/wrap.ts')).toBeVisible();
   expect(await focused(page)).toBe('src/text/wrap.ts');
-  // There's no diff yet to follow it.
-  await expect(page.getByRole('status').filter({ hasText: 'Show the file' })).toContainText(
-    'There’s no diff on screen to show it in.',
-  );
+  // The diff brings the file's header on screen, focus staying in the tree.
+  await expect(diffHeader(page, 'src/text/wrap.ts')).toBeInViewport();
 });
 
 test('⏎ on an unchanged file and ⌘⏎ ask for the whole file, and say why they can’t yet', async ({

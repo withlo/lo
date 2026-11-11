@@ -41,6 +41,14 @@ export function defineJobs<const Group extends string, Jobs extends Record<strin
   return { group, jobs };
 }
 
+/**
+ * What the window sends to stop a job it sent, by the id it sent it under: one still waiting for a
+ * worker never starts, and one running has its worker stopped.
+ */
+export interface JobCancel {
+  cancel: number;
+}
+
 /** What the window sends: an id of its choosing, the job's full name and its input. */
 export interface JobRequest {
   id: number;
@@ -51,8 +59,8 @@ export interface JobRequest {
 /**
  * What the process answers, under the request's id. A failure's code is `invalid` (the message or
  * its input didn't match), `unavailable` (no such job), `timeout` (it ran past its deadline),
- * `memory` (it ran out of its memory), or `failed` (it threw). The window adds `restarted` for
- * jobs lost when the process restarts.
+ * `memory` (it ran out of its memory), `cancelled` (the window stopped it), or `failed` (it
+ * threw). The window adds `restarted` for jobs lost when the process restarts.
  */
 export type JobReply = { id: number } & (
   { ok: true; value: unknown } | { ok: false; error: Failure }

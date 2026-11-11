@@ -3,10 +3,11 @@
 // its pull request with its account's poller, and fetches its local copy once it's shown. It also
 // copies text and opens github.com pages for every feature.
 
-import { clipboard } from 'electron';
+import { app, clipboard } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { openPage } from '../../../main/browser.ts';
+import { offlineAfter } from '../../../main/environment.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
@@ -69,6 +70,7 @@ export default defineFeature(contract, {
         };
       },
       clone: (id) => watcher?.clone(id),
+      drawn: (id, head) => watcher?.drawn(id, head),
     }),
   ],
   handlers: {
@@ -106,6 +108,7 @@ export default defineFeature(contract, {
   start(context) {
     const list = tabsOf(context);
     watcher = new Watcher({
+      offlineAfter: offlineAfter({ packaged: app.isPackaged, env: process.env }),
       github: context.use(github),
       git: context.git,
       publish: {

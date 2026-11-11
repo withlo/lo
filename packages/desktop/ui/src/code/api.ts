@@ -33,6 +33,15 @@ export type {
 /** Where a code view's cursor can be: on a file's line, or on its header. */
 export type Spot = { kind: 'line'; at: Place } | HeaderTarget;
 
+/**
+ * What's at the top of the screen: the line or header there, and how far above the screen's top
+ * its own top is, in pixels.
+ */
+export interface Viewport {
+  at: Spot;
+  offset: number;
+}
+
 /** How a diff is laid out: the two sides next to each other, or one column of both. */
 export type DiffLayout = 'split' | 'inline';
 
@@ -71,6 +80,10 @@ export interface DiffFile {
    * until `setLines` brings the whole file.
    */
   gaps?: readonly { side: Side; from: number; to: number }[];
+  /** Its diff, when it's known as the view is made: as `setDiff` gives it, but drawn at once. */
+  diff?: FileDiff;
+  /** Its highlighting, when it's known as the view is made, as `setTokens` gives it. */
+  tokens?: { old?: Uint32Array | undefined; new?: Uint32Array | undefined };
 }
 
 /** One end of moved code: a file's lines, first to last, on the side it's on. */
@@ -213,6 +226,13 @@ export interface Probe {
   readonly layout: DiffLayout;
   /** The focused code editor's cursor, or the one focus last left. */
   cursor(): CursorReading | undefined;
+  /**
+   * The line of text or header drawn at height `y` on the page, on the side that follows the
+   * screen, if one is there.
+   */
+  spotAt(y: number): Spot | undefined;
+  /** How far down the page a line or header is drawn, if it's drawn. */
+  spotTop(spot: Spot): number | undefined;
 }
 
 /** A pull request's diff, both sides in one scroll. */
@@ -239,6 +259,15 @@ export interface DiffView extends KeySource {
     lines: { old: readonly string[]; new: readonly string[] },
     diff?: FileDiff,
   ): void;
+  /**
+   * Whether `setLines` with these lines and diff would draw a shown file in the rows it has now,
+   * each a line or a collapsed run, on the same sides: so swapping it in moves nothing on screen.
+   */
+  keepsShape(
+    file: string,
+    lines: { old: readonly string[]; new: readonly string[] },
+    diff: FileDiff,
+  ): boolean;
   /** Says a file asked for with `load` couldn't be loaded: its note says so, and `za` asks again. */
   loadFailed(file: string): void;
   setHeader(file: string, header: FileHeader): void;
@@ -253,6 +282,21 @@ export interface DiffView extends KeySource {
    * can't. Not a jump, and focus stays where it is: `focus()` takes it there.
    */
   reveal(at: Target): boolean;
+  /**
+   * Closes a shown file into one block, as `za` does, or opens it again; a file kept out or not
+   * shown as a diff has nothing to close. Not a jump, and the cursor stays.
+   */
+  setCollapsed(file: string, collapsed: boolean): void;
+  /** The files with any of their rows on screen, first to last. */
+  filesOnScreen(): readonly string[];
+  /** What's at the top of the screen now. */
+  viewport(): Viewport;
+  /**
+   * Scrolls so `viewport`'s line or header is at the top of the screen as it was, its own top
+   * `offset` pixels above the screen's. Says whether the view has it. Moves neither the cursor nor
+   * focus.
+   */
+  scrollTo(viewport: Viewport): boolean;
   /** `]c` and kin: `count` changes, files or threads on, or back where it's negative. */
   jump(to: JumpTo, count: number): void;
   /** `Tab`: the cursor goes to its row on the other side. A jump. */

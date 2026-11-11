@@ -22,6 +22,23 @@ describe('workers', () => {
     expect(Date.now() - started).toBeLessThan(5000);
   });
 
+  it('stops a job the window cancels while it runs', async () => {
+    const controller = new AbortController();
+    const started = Date.now();
+    const answer = execute(
+      'sample.spin',
+      undefined,
+      { deadline: 30_000, memory: 64 },
+      controller.signal,
+    );
+    setTimeout(() => controller.abort(), 50);
+    expect(await answer).toEqual({
+      ok: false,
+      error: { code: 'cancelled', message: 'sample.spin was cancelled.' },
+    });
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
   it('stops a job that runs out of its memory', async () => {
     expect(await run('sample.fill')).toEqual({
       ok: false,

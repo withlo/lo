@@ -386,6 +386,72 @@ function withEndings(version: Version): string[] {
 }
 
 /**
+ * A diff whose changes are given rather than found, as a patch's hunks give them: each change's
+ * lines stay as given, and only the words that changed inside them are looked for, among the
+ * change's own lines. `oldLines` and `newLines` are each side's lines, numbered from 1, as far as
+ * the changes reach; lines outside the changes are never read, so they can stand in for lines the
+ * caller doesn't have. Changes must be in order, must not overlap, and must lie within the lines.
+ */
+export function diffOfChanges(
+  changes: readonly { old: Lines; new: Lines }[],
+  oldLines: readonly string[],
+  newLines: readonly string[],
+  options: DiffOptions & { noNewlineAtEnd?: { old: boolean; new: boolean } } = {},
+): FileDiff {
+  const budget = budgetOf(options);
+  let oldEnd = 1;
+  let newEnd = 1;
+  for (const change of changes) {
+    const fits = (lines: Lines, end: number, count: number) =>
+      lines.start >= end && lines.end >= lines.start && lines.end <= count + 1;
+    if (!fits(change.old, oldEnd, oldLines.length) || !fits(change.new, newEnd, newLines.length)) {
+      throw new RangeError("A diff's changes must be in order, apart, and within its lines.");
+    }
+    oldEnd = change.old.end;
+    newEnd = change.new.end;
+  }
+  const found = changes.map((given): Change => {
+    const change: Change = {
+      old: { ...given.old },
+      new: { ...given.new },
+      oldWords: [],
+      newWords: [],
+    };
+    if (given.old.end === given.old.start || given.new.end === given.new.start) return change;
+    const old = oldLines.slice(given.old.start - 1, given.old.end - 1);
+    const added = newLines.slice(given.new.start - 1, given.new.end - 1);
+    // Only the words come from here: which lines changed is the caller's to say.
+    const inner = diffLines(old, added, { budget, whitespace: options.whitespace ?? true });
+    for (const each of inner.changes) {
+      for (const word of each.oldWords) {
+        change.oldWords.push({ ...word, line: word.line + given.old.start - 1 });
+      }
+      for (const word of each.newWords) {
+        change.newWords.push({ ...word, line: word.line + given.new.start - 1 });
+      }
+    }
+    return change;
+  });
+  return fileDiff(
+    givenVersion(oldLines, options.noNewlineAtEnd?.old ?? false),
+    givenVersion(newLines, options.noNewlineAtEnd?.new ?? false),
+    found,
+    false,
+    options,
+  );
+}
+
+/** Lines a caller gave, as a version, without their line breaks. */
+function givenVersion(lines: readonly string[], noNewlineAtEnd: boolean): Version {
+  return {
+    lines: [...lines],
+    crlf: [],
+    noNewlineAtEnd,
+    lineEndings: lines.length === 0 ? 'none' : 'lf',
+  };
+}
+
+/**
  * The words that changed between two versions of a line, ignoring its indentation: where `oldLine`
  * and `newLine` differ, as ranges on line 1 of each.
  */

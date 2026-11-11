@@ -40,6 +40,7 @@ export type {
   Target,
   ThreadComment,
   ThreadView,
+  Viewport,
   VimKey,
   WordRange,
 } from './api.ts';

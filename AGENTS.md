@@ -326,7 +326,9 @@ files or the network for the window.
 - Jobs wait for one of as many workers as the machine has cores, each a thread of its own, under a
   deadline that starts when the job does and a cap on its JavaScript heap (10 s and 256 MB unless
   the job sets its own). Past either, the job fails as `timeout` or `memory`. Every message with an
-  id gets an answer, and the window gives up on one after a minute (`unanswered`).
+  id gets an answer, and the window gives up on one after a minute (`unanswered`). The window can
+  cancel a job it sent (`run`'s `signal`): one still waiting never starts, and one running has its
+  worker stopped; either fails as `cancelled`.
 - Main watches the process's memory and stops it past 2 GB, since memory outside the heap
   (WebAssembly's) can't be capped any other way, and treats a fatal error the same way. Jobs the
   window had sent fail as `restarted` at once; the process starts again, waiting longer after each
@@ -420,6 +422,9 @@ status bar.
   earlier fetch brought while GitHub can't be reached.
 - The head on screen is GitHub's when the tab opened. A newer push says so in a banner, and moves
   nothing until it's loaded.
+- A tab says it's offline once GitHub has been out of reach for 25 s, so a blip says nothing. A
+  build run from source takes another wait from `LO_OFFLINE_AFTER_MS`, for its tests; a packaged
+  build ignores it.
 - The window gets what it shows on `tab.pull`, `tab.files` and `tab.local`, each sent only when it
   changes, and asks for all three with `tab.state`. None of it holds a token. `tab.copy` puts up to
   1 MiB of text on the clipboard, and `tab.openExternal` opens pages on `https://github.com/` only,
@@ -462,6 +467,41 @@ Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `c
   the middle view calls with the file on screen, for the tree to mark and scroll to; and
   `onShowFile`, through which the diff shows a changed file the tree asks for, and the whole-file
   view any file. Until a view has asked, `⏎` and "Whole file" say there's nowhere to show the file.
+
+### A pull request's diff
+
+The `diff` feature draws a pull request's tab's middle: every changed file in one scroll, in the
+order the tree lists them, through `@lo/ui/code`'s diff view. It works that order out from its own
+files with the tree's `orderIn`, so the view is drawn in it from the start, before the tree has the
+files, and keeps it until the reader orders the files another way: what the files say of themselves
+changing, as when the local copy marks one generated, doesn't reorder a drawn view.
+
+- Main lists each changed file's versions at the head on screen (`diff.state`): from the local
+  copy's comparison once it's ready, with each side's blob and size, and from GitHub's list of the
+  pull request's files until then. Each says how the file starts out: shown, closed as generated,
+  kept out as large until `za`, binary, or unchanged. Files are named by their place in the list,
+  never by their paths.
+- The window asks for files' texts in batches (`diff.texts`), first files first, and the background
+  process diffs them (`diff.files`), finds moved code (`diff.moves`) and highlights them
+  (`diff.highlight`). The view is drawn once every file that shows its lines has its diff, and the
+  highlighting follows. A new order, or other files, is a new view, which puts the cursor's line
+  back where it was on the page, or else what was at the top of the screen. A batch that fails whole
+  is tried a file at a time, and closing the tab cancels its jobs.
+- GitHub's diff is drawn as GitHub gives it: its hunks at their real line numbers, and placeholders
+  between them that stay collapsed. Its lines are never diffed again; only the words inside each
+  change are looked for. A file whose hunks reach past line 100,000 waits for the local copy, as
+  does one past the first million lines GitHub's diffs of the tab's files draw between them, counted
+  in the panel's order, and a batch's files go over several jobs so no job draws more than 200,000.
+  When the local copy's files are the same ones, each is swapped in place as its diff arrives, and
+  what was at the top of the screen stays where it is; otherwise the view is drawn anew once they're
+  all in. Nothing on screen moves meanwhile: a file on screen whose new lines would draw in other
+  rows (`keepsShape`) keeps GitHub's lines, diff and colors, and every file on screen its moved-code
+  labels, until it's off screen once the reader stops scrolling, moves the cursor, or opens or
+  closes it, and then takes the loader's latest; a file off screen changes at once, how it starts
+  out included (generated, large, or no longer either).
+- Once the view is drawn, the window says so (`diff.drawn`), and the tab keeps that head on screen,
+  even one it took from what it saved: a newer one from GitHub is offered as a newer push.
+- `diff.layout` and `diff.whitespace` are settings; `gi` and `gw` change them.
 
 ### Opening pull requests
 

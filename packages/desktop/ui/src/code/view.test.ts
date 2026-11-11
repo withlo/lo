@@ -16,6 +16,7 @@ import type {
   VimKey,
 } from './api.ts';
 import { editsText } from './keys.ts';
+import { swapLines } from './lines.ts';
 import { createDiffView } from './view.ts';
 
 const noRects = (): DOMRectList => Object.assign([], { item: () => null });
@@ -860,6 +861,31 @@ describe('moved code', () => {
     shown.setMoves([]);
     expect(labels('After')).toEqual([]);
   });
+
+  test('draws again only the files whose moves changed', () => {
+    const shown = open();
+    const words = { old: [], new: [] };
+    const cToB = {
+      from: { file: 'c', first: 1, last: 3 },
+      to: { file: 'b', first: 3, last: 5 },
+      words,
+    };
+    shown.setMoves([cToB]);
+    const dispatched = vi.spyOn(EditorView.prototype, 'update');
+    try {
+      // The same moves again: nothing to draw.
+      shown.setMoves([cToB]);
+      expect(dispatched).not.toHaveBeenCalled();
+      // One more, within `a`: only `a` is drawn again, on each side.
+      shown.setMoves([
+        cToB,
+        { from: { file: 'a', first: 1, last: 1 }, to: { file: 'a', first: 5, last: 5 }, words },
+      ]);
+      expect(dispatched).toHaveBeenCalledTimes(2);
+    } finally {
+      dispatched.mockRestore();
+    }
+  });
 });
 
 describe('loading', () => {
@@ -1050,6 +1076,17 @@ describe('gaps', () => {
     }
   });
 
+  test('says whether the whole file would draw in the rows GitHub’s diff of it has', () => {
+    const shown = gappedView();
+    // The gap filled, collapsed as it was: the same rows.
+    expect(shown.keepsShape('e', { old: eOld, new: eNew }, diffOf({ old: eOld, new: eNew }))).toBe(
+      true,
+    );
+    // More lines after the last hunk: a collapsed run below it that wasn't there.
+    const longer = { old: [...eOld, ...numbered(10, 'x')], new: [...eNew, ...numbered(10, 'x')] };
+    expect(shown.keepsShape('e', longer, diffOf(longer))).toBe(false);
+  });
+
   test('a shown file keeps its diff only while its lines outside the gaps stay', () => {
     const shown = gappedView();
     // The gaps filled, and nothing else changed: the diff still fits.
@@ -1101,5 +1138,29 @@ describe('the inline layout', () => {
     expect(shown.probe.cursor()?.at).toEqual(onHeader('b', 'new'));
     shown.setLayout('split');
     expect(shown.probe.cursor()).toMatchObject({ at: onHeader('b', 'new'), pane: 'new' });
+  });
+});
+
+describe('swapLines', () => {
+  test('fills each run of placeholders with one change, and leaves the lines that stay', () => {
+    const before = ['a', '', '', '', 'e', '', 'g'];
+    const after = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+    const host = document.body.appendChild(document.createElement('div'));
+    let changed = 0;
+    const editor = new EditorView({
+      doc: ['header', ...before].join('\n'),
+      parent: host,
+      extensions: EditorView.updateListener.of((update) =>
+        update.changes.iterChangedRanges(() => (changed += 1)),
+      ),
+    });
+
+    swapLines(editor, 1, before, after, true);
+
+    expect(editor.state.doc.toString()).toBe(['header', ...after].join('\n'));
+    // Lines 2 to 4, line 6, and the line added at the end.
+    expect(changed).toBe(3);
+    editor.destroy();
+    host.remove();
   });
 });

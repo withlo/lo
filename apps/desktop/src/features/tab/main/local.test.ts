@@ -121,6 +121,62 @@ describe('a local copy', { timeout: 60_000 }, () => {
     local.close();
   });
 
+  it('finds where a merged pull request branched from GitHub’s base, not the branch it merged into', async () => {
+    // The base branch fast-forwarded to the head, as a merge can leave it.
+    const remote = writeAppRemote(folder());
+    git(
+      join(new URL(remote).pathname, 'rozed-dev', 'e2e.git'),
+      'update-ref',
+      'refs/heads/app/base',
+      APP_PULL.head,
+    );
+    const localGit = await testGit(remote);
+    const { local, last } = copyIn(localGit);
+    local.want(REFS);
+    local.show(APP_PULL.head);
+
+    await expect.poll(last, { timeout: 40_000 }).toEqual({
+      kind: 'ready',
+      head: APP_PULL.head,
+      base: APP_PULL.head,
+      mergeBase: APP_PULL.base,
+      offline: false,
+    });
+    local.close();
+  });
+
+  it('fetches a merged pull request’s base by its ID when its branch no longer holds it', async () => {
+    // The base branch fast-forwarded to the head, and GitHub's base, a commit after the one the
+    // pull request branched from, kept only by a ref no fetch of the branch brings.
+    const remote = writeAppRemote(folder());
+    const bare = join(new URL(remote).pathname, 'rozed-dev', 'e2e.git');
+    const tree = git(bare, 'rev-parse', `${APP_PULL.base}^{tree}`);
+    const githubBase = git(
+      bare,
+      'commit-tree',
+      tree,
+      '-p',
+      APP_PULL.base,
+      '-m',
+      'later on the base',
+    );
+    git(bare, 'update-ref', 'refs/kept/base', githubBase);
+    git(bare, 'update-ref', 'refs/heads/app/base', APP_PULL.head);
+    const localGit = await testGit(remote);
+    const { local, last } = copyIn(localGit);
+    local.want({ ...REFS, base: parseOid(githubBase) });
+    local.show(APP_PULL.head);
+
+    await expect.poll(last, { timeout: 40_000 }).toEqual({
+      kind: 'ready',
+      head: APP_PULL.head,
+      base: APP_PULL.head,
+      mergeBase: APP_PULL.base,
+      offline: false,
+    });
+    local.close();
+  });
+
   it('fetches a head GitHub has moved on from by its ID, and shows it once asked', async () => {
     const localGit = await testGit();
     const { local, last } = copyIn(localGit);

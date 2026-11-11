@@ -1,7 +1,7 @@
 import { diffText } from '@lo/diff';
 import { describe, expect, test } from 'vitest';
 
-import { collapsedRuns, type FileRows, fileRows, runAt, shownRuns } from './rows.ts';
+import { collapsedRuns, type FileRows, fileRows, runAt, shiftRows, shownRuns } from './rows.ts';
 
 /** Lines `first` to `last` as `a-b`, `a` for one line, or `.` for none. */
 function side(first: number, last: number): string {
@@ -169,5 +169,21 @@ describe('runAt', () => {
     expect(runAt(runs, 'old', 4)).toBe(runs[0]);
     expect(runAt(runs, 'new', 12)).toBe(runs[1]);
     expect(runAt(runs, 'new', 9)).toBeUndefined();
+  });
+});
+
+describe('shiftRows', () => {
+  test('moves a file’s rows as far as moving its headers would', () => {
+    const old = numbered(20);
+    const diff = diffText(old, old.replace('line 10\n', 'ten\nmore\n'));
+    const state = { kind: 'diff', diff } as const;
+    const at = (oldHeader: number, newHeader: number) =>
+      fileRows({ header: oldHeader, count: 20 }, { header: newHeader, count: 21 }, state);
+
+    expect(describeRows(shiftRows(at(5, 8), 3, -2))).toEqual(describeRows(at(8, 6)));
+    // A side with no line in a row stays without one.
+    expect(describeRows(shiftRows(at(5, 8), 3, -2)).filter((row) => row.startsWith('.'))).toEqual([
+      expect.stringMatching(/^\. -> \d+$/),
+    ]);
   });
 });
