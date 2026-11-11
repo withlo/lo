@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { openDatabase } from './database.ts';
 import { defineContract, reply } from '../ipc/contract.ts';
 import { createRouter, defineFeature, loadFeatures, type Feature } from './features.ts';
+import type { LocalGit } from './git.ts';
 import { migrate } from './migrations.ts';
 import { contract as notes } from './test/features/notes/contract.ts';
 
@@ -18,6 +19,15 @@ const migrations = import.meta.glob<string>('./test/features/*/migrations/*.sql'
   import: 'default',
 });
 
+/** Git as features see it, before Lo has looked for one: these tests run none. */
+const noGit: LocalGit = {
+  status: undefined,
+  cache: undefined,
+  onStatus: () => undefined,
+  check: () => Promise.reject(new Error('these tests run no git')),
+  setCap: () => Promise.resolve(),
+};
+
 function router() {
   const sent: [string, unknown][] = [];
   const log = vi.fn<(message: string, error: unknown) => void>();
@@ -28,6 +38,7 @@ function router() {
     send: (channel, value) => sent.push([channel, value]),
     log,
     database,
+    git: noGit,
   });
   routes.start();
   const ask = (channel: string, input?: unknown) =>
@@ -156,6 +167,7 @@ describe('createRouter', () => {
       send: (...message) => sent.push(message),
       log: () => {},
       database: openDatabase(':memory:'),
+      git: noGit,
     });
     expect(() => routes.start()).toThrow(z.ZodError);
     expect(sent).toEqual([]);

@@ -6,6 +6,12 @@
       "path": "../../packages/desktop/ui"
     },
     {
+      "path": "../../packages/desktop/git"
+    },
+    {
+      "path": "../../testing"
+    },
+    {
       "path": "./tsconfig.shared.json"
     },
     {

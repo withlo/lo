@@ -10,7 +10,7 @@ import {
   type Remote,
 } from './environment.ts';
 import { streamRecords } from './records.ts';
-import { Child, type Finished, OUTPUT_LIMIT } from './spawn.ts';
+import { Child, type Finished, OUTPUT_LIMIT, STOP_GRACE } from './spawn.ts';
 import type { Token } from './token.ts';
 import { formatVersion, type GitVersion } from './version.ts';
 
@@ -85,6 +85,9 @@ export class Runner {
   readonly #settings: RunnerSettings;
   /** How many gits are running on each repository, by its folder as commands name it. */
   readonly #running = new Map<string, number>();
+  /** Every git this runner started that hasn't exited, long-lived readers included. */
+  readonly #children = new Set<Child>();
+  #stopped = false;
 
   constructor(git: Git, settings: RunnerSettings) {
     this.git = git;
@@ -96,7 +99,7 @@ export class Runner {
   /**
    * A git command on the repository at `location`, which git is always told, so it never looks
    * for one. With `fetching`, git may download from the remote and signs in to it with the token,
-   * and only then.
+   * and only then. Once the runner has stopped, it fails: nothing more runs.
    */
   command(
     location: Location,
@@ -109,14 +112,41 @@ export class Runner {
       readsOnly?: boolean;
     } = {},
   ): GitCommand {
+    if (this.#stopped) throw stopped('git');
     return new GitCommand(
       this.git,
       this.#settings,
       this.remote,
       location,
       options.fetching,
-      options.readsOnly ? undefined : (child) => this.#track(location, child),
+      (child) => this.#started(location, child, !options.readsOnly),
     );
+  }
+
+  /**
+   * Stops every git this runner started, and keeps it from starting more, as when Lo quits. Each
+   * is asked to stop first, so that git removes its lock files and temporary files itself, and is
+   * killed, with everything it started, if it hasn't within {@link STOP_GRACE}. Resolves once all
+   * have exited.
+   */
+  async stop(): Promise<void> {
+    this.#stopped = true;
+    const children = [...this.#children];
+    await Promise.all(children.map((child) => child.stopGently()));
+    await within(
+      STOP_GRACE,
+      Promise.all(children.map((child) => child.exited.catch(() => undefined))),
+    );
+  }
+
+  /** Notes a git as started: until it exits, {@link Runner.stop} stops it. */
+  #started(location: Location, child: Child, counted: boolean): void {
+    this.#children.add(child);
+    const exited = () => this.#children.delete(child);
+    child.exited.then(exited, exited);
+    // Made just before the runner stopped, and started just after.
+    if (this.#stopped) child.stop();
+    if (counted) this.#track(location, child);
   }
 
   /**
@@ -341,6 +371,24 @@ async function* limited(
     length += chunk.byteLength;
     if (length > limit) throw new GitError({ kind: 'tooLarge', command, limit });
     yield chunk;
+  }
+}
+
+/** The error for running `command` once its runner has stopped. */
+function stopped(command: string): GitError {
+  return new GitError({ kind: 'git', command, message: 'the cache is closed' });
+}
+
+/** Waits for `promise`, or `milliseconds`, whichever comes first. */
+async function within(milliseconds: number, promise: Promise<unknown>): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const elapsed = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, milliseconds);
+  });
+  try {
+    await Promise.race([promise, elapsed]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
