@@ -15,6 +15,8 @@
     {"name": "misnested formatting", "parts": [["<b><i></b></i>", 60000]]},
     {"name": "formatting and links", "parts": [["<a><b><a><b>", 30000]]},
     {"name": "foster parenting", "parts": [["<table>x<div>", 60000]]},
+    {"name": "formatting tags with distinct attributes, each kept apart", "parts": [["<b id={i}>", 30000], ["x", 1]], "notes": ["deep"]},
+    {"name": "heading end tags against a deep stack", "parts": [["<div>", 30000], ["</h1>", 30000]], "notes": ["deep"]},
     {"name": "many attributes", "parts": [["<div ", 1], ["a=1 ", 250000], [">x", 1]]},
     {"name": "one huge attribute", "parts": [["<div title=\"", 1], ["x", 1000000], ["\">y", 1]]},
     {"name": "many paragraphs", "parts": [["<p>a</p>", 120000]], "notes": ["nodes"]},

@@ -34,6 +34,18 @@ test('a parse stops at its cap on elements', () => {
   expect(parseHtml('<b>'.repeat(9), 12)).toBeDefined();
 });
 
+test('and at its cap on attributes, which copies are charged for', () => {
+  const long = `<b id=1 class="${'c '.repeat(500)}">`;
+  // The text's own attributes, however long, are read.
+  expect(parseHtml(`<p>${long}x</b></p>`.repeat(50), 1_000)).toBeDefined();
+  // Copied into every later paragraph, they're more than the text holds.
+  expect(parseHtml(`<p>${long}<p>x<p>x<p>x`, 1_000)).toBe(undefined);
+});
+
+test('HTML is read as in a div, so a stray table part changes nothing', () => {
+  expect(textOf(parseHtml('<col><tr><td>a</td></tr><p>b</p>', 100)!)).toBe('a\nb\n');
+});
+
 test('HTML nested past the depth is its text', () => {
   const fragment = parseHtml(
     `${'<div>'.repeat(100)}deep${'</div>'.repeat(100)}<p>after</p>`,

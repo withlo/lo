@@ -1,11 +1,12 @@
 /**
  * GitHub's rendering of a post (`bodyHTML`) to Lo's tree. GitHub has already sanitized it, but it's
- * read as untrusted anyway: parsed with a cap on the elements built, stripped of what GitHub never
- * shows, flattened past a depth before anything that recurses reads it, sanitized again against an
- * allowlist far tighter than GitHub's own, and mapped by a closed switch that knows GitHub's markup
- * (mentions, alerts, task lists, highlighted code, footnotes, math and diagrams) as GitHub renders
- * it. Every link and image passes the same rules as Markdown's, through the same builder. A
- * rendering too long to read, or one that would build too much, shows from the post's Markdown.
+ * read as untrusted anyway: parsed with a cap on the elements built and the attributes they carry,
+ * stripped of what GitHub never shows, flattened past a depth before anything that recurses reads
+ * it, sanitized again against an allowlist far tighter than GitHub's own, and mapped by a closed
+ * switch that knows GitHub's markup (mentions, alerts, task lists, highlighted code, suggested
+ * changes, footnotes, math and diagrams) as GitHub renders it. Every link and image passes the same
+ * rules as Markdown's, through the same builder. A rendering too long to read, or one that would
+ * build too much, shows from the post's Markdown.
  */
 
 import type { Element, ElementContent, Properties, Root, RootContent } from 'hast';
@@ -19,7 +20,7 @@ import { resolveLimits, type Limits } from './limits.ts';
 import { fragmentName } from './links.ts';
 import { finish, markdownTree } from './markdown.ts';
 import type { Repo } from './references.ts';
-import type { Alert, Block, Inline, ListItem, Note, Table, Tree } from './tree.ts';
+import type { Alert, Block, Inline, ListItem, Note, Suggestion, Table, Tree } from './tree.ts';
 
 /** A post as GitHub gives it: its rendering, and the Markdown it was rendered from. */
 export interface Post {
@@ -162,6 +163,7 @@ export const SCHEMA: Schema = {
         ...ALERTS.map((type) => `markdown-alert-${type}`),
         'highlight',
         /^highlight-(?:source|text)-[\w+#.-]{1,64}$/,
+        'js-suggested-changes-blob',
       ],
     ],
     p: [['className', 'markdown-alert-title']],
@@ -176,7 +178,7 @@ export const SCHEMA: Schema = {
     'math-renderer': [['className', 'js-display-math', 'js-inline-math']],
     ol: ['start'],
     th: ['align'],
-    td: ['align'],
+    td: ['align', ['className', 'blob-code-addition', 'blob-code-deletion']],
     details: ['open'],
     video: ['src'],
   },
@@ -327,9 +329,12 @@ class Mapper {
       run = [];
     };
     for (const node of this.root.children) {
-      if (isElement(node, 'section') && node.properties['dataFootnotes'] !== undefined) {
+      if (isFootnotes(node)) {
         endRun();
-        append(footnotes, this.footnoteParts(node));
+        const { parts: items, rest } = this.footnoteParts(node);
+        append(footnotes, items);
+        // Whatever else the section holds shows where it was.
+        if (rest.some((child) => !isBlank(child))) parts.push(this.part(rest));
       } else if (isBlock(node)) {
         endRun();
         parts.push(this.part([node]));
@@ -352,10 +357,23 @@ class Mapper {
     return { build: () => this.blocks(nodes), plain };
   }
 
-  /** The footnotes in GitHub's footnote section, each named as its references name it. */
-  private footnoteParts(section: Element): FootnotePart[] {
+  /**
+   * The footnotes in GitHub's footnote section, each named as its references name it, and the
+   * rest of what the section holds besides its heading.
+   */
+  private footnoteParts(section: Element): { parts: FootnotePart[]; rest: ElementContent[] } {
+    const label = footnoteLabel(section);
     const list = section.children.find((child) => isElement(child, 'ol'));
-    if (!isElement(list)) return [];
+    const rest: ElementContent[] = [];
+    for (const child of section.children) {
+      if (child === label) continue;
+      if (child === list && isElement(list)) {
+        for (const item of list.children) if (!isElement(item, 'li')) rest.push(item);
+      } else {
+        rest.push(child);
+      }
+    }
+    if (!isElement(list)) return { parts: [], rest };
     const items = list.children.filter((child): child is Element => isElement(child, 'li'));
     // References name the first footnote with each name. One with no name, or a name already
     // taken, still shows, under a name no reference can mean, given once every name is known.
@@ -366,7 +384,7 @@ class Mapper {
       taken.add(name);
       return name;
     });
-    return items.map((item, index) => {
+    const parts = items.map((item, index) => {
       const number = index + 1;
       let name = names[index];
       for (let repeat = 1; name === undefined; repeat++) {
@@ -385,6 +403,7 @@ class Mapper {
         plain: () => lines(textOf(item)),
       };
     });
+    return { parts, rest };
   }
 
   /** Names every heading, in order, as GitHub makes its anchors, so links find them. */
@@ -398,14 +417,10 @@ class Mapper {
         continue;
       }
       // The footnote section's own heading is the renderer's to show.
-      if (
-        node.type === 'element' &&
-        node.tagName === 'section' &&
-        node.properties['dataFootnotes'] !== undefined
-      ) {
-        continue;
+      const label = node.type === 'element' && isFootnotes(node) ? footnoteLabel(node) : undefined;
+      for (let i = node.children.length - 1; i >= 0; i--) {
+        if (node.children[i] !== label) stack.push(node.children[i]!);
       }
-      for (let i = node.children.length - 1; i >= 0; i--) stack.push(node.children[i]!);
     }
   }
 
@@ -438,7 +453,6 @@ class Mapper {
   private block(node: Element): Block[] {
     switch (node.tagName) {
       case 'p': {
-        if (hasClass(node, 'markdown-alert-title')) return [];
         const children = this.paragraph(node.children);
         return children.length > 0 ? [{ kind: 'paragraph', children }] : [];
       }
@@ -464,7 +478,7 @@ class Mapper {
       case 'pre':
         return [this.pre(node)];
       case 'table':
-        return [this.table(node)];
+        return this.table(node);
       case 'hr':
         return [{ kind: 'rule' }];
       case 'details':
@@ -487,17 +501,29 @@ class Mapper {
     }
   }
 
-  /** GitHub's alerts and highlighted code are `div`s; any other `div` is its content. */
+  /**
+   * GitHub's alerts, highlighted code and review comments' suggested changes are `div`s; any
+   * other `div` is its content.
+   */
   private div(node: Element): Block[] {
     const names = classes(node);
+    if (names.includes('js-suggested-changes-blob')) {
+      const suggestion = suggested(node);
+      return suggestion ? [suggestion] : this.blocks(node.children);
+    }
     if (names.includes('markdown-alert')) {
       const type = ALERTS.find((alert) => names.includes(`markdown-alert-${alert}`));
-      const children = this.blocks(node.children);
       if (type) {
-        const alert: Alert = { kind: 'alert', type, children };
+        // GitHub's title ("Note" and the like) comes first, and is the renderer's to show.
+        const title = node.children.find((child) => !isBlank(child));
+        const rest =
+          isElement(title, 'p') && hasClass(title, 'markdown-alert-title')
+            ? node.children.filter((child) => child !== title)
+            : node.children;
+        const alert: Alert = { kind: 'alert', type, children: this.blocks(rest) };
         return [alert];
       }
-      return [{ kind: 'quote', children }];
+      return [{ kind: 'quote', children: this.blocks(node.children) }];
     }
     if (names.includes('highlight')) {
       const scope = names.find((name) => /^highlight-(?:source|text)-/.test(name));
@@ -565,21 +591,33 @@ class Mapper {
     };
   }
 
-  /** A list item, ticked or not when it's a task: GitHub marks it with a checkbox first. */
+  /**
+   * A list item, ticked or not when it's a task: GitHub marks it with a checkbox first, in its
+   * first paragraph when the list is loose.
+   */
   private item(node: Element): ListItem {
     if (!hasClass(node, 'task-list-item')) return { children: this.blocks(node.children) };
     const children = [...node.children];
     const first = children.findIndex((child) => !isBlank(child));
-    const box = children[first];
-    if (!isElement(box, 'input') || property(box, 'type') !== 'checkbox') {
-      return { children: this.blocks(node.children) };
+    const lead = children[first];
+    if (isElement(lead, 'p')) {
+      const inner = [...lead.children];
+      const box = withoutCheckbox(inner);
+      if (box === undefined) return { children: this.blocks(node.children) };
+      children[first] = { ...lead, children: inner };
+      return { checked: box, children: this.blocks(children) };
     }
-    children.splice(0, first + 1);
-    return { checked: Boolean(box.properties['checked']), children: this.blocks(children) };
+    const box = withoutCheckbox(children);
+    if (box === undefined) return { children: this.blocks(node.children) };
+    return { checked: box, children: this.blocks(children) };
   }
 
-  private table(node: Element): Table {
+  /** A table, after what it holds besides its rows: its caption, which GitHub shows as text. */
+  private table(node: Element): Block[] {
     const rows: { cells: Element[]; head: boolean }[] = [];
+    const caption = node.children.filter(
+      (child) => !isElement(child) || !['tr', 'thead', 'tbody', 'tfoot'].includes(child.tagName),
+    );
     // Rows in order, through the table's sections, which nest no further.
     const visit = (parent: Element, head: boolean): void => {
       for (const child of parent.children) {
@@ -602,7 +640,13 @@ class Mapper {
       const value = property(element, 'align');
       return value === 'left' || value === 'center' || value === 'right' ? value : 'none';
     });
-    return { kind: 'table', align, head, rows: rows.map((row) => row.cells.map(cell)) };
+    const table: Table = {
+      kind: 'table',
+      align,
+      head,
+      rows: rows.map((row) => row.cells.map(cell)),
+    };
+    return [...this.blocks(caption), table];
   }
 
   private details(node: Element): Block {
@@ -716,8 +760,15 @@ class Mapper {
     // Footnotes' links back, and headings' permalinks, are the renderer's to draw: GitHub's hold
     // an arrow, or only an icon. Anything else marked as one is an ordinary link.
     const written = collapse(textOf(node)).trim();
-    if (node.properties['dataFootnoteBackref'] !== undefined && /^↩\d*$/.test(written)) return [];
-    if (hasClass(node, 'anchor') && written === '') return [];
+    const pictured = find(node, 'img') !== undefined;
+    if (
+      node.properties['dataFootnoteBackref'] !== undefined &&
+      /^↩\d*$/.test(written) &&
+      !pictured
+    ) {
+      return [];
+    }
+    if (hasClass(node, 'anchor') && written === '' && !pictured) return [];
     if (hasClass(node, 'user-mention') || hasClass(node, 'team-mention')) {
       if (written.startsWith('@') && !linked)
         return this.builder.mention(written.slice(1), written);
@@ -736,6 +787,54 @@ class Mapper {
     if (href === undefined || linked) return this.inlines(node.children, linked);
     return this.builder.link(href, this.inlines(node.children, true));
   }
+}
+
+/**
+ * A review comment's suggested change as GitHub draws it, a diff: the lines it suggests, in its
+ * added rows. The removed rows are the lines it replaces, which the code shows. Anything besides
+ * the rows and GitHub's label, and it's only content.
+ */
+function suggested(node: Element): Suggestion | undefined {
+  const added: string[] = [];
+  let other = '';
+  const stack: ElementContent[] = node.children.toReversed();
+  while (stack.length > 0) {
+    const next = stack.pop()!;
+    if (next.type === 'text') other += next.value;
+    if (next.type !== 'element') continue;
+    if (next.tagName === 'td' && hasClass(next, 'blob-code-addition')) {
+      added.push(rawText(next));
+    } else if (!(next.tagName === 'td' && hasClass(next, 'blob-code-deletion'))) {
+      for (let i = next.children.length - 1; i >= 0; i--) stack.push(next.children[i]!);
+    }
+  }
+  if (collapse(other).trim() !== 'Suggested change') return undefined;
+  return { kind: 'suggestion', text: added.join('\n') };
+}
+
+/** Whether `node` is GitHub's footnote section. */
+function isFootnotes(node: RootContent | ElementContent): node is Element {
+  return isElement(node, 'section') && node.properties['dataFootnotes'] !== undefined;
+}
+
+/** The heading GitHub puts first in its footnote section, which the renderer shows its own way. */
+function footnoteLabel(section: Element): Element | undefined {
+  const first = section.children.find((child) => !isBlank(child));
+  return isElement(first, 'h2') && collapse(textOf(first)).trim() === 'Footnotes'
+    ? first
+    : undefined;
+}
+
+/**
+ * Takes the checkbox GitHub puts first in a task list's item out of `nodes`, and says whether it
+ * was ticked; undefined, leaving `nodes` as they were, when they don't start with one.
+ */
+function withoutCheckbox(nodes: (RootContent | ElementContent)[]): boolean | undefined {
+  const first = nodes.findIndex((child) => !isBlank(child));
+  const box = nodes[first];
+  if (!isElement(box, 'input') || property(box, 'type') !== 'checkbox') return undefined;
+  nodes.splice(0, first + 1);
+  return Boolean(box.properties['checked']);
 }
 
 /** The first `tag` element in `node`, found with an explicit stack. */

@@ -44,11 +44,11 @@ const CEILINGS: Readonly<Limits> = Object.freeze({
 
 /**
  * The least any limit may be lowered to: a tree always has room for its stand-ins, the plain text
- * shown for what didn't fit.
+ * shown for what didn't fit, and for a footnote's, a paragraph in an item in the footnotes.
  */
 const FLOORS: Readonly<Limits> = Object.freeze({
   length: 1,
-  depth: 1,
+  depth: 3,
   nodes: 16,
   images: 1,
   addresses: 1,

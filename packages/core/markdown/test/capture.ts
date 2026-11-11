@@ -87,6 +87,7 @@ const SNIPPETS = [
   'Text[^1] and[^1] again.\n\n[^1]: A note with **strong** text.\n\n    And a second paragraph.',
   '- [ ]\n- [x]\n- [ ] \n- [ ] Open\n- [x] Done\n  - [X] Nested',
   '1. [ ] Numbered\n2. Plain',
+  '- [ ] Loose\n\n- [x] Task\n\n  Second paragraph.',
   '- [ ] **Strong** first',
   '# Hi\n\n## Hi\n\n### `x` & Ü!\n\n[to the second](#hi-1)',
   'a\nb  \nc\\\nd',

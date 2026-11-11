@@ -5,7 +5,7 @@ import { describe, expect, test } from 'vitest';
 import { collect, textOf } from '../test/support.ts';
 import { isRecord, problems, walk } from '../test/walker.ts';
 import { githubTree, type Post } from './github.ts';
-import { DEFAULT_LIMITS } from './limits.ts';
+import { DEFAULT_LIMITS, resolveLimits } from './limits.ts';
 import { markdownTree } from './markdown.ts';
 import type { Block, Inline, Tree } from './tree.ts';
 
@@ -255,6 +255,17 @@ describe("GitHub's rendering", () => {
       true,
       undefined,
     ]);
+    // In a loose list, GitHub puts each checkbox in the item's first paragraph.
+    const loose = captured('snippets.json', 'snippets').find((item) =>
+      field(item, 'markdown').startsWith('- [ ] Loose'),
+    );
+    const [list] = tree(field(loose, 'html')).blocks;
+    expect(
+      list?.kind === 'list' && list.items.map((item) => [item.checked, textOf(item.children)]),
+    ).toEqual([
+      [false, 'Loose'],
+      [true, 'TaskSecond paragraph.'],
+    ]);
   });
 
   test('code, suggestions, diagrams and math as their text', () => {
@@ -438,8 +449,99 @@ describe("GitHub's rendering", () => {
     ]);
     const reference = posts.find((post) => post.source.endsWith('/pull/74'));
     expect(collect(tree(reference!, reference!.source), 'link').map((link) => link.target)).toEqual(
-      [{ kind: 'web', url: 'https://github.com/rozed-dev/e2e/pull/64' }],
+      [{ kind: 'web', url: 'https://github.com/rozed-dev/e2e/pull/75' }],
     );
+    // A review comment's suggested change, which GitHub draws as a diff, reads as Markdown's does.
+    const suggesting = posts.filter((post) => post.markdown.includes('```suggestion'));
+    expect(suggesting).toHaveLength(1);
+    const { markdown, html, source } = suggesting[0]!;
+    const suggestion = tree({ html, markdown }, source).blocks;
+    expect(collect({ blocks: suggestion, notes: [], diagnostics: [] }, 'suggestion')).toEqual([
+      { kind: 'suggestion', text: 'slow\npass' },
+    ]);
+    expect(suggestion).toEqual(markdownTree(markdown, { page: source }).blocks);
+  });
+});
+
+describe('forged markup', () => {
+  test("a stray table part doesn't change how the rest reads", () => {
+    expect(tree('<col><p>shown</p>').blocks).toEqual([
+      { kind: 'paragraph', children: [text('shown')] },
+    ]);
+    expect(textOf(tree('<tr><td>cell</td></tr><caption>c</caption><p>after</p>').blocks)).toBe(
+      'cellcafter',
+    );
+  });
+
+  test("an alert's title outside an alert is a paragraph", () => {
+    expect(tree('<p class="markdown-alert-title">Forged</p>').blocks).toEqual([
+      { kind: 'paragraph', children: [text('Forged')] },
+    ]);
+    // Inside an alert of no type, a quote, it shows too.
+    expect(
+      tree('<div class="markdown-alert"><p class="markdown-alert-title">Title</p><p>x</p></div>')
+        .blocks,
+    ).toEqual([
+      {
+        kind: 'quote',
+        children: [
+          { kind: 'paragraph', children: [text('Title')] },
+          { kind: 'paragraph', children: [text('x')] },
+        ],
+      },
+    ]);
+  });
+
+  test('a permalink or a link back that holds an image shows it', () => {
+    const image = '<img src="https://camo.githubusercontent.com/a" alt="pic">';
+    const made = tree(
+      `<p><a class="anchor" href="https://example.com/">${image}</a></p>` +
+        `<p><a data-footnote-backref href="https://example.com/">↩${image}</a></p>`,
+    );
+    expect(collect(made, 'image').map((found) => found.alt)).toEqual(['pic', 'pic']);
+  });
+
+  test('what a footnote section holds besides its footnotes shows where it was', () => {
+    const made = tree(
+      '<p>Text<sup><a href="#user-content-fn-1" data-footnote-ref>1</a></sup></p>' +
+        '<section data-footnotes class="footnotes"><h2>Footnotes</h2><p>Extra.</p>' +
+        '<ol><li id="user-content-fn-1"><p>The note.</p></li>Stray.</ol><h3>Heading</h3></section>' +
+        '<p>After.</p>',
+    );
+    expect(made.blocks.map((block) => [block.kind, textOf(block)])).toEqual([
+      ['paragraph', 'Text'],
+      ['paragraph', 'Extra.'],
+      ['paragraph', 'Stray.'],
+      ['heading', 'Heading'],
+      ['paragraph', 'After.'],
+      ['footnotes', ''],
+    ]);
+    expect(collect(made, 'heading').map((heading) => heading.anchor)).toEqual(['heading']);
+    expect(collect(made, 'footnotes')[0]?.items.map((item) => textOf(item.children))).toEqual([
+      'The note.',
+    ]);
+  });
+
+  test('a suggested change with anything else in it is only content', () => {
+    const rows =
+      '<table><tr><td class="blob-code-deletion">old</td></tr>' +
+      '<tr><td class="blob-code-addition">new</td></tr></table>';
+    expect(
+      tree(`<div class="js-suggested-changes-blob">Suggested change${rows}</div>`).blocks,
+    ).toEqual([{ kind: 'suggestion', text: 'new' }]);
+    expect(tree(`<div class="js-suggested-changes-blob">Hidden text${rows}</div>`).blocks).toEqual([
+      { kind: 'paragraph', children: [text('Hidden text')] },
+      { kind: 'table', align: ['none'], head: [], rows: [[[text('old')]], [[text('new')]]] },
+    ]);
+  });
+
+  test("a table's caption shows before it", () => {
+    expect(
+      tree('<table><caption>The <b>cap</b></caption><tr><td>a</td></tr></table>').blocks,
+    ).toEqual([
+      { kind: 'paragraph', children: [text('The '), { kind: 'strong', children: [text('cap')] }] },
+      { kind: 'table', align: ['none'], head: [], rows: [[[text('a')]]] },
+    ]);
   });
 });
 
@@ -495,6 +597,21 @@ describe('bounds', () => {
     expect(problems(made, { ...DEFAULT_LIMITS, nodes: 40 })).toEqual([]);
     expect(made.notes).toEqual(['nodes']);
     expect(textOf(made.blocks.at(-1))).toContain('Note 29.');
+  });
+
+  test('every depth a caller may set holds, footnotes included', () => {
+    const html = fixture('constructs.html');
+    const markdown = fixture('constructs.md');
+    const over: unknown[] = [];
+    for (let depth = 1; depth <= 6; depth++) {
+      const limits = resolveLimits({ depth });
+      const fromHtml = problems(githubTree({ html, markdown: '' }, { page: PAGE, limits }), limits);
+      const fromMarkdown = problems(markdownTree(markdown, { page: PAGE, limits }), limits);
+      if (fromHtml.length > 0 || fromMarkdown.length > 0) {
+        over.push([depth, fromHtml[0], fromMarkdown[0]]);
+      }
+    }
+    expect(over).toEqual([]);
   });
 
   test('every limit, held to the node', () => {

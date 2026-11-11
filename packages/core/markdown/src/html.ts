@@ -3,10 +3,17 @@
  * means to GitHub and to a browser. parse5 itself recurses nowhere and takes time in proportion to
  * the text, but the standard's algorithm can build far more elements than the text holds: a
  * formatting element closed early is made again for each later run of text, so 20 KB can build a
- * million elements. Each parse is given a cap on the elements it builds.
+ * million elements. Each copy carries all the original's attributes, so a few long ones, copied,
+ * make far more to read than the text holds. Each parse is given a cap on the elements it builds,
+ * and on the attributes they carry.
  */
 
-import { defaultTreeAdapter, parseFragment, type DefaultTreeAdapterTypes } from 'parse5';
+import {
+  defaultTreeAdapter,
+  html as namespaces,
+  parseFragment,
+  type DefaultTreeAdapterTypes,
+} from 'parse5';
 
 export type Fragment = DefaultTreeAdapterTypes.DocumentFragment;
 type ChildNode = DefaultTreeAdapterTypes.ChildNode;
@@ -16,21 +23,38 @@ type ParentNode = DefaultTreeAdapterTypes.ParentNode;
 class Overbuilt extends Error {}
 
 /**
- * `html` parsed as the content of an element, or undefined when it would build more than
- * `elements` elements. With `locations`, each node keeps where it was in `html`.
+ * How many characters of attributes a parse may build, for each character of its text. Every
+ * attribute the text writes takes at least as many characters in it as it's charged (its name and
+ * value, and one more), so only copies take more; this allows for a few.
+ */
+const ATTRIBUTES_PER_CHARACTER = 2;
+
+/**
+ * `html` parsed as the content of a `div`, as a browser and GitHub insert it, or undefined when it
+ * would build more than `elements` elements, or attributes of more than twice its length. With
+ * `locations`, each node keeps where it was in `html`.
  */
 export function parseHtml(html: string, elements: number, locations = false): Fragment | undefined {
   let built = 0;
+  let attributes = 0;
+  const attributeCap = ATTRIBUTES_PER_CHARACTER * html.length;
   const treeAdapter: typeof defaultTreeAdapter = {
     ...defaultTreeAdapter,
     createElement(tagName, namespaceURI, attrs) {
       built += 1;
-      if (built > elements) throw new Overbuilt();
+      // Charged for every element made, copies included, before anything reads them.
+      for (const attribute of attrs) {
+        attributes += 1 + attribute.name.length + attribute.value.length;
+      }
+      if (built > elements || attributes > attributeCap) throw new Overbuilt();
       return defaultTreeAdapter.createElement(tagName, namespaceURI, attrs);
     },
   };
+  // Not parse5's default, a `template`, in which a stray table part (`<col>`, `<tr>`) would
+  // change how everything after it is read.
+  const context = defaultTreeAdapter.createElement('div', namespaces.NS.HTML, []);
   try {
-    return parseFragment(html, { treeAdapter, sourceCodeLocationInfo: locations });
+    return parseFragment(context, html, { treeAdapter, sourceCodeLocationInfo: locations });
   } catch (error) {
     if (error instanceof Overbuilt) return undefined;
     throw error;
