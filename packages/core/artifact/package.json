@@ -1,0 +1,25 @@
+{
+  "name": "@lo/artifact",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "oxlint",
+    "test": "vitest run --root ../../.. --project @lo/artifact"
+  },
+  "dependencies": {
+    "@lo/markdown": "workspace:*",
+    "markdown-it": "15.0.3"
+  },
+  "nx": {
+    "name": "artifact",
+    "tags": [
+      "platform:core",
+      "license:mit"
+    ]
+  }
+}
