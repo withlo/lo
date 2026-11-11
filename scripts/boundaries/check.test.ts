@@ -314,20 +314,70 @@ describe('paths through node_modules', () => {
       ),
     ]);
   });
+});
 
-  test('follow symlinks to the folder they point to', () => {
+describe('symlinks', () => {
+  test("a relative import can't follow one out of every project", () => {
     expect(
       checkWorkspace({
         files: {
-          'packages/desktop/git/src/index.ts': `export const clone = 1;`,
-          'packages/core/review/src/index.ts': `import { clone } from '../modules/git/src/index.ts';`,
+          'shared/strings.ts': `export const title = 'Lo';`,
+          'packages/desktop/ui/src/index.ts': `import { title } from './shared/strings.ts';`,
         },
-        links: { 'packages/core/review/modules/git': '../../../desktop/git' },
+        links: { 'packages/desktop/ui/src/shared': '../../../../shared' },
+      }),
+    ).toEqual([
+      violation(
+        'packages/desktop/ui/src/index.ts:1',
+        "imports ./shared/strings.ts: through a symlink, that leaves ui's folder for files outside any project",
+      ),
+    ]);
+  });
+
+  test("a relative import can't follow one into another project, even one it may import", () => {
+    expect(
+      checkWorkspace({
+        files: {
+          'packages/desktop/git/src/clone.ts': `export const clone = 1;`,
+          'packages/desktop/ui/src/index.ts': `import { clone } from './clone.ts';`,
+          'packages/core/review/src/index.ts': `import { clone } from '../modules/git/src/clone.ts';`,
+        },
+        links: {
+          'packages/desktop/ui/src/clone.ts': '../../git/src/clone.ts',
+          'packages/core/review/modules/git': '../../../desktop/git',
+        },
       }),
     ).toEqual([
       violation(
         'packages/core/review/src/index.ts:1',
-        "imports ../modules/git/src/index.ts: git isn't a core project",
+        "imports ../modules/git/src/clone.ts: through a symlink, that leaves review's folder for git",
+      ),
+      violation(
+        'packages/desktop/ui/src/index.ts:1',
+        "imports ./clone.ts: through a symlink, that leaves ui's folder for git",
+      ),
+    ]);
+  });
+
+  test('a relative import may follow one into node_modules, where it reaches a package', () => {
+    expect(
+      checkWorkspace({
+        files: {
+          'node_modules/.pnpm/zod@4.0.0/node_modules/zod/index.js': `export const z = {};`,
+          'node_modules/electron/index.js': `export const app = {};`,
+          'packages/desktop/ui/src/index.ts': `import { z } from './zod/index.js';`,
+          'packages/core/github/src/index.ts': `import { app } from './shell/index.js';`,
+        },
+        links: {
+          'packages/desktop/ui/src/zod':
+            '../../../../node_modules/.pnpm/zod@4.0.0/node_modules/zod',
+          'packages/core/github/src/shell': '../../../../node_modules/electron',
+        },
+      }),
+    ).toEqual([
+      violation(
+        'packages/core/github/src/index.ts:1',
+        "imports ./shell/index.js: core projects run anywhere, so they can't use Electron",
       ),
     ]);
   });

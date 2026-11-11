@@ -110,7 +110,8 @@ reach, so a name or path can't disguise where an import goes. The same rules app
 references, to what a project's `package.json` lists in its dependencies (aliases included) and
 points to in its `imports` and `exports`, and to every edge in Nx's project graph. Also:
 
-- a relative import stays inside its project's folder; projects reach each other by package name;
+- a relative import stays inside its project's folder, and so does where a symlink takes it, unless
+  that's in `node_modules`; projects reach each other by package name;
 - no tsconfig sets `paths`;
 - the root `package.json` holds the repo's tooling only: no workspace package, and no alias besides
   TypeScript's two.

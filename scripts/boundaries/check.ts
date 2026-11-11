@@ -157,7 +157,8 @@ export function checkBoundaries(
 
   /**
    * Why `owner` may not refer to `specifier` from `folder`, or nothing when it may. A relative
-   * path stays inside the project's folder: projects reach each other by package name.
+   * path stays inside the project's folder, and so does where it lands through symlinks, unless
+   * that's in `node_modules`: projects reach each other by package name.
    */
   const verdict = (
     specifier: string,
@@ -175,10 +176,16 @@ export function checkBoundaries(
     const path = specifier.replace(/[?#].*$/, '');
     if (reference === 'path' || path.startsWith('.') || path.startsWith('/')) {
       const absolute = resolve(folder, path);
-      if (projectAt(absolute) !== owner) {
-        return `that leaves ${owner.name}'s folder for ${landing(resolvePath(absolute))}, and projects reach each other only by package name`;
+      const target = resolvePath(absolute);
+      const leaves = `leaves ${owner.name}'s folder for ${landing(target)}, and projects reach each other only by package name`;
+      if (projectAt(absolute) !== owner) return `that ${leaves}`;
+      // A symlink can take a path that stays in the folder as written somewhere else. Only
+      // node_modules may be that somewhere: there the path reaches a package, and its rules apply.
+      const real = toSlashes(realPath(absolute));
+      if (projectAt(real) !== owner && !real.split('/').includes('node_modules')) {
+        return `through a symlink, that ${leaves}`;
       }
-      return problem(owner, test, resolvePath(absolute));
+      return problem(owner, test, target);
     }
     if (path.startsWith('node:') || isBuiltin(path)) return problem(owner, test, node);
     return problem(owner, test, resolvePackage(path, folder, owner));
