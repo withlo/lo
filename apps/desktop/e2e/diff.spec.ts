@@ -45,6 +45,8 @@ declare global {
     loMoved?: string[];
     /** Stops watching. */
     loStill?: boolean;
+    /** Each change, frame by frame, in where a row is, the box and the scroll, while a test traces it. */
+    loTrace?: string[];
   }
 }
 
@@ -637,20 +639,34 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
       );
     const before = await where();
 
-    // The local copy comes, and swaps GitHub's diff out a file at a time, frames timed meanwhile.
-    await page.evaluate(() => {
+    // The local copy comes, and swaps GitHub's diff out a file at a time, frames timed meanwhile,
+    // with where the row, the box and the scroll are, for a failure to show.
+    await page.evaluate((key) => {
       const frames: number[] = [];
       window.loFrames = frames;
       window.loTops = [];
+      const trace: string[] = [];
+      window.loTrace = trace;
       let last = performance.now();
+      let seen = '';
       const tick = (now: number) => {
         frames.push(now - last);
-        window.loTops?.push(document.querySelector('.lo-diffview')?.scrollTop ?? 0);
+        const view = document.querySelector('.lo-diffview');
+        window.loTops?.push(view?.scrollTop ?? 0);
+        const at = view
+          ?.querySelector(`.cm-editor:last-of-type [data-row="${key}"]`)
+          ?.getBoundingClientRect().top;
+        const banners = document.querySelector('[data-lo-banners]')?.getBoundingClientRect().height;
+        const rect = view?.getBoundingClientRect();
+        const anchor = JSON.stringify(window.loDiff?.viewport());
+        const state = `row ${at} box ${rect?.top}+${rect?.height} scroll ${view?.scrollTop} banners ${banners} dpr ${devicePixelRatio} anchor ${anchor}`;
+        if (state !== seen) trace.push(`${Math.round(now)} ${state}`);
+        seen = state;
         last = now;
         if (window.loFrames === frames) requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
-    });
+    }, row);
     writeAppRemote(test.info().outputPath('remote'));
     await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
     // Looked for in the status bar alone, so looking costs the page's frames little.
@@ -676,6 +692,13 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
     // through the banners going and the files changing above it.
     expect(await page.evaluate(() => 'first' in (window.loDiff ?? {}))).toBe(true);
     const after = (await where()) ?? Number.NaN;
+    // Frame by frame, for a failure to say where the row went and why.
+    const trace = [
+      `row ${row}: ${before} then ${after}`,
+      ...(await page.evaluate(() => window.loTrace ?? [])),
+    ].join('\n');
+    writeFileSync(test.info().outputPath('where.txt'), trace);
+    if (Math.abs(after - (before ?? Number.NaN)) > 1) console.log(trace);
     expect(Math.abs(after - (before ?? Number.NaN))).toBeLessThanOrEqual(1);
     expect(Math.max(...frames.slice(1))).toBeLessThan(50);
     // One view from the tab's opening on: the panel's order came with the first, and the local
