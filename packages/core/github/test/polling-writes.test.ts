@@ -1146,35 +1146,49 @@ test('a thread github put on a newer head reads the threads and your pending rev
     { id: 'PRRC_5' },
     { data: { deletePullRequestReviewComment: { pullRequestReview: { id: 'PRR_1' } } } },
   );
+  // Answered without saying it was deleted, and still there when Lo reads it.
   const notDeleted = mutation(
     at(r, 1),
     'DeletePullRequestReviewComment',
     { id: 'PRRC_6' },
-    { message: 'Server Error' },
+    { data: { deletePullRequestReviewComment: null } },
   );
-  notDeleted.response.status = 502;
-  const answers = [onNewerHead(5, 'PRRC_5'), deleted, onNewerHead(6, 'PRRC_6'), notDeleted];
+  const stillThere = mutation(
+    at(r, 1),
+    'ReviewComment',
+    { comment: 'PRRC_6', thread: 'PRRT_6' },
+    { data: { comment: { __typename: 'PullRequestReviewComment', id: 'PRRC_6' }, thread: null } },
+  );
+  const answers = [
+    onNewerHead(5, 'PRRC_5'),
+    deleted,
+    onNewerHead(6, 'PRRC_6'),
+    notDeleted,
+    stillThere,
+  ];
   const { t, runs } = await reviewing('thread_on_newer_head', answers, reviewThreads(1));
   t.requests();
 
-  // Taken back out and refused: the threads and your pending review it changed twice are read again.
+  // Taken back out and refused: the threads and your pending review are read again after the add,
+  // and again after the delete.
   let sent = t.poller.sendReview(pr(1), addThread(5));
   await t.run();
   await t.runUntil(20);
   expect(await t.finish(sent)).toEqual({ refusal: 'headMoved', head: pushed });
-  expect([runs.threads, runs.pending]).toEqual([2, 2]);
+  expect([runs.threads, runs.pending]).toEqual([3, 3]);
   // Left on the newer head when it couldn't be taken back: read again, so the UI shows it there.
   sent = t.poller.sendReview(pr(1), addThread(6));
   await t.run();
   await t.runUntil(30);
-  expect(await t.finish(sent)).toMatchObject({ comment: 'PRRC_6', landedOn: pushed });
-  expect([runs.threads, runs.pending]).toEqual([3, 3]);
-  const writes = t.requests().filter(([, what]) => /^(Add|Delete)/.test(what));
+  expect(await t.finish(sent)).toMatchObject({ comment: 'PRRC_6', landedOn: { head: pushed } });
+  expect([runs.threads, runs.pending]).toEqual([5, 5]);
+  const writes = t.requests().filter(([, what]) => /^(Add|Delete|Review)/.test(what));
   expect(writes.map(([, what]) => what)).toEqual([
     'AddPullRequestReviewThread',
     'DeletePullRequestReviewComment',
     'AddPullRequestReviewThread',
     'DeletePullRequestReviewComment',
+    'ReviewComment',
   ]);
 });
 
