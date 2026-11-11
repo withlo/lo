@@ -35,6 +35,7 @@ export default defineFeature(contract, {
         platform: process.platform,
         theme: currentTheme(),
         git: gitInfo(git.status),
+        packaged: app.isPackaged,
       }),
     quit() {
       app.quit();

@@ -29,6 +29,7 @@ test('app.info answers', async ({ page }) => {
       git: expect.objectContaining({
         status: expect.stringMatching(/^(checking|found|missing|tooOld)$/),
       }),
+      packaged: false,
     },
   });
 });

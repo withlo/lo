@@ -713,7 +713,7 @@ function scopeOf(folder: string, top: string): string {
  * `*`'s place in the targets. Every condition's target counts, and every fallback's, since any of
  * them may be the one that loads. Nothing when no entry matches.
  */
-function mapped(map: unknown, key: string): string[] | undefined {
+export function mapped(map: unknown, key: string): string[] | undefined {
   if (!isRecord(map)) return undefined;
   if (!key.includes('*') && Object.hasOwn(map, key)) return targetsOf(map[key]);
   const patterns = Object.keys(map)
@@ -787,7 +787,7 @@ function aliasOf(spec: string, folder: string): Alias | undefined {
 }
 
 /** A specifier's package name, without any version, and the path parts after it. */
-function splitPackage(specifier: string): { name: string; rest: string[] } {
+export function splitPackage(specifier: string): { name: string; rest: string[] } {
   const parts = specifier.split('/');
   const length = specifier.startsWith('@') ? 2 : 1;
   const name = parts.slice(0, length).join('/');
@@ -842,7 +842,7 @@ function lineOf(text: string, key: string): number {
 }
 
 /** The real path of `path`'s deepest existing folder, with the rest of `path` after it. */
-function realPath(path: string): string {
+export function realPath(path: string): string {
   const missing: string[] = [];
   let existing = path;
   while (!existsSync(existing)) {
@@ -855,7 +855,11 @@ function realPath(path: string): string {
 }
 
 /** The project's source files, leaving out projects nested inside it. */
-function* sourceFiles(folder: string, root: string, roots: ReadonlySet<string>): Generator<string> {
+export function* sourceFiles(
+  folder: string,
+  root: string,
+  roots: ReadonlySet<string>,
+): Generator<string> {
   const entries = readdirSync(folder, { withFileTypes: true });
   for (const entry of entries.toSorted((a, b) => a.name.localeCompare(b.name, 'en'))) {
     const path = join(folder, entry.name);
@@ -870,6 +874,6 @@ function* sourceFiles(folder: string, root: string, roots: ReadonlySet<string>):
   }
 }
 
-function toSlashes(path: string): string {
+export function toSlashes(path: string): string {
   return sep === '/' ? path : path.split(sep).join('/');
 }

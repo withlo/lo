@@ -8,6 +8,7 @@ describe('appInfo', () => {
     platform: 'darwin',
     theme: 'dark',
     git: { status: 'found', version: '2.54.0' },
+    packaged: true,
   };
 
   it('takes what app.info answers, whatever Lo found of git', () => {

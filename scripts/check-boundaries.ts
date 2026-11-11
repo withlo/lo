@@ -1,12 +1,13 @@
-// Checks the workspace's boundaries: each project's tags against its folder, and every import,
-// dependency and edge of Nx's project graph against the rules its tags set. The rules are in
-// AGENTS.md under "Boundaries".
+// Checks the workspace's boundaries: each project's tags against its folder, every import,
+// dependency and edge of Nx's project graph against the rules its tags set, and what the desktop
+// app's features import from each other. The rules are in AGENTS.md under "Boundaries".
 //
 //   pnpm check:boundaries
 
 import { createProjectGraphAsync, workspaceRoot } from '@nx/devkit';
 
 import { checkBoundaries, type Edge, type Project } from './boundaries/check.ts';
+import { checkFeatures } from './boundaries/features.ts';
 
 const graph = await createProjectGraphAsync({ exitOnError: true });
 const projects: Project[] = Object.values(graph.nodes).map(({ name, data }) => ({
@@ -20,7 +21,10 @@ const edges: Edge[] = Object.values(graph.dependencies).flatMap((dependencies) =
   dependencies.map(({ source, target }) => ({ source, target })),
 );
 
-const violations = checkBoundaries(workspaceRoot, projects, edges);
+const violations = [
+  ...checkBoundaries(workspaceRoot, projects, edges),
+  ...checkFeatures(workspaceRoot),
+];
 for (const { where, message } of violations) console.error(`${where}: ${message}`);
 if (violations.length > 0) {
   console.error(`\n${violations.length} boundary violation(s). See "Boundaries" in AGENTS.md.`);

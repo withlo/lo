@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { app, type BrowserWindow, dialog, session, type Session } from 'electron';
 
 import { startBackground, type Background } from './background.ts';
-import { openDatabase } from './database.ts';
+import { openDatabase, type Database } from './database.ts';
 import { backgroundSettings, dataFolder, devServer } from './environment.ts';
 import { loadFeatures, type Feature } from './features.ts';
 import { cacheFolder, createGit, curlProxy, GitStopped, gitSettings, onceUp } from './git.ts';
@@ -14,15 +14,20 @@ import { serveFeatures } from './ipc.ts';
 import { migrate } from './migrations.ts';
 import { windowUrl } from './policy.ts';
 import { registerScheme, secureContents, secureSession } from './security.ts';
+import { findServices } from './services.ts';
 import { StartupError } from './startup.ts';
 import { openWindow } from './window.ts';
 
 /** The window's build output, next to this file's. */
 const windowFiles = fileURLToPath(new URL('../window', import.meta.url));
 
-// Every feature folder with a main side, and every feature's migrations. No file lists them.
+// Every feature folder with a main side, every service features define, and every feature's
+// migrations. No file lists them.
 const features = loadFeatures(
   import.meta.glob<Feature>('../features/*/main/index.ts', { eager: true, import: 'default' }),
+);
+const services = findServices(
+  import.meta.glob<Record<string, unknown>>('../features/*/service.ts', { eager: true }),
 );
 const migrations = import.meta.glob<string>('../features/*/migrations/*.sql', {
   eager: true,
@@ -58,6 +63,8 @@ function start(): void {
   let windowSession: Session | undefined;
   let background: Background | undefined;
   let window: BrowserWindow | undefined;
+  let database: Database | undefined;
+  let stopFeatures: (() => Promise<void>) | undefined;
   // Only main runs git. It looks for git once the window is up, and stops every git as Lo quits.
   const git = createGit({
     settings: gitOptions,
@@ -68,7 +75,8 @@ function start(): void {
     proxy: async (address) => curlProxy(await session.defaultSession.resolveProxy(address)),
     log: (line) => console.error(`git: ${line}`),
   });
-  let gitStopped = false;
+  let quitting: Promise<void> | undefined;
+  let stopped = false;
 
   /** Shows the window, opening it if it's closed. Nothing opens until its session is secured. */
   const show = (): BrowserWindow | undefined => {
@@ -89,15 +97,28 @@ function start(): void {
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
   });
-  // Lo quits once every git has stopped, so none is left running.
+  /**
+   * Stops what Lo runs, in order: its features, while the database is open, each within its own
+   * time limit; then the database and the background process; then every git, so none is left
+   * running.
+   */
+  const stop = async (): Promise<void> => {
+    await stopFeatures?.();
+    database?.close();
+    background?.stop();
+    await git.stop();
+  };
+  // Lo quits once everything has stopped. Asked to quit again meanwhile, it waits for the same.
   app.on('will-quit', (event) => {
-    if (gitStopped) return;
+    if (stopped) return;
     event.preventDefault();
-    void git.stop().finally(() => {
-      gitStopped = true;
-      // Not from inside this event: Electron ignores a quit asked for while it handles one.
-      setImmediate(() => app.quit());
-    });
+    quitting ??= stop()
+      .catch((error: unknown) => console.error("Lo couldn't stop cleanly:", error))
+      .finally(() => {
+        stopped = true;
+        // Not from inside this event: Electron ignores a quit asked for while it handles one.
+        setImmediate(() => app.quit());
+      });
   });
 
   app
@@ -108,12 +129,11 @@ function start(): void {
       const secured = session.fromPartition('persist:window');
       await secureSession(secured, windowFiles, dev);
       // Every feature's tables are ready before any of its handlers can be asked anything.
-      const database = openDatabase(join(app.getPath('userData'), 'lo.db'));
-      migrate(database, migrations);
-      app.once('will-quit', () => database.close());
-      serveFeatures(features, database, git, dev);
+      const opened = openDatabase(join(app.getPath('userData'), 'lo.db'));
+      database = opened;
+      migrate(opened, migrations);
+      stopFeatures = serveFeatures(features, services, opened, git, dev);
       background = startBackground(backgroundOptions);
-      app.once('will-quit', () => background?.stop());
       windowSession = secured;
       // Once the window is up, Lo looks for git, then opens its cache and cleans it up: none of
       // it holds the window up. A window that never says it's up holds the look back no more
