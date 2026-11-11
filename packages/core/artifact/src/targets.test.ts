@@ -57,12 +57,23 @@ describe('paths', () => {
     ['a C1 control', 'src/a\x85.ts'],
   ])('a path %s is refused', (_what, path) => {
     const read = readPath(path);
-    expect(read.ok).toBe(false);
-    if (!read.ok) {
-      expect(read.code).toBe('target-path');
-      // What it quotes can't move a terminal's cursor.
-      expect(read.message).not.toMatch(/\p{Cc}/u);
-    }
+    expect(read).toMatchObject({ ok: false, code: 'target-path' });
+    // What it quotes can't move a terminal's cursor.
+    expect(read.ok ? '' : read.message).not.toMatch(/\p{Cc}/u);
+  });
+
+  test('each refusal says why', () => {
+    const messages = ['/etc/passwd', 'a\\b', 'a/../b', '.git/config', 'a\x1bb'].map((path) => {
+      const read = readPath(path);
+      return read.ok ? '' : read.message;
+    });
+    expect(messages).toEqual([
+      "The path /etc/passwd starts with /. Write paths from the repository's root, without the /.",
+      'The path a\\b holds a \\. Separate folders with /.',
+      'The path a/../b has an empty, . or .. part. Write it as the repository names the file.',
+      'The path .git/config points into .git.',
+      'The path a\uFFFDb holds a control character.',
+    ]);
   });
 });
 
@@ -103,9 +114,7 @@ describe('lines', () => {
     ['a name', 'a.ts#main'],
     ['spaces', 'a.ts#L1 - L2'],
   ])('%s is refused', (_what, target) => {
-    const read = readCode(target, 'any');
-    expect(read.ok).toBe(false);
-    if (!read.ok) expect(read.code).toBe('target-lines');
+    expect(readCode(target, 'any')).toMatchObject({ ok: false, code: 'target-lines' });
   });
 
   test('a block shows at most 200 lines, and a link may name more, or the whole file', () => {
@@ -150,7 +159,7 @@ describe('figures', () => {
       'figures/shot 1.jpeg',
       'figures/x.webp',
     ]) {
-      expect(readFigure(path), path).toEqual({ ok: true, value: path });
+      expect(readFigure(path), `for ${path}`).toEqual({ ok: true, value: path });
     }
   });
 

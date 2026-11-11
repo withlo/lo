@@ -7,7 +7,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { LIMITS, parseArtifact, type ParsedArtifact } from '../src/index.ts';
-import { errors, found, HEADER, overview, PREAMBLE_LINES, timed } from './support.ts';
+import { errors, found, overview, PREAMBLE_LINES, timed } from './support.ts';
 import { problems } from './walker.ts';
 
 const LINE = PREAMBLE_LINES + 1;
@@ -31,9 +31,12 @@ function hostile(text: string | Uint8Array): ParsedArtifact {
   return made;
 }
 
+function bytes(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
 /** As much of `piece`, over and over, as fits between `start` and `end` at the size limit. */
 function filled(piece: string, start = overview(''), end = ''): string {
-  const bytes = (text: string): number => new TextEncoder().encode(text).length;
   const room = LIMITS.size - bytes(start) - bytes(end);
   return start + piece.repeat(Math.floor(room / bytes(piece))) + end;
 }
@@ -113,7 +116,7 @@ describe('Markdown', () => {
   test('as deep as fits, in quotes, lists and emphasis', () => {
     for (const piece of ['> ', '- + ', '1. ', '> - ']) {
       const made = hostile(filled(piece, overview(''), 'x\n'));
-      expect(errors(made), piece).toEqual(['too-deep']);
+      expect(errors(made), `in ${piece}`).toEqual(['too-deep']);
     }
     hostile(filled('*a '));
     hostile(filled('**_'));
@@ -132,7 +135,7 @@ describe('Markdown', () => {
       '![a](https://example.com/a.png) ',
     ]) {
       const made = hostile(filled(link));
-      expect(made.findings.length, link).toBeGreaterThan(0);
+      expect(made.findings.length, `with ${link}`).toBeGreaterThan(0);
     }
   });
 
@@ -179,20 +182,29 @@ describe('odd text', () => {
     expect(made.references[0]?.target.path).toBe('cafe\u0301.ts');
   });
 
-  test('every byte from 0 to 255, in every place', () => {
+  test('every byte from 0 to 255, in the header, a fence, a block and a link', () => {
+    const written = overview(':::code a.ts#L1\n:::\n[x](code:b.ts)\n');
+    const places = [
+      3,
+      10,
+      written.indexOf(':::'),
+      written.indexOf('a.ts'),
+      written.indexOf('b.ts'),
+    ];
+    let read = 0;
     for (let byte = 0; byte < 256; byte++) {
-      const text = new TextEncoder().encode(overview(':::code a.ts#L1\n:::\n[x](code:b.ts)\n'));
-      const at = text.indexOf(0x62);
-      text[at] = byte;
-      hostile(text);
-      const header = new TextEncoder().encode(`${HEADER}\n## tl;dr\n\nA.\n`);
-      header[10] = byte;
-      hostile(header);
+      for (const place of places) {
+        const changed = new TextEncoder().encode(written);
+        changed[place] = byte;
+        hostile(changed);
+        read += 1;
+      }
     }
+    expect(read).toBe(256 * places.length);
   });
 
   test('a header made of 4 KiB of one line, or of 1,000 keys', () => {
-    hostile(`---\n${'k'.repeat(4_096)}: v\n---\n`);
+    expect(errors(hostile(`---\n${'k'.repeat(4_096)}: v\n---\n`))).toContain('header-unclosed');
     const made = hostile(`---\n${'format: 1\n'.repeat(1_000)}---\n`);
     expect(errors(made)).toContain('header-unclosed');
   });

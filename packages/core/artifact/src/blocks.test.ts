@@ -56,7 +56,7 @@ describe('code', () => {
   });
 
   test('more colons, and spaces after them, are the same fence', () => {
-    clean(':::::  code src/a.ts#L1  ', '::::::::');
+    expect(collect(clean(':::::  code src/a.ts#L1  ', '::::::::'), 'excerpt')).toHaveLength(1);
   });
 
   test('a block without lines, or with too many, is left out', () => {
@@ -200,14 +200,25 @@ describe('figures', () => {
   });
 });
 
-describe('walkthroughs', () => {
-  const steps = (count: number): string[] =>
-    Array.from({ length: count }, (_, n) => [
-      `:::step src/a.ts#L${n + 1}`,
-      `Step ${n + 1}.`,
-      ':::',
-    ]).flat();
+/** `count` steps, on lines 1 to `count` of `src/a.ts`, three lines each. */
+function steps(count: number): string[] {
+  return Array.from({ length: count }, (_, n) => [
+    `:::step src/a.ts#L${n + 1}`,
+    `Step ${n + 1}.`,
+    ':::',
+  ]).flat();
+}
 
+/** `count` tabs, three lines each. */
+function tabs(count: number): string[] {
+  return Array.from({ length: count }, (_, n) => [
+    `:::tab Tab ${n + 1}`,
+    `Body ${n + 1}.`,
+    ':::',
+  ]).flat();
+}
+
+describe('walkthroughs', () => {
   test('hold three or more steps, each with lines and text', () => {
     const parsed = clean(':::walkthrough Reading a request', ...steps(3), ':::');
     expect(collect(parsed, 'walkthrough')).toEqual([
@@ -270,6 +281,18 @@ describe('walkthroughs', () => {
     ]);
   });
 
+  test('a walkthrough left out takes its steps with it', () => {
+    const parsed = parse(`:::walkthrough ${'w'.repeat(1_025)}`, ...steps(3), ':::');
+    expect(found(parsed)).toEqual([`block-argument@${LINE}`]);
+    expect(collect(parsed, 'walkthrough')).toEqual([]);
+    // Their text still shows, in their place.
+    expect(textOf(body(parsed))).toBe('Step 1.Step 2.Step 3.');
+    expect(problems(parsed.tree)).toEqual([]);
+    const tabbed = parse(`:::tabs ${'t'.repeat(1_025)}`, ...tabs(2), ':::');
+    expect(found(tabbed)).toEqual([`block-argument@${LINE}`]);
+    expect(textOf(body(tabbed))).toBe('Body 1.Body 2.');
+  });
+
   test('a step sits directly inside a walkthrough', () => {
     expect(found(parse(':::step a.ts#L1', 'Alone.', ':::'))).toEqual([`block-misplaced@${LINE}`]);
     const inList = parse(':::walkthrough W', '- :::step a.ts#L1', '  In a list.', '  :::', ':::');
@@ -302,13 +325,6 @@ describe('walkthroughs', () => {
 });
 
 describe('tabs', () => {
-  const tabs = (count: number): string[] =>
-    Array.from({ length: count }, (_, n) => [
-      `:::tab Tab ${n + 1}`,
-      `Body ${n + 1}.`,
-      ':::',
-    ]).flat();
-
   test('hold two or more titled tabs', () => {
     const parsed = clean(':::tabs', ...tabs(2), ':::');
     expect(collect(parsed, 'tabs')).toEqual([
@@ -393,8 +409,7 @@ describe('fences', () => {
       ':::',
       ':::',
     );
-    const [tabs] = collect(parsed, 'tabs');
-    expect(tabs?.tabs.map(({ title }) => title)).toEqual(['A', 'B']);
+    expect(collect(parsed, 'tabs')[0]?.tabs.map(({ title }) => title)).toEqual(['A', 'B']);
     expect(collect(parsed, 'walkthrough')[0]?.steps).toHaveLength(3);
   });
 

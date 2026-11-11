@@ -168,11 +168,11 @@ function wrong(parsed: ParsedArtifact): string[] {
     if (code === 'unreadable') found.push('unreadable');
     if (file !== ARTIFACT) found.push(`the file ${file}`);
     if (line !== undefined && !(Number.isSafeInteger(line) && line >= 1))
-      found.push(`line ${line}`);
+      found.push(`line ${String(line)}`);
     if (message === '' || /[\p{Cc}\p{Cf}\u2028\u2029]/u.test(message)) found.push(message);
   }
   for (const { target, line, from } of parsed.references) {
-    if (!isPlainPath(target.path)) found.push(`the reference ${target.path}`);
+    if (!isPlainPath(target.path)) found.push(`the reference ${String(target.path)}`);
     if (!(line >= 1) || !['block', 'step', 'link'].includes(from)) found.push(`${from}@${line}`);
   }
   return found;
@@ -188,9 +188,9 @@ test('300 random mixes never throw, and hold only what the format allows', () =>
     if (parsed.findings.length === 0) clean += 1;
     if (parsed.tree.blocks.length > 0) shown += 1;
     // Bytes and text read alike.
-    if (typeof input === 'string' && input.isWellFormed()) {
-      expect(parseArtifact(new TextEncoder().encode(input)), `mix ${seed}`).toEqual(parsed);
-    }
+    const same = typeof input === 'string' && input.isWellFormed();
+    const again = same ? parseArtifact(new TextEncoder().encode(input)) : parsed;
+    expect(again, `mix ${seed}`).toEqual(parsed);
   }
   // The mixes reach past the header: most are read as text, though few are clean.
   expect(shown).toBeGreaterThan(150);

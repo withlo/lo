@@ -1,6 +1,6 @@
 /** Helpers for writing overviews in tests and reading what the parse made of them. */
 
-import type { Block } from '@lo/markdown';
+import type { Block, Inline } from '@lo/markdown';
 
 import type { Finding, Overview, ParsedArtifact } from '../src/index.ts';
 import { isRecord } from './walker.ts';
@@ -28,7 +28,7 @@ export function errors(parsed: ParsedArtifact): Finding['code'][] {
   return parsed.findings.filter((finding) => finding.severity === 'error').map(({ code }) => code);
 }
 
-type Node = Block<Overview>;
+type Node = Block<Overview> | Inline<Overview>;
 
 function isKind<K extends string>(value: unknown, kind: K): value is Extract<Node, { kind: K }> {
   return isRecord(value) && value['kind'] === kind;
@@ -39,7 +39,7 @@ export function collect<K extends Node['kind']>(
   parsed: ParsedArtifact,
   kind: K,
 ): Extract<Node, { kind: K }>[] {
-  const found: Extract<Node, { kind: K }>[] = [];
+  const matches: Extract<Node, { kind: K }>[] = [];
   const stack: unknown[] = [parsed.tree.blocks];
   while (stack.length > 0) {
     const value = stack.pop();
@@ -48,11 +48,11 @@ export function collect<K extends Node['kind']>(
       continue;
     }
     if (!isRecord(value)) continue;
-    if (isKind(value, kind)) found.push(value);
+    if (isKind(value, kind)) matches.push(value);
     const fields = Object.values(value).filter((field) => typeof field === 'object');
     for (let i = fields.length - 1; i >= 0; i--) stack.push(fields[i]);
   }
-  return found;
+  return matches;
 }
 
 /** The text of `nodes` and everything in them, as written, without separators. */

@@ -118,10 +118,6 @@ export class Findings {
     return this.errors.length > 0;
   }
 
-  has(code: FindingCode): boolean {
-    return this.errors.some((finding) => finding.code === code);
-  }
-
   /**
    * The findings kept, in the order of their lines, those without a line first, and on one line,
    * errors first.

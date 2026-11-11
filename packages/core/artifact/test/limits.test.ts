@@ -53,11 +53,25 @@ test('targets of every kind count, from blocks, steps, parts and links', () => {
   expect(errors(past)).toEqual(['target-count']);
 });
 
+/** `count` figures, three lines each. */
+function figures(count: number): string {
+  return Array.from(
+    { length: count },
+    (_, n) => `:::figure figures/f${n}.svg\nFigure ${n}.\n:::`,
+  ).join('\n');
+}
+
+/** `count` list items of a word each: three nodes apiece. */
+function items(count: number): string {
+  return '- a\n'.repeat(count);
+}
+
+/** A paragraph in `depth` quotes. */
+function quotes(depth: number): string {
+  return `${'> '.repeat(depth)}deep\n`;
+}
+
 test('an overview shows at most 100 figures', () => {
-  const figures = (count: number): string =>
-    Array.from({ length: count }, (_, n) => `:::figure figures/f${n}.svg\nFigure ${n}.\n:::`).join(
-      '\n',
-    );
   const at = parseArtifact(overview(`${figures(LIMITS.figures)}\n`));
   expect(at.findings).toEqual([]);
   expect(at.figures).toHaveLength(LIMITS.figures);
@@ -66,8 +80,6 @@ test('an overview shows at most 100 figures', () => {
 });
 
 test('an overview holds at most 65,536 nodes', () => {
-  /** `count` list items of a word each: three nodes apiece. */
-  const items = (count: number): string => '- a\n'.repeat(count);
   const under = parseArtifact(overview(items(21_000)));
   expect(under.findings).toEqual([]);
   const { nodes } = walk(under.tree);
@@ -79,7 +91,6 @@ test('an overview holds at most 65,536 nodes', () => {
 });
 
 test('an overview nests at most 16 deep', () => {
-  const quotes = (depth: number): string => `${'> '.repeat(depth)}deep\n`;
   const at = parseArtifact(overview(quotes(15)));
   expect(at.findings).toEqual([]);
   expect(walk(at.tree).depth).toBe(LIMITS.depth);

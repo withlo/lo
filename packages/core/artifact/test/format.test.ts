@@ -34,8 +34,12 @@ test.each(examples.map((example, n) => [n + 1, example]))(
   },
 );
 
+/** `value` as format.md writes it. */
+function number(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
 test('format.md gives the limits the parse keeps', () => {
-  const number = (value: number): string => value.toLocaleString('en-US');
   expect(spec).toContain(`This is format ${FORMAT}.`);
   for (const phrase of [
     `${LIMITS.size / 1024} KiB of UTF-8`,

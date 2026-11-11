@@ -64,7 +64,7 @@ describe('the file', () => {
     ];
     for (const [what, bad] of cases) {
       const bytes = new Uint8Array([...start, ...encode('Bad: '), ...bad, ...encode('\nAfter.\n')]);
-      expect(found(parseArtifact(bytes)), what).toEqual(['encoding@14']);
+      expect(found(parseArtifact(bytes)), `with ${what}`).toEqual(['encoding@14']);
     }
     // In the header too.
     const header = new Uint8Array([...encode('---\nformat: 1\npr: '), 0xff, ...encode('\n---\n')]);

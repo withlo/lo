@@ -160,11 +160,7 @@ export class Reading {
       const token = tokens[index]!;
       token.type = LINE;
       const { kind } = opening(token.info);
-      this.add(
-        'block-unclosed',
-        lineOf(token),
-        `This :::${quote(kind)} has no closing :::. Close it in the list item or quote it opens in.`,
-      );
+      this.add('block-unclosed', lineOf(token), `This :::${quote(kind)} has no closing :::.`);
     }
   }
 
@@ -255,6 +251,8 @@ export class Reading {
           this.add('block-misplaced', line, 'A :::step sits directly inside a :::walkthrough.');
           return undefined;
         }
+        // A walkthrough left out, for its argument, leaves its steps out with it.
+        if (kind === 'step' && !(parent && this.blocks.has(parent.token))) return undefined;
         if (argument === '') {
           this.add(
             'block-argument',
@@ -305,6 +303,7 @@ export class Reading {
           this.add('block-misplaced', line, 'A :::tab sits directly inside a :::tabs block.');
           return undefined;
         }
+        if (!this.blocks.has(parent.token)) return undefined;
         return { kind, title: this.title(kind, argument, line) };
       case 'walkthrough':
       case 'fold':
@@ -376,7 +375,7 @@ export class Reading {
           this.add(
             'walkthrough-steps',
             opened.line,
-            `A walkthrough has at least ${MIN_STEPS} steps, and this one has ${opened.members}. Write fewer steps as prose.`,
+            `A walkthrough has at least ${MIN_STEPS} steps, and this one has ${opened.members}. With fewer, write prose.`,
           );
         }
         return;

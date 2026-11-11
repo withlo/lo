@@ -152,7 +152,7 @@ test('with counts, what the format counts fails too', () => {
     ],
   ];
   for (const [what, tree] of cases) {
-    expect(problems(tree), what).toEqual([]);
-    expect(problems(tree, { counts: true }), what).not.toEqual([]);
+    expect(problems(tree), `with ${what}`).toEqual([]);
+    expect(problems(tree, { counts: true }), `with ${what}`).not.toEqual([]);
   }
 });
