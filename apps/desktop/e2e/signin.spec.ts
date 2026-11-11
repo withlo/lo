@@ -3,7 +3,16 @@
 // file in the clear, or another process's arguments.
 
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -201,9 +210,11 @@ test.describe('a system with no keychain Lo keeps tokens with', () => {
   });
 });
 
-/** A stand-in gh that lists two accounts and prints their stand-in tokens, failing if a token is in its environment. */
+/**
+ * A stand-in gh in `folder` that lists two accounts and prints their stand-in tokens, and fails if
+ * its environment holds a token.
+ */
 function fakeGh(folder: string): string {
-  mkdirSync(folder, { recursive: true });
   const program = join(folder, 'gh');
   writeFileSync(
     join(folder, 'status.json'),
@@ -255,7 +266,9 @@ test.describe('importing from gh', () => {
   test.use({ cassette: 'user' });
   test.use({
     launch: async ({ github }, use) => {
-      const gh = fakeGh(test.info().outputPath('gh'));
+      // In a folder only this user can change, as Lo runs no other gh.
+      const folder = realpathSync(mkdtempSync(join(tmpdir(), 'lo-gh-')));
+      const gh = fakeGh(folder);
       await use({
         args: [appFolder, ...KEYCHAIN],
         env: {
@@ -266,6 +279,7 @@ test.describe('importing from gh', () => {
           GITHUB_TOKEN: 'gho_FAKE_FROM_THE_ENVIRONMENT',
         },
       });
+      rmSync(folder, { recursive: true, force: true });
     },
   });
 

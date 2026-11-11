@@ -10,7 +10,7 @@ import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vite
 import { IpcError } from '../../../ipc/contract.ts';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { Slots } from '../../../window/slots.tsx';
-import { installBridge as install } from '../../settings/window/test/bridge.ts';
+import { installBridge as install } from '../../../window/test/bridge.ts';
 import type { AccountSummary, GhListing, SignInState } from '../contract.ts';
 import keys from '../keys.ts';
 import { AccountDialogs } from './AccountDialogs.tsx';
