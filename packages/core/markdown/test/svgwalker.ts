@@ -40,8 +40,6 @@ const PRESENTATION = [
   'stroke-linecap',
   'stroke-linejoin',
   'stroke-miterlimit',
-  'stroke-dasharray',
-  'stroke-dashoffset',
   'opacity',
   'color',
   'font-family',
@@ -53,14 +51,13 @@ const PRESENTATION = [
   'letter-spacing',
   'text-decoration',
   'paint-order',
-  'vector-effect',
 ];
 const MARKERS = ['marker-start', 'marker-mid', 'marker-end'];
 const TEXT = ['x', 'y', 'dx', 'dy', 'rotate', 'textLength', 'lengthAdjust'];
 
 /** The attributes each element may have. */
 export const ATTRIBUTES: Record<string, string[]> = {
-  svg: ['id', 'viewBox', 'width', 'height', 'preserveAspectRatio', ...PRESENTATION],
+  svg: ['id', 'viewBox', 'preserveAspectRatio', ...PRESENTATION],
   g: ['id', 'transform', ...PRESENTATION],
   defs: ['id'],
   marker: [
@@ -92,6 +89,8 @@ for (const shape of SHAPES) {
     'id',
     'transform',
     ...PRESENTATION,
+    'stroke-dasharray',
+    'stroke-dashoffset',
     ...(MARKABLE.includes(shape) ? MARKERS : []),
     ...ATTRIBUTES[shape]!,
   ];
@@ -266,7 +265,10 @@ export function walkSvg(result: unknown): SvgWalked {
         references.push({ where: at, name: held, times });
       }
     }
-    charge(inside, cost);
+    const dashes = dashesOf(name, attributes);
+    if (dashes === undefined)
+      problem(where, 'has dashes along a length that depends on its context');
+    charge(inside, cost + (dashes ?? 0));
     const children = value['children'];
     if (!Array.isArray(children)) {
       problem(where, 'has children that are not a list');
@@ -305,22 +307,139 @@ export function walkSvg(result: unknown): SvgWalked {
   return { problems: found, ...walked };
 }
 
-/** A length in pixels, or NaN for another unit or none. */
-function pixels(value: unknown): number {
+/** A length in the element's own units, 0 when left out, or NaN in units that depend on context. */
+function own(value: unknown): number {
+  if (value === undefined) return 0;
   return typeof value === 'string' && /^[\d.e-]+(?:px)?$/.test(value)
     ? Number.parseFloat(value)
     : Number.NaN;
 }
 
+/**
+ * The points a canonical path visits, control points included, in absolute units, each run of
+ * them broken where a subpath moves; and the arcs' bounds, added separately.
+ */
+function pathBound(d: string): number {
+  let length = 0;
+  let x = 0;
+  let y = 0;
+  let startX = 0;
+  let startY = 0;
+  let lastCubic: number[] | undefined;
+  let lastQuad: number[] | undefined;
+  const line = (nx: number, ny: number) => {
+    length += Math.hypot(nx - x, ny - y);
+    x = nx;
+    y = ny;
+  };
+  for (const command of d.match(/[MmLlHhVvCcSsQqTtAaZz][^MmLlHhVvCcSsQqTtAaZz]*/g) ?? []) {
+    const letter = command[0]!;
+    const lower = letter.toLowerCase();
+    const numbers =
+      command.slice(1).trim() === '' ? [] : command.slice(1).trim().split(' ').map(Number);
+    const takes = lower === 'z' ? 0 : PATH_TAKES[lower]!;
+    const groups = takes === 0 ? 1 : numbers.length / takes;
+    for (let g = 0; g < groups; g++) {
+      const v = numbers.slice(g * takes, (g + 1) * takes);
+      const dx = letter === lower ? x : 0;
+      const dy = letter === lower ? y : 0;
+      let cubic: number[] | undefined;
+      let quad: number[] | undefined;
+      if (lower === 'm' && g === 0) {
+        x = dx + v[0]!;
+        y = dy + v[1]!;
+        startX = x;
+        startY = y;
+      } else if (lower === 'm' || lower === 'l') line(dx + v[0]!, dy + v[1]!);
+      else if (lower === 'h') line(dx + v[0]!, y);
+      else if (lower === 'v') line(x, dy + v[0]!);
+      else if (lower === 'z') line(startX, startY);
+      else if (lower === 'a') {
+        const [rx, ry, angle] = [Math.abs(v[0]!), Math.abs(v[1]!), (v[2]! * Math.PI) / 180];
+        const [ex, ey] = [dx + v[5]!, dy + v[6]!];
+        if (rx === 0 || ry === 0) length += Math.hypot(ex - x, ey - y);
+        else {
+          const hx = (x - ex) / 2;
+          const hy = (y - ey) / 2;
+          const px = Math.cos(angle) * hx + Math.sin(angle) * hy;
+          const py = -Math.sin(angle) * hx + Math.cos(angle) * hy;
+          const reach = (px * px) / (rx * rx) + (py * py) / (ry * ry);
+          length += 2 * Math.PI * Math.max(rx, ry) * Math.max(1, Math.sqrt(reach));
+        }
+        x = ex;
+        y = ey;
+      } else {
+        // Curves: through each control point to the end.
+        const reflect = (last: number[] | undefined) =>
+          last ? [2 * x - last[0]!, 2 * y - last[1]!] : [x, y];
+        const points: number[] =
+          lower === 'c'
+            ? v.map((n, i) => n + (i % 2 === 0 ? dx : dy))
+            : lower === 's'
+              ? [...reflect(lastCubic), ...v.map((n, i) => n + (i % 2 === 0 ? dx : dy))]
+              : lower === 'q'
+                ? v.map((n, i) => n + (i % 2 === 0 ? dx : dy))
+                : [...reflect(lastQuad), dx + v[0]!, dy + v[1]!];
+        if (lower === 'c' || lower === 's') cubic = points.slice(-4, -2);
+        else quad = points.slice(-4, -2);
+        for (let i = 0; i + 1 < points.length; i += 2) line(points[i]!, points[i + 1]!);
+      }
+      lastCubic = cubic;
+      lastQuad = quad;
+    }
+  }
+  return length;
+}
+
+/**
+ * How many dashes `name` with `attributes` draws, at most, in its own units; undefined when its
+ * shape is measured in units that depend on its context.
+ */
+function dashesOf(name: string, attributes: Record<string, unknown>): number | undefined {
+  const pattern = attributes['stroke-dasharray'];
+  if (typeof pattern !== 'string' || pattern === 'none') return 0;
+  const values = pattern.split(' ').map(Number);
+  const period = values.reduce((sum, value) => sum + value, 0);
+  const points =
+    typeof attributes['points'] === 'string' ? attributes['points'].split(' ').map(Number) : [];
+  const around = (closed: boolean) => {
+    let total = 0;
+    const count = points.length / 2 + (closed ? 1 : 0);
+    for (let i = 1; i < count; i++) {
+      const j = (i % (points.length / 2)) * 2;
+      total += Math.hypot(
+        points[j]! - points[(i - 1) * 2]!,
+        points[j + 1]! - points[(i - 1) * 2 + 1]!,
+      );
+    }
+    return total;
+  };
+  const at = (key: string) => own(attributes[key]);
+  const length =
+    name === 'rect'
+      ? 2 * (at('width') + at('height'))
+      : name === 'circle'
+        ? 2 * Math.PI * at('r')
+        : name === 'ellipse'
+          ? 2 * Math.PI * Math.max(at('rx'), at('ry'))
+          : name === 'line'
+            ? Math.hypot(at('x2') - at('x1'), at('y2') - at('y1'))
+            : name === 'polyline' || name === 'polygon'
+              ? around(name === 'polygon')
+              : typeof attributes['d'] === 'string'
+                ? pathBound(attributes['d'])
+                : 0;
+  if (Number.isNaN(length)) return undefined;
+  return period > 0 ? Math.ceil((length * values.length) / (2 * period)) + values.length : 0;
+}
+
 /** Whether a figure with `attributes` lays out at the article's width at a size within the caps. */
 function inProportion(attributes: unknown): boolean {
   if (!isRecord(attributes)) return false;
+  if ('width' in attributes || 'height' in attributes) return false;
   const box = typeof attributes['viewBox'] === 'string' ? attributes['viewBox'].split(' ') : [];
-  const [width, height] =
-    box.length === 4
-      ? [Number(box[2]), Number(box[3])]
-      : [pixels(attributes['width']), pixels(attributes['height'])];
-  if (Number.isNaN(width) || Number.isNaN(height)) return true;
+  if (box.length !== 4) return true;
+  const [width, height] = [Number(box[2]), Number(box[3])];
   return (
     Math.max(width, height) <= SVG_LIMITS.extent &&
     height <= SVG_LIMITS.tallest * width &&

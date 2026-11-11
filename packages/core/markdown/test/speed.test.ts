@@ -165,8 +165,9 @@ const cut =
     expect(made.removed.map((removal) => `${removal.reason} ${removal.element}`)).toEqual(removals);
 
 /**
- * The worst figures a review found, each once too slow to sanitize or to draw, and others like
- * them: each is cut down or refused as fast as a harmless figure, and what it draws is counted.
+ * Figures built to be slow to sanitize or to draw: long runs of spaces inside values, markers at
+ * every vertex and close, text in markers, tiny dashes, and sizes no article can lay out. Each is
+ * cut down or refused as fast as a harmless figure, for its reason, so what it draws is counted.
  */
 const WORST: [string, string, (made: SanitizedSvg) => void][] = [
   [
@@ -222,6 +223,52 @@ const WORST: [string, string, (made: SanitizedSvg) => void][] = [
   ],
   ['half a megabyte of text', `<svg><text>${'x'.repeat(500_000)}</text></svg>`, refused('drawn')],
   ['a viewBox a million tall', '<svg viewBox="0 0 1 1000000"><rect/></svg>', refused('aspect')],
+  [
+    '1,000 paths dashed every 0.002',
+    `<svg>${'<path d="M0 10L860 10" stroke-dasharray="0.001 0.001"/>'.repeat(1_000)}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'one path dashed every 0.002',
+    '<svg><path d="M0 10L860 10" stroke-dasharray="0.001 0.001"/></svg>',
+    refused('drawn'),
+  ],
+  [
+    'tiny dashes set on the figure, for 300 paths to inherit',
+    `<svg stroke-dasharray="0.001 0.001">${'<path d="M0 10L860 10"/>'.repeat(300)}</svg>`,
+    cut('attribute svg'),
+  ],
+  [
+    'tiny dashes set on a group, for 300 paths to inherit',
+    `<svg><g stroke-dasharray="0.001 0.001">${'<path d="M0 10L860 10"/>'.repeat(300)}</g></svg>`,
+    cut('attribute g'),
+  ],
+  [
+    'a dashed path in a marker drawn 200 times',
+    `<svg><marker id="m"><path d="M0 0h100" stroke-dasharray="0.01 0.01"/></marker><polyline points="${'1 1 '.repeat(200)}" marker-mid="url(#m)"/></svg>`,
+    refused('drawn'),
+  ],
+  [
+    'a dashed path in a marker at 10,922 closes',
+    `<svg><marker id="m"><path d="M0 0h10" stroke-dasharray="1 1"/></marker><path d="M50 50${'z'.repeat(10_922)}" marker-mid="url(#m)"/></svg>`,
+    refused('drawn'),
+  ],
+  [
+    'a figure sized a hundred thousand tall',
+    '<svg viewBox="0 0 860 320" width="1" height="100000"><rect/></svg>',
+    (made) => {
+      cut()(made);
+      expect(made.svg?.attributes).toEqual({ viewBox: '0 0 860 320' });
+    },
+  ],
+  [
+    'a figure sized in ems',
+    '<svg viewBox="0 0 860 320" width="1em" height="100000em"><rect/></svg>',
+    (made) => {
+      cut()(made);
+      expect(made.svg?.attributes).toEqual({ viewBox: '0 0 860 320' });
+    },
+  ],
 ];
 
 test.each(WORST)('%s is cut down or refused within budget', (_name, text, outcome) => {

@@ -17,6 +17,8 @@
  * escape, a comment or a function besides those.
  */
 
+import { Pen, polylineLength } from './length.ts';
+
 /** The elements a figure may hold. */
 export type SvgName =
   | 'svg'
@@ -100,8 +102,6 @@ const PRESENTATION: Readonly<Record<string, SvgValue>> = {
   'stroke-linecap': ['butt', 'round', 'square'],
   'stroke-linejoin': ['miter', 'round', 'bevel', 'miter-clip', 'arcs'],
   'stroke-miterlimit': 'miter',
-  'stroke-dasharray': 'dashes',
-  'stroke-dashoffset': 'coordinate',
   opacity: 'opacity',
   color: 'color',
   // Lo sets the figure's type, and maps `monospace` to its own.
@@ -126,7 +126,15 @@ const PRESENTATION: Readonly<Record<string, SvgValue>> = {
   'letter-spacing': 'spacing',
   'text-decoration': ['none', 'underline', 'overline', 'line-through'],
   'paint-order': 'order',
-  'vector-effect': ['none', 'non-scaling-stroke'],
+};
+
+/**
+ * Dashes, only on what has a length to dash, so nothing inherits them: each is drawn like a shape
+ * of its own, and they're counted along the element's length.
+ */
+const DASHES: Readonly<Record<string, SvgValue>> = {
+  'stroke-dasharray': 'dashes',
+  'stroke-dashoffset': 'coordinate',
 };
 
 /** Where markers go: only shapes with vertices. */
@@ -170,6 +178,7 @@ function shape(attributes: Record<string, SvgValue>, markable = false): SvgRule 
       id: 'id',
       transform: 'transform',
       ...PRESENTATION,
+      ...DASHES,
       ...(markable ? MARKERS : {}),
       ...attributes,
     },
@@ -188,12 +197,11 @@ function frozen<T>(value: T): T {
 
 /** Each element a figure may hold: what it may hold, and its attributes. */
 export const SVG_ELEMENTS: Readonly<Record<SvgName, SvgRule>> = frozen({
+  // No width or height: the renderer sizes the figure, by its viewBox.
   svg: {
     attributes: {
       id: 'id',
       viewBox: 'viewBox',
-      width: 'size',
-      height: 'size',
       preserveAspectRatio: 'aspect',
       ...PRESENTATION,
     },
@@ -282,6 +290,10 @@ export interface Read {
   numbers: number;
   /** For a path or points, how many vertices: where a marker can go, a path's closes included. */
   vertices?: number;
+  /** For a path or points, at most how long it is, in its own units. */
+  length?: number;
+  /** For points, how far from the last back to the first, which a polygon draws. */
+  closing?: number;
 }
 
 /** The largest number a value may hold, either side of zero. */
@@ -380,11 +392,11 @@ export function readValue(kind: SvgValue, text: string): Read | undefined {
       return { value: written(value), numbers: 1 };
     }
     case 'dashes': {
+      // In the element's own units, as its length is, so its dashes can be counted.
       if (trimmed(text).toLowerCase() === 'none') return { value: 'none', numbers: 0 };
-      const list = items(text);
-      const values = list?.map((item) => length(item, 0));
-      if (!values || values.some((value) => value === undefined)) return undefined;
-      return { value: values.join(' '), numbers: values.length };
+      const values = items(text)?.map((item) => number(item.replace(/px$/i, '')));
+      if (!values || values.some((value) => value === undefined || value < 0)) return undefined;
+      return { value: values.map((value) => written(value!)).join(' '), numbers: values.length };
     }
     case 'paint':
     case 'color': {
@@ -399,10 +411,13 @@ export function readValue(kind: SvgValue, text: string): Read | undefined {
     case 'points': {
       const values = numbers(text);
       if (!values || values.length < 2 || values.length % 2 !== 0) return undefined;
+      const open = polylineLength(values, false);
       return {
         value: values.map(written).join(' '),
         numbers: values.length,
         vertices: values.length / 2,
+        length: open,
+        closing: polylineLength(values, true) - open,
       };
     }
     case 'path':
@@ -548,6 +563,7 @@ function path(text: string): Read | undefined {
   let out = '';
   let count = 0;
   let vertices = 0;
+  const pen = new Pen();
   const spaces = (): void => {
     while (isSpace(text[at])) at += 1;
   };
@@ -559,19 +575,18 @@ function path(text: string): Read | undefined {
     spaces();
     return true;
   };
-  const read = (flag: boolean): string | undefined => {
+  const read = (flag: boolean): number | undefined => {
     if (flag) {
       const char = text[at];
       if (char !== '0' && char !== '1') return undefined;
       at += 1;
-      return char;
+      return char === '1' ? 1 : 0;
     }
     NUMBER_AT.lastIndex = at;
     const match = NUMBER_AT.exec(text);
     if (!match) return undefined;
     at += match[0].length;
-    const value = number(match[0]);
-    return value === undefined ? undefined : written(value);
+    return number(match[0]);
   };
   spaces();
   if (at >= text.length) return undefined;
@@ -585,17 +600,19 @@ function path(text: string): Read | undefined {
     if (takes === 0) {
       // A marker goes where a close lands, too.
       vertices += 1;
+      pen.draw(command, [], true);
       continue;
     }
     for (let group = 0; ; group += 1) {
-      const values: string[] = [];
+      const values: number[] = [];
       for (let index = 0; index < takes; index += 1) {
         if (index > 0) separator();
         const value = read(command.toLowerCase() === 'a' && (index === 3 || index === 4));
         if (value === undefined) return undefined;
         values.push(value);
       }
-      out += (group > 0 ? ' ' : '') + values.join(' ');
+      pen.draw(command, values, group === 0);
+      out += (group > 0 ? ' ' : '') + values.map(written).join(' ');
       count += takes;
       vertices += 1;
       const comma = separator();
@@ -606,7 +623,7 @@ function path(text: string): Read | undefined {
       }
     }
   }
-  return { value: out, numbers: count, vertices };
+  return { value: out, numbers: count, vertices, length: pen.length };
 }
 
 /** How many numbers each transform takes. */

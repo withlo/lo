@@ -624,6 +624,16 @@ function shaped(attributes: string): SvgRemoval[] {
   return sanitizeSvg(`<svg ${attributes}><rect/></svg>`).removed;
 }
 
+/** A figure of `count` paths, each dashed every 0.2 along 860. */
+function paths(count: number): string {
+  return `<svg>${'<path d="M0 10L860 10" stroke-dasharray="0.1 0.1"/>'.repeat(count)}</svg>`;
+}
+
+/** A figure of one `shape` through two points 1,000 apart, dashed every 0.01. */
+function dashed(shape: string): string {
+  return `<svg><${shape} points="0 0 1000 0" stroke-dasharray="0.005 0.005"/></svg>`;
+}
+
 /** A marker of 63 circles, each with its radius, which draws 127 each time it's drawn. */
 const CIRCLES = `<marker id="m">${'<circle r="1"/>'.repeat(63)}</marker>`;
 
@@ -641,6 +651,78 @@ function nested(depth: number): string {
 function pairs(count: number): string {
   return '0 0 '.repeat(count).trim();
 }
+
+describe('dashes', () => {
+  test('are only on what has a length to dash, so nothing inherits them', () => {
+    const made = sanitized(
+      `<svg stroke-dasharray="1 1"><g stroke-dasharray="1 1" stroke-dashoffset="1"><text stroke-dasharray="1 1">x</text></g><marker id="m" stroke-dasharray="1 1"/><path d="M0 0h10" stroke-dasharray="4 2" stroke-dashoffset="1" vector-effect="non-scaling-stroke"/></svg>`,
+    );
+    expect(removals(made)).toEqual([
+      'attribute svg.stroke-dasharray',
+      'attribute g.stroke-dasharray',
+      'attribute g.stroke-dashoffset',
+      'attribute text.stroke-dasharray',
+      'attribute marker.stroke-dasharray',
+      // Its dashes would be counted in the window's units, which scale with the figure.
+      'attribute path.vector-effect',
+    ]);
+    expect(elements(made).at(-1)?.attributes).toEqual({
+      d: 'M0 0h10',
+      'stroke-dasharray': '4 2',
+      'stroke-dashoffset': '1',
+    });
+  });
+
+  test('count against what a figure draws, along every kind of shape', () => {
+    // Each dashed every 0.002 along 860: 430,000 dashes, far past the cap, whatever the shape.
+    const shapes = [
+      '<path d="M0 10L860 10"',
+      '<line x2="860"',
+      '<polyline points="0 0 860 0"',
+      '<polygon points="0 0 430 0"',
+      '<rect width="215" height="215"',
+      `<circle r="${860 / (2 * Math.PI)}"`,
+      `<ellipse rx="${860 / (2 * Math.PI)}" ry="1"`,
+      '<path d="M0 0C0 430 860 430 860 0"',
+      '<path d="M0 0a1 1 0 0 1 300 0"',
+    ];
+    const passing = shapes.filter(
+      (shape) => sanitizeSvg(`<svg>${shape} stroke-dasharray="0.001 0.001"/></svg>`).svg,
+    );
+    expect(passing).toEqual([]);
+    // At 0.1 apart, 4,302 each: thirty fit, but not thirty-one.
+    expect(sanitized(paths(30)).removed).toEqual([]);
+    expect(sanitizeSvg(paths(31)).removed).toEqual([{ reason: 'drawn', element: 'svg' }]);
+  });
+
+  test("along a polygon's closing side too", () => {
+    // Dashed every 0.01 along 1,000, some 100,000 dashes; closed back, some 200,000.
+    expect(sanitized(dashed('polyline')).removed).toEqual([]);
+    expect(sanitizeSvg(dashed('polygon')).removed).toEqual([{ reason: 'drawn', element: 'svg' }]);
+  });
+
+  test('in a marker, count each time the marker is drawn', () => {
+    // A path dashed every 0.02 along 10, some 500 dashes, in a marker: drawn at 100 vertices,
+    // some 50,000 in all; at 400, past the cap. Its shapes alone would be a few thousand.
+    const marker = '<marker id="m"><path d="M0 0h10" stroke-dasharray="0.01 0.01"/></marker>';
+    const at = (vertices: number) =>
+      `<svg>${marker}<polyline points="${'1 1 '.repeat(vertices)}" marker-mid="url(#m)"/></svg>`;
+    expect(sanitized(at(100)).removed).toEqual([]);
+    expect(sanitizeSvg(at(400)).removed).toEqual([{ reason: 'drawn', element: 'svg' }]);
+  });
+
+  test('along a shape measured in units that depend on what is around it are removed', () => {
+    const made = sanitized(
+      '<svg><rect width="50%" height="10" stroke-dasharray="1 1" stroke-dashoffset="1"/><circle r="1em" stroke-dasharray="1"/><rect width="10px" height="10" stroke-dasharray="1"/></svg>',
+    );
+    expect(removals(made)).toEqual([
+      'value rect.stroke-dasharray',
+      'value rect.stroke-dashoffset',
+      'value circle.stroke-dasharray',
+    ]);
+    expect(elements(made).at(-1)?.attributes).toMatchObject({ 'stroke-dasharray': '1' });
+  });
+});
 
 describe('the caps', () => {
   test('on size', () => {
@@ -691,27 +773,38 @@ describe('the caps', () => {
     const refused = [{ reason: 'aspect', element: 'svg' }];
     for (const fine of [
       'viewBox="0 0 860 320"',
-      'viewBox="0 0 100 400"',
+      'viewBox="0 0 100 800"',
       'viewBox="0 0 3200 100"',
       'viewBox="0 0 100000 100000"',
-      'width="860" height="320"',
-      'width="100%" height="1000000"',
-      // The viewBox decides, as the article sizes the figure by its width.
-      'viewBox="0 0 860 320" width="1" height="100000"',
       '',
     ]) {
       expect(shaped(fine)).toEqual([]);
     }
     for (const tall of [
       'viewBox="0 0 1 1000000"',
-      'viewBox="0 0 100 401"',
+      'viewBox="0 0 100 801"',
       'viewBox="0 0 3201 100"',
       'viewBox="0 0 100001 100000"',
-      'width="1px" height="5"',
-      'width="0" height="1"',
     ]) {
       expect(shaped(tall)).toEqual(refused);
     }
+  });
+
+  test("the figure's own width and height are dropped: the renderer sizes it, by its viewBox", () => {
+    for (const sized of [
+      'viewBox="0 0 860 320" width="1" height="100000"',
+      'viewBox="0 0 860 320" width="1em" height="100000em"',
+      'width="1px" height="1000000"',
+      'width="100%" height="50%"',
+    ]) {
+      const made = sanitized(`<svg ${sized}><rect width="1" height="1"/></svg>`);
+      expect(made.removed).toEqual([]);
+      expect(Object.keys(made.svg!.attributes).filter((name) => name !== 'viewBox')).toEqual([]);
+    }
+    // A shape's own are its own.
+    expect(inside('<svg><rect width="10" height="20"/></svg>')).toEqual([
+      rect({ width: '10', height: '20' }),
+    ]);
   });
 
   test('numbers too large to draw are removed', () => {

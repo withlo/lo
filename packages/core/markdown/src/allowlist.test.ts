@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'vitest';
 
+import { dashCount } from './length.ts';
 import {
   FIGURE_COLORS,
   isSvgAttribute,
@@ -77,7 +78,15 @@ describe('numbers and lengths', () => {
     ).toEqual(Array.from({ length: 6 }, () => null));
     expect(read('points', ['0,0 10,10', '0 0 1', ''])).toEqual(['0 0 10 10', null, null]);
     expect(read('coordinates', ['1 2em 3%', '1,,2'])).toEqual(['1 2em 3%', null]);
-    expect(read('dashes', ['4 2', 'none', '4,-2'])).toEqual(['4 2', 'none', null]);
+    // Dashes are counted in the element's own units, so only those.
+    expect(read('dashes', ['4 2', 'none', '4px,2', '4,-2', '4em', '4%'])).toEqual([
+      '4 2',
+      'none',
+      '4 2',
+      null,
+      null,
+      null,
+    ]);
   });
 });
 
@@ -232,13 +241,52 @@ describe('paths', () => {
   });
 
   test('count their numbers and vertices', () => {
-    expect(readValue('path', 'M0 0 1 1 2 2h3z')).toEqual({
+    expect(readValue('path', 'M0 0 1 1 2 2h3z')).toMatchObject({
       value: 'M0 0 1 1 2 2h3z',
       numbers: 7,
       // A close is a vertex too.
       vertices: 5,
     });
     expect(readValue('points', '0 0 1 1 2 2')).toMatchObject({ numbers: 6, vertices: 3 });
+  });
+
+  test('are no longer than their lines, control polygons and whole ellipses', () => {
+    const lengths = [
+      ['M0 0L3 4', 5],
+      ['m1 1l3 4', 5],
+      ['M0 0l3 4z', 10],
+      ['M0 0h3v4', 7],
+      // Through the control points.
+      ['M0 0C0 1 1 1 1 0', 3],
+      ['M0 0Q1 1 2 0', 2 * Math.SQRT2],
+      // A smooth curve's first control point is the last one reflected.
+      ['M0 0C1 0 1 1 0 1S-1 2 0 2', 6],
+      ['M0 0Q1 1 2 0T4 0', 4 * Math.SQRT2],
+      // An arc: its whole ellipse, scaled up until it reaches; with a radius of 0, a line.
+      ['M0 0A5 5 0 0 1 10 0', 10 * Math.PI],
+      ['M0 0A1 1 0 0 1 10 0', 10 * Math.PI],
+      ['M0 0A0 5 0 0 1 3 4', 5],
+      // A move draws nothing; a close goes back to where its subpath began.
+      ['M0 0L3 4M10 10l0 1z', 7],
+    ] as const;
+    expect(lengths.map(([d]) => readValue('path', d)?.length)).toEqual(
+      lengths.map(([, length]) => expect.closeTo(length, 9)),
+    );
+    expect(readValue('points', '0 0 3 4 3 0')).toMatchObject({ length: 9, closing: 3 });
+  });
+});
+
+describe('dashes', () => {
+  test('are counted along a length: half as many as the pattern has numbers, each run of their sum', () => {
+    expect(dashCount([1, 1], 10)).toBe(7);
+    // An odd pattern is repeated: the same count.
+    expect(dashCount([1], 10)).toBe(6);
+    expect(dashCount([0.001, 0.001], 860)).toBe(430_002);
+    expect(dashCount([0, 0], 860)).toBe(0);
+    expect(dashCount([1, 1], 0)).toBe(2);
+    // Dashes too small to write are past any cap.
+    expect(dashCount([1e-300], 1)).toBeGreaterThan(1e299);
+    expect(dashCount([1e-320], 1)).toBe(Infinity);
   });
 });
 

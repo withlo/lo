@@ -24,6 +24,7 @@ import { html as namespaces, type DefaultTreeAdapterTypes } from 'parse5';
 
 import { readValue, svgRule, type SvgName } from './allowlist.ts';
 import { parseHtml, type Fragment } from './html.ts';
+import { dashCount } from './length.ts';
 import { MAX_DIAGNOSTICS } from './limits.ts';
 
 type Element = DefaultTreeAdapterTypes.Element;
@@ -66,8 +67,8 @@ export type SvgNode = SvgElement | SvgText;
  * - `depth`: it nests deeper than the cap;
  * - `numbers`: it holds more numbers than the cap;
  * - `drawn`: it would draw more than the cap (see `SvgLimits.drawn`);
- * - `aspect`: its viewBox, or its width and height, are larger than the cap, or so tall or wide
- *   that drawn at the article's width it would be far too tall, or too thin to see;
+ * - `aspect`: its viewBox is larger than the cap, or so tall or wide that drawn at the article's
+ *   width it would be far too tall, or too thin to see;
  * - `root`: it has no `<svg>` at the top.
  */
 export type SvgReason =
@@ -113,9 +114,9 @@ export interface SvgLimits {
   /** The most numbers its values may hold, all together. */
   numbers: number;
   /**
-   * The most it may draw, counting one for each element, number, vertex and character of text, and
-   * a marker's all again each time it's drawn: once at each end, or at every vertex, closes
-   * included.
+   * The most it may draw, counting one for each element, number, vertex, character of text and
+   * dash, and a marker's all again each time it's drawn: once at each end, or at every vertex,
+   * closes included.
    */
   drawn: number;
   /** The largest its viewBox may be, either way. */
@@ -137,7 +138,7 @@ export const SVG_LIMITS: Readonly<SvgLimits> = Object.freeze({
   numbers: 65_536,
   drawn: 131_072,
   extent: 100_000,
-  tallest: 4,
+  tallest: 8,
   widest: 32,
 });
 
@@ -341,6 +342,8 @@ class Sanitizer {
     // Where markers go: each vertex of a path, closes included, or of points, a polygon's closing
     // one included, and a line's two ends.
     let vertices = name === 'line' ? 2 : 0;
+    // At most how long a path or points are, in their own units, for counting dashes.
+    let length = 0;
     this.cost = 1;
     for (const attribute of node.attrs) {
       const written = attribute.prefix ? `${attribute.prefix}:${attribute.name}` : attribute.name;
@@ -348,6 +351,9 @@ class Sanitizer {
       const place = attributePlace(node, written);
       const remove = (reason: SvgReason): void =>
         this.remove(this.within, reason, name, written, place);
+      // The renderer sizes the figure, by its viewBox: a browser would take the figure's
+      // proportions from these first.
+      if (name === 'svg' && (written === 'width' || written === 'height')) continue;
       if (attribute.namespace === XMLNS) {
         if (DECLARATIONS.get(written) !== value) remove('attribute');
         continue;
@@ -391,6 +397,9 @@ class Sanitizer {
       this.numbers += read.numbers;
       this.cost += read.numbers;
       if (read.vertices !== undefined) vertices = read.vertices + (name === 'polygon' ? 1 : 0);
+      if (read.length !== undefined) {
+        length = read.length + (name === 'polygon' ? (read.closing ?? 0) : 0);
+      }
       if (kind === 'id') {
         const holders = this.ids.get(read.value) ?? [];
         holders.push({ element: made, place });
@@ -398,11 +407,31 @@ class Sanitizer {
       }
     }
     this.cost += vertices;
+    this.cost += this.dashes(node, made, length);
     for (const reference of references) {
       const times = reference.attribute === 'marker-mid' ? Math.max(0, vertices - 2) : 1;
       this.references.push({ ...reference, times });
     }
     return made;
+  }
+
+  /**
+   * How many dashes `element` draws: along at most its length, in its own units. When its shape is
+   * measured in units it can't be counted in (`%` or `em`), its dashes are removed.
+   */
+  private dashes(node: Element, element: SvgElement, pathLength: number): number {
+    const pattern = element.attributes['stroke-dasharray'];
+    if (pattern === undefined || pattern === 'none') return 0;
+    const length = shapeLength(element, pathLength);
+    if (length === undefined) {
+      for (const attribute of ['stroke-dasharray', 'stroke-dashoffset']) {
+        if (!(attribute in element.attributes)) continue;
+        delete element.attributes[attribute];
+        this.remove(this.within, 'value', element.name, attribute, attributePlace(node, attribute));
+      }
+      return 0;
+    }
+    return dashCount(pattern.split(' ').map(Number), length);
   }
 
   /** Adds `cost` to what the marker draws each time, or, outside markers, to what's drawn once. */
@@ -467,24 +496,56 @@ function removal(
   return made;
 }
 
-/** A length in pixels, as the allowlist writes it, or undefined for another unit or none. */
-function pixels(value: string | undefined): number | undefined {
-  return value !== undefined && /^[\d.e-]+(?:px)?$/.test(value)
-    ? Number.parseFloat(value)
-    : undefined;
+/** A length in the element's own units: unitless, in pixels, or 0 when it's left out. */
+function own(value: string | undefined): number | undefined {
+  if (value === undefined) return 0;
+  return /^[\d.e-]+(?:px)?$/.test(value) ? Number.parseFloat(value) : undefined;
+}
+
+/**
+ * At most how long `element` is, in its own units: a rectangle's perimeter, a circle's or an
+ * ellipse's circumference, a line's length, or its path's or points'. Undefined when a measure is
+ * in `%` or `em`, which depend on what's around it.
+ */
+function shapeLength(element: SvgElement, pathLength: number): number | undefined {
+  const at = (name: string): number | undefined => own(element.attributes[name]);
+  const all = (...names: string[]): number[] | undefined => {
+    const values: number[] = [];
+    for (const name of names) {
+      const value = at(name);
+      if (value === undefined) return undefined;
+      values.push(value);
+    }
+    return values;
+  };
+  if (element.name === 'rect') {
+    const sides = all('width', 'height');
+    return sides && 2 * (sides[0]! + sides[1]!);
+  }
+  if (element.name === 'circle') {
+    const r = all('r');
+    return r && 2 * Math.PI * r[0]!;
+  }
+  if (element.name === 'ellipse') {
+    const radii = all('rx', 'ry');
+    return radii && 2 * Math.PI * Math.max(radii[0]!, radii[1]!);
+  }
+  if (element.name === 'line') {
+    const ends = all('x1', 'y1', 'x2', 'y2');
+    return ends && Math.hypot(ends[2]! - ends[0]!, ends[3]! - ends[1]!);
+  }
+  // A path, or points.
+  return pathLength;
 }
 
 /**
  * Whether the figure, drawn at the article's width with its height following, is a size the window
- * can lay out: its viewBox, or else its width and height in pixels, within the caps.
+ * can lay out: its viewBox within the caps.
  */
 function inProportion(svg: SvgElement): boolean {
   const box = svg.attributes['viewBox']?.split(' ').slice(2).map(Number);
-  const [width, height] = box ?? [
-    pixels(svg.attributes['width']),
-    pixels(svg.attributes['height']),
-  ];
-  if (width === undefined || height === undefined) return true;
+  if (!box) return true;
+  const [width = 0, height = 0] = box;
   if (Math.max(width, height) > SVG_LIMITS.extent) return false;
   return height <= SVG_LIMITS.tallest * width && width <= SVG_LIMITS.widest * height;
 }
