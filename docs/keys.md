@@ -213,9 +213,12 @@ shows the new keys and the lines Lo can't use. To open the file, use the button 
 command palette or `g ,`: Lo opens it as text in your system's text editor, writing it first, with a
 header of comments, if there isn't one. Opening never runs anything, so Lo doesn't open a file that
 is executable, isn't a plain file (a folder, or an app a link leads to) or is over the limit below:
-key help says why, and has no button. A link to a file in a dotfiles folder is followed. Lo reads a
-file of up to 1 MiB and lines of up to 1,000 characters; a longer line is reported and skipped, and
-a longer file isn't read. Nothing in the file is ever run.
+key help says why, and has no button. The editor is the app for text whatever the file's name or
+contents, even through a link to a file named like a launcher or a web page: on Linux, the app
+`xdg-mime query default text/plain` names, started with `gio launch`. Without one of those, Lo says
+so and opens nothing. A link to a file in a dotfiles folder is followed. Lo reads a file of up to 1
+MiB and lines of up to 1,000 characters; a longer line is reported and skipped, and a longer file
+isn't read. Nothing in the file is ever run.
 
 ### Writing keys
 
