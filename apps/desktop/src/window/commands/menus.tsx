@@ -3,8 +3,8 @@
 // on the target it was opened for.
 
 import { ContextMenu, type ContextMenuAnchor } from '@lo/ui';
-import { menuSections, textKind, type Target, type TargetKind } from '@lo/ui/commands';
-import { useSyncExternalStore, type MouseEvent } from 'react';
+import { hasEditMenu, menuSections, textKind, type Target, type TargetKind } from '@lo/ui/commands';
+import { useEffect, useSyncExternalStore, type MouseEvent } from 'react';
 
 import { focusedTarget } from './bar.ts';
 import { registry, useKeys } from './registry.ts';
@@ -80,8 +80,8 @@ function anchorOf(element: Element | null): ContextMenuAnchor {
  * the focused scope's, as a key's is. A text field has none.
  */
 export function openMenuAtFocus(): boolean {
-  // A text field gets the system's Edit menu by right-click only; Lo's menus skip it.
-  if (textKind(document.activeElement) !== undefined) return false;
+  // A form field gets the system's Edit menu by right-click only; Lo's menus skip it.
+  if (hasEditMenu(document.activeElement)) return false;
   return openMenu(focusedTarget(), anchorOf(document.activeElement), true);
 }
 
@@ -106,8 +106,8 @@ export function useMenuTarget(
         return;
       }
       if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
-      // A text field gets the system's Edit menu, which main shows: cut, copy, paste, spelling.
-      if (event.target instanceof Element && textKind(event.target) !== undefined) return;
+      // A form field gets the system's Edit menu, which main shows: cut, copy, paste, spelling.
+      if (event.target instanceof Element && hasEditMenu(event.target)) return;
       const clicked = typeof target === 'function' ? target(event) : target;
       if (clicked && openMenu(clicked, { x: event.clientX, y: event.clientY })) {
         event.preventDefault();
@@ -139,10 +139,25 @@ function nameOf(kind: TargetKind): string {
   }
 }
 
+/**
+ * A right-click in a code view's text that no menu took gets no menu at all. Its text is editable
+ * to the page, so the system would offer cut and paste for code that nothing can change.
+ */
+function keepEditMenuFromCode(event: Event): void {
+  const { target } = event;
+  if (event.defaultPrevented || !(target instanceof Element)) return;
+  if (textKind(target) !== undefined && !hasEditMenu(target)) event.preventDefault();
+}
+
 /** The right-click menu, over the window. */
 export function Menus() {
   const open = useSyncExternalStore(subscribe, currentMenu);
   useKeys();
+  useEffect(() => {
+    // After the page's own handlers, which are on its root and so run before this one on `document`.
+    document.addEventListener('contextmenu', keepEditMenuFromCode);
+    return () => document.removeEventListener('contextmenu', keepEditMenuFromCode);
+  }, []);
   const shown = open ?? closing;
   const container = document.getElementById('root');
   return (

@@ -1,18 +1,24 @@
-// What Lo says when something asked for didn't happen: a note at the bottom of the window that goes
-// by itself. A key, a menu or the palette that asks for a command that can't run, and a Back with
-// nowhere to go, say why here rather than doing nothing.
+// What Lo says when something asked for didn't happen: a toast at the bottom of the window that
+// goes by itself. A key, a menu or the palette that asks for a command that can't run, and a Back
+// with nowhere to go, say why here rather than doing nothing.
 
-import { Notice } from '@lo/ui';
+import { Toast, ToastRegion } from '@lo/ui';
 import { useSyncExternalStore } from 'react';
 
 /** How long a note stays, in ms. */
 export const NOTICE_TIME = 4000;
 
-let current: string | undefined;
+/** What a note says: what was asked for, in a few words, and why it didn't happen. */
+export interface Note {
+  readonly title: string;
+  readonly body: string;
+}
+
+let current: Note | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<() => void>();
 
-function set(next: string | undefined): void {
+function set(next: Note | undefined): void {
   current = next;
   for (const listener of listeners) listener();
 }
@@ -25,21 +31,38 @@ function subscribe(listener: () => void): () => void {
 }
 
 /** The note showing now. */
-export function notice(): string | undefined {
+export function notice(): Note | undefined {
   return current;
 }
 
-/** Says `message` for a few seconds, in place of the last one. */
-export function notify(message: string): void {
+/** Says why `title`, what was asked for, didn't happen, for a few seconds, in place of the last. */
+export function notify(title: string, body: string): void {
   clearTimeout(timer);
-  set(message);
+  set({ title, body });
   timer = setTimeout(() => {
     timer = undefined;
     set(undefined);
   }, NOTICE_TIME);
 }
 
-/** The window's notes. */
+/** The window's notes, as toasts: an info icon, what was asked for and why it didn't happen. */
 export function Notices() {
-  return <Notice message={useSyncExternalStore(subscribe, notice)} />;
+  const note = useSyncExternalStore(subscribe, notice);
+  return (
+    <ToastRegion>
+      {note !== undefined && (
+        <Toast
+          tone="info"
+          icon={
+            <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.25" />
+              <path d="M8 7.25v4M8 4.75v.01" />
+            </svg>
+          }
+          title={note.title}
+          body={note.body}
+        />
+      )}
+    </ToastRegion>
+  );
 }

@@ -33,6 +33,23 @@ const view = (scope: string, mode: 'normal' | 'visual' | 'insert' = 'normal'): F
   view: { mode, pending: false },
 });
 
+/** What `g` then `,` run where `focus` is. */
+function opens(focus: Focus, system: System = 'mac'): boolean {
+  const bindings = new Bindings(system, declaredBindings(commands, system));
+  let pending;
+  let outcome;
+  for (const key of ['g', ',']) {
+    const [stroke] = systemStrokes(parseKeys(key), system);
+    ({ pending, outcome } = match(
+      bindings,
+      pending,
+      { stroke: stroke!, repeat: false, composing: false, time: 0 },
+      focus,
+    ));
+  }
+  return outcome?.kind === 'run' && outcome.command.id === 'keys.openKeymap';
+}
+
 describe("the registry's own keys", () => {
   it('Esc goes back to the middle view, except where Esc closes something or is Vim’s', () => {
     expect(runs('esc', { scope: 'window', text: false })).toBe('keys.escape');
@@ -50,6 +67,22 @@ describe("the registry's own keys", () => {
       expect(runs('ctrl+o', view('diff'), system)).toBe('keys.back');
       expect(runs('ctrl+i', { scope: 'window', text: false }, system)).toBe('keys.forward');
       expect(runs('ctrl+o', view('box'), system)).toBeUndefined();
+    }
+  });
+});
+
+describe('the keymap file', () => {
+  it('g , opens it, anywhere but where g is typed or is Vim’s', () => {
+    for (const system of ['mac', 'linux'] as const) {
+      expect(opens({ scope: 'window', text: false }, system)).toBe(true);
+      expect(opens({ scope: 'tree', text: false }, system)).toBe(true);
+      expect(opens(view('diff'), system)).toBe(true);
+      expect(opens(view('diff', 'visual'), system)).toBe(false);
+      expect(opens(view('box'), system)).toBe(false);
+      for (const scope of ['menu', 'dialog', 'palette']) {
+        expect(opens({ scope, text: false }, system)).toBe(false);
+      }
+      expect(opens({ scope: 'window', text: true }, system)).toBe(false);
     }
   });
 });
