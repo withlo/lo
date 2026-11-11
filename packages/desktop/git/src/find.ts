@@ -392,7 +392,23 @@ async function distrustProgram(
   }
 }
 
-async function isExecutableFile(path: string): Promise<boolean> {
+/**
+ * Why someone besides this user and root could change the program at `program`, links followed,
+ * or `undefined` when nobody else can: the rule {@link findGit} holds git to, for the other
+ * programs Lo finds and runs, such as `gh`. `groups` are the groups that may write to it, as
+ * {@link Places.groups} has them.
+ */
+export async function whyDistrusted(
+  program: string,
+  groups: readonly number[],
+): Promise<string | undefined> {
+  const real = await realpath(program).catch(() => undefined);
+  if (real === undefined) return "it can't be found";
+  return distrustProgram(program, real, groups);
+}
+
+/** Whether `path` is a file this user may run. */
+export async function isExecutableFile(path: string): Promise<boolean> {
   try {
     if (!(await stat(path)).isFile()) return false;
     await access(path, constants.X_OK);

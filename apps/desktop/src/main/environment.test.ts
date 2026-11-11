@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   appName,
   backgroundEnvironment,
+  browserProgram,
   backgroundSettings,
   configFolder,
   dataFolder,
   devServer,
   devTools,
+  ghProgram,
   githubSettings,
   keymapEditor,
 } from './environment.ts';
@@ -263,6 +265,40 @@ describe('githubSettings', () => {
 
   it('refuses a relative token file', () => {
     expect(() => githubSettings({ packaged: false, env: { LO_TEST_TOKEN_FILE: 'token' } })).toThrow(
+      'absolute path',
+    );
+  });
+});
+
+describe('ghProgram', () => {
+  it('names the gh a build run from source runs, or none', () => {
+    expect(ghProgram({ packaged: false, env: { LO_GH: '/tmp/gh' } })).toBe('/tmp/gh');
+    expect(ghProgram({ packaged: false, env: { LO_GH: 'none' } })).toBe('none');
+    expect(ghProgram({ packaged: false, env: {} })).toBeUndefined();
+  });
+
+  it('is ignored in a packaged build, which always finds gh itself', () => {
+    expect(ghProgram({ packaged: true, env: { LO_GH: '/tmp/gh' } })).toBeUndefined();
+    expect(ghProgram({ packaged: true, env: { LO_GH: 'relative' } })).toBeUndefined();
+  });
+
+  it('refuses a relative path', () => {
+    expect(() => ghProgram({ packaged: false, env: { LO_GH: 'gh' } })).toThrow('absolute path');
+  });
+});
+
+describe('browserProgram', () => {
+  it('names the program a build run from source opens web pages with', () => {
+    expect(browserProgram({ packaged: false, env: { LO_BROWSER: '/tmp/open' } })).toBe('/tmp/open');
+    expect(browserProgram({ packaged: false, env: {} })).toBeUndefined();
+  });
+
+  it('is ignored in a packaged build, so nothing the environment says picks what Lo runs', () => {
+    expect(browserProgram({ packaged: true, env: { LO_BROWSER: '/tmp/open' } })).toBeUndefined();
+  });
+
+  it('refuses a relative path', () => {
+    expect(() => browserProgram({ packaged: false, env: { LO_BROWSER: 'open' } })).toThrow(
       'absolute path',
     );
   });

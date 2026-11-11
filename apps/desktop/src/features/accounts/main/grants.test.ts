@@ -268,6 +268,52 @@ describe("Linux's built-in key, and other stand-in keychains", () => {
     );
   });
 
+  it("says why a token can't be kept before anything is written: Linux's built-in key", async () => {
+    const { grants: kept, storage, database } = grants({ keychain: linux });
+    expect(await kept.problem()).toBeUndefined();
+    storage.mark = 'v10';
+    expect(await kept.problem()).toContain('none answered');
+    // Nothing is kept by asking.
+    expect(database.prepare('SELECT count(*) AS n FROM accounts_grants').get()).toEqual({ n: 0 });
+    // A Mac's keychain marks its key so too, and a test run takes the built-in key.
+    const onMac = grants({ keychain: mac });
+    onMac.storage.mark = 'v10';
+    expect(await onMac.grants.problem()).toBeUndefined();
+    const testRun = grants({ keychain: { ...linux, testRun: true } });
+    testRun.storage.mark = 'v10';
+    expect(await testRun.grants.problem()).toBeUndefined();
+  });
+
+  it('says why a token can’t be kept: no keychain, or a stand-in one', async () => {
+    const { grants: kept, storage } = grants({ keychain: { ...mac, mockKeychain: true } });
+    expect(await kept.problem()).toContain('stand-in keychain');
+    storage.available = false;
+    expect(await kept.problem()).toContain("can't reach the system's keychain");
+  });
+
+  it("takes a keyring's grant that no longer decrypts, once only the built-in key answers, for want of a keyring", async () => {
+    const { grants: kept, storage } = grants({ keychain: linux });
+    storage.mark = 'v11';
+    await kept.write('bot', expiring);
+    // The keyring stops answering: decrypting fails, and what's encrypted now is the built-in key's.
+    storage.refusing = true;
+    storage.mark = 'v10';
+    const read = kept.read('bot');
+    await expect(read).rejects.toBeInstanceOf(NoKeychain);
+    await expect(read).rejects.toThrow('none answered');
+    // While a keyring still encrypts, it's the keychain refusing just now, as when the person says no.
+    storage.mark = 'v12';
+    const refused = kept.read('bot');
+    await expect(refused).rejects.not.toBeInstanceOf(NoKeychain);
+    await expect(refused).rejects.toThrow("the keychain couldn't decrypt the token");
+    // On a Mac, a refusal is never taken for no keychain.
+    const onMac = grants({ keychain: mac });
+    await onMac.grants.write('bot', expiring);
+    onMac.storage.refusing = true;
+    onMac.storage.mark = 'v10';
+    await expect(onMac.grants.read('bot')).rejects.not.toBeInstanceOf(NoKeychain);
+  });
+
   it("leaves an account signed in, its grant kept, while there's no keyring", async () => {
     const { grants: kept, storage, database } = grants({ keychain: linux });
     storage.mark = 'v10';
