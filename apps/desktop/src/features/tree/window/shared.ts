@@ -2,6 +2,8 @@
 // in, which the diff shows them in; the file on screen, which the diff says as it scrolls and the
 // tree follows; and the views that show a file the tree asks for.
 
+import { useMemo } from 'react';
+
 import { useTabState } from '../../tab/window/shared.ts';
 import type { Changed, TreeState } from '../contract.ts';
 import { panelOrder, type Mode } from './model.ts';
@@ -36,6 +38,19 @@ export function useFileOrder(tab: string): readonly string[] {
   const state = useTabState(states, tab);
   const mode = useTabState(choices, tab, (chosen) => chosen.mode);
   return orderOf(tab, state, mode);
+}
+
+/**
+ * The order the panel lists `changes` in, by key, in `tab`'s mode, as {@link useFileOrder} gives
+ * it once the tree has the same changes: for a view that has them first, so it's drawn in the
+ * panel's order from the start.
+ */
+export function useOrderOf(
+  tab: string,
+  changes: readonly Changed[] | undefined,
+): readonly string[] | undefined {
+  const mode = useTabState(choices, tab, (chosen) => chosen.mode);
+  return useMemo(() => (changes ? panelOrder(changes, mode) : undefined), [changes, mode]);
 }
 
 /**

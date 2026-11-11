@@ -1,8 +1,8 @@
 // A tab's diff view, while it's drawn: what's been worked out of each file goes in as it arrives,
 // a frame's worth at a time, so the page never stalls. When the local copy's files take the place
 // of GitHub's and some start out otherwise (generated, large, or no longer either), a file off
-// screen changes at once; one the reader is looking at stays as it is until it's scrolled away, or
-// until the reader opens or closes it.
+// screen changes at once; one the reader is looking at stays as it is until it's off screen once
+// the reader stops scrolling, or until the reader moves the cursor, opens or closes it.
 
 import { createDiffView, type DiffView, type Probe, type Target, type Viewport } from '@lo/ui/code';
 
@@ -20,13 +20,16 @@ declare global {
   interface Window {
     /**
      * The diff on screen, for the smoke test, in a build run from source: its readings, its
-     * files' ids and paths, in the order it shows them, and what's at the top of the screen.
+     * files' ids and paths, in the order it shows them, what's at the top of the screen, and how
+     * many views the page has drawn.
      */
     loDiff?:
       | {
           probe: Probe;
+          draws: number;
           files: { id: string; path: string }[];
           viewport(): Viewport;
+          scrollTo(viewport: Viewport): boolean;
           filesOnScreen(): readonly string[];
         }
       | undefined;
@@ -115,6 +118,9 @@ class Pacer {
   };
 }
 
+/** How long the scroll stays still before the reader counts as having stopped, in milliseconds. */
+const STILL_AFTER = 150;
+
 /** Whether Lo runs as it ships, which keeps the smoke test's readings out of the page. */
 export interface DrawOptions {
   parent: HTMLElement;
@@ -129,8 +135,12 @@ export interface DrawOptions {
   before: Place | undefined;
 }
 
+/** How many views the page has drawn, for the smoke test. */
+let draws = 0;
+
 /** Draws the view of `entries`, fills in what's been worked out, and hooks it up. */
 export function draw(options: DrawOptions): Drawing {
+  draws += 1;
   const { parent, tab, loader, entries, at } = options;
   const keys = registry();
   const files = entries.map((entry) => diffFileOf(entry, loader.shown(entry.id)));
@@ -149,10 +159,18 @@ export function draw(options: DrawOptions): Drawing {
   /** Files to change once the reader isn't looking at them, and how. */
   const pending = new Map<string, { change: Change; start: Start }>();
   /**
-   * The local copy's lines of files that start out otherwise now and are on screen: they stay as
-   * they were until they're scrolled away, lines and all.
+   * Files on screen whose local copy's lines have come, which start out otherwise now: they stay
+   * as they were, lines, diff and colors, until they're scrolled away, and then take the loader's
+   * latest, whatever whitespace was hidden or shown meanwhile.
    */
-  const held = new Map<string, Shown>();
+  const held = new Set<string>();
+
+  /** Gives a held file the loader's latest lines, diff and colors. */
+  const release = (id: string) => {
+    if (!held.delete(id)) return;
+    const shown = loader.shown(id);
+    if (shown) setLines(id, shown);
+  };
   /** Files the reader asked to load, which come in as soon as they arrive. */
   const asked = new Set<string>();
   const pacer = new Pacer();
@@ -218,10 +236,9 @@ export function draw(options: DrawOptions): Drawing {
     settling = false;
     const looked = new Set(view.filesOnScreen());
     const made = (): boolean => {
-      for (const [id, shown] of held) {
+      for (const id of held) {
         if (looked.has(id)) continue;
-        held.delete(id);
-        setLines(id, shown);
+        release(id);
         return true;
       }
       for (const [id, { change, start }] of pending) {
@@ -274,7 +291,7 @@ export function draw(options: DrawOptions): Drawing {
       pacer.run(() => {
         // A file the reader is looking at that starts out otherwise now stays as it is.
         if (pending.has(id) && drawn.get(id) !== 'out' && view.filesOnScreen().includes(id)) {
-          held.set(id, shown);
+          held.add(id);
           return;
         }
         if (drawn.get(id) !== 'out' || asked.delete(id)) {
@@ -287,22 +304,41 @@ export function draw(options: DrawOptions): Drawing {
         settle();
       });
     },
-    diff: (id, diff) => pacer.run(() => steady(() => view.setDiff(id, diff))),
-    failed: (id) => pacer.run(() => steady(() => view.loadFailed(id))),
+    // A held file shows GitHub's lines still: what's worked out of the local copy's waits for it.
+    diff: (id, diff) =>
+      pacer.run(() => {
+        if (!held.has(id)) steady(() => view.setDiff(id, diff));
+      }),
+    failed: (id) =>
+      pacer.run(() => {
+        if (!held.has(id)) steady(() => view.loadFailed(id));
+      }),
     // Labels at moves' ends change the height of files above the screen too.
     moves: (moves) => pacer.run(() => steady(() => view.setMoves(moves))),
-    tokens: (id, tokens) => pacer.run(() => setTokens(id, tokens)),
+    tokens: (id, tokens) =>
+      pacer.run(() => {
+        if (!held.has(id)) setTokens(id, tokens);
+      }),
   });
+  // Once the reader stops scrolling, what's waiting on files that left the screen is done.
+  let still: ReturnType<typeof setTimeout> | undefined;
+  const scrolled = () => {
+    clearTimeout(still);
+    still = setTimeout(settle, STILL_AFTER);
+  };
+  parent.addEventListener('scroll', scrolled, { capture: true, passive: true });
   const stops = [
+    () => {
+      parent.removeEventListener('scroll', scrolled, { capture: true });
+      clearTimeout(still);
+    },
     setDrawn(tab.id, {
       view,
       loader,
       pull: { owner: tab.owner, repo: tab.repo, number: tab.number },
       acted(id) {
         pending.delete(id);
-        const shown = held.get(id);
-        held.delete(id);
-        if (shown) setLines(id, shown);
+        release(id);
       },
     }),
     setMiddle({
@@ -325,8 +361,10 @@ export function draw(options: DrawOptions): Drawing {
     ? undefined
     : {
         probe: view.probe,
+        draws,
         files: files.map(({ id, path }) => ({ id, path })),
         viewport: () => view.viewport(),
+        scrollTo: (viewport: Viewport) => view.scrollTo(viewport),
         filesOnScreen: () => view.filesOnScreen(),
       };
   if (testing) window.loDiff = testing;

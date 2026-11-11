@@ -471,7 +471,9 @@ Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `c
 ### A pull request's diff
 
 The `diff` feature draws a pull request's tab's middle: every changed file in one scroll, in the
-order the tree lists them, through `@lo/ui/code`'s diff view.
+order the tree lists them, through `@lo/ui/code`'s diff view. It works that order out from its own
+files with the tree's `useOrderOf`, so the view is drawn in it from the start, before the tree has
+the files.
 
 - Main lists each changed file's versions at the head on screen (`diff.state`): from the local
   copy's comparison once it's ready, with each side's blob and size, and from GitHub's list of the
@@ -486,12 +488,15 @@ order the tree lists them, through `@lo/ui/code`'s diff view.
   cancels its jobs.
 - GitHub's diff is drawn as GitHub gives it: its hunks at their real line numbers, and placeholders
   between them that stay collapsed. Its lines are never diffed again; only the words inside each
-  change are looked for. A file whose hunks reach past line 100,000 waits for the local copy. When
-  the local copy's files are the same ones, each is swapped in place as its diff arrives, and what
-  was at the top of the screen stays where it is; otherwise the view is drawn anew once they're all
-  in. A file that starts out otherwise in the local copy (generated, large, or no longer either)
-  changes at once if it's off screen, and once it's scrolled away, or the reader opens or closes it,
-  if it isn't.
+  change are looked for. A file whose hunks reach past line 100,000 waits for the local copy, as
+  does one past the first million lines GitHub's diffs of the tab's files draw between them, and a
+  batch's files go over several jobs so no job draws more than 200,000. When the local copy's files
+  are the same ones, each is swapped in place as its diff arrives, and what was at the top of the
+  screen stays where it is; otherwise the view is drawn anew once they're all in. A file that starts
+  out otherwise in the local copy (generated, large, or no longer either) changes at once if it's
+  off screen; if it isn't, it keeps GitHub's lines, diff and colors until it's off screen once the
+  reader stops scrolling, moves the cursor, or opens or closes it, and then takes the loader's
+  latest.
 - Once the view is drawn, the window says so (`diff.drawn`), and the tab keeps that head on screen,
   even one it took from what it saved: a newer one from GitHub is offered as a newer push.
 - `diff.layout` and `diff.whitespace` are settings; `gi` and `gw` change them.
