@@ -11,6 +11,13 @@ import { defineJobs } from '../../ipc/jobs.ts';
 /** The most files one `diff.files` job takes. */
 export const FILES_PER_JOB = 64;
 
+/**
+ * The furthest line GitHub's diff of a file is drawn to. Its unchanged lines before each hunk are
+ * drawn too, as placeholders, one each, so a file whose hunks reach further waits for the local
+ * copy, rather than fill the documents with empty lines.
+ */
+export const FAR_LINES = 100_000;
+
 /** The longest a file's diff may take, in milliseconds, before it settles for a coarser one. */
 export const MAX_BUDGET = 20_000;
 

@@ -302,15 +302,7 @@ export class Loader {
     for (const batch of batches) {
       if (run.stopped) return;
       const next = this.#batch(run, batch, BUDGET)
-        .catch((error: unknown) => {
-          if (run.stopped) return;
-          this.#work.log('Lo couldn’t load part of the diff:', error);
-          for (const entry of batch) {
-            if (this.#shown.get(entry.id)?.from !== run.from) this.#fail(run, entry, 'it failed');
-          }
-          this.#readyIfDone(run);
-          this.#changed();
-        })
+        .catch((error: unknown) => this.#oneByOne(run, batch, error))
         .finally(() => going.delete(next));
       going.add(next);
       if (going.size >= IN_FLIGHT) await Promise.race(going);
@@ -318,6 +310,29 @@ export class Loader {
     await Promise.all(going);
     if (run.stopped) return;
     await this.#findMoves(run);
+  }
+
+  /**
+   * A batch failed as a whole, as when one file in it takes all the job's memory: each of its
+   * files is tried on its own, so one can't keep the rest from showing.
+   */
+  async #oneByOne(run: Run, batch: readonly Entry[], error: unknown): Promise<void> {
+    if (run.stopped) return;
+    this.#work.log('Lo couldn’t load part of the diff, so it tries each file on its own:', error);
+    for (const entry of batch) {
+      if (run.stopped) return;
+      if (batch.length === 1) {
+        this.#fail(run, entry, describe(error));
+        continue;
+      }
+      try {
+        await this.#batch(run, [entry], BUDGET);
+      } catch (alone) {
+        if (!run.stopped) this.#fail(run, entry, describe(alone));
+      }
+    }
+    this.#readyIfDone(run);
+    this.#changed();
   }
 
   /** `entries` in the left panel's order, then any it doesn't list, in main's. */
@@ -500,6 +515,10 @@ export class Loader {
     this.#snapshot = snapshot;
     for (const listener of this.#listeners) listener();
   }
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** Entries in batches of a megabyte or so of text, as main's sizes say, or 48 files at most. */

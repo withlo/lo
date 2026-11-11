@@ -77,10 +77,18 @@ export function tagsOf(versions: FileVersions): string[] {
       tags.push('large');
       break;
     case 'unchanged':
-      tags.push(versions.change === 'renamed' ? 'renamed' : 'no change to its text');
+      tags.push(
+        versions.submodule === 'both'
+          ? 'submodule'
+          : versions.change === 'renamed'
+            ? 'renamed'
+            : 'no change to its text',
+      );
       break;
     case 'shown':
     case 'collapsed':
+      if (versions.submodule === 'new') tags.push('now a submodule');
+      if (versions.submodule === 'old') tags.push('was a submodule');
       break;
     default:
       versions.start satisfies never;

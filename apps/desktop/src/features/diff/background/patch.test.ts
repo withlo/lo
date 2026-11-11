@@ -99,6 +99,11 @@ describe('GitHub’s diff', () => {
     expect(shown.diff.noNewlineAtEnd).toEqual({ old: true, new: false });
   });
 
+  it('refuses a patch whose hunks start too far down to fill with placeholders', () => {
+    const patch = ['@@ -5000000,1 +5000000,1 @@', '-a', '+b'].join('\n');
+    expect(() => patchShown(patch)).toThrow(/past line 100000/);
+  });
+
   it('refuses a patch whose unchanged lines between hunks don’t pair up', () => {
     const patch = ['@@ -1,1 +1,1 @@', ' a', '@@ -5,1 +9,1 @@', ' e'].join('\n');
     expect(() => patchShown(patch)).toThrow(/differ in number/);

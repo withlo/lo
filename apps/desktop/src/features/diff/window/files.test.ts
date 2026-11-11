@@ -16,6 +16,7 @@ function entry(id: string, path: string, start: Start = 'shown', place = 0): Ent
     start,
     generated: null,
     large: null,
+    submodule: null,
   };
   return { id, key: path, place, versions };
 }

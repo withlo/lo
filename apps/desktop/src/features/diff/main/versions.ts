@@ -24,6 +24,7 @@ import {
 
 import { PATH_LIMIT, type Change, type TreePath } from '../../tree/contract.ts';
 import type { FileSide, FileVersions, Start } from '../contract.ts';
+import { FAR_LINES } from '../jobs.ts';
 
 /**
  * `bytes`, a path as git stores it, as the window takes it: one longer than the tree's limit with
@@ -97,8 +98,11 @@ export function localVersions(file: ChangedFile, linguistGenerated?: boolean): F
   const deletions = file.lines?.deleted ?? 0;
   const old = sideOf(file.old);
   const added = sideOf(file.new);
+  const submodule = submoduleSides(file);
+  // A submodule whose commit moved has no text to show; a file that became one, or was one, shows
+  // the side that's a file.
   const unchanged =
-    isSubmodule(file) ||
+    submodule === 'both' ||
     isModeChangeOnly(file) ||
     (old !== null && added !== null && old.blob === added.blob);
   const review: ReviewFile = {
@@ -118,8 +122,32 @@ export function localVersions(file: ChangedFile, linguistGenerated?: boolean): F
     deletions,
     old,
     new: added,
-    ...startOf(review, { binary: file.binary && !isSubmodule(file), unchanged }),
+    ...startOf(review, { binary: file.binary && submodule === null, unchanged }),
+    submodule,
   };
+}
+
+/** Which of a changed file's sides are submodules, if any are. */
+function submoduleSides(file: ChangedFile): FileVersions['submodule'] {
+  if (!isSubmodule(file)) return null;
+  const old = file.old?.mode === 'submodule';
+  const added = file.new?.mode === 'submodule';
+  if (old && added) return 'both';
+  return added ? 'new' : 'old';
+}
+
+/** How far down a patch's hunks reach, on the side that reaches further, in lines. */
+export function patchReach(patch: string): number {
+  let reach = 0;
+  for (const match of patch.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
+    const [, oldStart = '0', oldCount = '1', newStart = '0', newCount = '1'] = match;
+    reach = Math.max(
+      reach,
+      Number(oldStart) + Number(oldCount),
+      Number(newStart) + Number(newCount),
+    );
+  }
+  return reach;
 }
 
 /**
@@ -141,6 +169,7 @@ export function githubVersions(file: PullFile): FileVersions {
   };
   const noPatch = file.patch === undefined;
   const counted = file.additions + file.deletions > 0;
+  const far = file.patch !== undefined && patchReach(file.patch) > FAR_LINES;
   const quiet = noPatch && !counted;
   const binary = quiet && (change === 'modified' || change === 'added' || change === 'deleted');
   const shape = startOf(review, { binary, unchanged: quiet && !binary });
@@ -152,12 +181,21 @@ export function githubVersions(file: PullFile): FileVersions {
     deletions: file.deletions,
     old: null,
     new: null,
-    ...(noPatch && counted && shape.start !== 'large'
-      ? {
-          ...shape,
-          start: 'large',
-          large: 'too large for GitHub’s diff: it loads from the local copy',
-        }
-      : shape),
+    submodule: null,
+    ...(shape.start === 'large'
+      ? shape
+      : noPatch && counted
+        ? {
+            ...shape,
+            start: 'large',
+            large: 'too large for GitHub’s diff: it loads from the local copy',
+          }
+        : far
+          ? {
+              ...shape,
+              start: 'large',
+              large: `GitHub’s diff of it reaches past line ${FAR_LINES.toLocaleString('en-US')}: it loads from the local copy`,
+            }
+          : shape),
   };
 }

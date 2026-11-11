@@ -29,7 +29,9 @@ export type Start = z.output<typeof start>;
  * A changed file, as the comparison holds it: its path (in the head; a deleted file's in the
  * base), a rename's old path, how it changed, its lines added and deleted, each side's blob from
  * the local copy (`null` for a side it isn't on, and both `null` from GitHub), how it starts out
- * and why: it's generated, and how, and why it's too large to load at once.
+ * and why: it's generated, and how, and why it's too large to load at once. `submodule` says which
+ * sides are another repository's commit, which has no text: a file that becomes a submodule shows
+ * its lines deleted, and one that was a submodule its lines added.
  */
 export const fileVersions = z.strictObject({
   path: treePath,
@@ -42,6 +44,7 @@ export const fileVersions = z.strictObject({
   start,
   generated: z.enum(['attribute', 'lockfile']).nullable(),
   large: z.string().nullable(),
+  submodule: z.enum(['old', 'new', 'both']).nullable(),
 });
 export type FileVersions = z.output<typeof fileVersions>;
 

@@ -6,7 +6,7 @@
 import { diffOfChanges, type FileDiff, type Lines } from '@lo/diff';
 import { parsePatch } from '@lo/github';
 
-import type { Gap } from '../jobs.ts';
+import { FAR_LINES, type Gap } from '../jobs.ts';
 
 /** A file as GitHub's patch shows it. */
 export interface PatchShown {
@@ -28,6 +28,7 @@ export function patchShown(text: string, options: { budget?: number } = {}): Pat
   const changes: { old: Lines; new: Lines }[] = [];
   /** Placeholders on `side` up to row `row`, from 0, where the next hunk starts. */
   const fill = (side: 'old' | 'new', row: number): number => {
+    if (row > FAR_LINES) throw new Error(`a hunk starts past line ${FAR_LINES}`);
     const each = lines[side];
     const missing = row - each.length;
     if (missing < 0) throw new Error(`a hunk on the ${side} side starts inside the one before`);

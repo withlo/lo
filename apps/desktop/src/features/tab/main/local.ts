@@ -390,15 +390,18 @@ export class LocalCopy {
       }
       let mergeBase = await opened.mergeBase(head, base);
       // A pull request merged into its base branch is in the branch's tip, which can't say where
-      // it branched: GitHub's base, from before it merged, can.
+      // it branched: GitHub's base, from before it merged, can, fetched by its ID if the branch
+      // no longer holds it.
       const githubBase = wanted.base;
-      if (
-        mergeBase === head &&
-        githubBase !== undefined &&
-        githubBase !== base &&
-        (await opened.hasCommit(githubBase))
-      ) {
-        mergeBase = await opened.mergeBase(head, githubBase);
+      if (mergeBase === head && githubBase !== undefined && githubBase !== base) {
+        if (!(await opened.hasCommit(githubBase)) && !opened.offline) {
+          await opened.fetchCommit(githubBase).catch((error: unknown) => {
+            this.#options.log(`fetching GitHub's base ${githubBase}: ${failureOf(error).message}`);
+          });
+        }
+        if (await opened.hasCommit(githubBase)) {
+          mergeBase = await opened.mergeBase(head, githubBase);
+        }
       }
       if (this.#closed || this.#shown !== head) return;
       this.#ready = { head, base, mergeBase };

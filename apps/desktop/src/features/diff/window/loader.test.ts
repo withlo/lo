@@ -20,6 +20,7 @@ function versions(path: string, start: Start = 'shown', size = 10): FileVersions
     start,
     generated: null,
     large: start === 'large' ? 'large' : null,
+    submodule: null,
   };
 }
 
@@ -137,6 +138,32 @@ describe('a tab’s diff in the window', () => {
     expect(loader.moves()).toEqual([
       expect.objectContaining({ from: expect.objectContaining({ file: 'd0' }) }),
     ]);
+  });
+
+  it('tries each file of a batch that failed whole on its own, so one can’t sink the rest', async () => {
+    const files = [versions('a.ts'), versions('huge.ts'), versions('c.ts')];
+    const { done, list } = work();
+    list(files);
+    const sizes: number[] = [];
+    const loader = new Loader({
+      ...done,
+      files: (input) => {
+        sizes.push(input.files.length);
+        // A batch with the huge file runs out of memory, as the job would.
+        return input.files.some((file) => file.path === 'huge.ts')
+          ? Promise.reject(new Error('huge.ts ran out of memory'))
+          : done.files(input);
+      },
+    });
+    loader.setWhitespace(true);
+    loader.take(state(files));
+    await settle(loader);
+
+    expect(sizes).toEqual([3, 1, 1, 1]);
+    expect(loader.shown('d0')).toBeDefined();
+    expect(loader.shown('d2')).toBeDefined();
+    expect(loader.failed('d1')).toBe(true);
+    expect(loader.snapshot().ready).toBeDefined();
   });
 
   it('finds no moves in generated files', async () => {
