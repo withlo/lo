@@ -30,11 +30,11 @@ const COMMENT_LIMIT = 750;
 const OVERVIEW_LIMIT = 1_200;
 const RENDERING_LIMIT = 2_000;
 /**
- * A figure at the caps takes about 30 ms on a laptop, about a third of its whole test, which also
- * makes the figure and walks what comes back. On a Linux CI runner the whole test took 670 ms, so
- * some 220 ms to sanitize; this is three times 250 ms. Each figure's time is printed.
+ * A figure at the caps takes about 30 ms to sanitize on a laptop and 150 ms on a Linux CI runner,
+ * which runs test files side by side; this is three times that. The figures built to be slow take
+ * less. Each one's time is printed.
  */
-const FIGURE_LIMIT = 750;
+const FIGURE_LIMIT = 450;
 
 /** One section of a typical long description or overview, about 1.6 KB. */
 function section(n: number): string {
