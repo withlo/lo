@@ -564,6 +564,9 @@ describe('the optional steps', () => {
     click(copy);
     await settle();
     expect(bridge.calls).toContainEqual(['tab.copy', { text: routers[1]?.rule }]);
+    // The dialog says it, since a note under its scrim can't be seen or heard.
+    expect(copy.textContent).toBe('Copied');
+    expect(rules?.querySelector('[role="status"]')?.textContent).toBe('Copied the rule for Velja.');
     click(button('Read the docs'));
     await settle();
     expect(bridge.calls).toContainEqual([

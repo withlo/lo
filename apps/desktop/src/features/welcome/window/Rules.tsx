@@ -1,8 +1,8 @@
 // The dialog of ready-made rules for the link routers, to copy.
 
-import { Button, Dialog, DialogSpacer, Key } from '@lo/ui';
+import { Button, Callout, Dialog, DialogSpacer, Key } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
@@ -19,6 +19,11 @@ export function Rules() {
   const open = useStore(welcomeStore, (state) => state.rules);
   const done = useRef<HTMLButtonElement>(null);
   const { system } = registry();
+  /** The router whose rule was last copied, or whose copy failed. */
+  const [copied, setCopied] = useState<{ name: string; ok: boolean }>();
+  useEffect(() => {
+    if (!open) setCopied(undefined);
+  }, [open]);
   return (
     <Dialog
       open={open}
@@ -45,6 +50,14 @@ export function Rules() {
         </>
       }
     >
+      {copied?.ok === false && (
+        <Callout tone="danger" role="alert">
+          Lo couldn’t copy the rule for {copied.name}.
+        </Callout>
+      )}
+      <span role="status" className="sr-only">
+        {copied?.ok ? `Copied the rule for ${copied.name}.` : ''}
+      </span>
       {routers.map((router) => (
         <section key={router.name} aria-label={router.name} className="flex flex-col gap-6">
           <div className="flex items-center gap-8">
@@ -52,9 +65,13 @@ export function Rules() {
             <Button
               size="sm"
               aria-label={`Copy the rule for ${router.name}`}
-              onClick={() => void copyRule(router.name, router.rule)}
+              onClick={() => {
+                void copyRule(router.name, router.rule).then((ok) =>
+                  setCopied({ name: router.name, ok }),
+                );
+              }}
             >
-              Copy
+              {copied?.ok && copied.name === router.name ? 'Copied' : 'Copy'}
             </Button>
           </div>
           <p className="m-0 text-fg-muted text-small">{router.steps}</p>

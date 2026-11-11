@@ -66,14 +66,17 @@ export async function checkGit(): Promise<void> {
   }
 }
 
-/** Copies a router's rule, and says so in a notice. */
-export async function copyRule(name: string, rule: string): Promise<void> {
+/**
+ * Copies a router's rule through main. Resolves whether it did: the dialog says so itself, since a
+ * note at the foot of the window sits under the dialog.
+ */
+export async function copyRule(name: string, rule: string): Promise<boolean> {
   try {
     await client(tabs).copy({ text: rule });
-    notify('Send PR links to Lo', `Copied the rule for ${name}.`);
+    return true;
   } catch (error) {
     console.error(`Lo couldn't copy the rule for ${name}:`, error);
-    notify('Send PR links to Lo', `Lo couldn't copy the rule for ${name}.`);
+    return false;
   }
 }
 

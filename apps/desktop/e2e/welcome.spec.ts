@@ -306,17 +306,34 @@ test('the rules link to the docs, which open in the browser', async ({ page }) =
   await expect.poll(browsed).toEqual([DOCS]);
 });
 
-test('copies a router’s rule to the clipboard', async ({ app, page }) => {
-  // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
-  test.skip(mac, "The Mac's clipboard is its user's.");
+test('copies a router’s rule through main, which writes the clipboard', async ({ app, page }) => {
+  // Main's clipboard is the system's, which the tests running beside this one use too: it records
+  // what it is given instead of writing it.
+  await app.evaluate(({ clipboard }) => {
+    const written: string[] = [];
+    Reflect.set(globalThis, 'written', written);
+    clipboard.writeText = async (text: string) => {
+      written.push(text);
+    };
+  });
+  const copied = () =>
+    app.evaluate((): string[] => {
+      const written: unknown = Reflect.get(globalThis, 'written');
+      return Array.isArray(written) ? written.map(String) : [];
+    });
   await welcome(page).getByRole('button', { name: 'Set up' }).click();
   const dialog = page.getByTestId('link-rules');
   await dialog.getByRole('button', { name: 'Copy the rule for Finicky' }).click();
-  await expect
-    .poll(() => app.evaluate(({ clipboard }) => clipboard.readText()))
-    .toContain('browser: "com.scornz.lo"');
+  await expect.poll(copied).toHaveLength(1);
+  expect((await copied())[0]).toContain('browser: "com.scornz.lo"');
   await dialog.getByRole('button', { name: 'Copy the rule for Choosy' }).click();
-  await expect
-    .poll(() => app.evaluate(({ clipboard }) => clipboard.readText()))
-    .toContain('https://github\\.com/');
+  await expect.poll(copied).toHaveLength(2);
+  expect((await copied())[1]).toContain('^https://github\\.com/');
+  await expect(dialog.getByRole('button', { name: 'Copy the rule for Choosy' })).toHaveText(
+    'Copied',
+  );
+  await expect(dialog.getByRole('button', { name: 'Copy the rule for Finicky' })).toHaveText(
+    'Copy',
+  );
+  await expect(dialog.getByRole('status')).toHaveText('Copied the rule for Choosy.');
 });
