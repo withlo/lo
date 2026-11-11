@@ -43,7 +43,7 @@ export interface ViewThread {
 }
 
 /** What a file shows where its lines would be, when they aren't shown as a diff. */
-export type FileNote = 'pending' | 'too-large' | 'loading' | 'binary' | 'closed';
+export type FileNote = 'pending' | 'too-large' | 'loading' | 'failed' | 'binary' | 'closed';
 
 export interface Common {
   index: number;
@@ -63,6 +63,7 @@ function noteText(file: ViewFile, note: FileNote): string {
   const texts: Record<FileNote, string> = {
     'too-large': `${file.additions + file.deletions} changed lines: za loads them`,
     loading: 'Loading the file…',
+    failed: 'The file couldn’t be loaded: za tries again',
     binary: 'A binary file',
     pending: 'Working out the diff…',
     closed: `+${file.additions} −${file.deletions}, closed: za opens it`,

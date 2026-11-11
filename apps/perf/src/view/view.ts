@@ -143,6 +143,8 @@ export class DiffView {
   /** Files closed with `za`, and large files being loaded or loaded. */
   readonly #closed = new Set<number>();
   readonly #loading = new Set<number>();
+  /** Large files whose lines couldn't be loaded, which `za` tries again. */
+  readonly #failed = new Set<number>();
   readonly #loaded = new Set<number>();
   readonly #tokens: { old?: FileTokens | undefined; new?: FileTokens | undefined }[];
   readonly #boxes = new Map<string, CommentBox>();
@@ -275,6 +277,13 @@ export class DiffView {
     for (const file of new Set(moves.flatMap((move) => [move.from.file, move.to.file]))) {
       this.#refresh(file);
     }
+  }
+
+  /** Says a large file's lines couldn't be loaded: its note says so, and `za` tries again. */
+  loadFailed(file: number): void {
+    if (!this.#loading.delete(file)) return;
+    this.#failed.add(file);
+    this.#refresh(file);
   }
 
   /** Puts a large file's lines in the documents. Its diff follows with `setResult`. */
@@ -535,6 +544,7 @@ export class DiffView {
   #noteOf(file: number): FileNote | undefined {
     const skipped = this.#files[file]!.skipped;
     if (this.#loading.has(file)) return 'loading';
+    if (this.#failed.has(file)) return 'failed';
     if (skipped === 'binary') return 'binary';
     if (skipped === 'too-large' && !this.#loaded.has(file)) return 'too-large';
     if (!this.#diffs[file]) return 'pending';
@@ -895,8 +905,9 @@ export class DiffView {
   /** `za`: loads a large file, or closes a file into one block, or opens it again. */
   #toggleFile(file: number): void {
     const note = this.#noteOf(file);
-    if (note === 'too-large') {
+    if (note === 'too-large' || note === 'failed') {
       if (!this.#options.load) return;
+      this.#failed.delete(file);
       this.#loading.add(file);
       this.#refresh(file);
       this.#options.load(file);

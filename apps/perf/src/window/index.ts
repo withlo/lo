@@ -40,9 +40,10 @@ const view = new DiffView(
   {
     nonce,
     load: (file) => {
-      void window.perf.load(file).then((loaded) => {
-        view.addLines(file, lines(loaded.old), lines(loaded.new));
-      });
+      void window.perf.load(file).then(
+        (loaded) => view.addLines(file, lines(loaded.old), lines(loaded.new)),
+        () => view.loadFailed(file),
+      );
     },
     copyLink: (place) => {
       void linkTo(place).then((link) => window.perf.copy(link));
