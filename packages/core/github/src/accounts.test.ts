@@ -81,6 +81,8 @@ class GitHub {
   gh: string | undefined;
   /** How many times `gh` was asked. */
   ghRuns = 0;
+  /** Whether `gh` can't be asked just now, as when it times out. */
+  ghDown = false;
   readonly #held = new Map<string, Promise<void>>();
 
   constructor(events: string[] = []) {
@@ -103,6 +105,7 @@ class GitHub {
   readonly reread = async (login: string): Promise<Token | undefined> => {
     this.ghRuns += 1;
     await Promise.resolve();
+    if (this.ghDown) throw new Error("gh didn't read a's token within 30 s, so Lo stopped it.");
     return login === 'a' && this.gh !== undefined ? new Token(this.gh) : undefined;
   };
 
@@ -478,6 +481,34 @@ test('a gh account is signed out when gh has nothing newer', async () => {
   // Signed out, the next refusal doesn't ask gh again.
   await expect(a.get(REPO, anything)).rejects.toMatchObject(UNAUTHORIZED);
   expect(github.ghRuns).toBe(1);
+});
+
+test('a gh account stays signed in when gh cant be asked, and gh is asked again later', async () => {
+  const github = new GitHub();
+  github.sees = ['gho_FRESH'];
+  github.revoked = ['gho_OLD'];
+  github.gh = 'gho_FRESH';
+  github.ghDown = true;
+  const { accounts, store } = await setup(github);
+  await add(accounts, 'a', 'gho_OLD', 'gh');
+  const a = await accounts.client('a');
+
+  await expect(a.get(REPO, anything)).rejects.toMatchObject(UNAUTHORIZED);
+  expect(github.ghRuns).toBe(1);
+  expect(accounts.isSignedOut('a')).toBe(false);
+  expect(store.token('a')).toBe('gho_OLD');
+  // A refusal meanwhile waits rather than asking gh again at once.
+  await expect(a.get(REPO, anything)).rejects.toMatchObject(UNAUTHORIZED);
+  expect(github.ghRuns).toBe(1);
+
+  // Once gh answers again, after the wait, its newer token is used.
+  github.ghDown = false;
+  await advance(RENEW_GAP);
+  await a.get(REPO, anything);
+  expect(github.ghRuns).toBe(2);
+  expect(a.token?.expose()).toBe('gho_FRESH');
+  expect(store.token('a')).toBe('gho_FRESH');
+  expect(accounts.isSignedOut('a')).toBe(false);
 });
 
 test('a missing token signs the account out', async () => {

@@ -42,3 +42,39 @@ export function refusedArguments(options: {
   }
   return refused;
 }
+
+/**
+ * Variables in its environment that make Chromium or Node, whatever Lo does, write out what Lo
+ * sends GitHub or stop checking who it's talking to, each with the value that does so, or any.
+ * Lo uses none, and nothing a person's usual environment sets is among them.
+ */
+const refusedVariables: readonly { name: string; refuses: (value: string) => boolean }[] = [
+  // Chromium writes every TLS connection's secrets to this file, which decrypts captured traffic,
+  // tokens included.
+  { name: 'SSLKEYLOGFILE', refuses: () => true },
+  // Chromium's own logs, to the console or a file: what `--enable-logging` and `--log-file` do.
+  { name: 'ELECTRON_ENABLE_LOGGING', refuses: () => true },
+  { name: 'ELECTRON_LOG_FILE', refuses: () => true },
+  // Node's TLS, which Lo's requests don't use, stops checking certificates.
+  { name: 'NODE_TLS_REJECT_UNAUTHORIZED', refuses: (value) => value === '0' },
+];
+
+/**
+ * The variables in `env` a packaged Lo refuses to start with, by name: the environment's way to
+ * what the switches {@link refusedArguments} refuses do, such as `SSLKEYLOGFILE`, which has
+ * Chromium write out the secrets of every connection to GitHub. An unpackaged build takes them
+ * all. The certificate authorities' variables, which networks that inspect TLS need, aren't
+ * refused.
+ */
+export function refusedEnvironment(options: {
+  packaged: boolean;
+  env: Readonly<Record<string, string | undefined>>;
+}): string[] {
+  if (!options.packaged) return [];
+  return refusedVariables
+    .filter(({ name, refuses }) => {
+      const value = options.env[name];
+      return value !== undefined && refuses(value);
+    })
+    .map(({ name }) => name);
+}

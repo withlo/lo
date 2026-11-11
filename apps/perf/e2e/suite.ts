@@ -4,7 +4,7 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import type { CursorReading, Misalignment } from '@lo/ui/code';
+import type { CursorReading, Misalignment, Spot } from '@lo/ui/code';
 import { _electron as electron, test as base, type Page } from '@playwright/test';
 // Imported from Node, the electron package is the path to its binary, whatever its types say.
 import electronPackage from 'electron';
@@ -127,6 +127,17 @@ export { expect } from '@playwright/test';
 /** The cursor, as the probe reads it. */
 export function cursor(page: Page): Promise<CursorReading | undefined> {
   return page.evaluate(() => window.diffView.cursor());
+}
+
+/** The file a spot is in. */
+export function fileOf(spot: Spot | undefined): string | undefined {
+  return spot?.kind === 'line' ? spot.at.file : spot?.file;
+}
+
+/** The line a spot is on, or 0 on a header. */
+export function lineOf(spot: Spot | undefined): number | undefined {
+  if (!spot) return undefined;
+  return spot.kind === 'line' ? spot.at.line : 0;
 }
 
 /** Gives a side focus, with a click in the middle of what it shows. */

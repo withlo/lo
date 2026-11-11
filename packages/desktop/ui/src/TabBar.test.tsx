@@ -81,6 +81,46 @@ describe('TabBar', () => {
     expect(markup).toMatch(/>fd <\/span><span[^>]*>#2212<\/span>/);
     expect(markup).not.toContain('title="open"');
     expect(markup).toContain('aria-label="Close tab"');
+    // Not opening: nothing says it's busy.
+    expect(markup).not.toContain('aria-busy');
+    expect(markup).not.toContain('spinner');
+  });
+
+  it('shows a spinner and a placeholder on a tab still opening, until its title arrives', () => {
+    const opening = renderToStaticMarkup(
+      <TabBar tabs={[{ kind: 'pull', id: 'a', repo: 'fd', number: 2212, loading: true }]} />,
+    );
+    expect(opening).toContain('aria-busy="true"');
+    expect(opening).toContain('spinner');
+    expect(opening).toContain('skeleton');
+    expect(opening).toMatch(/>fd <\/span><span[^>]*>#2212<\/span>/);
+    const arrived = renderToStaticMarkup(
+      <TabBar
+        tabs={[{ kind: 'pull', id: 'a', repo: 'fd', number: 2212, loading: true, title: 'Done' }]}
+      />,
+    );
+    expect(arrived).not.toContain('aria-busy');
+    expect(arrived).not.toContain('skeleton');
+    expect(arrived).toContain('Done</span>');
+  });
+
+  it("keeps a narrow tab's repository, cut short, and gives a long one half the tab at most", () => {
+    const markup = renderToStaticMarkup(
+      <TabBar
+        tabs={[{ kind: 'pull', id: 'a', repo: 'r'.repeat(100), number: 123456, title: 'T' }]}
+      />,
+    );
+    const repository = /<span class="([^"]*)">r{100} <\/span>/.exec(markup)?.[1] ?? '';
+    expect(repository.split(' ')).toEqual(
+      expect.arrayContaining(['min-w-16', 'max-w-1/2', 'truncate', 'shrink']),
+    );
+    expect(markup).toMatch(/<span class="[^"]*flex-none[^"]*">#123456<\/span>/);
+  });
+
+  it("takes no room for another tab's close button until it's hovered", () => {
+    const [selected, other] = tabsIn(renderToStaticMarkup(<TabBar tabs={tabs} selected="a" />));
+    expect(selected).toMatch(/aria-label="Close tab"[^>]*class="[^"]* grid"/);
+    expect(other).toMatch(/aria-label="Close tab"[^>]*class="[^"]* hidden group-hover:grid"/);
   });
 
   it('names Recent pull requests and Settings, and gives Recent no close button', () => {

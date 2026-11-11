@@ -201,6 +201,30 @@ describe('createGit', () => {
     await expect.poll(() => opened).toEqual([git.cache]);
   });
 
+  it('hands the cache to each feature waiting for it once it opens, or at once once it has', async () => {
+    const { git } = testGit();
+    const early: Cache[] = [];
+    const gone: Cache[] = [];
+    git.onCache((cache) => early.push(cache));
+    const stop = git.onCache((cache) => gone.push(cache));
+    stop();
+    // One that fails is only noted: the cache still opens, and the others still hear.
+    git.onCache(() => {
+      throw new Error('a feature that fails');
+    });
+
+    await git.check();
+
+    expect(early).toEqual([git.cache]);
+    expect(gone).toEqual([]);
+    const late: Cache[] = [];
+    git.onCache((cache) => late.push(cache));
+    expect(late).toEqual([git.cache]);
+    // Looking again opens nothing new.
+    await git.check();
+    expect(early).toHaveLength(1);
+  });
+
   it('runs no git with LO_GIT=none, and opens no cache', async () => {
     const { git, root } = testGit({ settings: { program: 'none' } });
 

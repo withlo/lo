@@ -84,4 +84,28 @@ describe('the tab keys', () => {
     expect(close?.targets).toEqual(['tab', 'none']);
     expect(close?.menu?.on).toBe('tab');
   });
+
+  it('⌘⇧A opens the tabs that don’t fit, and ⌘\\ the left panel, from anywhere but a dialog or a palette', () => {
+    for (const system of ['mac', 'linux'] as const) {
+      expect(runs('cmd+shift+a', window, system)).toBe('tab.more');
+      expect(runs('cmd+shift+a', view('diff'), system)).toBe('tab.more');
+      expect(runs('cmd+\\', window, system)).toBe('tab.leftPanel');
+      expect(runs('cmd+\\', { scope: 'window', text: true }, system)).toBe('tab.leftPanel');
+    }
+    for (const scope of ['dialog', 'palette']) {
+      expect(runs('cmd+shift+a', { scope, text: false })).toBeUndefined();
+      expect(runs('cmd+\\', { scope, text: false })).toBeUndefined();
+    }
+  });
+
+  it('` and ~ step through the middle views, over Vim’s marks, but not in a comment box or a text field', () => {
+    expect(runs('`', window)).toBe('tab.nextView');
+    expect(runs('~', window)).toBe('tab.previousView');
+    expect(runs('`', view('diff'))).toBe('tab.nextView');
+    expect(runs('~', view('file'))).toBe('tab.previousView');
+    expect(runs('`', view('diff', 'visual'))).toBeUndefined();
+    expect(runs('`', view('box', 'insert'))).toBeUndefined();
+    expect(runs('`', { scope: 'window', text: true })).toBeUndefined();
+    expect(runs('`', { scope: 'menu', text: false })).toBeUndefined();
+  });
 });

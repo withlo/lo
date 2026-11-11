@@ -30,6 +30,7 @@ import type { FileDiff, MovedBlock } from '@lo/diff';
 import { vim } from '@replit/codemirror-vim';
 
 import {
+  type HeaderTarget,
   type LineTarget,
   SCOPE_ATTRIBUTE,
   setScopeSource,
@@ -49,12 +50,14 @@ import type {
   JumpTo,
   Misalignment,
   Mode,
+  MovedCode,
   Movement,
   PassStats,
   Place,
   Probe,
   Side,
   Span,
+  Spot,
   ThreadView,
   VimKey,
 } from './api.ts';
@@ -85,7 +88,16 @@ import {
 } from './keys.ts';
 import { Layout } from './layout.ts';
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
-import { collapsedRuns, type FileRows, fileRows, runAt, shownRuns } from './rows.ts';
+import {
+  collapsedRuns,
+  type FileRows,
+  fileRows,
+  type Gap,
+  inGap,
+  type LineRange,
+  runAt,
+  shownRuns,
+} from './rows.ts';
 import { leaveOnScreen } from './screen.ts';
 import { ThreadSizes } from './widgets.ts';
 
@@ -178,6 +190,8 @@ class View implements DiffView {
   readonly #boxLines: { old: Set<number>; new: Set<number> }[];
   /** Each file's opened runs, by their first old line. */
   readonly #open: Set<number>[];
+  /** Lines each file holds only as placeholders, until the whole file comes. */
+  readonly #gaps: (readonly Gap[])[];
   /** Files closed with `za`, and files kept out being loaded or loaded. */
   readonly #closed = new Set<number>();
   readonly #loading = new Set<number>();
@@ -196,10 +210,14 @@ class View implements DiffView {
   /** The sizes of the threads each side's editor draws. */
   readonly #sizes: Record<Side, ThreadSizes>;
   #pane: DiffLayout = 'split';
-  /** The editor that last had focus. */
+  /** The editor that last had focus, or the cursor was last revealed in. */
   #lastPane: Pane = 'new';
+  /** The side that last had the cursor, which a header in the inline layout, on both, keeps. */
+  #lastSide: Side = 'new';
   /** The thread `]t` last landed on, while the cursor stays on its line. */
   #landed: (At & { thread: string }) | undefined;
+  /** Above 0 while the view changes its own documents, which says nothing until it's done. */
+  #quiet = 0;
   /** What the events last said, so each says only what changed. */
   #said: { cursor?: string; mode: Mode; file: number } = { mode: 'normal', file: -1 };
   readonly #stops: (() => void)[] = [];
@@ -237,6 +255,7 @@ class View implements DiffView {
     this.#triples = init.files.map(() => ({}));
     this.#tokens = init.files.map(() => ({}));
     this.#open = init.files.map(() => new Set());
+    this.#gaps = init.files.map((file) => file.gaps ?? []);
     this.#threads = init.files.map(() => new Map());
     this.#keep = init.files.map(() => ({ old: new Set<number>(), new: new Set<number>() }));
     this.#boxLines = init.files.map(() => ({ old: new Set<number>(), new: new Set<number>() }));
@@ -317,16 +336,15 @@ class View implements DiffView {
   setDiff(id: string, diff: FileDiff): void {
     const file = this.#fileOf(id);
     this.#diffs[file] = diff;
-    this.#loading.delete(file);
-    if (this.#inline) this.#addInline(file);
+    if (this.#inline) this.#replaceInline(file);
     this.#refresh(file, [tokensChanged.of(null)]);
   }
 
-  setMoves(moves: readonly MovedBlock[]): void {
-    this.#moves = moves;
-    for (const file of new Set(moves.flatMap((move) => [move.from.file, move.to.file]))) {
-      if (file >= 0 && file < this.#ids.length) this.#refresh(file);
-    }
+  setMoves(moves: readonly MovedCode[]): void {
+    const before = this.#moves;
+    this.#moves = moves.flatMap((move) => this.#movedBlock(move) ?? []);
+    const ends = [...before, ...this.#moves].flatMap((move) => [move.from.file, move.to.file]);
+    for (const file of new Set(ends)) this.#refresh(file);
   }
 
   setTokens(id: string, side: Side, triples: Uint32Array): void {
@@ -338,8 +356,12 @@ class View implements DiffView {
     for (const view of this.#editors()) view.dispatch({ effects: tokensChanged.of(null) });
   }
 
-  setLines(id: string, lines: { old: readonly string[]; new: readonly string[] }): void {
-    this.#bringIn(this.#fileOf(id), lines);
+  setLines(
+    id: string,
+    lines: { old: readonly string[]; new: readonly string[] },
+    diff?: FileDiff,
+  ): void {
+    this.#bringIn(this.#fileOf(id), lines, diff);
   }
 
   loadFailed(id: string): void {
@@ -380,21 +402,59 @@ class View implements DiffView {
 
   // Moving -----------------------------------------------------------------------------------
 
-  reveal(at: Place | { file: string }): void {
-    const file = this.#fileOf(at.file);
-    const pane = this.#pane === 'inline' ? 'inline' : 'side' in at ? at.side : this.#activePane();
-    const place: At = 'side' in at ? { file, side: at.side, line: at.line } : this.#headerOf(file);
+  reveal(at: Target): boolean {
+    const found = this.#atOf(at);
+    if (!found) return false;
+    const { place, column } = found;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
     const view = this.#viewOf(pane);
     const line = view.state.doc.line(this.#docLine(pane, place));
-    const column = 'column' in at && at.column !== undefined ? at.column : 0;
     // What Vim was in the middle of, such as a count typed before `⌃o`, ends here.
     this.clearPending();
-    this.#aligner.follow();
-    view.focus();
+    this.#lastPane = pane;
+    this.#lastSide = place.side;
+    this.#aligner.follow(pane === 'inline' ? undefined : pane);
     view.dispatch({
       selection: { anchor: line.from + Math.min(column, line.length) },
       scrollIntoView: true,
     });
+    return true;
+  }
+
+  /** The place `at` names, and the column on it, if the view has it. */
+  #atOf(at: Target): { place: At; column: number } | undefined {
+    const fileOf = (id: string): number | undefined => this.#index.get(id);
+    switch (at.kind) {
+      case 'line': {
+        const file = fileOf(at.at.file);
+        if (file === undefined) return undefined;
+        const line = 'line' in at.at ? at.at.line : Math.max(at.at.from, at.at.to);
+        const column = 'line' in at.at ? (at.at.column ?? 0) : 0;
+        return { place: { file, side: at.at.side, line }, column };
+      }
+      case 'header': {
+        const file = fileOf(at.file);
+        return file === undefined
+          ? undefined
+          : { place: { file, side: at.side, line: 0 }, column: 0 };
+      }
+      case 'file': {
+        const file = fileOf(at.file);
+        return file === undefined ? undefined : { place: this.#headerOf(file), column: 0 };
+      }
+      case 'thread': {
+        const place = this.#threadPlace(at.thread);
+        return place && { place, column: 0 };
+      }
+      case 'layer':
+      case 'block':
+      case 'tab':
+      case 'none':
+        return undefined;
+      default:
+        at satisfies never;
+        return undefined;
+    }
   }
 
   jump(to: JumpTo, count: number): void {
@@ -415,18 +475,22 @@ class View implements DiffView {
     this.#moveTo(pane === 'old' ? 'new' : 'old', this.#otherSideLine(pane, from), from, pane);
   }
 
-  fold(at: Place, how: Fold): void {
-    const file = this.#fileOf(at.file);
+  fold(at: Target, how: Fold): void {
+    const found = this.#atOf(at);
+    if (!found) return;
+    const { place } = found;
+    const { file } = place;
     switch (how) {
       case 'open':
       case 'close':
-        this.#openRun({ file, side: at.side, line: at.line }, how === 'open');
+        this.#openRun(place, how === 'open');
         return;
       case 'file': {
         const diff = this.#diffs[file];
         if (!diff || this.#noteOf(file)) return;
-        for (const run of collapsedRuns(diff, this.#keep[file]))
-          this.#open[file]!.add(run.old.first);
+        for (const run of collapsedRuns(diff, this.#keep[file], 2, this.#gaps[file])) {
+          if (!this.#inGap(file, run)) this.#open[file]!.add(run.old.first);
+        }
         this.#refresh(file);
         return;
       }
@@ -444,7 +508,11 @@ class View implements DiffView {
   }
 
   focus(): void {
-    this.#viewOf(this.#activePane()).focus();
+    // Where `reveal` last put the cursor, or the editor that had focus last.
+    const pane = this.#panes().includes(this.#lastPane) ? this.#lastPane : this.#activePane();
+    this.#viewOf(pane).focus();
+    // Said now: CodeMirror hears of focus a little later.
+    this.#tell(pane);
   }
 
   destroy(): void {
@@ -477,8 +545,11 @@ class View implements DiffView {
     setVimKeys(keys);
   }
 
-  /** What a key acts on in `pane`: the cursor's line, or the lines `v` selected, and a thread. */
-  #targetOf(pane: Pane): LineTarget {
+  /**
+   * What a key acts on in `pane`: the cursor's line, or the lines `v` selected, and a thread; or
+   * the header the cursor is on.
+   */
+  #targetOf(pane: Pane): LineTarget | HeaderTarget {
     const view = this.#viewOf(pane);
     const { doc, selection } = view.state;
     const { head, anchor } = selection.main;
@@ -492,7 +563,13 @@ class View implements DiffView {
         return { kind: 'line', at: { file: this.#ids[at.file]!, side: at.side, from, to } };
       }
     }
-    const place = this.#outward(at, head - headLine.from);
+    return this.#lineTarget(at, head - headLine.from);
+  }
+
+  /** What a key or a click at `at` acts on: the line and its thread, or the header. */
+  #lineTarget(at: At, column?: number): LineTarget | HeaderTarget {
+    if (at.line === 0) return { kind: 'header', file: this.#ids[at.file]!, side: at.side };
+    const place = this.#outward(at, column);
     const thread = this.#threadAt(at);
     return thread === undefined ? { kind: 'line', at: place } : { kind: 'line', at: place, thread };
   }
@@ -564,16 +641,23 @@ class View implements DiffView {
   /** Where a box for `at` goes: under a line, a span's last line, or a thread's line. */
   #boxPlace(at: Place | Span | { thread: string }): At {
     if ('thread' in at) {
-      for (const [file, byPlace] of this.#threads.entries()) {
-        for (const threads of byPlace.values()) {
-          const thread = threads.find((each) => each.id === at.thread);
-          if (thread) return { file, side: thread.at.side, line: thread.at.line };
-        }
-      }
-      throw new Error(`There's no thread ${at.thread} in the view.`);
+      const place = this.#threadPlace(at.thread);
+      if (!place) throw new Error(`There's no thread ${at.thread} in the view.`);
+      return place;
     }
     const file = this.#fileOf(at.file);
     return { file, side: at.side, line: 'line' in at ? at.line : Math.max(at.from, at.to) };
+  }
+
+  /** The line thread `id` is under, if the view has it. */
+  #threadPlace(id: string): At | undefined {
+    for (const [file, byPlace] of this.#threads.entries()) {
+      for (const threads of byPlace.values()) {
+        const thread = threads.find((each) => each.id === id);
+        if (thread) return { file, side: thread.at.side, line: thread.at.line };
+      }
+    }
+    return undefined;
   }
 
   #closeBox(box: CommentBox): void {
@@ -670,7 +754,7 @@ class View implements DiffView {
     const view = this.#viewOf(pane);
     const head = view.state.selection.main.head;
     const line = view.state.doc.lineAt(head);
-    const at = this.#outward(this.#placeAt(pane, line.number), head - line.from);
+    const at = this.#spot(this.#placeAt(pane, line.number), head - line.from);
     const drawn = view.coordsAtPos(head, 1);
     const block = view.lineBlockAt(head);
     const top = drawn?.top ?? block.top + view.documentTop;
@@ -686,6 +770,7 @@ class View implements DiffView {
   /** Says where the cursor is in `pane`, and Vim's mode there, if either changed. */
   #tell(pane: Pane): void {
     this.#lastPane = pane;
+    if (pane !== 'inline') this.#lastSide = pane;
     const view = this.#viewOf(pane);
     const head = view.state.selection.main.head;
     const line = view.state.doc.lineAt(head);
@@ -694,11 +779,11 @@ class View implements DiffView {
     if (landed && (landed.file !== at.file || landed.side !== at.side || landed.line !== at.line)) {
       this.#landed = undefined;
     }
-    const place = this.#outward(at, head - line.from);
-    const said = `${place.file}\n${place.side}\n${place.line}\n${place.column ?? ''}`;
+    const spot = this.#spot(at, head - line.from);
+    const said = JSON.stringify(spot);
     if (said !== this.#said.cursor) {
       this.#said.cursor = said;
-      this.#on.cursor(place);
+      this.#on.cursor(spot);
     }
     this.#tellMode(vimMode(view));
   }
@@ -747,11 +832,7 @@ class View implements DiffView {
       const view = this.#viewOf(pane);
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
       if (pos === null) return;
-      const at = this.#placeAt(pane, view.state.doc.lineAt(pos).number);
-      const thread = this.#threadAt(at);
-      const place = this.#outward(at);
-      clicked =
-        thread === undefined ? { kind: 'line', at: place } : { kind: 'line', at: place, thread };
+      clicked = this.#lineTarget(this.#placeAt(pane, view.state.doc.lineAt(pos).number));
     }
     event.preventDefault();
     this.#on.menu(clicked, event.clientX, event.clientY);
@@ -792,7 +873,7 @@ class View implements DiffView {
         ) {
           return;
         }
-        this.#on.jumped(this.#outward(before), this.#outward(after));
+        this.#on.jumped(this.#spot(before), this.#spot(after));
       },
       // What a key did is said once Vim is done with it, never what it passed through.
       settled: () => {
@@ -819,7 +900,7 @@ class View implements DiffView {
       fileField,
       leaveOnScreen,
       EditorView.updateListener.of((update) => {
-        if (!update.view.hasFocus || handlingKey(update.view)) return;
+        if (!update.view.hasFocus || handlingKey(update.view) || this.#quiet > 0) return;
         if (update.selectionSet || update.focusChanged || update.docChanged) this.#tell(pane);
       }),
     ];
@@ -982,7 +1063,7 @@ class View implements DiffView {
     this.#aligner.follow();
     view.focus();
     view.dispatch({ selection: { anchor: view.state.doc.line(line).from }, scrollIntoView: true });
-    this.#on.jumped(this.#outward(before), this.#outward(this.#placeAt(pane, line)));
+    this.#on.jumped(this.#spot(before), this.#spot(this.#placeAt(pane, line)));
   }
 
   // Files ------------------------------------------------------------------------------------
@@ -994,16 +1075,22 @@ class View implements DiffView {
     return file;
   }
 
-  /** A place as the caller sees it. */
+  /** A line as the caller sees it. */
   #outward(at: At, column?: number): Place {
     const place: Place = { file: this.#ids[at.file]!, side: at.side, line: at.line };
-    if (column !== undefined && at.line > 0) place.column = column;
+    if (column !== undefined) place.column = column;
     return place;
   }
 
+  /** Where the cursor is, as the caller sees it: a line, or a header. */
+  #spot(at: At, column?: number): Spot {
+    if (at.line === 0) return { kind: 'header', file: this.#ids[at.file]!, side: at.side };
+    return { kind: 'line', at: this.#outward(at, column) };
+  }
+
+  /** A file's header, on the side the cursor was last on. */
   #headerOf(file: number): At {
-    const pane = this.#activePane();
-    return { file, side: pane === 'inline' ? 'new' : pane, line: 0 };
+    return { file, side: this.#lastSide, line: 0 };
   }
 
   #noteOf(file: number): FileNote | undefined {
@@ -1025,7 +1112,13 @@ class View implements DiffView {
       lines.old,
       lines.new,
       diff && !this.#noteOf(file)
-        ? { kind: 'diff', diff, keep: this.#keep[file], open: this.#open[file] }
+        ? {
+            kind: 'diff',
+            diff,
+            keep: this.#keep[file],
+            open: this.#open[file],
+            gaps: this.#gaps[file],
+          }
         : { kind: 'collapsed' },
     );
   }
@@ -1070,6 +1163,7 @@ class View implements DiffView {
       threads: this.#viewThreads(file),
       keep: this.#keep[file]!,
       open: this.#open[file]!,
+      gaps: this.#gaps[file]!,
       note: this.#noteOf(file),
     };
   }
@@ -1229,32 +1323,96 @@ class View implements DiffView {
     for (const file of files) this.#refresh(file);
   }
 
-  /** Puts a kept-out file's lines in the documents. Its diff follows with `setDiff`. */
-  #bringIn(file: number, given: { old: readonly string[]; new: readonly string[] }): void {
-    if (this.#loaded.has(file)) return;
+  /**
+   * Puts a file's lines in the documents: a file kept out, or the whole of one in place of what it
+   * showed, at the same place. Only the lines that differ change, so the cursor keeps its line and
+   * the scroll its anchor. `diff`, when given, is shown with the new lines at once; without it, a
+   * shown file keeps its diff while its lines keep their counts. Highlighting comes again.
+   */
+  #bringIn(
+    file: number,
+    given: { old: readonly string[]; new: readonly string[] },
+    diff: FileDiff | undefined,
+  ): void {
+    const shown = this.#loaded.has(file);
+    const before = this.#lines[file]!;
+    const sameCounts =
+      before.old.length === given.old.length && before.new.length === given.new.length;
     this.#loaded.add(file);
     this.#loading.delete(file);
     this.#failed.delete(file);
+    this.#gaps[file] = [];
     this.#lines[file] = { old: given.old, new: given.new };
-    for (const side of ['old', 'new'] as const) {
-      const lines = given[side];
-      const triples = this.#triples[file]![side];
-      if (triples) this.#tokens[file]![side] = { tokens: triples, starts: lineStarts(lines) };
-      if (lines.length === 0) continue;
-      const view = this.views[side];
-      const header = view.state.doc.line(this.#layout.files[file]![side].header);
+    if (diff) this.#diffs[file] = diff;
+    else if (shown && !sameCounts) this.#diffs[file] = undefined;
+    if (shown) {
+      // Offsets into the old text: the highlighting of the new comes with `setTokens`.
+      this.#triples[file] = {};
+      this.#tokens[file] = {};
+    }
+    // The lines change under the editors: what the cursor is on is said once they settle.
+    this.#quiet++;
+    try {
+      for (const side of ['old', 'new'] as const) {
+        const lines = given[side];
+        const triples = this.#triples[file]![side];
+        if (triples) this.#tokens[file]![side] = { tokens: triples, starts: lineStarts(lines) };
+        const { header } = this.#layout.files[file]![side];
+        replaceLines(this.views[side], header, before[side], lines);
+        this.#layout.setCount(side, file, lines.length);
+      }
+      // Every file after it has moved.
+      for (let index = file; index < this.#rows.length; index++) {
+        this.#rows[index] = this.#rowsOf(index);
+      }
+      if (this.#inline) this.#replaceInline(file);
+      this.#refresh(file, [tokensChanged.of(null)]);
+    } finally {
+      this.#quiet--;
+    }
+    const pane = this.#activePane();
+    if (this.#viewOf(pane).hasFocus) this.#tell(pane);
+  }
+
+  /** Gives the inline document file `file`'s lines from its diff now, in place of those it had. */
+  #replaceInline(file: number): void {
+    const inline = this.#inline!;
+    const had = inline.layout.lines[file];
+    if (!had) {
+      this.#addInline(file);
+      return;
+    }
+    const diff = this.#diffs[file];
+    const lines = this.#lines[file]!;
+    const { header, count } = inline.layout.files[file]!;
+    const { view } = inline;
+    const was = view.state.doc.sliceString(
+      view.state.doc.line(header).to,
+      view.state.doc.line(header + count).to,
+    );
+    const before = was === '' ? [] : was.slice(1).split('\n');
+    if (diff && this.#loaded.has(file)) {
+      const now = inlineLines(diff);
+      const text = inlineText(now, lines.old, lines.new);
+      if (text.length === before.length) {
+        // The same rows: line for line, so the cursor stays where it is.
+        replaceLines(view, header, before, text);
+        inline.layout.setLines(file, now);
+        return;
+      }
+    }
+    // Other rows: the file's inline lines go, and come again from its diff, the cursor kept on
+    // the same file line if it was in the file.
+    const head = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(head).number;
+    const at = this.#fileAt('inline', line) === file ? this.#placeAt('inline', line) : undefined;
+    replaceLines(view, header, before, []);
+    inline.layout.clearLines(file);
+    this.#addInline(file);
+    if (at)
       view.dispatch({
-        changes: { from: header.to, insert: `\n${lines.join('\n')}` },
-        annotations: ownChange.of(true),
+        selection: { anchor: view.state.doc.line(this.#docLine('inline', at)).from },
       });
-      this.#layout.setCount(side, file, lines.length);
-    }
-    // Every file after it has moved.
-    for (let index = file; index < this.#rows.length; index++) {
-      this.#rows[index] = this.#rowsOf(index);
-    }
-    if (this.#inline) this.#addInline(file);
-    this.#refresh(file, [tokensChanged.of(null)]);
   }
 
   // Jumps and folds --------------------------------------------------------------------------
@@ -1269,9 +1427,10 @@ class View implements DiffView {
     const file = this.#fileAt(pane, line);
     if (pane !== 'inline') return { file, side: pane, line: this.#layout.fileLine(pane, line) };
     const shown = this.#inline!.layout.lineAt(line);
-    return shown.new > 0
-      ? { file, side: 'new', line: shown.new }
-      : { file, side: 'old', line: shown.old };
+    if (shown.new > 0) return { file, side: 'new', line: shown.new };
+    if (shown.old > 0) return { file, side: 'old', line: shown.old };
+    // A header, on both sides at once: the side the cursor was last on.
+    return { file, side: this.#lastSide, line: 0 };
   }
 
   /** The document line of `place` in `pane`. */
@@ -1351,12 +1510,33 @@ class View implements DiffView {
     if (!diff || place.line === 0 || this.#noteOf(place.file)) return;
     const keep = this.#keep[place.file];
     const opened = this.#open[place.file]!;
-    const runs = open ? shownRuns(diff, keep, opened) : collapsedRuns(diff, keep);
+    const gaps = this.#gaps[place.file];
+    const runs = open ? shownRuns(diff, keep, opened, gaps) : collapsedRuns(diff, keep, 2, gaps);
     const run = runAt(runs, place.side, place.line);
-    if (!run || opened.has(run.old.first) === open) return;
+    // Lines the view has only as placeholders stay collapsed.
+    if (!run || opened.has(run.old.first) === open || this.#inGap(place.file, run)) return;
     if (open) opened.add(run.old.first);
     else opened.delete(run.old.first);
     this.#refresh(place.file);
+  }
+
+  /** Whether `run` takes in lines file `file` holds only as placeholders. */
+  #inGap(file: number, run: { old: LineRange; new: LineRange }): boolean {
+    return inGap(run, this.#gaps[file]!);
+  }
+
+  /** Moved code as the decorations take it, by the files' places in the view, if it has both. */
+  #movedBlock(move: MovedCode): MovedBlock | undefined {
+    const from = this.#index.get(move.from.file);
+    const to = this.#index.get(move.to.file);
+    if (from === undefined || to === undefined) return undefined;
+    const fromFile = this.#files[from]!;
+    return {
+      from: { ...move.from, file: from, path: fromFile.previousPath ?? fromFile.path },
+      to: { ...move.to, file: to, path: this.#files[to]!.path },
+      edits: [],
+      words: { old: [...move.words.old], new: [...move.words.new] },
+    };
   }
 
   /** `za`: loads a file kept out, or closes a file into one block, or opens it again. */
@@ -1434,6 +1614,32 @@ class ViewProbe implements Probe {
   cursor(): CursorReading | undefined {
     return this.#read.cursor();
   }
+}
+
+/**
+ * Replaces lines `before` after document line `header` of `view` with `after`, changing only the
+ * lines that differ, and adding or removing lines at the end: a cursor or a scroll anchor on a line
+ * that stays keeps its place.
+ */
+function replaceLines(
+  view: EditorView,
+  header: number,
+  before: readonly string[],
+  after: readonly string[],
+): void {
+  const { doc } = view.state;
+  const changes: { from: number; to?: number; insert?: string }[] = [];
+  const common = Math.min(before.length, after.length);
+  for (let index = 0; index < common; index++) {
+    if (before[index] === after[index]) continue;
+    const line = doc.line(header + 1 + index);
+    changes.push({ from: line.from, to: line.to, insert: after[index] });
+  }
+  const end = doc.line(header + common).to;
+  if (after.length > common)
+    changes.push({ from: end, insert: `\n${after.slice(common).join('\n')}` });
+  if (before.length > common) changes.push({ from: end, to: doc.line(header + before.length).to });
+  if (changes.length > 0) view.dispatch({ changes, annotations: ownChange.of(true) });
 }
 
 /** Whether a file's threads are the same threads, in the same places. */

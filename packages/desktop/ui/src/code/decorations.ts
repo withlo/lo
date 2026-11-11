@@ -13,7 +13,7 @@ import type { FileDiff, MovedBlock } from '@lo/diff';
 
 import type { InlineLines } from './inline.ts';
 import type { Side } from './layout.ts';
-import { type FileLines, type Keep, type Open, shownRuns } from './rows.ts';
+import { type FileLines, type Gap, inGap, type Keep, type Open, shownRuns } from './rows.ts';
 import {
   type BoxHost,
   CollapsedWidget,
@@ -59,6 +59,8 @@ export interface Common {
   threads: readonly ViewThread[];
   keep: Keep;
   open: Open;
+  /** Lines the file holds only as placeholders, until the whole file comes. */
+  gaps: readonly Gap[];
   /** Why the file's lines aren't drawn as a diff, when they aren't. */
   note?: FileNote | undefined;
 }
@@ -86,7 +88,7 @@ export function fileBlocks(
     otherLines: boolean;
   },
 ): Range<Decoration>[] {
-  const { side, index, file, lines, doc, diff, threads, keep, open, sizes } = input;
+  const { side, index, file, lines, doc, diff, threads, keep, open, sizes, gaps } = input;
   const tag = { file: index };
   const line = (number: number): { from: number; to: number } => doc.line(lines.header + number);
   const headerLine = doc.line(lines.header);
@@ -109,9 +111,9 @@ export function fileBlocks(
   }
   if (!diff || lines.count === 0) return out;
 
-  for (const run of shownRuns(diff, keep, open)) {
+  for (const run of shownRuns(diff, keep, open, gaps)) {
     const { first, last } = run[side];
-    const widget = collapsed(index, run.old.first, first, last);
+    const widget = collapsed(index, run.old.first, first, last, inGap(run, gaps));
     out.push(
       Decoration.replace({ widget, block: true, ...tag }).range(line(first).from, line(last).to),
     );
@@ -127,7 +129,7 @@ export function fileBlocks(
 export function inlineBlocks(
   input: Common & { lines: { header: number; count: number }; inline: InlineLines | undefined },
 ): Range<Decoration>[] {
-  const { index, file, lines, inline, doc, diff, threads, keep, open, sizes } = input;
+  const { index, file, lines, inline, doc, diff, threads, keep, open, sizes, gaps } = input;
   const tag = { file: index };
   const headerLine = doc.line(lines.header);
   const note = input.note ?? (diff && inline ? undefined : 'pending');
@@ -149,9 +151,9 @@ export function inlineBlocks(
   const at = (side: Side, number: number): { from: number; to: number } =>
     doc.line(lines.header + (side === 'old' ? inline.ofOld : inline.ofNew)[number]!);
 
-  for (const run of shownRuns(diff, keep, open)) {
+  for (const run of shownRuns(diff, keep, open, gaps)) {
     // An unchanged run's lines are both sides' lines at once.
-    const widget = collapsed(index, run.old.first, run.new.first, run.new.last);
+    const widget = collapsed(index, run.old.first, run.new.first, run.new.last, inGap(run, gaps));
     out.push(
       Decoration.replace({ widget, block: true, ...tag }).range(
         at('new', run.new.first).from,
@@ -181,11 +183,19 @@ function header(
   return Decoration.replace({ widget, block: true, file: input.index }).range(line.from, line.to);
 }
 
-function collapsed(file: number, key: number, first: number, last: number): CollapsedWidget {
+/** Unchanged lines collapsed: `missing` when the view has them only as placeholders. */
+function collapsed(
+  file: number,
+  key: number,
+  first: number,
+  last: number,
+  missing: boolean,
+): CollapsedWidget {
   const count = last - first + 1;
+  const lines = `${count} unchanged line${count === 1 ? '' : 's'}`;
   return new CollapsedWidget(
-    `${file}:${key}`,
-    `${count} unchanged line${count === 1 ? '' : 's'}`,
+    `${file}:${key}${missing ? ':missing' : ''}`,
+    missing ? `${lines}, not loaded yet` : lines,
     `lines ${first}–${last}`,
     `c:${file}:${key}`,
   );

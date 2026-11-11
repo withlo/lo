@@ -1,5 +1,8 @@
 @import '@lo/ui/styles.css';
 
+/* Classes in the window's code: its own folder, which Tailwind finds by itself, and the features'. */
+@source '../features';
+
 html,
 body,
 #root {

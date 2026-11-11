@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { refusedArguments } from './arguments.ts';
+import { refusedArguments, refusedEnvironment } from './arguments.ts';
 
 /** `hasSwitch` for a command line that holds these switches, as Chromium names them. */
 const holding =
@@ -98,5 +98,54 @@ describe('refusedArguments', () => {
         hasSwitch: holding('remote-debugging-port'),
       }),
     ).toEqual(['-remote-debugging-port']);
+  });
+});
+
+describe('refusedEnvironment', () => {
+  /** An environment such as a person's usual one: a proxy, and a network's certificate authority. */
+  const usual = {
+    PATH: '/usr/bin:/bin',
+    HOME: '/Users/me',
+    HTTPS_PROXY: 'http://proxy.example:3128',
+    NO_PROXY: 'localhost',
+    SSL_CERT_FILE: '/etc/ssl/corporate.pem',
+    SSL_CERT_DIR: '/etc/ssl/certs',
+    CURL_CA_BUNDLE: '/etc/ssl/corporate.pem',
+    NODE_EXTRA_CA_CERTS: '/etc/ssl/corporate.pem',
+    NODE_TLS_REJECT_UNAUTHORIZED: '1',
+  };
+
+  it('starts a packaged build in a usual environment', () => {
+    expect(refusedEnvironment({ packaged: true, env: usual })).toEqual([]);
+  });
+
+  it.each([
+    ['SSLKEYLOGFILE', '/tmp/keys.log'],
+    ['SSLKEYLOGFILE', ''],
+    ['ELECTRON_ENABLE_LOGGING', '1'],
+    ['ELECTRON_LOG_FILE', '/tmp/chromium.log'],
+    ['NODE_TLS_REJECT_UNAUTHORIZED', '0'],
+  ])('refuses %s=%j in a packaged build, by its name', (name, value) => {
+    expect(refusedEnvironment({ packaged: true, env: { ...usual, [name]: value } })).toEqual([
+      name,
+    ]);
+  });
+
+  it('names each refused, and never repeats a value', () => {
+    const refused = refusedEnvironment({
+      packaged: true,
+      env: { SSLKEYLOGFILE: '/tmp/secret-place', ELECTRON_ENABLE_LOGGING: 'file' },
+    });
+    expect(refused).toEqual(['SSLKEYLOGFILE', 'ELECTRON_ENABLE_LOGGING']);
+    expect(refused.join(' ')).not.toContain('secret-place');
+  });
+
+  it('takes them all in an unpackaged build, which its tests and debugging use', () => {
+    expect(
+      refusedEnvironment({
+        packaged: false,
+        env: { SSLKEYLOGFILE: '/tmp/keys.log', ELECTRON_ENABLE_LOGGING: '1' },
+      }),
+    ).toEqual([]);
   });
 });
