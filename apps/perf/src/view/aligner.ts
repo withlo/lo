@@ -290,8 +290,6 @@ export class Aligner {
   #keyed = -Infinity;
   /** The lines the last pass lined up on each side, which keep their spacers when others go. */
   #lined: { old?: { from: number; to: number }; new?: { from: number; to: number } } = {};
-  /** Told of each scroll CodeMirror makes to bring a moved cursor into view, for the measurements. */
-  onCursorScroll: ((delta: number) => void) | undefined;
   readonly #resized: ResizeObserver;
 
   constructor(
@@ -441,7 +439,6 @@ export class Aligner {
         // anchoring, from the top of a block that can hold the pass's spacers, and the pass's
         // anchor, taken before CodeMirror measured, puts it right.
         if (turn === 0 && this.#selected && Math.abs(this.#scroller.scrollTop - scrolled) > 0.5) {
-          this.onCursorScroll?.(this.#scroller.scrollTop - scrolled);
           anchor = this.#anchorNow();
         } else if (
           turn === 0 &&
@@ -1103,11 +1100,6 @@ export class Aligner {
       old: this.#views.old.state.field(spacerField).size,
       new: this.#views.new.state.field(spacerField).size,
     };
-  }
-
-  /** The editor the scroll is anchored to now. */
-  get anchoring(): Side {
-    return this.#anchorSide();
   }
 
   /** The editor CodeMirror anchors the scroll to: the focused one, else one just wheeled. */

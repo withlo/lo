@@ -158,10 +158,16 @@ export class DiffView {
   /** The sizes of the threads each side's editor draws. */
   readonly #sizes: Record<Side, ThreadSizes>;
   #pane: 'split' | 'inline' = 'split';
-  /** The scroll input asked for since `movement()` was last called: wheel and moved cursors. */
+  /**
+   * The scroll the input asked for since `movement()` was last called: the wheel's, and the
+   * scroll CodeMirror makes to bring a cursor into view.
+   */
   #asked = 0;
-  /** The line `movement()` follows, by its side and document line, and where it was on screen. */
-  #followed: { side: Side; line: number; top: number } | undefined;
+  /** What `movement()` follows on each side, and where it was on screen. */
+  readonly #followed: {
+    old?: { selector: string; top: number } | undefined;
+    new?: { selector: string; top: number } | undefined;
+  } = {};
 
   /** How many spacers each editor holds, drawn or not, for the measurements. */
   get spacers(): { old: number; new: number } {
@@ -212,8 +218,7 @@ export class DiffView {
       new: new ThreadSizes(this.views.new.contentDOM),
     };
     this.#aligner = new Aligner(this.views, this.#layout, (file) => this.#rows[file]!, this.dom);
-    // What the input asks the scroll to do, for `movement()`: the wheel's distance, and the
-    // scroll CodeMirror makes to bring a moved cursor into view.
+    // What the wheel asks the scroll to do, for `movement()`.
     this.dom.addEventListener(
       'wheel',
       (event) => {
@@ -227,7 +232,6 @@ export class DiffView {
       },
       { passive: true },
     );
-    this.#aligner.onCursorScroll = (delta) => (this.#asked += delta);
     for (const side of ['old', 'new'] as const) {
       const view = this.views[side];
       registerDiffEditor(view, this.#keysFor(side));
@@ -371,41 +375,39 @@ export class DiffView {
 
   /**
    * How far what's on screen moved since the last call, against what the input asked: the wheel's
-   * distance and the scroll that brought a moved cursor into view. Follows a line on screen near
-   * its middle, on the side the scroll is anchored to where it has one; `moved` is how far it went
-   * up, so with nothing else moving it, it equals `asked`. Undefined when the line followed isn't
-   * drawn now. Call it every frame.
+   * distance, and the scroll CodeMirror makes to bring a cursor into view, as it makes it. Follows,
+   * on each side, what it draws on screen nearest the middle of the screen, a line or the header
+   * or collapsed block a row starts with; `old` and `new` are how far each went up, so with
+   * nothing else moving them, each equals `asked`. A side's is undefined when it had nothing on
+   * screen, or what it followed isn't drawn now. Call it every frame.
    */
-  movement(): { asked: number; moved?: number } {
+  movement(): { asked: number; old?: number; new?: number } {
     const asked = this.#asked;
     this.#asked = 0;
     const screen = this.dom.getBoundingClientRect();
-    const followed = this.#followed;
-    let moved: number | undefined;
-    if (followed) {
-      const element = this.views[followed.side].contentDOM.querySelector(
-        `[data-line="${followed.line}"]`,
-      );
-      if (element) moved = followed.top - element.getBoundingClientRect().top;
-    }
-    // Follow, next, the line on screen nearest its middle, on the side the scroll is anchored to,
-    // or on the other where that side has none, as beside a deleted file.
-    const anchoring = this.#aligner.anchoring;
     const middle = (screen.top + screen.bottom) / 2;
-    this.#followed = undefined;
-    for (const side of [anchoring, anchoring === 'old' ? 'new' : 'old'] as const) {
+    const result: { asked: number; old?: number; new?: number } = { asked };
+    for (const side of ['old', 'new'] as const) {
+      const followed = this.#followed[side];
+      if (followed) {
+        const element = this.views[side].contentDOM.querySelector(followed.selector);
+        if (element) result[side] = followed.top - element.getBoundingClientRect().top;
+      }
+      // Follow, next, what's on screen nearest its middle.
+      let nearest: { selector: string; top: number } | undefined;
       for (const element of this.views[side].contentDOM.querySelectorAll<HTMLElement>(
-        '[data-line]',
+        '[data-line], [data-row]',
       )) {
         const top = element.getBoundingClientRect().top;
         if (top < screen.top || top >= screen.bottom) continue;
-        if (!this.#followed || Math.abs(top - middle) < Math.abs(this.#followed.top - middle)) {
-          this.#followed = { side, line: Number(element.dataset.line), top };
-        }
+        if (nearest && Math.abs(top - middle) >= Math.abs(nearest.top - middle)) continue;
+        const { line, row } = element.dataset;
+        const selector = line === undefined ? `[data-row="${row}"]` : `[data-line="${line}"]`;
+        nearest = { selector, top };
       }
-      if (this.#followed) break;
+      this.#followed[side] = nearest;
     }
-    return moved === undefined ? { asked } : { asked, moved };
+    return result;
   }
 
   destroy(): void {
@@ -462,7 +464,24 @@ export class DiffView {
         tokens: (file, tokenSide) => this.#tokens[file]?.[tokenSide],
       }),
       diffKeys(this.#keysFor(side)),
+      EditorView.scrollHandler.of((view) => this.#scrollAsked(view)),
     ];
+  }
+
+  /**
+   * Counts the scroll CodeMirror makes to bring a cursor into view, for `movement()`: from where
+   * the scroll is as it starts to where it is when the editor next reads the layout, right after.
+   * Lets CodeMirror scroll as it would.
+   */
+  #scrollAsked(view: EditorView): boolean {
+    const before = this.dom.scrollTop;
+    view.requestMeasure({
+      read: () => {
+        this.#asked += this.dom.scrollTop - before;
+        return null;
+      },
+    });
+    return false;
   }
 
   #makeInline(): { view: EditorView; layout: InlineLayout } {
