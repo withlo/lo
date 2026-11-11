@@ -4,11 +4,11 @@
  */
 
 import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-import { gitProgram, testGitEnvironment } from '@lo/testing/git';
+import { git, gitProgram, testGitEnvironment } from '@lo/testing/git';
 
 import { overview, repositoryOf, runChecker, runJson, scratch } from './support.ts';
 
@@ -162,8 +162,35 @@ describe('check', () => {
     const ran = runChecker(['check', gone], repo);
     expect(ran.status).toBe(2);
     expect(ran.stderr).toBe(
-      `The repository this runs in doesn't have commit ${'0'.repeat(40)}. Run it in the pull request's repository, with the commit fetched.\nLo couldn't check all of the overview.\n`,
+      `The repository doesn't have commit ${'0'.repeat(40)}. Check the overview against the pull request's repository, with the commit fetched.\nLo couldn't check all of the overview.\n`,
     );
+  });
+
+  test('reads the code from the repository --repo names, wherever it runs', () => {
+    const dir = folder('repo option', {
+      'artifact.md': overview(commit, ':::code src/a.ts#L1-L3\n:::\n'),
+    });
+    // Run from a folder outside any repository, which is where its git would otherwise look.
+    const away = folder('away', {});
+    expect(runChecker(['check', dir, '--repo', repo], away)).toEqual({
+      status: 0,
+      stdout: 'No errors or warnings.\n',
+      stderr: '',
+    });
+    // A relative one is from where it runs.
+    expect(runChecker(['check', dir, `--repo=../${basename(repo)}`], away).status).toBe(0);
+    expect(runChecker(['check', dir], away).status).toBe(2);
+
+    const written = runJson(['commit', dir, '--pr', '4797', '--repo', repo], away);
+    expect(written.status).toBe(0);
+    expect(git(repo, 'cat-file', '-t', written.commit!)).toBe('commit');
+
+    const missing = runChecker(['check', dir, '--repo', join(root.dir, 'nowhere')], away);
+    expect(missing).toEqual({
+      status: 2,
+      stdout: '',
+      stderr: `Lo can't check the overview. There's no folder at ${JSON.stringify(join(root.dir, 'nowhere'))} for --repo.\n`,
+    });
   });
 
   test('can’t check, exiting 2, a folder that isn’t there or can’t be read', () => {
@@ -231,6 +258,8 @@ describe('check', () => {
       ['check', '--pr'],
       ['commit', 'dir'],
       ['commit', 'dir', '--pr', '1e3'],
+      ['check', '--repo'],
+      ['check', '--repo='],
     ]) {
       const ran = runChecker(args, repo);
       expect(ran.status, `for ${args.join(' ')}`).toBe(2);

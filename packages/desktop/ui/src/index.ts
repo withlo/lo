@@ -43,6 +43,8 @@ export { SetupItem, SetupList, type SetupItemProps, type SetupListProps } from '
 export { Switch, type SwitchProps } from './Switch.tsx';
 export { Tag, type TagTone } from './Tag.tsx';
 export {
+  FileIcon,
+  FileMarks,
   FileTree,
   FileTreePanel,
   ROW_HEIGHT,

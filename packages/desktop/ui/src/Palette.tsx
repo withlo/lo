@@ -3,6 +3,7 @@ import { Dialog } from '@base-ui/react/dialog';
 import { useRef, type ReactNode } from 'react';
 
 import { Key, type KeyAria } from './Key.tsx';
+import { useReturnFocus } from './returnFocus.ts';
 
 /** A run of a palette's items, under a label or none. */
 export interface PaletteGroup<T> {
@@ -84,13 +85,17 @@ export function Palette<T>({
   onClosed,
 }: PaletteProps<T>) {
   const input = useRef<HTMLInputElement>(null);
+  const returnFocus = useReturnFocus(open);
   const rows = groups.some((group) => group.items.length > 0);
   return (
     <Dialog.Root
       open={open}
       onOpenChange={(next) => onOpenChange(next)}
       onOpenChangeComplete={(next) => {
-        if (!next) onClosed?.();
+        if (!next) {
+          returnFocus();
+          onClosed?.();
+        }
       }}
     >
       <Dialog.Portal container={container}>
@@ -98,6 +103,7 @@ export function Palette<T>({
         <Dialog.Viewport className="fixed inset-0 z-dialog flex items-start justify-center px-16 pt-64 pb-16">
           <Dialog.Popup
             initialFocus={input}
+            finalFocus={false}
             aria-label={label}
             data-lo-scope="palette"
             className="flex max-h-full w-palette-w max-w-full flex-col overflow-hidden rounded-lg bg-bg-overlay text-fg shadow-dialog"

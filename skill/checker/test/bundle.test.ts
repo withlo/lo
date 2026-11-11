@@ -1,7 +1,7 @@
 /**
  * The checker as it's published: one file that runs with Node alone, holding only code under
- * licenses its MIT license can carry, each given in `THIRD_PARTY_NOTICES`; and the package `pnpm
- * pack` makes of it, run from an empty folder.
+ * licenses its MIT license can carry, each given in `THIRD_PARTY_NOTICES`, and the skill it
+ * installs; and the package `pnpm pack` makes of it, run from an empty folder.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -13,7 +13,15 @@ import { build } from 'vite';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import { ALLOWED, bundledPackages, NOTICES, notices, packageAt } from '../build/notices.ts';
-import { CHECKER, overview, repositoryOf, scratch } from './support.ts';
+import {
+  CHECKER,
+  expectSkill,
+  listing,
+  overview,
+  repositoryOf,
+  scratch,
+  skillFiles,
+} from './support.ts';
 
 const PACKAGE = fileURLToPath(new URL('..', import.meta.url));
 const bundle = readFileSync(CHECKER, 'utf8');
@@ -143,6 +151,7 @@ test('the packed package runs with Node alone, from an empty folder', () => {
     './package/package.json',
   ]);
   const manifest = JSON.parse(readFileSync(join(empty, 'package/package.json'), 'utf8'));
+  expect(manifest.name).toBe('@withlo/overview');
   expect(manifest.dependencies).toBeUndefined();
   expect(manifest.bin).toEqual({ 'lo-overview': './dist/checker.js' });
 
@@ -165,4 +174,17 @@ test('the packed package runs with Node alone, from an empty folder', () => {
   mkdirSync(dir);
   writeFileSync(join(dir, 'artifact.md'), overview(commit, ':::code src/a.ts#L1\n:::\n'));
   expect(run(['check', dir], repo)).toBe('No errors or warnings.\n');
+
+  // It carries the skill, and installs it.
+  const skills = join(root.dir, 'skills');
+  expect(run(['install', '--dir', skills], empty)).toBe(
+    `Installed the lo-overview skill in ${join(skills, 'lo-overview')}.\n`,
+  );
+  expect(listing(join(skills, 'lo-overview'))).toEqual([...skillFiles(), 'references/'].toSorted());
+  expectSkill(join(skills, 'lo-overview'));
+  // Its SKILL.md runs this package, at the version it was packed as.
+  const shipped = readFileSync(join(skills, 'lo-overview', 'SKILL.md'), 'utf8');
+  expect(shipped).toContain(
+    `npx --prefix '<tools>' --yes ${manifest.name}@${manifest.version} check`,
+  );
 });
