@@ -18,6 +18,7 @@ import {
   type PullRequestQuery,
   type ViewerQuery,
 } from './generated/graphql.ts';
+import type { BranchLookup, MergedPullRequest } from './merged.ts';
 import { notFound, PAGE_SIZE, Pager } from './pager.ts';
 import type { RepoRef } from './refs.ts';
 
@@ -49,16 +50,64 @@ export type RecentlyMergedPullRequest = NonNullable<
   NonNullable<OpenRepository['mergedPullRequests']['nodes']>[number]
 >;
 
-/** A repository's open pull requests, newest first. */
+/** A repository's open pull requests, newest first, with what finding stacks needs besides. */
 export interface OpenPullRequestList {
   pullRequests: OpenPullRequest[];
   /** How many GitHub says are open. */
   totalCount: number;
   /** Whether there were more than {@link MAX_OPEN_PULL_REQUESTS}, so the oldest were left out. */
   truncated: boolean;
+  /** The repository's default branch, or nothing for an empty repository. */
   defaultBranch: string | undefined;
-  /** The merged pull requests updated most recently, from the first page. */
-  merged: RecentlyMergedPullRequest[];
+  /**
+   * The merged pull requests finding stacks needs, each once: the
+   * {@link RECENTLY_UPDATED_MERGED} updated most recently, from the first page, and those from the
+   * branches open pull requests target, followed down, once they're looked up.
+   */
+  merged: MergedPullRequest[];
+  /**
+   * The branches whose merged pull requests were looked up, which the next read carries over while
+   * their tips stay put.
+   */
+  lookups: BranchLookup[];
+  /**
+   * Whether some branches' merged pull requests weren't looked up, past the most looked up for one
+   * read or after a lookup failed. Layers above them sit on those branches as roots.
+   */
+  mergedTruncated: boolean;
+}
+
+/** The open pull request numbered `number`, if the list has it. */
+export function openPullRequest(
+  list: OpenPullRequestList,
+  number: number,
+): OpenPullRequest | undefined {
+  return list.pullRequests.find((pr) => pr.number === number);
+}
+
+/**
+ * The branches that open pull requests both target and come from, other than the default branch:
+ * the ones whose being a trunk changes the stacks, and which `readTrunkRules` checks one by one
+ * when it can't read the rulesets.
+ */
+export function branchesToCheck(list: OpenPullRequestList): string[] {
+  const heads = new Set(
+    list.pullRequests.filter((pr) => !pr.isCrossRepository).map((pr) => pr.headRefName),
+  );
+  const branches = list.pullRequests
+    .map((pr) => pr.baseRefName)
+    .filter((base) => heads.has(base) && base !== list.defaultBranch);
+  return [...new Set(branches)].toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/** `branch`'s tip, as a pull request that targets it says. */
+export function branchTip(list: OpenPullRequestList, branch: string): string | undefined {
+  const fromOpen = list.pullRequests.find(
+    (pr) => pr.baseRefName === branch && pr.baseRef?.target != null,
+  );
+  if (fromOpen) return fromOpen.baseRef?.target?.oid;
+  return list.merged.find((pr) => pr.baseRefName === branch && pr.baseRef?.target != null)?.baseRef
+    ?.target?.oid;
 }
 
 /** How many times a pull request's files are read again from the start when its head moves while they're paged through. */
@@ -185,6 +234,8 @@ export async function openPullRequestsPaged(
     truncated: false,
     defaultBranch: undefined,
     merged: [],
+    lookups: [],
+    mergedTruncated: false,
   };
   let pager: Pager | undefined;
   let after: string | null = null;

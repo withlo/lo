@@ -1,0 +1,25 @@
+{
+  "name": "@lo/stacks",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "oxlint",
+    "test": "vitest run --root ../../.. --project @lo/stacks"
+  },
+  "dependencies": {
+    "@lo/github": "workspace:*"
+  },
+  "devDependencies": {
+    "@lo/testing": "workspace:*"
+  },
+  "nx": {
+    "name": "stacks",
+    "tags": [
+      "platform:core"
+    ]
+  }
+}
