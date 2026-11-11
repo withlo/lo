@@ -1,7 +1,9 @@
 # Builds Lo for a Mac to try: an arm64 zip, signed ad hoc. It holds no certificate, so the workflow
-# reads no secret and notarizes nothing, and Gatekeeper doesn't trust the zip: a copy that was
-# downloaded opens with a right-click and "Open". Only a person starting it runs it, from the
-# Actions tab or with `gh workflow run package.yml --ref <branch>`; no push or pull request does.
+# reads no secret and notarizes nothing, and Gatekeeper doesn't trust the zip. One downloaded in a
+# browser is quarantined: allow it in System Settings > Privacy & Security > Open Anyway. One fetched
+# with `gh run download <run id>` has no quarantine flag and opens as it is. Only a person starting
+# the workflow runs it, from the Actions tab or with `gh workflow run package.yml --ref <branch>`; no
+# push or pull request does.
 name: package
 
 on:
