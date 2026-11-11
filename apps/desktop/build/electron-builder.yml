@@ -1,8 +1,10 @@
 # electron-builder's settings for Lo, run from apps/desktop by `nx run desktop:package`.
 #
 # This makes a macOS zip for arm64, signed ad hoc: it holds no certificate, notarizes nothing and
-# reads no secret. Gatekeeper doesn't trust such a signature, so a copy that was downloaded opens
-# with a right-click and "Open".
+# reads no secret. Gatekeeper doesn't trust such a signature. A zip downloaded in a browser is
+# quarantined, so macOS blocks the app until it's allowed in System Settings > Privacy & Security >
+# Open Anyway (macOS 15 and later no longer offer right-click > Open). A zip fetched with
+# `gh run download` carries no quarantine flag and opens as it is.
 
 appId: com.scornz.lo
 productName: Lo
@@ -30,11 +32,31 @@ mac:
       arch: arm64
   category: public.app-category.developer-tools
   icon: ../../brand/Lo.icns
-  # '-' signs ad hoc, even when the keychain holds a certificate. The hardened runtime is off:
-  # with an ad hoc signature it would refuse to load Electron's frameworks.
+  # '-' signs ad hoc, even when the keychain holds a certificate.
   identity: '-'
-  hardenedRuntime: false
+  # The hardened runtime is on, with only the two entitlements that Lo can't start without (the
+  # same file for the app and its helpers). allow-jit: V8 maps its code as executable, and without
+  # it Lo dies at start, reserving memory for V8's code. disable-library-validation: an ad hoc signature has no
+  # team, so library validation refuses Electron's framework as another signer's. A Developer ID
+  # signature has one, and wouldn't need it. Neither WebAssembly, workers nor node:sqlite needs
+  # allow-unsigned-executable-memory.
+  hardenedRuntime: true
+  entitlements: build/entitlements.plist
+  entitlementsInherit: build/entitlements.plist
   notarize: false
+
+# Fuses are switches in Electron's binary, flipped just before it's signed. These close what a
+# process that can start Lo with arguments or an environment could use to run code in it: the
+# debugger, NODE_OPTIONS and ELECTRON_RUN_AS_NODE. Lo loads its code only from the asar, whose
+# contents Electron checks against a hash in Info.plist, and its window is never served from file:.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
+  enableEmbeddedAsarIntegrityValidation: true
+  enableCookieEncryption: true
+  grantFileProtocolExtraPrivileges: false
 
 # Registers Lo for `lo://` links and for web links. The Viewer role makes Lo a choice among the apps
 # that open `http` and `https`, and leaves the default browser as it is.

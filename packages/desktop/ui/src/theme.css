@@ -35,6 +35,10 @@
   --spacing-palette-w: var(--lo-palette-w);
   --spacing-palette-list-h: var(--lo-palette-list-h);
   --spacing-keyhelp-w: var(--lo-keyhelp-w);
+  --spacing-settings-nav-w: var(--lo-settings-nav-w);
+  --spacing-settings-w: var(--lo-settings-w);
+  --spacing-swatch-w: var(--lo-swatch-w);
+  --spacing-swatch-h: var(--lo-swatch-h);
   --spacing-file-header-h: var(--lo-file-header-h);
   --spacing-window-inset-start: var(--lo-window-inset-start);
   --spacing-window-inset-end: var(--lo-window-inset-end);
