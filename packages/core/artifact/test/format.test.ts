@@ -83,6 +83,8 @@ test('format.md gives the limits figures are checked under', () => {
     `${LIMITS.svg / 1024} KiB, ${number(SVG_LIMITS.elements)} elements, ${SVG_LIMITS.depth} deep`,
   );
   row('The SVGs figures show, together', `${LIMITS.svgs / MIB} MiB`);
+  expect(LIMITS.drawn).toBe(4 * SVG_LIMITS.drawn);
+  row('What SVG figures draw, together', '4 times what one SVG may draw');
   expect(spec.replace(/\s+/g, ' ')).toContain(
     `no taller than ${SVG_LIMITS.tallest} times its width or wider than ${SVG_LIMITS.widest} times its height`,
   );

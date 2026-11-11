@@ -104,6 +104,23 @@ describe('the commit', () => {
     }
   });
 
+  test('artifact.md the listing says is too large to read is too large, whatever was parsed', async () => {
+    // A parse of its start, or of anything else, read past the listing's word.
+    const parsed = parseArtifact(overview('[a](code:src/a.ts#L1)\n'));
+    expect(parsed.findings).toEqual([]);
+    for (const newer of [false, true]) {
+      const text = newer ? HEADER.replace('format: 1', 'format: 2') : '';
+      const files = overviewFiles({ 'artifact.md': { kind: 'file', size: ARTIFACT_READ + 1 } });
+      const checked = await checkArtifact(
+        newer ? parseArtifact(text) : parsed,
+        files,
+        repository(COMMIT, held).readCode,
+      );
+      expect(checked.outcome).toMatchObject({ kind: 'tooLarge', what: 'text' });
+      expect(codes(checked)).toEqual(['too-large']);
+    }
+  });
+
   test('a listing a reader got wrong is refused, never thrown', async () => {
     // A path that isn't bytes, as no reader should list.
     const wrong: TreeEntry[] = JSON.parse('[{ "path": "artifact.md", "kind": "file" }]');
@@ -271,16 +288,61 @@ describe('the commit’s limits', () => {
     expect(past.asked).toBe(0);
   });
 
-  test('a path longer than any target is one entry, reported quickly', async () => {
+  test('a path longer than any target is reported quickly', async () => {
+    const long = encoder.encode(`figures/${'d'.repeat(1_000_000)}.png`);
+    const started = performance.now();
+    const checked = await check(overview(''), {}, [listed(long, 'file', 1)]);
+    expect(performance.now() - started).toBeLessThan(100);
+    expect(checked.outcome.kind).toBe('shown');
+    expect(codes(checked)).toEqual([`tree-extra:figures/${'d'.repeat(40)}…`]);
+    expect(checked.findings[0]?.message).toBe(
+      "A path in the overview's commit is longer than 1,024 bytes, which no overview holds.",
+    );
+  });
+
+  test('a path longer than any target counts each folder it passes through, quickly', async () => {
     const deep = encoder.encode(`${'d/'.repeat(1_000_000)}x.png`);
     const started = performance.now();
     const checked = await check(overview(''), {}, [listed(deep, 'file', 1)]);
     expect(performance.now() - started).toBeLessThan(100);
-    expect(checked.outcome).toMatchObject({ kind: 'shown' });
-    expect(codes(checked)).toEqual([`tree-extra:${'d/'.repeat(24)}…`]);
-    expect(checked.findings[0]?.message).toBe(
-      "A path in the overview's commit is longer than 1,024 bytes, which no overview holds.",
-    );
+    expect(checked.outcome).toMatchObject({
+      kind: 'tooLarge',
+      what: 'entries',
+      sizes: { entries: LIMITS.entries + 1 },
+    });
+    expect(codes(checked)).toEqual(['tree-count']);
+  });
+
+  test('a listing of files alone counts as one that lists their folders too', async () => {
+    // A path past 1,024 bytes through 100 folders: with artifact.md, figures and its file, 102
+    // files and folders besides the figures.
+    const parts = Array.from({ length: 100 }, (_, n) => `folder${String(n).padStart(4, '0')}`);
+    const long = `${parts.join('/')}/x.png`;
+    expect(long.length).toBeGreaterThan(LIMITS.argument);
+    const folders = parts.map((_, n) => listed(parts.slice(0, n + 1).join('/'), 'folder', 0));
+    for (const [count, outcome] of [
+      [397, 'shown'],
+      [398, 'tooLarge'],
+    ] as const) {
+      const files = [...figures(count), listed(long, 'file', 1)];
+      for (const entries of [files, [...files, ...folders]]) {
+        const checked = await check(overview(''), {}, entries);
+        expect(checked.outcome.kind).toBe(outcome);
+      }
+    }
+  });
+
+  test('long paths through the same long folder count it once', async () => {
+    // Ten files in one folder whose name is past 1,024 bytes: with artifact.md, figures, the folder
+    // and the one it's in, 500 files and folders, unless the long one counted more than once.
+    const folder = `long/${'f'.repeat(2_000)}`;
+    const paths = Array.from({ length: 10 }, (_, n) => listed(`${folder}/${n}.png`, 'file', 1));
+    for (const extra of [[], [listed(folder, 'folder', 0)]]) {
+      const at = await check(overview(''), {}, [...figures(486), ...paths, ...extra]);
+      expect(at.outcome.kind).toBe('shown');
+      const past = await check(overview(''), {}, [...figures(487), ...paths, ...extra]);
+      expect(past.outcome).toMatchObject({ kind: 'tooLarge', what: 'entries' });
+    }
   });
 
   test('a path through as many folders as fit in a target counts each', async () => {

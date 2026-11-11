@@ -175,7 +175,7 @@ export function walkSvg(result: unknown): SvgWalked {
   const walked = { elements: 0, depth: 0 };
   if (!isRecord(result)) return { problems: ['the result is not a plain object'], ...walked };
   const keys = Object.keys(result).toSorted().join();
-  if (keys !== 'removed,svg' && keys !== 'removed') problem('result', `has ${keys}`);
+  if (keys !== 'drawn,removed,svg' && keys !== 'removed') problem('result', `has ${keys}`);
   checkRemoved(result['removed'], problem);
   if (!('svg' in result)) return { problems: found, ...walked };
 
@@ -299,6 +299,11 @@ export function walkSvg(result: unknown): SvgWalked {
   }
   if (walked.elements > SVG_LIMITS.elements) problem('svg', `has ${walked.elements} elements`);
   if (!(drawn <= SVG_LIMITS.drawn)) problem('svg', `draws ${drawn}, more than ${SVG_LIMITS.drawn}`);
+  // What the result says it draws bounds what it does, so a budget over several figures holds.
+  const said = result['drawn'];
+  if (typeof said !== 'number' || !(drawn <= said && said <= SVG_LIMITS.drawn)) {
+    problem('drawn', `is ${String(said)}, and the figure draws ${drawn}`);
+  }
   if (found.length === 0) {
     if (!isDeepStrictEqual(structuredClone(result), result))
       problem('result', "doesn't survive structuredClone");

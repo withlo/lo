@@ -5,6 +5,15 @@
  * folder it runs in. Each reader answers the same way, and the checks hold every answer to it.
  */
 
+import { LIMITS } from './limits.ts';
+
+/**
+ * The size past which a reader may answer a file with its size alone, and none of its bytes. Every
+ * limit on a file that's read is no larger, so no check looks at the bytes of a file this large: it's
+ * too large by its size. A reader can ask for a file's size first, then, and never read such a file.
+ */
+export const SIZE_ONLY: number = LIMITS.file;
+
 /** What a path in a commit is. A link is a symbolic link, never followed. */
 export type EntryKind = 'file' | 'link' | 'folder' | 'submodule';
 
@@ -20,7 +29,8 @@ export type TreeEntry =
 /**
  * What reading a file at a commit gave.
  *
- * - `file`: its size, and its first bytes, up to the cap: all of it when it's no larger.
+ * - `file`: its size, and its first bytes, up to the cap: all of it when it's no larger. A file
+ *   larger than {@link SIZE_ONLY} may come with no bytes at all.
  * - `missing`: nothing is at the path. That includes a path through a link or a file, as where a
  *   folder should be: a link is never followed.
  * - `notFile`: the path is a link, a folder or a submodule.
@@ -62,8 +72,9 @@ export interface OverviewFiles {
 
 /**
  * `answer`, from a reader, if it's one of the answers {@link FileAnswer} lists and keeps to `cap`;
- * otherwise undefined. Bytes that aren't the file's first `cap`, by its size, aren't trusted.
- * Never throws, whatever the answer is made of.
+ * otherwise undefined. Bytes that aren't the file's first `cap`, by its size, aren't trusted, unless
+ * there are none of a file larger than {@link SIZE_ONLY}. Never throws, whatever the answer is made
+ * of.
  */
 export function checkedAnswer(answer: unknown, cap: number): FileAnswer | undefined {
   try {
@@ -83,7 +94,8 @@ function checked(answer: unknown, cap: number): FileAnswer | undefined {
       // A view of a real array of bytes, never a proxy, which could say anything of its length.
       if (!ArrayBuffer.isView(bytes) || !(bytes instanceof Uint8Array)) return undefined;
       if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 0) return undefined;
-      if (bytes.length !== Math.min(size, cap)) return undefined;
+      const sizeOnly = size > SIZE_ONLY && bytes.length === 0;
+      if (bytes.length !== Math.min(size, cap) && !sizeOnly) return undefined;
       return { kind: 'file', size, bytes };
     }
     case 'notFile': {

@@ -7,8 +7,9 @@
  *
  * Each figure is read once, however many blocks show it, in the order the overview first shows it:
  * its first {@link FIGURE_HEAD} bytes, then the rest only for an SVG, or for an image whose header
- * goes on past them. SVGs are read up to {@link LIMITS.svgs} together, so which figures are kept
- * never depends on how fast the reader is. A reader that fails, or is too slow, leaves its figure
+ * goes on past them. SVGs are read up to {@link LIMITS.svgs} together, and drawn up to
+ * {@link LIMITS.drawn} together each time a block shows one, so which figures are kept never depends
+ * on how fast the reader is. A reader that fails, or is too slow, leaves its figure
  * unread, and never keeps the check waiting.
  */
 
@@ -27,7 +28,7 @@ import { article } from './commit.ts';
 import { quote, type Findings } from './findings.ts';
 import { imageHeader, imageType, type ImageType } from './images.ts';
 import { FIGURE_HEAD, LIMITS } from './limits.ts';
-import { answered, type EntryKind, type FileAnswer, type Unread } from './readers.ts';
+import { answered, SIZE_ONLY, type EntryKind, type FileAnswer, type Unread } from './readers.ts';
 import type { FigureReference } from './reading.ts';
 import { firstInvalid, lineAt } from './source.ts';
 
@@ -39,7 +40,10 @@ export type FigureType = 'svg' | ImageType;
  *
  * - `kept`: Lo shows it. An SVG is shown as `svg`, the tree `sanitizeSvg` made, with `parts`, the
  *   ids of the block's parts that name elements Lo can link. An image is shown from its file, as an
- *   image of its type, decoded no larger than its header says.
+ *   image of its type, decoded no larger than its header says. Never sniff: a figure's type comes
+ *   from its name, never its bytes. Its first bytes were checked to start as that type, but a file
+ *   can start as one type and go on as another, so whatever shows it serves it as `type`, and
+ *   never guesses another from its bytes.
  * - `leftOut`: Lo shows a note in its place, and why: nothing is at its path, the path is a link or
  *   folder, its bytes aren't the type its name says, its header is damaged, an SVG isn't UTF-8,
  *   `sanitizeSvg` removed some of what it holds, or it's past a limit.
@@ -74,6 +78,8 @@ type Found =
       colors: readonly string[];
       /** What `sanitizeSvg` removed: with any, the figure is left out. */
       removed: readonly SvgRemoval[];
+      /** How much it draws each time it's shown, as `sanitizeSvg` counts it. */
+      drawn: number;
     }
   | { kind: 'image'; type: ImageType; width: number; height: number }
   | { kind: 'missing' }
@@ -118,8 +124,20 @@ export async function checkFigures(
     }
   }
 
+  // What's drawn counts each time a block shows a figure, in the overview's order.
+  let drawing = LIMITS.drawn;
   return references.map((reference) => {
-    const file = found.get(reference.path) ?? { kind: 'unread', why: 'stopped' };
+    let file = found.get(reference.path) ?? { kind: 'unread', why: 'stopped' };
+    if (file.kind === 'svg' && file.removed.length === 0) {
+      if (file.drawn > drawing) {
+        file = {
+          kind: 'tooLarge',
+          why: `would draw more than is left of the ${count(LIMITS.drawn)} Lo draws for all of an overview's figures, which the figures shown before it take up`,
+        };
+      } else {
+        drawing -= file.drawn;
+      }
+    }
     report(findings, reference, file, otherCase);
     return { reference, figure: stateOf(reference, file) };
   });
@@ -154,6 +172,9 @@ async function readFigure(
   const head = await read(FIGURE_HEAD);
   // The listing says a file is there, so any other answer is the reader's mistake.
   if (head.kind !== 'file') return { found: unread(head), svg: 0 };
+  // Past every limit on a figure, it's too large by its size, whatever its bytes: a reader may have
+  // read none of it.
+  if (head.size > SIZE_ONLY) return { found: tooLarge(named), svg: 0 };
   const is = imageType(head.bytes);
   const whole = async (): Promise<Extract<FileAnswer, { kind: 'file' }> | Unread> => {
     if (head.bytes.length === head.size) return head;
@@ -164,15 +185,7 @@ async function readFigure(
 
   if (named === 'svg') {
     if (is !== undefined) return { found: { kind: 'type', is }, svg: 0 };
-    if (head.size > LIMITS.svg) {
-      return {
-        found: {
-          kind: 'tooLarge',
-          why: `is larger than ${kibibytes(LIMITS.svg)}, the most an SVG figure may be`,
-        },
-        svg: 0,
-      };
-    }
+    if (head.size > LIMITS.svg) return { found: tooLarge(named), svg: 0 };
     if (head.size > room) {
       return {
         found: {
@@ -188,15 +201,7 @@ async function readFigure(
   }
 
   if (is !== named) return { found: { kind: 'type', is }, svg: 0 };
-  if (head.size > LIMITS.image) {
-    return {
-      found: {
-        kind: 'tooLarge',
-        why: `is larger than ${mebibytes(LIMITS.image)}, the most an image figure may be`,
-      },
-      svg: 0,
-    };
-  }
+  if (head.size > LIMITS.image) return { found: tooLarge(named), svg: 0 };
   let header = imageHeader(named, head.bytes, head.bytes.length === head.size);
   if (header.kind === 'more') {
     const all = await whole();
@@ -228,6 +233,17 @@ async function readFigure(
   }
 }
 
+/** A figure of type `named` larger than its type may be. */
+function tooLarge(named: FigureType): Found {
+  return {
+    kind: 'tooLarge',
+    why:
+      named === 'svg'
+        ? `is larger than ${kibibytes(LIMITS.svg)}, the most an SVG figure may be`
+        : `is larger than ${mebibytes(LIMITS.image)}, the most an image figure may be`,
+  };
+}
+
 /** A reader's answer that isn't a file, where one is: unread, as it failed. */
 function unread(answer: FileAnswer | Unread): Unread {
   return answer.kind === 'unread' ? answer : { kind: 'unread', why: 'failed' };
@@ -243,7 +259,13 @@ function svgFigure(bytes: Uint8Array): Found {
   }
   const sanitized = sanitizeSvg(text);
   if (!sanitized.svg) return refusal(sanitized.removed[0]?.reason);
-  return { kind: 'svg', svg: sanitized.svg, ...walk(sanitized.svg), removed: sanitized.removed };
+  return {
+    kind: 'svg',
+    svg: sanitized.svg,
+    ...walk(sanitized.svg),
+    removed: sanitized.removed,
+    drawn: sanitized.drawn ?? SVG_LIMITS.drawn,
+  };
 }
 
 /** A figure with more of `what` than `limit`. */
