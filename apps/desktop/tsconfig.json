@@ -6,6 +6,9 @@
       "path": "../../packages/desktop/ui"
     },
     {
+      "path": "../../packages/core/review"
+    },
+    {
       "path": "../../packages/desktop/git"
     },
     {

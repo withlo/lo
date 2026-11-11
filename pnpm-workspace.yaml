@@ -11,8 +11,10 @@ packages:
   - scripts
 
 # pnpm runs a dependency's install script only when it's allowed here. lefthook's installs its
-# binary. Nx's only updates its Nx Cloud client, which this repo doesn't use.
+# binary. Nx's only updates its Nx Cloud client, which this repo doesn't use. electron-winstaller's
+# is for building Windows installers, which Lo doesn't make.
 allowBuilds:
+  electron-winstaller: false
   lefthook: true
   nx: false
   tree-sitter-cli: true

@@ -38,9 +38,9 @@ test('a second launch on the same data folder hands over to the first', async ({
   expect(app.windows()).toEqual([page]);
 });
 
-test('the window opens on an empty tab strip, in both of its fonts', async ({ page }) => {
+test('the window opens on Recent pull requests alone, in both of its fonts', async ({ page }) => {
   const strip = page.getByRole('tablist', { name: 'Pull requests' });
-  await expect(strip.getByRole('tab')).toHaveCount(0);
+  await expect(strip.getByRole('tab')).toHaveText(['Recent pull requests']);
   const open = strip.getByRole('button', { name: 'Open a pull request' });
   await expect(open).toBeVisible();
   // Inert until pull requests can be opened.
@@ -110,7 +110,7 @@ test("the tab strip's row clears the window's controls", async ({ page }) => {
   }
 });
 
-test('the empty strip looks as designed', async ({ app, page }) => {
+test('the strip with nothing open looks as designed', async ({ app, page }) => {
   // Screenshots differ from system to system, so they're compared on Linux, where CI runs.
   test.skip(process.platform !== 'linux', 'Compared on Linux only.');
   await app.evaluate(({ nativeTheme }) => {
@@ -118,6 +118,7 @@ test('the empty strip looks as designed', async ({ app, page }) => {
   });
   await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
   await page.evaluate(() => document.fonts.ready);
-  const strip = page.getByRole('tablist', { name: 'Pull requests' }).locator('..');
-  await expect(strip).toHaveScreenshot('empty-strip.png');
+  const strip = page.getByRole('tablist', { name: 'Pull requests' });
+  await expect(strip.getByRole('tab', { name: 'Recent pull requests' })).toBeVisible();
+  await expect(strip.locator('..')).toHaveScreenshot('empty-strip.png');
 });

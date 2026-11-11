@@ -11,16 +11,19 @@
     "dev": "electron-vite dev",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "lint": "oxlint && lo-check-classes src",
+    "package": "electron-builder --config build/electron-builder.yml --mac",
     "start": "electron .",
     "test": "vitest run --root ../.. --project @lo/desktop"
   },
   "dependencies": {
     "@lo/design": "workspace:*",
     "@lo/git": "workspace:*",
+    "@lo/review": "workspace:*",
     "@lo/ui": "workspace:*",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "zustand": "5.1.0"
   },
   "devDependencies": {
     "@lo/testing": "workspace:*",
@@ -30,6 +33,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
     "electron": "45.2.3",
+    "electron-builder": "26.18.1",
     "electron-vite": "6.0.0",
     "jsdom": "30.1.3",
     "vite": "8.3.7"
@@ -55,6 +59,12 @@
         ]
       },
       "e2e": {
+        "dependsOn": [
+          "build"
+        ],
+        "cache": false
+      },
+      "package": {
         "dependsOn": [
           "build"
         ],
