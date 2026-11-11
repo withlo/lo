@@ -2,6 +2,7 @@ import { Autocomplete } from '@base-ui/react/autocomplete';
 import { Dialog } from '@base-ui/react/dialog';
 import { useRef, type ReactNode } from 'react';
 
+import { useTakeFocus } from './focus.ts';
 import { Key, type KeyAria } from './Key.tsx';
 import { useReturnFocus } from './returnFocus.ts';
 
@@ -86,6 +87,9 @@ export function Palette<T>({
 }: PaletteProps<T>) {
   const input = useRef<HTMLInputElement>(null);
   const returnFocus = useReturnFocus(open);
+  // The input has focus as the palette mounts, not a frame on, so the keys typed after the one
+  // that opened it are the palette's.
+  const takeFocus = useTakeFocus(input);
   const rows = groups.some((group) => group.items.length > 0);
   return (
     <Dialog.Root
@@ -102,6 +106,7 @@ export function Palette<T>({
         <Dialog.Backdrop className="fixed inset-0 z-dialog bg-scrim" />
         <Dialog.Viewport className="fixed inset-0 z-dialog flex items-start justify-center px-16 pt-64 pb-16">
           <Dialog.Popup
+            ref={takeFocus}
             initialFocus={input}
             finalFocus={false}
             aria-label={label}
