@@ -82,6 +82,14 @@ async function fetchVia(
       await ses.setProxy(
         proxy === undefined ? { mode: 'direct' } : { proxyRules: `http://127.0.0.1:${proxy}` },
       );
+      // `setProxy` resolves once the setting is made, not once the network service has taken it,
+      // and a request sent in between goes the session's old way: straight to the host. So wait
+      // until the session resolves the address the new way.
+      const route = proxy === undefined ? 'DIRECT' : `PROXY 127.0.0.1:${proxy}`;
+      for (let tries = 0; (await ses.resolveProxy(address)) !== route; tries++) {
+        if (tries === 100) throw new Error(`the session never took the route ${route}`);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
       type Said = { name: unknown; code: unknown; message: unknown };
       type Got = { status: number | undefined; chain: Said[] };
       return new Promise<Got>((resolve) => {
