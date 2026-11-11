@@ -227,6 +227,58 @@ test('a clone with a setting that holds two values is made again', async () => {
   expect(await madeAgain(cache, repo)).toBe(true);
 });
 
+/** Replaces `from` in the clone's settings with `to`, failing when they don't hold it. */
+function rewriteSettings(repo: Repo, from: string, to: string): void {
+  const path = join(repo.folder, 'config');
+  const settings = readFileSync(path, 'utf8');
+  expect(settings).toContain(from);
+  writeFileSync(path, settings.replace(from, to));
+}
+
+test('a clone whose promisor is a remote of another name is made again', async () => {
+  const { cache, repo, logged } = await fetched();
+  // git tells remotes apart by case: fetches would download what the clone lacks from `Origin`,
+  // which Lo never points at GitHub, rather than from `origin`.
+  rewriteSettings(repo, '[remote "origin"]', '[remote "Origin"]');
+  rewriteSettings(repo, 'partialclone = origin', 'partialclone = Origin');
+
+  expect(await madeAgain(cache, repo)).toBe(true);
+  expect(logged).toEqual([
+    "owner/repo: making its local copy again, since it has settings Lo didn't write " +
+      '(remote.Origin.url, remote.Origin.promisor, remote.Origin.partialclonefilter)',
+  ]);
+});
+
+test.each([
+  ['extensions.partialclone', 'upstream'],
+  ['remote.origin.promisor', 'false'],
+  ['remote.origin.partialclonefilter', 'tree:0'],
+  ['remote.origin.url', 'https://elsewhere.example/owner/repo.git'],
+  ['core.bare', 'false'],
+  ['core.repositoryformatversion', '0'],
+  ['core.logallrefupdates', 'always'],
+])('a clone with %s set to %s, which Lo never sets, is made again', async (name, value) => {
+  const { cache, repo, logged } = await fetched();
+  git(repo.folder, 'config', name, value);
+
+  expect(await madeAgain(cache, repo)).toBe(true);
+  expect(logged).toEqual([
+    `owner/repo: making its local copy again, since it has settings Lo set otherwise (${name})`,
+  ]);
+});
+
+test('a clone with a setting Lo writes, but without its value, is made again', async () => {
+  const { cache, repo, logged } = await fetched();
+  // A name alone sets it to true, which isn't how Lo writes it.
+  rewriteSettings(repo, 'promisor = true', 'promisor');
+
+  expect(await madeAgain(cache, repo)).toBe(true);
+  expect(logged).toEqual([
+    'owner/repo: making its local copy again, since it has settings Lo set otherwise ' +
+      '(remote.origin.promisor)',
+  ]);
+});
+
 test('a clone that fails the check is never pulled out from under a repository reading it', async () => {
   const { cache, repo } = await fetched();
   const reading = await cache.open('owner', 'repo');
