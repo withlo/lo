@@ -624,14 +624,44 @@ function shaped(attributes: string): SvgRemoval[] {
   return sanitizeSvg(`<svg ${attributes}><rect/></svg>`).removed;
 }
 
-/** A figure of `count` paths, each dashed every 0.2 along 860. */
+/** A figure of `count` paths, each dashed every unit along 4,250. */
 function paths(count: number): string {
-  return `<svg>${'<path d="M0 10L860 10" stroke-dasharray="0.1 0.1"/>'.repeat(count)}</svg>`;
+  return `<svg>${'<path d="M0 10L4250 10" stroke-dasharray="0.5 0.5"/>'.repeat(count)}</svg>`;
 }
 
-/** A figure of one `shape` through two points 1,000 apart, dashed every 0.01. */
+/** A figure of one `shape` through two points 100,000 apart, dashed every unit. */
 function dashed(shape: string): string {
-  return `<svg><${shape} points="0 0 1000 0" stroke-dasharray="0.005 0.005"/></svg>`;
+  return `<svg><${shape} points="0 0 100000 0" stroke-dasharray="0.5 0.5"/></svg>`;
+}
+
+/** A figure of a path dashed with `pattern`, and an offset. */
+function dashedPath(pattern: string): string {
+  return `<svg><path d="M0 0h10" stroke-dasharray="${pattern}" stroke-dashoffset="2"/></svg>`;
+}
+
+/** A hundred of `shape`, a tag left open, each dashed twice a unit. */
+function hundred(shape: string): string {
+  return `${shape} stroke-dasharray="0.25 0.25 0.25 0.25"/>`.repeat(100);
+}
+
+/** A figure of `shapes` and a text of `length` characters. */
+function withText(shapes: string, length: number): string {
+  return `<svg>${shapes}<text>${'x'.repeat(length)}</text></svg>`;
+}
+
+/**
+ * The most characters of text that fit in a figure of `shapes`, with the text, within what a
+ * figure may draw: the room they leave.
+ */
+function room(shapes: string): number {
+  let fits = 0;
+  let past = SVG_LIMITS.drawn + 1;
+  while (fits + 1 < past) {
+    const length = Math.floor((fits + past) / 2);
+    if (sanitizeSvg(withText(shapes, length)).svg) fits = length;
+    else past = length;
+  }
+  return fits;
 }
 
 /** A marker of 63 circles, each with its radius, which draws 127 each time it's drawn. */
@@ -673,61 +703,79 @@ describe('dashes', () => {
     });
   });
 
+  test('are kept only with a period of at least 1, in the unit of the shape', () => {
+    // Real figures: "4 3", and a period of exactly 1; an odd count is repeated, so 0.6 is 1.2.
+    const kept = ['4 3', '4,3', '4px 3px', '1 0', '0.5 0.5', '0.5', '0.6', '0.2 0.2 0.2'];
+    expect(kept.flatMap((pattern) => removals(sanitized(dashedPath(pattern))))).toEqual([]);
+    // Just short of 1, with any count of numbers, zeros included, the dashes are removed.
+    const short = ['0.499 0.5', '0.4995', '0.4', '0.1 0.1 0.2', '0', '0 0', '0.25 0.25'];
+    for (const pattern of short) {
+      const made = sanitized(dashedPath(pattern));
+      expect(removals(made)).toEqual(['value path.stroke-dasharray']);
+      // The path is kept, drawn solid.
+      expect(elements(made).at(-1)?.attributes).toEqual({ d: 'M0 0h10', 'stroke-dashoffset': '2' });
+    }
+  });
+
   test('count against what a figure draws, along every kind of shape', () => {
-    // Each dashed every 0.002 along 860: 430,000 dashes, far past the cap, whatever the shape.
+    // Each dashed every unit along 200,000: 200,000 dashes, far past the cap, whatever the shape.
     const shapes = [
-      '<path d="M0 10L860 10"',
-      '<line x2="860"',
-      '<polyline points="0 0 860 0"',
-      '<polygon points="0 0 430 0"',
-      '<rect width="215" height="215"',
-      `<circle r="${860 / (2 * Math.PI)}"`,
-      `<ellipse rx="${860 / (2 * Math.PI)}" ry="1"`,
-      '<path d="M0 0C0 430 860 430 860 0"',
-      '<path d="M0 0a1 1 0 0 1 300 0"',
+      '<path d="M0 10L200000 10"',
+      '<line x2="200000"',
+      '<polyline points="0 0 200000 0"',
+      '<polygon points="0 0 100000 0"',
+      '<rect width="50000" height="50000"',
+      `<circle r="${200_000 / (2 * Math.PI)}"`,
+      `<ellipse rx="${200_000 / (2 * Math.PI)}" ry="1"`,
+      '<path d="M0 0C0 100000 200000 100000 200000 0"',
+      '<path d="M0 0a1 1 0 0 1 100000 0"',
     ];
     const passing = shapes.filter(
-      (shape) => sanitizeSvg(`<svg>${shape} stroke-dasharray="0.001 0.001"/></svg>`).svg,
+      (shape) => sanitizeSvg(`<svg>${shape} stroke-dasharray="0.5 0.5"/></svg>`).svg,
     );
     expect(passing).toEqual([]);
-    // At 0.1 apart, 4,302 each: thirty fit, but not thirty-one.
+    // At 1 apart, 4,302 each: thirty fit, but not thirty-one.
     expect(sanitized(paths(30)).removed).toEqual([]);
     expect(sanitizeSvg(paths(31)).removed).toEqual([{ reason: 'drawn', element: 'svg' }]);
   });
 
-  test('allow each segment of a shape a few float32 steps where it is drawn', () => {
-    // Near 600,000, a float32 step is a sixteenth: a tiny shape there, dashed every 1e-6, is some
-    // hundred thousand dashes as its numbers read, and far more with each segment's quarter.
+  test('allow each segment of a shape 8 float32 steps where it is drawn', () => {
+    // Near 600,000, a float32 step is a sixteenth, and each segment is allowed 8: half a unit. A
+    // hundred tiny shapes there, each dashed twice a unit, draw more than the same near the
+    // origin, where a step is far smaller: they leave less room in the figure.
     const shapes = [
       '<rect x="600000.375" width="0.03125" height="0.03125"',
       '<circle cx="600000.375" r="0.001"',
       '<ellipse cy="600000.375" rx="0.001" ry="0.002"',
       '<line x1="600000.375" x2="600000.40625"',
+      '<polyline points="600000.375 0 600000.40625 0 600000.375 0"',
       '<path d="M600000.375 0A0.01 0.01 0 0 1 600000.40625 0"',
     ];
-    const kept = shapes.filter(
-      (shape) => sanitizeSvg(`<svg>${shape} stroke-dasharray="5e-7"/></svg>`).svg,
+    const less = shapes.filter(
+      (shape) => room(hundred(shape)) >= room(hundred(shape.replaceAll('600000.', '0.'))),
     );
-    expect(kept).toEqual([]);
-    // The same, near the origin, where a step is far smaller, are kept.
-    const near = shapes.map((shape) => shape.replaceAll('600000.', '0.'));
-    expect(
-      near.filter(
-        (shape) => sanitizeSvg(`<svg>${shape} stroke-dasharray="5e-7"/></svg>`).removed.length > 0,
-      ),
-    ).toEqual([]);
+    expect(less).toEqual([]);
+    // A figure that just fits is within what an independent count finds too, and one more
+    // character is past it.
+    for (const shape of shapes) {
+      const fits = room(hundred(shape));
+      expect(sanitized(withText(hundred(shape), fits)).removed).toEqual([]);
+      expect(sanitizeSvg(withText(hundred(shape), fits + 1)).removed).toEqual([
+        { reason: 'drawn', element: 'svg' },
+      ]);
+    }
   });
 
   test("along a polygon's closing side too", () => {
-    // Dashed every 0.01 along 1,000, some 100,000 dashes; closed back, some 200,000.
+    // Dashed every unit along 100,000, some 100,000 dashes; closed back, some 200,000.
     expect(sanitized(dashed('polyline')).removed).toEqual([]);
     expect(sanitizeSvg(dashed('polygon')).removed).toEqual([{ reason: 'drawn', element: 'svg' }]);
   });
 
   test('in a marker, count each time the marker is drawn', () => {
-    // A path dashed every 0.02 along 10, some 500 dashes, in a marker: drawn at 100 vertices,
-    // some 50,000 in all; at 400, past the cap. Its shapes alone would be a few thousand.
-    const marker = '<marker id="m"><path d="M0 0h10" stroke-dasharray="0.01 0.01"/></marker>';
+    // A path dashed every unit along 1,000, some 1,000 dashes, in a marker: drawn at 100 vertices,
+    // some 100,000 in all; at 400, past the cap. Its shapes alone would be a few thousand.
+    const marker = '<marker id="m"><path d="M0 0h1000" stroke-dasharray="0.5 0.5"/></marker>';
     const at = (vertices: number) =>
       `<svg>${marker}<polyline points="${'1 1 '.repeat(vertices)}" marker-mid="url(#m)"/></svg>`;
     expect(sanitized(at(100)).removed).toEqual([]);

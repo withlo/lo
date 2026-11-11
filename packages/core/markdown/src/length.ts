@@ -7,16 +7,30 @@
  *
  * A browser keeps a path's points as 32-bit floats, so they're rounded here the same way: near a
  * million, a float32 is a sixteenth apart, and a step of 0.01 there is a sixteenth long, six times
- * as long. A browser's own parsing can round a number the other way, near halfway between two
- * floats, so each segment is allowed a few float32 steps more, at the largest coordinate of what
- * it's part of: a hundredth of a millionth near a thousand, a quarter near a million. Anything that
- * doesn't come out finite is as long as can be.
+ * as long. A browser's own parsing can read a number a few floats away from the one read here, so
+ * each segment is allowed 8 float32 steps more, at the largest coordinate of what it's part of: a
+ * few millionths near the origin, half a thousandth near a thousand, a half near a million.
+ * Anything that doesn't come out finite is as long as can be.
+ *
+ * Dash patterns are also kept to a period of at least `MIN_DASH_PERIOD`, so a unit of a length
+ * holds no more dashes than the pattern has numbers, however a browser rounds a float.
  */
 
 const f = Math.fround;
 
-/** How many float32 steps longer a browser may find each segment than its points read here. */
-const SLACK_STEPS = 4;
+/**
+ * How many float32 steps longer a browser may find each segment than its points read here. A
+ * browser's number parser can read a number up to 4 float32 steps from where it's read here, and a
+ * segment runs between two of them.
+ */
+const SLACK_STEPS = 8;
+
+/**
+ * The least a dash pattern's period may be, in the element's own units. Below it, a unit of the
+ * shape holds more than a run of the pattern, and how a browser rounds a length or a point decides
+ * how many dashes it draws.
+ */
+export const MIN_DASH_PERIOD = 1;
 
 /** The segments a browser draws an arc with, at most: four cubic curves of three edges each. */
 const ARC_SEGMENTS = 12;
@@ -217,6 +231,15 @@ export function polylineLength(numbers: readonly number[], closed: boolean): num
   }
   const most = values.reduce((largest, value) => Math.max(largest, Math.abs(value)), 0);
   return length + slack(segments, most);
+}
+
+/**
+ * How long one run of the dash pattern `pattern` is: the sum of its numbers, and, as SVG repeats a
+ * pattern of an odd count of numbers to make an even one, twice that when the count is odd.
+ */
+export function dashPeriod(pattern: readonly number[]): number {
+  const sum = pattern.reduce((total, value) => total + value, 0);
+  return pattern.length % 2 === 0 ? sum : 2 * sum;
 }
 
 /**

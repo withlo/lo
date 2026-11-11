@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'vitest';
 
-import { arcLength, dashCount, float32Step } from './length.ts';
+import { arcLength, dashCount, dashPeriod, float32Step } from './length.ts';
 import {
   FIGURE_COLORS,
   isSvgAttribute,
@@ -95,6 +95,20 @@ describe('numbers and lengths', () => {
       null,
       null,
     ]);
+  });
+
+  test('a dash pattern is kept when its period is at least 1, doubled for an odd count', () => {
+    expect(read('dashes', ['4 3', '1', '0.5', '0.5 0.5', '0.6', '0.2 0.2 0.2', '0.001 1'])).toEqual(
+      ['4 3', '1', '0.5', '0.5 0.5', '0.6', '0.2 0.2 0.2', '0.001 1'],
+    );
+    // A period just short of 1 is refused, in any count of numbers, zeros included.
+    expect(
+      read('dashes', ['0.4995', '0.4', '0.499 0.5', '0.1 0.1 0.2', '0 0', '0', '0.1 0.2 0.1 0.2']),
+    ).toEqual(Array.from({ length: 7 }, () => null));
+    // Tiny dashes, however many, are refused too: a period is their sum.
+    expect(read('dashes', ['0.0001 '.repeat(1_000).trim()])).toEqual([null]);
+    expect(isSvgAttribute('path', 'stroke-dasharray', '4 3')).toBe(true);
+    expect(isSvgAttribute('path', 'stroke-dasharray', '0.499 0.5')).toBe(false);
   });
 });
 
@@ -277,7 +291,7 @@ describe('paths', () => {
       // A move draws nothing; a close goes back to where its subpath began.
       ['M0 0L3 4M10 10l0 1z', 7],
     ] as const;
-    // No shorter, and longer only by each segment's slack: a few float32 steps, here millionths.
+    // No shorter, and longer only by each segment's slack: 8 float32 steps, here millionths.
     const off = lengths.map(([d, length]) => (readValue('path', d)?.length ?? Infinity) - length);
     expect(off.filter((extra) => !(extra >= 0 && extra < 1e-3))).toEqual([]);
     const points = readValue('points', '0 0 3 4 3 0');
@@ -287,17 +301,17 @@ describe('paths', () => {
 
   test('are measured in 32-bit floats, as a browser keeps their points', () => {
     // Near a million, a float32 is a sixteenth apart: steps of a hundredth there are a sixteenth.
-    // And each of its 100 steps is allowed 4 more, however a browser rounds what it reads.
+    // And each of its 100 steps is allowed 8 more, however a browser rounds what it reads.
     const zigzag = `M999999.03 0${'L999999.04 0L999999.03 0'.repeat(50)}`;
-    expect(readValue('path', zigzag)?.length).toBe(100 / 16 + (100 * 4) / 16);
+    expect(readValue('path', zigzag)?.length).toBe(100 / 16 + (100 * 8) / 16);
     expect(readValue('points', `0 0 ${'999999.03 0 999999.04 0 '.repeat(50)}`)?.length).toBe(
-      999_999 + 99 / 16 + (100 * 4) / 16,
+      999_999 + 99 / 16 + (100 * 8) / 16,
     );
   });
 
-  test('allow each segment a few float32 steps, however a browser rounds a number halfway', () => {
+  test('allow each segment 8 float32 steps, however a browser rounds a number halfway', () => {
     // A browser can read 600000.40625, halfway between two floats, as either: each step a
-    // sixteenth, or none. Either way, each is allowed a quarter.
+    // sixteenth, or none. Either way, each is allowed half.
     const short = [
       `M0 600000.375${'V600000.40625V600000.375'.repeat(10)}`,
       `M600000.375 0${'H600000.40625H600000.375'.repeat(10)}`,
@@ -307,7 +321,7 @@ describe('paths', () => {
     ].filter((d) => {
       const segments = d.includes('C') ? 30 : 20;
       const step = d.includes('300000.') ? 1 / 32 : 1 / 16;
-      return !((readValue('path', d)?.length ?? 0) >= segments * 4 * step);
+      return !((readValue('path', d)?.length ?? 0) >= segments * 8 * step);
     });
     expect(short).toEqual([]);
     expect(float32Step(600_000)).toBe(1 / 16);
@@ -323,10 +337,11 @@ describe('paths', () => {
       'M0 0A1e-40 1e-40 0 0 1 0 999000',
       'M0 0A1e-200 1000000 45 1 0 0 999000',
     ]) {
-      // Its straight line, and the slack of the curves a browser would draw an arc with.
+      // Its straight line, and the slack of the curves a browser would draw an arc with: 12 of
+      // them, 8 steps each, where the arc's ellipse reaches past a million and a step is an eighth.
       const length = readValue('path', d)?.length ?? 0;
       expect(length).toBeGreaterThanOrEqual(999_000);
-      expect(length).toBeLessThan(999_010);
+      expect(length).toBeLessThanOrEqual(999_000 + 12 * 8 * 0.125);
     }
     // Given radii whose squares underflow, it's no bound at all, rather than a tiny one.
     expect(arcLength(0, 0, 1e-200, 1e-200, 0, 0, 999_000)).toBe(Infinity);
@@ -351,6 +366,14 @@ describe('dashes', () => {
     // A length that isn't finite has no end of dashes.
     expect(dashCount([1, 1], Infinity)).toBe(Infinity);
     expect(dashCount([1, 1], Number.NaN)).toBe(Infinity);
+  });
+
+  test('have a period: the sum of their numbers, doubled when there is an odd count', () => {
+    expect(dashPeriod([4, 3])).toBe(7);
+    expect(dashPeriod([4])).toBe(8);
+    expect(dashPeriod([1, 2, 3])).toBe(12);
+    expect(dashPeriod([0.25, 0.25])).toBe(0.5);
+    expect(dashPeriod([])).toBe(0);
   });
 });
 
