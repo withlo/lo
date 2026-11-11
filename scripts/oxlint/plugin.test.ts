@@ -20,6 +20,9 @@ function reported(source: string): string[] {
   new Visitor({
     ReturnStatement: (node) => rule.ReturnStatement(node),
     ArrowFunctionExpression: (node) => rule.ArrowFunctionExpression(node),
+    AssignmentExpression: (node) => rule.AssignmentExpression(node),
+    VariableDeclarator: (node) => rule.VariableDeclarator(node),
+    YieldExpression: (node) => rule.YieldExpression(node),
   }).visit(program);
   return found;
 }
@@ -49,6 +52,43 @@ test('returning a value checked as never is refused', () => {
   ]);
 });
 
+test('assigning or yielding a value checked as never is refused', () => {
+  const source = `
+    type Kind = 'a' | 'b';
+    function name(kind: Kind): string {
+      let found = 'none';
+      switch (kind) {
+        case 'a':
+          found = 'A';
+          break;
+        case 'b':
+          found = 'B';
+          break;
+        default:
+          found = kind satisfies never;
+      }
+      return found;
+    }
+    function declared(kind: never): unknown {
+      const kept = (kind satisfies never);
+      return kept;
+    }
+    const held: { kind?: unknown } = {};
+    function into(kind: never): void {
+      held.kind = kind satisfies never;
+    }
+    function* each(kinds: never[]): Generator<unknown> {
+      for (const kind of kinds) yield kind satisfies never;
+    }
+  `;
+  expect(reported(source)).toEqual([
+    'kind satisfies never',
+    'kind satisfies never',
+    'kind satisfies never',
+    'kind satisfies never',
+  ]);
+});
+
 test('checking a value as never then throwing or falling back is allowed', () => {
   const source = `
     function name(kind: 'a'): string {
@@ -69,6 +109,12 @@ test('checking a value as never then throwing or falling back is allowed', () =>
       }
     }
     const known = (kind: 'a') => kind satisfies 'a';
+    const checked = known('a') satisfies 'a';
+    let last: string = checked;
+    last = checked satisfies string;
+    function* kinds(): Generator<'a'> {
+      yield checked satisfies 'a';
+    }
   `;
   expect(reported(source)).toEqual([]);
 });
