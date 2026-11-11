@@ -54,3 +54,4 @@ export * from './merge-writes.ts';
 export * from './review-writes.ts';
 export * from './poll/merge-writes.ts';
 export * from './poll/review-writes.ts';
+export * from './merge-jobs.ts';
