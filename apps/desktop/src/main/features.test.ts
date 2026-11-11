@@ -6,7 +6,10 @@ import { defineContract, reply } from '../ipc/contract.ts';
 import { createRouter, defineFeature, loadFeatures, type Feature } from './features.ts';
 import type { LocalGit } from './git.ts';
 import { migrate } from './migrations.ts';
+import { defineService, findServices, provides, type Service } from './services.ts';
+import { contract as digest } from './test/features/digest/contract.ts';
 import { contract as notes } from './test/features/notes/contract.ts';
+import { board } from './test/features/notes/service.ts';
 
 // Found the way main finds the real features and their migrations, from a folder of made-up ones.
 const found = import.meta.glob<Feature>('./test/features/*/main/index.ts', {
@@ -18,6 +21,9 @@ const migrations = import.meta.glob<string>('./test/features/*/migrations/*.sql'
   query: '?raw',
   import: 'default',
 });
+const services = findServices(
+  import.meta.glob<Record<string, unknown>>('./test/features/*/service.ts', { eager: true }),
+);
 
 /** Git as features see it, before Lo has looked for one: these tests run none. */
 const noGit: LocalGit = {
@@ -39,6 +45,7 @@ function router() {
     log,
     database,
     git: noGit,
+    services,
   });
   routes.start();
   const ask = (channel: string, input?: unknown) =>
@@ -48,11 +55,14 @@ function router() {
 
 describe('loadFeatures', () => {
   it('takes a feature from its own folder, with nothing listed anywhere else', () => {
-    expect(loadFeatures(found).map((feature) => feature.contract.feature)).toEqual(['notes']);
+    expect(loadFeatures(found).map((feature) => feature.contract.feature)).toEqual([
+      'digest',
+      'notes',
+    ]);
   });
 
   it("refuses a feature whose folder doesn't match its name", () => {
-    const [feature] = Object.values(found);
+    const feature = found['./test/features/notes/main/index.ts'];
     expect(() => loadFeatures({ '../features/other/main/index.ts': feature! })).toThrow(
       'defines the feature "notes", but its folder is "other"',
     );
@@ -84,6 +94,7 @@ describe('loadFeatures', () => {
 describe('createRouter', () => {
   it('names each request <feature>.<name>', () => {
     expect(router().routes.channels).toEqual([
+      'digest.read',
       'notes.add',
       'notes.remove',
       'notes.count',
@@ -102,6 +113,7 @@ describe('createRouter', () => {
     expect(await ask('notes.remove', { id: 1 })).toEqual({ ok: true, value: null });
     expect(await ask('notes.count')).toEqual({ ok: true, value: 1 });
     expect(sent).toEqual([
+      ['digest.started', { notes: 0 }],
       ['notes.changed', 1],
       ['notes.changed', 2],
       ['notes.changed', 1],
@@ -168,8 +180,114 @@ describe('createRouter', () => {
       log: () => {},
       database: openDatabase(':memory:'),
       git: noGit,
+      services: [],
     });
     expect(() => routes.start()).toThrow(z.ZodError);
     expect(sent).toEqual([]);
+  });
+});
+
+/** Starts a router on made-up features, with these services defined. */
+function start(features: readonly Feature[], defined: readonly Service<unknown>[] = []) {
+  const sent: [string, unknown][] = [];
+  const routes = createRouter(features, {
+    isAllowedSender: () => true,
+    send: (channel, value) => sent.push([channel, value]),
+    log: () => {},
+    database: openDatabase(':memory:'),
+    git: noGit,
+    services: defined,
+  });
+  routes.start();
+  return { routes, sent };
+}
+
+describe('services', () => {
+  const counter = defineService<{ next(): number }>('notes.counter');
+  const handlers = {
+    add: () => ({ id: 1 }),
+    remove: () => null,
+    count: () => 0,
+    crash: () => null,
+  };
+  /** notes, providing a counter. */
+  const provider = defineFeature(notes, {
+    provide() {
+      let count = 0;
+      return [provides(counter, { next: () => ++count })];
+    },
+    handlers,
+  });
+  /** digest, using the counter as it starts and in its handler. */
+  const user = defineFeature(digest, {
+    handlers: { read: (_input, { use }) => ({ notes: use(counter).next() }) },
+    start: ({ publish, use }) => publish('started', { notes: use(counter).next() }),
+  });
+
+  it("lets a feature use another's service, in its start and its handlers", async () => {
+    const { routes, sent } = router();
+    expect(sent).toEqual([['digest.started', { notes: 0 }]]);
+    await routes.answer('notes.add', 'lo-app://app/index.html', { text: 'Read the diff' });
+    expect(await routes.answer('digest.read', 'lo-app://app/index.html', undefined)).toEqual({
+      ok: true,
+      value: { notes: 1 },
+    });
+  });
+
+  it('runs every feature’s provide before any feature’s start, in either order', async () => {
+    for (const features of [
+      [user, provider],
+      [provider, user],
+    ]) {
+      const { routes, sent } = start(features);
+      expect(sent).toEqual([['digest.started', { notes: 1 }]]);
+      expect(await routes.answer('digest.read', 'any', undefined)).toEqual({
+        ok: true,
+        value: { notes: 2 },
+      });
+    }
+  });
+
+  it('refuses a service used while features are still providing, in either order', () => {
+    const early = defineFeature(digest, {
+      provide({ use }) {
+        use(counter).next();
+        return [];
+      },
+      handlers: { read: () => ({ notes: 0 }) },
+    });
+    for (const features of [
+      [early, provider],
+      [provider, early],
+    ]) {
+      expect(() => start(features)).toThrow(
+        'notes.counter was used while features were still providing theirs.',
+      );
+    }
+  });
+
+  it('lets only the feature a service is named for provide it', () => {
+    const impostor = defineFeature(digest, {
+      provide: () => [provides(counter, { next: () => 0 })],
+      handlers: { read: () => ({ notes: 0 }) },
+    });
+    expect(() => start([impostor])).toThrow(
+      'digest provides notes.counter, but only notes may: each feature provides its own services.',
+    );
+  });
+
+  it('refuses a service provided twice', () => {
+    const twice = defineFeature(notes, {
+      provide: () => [provides(counter, { next: () => 0 }), provides(counter, { next: () => 1 })],
+      handlers,
+    });
+    expect(() => start([twice])).toThrow('notes.counter is provided twice.');
+  });
+
+  it('refuses to start while a service a service.ts defines goes unprovided', () => {
+    const silent = defineFeature(notes, { handlers });
+    expect(() => start([silent, user], [board])).toThrow(
+      "The notes feature defines notes.board in its service.ts, but doesn't provide it.",
+    );
   });
 });

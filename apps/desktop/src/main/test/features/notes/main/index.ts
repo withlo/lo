@@ -1,12 +1,15 @@
 import { IpcError } from '../../../../../ipc/contract.ts';
 import type { Database } from '../../../../database.ts';
 import { defineFeature } from '../../../../features.ts';
+import { provides } from '../../../../services.ts';
 import { contract } from '../contract.ts';
+import { board } from '../service.ts';
 
 const count = (database: Database) =>
   Number(database.prepare('SELECT count(*) AS count FROM notes_entries').get()?.count);
 
 export default defineFeature(contract, {
+  provide: ({ database }) => [provides(board, { count: () => count(database) })],
   handlers: {
     add({ text }, { database, publish }) {
       const added = database.prepare('INSERT INTO notes_entries (text) VALUES (?)').run(text);

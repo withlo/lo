@@ -4,7 +4,8 @@ import { z } from 'zod';
 
 import { listenForBackground } from './background.ts';
 import { startCommands } from './commands/index.ts';
-import { startFeatures } from './features.ts';
+import { featureViews, startFeatures } from './features.ts';
+import { Slots } from './slots.tsx';
 import { Window } from './Window.tsx';
 
 // Zod would otherwise try compiling its parsers with `new Function`, which the window's content
@@ -28,6 +29,8 @@ const root = document.getElementById('root');
 if (!root) throw new Error("Lo's page has no #root element.");
 createRoot(root).render(
   <StrictMode>
-    <Window />
+    <Slots views={featureViews()}>
+      <Window />
+    </Slots>
   </StrictMode>,
 );

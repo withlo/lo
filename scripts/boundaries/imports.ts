@@ -40,20 +40,7 @@ type Node = { type: string; start: number; end: number; [key: string]: unknown }
  */
 export function importsOf(filename: string, source: string): Import[] {
   const result = parseSync(filename, source);
-  const lineStarts = [0];
-  for (let i = source.indexOf('\n'); i !== -1; i = source.indexOf('\n', i + 1)) {
-    lineStarts.push(i + 1);
-  }
-  const lineOf = (offset: number): number => {
-    let low = 0;
-    let high = lineStarts.length - 1;
-    while (low < high) {
-      const mid = (low + high + 1) >> 1;
-      if ((lineStarts[mid] ?? 0) <= offset) low = mid;
-      else high = mid - 1;
-    }
-    return low + 1;
-  };
+  const lineOf = lineFinder(source);
 
   const [error] = result.errors;
   if (error) throw new ParseError(error.message, lineOf(error.labels[0]?.start ?? 0));
@@ -131,6 +118,67 @@ export function importsOf(filename: string, source: string): Import[] {
   // A `require` that `createRequire()` made is listed twice when it's named `require`.
   const unique = new Map(found.map((item) => [JSON.stringify(item), item]));
   return [...unique.values()].toSorted((a, b) => a.line - b.line);
+}
+
+/** A call to Vite's `import.meta.glob`, which imports every file its patterns match. */
+export interface Glob {
+  /** Its patterns, as written. One that starts with `!` leaves files out. */
+  patterns: string[];
+  line: number;
+}
+
+/**
+ * Lists a file's `import.meta.glob` calls. Vite takes only patterns written out, as a string or a
+ * list of them, and a call with anything else doesn't build, so it's left out. Throws a
+ * `ParseError` for a file that doesn't parse.
+ */
+export function globsOf(filename: string, source: string): Glob[] {
+  const result = parseSync(filename, source);
+  const lineOf = lineFinder(source);
+  const [error] = result.errors;
+  if (error) throw new ParseError(error.message, lineOf(error.labels[0]?.start ?? 0));
+
+  const program: unknown = result.program;
+  const globs: Glob[] = [];
+  for (const [node] of isNode(program) ? walk(program) : []) {
+    const callee = node.type === 'CallExpression' ? child(node, 'callee') : undefined;
+    const meta = child(callee, 'object');
+    const glob =
+      callee?.type === 'MemberExpression' &&
+      !callee.computed &&
+      identifier(child(callee, 'property')) === 'glob' &&
+      meta?.type === 'MetaProperty' &&
+      identifier(child(meta, 'meta')) === 'import' &&
+      identifier(child(meta, 'property')) === 'meta';
+    if (!glob) continue;
+    const argument = firstArgument(node);
+    const list = isNode(argument) && argument.type === 'ArrayExpression';
+    const items: unknown[] =
+      list && Array.isArray(argument.elements) ? argument.elements : [argument];
+    const patterns = items.map((item) => (isNode(item) ? nameOf(item) : undefined));
+    if (patterns.every((pattern) => pattern !== undefined)) {
+      globs.push({ patterns, line: lineOf(node.start) });
+    }
+  }
+  return globs.toSorted((a, b) => a.line - b.line);
+}
+
+/** Finds the line, counted from 1, that an offset into `source` is on. */
+function lineFinder(source: string): (offset: number) => number {
+  const lineStarts = [0];
+  for (let i = source.indexOf('\n'); i !== -1; i = source.indexOf('\n', i + 1)) {
+    lineStarts.push(i + 1);
+  }
+  return (offset) => {
+    let low = 0;
+    let high = lineStarts.length - 1;
+    while (low < high) {
+      const mid = (low + high + 1) >> 1;
+      if ((lineStarts[mid] ?? 0) <= offset) low = mid;
+      else high = mid - 1;
+    }
+    return low + 1;
+  };
 }
 
 /** The module a string, or a template literal without substitutions, names. */

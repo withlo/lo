@@ -4,7 +4,12 @@
     "outDir": ".tsbuild/main",
     "types": ["node", "vite/client", "electron-vite/node"]
   },
-  "include": ["src/main/**/*.ts", "src/platform/**/*.ts", "src/features/*/main/**/*.ts"],
+  "include": [
+    "src/main/**/*.ts",
+    "src/platform/**/*.ts",
+    "src/features/*/main/**/*.ts",
+    "src/features/*/service.ts"
+  ],
   "exclude": ["src/**/*.test.ts", "src/**/test/**"],
   "references": [
     {

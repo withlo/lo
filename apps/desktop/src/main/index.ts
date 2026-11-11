@@ -14,15 +14,20 @@ import { serveFeatures } from './ipc.ts';
 import { migrate } from './migrations.ts';
 import { windowUrl } from './policy.ts';
 import { registerScheme, secureContents, secureSession } from './security.ts';
+import { findServices } from './services.ts';
 import { StartupError } from './startup.ts';
 import { openWindow } from './window.ts';
 
 /** The window's build output, next to this file's. */
 const windowFiles = fileURLToPath(new URL('../window', import.meta.url));
 
-// Every feature folder with a main side, and every feature's migrations. No file lists them.
+// Every feature folder with a main side, every service features define, and every feature's
+// migrations. No file lists them.
 const features = loadFeatures(
   import.meta.glob<Feature>('../features/*/main/index.ts', { eager: true, import: 'default' }),
+);
+const services = findServices(
+  import.meta.glob<Record<string, unknown>>('../features/*/service.ts', { eager: true }),
 );
 const migrations = import.meta.glob<string>('../features/*/migrations/*.sql', {
   eager: true,
@@ -111,7 +116,7 @@ function start(): void {
       const database = openDatabase(join(app.getPath('userData'), 'lo.db'));
       migrate(database, migrations);
       app.once('will-quit', () => database.close());
-      serveFeatures(features, database, git, dev);
+      serveFeatures(features, services, database, git, dev);
       background = startBackground(backgroundOptions);
       app.once('will-quit', () => background?.stop());
       windowSession = secured;

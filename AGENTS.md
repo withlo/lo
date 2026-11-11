@@ -109,7 +109,9 @@ A package's folder says where it runs, and its Nx tags (`"nx": { "tags": [...] }
 - `license:mit` projects import only `license:mit` projects;
 - nothing imports an app;
 - only tests import `testing/`. Tests are `*.test.*` files and anything in `test/` or `e2e/`, and
-  `testing` belongs in `devDependencies`.
+  `testing` belongs in `devDependencies`;
+- in the desktop app, a feature imports from another feature only the files it shares through (see
+  "Features" under "The desktop app").
 
 Imports resolve the way Node finds them, through `node_modules`, symlinks, and the `imports` and
 `exports` in a `package.json`, to the project they reach, so a name or path can't disguise where an
@@ -190,11 +192,19 @@ the window find them with `import.meta.glob`.
   `<feature>.<name>`. Objects in an input are `z.strictObject`, so unknown keys are refused; a test
   checks every contract. Main and the window both load contracts, so lint keeps Electron, Node and
   either side's code out of them.
-- `main/index.ts` exports `defineFeature(contract, { handlers, start })` by default: a handler for
-  every request, and optionally a `start` that runs before the window opens, to publish on the
-  feature's topics. Both get the feature's context: `publish`, `database` and `git`. A handler
-  throws an `IpcError` for a failure the window should see; any other error is logged and reaches
-  the window only as `internal`.
+- `main/index.ts` exports `defineFeature(contract, { handlers, provide, start })` by default: a
+  handler for every request; optionally a `provide` that returns the values of the feature's
+  services; and optionally a `start` that runs before the window opens, to publish on the feature's
+  topics. Each gets the feature's context: `publish`, `database`, `git` and `use`. A handler throws
+  an `IpcError` for a failure the window should see; any other error is logged and reaches the
+  window only as `internal`.
+- `service.ts` names what the feature's main side offers other features, each with
+  `defineService<T>('<feature>.<name>')`: the GitHub clients, say. Its `provide` pairs each with its
+  value (`provides(service, value)`). Every feature's `provide` runs before any feature's `start`,
+  and features reach a service with `use(service)` in `start` or a handler, never in `provide`, so
+  it doesn't matter which feature starts first. What a feature tells others about, such as an
+  account removed, is a member of its service. Lo doesn't start while a service in a `service.ts`
+  goes unprovided, and only the feature a service is named for may provide it.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.
@@ -210,6 +220,18 @@ the window find them with `import.meta.glob`.
   - Lo also refuses a database holding a migration it doesn't have, which a newer Lo wrote.
 - `window/index.ts` exports a `WindowFeature` by default. The window calls main through
   `client(contract)`, whose methods and types come from the contract.
+- `window/shared.ts` holds what the feature's screens share: the slots it renders, each from
+  `defineSlot<Props>('<feature>.<name>')`, and the few functions other features may call and the
+  state they may read. Other features fill a slot by listing views in their `WindowFeature`'s
+  `views`, each from `defineView(slot, { id, order, render })`, so a feature adds a view, a panel or
+  a header item to another's screen without editing it. `<Slot slot={…} props={…} />` renders a
+  slot's views in order, and `useViews(slot)` lists them for an owner that lays them out itself.
+
+Features share only through `contract.ts`, `keys.ts`, `service.ts` and `window/shared.ts`. From a
+feature's folder, nothing else in another feature's folder is imported or matched by
+`import.meta.glob`: `pnpm check:boundaries` follows each import and glob to the file it lands on,
+and refuses a module chosen at run time. Main code reaches another feature's `service.ts`, and
+window code its `window/shared.ts`; each side's tsconfig holds only its own.
 
 The database is SQLite through Node's built-in `node:sqlite`, in `lo.db` in the data folder: WAL
 mode, foreign keys enforced, defensive. `src/main/database.ts` is the only module that uses

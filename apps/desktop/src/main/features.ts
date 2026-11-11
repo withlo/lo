@@ -6,6 +6,7 @@ import type { z } from 'zod';
 
 import type { Database } from './database.ts';
 import type { LocalGit } from './git.ts';
+import { createServices, type Provided, type Service } from './services.ts';
 import {
   channel,
   IpcError,
@@ -24,7 +25,7 @@ export type Handlers<C extends Contract> = {
   ) => ReplyOf<C['requests'][Name]> | Promise<ReplyOf<C['requests'][Name]>>;
 };
 
-/** What a feature's main side has to work with, in its handlers and its `start`. */
+/** What a feature's main side has to work with, in its `provide`, its handlers and its `start`. */
 export interface FeatureContext<C extends Contract> {
   /** Pushes a value to the window on one of the feature's topics. */
   readonly publish: <Topic extends keyof C['topics'] & string>(
@@ -35,6 +36,12 @@ export interface FeatureContext<C extends Contract> {
   readonly database: Database;
   /** Git, which only main runs: what Lo found, and the cache of repositories once it's open. */
   readonly git: LocalGit;
+  /**
+   * Another feature's service, from that feature's `service.ts`, or one of this feature's own. It
+   * answers once every feature has provided its services: in `start` and handlers, not in
+   * `provide`.
+   */
+  readonly use: <T>(service: Service<T>) => T;
 }
 
 /** A function whose parameters are checked both ways, so any handler fits in a list of them. */
@@ -46,19 +53,26 @@ type AnyHandler = {
 export interface Feature {
   readonly contract: Contract;
   readonly handlers: Readonly<Record<string, AnyHandler>>;
+  readonly provide?: ((context: FeatureContext<Contract>) => readonly Provided[]) | undefined;
   readonly start?: ((context: FeatureContext<Contract>) => void) | undefined;
 }
 
 /**
- * Defines a feature's main side: a handler for each request in its contract, and optionally a
- * `start` that runs once before the window opens, for pushing to its topics. Both get the
- * feature's context. A feature's `main/index.ts` exports this as its default export.
+ * Defines a feature's main side: a handler for each request in its contract; optionally a
+ * `provide` that returns the values of the services its `service.ts` defines, each paired with
+ * its service by `provides`; and optionally a `start` that runs once before the window opens, for
+ * pushing to its topics. Every feature's `provide` runs before any feature's `start`. Each part
+ * gets the feature's context. A feature's `main/index.ts` exports this as its default export.
  */
 export function defineFeature<C extends Contract>(
   contract: C,
-  parts: { handlers: Handlers<C>; start?: (context: FeatureContext<C>) => void },
+  parts: {
+    handlers: Handlers<C>;
+    provide?: (context: FeatureContext<C>) => readonly Provided[];
+    start?: (context: FeatureContext<C>) => void;
+  },
 ): Feature {
-  return { contract, handlers: parts.handlers, start: parts.start };
+  return { contract, handlers: parts.handlers, provide: parts.provide, start: parts.start };
 }
 
 /**
@@ -98,7 +112,10 @@ export interface Router {
    * error is reported to `log` and reaches the window only as `internal`.
    */
   answer(channel: string, sender: string | undefined, input: unknown): Promise<Result<unknown>>;
-  /** Runs each feature's `start`. */
+  /**
+   * Runs each feature's `provide`, checks that every service the features define was provided,
+   * then runs each feature's `start`.
+   */
   start(): void;
 }
 
@@ -113,8 +130,11 @@ export function createRouter(
     /** Lo's database, migrated, for every feature's handlers. */
     database: Database;
     git: LocalGit;
+    /** Every service the features' `service.ts` files define, which they must all provide. */
+    services: readonly Service<unknown>[];
   },
 ): Router {
+  const services = createServices();
   const context = (contract: Contract): FeatureContext<Contract> => ({
     publish(topic, value) {
       const schema = Object.hasOwn(contract.topics, topic) ? contract.topics[topic] : undefined;
@@ -123,6 +143,7 @@ export function createRouter(
     },
     database: options.database,
     git: options.git,
+    use: (service) => services.use(service),
   });
 
   const requests = new Map<
@@ -167,6 +188,10 @@ export function createRouter(
     },
 
     start() {
+      for (const [{ contract, provide }, shared] of contexts) {
+        services.add(contract.feature, provide?.(shared) ?? []);
+      }
+      services.ready(options.services);
       for (const [{ start }, shared] of contexts) start?.(shared);
     },
   };
