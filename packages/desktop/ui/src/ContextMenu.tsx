@@ -1,6 +1,6 @@
 import { Menu } from '@base-ui/react/menu';
 import { Separator } from '@base-ui/react/separator';
-import { Fragment, useMemo, useRef } from 'react';
+import { Fragment, useCallback, useMemo, useRef } from 'react';
 
 import { Key, keyAria } from './Key.tsx';
 
@@ -75,7 +75,23 @@ export function ContextMenu({
   container,
 }: ContextMenuProps) {
   const chosen = useRef<string | undefined>(undefined);
-  const popup = useRef<HTMLDivElement>(null);
+  const popup = useRef<HTMLDivElement | null>(null);
+  // Base UI focuses the menu on the next animation frame. Until then keys still go to what had
+  // focus, outside the `menu` scope, which is what holds every other command back. So the menu
+  // takes focus itself, before any key can arrive. It waits for two microtasks, so that Base UI
+  // has noted where focus was (to give it back on close) and whether any is inside already, as
+  // it does before it focuses the menu a frame on. An action that has focus by then keeps it.
+  const mounted = useCallback((element: HTMLDivElement | null) => {
+    popup.current = element;
+    if (!element) return;
+    queueMicrotask(() =>
+      queueMicrotask(() => {
+        if (!element.contains(element.ownerDocument.activeElement)) {
+          element.focus({ preventScroll: true });
+        }
+      }),
+    );
+  }, []);
   const at = useMemo(() => (anchor ? virtual(anchor) : undefined), [anchor]);
   return (
     <Menu.Root
@@ -103,7 +119,7 @@ export function ContextMenu({
           className="z-popover outline-none"
         >
           <Menu.Popup
-            ref={popup}
+            ref={mounted}
             finalFocus={() => (finalFocus?.isConnected ? finalFocus : true)}
             aria-label={label}
             data-lo-scope="menu"
