@@ -183,7 +183,7 @@ describe('comments', () => {
       // An image's link, too.
       ['data:image/png;base64,iVBORw0KGgo=', undefined],
       ['https://example.com/a', 'https://example.com/a'],
-      ['../blob/main/a.rs', 'https://github.com/octo/repo/blob/main/a.rs'],
+      ['../blob/main/a.ts', 'https://github.com/octo/repo/blob/main/a.ts'],
       ['#discussion_r2', 'https://github.com/octo/repo/pull/1#discussion_r2'],
     ] as const;
     expect(
@@ -324,13 +324,41 @@ describe('constructs', () => {
       type: 'note',
       children: [{ kind: 'paragraph', children: [text('Body of note.')] }],
     });
-    // Not alerts: another word, text on the marker's line, a quote of a marker in a sentence.
-    const quotes = ['> [!DANGER]\n> x', '> [!NOTE] x', '> see [!NOTE]'];
-    expect(quotes.map((body) => tree(body).blocks[0]?.kind)).toEqual(['quote', 'quote', 'quote']);
+    // Not alerts, as GitHub renders them: another word, text on the marker's line, a marker in a
+    // sentence, a marker with nothing after it, and a quote in a list or in another quote.
+    const quotes = [
+      '> [!DANGER]\n> x',
+      '> [!NOTE] x',
+      '> see [!NOTE]',
+      '> [!NOTE]',
+      '> [!NOTE]\n>',
+      '- > [!TIP]\n  > in a list',
+      '> > [!WARNING]\n> > nested',
+    ];
+    expect(
+      quotes.map((body) => {
+        const [first] = tree(body).blocks;
+        return first?.kind === 'list' ? first.items[0]?.children[0]?.kind : first?.kind;
+      }),
+    ).toEqual(quotes.map(() => 'quote'));
+    expect(collect(tree('> > [!WARNING]\n> > nested'), 'alert')).toEqual([]);
+    // Alerts, as GitHub renders them: in lower case, and with a blank line after the marker.
+    expect(tree('> [!note]\n> lower').blocks[0]).toEqual({
+      kind: 'alert',
+      type: 'note',
+      children: [{ kind: 'paragraph', children: [text('lower')] }],
+    });
+    expect(tree('> [!TIP]\n>\n> after a blank line').blocks[0]).toEqual({
+      kind: 'alert',
+      type: 'tip',
+      children: [{ kind: 'paragraph', children: [text('after a blank line')] }],
+    });
   });
 
   test('task lists say which items are ticked', () => {
-    const made = tree('- [ ] open\n- [x] done\n- [X] also\n- [y] not a task\n- plain');
+    const made = tree(
+      '- [ ] open\n- [x] done\n- [X] also\n- [y] not a task\n- plain\n- [ ]\n- [x]',
+    );
     const [list] = collect(made, 'list');
     expect(list?.items.map((item) => [item.checked, textOf(item.children)])).toEqual([
       [false, 'open'],
@@ -338,8 +366,22 @@ describe('constructs', () => {
       [true, 'also'],
       [undefined, '[y] not a task'],
       [undefined, 'plain'],
+      // With nothing after it, a marker is text, as on GitHub.
+      [undefined, '[ ]'],
+      [undefined, '[x]'],
     ]);
     expect(list?.items[4]).not.toHaveProperty('checked');
+  });
+
+  test('one tilde or two strike through, as on GitHub', () => {
+    expect(paragraph(tree('~a~ ~~b~~ ~~~c~~~ ~d~~ ~~e~ a~b~c'))).toEqual([
+      { kind: 'strike', children: [text('a')] },
+      text(' '),
+      { kind: 'strike', children: [text('b')] },
+      text(' ~~~c~~~ ~d~~ ~~e~ a'),
+      { kind: 'strike', children: [text('b')] },
+      text('c'),
+    ]);
   });
 
   test('lists keep their numbering and spacing', () => {
@@ -400,6 +442,15 @@ describe('constructs', () => {
     expect(collect(tree('# fn-a\n\nx[^a]\n\n[^a]: y'), 'heading')[0]?.anchor).toBe('fn-a-1');
     // GitHub has no inline footnotes.
     expect(collect(tree('x^[inline]'), 'footnoteReference')).toEqual([]);
+    // Labels match whatever their case, as on GitHub, and name the footnote as its definition does.
+    const cased = tree('x[^A] y[^a]\n\n[^a]: Lower.');
+    expect(collect(cased, 'footnoteReference')).toEqual([
+      { kind: 'footnoteReference', name: 'fn-a', number: 1 },
+      { kind: 'footnoteReference', name: 'fn-a', number: 1 },
+    ]);
+    expect(collect(cased, 'footnotes')[0]?.items).toEqual([
+      { name: 'fn-a', number: 1, children: [{ kind: 'paragraph', children: [text('Lower.')] }] },
+    ]);
   });
 
   test('mentions and references link to GitHub', () => {
@@ -475,6 +526,22 @@ describe('constructs', () => {
     ]);
   });
 
+  test('only what an HTML parser reads as a comment is left out', () => {
+    // `<!--` in an attribute's value is no comment, and GitHub shows the text around it.
+    const quoted = tree('<div title="<!--">visible<span title="-->">x</span></div>\n\nafter');
+    expect(textOf(quoted.blocks)).toBe(
+      '<div title="<!--">visible<span title="-->">x</span></div>after',
+    );
+    // A comment left open runs to the end, and GitHub shows nothing after it.
+    expect(tree('para\n\n<!-- open\n\nhidden too').blocks).toEqual([
+      { kind: 'paragraph', children: [text('para')] },
+    ]);
+    // Nor is one in a script, though GitHub shows no script either.
+    expect(textOf(tree('<script>a <!-- b --> c</script>').blocks)).toBe(
+      '<script>a <!-- b --> c</script>',
+    );
+  });
+
   test('a newline breaks the line unless told otherwise', () => {
     expect(paragraph(tree('a\nb'))).toEqual([text('a'), { kind: 'break' }, text('b')]);
     expect(paragraph(tree('a\nb', { breaks: false }))).toEqual([text('a b')]);
@@ -510,6 +577,58 @@ describe('constructs', () => {
     ]);
   });
 
+  test('the limits hold for the tree as built, not as parsed', () => {
+    // Raw HTML becomes a paragraph and its text, and an image Lo won't load a link and its text:
+    // two nodes for one token, and a level deeper.
+    const limits = { nodes: 1_000 };
+    for (const body of ['<a>\n\n'.repeat(2_000), '![a](https://e.com/x.png) '.repeat(2_000)]) {
+      const made = tree(body, { limits });
+      expect(walk(made, { ...DEFAULT_LIMITS, ...limits }).nodes).toBeLessThanOrEqual(limits.nodes);
+      expect(made.notes).toEqual(['nodes']);
+    }
+    for (const body of [
+      `${'>'.repeat(MAX_DEPTH)}<div>`,
+      `${'>'.repeat(MAX_DEPTH - 1)} ![a](https://e.com/x.png)`,
+    ]) {
+      const made = tree(body);
+      expect(walk(made).depth).toBeLessThanOrEqual(MAX_DEPTH);
+      expect(made.notes).toEqual(['deep']);
+      expect(made.blocks).toEqual([{ kind: 'paragraph', children: [text(body)] }]);
+    }
+  });
+
+  test('only the part nested too deep shows as its text', () => {
+    // Emphasis nests without end in Markdown; the paragraph before it still shows as built.
+    const deep = `${'*a **a '.repeat(3_000)}b${' a** a*'.repeat(3_000)}`;
+    const made = tree(`Normal *text*.\n\n${deep}`);
+    expect(made.notes).toEqual(['deep']);
+    expect(made.blocks).toEqual([
+      {
+        kind: 'paragraph',
+        children: [text('Normal '), { kind: 'emphasis', children: [text('text')] }, text('.')],
+      },
+      { kind: 'paragraph', children: [text(deep)] },
+    ]);
+  });
+
+  test('the tree never holds more nodes than the limit', () => {
+    const body = [
+      '# Title',
+      'Some *text* and a [link](https://e.com/).',
+      '- a\n- b',
+      '> quote',
+      '| a | b |\n|---|---|\n| c | d |',
+      'x[^1]\n\n[^1]: Note.',
+    ].join('\n\n');
+    const over = [];
+    for (let nodes = 1; nodes <= 80; nodes++) {
+      const made = markdownTree(body, { page: PAGE, limits: { nodes } });
+      const walked = walk(made, { ...DEFAULT_LIMITS, nodes: Math.max(nodes, 16) });
+      if (walked.problems.length > 0) over.push([nodes, walked.nodes, walked.problems[0]]);
+    }
+    expect(over).toEqual([]);
+  });
+
   test('past the node limit, footnotes are left out and their references are text', () => {
     const notes = Array.from({ length: 20 }, (_, n) => `[^${n}]: Note ${n}.`).join('\n');
     const references = Array.from({ length: 20 }, (_, n) => `[^${n}]`).join(' ');
@@ -520,6 +639,27 @@ describe('constructs', () => {
     expect(kept.length).toBeLessThan(20);
     expect(collect(made, 'footnoteReference').map((reference) => reference.name)).toEqual(kept);
     expect(textOf(made.blocks[0])).toContain(`[^${kept.length}]`);
+    // What doesn't fit still shows, as its text.
+    expect(textOf(made.blocks.at(-1))).toContain('Note 19.');
+  });
+
+  test('footnotes take time in proportion to the text', () => {
+    // Thousands of footnotes, each defined and referenced once.
+    const count = 60_000;
+    const references = Array.from({ length: count }, (_, n) => `[^${n}]`).join('');
+    const definitions = Array.from({ length: count }, (_, n) => `[^${n}]: x`).join('\n');
+    const started = performance.now();
+    markdownTree(`${references}\n\n${definitions}`, {
+      limits: { length: 1_048_576, nodes: 1_048_576, addresses: 1 << 26 },
+    });
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
+  test('a footnote defined before the text is cut still shows', () => {
+    const body = `[^early]: Defined early.\n\n${'x '.repeat(10)}[^early]\n\n${'*y* '.repeat(200)}`;
+    const made = tree(body, { limits: { nodes: 30 } });
+    expect(made.notes).toEqual(['nodes']);
+    expect(textOf(made.blocks)).toContain('Defined early.');
   });
 
   test('a link never holds another link', () => {
@@ -531,6 +671,12 @@ describe('constructs', () => {
     const made = markdownTree('# Still *shown*', { syntax: { plugins: [overflow] } });
     expect(made.notes).toEqual(['deep']);
     expect(made.blocks).toEqual([{ kind: 'paragraph', children: [text('# Still *shown*')] }]);
+    // It says only that, and that the text was cut, whatever the first try found.
+    const cut = markdownTree('x '.repeat(40), {
+      syntax: { plugins: [overflow] },
+      limits: { length: 10, nodes: 1 },
+    });
+    expect(cut.notes).toEqual(['cut', 'deep']);
   });
 
   test('diagnostics stop at their cap', () => {

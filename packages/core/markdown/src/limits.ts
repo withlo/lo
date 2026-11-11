@@ -16,6 +16,11 @@ export interface Limits {
    * number of times, which would make the tree far larger than its text.
    */
   addresses: number;
+  /**
+   * The most UTF-8 bytes of GitHub's rendering of a post read; past them, the post shows from its
+   * Markdown instead.
+   */
+  html: number;
 }
 
 export const DEFAULT_LIMITS: Readonly<Limits> = Object.freeze({
@@ -24,6 +29,7 @@ export const DEFAULT_LIMITS: Readonly<Limits> = Object.freeze({
   nodes: 32_768,
   images: 30,
   addresses: 131_072,
+  html: 1_048_576,
 });
 
 /** The most any limit may be raised to, so a mistaken value can't lift the guard. */
@@ -33,9 +39,23 @@ const CEILINGS: Readonly<Limits> = Object.freeze({
   nodes: 1_048_576,
   images: 1_000,
   addresses: 64 * 1024 * 1024,
+  html: 64 * 1024 * 1024,
 });
 
-const KEYS: readonly (keyof Limits)[] = ['length', 'depth', 'nodes', 'images', 'addresses'];
+/**
+ * The least any limit may be lowered to: a tree always has room for its stand-ins, the plain text
+ * shown for what didn't fit.
+ */
+const FLOORS: Readonly<Limits> = Object.freeze({
+  length: 1,
+  depth: 1,
+  nodes: 16,
+  images: 1,
+  addresses: 1,
+  html: 1,
+});
+
+const KEYS: readonly (keyof Limits)[] = ['length', 'depth', 'nodes', 'images', 'addresses', 'html'];
 
 /** The most diagnostics a tree keeps. */
 export const MAX_DIAGNOSTICS = 100;
@@ -44,8 +64,9 @@ export const MAX_DIAGNOSTICS = 100;
 export const MAX_ADDRESS = 8_192;
 
 /**
- * `limits` with every missing or invalid value at its default: a limit is a whole number from 1
- * to its ceiling, and anything else falls back rather than lifting the guard.
+ * `limits` with every missing or invalid value at its default: a limit is a whole number, raised
+ * to its floor and lowered to its ceiling, and anything else falls back rather than lifting the
+ * guard.
  */
 export function resolveLimits(limits: Partial<Limits> | undefined): Limits {
   const resolved = { ...DEFAULT_LIMITS };
@@ -53,7 +74,7 @@ export function resolveLimits(limits: Partial<Limits> | undefined): Limits {
   for (const key of KEYS) {
     const value = limits[key];
     if (typeof value === 'number' && Number.isInteger(value) && value >= 1) {
-      resolved[key] = Math.min(value, CEILINGS[key]);
+      resolved[key] = Math.max(FLOORS[key], Math.min(value, CEILINGS[key]));
     }
   }
   return resolved;

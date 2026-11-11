@@ -1,0 +1,114 @@
+{
+  "posts": [
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5810452633",
+      "markdown": "Fixture E11: the pending review's summary, submitted as a comment.",
+      "html": "<p dir=\"auto\">Fixture E11: the pending review's summary, submitted as a comment.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5810454777",
+      "markdown": "Fixture E11: a review with only a summary.",
+      "html": "<p dir=\"auto\">Fixture E11: a review with only a summary.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5810701104",
+      "markdown": "Fixture E11: the pending review's summary, submitted as a comment.",
+      "html": "<p dir=\"auto\">Fixture E11: the pending review's summary, submitted as a comment.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5810703067",
+      "markdown": "Fixture E11: a review with only a summary.",
+      "html": "<p dir=\"auto\">Fixture E11: a review with only a summary.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4508516550",
+      "markdown": "Lo L7 check: a comment, so the review isn't empty.",
+      "html": "<p dir=\"auto\">Lo L7 check: a comment, so the review isn't empty.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5820505642",
+      "markdown": "Lo L7 check B: a summary written before submitting (body left out of the submit).",
+      "html": "<p dir=\"auto\">Lo L7 check B: a summary written before submitting (body left out of the submit).</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4508517388",
+      "markdown": "Lo L7 check: a comment, so the review isn't empty.",
+      "html": "<p dir=\"auto\">Lo L7 check: a comment, so the review isn't empty.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5820508942",
+      "markdown": "Lo L7 check C: a summary written before submitting (Lo's mutation, body sent as null).",
+      "html": "<p dir=\"auto\">Lo L7 check C: a summary written before submitting (Lo's mutation, body sent as null).</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4508520162",
+      "markdown": "Lo L7 check: a comment, so the review isn't empty.",
+      "html": "<p dir=\"auto\">Lo L7 check: a comment, so the review isn't empty.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5821626284",
+      "markdown": "Fixture E11: the pending review's summary, submitted as a comment.",
+      "html": "<p dir=\"auto\">Fixture E11: the pending review's summary, submitted as a comment.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5821628149",
+      "markdown": "Fixture E11: a review with only a summary.",
+      "html": "<p dir=\"auto\">Fixture E11: a review with only a summary.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5853379512",
+      "markdown": "Fixture E11: the pending review's summary, submitted as a comment.",
+      "html": "<p dir=\"auto\">Fixture E11: the pending review's summary, submitted as a comment.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4533612680",
+      "markdown": "Fixture E11: a line thread, the first comment of a pending review.",
+      "html": "<p dir=\"auto\">Fixture E11: a line thread, the first comment of a pending review.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4533613168",
+      "markdown": "Fixture E11: a range from the base's line 10 to the head's line 11.",
+      "html": "<p dir=\"auto\">Fixture E11: a range from the base's line 10 to the head's line 11.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4533613259",
+      "markdown": "Fixture E11: a file-level thread.",
+      "html": "<p dir=\"auto\">Fixture E11: a file-level thread.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4533613822",
+      "markdown": "Fixture E11: a reply in the pending review.",
+      "html": "<p dir=\"auto\">Fixture E11: a reply in the pending review.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4533614533",
+      "markdown": "Fixture E11: a reply sent to be posted at once, which joined the pending review.",
+      "html": "<p dir=\"auto\">Fixture E11: a reply sent to be posted at once, which joined the pending review.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/27#discussion_r4509437980",
+      "markdown": "Lo 8f check: a thread to reply to.",
+      "html": "<p dir=\"auto\">Lo 8f check: a thread to reply to.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/27#pullrequestreview-5821649820",
+      "markdown": "Lo 8f check: a summary for the review.",
+      "html": "<p dir=\"auto\">Lo 8f check: a summary for the review.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/27#discussion_r4509439512",
+      "markdown": "Lo 8f check: a reply in the thread.",
+      "html": "<p dir=\"auto\">Lo 8f check: a reply in the thread.</p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/27#discussion_r4509828109",
+      "markdown": "Lo 8h check: an image attached in Lo.\n\n![image](https://github.com/user-attachments/assets/82098230-e8eb-49e2-8a8c-399d063cb759)",
+      "html": "<p dir=\"auto\">Lo 8h check: an image attached in Lo.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://private-user-images.githubusercontent.com/353226052/699318603-82098230-e8eb-49e2-8a8c-399d063cb759.png?jwt=REDACTED\"><img src=\"https://private-user-images.githubusercontent.com/353226052/699318603-82098230-e8eb-49e2-8a8c-399d063cb759.png?jwt=REDACTED\" alt=\"image\" style=\"max-width: 100%;\"></a></p>"
+    },
+    {
+      "source": "https://github.com/rozed-dev/e2e/pull/74",
+      "markdown": "A GitHub stack's bottom layer, queued on e4/queued to see what dequeuing a layer does. Lo's PR #64 checks; closed afterwards.",
+      "html": "<p dir=\"auto\">A GitHub stack's bottom layer, queued on e4/queued to see what dequeuing a layer does. Lo's PR <a class=\"issue-link js-issue-link\" data-error-text=\"Failed to load title\" data-id=\"6273358320\" data-permission-text=\"Title is private\" data-url=\"https://github.com/rozed-dev/e2e/issues/64\" data-hovercard-type=\"pull_request\" data-hovercard-url=\"/rozed-dev/e2e/pull/64/hovercard\" href=\"https://github.com/rozed-dev/e2e/pull/64\">#64</a> checks; closed afterwards.</p>"
+    }
+  ]
+}

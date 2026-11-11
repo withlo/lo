@@ -1,0 +1,104 @@
+{
+  "snippets": [
+    {
+      "markdown": "> [!note]\n> In lower case.",
+      "html": "<div class=\"markdown-alert markdown-alert-note\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-info mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z\"></path></svg>Note</p><p dir=\"auto\">In lower case.</p>\n</div>"
+    },
+    {
+      "markdown": "> [!NOTE]\n>\n> After a blank line.",
+      "html": "<div class=\"markdown-alert markdown-alert-note\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-info mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z\"></path></svg>Note</p>\n<p dir=\"auto\">After a blank line.</p>\n</div>"
+    },
+    {
+      "markdown": "> [!NOTE]  \n> After trailing spaces.",
+      "html": "<div class=\"markdown-alert markdown-alert-note\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-info mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z\"></path></svg>Note</p><p dir=\"auto\">After trailing spaces.</p>\n</div>"
+    },
+    {
+      "markdown": ">[!TIP]\n>Without a space.",
+      "html": "<div class=\"markdown-alert markdown-alert-tip\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-light-bulb mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 0 1-1.484.211c-.04-.282-.163-.547-.37-.847a8.456 8.456 0 0 0-.542-.68c-.084-.1-.173-.205-.268-.32C3.201 7.75 2.5 6.766 2.5 5.25 2.5 2.31 4.863 0 8 0s5.5 2.31 5.5 5.25c0 1.516-.701 2.5-1.328 3.259-.095.115-.184.22-.268.319-.207.245-.383.453-.541.681-.208.3-.33.565-.37.847a.751.751 0 0 1-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292.45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75ZM5.75 12h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM6 15.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z\"></path></svg>Tip</p><p dir=\"auto\">Without a space.</p>\n</div>"
+    },
+    {
+      "markdown": "> [!TIP]\n> - A list in an alert.",
+      "html": "<div class=\"markdown-alert markdown-alert-tip\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-light-bulb mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 0 1-1.484.211c-.04-.282-.163-.547-.37-.847a8.456 8.456 0 0 0-.542-.68c-.084-.1-.173-.205-.268-.32C3.201 7.75 2.5 6.766 2.5 5.25 2.5 2.31 4.863 0 8 0s5.5 2.31 5.5 5.25c0 1.516-.701 2.5-1.328 3.259-.095.115-.184.22-.268.319-.207.245-.383.453-.541.681-.208.3-.33.565-.37.847a.751.751 0 0 1-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292.45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75ZM5.75 12h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM6 15.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z\"></path></svg>Tip</p>\n<ul dir=\"auto\">\n<li>A list in an alert.</li>\n</ul>\n</div>"
+    },
+    {
+      "markdown": "> [!NOTE]",
+      "html": "<blockquote>\n<p dir=\"auto\">[!NOTE]</p>\n</blockquote>"
+    },
+    {
+      "markdown": "> [!NOTE] On the same line.",
+      "html": "<blockquote>\n<p dir=\"auto\">[!NOTE] On the same line.</p>\n</blockquote>"
+    },
+    {
+      "markdown": "- > [!TIP]\n  > In a list.",
+      "html": "<ul dir=\"auto\">\n<li>\n<blockquote>\n<p dir=\"auto\">[!TIP]<br>\nIn a list.</p>\n</blockquote>\n</li>\n</ul>"
+    },
+    {
+      "markdown": "> > [!WARNING]\n> > Nested.",
+      "html": "<blockquote>\n<blockquote>\n<p dir=\"auto\">[!WARNING]<br>\nNested.</p>\n</blockquote>\n</blockquote>"
+    },
+    {
+      "markdown": "> [!DANGER]\n> Not a type.",
+      "html": "<blockquote>\n<p dir=\"auto\">[!DANGER]<br>\nNot a type.</p>\n</blockquote>"
+    },
+    {
+      "markdown": "~a~ ~~b~~ ~~~c~~~ ~d~~ ~~e~ a~b~c",
+      "html": "<p dir=\"auto\"><del>a</del> <del>b</del> ~~~c~~~ ~d~~ ~~e~ a<del>b</del>c</p>"
+    },
+    {
+      "markdown": "~~*a* ~b~~ and ~x\ny~",
+      "html": "<p dir=\"auto\">~~<em>a</em> ~b~~ and <del>x<br>\ny</del></p>"
+    },
+    {
+      "markdown": "x[^A] y[^a] z[^b]\n\n[^a]: Lower case.\n[^B]: Upper case.\n[^unused]: Never shown.",
+      "html": "<p dir=\"auto\">x<sup><a href=\"#user-content-fn-a-1a09754112c6a04f5de70b80f849b9f8\" id=\"user-content-fnref-a-1a09754112c6a04f5de70b80f849b9f8\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup> y<sup><a href=\"#user-content-fn-a-1a09754112c6a04f5de70b80f849b9f8\" id=\"user-content-fnref-a-2-1a09754112c6a04f5de70b80f849b9f8\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup> z<sup><a href=\"#user-content-fn-B-1a09754112c6a04f5de70b80f849b9f8\" id=\"user-content-fnref-b-1a09754112c6a04f5de70b80f849b9f8\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">2</a></sup></p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 id=\"footnote-label\" class=\"sr-only\" dir=\"auto\">Footnotes</h2>\n<ol dir=\"auto\">\n<li id=\"user-content-fn-a-1a09754112c6a04f5de70b80f849b9f8\">\n<p dir=\"auto\">Lower case. <a href=\"#user-content-fnref-a-1a09754112c6a04f5de70b80f849b9f8\" data-footnote-backref=\"\" aria-label=\"Back to reference 1\" class=\"data-footnote-backref\">↩</a> <a href=\"#user-content-fnref-a-2-1a09754112c6a04f5de70b80f849b9f8\" data-footnote-backref=\"\" aria-label=\"Back to reference 1-2\" class=\"data-footnote-backref\">↩<sup>2</sup></a></p>\n</li>\n<li id=\"user-content-fn-B-1a09754112c6a04f5de70b80f849b9f8\">\n<p dir=\"auto\">Upper case. <a href=\"#user-content-fnref-B-1a09754112c6a04f5de70b80f849b9f8\" data-footnote-backref=\"\" aria-label=\"Back to reference 2\" class=\"data-footnote-backref\">↩</a></p>\n</li>\n</ol>\n</section>"
+    },
+    {
+      "markdown": "Text[^1] and[^1] again.\n\n[^1]: A note with **strong** text.\n\n    And a second paragraph.",
+      "html": "<p dir=\"auto\">Text<sup><a href=\"#user-content-fn-1-6f9c218c0857a5c2e59bf4767e11a891\" id=\"user-content-fnref-1-6f9c218c0857a5c2e59bf4767e11a891\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup> and<sup><a href=\"#user-content-fn-1-6f9c218c0857a5c2e59bf4767e11a891\" id=\"user-content-fnref-1-2-6f9c218c0857a5c2e59bf4767e11a891\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup> again.</p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 id=\"footnote-label\" class=\"sr-only\" dir=\"auto\">Footnotes</h2>\n<ol dir=\"auto\">\n<li id=\"user-content-fn-1-6f9c218c0857a5c2e59bf4767e11a891\">\n<p dir=\"auto\">A note with <strong>strong</strong> text.</p>\n<p dir=\"auto\">And a second paragraph. <a href=\"#user-content-fnref-1-6f9c218c0857a5c2e59bf4767e11a891\" data-footnote-backref=\"\" aria-label=\"Back to reference 1\" class=\"data-footnote-backref\">↩</a> <a href=\"#user-content-fnref-1-2-6f9c218c0857a5c2e59bf4767e11a891\" data-footnote-backref=\"\" aria-label=\"Back to reference 1-2\" class=\"data-footnote-backref\">↩<sup>2</sup></a></p>\n</li>\n</ol>\n</section>"
+    },
+    {
+      "markdown": "- [ ]\n- [x]\n- [ ] \n- [ ] Open\n- [x] Done\n  - [X] Nested",
+      "html": "<ul class=\"contains-task-list\">\n<li>[ ]</li>\n<li>[x]</li>\n<li>[ ]</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" id=\"\" disabled=\"\" class=\"task-list-item-checkbox\" aria-label=\"Incomplete task\"> Open</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" id=\"\" disabled=\"\" class=\"task-list-item-checkbox\" aria-label=\"Completed task\" checked=\"\"> Done\n<ul class=\"contains-task-list\">\n<li class=\"task-list-item\"><input type=\"checkbox\" id=\"\" disabled=\"\" class=\"task-list-item-checkbox\" aria-label=\"Completed task\" checked=\"\"> Nested</li>\n</ul>\n</li>\n</ul>"
+    },
+    {
+      "markdown": "1. [ ] Numbered\n2. Plain",
+      "html": "<ol class=\"contains-task-list\">\n<li class=\"task-list-item\"><input type=\"checkbox\" id=\"\" disabled=\"\" class=\"task-list-item-checkbox\" aria-label=\"Incomplete task\"> Numbered</li>\n<li>Plain</li>\n</ol>"
+    },
+    {
+      "markdown": "- [ ] **Strong** first",
+      "html": "<ul class=\"contains-task-list\">\n<li class=\"task-list-item\"><input type=\"checkbox\" id=\"\" disabled=\"\" class=\"task-list-item-checkbox\" aria-label=\"Incomplete task\"> <strong>Strong</strong> first</li>\n</ul>"
+    },
+    {
+      "markdown": "# Hi\n\n## Hi\n\n### `x` & Ü!\n\n[to the second](#hi-1)",
+      "html": "<h1 dir=\"auto\">Hi</h1>\n<h2 dir=\"auto\">Hi</h2>\n<h3 dir=\"auto\"><code class=\"notranslate\">x</code> &amp; Ü!</h3>\n<p dir=\"auto\"><a href=\"#hi-1\">to the second</a></p>"
+    },
+    {
+      "markdown": "a\nb  \nc\\\nd",
+      "html": "<p dir=\"auto\">a<br>\nb<br>\nc<br>\nd</p>"
+    },
+    {
+      "markdown": "**strong** *em* `code` [link](https://example.com)",
+      "html": "<p dir=\"auto\"><strong>strong</strong> <em>em</em> <code class=\"notranslate\">code</code> <a href=\"https://example.com\" rel=\"nofollow\">link</a></p>"
+    },
+    {
+      "markdown": "| a | b |\n|:-|-:|\n| 1 | **2** |",
+      "html": "<markdown-accessiblity-table><table role=\"table\">\n<thead>\n<tr>\n<th align=\"left\">a</th>\n<th align=\"right\">b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td align=\"left\">1</td>\n<td align=\"right\"><strong>2</strong></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>"
+    },
+    {
+      "markdown": "3. three\n4. four\n\n- loose\n\n- list",
+      "html": "<ol start=\"3\" dir=\"auto\">\n<li>three</li>\n<li>four</li>\n</ol>\n<ul dir=\"auto\">\n<li>\n<p dir=\"auto\">loose</p>\n</li>\n<li>\n<p dir=\"auto\">list</p>\n</li>\n</ul>"
+    },
+    {
+      "markdown": "www.example.com and https://example.com/a.",
+      "html": "<p dir=\"auto\"><a href=\"http://www.example.com\" rel=\"nofollow\">www.example.com</a> and <a href=\"https://example.com/a\" rel=\"nofollow\">https://example.com/a</a>.</p>"
+    },
+    {
+      "markdown": "```ts\nconst x = 1;\n```",
+      "html": "<div class=\"highlight highlight-source-ts\" dir=\"auto\"><pre class=\"notranslate\"><span class=\"pl-k\">const</span> <span class=\"pl-s1\">x</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">1</span><span class=\"pl-kos\">;</span></pre></div>"
+    },
+    {
+      "markdown": "@rozed-bot, hi.",
+      "html": "<p dir=\"auto\"><a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/rozed-bot/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/rozed-bot\">@rozed-bot</a>, hi.</p>"
+    }
+  ]
+}
