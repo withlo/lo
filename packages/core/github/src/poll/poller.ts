@@ -245,8 +245,8 @@ export interface WriteOptions<T> {
    * A write to send after this one in the same turn, given what this one answered, or nothing: for
    * one that undoes it, which nothing else in the account's queue may go before. It's sent the
    * spacing after this one, and not at all when GitHub has asked Lo to hold off by then. Its answer
-   * is taken in as any write's is, then left to whoever made it: the write answers what it did,
-   * even when making or sending the follow-up throws.
+   * is taken in as any write's is, then left to whoever made it, and logged when it fails: the
+   * write answers what it did, even when making or sending the follow-up throws.
    */
   followUp?: ((answer: T) => ((client: GithubClient) => Promise<unknown>) | undefined) | undefined;
 }
@@ -1359,8 +1359,8 @@ export class Poller {
 
   /**
    * Sends the write `followUp` makes of `answer`, the answer of the write just sent, in the same
-   * turn ({@link WriteOptions.followUp}). Whatever it throws is logged and goes no further: the
-   * write it follows was sent, and answers as it did.
+   * turn ({@link WriteOptions.followUp}). Whatever making or sending it throws, and a request that
+   * fails, is logged and goes no further: the write it follows was sent, and answers as it did.
    */
   async #followUp<T>(
     client: GithubClient,
@@ -1378,6 +1378,9 @@ export class Poller {
       const followed = await settle(Promise.resolve().then(() => next(sending)));
       this.#answeredWith(client, followed);
       this.#heardWrite(client, followed, false);
+      // Logged as well as left to whoever made it, who may never hear of it: a request that
+      // threw as it was made never reached them.
+      if (!followed.ok) this.#log(`a write's follow-up failed: ${String(followed.error)}`);
     } catch (error) {
       this.#log(`a write's follow-up failed: ${String(error)}`);
     }

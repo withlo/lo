@@ -18,6 +18,8 @@ import {
   type Text,
 } from '@codemirror/state';
 import {
+  type BlockInfo,
+  BlockType,
   Decoration,
   type DecorationSet,
   EditorView,
@@ -57,9 +59,10 @@ import type {
   Span,
   Spot,
   ThreadView,
+  Viewport,
   VimKey,
 } from './api.ts';
-import { Aligner, alignerFields } from './aligner.ts';
+import { Aligner, alignerFields, drawnTop, ownTop } from './aligner.ts';
 import { CommentBox, placeKey } from './comments.ts';
 import {
   type FileNote,
@@ -85,6 +88,7 @@ import {
   vimPending,
 } from './keys.ts';
 import { Layout } from './layout.ts';
+import { swapLines } from './lines.ts';
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
 import {
   collapsedRuns,
@@ -95,6 +99,7 @@ import {
   isGapLine,
   type LineRange,
   runAt,
+  shiftRows,
   shownRuns,
 } from './rows.ts';
 import { ThreadSizes } from './widgets.ts';
@@ -114,6 +119,9 @@ interface At {
 }
 
 /** Replaces one file's decorations. */
+/** How long a line put back at the top stays there once it's settled, in milliseconds. */
+const HOLD_AFTER = 2_000;
+
 const setFile = StateEffect.define<{
   file: number;
   from: number;
@@ -249,9 +257,21 @@ class View implements DiffView {
     this.#layout = new Layout(
       init.files.map((file, index) => ({ path: file.path, ...this.#lines[index]! })),
     );
-    this.#diffs = init.files.map(() => undefined);
-    this.#triples = init.files.map(() => ({}));
-    this.#tokens = init.files.map(() => ({}));
+    // Diffs and highlighting known already are drawn with the rest, not a file at a time after.
+    this.#diffs = init.files.map((file, index) =>
+      this.#loaded.has(index) ? file.diff : undefined,
+    );
+    this.#triples = init.files.map((file, index) =>
+      this.#loaded.has(index) ? { ...file.tokens } : {},
+    );
+    this.#tokens = init.files.map((_, index) => {
+      const lines = this.#lines[index]!;
+      const triples = this.#triples[index]!;
+      return {
+        old: triples.old && { tokens: triples.old, starts: lineStarts(lines.old) },
+        new: triples.new && { tokens: triples.new, starts: lineStarts(lines.new) },
+      };
+    });
     this.#open = init.files.map(() => new Set());
     this.#gaps = init.files.map((file) => file.gaps ?? []);
     this.#threads = init.files.map(() => new Map());
@@ -299,6 +319,19 @@ class View implements DiffView {
       { passive: true },
     );
     this.dom.addEventListener('scroll', this.#watchFile, { passive: true });
+    // When the box moves on the page, as a banner over it comes or goes, what's on screen stays
+    // put: the scroll takes the move, and at the very top, room above the first file does.
+    this.#slack.className = 'lo-diffslack';
+    this.dom.prepend(this.#slack);
+    this.#placed = this.#contentTop();
+    this.#scrolled = this.dom.scrollTop;
+    this.#boxHeight = this.dom.clientHeight;
+    this.dom.addEventListener('scroll', this.#placeChosen, { passive: true });
+    for (const type of ['wheel', 'keydown', 'pointerdown'] as const) {
+      this.dom.addEventListener(type, this.#letGo, { passive: true, capture: true });
+    }
+    this.#boxWatch = new ResizeObserver(this.#keepPlace);
+    this.#boxWatch.observe(this.dom);
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
     for (const side of ['old', 'new'] as const) {
       const view = this.views[side];
@@ -322,7 +355,98 @@ class View implements DiffView {
       spacers: () => this.#aligner.spacers,
       layout: () => this.#pane,
       cursor: () => this.#cursorReading(),
+      spotAt: (y) => this.#spotAt(y),
+      spotTop: (spot) => this.#spotTop(spot),
     });
+  }
+
+  /** The line `scrollTo` is putting back at the top, until it's there or the reader moves. */
+  #holding: Viewport | undefined;
+  /**
+   * Where on the page the line `#holding` names goes, which stays put as the box moves, as when a
+   * banner over it comes or goes.
+   */
+  #holdingAt = 0;
+  /** Counts calls to `scrollTo`, so only the latest puts its line back. */
+  #holds = 0;
+  /**
+   * Until when a line put back stays the one at the top, though it's settled: the next change
+   * then holds it where it was put, not where rounding the scroll left it, so many changes in a
+   * row don't walk it away a fraction of a pixel at a time.
+   */
+  #holdEnds = 0;
+
+  /** The reader moves: what's at the top is theirs to choose again. */
+  readonly #letGo = (): void => {
+    this.#holding = undefined;
+  };
+
+  /** Room above the first file that keeps what's on screen in place as the box moves up. */
+  readonly #slack = document.createElement('div');
+  #slackHeight = 0;
+  /** Where the content's top was on the page when the reader last put it there. */
+  #placed = 0;
+  /** The scroll `#placed` counts, to take only what the scroll moved since. */
+  #scrolled = 0;
+  /** The box's height when its place was last kept, to tell a box that grew. */
+  #boxHeight = 0;
+  readonly #boxWatch: ResizeObserver;
+
+  /** Where the content's top is on the page now, room above it included. */
+  #contentTop(): number {
+    return this.dom.getBoundingClientRect().top - this.dom.scrollTop + this.#slackHeight;
+  }
+
+  /**
+   * The scroll moved, by the reader or the view: the content is meant to be as far from where it
+   * was. Only the scroll counts, not where the box is: a box that moved in the same frame, before
+   * it could be made up for, would otherwise be taken as where the content belongs.
+   */
+  readonly #placeChosen = (): void => {
+    const now = this.dom.scrollTop;
+    const end = this.dom.scrollHeight - this.dom.clientHeight;
+    // Pulled back to the end as the box grew and left less to scroll: the browser's doing, which
+    // the content's place doesn't follow, so the box's move puts it back if there's room. A pull
+    // as the content shrank, as files above close, is where the content is now, as any scroll.
+    const pulled =
+      this.dom.clientHeight > this.#boxHeight + 0.5 && now < this.#scrolled && now >= end - 0.5;
+    if (!pulled) this.#placed -= now - this.#scrolled;
+    this.#scrolled = now;
+  };
+
+  /**
+   * The box moved or changed size, as when a banner over it comes or goes: the content goes back
+   * where it was on the page, by scrolling, or at the very top by room added above the first
+   * file, which a box moving back down takes away again.
+   */
+  readonly #keepPlace = (): void => {
+    // A scroll whose event hasn't come yet is the reader's, or the view's, not the box's.
+    this.#placeChosen();
+    this.#boxHeight = this.dom.clientHeight;
+    const moved = this.#contentTop() - this.#placed;
+    if (Math.abs(moved) < 0.5) return;
+    if (moved > 0) {
+      const taken = Math.min(this.#slackHeight, moved);
+      this.#setSlack(this.#slackHeight - taken);
+      this.dom.scrollTop += moved - taken;
+    } else {
+      const up = -moved;
+      const room = this.dom.scrollTop;
+      this.dom.scrollTop -= Math.min(up, room);
+      if (up > room) this.#setSlack(this.#slackHeight + up - room);
+    }
+    this.#scrolled = this.dom.scrollTop;
+    // The scroll goes by whole pixels, or halves, which can leave the content a fraction from where
+    // it's meant to be: that place stays, so the next move makes up for it rather than adding to
+    // it. A scroll that couldn't go as far, at either end, leaves the content where it is now.
+    if (Math.abs(this.#contentTop() - this.#placed) >= 1) this.#placed = this.#contentTop();
+    // Room added above moves no scroll the pass would see: it keeps what's on screen as it is now.
+    this.#aligner.anchorHere();
+  };
+
+  #setSlack(height: number): void {
+    this.#slackHeight = Math.max(0, height);
+    this.#slack.style.height = `${this.#slackHeight}px`;
   }
 
   readonly #measure = (): void => {
@@ -339,10 +463,13 @@ class View implements DiffView {
   }
 
   setMoves(moves: readonly MovedCode[]): void {
-    const before = this.#moves;
+    const before = movesByFile(this.#moves);
     this.#moves = moves.flatMap((move) => this.#movedBlock(move) ?? []);
-    const ends = [...before, ...this.#moves].flatMap((move) => [move.from.file, move.to.file]);
-    for (const file of new Set(ends)) this.#refresh(file);
+    const after = movesByFile(this.#moves);
+    // Only the files whose moves changed are drawn again: a pull request's moves come all at once.
+    for (const file of new Set([...before.keys(), ...after.keys()])) {
+      if (before.get(file) !== after.get(file)) this.#refresh(file);
+    }
   }
 
   setTokens(id: string, side: Side, triples: Uint32Array): void {
@@ -352,6 +479,24 @@ class View implements DiffView {
     // A file not drawn yet takes its highlighting when it's drawn.
     if (this.#noteOf(file)) return;
     for (const view of this.#editors()) view.dispatch({ effects: tokensChanged.of(null) });
+  }
+
+  keepsShape(
+    id: string,
+    lines: { old: readonly string[]; new: readonly string[] },
+    diff: FileDiff,
+  ): boolean {
+    const file = this.#fileOf(id);
+    const note = this.#noteOf(file);
+    // Closed, it stays one block, whatever its lines.
+    if (note === 'closed') return true;
+    if (note || !this.#loaded.has(file)) return false;
+    const next = fileRows(
+      { header: 0, count: lines.old.length },
+      { header: 0, count: lines.new.length },
+      { kind: 'diff', diff, keep: this.#keep[file], open: this.#open[file], gaps: [] },
+    );
+    return sameShape(this.#rows[file]!, next);
   }
 
   setLines(
@@ -403,6 +548,8 @@ class View implements DiffView {
   reveal(at: Target): boolean {
     const found = this.#atOf(at);
     if (!found) return false;
+    // What's at the top is wherever this puts it now.
+    this.#holding = undefined;
     const { place, column } = found;
     const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
     const view = this.#viewOf(pane);
@@ -453,6 +600,121 @@ class View implements DiffView {
         at satisfies never;
         return undefined;
     }
+  }
+
+  setCollapsed(id: string, collapsed: boolean): void {
+    const file = this.#fileOf(id);
+    const { skipped } = this.#files[file]!;
+    if (skipped || !this.#loaded.has(file) || this.#closed.has(file) === collapsed) return;
+    if (collapsed) this.#closed.add(file);
+    else this.#closed.delete(file);
+    if (this.#inline && !collapsed) this.#addInline(file);
+    this.#refresh(file);
+  }
+
+  filesOnScreen(): readonly string[] {
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
+    const view = this.#viewOf(pane);
+    const top = this.dom.getBoundingClientRect().top - view.documentTop;
+    const fileAt = (height: number): number =>
+      this.#fileAt(
+        pane,
+        view.state.doc.lineAt(view.lineBlockAtHeight(Math.max(0, height)).from).number,
+      );
+    const first = fileAt(top);
+    const last = fileAt(top + Math.max(0, this.dom.clientHeight - 1));
+    return this.#ids.slice(first, last + 1);
+  }
+
+  viewport(): Viewport {
+    // While the view is putting a line back at the top, or has just, that's where it belongs.
+    if (this.#holding && performance.now() < this.#holdEnds) {
+      return {
+        at: this.#holding.at,
+        offset: this.dom.getBoundingClientRect().top - this.#holdingAt,
+      };
+    }
+    this.#holding = undefined;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
+    const view = this.#viewOf(pane);
+    const top = this.dom.getBoundingClientRect().top - view.documentTop;
+    // A line of text or a file's header, which every version of the file has: not collapsed
+    // lines, a note or a spacer, whose size can change when the file's lines do. Past them, the
+    // next line down, below the screen's top.
+    let block = view.elementAtHeight(Math.max(0, top));
+    for (let step = 0; step < 50 && !this.#steadyBlock(pane, view, block); step++) {
+      if (block.bottom >= view.contentHeight) break;
+      block = view.elementAtHeight(block.bottom + 0.5);
+    }
+    const line = view.state.doc.lineAt(block.from).number;
+    // Where it's drawn, which the height map can be off from by a line it has only estimated.
+    const drawn = drawnTop(view, block.from);
+    const offset =
+      drawn === undefined ? top - block.top : this.dom.getBoundingClientRect().top - drawn;
+    return { at: this.#spot(this.#placeAt(pane, line)), offset };
+  }
+
+  /** The line or header drawn at height `y` on the page, on the side that follows the screen. */
+  #spotAt(y: number): Spot | undefined {
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
+    const view = this.#viewOf(pane);
+    const block = view.elementAtHeight(y - view.documentTop);
+    if (!this.#steadyBlock(pane, view, block)) return undefined;
+    return this.#spot(this.#placeAt(pane, view.state.doc.lineAt(block.from).number));
+  }
+
+  /** How far down the page `spot` is drawn, if it is. */
+  #spotTop(spot: Spot): number | undefined {
+    const found = this.#atOf(spot);
+    if (!found) return undefined;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : found.place.side;
+    const view = this.#viewOf(pane);
+    return drawnTop(view, view.state.doc.line(this.#docLine(pane, found.place)).from);
+  }
+
+  /** Whether a block keeps its place and size as its file's lines change: a line, or a header. */
+  #steadyBlock(pane: Pane, view: EditorView, block: BlockInfo): boolean {
+    if (block.type === BlockType.Text) return true;
+    if (block.type !== BlockType.WidgetRange) return false;
+    // A header replaces its own line, and nothing else.
+    const line = view.state.doc.lineAt(block.from);
+    return block.to === line.to && this.#placeAt(pane, line.number).line === 0;
+  }
+
+  scrollTo(viewport: Viewport): boolean {
+    const found = this.#atOf(viewport.at);
+    if (!found) return false;
+    const { place } = found;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
+    const view = this.#viewOf(pane);
+    // Checked each frame, after the editors have measured and the sides are levelled, until it
+    // holds still. Until then, what's at the top is this, whatever else changes.
+    this.#holding = viewport;
+    this.#holdingAt = this.dom.getBoundingClientRect().top - viewport.offset;
+    this.#holdEnds = Infinity;
+    const run = ++this.#holds;
+    let still = 0;
+    let frames = 0;
+    const check = (): void => {
+      // A later call, or the reader, takes over.
+      if (this.#holds !== run || this.#holding !== viewport) return;
+      const pos = view.state.doc.line(this.#docLine(pane, place)).from;
+      const top = drawnTop(view, pos) ?? view.documentTop + ownTop(view.lineBlockAt(pos));
+      const moved = top - this.#holdingAt;
+      if (Math.abs(moved) >= 0.5) {
+        this.dom.scrollTop += moved;
+        still = 0;
+      } else {
+        still += 1;
+      }
+      frames += 1;
+      // Put back, it stays for a while; one that can't be, as past the end, is let go.
+      if (still >= 2) this.#holdEnds = performance.now() + HOLD_AFTER;
+      else if (frames > 30) this.#holding = undefined;
+      else requestAnimationFrame(check);
+    };
+    requestAnimationFrame(check);
+    return true;
   }
 
   jump(to: JumpTo, count: number): void {
@@ -514,6 +776,11 @@ class View implements DiffView {
   }
 
   destroy(): void {
+    this.#boxWatch.disconnect();
+    this.dom.removeEventListener('scroll', this.#placeChosen);
+    for (const type of ['wheel', 'keydown', 'pointerdown'] as const) {
+      this.dom.removeEventListener(type, this.#letGo, { capture: true });
+    }
     document.fonts.removeEventListener('loadingdone', this.#measure);
     for (const stop of this.#stops) stop();
     this.#aligner.destroy();
@@ -1045,6 +1312,7 @@ class View implements DiffView {
    * a jump from line `from` of `start`.
    */
   #moveTo(pane: Pane, line: number, from: number, start: Pane = pane): void {
+    this.#holding = undefined;
     const view = this.#viewOf(pane);
     const before = this.#placeAt(start, from);
     this.#aligner.follow();
@@ -1357,9 +1625,16 @@ class View implements DiffView {
         swapLines(this.views[side], header, before[side], lines, fits[side]);
         this.#layout.setCount(side, file, lines.length);
       }
-      // Every file after it has moved.
-      for (let index = file; index < this.#rows.length; index++) {
-        this.#rows[index] = this.#rowsOf(index);
+      // Every file after it has moved by as many lines as it grew.
+      this.#rows[file] = this.#rowsOf(file);
+      const grew = {
+        old: given.old.length - before.old.length,
+        new: given.new.length - before.new.length,
+      };
+      if (grew.old !== 0 || grew.new !== 0) {
+        for (let index = file + 1; index < this.#rows.length; index++) {
+          this.#rows[index] = shiftRows(this.#rows[index]!, grew.old, grew.new);
+        }
       }
       if (this.#inline) this.#replaceInline(file, gaps);
       this.#refresh(file, [tokensChanged.of(null)]);
@@ -1612,6 +1887,14 @@ class ViewProbe implements Probe {
   cursor(): CursorReading | undefined {
     return this.#read.cursor();
   }
+
+  spotAt(y: number): Spot | undefined {
+    return this.#read.spotAt(y);
+  }
+
+  spotTop(spot: Spot): number | undefined {
+    return this.#read.spotTop(spot);
+  }
 }
 
 /**
@@ -1636,62 +1919,29 @@ function sameCounts(
   return before.old.length === after.old.length && before.new.length === after.new.length;
 }
 
-/**
- * Puts lines `after` in place of `before`, after document line `header` of `view`. `inPlace`, as
- * `fitsInPlace` says, changes only the lines that differ, and adds or removes lines at the end, so
- * a cursor or a scroll anchor on a line that stays keeps its place. Otherwise every line is
- * replaced, and a cursor on one goes to the nearest new line with the same text, at its column, or
- * to the same line if none has it.
- */
-function swapLines(
-  view: EditorView,
-  header: number,
-  before: readonly string[],
-  after: readonly string[],
-  inPlace: boolean,
-): void {
-  const { doc, selection } = view.state;
-  const from = doc.line(header).to;
-  const changes: { from: number; to?: number; insert?: string }[] = [];
-  if (!inPlace) {
-    const to = doc.line(header + before.length).to;
-    const head = selection.main.head;
-    const on = head > from && head <= to ? doc.lineAt(head) : undefined;
-    if (from === to && after.length === 0) return;
-    view.dispatch({
-      changes: { from, to, insert: after.length === 0 ? '' : `\n${after.join('\n')}` },
-      annotations: ownChange.of(true),
-    });
-    if (!on) return;
-    const index = on.number - header - 1;
-    const now = view.state.doc;
-    const line = now.line(header + 1 + nearestLine(after, before[index]!, index));
-    view.dispatch({ selection: { anchor: line.from + Math.min(head - on.from, line.length) } });
-    return;
+/** Whether two files' rows draw alike: as many, each collapsed or not, with the same sides. */
+function sameShape(a: FileRows, b: FileRows): boolean {
+  if (a.collapsed.length !== b.collapsed.length) return false;
+  for (let row = 0; row < a.collapsed.length; row++) {
+    if (a.collapsed[row] !== b.collapsed[row]) return false;
+    if (a.oldFirst[row]! < 0 !== b.oldFirst[row]! < 0) return false;
+    if (a.newFirst[row]! < 0 !== b.newFirst[row]! < 0) return false;
   }
-  const common = Math.min(before.length, after.length);
-  for (let index = 0; index < common; index++) {
-    if (before[index] === after[index]) continue;
-    const line = doc.line(header + 1 + index);
-    changes.push({ from: line.from, to: line.to, insert: after[index] });
-  }
-  const end = doc.line(header + common).to;
-  if (after.length > common)
-    changes.push({ from: end, insert: `\n${after.slice(common).join('\n')}` });
-  if (before.length > common) changes.push({ from: end, to: doc.line(header + before.length).to });
-  if (changes.length > 0) view.dispatch({ changes, annotations: ownChange.of(true) });
+  return true;
 }
 
-/**
- * The index of the line of `lines` that reads `text` nearest to `index`, or of the line at `index`,
- * or the last, when none does. -1 for no lines: the header's.
- */
-function nearestLine(lines: readonly string[], text: string, index: number): number {
-  for (let distance = 0; index - distance >= 0 || index + distance < lines.length; distance++) {
-    if (lines[index - distance] === text) return index - distance;
-    if (lines[index + distance] === text) return index + distance;
+/** The moves at each file's ends, by file, written out to compare. */
+function movesByFile(moves: readonly MovedBlock[]): Map<number, string> {
+  const byFile = new Map<number, string[]>();
+  for (const move of moves) {
+    const written = JSON.stringify(move);
+    for (const file of new Set([move.from.file, move.to.file])) {
+      const list = byFile.get(file);
+      if (list) list.push(written);
+      else byFile.set(file, [written]);
+    }
   }
-  return Math.min(index, lines.length - 1);
+  return new Map([...byFile].map(([file, list]) => [file, list.join('\n')]));
 }
 
 /** Whether a file's threads are the same threads, in the same places. */

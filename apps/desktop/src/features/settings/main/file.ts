@@ -5,7 +5,8 @@
 // isn't a plain file of UTF-8 text within the limit holding one JSON object is left unread, and
 // said so in words for the person. It is written whole, to a new file that then replaces the old
 // one, so a crash or a full disk never leaves half a file, and an editor open on it sees it
-// change in one step.
+// change in one step. It is replaced only if it hasn't changed since it was read, so an edit saved
+// meanwhile isn't lost.
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -127,23 +128,37 @@ export function errorCode(error: unknown): string | undefined {
   return typeof error.code === 'string' ? error.code : undefined;
 }
 
+/** The settings file changed after it was read, so a write made from what was read wasn't made. */
+export class SettingsChanged extends Error {
+  override name = 'SettingsChanged';
+
+  constructor() {
+    super('The settings file changed while Lo was writing it.');
+  }
+}
+
 /**
  * Writes `text` as the settings file at `path`: to a new file beside it, which then replaces it in
  * one step, so the file is always the whole of the old one or of the new one. A link (to a file in
  * a dotfiles folder, say) stays a link, and the file it leads to is the one replaced, with the
  * permissions it had. The folder is made if there is none. Fails if the file can't be written,
  * leaving the old one as it was.
+ *
+ * With `read`, the file's {@link signature} when what `text` was made from was read, it fails with
+ * {@link SettingsChanged}, writing nothing, if the file has changed since: looked at last, just
+ * before it's replaced, so an edit saved while `text` was being written is kept.
  */
-export async function writeSettings(path: string, text: string): Promise<void> {
+export async function writeSettings(path: string, text: string, read?: string): Promise<void> {
   const target = await place(path);
-  await mkdir(dirname(target), { recursive: true });
+  const folder = dirname(target);
+  await mkdir(folder, { recursive: true });
   let mode = 0o644;
   try {
     mode = (await stat(target)).mode & 0o777;
   } catch {
     // A new file: the usual permissions.
   }
-  const temporary = join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`);
+  const temporary = join(folder, `.${basename(target)}.${randomUUID()}.tmp`);
   const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL);
   try {
     try {
@@ -153,10 +168,29 @@ export async function writeSettings(path: string, text: string): Promise<void> {
     } finally {
       await handle.close();
     }
+    if (read !== undefined && (await signature(path)) !== read) throw new SettingsChanged();
     await rename(temporary, target);
   } catch (error) {
     await unlink(temporary).catch(() => undefined);
     throw error;
+  }
+  await syncFolder(folder);
+}
+
+/**
+ * Syncs `folder`, so a file renamed into it is there after a crash or a power cut, not the one it
+ * replaced. The file has been replaced either way, so a file system that can't sync a folder is no
+ * failure.
+ */
+async function syncFolder(folder: string): Promise<void> {
+  let handle;
+  try {
+    handle = await open(folder, constants.O_RDONLY | constants.O_DIRECTORY);
+    await handle.sync();
+  } catch {
+    // Some file systems refuse to sync a folder.
+  } finally {
+    await handle?.close().catch(() => undefined);
   }
 }
 

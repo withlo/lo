@@ -40,8 +40,11 @@ export interface Pull {
   number: number;
   files: PullFile[];
   threads: PullThread[];
-  /** How long after its diff a file with gaps gets its whole lines, in ms. */
-  copyAfterMs?: number | undefined;
+  /**
+   * Whether a file with gaps gets its whole lines only when the test says, with `perfCopy`, as
+   * the local copy comes after GitHub's diff; otherwise as soon as its diff is worked out.
+   */
+  copyWhenAsked?: boolean | undefined;
 }
 
 /** What main sends the window when it asks for the pull request. */
@@ -49,6 +52,12 @@ export interface PullReply {
   pull: Pull;
   /** The nonce the content security policy lets CodeMirror's style elements use. */
   nonce: string;
+  /**
+   * When main started opening the pull request, and when it had read every file: milliseconds
+   * since the epoch, for the bench.
+   */
+  opened: number;
+  read: number;
 }
 
 /** A file to diff and highlight, as main sends it to the background process. */

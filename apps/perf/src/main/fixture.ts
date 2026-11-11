@@ -28,8 +28,8 @@ export const Fixture = z.strictObject({
         .optional(),
     }),
   ),
-  /** How long after its diff a file with gaps gets its whole lines, in ms. */
-  copyAfterMs: z.int().nonnegative().optional(),
+  /** Whether a file with gaps gets its whole lines only when the test says, with `perfCopy`. */
+  copyWhenAsked: z.boolean().optional(),
   threads: z.array(
     z.strictObject({
       path: z.string().min(1),
@@ -71,7 +71,7 @@ export function readFixture(path: string): { pull: Pull; jobs: Job[]; large: Map
       number: fixture.number,
       files,
       threads,
-      copyAfterMs: fixture.copyAfterMs,
+      copyWhenAsked: fixture.copyWhenAsked,
     },
     jobs,
     large: new Map(),

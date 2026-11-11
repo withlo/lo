@@ -17,9 +17,11 @@
   },
   "dependencies": {
     "@lo/design": "workspace:*",
+    "@lo/diff": "workspace:*",
     "@lo/git": "workspace:*",
     "@lo/github": "workspace:*",
     "@lo/review": "workspace:*",
+    "@lo/syntax": "workspace:*",
     "@lo/ui": "workspace:*",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -72,6 +74,16 @@
           "build"
         ],
         "cache": false
+      },
+      "build": {
+        "inputs": [
+          "production",
+          "^production",
+          {
+            "dependentTasksOutputFiles": "**/*.{wasm,scm}",
+            "transitive": true
+          }
+        ]
       }
     }
   }

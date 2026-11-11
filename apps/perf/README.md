@@ -109,6 +109,62 @@ as GitHub's diff leaves it, unchanged lines between hunks left out, then fills i
 local copy would (`gaps` and `copyAfterMs` in the file): the cursor and the scroll stay put. CI runs
 them on Linux.
 
+## The bench
+
+```sh
+pnpm nx run perf:bench
+```
+
+This measures the diff view against its bars, on kubernetes#125488 and TypeScript#51387, at 1440 px
+wide and at the screen's full width, and `zR` on TypeScript#54820's `checker.ts`, three runs of
+each. It runs only on a Mac, logged in with the display awake, and never in CI: frame times mean
+nothing without a display to pace them. It stops if the screen is locked, or if frames don't come at
+the display's rate. Give it a quiet machine; a full run takes about three hours.
+
+It starts the built suite unpackaged, as Playwright can't drive a packaged build, with
+`--js-flags=--expose-gc` so it can read the heap after a collection. The window opens at 1440 by 900
+px, or with `LO_PERF_WINDOW=screen` as large as the screen allows. The page notes when main started
+opening the pull request, when the page itself started, and when its first file and everything else
+arrived (`window.perfMarks`), and the bench adds a recorder that reads every frame after its layout
+and before its paint. Input is real, through Chromium's input pipeline: scrolling is Chromium's own
+synthesized scroll gesture, paced by the display as a trackpad's is, and keys are sent on a clock as
+a keyboard sends them. Each run:
+
+- opens the pull request, and times it from the page starting to open it to the first file drawn
+  with its diff and highlighting, with the window's long tasks, and from the background process
+  getting the files to every diff and the moves arriving; main reading the files and the window
+  starting are reported on their own;
+- presses `]f`, `]c` and `G` from the top, holds `j`, types a comment on each side and crosses with
+  `Tab`, timing each key from its keydown to the next frame on the display with the Event Timing
+  API; it also holds F7, whose only effect is to recolour a 4 px square, the floor any key that
+  paints stands on, and `Esc`, which paints nothing;
+- scrolls from the top to the bottom at 8,000 px a second, twice; then 40,000 px from the top at
+  each of 3,000, 8,000 and 15,000 px a second, and in flings that slow down as a trackpad's do,
+  noting each frame's time, how level the rows on screen are, and anything blank on screen;
+- holds PageDown from the top to the bottom; where PageDown stops moving short of the bottom, it
+  notes the place and scrolls past it with the wheel, and where PageDown keeps going back there, it
+  says how far down it got;
+- reads the renderer's footprint (macOS's `phys_footprint`) and resident memory, the GPU process's
+  footprint, and the heap after each of the two full scrolls;
+- in TypeScript#51387, loads `checker.ts`, which stays out of the documents until `za`.
+
+Then a run with tracing writes JSON traces of the opening, the keys, scrolling and PageDown, which
+open in DevTools' Performance panel or at ui.perfetto.dev, and a last run records a video of each
+pull request at 1440 px, converted to MP4 in a hidden window with Chromium's own encoder. The
+report, `report.md` and `report.json`, the traces, the videos and every frame recorded go to
+`bench/results/<date>/`, which git ignores. `report.md` says what each timer starts and stops on.
+
+For a short trial, run one of each and stop each full scroll early:
+
+```sh
+pnpm nx run perf:bench -- --runs 1 --pull kubernetes-125488 --width 1440 --limit 50000 --no-traces --no-videos
+```
+
+`--pull` and `--width` (`1440` or `screen`) can each be given more than once; `--no-zr`,
+`--no-traces` and `--no-videos` leave those out. `--report <folder>` writes a folder's `report.md`
+again from its `report.json`, with the folder's `notes.md`, if it has one, under the summary.
+Recording a video needs Playwright's own ffmpeg, which the bench downloads the first time.
+
 ## Recording the manifests
 
 The manifests are committed, so only a maintainer adding or refreshing a PR needs this:

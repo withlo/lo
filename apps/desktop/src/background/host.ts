@@ -13,8 +13,43 @@ const request = z.strictObject({
   input: z.unknown().optional(),
 });
 
-/** Runs a job, already checked, under its limits. */
-export type Execute = (job: string, input: unknown, limits: Limits) => Promise<Result<unknown>>;
+/** Runs a job, already checked, under its limits, until `signal` says to stop it. */
+export type Execute = (
+  job: string,
+  input: unknown,
+  limits: Limits,
+  signal?: AbortSignal,
+) => Promise<Result<unknown>>;
+
+const cancel = z.strictObject({
+  cancel: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+});
+
+/**
+ * One port's side of the process: answers each job the window sends, and stops one the window
+ * cancels, waiting or running, which then answers as `cancelled`.
+ */
+export function host(runners: readonly Runner[], execute: Execute) {
+  const running = new Map<number, AbortController>();
+  return {
+    /** Takes a message from the window: what to answer it with, if anything. */
+    async receive(message: unknown): Promise<JobReply | undefined> {
+      const stop = cancel.safeParse(message);
+      if (stop.success) {
+        running.get(stop.data.cancel)?.abort();
+        return undefined;
+      }
+      const id = idOf(message);
+      const controller = new AbortController();
+      if (id !== undefined) running.set(id, controller);
+      try {
+        return await answer(runners, execute, message, controller.signal);
+      } finally {
+        if (id !== undefined && running.get(id) === controller) running.delete(id);
+      }
+    },
+  };
+}
 
 /**
  * Answers a message from the window: the job's result, or why it didn't run. A message without
@@ -25,6 +60,7 @@ export async function answer(
   runners: readonly Runner[],
   execute: Execute,
   message: unknown,
+  signal?: AbortSignal,
 ): Promise<JobReply | undefined> {
   const problem = plainDataProblem(message);
   if (problem) {
@@ -46,7 +82,8 @@ export async function answer(
     const where = checked.error.issues.map((issue) => issue.path.join('.') || 'input');
     return fail(id, 'invalid', `${job} got malformed input (${where.join(', ')}).`);
   }
-  return { id, ...(await execute(job, checked.data, found.limits)) };
+  if (signal?.aborted) return fail(id, 'cancelled', `${job} was cancelled.`);
+  return { id, ...(await execute(job, checked.data, found.limits, signal)) };
 }
 
 function fail(id: number, code: string, message: string): JobReply {

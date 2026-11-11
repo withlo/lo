@@ -13,7 +13,7 @@ export function pool(execute: Execute, size: number, waitingLimit = 1000): Execu
     waiting.shift()?.();
   };
 
-  return (job, input, limits) => {
+  return (job, input, limits, signal) => {
     if (running >= size && waiting.length >= waitingLimit) {
       return Promise.resolve({
         ok: false,
@@ -22,8 +22,9 @@ export function pool(execute: Execute, size: number, waitingLimit = 1000): Execu
     }
     return new Promise<Result<unknown>>((resolve) => {
       const start = () => {
+        signal?.removeEventListener('abort', leave);
         running += 1;
-        void execute(job, input, limits)
+        void execute(job, input, limits, signal)
           .catch((): Result<unknown> => ({
             ok: false,
             error: { code: 'failed', message: `${job} failed.` },
@@ -31,8 +32,18 @@ export function pool(execute: Execute, size: number, waitingLimit = 1000): Execu
           .then(resolve)
           .finally(next);
       };
+      // Cancelled while it waits: it never starts.
+      const leave = () => {
+        const at = waiting.indexOf(start);
+        if (at < 0) return;
+        waiting.splice(at, 1);
+        resolve({ ok: false, error: { code: 'cancelled', message: `${job} was cancelled.` } });
+      };
       if (running < size) start();
-      else waiting.push(start);
+      else {
+        waiting.push(start);
+        signal?.addEventListener('abort', leave, { once: true });
+      }
     });
   };
 }

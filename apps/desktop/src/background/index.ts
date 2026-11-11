@@ -8,7 +8,7 @@ import { isMainThread } from 'node:worker_threads';
 
 import type { MessagePortMain } from 'electron';
 
-import { answer, idOf } from './host.ts';
+import { host, idOf } from './host.ts';
 import { memoryCap, pool, poolSize } from './pool.ts';
 import { largestHeap, loadRunners, type Runner } from './runners.ts';
 import testing from './testing.ts';
@@ -34,8 +34,10 @@ if (isMainThread) {
   });
   const execute = pool(workers(new URL(import.meta.url)), size);
   const serve = (port: MessagePortMain) => {
+    const jobs = host(runners, execute);
     port.on('message', ({ data }) => {
-      answer(runners, execute, data)
+      jobs
+        .receive(data)
         .catch((error: unknown) => {
           // Every message with an id gets an answer, even one that broke the process's own code.
           console.error("The background process couldn't answer:", error);

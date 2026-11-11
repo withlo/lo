@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url';
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { dirname, join, posix } from 'node:path';
 
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
@@ -26,8 +27,57 @@ function fontLicenses(): Plugin {
   };
 }
 
+/**
+ * The syntax package's grammars and queries, and tree-sitter's own WebAssembly, beside the
+ * background process's script, which loads them from its own folder: `syntax/dist/grammars`,
+ * `syntax/queries` and `web-tree-sitter.wasm`, as the package and tree-sitter lay them out.
+ */
+function syntaxFiles(): Plugin {
+  const syntax = dirname(dirname(createRequire(import.meta.url).resolve('@lo/syntax')));
+  const treeSitter = join(
+    dirname(createRequire(join(syntax, 'package.json')).resolve('web-tree-sitter')),
+    'web-tree-sitter.wasm',
+  );
+  const files = (folder: string): string[] =>
+    readdirSync(join(syntax, folder), { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) =>
+        posix.join(folder, posix.relative(join(syntax, folder), entry.parentPath), entry.name),
+      );
+  return {
+    name: 'lo:syntax-files',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const folders = new Set(
+        Object.values(bundle).flatMap((output) =>
+          output.type === 'chunk' && output.code.includes('web-tree-sitter.wasm')
+            ? [posix.dirname(output.fileName)]
+            : [],
+        ),
+      );
+      for (const folder of folders) {
+        const at = (name: string) => posix.join(folder, name);
+        this.emitFile({
+          type: 'asset',
+          fileName: at('web-tree-sitter.wasm'),
+          source: readFileSync(treeSitter),
+        });
+        for (const file of [...files('dist/grammars'), ...files('queries')]) {
+          if (!/\.(?:wasm|scm)$/.test(file)) continue;
+          this.emitFile({
+            type: 'asset',
+            fileName: at(posix.join('syntax', file)),
+            source: readFileSync(join(syntax, file)),
+          });
+        }
+      }
+    },
+  };
+}
+
 export default defineConfig({
   main: {
+    plugins: [syntaxFiles()],
     build: {
       outDir: 'dist/main',
       // Everything main imports is bundled, so the app never loads anything from node_modules.

@@ -1,0 +1,142 @@
+// The diff's jobs in the background process: each file's line and word diff with both sides
+// highlighted, from its two texts or from GitHub's patch, and the code the pull request moves. The
+// window sends them what main read, as it arrives, and draws what comes back.
+
+import type { FileDiff, MovedBlock } from '@lo/diff';
+import { z } from 'zod';
+
+import { reply } from '../../ipc/contract.ts';
+import { defineJobs } from '../../ipc/jobs.ts';
+
+/** The most files one `diff.files` job takes. */
+export const FILES_PER_JOB = 64;
+
+/**
+ * The furthest line GitHub's diff of a file is drawn to. Its unchanged lines before each hunk are
+ * drawn too, as placeholders, one each, so a file whose hunks reach further waits for the local
+ * copy, rather than fill the documents with empty lines.
+ */
+export const FAR_LINES = 100_000;
+
+/**
+ * The most lines GitHub's diffs of a tab's files draw between them, placeholders included: past
+ * it, a file waits for the local copy, as one reaching past {@link FAR_LINES} does.
+ */
+export const TAB_LINES = 1_000_000;
+
+/**
+ * The most lines GitHub's diffs of one `diff.files` job's files draw between them, placeholders
+ * included: a batch of files reaching further is split over several jobs.
+ */
+export const JOB_LINES = 200_000;
+
+/** How far down a patch's hunks reach, on the side that reaches further, in lines. */
+export function patchReach(patch: string): number {
+  let reach = 0;
+  for (const match of patch.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
+    const [, oldStart = '0', oldCount = '1', newStart = '0', newCount = '1'] = match;
+    reach = Math.max(
+      reach,
+      Number(oldStart) + Number(oldCount),
+      Number(newStart) + Number(newCount),
+    );
+  }
+  return reach;
+}
+
+/** The most files one `diff.highlight` job takes. */
+export const HIGHLIGHTS_PER_JOB = 200;
+
+/** The longest a file's diff may take, in milliseconds, before it settles for a coarser one. */
+export const MAX_BUDGET = 20_000;
+
+/**
+ * A file to diff: its two texts, `null` for a side it isn't on, or GitHub's patch of it, whose
+ * hunks are drawn as GitHub gives them.
+ */
+export const fileJob = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('texts'),
+    /** Its path, for the language it's highlighted as. */
+    path: z.string(),
+    old: z.string().nullable(),
+    new: z.string().nullable(),
+  }),
+  z.strictObject({ kind: z.literal('patch'), path: z.string(), patch: z.string() }),
+]);
+export type FileJob = z.output<typeof fileJob>;
+
+/** Changed lines in a row, from line `start`, their texts joined with `\n`. */
+export const lineRun = z.strictObject({ start: z.number().int().min(1), text: z.string() });
+export type LineRun = z.output<typeof lineRun>;
+
+/** A file's changed lines, for finding moves: deleted ones by old number, added ones by new. */
+export const changedRuns = z.strictObject({ deleted: z.array(lineRun), added: z.array(lineRun) });
+export type ChangedRuns = z.output<typeof changedRuns>;
+
+/** Lines, first to last, that a file shown from GitHub's patch has only as placeholders. */
+export interface Gap {
+  side: 'old' | 'new';
+  from: number;
+  to: number;
+}
+
+/** What `diff.files` says of each file it was given, in the order given. */
+export type FileResult =
+  | {
+      ok: true;
+      diff: FileDiff;
+      /**
+       * Each side's lines, for a patch: GitHub's lines, with empty placeholders in the gaps
+       * between its hunks. A file diffed from its texts has the lines its texts split into.
+       */
+      lines?: { old: string[]; new: string[] } | undefined;
+      gaps?: Gap[] | undefined;
+      /** `@lo/syntax`'s `[from, to, token]` triples for each side, where it could highlight. */
+      tokens: { old?: Uint32Array | undefined; new?: Uint32Array | undefined };
+      /** The changed lines moves are found among: none in a diff that came out approximate. */
+      changes: ChangedRuns;
+    }
+  | { ok: false; why: string };
+
+export const contract = defineJobs('diff', {
+  /**
+   * Diffs and highlights files, a batch at a time: the highlighter takes a moment to start, and
+   * each job starts its own. `whitespace: false` hides changes to whitespace alone, as
+   * `git diff -w` does, in files diffed from their texts; GitHub's patches are drawn as they are.
+   * `budget` is how long each file's diff may take before it comes out approximate.
+   */
+  files: {
+    input: z.strictObject({
+      files: z.array(fileJob).min(1).max(FILES_PER_JOB),
+      whitespace: z.boolean(),
+      highlight: z.boolean(),
+      budget: z.number().int().min(0).max(MAX_BUDGET),
+    }),
+    reply: reply<FileResult[]>(),
+  },
+  /**
+   * Highlights files' sides, as their lines are shown, joined with `\n`: the diff is drawn first,
+   * and its highlighting follows, a batch at a time. `null` for a side with no lines.
+   */
+  highlight: {
+    input: z.strictObject({
+      files: z
+        .array(
+          z.strictObject({
+            path: z.string(),
+            old: z.string().nullable(),
+            new: z.string().nullable(),
+          }),
+        )
+        .min(1)
+        .max(HIGHLIGHTS_PER_JOB),
+    }),
+    reply: reply<{ old?: Uint32Array | undefined; new?: Uint32Array | undefined }[]>(),
+  },
+  /** The code the pull request moves, among every file's changed lines, files by their place. */
+  moves: {
+    input: z.strictObject({ files: z.array(changedRuns).max(100_000) }),
+    reply: reply<MovedBlock[]>(),
+  },
+});

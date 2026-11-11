@@ -119,7 +119,7 @@ export class GithubError extends Error {
   readonly detail: GithubErrorDetail;
 
   constructor(detail: GithubErrorDetail, options?: ErrorOptions) {
-    super(describe(detail), options);
+    super(describeOr(detail), options);
     this.detail = detail;
   }
 
@@ -303,6 +303,18 @@ export class GithubError extends Error {
     const notFound = errors.find((error) => error.type === 'NOT_FOUND');
     if (notFound) return new GithubError({ kind: 'notFound', message: notFound.message });
     return new GithubError({ kind: 'graphql', errors });
+  }
+}
+
+/**
+ * `detail` in words, or a plain message when it can't be put in words, as for a kind Lo doesn't
+ * know: making the error never throws, so it never hides the failure it reports.
+ */
+function describeOr(detail: GithubErrorDetail): string {
+  try {
+    return describe(detail);
+  } catch {
+    return "GitHub gave an error Lo couldn't describe";
   }
 }
 

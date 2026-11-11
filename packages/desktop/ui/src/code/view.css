@@ -21,7 +21,8 @@
   flex: 1 1 1px;
   min-width: 0;
 }
-.lo-diffview > .lo-diffnote {
+.lo-diffview > .lo-diffnote,
+.lo-diffview > .lo-diffslack {
   flex: 1 0 100%;
 }
 .lo-diffview > .cm-editor + .cm-editor {

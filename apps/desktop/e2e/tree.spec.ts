@@ -68,7 +68,10 @@ async function focused(page: Page): Promise<string | null> {
   });
 }
 
-/** Opens #78 and waits for its tree from the local copy. */
+/**
+ * Opens #78 and waits for its tree from the local copy, and its diff, which the tree follows: the
+ * first changed file is on screen.
+ */
 async function shown(page: Page): Promise<string> {
   const id = await openE2e(page);
   await expect
@@ -84,6 +87,8 @@ async function shown(page: Page): Promise<string> {
     )
     .toMatchObject({ at: APP_PULL.head, from: 'local', changesFrom: 'local' });
   await expect(row(page, 'src/parser.ts')).toBeVisible();
+  await expect(page.locator('.lo-diffview')).toBeVisible({ timeout: 20_000 });
+  await expect(row(page, 'assets/mark.png')).toHaveClass(/tree-current/);
   return id;
 }
 
@@ -118,7 +123,9 @@ test('answers its keys: moving, opening and closing folders, review order and ch
   await page.locator('[data-lo-middle]').focus();
   await page.keyboard.press('-');
   await expect(tree(page)).toBeFocused();
-  await page.keyboard.press('j');
+  // At the file the diff has on screen.
+  expect(await focused(page)).toBe('assets/mark.png');
+  await page.keyboard.press('k');
   expect(await focused(page)).toBe('assets');
   await page.keyboard.press('j');
   expect(await focused(page)).toBe('assets/mark.png');
@@ -168,15 +175,24 @@ test('answers its keys: moving, opening and closing folders, review order and ch
   await expect(tree(page)).toBeFocused();
 });
 
-test('says why ⏎ can’t show a file before there’s a diff to show it in', async ({ page }) => {
+test('shows a changed file in the diff on ⏎, the keyboard staying in the tree', async ({
+  page,
+}) => {
   await shown(page);
   await row(page, 'src/format.ts').click();
   await expect(tree(page)).toBeFocused();
   expect(await focused(page)).toBe('src/format.ts');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('status').filter({ hasText: 'Show the file' })).toContainText(
-    'There’s no diff on screen to show it in.',
-  );
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const at = window.loDiff?.probe.cursor()?.at;
+        const id = at?.kind === 'header' ? at.file : undefined;
+        return window.loDiff?.files.find((file) => file.id === id)?.path;
+      }),
+    )
+    .toBe('src/format.ts');
+  await expect(tree(page)).toBeFocused();
   // On a folder, ⏎ opens and closes it.
   await row(page, 'data').click();
   await expect(row(page, 'data')).toHaveAttribute('aria-expanded', 'false');

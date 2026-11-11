@@ -45,6 +45,27 @@ function process(): Port {
 }
 
 describe('the background connection', () => {
+  it('cancels a job: it fails at once, and the process is asked to stop it', async () => {
+    const connection = createConnection();
+    const port = process();
+    const sent: unknown[] = [];
+    connection.connect({
+      ...port,
+      postMessage: (message) => {
+        sent.push(message);
+        port.postMessage(message);
+      },
+    });
+    const controller = new AbortController();
+    const answer = jobs(contract, connection).stall(undefined, { signal: controller.signal });
+    controller.abort();
+    await expect(answer).rejects.toMatchObject({ code: 'cancelled' });
+    expect(sent).toEqual([{ id: 1, job: 'sample.stall', input: undefined }, { cancel: 1 }]);
+    await expect(
+      jobs(contract, connection).double(1, { signal: controller.signal }),
+    ).rejects.toMatchObject({ code: 'cancelled' });
+  });
+
   it('runs a job and resolves with its answer', async () => {
     const connection = createConnection();
     connection.connect(process());

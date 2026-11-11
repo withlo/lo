@@ -70,7 +70,11 @@ const env = process.env;
 const folder = dataFolder({ packaged: app.isPackaged, appData: app.getPath('appData'), env });
 if (folder) app.setPath('userData', folder);
 const dev = devServer({ packaged: app.isPackaged, env });
-const backgroundOptions = backgroundSettings({ packaged: app.isPackaged, env });
+const backgroundOptions = backgroundSettings({
+  packaged: app.isPackaged,
+  env,
+  warn: (message) => console.warn(message),
+});
 const gitOptions = gitSettings({ packaged: app.isPackaged, env });
 const cacheRoot = cacheFolder({
   packaged: app.isPackaged,
