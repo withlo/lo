@@ -677,8 +677,8 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
           if (window.loFrames === frames) requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
-        const box = document.querySelector('.lo-diffview');
-        if (box) new ResizeObserver(() => sample('resized')).observe(box);
+        const scroller = document.querySelector('.lo-diffview');
+        if (scroller) new ResizeObserver(() => sample('resized')).observe(scroller);
       }, row);
       writeAppRemote(test.info().outputPath('remote'));
       await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
