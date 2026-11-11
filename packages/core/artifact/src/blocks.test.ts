@@ -121,12 +121,38 @@ describe('figures', () => {
         ],
       },
     ]);
-    expect(parsed.figures).toEqual([{ path: 'figures/flow.svg', line: LINE + 2 }]);
+    expect(parsed.figures).toEqual([
+      {
+        path: 'figures/flow.svg',
+        line: LINE + 2,
+        parts: [
+          { id: 'bucket', line: LINE + 5 },
+          { id: '_limiter.2', line: LINE + 6 },
+        ],
+      },
+    ]);
   });
 
   test('need no parts', () => {
     const parsed = clean(':::figure figures/shot.png', 'The settings page.', ':::');
     expect(collect(parsed, 'figure')[0]?.parts).toEqual([]);
+  });
+
+  test.each(['png', 'jpg', 'jpeg', 'gif', 'webp'])('only an SVG has parts, not a .%s', (type) => {
+    const parsed = parse(
+      `:::figure figures/shot.${type}`,
+      'The settings page.',
+      '',
+      '- [save](code:src/a.ts#L1)',
+      ':::',
+    );
+    expect(found(parsed)).toEqual([`figure-part@${LINE + 3}`]);
+    expect(parsed.findings[0]?.message).toBe(
+      `Only an SVG's parts can be linked, and figures/shot.${type} isn't one. Leave the list of parts out.`,
+    );
+    expect(parsed.figures).toEqual([{ path: `figures/shot.${type}`, line: LINE, parts: [] }]);
+    expect(collect(parsed, 'figure')[0]?.parts).toEqual([]);
+    expect(problems(parsed.tree)).toEqual([]);
   });
 
   test('need a caption', () => {

@@ -30,11 +30,27 @@
  * path would, and CodeMirror would then keep the content that wide while the block is drawn, so
  * every line would wrap differently, and move, as it comes and goes.
  */
+.lo-diffview .lo-fileblock,
 .lo-diffview .lo-diffhead,
 .lo-diffview .lo-movedlabel,
 .lo-diffview .lo-collapsed,
-.lo-diffview .lo-diffthreads {
+.lo-diffview .lo-diffthread {
   contain: inline-size;
+}
+/*
+ * Vim's block cursor glows, as the design has it, without blinking: Vim's package starts the blink
+ * again each time the editor's viewport changes, which in a scroll is every frame, and with it
+ * running, frames of a long fling went from 17 ms to 30 to 60. The package sets the animation on
+ * the element itself, which only an important rule outranks.
+ */
+.lo-diffview .cm-vimCursorLayer {
+  animation-name: none !important;
+}
+/* A file's note looks like collapsed code, but there's nothing under it to open. */
+.lo-filenote,
+.lo-filenote:hover {
+  background: var(--lo-diff-collapsed-bg);
+  color: var(--lo-fg-muted);
 }
 .lo-diffhead .lo-path,
 .lo-movedlabel a {

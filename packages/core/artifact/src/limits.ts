@@ -38,6 +38,16 @@ export const LIMITS = Object.freeze({
   file: 10 * 1024 * 1024,
   /** The most bytes of code Lo reads for one overview: every file its targets name, together. */
   code: 64 * 1024 * 1024,
+  /** The most bytes in an image figure: a PNG, JPEG, GIF or WebP. */
+  image: 10 * 1024 * 1024,
+  /** The most pixels an image figure is on either side. */
+  side: 16_384,
+  /** The most pixels in an image figure, its width times its height. */
+  pixels: 40_000_000,
+  /** The most bytes in an SVG figure: `SVG_LIMITS.size`, as bytes. */
+  svg: 512 * 1024,
+  /** The most bytes of SVG Lo reads for one overview: every SVG figure it shows, together. */
+  svgs: 2 * 1024 * 1024,
 });
 
 /**
@@ -49,7 +59,16 @@ export const ARTIFACT_READ = LIMITS.size + 3;
 /** How much of the start of a file is looked at for a NUL byte, which makes it binary. */
 export const BINARY_WINDOW = 8 * 1024;
 
-/** How long checking an overview's code may take unless the caller says, in milliseconds. */
+/**
+ * How much of the start of a figure is read first: enough for its type, and nearly always for an
+ * image's header. Only an SVG, or an image whose header goes on past this, is read further.
+ */
+export const FIGURE_HEAD = 4 * 1024;
+
+/**
+ * How long reading an overview's code and figures may take unless the caller says, in
+ * milliseconds.
+ */
 export const CHECK_TIMEOUT = 30_000;
 
 /** The fewest steps in a walkthrough: with fewer, prose reads better. */

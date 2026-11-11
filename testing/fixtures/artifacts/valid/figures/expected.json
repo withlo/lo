@@ -1,0 +1,19 @@
+{
+  "outcome": "shown",
+  "findings": [],
+  "code": [
+    { "line": 17, "state": "resolved" },
+    { "line": 24, "state": "resolved" }
+  ],
+  "figures": [
+    { "line": 13, "state": "kept", "type": "svg", "parts": ["bucket", "limiter", "timeout"] },
+    { "line": 21, "state": "kept", "type": "svg", "parts": ["limiter"] },
+    { "line": 29, "state": "kept", "type": "png", "width": 320, "height": 180 },
+    { "line": 33, "state": "kept", "type": "jpeg", "width": 240, "height": 135 },
+    { "line": 37, "state": "kept", "type": "jpeg", "width": 240, "height": 135 },
+    { "line": 41, "state": "kept", "type": "gif", "width": 24, "height": 12 },
+    { "line": 45, "state": "kept", "type": "webp", "width": 1, "height": 1 },
+    { "line": 49, "state": "kept", "type": "webp", "width": 1, "height": 1 },
+    { "line": 53, "state": "kept", "type": "webp", "width": 1, "height": 1 }
+  ]
+}

@@ -333,6 +333,71 @@ describe('stopping', () => {
     expect(log).toHaveBeenCalledWith("a wasn't stopped: features had taken 12000 ms.");
   });
 
+  it('stops a provider past the limit for all, with its own limit, before the database closes', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => void vi.useRealTimers());
+    const notesBoard = defineService<object>('notes.board');
+    const stopped: string[] = [];
+    let saved = false;
+    const stuck = (name: string) =>
+      plain(name, {
+        uses: [notesBoard],
+        stop: () => new Promise<never>(() => void stopped.push(name)),
+      });
+    const { routes, log } = routerOf([
+      defineFeature(notes, {
+        provide: () => [provides(notesBoard, {})],
+        handlers: { add: () => ({ id: 1 }), remove: () => null, count: () => 0, crash: () => null },
+        async stop() {
+          stopped.push('notes');
+          await new Promise((resolve) => setTimeout(resolve, 4_000));
+          saved = true;
+        },
+      }),
+      // Uses nothing and provides nothing, so it's passed over once the limit for all is up.
+      plain('quiet', { stop: () => void stopped.push('quiet') }),
+      ...['a', 'b', 'c', 'd', 'e', 'f'].map(stuck),
+    ]);
+    let done = false;
+    void routes.stop().then(() => (done = true));
+    // Six users of notes' service each take their whole 5 s, which uses up the 30 s for all.
+    await vi.advanceTimersByTimeAsync(STOP_LIMITS.all);
+    expect(stopped).toEqual(['f', 'e', 'd', 'c', 'b', 'a', 'notes']);
+    expect(log).toHaveBeenCalledWith("quiet wasn't stopped: features had taken 30000 ms.");
+    expect([saved, done]).toEqual([false, false]);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect([saved, done]).toEqual([true, true]);
+  });
+
+  it('gives a provider stopping past the limit for all no more than its own limit', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => void vi.useRealTimers());
+    const notesBoard = defineService<object>('notes.board');
+    const { routes, log } = routerOf(
+      [
+        defineFeature(notes, {
+          provide: () => [provides(notesBoard, {})],
+          handlers: {
+            add: () => ({ id: 1 }),
+            remove: () => null,
+            count: () => 0,
+            crash: () => null,
+          },
+          stop: () => new Promise<never>(() => {}),
+        }),
+        plain('stuck', { uses: [notesBoard], stop: () => new Promise<never>(() => {}) }),
+      ],
+      { each: 5_000, all: 3_000 },
+    );
+    let done = false;
+    void routes.stop().then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(done).toBe(true);
+    expect(log).toHaveBeenCalledWith('notes took over 5000 ms to stop; Lo went on without it.');
+  });
+
   it('stops once, however often it’s asked', async () => {
     const stop = vi.fn<() => void>();
     const { routes } = routerOf([plain('a', { stop })]);

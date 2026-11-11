@@ -9,5 +9,8 @@
     { "line": 30, "state": "resolved" },
     { "line": 32, "state": "resolved" },
     { "line": 54, "state": "resolved" }
+  ],
+  "figures": [
+    { "line": 18, "state": "kept", "type": "svg", "parts": ["bucket", "limiter"] }
   ]
 }

@@ -1,0 +1,12 @@
+{
+  "outcome": "shown",
+  "findings": [
+    { "code": "figure-color", "line": 13 },
+    { "code": "figure-color", "line": 17 }
+  ],
+  "code": [],
+  "figures": [
+    { "line": 13, "state": "kept", "type": "svg", "parts": [] },
+    { "line": 17, "state": "kept", "type": "svg", "parts": [] }
+  ]
+}

@@ -180,7 +180,7 @@ A request waits for a token in its tenant's bucket, then goes on to the API.
 
 The link's text is the id of an element in the figure, and the link goes to code, a term or a
 section. An id starts with a letter or `_`, followed by letters, digits, `_`, `.` or `-`, up to 64
-in all, and is linked once.
+in all, and is linked once. Only an SVG has parts: an image's figure has no such list.
 
 ### Walkthroughs
 
@@ -284,15 +284,23 @@ Only `term:` links mark a term. Other uses of the word are left alone.
 ## Figures
 
 A figure is an SVG, PNG, JPEG, GIF or WebP file directly in `figures/`, named with one of the
-endings `.svg`, `.png`, `.jpg`, `.jpeg`, `.gif` or `.webp`, in lower case. Its contents must be of
-the type its name says. A figure that isn't there as a file is left out, with a note in its place.
+endings `.svg`, `.png`, `.jpg`, `.jpeg`, `.gif` or `.webp`, in lower case. Lo reads its type from
+its first bytes, and they must be of the type its name says. A figure that isn't there as a file, of
+another type, or past a limit, is left out, with a note in its place.
 
-- **SVG figures** follow `figures.md`: Lo's named colors, `var(--fig-*)`, so they follow the
-  reader's theme; no scripts, outside images, `<foreignObject>`, filters or gradients. Lo removes
-  anything else, and a figure it had to change is left out, with a note in its place. Only an SVG's
-  parts can be linked.
-- **Other figures** are shown as they are, such as screenshots. Lo reads their size from their
-  header: at most 16,384 pixels a side and 40 megapixels.
+- **SVG figures** follow `figures.md`, in UTF-8. Lo keeps only what a figure may hold: no scripts,
+  styles, outside images or addresses, `<foreignObject>`, filters or gradients. A figure Lo had to
+  change, or refused whole, is left out, since a figure missing some of what it draws can mislead. A
+  color other than Lo's named colors, `var(--fig-*)`, doesn't follow the reader's theme, and is a
+  warning.
+- **Image figures**, such as screenshots, are shown as they are. Lo reads their size from their
+  header alone, and never decodes them to check them: a PNG's `IHDR` chunk, a JPEG's frame header, a
+  WebP's first chunk, or a GIF's screen, grown to take in its first frame. A figure whose header is
+  damaged or cut short is left out.
+- **Parts** are an SVG's elements, each named by its id: a shape, a group or a text, but not the
+  figure itself, its `<defs>`, a marker or what a marker draws, or a `<tspan>`. An id names an
+  element in its own figure only, and an id two elements have names neither. A part that names no
+  element Lo can link isn't linked.
 
 ## Markdown
 
@@ -333,11 +341,13 @@ Past these, Lo shows the overview without the one block or figure, with a note i
 | The files targets name, together | 64 MiB                              |
 | An image                         | 10 MiB, 16,384 pixels a side, 40 MP |
 | An SVG                           | 512 KiB, 4,096 elements, 32 deep    |
+| The SVGs figures show, together  | 2 MiB                               |
 
 A file a target names is text unless one of its first 8 KiB is a NUL byte. The files targets name
 count in the order the overview first names them, and a file named only whole, by a link, counts for
-nothing. An SVG also may be no taller than 8 times its width or wider than 32 times its height, and
-what it draws is capped.
+nothing. SVGs count in the order the overview first shows them, each once however often it's shown.
+An SVG also may be no taller than 8 times its width or wider than 32 times its height, and what it
+draws is capped.
 
 ## Versions
 

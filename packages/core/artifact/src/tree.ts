@@ -7,8 +7,12 @@
  *
  * - Fill each `excerpt` and each step's code view from the repository at the overview's commit,
  *   never from the overview.
- * - Show a figure only from `figures/` in the overview's own commit, once it has passed the checks.
- * - Treat a part's id as a name inside the figure, scoped as anchors are.
+ * - Show a figure only as `checkArtifact` kept it. Draw an SVG from the tree the check made, never
+ *   from its file again. Show an image from `figures/` in the overview's own commit only as an
+ *   image of the type the check read, never letting a browser guess its type or open it as a page,
+ *   and decode it, every frame included, no larger than the size the check read.
+ * - Link only the parts the check kept for that block, each a name inside its figure, scoped as
+ *   anchors are.
  */
 
 import type { Block, Extension, Target, Tree } from '@lo/markdown';
