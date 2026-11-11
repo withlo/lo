@@ -1,6 +1,6 @@
 import { handlers } from '@lo/ui/commands';
 
-import { barItems, focusedTarget } from '../../../window/commands/bar.ts';
+import { barItems, focusedTarget, runFromBar } from '../../../window/commands/bar.ts';
 import { focusMiddle, here, registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client, type Client } from '../../../window/ipc.ts';
@@ -51,9 +51,10 @@ export default {
   }),
   start() {
     const menu = client(contract);
-    // A click in the app menu runs through the registry, on what has focus, as a key would.
+    // A click in the app menu runs through the registry, on what has focus, as a key would. Only
+    // the menu's own commands run this way.
     menu.subscribe('run', ({ id }) => {
-      registry().run(id, focusedTarget());
+      runFromBar(registry(), id, focusedTarget());
     });
     // Linux has no app menu.
     if (registry().system === 'mac') syncMenu(menu);

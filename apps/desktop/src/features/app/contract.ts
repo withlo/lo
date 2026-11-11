@@ -39,9 +39,20 @@ export const appInfo = z.strictObject({
 });
 export type AppInfo = z.output<typeof appInfo>;
 
+/** A step of the window's zoom: in, out, or back to its actual size. */
+export const zoomStep = z.enum(['in', 'out', 'reset']);
+export type ZoomStep = z.output<typeof zoomStep>;
+
 export const contract = defineContract('app', {
   requests: {
     info: { input: z.undefined(), reply: reply<AppInfo>() },
+    // What the app menu's roles do on macOS, for Linux, which has no app menu.
+    /** Quits Lo. */
+    quit: { input: z.undefined(), reply: reply<void>() },
+    /** Zooms the window's page a step in or out, or back to its actual size. */
+    zoom: { input: z.strictObject({ step: zoomStep }), reply: reply<void>() },
+    /** Takes the window into full screen, or out of it. */
+    fullScreen: { input: z.undefined(), reply: reply<void>() },
   },
   topics: {
     /** The system's appearance, each time it changes. */

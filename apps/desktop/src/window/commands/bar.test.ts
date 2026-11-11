@@ -1,7 +1,7 @@
 import { defineCommands, handlers, Registry, type Target } from '@lo/ui/commands';
 import { describe, expect, it } from 'vitest';
 
-import { barItems } from './bar.ts';
+import { barItems, runFromBar } from './bar.ts';
 import { systemOf } from './registry.ts';
 
 const declarations = defineCommands('view', {
@@ -65,6 +65,32 @@ describe('the app menu’s items', () => {
       alt: true,
       shift: false,
     });
+  });
+});
+
+describe('a click in the app menu', () => {
+  it('runs only a command the menu lists', () => {
+    const ran: string[] = [];
+    const registry = new Registry({
+      system: 'mac',
+      commands: handlers(declarations, {
+        inline: { run: () => void ran.push('inline') },
+        threads: { run: () => void ran.push('threads') },
+        hidden: { run: () => void ran.push('hidden') },
+      }),
+    });
+    expect(runFromBar(registry, 'view.inline', { kind: 'none' })).toBe(true);
+    expect(runFromBar(registry, 'view.hidden', { kind: 'none' })).toBe(
+      "view.hidden isn't in the app menu.",
+    );
+    expect(runFromBar(registry, 'view.missing', { kind: 'none' })).toBe(
+      "view.missing isn't in the app menu.",
+    );
+    // Still only where it can run.
+    expect(runFromBar(registry, 'view.threads', { kind: 'none' })).toBe(
+      "Threads panel doesn't apply here.",
+    );
+    expect(ran).toEqual(['inline']);
   });
 });
 

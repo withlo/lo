@@ -36,6 +36,15 @@ export function barItems(registry: Registry, target: Target): BarItem[] {
   });
 }
 
+/**
+ * Runs the command a click in the app menu chose, on `target`, through the registry: only one the
+ * menu lists, one that declares `bar`. `true`, or why it didn't run.
+ */
+export function runFromBar(registry: Registry, id: string, target: Target): true | string {
+  if (!registry.command(id)?.bar) return `${id} isn't in the app menu.`;
+  return registry.run(id, target);
+}
+
 /** What a key, a menu click or the palette acts on now: the focused scope's target. */
 export function focusedTarget(): Target {
   try {
