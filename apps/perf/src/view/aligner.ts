@@ -945,12 +945,24 @@ export class Aligner {
     if (remembered) return true;
     const measured: RowHeights[] = [];
     const tops = { old: 0, new: 0 };
+    // Where each row with lines on a side starts there: a row ends where the next one starts.
+    const starts = { old: [] as (number | undefined)[], new: [] as (number | undefined)[] };
+    for (const side of ['old', 'new'] as const) {
+      const view = this.#views[side];
+      for (const ref of refs) {
+        const { first } = lines(ref, side);
+        starts[side].push(
+          first === -1 ? undefined : view.lineBlockAt(view.state.doc.line(first).from).top,
+        );
+      }
+    }
     refs.forEach((ref, index) => {
       const heights: RowHeights = {};
       for (const side of ['old', 'new'] as const) {
         const { first, last } = lines(ref, side);
         if (first === -1) continue;
-        const { top, ...rest } = this.#heights(side, first, last);
+        const next = starts[side].slice(index + 1).find((start) => start !== undefined);
+        const { top, ...rest } = this.#heights(side, first, last, next);
         heights[side] = rest;
         // Where it's drawn, which is what has to line up.
         if (index === 0)
@@ -1053,31 +1065,36 @@ export class Aligner {
   /**
    * A row's heights on one side without its spacers, from CodeMirror's height map: what's drawn
    * above its lines, and its lines with what's drawn below them, and where its first line's block
-   * starts.
+   * starts. The row ends at `end`, where the next row starts, if one does: the heights CodeMirror
+   * gives lines it hasn't drawn, one by one, add up to a little more than the space it gives them
+   * all, so the rows' heights are taken from where they start, not from their lines'.
    */
-  #heights(side: Side, first: number, last: number): SideHeights & { top: number } {
+  #heights(
+    side: Side,
+    first: number,
+    last: number,
+    end: number | undefined,
+  ): SideHeights & { top: number } {
     const view = this.#views[side];
     const doc = view.state.doc;
     let top: number | undefined;
+    let bottom = 0;
     let above = 0;
-    let body = 0;
+    let spacers = 0;
     let started = false;
     for (let line = first; line <= last;) {
       const block = view.lineBlockAt(doc.line(line).from);
       top ??= block.top;
+      bottom = block.bottom;
       const parts = Array.isArray(block.type) ? block.type : [block];
       for (const part of parts) {
-        if (part.widget instanceof SpacerWidget) continue;
-        if (!started && part.type === BlockType.WidgetBefore) {
-          above += part.height;
-        } else {
-          started = true;
-          body += part.height;
-        }
+        if (part.widget instanceof SpacerWidget) spacers += part.height;
+        else if (!started && part.type === BlockType.WidgetBefore) above += part.height;
+        else started = true;
       }
       line = doc.lineAt(block.to).number + 1;
     }
-    return { top: top!, above, body };
+    return { top: top!, above, body: (end ?? bottom) - top! - above - spacers };
   }
 
   /** How many spacers each editor holds, drawn or not, for the measurements. */
