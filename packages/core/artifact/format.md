@@ -119,9 +119,9 @@ The overview is a series of sections, each starting with a `##` heading, in the 
 - **Any other section** holds whatever you like. With no other instructions, write "How it works",
   "Where to look" and "How it was checked".
 
-Nothing comes before the tl;dr, and each of the two is written once. There's no `#` heading
-anywhere, since the pull request's title is the overview's. A `##` heading never sits inside a
-block: use `###` there.
+Nothing comes before the tl;dr, and the tl;dr and the glossary each appear once. There's no `#`
+heading anywhere, since the pull request's title is the overview's. A `##` heading never sits inside
+a block: use `###` there.
 
 ## Blocks
 
@@ -245,8 +245,8 @@ syntax: `[the limiter](code:src/limiter.ts#L12-L40)`, `[buckets](term:bucket)`,
   and `-1`, `-2` and on for repeats.
 - **At most 500 targets** in all: code, terms and sections, from blocks, steps, parts and links.
 
-Any other link goes to a web page, as on GitHub. A link to anything else, such as a relative path,
-shows as plain text, with a warning.
+A link to a web page works as on GitHub. A link to anything else, such as a relative path, shows as
+plain text, with a warning.
 
 ## Terms
 
@@ -297,28 +297,34 @@ lists, footnotes, alerts and links.
 
 ## Limits
 
-An overview past any of these is invalid. Lo doesn't cut it short.
+Past any of these, Lo doesn't show the overview, and says why. It never cuts one short.
 
-| What                                   | At most                             |
-| -------------------------------------- | ----------------------------------- |
-| `artifact.md`                          | 256 KiB of UTF-8                    |
-| The overview's tree                    | 65,536 pieces, nested 16 deep       |
-| Targets                                | 500                                 |
-| Blocks inside blocks                   | 4 deep                              |
-| A block's argument, or a link's target | 1,024 bytes                         |
-| A code block's or a step's lines       | 200                                 |
-| Figures                                | 100                                 |
-| Steps in a walkthrough                 | 50, and at least 3                  |
-| Tabs in a `:::tabs` block              | 12, and at least 2                  |
-| The commit, figures included           | 50 MB, and 500 files and folders    |
-| A file a target names                  | 10 MiB of text                      |
-| An image                               | 10 MiB, 16,384 pixels a side, 40 MP |
-| An SVG                                 | 512 KiB, 4,096 elements, 32 deep    |
+| What                                   | At most                          |
+| -------------------------------------- | -------------------------------- |
+| `artifact.md`                          | 256 KiB of UTF-8                 |
+| The overview's tree                    | 65,536 pieces, nested 16 deep    |
+| Targets                                | 500                              |
+| Blocks inside blocks                   | 4 deep                           |
+| A block's argument, or a link's target | 1,024 bytes                      |
+| A code block's or a step's lines       | 200                              |
+| Figures                                | 100                              |
+| Steps in a walkthrough                 | 50, and at least 3               |
+| Tabs in a `:::tabs` block              | 12, and at least 2               |
+| The commit, figures included           | 50 MB, and 500 files and folders |
 
 The tree's pieces are what Lo shows: each paragraph, heading, list item, link, run of text and block
-counts as one, and each level of a list, quote or block inside another is a level of nesting. An SVG
-also may be no taller than 8 times its width or wider than 32 times its height, and what it draws is
-capped. A file a target names is text unless one of its first 8 KiB is a NUL byte.
+counts as one, and each level of a list, quote or block inside another is a level of nesting.
+
+Past these, Lo shows the overview without the one block or figure, with a note in its place:
+
+| What                  | At most                             |
+| --------------------- | ----------------------------------- |
+| A file a target names | 10 MiB of text                      |
+| An image              | 10 MiB, 16,384 pixels a side, 40 MP |
+| An SVG                | 512 KiB, 4,096 elements, 32 deep    |
+
+A file a target names is text unless one of its first 8 KiB is a NUL byte. An SVG also may be no
+taller than 8 times its width or wider than 32 times its height, and what it draws is capped.
 
 ## Versions
 
