@@ -22,7 +22,12 @@
       }
     },
     {
-      "files": ["src/ipc/**", "src/features/*/contract.ts", "src/features/*/jobs.ts"],
+      "files": [
+        "src/ipc/**",
+        "src/features/*/contract.ts",
+        "src/features/*/jobs.ts",
+        "src/features/*/settings.ts"
+      ],
       "rules": {
         "no-restricted-imports": [
           "error",

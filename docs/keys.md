@@ -9,6 +9,13 @@ another: `] f` is `]`, then `f`.
 
 Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
+## Move
+
+| Action                       | Keys | Where         | Command                    |
+| ---------------------------- | ---- | ------------- | -------------------------- |
+| Next section of Settings     | `j`  | In `settings` | `settings.nextSection`     |
+| Previous section of Settings | `k`  | In `settings` | `settings.previousSection` |
+
 ## Code
 
 | Action  | Keys | Where              | Command        |
@@ -39,6 +46,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Show the right-click menu | `Menu`, `⇧F10` | Anywhere but `menu`, `dialog` and `palette`                                            | `keys.menu`       |
 | Back to the middle view   | `Esc`          | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`     |
 | Open the keymap file      | `g ,`          | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.openKeymap` |
+| Open Settings             | `⌘,`           | Anywhere but `dialog` and `palette`                                                    | `settings.open`   |
 | Tab 1                     | `⌘1`           | Anywhere but `dialog` and `palette`                                                    | `tab.show1`       |
 | Tab 2                     | `⌘2`           | Anywhere but `dialog` and `palette`                                                    | `tab.show2`       |
 | Tab 3                     | `⌘3`           | Anywhere but `dialog` and `palette`                                                    | `tab.show3`       |
@@ -58,16 +66,17 @@ A key applies in a scope: the nearest part of the window around the focused elem
 or `window`. A key for a scope beats one for anywhere, so the same chord can mean one thing in a
 comment box and another elsewhere.
 
-| Scope     | What it is                                                                            |
-| --------- | ------------------------------------------------------------------------------------- |
-| `window`  | Anywhere no other scope has focus.                                                    |
-| `menu`    | A menu. Only commands that name it run there, and `j` and `k` move as `↓` and `↑` do. |
-| `dialog`  | A dialog, which keeps the browser's `Tab`.                                            |
-| `palette` | A palette, such as the command palette.                                               |
-| `diff`    | The diff, a code view.                                                                |
-| `file`    | A whole file, a code view.                                                            |
-| `peek`    | A peek at code elsewhere, such as a definition, a code view.                          |
-| `box`     | A comment box, a code view with an insert mode.                                       |
+| Scope      | What it is                                                                            |
+| ---------- | ------------------------------------------------------------------------------------- |
+| `window`   | Anywhere no other scope has focus.                                                    |
+| `menu`     | A menu. Only commands that name it run there, and `j` and `k` move as `↓` and `↑` do. |
+| `dialog`   | A dialog, which keeps the browser's `Tab`.                                            |
+| `palette`  | A palette, such as the command palette.                                               |
+| `diff`     | The diff, a code view.                                                                |
+| `file`     | A whole file, a code view.                                                            |
+| `peek`     | A peek at code elsewhere, such as a definition, a code view.                          |
+| `box`      | A comment box, a code view with an insert mode.                                       |
+| `settings` | Named by `settings`.                                                                  |
 
 In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a
 command (after a count or an operator), only chords are Lo's, and other keys go to Vim. In a text

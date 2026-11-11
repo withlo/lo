@@ -384,6 +384,10 @@
   --lo-palette-w: 640px; /* Width of a palette: the command palette, the file finder, open a PR. */
   --lo-palette-list-h: 440px; /* Tallest a palette's list grows before it scrolls. */
   --lo-keyhelp-w: 1240px; /* Widest the key help grows. */
+  --lo-settings-nav-w: 220px; /* Width of the list of sections beside Settings. */
+  --lo-settings-w: 760px; /* Widest a section of Settings grows. */
+  --lo-swatch-w: 132px; /* Width of a theme's swatch in Settings. */
+  --lo-swatch-h: 72px; /* Height of a theme's swatch in Settings. */
   --lo-file-header-h: 38px; /* Sticky file headers in the diff. */
   --lo-window-inset-start: 78px; /* Space before the first tab: 78px for the macOS traffic lights, 0 on Linux. */
   --lo-window-inset-end: 0px; /* Space after the last tab: 0, or the system controls' width in a frameless Linux window. */
