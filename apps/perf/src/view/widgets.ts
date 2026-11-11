@@ -1,5 +1,7 @@
-// The blocks the diff view draws between lines: file headers, collapsed code, threads, the labels
-// on moved code, and the spacers that keep the two sides lined up.
+// The blocks the diff view draws between lines: file headers, collapsed code, notes on files not
+// shown, threads, the labels on moved code, and the spacers that keep the two sides lined up. A
+// block that starts a row with lines on both sides carries the row's key as `data-row`, as the
+// first line of a row does, so the alignment drawn on screen can be checked row by row.
 
 import { WidgetType } from '@codemirror/view';
 
@@ -28,6 +30,7 @@ export class HeaderWidget extends WidgetType {
 
   toDOM(): HTMLElement {
     const head = element('div', 'lo-filehead lo-diffhead');
+    head.dataset.row = `h:${this.file}`;
     const path = element('span', 'lo-path');
     if (this.info.previousPath && this.info.previousPath !== this.info.path) {
       path.append(element('span', 'lo-path--old', this.info.previousPath), ' → ');
@@ -57,13 +60,15 @@ export class CollapsedWidget extends WidgetType {
   readonly key: string;
   readonly text: string;
   readonly range: string;
+  readonly row: string | undefined;
 
-  /** `key` tells blocks apart: equal keys draw the same. */
-  constructor(key: string, text: string, range = '') {
+  /** `key` tells blocks apart: equal keys draw the same. `row` is its row's key, if it has one. */
+  constructor(key: string, text: string, range = '', row?: string) {
     super();
     this.key = key;
     this.text = text;
     this.range = range;
+    this.row = row;
   }
 
   override eq(other: CollapsedWidget): boolean {
@@ -72,6 +77,7 @@ export class CollapsedWidget extends WidgetType {
 
   toDOM(): HTMLElement {
     const block = element('div', 'lo-collapsed');
+    if (this.row) block.dataset.row = this.row;
     if (this.range) block.append(element('span', 'lo-collapsed__range', this.range));
     block.append(element('span', '', this.text));
     return block;
@@ -164,6 +170,32 @@ export class ThreadWidget extends WidgetType {
     return (
       16 + this.comments.reduce((total, length) => total + 38 + Math.ceil(length / 90) * 20, 0)
     );
+  }
+}
+
+/** A note under a file's header where it has no lines: it's too large to show, or binary. */
+export class FileNoteWidget extends WidgetType {
+  readonly file: number;
+  readonly text: string;
+
+  constructor(file: number, text: string) {
+    super();
+    this.file = file;
+    this.text = text;
+  }
+
+  override eq(other: FileNoteWidget): boolean {
+    return other.file === this.file && other.text === this.text;
+  }
+
+  toDOM(): HTMLElement {
+    const note = element('div', 'lo-collapsed lo-filenote', this.text);
+    note.dataset.row = `n:${this.file}`;
+    return note;
+  }
+
+  override get estimatedHeight(): number {
+    return 28;
   }
 }
 

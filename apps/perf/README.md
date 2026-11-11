@@ -53,8 +53,10 @@ code comes last. A file with more than 5,000 changed lines, or a binary file, st
 
 The two sides stay level through a spacer pass, which runs only over the rows both editors draw:
 rows with lines on both sides start at the same height on both, so a block of added lines faces
-empty space. The page sets `window.diffView`, whose `misalignment()` says how far apart the paired
-rows on screen are, for the measurements to read.
+empty space. It runs after the editors measure and before the page is painted, from the heights
+CodeMirror measured. The page sets `window.diffView`: `misalignment()` says how far apart, as drawn,
+the rows on screen start on the two sides, headers and collapsed blocks included, and how many are
+drawn on one side only, cheaply enough to call every frame; `passStats` says what the pass has cost.
 
 ## Recording the manifests
 

@@ -3,6 +3,7 @@
   display: flex;
   align-items: flex-start;
   height: 100%;
+  overflow-x: hidden;
   overflow-y: auto;
   /* The view anchors the scroll itself, so the browser's anchoring must stay out of it. */
   overflow-anchor: none;

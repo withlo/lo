@@ -1,15 +1,25 @@
 // The diff view: a whole pull request in one scroll, the old side and the new side each one
 // CodeMirror document holding every file. The documents never change; what each file shows comes
-// from decorations, replaced as its diff, its highlighting and the moves arrive.
+// from decorations, replaced as its diff, its highlighting and the moves arrive. Its blocks, which
+// set the documents' heights, are kept for the whole document; its marks and highlighting are made
+// only for the lines drawn.
 
-import { EditorState, type Extension, StateEffect, StateField } from '@codemirror/state';
+import {
+  EditorState,
+  type Extension,
+  type Range,
+  StateEffect,
+  StateField,
+  type Text,
+} from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, lineNumbers } from '@codemirror/view';
 import { type FileDiff, type MovedBlock } from '@lo/diff';
 
-import { Aligner, spacerField } from './aligner.ts';
-import { fileDecorations, type ViewFile, type ViewThread } from './decorations.ts';
+import { Aligner, type PassStats, spacerField } from './aligner.ts';
+import { fileBlocks, fileMarks, type ViewFile, type ViewThread } from './decorations.ts';
 import { highlighting, setTokens, tokensField } from './highlight.ts';
 import { Layout, type Side } from './layout.ts';
+import { marking, marksChanged, rowKey } from './marks.ts';
 import { type FileRows, fileRows, type Keep } from './rows.ts';
 
 /** A file as the view is given it. */
@@ -28,12 +38,12 @@ export interface DiffViewOptions {
   nonce?: string;
 }
 
-/** Replaces one file's decorations. */
+/** Replaces one file's blocks. */
 const setFile = StateEffect.define<{
   file: number;
   from: number;
   to: number;
-  decorations: readonly ReturnType<typeof fileDecorations>[number][];
+  decorations: readonly Range<Decoration>[];
 }>();
 
 const fileField = StateField.define<DecorationSet>({
@@ -67,6 +77,11 @@ export class DiffView {
   readonly #keep: Keep[];
   #moves: readonly MovedBlock[] = [];
   readonly #aligner: Aligner;
+
+  /** What the spacer pass has cost so far, for the measurements. */
+  get passStats(): PassStats {
+    return this.#aligner.stats;
+  }
 
   constructor(
     parent: HTMLElement,
@@ -103,7 +118,7 @@ export class DiffView {
     this.#aligner = new Aligner(this.views, this.#layout, (file) => this.#rows[file]!, this.dom);
     for (const side of ['old', 'new'] as const) {
       this.views[side].dispatch({ effects: StateEffect.appendConfig.of(this.#aligner.plugin()) });
-      const ranges = files.flatMap((_, index) => this.#decorations(side, index));
+      const ranges = files.flatMap((_, index) => this.#blocks(side, index));
       this.views[side].dispatch({
         effects: setFile.of({ file: -1, from: 0, to: 0, decorations: ranges }),
       });
@@ -127,7 +142,7 @@ export class DiffView {
     this.#diffs[file] = diff;
     this.#rows[file] = this.#rowsOf(file);
     for (const side of ['old', 'new'] as const) {
-      const effects: StateEffect<unknown>[] = [this.#replace(side, file)];
+      const effects: StateEffect<unknown>[] = [this.#replace(side, file), marksChanged.of(null)];
       const sideTokens = tokens[side];
       if (sideTokens) effects.push(setTokens.of({ file, tokens: sideTokens }));
       this.views[side].dispatch({ effects });
@@ -140,56 +155,49 @@ export class DiffView {
     this.#moves = moves;
     const files = new Set(moves.flatMap((move) => [move.from.file, move.to.file]));
     for (const side of ['old', 'new'] as const) {
-      this.views[side].dispatch({ effects: [...files].map((file) => this.#replace(side, file)) });
+      this.views[side].dispatch({
+        effects: [...[...files].map((file) => this.#replace(side, file)), marksChanged.of(null)],
+      });
     }
     this.#aligner.schedule();
   }
 
   /**
-   * How level the rows on screen are: of the rows with lines on both sides, how many are on
-   * screen, how far apart the worst one's first lines start, in pixels, and which row that is.
+   * How level the rows on screen are now, as drawn: every row with something on both sides whose
+   * start is on screen on either side, its first line or the header, collapsed block or note it
+   * starts with, found by the key each carries. Gives how many there are, how far apart the worst
+   * one's tops are on the two sides, in pixels, and which it is, and how many are drawn on one side
+   * only, with the other side's blank there. Cheap enough to call every frame.
    */
-  misalignment(): { rows: number; worst: number; at?: { file: number; old: number; new: number } } {
-    const top = this.dom.getBoundingClientRect();
-    let checked = 0;
+  misalignment(): { rows: number; worst: number; blank: number; at?: string } {
+    const screen = this.dom.getBoundingClientRect();
+    const drawn = { old: drawnRows(this.views.old), new: drawnRows(this.views.new) };
+    const onScreen = (top: number | undefined): boolean =>
+      top !== undefined && top >= screen.top && top < screen.bottom;
+    let rows = 0;
     let worst = 0;
-    let at: { file: number; old: number; new: number } | undefined;
-    for (let file = 0; file < this.#rows.length; file++) {
-      const rows = this.#rows[file]!;
-      for (let row = 0; row < rows.oldFirst.length; row++) {
-        const old = rows.oldFirst[row]!;
-        const added = rows.newFirst[row]!;
-        if (old === -1 || added === -1 || rows.collapsed[row]) continue;
-        const oldTop = this.#lineTop('old', old);
-        const newTop = this.#lineTop('new', added);
-        if (oldTop === undefined || newTop === undefined) continue;
-        if (newTop < top.top || newTop > top.bottom) continue;
-        checked++;
-        if (Math.abs(oldTop - newTop) > worst) {
-          worst = Math.abs(oldTop - newTop);
-          at = {
-            file,
-            old: this.#layout.fileLine('old', old),
-            new: this.#layout.fileLine('new', added),
-          };
-        }
+    let blank = 0;
+    let at: string | undefined;
+    for (const key of new Set([...drawn.old.keys(), ...drawn.new.keys()])) {
+      const old = drawn.old.get(key);
+      const added = drawn.new.get(key);
+      if (!onScreen(old) && !onScreen(added)) continue;
+      rows++;
+      if (old === undefined || added === undefined) {
+        blank++;
+        continue;
+      }
+      if (Math.abs(old - added) > worst) {
+        worst = Math.abs(old - added);
+        at = key;
       }
     }
-    return at ? { rows: checked, worst, at } : { rows: checked, worst };
-  }
-
-  /** Where line `line` of `side`'s document starts on screen, if it's drawn: its element's top. */
-  #lineTop(side: Side, line: number): number | undefined {
-    const view = this.views[side];
-    const { from } = view.state.doc.line(line);
-    if (from < view.viewport.from || from > view.viewport.to) return undefined;
-    const { node } = view.domAtPos(from);
-    const element = node instanceof Element ? node : node.parentElement;
-    return element?.closest('.cm-line')?.getBoundingClientRect().top;
+    return at ? { rows, worst, blank, at } : { rows, worst, blank };
   }
 
   destroy(): void {
     document.fonts.removeEventListener('loadingdone', this.#measure);
+    this.#aligner.destroy();
     this.views.old.destroy();
     this.views.new.destroy();
     this.dom.remove();
@@ -214,6 +222,7 @@ export class DiffView {
       spacerField,
       tokensField,
       highlighting(layout, side),
+      marking((doc, first, last) => this.#marks(side, doc, first, last)),
     ];
   }
 
@@ -227,18 +236,49 @@ export class DiffView {
     );
   }
 
-  #decorations(side: Side, file: number): ReturnType<typeof fileDecorations> {
-    return fileDecorations({
+  #input(side: Side, file: number, doc: Text): Parameters<typeof fileBlocks>[0] {
+    const lines = this.#layout.files[file]!;
+    return {
       side,
       index: file,
       file: this.#files[file]!,
-      lines: this.#layout.files[file]![side],
-      doc: this.views[side].state.doc,
+      lines: lines[side],
+      otherLines: lines[side === 'old' ? 'new' : 'old'].count > 0,
+      doc,
       diff: this.#diffs[file],
       moves: this.#moves.filter((move) => move.from.file === file || move.to.file === file),
       threads: this.#threads[file] ?? [],
       keep: this.#keep[file]!,
-    });
+    };
+  }
+
+  #blocks(side: Side, file: number): Range<Decoration>[] {
+    return fileBlocks(this.#input(side, file, this.views[side].state.doc));
+  }
+
+  /** The marks on document lines `first` to `last` of `side`, and each row's key on its first. */
+  #marks(side: Side, doc: Text, first: number, last: number): Range<Decoration>[] {
+    const out: Range<Decoration>[] = [];
+    const layout = this.#layout;
+    for (let file = layout.fileAt(side, first); file < layout.files.length; file++) {
+      const lines = layout.files[file]![side];
+      if (lines.header > last) break;
+      if (lines.count === 0) continue;
+      const from = Math.max(1, first - lines.header);
+      const to = Math.min(lines.count, last - lines.header);
+      if (from > to) continue;
+      out.push(...fileMarks(this.#input(side, file, doc), from, to));
+      const rows = this.#rows[file]!;
+      const firsts = side === 'old' ? rows.oldFirst : rows.newFirst;
+      const others = side === 'old' ? rows.newFirst : rows.oldFirst;
+      for (let row = 1; row < firsts.length; row++) {
+        const line = firsts[row]!;
+        if (line === -1 || others[row] === -1 || rows.collapsed[row]) continue;
+        if (line < lines.header + from || line > lines.header + to) continue;
+        out.push(rowKey(`p:${file}:${row}`).range(doc.line(line).from));
+      }
+    }
+    return out;
   }
 
   /** The effect that replaces a file's decorations on one side. */
@@ -249,7 +289,17 @@ export class DiffView {
       file,
       from: doc.line(lines.header).from,
       to: doc.line(lines.header + lines.count).to,
-      decorations: this.#decorations(side, file),
+      decorations: this.#blocks(side, file),
     });
   }
+}
+
+/** Where the rows `view` draws start on screen, by their keys. */
+function drawnRows(view: EditorView): Map<string, number> {
+  const tops = new Map<string, number>();
+  for (const element of view.contentDOM.querySelectorAll<HTMLElement>('[data-row]')) {
+    const key = element.dataset.row;
+    if (key) tops.set(key, element.getBoundingClientRect().top);
+  }
+  return tops;
 }
