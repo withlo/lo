@@ -25,6 +25,8 @@ export interface WatcherOptions {
   readonly publish: TabPublish;
   readonly store: TabStore;
   readonly log: (line: string) => void;
+  /** How long GitHub must be out of reach before a tab says so, if not the tab's own wait. */
+  readonly offlineAfter?: number | undefined;
 }
 
 export class Watcher {
@@ -72,6 +74,7 @@ export class Watcher {
         keep: (change) => this.#options.store.keep(tab.id, change),
         changed: () => this.#changed(tab.id),
         log: (line) => this.#options.log(`${tab.owner}/${tab.repo}#${tab.number}: ${line}`),
+        offlineAfter: this.#options.offlineAfter,
       });
       this.#tabs.set(tab.id, pull);
       void pull.watch();

@@ -418,6 +418,9 @@ status bar.
   earlier fetch brought while GitHub can't be reached.
 - The head on screen is GitHub's when the tab opened. A newer push says so in a banner, and moves
   nothing until it's loaded.
+- A tab says it's offline once GitHub has been out of reach for 25 s, so a blip says nothing. A
+  build run from source takes another wait from `LO_OFFLINE_AFTER_MS`, for its tests; a packaged
+  build ignores it.
 - The window gets what it shows on `tab.pull`, `tab.files` and `tab.local`, each sent only when it
   changes, and asks for all three with `tab.state`. None of it holds a token. `tab.copy` puts up to
   1 MiB of text on the clipboard, and `tab.openExternal` opens pages on `https://github.com/` only,

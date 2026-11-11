@@ -196,6 +196,20 @@ export function githubSettings(options: { packaged: boolean; env: Environment })
 }
 
 /**
+ * How long GitHub must be out of reach before a pull request's tab says it's offline, in
+ * milliseconds, from `LO_OFFLINE_AFTER_MS` in a build run from source, so a test needn't wait the
+ * whole while; nothing to take the tab's own. A packaged build ignores it.
+ */
+export function offlineAfter(options: { packaged: boolean; env: Environment }): number | undefined {
+  const wait = options.env.LO_OFFLINE_AFTER_MS;
+  if (options.packaged || wait === undefined) return undefined;
+  if (!/^\d+$/.test(wait) || !Number.isSafeInteger(Number(wait))) {
+    throw new Error(`LO_OFFLINE_AFTER_MS must be a whole number of milliseconds, not "${wait}".`);
+  }
+  return Number(wait);
+}
+
+/**
  * The `gh` to run rather than one Lo finds, from `LO_GH`: an absolute path, or `none` for no gh at
  * all. Tests bring a gh of their own this way, so they never run the one on `PATH`, which holds the
  * tokens of whoever runs them. A test run, one talking to a GitHub on this machine, runs no gh

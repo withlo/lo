@@ -12,6 +12,7 @@ import {
   ghProgram,
   githubSettings,
   keymapEditor,
+  offlineAfter,
 } from './environment.ts';
 
 describe('appName', () => {
@@ -88,6 +89,25 @@ describe('configFolder', () => {
     expect(() => configFolder({ ...source, env: { LO_USER_DATA_DIR: 'lo' } })).toThrow(
       'absolute path',
     );
+  });
+});
+
+describe('offlineAfter', () => {
+  it('takes a shorter wait before saying offline in a build run from source, for tests', () => {
+    expect(offlineAfter({ packaged: false, env: { LO_OFFLINE_AFTER_MS: '500' } })).toBe(500);
+    expect(offlineAfter({ packaged: false, env: {} })).toBe(undefined);
+  });
+
+  it('is ignored in a packaged build', () => {
+    expect(offlineAfter({ packaged: true, env: { LO_OFFLINE_AFTER_MS: '500' } })).toBe(undefined);
+  });
+
+  it('refuses anything but whole milliseconds', () => {
+    for (const wait of ['', '1.5', '-1', 'soon']) {
+      expect(() => offlineAfter({ packaged: false, env: { LO_OFFLINE_AFTER_MS: wait } })).toThrow(
+        'LO_OFFLINE_AFTER_MS',
+      );
+    }
   });
 });
 
