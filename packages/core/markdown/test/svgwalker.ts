@@ -268,6 +268,7 @@ export function walkSvg(result: unknown): SvgWalked {
     const dashes = dashesOf(name, attributes);
     if (dashes === undefined)
       problem(where, 'has dashes along a length that depends on its context');
+    if (patternPeriod(attributes) < 1) problem(where, 'has dashes with a period under 1');
     charge(inside, cost + (dashes ?? 0));
     const children = value['children'];
     if (!Array.isArray(children)) {
@@ -314,9 +315,9 @@ function step(magnitude: number): number {
   return next[0]! - float[0]!;
 }
 
-/** What `segments` segments may each be longer in a browser: 4 float32 steps at `most`. */
+/** What `segments` segments may each be longer in a browser: 8 float32 steps at `most`. */
 function slack(segments: number, most: number): number {
-  return segments * 4 * step(most);
+  return segments * 8 * step(most);
 }
 
 /** A length in the element's own units, 0 when left out, or NaN in units that depend on context. */
@@ -416,6 +417,18 @@ function pathBound(d: string): number {
     }
   }
   return length + slack(segments, most);
+}
+
+/**
+ * How long one run of the dash pattern in `attributes` is: the sum of its numbers, twice over when
+ * there is an odd count of them, as SVG repeats it. Infinity when there is none.
+ */
+function patternPeriod(attributes: Record<string, unknown>): number {
+  const pattern = attributes['stroke-dasharray'];
+  if (typeof pattern !== 'string' || pattern === 'none') return Infinity;
+  const values = pattern.split(' ').map(Number);
+  const sum = values.reduce((total, value) => total + value, 0);
+  return values.length % 2 === 0 ? sum : 2 * sum;
 }
 
 /**

@@ -168,8 +168,9 @@ const TINY_ARC = (radii: string, angle = 0) =>
   `<path d="M0 0A${radii} ${angle} 0 1 0 999000" stroke-dasharray="0.5 0.5"/>`;
 
 /**
- * A path from `start`, `step` four times over, dashed every 4e-7: each step between two numbers
- * a browser may read as one float32 or as the next, a sixteenth apart near 600,000.
+ * A path from `start`, `step` four times over, dashed every 4e-7, a period no figure may have: each
+ * step between two numbers a browser may read as one float32 or as the next, a sixteenth apart near
+ * 600,000.
  */
 const HALFWAY = (start: string, step: string) =>
   `<path d="${start}${step.repeat(4)}" stroke-dasharray="4e-7"/>`;
@@ -184,6 +185,9 @@ const cut =
   (...removals: string[]) =>
   (made: SanitizedSvg) =>
     expect(made.removed.map((removal) => `${removal.reason} ${removal.element}`)).toEqual(removals);
+/** Cut down by `removal` from each of `count` elements, of which only so many are listed. */
+const cutEach = (removal: string, count: number) =>
+  cut(...Array.from({ length: Math.min(count, MAX_DIAGNOSTICS) }, () => removal));
 
 /**
  * Figures built to be slow to sanitize or to draw: long runs of spaces inside values, markers at
@@ -245,14 +249,24 @@ const WORST: [string, string, (made: SanitizedSvg) => void][] = [
   ['half a megabyte of text', `<svg><text>${'x'.repeat(500_000)}</text></svg>`, refused('drawn')],
   ['a viewBox a million tall', '<svg viewBox="0 0 1 1000000"><rect/></svg>', refused('aspect')],
   [
+    '1,000 paths dashed every unit',
+    `<svg>${'<path d="M0 10L860 10" stroke-dasharray="0.5 0.5"/>'.repeat(1_000)}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'one path dashed every unit, a million long',
+    '<svg><path d="M0 10L1000000 10" stroke-dasharray="0.5 0.5"/></svg>',
+    refused('drawn'),
+  ],
+  [
     '1,000 paths dashed every 0.002',
     `<svg>${'<path d="M0 10L860 10" stroke-dasharray="0.001 0.001"/>'.repeat(1_000)}</svg>`,
-    refused('drawn'),
+    cutEach('value path', 1_000),
   ],
   [
     'one path dashed every 0.002',
     '<svg><path d="M0 10L860 10" stroke-dasharray="0.001 0.001"/></svg>',
-    refused('drawn'),
+    cut('value path'),
   ],
   [
     'tiny dashes set on the figure, for 300 paths to inherit',
@@ -266,7 +280,7 @@ const WORST: [string, string, (made: SanitizedSvg) => void][] = [
   ],
   [
     'a dashed path in a marker drawn 200 times',
-    `<svg><marker id="m"><path d="M0 0h100" stroke-dasharray="0.01 0.01"/></marker><polyline points="${'1 1 '.repeat(200)}" marker-mid="url(#m)"/></svg>`,
+    `<svg><marker id="m"><path d="M0 0h1000" stroke-dasharray="0.5 0.5"/></marker><polyline points="${'1 1 '.repeat(200)}" marker-mid="url(#m)"/></svg>`,
     refused('drawn'),
   ],
   [
@@ -298,49 +312,54 @@ const WORST: [string, string, (made: SanitizedSvg) => void][] = [
     refused('drawn'),
   ],
   [
-    'a dashed zigzag near a million, where float32 steps are a sixteenth',
+    'a dashed zigzag near a million, where float32 steps are a sixteenth, at the cap on numbers',
+    `<svg><path d="M999999.03 0${'L999999.04 0L999999.03 0'.repeat(16_383)}" stroke-dasharray="0.5 0.5"/></svg>`,
+    cut(),
+  ],
+  [
+    'a zigzag near a million dashed every 0.0005',
     `<svg><path d="M999999.03 0${'L999999.04 0L999999.03 0'.repeat(1_000)}" stroke-dasharray="0.0005"/></svg>`,
-    refused('drawn'),
+    cut('value path'),
   ],
   [
     'paths alternating at a float32 halfway, 2,532 of them',
     `<svg>${HALFWAY('M0 0', 'V600000.40625V600000.375').repeat(2_532)}</svg>`,
-    refused('drawn'),
+    cutEach('value path', 2_532),
   ],
   [
     'one path alternating at a float32 halfway',
     `<svg>${HALFWAY('M0 0', 'V600000.40625V600000.375')}</svg>`,
-    refused('drawn'),
+    cut('value path'),
   ],
   [
     'a path alternating at a halfway, across',
     `<svg>${HALFWAY('M0 0', 'H600000.40625H600000.375')}</svg>`,
-    refused('drawn'),
+    cut('value path'),
   ],
   [
     'a path alternating at a halfway, by relative steps',
     `<svg>${HALFWAY('M0 600000.375', 'v0.03125v-0.03125')}</svg>`,
-    refused('drawn'),
+    cut('value path'),
   ],
   [
     'a path alternating at another halfway',
     `<svg>${HALFWAY('M0 0', 'V300000.203125V300000.1875')}</svg>`,
-    refused('drawn'),
+    cut('value path'),
   ],
   [
     'curves through a halfway',
     `<svg>${HALFWAY('M600000.375 0', 'C600000.40625 0 600000.375 0 600000.40625 0')}</svg>`,
-    refused('drawn'),
+    cut('value path'),
   ],
   [
     'lines across a float32 halfway',
     `<svg>${'<line x1="600000.375" x2="600000.40625" stroke-dasharray="4e-7"/>'.repeat(1_000)}</svg>`,
-    refused('drawn'),
+    cutEach('value line', 1_000),
   ],
   [
     'points alternating at a float32 halfway',
     `<svg><polyline points="${'600000.375 0 600000.40625 0 '.repeat(100)}" stroke-dasharray="4e-7"/></svg>`,
-    refused('drawn'),
+    cut('value polyline'),
   ],
   [
     'a figure sized a hundred thousand tall',
