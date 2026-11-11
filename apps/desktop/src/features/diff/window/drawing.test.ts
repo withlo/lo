@@ -96,7 +96,7 @@ const work: LoaderWork = {
     ),
   moves: () => Promise.resolve([]),
   highlight: ({ files }) =>
-    Promise.resolve(files.map(() => ({ new: Uint32Array.from([0, 1, 1]) }))),
+    Promise.resolve(highlighting ? files.map(() => ({ new: Uint32Array.from([0, 1, 1]) })) : []),
   order: () => [],
   log: () => undefined,
 };
@@ -107,6 +107,8 @@ async function frames(count = 8): Promise<void> {
 }
 
 let drawing: Drawing | undefined;
+/** Whether highlighting answers: off, as when it's dropped before it comes. */
+let highlighting = true;
 
 /**
  * Draws GitHub's diff of the tab's one file, and has the local copy's list follow, in which it
@@ -141,6 +143,7 @@ async function swapUnderReader(): Promise<Loader> {
 beforeEach(() => {
   told.length = 0;
   onScreen = ['d0'];
+  highlighting = true;
 });
 
 afterEach(() => {
@@ -175,5 +178,16 @@ describe('a file under the reader that starts out otherwise in the local copy', 
     await frames(15);
     expect(told).toContain('lines d0 local shown');
     expect(told).toContain('collapsed d0 true');
+  });
+
+  it('asks for its colors again when it’s let go without them', async () => {
+    highlighting = false;
+    await swapUnderReader();
+    expect(told).toEqual([]);
+
+    highlighting = true;
+    drawnFor(TAB.id)?.acted('d0');
+    await frames();
+    expect(told).toContain('tokens d0 new');
   });
 });

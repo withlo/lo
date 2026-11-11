@@ -194,11 +194,13 @@ export function draw(options: DrawOptions): Drawing {
   let shownMoves: readonly Moved[] = loader.moves();
   let latestMoves = shownMoves;
 
-  /** Gives a held file the loader's latest lines, diff and colors. */
+  /** Gives a held file the loader's latest lines, diff and colors, asking for colors it lacks. */
   const release = (id: string) => {
     if (!held.delete(id)) return;
     const shown = loader.shown(id);
-    if (shown) setLines(id, shown);
+    if (!shown) return;
+    setLines(id, shown);
+    if (!shown.tokens.old && !shown.tokens.new) loader.recolor(id);
   };
   /** Files the reader asked to load, which come in as soon as they arrive. */
   const asked = new Set<string>();

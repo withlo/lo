@@ -268,6 +268,20 @@ export class Loader {
     );
   }
 
+  /**
+   * Highlights a file again, if what's been worked out of it came without: as for one the view
+   * held while its highlighting was dropped.
+   */
+  recolor(id: string): void {
+    const run = this.#run;
+    const entry = run?.entries.find((each) => each.id === id);
+    const shown = this.#shown.get(id);
+    if (!run || !entry || shown?.from !== run.from || shown.tokens.old || shown.tokens.new) return;
+    this.#highlightBatch(run, [entry]).catch((error: unknown) => {
+      if (!run.stopped) this.#work.log('Lo couldn’t highlight a file:', error);
+    });
+  }
+
   /** Loads a file kept out, as `za` asks: its texts, then its diff, given to the view. */
   load(id: string): void {
     const run = this.#run;
