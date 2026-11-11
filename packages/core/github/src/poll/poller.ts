@@ -245,7 +245,8 @@ export interface WriteOptions<T> {
    * A write to send after this one in the same turn, given what this one answered, or nothing: for
    * one that undoes it, which nothing else in the account's queue may go before. It's sent the
    * spacing after this one, and not at all when GitHub has asked Lo to hold off by then. Its answer
-   * is taken in as any write's is, then left to whoever made it: the write answers what it did.
+   * is taken in as any write's is, then left to whoever made it: the write answers what it did,
+   * even when making or sending the follow-up throws.
    */
   followUp?: ((answer: T) => ((client: GithubClient) => Promise<unknown>) | undefined) | undefined;
 }
@@ -1338,15 +1339,7 @@ export class Poller {
           // Taken in within the turn, so the write after it sees what this one's answer said.
           this.#answeredWith(client, answer);
           this.#heardWrite(client, answer, content ?? false);
-          const next = answer.ok ? followUp?.(answer.value) : undefined;
-          if (next === undefined) return answer;
-          await new Promise((resolve) => setTimeout(resolve, this.#config.writeSpacing));
-          // This write's answer, or anything heard since, may have asked Lo to hold off.
-          this.#takeIn(client);
-          if (this.writesHeldUntil() !== undefined) return answer;
-          const followed = await settle(next(sending));
-          this.#answeredWith(client, followed);
-          this.#heardWrite(client, followed, false);
+          if (answer.ok && followUp) await this.#followUp(client, sending, followUp, answer.value);
           return answer;
         }, signal),
       );
@@ -1362,6 +1355,32 @@ export class Poller {
     }
     await Promise.all(targets.map((target) => this.#invalidate(target)));
     return result;
+  }
+
+  /**
+   * Sends the write `followUp` makes of `answer`, the answer of the write just sent, in the same
+   * turn ({@link WriteOptions.followUp}). Whatever it throws is logged and goes no further: the
+   * write it follows was sent, and answers as it did.
+   */
+  async #followUp<T>(
+    client: GithubClient,
+    sending: GithubClient,
+    followUp: (answer: T) => ((client: GithubClient) => Promise<unknown>) | undefined,
+    answer: T,
+  ): Promise<void> {
+    try {
+      const next = followUp(answer);
+      if (next === undefined) return;
+      await new Promise((resolve) => setTimeout(resolve, this.#config.writeSpacing));
+      // This write's answer, or anything heard since, may have asked Lo to hold off.
+      this.#takeIn(client);
+      if (this.writesHeldUntil() !== undefined) return;
+      const followed = await settle(Promise.resolve().then(() => next(sending)));
+      this.#answeredWith(client, followed);
+      this.#heardWrite(client, followed, false);
+    } catch (error) {
+      this.#log(`a write's follow-up failed: ${String(error)}`);
+    }
   }
 
   /**

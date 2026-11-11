@@ -385,6 +385,41 @@ test('a write finishes when its caller stops waiting', async () => {
   expect((await write).ok).toBe(true);
 });
 
+/** A follow-up, or a follow-up's request, that throws. */
+function thrown(): never {
+  throw new Error('the follow-up failed');
+}
+
+test('a write answers what it did when its follow-up throws', async () => {
+  const r = recorded();
+  const t = await Polling.start('follow_up_throws', [comment(r)]);
+  /** Comments on #1, followed by `followUp`. */
+  const commenting = (followUp: () => (() => Promise<unknown>) | undefined) =>
+    t.finish(
+      t.poller.writeChanging(
+        [pr(1)],
+        (client) =>
+          client.write(
+            'POST',
+            '/repos/rozed-dev/playground/issues/1/comments',
+            JSON.stringify({ body: 'hi' }),
+            (json: unknown) => json,
+          ),
+        { followUp },
+      ),
+    );
+  // The comment was sent: neither making the follow-up nor sending it turns that into a failure.
+  expect(idOf(await commenting(thrown))).toBe(1);
+  expect(idOf(await commenting(() => thrown))).toBe(1);
+  // And the account's queue goes on.
+  expect(idOf(await t.finish(postComment(t.poller)))).toBe(1);
+  expect(t.requests().map(([, what]) => what)).toEqual([
+    'POST /issues/1/comments',
+    'POST /issues/1/comments',
+    'POST /issues/1/comments',
+  ]);
+});
+
 test('a write that hits a rate limit pauses polling', async () => {
   const r = recorded();
   const limited = comment(r);
