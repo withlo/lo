@@ -4,7 +4,7 @@
 
 import type { DiffView } from '@lo/ui/code';
 
-import { fileOrder } from '../../tree/window/shared.ts';
+import { orderIn, orderModeOf } from '../../tree/window/shared.ts';
 import type { DiffState } from '../contract.ts';
 import { Loader } from './loader.ts';
 import { diffJobs, main } from './main.ts';
@@ -20,7 +20,7 @@ export function loaderOf(id: string): Loader {
     files: (input, signal) => diffJobs().files(input, { signal }),
     moves: (input, signal) => diffJobs().moves(input, { signal }),
     highlight: (input, signal) => diffJobs().highlight(input, { signal }),
-    order: () => fileOrder(id),
+    order: (changes) => orderIn(changes, orderModeOf(id)),
     log: (message, error) => console.error(message, error),
   });
   loader = made;

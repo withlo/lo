@@ -7,18 +7,19 @@
 
 import { splitLines, type FileDiff, type MovedBlock } from '@lo/diff';
 
-import { fileKey } from '../../tree/contract.ts';
+import { type Changed, fileKey } from '../../tree/contract.ts';
 import type { DiffState, FileText, FileVersions, Source } from '../contract.ts';
 import {
   HIGHLIGHTS_PER_JOB,
   JOB_LINES,
   patchReach,
+  TAB_LINES,
   type ChangedRuns,
   type FileJob,
   type FileResult,
   type Gap,
 } from '../jobs.ts';
-import { inOrder } from './files.ts';
+import { changeOf, inOrder } from './files.ts';
 import { FileIds } from './ids.ts';
 
 /** What the loader asks main and the background process for. */
@@ -34,8 +35,8 @@ export interface LoaderWork {
     input: { files: { path: string; old: string | null; new: string | null }[] },
     signal: AbortSignal,
   ): Promise<{ old?: Uint32Array | undefined; new?: Uint32Array | undefined }[]>;
-  /** The order the left panel lists the changed files in, by key, to load them in. */
-  order(): readonly string[];
+  /** The order the left panel lists these changed files in, by key, to load them in. */
+  order(changes: readonly Changed[]): readonly string[];
   log(message: string, error: unknown): void;
 }
 
@@ -134,6 +135,11 @@ interface Run {
   /** Stops its jobs in the background process, as a new run takes its place or the tab closes. */
   readonly controller: AbortController;
   readonly stopped: boolean;
+  /**
+   * Whether its moved code has been looked for: a view of its files is drawn with their labels,
+   * which would move what's on screen if they came after.
+   */
+  moved: boolean;
 }
 
 /** A run of `entries`, at a head, from a source, loading `shown`'s lines too. */
@@ -150,6 +156,7 @@ function runOf(
     entries,
     shown,
     controller,
+    moved: false,
     get stopped() {
       return controller.signal.aborted;
     },
@@ -308,10 +315,11 @@ export class Loader {
 
   #start(at: string, from: Source, files: readonly FileVersions[]): void {
     this.#run?.controller.abort();
-    const entries = files.map((versions, place) => {
+    const listed = files.map((versions, place) => {
       const key = keyOf(versions);
       return { place, versions, key, id: this.ids.of(key) };
     });
+    const entries = from === 'github' ? this.#bounded(listed) : listed;
     const ready = this.#ready;
     // The view drawn from GitHub's files takes the local copy's in place when they're the same
     // files, however each starts out now: the view changes that where the reader isn't looking.
@@ -354,7 +362,17 @@ export class Loader {
     }
     await Promise.all(going);
     if (run.stopped) return;
-    await Promise.all([this.#findMoves(run), this.#highlight(run)]);
+    try {
+      await this.#findMoves(run);
+    } catch (error) {
+      if (!run.stopped) this.#work.log('Lo couldn’t look for moved code:', error);
+    } finally {
+      run.moved = true;
+    }
+    if (run.stopped) return;
+    this.#readyIfDone(run);
+    this.#changed();
+    await this.#highlight(run);
   }
 
   /**
@@ -382,7 +400,34 @@ export class Loader {
 
   /** `entries` in the left panel's order, then any it doesn't list, in main's. */
   #ordered(entries: readonly Entry[]): Entry[] {
-    return inOrder(entries, this.#work.order(), (key) => this.ids.find(key));
+    return inOrder(entries, this.#work.order(entries.map(changeOf)), (key) => this.ids.find(key));
+  }
+
+  /**
+   * GitHub's files, those past the first {@link TAB_LINES} lines its diffs draw between them, in
+   * the panel's order, kept out to load from the local copy: the files the reader comes to first
+   * get their lines.
+   */
+  #bounded(entries: readonly Entry[]): Entry[] {
+    const out = new Set<string>();
+    let drawn = 0;
+    for (const { id, versions } of this.#ordered(entries)) {
+      if (versions.start !== 'shown' && versions.start !== 'collapsed') continue;
+      if (drawn + versions.reach <= TAB_LINES) drawn += versions.reach;
+      else out.add(id);
+    }
+    return entries.map((entry) =>
+      out.has(entry.id)
+        ? {
+            ...entry,
+            versions: {
+              ...entry.versions,
+              start: 'large',
+              large: `GitHub’s diffs of the files before it reach ${TAB_LINES.toLocaleString('en-US')} lines between them: it loads from the local copy`,
+            },
+          }
+        : entry,
+    );
   }
 
   /** Asks for a batch's texts, then diffs and highlights them, and keeps and gives what came. */
@@ -473,6 +518,7 @@ export class Loader {
   /** Once every file that shows its lines has them, or couldn't, the run's files can be drawn. */
   #readyIfDone(run: Run): void {
     if (run.stopped || (this.#ready?.at === run.at && this.#ready.from === run.from)) return;
+    if (!run.moved) return;
     const done = run.entries.every(
       (entry) =>
         !wants(run, entry) ||

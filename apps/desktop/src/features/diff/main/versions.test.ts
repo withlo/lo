@@ -4,8 +4,8 @@ import { parseOid, type ChangedFile } from '@lo/git';
 import type { PullFile } from '@lo/github';
 import { describe, expect, it } from 'vitest';
 
-import { patchReach, TAB_LINES } from '../jobs.ts';
-import { githubFiles, githubVersions, localVersions, treePathOf } from './versions.ts';
+import { patchReach } from '../jobs.ts';
+import { githubVersions, localVersions, treePathOf } from './versions.ts';
 
 const digest = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 
@@ -45,28 +45,8 @@ describe('a file GitHub lists', () => {
       large: expect.stringContaining('past line 100,000'),
     });
     expect(
-      githubVersions(listed('near.ts', { patch: '@@ -99990,2 +99990,2 @@\n-a\n+b\n c' })).start,
-    ).toBe('shown');
-  });
-
-  it('waits for the local copy once the files before it reach far enough between them', () => {
-    // 48 files whose hunks end near line 99,000: each alone is drawn, but not all of them.
-    const near = '@@ -98990,10 +98990,10 @@\n-a\n+b\n c';
-    const files = githubFiles(
-      Array.from({ length: 48 }, (_, index) => listed(`f${index}.ts`, { patch: near })),
-    );
-    const drawn = Math.floor(TAB_LINES / patchReach(near));
-    expect(files.filter((file) => file.start === 'shown')).toHaveLength(drawn);
-    expect(files.slice(0, drawn).every((file) => file.start === 'shown')).toBe(true);
-    expect(files[drawn]).toMatchObject({
-      start: 'large',
-      large: expect.stringContaining('1,000,000 lines between them'),
-    });
-    // Files GitHub's diff draws no lines of don't count.
-    expect(githubFiles([listed('a.ts'), listed('b.ts')]).map((file) => file.start)).toEqual([
-      'shown',
-      'shown',
-    ]);
+      githubVersions(listed('near.ts', { patch: '@@ -99990,2 +99990,2 @@\n-a\n+b\n c' })),
+    ).toMatchObject({ start: 'shown', reach: 99_992 });
   });
 
   it('starts out as GitHub’s list lets the diff tell', () => {

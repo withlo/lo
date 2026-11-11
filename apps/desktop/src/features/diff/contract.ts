@@ -45,6 +45,11 @@ export const fileVersions = z.strictObject({
   generated: z.enum(['attribute', 'lockfile']).nullable(),
   large: z.string().nullable(),
   submodule: z.enum(['old', 'new', 'both']).nullable(),
+  /**
+   * How many lines GitHub's diff of it draws on the side that reaches further, its placeholders
+   * included: as far as its patch's hunks reach. None for the local copy's.
+   */
+  reach: z.number().int().nonnegative(),
 });
 export type FileVersions = z.output<typeof fileVersions>;
 

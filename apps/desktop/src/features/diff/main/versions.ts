@@ -24,7 +24,7 @@ import {
 
 import { PATH_LIMIT, type Change, type TreePath } from '../../tree/contract.ts';
 import type { FileSide, FileVersions, Start } from '../contract.ts';
-import { FAR_LINES, patchReach, TAB_LINES } from '../jobs.ts';
+import { FAR_LINES, patchReach } from '../jobs.ts';
 
 /**
  * `bytes`, a path as git stores it, as the window takes it: one longer than the tree's limit with
@@ -124,6 +124,7 @@ export function localVersions(file: ChangedFile, linguistGenerated?: boolean): F
     new: added,
     ...startOf(review, { binary: file.binary && submodule === null, unchanged }),
     submodule,
+    reach: 0,
   };
 }
 
@@ -134,30 +135,6 @@ function submoduleSides(file: ChangedFile): FileVersions['submodule'] {
   const added = file.new?.mode === 'submodule';
   if (old && added) return 'both';
   return added ? 'new' : 'old';
-}
-
-/**
- * The files GitHub lists, until the local copy lists them, as {@link githubVersions} has each:
- * past {@link TAB_LINES} lines drawn for the files before it, placeholders included, a file waits
- * for the local copy too, so many files reaching far can't fill the documents between them.
- */
-export function githubFiles(files: readonly PullFile[]): FileVersions[] {
-  let drawn = 0;
-  return files.map((file) => {
-    const versions = githubVersions(file);
-    const shows = versions.start === 'shown' || versions.start === 'collapsed';
-    if (!shows || file.patch === undefined) return versions;
-    const reach = patchReach(file.patch);
-    if (drawn + reach <= TAB_LINES) {
-      drawn += reach;
-      return versions;
-    }
-    return {
-      ...versions,
-      start: 'large',
-      large: `GitHub’s diffs of the files before it reach ${TAB_LINES.toLocaleString('en-US')} lines between them: it loads from the local copy`,
-    };
-  });
 }
 
 /**
@@ -179,7 +156,8 @@ export function githubVersions(file: PullFile): FileVersions {
   };
   const noPatch = file.patch === undefined;
   const counted = file.additions + file.deletions > 0;
-  const far = file.patch !== undefined && patchReach(file.patch) > FAR_LINES;
+  const reach = file.patch === undefined ? 0 : patchReach(file.patch);
+  const far = reach > FAR_LINES;
   const quiet = noPatch && !counted;
   const binary = quiet && (change === 'modified' || change === 'added' || change === 'deleted');
   const shape = startOf(review, { binary, unchanged: quiet && !binary });
@@ -192,6 +170,7 @@ export function githubVersions(file: PullFile): FileVersions {
     old: null,
     new: null,
     submodule: null,
+    reach,
     ...(shape.start === 'large'
       ? shape
       : noPatch && counted

@@ -1,8 +1,10 @@
 // The diff, the middle of a pull request's tab: every changed file in one scroll, in the left
 // panel's order, drawn by `@lo/ui/code`'s view once each file that shows its lines has them. The
 // order is worked out from the diff's own files, as the panel works it out, so the view is drawn
-// in it from the start. A new order, as when the reader picks review order, or other files, is a
-// new view, which comes back to what was at the top of the screen.
+// in it from the start, and kept until the reader orders the files another way: what the files
+// say of themselves changing doesn't reorder them under the reader. A new order, or other files,
+// is a new view, which puts the cursor's line back where it was on the page, or else what was at
+// the top of the screen.
 // What arrives after it's drawn goes into the view in place (`drawing.ts`). The tree follows the
 // file on screen, and asks the diff to show the files it picks.
 
@@ -12,15 +14,18 @@ import { client } from '../../../window/ipc.ts';
 import { contract as app } from '../../app/contract.ts';
 import { useSetting } from '../../settings/window/shared.ts';
 import { tabState, usePull, type PullTab } from '../../tab/window/shared.ts';
-import { useOrderOf } from '../../tree/window/shared.ts';
+import { orderIn, useOrderMode } from '../../tree/window/shared.ts';
 import { layout as layoutSetting, whitespace as whitespaceSetting } from '../settings.ts';
 import { draw, type Drawing, type Place } from './drawing.ts';
-import { inOrder, viewKey } from './files.ts';
+import { inOrder, keptOrder, type KeptOrder, viewKey } from './files.ts';
 import type { Loader, Snapshot } from './loader.ts';
 import { loaderOf } from './tabs.ts';
 
 /** Where each tab's view was when it last went, to come back to. */
 const places = tabState<Place | undefined>(() => undefined);
+
+/** The order each tab's diff is drawn in. */
+const orders = tabState<KeptOrder | undefined>(() => undefined);
 
 let page: Promise<{ nonce: string; packaged: boolean }> | undefined;
 
@@ -69,18 +74,17 @@ export function Diff({ tab }: { tab: PullTab }) {
   const snapshot = useSnapshot(loader);
   const { ready } = snapshot;
   // The panel's order, worked out from the diff's own files as the tree works it out from its
-  // own, so the first view is drawn in it: the tree has its files a while after.
-  const changes = useMemo(
-    () =>
-      ready?.entries.map(({ versions: { path, previous, change, generated } }) => ({
-        path,
-        previous,
-        change,
-        generated,
-      })),
-    [ready],
-  );
-  const order = useOrderOf(tab.id, changes);
+  // own, so the first view is drawn in it: the tree has its files a while after. It stays until
+  // the reader orders the files another way.
+  const mode = useOrderMode(tab.id);
+  const order = useMemo(() => {
+    if (!ready) return undefined;
+    const kept = keptOrder(orders.get(tab.id), ready.at, ready.entries, mode, (changes) =>
+      orderIn(changes, mode),
+    );
+    orders.set(tab.id, kept);
+    return kept.order;
+  }, [ready, mode, tab.id]);
   const layout = useSetting(layoutSetting);
   const whitespace = useSetting(whitespaceSetting);
   const nonceValue = useNonce();

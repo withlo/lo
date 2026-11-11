@@ -28,7 +28,7 @@ import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type { DiffState, FileText, FileVersions, Source } from '../contract.ts';
 import { listedAt } from './listed.ts';
-import { githubFiles, localVersions } from './versions.ts';
+import { githubVersions, localVersions } from './versions.ts';
 
 /** Requests GitHub's API keeps for the poller: the diff reads no page of files past them. */
 export const KEEP_REQUESTS = 100;
@@ -311,7 +311,7 @@ export class DiffTab {
         this.#options.log('GitHub listed the files of a newer head; waiting for the local copy');
         return;
       }
-      at.files = githubFiles(listed.files);
+      at.files = listed.files.map(githubVersions);
       at.patches = listed.files.map((file) => file.patch);
       at.from = 'github';
       at.partial = listed.cutShort !== undefined || listed.files.length >= MAX_FILES;

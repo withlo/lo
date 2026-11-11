@@ -4,7 +4,14 @@
 // screen changes at once; one the reader is looking at stays as it is until it's off screen once
 // the reader stops scrolling, or until the reader moves the cursor, opens or closes it.
 
-import { createDiffView, type DiffView, type Probe, type Target, type Viewport } from '@lo/ui/code';
+import {
+  createDiffView,
+  type DiffView,
+  type Probe,
+  type Spot,
+  type Target,
+  type Viewport,
+} from '@lo/ui/code';
 
 import { openMenu } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle } from '../../../window/commands/registry.ts';
@@ -12,7 +19,7 @@ import type { PullTab } from '../../tab/window/shared.ts';
 import { followFile, onShowFile } from '../../tree/window/shared.ts';
 import type { Start } from '../contract.ts';
 import { diffFileOf, headerOf } from './files.ts';
-import type { Entry, Loader, Shown } from './loader.ts';
+import type { Entry, Loader, Moved, Shown } from './loader.ts';
 import { main } from './main.ts';
 import { setDrawn } from './tabs.ts';
 
@@ -36,10 +43,25 @@ declare global {
   }
 }
 
-/** Where a tab's view was when it went: its cursor, and what was at the top of the screen. */
+/**
+ * Where a tab's view was when it went: its cursor, what was at the top of the screen, and where
+ * the cursor's line was, if it was on screen, which a view of the files in a new order puts back.
+ */
 export interface Place {
   readonly cursor: Target;
   readonly viewport: Viewport;
+  readonly cursorAt?: Viewport | undefined;
+}
+
+/** The line or header `target` is on, if it's on one. */
+function spotOf(target: Target): Spot | undefined {
+  if (target.kind === 'line') {
+    const { at } = target;
+    // A span of lines is on the line its cursor is on, its end.
+    if ('line' in at) return { kind: 'line', at };
+    return { kind: 'line', at: { file: at.file, side: at.side, line: Math.max(at.from, at.to) } };
+  }
+  return target.kind === 'header' ? target : undefined;
 }
 
 /** A view drawn, and what's done with it while it's drawn. */
@@ -159,11 +181,18 @@ export function draw(options: DrawOptions): Drawing {
   /** Files to change once the reader isn't looking at them, and how. */
   const pending = new Map<string, { change: Change; start: Start }>();
   /**
-   * Files on screen whose local copy's lines have come, which start out otherwise now: they stay
-   * as they were, lines, diff and colors, until they're scrolled away, and then take the loader's
-   * latest, whatever whitespace was hidden or shown meanwhile.
+   * Files on screen whose local copy's lines have come: they stay as they were, lines, diff and
+   * colors, so nothing on screen moves, until they're off screen once the reader stops scrolling,
+   * or the reader opens or closes them, and then take the loader's latest, whatever whitespace was
+   * hidden or shown meanwhile.
    */
   const held = new Set<string>();
+  /**
+   * The moved code the view shows, and the latest found: a move at a file on screen, or held,
+   * waits as the file does, since its labels change the file's height.
+   */
+  let shownMoves: readonly Moved[] = loader.moves();
+  let latestMoves = shownMoves;
 
   /** Gives a held file the loader's latest lines, diff and colors. */
   const release = (id: string) => {
@@ -222,12 +251,24 @@ export function draw(options: DrawOptions): Drawing {
     }
   };
 
+  /** Shows the latest moves, but those at files on screen or held, which keep what they had. */
+  const showMoves = () => {
+    const looked = new Set(view.filesOnScreen());
+    const waits = (move: Moved) =>
+      [move.from.file, move.to.file].some((file) => looked.has(file) || held.has(file));
+    const next = [...latestMoves.filter((move) => !waits(move)), ...shownMoves.filter(waits)];
+    if (sameMoves(next, shownMoves)) return;
+    shownMoves = next;
+    steady(() => view.setMoves(next));
+  };
+
   /** Whether a pass of `settleOne` is waiting its turn. */
   let settling = false;
 
   /** Makes the changes waiting on files the reader isn't looking at now, a file a task. */
   const settle = () => {
-    if (settling || (pending.size === 0 && held.size === 0)) return;
+    const waiting = pending.size > 0 || held.size > 0 || !sameMoves(shownMoves, latestMoves);
+    if (settling || !waiting) return;
     settling = true;
     pacer.run(settleOne);
   };
@@ -249,6 +290,7 @@ export function draw(options: DrawOptions): Drawing {
       return false;
     };
     if (made()) settle();
+    else showMoves();
   };
 
   const view = createDiffView(
@@ -275,22 +317,13 @@ export function draw(options: DrawOptions): Drawing {
       },
     },
   );
-  // Highlighting first, so each file is drawn once, with its diff.
-  files.forEach((file) => {
-    const shown = file.lines ? loader.shown(file.id) : undefined;
-    if (!shown) return;
-    for (const side of ['old', 'new'] as const) {
-      const triples = shown.tokens[side];
-      if (triples) view.setTokens(file.id, side, triples);
-    }
-    view.setDiff(file.id, shown.diff);
-  });
-  view.setMoves(loader.moves());
+  // Each file's diff and highlighting came with it.
+  view.setMoves(shownMoves);
   loader.attach({
     lines(id, shown) {
       pacer.run(() => {
-        // A file the reader is looking at that starts out otherwise now stays as it is.
-        if (pending.has(id) && drawn.get(id) !== 'out' && view.filesOnScreen().includes(id)) {
+        // A file the reader is looking at stays as it is.
+        if (drawn.get(id) !== 'out' && !asked.has(id) && view.filesOnScreen().includes(id)) {
           held.add(id);
           return;
         }
@@ -313,8 +346,13 @@ export function draw(options: DrawOptions): Drawing {
       pacer.run(() => {
         if (!held.has(id)) steady(() => view.loadFailed(id));
       }),
-    // Labels at moves' ends change the height of files above the screen too.
-    moves: (moves) => pacer.run(() => steady(() => view.setMoves(moves))),
+    // Labels at moves' ends change the height of files above the screen too: `steady` keeps what's
+    // on screen in place.
+    moves: (moves) =>
+      pacer.run(() => {
+        latestMoves = moves;
+        showMoves();
+      }),
     tokens: (id, tokens) =>
       pacer.run(() => {
         if (!held.has(id)) setTokens(id, tokens);
@@ -372,7 +410,9 @@ export function draw(options: DrawOptions): Drawing {
   const { before } = options;
   if (before) {
     view.reveal(before.cursor);
-    view.scrollTo(before.viewport);
+    // The cursor's line where it was on the page, as when the reader changes the files' order; or
+    // what was at the top of the screen.
+    if (!(before.cursorAt && view.scrollTo(before.cursorAt))) view.scrollTo(before.viewport);
   }
   // Focus that's nowhere in particular comes to the diff, as it does to any middle view.
   const focused = document.activeElement;
@@ -402,7 +442,18 @@ export function draw(options: DrawOptions): Drawing {
       }
       settle();
     },
-    place: () => ({ cursor: view.keyState().target, viewport: view.viewport() }),
+    place: () => {
+      const cursor = view.keyState().target;
+      const spot = spotOf(cursor);
+      const top = spot && view.probe.spotTop(spot);
+      const box = parent.getBoundingClientRect();
+      const shown = top !== undefined && top >= box.top && top < box.bottom;
+      return {
+        cursor,
+        viewport: view.viewport(),
+        cursorAt: spot && shown ? { at: spot, offset: box.top - top } : undefined,
+      };
+    },
     stop() {
       pacer.stop();
       if (testing && window.loDiff === testing) window.loDiff = undefined;
@@ -410,4 +461,11 @@ export function draw(options: DrawOptions): Drawing {
       for (const stop of stops) stop();
     },
   };
+}
+
+/** Whether two lists hold the same moves, in any order. */
+function sameMoves(a: readonly Moved[], b: readonly Moved[]): boolean {
+  if (a.length !== b.length) return false;
+  const seen = new Set(a.map((move) => JSON.stringify(move)));
+  return b.every((move) => seen.has(JSON.stringify(move)));
 }

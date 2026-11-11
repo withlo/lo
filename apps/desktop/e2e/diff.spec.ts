@@ -38,6 +38,13 @@ declare global {
     loFrames?: number[];
     /** Where the diff was scrolled to at each frame while a test timed them. */
     loTops?: number[];
+    /**
+     * What moved on the page while a test watched it: the line at the top of the screen, or the one
+     * in its middle, on a frame the reader gave no input.
+     */
+    loMoved?: string[];
+    /** Stops watching. */
+    loStill?: boolean;
   }
 }
 
@@ -455,6 +462,127 @@ test.describe('when the tree has the changed files after the diff does', () => {
   });
 });
 
+/**
+ * Watches, every frame until the test stops it, where the line at the top of the screen and the
+ * one in its middle are on the page, and says each time either has moved on a frame without
+ * the reader's input. Each is sampled as a frame starts, and counts as moved once it's been away
+ * from its place for two frames running, so a change made up for before it's painted doesn't.
+ */
+async function watchStill(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const view = document.querySelector<HTMLElement>('.lo-diffview');
+    const diff = window.loDiff;
+    if (!view || !diff) throw new Error('no diff to watch');
+    const box = view.getBoundingClientRect();
+    const middle = (() => {
+      for (let dy = 0; dy < box.height / 2; dy += 4) {
+        const spot = diff.probe.spotAt(box.top + box.height / 2 + dy);
+        if (spot) return spot;
+      }
+      return undefined;
+    })();
+    const watched = [
+      { name: 'top', spot: diff.viewport().at },
+      { name: 'middle', spot: middle },
+    ].flatMap(({ name, spot }) => {
+      const y = spot ? diff.probe.spotTop(spot) : undefined;
+      return spot && y !== undefined ? [{ name, spot, y, away: 0 }] : [];
+    });
+    if (watched.length < 2) throw new Error('no line to watch in the middle of the screen');
+    const moved: string[] = [];
+    window.loMoved = moved;
+    window.loStill = false;
+    let input = false;
+    for (const type of ['wheel', 'keydown', 'pointerdown']) {
+      window.addEventListener(type, () => (input = true), { capture: true });
+    }
+    const tick = () => {
+      for (const each of watched) {
+        const y = window.loDiff?.probe.spotTop(each.spot);
+        if (input) {
+          // The reader moved it: where it is now is its place.
+          if (y !== undefined) each.y = y;
+          each.away = 0;
+          continue;
+        }
+        const off = y === undefined || Math.abs(y - each.y) > 0.5;
+        each.away = off ? each.away + 1 : 0;
+        if (each.away === 2) {
+          moved.push(`${each.name} ${JSON.stringify(each.spot)} from ${each.y} to ${y}`);
+        }
+      }
+      input = false;
+      if (!window.loStill) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+test.describe('while the local copy takes GitHub’s place', () => {
+  test.use({ cassette: 'app_e2e_late', lateRemote: true });
+
+  for (const order of ['tree', 'review'] as const) {
+    for (const depth of [0.25, 0.5, 0.75]) {
+      test(`nothing on screen moves, in ${order} order, ${depth * 100}% of the way down`, async ({
+        app,
+        page,
+      }) => {
+        await app.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0]?.setSize(1100, 440),
+        );
+        const id = await drawn(page, 'github', { moves: false });
+        const view = page.locator('.lo-diffview');
+        if (order === 'review') {
+          const tree = page.locator('[role="tree"][data-lo-scope="tree"]');
+          await tree.focus();
+          await page.keyboard.press('t');
+          await expect(tree).toHaveAttribute('aria-label', 'Changed files in review order');
+          await page.waitForTimeout(300);
+        }
+        // Wheeled down, with the banner that says the copy couldn't be fetched over the diff.
+        const box = await view.boundingBox();
+        await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
+        const goal = await view.evaluate(
+          (each, part) => Math.round((each.scrollHeight - each.clientHeight) * part),
+          depth,
+        );
+        await expect
+          .poll(
+            async () => {
+              const at = await view.evaluate((each) => each.scrollTop);
+              if (at < goal) await page.mouse.wheel(0, Math.min(120, goal - at));
+              return at >= goal - 1;
+            },
+            { timeout: 10_000 },
+          )
+          .toBe(true);
+        await page.waitForTimeout(500);
+        await watchStill(page);
+
+        // The banner goes, the local copy comes and takes GitHub's place, and its moves and
+        // highlighting follow.
+        writeAppRemote(test.info().outputPath('remote'));
+        await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+        const status = page.locator('footer');
+        await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
+          timeout: 30_000,
+        });
+        await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, {
+          timeout: 20_000,
+        });
+        await expect(page.locator('[data-lo-banners]')).toHaveCount(0);
+        await page.waitForTimeout(1500);
+        const moved = await page.evaluate(() => {
+          window.loStill = true;
+          return window.loMoved ?? [];
+        });
+
+        expect(moved).toEqual([]);
+      });
+    }
+  }
+});
+
 test.describe('when the local copy comes after GitHub’s diff', () => {
   test.use({ cassette: 'app_e2e_late', lateRemote: true });
 
@@ -531,11 +659,11 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
       timeout: 30_000,
     });
     await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
-    // src/format.ts, off screen, came in; the lines GitHub left out of src/parser.ts are there.
-    await expect(
-      page.locator('.lo-diffview .lo-collapsed', { hasText: 'not loaded yet' }),
-    ).toHaveCount(0);
+    // src/format.ts, off screen, came in; src/parser.ts, on screen, keeps GitHub's lines.
     await expect(formatNote).toHaveCount(0);
+    await expect(
+      page.locator('.lo-diffview .lo-collapsed', { hasText: 'not loaded yet' }).first(),
+    ).toBeAttached();
     await page.waitForTimeout(500);
     const { frames, tops } = await page.evaluate(() => {
       const timed = { frames: window.loFrames ?? [], tops: window.loTops ?? [] };

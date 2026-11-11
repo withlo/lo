@@ -61,6 +61,7 @@ function versions(path: string): FileVersions {
     generated: null,
     large: null,
     submodule: null,
+    reach: 0,
   };
 }
 

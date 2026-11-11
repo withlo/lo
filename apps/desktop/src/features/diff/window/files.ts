@@ -4,6 +4,7 @@
 import { sizeText } from '@lo/review';
 import type { DiffFile, FileHeader } from '@lo/ui/code';
 
+import type { Changed } from '../../tree/contract.ts';
 import type { FileVersions } from '../contract.ts';
 import type { Entry, Shown } from './loader.ts';
 
@@ -24,6 +25,41 @@ export function inOrder(
   return entries.toSorted(
     (a, b) => (places.get(a.id) ?? Infinity) - (places.get(b.id) ?? Infinity) || a.place - b.place,
   );
+}
+
+/**
+ * The order a tab's diff draws its files in: worked out in the panel's way, and kept until the
+ * reader changes how the panel orders them, or the files change. What the files say of themselves
+ * changing, as when the local copy marks one generated, which moves it in review order, doesn't
+ * reorder a view that's drawn.
+ */
+export interface KeptOrder {
+  readonly mode: string;
+  readonly at: string;
+  /** The files' keys, sorted, to tell when they change. */
+  readonly files: string;
+  readonly order: readonly string[];
+}
+
+/** {@link KeptOrder} for `entries` at `at` in `mode`: `kept`, or a new one from `orderOf`. */
+export function keptOrder(
+  kept: KeptOrder | undefined,
+  at: string,
+  entries: readonly Entry[],
+  mode: string,
+  orderOf: (changes: readonly Changed[]) => readonly string[],
+): KeptOrder {
+  const files = entries
+    .map((entry) => entry.key)
+    .toSorted()
+    .join('\n');
+  if (kept && kept.mode === mode && kept.at === at && kept.files === files) return kept;
+  return { mode, at, files, order: orderOf(entries.map(changeOf)) };
+}
+
+/** A file as the panel orders it. */
+export function changeOf({ versions: { path, previous, change, generated } }: Entry): Changed {
+  return { path, previous, change, generated };
 }
 
 /**
@@ -143,6 +179,8 @@ export function diffFileOf(entry: Entry, shown: Shown | undefined): DiffFile {
     return file;
   }
   file.lines = shown.lines;
+  file.diff = shown.diff;
+  file.tokens = shown.tokens;
   if (shown.gaps.length > 0) file.gaps = shown.gaps;
   if (versions.start === 'collapsed') file.collapsed = true;
   return file;

@@ -69,6 +69,7 @@ function versions(start: Start): FileVersions {
     generated: start === 'collapsed' ? 'attribute' : null,
     large: null,
     submodule: null,
+    reach: 0,
   };
 }
 

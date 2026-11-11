@@ -21,6 +21,7 @@ function versions(path: string, start: Start = 'shown', size = 10): FileVersions
     generated: null,
     large: start === 'large' ? 'large' : null,
     submodule: null,
+    reach: 0,
   };
 }
 
@@ -266,6 +267,38 @@ describe('a tab’s diff in the window', () => {
     expect(loader.ids.of('x.ts')).toBe('d0');
     expect(loader.ids.keyOf('d1')).toBe('y.ts');
     expect(loader.ids.find('z.ts')).toBe(undefined);
+  });
+
+  it('keeps out GitHub’s files past a million lines between them, counting in the panel’s order', async () => {
+    // Main lists z.ts first; the panel lists a.ts and b.ts first. Each draws 400,000 lines.
+    const files = ['z.ts', 'a.ts', 'b.ts'].map((path) => ({
+      ...versions(path),
+      reach: 400_000,
+    }));
+    const { done, asked, list } = work(['a.ts', 'b.ts', 'z.ts']);
+    list(files);
+    const loader = new Loader({
+      ...done,
+      texts: ({ files: places }) => {
+        asked.texts.push(places);
+        return Promise.resolve(
+          places.map(() => ({ kind: 'texts' as const, old: 'x\n', new: 'y\n' })),
+        );
+      },
+    });
+    loader.setWhitespace(true);
+    loader.take(state(files, 'github'));
+    await settle(loader);
+
+    const starts = loader
+      .snapshot()
+      .ready?.entries.map((entry) => [entry.versions.path.text, entry.versions.start]);
+    expect(starts).toEqual([
+      ['z.ts', 'large'],
+      ['a.ts', 'shown'],
+      ['b.ts', 'shown'],
+    ]);
+    expect(asked.texts.flat().toSorted((a, b) => a - b)).toEqual([1, 2]);
   });
 
   it('splits a batch whose patches reach far between them over several jobs', async () => {
