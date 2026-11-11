@@ -313,6 +313,16 @@ importers:
         specifier: workspace:*
         version: link:../../../testing
 
+  packages/core/stacks:
+    dependencies:
+      '@lo/github':
+        specifier: workspace:*
+        version: link:../github
+    devDependencies:
+      '@lo/testing':
+        specifier: workspace:*
+        version: link:../../../testing
+
   packages/desktop/git:
     devDependencies:
       '@lo/testing':
