@@ -37,95 +37,50 @@ open. It talks to GitHub directly and has no backend of its own.
 Lo is built around what a reviewer does all day: read an overview that a coding agent wrote to
 explain the change, see the changed files among the rest of the repository, review a stack of pull
 requests layer by layer, see what changed since your last review even after a rebase, follow code to
-where it's defined, and approve and merge on one key. [Features](#features) says which of these work
-today.
+where it's defined, and approve and merge on one key. [Status](#status) says how far along it is.
 
 ## Principles
 
-Lo keeps to these rules.
+Lo keeps to these rules. [`docs/design.md`](docs/design.md) has the detail.
 
-- **No AI in Lo.** Lo calls no model and runs no agent. It shows what agents write elsewhere: a pull
-  request can carry an overview, an explanation written by a coding agent with push access, and Lo
-  displays it whichever agent wrote it. The overview format and the skill that teaches an agent to
-  write one are open source under the MIT license, and the skill installs for Claude Code or Codex.
-  Lo never starts an agent itself: when a pull request has no overview, it will offer a prompt to
-  copy into yours.
-- **Built on GitHub.** Lo talks to GitHub directly and uses GitHub's own state: reviews, comments,
-  viewed marks and merges are all GitHub's, so github.com shows what you did in Lo. An overview is
-  kept in the pull request's repository, on a git ref of its own. Lo keeps nothing of yours on a
-  server of its own: what isn't on GitHub stays on your computer.
-- **Your data stays between you and GitHub.** There's no Lo backend and no Lo account: you sign in
-  with GitHub, or open public pull requests without signing in. Lo sends no telemetry and no
-  analytics. Your GitHub tokens are stored only on your computer, encrypted with a key kept in your
-  system's keychain, and sent only to GitHub. Lo connects only to GitHub, to the official download
-  sources of the language servers it uses, and to GitHub Releases for updates.
-- **Read-only.** Lo never edits files or pushes commits. It writes to GitHub only to review and
-  merge: comments and their attachments, reviews, viewed marks, merges, merge queue and auto-merge
-  changes, and a pull request's base branch when you form a stack.
-- **Never runs a repository's code.** Lo installs no dependencies and runs no build steps, and
-  overviews can't contain scripts. Language servers are the one exception, since some of them run
-  code from the project they read: they run only on repositories you trust, and a pull request from
-  a fork must be trusted on its own.
-- **Keyboard first.** Lo is built to be used from the keyboard: every action is meant to have a key,
-  `?` lists the keys, and a keymap file changes any of them. A few rare actions, such as installing
-  the `lo` command, have no key: they're in the command palette instead, and on macOS in the app
-  menu too.
+- **No AI in Lo.** Lo calls no model and runs no agent: it shows the overviews agents write. Their
+  format and skill are MIT-licensed, and the skill installs for Claude Code or Codex.
+- **Built on GitHub.** Reviews, comments, viewed marks and merges are GitHub's own, so github.com
+  shows what you did in Lo.
+- **Your data stays between you and GitHub.** No Lo backend, account or telemetry. Your tokens stay
+  on your computer, protected by your system's keychain, and go only to GitHub.
+- **Read-only.** Lo never edits files or pushes commits. It writes to GitHub only to review, merge
+  and form stacks.
+- **Never runs a repository's code.** No dependency installs or build steps. Language servers, which
+  can run a project's code, start only on repositories you trust.
+- **Keyboard first.** Every action is meant to have a key, and `?` lists every key. A few rare ones,
+  such as installing the `lo` command, live in the command palette instead.
 
 ## Features
 
-### Works today
-
-- **Signing in.** Through GitHub's device flow, or by importing your accounts from the `gh` CLI.
-  Several accounts can be signed in at once. A pull request opens as the account that can see it,
-  and when more than one can, Lo asks which and remembers your answer for that owner.
-- **A welcome screen,** while no account is signed in. It signs you in, opens a public pull request
-  without signing in, and offers to install the `lo` command and to send pull request links to Lo.
-- **Opening pull requests.** `⌘L` opens a pull request from its link, and so do the `lo` command and
-  `lo://` links. Lo can also take pull request links from a link router: there are rules for
-  Finicky, Velja and Choosy, though they haven't been tried in those apps yet. Public pull requests
-  open read-only without signing in. With nothing open, Lo lists the pull requests you opened
-  recently.
-- **Pull request tabs.** Each pull request opens in a tab of its own, with a header and with banners
-  for anything that needs you, such as a newer push or a lost connection. Lo keeps a partial clone
-  of each repository in its cache.
-- **The file tree.** The changed files among their unchanged neighbors, or, with `t`, in review
-  order: each source file followed by its tests, then config, then generated files. `f` shows only
-  the changed files.
-- **Finding a file.** `⌘P` finds any file in the repository by its name, changed or not.
-- **Keys.** `?` shows every key, `⌘⇧P` opens the command palette, `Menu` or `⇧F10` opens the
-  right-click menu of what has focus, and a keymap file changes any key.
-- **Settings.** `⌘,` opens Settings, for accounts, the theme, keys and the cache. It edits a
-  `settings.json` file, which you can also edit by hand.
-- **The overview skill,** in [`skill/`](skill/), with its checker. The skill teaches a coding agent
-  to write an overview, and the checker checks it with the same parser as Lo and commits it for its
-  pull request. Neither is published yet.
-
-### Coming
-
-- **The diff.** Side by side by default or inline, with moved-code detection.
-- **Revisions.** Compare any two pushes, and see what changed since your last review, even across a
-  rebase.
-- **Viewed marks.** GitHub's own, so they match the web UI. `e` marks a file viewed and moves to the
-  next one, and a file that changed since you viewed it opens on what changed.
-- **The whole-file view.** Any file in the repository, changed or not.
-- **Overviews in Lo.** A pull request's overview opens before the diff, with definitions, diagrams
-  and walkthroughs tied to the real code.
+- **Overviews.** A pull request can carry an overview: an explanation a coding agent wrote, with
+  definitions, diagrams and walkthroughs tied to the real code. Lo opens it before the diff.
+- **The whole repo.** The file tree shows changed files among their unchanged neighbors, or in
+  review order, with each source file followed by its tests. `⌘P` finds any file.
 - **Stacks.** Native GitHub stacks, chains of base branches, and pull requests that contain
-  another's commits. Stacks show as a tree, you review them layer by layer, and they merge as one
-  unit wherever GitHub allows.
-- **Comments and reviews.** Threads in the diff, a pending review and the full conversation
-  timeline.
-- **Merging and the merge queue.** A clear "why can't this merge" panel, approve and ship on one
-  key, and full merge queue support.
-- **Code navigation.** Syntax-based navigation everywhere, plus types, hovers and exact references
-  from language servers on repositories you trust.
-- **A release.** A signed, notarized download and a Homebrew cask for the Mac, deb and rpm packages
-  for Linux, and updates from GitHub Releases.
+  another's commits show as a tree. You review them layer by layer, and they merge as one unit
+  wherever GitHub allows.
+- **Diffs.** Side by side by default, with moved-code detection.
+- **Revisions.** Compare any two pushes, and see what changed since your last review or since you
+  marked a file viewed, even across a rebase.
+- **Code.** Syntax-based navigation everywhere, plus types, hovers and exact references from
+  language servers on repositories you trust.
+- **Merging.** Approve and ship on one key, a clear "why can't this merge" panel, and full merge
+  queue support.
+- **Keys.** Vim-style keys in the code, a command palette, `?` for every key, and a keymap file to
+  change them.
 
 ## Status
 
 Lo is in early development, and there's no release yet: no download, Homebrew cask or Linux package.
-To try it, build it from source, and expect missing pieces and things that change.
+Today you can sign in, open pull requests and browse their files; the diff, revisions, overviews,
+stacks, comments, merging and code navigation are still being built. To try it, build it from
+source, and expect missing pieces and things that change.
 
 It's built for the Mac first. Linux builds will be published as a preview, and Lo already builds and
 runs on Linux from source: its tests drive the real app there. On Linux, Ctrl takes the place of
