@@ -71,6 +71,111 @@
   z-index: var(--lo-z-toast);
 }
 
+/* A small wait in place: a ring turning, in the accent at its top. Reduce Motion stops it. */
+@keyframes lo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@utility spinner {
+  flex: none;
+  border-radius: 50%;
+  border: 1.5px solid var(--lo-border-strong);
+  border-top-color: var(--lo-accent);
+  animation: lo-spin 0.8s linear infinite;
+}
+
+/* Where text will be once it arrives: a bar with a shimmer passing along it. */
+@keyframes lo-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@utility skeleton {
+  display: block;
+  height: var(--lo-sp-8);
+  border-radius: var(--lo-r-pill);
+  background: linear-gradient(90deg, var(--lo-hover) 0%, var(--lo-press) 50%, var(--lo-hover) 100%)
+    0 0 / 200% 100%;
+  animation: lo-shimmer 1.4s var(--lo-ease-in-out) infinite;
+}
+
+/* The PR header: the title row, then the row of what's on screen, in the header's height. */
+@utility pr-header {
+  display: grid;
+  grid-template-rows: var(--lo-sp-40) minmax(0, 1fr);
+}
+
+/* A PR's number beside its title: the title's size, at a lighter weight. */
+@utility pr-number {
+  font: var(--lo-text-title);
+  font-weight: 500;
+  letter-spacing: var(--lo-track-tight);
+}
+
+/* A banner's ground and its edge under it, by its tone. */
+@utility banner-info {
+  background: var(--lo-info-bg);
+  box-shadow: inset 0 -1px 0 var(--lo-info-border);
+}
+@utility banner-warn {
+  background: var(--lo-warning-bg);
+  box-shadow: inset 0 -1px 0 var(--lo-warning-border);
+}
+@utility banner-danger {
+  background: var(--lo-danger-bg);
+  box-shadow: inset 0 -1px 0 var(--lo-danger-border);
+}
+
+/* A chip in a status color with its border inside, as the header's connection state is. */
+@utility chip-warn {
+  color: var(--lo-warning);
+  background: var(--lo-warning-bg);
+  box-shadow: inset 0 0 0 1px var(--lo-warning-border);
+}
+@utility chip-danger {
+  color: var(--lo-danger);
+  background: var(--lo-danger-bg);
+  box-shadow: inset 0 0 0 1px var(--lo-danger-border);
+}
+
+/* A PR state's pill: its color, ground and border inside. */
+@utility state-open {
+  color: var(--lo-state-open);
+  background: var(--lo-state-open-bg);
+  box-shadow: inset 0 0 0 1px var(--lo-state-open-border);
+}
+@utility state-draft {
+  color: var(--lo-state-draft);
+  background: var(--lo-state-draft-bg);
+  box-shadow: inset 0 0 0 1px var(--lo-state-draft-border);
+}
+@utility state-merged {
+  color: var(--lo-state-merged);
+  background: var(--lo-state-merged-bg);
+  box-shadow: inset 0 0 0 1px var(--lo-state-merged-border);
+}
+@utility state-closed {
+  color: var(--lo-state-closed);
+  background: var(--lo-state-closed-bg);
+  box-shadow: inset 0 0 0 1px var(--lo-state-closed-border);
+}
+
+/* The status bar's hairline over it. */
+@utility statusbar-edge {
+  box-shadow: inset 0 1px 0 var(--lo-border-subtle);
+}
+
+/* The middle sheet: the ground with round top corners, set into the chrome. */
+@utility sheet {
+  background: var(--lo-bg);
+  border-radius: var(--lo-r-lg) var(--lo-r-lg) 0 0;
+  box-shadow: 0 0 0 1px var(--lo-border-subtle);
+}
+
 /* Dialogs and palettes sit over the window. */
 @utility z-dialog {
   z-index: var(--lo-z-dialog);

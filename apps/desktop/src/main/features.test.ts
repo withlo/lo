@@ -38,6 +38,7 @@ const noGit: LocalGit = {
   status: undefined,
   cache: undefined,
   onStatus: () => undefined,
+  onCache: () => () => undefined,
   check: () => Promise.reject(new Error('these tests run no git')),
   setCap: () => Promise.resolve(),
 };

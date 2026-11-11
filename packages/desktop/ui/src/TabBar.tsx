@@ -1,6 +1,8 @@
 import { Menu } from '@base-ui/react/menu';
 import { cva } from 'class-variance-authority';
-import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+
+import { Skeleton, Spinner } from './Spinner.tsx';
 
 /** A tab in the strip: a pull request's (or a whole stack's), or one of Lo's own. */
 export type Tab = PullTab | RecentTab | SettingsTab;
@@ -18,6 +20,11 @@ export interface PullTab {
   state?: 'open' | 'draft' | 'merged' | 'closed' | undefined;
   /** How many pull requests the tab's stack holds, when it holds one. */
   stack?: number | undefined;
+  /**
+   * Whether it's still opening, with no title yet: it shows a spinner where its state goes, and a
+   * placeholder where its title will be.
+   */
+  loading?: boolean | undefined;
 }
 
 /** "Recent pull requests": the only tab while nothing else is open. It has no close button. */
@@ -42,10 +49,16 @@ export interface TabBarProps {
   onNew?: (() => void) | undefined;
   /** Where the menu of tabs that don't fit is put in the page: an element inside `.lo-app`. */
   menuContainer?: HTMLElement | null | undefined;
+  /** Whether the menu of tabs that don't fit is open, for a key to open it. */
+  moreOpen?: boolean | undefined;
+  /** Hears the menu of tabs that don't fit open or close. */
+  onMoreOpenChange?: ((open: boolean) => void) | undefined;
+  /** Hears which tabs don't fit, by id, each time that changes. */
+  onFold?: ((folded: readonly string[]) => void) | undefined;
 }
 
 const tab = cva(
-  'relative mt-8 flex max-w-tab-w min-w-tab-w-min shrink grow-0 basis-tab-w items-center gap-6 rounded-t-md ps-12 pe-6 whitespace-nowrap no-drag text-small focus-visible:shadow-ring-inset',
+  'relative mt-8 flex max-w-tab-w min-w-tab-w-min shrink grow-0 basis-tab-w items-center gap-4 rounded-t-md ps-12 pe-4 whitespace-nowrap no-drag text-small focus-visible:shadow-ring-inset',
   {
     variants: {
       selected: {
@@ -76,12 +89,26 @@ const state = cva('size-8 flex-none rounded-full', {
  * Tabs shrink as more open, down to their repository and number, and those that still don't fit
  * fold into a menu after the last that does, "N more". The tab on screen never folds.
  */
-export function TabBar({ tabs, selected, onSelect, onClose, onNew, menuContainer }: TabBarProps) {
+export function TabBar({
+  tabs,
+  selected,
+  onSelect,
+  onClose,
+  onNew,
+  menuContainer,
+  moreOpen,
+  onMoreOpenChange,
+  onFold,
+}: TabBarProps) {
   const list = useRef<HTMLDivElement>(null);
   const plus = useRef<HTMLButtonElement>(null);
   const more = useRef<HTMLButtonElement>(null);
   const room = useRoom(list, plus, more, tabs.length);
   const { shown, folded } = foldTabs(tabs, selected, room);
+  const foldedIds = folded.map((item) => item.id).join('\n');
+  useEffect(() => {
+    onFold?.(foldedIds === '' ? [] : foldedIds.split('\n'));
+  }, [foldedIds, onFold]);
   return (
     <div className="h-tabbar-h shrink-0 bg-bg ps-window-inset-start pe-window-inset-end drag">
       <div
@@ -100,7 +127,14 @@ export function TabBar({ tabs, selected, onSelect, onClose, onNew, menuContainer
           />
         ))}
         {folded.length > 0 && (
-          <MoreTabs trigger={more} tabs={folded} onSelect={onSelect} container={menuContainer} />
+          <MoreTabs
+            trigger={more}
+            tabs={folded}
+            onSelect={onSelect}
+            container={menuContainer}
+            open={moreOpen}
+            onOpenChange={onMoreOpenChange}
+          />
         )}
         <button
           ref={plus}
@@ -215,20 +249,30 @@ function useRoom(
   return room;
 }
 
-/** The "N more" button, and the menu of the tabs it holds. Choosing one shows it. */
+/**
+ * The "N more" button, and the menu of the tabs it holds. Choosing one shows it. `Tab` reaches the
+ * button, and a key can open the menu, through `open`.
+ */
 function MoreTabs({
   trigger,
   tabs,
   onSelect,
   container,
+  open,
+  onOpenChange,
 }: {
   trigger: RefObject<HTMLButtonElement | null>;
   tabs: readonly Tab[];
   onSelect: TabBarProps['onSelect'];
   container: HTMLElement | null | undefined;
+  open: boolean | undefined;
+  onOpenChange: ((open: boolean) => void) | undefined;
 }) {
   return (
-    <Menu.Root>
+    <Menu.Root
+      {...(open === undefined ? {} : { open })}
+      onOpenChange={(next) => onOpenChange?.(next)}
+    >
       <Menu.Trigger
         ref={trigger}
         aria-label={`${tabs.length} more tabs`}
@@ -296,10 +340,12 @@ function TabItem({
   onClose: TabBarProps['onClose'];
 }) {
   const { id } = item;
+  const loading = item.kind === 'pull' && isLoading(item);
   return (
     <div
       role="tab"
       aria-selected={selected}
+      aria-busy={loading ? true : undefined}
       tabIndex={selected ? 0 : -1}
       data-tab={id}
       onClick={() => onSelect?.(id)}
@@ -315,7 +361,8 @@ function TabItem({
             event.stopPropagation();
             onClose?.(id);
           }}
-          className={`grid size-20 flex-none place-items-center rounded-xs text-fg-muted hover:bg-press hover:text-fg ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          // Another tab's button takes no room until it's hovered, so a narrow tab keeps its name.
+          className={`size-20 flex-none place-items-center rounded-xs text-fg-muted hover:bg-press hover:text-fg ${selected ? 'grid' : 'hidden group-hover:grid'}`}
         >
           <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M4 4l8 8M12 4l-8 8" />
@@ -326,9 +373,15 @@ function TabItem({
   );
 }
 
+/** Whether a pull request's tab is still opening: it has no title yet, and says it's loading. */
+function isLoading(item: PullTab): boolean {
+  return item.loading === true && item.title === undefined;
+}
+
 /**
  * What a tab says: a pull request's state, place and title, or the name of one of Lo's own. As
- * the tab narrows, its title goes first, then its repository's name; its number stays.
+ * the tab narrows, its title goes first, then its repository's name shortens, but never past
+ * its first letter and an ellipsis, and never past half the tab; its number stays whole.
  */
 function TabLabel({ tab: item, selected }: { tab: Tab; selected: boolean }) {
   const title = `min-w-0 flex-1 truncate ${selected ? 'font-medium' : ''}`;
@@ -336,10 +389,18 @@ function TabLabel({ tab: item, selected }: { tab: Tab; selected: boolean }) {
     case 'pull':
       return (
         <>
-          {item.state && <span className={state({ state: item.state })} title={item.state} />}
-          <span className="min-w-0 truncate text-fg-muted">{item.repo} </span>
+          {isLoading(item) ? (
+            <Spinner size="xs" />
+          ) : (
+            item.state && <span className={state({ state: item.state })} title={item.state} />
+          )}
+          <span className="max-w-1/2 min-w-16 shrink truncate text-fg-muted">{item.repo}</span>
           <span className="lo-num flex-none text-fg-muted">#{item.number}</span>
-          <span className={title}>{item.title}</span>
+          {isLoading(item) ? (
+            <Skeleton className="w-48 min-w-0 shrink" />
+          ) : (
+            <span className={title}>{item.title}</span>
+          )}
           {item.stack !== undefined && (
             <span
               className="inline-flex flex-none items-center gap-4 text-fg-muted text-micro"

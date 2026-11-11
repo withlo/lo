@@ -1,3 +1,4 @@
+export * from './app.ts';
 export * from './fake.ts';
 export * from './git.ts';
 export * from './github.ts';

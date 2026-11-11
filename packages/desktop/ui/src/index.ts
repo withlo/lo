@@ -16,3 +16,8 @@ export { Key, keyAria, type KeyAria, type KeyProps } from './Key.tsx';
 export { Toast, ToastRegion, type ToastProps, type ToastTone } from './Toast.tsx';
 export { KeyHelp, type KeyHelpProps } from './KeyHelp.tsx';
 export { Palette, PaletteHint, type PaletteGroup, type PaletteProps } from './Palette.tsx';
+export { Banner, type BannerAction, type BannerProps } from './Banner.tsx';
+export { PRHeader, type HeaderConnection, type PRHeaderProps } from './PRHeader.tsx';
+export { Skeleton, Spinner, type SpinnerProps } from './Spinner.tsx';
+export { StatePill, type PullRequestState } from './StatePill.tsx';
+export { StatusBar, StatusItem } from './StatusBar.tsx';

@@ -108,6 +108,11 @@ export interface LocalGit {
   /** Hears what Lo finds each time it looks. */
   onStatus(listener: (status: GitStatus) => void): void;
   /**
+   * Hears the cache once it opens, or at once if it's open already: a feature that waits to fetch
+   * starts from here. Returns a function that stops listening.
+   */
+  onCache(listener: (cache: Cache) => void): () => void;
+  /**
    * Lo's local copies of repositories: `undefined` until git is found and the cache is open, and
    * while Lo has no git. Open a repository with its account's token as a source, read as each
    * fetch starts; the cache adds the proxy Lo's own requests take.
@@ -192,6 +197,7 @@ class GitHost implements MainGit {
   readonly #options: GitOptions;
   #status: GitStatus | undefined;
   readonly #listeners = new Set<(status: GitStatus) => void>();
+  readonly #cacheListeners = new Set<(cache: Cache) => void>();
   #cache: Cache | undefined;
   #cap = DEFAULT_CAP;
   /** The look for git under way, which every check asked for meanwhile shares. */
@@ -213,6 +219,23 @@ class GitHost implements MainGit {
 
   onStatus(listener: (status: GitStatus) => void): void {
     this.#listeners.add(listener);
+  }
+
+  onCache(listener: (cache: Cache) => void): () => void {
+    this.#cacheListeners.add(listener);
+    if (this.#cache) this.#tell(listener, this.#cache);
+    return () => {
+      this.#cacheListeners.delete(listener);
+    };
+  }
+
+  /** Gives `cache` to `listener`, noting a listener that fails rather than failing the open. */
+  #tell(listener: (cache: Cache) => void, cache: Cache): void {
+    try {
+      listener(cache);
+    } catch (error) {
+      this.#options.log(`can't hand on the cache: ${describe(error)}`);
+    }
   }
 
   check(): Promise<GitStatus> {
@@ -290,6 +313,7 @@ class GitHost implements MainGit {
       return;
     }
     this.#cache = cache;
+    for (const listener of this.#cacheListeners) this.#tell(listener, cache);
     // Nothing waits for cleanup, and a failure is only noted.
     void this.#cleanUp(cache);
   }
