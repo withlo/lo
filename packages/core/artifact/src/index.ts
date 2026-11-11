@@ -1,9 +1,9 @@
 export * from './tree.ts';
 export { parseArtifact, type ParsedArtifact } from './parse.ts';
 export { checkArtifact, type CheckedArtifact, type CheckOptions, type Outcome } from './check.ts';
-export { lineCount, type CheckedCode, type CodeState } from './code.ts';
+export type { CheckedCode, CodeState } from './code.ts';
 export type { SizeKind, Sizes } from './commit.ts';
-export type { EntryKind, FileAnswer, OverviewFiles, CodeReader, TreeEntry } from './readers.ts';
+export type { CodeReader, EntryKind, FileAnswer, OverviewFiles, TreeEntry } from './readers.ts';
 export type { Header } from './header.ts';
 export type { CodeReference, FigureReference } from './reading.ts';
 export {

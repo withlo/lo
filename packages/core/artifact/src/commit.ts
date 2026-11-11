@@ -46,7 +46,8 @@ export interface CommitContents {
  */
 export function readCommit(entries: readonly TreeEntry[], findings: Findings): CommitContents {
   const kinds = new Map<string, EntryKind>();
-  const listed: { text: string; utf8: boolean; kind: EntryKind; twice: boolean }[] = [];
+  const listed: { text: string; utf8: boolean; kind: EntryKind }[] = [];
+  const twice = new Set<string>();
   const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
   const loose = new TextDecoder('utf-8', { ignoreBOM: true });
   const totals = new Map<SizeKind, { files: number; bytes: number }>();
@@ -68,9 +69,9 @@ export function readCommit(entries: readonly TreeEntry[], findings: Findings): C
       totals.set(kind, { files: total.files + 1, bytes: total.bytes + size });
     }
     const earlier = utf8 ? kinds.get(text) : undefined;
-    // A path listed twice is taken for a file only if it's a file both times.
-    if (utf8) kinds.set(text, earlier !== undefined && earlier !== 'file' ? earlier : entry.kind);
-    listed.push({ text, utf8, kind: entry.kind, twice: earlier !== undefined });
+    if (earlier !== undefined) twice.add(text);
+    if (utf8) kinds.set(text, earlier === undefined ? entry.kind : either(earlier, entry.kind));
+    listed.push({ text, utf8, kind: entry.kind });
   }
 
   const count = entryCount(listed.map(({ text }) => text));
@@ -101,13 +102,23 @@ export function readCommit(entries: readonly TreeEntry[], findings: Findings): C
 
   // In the order of their paths, so a listing in any order reports the same.
   const reported = new Set<string>();
-  for (const { text, utf8, kind, twice } of listed.toSorted((a, b) => compare(a.text, b.text))) {
-    const extra = extraEntry(text, utf8, kind, twice);
+  for (const { text, utf8, kind } of listed.toSorted((a, b) => compare(a.text, b.text))) {
+    const extra = extraEntry(text, utf8, kind, twice.has(text));
     if (!extra || reported.has(extra.path)) continue;
     reported.add(extra.path);
     findings.add('tree-extra', undefined, extra.message, quote(extra.path));
   }
   return { artifact, kinds, sizes, past: undefined };
+}
+
+/**
+ * What a path listed twice, as `a` and as `b`, is taken for, whichever order they're listed in: a
+ * file only if it's a file both times.
+ */
+function either(a: EntryKind, b: EntryKind): EntryKind {
+  if (a === 'file') return b;
+  if (b === 'file') return a;
+  return compare(a, b) <= 0 ? a : b;
 }
 
 /** The order of `a` and `b` by their code units, which is the same everywhere. */

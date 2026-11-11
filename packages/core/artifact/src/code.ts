@@ -9,7 +9,7 @@
 import { article } from './commit.ts';
 import { quote, type Findings } from './findings.ts';
 import { BINARY_WINDOW, LIMITS } from './limits.ts';
-import { checkedAnswer, type EntryKind, type FileAnswer, type CodeReader } from './readers.ts';
+import { checkedAnswer, type CodeReader, type EntryKind, type FileAnswer } from './readers.ts';
 import type { CodeReference } from './reading.ts';
 
 /**

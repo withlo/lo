@@ -2,11 +2,11 @@ import { describe, expect, test } from 'vitest';
 
 import { answer, overviewFiles, repository, silent, type Paths } from '../test/readers.ts';
 import { overview, PREAMBLE_LINES } from '../test/support.ts';
+import { lineCount } from './code.ts';
 import {
   BINARY_WINDOW,
   checkArtifact,
   LIMITS,
-  lineCount,
   parseArtifact,
   type CheckedArtifact,
   type CheckOptions,
@@ -374,21 +374,25 @@ describe('a reader that misbehaves', () => {
     expect(repo.asked).toEqual([]);
   });
 
-  test('a reader still at work is told its answer isn’t wanted', async () => {
+  test('a reader stopped at the timeout is told its answer isn’t wanted', async () => {
     const signals: AbortSignal[] = [];
     const reader: CodeReader = (_commit, _path, _cap, signal) => {
       signals.push(signal);
       return new Promise(() => {});
     };
     await checkWith(body, reader, { timeout: 10 });
-    expect(signals.length).toBeGreaterThan(0);
-    for (const signal of signals) expect(signal.aborted).toBe(true);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(true);
   });
+
+  /** A reader that answers after 20 ms. */
+  const unhurried: CodeReader = (_commit, path, cap) =>
+    new Promise((resolve) => setTimeout(() => resolve(answer(held, path, cap)), 20));
 
   test('a timeout that isn’t a number of milliseconds is the default, never none', async () => {
     for (const timeout of [Infinity, -1, Number.NaN]) {
-      const checked = await check(body, held, { timeout });
-      expect(checked.states).toEqual([resolved, resolved]);
+      const checked = await checkWith(body, unhurried, { timeout });
+      expect(states(checked), `with ${timeout}`).toEqual([resolved, resolved]);
     }
   });
 });

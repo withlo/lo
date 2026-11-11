@@ -93,6 +93,15 @@ describe('the commit', () => {
     expect(codes(checked)).toEqual(['unreadable']);
   });
 
+  test('a listing a reader got wrong is refused, never thrown', async () => {
+    // A path that isn't bytes, as no reader should list.
+    const wrong: TreeEntry[] = JSON.parse('[{ "path": "artifact.md", "kind": "file" }]');
+    const files = { ...overviewFiles({}), entries: wrong };
+    const checked = await checkArtifact(undefined, files, repository(COMMIT, held).readCode);
+    expect(checked.outcome).toEqual({ kind: 'invalid' });
+    expect(codes(checked)).toEqual(['unreadable']);
+  });
+
   test('anything else is reported once, at its outermost path, and the overview still shows', async () => {
     const checked = await check(overview(''), {
       'README.md': 'Hi.',
@@ -178,6 +187,11 @@ describe('the commit', () => {
 
   test('a path listed twice is a file only if it’s a file both times', async () => {
     const text = overview(':::figure figures/a.svg\nA.\n:::\n');
+    const files = await check(text, { 'figures/a.svg': '<svg/>' }, [
+      { path: encoder.encode('figures/a.svg'), kind: 'file', size: 6 },
+    ]);
+    expect(codes(files)).toEqual(['tree-extra:figures/a.svg']);
+    expect(files.findings[0]?.message).toBe("figures/a.svg is in the overview's commit twice.");
     const twice = await check(text, { 'figures/a.svg': '<svg/>' }, [
       { path: encoder.encode('figures/a.svg'), kind: 'link', size: 11 },
     ]);
@@ -245,7 +259,12 @@ describe('the commit’s limits', () => {
     const started = performance.now();
     const checked = await check(overview(''), {}, [{ path, kind: 'file', size: 1 }]);
     expect(performance.now() - started).toBeLessThan(1_000);
-    expect(checked.outcome).toMatchObject({ kind: 'tooLarge', what: 'entries' });
+    // Counting stops just past the limit.
+    expect(checked.outcome).toMatchObject({
+      kind: 'tooLarge',
+      what: 'entries',
+      sizes: { entries: LIMITS.entries + 1 },
+    });
   });
 
   test('a listing of 200,000 entries is read quickly', async () => {
@@ -291,13 +310,21 @@ describe('the commit’s limits', () => {
 
   test('a size the listing doesn’t give, or gives wrongly, counts for nothing', async () => {
     const sizes = [undefined, Number.NaN, -1, Infinity, 1e300, 1.5, -LIMITS.commit];
-    const checked = await check(
-      overview(''),
-      {},
-      sizes.map((size, n) => ({ path: encoder.encode(`figures/f${n}.png`), kind: 'file', size })),
-    );
+    const odd: TreeEntry[] = sizes.map((size, n) => ({
+      path: encoder.encode(`figures/f${n}.png`),
+      kind: 'file',
+      size,
+    }));
+    const checked = await check(overview(''), {}, odd);
     expect(checked.findings).toEqual([]);
     expect(checked.outcome.kind).toBe('shown');
+    // Nor can they hide a size the listing does give.
+    const past = await check(
+      overview(''),
+      { 'figures/big.png': { kind: 'file', size: LIMITS.commit } },
+      odd,
+    );
+    expect(past.outcome).toMatchObject({ kind: 'tooLarge', what: 'bytes' });
   });
 
   test('a folder or a submodule has no size, whatever the listing says', async () => {

@@ -11,7 +11,7 @@ import { ARTIFACT, Findings, quote, type Finding } from './findings.ts';
 import type { Header } from './header.ts';
 import { CHECK_TIMEOUT, FORMAT } from './limits.ts';
 import type { ParsedArtifact } from './parse.ts';
-import type { OverviewFiles, CodeReader } from './readers.ts';
+import type { CodeReader, OverviewFiles } from './readers.ts';
 
 /**
  * What Lo does with an overview.
@@ -59,24 +59,43 @@ export async function checkArtifact(
   readCode: CodeReader,
   options: CheckOptions = {},
 ): Promise<CheckedArtifact> {
+  try {
+    return await check(parsed, files, readCode, options);
+  } catch {
+    // Nothing above throws on what a reader gives, so this is a backstop: an overview that makes a
+    // step fail is refused, saying only that.
+    return unreadable("Lo couldn't check the overview, for a reason it can't name.");
+  }
+}
+
+async function check(
+  parsed: ParsedArtifact | undefined,
+  files: OverviewFiles,
+  readCode: CodeReader,
+  options: CheckOptions,
+): Promise<CheckedArtifact> {
   const tree = new Findings();
   const commit = readCommit(files.entries, tree);
   if (commit.artifact !== 'file') {
     // What was parsed, if anything, isn't the overview's text.
     const findings = new Findings();
-    findings.add(...artifactMissing(commit));
+    if (commit.artifact === undefined) {
+      findings.add(
+        'artifact-missing',
+        undefined,
+        `The overview's commit has no artifact.md, the overview's text.${otherCase(commit, ARTIFACT)}`,
+      );
+    } else {
+      findings.add(
+        'artifact-not-file',
+        undefined,
+        `artifact.md is ${article(commit.artifact)}. It's the overview's text, a file.`,
+      );
+    }
     for (const finding of tree.list()) findings.keep(finding);
     return { outcome: { kind: 'invalid' }, findings: findings.list() };
   }
-  if (!parsed) {
-    const findings = new Findings();
-    findings.add(
-      'unreadable',
-      undefined,
-      "Lo couldn't read artifact.md, for a reason it can't name.",
-    );
-    return { outcome: { kind: 'invalid' }, findings: findings.list() };
-  }
+  if (!parsed) return unreadable("Lo couldn't read artifact.md, for a reason it can't name.");
   // A newer format may hold what this version doesn't know: only the parse's word on it counts.
   if (parsed.format !== undefined && parsed.format > FORMAT) {
     return { outcome: { kind: 'newer', format: parsed.format }, findings: parsed.findings };
@@ -85,10 +104,12 @@ export async function checkArtifact(
   const findings = new Findings();
   for (const finding of parsed.findings) findings.keep(finding);
   for (const finding of tree.list()) findings.keep(finding);
-  const long = parsed.findings.some(({ code }) => code === 'too-large');
-  if (long || commit.past !== undefined) {
-    const what = long ? 'text' : (commit.past ?? 'bytes');
-    return { outcome: { kind: 'tooLarge', what, sizes: commit.sizes }, findings: findings.list() };
+  const past = parsed.findings.some(({ code }) => code === 'too-large') ? 'text' : commit.past;
+  if (past !== undefined) {
+    return {
+      outcome: { kind: 'tooLarge', what: past, sizes: commit.sizes },
+      findings: findings.list(),
+    };
   }
 
   const invalid = parsed.findings.some(({ severity }) => severity === 'error');
@@ -141,8 +162,6 @@ async function codeOf(
   } finally {
     clearTimeout(timer);
     outer?.removeEventListener('abort', abort);
-    // Tells a reader still at work that its answer is no longer wanted.
-    stop.abort();
   }
 }
 
@@ -153,24 +172,11 @@ function timeoutOf(timeout: number | undefined): number {
   return Math.min(timeout, 2 ** 31 - 1);
 }
 
-/** Why the commit has no file `artifact.md`, as a finding. */
-function artifactMissing(
-  commit: CommitContents,
-): ['artifact-missing' | 'artifact-not-file', undefined, string, string] {
-  if (commit.artifact === undefined) {
-    return [
-      'artifact-missing',
-      undefined,
-      `The overview's commit has no artifact.md, the overview's text.${otherCase(commit, ARTIFACT)}`,
-      ARTIFACT,
-    ];
-  }
-  return [
-    'artifact-not-file',
-    undefined,
-    `artifact.md is ${article(commit.artifact)}. It's the overview's text, a file.`,
-    ARTIFACT,
-  ];
+/** An overview refused for `message`, a reason that isn't its own. */
+function unreadable(message: string): CheckedArtifact {
+  const findings = new Findings();
+  findings.add('unreadable', undefined, message);
+  return { outcome: { kind: 'invalid' }, findings: findings.list() };
 }
 
 /** A sentence naming a path in the commit that differs from `path` only in case, when there is one. */
