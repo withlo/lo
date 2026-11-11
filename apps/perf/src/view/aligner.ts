@@ -25,7 +25,9 @@
 // they hear of the scroll, so it listens first), and again after each pass. CodeMirror anchors the
 // scroll too, as it measures, to the top of an editor that has focus or was just wheeled, and its
 // tops take in the pass's spacers; the pass puts that right, but for the scroll that brings a
-// moved cursor into view.
+// moved cursor into view. For a second after a key moves a cursor, until the wheel, a pointer or
+// the scrollbar takes the scroll, the pass keeps the cursor's line on screen, which CodeMirror's
+// measuring after a far jump can leave it off.
 
 import { type Extension, StateEffect, StateField } from '@codemirror/state';
 import {
@@ -186,8 +188,11 @@ interface Anchor {
 /** Rounds of measuring, lining up and restoring the scroll a pass may take to settle. */
 const rounds = 3;
 
-/** How long after a cursor moves the pass sees that it ends up on screen, in ms. */
+/** How long after a key moves a cursor the pass sees that it ends up on screen, in ms. */
 const cursorFollow = 1000;
+
+/** How long after a key is pressed a cursor that moves was moved by it, in ms. */
+const keyMove = 100;
 
 /** How far inside the screen's edges a cursor brought into view sits, as CodeMirror's own does. */
 const cursorMargin = 5;
@@ -229,12 +234,15 @@ export class Aligner {
   /** Whether a cursor moved since the last pass, so a scroll CodeMirror makes is the cursor's. */
   #selected = false;
   /**
-   * When a cursor last moved, and how often the pass has had CodeMirror scroll to it since: after
-   * a far jump, CodeMirror keeps the top of the screen still as it measures what it drew, and the
-   * cursor can end up off screen.
+   * When a key last moved a cursor, while the pass keeps it on screen, and how often it has had
+   * CodeMirror scroll to it since: after a far jump, CodeMirror keeps the top of the screen still
+   * as it measures what it drew, and the cursor can end up off screen. The wheel, a pointer or the
+   * scrollbar takes the scroll back.
    */
-  #cursorMoved = 0;
+  #following = 0;
   #cursorTries = 0;
+  /** When a key was last pressed in the view, until the wheel or a pointer comes after it. */
+  #keyed = -Infinity;
   /** The lines the last pass lined up on each side, which keep their spacers when others go. */
   #lined: { old?: { from: number; to: number }; new?: { from: number; to: number } } = {};
   /** Told of each scroll CodeMirror makes to bring a moved cursor into view, for the measurements. */
@@ -271,6 +279,17 @@ export class Aligner {
         passive: true,
       });
     }
+    // A key that moves a cursor has the pass keep it on screen for a while; the wheel, a pointer
+    // or the scrollbar, which a pointer drags, stops it.
+    scroller.addEventListener('keydown', () => (this.#keyed = performance.now()), {
+      capture: true,
+    });
+    const stop = (): void => {
+      this.#keyed = -Infinity;
+      this.#following = 0;
+    };
+    scroller.addEventListener('wheel', stop, { capture: true, passive: true });
+    scroller.addEventListener('pointerdown', stop, { capture: true });
     // A block that grows where CodeMirror doesn't look, or a width that changes, resizes the
     // content. The observer runs after layout and before the paint, so the pass does too.
     this.#resized = new ResizeObserver(() => {
@@ -298,8 +317,10 @@ export class Aligner {
         }
         if (update.selectionSet) {
           this.#selected = true;
-          this.#cursorMoved = Date.now();
-          this.#cursorTries = 0;
+          if (performance.now() - this.#keyed < keyMove) {
+            this.#following = Date.now();
+            this.#cursorTries = 0;
+          }
         }
         if (this.#running) return;
         if (update.heightChanged || update.viewportChanged || update.geometryChanged) {
@@ -398,12 +419,12 @@ export class Aligner {
       this.stats.totalMs += ms;
       this.stats.maxMs = Math.max(this.stats.maxMs, ms);
     }
-    if (Date.now() - this.#cursorMoved < cursorFollow) this.#cursorInView();
+    if (Date.now() - this.#following < cursorFollow) this.#cursorInView();
   }
 
   /**
    * Brings a focused editor's cursor back on screen, the least scroll that shows its line, when
-   * the measuring after a far jump left it off: a line it draws by scrolling, one it doesn't by
+   * the measuring after a key's far jump left it off: a line it draws by scrolling, one it doesn't by
    * having CodeMirror scroll there again, a few times at most.
    */
   #cursorInView(): void {
@@ -415,8 +436,9 @@ export class Aligner {
     const screen = this.#scroller.getBoundingClientRect();
     if (!line) {
       if (this.#cursorTries++ < 3) {
+        const following = this.#following;
         requestAnimationFrame(() => {
-          if (view.state.selection.main.head === head) {
+          if (this.#following === following && view.state.selection.main.head === head) {
             view.dispatch({ effects: EditorView.scrollIntoView(head, { yMargin: cursorMargin }) });
           }
         });
