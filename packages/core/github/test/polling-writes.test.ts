@@ -502,45 +502,215 @@ test('a write waiting out a pause is never sent once polling stops', async () =>
   expect(t.poller.hasUnfinishedWrites()).toBe(false);
 });
 
-test('a comment github finds too fast holds every write for a minute then two', async () => {
-  const r = recorded();
-  const body = {
-    commit_id: FULL_SHA,
-    path: 'a.rs',
-    body: 'Hm.',
-    subject_type: 'file' as const,
-  };
-  const tooFast: Interaction = {
+/** REST's file-level comment on #1, as `sendReview` sends it. */
+const FILE_COMMENT = {
+  commit_id: FULL_SHA,
+  path: 'a.rs',
+  body: 'Hm.',
+  subject_type: 'file' as const,
+};
+
+/** GitHub's answers to {@link FILE_COMMENT}, in order: each `tooFast` or `posted`. */
+function fileComments(r: readonly Interaction[], answers: readonly ('tooFast' | 'posted')[]) {
+  return answers.map((answered): Interaction => ({
     request: {
       method: 'POST',
       url: 'https://api.github.com/repos/rozed-dev/playground/pulls/1/comments',
-      body: JSON.stringify(body),
+      body: JSON.stringify(FILE_COMMENT),
     },
-    response: answer(
-      at(r, 0),
-      422,
-      [],
-      `{"message":"Validation Failed","errors":[{"resource":"PullRequestReviewComment",
-        "code":"unprocessable","field":"data","message":"was submitted too quickly"}]}`,
-    ).response,
-  };
-  const t = await Polling.start('too_fast_holds_writes', [tooFast, ...retargeted(r)]);
-  const write: ReviewWrite = { kind: 'postFileComment', body, head: FULL_SHA };
+    response:
+      answered === 'tooFast'
+        ? answer(
+            at(r, 0),
+            422,
+            [],
+            `{"message":"Validation Failed","errors":[{"resource":"PullRequestReviewComment",
+                "code":"unprocessable","field":"data","message":"was submitted too quickly"}]}`,
+          ).response
+        : answer(at(r, 0), 201, [], '{"node_id":"PRRC_1"}').response,
+  }));
+}
+
+test('content github finds too fast holds every write a minute doubling with each in a row', async () => {
+  const r = recorded();
+  const t = await Polling.start('too_fast_holds_writes', [
+    ...fileComments(r, ['tooFast', 'tooFast', 'posted', 'tooFast']),
+    ...retargeted(r),
+  ]);
+  const write: ReviewWrite = { kind: 'postFileComment', body: FILE_COMMENT, head: FULL_SHA };
+  const send = () => t.finish(t.poller.sendReview(pr(1), write));
   const refused = { refusal: 'tooFast', message: 'was submitted too quickly' };
-  expect(await t.finish(t.poller.sendReview(pr(1), write))).toEqual(refused);
+
+  expect(await send()).toEqual(refused);
   // Every write waits a minute: a comment is refused, a base branch change waits for it.
   expect(t.poller.writesHeldUntil()).toBe(wall(60));
-  expect(await t.poller.sendReview(pr(1), write)).toEqual({ refusal: 'paused', until: wall(60) });
-  const retarget = t.poller.retarget(PLAYGROUND, { pr: 2, from: 'stack-a', to: 'main' });
+  expect(await send()).toEqual({ refusal: 'paused', until: wall(60) });
   // Polls aren't held: reads aren't content.
   expect(t.status()).toEqual(QUIET);
-  await t.finish(retarget);
-  expect(t.requests()).toEqual(
-    log([0, 'POST /pulls/1/comments'], [60, 'GET /pulls/2'], [60, 'PATCH /pulls/2']),
+  const moved = await t.finish(
+    t.poller.retarget(PLAYGROUND, { pr: 2, from: 'stack-a', to: 'main' }),
   );
-  // The comment sent again, and turned away again: two minutes this time.
-  expect(await t.finish(t.poller.sendReview(pr(1), write))).toEqual(refused);
-  expect(t.poller.writesHeldUntil()).toBe(wall(180));
+  expect('base' in moved ? moved.base.ref : moved).toBe('main');
+
+  // A base branch change says nothing about GitHub's limit on content, so the next refusal is the
+  // second in a row: two minutes.
+  const second = t.now();
+  expect(await send()).toEqual(refused);
+  expect(t.poller.writesHeldUntil()).toBe(wall(second + 120));
+  // A comment GitHub takes ends the run: the next refusal, a second later, holds writes a minute.
+  await t.runUntil(second + 120);
+  expect(await send()).toEqual({ comment: 'PRRC_1' });
+  expect(await send()).toEqual(refused);
+  expect(t.poller.writesHeldUntil()).toBe(wall(second + 121 + 60));
+  expect(t.requests()).toEqual(
+    log(
+      [0, 'POST /pulls/1/comments'],
+      [60, 'GET /pulls/2'],
+      [60, 'PATCH /pulls/2'],
+      [second, 'POST /pulls/1/comments'],
+      [second + 120, 'POST /pulls/1/comments'],
+      [second + 121, 'POST /pulls/1/comments'],
+    ),
+  );
+
+  // Timed by the monotonic clock: the wall clock set back an hour, or the Mac asleep for one, holds
+  // writes for the minute left, no more and no less.
+  const left = (t.poller.writesHeldUntil() ?? 0) - Date.now();
+  t.sleep(-3600);
+  expect((t.poller.writesHeldUntil() ?? 0) - Date.now()).toBe(left);
+  t.sleep(7200);
+  expect((t.poller.writesHeldUntil() ?? 0) - Date.now()).toBe(left);
+  expect(await t.poller.sendReview(pr(1), write)).toMatchObject({ refusal: 'paused' });
+});
+
+test('writes waiting behind a poll github answers with a secondary limit are held', async () => {
+  const r = recorded();
+  const limited = answer(
+    at(r, 0),
+    403,
+    [['retry-after', '60']],
+    '{"message":"You have exceeded a secondary rate limit."}',
+  );
+  const t = await Polling.start(
+    'writes_behind_limited_poll',
+    [limited, ...recorded(), comment(r)],
+    {
+      delay: 1000,
+    },
+  );
+  void t.poller.setOpen(pr(1));
+  await t.run();
+  // While the open PR's poll is in flight (0–1 s), a comment Lo refuses while paused and a write
+  // that waits out a pause are asked for. GitHub's answer asks for a minute from 1 s.
+  await t.runUntil(0.5);
+  const conversation = t.poller.addConversationComment(pr(1), 'PR_1', 'hi');
+  const plain = postComment(t.poller);
+  await t.run();
+  expect(await t.finish(conversation)).toEqual({ refusal: 'paused', until: wall(61) });
+  expect(t.poller.writesHeldUntil()).toBe(wall(61));
+  await t.runUntil(60);
+  expect(t.requests()).toEqual(log([0, 'GET /pulls/1']));
+  expect(idOf(await t.finish(plain))).toBe(1);
+  // It waited for the pause to end, then went once, between the polls that came due with it.
+  const posted = t.requests().filter(([, what]) => what.startsWith('POST'));
+  expect(posted).toHaveLength(1);
+  expect(posted[0]?.[0]).toBeGreaterThanOrEqual(61);
+});
+
+test('an unstack reads its stack first and refuses when it holds other layers', async () => {
+  const r = recorded();
+  /** GitHub's stacks holding #1: stack 3, of `layers`. */
+  const holding = (layers: readonly number[]): Interaction => ({
+    request: {
+      method: 'GET',
+      url: 'https://api.github.com/repos/rozed-dev/playground/stacks?pull_request=1',
+    },
+    response: answer(
+      at(r, 3),
+      200,
+      [],
+      JSON.stringify([
+        {
+          number: 3,
+          node_id: 'PRS_x',
+          base: { ref: 'main' },
+          open: true,
+          pull_requests: layers.map((number) => ({
+            number,
+            state: 'open',
+            draft: false,
+            merged_at: null,
+            head: { ref: `stack-${number}`, sha: 'a' },
+          })),
+        },
+      ]),
+    ).response,
+  });
+  const unstacked: Interaction = {
+    request: {
+      method: 'POST',
+      url: 'https://api.github.com/repos/rozed-dev/playground/stacks/3/unstack',
+    },
+    response: { status: 204, headers: {} },
+  };
+  const t = await Polling.start('unstack_reads_first', [
+    holding([1, 2, 4]),
+    holding([1, 2]),
+    unstacked,
+  ]);
+  // #4 was added on top since Lo made the stack of #1 and #2: unstacking would take it out too.
+  expect(await t.finish(t.poller.unstack(PLAYGROUND, 3, [1, 2]))).toEqual({
+    refusal: 'stackChanged',
+  });
+  expect(await t.finish(t.poller.unstack(PLAYGROUND, 3, [1, 2]))).toEqual({ left: undefined });
+  expect(t.requests().map(([, what]) => what)).toEqual([
+    'GET /stacks?pull_request=1',
+    'GET /stacks?pull_request=1',
+    'POST /stacks/3/unstack',
+  ]);
+});
+
+test('a stack write given up on is never sent, waiting out a pause or in its turn', async () => {
+  const r = recorded();
+  const t = await Polling.start('stack_write_given_up', [
+    limitedComment(r),
+    ...retargeted(r),
+    comment(r),
+  ]);
+  const first = outcome(postComment(t.poller));
+  await t.run();
+  await first;
+  // Waiting out the pause.
+  const waiting = new AbortController();
+  const held = outcome(
+    t.poller.retarget(PLAYGROUND, { pr: 2, from: 'stack-a', to: 'main' }, waiting.signal),
+  );
+  await t.runUntil(10);
+  waiting.abort();
+  expect((await held).ok).toBe(false);
+  // In its turn, through the second it waits after the write before it: it ends at once.
+  await t.runUntil(60);
+  const before = postComment(t.poller);
+  const turn = new AbortController();
+  let ended = false;
+  const spaced = outcome(
+    t.poller.retarget(PLAYGROUND, { pr: 2, from: 'stack-a', to: 'main' }, turn.signal),
+  ).finally(() => {
+    ended = true;
+  });
+  await t.run();
+  await t.finish(before);
+  await t.run();
+  expect(ended).toBe(false);
+  turn.abort();
+  await t.run();
+  expect(ended).toBe(true);
+  expect((await spaced).ok).toBe(false);
+  await t.runUntil(120);
+  expect(t.requests()).toEqual(
+    log([0, 'POST /issues/1/comments'], [60, 'POST /issues/1/comments']),
+  );
+  expect(t.poller.hasUnfinishedWrites()).toBe(false);
 });
 
 // Comments and reviews: what each write reads again, with the review threads, your pending review

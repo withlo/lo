@@ -132,8 +132,8 @@ export type Unknown =
   /** It was still pending when Lo stopped asking ({@link JobConfig.followFor}). */
   | { kind: 'stillPending' }
   /**
-   * The jobs were stopped before it ended ({@link MergeJobs.stop}). A merge still waiting for its
-   * turn was never sent; one sent may have been taken, and Lo asks nothing more about it.
+   * The jobs were stopped before it ended ({@link MergeJobs.stop}). A merge not sent by then never
+   * is; one sent may have been taken, and Lo asks nothing more about it.
    */
   | { kind: 'stopped' }
   /** GitHub answered a status Lo doesn't know, which is never read as merged. */
@@ -291,8 +291,9 @@ export class MergeJobs {
   /**
    * Stops following merges, as when Lo quits: every running job ends at once as `stopped`, and its
    * pull request and repository are read again, as after any job. Nothing more is sent or asked: a
-   * merge still waiting for its turn in the account's queue is never sent, and every wait ends now.
-   * A request already sent finishes, as a poller's write does once it's sent, and its answer is
+   * merge not yet sent never is, whether it waits for its turn in the account's queue, through the
+   * second between writes, or between its stack lookup and the merge itself, and every wait ends
+   * now. A request already sent finishes, as a poller's write does once it's sent, and its answer is
    * dropped. Jobs that ended stay readable, and no merge starts after this.
    */
   stop(): void {

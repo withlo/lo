@@ -6,7 +6,7 @@
  * monotonic clock, which doesn't move while the computer sleeps.
  */
 
-import type { Conditional, GithubClient } from '../client.ts';
+import type { Conditional, GithubClient, RequestGate } from '../client.ts';
 import { GithubError, MAX_RETRY_AFTER, type GithubErrorDetail } from '../errors.ts';
 import { unchecked } from '../json.ts';
 import { readMergeFacts, type MergeFacts } from '../merge.ts';
@@ -223,7 +223,15 @@ export interface WriteOptions<T> {
    * that ends ({@link Poller.writesHeldUntil}). Without it, the write waits until then, and is sent.
    */
   whilePaused?: ((until: number) => T) | undefined;
-  /** Gives the write up while it waits for its turn, or for a pause to end: it's never sent. */
+  /**
+   * Whether it creates content, as a comment or a review does, which GitHub limits apart: one GitHub
+   * takes ends a run of refusals of content sent too fast.
+   */
+  content?: boolean | undefined;
+  /**
+   * Gives the write up: while it waits for its turn or for a pause to end, it's never sent, and
+   * none of the requests it's made of is sent once it's given up, though one already sent finishes.
+   */
   signal?: AbortSignal | undefined;
 }
 
@@ -542,14 +550,20 @@ export function answered(result: Settled<unknown>): boolean {
   return kind !== 'network' && kind !== 'refusedUrl' && kind !== 'tokenUnavailable';
 }
 
+/** Whether a write's answer is a refusal, Lo's or GitHub's, rather than what the write made. */
+function isRefusalValue(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && 'refusal' in value;
+}
+
 /** Whether a write's answer is GitHub's refusal of content sent too fast. */
 function isTooFast(value: unknown): boolean {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'refusal' in value &&
-    Reflect.get(value, 'refusal') === 'tooFast'
-  );
+  return isRefusalValue(value) && Reflect.get(Object(value), 'refusal') === 'tooFast';
+}
+
+/** A gate that lets each request through until `signal` gives up what it's part of. */
+function givenUpOn(signal: AbortSignal): RequestGate {
+  return () =>
+    signal.aborted ? Promise.reject(abandoned(signal)) : Promise.resolve(() => undefined);
 }
 
 async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
@@ -599,9 +613,14 @@ export class Poller {
   #limits = new RateLimits();
   #cooldown: Cooldown | undefined;
   #secondaryAttempts = 0;
-  /** Until when writes wait after GitHub turned one away as content sent too fast, and how many in a row it has. */
-  #tooFastUntil: number | undefined;
+  /**
+   * Until when writes wait after GitHub turned one away as content sent too fast, by the monotonic
+   * clock, and how many in a row it has.
+   */
+  #tooFastEnds: number | undefined;
   #tooFastInARow = 0;
+  /** The client's refusals for the rate limit already taken in ({@link GithubClient.rateLimited}). */
+  readonly #heardLimits = new WeakSet<object>();
   /** Wakes each write waiting for a pause to end, so it sees that the poller stopped. */
   readonly #pauseWaiters = new Set<() => void>();
   #offline: OfflineState | undefined;
@@ -1275,9 +1294,16 @@ export class Poller {
     request: (client: GithubClient) => Promise<T>,
     options: WriteOptions<T>,
   ): Promise<Settled<T>> {
-    const { again, whilePaused, signal } = options;
-    let sent: { client: GithubClient; result: Settled<T> } | undefined;
-    while (sent === undefined) {
+    const { again, whilePaused, content, signal } = options;
+    let result: Settled<T> | undefined;
+    while (result === undefined) {
+      let client: GithubClient;
+      try {
+        client = await this.#client();
+      } catch (error) {
+        return { ok: false, error };
+      }
+      this.#takeIn(client);
       const until = this.writesHeldUntil();
       if (until !== undefined) {
         if (whilePaused) return { ok: true, value: whilePaused(until) };
@@ -1286,26 +1312,25 @@ export class Poller {
         await this.#pause(until, signal);
         continue;
       }
-      let client: GithubClient;
-      try {
-        client = await this.#client();
-      } catch (error) {
-        return { ok: false, error };
-      }
+      // Each request the write makes checks first that it hasn't been given up on.
+      const sending = signal ? client.gated(givenUpOn(signal)) : client;
       const turn = await settle(
         this.#queue.write(async (): Promise<Settled<T> | undefined> => {
-          // A pause that started while it waited for its turn holds it back.
+          // The answer of a request before this turn may have asked Lo to hold off: the client
+          // recorded it before that request's turn ended.
+          this.#takeIn(client);
           if (this.writesHeldUntil() !== undefined) return undefined;
-          return settle(request(client));
+          const answer = await settle(request(sending));
+          // Taken in within the turn, so the write after it sees what this one's answer said.
+          this.#answeredWith(client, answer);
+          this.#heardWrite(answer, content ?? false);
+          return answer;
         }, signal),
       );
-      // Given up on while it waited for its turn: never sent.
+      // Given up on before it was sent.
       if (!turn.ok) return turn;
-      if (turn.value !== undefined) sent = { client, result: turn.value };
+      result = turn.value;
     }
-    const { client, result } = sent;
-    this.#answeredWith(client, result, 'writing');
-    this.#heardWrite(result);
     const rereads = again?.(result) ?? [];
     for (const target of targets) {
       if (target instanceof PullRef) {
@@ -1323,13 +1348,16 @@ export class Poller {
    * {@link WriteOptions.whilePaused} says.
    */
   writesHeldUntil(): number | undefined {
-    const wall = this.#config.now();
+    const { now, monotonic, secondaryMaxWait } = this.#config;
+    const wall = now();
     const state = rateLimitState(this.#limits, this.#cooldown, wall, this.#config);
     const paused = state.kind === 'paused' ? state.until : undefined;
-    const tooFast =
-      this.#tooFastUntil !== undefined && this.#tooFastUntil > wall
-        ? this.#tooFastUntil
-        : undefined;
+    // Timed by the monotonic clock, so a wall clock set back or forward doesn't stretch or end it.
+    const left =
+      this.#tooFastEnds === undefined
+        ? 0
+        : Math.min(this.#tooFastEnds - monotonic(), secondaryMaxWait);
+    const tooFast = left > 0 ? wall + left : undefined;
     if (paused === undefined || tooFast === undefined) return paused ?? tooFast;
     return Math.max(paused, tooFast);
   }
@@ -1355,19 +1383,21 @@ export class Poller {
 
   /**
    * Takes in a sent write's answer: GitHub turning it away as content sent too fast ("was submitted
-   * too quickly") holds every write for a minute, doubling with each in a row. GitHub doesn't say
-   * which writes count, so it holds them all. Polls go on: reads aren't content.
+   * too quickly") holds every write for a minute, doubling with each in a row up to 15 minutes.
+   * GitHub doesn't say which writes count, so it holds them all. A write of content GitHub takes
+   * (`content`) ends the run; one of anything else says nothing about that limit. Polls go on:
+   * reads aren't content.
    */
-  #heardWrite(result: Settled<unknown>): void {
+  #heardWrite(result: Settled<unknown>, content: boolean): void {
     if (!result.ok) return;
     if (!isTooFast(result.value)) {
-      this.#tooFastInARow = 0;
+      if (content && !isRefusalValue(result.value)) this.#tooFastInARow = 0;
       return;
     }
     this.#tooFastInARow += 1;
-    const { secondaryFirstWait, secondaryMaxWait } = this.#config;
+    const { secondaryFirstWait, secondaryMaxWait, monotonic } = this.#config;
     const wait = backoff(this.#tooFastInARow, secondaryFirstWait, secondaryMaxWait, 0, 0);
-    this.#tooFastUntil = this.#config.now() + wait;
+    this.#tooFastEnds = monotonic() + wait;
     this.#log(`GitHub turned a write away as sent too fast; writing again in ${wait / 1000} s`);
     this.#changed();
   }
@@ -1398,7 +1428,7 @@ export class Poller {
   ): Promise<T> {
     const client = await this.#client();
     const result = await settle(this.#queue.read(() => request(client), signal));
-    this.#answeredWith(client, result, 'reading');
+    this.#answeredWith(client, result);
     if (result.ok) return result.value;
     throw result.error;
   }
@@ -1505,9 +1535,16 @@ export class Poller {
     return disableAutoMergeOn(this, pull, pullRequestId);
   }
 
-  /** Makes `prs`, bottom to top, a GitHub stack in `repo` ({@link createStackIn}). */
-  createStack(repo: RepoRef, prs: readonly number[]): Promise<GithubStack | MergeRefusal> {
-    return createStackIn(this, repo, prs);
+  /**
+   * Makes `prs`, bottom to top, a GitHub stack in `repo` ({@link createStackIn}). Each of these stack
+   * writes can be given up on through `signal`, as when the plan it's a step of is cancelled.
+   */
+  createStack(
+    repo: RepoRef,
+    prs: readonly number[],
+    signal?: AbortSignal,
+  ): Promise<GithubStack | MergeRefusal> {
+    return createStackIn(this, repo, prs, signal);
   }
 
   /** Adds `prs` to the top of GitHub stack `stack` in `repo` ({@link addToStackIn}). */
@@ -1515,27 +1552,37 @@ export class Poller {
     repo: RepoRef,
     stack: number,
     prs: readonly number[],
+    signal?: AbortSignal,
   ): Promise<GithubStack | MergeRefusal> {
-    return addToStackIn(this, repo, stack, prs);
+    return addToStackIn(this, repo, stack, prs, signal);
   }
 
-  /** Takes what it can out of GitHub stack `stack` in `repo` ({@link unstackIn}). */
+  /** Takes what it can out of GitHub stack `stack` in `repo`, while it holds exactly `prs` ({@link unstackIn}). */
   unstack(
     repo: RepoRef,
     stack: number,
     prs: readonly number[],
+    signal?: AbortSignal,
   ): Promise<{ left: GithubStack | undefined } | MergeRefusal> {
-    return unstackIn(this, repo, stack, prs);
+    return unstackIn(this, repo, stack, prs, signal);
   }
 
   /** Moves a pull request in `repo` onto another base branch, as a plan's step does ({@link retargetIn}). */
-  retarget(repo: RepoRef, move: Retarget): Promise<PullSummary | MergeRefusal> {
-    return retargetIn(this, repo, move);
+  retarget(
+    repo: RepoRef,
+    move: Retarget,
+    signal?: AbortSignal,
+  ): Promise<PullSummary | MergeRefusal> {
+    return retargetIn(this, repo, move, signal);
   }
 
   /** Runs one step of "Make this a GitHub stack" ({@link runConversionStepIn}). */
-  runConversionStep(repo: RepoRef, step: ConversionStep): Promise<StepDone | MergeRefusal> {
-    return runConversionStepIn(this, repo, step);
+  runConversionStep(
+    repo: RepoRef,
+    step: ConversionStep,
+    signal?: AbortSignal,
+  ): Promise<StepDone | MergeRefusal> {
+    return runConversionStepIn(this, repo, step, signal);
   }
 
   /**
@@ -1562,13 +1609,24 @@ export class Poller {
    * offline; the rate limits it reported; and a rate limit it ran into, which pauses polling as a
    * poll's would.
    */
-  #answeredWith(client: GithubClient, result: Settled<unknown>, doing: string): void {
+  #answeredWith(client: GithubClient, result: Settled<unknown>): void {
     if (answered(result)) this.#offline = undefined;
+    this.#takeIn(client);
+  }
+
+  /**
+   * Takes in what the account's answers said about the rate limit: what's left of each limit, and
+   * each refusal the client heard that isn't taken in yet, which pauses polling and writes as
+   * {@link Poller.#rateLimited} says, from when GitHub answered. A refusal heard long before, as by
+   * the client of a poller this one replaced, asks for a pause that's over.
+   */
+  #takeIn(client: GithubClient): void {
     this.#limits = client.rateLimits();
-    const detail = behind(result);
-    if (detail?.kind === 'rateLimited') {
-      this.#log(`GitHub's rate limit, ${doing}: ${detail.message}`);
-      this.#rateLimited(detail, this.#config.now());
+    for (const heard of client.rateLimited()) {
+      if (this.#heardLimits.has(heard)) continue;
+      this.#heardLimits.add(heard);
+      this.#log(`GitHub's rate limit: ${heard.detail.message}`);
+      this.#rateLimited(heard.detail, heard.at);
     }
     this.#refreshStatus();
   }
@@ -1900,7 +1958,7 @@ export class Poller {
 
   /** Takes in a poll's answer: updates what's known, sends events, and returns the cache writes to make. */
   #finish(job: Job, ticket: number, result: Settled<Outcome>, client: GithubClient): CacheWrite[] {
-    this.#limits = client.rateLimits();
+    this.#takeIn(client);
     const now = this.#config.monotonic();
     const wall = this.#config.now();
     const target = targetOf(job);
@@ -1919,8 +1977,7 @@ export class Poller {
         if (read === undefined) this.#schedule(target)?.serve(ticket);
         this.#backOff(new GithubError(detail).message, now, wall);
       } else if (detail.kind === 'rateLimited') {
-        this.#log(`GitHub's rate limit: ${detail.message}`);
-        this.#rateLimited(detail, wall);
+        // Taken in from the client above, as it heard it.
       } else if (detail.kind === 'unauthorized' && this.#accounts.isSignedOut(this.#login)) {
         // The client's renewal has already signed the account out, or read a newer token from `gh`
         // for an account imported from it.

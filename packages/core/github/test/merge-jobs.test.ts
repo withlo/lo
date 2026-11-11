@@ -692,3 +692,83 @@ test('a merge still waiting for its turn when the jobs stop is never sent', asyn
     outcome: { kind: 'unknown', unknown: { kind: 'stopped' } },
   });
 });
+
+test('a merge waiting through the second after a retarget when the jobs stop is never sent', async () => {
+  const recorded = new Recorded();
+  const pull = recorded.pull();
+  // The chain's next layer moved onto the base, then merged: GitHub's answers to the retarget.
+  const read = pullAnswer(pull.number, false);
+  object(object(read.response.body)['base'])['ref'] = 'stack-a';
+  const moved: Interaction = {
+    request: { method: 'PATCH', url: read.request.url, body: '{"base":"main"}' },
+    response: structuredClone(read.response),
+  };
+  object(object(moved.response.body)['base'])['ref'] = 'main';
+  const harness = await Harness.create('merge_jobs_stopped_after_retarget', [
+    read,
+    moved,
+    recorded.sent,
+    recorded.merged,
+  ]);
+
+  const retarget = harness.poller.retarget(pull.repo, {
+    pr: pull.number,
+    from: 'stack-a',
+    to: 'main',
+  });
+  await settle();
+  const retargeted = await retarget;
+  expect('base' in retargeted ? retargeted.base.ref : retargeted).toBe('main');
+  // The merge has its turn, and waits the second GitHub asks for between writes.
+  expect(await harness.merge(pull, recorded.request())).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(500);
+  harness.jobs.stop();
+  await harness.runUntil(10);
+  expect(harness.requests()).toEqual([
+    [0, `GET /pulls/${pull.number}`],
+    [0, `PATCH /pulls/${pull.number}`],
+  ]);
+  expect(unknown(harness.state(pull), 'stopped')).toEqual({ kind: 'stopped' });
+});
+
+test('a merge stopped between its stack lookup and the merge is never sent', async () => {
+  const recorded = new Recorded();
+  const harness = await Harness.create('merge_jobs_stopped_after_lookup', [
+    recorded.sent,
+    recorded.merged,
+  ]);
+  const pull = recorded.pull();
+  harness.slow(LOOKUP, 2000);
+
+  expect(await harness.merge(pull, recorded.request())).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(1000);
+  harness.jobs.stop();
+  await harness.runUntil(10);
+  // The lookup was sent and answered; the merge after it in the same turn wasn't.
+  expect(harness.requests()).toEqual([[0, LOOKUP]]);
+  expect(unknown(harness.state(pull), 'stopped')).toEqual({ kind: 'stopped' });
+});
+
+test('a question about a merge waiting for its turn when the jobs stop is never asked', async () => {
+  const recorded = new Recorded();
+  const harness = await Harness.create('merge_jobs_stopped_asking', [
+    recorded.sent,
+    recorded.merged,
+  ]);
+  const pull = recorded.pull();
+
+  expect(await harness.merge(pull, recorded.request())).toBeUndefined();
+  // A read holds the account's queue from half a second to 5 s, so the question at 1 s waits.
+  await vi.advanceTimersByTimeAsync(500);
+  const holding = harness.poller.queue.read(
+    () => new Promise<void>((resolve) => setTimeout(resolve, 4500)),
+  );
+  await harness.runUntil(2);
+  harness.jobs.stop();
+  await harness.runUntil(10);
+  await holding;
+  expect(harness.requests()).toEqual([
+    [0, LOOKUP],
+    [0, recorded.put()],
+  ]);
+});

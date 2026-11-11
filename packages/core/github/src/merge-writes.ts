@@ -1411,6 +1411,26 @@ async function settled(
 }
 
 /**
+ * {@link unstack}, only while GitHub stack `stack` holds exactly `prs`, bottom to top, as when Lo
+ * made it: it reads the stack first, and refuses (`stackChanged`) when the stack holds other pull
+ * requests, such as layers added since, which unstacking would take out too, or it's gone or
+ * closed. With no pull requests named there's nothing to check it against, and it's refused too.
+ */
+export async function unstackHolding(
+  client: GithubClient,
+  repo: RepoRef,
+  stack: number,
+  prs: readonly number[],
+): Promise<{ left: GithubStack | undefined } | MergeRefusal> {
+  const bottom = prs[0];
+  if (bottom === undefined) return { refusal: 'stackChanged' };
+  const holding = await stacksHolding(client, repo, bottom);
+  const found = holding?.find((held) => held.number === stack && held.open);
+  if (!found || !sameNumbers(stackNumbers(found), prs)) return { refusal: 'stackChanged' };
+  return unstack(client, repo, stack);
+}
+
+/**
  * Takes every pull request that isn't merged or queued out of GitHub stack `stack`
  * (`POST /repos/{owner}/{repo}/stacks/{stack}/unstack`). Answers with what's left of it, or nothing
  * when GitHub dissolved it. Never sent again by itself ({@link GithubError.mayHavePosted}).
