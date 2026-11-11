@@ -19,6 +19,14 @@ test('a line gives its file and its thread, and anything does for a command that
   expect(fit(['tab', 'none'], line)).toEqual({ kind: 'none' });
 });
 
+test('a header gives its file, and is a line for no command', () => {
+  const header: Target = { kind: 'header', file: 'a.ts', side: 'old' };
+  expect(fit(['file'], header)).toEqual({ kind: 'file', file: 'a.ts' });
+  expect(fit(['line'], header)).toBeUndefined();
+  expect(fit(['line', 'header'], header)).toBe(header);
+  expect(plainTarget({ ...header, extra: 1 } as Target)).toEqual(header);
+});
+
 test('a target that fits none of the kinds is refused', () => {
   expect(fit(['line'], { kind: 'none' })).toBeUndefined();
   expect(fit(['block'], line)).toBeUndefined();

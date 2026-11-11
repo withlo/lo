@@ -3,7 +3,18 @@
 // its keys and stays level as it grows, a held key dies on blur, and a key Lo holds still reaches
 // Vim when it isn't Lo's.
 
-import { app, boxText, cursor, expect, focusSide, inBox, press, test } from './suite.ts';
+import {
+  app,
+  boxText,
+  cursor,
+  expect,
+  fileOf,
+  focusSide,
+  inBox,
+  lineOf,
+  press,
+  test,
+} from './suite.ts';
 
 test('j, ]f, ]t and G keep the cursor on screen', async ({ page }) => {
   await focusSide(page, 'new');
@@ -14,7 +25,7 @@ test('j, ]f, ]t and G keep the cursor on screen', async ({ page }) => {
   for (let step = 0; step < 5; step++) {
     await press(page, ']', 'f');
     await expect.poll(async () => (await cursor(page))?.onScreen).toBe(true);
-    files.push((await cursor(page))?.at.file ?? '');
+    files.push(fileOf((await cursor(page))?.at) ?? '');
   }
   expect(files).toEqual([
     'src/new-name.ts',
@@ -29,12 +40,12 @@ test('j, ]f, ]t and G keep the cursor on screen', async ({ page }) => {
     await press(page, ']', 't');
     await expect.poll(async () => (await cursor(page))?.onScreen).toBe(true);
     const at = (await cursor(page))?.at;
-    threads.push(`${at?.file}:${at?.line}`);
+    threads.push(`${fileOf(at)}:${lineOf(at)}`);
   }
   expect(threads).toEqual(['src/app.ts:40', 'docs/added.ts:120']);
   await press(page, 'G');
   await expect.poll(async () => (await cursor(page))?.onScreen).toBe(true);
-  expect((await cursor(page))?.at.file).toBe('src/removed.ts');
+  expect(fileOf((await cursor(page))?.at)).toBe('src/removed.ts');
 });
 
 test('Tab crosses to the other side, and ⌃o comes back', async ({ page }) => {
@@ -46,7 +57,8 @@ test('Tab crosses to the other side, and ⌃o comes back', async ({ page }) => {
   await expect.poll(async () => (await cursor(page))?.pane).toBe('old');
   await press(page, 'Control+o');
   await expect.poll(async () => (await cursor(page))?.pane).toBe('new');
-  expect((await cursor(page))?.at).toMatchObject({ file: start?.at.file, line: start?.at.line });
+  const back = (await cursor(page))?.at;
+  expect([fileOf(back), lineOf(back)]).toEqual([fileOf(start?.at), lineOf(start?.at)]);
   await press(page, 'Control+i');
   await expect.poll(async () => (await cursor(page))?.pane).toBe('old');
 });
@@ -134,7 +146,7 @@ test('y w still reaches Vim', async ({ page }) => {
   await press(page, 'c');
   await expect.poll(() => inBox(page)).toBe(true);
   await press(page, 'Escape', 'p');
-  const line = app.new[(start?.at.line ?? 1) - 1] ?? '';
+  const line = app.new[(lineOf(start?.at) ?? 1) - 1] ?? '';
   // `yw` takes the space after the word too.
   expect(await boxText(page)).toEqual([`${line.split(' ')[0]} `]);
 });
@@ -149,4 +161,30 @@ test('gi goes inline and back', async ({ page }) => {
   await press(page, 'g', 'i');
   await expect.poll(() => page.evaluate(() => window.diffView.layout)).toBe('split');
   expect(await cursor(page)).toMatchObject({ pane: 'new', at: start?.at });
+});
+
+test('an input method composing in a diff is cancelled, and focus moves on cleanly', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await focusSide(page, 'new');
+  await press(page, 'g', 'g', ']', 'c');
+  // As an input method types, through the browser's own protocol.
+  const cdp = await page.context().newCDPSession(page);
+  for (const round of [1, 2]) {
+    await cdp.send('Input.imeSetComposition', { text: 'に', selectionStart: 1, selectionEnd: 1 });
+    await page.waitForTimeout(100);
+    await cdp.send('Input.imeSetComposition', { text: 'にほ', selectionStart: 2, selectionEnd: 2 });
+    await page.waitForTimeout(100);
+    await cdp.send('Input.insertText', { text: '日本' });
+    await page.waitForTimeout(200);
+    await focusSide(page, 'old');
+    await press(page, 'j');
+    await focusSide(page, 'new');
+    await press(page, round === 1 ? 'k' : 'Tab');
+    await page.waitForTimeout(200);
+  }
+  expect(errors).toEqual([]);
+  await expect(page.locator('.cm-content[aria-label="After"]')).not.toContainText('日本');
 });

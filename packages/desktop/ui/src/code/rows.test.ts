@@ -92,6 +92,34 @@ describe('collapsedRuns', () => {
   });
 });
 
+/** Gaps at line 1 and lines 9 to 12, on one side. */
+function gapsOn(on: 'old' | 'new'): { side: 'old' | 'new'; from: number; to: number }[] {
+  return [
+    { side: on, from: 1, to: 1 },
+    { side: on, from: 9, to: 12 },
+  ];
+}
+
+describe('collapsedRuns with gaps', () => {
+  // Lines 4 and 8 changed: the hunk's context covers lines 1 to 11.
+  const old = numbered(12);
+  const diff = diffText(old, old.replace('line 4\n', 'four\n').replace('line 8\n', 'eight\n'));
+
+  test('collapse a gap of one line, and a gap the context would show, on either side', () => {
+    expect(collapsedRuns(diff)).toEqual([]);
+    for (const each of ['old', 'new'] as const) {
+      expect(collapsedRuns(diff, undefined, 2, gapsOn(each))).toEqual([
+        { old: { first: 1, last: 1 }, new: { first: 1, last: 1 } },
+        { old: { first: 9, last: 12 }, new: { first: 9, last: 12 } },
+      ]);
+    }
+  });
+
+  test('stay collapsed when opened', () => {
+    expect(shownRuns(diff, undefined, new Set([1, 9]), gapsOn('new'))).toHaveLength(2);
+  });
+});
+
 describe('shownRuns', () => {
   test('leaves out the runs opened, by their first old line', () => {
     const old = numbered(30);
