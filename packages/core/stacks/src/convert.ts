@@ -97,6 +97,11 @@ export type Reason =
   /** A pull request in the path is in a merge queue, which is already merging it. */
   | { readonly kind: 'queued'; readonly pr: number }
   /**
+   * A pull request in the path is based on `base`, a trunk other than the root, such as a protected
+   * release branch, and Lo never moves a pull request off a trunk.
+   */
+  | { readonly kind: 'onTrunk'; readonly pr: number; readonly base: string }
+  /**
    * A pull request in the path is already in GitHub stack `stack`, which doesn't hold the layers
    * below it. A pull request can be in only one stack.
    */
@@ -145,6 +150,9 @@ export function planConversion(stacks: Stacks, layer: number, facts: Facts): Con
     const known = layerOf(stacks, pr);
     if (known && !known.headInBaseRepo) reasons.push({ kind: 'fromFork', pr });
     if (facts.queued.includes(pr)) reasons.push({ kind: 'queued', pr });
+    if (known?.onTrunk && known.baseRef !== root) {
+      reasons.push({ kind: 'onTrunk', pr, base: known.baseRef });
+    }
     const entry = known?.nativeStack;
     if (entry && index >= stacked) {
       reasons.push({ kind: 'inAnotherStack', pr, stack: entry.stack });

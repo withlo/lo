@@ -170,7 +170,8 @@ export interface Layer {
   readonly parent: Parent;
   /**
    * The rule that linked it to the pull request below, which may be a merged one. Nothing when no
-   * rule did, or its link was dropped to break a cycle; it then sits on its own base branch.
+   * rule did, or its link was dropped to break a cycle or to keep it on its trunk
+   * ({@link Layer.onTrunk}); it then sits on its own base branch.
    */
   readonly rule: Rule | undefined;
   /**
@@ -198,6 +199,13 @@ export interface Layer {
   readonly headInBaseRepo: boolean;
   /** Its place in a GitHub stack, if it's in one. */
   readonly nativeStack: NativeStackEntry | undefined;
+  /**
+   * Whether its base branch is a trunk, such as a protected `release`. Lo never moves a pull request
+   * off a trunk other than its stack's root: one into a trunk that a rule would put on another
+   * stack, such as a backport cut from a feature branch, which shares that branch's commits, sits
+   * on its trunk as a stack of its own instead.
+   */
+  readonly onTrunk: boolean;
 }
 
 /** Why a layer needs a rebase, and what to compare it against until then. */
@@ -333,7 +341,8 @@ export function stackOf(stacks: Stacks, number: number): Stack | undefined {
  * `trunks` are the repository's long-lived branches: its default branch plus protected or
  * ruleset-covered ones. They're always roots: a pull request from a trunk, such as a deploy
  * `production <- main` or a back-merge `develop <- main`, is never below another. A fork's branch
- * is never a trunk, whatever its name.
+ * is never a trunk, whatever its name. A pull request into a trunk sits only on a stack whose root
+ * is that trunk ({@link Layer.onTrunk}).
  */
 export function findStacks(prs: readonly PullRequest[], trunks: readonly string[]): Stacks {
   const graph = new Graph(prs, trunks);
@@ -343,7 +352,48 @@ export function findStacks(prs: readonly PullRequest[], trunks: readonly string[
   const placed = graph.prs.flatMap((pr, index) =>
     isOpen(pr) ? [graph.place(index, links, landings)] : [],
   );
-  return { ...build(placed, trunks), cycles, gaps: [] };
+  return { ...build(keepOnTrunks(placed, new Set(trunks)), trunks), cycles, gaps: [] };
+}
+
+/**
+ * `placed`, with each pull request into a trunk that its link puts on a stack with another root
+ * sitting on its trunk instead, as a stack of its own. Lo never moves a pull request off a trunk,
+ * and such a link is shared history, as a backport cut from a feature branch has, not a layer.
+ * Those nearest a root go first, so one taken out takes the layers on it to its trunk with it.
+ */
+function keepOnTrunks(placed: readonly Placed[], trunks: ReadonlySet<string>): Placed[] {
+  const kept = [...placed];
+  const at = new Map(kept.map(({ pr }, index) => [pr.number, index]));
+  // Following what each sits on down to its root branch, counting the steps. `findStacks` broke
+  // every cycle, so each walk ends.
+  const walk = (start: number): { root: string; depth: number } => {
+    let depth = 0;
+    for (let parent = kept[start]?.parent; parent !== undefined; depth++) {
+      if (parent.kind === 'branch') return { root: parent.branch, depth };
+      parent = kept[at.get(parent.number) ?? -1]?.parent;
+    }
+    return { root: '', depth };
+  };
+  const candidates = kept
+    .map((_, index) => index)
+    .filter((index) => {
+      const { pr, parent } = kept[index] ?? {};
+      if (!pr || !parent || !trunks.has(pr.baseRef)) return false;
+      return parent.kind === 'pr' || parent.branch !== pr.baseRef;
+    })
+    .toSorted((a, b) => walk(a).depth - walk(b).depth);
+  for (const index of candidates) {
+    const pr = kept[index]?.pr;
+    if (pr === undefined || walk(index).root === pr.baseRef) continue;
+    kept[index] = {
+      pr,
+      parent: { kind: 'branch', branch: pr.baseRef },
+      rule: undefined,
+      needsRebase: undefined,
+      retargetTo: undefined,
+    };
+  }
+  return kept;
 }
 
 /** An open pull request and where it sits. */
@@ -380,6 +430,7 @@ function build(
       baseRef: pr.baseRef,
       headInBaseRepo: pr.headInBaseRepo,
       nativeStack: pr.nativeStack,
+      onTrunk: trunks.includes(pr.baseRef),
     };
   }
   for (const [number, above] of children) {
