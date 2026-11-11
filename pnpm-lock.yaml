@@ -344,6 +344,10 @@ importers:
       markdown-it:
         specifier: 15.0.3
         version: 15.0.3
+    devDependencies:
+      '@lo/testing':
+        specifier: workspace:*
+        version: link:../../../testing
 
   packages/core/diff: {}
 

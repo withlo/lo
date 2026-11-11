@@ -1,0 +1,6 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "tldr-empty", "line": 7 }
+  ]
+}

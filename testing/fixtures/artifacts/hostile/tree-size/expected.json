@@ -1,0 +1,7 @@
+{
+  "outcome": "tooLarge",
+  "what": "bytes",
+  "findings": [
+    { "code": "tree-size" }
+  ]
+}

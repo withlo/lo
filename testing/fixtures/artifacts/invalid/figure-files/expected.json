@@ -1,0 +1,10 @@
+{
+  "outcome": "shown",
+  "findings": [
+    { "code": "tree-extra", "file": "figures/link.svg" },
+    { "code": "figure-missing", "line": 12 },
+    { "code": "figure-missing", "line": 16 },
+    { "code": "figure-not-file", "line": 20 }
+  ],
+  "code": []
+}

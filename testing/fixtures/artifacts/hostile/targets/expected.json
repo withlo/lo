@@ -1,0 +1,25 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "target-path", "line": 13 },
+    { "code": "target-path", "line": 13 },
+    { "code": "target-path", "line": 13 },
+    { "code": "target-path", "line": 14 },
+    { "code": "target-path", "line": 14 },
+    { "code": "target-path", "line": 14 },
+    { "code": "target-lines", "line": 15 },
+    { "code": "code-missing", "line": 15 },
+    { "code": "target-path", "line": 16 },
+    { "code": "target-path", "line": 16 },
+    { "code": "dead-link", "line": 18 },
+    { "code": "dead-link", "line": 18 },
+    { "code": "dead-link", "line": 18 },
+    { "code": "code-missing", "line": 19 },
+    { "code": "code-not-file", "line": 23 },
+    { "code": "code-missing", "line": 23 },
+    { "code": "code-not-file", "line": 23 },
+    { "code": "code-not-file", "line": 23 },
+    { "code": "code-missing", "line": 24 },
+    { "code": "code-missing", "line": 24 }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "header-twice", "line": 4 },
+    { "code": "header-key", "line": 5 },
+    { "code": "header-line", "line": 6 }
+  ]
+}

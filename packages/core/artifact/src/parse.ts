@@ -71,11 +71,7 @@ function read(source: Uint8Array | string): ParsedArtifact {
     return { ...known, ...nothing(), findings: findings.list() };
   }
   if (file.size > LIMITS.size) {
-    findings.add(
-      'too-large',
-      undefined,
-      `artifact.md is larger than ${LIMITS.size / 1024} KiB, the most an overview's text may be. Shorten it.`,
-    );
+    tooLong(findings);
     return { ...known, ...nothing(), findings: findings.list() };
   }
   // Where a header that never closes ends is unknown, so nothing after it is read.
@@ -102,6 +98,15 @@ function read(source: Uint8Array | string): ParsedArtifact {
     figures: reading.figures,
     findings: findings.list(),
   };
+}
+
+/** Adds that `artifact.md` is past its limit. */
+export function tooLong(findings: Findings): void {
+  findings.add(
+    'too-large',
+    undefined,
+    `artifact.md is larger than ${LIMITS.size / 1024} KiB, the most an overview's text may be. Shorten it.`,
+  );
 }
 
 function nothing(): Pick<ParsedArtifact, 'tree' | 'references' | 'figures'> {

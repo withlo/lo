@@ -1,0 +1,6 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "target-count", "line": 511 }
+  ]
+}

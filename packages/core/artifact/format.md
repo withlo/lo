@@ -9,8 +9,10 @@ shows code from the repository itself, so an overview names a file and its lines
 code. This is format 1.
 
 An overview that breaks a rule here is invalid: Lo shows the pull request's diff instead, with a
-report of what's wrong. The checker reports the same before you push. Warnings don't stop an
-overview from showing.
+report of what's wrong. A few rules are about what's outside `artifact.md`, and breaking one leaves
+out only what it's about: a block whose code isn't there shows a note in its place, and a file the
+commit shouldn't hold is never read. The checker reports every rule broken before you push. Warnings
+don't stop an overview from showing.
 
 ## An example
 
@@ -79,10 +81,12 @@ The new burst tests in [limiter.test.ts](code:src/limiter.test.ts) pass, as do t
 
 ## The files
 
-- **`artifact.md`:** the overview's text, in UTF-8, up to 256 KiB. A byte-order mark at its start is
-  ignored, and lines may end in `\n` or `\r\n`.
-- **`figures/`:** the overview's figures, each directly in the folder. Nothing else may be in the
-  commit.
+- **`artifact.md`:** the overview's text, in UTF-8, up to 256 KiB: a file, never a link. A
+  byte-order mark at its start is ignored, and lines may end in `\n` or `\r\n`.
+- **`figures/`:** the overview's figures, each a file directly in the folder.
+
+Nothing else may be in the commit: no other file, folder, link or submodule. Names match exactly, so
+`Artifact.md` isn't `artifact.md`.
 
 ## The header
 
@@ -242,7 +246,8 @@ syntax: `[the limiter](code:src/limiter.ts#L12-L40)`, `[buckets](term:bucket)`,
 - **Lines** count from 1: `L12` is one line, `L12-L44` the lines from 12 to 44. A code block and a
   step show at most 200 lines; for more, link the file.
 - **The code** is the repository's at the header's commit, so a target is any file there: changed by
-  the pull request or not.
+  the pull request or not. It's a file, not a link, folder or submodule, and when the target names
+  lines, the file is text and has them. Lo shows a note in place of code that isn't there.
 - **A heading's anchor** is GitHub's: its text in lower case, punctuation removed, spaces as `-`,
   and `-1`, `-2` and on for repeats.
 - **At most 500 targets** in all: code, terms and sections, from blocks, steps, parts and links.
@@ -280,7 +285,7 @@ Only `term:` links mark a term. Other uses of the word are left alone.
 
 A figure is an SVG, PNG, JPEG, GIF or WebP file directly in `figures/`, named with one of the
 endings `.svg`, `.png`, `.jpg`, `.jpeg`, `.gif` or `.webp`, in lower case. Its contents must be of
-the type its name says.
+the type its name says. A figure that isn't there as a file is left out, with a note in its place.
 
 - **SVG figures** follow `figures.md`: Lo's named colors, `var(--fig-*)`, so they follow the
   reader's theme; no scripts, outside images, `<foreignObject>`, filters or gradients. Lo removes
@@ -304,35 +309,40 @@ lists, footnotes, alerts and links.
 
 Past any of these, Lo doesn't show the overview, and says why. It never cuts one short.
 
-| What                                   | At most                          |
-| -------------------------------------- | -------------------------------- |
-| `artifact.md`                          | 256 KiB of UTF-8                 |
-| The overview's tree                    | 65,536 pieces, nested 16 deep    |
-| Targets                                | 500                              |
-| Blocks inside blocks                   | 4 deep                           |
-| A block's argument, or a link's target | 1,024 bytes                      |
-| A code block's or a step's lines       | 200                              |
-| Figures                                | 100                              |
-| Steps in a walkthrough                 | 50, and at least 3               |
-| Tabs in a `:::tabs` block              | 12, and at least 2               |
-| The commit, figures included           | 50 MB, and 500 files and folders |
+| What                                   | At most                       |
+| -------------------------------------- | ----------------------------- |
+| `artifact.md`                          | 256 KiB of UTF-8              |
+| The overview's tree                    | 65,536 pieces, nested 16 deep |
+| Targets                                | 500                           |
+| Blocks inside blocks                   | 4 deep                        |
+| A block's argument, or a link's target | 1,024 bytes                   |
+| A code block's or a step's lines       | 200                           |
+| Figures                                | 100                           |
+| Steps in a walkthrough                 | 50, and at least 3            |
+| Tabs in a `:::tabs` block              | 12, and at least 2            |
+| The commit, figures included           | 50 MiB, 500 files and folders |
 
 The tree's pieces are what Lo shows: each paragraph, heading, list item, link, run of text and block
 counts as one, and each level of a list, quote or block inside another is a level of nesting.
 
 Past these, Lo shows the overview without the one block or figure, with a note in its place:
 
-| What                  | At most                             |
-| --------------------- | ----------------------------------- |
-| A file a target names | 10 MiB of text                      |
-| An image              | 10 MiB, 16,384 pixels a side, 40 MP |
-| An SVG                | 512 KiB, 4,096 elements, 32 deep    |
+| What                             | At most                             |
+| -------------------------------- | ----------------------------------- |
+| A file a target names            | 10 MiB of text                      |
+| The files targets name, together | 64 MiB                              |
+| An image                         | 10 MiB, 16,384 pixels a side, 40 MP |
+| An SVG                           | 512 KiB, 4,096 elements, 32 deep    |
 
-A file a target names is text unless one of its first 8 KiB is a NUL byte. An SVG also may be no
-taller than 8 times its width or wider than 32 times its height, and what it draws is capped.
+A file a target names is text unless one of its first 8 KiB is a NUL byte. The files targets name
+count in the order the overview first names them, and a file named only whole, by a link, counts for
+nothing. An SVG also may be no taller than 8 times its width or wider than 32 times its height, and
+what it draws is capped.
 
 ## Versions
 
 The header's `format` says which version of this format the overview is written in. A change that an
 earlier version of Lo would read wrongly makes a new format. Each version of Lo reads every format
-up to its own, and says it needs an update for a newer one.
+up to its own, and says it needs an update for a newer one. Of an overview in a newer format, Lo
+reads only the header: a newer format may allow files, or limits, that this one doesn't, so its
+commit isn't held to this format's rules either.

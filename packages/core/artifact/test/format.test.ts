@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { DEFAULT_LIMITS } from '@lo/markdown';
 import { expect, test } from 'vitest';
 
-import { FORMAT, LIMITS, MIN_STEPS, MIN_TABS, parseArtifact } from '../src/index.ts';
+import { BINARY_WINDOW, FORMAT, LIMITS, MIN_STEPS, MIN_TABS, parseArtifact } from '../src/index.ts';
 import { HEADER } from './support.ts';
 import { problems } from './walker.ts';
 
@@ -35,6 +35,8 @@ test.each(examples.map((example, n) => [n + 1, example]))(
   },
 );
 
+const MIB = 1024 * 1024;
+
 /** `value` as format.md writes it. */
 function number(value: number): string {
   return value.toLocaleString('en-US');
@@ -54,7 +56,15 @@ test('format.md gives the limits the parse keeps', () => {
     `${LIMITS.tabs}, and at least ${MIN_TABS}`,
     // The parse leaves Markdown's limit on addresses as it is.
     `${number(DEFAULT_LIMITS.addresses)} characters of addresses`,
+    `${LIMITS.commit / MIB} MiB, ${LIMITS.entries} files and folders`,
+    `first ${BINARY_WINDOW / 1024} KiB is a NUL byte`,
   ]) {
     expect(spec).toContain(phrase);
   }
+  expect(spec).toMatch(
+    new RegExp(`\\| A file a target names +\\| ${LIMITS.file / MIB} MiB of text`),
+  );
+  expect(spec).toMatch(
+    new RegExp(`\\| The files targets name, together +\\| ${LIMITS.code / MIB} MiB `),
+  );
 });

@@ -1,0 +1,6 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "header-unclosed", "line": 1 }
+  ]
+}
