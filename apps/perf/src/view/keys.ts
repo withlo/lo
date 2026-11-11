@@ -1,9 +1,11 @@
 // Keys in the diff: Vim's own, from CodeMirror's Vim package, and Lo's. Lo's jumps (`]c`, `]f`,
 // `]t` and their `[` twins) are Vim motions, so counts, visual mode and the jumplist work with
 // them; Vim's keymap is global, but they move only in a diff editor. `Ctrl-o` and `Ctrl-i` walk a
-// jumplist the diff's editors share, so they can go back across to the other side. Lo's actions whose keys Vim
-// uses for editing (`c`, `yl`, `gi`, `zo`, `zc`, `zR`, `za`) and `Tab` go through a handler on
-// diff editors alone, ahead of Vim, so a comment box keeps Vim's meanings.
+// jumplist the diff's editors share, so they can go back across to the other side. Lo's actions
+// whose keys Vim uses for editing (`c`, `yl`, `gi`, `zo`, `zc`, `zR`, `za`) and `Tab` go through a
+// handler on diff editors alone, ahead of Vim, so a comment box keeps Vim's meanings. Vim's keys
+// that go by the screen, such as `Ctrl-f`, `Ctrl-d`, `H` and `zz`, go by the box that scrolls
+// (see `screen.ts`).
 
 import { Prec } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
@@ -11,6 +13,7 @@ import { getCM, Vim } from '@replit/codemirror-vim';
 
 import { idle } from './comments.ts';
 import { addDiffEditor, installJumps, mapJumps, walkJumps } from './jumps.ts';
+import { defineScreenKeys, leaveOnScreen } from './screen.ts';
 
 export type Target = 'change' | 'file' | 'thread';
 
@@ -55,6 +58,7 @@ function defineMotions(): void {
   if (motionsDefined) return;
   motionsDefined = true;
   installJumps();
+  defineScreenKeys();
   Vim.defineMotion('loJump', (cm, head, motionArgs) => {
     const view: unknown = cm.cm6;
     const keys = view instanceof EditorView ? editors.get(view) : undefined;
@@ -145,6 +149,7 @@ export function diffKeys(keys: DiffKeys): ReturnType<typeof Prec.highest> {
     EditorView.updateListener.of((update) => {
       if (update.docChanged) mapJumps(update.view, update.changes);
     }),
+    leaveOnScreen,
   ]);
 }
 

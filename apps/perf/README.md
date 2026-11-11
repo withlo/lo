@@ -80,7 +80,9 @@ counts, `gg`/`G`, `V` and `/` work as in Vim, and these are Lo's:
 | `c`       | A comment box on the line, on either side                            |
 | `yl`      | Copy GitHub's link to the line                                       |
 
-`Ctrl-o` and `Ctrl-i` go back and forth through the jumps made, across both sides.
+`Ctrl-o` and `Ctrl-i` go back and forth through the jumps made, across both sides. The keys that go
+by the screen, `PageDown`/`PageUp`, `Ctrl-f`/`b`/`d`/`u`/`e`/`y`, `H`/`M`/`L` and `zt`/`zz`/`zb`, go
+by the box that scrolls both sides, as Vim's go by its window, and take counts as Vim's do.
 
 In a comment box, which grows as you type, Vim's keys keep their own meanings, and `Tab` indents in
 insert mode. `⌘⏎` adds the comment to the thread; `Esc` leaves insert mode, and `Esc` again closes
