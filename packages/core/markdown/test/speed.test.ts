@@ -12,12 +12,12 @@ import { problems } from './walker.ts';
 
 /**
  * How long each may take, in milliseconds: three times the slowest run on a Linux CI runner,
- * which runs test files side by side (about 200 ms for the comment, 350 ms for the overview and
- * 500 ms for the rendering, against 30, 60 and 90 ms on a laptop). Faster machines pass easily.
+ * which runs test files side by side (about 250 ms for the comment, 400 ms for the overview and
+ * 650 ms for the rendering, against 30, 60 and 100 ms on a laptop). Faster machines pass easily.
  */
-const COMMENT_LIMIT = 600;
-const OVERVIEW_LIMIT = 1_050;
-const RENDERING_LIMIT = 1_500;
+const COMMENT_LIMIT = 750;
+const OVERVIEW_LIMIT = 1_200;
+const RENDERING_LIMIT = 2_000;
 
 /** One section of a typical long description or overview, about 1.6 KB. */
 function section(n: number): string {

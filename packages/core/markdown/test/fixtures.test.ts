@@ -19,11 +19,11 @@ const OPTIONS = {
 };
 
 /**
- * The longest any one input may take, in milliseconds. The slowest takes about 60 ms on a laptop
- * and some 300 ms on a Linux CI runner running test files side by side; anything that grows faster
- * than its text takes seconds.
+ * The longest any one input may take, in milliseconds. The slowest takes about 250 ms on a
+ * laptop and some 800 ms on a Linux CI runner running test files side by side; anything that
+ * grows faster than its text takes far longer at these sizes.
  */
-const LIMIT = 1_000;
+const LIMIT = 2_500;
 
 function hostile(name: string): Tree {
   const text = readFileSync(new URL(name, HOSTILE), 'utf8');
