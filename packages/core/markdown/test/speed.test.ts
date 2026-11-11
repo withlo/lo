@@ -9,11 +9,12 @@ import { markdownTree, plainText } from '../src/index.ts';
 import { problems } from './walker.ts';
 
 /**
- * How long each may take, in milliseconds: three times the slowest run on a Linux CI runner
- * (about 50 ms for the comment and 120 ms for the overview). Faster machines pass easily.
+ * How long each may take, in milliseconds: three times the slowest run on a Linux CI runner,
+ * which runs test files side by side (about 200 ms for the comment and 350 ms for the overview,
+ * against 30 and 60 ms on a laptop). Faster machines pass easily.
  */
-const COMMENT_LIMIT = 250;
-const OVERVIEW_LIMIT = 500;
+const COMMENT_LIMIT = 600;
+const OVERVIEW_LIMIT = 1_050;
 
 /** One section of a typical long description or overview, about 1.6 KB. */
 function section(n: number): string {

@@ -18,9 +18,9 @@ const OPTIONS = {
 };
 
 /**
- * The longest any one input may take, in milliseconds. The slowest generated input takes about
- * 60 ms on a laptop; this leaves room for a slow CI runner while still failing anything that
- * grows faster than its text.
+ * The longest any one input may take, in milliseconds. The slowest takes about 60 ms on a laptop
+ * and some 300 ms on a Linux CI runner running test files side by side; anything that grows faster
+ * than its text takes seconds.
  */
 const LIMIT = 1_000;
 
