@@ -2,11 +2,36 @@
 // editor underneath. Features hand a view Lo's data, call its methods, and hear back through its
 // events, in places (a file's id, a side, a line), never in editors or document positions.
 
-import type { FileDiff, MovedBlock } from '@lo/diff';
+import type { FileDiff, WordRange } from '@lo/diff';
 
-import type { KeySource, Mode, Place, Side, Span, Target, VimKey } from '../commands/index.ts';
+import type {
+  HeaderTarget,
+  KeySource,
+  LineTarget,
+  Mode,
+  Place,
+  Side,
+  Span,
+  Target,
+  VimKey,
+} from '../commands/index.ts';
 
-export type { FileDiff, KeySource, Mode, MovedBlock, Place, Side, Span, Target, VimKey };
+export type {
+  FileDiff,
+  HeaderTarget,
+  KeySource,
+  LineTarget,
+  Mode,
+  Place,
+  Side,
+  Span,
+  Target,
+  VimKey,
+  WordRange,
+};
+
+/** Where a code view's cursor can be: on a file's line, or on its header. */
+export type Spot = { kind: 'line'; at: Place } | HeaderTarget;
 
 /** How a diff is laid out: the two sides next to each other, or one column of both. */
 export type DiffLayout = 'split' | 'inline';
@@ -40,6 +65,27 @@ export interface DiffFile {
   /** Starts closed into one block, as a viewed or generated file does; `za` opens it. */
   collapsed?: boolean;
   header: FileHeader;
+  /**
+   * Lines, first to last, that `lines` holds only as placeholders, as GitHub's diff leaves out the
+   * unchanged lines between its hunks. They stay collapsed, and `zo` and `zR` don't open them,
+   * until `setLines` brings the whole file.
+   */
+  gaps?: readonly { side: Side; from: number; to: number }[];
+}
+
+/** One end of moved code: a file's lines, first to last, on the side it's on. */
+export interface MovedEnd {
+  file: string;
+  first: number;
+  last: number;
+}
+
+/** Code the pull request moves: deleted at `from`, on the old side, and added at `to`. */
+export interface MovedCode {
+  from: MovedEnd;
+  to: MovedEnd;
+  /** The words edited on the way, on each side's lines. */
+  words: { old: readonly WordRange[]; new: readonly WordRange[] };
 }
 
 /** A note at the top of the view, on what's being compared. */
@@ -49,10 +95,7 @@ export interface DiffNote {
 }
 
 export interface DiffInit {
-  /**
-   * The files in the left panel's order. A new order is a new view. A move's files
-   * (`MovedBlock`'s `file`) are positions in this list.
-   */
+  /** The files in the left panel's order. A new order is a new view. */
   files: readonly DiffFile[];
   note?: DiffNote;
   layout: DiffLayout;
@@ -146,7 +189,7 @@ export interface PassStats {
 
 /** Where the cursor is, and where it's drawn, in the window's pixels. */
 export interface CursorReading {
-  at: Place;
+  at: Spot;
   /** The column it's in: a side, or the inline layout's one. */
   pane: Side | 'inline';
   top: number;
@@ -177,10 +220,14 @@ export interface DiffView extends KeySource {
   /** Shows a file's diff. Its lines must be in the view already. */
   setDiff(file: string, diff: FileDiff): void;
   /** Shows the code the pull request moves. */
-  setMoves(moves: readonly MovedBlock[]): void;
+  setMoves(moves: readonly MovedCode[]): void;
   /** Highlights a side of a file from `@lo/syntax`'s `[from, to, token]` triples over its text. */
   setTokens(file: string, side: Side, triples: Uint32Array): void;
-  /** Brings in the lines of a file kept out, as after `load`. Its diff follows with `setDiff`. */
+  /**
+   * Brings in a file's lines: those of a file kept out, as after `load`, or the whole of one in
+   * place of what it showed, its gaps filled. Its diff and highlighting follow with `setDiff` and
+   * `setTokens`.
+   */
   setLines(file: string, lines: { old: readonly string[]; new: readonly string[] }): void;
   /** Says a file asked for with `load` couldn't be loaded: its note says so, and `za` asks again. */
   loadFailed(file: string): void;
@@ -189,13 +236,19 @@ export interface DiffView extends KeySource {
   setLayout(layout: DiffLayout): void;
   /** Replaces the threads drawn under lines. */
   setThreads(threads: readonly ThreadView[]): void;
-  /** Moves the cursor to a place, or a file's header, and brings it on screen. Not a jump. */
-  reveal(at: Place | { file: string }): void;
+  /**
+   * Moves the cursor to what `at` names, and brings it on screen: a line, the last line `v`
+   * selected, a header, a file's header on the side the cursor is on, or a thread's line. Says
+   * whether it could: a file or a thread the view doesn't have, or a target of another kind, it
+   * can't. Not a jump, and focus stays where it is: `focus()` takes it there.
+   */
+  reveal(at: Target): boolean;
   /** `]c` and kin: `count` changes, files or threads on, or back where it's negative. */
   jump(to: JumpTo, count: number): void;
   /** `Tab`: the cursor goes to its row on the other side. A jump. */
   otherSide(): void;
-  fold(at: Place, how: Fold): void;
+  /** `open` and `close` act on a line; `file` and `toggle` on a line's file, a header's or a file. */
+  fold(at: Target, how: Fold): void;
   /** The text of a span's lines, as `yy` copies them. */
   lines(span: Span): readonly string[];
   /**
@@ -211,17 +264,17 @@ export interface DiffView extends KeySource {
 /** What a diff view tells its caller. */
 export interface DiffEvents {
   /** The cursor moved, in a side or inline: for the status bar. */
-  cursor(at: Place): void;
+  cursor(at: Spot): void;
   /** Vim's mode changed in the view's code: for the status bar. */
   mode(mode: Mode): void;
   /** The file at the top of the screen changed: the tree follows. */
   file(id: string): void;
   /**
-   * A jump, from one place to another: a Vim motion that jumps (`G`, `/`, `]f`), `jump` or
+   * A jump, from one spot to another: a Vim motion that jumps (`G`, `/`, `]f`), `jump` or
    * `otherSide`. The caller records `from` in the tab's history, which `⌃o` walks back with
-   * `reveal`. A place on a file's header has line 0.
+   * `reveal`.
    */
-  jumped(from: Place, to: Place): void;
+  jumped(from: Spot, to: Spot): void;
   /** `za` on a file kept out: load its lines, then `setLines`, or `loadFailed`. */
   load(file: string): void;
   /** A right-click: the registry's menu for what was clicked. */
@@ -231,6 +284,7 @@ export interface DiffEvents {
 /**
  * Lo's motions the diff view runs, by the ids of the commands that declare them: in a code view,
  * Vim runs them under the keys the registry gives (`setVimKeys`), so counts and visual mode work.
+ * A motion the registry gives that isn't here is refused, rather than left a dead key.
  */
 export const diffMotions: Readonly<Record<string, { to: JumpTo; forward: boolean }>> = {
   'diff.nextChange': { to: 'change', forward: true },

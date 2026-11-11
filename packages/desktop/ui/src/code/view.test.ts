@@ -12,8 +12,10 @@ import type {
   DiffInit,
   DiffView,
   Place,
+  Spot,
   VimKey,
 } from './api.ts';
+import { editsText } from './keys.ts';
 import { createDiffView } from './view.ts';
 
 const noRects = (): DOMRectList => Object.assign([], { item: () => null });
@@ -135,7 +137,7 @@ function open(on: DiffEvents = events(), init: Partial<DiffInit> = {}): DiffView
     { files, layout: 'split', vimKeys: motions, nonce: 'n', ...init },
     on,
   );
-  for (const file of files) {
+  for (const file of init.files ?? files) {
     if (file.lines) view.setDiff(file.id, diffOf(file.lines));
   }
   focusable();
@@ -193,6 +195,19 @@ function at(file: string, side: 'old' | 'new', line: number): Place {
   return { file, side, line };
 }
 
+/** The cursor on a file's line, as the view reports it and `reveal` takes it. */
+function onLine(file: string, side: 'old' | 'new', line: number, column?: number): Spot {
+  return {
+    kind: 'line',
+    at: column === undefined ? at(file, side, line) : { ...at(file, side, line), column },
+  };
+}
+
+/** The cursor on a file's header. */
+function onHeader(file: string, side: 'old' | 'new'): Spot {
+  return { kind: 'header', file, side };
+}
+
 /** The collapsed runs drawn in file `a` on the new side. */
 function collapsed(): number {
   return parent!.querySelectorAll('.cm-content[aria-label="After"] [data-row^="c:0:"]').length;
@@ -204,36 +219,94 @@ function notes(): string[] {
   );
 }
 
+/** Each list of keys, titled by the keys it holds. */
+function titled(lists: string[][]): (readonly [string, string[]])[] {
+  return lists.map((keys) => [keys.join(''), keys] as const);
+}
+
+/** The labels on moved code drawn in the editor labelled `label`. */
+function labels(label: string): (string | null)[] {
+  return [...parent!.querySelectorAll(`.cm-content[aria-label="${label}"] .lo-movedlabel`)].map(
+    (each) => each.textContent,
+  );
+}
+
+/** Lines 8 to 22 of `lines` as placeholders, as GitHub's diff leaves them out. */
+function placeholders(lines: string[]): string[] {
+  return lines.map((each, index) => (index >= 7 && index <= 21 ? '' : each));
+}
+
+/** What each block of collapsed lines drawn on the new side says. */
+function runs(): string[] {
+  return [...parent!.querySelectorAll('.cm-content[aria-label="After"] .lo-collapsed')].map(
+    (each) => each.lastElementChild?.textContent ?? '',
+  );
+}
+
 describe('places', () => {
   test('a file line goes to its document line and back, on each side and inline', () => {
     const shown = open();
     const places = [at('a', 'new', 22), at('a', 'old', 35), at('b', 'new', 7), at('c', 'old', 3)];
     for (const place of places) {
-      shown.reveal(place);
-      expect(shown.probe.cursor()?.at).toMatchObject(place);
+      shown.reveal({ kind: 'line', at: place });
+      expect(shown.probe.cursor()?.at).toMatchObject({ kind: 'line', at: place });
       expect(shown.keyState().target).toMatchObject({ kind: 'line', at: place });
     }
     shown.setLayout('inline');
     expect(shown.probe.layout).toBe('inline');
     for (const place of [at('a', 'new', 22), at('a', 'old', 35), at('b', 'new', 7)]) {
-      shown.reveal(place);
-      expect(shown.probe.cursor()).toMatchObject({ at: place, pane: 'inline' });
+      shown.reveal({ kind: 'line', at: place });
+      expect(shown.probe.cursor()).toMatchObject({
+        at: { kind: 'line', at: place },
+        pane: 'inline',
+      });
     }
   });
 
-  test("a file's header is line 0, where revealing the file goes", () => {
+  test("a file's header is a target of its own, on the side the cursor was on", () => {
     const shown = open();
-    shown.reveal({ file: 'b' });
-    expect(shown.probe.cursor()?.at).toEqual(at('b', 'new', 0));
-    shown.reveal(at('c', 'old', 2));
-    shown.reveal({ file: 'a' });
-    expect(shown.probe.cursor()?.at).toEqual(at('a', 'old', 0));
+    shown.reveal({ kind: 'file', file: 'b' });
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('b', 'new'));
+    expect(shown.keyState().target).toEqual(onHeader('b', 'new'));
+    shown.reveal(onLine('c', 'old', 2));
+    shown.reveal({ kind: 'file', file: 'a' });
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('a', 'old'));
+    shown.reveal(onHeader('a', 'new'));
+    expect(shown.keyState().target).toEqual(onHeader('a', 'new'));
+  });
+
+  test("reveal takes a thread's line, and says whether it could", () => {
+    const shown = open();
+    shown.setThreads([{ id: 'here', at: at('b', 'new', 6), comments: [] }]);
+    expect(shown.reveal({ kind: 'thread', thread: 'here' })).toBe(true);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('b', 'new', 6));
+    expect(shown.reveal({ kind: 'thread', thread: 'gone' })).toBe(false);
+    expect(shown.reveal(onLine('z', 'new', 1))).toBe(false);
+    expect(shown.reveal({ kind: 'tab', tab: 'pull' })).toBe(false);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('b', 'new', 6));
+  });
+
+  test('reveal leaves focus where it is, for focus() to move', () => {
+    const shown = open();
+    const elsewhere = document.createElement('button');
+    document.body.append(elsewhere);
+    elsewhere.focus();
+    shown.reveal(onLine('a', 'old', 12));
+    expect(document.activeElement).toBe(elsewhere);
+    shown.focus();
+    expect(document.activeElement).toBe(vimIn('Before').content);
+    // Revealed on the other side, focus follows it there, not to the editor that has it.
+    shown.reveal(onLine('a', 'new', 12));
+    expect(document.activeElement).toBe(vimIn('Before').content);
+    shown.focus();
+    expect(document.activeElement).toBe(vimIn('After').content);
+    elsewhere.remove();
   });
 
   test("a column puts the cursor on the line's character", () => {
     const shown = open();
-    shown.reveal({ ...at('a', 'new', 5), column: 7 });
-    expect(shown.probe.cursor()?.at).toEqual({ ...at('a', 'new', 5), column: 7 });
+    shown.reveal(onLine('a', 'new', 5, 7));
+    expect(shown.probe.cursor()?.at).toEqual(onLine('a', 'new', 5, 7));
   });
 
   test("lines gives a span's text, either way round", () => {
@@ -247,7 +320,7 @@ describe('places', () => {
 
   test("a file the view doesn't have is refused", () => {
     const shown = open();
-    expect(() => shown.reveal(at('z', 'new', 1))).toThrow('no file z');
+    expect(() => shown.setDiff('z', diffOf({ old: [], new: ['z'] }))).toThrow('no file z');
   });
 });
 
@@ -258,76 +331,76 @@ describe('jumps', () => {
       { id: 't1', at: at('a', 'new', 3), comments: [] },
       { id: 't2', at: at('b', 'new', 4), comments: [] },
     ]);
-    shown.reveal(at('a', 'new', 1));
+    shown.reveal(onLine('a', 'new', 1));
     shown.jump('change', 2);
-    expect(shown.probe.cursor()?.at).toMatchObject(at('a', 'new', 21));
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 21));
     shown.jump('change', -1);
-    expect(shown.probe.cursor()?.at).toMatchObject(at('a', 'new', 5));
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 5));
     // On into the next files, where an added file is one change.
     shown.jump('change', 3);
-    expect(shown.probe.cursor()?.at).toMatchObject(at('b', 'new', 1));
-    shown.reveal(at('a', 'new', 5));
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('b', 'new', 1));
+    shown.reveal(onLine('a', 'new', 5));
     // As far as there is: a file deleted is one change at its header on the new side.
     shown.jump('change', 9);
-    expect(shown.probe.cursor()?.at).toEqual(at('c', 'new', 0));
-    shown.reveal(at('a', 'new', 37));
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('c', 'new'));
+    shown.reveal(onLine('a', 'new', 37));
     shown.jump('file', 2);
-    expect(shown.probe.cursor()?.at).toEqual(at('c', 'new', 0));
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('c', 'new'));
     shown.jump('file', -1);
-    expect(shown.probe.cursor()?.at).toEqual(at('b', 'new', 0));
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('b', 'new'));
     shown.jump('thread', -1);
-    expect(shown.probe.cursor()?.at).toMatchObject(at('a', 'new', 3));
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 3));
     shown.jump('thread', 1);
-    expect(shown.probe.cursor()?.at).toMatchObject(at('b', 'new', 4));
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('b', 'new', 4));
   });
 
   test("Vim runs Lo's motions with counts, under the keys it's given", () => {
     const shown = open();
-    shown.reveal(at('a', 'new', 1));
+    shown.reveal(onLine('a', 'new', 1));
     const after = vimIn('After');
     after.keys('2', ']', 'c');
-    expect(shown.probe.cursor()?.at).toMatchObject(at('a', 'new', 21));
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 21));
     after.keys(']', 'f');
-    expect(shown.probe.cursor()?.at).toEqual(at('b', 'new', 0));
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('b', 'new'));
     shown.setVimKeys([{ kind: 'motion', command: 'diff.nextFile', keys: ']n' }]);
     after.keys(']', 'f');
-    expect(shown.probe.cursor()?.at).toEqual(at('b', 'new', 0));
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('b', 'new'));
     after.keys(']', 'n');
-    expect(shown.probe.cursor()?.at).toEqual(at('c', 'new', 0));
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('c', 'new'));
     shown.setVimKeys([...motions, { kind: 'map', mode: 'normal', keys: 'Q', to: 'gg' }]);
     after.keys('Q');
-    expect(shown.probe.cursor()?.at).toEqual(at('a', 'new', 0));
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('a', 'new'));
   });
 
   test('a jump goes out with its side and file, never into a list of Vim’s', () => {
     const on = events();
     const shown = open(on);
-    shown.reveal(at('a', 'new', 2));
+    shown.reveal(onLine('a', 'new', 2));
     const after = vimIn('After');
     after.keys(']', 'f');
-    expect(on.jumped).toHaveBeenLastCalledWith(at('a', 'new', 2), at('b', 'new', 0));
+    expect(on.jumped).toHaveBeenLastCalledWith(onLine('a', 'new', 2), onHeader('b', 'new'));
     after.keys('G');
-    expect(on.jumped).toHaveBeenLastCalledWith(at('b', 'new', 0), at('d', 'new', 0));
-    shown.reveal(at('a', 'new', 21));
+    expect(on.jumped).toHaveBeenLastCalledWith(onHeader('b', 'new'), onHeader('d', 'new'));
+    shown.reveal(onLine('a', 'new', 21));
     shown.otherSide();
-    expect(on.jumped).toHaveBeenLastCalledWith(at('a', 'new', 21), at('a', 'old', 20));
-    expect(shown.probe.cursor()?.at).toMatchObject(at('a', 'old', 20));
+    expect(on.jumped).toHaveBeenLastCalledWith(onLine('a', 'new', 21), onLine('a', 'old', 20));
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'old', 20));
     shown.jump('change', 1);
-    expect(on.jumped).toHaveBeenLastCalledWith(at('a', 'old', 20), at('a', 'old', 21));
+    expect(on.jumped).toHaveBeenLastCalledWith(onLine('a', 'old', 20), onLine('a', 'old', 21));
     // Going back is the tab's history's to do: Vim's own `⌃o` has nowhere to go.
     const calls = on.jumped.mock.calls.length;
     vimIn('Before').keys('<C-o>');
-    expect(shown.probe.cursor()?.at).toMatchObject(at('a', 'old', 21));
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'old', 21));
     expect(on.jumped).toHaveBeenCalledTimes(calls);
   });
 
   test("revealing a place isn't a jump, and drops a count typed before it", () => {
     const on = events();
     const shown = open(on);
-    shown.reveal(at('a', 'new', 2));
+    shown.reveal(onLine('a', 'new', 2));
     vimIn('After').keys('2');
     expect(shown.keyState().pending).toBe(true);
-    shown.reveal(at('b', 'new', 3));
+    shown.reveal(onLine('b', 'new', 3));
     expect(shown.keyState().pending).toBe(false);
     expect(on.jumped).not.toHaveBeenCalled();
   });
@@ -337,15 +410,15 @@ describe('folds', () => {
   test('open and close take the run at a place, file opens every run, toggle closes the file', () => {
     const shown = open();
     expect(collapsed()).toBe(3);
-    shown.fold(at('a', 'new', 12), 'open');
+    shown.fold(onLine('a', 'new', 12), 'open');
     expect(collapsed()).toBe(2);
-    shown.fold(at('a', 'old', 12), 'close');
+    shown.fold(onLine('a', 'old', 12), 'close');
     expect(collapsed()).toBe(3);
-    shown.fold(at('a', 'new', 1), 'file');
+    shown.fold(onLine('a', 'new', 1), 'file');
     expect(collapsed()).toBe(0);
-    shown.fold(at('a', 'new', 0), 'toggle');
+    shown.fold(onHeader('a', 'new'), 'toggle');
     expect(notes()).toEqual(['+3 −2, closed: za opens it']);
-    shown.fold(at('a', 'new', 3), 'toggle');
+    shown.fold(onLine('a', 'new', 3), 'toggle');
     expect(notes()).toEqual([]);
   });
 
@@ -354,20 +427,20 @@ describe('folds', () => {
     const shown = open(on);
     const lines = { old: numbered(4, 'd'), new: [...numbered(4, 'd'), 'd 5'] };
     // Drawn, at the end of the documents.
-    shown.reveal({ file: 'd' });
+    shown.reveal({ kind: 'file', file: 'd' });
     expect(notes()).toEqual(['18000 changed lines: za loads them']);
-    shown.fold(at('d', 'new', 0), 'toggle');
+    shown.fold(onHeader('d', 'new'), 'toggle');
     expect(on.load).toHaveBeenCalledWith('d');
     expect(notes()).toEqual(['Loading the file…']);
     shown.loadFailed('d');
     expect(notes()).toEqual(['The file couldn’t be loaded: za tries again']);
-    shown.fold(at('d', 'new', 0), 'toggle');
+    shown.fold(onHeader('d', 'new'), 'toggle');
     expect(on.load).toHaveBeenCalledTimes(2);
     shown.setLines('d', lines);
     shown.setDiff('d', diffOf(lines));
     expect(notes()).toEqual([]);
-    shown.reveal(at('d', 'new', 5));
-    expect(shown.probe.cursor()?.at).toMatchObject(at('d', 'new', 5));
+    shown.reveal(onLine('d', 'new', 5));
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('d', 'new', 5));
     expect(shown.lines({ file: 'd', side: 'new', from: 5, to: 5 })).toEqual(['d 5']);
   });
 });
@@ -380,11 +453,11 @@ describe('targets', () => {
       { id: 'first', at: at('a', 'new', 25), comments: [] },
       { id: 'second', at: at('a', 'new', 25), comments: [] },
     ]);
-    shown.reveal(at('a', 'new', 10));
+    shown.reveal(onLine('a', 'new', 10));
     expect(shown.keyState().target).toMatchObject({ at: at('a', 'new', 10), thread: 'alone' });
-    shown.reveal(at('a', 'new', 25));
+    shown.reveal(onLine('a', 'new', 25));
     expect(shown.keyState().target).not.toHaveProperty('thread');
-    shown.reveal(at('a', 'new', 12));
+    shown.reveal(onLine('a', 'new', 12));
     vimIn('After').keys(']', 't');
     expect(shown.keyState().target).toMatchObject({ at: at('a', 'new', 25), thread: 'first' });
     vimIn('After').keys('k');
@@ -393,7 +466,7 @@ describe('targets', () => {
 
   test('in visual mode, the target is the lines selected', () => {
     const shown = open();
-    shown.reveal(at('a', 'new', 20));
+    shown.reveal(onLine('a', 'new', 20));
     const after = vimIn('After');
     // To document line 23, file line 22, by count: jsdom has no layout for `j` to go by.
     after.keys('V', '2', '3', 'G');
@@ -421,7 +494,8 @@ describe('targets', () => {
 function pressing(keys: string[]) {
   const on = events();
   const shown = open(on);
-  shown.reveal(at('a', 'new', 10));
+  shown.reveal(onLine('a', 'new', 10));
+  shown.focus();
   const after = vimIn('After');
   const before = { text: after.text, cursor: after.cursor };
   after.keys(...keys);
@@ -455,34 +529,39 @@ describe('insert mode', () => {
     ['<C-v>', 'A'],
   ];
 
-  test.each(normal)('%s doesn’t enter insert or replace mode in a diff, nor move', (...keys) => {
-    const { on, shown, after, before } = pressing(keys);
-    expect(after.mode).toBe('normal');
-    expect(shown.keyState().mode).toBe('normal');
-    expect(after.text).toBe(before.text);
-    expect(after.cursor).toBe(before.cursor);
-    expect(on.mode).not.toHaveBeenCalledWith('insert');
-  });
-
-  test.each(visual)('%s doesn’t enter insert or replace mode from visual mode', (...keys) => {
-    const { on, shown, after, before } = pressing(keys);
-    expect(after.mode).not.toBe('insert');
-    expect(shown.keyState().mode).not.toBe('insert');
-    expect(after.text).toBe(before.text);
-    expect(on.mode).not.toHaveBeenCalledWith('insert');
-  });
-
-  test.each([['x'], ['d', 'd'], ['y', 'y', 'p'], ['J'], ['r', 'X'], ['>', '>'], ['~'], ['<C-a>']])(
-    '%s changes no text in a diff',
-    (...keys) => {
-      open();
-      view!.reveal(at('a', 'new', 10));
-      const after = vimIn('After');
-      const { text } = after;
-      after.keys(...keys);
-      expect(after.text).toBe(text);
+  test.each(titled(normal))(
+    '%s doesn’t enter insert or replace mode in a diff, nor move',
+    (_, keys) => {
+      const { on, shown, after, before } = pressing(keys);
+      expect(after.mode).toBe('normal');
+      expect(shown.keyState().mode).toBe('normal');
+      expect(after.text).toBe(before.text);
+      expect(after.cursor).toBe(before.cursor);
+      expect(on.mode).not.toHaveBeenCalledWith('insert');
     },
   );
+
+  test.each(titled(visual))(
+    '%s doesn’t enter insert or replace mode from visual mode',
+    (_, keys) => {
+      const { on, shown, after, before } = pressing(keys);
+      expect(after.mode).not.toBe('insert');
+      expect(shown.keyState().mode).not.toBe('insert');
+      expect(after.text).toBe(before.text);
+      expect(on.mode).not.toHaveBeenCalledWith('insert');
+    },
+  );
+
+  test.each(
+    titled([['x'], ['d', 'd'], ['y', 'y', 'p'], ['J'], ['r', 'X'], ['>', '>'], ['~'], ['<C-a>']]),
+  )('%s changes no text in a diff', (_, keys) => {
+    open();
+    view!.reveal(onLine('a', 'new', 10));
+    const after = vimIn('After');
+    const { text } = after;
+    after.keys(...keys);
+    expect(after.text).toBe(text);
+  });
 });
 
 describe('comment boxes', () => {
@@ -538,7 +617,7 @@ describe('comment boxes', () => {
     press(content, 'Escape');
     expect(on.close).toHaveBeenCalledWith(true);
     expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
-    expect(shown.probe.cursor()?.at).toMatchObject(at('a', 'new', 10));
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 10));
   });
 
   test('an empty box closes with nothing to keep, and close() closes it quietly', () => {
@@ -591,7 +670,7 @@ describe('comment boxes', () => {
 describe('keys', () => {
   test("keyState says Vim's mode and whether it's in the middle of a command", () => {
     const shown = open();
-    shown.reveal(at('a', 'new', 10));
+    shown.reveal(onLine('a', 'new', 10));
     const after = vimIn('After');
     expect(shown.keyState()).toMatchObject({ mode: 'normal', pending: false });
     after.keys('2');
@@ -603,7 +682,7 @@ describe('keys', () => {
     shown.clearPending();
     after.keys('l');
     // The `d` went: `l` moved alone, where `dl` would have been refused.
-    expect(shown.probe.cursor()?.at).toEqual({ ...at('a', 'new', 10), column: 1 });
+    expect(shown.probe.cursor()?.at).toEqual(onLine('a', 'new', 10, 1));
     after.keys('v');
     expect(shown.keyState()).toMatchObject({ mode: 'visual', pending: false });
     shown.clearPending();
@@ -612,18 +691,19 @@ describe('keys', () => {
 
   test('passKeys hands keys to Vim, as if typed', () => {
     const shown = open();
-    shown.reveal(at('a', 'new', 10));
+    shown.reveal(onLine('a', 'new', 10));
     shown.passKeys(['y', 'w']);
-    expect(shown.probe.cursor()?.at).toMatchObject(at('a', 'new', 10));
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 10));
     shown.passKeys(['g', 'g']);
-    expect(shown.probe.cursor()?.at).toEqual(at('a', 'new', 0));
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('a', 'new'));
   });
 
   test('cursor and mode events follow the focused editor', () => {
     const on = events();
     const shown = open(on);
-    shown.reveal(at('a', 'old', 7));
-    expect(on.cursor).toHaveBeenLastCalledWith({ ...at('a', 'old', 7), column: 0 });
+    shown.reveal(onLine('a', 'old', 7));
+    shown.focus();
+    expect(on.cursor).toHaveBeenLastCalledWith(onLine('a', 'old', 7, 0));
     vimIn('Before').keys('v');
     expect(on.mode).toHaveBeenLastCalledWith('visual');
     vimIn('Before').keys('<Esc>');
@@ -644,7 +724,7 @@ describe('the file on screen', () => {
 describe('headers and notes', () => {
   test("a header shows what it's given", () => {
     const shown = open();
-    shown.reveal({ file: 'b' });
+    shown.reveal({ kind: 'file', file: 'b' });
     shown.setHeader('b', { additions: 10, deletions: 0, viewed: true, comments: 2, tags: ['new'] });
     const header = parent!.querySelector('.cm-content[aria-label="After"] [data-row="h:1"]')!;
     expect(header.classList.contains('is-viewed')).toBe(true);
@@ -655,5 +735,201 @@ describe('headers and notes', () => {
     open(events(), { note: { text: 'r3 → r5, since you last looked', tone: 'info' } });
     const note = parent!.querySelector('.lo-diffview > .lo-diffnote--info');
     expect(note?.textContent).toBe('r3 → r5, since you last looked');
+  });
+});
+
+/** Runs `command` from Vim's `:` prompt in the editor labelled `label`, as `Enter` there does. */
+function ex(label: string, command: string): void {
+  const vim = vimIn(label);
+  vim.keys(':');
+  const prompt = vim.content.parentElement!.parentElement!.querySelector('input');
+  if (!prompt) throw new Error('Vim opened no prompt.');
+  prompt.value = command;
+  prompt.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true }),
+  );
+}
+
+describe('Ex commands', () => {
+  test.each([
+    's/line/x/',
+    '%s/line/x/g',
+    'j',
+    '5,9j',
+    'put',
+    'normal x',
+    'normal .',
+    '3,8normal .',
+    "'<,'>d",
+    'g/line/d',
+    'sort',
+  ])(':%s keeps the cursor where it was, and the text', (command) => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 10));
+    shown.focus();
+    const after = vimIn('After');
+    after.keys('x');
+    const before = { text: after.text, cursor: after.cursor };
+    ex('After', command);
+    expect(after.text).toBe(before.text);
+    expect(after.cursor).toBe(before.cursor);
+    expect(after.mode).toBe('normal');
+  });
+
+  test(':startinsert leaves the diff in normal mode', () => {
+    const on = events();
+    const shown = open(on);
+    shown.reveal(onLine('a', 'new', 10));
+    shown.focus();
+    ex('After', 'startinsert');
+    expect(vimIn('After').mode).toBe('normal');
+    expect(on.mode).not.toHaveBeenCalledWith('insert');
+  });
+
+  test('a line number still moves the cursor there', () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 10));
+    shown.focus();
+    // Document line 31 is file line 30.
+    ex('After', '31');
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 30));
+  });
+
+  test.each([
+    ['s/a/b/', true],
+    [' :%s#a#b#g', true],
+    ['.,$d', true],
+    ["'<,'>norm .", true],
+    ['/needle/,+3j', true],
+    ['5', false],
+    ['$', false],
+    ['/needle/', false],
+    ['set nu', false],
+    ['noh', false],
+    ['y', false],
+    ['st', false],
+    ['re', false],
+  ] as const)('%s is an edit: %s', (command, edits) => {
+    expect(editsText(command)).toBe(edits);
+  });
+});
+
+describe("Lo's motions", () => {
+  test('a motion no code view runs is refused, not left a dead key', () => {
+    const shown = open();
+    const unknown: VimKey = { kind: 'motion', command: 'tree.nextFolder', keys: ']d' };
+    expect(() => shown.setVimKeys([...motions, unknown])).toThrow(
+      "No code view runs tree.nextFolder as a motion: diffMotions doesn't list it.",
+    );
+    // The keys in place before stay.
+    shown.reveal(onLine('a', 'new', 1));
+    vimIn('After').keys(']', 'c');
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 5));
+  });
+});
+
+describe('moved code', () => {
+  test('is named by file ids, and code moved to or from a file the view lacks is left out', () => {
+    const shown = open();
+    const words = { old: [], new: [] };
+    shown.setMoves([
+      { from: { file: 'c', first: 1, last: 3 }, to: { file: 'b', first: 3, last: 5 }, words },
+      { from: { file: 'gone', first: 1, last: 2 }, to: { file: 'b', first: 7, last: 8 }, words },
+    ]);
+    // Drawn: the files after `a`, at the end of the documents.
+    shown.reveal(onHeader('c', 'old'));
+    expect(labels('Before')).toEqual(['Moved tosrc/b.ts:3']);
+    shown.reveal(onHeader('b', 'new'));
+    expect(labels('After')).toEqual(['Moved fromsrc/c.ts:1']);
+    shown.setMoves([]);
+    expect(labels('After')).toEqual([]);
+  });
+});
+
+describe('loading', () => {
+  test('a diff that comes before its lines leaves the file loading, and za asks once', () => {
+    const on = events();
+    const shown = open(on);
+    const lines = { old: numbered(4, 'd'), new: [...numbered(4, 'd'), 'd 5'] };
+    shown.reveal({ kind: 'file', file: 'd' });
+    shown.fold({ kind: 'file', file: 'd' }, 'toggle');
+    shown.setDiff('d', diffOf(lines));
+    expect(notes()).toEqual(['Loading the file…']);
+    shown.fold({ kind: 'file', file: 'd' }, 'toggle');
+    expect(on.load).toHaveBeenCalledTimes(1);
+    shown.setLines('d', lines);
+    expect(notes()).toEqual([]);
+    expect(shown.lines({ file: 'd', side: 'new', from: 5, to: 5 })).toEqual(['d 5']);
+  });
+});
+
+describe('gaps', () => {
+  /** `e`: GitHub's diff of a 30-line file, which left out lines 8 to 22 on both sides. */
+  const eOld = numbered(30, 'e');
+  const eNew = eOld.map((each, index) => (index === 2 || index === 27 ? `${each}!` : each));
+  const gapped: DiffFile = {
+    id: 'e',
+    path: 'src/e.ts',
+    change: 'modified',
+    lines: { old: placeholders(eOld), new: placeholders(eNew) },
+    gaps: [
+      { side: 'old', from: 8, to: 22 },
+      { side: 'new', from: 8, to: 22 },
+    ],
+    header: { additions: 2, deletions: 2 },
+  };
+
+  function gappedView(): DiffView {
+    const shown = open(events(), { files: [gapped] });
+    shown.setDiff('e', diffOf(gapped.lines!));
+    focusable();
+    return shown;
+  }
+
+  test("lines GitHub's diff left out stay collapsed, and say so", () => {
+    const shown = gappedView();
+    expect(runs()).toEqual(['18 unchanged lines, not loaded yet']);
+    shown.fold(onLine('e', 'new', 12), 'open');
+    shown.fold(onLine('e', 'new', 1), 'file');
+    expect(runs()).toHaveLength(1);
+  });
+
+  test('the whole file fills them, and they open', () => {
+    const shown = gappedView();
+    shown.setLines('e', { old: eOld, new: eNew });
+    shown.setDiff('e', diffOf({ old: eOld, new: eNew }));
+    expect(runs()).toEqual(['18 unchanged lines']);
+    expect(shown.lines({ file: 'e', side: 'new', from: 12, to: 12 })).toEqual(['e 12']);
+    shown.fold(onLine('e', 'new', 12), 'open');
+    expect(runs()).toEqual([]);
+  });
+});
+
+describe('input methods', () => {
+  test('a composition in a diff never reaches CodeMirror, and is ended', () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 3));
+    shown.focus();
+    const { content } = vimIn('After');
+    const blurred = vi.fn<() => void>();
+    content.addEventListener('blur', blurred);
+    const reached = vi.fn<() => void>();
+    content.addEventListener('compositionstart', reached);
+    content.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: 'に' }));
+    expect(reached).not.toHaveBeenCalled();
+    expect(blurred).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(content);
+  });
+});
+
+describe('the inline layout', () => {
+  test('gi from a header comes back on the side it left', () => {
+    const shown = open();
+    shown.reveal(onHeader('b', 'new'));
+    shown.focus();
+    shown.setLayout('inline');
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('b', 'new'));
+    shown.setLayout('split');
+    expect(shown.probe.cursor()).toMatchObject({ at: onHeader('b', 'new'), pane: 'new' });
   });
 });
