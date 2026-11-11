@@ -150,7 +150,11 @@ export default defineFeature(contract, {
     const gh = new Gh({
       env: process.env,
       platform: process.platform,
-      program: ghProgram({ packaged: app.isPackaged, env: process.env }),
+      program: ghProgram({
+        packaged: app.isPackaged,
+        env: process.env,
+        testRun: settings.testRun,
+      }),
     });
     const service = new Github({
       database,
@@ -280,10 +284,15 @@ export default defineFeature(contract, {
         );
     }
   },
-  stop() {
+  async stop() {
     const { signIns, gh, github: accounts } = feature();
     signIns.stop();
-    gh.stop();
-    return accounts.stop(SAVE_WITHIN);
+    // gh stops after the accounts, so a token being read from it again as Lo quits is still read.
+    // One stopped past the accounts' limit counts as gh not answering, which signs nothing out.
+    try {
+      await accounts.stop(SAVE_WITHIN);
+    } finally {
+      gh.stop();
+    }
   },
 });

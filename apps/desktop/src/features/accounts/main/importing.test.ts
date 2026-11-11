@@ -194,6 +194,82 @@ describe('reading a token from gh again', () => {
     ]);
   });
 
+  it('answers nothing when gh is no longer signed in to the account, or GitHub refuses its token too', async () => {
+    const { gh, log, folder, logged } = setUp();
+    const reread = rereadFromGh({ gh, fetch: replayFetch('user'), urls: GITHUB_URLS, log });
+    expect(await reread('nobody')).toBeUndefined();
+    expect(asked(folder)).toEqual(['auth status --json hosts --hostname github.com']);
+    const refused = rereadFromGh({
+      gh,
+      fetch: () => Promise.resolve(Response.json({ message: 'Bad credentials' }, { status: 401 })),
+      urls: GITHUB_URLS,
+      log,
+    });
+    expect(await refused('rozed-bot')).toBeUndefined();
+    expect(logged[0]).toBe(
+      "reading nobody's token from gh again: gh isn't signed in to nobody any more.",
+    );
+    expect(logged.join('\n')).not.toContain(GH_TOKEN_FOR_BOT);
+  });
+
+  it("throws, rather than answer nothing, when gh times out, so the account isn't signed out", async () => {
+    const { folder, program } = fakeGh({ script: '#!/bin/sh\nexec sleep 30\n' });
+    const logged: string[] = [];
+    const gh = new Gh({
+      env: { PATH: '/usr/bin:/bin', HOME: folder },
+      platform: process.platform,
+      program,
+      places: nowhere,
+      timeout: 200,
+    });
+    const reread = rereadFromGh({
+      gh,
+      fetch: replayFetch('user'),
+      urls: GITHUB_URLS,
+      log: (message) => logged.push(message),
+    });
+    await expect(reread('rozed-bot')).rejects.toThrow(
+      "gh didn't list its accounts within 0.2 s, so Lo stopped it.",
+    );
+    expect(logged).toEqual([
+      "reading rozed-bot's token from gh again: gh didn't list its accounts within 0.2 s, so Lo stopped it.",
+    ]);
+  });
+
+  it('throws when Lo quits while gh is asked', async () => {
+    const { folder, program } = fakeGh({ script: '#!/bin/sh\nexec sleep 30\n' });
+    const gh = new Gh({
+      env: { PATH: '/usr/bin:/bin', HOME: folder },
+      platform: process.platform,
+      program,
+      places: nowhere,
+    });
+    const reread = rereadFromGh({
+      gh,
+      fetch: replayFetch('user'),
+      urls: GITHUB_URLS,
+      log: () => undefined,
+    });
+    const reading = reread('rozed-bot');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    gh.stop();
+    await expect(reading).rejects.toThrow('Lo is quitting.');
+  });
+
+  it("throws when GitHub can't be reached to check gh's token", async () => {
+    const { gh, log } = setUp();
+    const reread = rereadFromGh({
+      gh,
+      fetch: () =>
+        Promise.reject(
+          new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND') }),
+        ),
+      urls: GITHUB_URLS,
+      log,
+    });
+    await expect(reread('rozed-bot')).rejects.toMatchObject({ detail: { kind: 'network' } });
+  });
+
   it('answers nothing without gh', async () => {
     const logged: string[] = [];
     const none = new Gh({ env: {}, platform: process.platform, program: 'none' });

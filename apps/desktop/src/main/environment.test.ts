@@ -270,20 +270,39 @@ describe('githubSettings', () => {
   });
 });
 
+/** The gh a build run from source runs with `env`. */
+const run = (env: Record<string, string>, testRun = false) =>
+  ghProgram({ packaged: false, env, testRun });
+
 describe('ghProgram', () => {
   it('names the gh a build run from source runs, or none', () => {
-    expect(ghProgram({ packaged: false, env: { LO_GH: '/tmp/gh' } })).toBe('/tmp/gh');
-    expect(ghProgram({ packaged: false, env: { LO_GH: 'none' } })).toBe('none');
-    expect(ghProgram({ packaged: false, env: {} })).toBeUndefined();
+    expect(run({ LO_GH: '/tmp/gh' })).toBe('/tmp/gh');
+    expect(run({ LO_GH: 'none' })).toBe('none');
+    expect(run({})).toBeUndefined();
+    expect(run({ LO_GH: '' })).toBeUndefined();
+  });
+
+  it('runs no gh in a test run unless one is named, so no real token reaches its GitHub', () => {
+    expect(ghProgram({ packaged: false, env: {}, testRun: true })).toBe('none');
+    expect(ghProgram({ packaged: false, env: { LO_GH: '' }, testRun: true })).toBe('none');
+    expect(ghProgram({ packaged: false, env: { LO_GH: '/tmp/gh' }, testRun: true })).toBe(
+      '/tmp/gh',
+    );
   });
 
   it('is ignored in a packaged build, which always finds gh itself', () => {
-    expect(ghProgram({ packaged: true, env: { LO_GH: '/tmp/gh' } })).toBeUndefined();
-    expect(ghProgram({ packaged: true, env: { LO_GH: 'relative' } })).toBeUndefined();
+    expect(
+      ghProgram({ packaged: true, env: { LO_GH: '/tmp/gh' }, testRun: false }),
+    ).toBeUndefined();
+    expect(
+      ghProgram({ packaged: true, env: { LO_GH: 'relative' }, testRun: false }),
+    ).toBeUndefined();
   });
 
   it('refuses a relative path', () => {
-    expect(() => ghProgram({ packaged: false, env: { LO_GH: 'gh' } })).toThrow('absolute path');
+    expect(() => ghProgram({ packaged: false, env: { LO_GH: 'gh' }, testRun: false })).toThrow(
+      'absolute path',
+    );
   });
 });
 

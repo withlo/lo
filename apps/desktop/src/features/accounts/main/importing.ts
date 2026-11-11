@@ -6,6 +6,7 @@
 
 import {
   GithubClient,
+  GithubError,
   missingScopes,
   sameLogin,
   type AuthenticatedUser,
@@ -131,23 +132,60 @@ export async function importFromGh(
 
 /**
  * What reads an account imported from gh from gh again, after GitHub refused its token: gh's token
- * for it, once GitHub says it's the account's, or nothing.
+ * for it, once GitHub says it's the account's, or nothing when gh has nothing for it: no gh, the
+ * account no longer in gh, or a token GitHub refuses too or says is someone else's. Nothing signs
+ * the account out. It throws when gh or GitHub couldn't be asked, as when gh times out, can't reach
+ * its keyring, Lo is offline or Lo is quitting, so the account stays signed in and is tried again
+ * later.
  */
 export function rereadFromGh(
   options: ImportOptions & { log: (message: string) => void },
 ): (login: string) => Promise<Token | undefined> {
+  const { gh, log } = options;
+  const tell = (login: string, message: string) =>
+    log(`reading ${login}'s token from gh again: ${message}`);
   return async (login) => {
-    try {
-      const found = await options.gh.find();
-      if (found.kind === 'missing') {
-        options.log(`reading ${login}'s token from gh again: ${found.message}`);
-        return undefined;
-      }
-      return (await ghToken(options, found.program, login)).token;
-    } catch (error) {
-      options.log(`reading ${login}'s token from gh again: ${ghMessage(error, () => undefined)}`);
+    const found = await gh.find();
+    if (found.kind === 'missing') {
+      tell(login, found.message);
       return undefined;
     }
+    let listed: GhAccount[];
+    let token: Token;
+    try {
+      listed = await gh.accounts(found.program);
+      if (!listed.some((account) => sameLogin(account.login, login))) {
+        tell(login, `gh isn't signed in to ${login} any more.`);
+        return undefined;
+      }
+      token = await gh.token(found.program, login);
+    } catch (error) {
+      tell(
+        login,
+        ghMessage(error, () => undefined),
+      );
+      throw error;
+    }
+    const client = new GithubClient({ fetch: options.fetch, token, urls: options.urls });
+    let user: AuthenticatedUser;
+    try {
+      user = checkedUser(await client.user());
+    } catch (error) {
+      tell(
+        login,
+        ghMessage(error, () => undefined),
+      );
+      // A token GitHub refuses, or answers for with no account, is no newer token.
+      if (error instanceof GithubError && ['unauthorized', 'decode'].includes(error.detail.kind)) {
+        return undefined;
+      }
+      throw error;
+    }
+    if (!sameLogin(user.user.login, login)) {
+      tell(login, `gh's token for ${login} is ${user.user.login}'s.`);
+      return undefined;
+    }
+    return token;
   };
 }
 

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { app, type BrowserWindow, dialog, session, type Session } from 'electron';
 
-import { refusedArguments } from './arguments.ts';
+import { refusedArguments, refusedEnvironment } from './arguments.ts';
 import { startBackground, type Background } from './background.ts';
 import { openDatabase, type Database } from './database.ts';
 import { appName, backgroundSettings, dataFolder, devServer } from './environment.ts';
@@ -36,8 +36,9 @@ const migrations = import.meta.glob<string>('../features/*/migrations/*.sql', {
   import: 'default',
 });
 
-// A packaged Lo takes no command-line switches. It quits first of all, before `ready`, so no port
-// has opened and nothing has started.
+// A packaged Lo takes no command-line switches, nor the variables that do what some of them do. It
+// quits first of all, before `ready`, so no port has opened, no connection has been made and
+// nothing has started.
 const refused = refusedArguments({
   packaged: app.isPackaged,
   argv: process.argv.slice(1),
@@ -45,6 +46,13 @@ const refused = refusedArguments({
 });
 if (refused.length > 0) {
   console.error(`Lo takes no command-line switches, so it quit. Refused: ${refused.join(' ')}`);
+  app.exit(1);
+}
+const refusedVariables = refusedEnvironment({ packaged: app.isPackaged, env: process.env });
+if (refusedVariables.length > 0) {
+  console.error(
+    `Lo won't start with these set in its environment, which would write out or expose its traffic to GitHub, so it quit: ${refusedVariables.join(' ')}`,
+  );
   app.exit(1);
 }
 
