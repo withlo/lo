@@ -87,6 +87,11 @@ applies) as scripts. Add `test` with the package's first test: Vitest fails a pr
   extends `tsconfig.node.json`.
 - `nx sync` keeps the project references in step with the dependencies in each `package.json`. Run
   it after adding a dependency between packages; CI runs `nx sync:check`.
+- A `switch` over a union names every member and ends with a `default` that checks the value is
+  `never` (`return value satisfies never`), so a new member fails to compile wherever it isn't
+  handled. A value from outside, such as GitHub's answer, can still be one Lo doesn't know: there
+  the default checks the value, then falls back as before (`value satisfies never; return ...`, or
+  `review`'s `outsideCase`). Lint requires the cases and the `default`, not what the `default` does.
 
 ## Boundaries
 

@@ -401,6 +401,8 @@ export class YourReview {
       case 'review':
         this.#pending = undefined;
         return;
+      default:
+        mutation satisfies never;
     }
   }
 
