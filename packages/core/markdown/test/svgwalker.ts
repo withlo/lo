@@ -22,7 +22,7 @@ export const HOLDS: Record<string, { children: string[]; text: boolean }> = {
   svg: { children: [...DRAWN, 'marker', 'defs'], text: false },
   g: { children: [...DRAWN, 'marker', 'defs'], text: false },
   defs: { children: ['marker', ...DESCRIBED], text: false },
-  marker: { children: DRAWN, text: false },
+  marker: { children: DRAWN.filter((name) => name !== 'text'), text: false },
   ...Object.fromEntries(SHAPES.map((shape) => [shape, { children: DESCRIBED, text: false }])),
   text: { children: ['tspan', ...DESCRIBED], text: true },
   tspan: { children: ['tspan'], text: true },
@@ -138,9 +138,35 @@ interface Entry {
   where: string;
   depth: number;
   parent: string | undefined;
-  /** Whether it's inside a marker. */
-  marked: boolean;
+  /** The marker it's inside, if any. */
+  marker: object | undefined;
 }
+
+/** The numbers a value holds, as `String` writes them. */
+function countNumbers(value: string): number {
+  return value.match(/-?\d+(?:\.\d+)?(?:e-\d+)?/g)?.length ?? 0;
+}
+
+const PATH_TAKES: Record<string, number> = { m: 2, l: 2, h: 1, v: 1, c: 6, s: 4, q: 4, t: 2, a: 7 };
+
+/** Where a marker can land on `name` with `attributes`: its vertices, closes included. */
+function vertices(name: string, attributes: Record<string, unknown>): number {
+  if (name === 'line') return 2;
+  const points = attributes['points'];
+  if (typeof points === 'string') return countNumbers(points) / 2 + (name === 'polygon' ? 1 : 0);
+  const d = attributes['d'];
+  if (name !== 'path' || typeof d !== 'string') return 0;
+  let count = 0;
+  // Each command and its numbers; a number's exponent, `e`, is no command.
+  for (const command of d.match(/[MmLlHhVvCcSsQqTtAaZz][^MmLlHhVvCcSsQqTtAaZz]*/g) ?? []) {
+    const letter = command[0]!.toLowerCase();
+    count += letter === 'z' ? 1 : countNumbers(command.slice(1)) / PATH_TAKES[letter]!;
+  }
+  return count;
+}
+
+/** Attributes whose numbers are no part of what's drawn: colors and names. */
+const UNCOUNTED = new Set(['fill', 'stroke', 'color', 'id', ...MARKERS]);
 
 export function walkSvg(result: unknown): SvgWalked {
   const found: string[] = [];
@@ -154,13 +180,21 @@ export function walkSvg(result: unknown): SvgWalked {
   checkRemoved(result['removed'], problem);
   if (!('svg' in result)) return { problems: found, ...walked };
 
-  const ids = new Map<string, string[]>();
-  const references: { where: string; name: string }[] = [];
+  const ids = new Map<string, { name: string; node: object }[]>();
+  const references: { where: string; name: string; times: number }[] = [];
+  // What's drawn once, and what each marker draws each time it's drawn.
+  let drawn = 0;
+  const markers = new Map<object, number>();
+  const charge = (marker: object | undefined, cost: number): void => {
+    if (marker) markers.set(marker, (markers.get(marker) ?? 0) + cost);
+    else drawn += cost;
+  };
   const stack: Entry[] = [
-    { value: result['svg'], where: 'svg', depth: 1, parent: undefined, marked: false },
+    { value: result['svg'], where: 'svg', depth: 1, parent: undefined, marker: undefined },
   ];
   while (stack.length > 0) {
-    const { value, where, depth, parent, marked } = stack.pop()!;
+    const { value, where, depth, parent, marker } = stack.pop()!;
+    const marked = marker !== undefined;
     if (!isRecord(value)) {
       problem(where, 'is not a plain object');
       continue;
@@ -172,6 +206,7 @@ export function walkSvg(result: unknown): SvgWalked {
         problem(where, `is text of another shape: ${JSON.stringify(value).slice(0, 80)}`);
       }
       if (parent === undefined || !HOLDS[parent]?.text) problem(where, `is text in ${parent}`);
+      if (typeof text === 'string') charge(marker, text.length);
       continue;
     }
     const fields = Object.keys(value).toSorted().join();
@@ -192,14 +227,22 @@ export function walkSvg(result: unknown): SvgWalked {
       problem(where, `is ${name} in ${parent ?? 'nothing'}`);
     }
     if (name === 'marker' && marked) problem(where, 'is a marker in a marker');
+    if (name === 'text' && marked) problem(where, 'is text in a marker');
+    if (parent === undefined && !inProportion(value['attributes'])) {
+      problem(where, 'is too large, or too tall or wide, to lay out');
+    }
 
     const attributes = value['attributes'];
     if (!isRecord(attributes)) {
       problem(where, 'has attributes that are not a plain object');
       continue;
     }
+    const corners = vertices(name, attributes);
+    const inside = name === 'marker' ? value : marker;
+    let cost = 1 + corners;
     for (const [attribute, held] of Object.entries(attributes)) {
       const at = `${where}.${attribute}`;
+      if (typeof held === 'string' && !UNCOUNTED.has(attribute)) cost += countNumbers(held);
       if (!ATTRIBUTES[name]!.includes(attribute)) {
         problem(at, `is an attribute ${name} doesn't have`);
         continue;
@@ -216,12 +259,14 @@ export function walkSvg(result: unknown): SvgWalked {
       ) {
         problem(at, `holds ${JSON.stringify(held.slice(0, 80))}`);
       }
-      if (attribute === 'id') ids.set(held, [...(ids.get(held) ?? []), name]);
+      if (attribute === 'id') ids.set(held, [...(ids.get(held) ?? []), { name, node: value }]);
       if (MARKERS.includes(attribute)) {
         if (marked) problem(at, 'is a marker attribute inside a marker');
-        references.push({ where: at, name: held });
+        const times = attribute === 'marker-mid' ? Math.max(0, corners - 2) : 1;
+        references.push({ where: at, name: held, times });
       }
     }
+    charge(inside, cost);
     const children = value['children'];
     if (!Array.isArray(children)) {
       problem(where, 'has children that are not a list');
@@ -233,20 +278,24 @@ export function walkSvg(result: unknown): SvgWalked {
         where: `${where}.children[${i}]`,
         depth: depth + 1,
         parent: name,
-        marked: marked || name === 'marker',
+        marker: inside,
       });
     }
   }
   for (const [id, holders] of ids) {
     if (holders.length > 1) problem(`#${id}`, `is the id of ${holders.length} elements`);
   }
-  for (const { where, name } of references) {
+  for (const { where, name, times } of references) {
     const holders = ids.get(name);
-    if (holders?.length !== 1 || holders[0] !== 'marker') {
+    const target = holders?.length === 1 ? holders[0] : undefined;
+    if (target?.name !== 'marker') {
       problem(where, `names ${name}, which is no marker defined once`);
+      continue;
     }
+    drawn += times * (markers.get(target.node) ?? 0);
   }
   if (walked.elements > SVG_LIMITS.elements) problem('svg', `has ${walked.elements} elements`);
+  if (drawn > SVG_LIMITS.drawn) problem('svg', `draws ${drawn}, more than ${SVG_LIMITS.drawn}`);
   if (found.length === 0) {
     if (!isDeepStrictEqual(structuredClone(result), result))
       problem('result', "doesn't survive structuredClone");
@@ -254,6 +303,29 @@ export function walkSvg(result: unknown): SvgWalked {
       problem('result', "doesn't survive JSON");
   }
   return { problems: found, ...walked };
+}
+
+/** A length in pixels, or NaN for another unit or none. */
+function pixels(value: unknown): number {
+  return typeof value === 'string' && /^[\d.e-]+(?:px)?$/.test(value)
+    ? Number.parseFloat(value)
+    : Number.NaN;
+}
+
+/** Whether a figure with `attributes` lays out at the article's width at a size within the caps. */
+function inProportion(attributes: unknown): boolean {
+  if (!isRecord(attributes)) return false;
+  const box = typeof attributes['viewBox'] === 'string' ? attributes['viewBox'].split(' ') : [];
+  const [width, height] =
+    box.length === 4
+      ? [Number(box[2]), Number(box[3])]
+      : [pixels(attributes['width']), pixels(attributes['height'])];
+  if (Number.isNaN(width) || Number.isNaN(height)) return true;
+  return (
+    Math.max(width, height) <= SVG_LIMITS.extent &&
+    height <= SVG_LIMITS.tallest * width &&
+    width <= SVG_LIMITS.widest * height
+  );
 }
 
 const REASONS = [
@@ -269,6 +341,7 @@ const REASONS = [
   'depth',
   'numbers',
   'drawn',
+  'aspect',
   'root',
 ];
 

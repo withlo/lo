@@ -6,7 +6,8 @@
  *
  * Two rules reach further than an element's own:
  *
- * - Nothing inside a `marker` is a `marker` or has a marker attribute, so no marker draws another.
+ * - Nothing inside a `marker` is a `marker` or `text`, or has a marker attribute, so no marker draws
+ *   another or lays out text again at every vertex.
  * - `id` and the marker attributes hold names, which a renderer scopes to the figure as it does a
  *   document's anchors, so a figure can't reach an id of Lo's own or another figure's. It writes a
  *   marker attribute as `url(#<the scoped name>)`, and each names a `marker` defined once.
@@ -206,6 +207,7 @@ export const SVG_ELEMENTS: Readonly<Record<SvgName, SvgRule>> = frozen({
   },
   // Definitions, which draw nothing themselves: here, only markers.
   defs: { attributes: { id: 'id' }, children: ['marker', ...DESCRIBED], text: false },
+  // A marker draws only shapes and paths: text it held would be laid out again at every vertex.
   marker: {
     attributes: {
       id: 'id',
@@ -219,7 +221,7 @@ export const SVG_ELEMENTS: Readonly<Record<SvgName, SvgRule>> = frozen({
       preserveAspectRatio: 'aspect',
       ...PRESENTATION,
     },
-    children: DRAWN,
+    children: DRAWN.filter((name) => name !== 'text'),
     text: false,
   },
   rect: shape({
@@ -278,7 +280,7 @@ export function isSvgAttribute(element: string, attribute: string, value: string
 export interface Read {
   value: string;
   numbers: number;
-  /** For a path or points, how many vertices: where a marker can go. */
+  /** For a path or points, how many vertices: where a marker can go, a path's closes included. */
   vertices?: number;
 }
 
@@ -288,7 +290,6 @@ export const MAX_MAGNITUDE = 1_000_000;
 /** The longest name, an id or a marker's. */
 export const MAX_NAME = 64;
 
-const SPACE = /^[\t\n\f\r ]+|[\t\n\f\r ]+$/g;
 const NUMBER = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 const NUMBER_AT = /[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/y;
 const NAME = /^[A-Za-z_][\w.-]*$/;
@@ -297,9 +298,17 @@ function isName(text: string): boolean {
   return text.length <= MAX_NAME && NAME.test(text);
 }
 
-/** CSS's spaces off both ends; only those, so no other space slips through as one. */
+/**
+ * CSS's spaces off both ends; only those, so no other space slips through as one. By hand: a
+ * regular expression for a run at the end tries again at every space of a run inside, which takes
+ * time in the square of its length.
+ */
 function trimmed(text: string): string {
-  return text.replace(SPACE, '');
+  let start = 0;
+  let end = text.length;
+  while (start < end && isSpace(text[start])) start += 1;
+  while (end > start && isSpace(text[end - 1])) end -= 1;
+  return text.slice(start, end);
 }
 
 /** A number as written in SVG, when it's finite and within `MAX_MAGNITUDE`. */
@@ -573,7 +582,11 @@ function path(text: string): Read | undefined {
     at += 1;
     out += command;
     spaces();
-    if (takes === 0) continue;
+    if (takes === 0) {
+      // A marker goes where a close lands, too.
+      vertices += 1;
+      continue;
+    }
     for (let group = 0; ; group += 1) {
       const values: string[] = [];
       for (let index = 0; index < takes; index += 1) {
@@ -606,20 +619,24 @@ const TRANSFORMS = new Map([
   ['skewY', [1]],
 ]);
 
+/** One transform, and the spaces and comma after it, read where the last one ended. */
+const TRANSFORM_AT = /([A-Za-z]+)[\t\n\f\r ]*\(([^()]*)\)[\t\n\f\r ]*,?[\t\n\f\r ]*/y;
+
 /** A list of transforms, each with as many numbers as it takes, written `name(a,b)`. */
 function transform(text: string): Read | undefined {
   const out: string[] = [];
   let count = 0;
-  let rest = trimmed(text);
-  if (rest === '') return undefined;
-  while (rest !== '') {
-    const match = /^([A-Za-z]+)[\t\n\f\r ]*\(([^()]*)\)(?:[\t\n\f\r ]*,?[\t\n\f\r ]*)/.exec(rest);
+  const list = trimmed(text);
+  if (list === '') return undefined;
+  TRANSFORM_AT.lastIndex = 0;
+  while (TRANSFORM_AT.lastIndex < list.length) {
+    const match = TRANSFORM_AT.exec(list);
     const takes = match ? TRANSFORMS.get(match[1]!) : undefined;
     const values = match?.[2] === undefined ? undefined : numbers(match[2]);
     if (!match || !takes || !values || !takes.includes(values.length)) return undefined;
     out.push(`${match[1]}(${values.map(written).join(',')})`);
     count += values.length;
-    rest = rest.slice(match[0].length);
   }
+  if (list.endsWith(',')) return undefined;
   return { value: out.join(' '), numbers: count };
 }

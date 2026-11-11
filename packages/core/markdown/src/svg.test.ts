@@ -555,21 +555,77 @@ describe('markers', () => {
   });
 
   test('a figure whose markers would draw too much is refused', () => {
-    // A marker of 64 elements at each of 400 vertices: some 25,000 drawn.
-    const marker = `<marker id="m">${'<circle r="1"/>'.repeat(63)}</marker>`;
-    const vertices = Array.from({ length: 400 }, (_, i) => `${i} ${i % 2}`).join(' ');
+    // A marker of 63 circles, each with its radius, draws 127 each time: at 1,198 vertices, some
+    // 152,000.
+    const vertices = Array.from({ length: 1_200 }, (_, i) => `${i} ${i % 2}`).join(' ');
     expect(
-      sanitizeSvg(`<svg>${marker}<polyline points="${vertices}" marker-mid="url(#m)"/></svg>`)
+      sanitizeSvg(`<svg>${CIRCLES}<polyline points="${vertices}" marker-mid="url(#m)"/></svg>`)
         .removed,
     ).toEqual([{ reason: 'drawn', element: 'svg' }]);
     // At each end only, it's drawn twice.
     expect(
       sanitized(
-        `<svg>${marker}<polyline points="${vertices}" marker-end="url(#m)" marker-start="url(#m)"/></svg>`,
+        `<svg>${CIRCLES}<polyline points="${vertices}" marker-end="url(#m)" marker-start="url(#m)"/></svg>`,
       ).removed,
     ).toEqual([]);
   });
+
+  test('a marker lands on every close of a path', () => {
+    const closes = `M50 50${'z'.repeat(50_000)}`;
+    // 50,000 closes cost one each to draw,
+    expect(sanitized(`<svg><path d="${closes}"/></svg>`).removed).toEqual([]);
+    // but a marker at each is drawn 50,000 times.
+    expect(
+      sanitizeSvg(`<svg>${CIRCLES}<path d="${closes}" marker-mid="url(#m)"/></svg>`).removed,
+    ).toEqual([{ reason: 'drawn', element: 'svg' }]);
+    // Hundreds of thousands are too many to draw even without one.
+    expect(sanitizeSvg(`<svg><path d="M50 50${'z'.repeat(400_000)}"/></svg>`).removed).toEqual([
+      { reason: 'drawn', element: 'svg' },
+    ]);
+  });
+
+  test("a marker lands on a polygon's closing vertex too", () => {
+    // An empty marker draws 1. A polygon of n points draws 1, its 2n numbers and its n + 1
+    // vertices, and the marker at n - 1 of them: with the figure, 4n + 2 in all.
+    const most = (SVG_LIMITS.drawn - 2) / 4;
+    expect(sanitized(polygon(most)).removed).toEqual([]);
+    expect(sanitizeSvg(polygon(most + 1)).removed).toEqual([{ reason: 'drawn', element: 'svg' }]);
+  });
+
+  test('a marker holds no text, which it would lay out again at every vertex', () => {
+    const made = sanitized(
+      `<svg><marker id="m"><text>${'x'.repeat(1_000)}</text><g><text>y</text></g><title>T</title><circle r="1"/></marker><path d="M0 0L1 1L2 2" marker-mid="url(#m)"/></svg>`,
+    );
+    expect(removals(made)).toEqual(['element text', 'element text']);
+    expect(JSON.stringify(made.svg)).not.toMatch(/x{10}|"y"/);
+  });
+
+  test('every character of text is drawn, and counts', () => {
+    // The figure and the text element draw one each.
+    expect(sanitized(longText(SVG_LIMITS.drawn - 2)).svg).toBeDefined();
+    expect(sanitizeSvg(longText(SVG_LIMITS.drawn - 1)).removed).toEqual([
+      { reason: 'drawn', element: 'svg' },
+    ]);
+  });
 });
+
+/** A figure of an empty marker at every vertex of a polygon of `points` points. */
+function polygon(points: number): string {
+  return `<svg><marker id="m"/><polygon points="${'0 0 '.repeat(points).trim()}" marker-mid="url(#m)"/></svg>`;
+}
+
+/** A figure of one text of `length` characters. */
+function longText(length: number): string {
+  return `<svg><text>${'x'.repeat(length)}</text></svg>`;
+}
+
+/** What's removed from a figure of a rectangle, with `attributes` on the figure. */
+function shaped(attributes: string): SvgRemoval[] {
+  return sanitizeSvg(`<svg ${attributes}><rect/></svg>`).removed;
+}
+
+/** A marker of 63 circles, each with its radius, which draws 127 each time it's drawn. */
+const CIRCLES = `<marker id="m">${'<circle r="1"/>'.repeat(63)}</marker>`;
 
 /** `count` rectangles in a figure. */
 function rects(count: number): string {
@@ -629,6 +685,33 @@ describe('the caps', () => {
     expect(sanitizeSvg(`<svg>${polyline.repeat(2_000)}</svg>`).removed).toEqual([
       { reason: 'numbers', element: 'svg' },
     ]);
+  });
+
+  test('on proportions: a figure the article can lay out', () => {
+    const refused = [{ reason: 'aspect', element: 'svg' }];
+    for (const fine of [
+      'viewBox="0 0 860 320"',
+      'viewBox="0 0 100 400"',
+      'viewBox="0 0 3200 100"',
+      'viewBox="0 0 100000 100000"',
+      'width="860" height="320"',
+      'width="100%" height="1000000"',
+      // The viewBox decides, as the article sizes the figure by its width.
+      'viewBox="0 0 860 320" width="1" height="100000"',
+      '',
+    ]) {
+      expect(shaped(fine)).toEqual([]);
+    }
+    for (const tall of [
+      'viewBox="0 0 1 1000000"',
+      'viewBox="0 0 100 401"',
+      'viewBox="0 0 3201 100"',
+      'viewBox="0 0 100001 100000"',
+      'width="1px" height="5"',
+      'width="0" height="1"',
+    ]) {
+      expect(shaped(tall)).toEqual(refused);
+    }
   });
 
   test('numbers too large to draw are removed', () => {

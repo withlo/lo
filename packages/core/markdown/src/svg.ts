@@ -5,8 +5,8 @@
  * an explicit stack, keeping only the elements, attributes and values the allowlist names, each
  * value in the one form the allowlist keeps it in. Whatever else the figure held is removed, and
  * listed with why, so an overview can leave the figure out with a note and the checker says the
- * same. A figure past a cap on its size, elements, depth or numbers, or whose markers would draw
- * too much, is refused whole.
+ * same. A figure past a cap on its size, elements, depth or numbers, one that would draw too much,
+ * markers and text included, or one of proportions no article can lay out, is refused whole.
  *
  * What a renderer must do with the tree:
  *
@@ -15,6 +15,9 @@
  * - Scope every `id` and marker attribute to the figure, as it does a document's anchors, and write
  *   a marker attribute as `url(#<the scoped name>)`.
  * - Set text only as text.
+ * - Clip the figure to its frame, and cap its height: the caps here refuse only proportions no
+ *   figure needs, and drawn at the article's width, a figure four times as tall as it's wide is
+ *   still tall.
  */
 
 import { html as namespaces, type DefaultTreeAdapterTypes } from 'parse5';
@@ -50,7 +53,7 @@ export type SvgNode = SvgElement | SvgText;
  *   marker attribute that names no marker defined once, or is inside a marker;
  * - `element`: an element Lo doesn't draw, with all it held: `foreignObject`, `image`, `a`, `use`,
  *   animations and `set`, filters, gradients, patterns, masks, HTML, and anything else outside
- *   the allowlist; or one where it can't go, such as a marker inside a marker;
+ *   the allowlist; or one where it can't go, such as a marker or text inside a marker;
  * - `attribute`: an attribute Lo doesn't draw on that element;
  * - `value`: an attribute Lo draws, with a value outside its form: a color that isn't one of Lo's
  *   or plain, a number too large, a path that doesn't parse;
@@ -62,7 +65,9 @@ export type SvgNode = SvgElement | SvgText;
  * - `elements`: it would build more elements, or attributes, than the cap;
  * - `depth`: it nests deeper than the cap;
  * - `numbers`: it holds more numbers than the cap;
- * - `drawn`: it draws more elements than the cap, each of a marker's counted each time it's drawn;
+ * - `drawn`: it would draw more than the cap (see `SvgLimits.drawn`);
+ * - `aspect`: its viewBox, or its width and height, are larger than the cap, or so tall or wide
+ *   that drawn at the article's width it would be far too tall, or too thin to see;
  * - `root`: it has no `<svg>` at the top.
  */
 export type SvgReason =
@@ -78,6 +83,7 @@ export type SvgReason =
   | 'depth'
   | 'numbers'
   | 'drawn'
+  | 'aspect'
   | 'root';
 
 export interface SvgRemoval {
@@ -106,8 +112,18 @@ export interface SvgLimits {
   depth: number;
   /** The most numbers its values may hold, all together. */
   numbers: number;
-  /** The most elements it may draw, each of a marker's counted each time the marker is drawn. */
+  /**
+   * The most it may draw, counting one for each element, number, vertex and character of text, and
+   * a marker's all again each time it's drawn: once at each end, or at every vertex, closes
+   * included.
+   */
   drawn: number;
+  /** The largest its viewBox may be, either way. */
+  extent: number;
+  /** The most its height may be, in widths. */
+  tallest: number;
+  /** The most its width may be, in heights. */
+  widest: number;
 }
 
 /**
@@ -119,7 +135,10 @@ export const SVG_LIMITS: Readonly<SvgLimits> = Object.freeze({
   elements: 4_096,
   depth: 32,
   numbers: 65_536,
-  drawn: 16_384,
+  drawn: 131_072,
+  extent: 100_000,
+  tallest: 4,
+  widest: 32,
 });
 
 /** The longest name a removal gives. */
@@ -229,13 +248,15 @@ class Sanitizer {
   private readonly within: Removed[] = [];
   private readonly settled: Removed[] = [];
   private numbers = 0;
-  /** Elements drawn once each: all but markers' content. */
+  /** What's drawn once each: all but markers' content (see `SvgLimits.drawn`). */
   private drawn = 0;
   /** Each kept element with an id, by the id. */
   private readonly ids = new Map<string, { element: SvgElement; place: Place }[]>();
   private readonly references: Reference[] = [];
-  /** How many elements each marker holds, itself included. */
+  /** What each marker draws each time it's drawn, itself included. */
   private readonly markers = new Map<SvgElement, number>();
+  /** What each element draws, its numbers and vertices, while it's being read. */
+  private cost = 0;
 
   run(fragment: Fragment): SanitizedSvg {
     let root: Element | undefined;
@@ -256,7 +277,8 @@ class Sanitizer {
     }
     if (!root) return refused('root');
     const svg = this.element(root, 'svg', undefined);
-    this.drawn += 1;
+    if (!inProportion(svg)) return refused('aspect');
+    this.drawn += this.cost;
     // Each node in the text's order, with an explicit stack.
     const stack: Entry[] = [];
     const pushChildren = (
@@ -274,8 +296,11 @@ class Sanitizer {
       const { node, parent, depth, marker } = stack.pop()!;
       const rule = svgRule(parent.name)!;
       if (node.nodeName === '#text' && 'value' in node) {
-        // SVG draws text only in its text elements.
-        if (rule.text) parent.children.push({ kind: 'text', value: node.value });
+        // SVG draws text only in its text elements, each character a glyph to lay out.
+        if (rule.text) {
+          parent.children.push({ kind: 'text', value: node.value });
+          this.charge(marker, node.value.length);
+        }
         continue;
       }
       if (!isElement(node)) continue;
@@ -284,7 +309,7 @@ class Sanitizer {
       const allowed =
         node.namespaceURI === namespaces.NS.SVG &&
         holds.includes(name) &&
-        !(name === 'marker' && marker);
+        !((name === 'marker' || name === 'text') && marker);
       if (!allowed || !isSvgName(name)) {
         this.remove(this.within, elementReason(name), name, undefined, placeOf(node));
         continue;
@@ -294,9 +319,9 @@ class Sanitizer {
       if (this.numbers > SVG_LIMITS.numbers) return refused('numbers');
       parent.children.push(element);
       const inside = name === 'marker' ? element : marker;
-      if (inside) this.markers.set(inside, (this.markers.get(inside) ?? 0) + 1);
-      else this.drawn += 1;
+      this.charge(inside, this.cost);
       pushChildren(node, element, depth + 1, inside);
+      if (this.drawn > SVG_LIMITS.drawn) return refused('drawn');
     }
     this.resolve();
     if (this.drawn > SVG_LIMITS.drawn) return refused('drawn');
@@ -313,8 +338,10 @@ class Sanitizer {
     const attributes: Record<string, string> = {};
     const made: SvgElement = { kind: 'element', name, attributes, children: [] };
     const references: Omit<Reference, 'times'>[] = [];
-    // Where markers go: each vertex of a path or points, and a line's two ends.
+    // Where markers go: each vertex of a path, closes included, or of points, a polygon's closing
+    // one included, and a line's two ends.
     let vertices = name === 'line' ? 2 : 0;
+    this.cost = 1;
     for (const attribute of node.attrs) {
       const written = attribute.prefix ? `${attribute.prefix}:${attribute.name}` : attribute.name;
       const { value } = attribute;
@@ -345,7 +372,7 @@ class Sanitizer {
       }
       if (kind === 'marker') {
         // No marker, as when it's left out.
-        if (/^[\t\n\f\r ]*none[\t\n\f\r ]*$/i.test(value)) continue;
+        if (readValue(['none'], value)) continue;
         if (marker) {
           remove('reference');
           continue;
@@ -362,18 +389,26 @@ class Sanitizer {
       }
       attributes[written] = read.value;
       this.numbers += read.numbers;
-      if (read.vertices !== undefined) vertices = read.vertices;
+      this.cost += read.numbers;
+      if (read.vertices !== undefined) vertices = read.vertices + (name === 'polygon' ? 1 : 0);
       if (kind === 'id') {
         const holders = this.ids.get(read.value) ?? [];
         holders.push({ element: made, place });
         this.ids.set(read.value, holders);
       }
     }
+    this.cost += vertices;
     for (const reference of references) {
       const times = reference.attribute === 'marker-mid' ? Math.max(0, vertices - 2) : 1;
       this.references.push({ ...reference, times });
     }
     return made;
+  }
+
+  /** Adds `cost` to what the marker draws each time, or, outside markers, to what's drawn once. */
+  private charge(marker: SvgElement | undefined, cost: number): void {
+    if (marker) this.markers.set(marker, (this.markers.get(marker) ?? 0) + cost);
+    else this.drawn += cost;
   }
 
   /**
@@ -430,6 +465,28 @@ function removal(
   if (attribute !== undefined) made.attribute = named(attribute);
   if (line !== undefined) made.line = line;
   return made;
+}
+
+/** A length in pixels, as the allowlist writes it, or undefined for another unit or none. */
+function pixels(value: string | undefined): number | undefined {
+  return value !== undefined && /^[\d.e-]+(?:px)?$/.test(value)
+    ? Number.parseFloat(value)
+    : undefined;
+}
+
+/**
+ * Whether the figure, drawn at the article's width with its height following, is a size the window
+ * can lay out: its viewBox, or else its width and height in pixels, within the caps.
+ */
+function inProportion(svg: SvgElement): boolean {
+  const box = svg.attributes['viewBox']?.split(' ').slice(2).map(Number);
+  const [width, height] = box ?? [
+    pixels(svg.attributes['width']),
+    pixels(svg.attributes['height']),
+  ];
+  if (width === undefined || height === undefined) return true;
+  if (Math.max(width, height) > SVG_LIMITS.extent) return false;
+  return height <= SVG_LIMITS.tallest * width && width <= SVG_LIMITS.widest * height;
 }
 
 function isSvgName(name: string): name is SvgName {

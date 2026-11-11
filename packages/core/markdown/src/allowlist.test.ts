@@ -235,7 +235,8 @@ describe('paths', () => {
     expect(readValue('path', 'M0 0 1 1 2 2h3z')).toEqual({
       value: 'M0 0 1 1 2 2h3z',
       numbers: 7,
-      vertices: 4,
+      // A close is a vertex too.
+      vertices: 5,
     });
     expect(readValue('points', '0 0 1 1 2 2')).toMatchObject({ numbers: 6, vertices: 3 });
   });
@@ -270,6 +271,8 @@ describe('transforms', () => {
       'expression(alert(1))',
       'translate(1);',
       'translate(var(--fig-blue))',
+      'translate(1),',
+      'translate(1),,scale(2)',
     ];
     expect(read('transform', refused).filter((value) => value !== null)).toEqual([]);
   });
@@ -333,6 +336,61 @@ describe('keywords and names', () => {
       'url(javascript:alert(1))',
     ];
     expect(read('marker', refused).filter((value) => value !== null)).toEqual([]);
+  });
+});
+
+describe('a long run of spaces', () => {
+  // Half a megabyte of spaces, inside a value, where a trim that backtracks takes minutes.
+  const run = ' '.repeat(524_000);
+  const kinds: SvgValue[] = [
+    'coordinate',
+    'size',
+    'coordinates',
+    'numbers',
+    'opacity',
+    'miter',
+    'dashes',
+    'paint',
+    'color',
+    'viewBox',
+    'points',
+    'path',
+    'transform',
+    'aspect',
+    'orient',
+    'spacing',
+    'weight',
+    'order',
+    'id',
+    'marker',
+    ['nonzero', 'evenodd'],
+  ];
+  const values = [
+    `1${run}1`,
+    `${run}1${run}`,
+    `translate(1${run}1)`,
+    `rgb(1${run},2,3)`,
+    `var(${run}--fig-blue${run})`,
+    `url(${run}#a${run}x)`,
+    `M0${run}0${run}x`,
+    `1,${run},1`,
+  ];
+
+  test('is read in time linear in its length, by every kind of value', () => {
+    const started = performance.now();
+    for (const kind of kinds) for (const value of values) readValue(kind, value);
+    // Some 170 readings of half a megabyte each.
+    expect(performance.now() - started).toBeLessThan(2_500);
+  });
+
+  test("and checked so by a renderer, whatever the tree it's given holds", () => {
+    const started = performance.now();
+    for (const [element, attributes] of Object.entries(SVG_ELEMENTS)) {
+      for (const attribute of Object.keys(attributes.attributes)) {
+        isSvgAttribute(element, attribute, `1${run}1`);
+      }
+    }
+    expect(performance.now() - started).toBeLessThan(2_500);
   });
 });
 

@@ -15,6 +15,7 @@ import {
   plainText,
   sanitizeSvg,
   SVG_LIMITS,
+  type SanitizedSvg,
 } from '../src/index.ts';
 import { svgProblems, walkSvg } from './svgwalker.ts';
 import { problems } from './walker.ts';
@@ -150,4 +151,83 @@ test('a figure at the caps sanitizes within budget', () => {
   expect(svgProblems(made)).toEqual([]);
   expect(walkSvg(made).elements).toBeGreaterThan(0.95 * SVG_LIMITS.elements);
   expect(elapsed, `took ${elapsed} ms for a figure at the caps`).toBeLessThan(FIGURE_LIMIT);
+});
+
+/** A marker of 63 circles, which draws 127 each time it's drawn. */
+const CIRCLES = `<marker id="m">${'<circle r="1"/>'.repeat(63)}</marker>`;
+const SPACES = ' '.repeat(524_000);
+const SEVEN_THOUSAND = '1 1 '.repeat(7_000);
+const refused = (reason: string) => (made: SanitizedSvg) =>
+  expect(made.removed).toEqual([{ reason, element: 'svg' }]);
+const cut =
+  (...removals: string[]) =>
+  (made: SanitizedSvg) =>
+    expect(made.removed.map((removal) => `${removal.reason} ${removal.element}`)).toEqual(removals);
+
+/**
+ * The worst figures a review found, each once too slow to sanitize or to draw, and others like
+ * them: each is cut down or refused as fast as a harmless figure, and what it draws is counted.
+ */
+const WORST: [string, string, (made: SanitizedSvg) => void][] = [
+  [
+    'a fill with half a megabyte of spaces inside',
+    `<svg><rect fill="1${SPACES}1"/></svg>`,
+    cut('value rect'),
+  ],
+  [
+    'spaces inside a transform',
+    `<svg><rect transform="translate(1${SPACES}x)"/></svg>`,
+    cut('value rect'),
+  ],
+  ['spaces inside a color', `<svg><rect fill="rgb(1${SPACES}1,2,3)"/></svg>`, cut('value rect')],
+  [
+    'spaces inside a marker reference',
+    `<svg><marker id="m"/><path d="M0 0" marker-end="url(${SPACES}#m x)"/></svg>`,
+    cut('reference path'),
+  ],
+  [
+    'spaces around a color',
+    `<svg><rect fill="${SPACES.slice(262_000)}red${SPACES.slice(262_000)}"/></svg>`,
+    cut(),
+  ],
+  [
+    'a marker at each of 400,000 closes',
+    `<svg>${CIRCLES}<path d="M50 50${'z'.repeat(400_000)}" marker-mid="url(#m)"/></svg>`,
+    refused('drawn'),
+  ],
+  [
+    'a marker at each of 50,000 closes',
+    `<svg>${CIRCLES}<path d="M50 50${'z'.repeat(50_000)}" marker-mid="url(#m)"/></svg>`,
+    refused('drawn'),
+  ],
+  [
+    'a marker at every vertex of a polygon',
+    `<svg>${CIRCLES}<polygon points="${'1 1 '.repeat(5_000)}" marker-mid="url(#m)"/></svg>`,
+    refused('drawn'),
+  ],
+  [
+    'a marker holding half a megabyte of text, at 7,000 vertices',
+    `<svg><marker id="m"><text>${'x'.repeat(480_000)}</text></marker><polyline points="${SEVEN_THOUSAND}" marker-mid="url(#m)"/></svg>`,
+    cut('element text'),
+  ],
+  [
+    'text in a group in a marker, at 7,000 vertices',
+    `<svg><marker id="m"><g><text>${'x'.repeat(480_000)}</text></g></marker><polyline points="${SEVEN_THOUSAND}" marker-mid="url(#m)"/></svg>`,
+    cut('element text'),
+  ],
+  [
+    'a long title in a marker, at 7,000 vertices',
+    `<svg><marker id="m"><title>${'x'.repeat(480_000)}</title></marker><polyline points="${SEVEN_THOUSAND}" marker-mid="url(#m)"/></svg>`,
+    refused('drawn'),
+  ],
+  ['half a megabyte of text', `<svg><text>${'x'.repeat(500_000)}</text></svg>`, refused('drawn')],
+  ['a viewBox a million tall', '<svg viewBox="0 0 1 1000000"><rect/></svg>', refused('aspect')],
+];
+
+test.each(WORST)('%s is cut down or refused within budget', (_name, text, outcome) => {
+  expect(text.length).toBeLessThanOrEqual(SVG_LIMITS.size);
+  const { made, elapsed } = timed(() => sanitizeSvg(text));
+  expect(svgProblems(made)).toEqual([]);
+  outcome(made);
+  expect(elapsed, `took ${elapsed} ms`).toBeLessThan(FIGURE_LIMIT);
 });
