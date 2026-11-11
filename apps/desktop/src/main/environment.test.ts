@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  appName,
   backgroundEnvironment,
   backgroundSettings,
   dataFolder,
@@ -8,6 +9,13 @@ import {
   devTools,
   githubSettings,
 } from './environment.ts';
+
+describe('appName', () => {
+  it("keeps a packaged build's own name, and gives one run from source its own", () => {
+    expect(appName({ packaged: true })).toBeUndefined();
+    expect(appName({ packaged: false })).toBe('Lo Dev');
+  });
+});
 
 describe('dataFolder', () => {
   const appData = '/home/me/.config';

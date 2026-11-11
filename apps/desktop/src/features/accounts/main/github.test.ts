@@ -11,9 +11,13 @@ import {
   PullRef,
   RepoRef,
   Token,
+  type Account,
+  type AccountRows,
   type AuthenticatedUser,
+  type GitHubUrls,
   type Grant,
 } from '@lo/github';
+import { MemoryAccountRows } from '@lo/testing';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { Database } from '../../../main/database.ts';
@@ -113,6 +117,8 @@ function start(
     database?: Database;
     storage?: FakeStorage;
     build?: string;
+    urls?: GitHubUrls;
+    rows?: AccountRows;
   } = {},
 ): Started {
   const database = options.database ?? accountsDatabase();
@@ -129,6 +135,8 @@ function start(
     secrets,
     fetch: options.fetch ?? offline,
     build: options.build ?? 'build-1',
+    urls: options.urls,
+    rows: options.rows,
     log: (message) => logged.push(message),
     poll: { jitter: 0 },
   });
@@ -295,9 +303,19 @@ describe('polling', () => {
     expect(shown?.details.title).toBe('feat: stack layer A');
     expect(shown?.fetchedAt).toBe(START * 1000);
 
-    // Another build doesn't.
+    // Another build doesn't, nor the same build talking to another GitHub.
     const other = start({ database: first.database, storage: first.storage, build: 'build-2' });
     expect(await (await other.github.poller(LOGIN)).setOpen(pr(1))).toBeUndefined();
+    const local = start({
+      database: first.database,
+      storage: first.storage,
+      urls: {
+        api: 'http://127.0.0.1:4567/api',
+        web: 'http://127.0.0.1:4567/web',
+        uploads: 'http://127.0.0.1:4567/uploads',
+      },
+    });
+    expect(await (await local.github.poller(LOGIN)).setOpen(pr(1))).toBeUndefined();
   });
 
   it('polls faster while Lo is in the foreground', async () => {
@@ -402,6 +420,21 @@ describe('saving before quitting', () => {
     expect(logged).toEqual([
       'a renewal was still out after 4000 ms, so its token may not be saved',
     ]);
+  });
+
+  it('counts its limit from when it starts stopping, the accounts still loading included', async () => {
+    const slow = new MemoryAccountRows<Account>();
+    const loading = Promise.withResolvers<Account[]>();
+    slow.accounts = () => loading.promise;
+    const { github, logged } = start({ rows: slow });
+    let done = false;
+    void github.stop(4_000).then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(3_999);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(done).toBe(true);
+    expect(logged).toEqual(['the accounts were still loading after 4000 ms, so nothing was saved']);
+    loading.resolve([]);
   });
 
   it('has nothing to wait for when every grant is saved', async () => {

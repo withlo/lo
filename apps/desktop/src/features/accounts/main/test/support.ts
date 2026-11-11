@@ -52,6 +52,11 @@ export class FakeStorage implements SafeStorage {
   backend = 'gnome_libsecret';
   /** When set, decrypting fails, as when the user denies Lo the keychain. */
   refusing = false;
+  /**
+   * How it marks what it encrypts: `v11` for a Linux keyring's key, as by default, or `v10` for
+   * Chromium's built-in key (and the Mac keychain's).
+   */
+  mark = 'v11';
   /** When set, encrypting fails, as when the keychain refuses a write. */
   refusingWrites = false;
   /** When set, decrypting asks for the text to be encrypted again, as after a new key. */
@@ -72,7 +77,7 @@ export class FakeStorage implements SafeStorage {
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', this.#key, iv);
     const text = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()]);
-    return Promise.resolve(Buffer.concat([Buffer.from('v11'), iv, cipher.getAuthTag(), text]));
+    return Promise.resolve(Buffer.concat([Buffer.from(this.mark), iv, cipher.getAuthTag(), text]));
   }
 
   async decryptStringAsync(

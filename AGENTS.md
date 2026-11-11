@@ -159,8 +159,10 @@ pnpm nx run desktop:e2e    # build it, then run its smoke test
 
 - The `electron` package downloads Electron's binary the first time it's needed.
   `pnpm --filter @lo/desktop exec install-electron` fetches it ahead of time.
-- A build run from source keeps its data in its own folder (`Lo Dev`, beside an installed Lo's), or
-  in `LO_USER_DATA_DIR` when that's set. A packaged build ignores both.
+- A build run from source goes by `Lo Dev`, so it never touches an installed Lo's data or its key in
+  the system's keychain: it keeps its data in its own folder (`Lo Dev`), or in `LO_USER_DATA_DIR`
+  when that's set, and its key under "Lo Dev Safe Storage". A packaged build is `Lo`, and ignores
+  `LO_USER_DATA_DIR`.
 - Code that doesn't call Electron goes in its own module, with unit tests beside it. The smoke test
   in `e2e/` drives the built app with Playwright, each test on an empty data folder, and covers what
   needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`.
@@ -311,15 +313,16 @@ repositories, which account opens a repository, and the pull requests opened lat
 
 - Each account's grant (its token, and the refresh token that renews it) is one row in the database,
   encrypted whole by Electron's `safeStorage`, which keeps its key in the system's keychain. Where
-  the system has no keychain to encrypt with (Linux without GNOME Keyring or KWallet, which
-  `safeStorage` reports as `basic_text`, or Chromium's `--use-mock-keychain`), Lo neither keeps nor
-  reads a token, except in a test run.
+  the system has no keychain to encrypt with (Linux without GNOME Keyring or KWallet, or Chromium's
+  `--use-mock-keychain`), Lo neither keeps nor reads a token, except in a test run. On Linux the
+  store `safeStorage` reports is only the one chosen for the desktop, so what it encrypted counts
+  too: a ciphertext marked `v10` was made with Chromium's built-in key, as with no keyring.
 - Every request to GitHub goes through Chromium's network stack (`src/main/fetch.ts`, on
   `net.request`), so it takes the system's proxy, with nothing kept in Chromium's cache and no
   cookie. Electron's `net.fetch` isn't used: it fails a redirect GitHub's client asks to see, and
   the client follows redirects itself, only to where the token may go.
 - Each account's poller keeps what it read in the database, read back only by the build of Lo that
-  wrote it.
+  wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
   out), never a token.
 - As Lo quits, the feature saves any renewed token the keychain refused, waiting for renewals GitHub

@@ -179,6 +179,12 @@ test('Linux reports its fallback store as basic_text, which Lo takes only in a t
     return safeStorage.getSelectedStorageBackend();
   });
   expect(backend).toBe('basic_text');
+  // And marks what it encrypted with its built-in key `v10`, which Lo refuses outside a test run.
+  expect(sealedGrant().subarray(0, 3).toString()).toBe('v10');
+});
+
+test('a build run from source goes by Lo Dev, so its keychain key is its own', async ({ app }) => {
+  expect(await app.evaluate(({ app: electronApp }) => electronApp.getName())).toBe('Lo Dev');
 });
 
 test("Lo follows GitHub's redirect itself, sending the token only to GitHub's API", async () => {

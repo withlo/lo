@@ -170,6 +170,63 @@ describe("Linux's fallback, and other stand-in keychains", () => {
     await expect(kept.read('bot')).rejects.toBeInstanceOf(NoKeychain);
   });
 
+  it("refuses what Linux's built-in key encrypted, whatever store safeStorage reports", async () => {
+    // A GNOME session whose keyring never answered: the store chosen is libsecret's, and Chromium
+    // falls back to its built-in key, marked v10.
+    const { grants: kept, storage, database } = grants({ keychain: linux });
+    storage.backend = 'gnome_libsecret';
+    storage.mark = 'v10';
+    const written = kept.write('bot', expiring);
+    await expect(written).rejects.toBeInstanceOf(NoKeychain);
+    await expect(written).rejects.toThrow('GNOME Keyring or KWallet');
+    expect(database.prepare('SELECT count(*) AS n FROM accounts_grants').get()).toEqual({ n: 0 });
+
+    // One kept so before isn't read, nor taken for none.
+    const garbled = await storage.encryptStringAsync(JSON.stringify({ github: API, token: TOKEN }));
+    database
+      .prepare('INSERT INTO accounts_grants (login, sealed) VALUES (?, ?)')
+      .run('bot', garbled);
+    await expect(kept.read('bot')).rejects.toBeInstanceOf(NoKeychain);
+
+    // Once the keyring answers, what it encrypts is kept.
+    storage.mark = 'v11';
+    await kept.write('bot', expiring);
+    expect(exposed(await kept.read('bot'))).toEqual(exposed(expiring));
+  });
+
+  it("never encrypts a grant again with Linux's built-in key", async () => {
+    const { grants: kept, storage, database } = grants({ keychain: linux });
+    await kept.write('bot', expiring);
+    const before = bytes(
+      database.prepare('SELECT sealed FROM accounts_grants').get() ?? {},
+      'sealed',
+    );
+    // The keyring stops answering once it has decrypted: what the grant was kept with stays.
+    storage.reEncrypt = true;
+    storage.mark = 'v10';
+    const read = await kept.read('bot');
+    expect(exposed(read)).toEqual(exposed(expiring));
+    const after = bytes(
+      database.prepare('SELECT sealed FROM accounts_grants').get() ?? {},
+      'sealed',
+    );
+    expect(Buffer.from(after).equals(Buffer.from(before))).toBe(true);
+  });
+
+  it("takes v10 on a Mac, whose keychain's key Chromium marks so", async () => {
+    const { grants: kept, storage } = grants({ keychain: mac });
+    storage.mark = 'v10';
+    await kept.write('bot', expiring);
+    expect(exposed(await kept.read('bot'))).toEqual(exposed(expiring));
+  });
+
+  it("takes Linux's built-in key in a test run", async () => {
+    const { grants: kept, storage } = grants({ keychain: { ...linux, testRun: true } });
+    storage.mark = 'v10';
+    await kept.write('bot', expiring);
+    expect(exposed(await kept.read('bot'))).toEqual(exposed(expiring));
+  });
+
   it('takes the fallback in a test run', async () => {
     const { grants: kept, storage } = grants({ keychain: { ...linux, testRun: true } });
     storage.backend = 'basic_text';

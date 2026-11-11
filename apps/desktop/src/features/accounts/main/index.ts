@@ -2,8 +2,6 @@
 // (`service.ts`), and the accounts' summaries for the window. Tokens are kept encrypted by the
 // system's keychain, and never leave main.
 
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { app, net, safeStorage } from 'electron';
@@ -15,6 +13,7 @@ import { netFetch } from '../../../main/fetch.ts';
 import { provides } from '../../../main/services.ts';
 import { accountSummary, contract, type AccountSummary } from '../contract.ts';
 import { github } from '../service.ts';
+import { buildOf } from './build.ts';
 import { Github } from './github.ts';
 import { Grants } from './grants.ts';
 
@@ -31,12 +30,11 @@ const SAVE_WITHIN = STOP_LIMITS.each - 1_000;
 const fetch = netFetch((options) => net.request(options));
 
 /**
- * This build of Lo: a hash of the code main runs, which holds the pollers' reads and their
- * shapes, so the answers one build kept are never read back by another.
+ * This build of Lo: a hash of the code main runs, which holds the pollers' reads and their shapes.
+ * This module is bundled into main's entry, at the top of main's output folder.
  */
 function thisBuild(): string {
-  const code = readFileSync(fileURLToPath(import.meta.url));
-  return createHash('sha256').update(code).digest('hex').slice(0, 16);
+  return buildOf(fileURLToPath(new URL('.', import.meta.url)));
 }
 
 const log = (message: string) => console.error(`accounts: ${message}`);

@@ -2,6 +2,7 @@
 // each on the database's cache, and a client for public repositories. Nothing here calls Electron,
 // so it runs under unit tests with a `fetch` that replays GitHub.
 
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import {
@@ -12,6 +13,7 @@ import {
   Poller,
   refreshGrant,
   Token,
+  type AccountRows,
   type AccountSource,
   type AccountsEvent,
   type AuthenticatedUser,
@@ -44,13 +46,14 @@ export interface GithubOptions {
   log: (message: string) => void;
   /** The pollers' settings, for tests. */
   poll?: Partial<PollConfig> | undefined;
+  /** Where the accounts' rows are, for tests: the database's tables unless said otherwise. */
+  rows?: AccountRows | undefined;
 }
 
 /** The {@link GithubAccess} the accounts feature provides, with what only the feature itself does. */
 export class Github implements GithubAccess {
   readonly urls: GitHubUrls;
   readonly anonymous: GithubClient;
-  readonly #rows: AccountTable;
   readonly #cache: AnswerCache;
   readonly #fetch: typeof globalThis.fetch;
   readonly #log: (message: string) => void;
@@ -69,15 +72,15 @@ export class Github implements GithubAccess {
   constructor(options: GithubOptions) {
     const { database, fetch, log } = options;
     this.urls = options.urls ?? GITHUB_URLS;
-    this.#rows = new AccountTable(database);
-    this.#cache = new AnswerCache(database, options.build);
+    // What a poller read is GitHub's at this address, and only this build reads it back.
+    this.#cache = new AnswerCache(database, stampOf(options.build, this.urls.api));
     this.#fetch = fetch;
     this.#log = log;
     this.#poll = options.poll;
     this.anonymous = new GithubClient({ fetch, urls: this.urls });
     const web = { fetch, urls: this.urls };
     this.#loaded = Accounts.load({
-      rows: this.#rows,
+      rows: options.rows ?? new AccountTable(database),
       secrets: options.secrets,
       renew: (refresh) => refreshGrant(web, refresh),
       fetch,
@@ -204,26 +207,29 @@ export class Github implements GithubAccess {
    * database is still open for the last save. Run once, as Lo quits.
    */
   async stop(within: number): Promise<void> {
-    this.#stopped = true;
-    for (const unsubscribe of this.#unsubscribe.splice(0)) unsubscribe();
-    for (const poller of this.#pollers.values()) poller.stop();
-    this.#pollers.clear();
-    let accounts: Accounts;
-    try {
-      accounts = await this.#loaded;
-    } catch {
-      return;
-    }
-    const saving = accounts.saveBeforeQuitting();
-    if (!saving) return;
+    // The limit counts from now, the accounts' loading included.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<'late'>((resolve) => {
       timer = setTimeout(() => resolve('late'), within);
     });
-    const saved = await Promise.race([saving.then(() => 'saved' as const), late]);
-    clearTimeout(timer);
-    if (saved === 'late') {
-      this.#log(`a renewal was still out after ${within} ms, so its token may not be saved`);
+    try {
+      this.#stopped = true;
+      for (const unsubscribe of this.#unsubscribe.splice(0)) unsubscribe();
+      for (const poller of this.#pollers.values()) poller.stop();
+      this.#pollers.clear();
+      const loaded = await Promise.race([this.#loaded.catch(() => undefined), late]);
+      if (loaded === 'late') {
+        this.#log(`the accounts were still loading after ${within} ms, so nothing was saved`);
+        return;
+      }
+      const saving = loaded?.saveBeforeQuitting();
+      if (!saving) return;
+      const saved = await Promise.race([saving.then(() => 'saved' as const), late]);
+      if (saved === 'late') {
+        this.#log(`a renewal was still out after ${within} ms, so its token may not be saved`);
+      }
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -299,4 +305,9 @@ export class Github implements GithubAccess {
       }
     }
   }
+}
+
+/** What the cache's rows are stamped with: this build of Lo, and the GitHub its answers are from. */
+function stampOf(build: string, api: string): string {
+  return createHash('sha256').update(`${build}\n${api}`).digest('hex').slice(0, 16);
 }

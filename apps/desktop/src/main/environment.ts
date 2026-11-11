@@ -4,6 +4,21 @@ import { GITHUB_URLS, type GitHubUrls } from '@lo/github';
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
+/** What a build run from source goes by, beside an installed Lo: its data folder and cache too. */
+export const DEV_NAME = 'Lo Dev';
+
+/**
+ * The name Lo goes by, or undefined to keep the one Electron takes from `package.json` ("Lo").
+ *
+ * A build run from source goes by {@link DEV_NAME}, so it never shares the installed Lo's key in the
+ * system's keychain ("Lo Safe Storage"), which `safeStorage` names after the app. A build run from
+ * source runs on Electron's own app, which every project built on it shares, so the installed
+ * Lo's key must never trust it.
+ */
+export function appName(options: { packaged: boolean }): string | undefined {
+  return options.packaged ? undefined : DEV_NAME;
+}
+
 /**
  * Where Lo keeps its data, or undefined to keep Electron's default (`<appData>/Lo`).
  *
@@ -24,7 +39,7 @@ export function dataFolder(options: {
     }
     return chosen;
   }
-  return join(options.appData, 'Lo Dev');
+  return join(options.appData, DEV_NAME);
 }
 
 /**
