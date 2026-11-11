@@ -62,8 +62,21 @@ describe('on Linux, which has no app menu', () => {
   });
 });
 
-it('leaves these keys to the app menu on macOS', () => {
-  expect(runs({ key: 'q', code: 'KeyQ', metaKey: true }, anywhere, 'mac')).toBeUndefined();
-  expect(runs({ key: '=', code: 'Equal', metaKey: true }, anywhere, 'mac')).toBeUndefined();
-  expect(runs({ key: 'F11', code: 'F11' }, anywhere, 'mac')).toBeUndefined();
+describe('on macOS', () => {
+  it('leaves quitting and full screen to the app menu', () => {
+    expect(runs({ key: 'q', code: 'KeyQ', metaKey: true }, anywhere, 'mac')).toBeUndefined();
+    expect(runs({ key: 'F11', code: 'F11' }, anywhere, 'mac')).toBeUndefined();
+  });
+
+  it('zooms with ⌘ and =, +, - and 0, and lists zooming in the View menu', () => {
+    expect(runs({ key: '=', code: 'Equal', metaKey: true }, anywhere, 'mac')).toBe('app.zoomIn');
+    expect(runs({ key: '+', code: 'Equal', metaKey: true, shiftKey: true }, anywhere, 'mac')).toBe(
+      'app.zoomIn',
+    );
+    expect(runs({ key: '-', code: 'Minus', metaKey: true }, diff, 'mac')).toBe('app.zoomOut');
+    expect(runs({ key: '0', code: 'Digit0', metaKey: true }, box, 'mac')).toBe('app.actualSize');
+    expect(
+      commands.filter((command) => command.bar?.menu === 'View').map((command) => command.id),
+    ).toEqual(['app.zoomIn', 'app.zoomOut', 'app.actualSize']);
+  });
 });

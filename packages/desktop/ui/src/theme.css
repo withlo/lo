@@ -28,6 +28,10 @@
   --spacing-row-h: var(--lo-row-h);
   --spacing-control-h: var(--lo-control-h);
   --spacing-control-h-sm: var(--lo-control-h-sm);
+  --spacing-kbd-h: var(--lo-kbd-h);
+  --spacing-palette-w: var(--lo-palette-w);
+  --spacing-palette-list-h: var(--lo-palette-list-h);
+  --spacing-keyhelp-w: var(--lo-keyhelp-w);
   --spacing-file-header-h: var(--lo-file-header-h);
   --spacing-window-inset-start: var(--lo-window-inset-start);
   --spacing-window-inset-end: var(--lo-window-inset-end);
@@ -289,4 +293,8 @@
 
 @utility code-small {
   font: var(--lo-code-small);
+}
+
+@utility code-key {
+  font: var(--lo-code-key);
 }

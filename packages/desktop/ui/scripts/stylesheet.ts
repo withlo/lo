@@ -8,7 +8,10 @@ import { fileURLToPath } from 'node:url';
 
 import { compile } from 'tailwindcss';
 
-const entry = fileURLToPath(new URL('../src/styles.css', import.meta.url));
+// The base is named first: under jsdom, Vite rewrites `new URL('…', import.meta.url)` into an
+// address on its dev server.
+const here = import.meta.url;
+const entry = fileURLToPath(new URL('../src/styles.css', here));
 
 /** Finds what an `@import` names: a file beside the importer, or a package's. */
 async function loadStylesheet(id: string, base: string) {

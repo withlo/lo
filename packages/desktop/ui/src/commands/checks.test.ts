@@ -338,6 +338,51 @@ describe('clashes', () => {
   });
 });
 
+describe('clashes the engine’s rules hide', () => {
+  test('fail a scope’s motion against a command for anywhere on the same key, in code views', () => {
+    expect(
+      checkClashes([
+        feature({
+          nextFile: {
+            label: 'Next file',
+            group: 'Jump',
+            keys: ['] f'],
+            vim: 'motion',
+            when: { scope: 'diff' },
+          },
+          follow: { label: 'Follow', group: 'Act', keys: ['] f'] },
+        }),
+      ]),
+    ).toEqual([
+      '`] f` runs both diff.nextFile and diff.follow, in diff (normal) and diff (visual), on macOS and Linux.',
+    ]);
+    // Without the motion, the scope's command beats the one for anywhere, as designed.
+    expect(
+      checkClashes([
+        feature({
+          nextFile: { label: 'Next file', group: 'Jump', keys: ['] f'], when: { scope: 'diff' } },
+          follow: { label: 'Follow', group: 'Act', keys: ['] f'] },
+        }),
+      ]),
+    ).toEqual([]);
+  });
+
+  test('fail a menu command on j or k, which move in menus', () => {
+    expect(
+      checkClashes([
+        feature({
+          jump: { label: 'Jump', group: 'Act', keys: ['j'], when: { scope: 'menu' } },
+          kill: { label: 'Kill', group: 'Act', keys: ['k x'], when: { scope: 'menu' } },
+          next: { label: 'Next', group: 'Act', keys: ['n'], when: { scope: 'menu' } },
+        }),
+      ]),
+    ).toEqual([
+      '`j` (diff.jump) never runs, since `j` and `k` move as the arrows do, in menu, on macOS and Linux.',
+      '`k x` (diff.kill) never runs, since `j` and `k` move as the arrows do, in menu, on macOS and Linux.',
+    ]);
+  });
+});
+
 describe('Vim’s keys', () => {
   test('fail a key over one of Vim’s in a code view without overVim', () => {
     expect(

@@ -6,13 +6,21 @@
 //   declare;
 // - keys: every command has a default key on each system it's on;
 // - menus: every item in a right-click menu or the app menu has a key;
-// - clashes: in each scope, mode and system, no key or start of a sequence is claimed twice;
+// - clashes: in each scope, mode and system, no key or start of a sequence is claimed twice, and
+//   none is one the engine takes first;
 // - Vim: in a code view, no key of Lo's meets one of Vim's unless its command says `overVim`.
 //
 // Each returns its problems as sentences, and none when the declarations pass.
 
 import { commandsOf, isCommandId, listOf, type Command, type Declarations } from './declare.ts';
-import { declaredBindings, holds, startsWith, type Binding, type Focus } from './match.ts';
+import {
+  declaredBindings,
+  holds,
+  menuArrows,
+  startsWith,
+  type Binding,
+  type Focus,
+} from './match.ts';
 import { parseKeys, systemStrokes, writeStrokes, type Stroke, type System } from './notation.ts';
 import { codeScopes, engineScopes, type Mode } from './scopes.ts';
 import { vimDefaults } from './vim.ts';
@@ -262,7 +270,9 @@ export function checkMenus(features: readonly Declarations[]): string[] {
  * key, nor one the start of another's sequence (a lone `g` against `g S`), since one of the two
  * would never run. Lo's motions count in code views, where Vim runs them. The one exception is the
  * rule matching follows: a command for the focused scope beats one for anywhere on the same keys,
- * so `⌘⏎` can add to the review in a box and submit it elsewhere.
+ * so `⌘⏎` can add to the review in a box and submit it elsewhere. A motion against another command
+ * in a code view has no such exception, since matching never takes the motion there. Nor may a
+ * binding start with a key the engine takes first: `j` or `k` in a menu.
  */
 export function checkClashes(features: readonly Declarations[]): string[] {
   const commands = features.flatMap(commandsOf).filter((command) => command.vim !== 'own');
@@ -276,8 +286,10 @@ export function checkClashes(features: readonly Declarations[]): string[] {
         const focus = focusAt(site);
         const here = bindings.filter((binding) => holds(binding, focus, system));
         here.forEach((first, index) => {
+          const taken = engineTakes(first, site);
+          if (taken !== undefined) found.add(taken, site);
           for (const second of here.slice(index + 1)) {
-            const problem = clash(first, second, system);
+            const problem = clash(first, second, site);
             if (problem !== undefined) found.add(problem, site);
           }
         });
@@ -292,13 +304,32 @@ function scoped(command: Command): boolean {
   return command.when?.scope !== undefined;
 }
 
+/**
+ * Why a binding never runs at `site` because the engine takes its first key there, if it doesn't:
+ * in a menu, `j` and `k` move as the arrows do.
+ */
+function engineTakes(binding: Binding, site: Site): string | undefined {
+  const first = binding.strokes[0];
+  if (site.scope !== 'menu' || first === undefined || !Object.hasOwn(menuArrows, first.id)) {
+    return undefined;
+  }
+  return `${quoted(binding.strokes, site.system)} (${binding.command.id}) never runs, since \`j\` and \`k\` move as the arrows do`;
+}
+
 /** How two bindings that hold at the same site clash there, if they do. */
-function clash(a: Binding, b: Binding, system: System): string | undefined {
+function clash(a: Binding, b: Binding, site: Site): string | undefined {
+  const { system } = site;
   const [short, long] = a.strokes.length <= b.strokes.length ? [a, b] : [b, a];
   if (!startsWith(long.strokes, short.strokes)) return undefined;
   if (short.strokes.length === long.strokes.length) {
-    // The same key written twice for one command, or a scope's command over one for anywhere.
-    if (a.command === b.command || scoped(a.command) !== scoped(b.command)) return undefined;
+    // The same key written twice for one command.
+    if (a.command === b.command) return undefined;
+    // A scope's command beats one for anywhere on the same keys, but not in a code view when one
+    // of the two is a motion: matching never takes a motion there, so Lo's other command takes
+    // the key before Vim, and the motion never runs.
+    const motion = a.command.vim === 'motion' || b.command.vim === 'motion';
+    const overridden = scoped(a.command) !== scoped(b.command);
+    if (overridden && !(motion && site.mode !== undefined)) return undefined;
     return `${quoted(a.strokes, system)} runs both ${a.command.id} and ${b.command.id}`;
   }
   return `${quoted(short.strokes, system)} (${short.command.id}) starts ${quoted(long.strokes, system)} (${long.command.id})`;

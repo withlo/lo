@@ -28,6 +28,27 @@
   box-shadow: inset 0 0 0 1.5px currentcolor;
 }
 
+/* A key cap's bottom edge, which makes it read as a key. */
+@utility key-edge {
+  box-shadow: inset 0 -1px 0 var(--lo-border-strong);
+}
+
+/* Panel labels: small capitals, tracked out. */
+@utility label-caps {
+  letter-spacing: var(--lo-track-label);
+  text-transform: uppercase;
+}
+
+/* The thing on screen, as a row's background. Tailwind's own `bg-current` is the text color. */
+@utility bg-on-screen {
+  background-color: var(--lo-current);
+}
+
+/* Dialogs and palettes sit over the window. */
+@utility z-dialog {
+  z-index: var(--lo-z-dialog);
+}
+
 /* The concave flares where the selected tab meets the strip: the mark's socket curve. */
 @utility tab-flares {
   &::before,

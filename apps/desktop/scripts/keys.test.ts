@@ -41,13 +41,14 @@ function section(heading: string): string[] {
 describe('docs/keys.md', () => {
   it('lists key help’s groups in their order, in macOS form', () => {
     const headings = doc.split('\n').filter((line) => line.startsWith('## '));
-    expect(headings.slice(0, 7)).toEqual([
+    expect(headings.slice(0, 8)).toEqual([
       '## Move',
       '## Jump',
       '## Act',
       '## Code',
       '## Find',
       '## Files',
+      '## Palettes',
       '## Tabs and window',
     ]);
     expect(section('## Find')).toContain(
@@ -95,11 +96,11 @@ describe('docs/keys.md', () => {
 
   it('describes the keymap file, with an example that applies', () => {
     // The example's comments start with #, so the section is read as a whole.
-    expect(doc).toContain('```\n# Back and forward with Alt and the arrows');
-    expect(doc).toContain('\nbind alt+left keys.back\n');
+    expect(doc).toContain('```\n# Open the command palette with ⌘K as well');
+    expect(doc).toContain('\nbind cmd+k keys.palette\n');
     expect(section('### Writing keys').join('\n')).toContain('`f1` to `f20`');
     expect(() => keysDoc([diff, tree])).toThrow(
-      "The example keymap no longer applies: line 2: There's no command called keys.back.",
+      "The example keymap no longer applies: line 2: There's no command called keys.palette.",
     );
   });
 

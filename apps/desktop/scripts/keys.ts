@@ -139,7 +139,7 @@ function scopeSection(features: readonly Declarations[]): string[] {
     '',
     "In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a command (after a count or an operator), only chords are Lo's, and other keys go to Vim. In a text field, typing and moving through the text are the field's.",
     '',
-    `A key that starts one of Lo's sequences waits up to ${seconds} s for the rest. If the next key doesn't go on with it, both go on to Vim, so \`y w\` still yanks a word. Focus leaving, a click, \`Esc\` or a tab switch drops a waiting key.`,
+    `A key that starts one of Lo's sequences waits up to ${seconds} s for the rest. In a code view, a waiting key that isn't completed goes on to Vim: with the next key, when that doesn't go on with it, so \`y w\` still yanks a word, or alone once the time is up. Anywhere else it's dropped, and the next key counts on its own. A chord Lo runs drops the waiting key, as do \`Esc\`, focus leaving, a click and a tab switch.`,
     '',
     "`Tab` doesn't move focus out of a scope; only dialogs and forms keep the browser's `Tab`.",
     '',
@@ -254,9 +254,8 @@ function vimSection(commands: readonly Command[], vim: VimKeys): string[] {
 }
 
 /** An example keymap file, which every command it names must have, and every line apply. */
-const example = `# Back and forward with Alt and the arrows, as well as ⌃o and ⌃i.
-bind alt+left keys.back
-bind alt+right keys.forward
+const example = `# Open the command palette with ⌘K as well, as many apps do.
+bind cmd+k keys.palette
 # Esc no longer goes back to the middle view.
 unbind esc keys.escape
 # Y yanks to the end of the line.

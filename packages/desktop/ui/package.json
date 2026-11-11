@@ -18,6 +18,7 @@
     "test": "vitest run --root ../../.. --project @lo/ui"
   },
   "dependencies": {
+    "@base-ui/react": "1.9.0",
     "@fontsource-variable/host-grotesk": "5.3.0",
     "@fontsource/fragment-mono": "5.3.0",
     "@lo/design": "workspace:*",

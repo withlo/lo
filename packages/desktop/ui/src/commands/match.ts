@@ -98,6 +98,15 @@ export const linuxEditingKeys: readonly string[] = ['c', 'x', 'v', 'a', 'z', 'w'
 );
 const linuxEditing = new Set(linuxEditingKeys);
 
+/**
+ * The keys the engine takes in a menu, before any command: `j` and `k` move as `↓` and `↑` do, so a
+ * command for menus can't start with them.
+ */
+export const menuArrows: Readonly<Record<string, 'ArrowDown' | 'ArrowUp' | undefined>> = {
+  j: 'ArrowDown',
+  k: 'ArrowUp',
+};
+
 /** The bindings `commands` declare for `system`, in their order: their default keys. */
 export function declaredBindings(commands: readonly Command[], system: System): Binding[] {
   const bindings: Binding[] = [];
@@ -237,12 +246,11 @@ export function match(
     }
     return { pending: undefined, outcome: { kind: 'replay', strokes: pending.strokes } };
   }
-  if (focus.scope === 'menu' && !focus.text && (stroke.id === 'j' || stroke.id === 'k')) {
-    return {
-      pending: undefined,
-      outcome: { kind: 'arrow', key: stroke.id === 'j' ? 'ArrowDown' : 'ArrowUp' },
-    };
-  }
+  const arrow =
+    focus.scope === 'menu' && !focus.text && Object.hasOwn(menuArrows, stroke.id)
+      ? menuArrows[stroke.id]
+      : undefined;
+  if (arrow !== undefined) return { pending: undefined, outcome: { kind: 'arrow', key: arrow } };
   const found = bindings.find([stroke], focus);
   if (found.command) return { pending: undefined, outcome: run(found.command, press) };
   if (found.longer) {

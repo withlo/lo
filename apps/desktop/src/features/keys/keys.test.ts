@@ -53,3 +53,24 @@ describe("the registry's own keys", () => {
     }
   });
 });
+
+describe('key help and the palette', () => {
+  it('? shows every key, anywhere but in a field, where it’s typed', () => {
+    expect(runs('?', { scope: 'window', text: false })).toBe('keys.help');
+    expect(runs('?', view('diff'))).toBe('keys.help');
+    expect(runs('?', { scope: 'dialog', text: false })).toBe('keys.help');
+    expect(runs('?', { scope: 'palette', text: true })).toBeUndefined();
+    expect(runs('?', { scope: 'window', text: true })).toBeUndefined();
+  });
+
+  it('⌘⇧P opens the palette, even from a field', () => {
+    expect(runs('cmd+shift+p', { scope: 'window', text: true })).toBe('keys.palette');
+    expect(runs('cmd+shift+p', view('box', 'insert'), 'linux')).toBe('keys.palette');
+  });
+
+  it('⌥⏎ shows the highlighted action’s key, in the palette only', () => {
+    expect(runs('alt+enter', { scope: 'palette', text: true })).toBe('keys.showKey');
+    expect(runs('alt+enter', { scope: 'window', text: false })).toBeUndefined();
+    expect(runs('alt+enter', { scope: 'palette', text: true }, 'linux')).toBe('keys.showKey');
+  });
+});

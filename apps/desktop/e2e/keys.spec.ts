@@ -184,20 +184,37 @@ function zoom(app: ElectronApplication): Promise<number | undefined> {
   );
 }
 
-test.describe('on Linux, with no app menu', () => {
-  test.skip(mac, 'macOS’s app menu has these.');
+test('⌘ or Ctrl with =, - and 0 zooms the window', async ({ app, page }) => {
+  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+  const held = mac ? 'Meta' : 'Control';
+  expect(await zoom(app)).toBe(0);
+  await page.keyboard.press(`${held}+Equal`);
+  await expect.poll(() => zoom(app)).toBe(0.5);
+  await page.keyboard.press(`${held}+Minus`);
+  await page.keyboard.press(`${held}+Minus`);
+  await expect.poll(() => zoom(app)).toBe(-0.5);
+  await page.keyboard.press(`${held}+Digit0`);
+  await expect.poll(() => zoom(app)).toBe(0);
+});
 
-  test('Ctrl with =, - and 0 zooms the window', async ({ app, page }) => {
-    await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
-    expect(await zoom(app)).toBe(0);
-    await page.keyboard.press('Control+Equal');
-    await expect.poll(() => zoom(app)).toBe(0.5);
-    await page.keyboard.press('Control+Minus');
-    await page.keyboard.press('Control+Minus');
-    await expect.poll(() => zoom(app)).toBe(-0.5);
-    await page.keyboard.press('Control+Digit0');
-    await expect.poll(() => zoom(app)).toBe(0);
-  });
+test('macOS’s View menu lists zooming, with its keys', async ({ app }) => {
+  test.skip(!mac, 'Linux has no app menu.');
+  await expect
+    .poll(() => menuContents(app))
+    .toEqual(
+      expect.arrayContaining([
+        'id:app.zoomIn',
+        'key:Command+=',
+        'id:app.zoomOut',
+        'key:Command+-',
+        'id:app.actualSize',
+        'key:Command+0',
+      ]),
+    );
+});
+
+test.describe('on Linux, with no app menu', () => {
+  test.skip(mac, 'macOS’s app menu quits and goes full screen.');
 
   test('F11 asks for full screen', async ({ app, page }) => {
     await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();

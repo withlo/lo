@@ -16,11 +16,27 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Back    | `⌃o` | Anywhere but `box` | `keys.back`    |
 | Forward | `⌃i` | Anywhere but `box` | `keys.forward` |
 
+## Find
+
+| Action          | Keys  | Where    | Command        |
+| --------------- | ----- | -------- | -------------- |
+| Command palette | `⌘⇧P` | Anywhere | `keys.palette` |
+
+## Palettes
+
+| Action               | Keys | Where        | Command        |
+| -------------------- | ---- | ------------ | -------------- |
+| Show an action's key | `⌥⏎` | In `palette` | `keys.showKey` |
+
 ## Tabs and window
 
-| Action                  | Keys  | Where                                                                                  | Command       |
-| ----------------------- | ----- | -------------------------------------------------------------------------------------- | ------------- |
-| Back to the middle view | `Esc` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape` |
+| Action                  | Keys        | Where                                                                                  | Command          |
+| ----------------------- | ----------- | -------------------------------------------------------------------------------------- | ---------------- |
+| Zoom in                 | `⌘=`, `⌘⇧=` | Anywhere                                                                               | `app.zoomIn`     |
+| Zoom out                | `⌘-`        | Anywhere                                                                               | `app.zoomOut`    |
+| Actual size             | `⌘0`        | Anywhere                                                                               | `app.actualSize` |
+| Every key               | `?`         | Anywhere                                                                               | `keys.help`      |
+| Back to the middle view | `Esc`       | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`    |
 
 ## Where keys apply
 
@@ -43,9 +59,11 @@ In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for 
 command (after a count or an operator), only chords are Lo's, and other keys go to Vim. In a text
 field, typing and moving through the text are the field's.
 
-A key that starts one of Lo's sequences waits up to 1 s for the rest. If the next key doesn't go on
-with it, both go on to Vim, so `y w` still yanks a word. Focus leaving, a click, `Esc` or a tab
-switch drops a waiting key.
+A key that starts one of Lo's sequences waits up to 1 s for the rest. In a code view, a waiting key
+that isn't completed goes on to Vim: with the next key, when that doesn't go on with it, so `y w`
+still yanks a word, or alone once the time is up. Anywhere else it's dropped, and the next key
+counts on its own. A chord Lo runs drops the waiting key, as do `Esc`, focus leaving, a click and a
+tab switch.
 
 `Tab` doesn't move focus out of a scope; only dialogs and forms keep the browser's `Tab`.
 
@@ -56,13 +74,10 @@ form: `⌘⇧P` is `Ctrl+Shift+P` on Linux. `⌃` is Ctrl on both, so Vim's `⌃
 
 These keys are on one system only:
 
-| Action      | Keys                     | On    | Where    | Command          |
-| ----------- | ------------------------ | ----- | -------- | ---------------- |
-| Quit Lo     | `Ctrl+Q`                 | Linux | Anywhere | `app.quit`       |
-| Zoom in     | `Ctrl+=`, `Ctrl+Shift+=` | Linux | Anywhere | `app.zoomIn`     |
-| Zoom out    | `Ctrl+-`                 | Linux | Anywhere | `app.zoomOut`    |
-| Actual size | `Ctrl+0`                 | Linux | Anywhere | `app.actualSize` |
-| Full screen | `F11`                    | Linux | Anywhere | `app.fullScreen` |
+| Action      | Keys     | On    | Where    | Command          |
+| ----------- | -------- | ----- | -------- | ---------------- |
+| Quit Lo     | `Ctrl+Q` | Linux | Anywhere | `app.quit`       |
+| Full screen | `F11`    | Linux | Anywhere | `app.fullScreen` |
 
 On Linux, in a comment box in insert mode, and in a field inside a code view such as Vim's search,
 Lo never takes `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A`, `Ctrl+Z` or `Ctrl+W`: they keep their editing
@@ -73,11 +88,12 @@ meanings.
 Code views (`diff`, `file`, `peek` and `box`) run Vim, and Lo leaves Vim's keys to it there, except
 these, which run Lo's command in place of Vim's key:
 
-| Keys             | Action  | Vim's key | Where                                                | Command        |
-| ---------------- | ------- | --------- | ---------------------------------------------------- | -------------- |
-| `⌃o`             | Back    | `⌃o`      | `diff`, `file` and `peek`                            | `keys.back`    |
-| `⌃i`             | Forward | `⌃i`      | `diff`, `file` and `peek`                            | `keys.forward` |
-| `Ctrl+Q` (Linux) | Quit Lo | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual) | `app.quit`     |
+| Keys             | Action    | Vim's key | Where                                                | Command        |
+| ---------------- | --------- | --------- | ---------------------------------------------------- | -------------- |
+| `?`              | Every key | `?`       | `diff`, `file`, `peek` and `box` (normal and visual) | `keys.help`    |
+| `⌃o`             | Back      | `⌃o`      | `diff`, `file` and `peek`                            | `keys.back`    |
+| `⌃i`             | Forward   | `⌃i`      | `diff`, `file` and `peek`                            | `keys.forward` |
+| `Ctrl+Q` (Linux) | Quit Lo   | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual) | `app.quit`     |
 
 ## The keymap file
 
@@ -92,9 +108,8 @@ one change on each line:
 - `#` starts a comment.
 
 ```
-# Back and forward with Alt and the arrows, as well as ⌃o and ⌃i.
-bind alt+left keys.back
-bind alt+right keys.forward
+# Open the command palette with ⌘K as well, as many apps do.
+bind cmd+k keys.palette
 # Esc no longer goes back to the middle view.
 unbind esc keys.escape
 # Y yanks to the end of the line.
