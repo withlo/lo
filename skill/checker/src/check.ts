@@ -16,7 +16,7 @@ import {
 
 import { gitCode } from './code.ts';
 import { readFolder, type Folder } from './folder.ts';
-import { GitError, NoGit, run, type Git } from './git.ts';
+import { GitError, NoGit, run, TooMuch, type Git } from './git.ts';
 
 /** What checking a folder found. */
 export interface FolderCheck {
@@ -39,7 +39,9 @@ export async function checkFolder(dir: string, git: Git, pr?: number): Promise<F
   const incomplete: string[] = [];
   const failed = (what: string) => (error: unknown) => {
     const said = error instanceof Error ? error.message : String(error);
-    if (incomplete.length < 5) incomplete.push(`${what} couldn't be read: ${said}`);
+    // Past git's limit, every read after fails the same way: that's said once.
+    const sentence = error instanceof TooMuch ? said : `${what} couldn't be read: ${said}`;
+    if (incomplete.length < 5 && !incomplete.includes(sentence)) incomplete.push(sentence);
     throw error;
   };
 
@@ -54,7 +56,7 @@ export async function checkFolder(dir: string, git: Git, pr?: number): Promise<F
     parsed = parseArtifact(artifact.bytes);
   }
 
-  const code = gitCode(git);
+  const code = gitCode(git, parsed?.references.map(({ target }) => target.path) ?? []);
   const readCode: CodeReader = (commit, path, cap, stop) =>
     code.read(commit, path, cap, stop).catch(failed(`The code at ${path}`));
   const files: Folder = {

@@ -48,35 +48,54 @@ export interface Streams {
   err: (text: string) => void;
 }
 
-/** Runs the command line `args`, writing to `streams`, and returns its exit status. */
+/**
+ * Runs the command line `args`, writing to `streams`, and returns its exit status. Never rejects
+ * unless writing does: whatever goes wrong is said, as JSON with `--json`, and exits 2.
+ */
 export async function main(args: readonly string[], streams: Streams): Promise<number> {
-  let command: Command;
-  try {
-    command = parse(args);
-  } catch (error) {
-    streams.err(`${error instanceof Error ? error.message : String(error)}\n\n${USAGE}`);
+  // Read before the rest, so a mistake in the rest is answered as JSON too.
+  const end = args.indexOf('--');
+  const json = (end === -1 ? args : args.slice(0, end)).includes('--json');
+  const fail = (message: string, usage = false): number => {
+    if (json) streams.out(`${JSON.stringify({ error: message }, null, 2)}\n`);
+    else streams.err(usage ? `${message}\n\n${USAGE}` : `${message}\n`);
     return 2;
-  }
+  };
   try {
-    switch (command.kind) {
-      case 'help':
-        streams.out(USAGE);
-        return 0;
-      case 'check':
-        return report(await checkFolder(command.dir, gitIn(), command.pr), command.json, streams);
-      case 'commit':
-        return await commit(command.dir, command.pr, command.json, streams);
-      default:
-        command satisfies never;
-        throw new Error(`Unknown command ${JSON.stringify(command)}`);
+    let command: Command;
+    try {
+      command = parse(args);
+    } catch (error) {
+      return fail(messageOf(error), true);
+    }
+    try {
+      switch (command.kind) {
+        case 'help':
+          streams.out(USAGE);
+          return 0;
+        case 'check':
+          return report(await checkFolder(command.dir, gitIn(), command.pr), command.json, streams);
+        case 'commit':
+          return await commit(command.dir, command.pr, command.json, streams);
+        default:
+          command satisfies never;
+          throw new Error(`Unknown command ${JSON.stringify(command)}`);
+      }
+    } catch (error) {
+      if (error instanceof GitError || error instanceof FolderError || isFileSystemError(error)) {
+        return fail(`Lo can't check the overview. ${error.message}`);
+      }
+      throw error;
     }
   } catch (error) {
-    if (error instanceof GitError || error instanceof FolderError || isFileSystemError(error)) {
-      streams.err(`Lo can't check the overview. ${error.message}\n`);
-      return 2;
-    }
-    throw error;
+    // Nothing above throws on any overview, so this is the checker's own fault: it can't check.
+    return fail(`Lo couldn't check the overview, for a reason it can't name: ${messageOf(error)}`);
   }
+}
+
+/** What `error` says. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** The command `args` ask for. Throws with what's wrong with them. */

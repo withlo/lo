@@ -15,7 +15,7 @@ import { git, gitBytes, testGitEnvironment } from '@lo/testing/git';
 
 import { gitCode, type GitCode } from '../src/code.ts';
 import { readFolder } from '../src/folder.ts';
-import { gitEnvironment, gitIn } from '../src/git.ts';
+import { findGit, gitEnvironment, gitIn } from '../src/git.ts';
 import { scratch } from './support.ts';
 
 const signal = new AbortController().signal;
@@ -140,6 +140,113 @@ describe('code from git', () => {
     }
     expect(await read('small.ts')).toMatchObject({ kind: 'file', size: 8 });
   });
+
+  test('takes a commit by its exact id only: not a tag’s, a name’s, or a shorter id', async () => {
+    const tag = gitBytes(
+      repo,
+      ['hash-object', '-t', 'tag', '-w', '--stdin'],
+      `object ${commit}\ntype commit\ntag v1\ntagger Lo test <test@lo.invalid> 0 +0000\n\nA tag.\n`,
+    )
+      .toString()
+      .trim();
+    // A ref named like a SHA-256 id, in a SHA-1 repository.
+    const named = 'a'.repeat(64);
+    git(repo, 'update-ref', `refs/tags/${named}`, commit);
+    for (const at of [tag, named]) {
+      expect(await read('small.ts', 8_192, at), `at ${at}`).toEqual({ kind: 'noCommit' });
+      expect(await code.has(at), `has ${at}`).toBe(false);
+    }
+
+    // A SHA-256 repository's commit, by its first 40 digits.
+    const wide = join(root.dir, 'sha256');
+    mkdirSync(wide);
+    git(wide, 'init', '-q', '--object-format=sha256', '.');
+    writeFileSync(join(wide, 'a.ts'), 'one\n');
+    git(wide, 'add', 'a.ts');
+    git(wide, 'commit', '-q', '-m', 'Code');
+    const id = git(wide, 'rev-parse', 'HEAD');
+    const wideCode = gitCode(gitIn(wide, testGitEnvironment()));
+    try {
+      expect(await wideCode.read(id, 'a.ts', 100, signal)).toMatchObject({ kind: 'file', size: 4 });
+      expect(await wideCode.read(id.slice(0, 40), 'a.ts', 100, signal)).toEqual({
+        kind: 'noCommit',
+      });
+    } finally {
+      wideCode.close();
+    }
+  });
+});
+
+describe('what git writes', () => {
+  const MIB = 1024 * 1024;
+  let repo: string;
+  let commit: string;
+
+  beforeAll(() => {
+    repo = join(root.dir, 'large');
+    mkdirSync(repo);
+    git(repo, 'init', '-q', '--object-format=sha1', '.');
+    const blob = (contents: string | Uint8Array) =>
+      gitBytes(repo, ['hash-object', '-w', '--stdin'], contents).toString().trim();
+    const tree = (lines: string[]) =>
+      gitBytes(repo, ['mktree', '-z'], Buffer.from(lines.map((line) => `${line}\0`).join('')))
+        .toString()
+        .trim();
+    // Six files of 1 MiB, each its own, and a folder of 2,000 files.
+    const large = Array.from({ length: 6 }, (_, n) => {
+      const bytes = new Uint8Array(MIB);
+      bytes.set(encoder.encode(`file ${n}\n`));
+      return `100644 blob ${blob(bytes)}\t${n}.bin`;
+    });
+    const small = blob('one\n');
+    const many = tree(
+      Array.from(
+        { length: 2_000 },
+        (_, n) => `100644 blob ${small}\tf${String(n).padStart(4, '0')}.ts`,
+      ),
+    );
+    const top = tree([...large, `040000 tree ${many}\tmany`, `100644 blob ${small}\ta.ts`]);
+    commit = gitBytes(repo, ['commit-tree', top], 'Code.\n').toString().trim();
+  });
+
+  test('keeps only the bytes asked for, and stops past its limit, saying so', async () => {
+    const files = Array.from({ length: 6 }, (_, n) => `${n}.bin`);
+    const code = gitCode(gitIn(repo, testGitEnvironment()), [...files, 'a.ts'], 5.5 * MIB);
+    try {
+      for (const path of files.slice(0, 5)) {
+        const answer = await code.read(commit, path, 8_192, signal);
+        // A copy of its own: nothing holds on to the rest of the file.
+        expect(answer.kind === 'file' && answer.bytes.buffer.byteLength).toBe(8_192);
+      }
+      expect(code.streamed()).toBeGreaterThan(5 * MIB);
+      await expect(code.read(commit, '5.bin', 8_192, signal)).rejects.toThrow(
+        'Checking the overview would read more than 6 MiB from git, the most the checker reads for one overview. Name fewer large files.',
+      );
+      // What still fits is still read.
+      expect(await code.read(commit, 'a.ts', 8_192, signal)).toMatchObject({
+        kind: 'file',
+        size: 4,
+      });
+    } finally {
+      code.close();
+    }
+  });
+
+  test('holds only the tree entries on the way to the paths the overview names', async () => {
+    const code = gitCode(gitIn(repo, testGitEnvironment()), ['many/f0001.ts', 'a.ts']);
+    try {
+      expect(await code.read(commit, 'many/f0001.ts', 100, signal)).toMatchObject({ size: 4 });
+      expect(await code.read(commit, 'a.ts', 100, signal)).toMatchObject({ size: 4 });
+      // The root's many and a.ts, and the folder's f0001.ts: not the 2,000 beside it.
+      expect(code.held()).toBe(3);
+      // A path no target names is read all the same, holding nothing more.
+      expect(await code.read(commit, 'many/f1999.ts', 100, signal)).toMatchObject({ size: 4 });
+      expect(await code.read(commit, 'many/f2000.ts', 100, signal)).toEqual({ kind: 'missing' });
+      expect(code.held()).toBe(3);
+    } finally {
+      code.close();
+    }
+  });
 });
 
 test('git reaches no network: a partial clone’s missing file stays missing', async () => {
@@ -184,6 +291,52 @@ test('git runs with the network closed, and asks for nothing', () => {
     GIT_ALLOW_PROTOCOL: 'none',
     GIT_TERMINAL_PROMPT: '0',
     GIT_OPTIONAL_LOCKS: '0',
+    NoDefaultCurrentDirectoryInExePath: '1',
+  });
+});
+
+describe('finding git', () => {
+  test('takes the first git in a folder PATH names absolutely, never the folder it runs in', () => {
+    const programs = new Set([
+      '/usr/bin/git',
+      '/opt/git/bin/git',
+      'git',
+      '.git',
+      './git',
+      'bin/git',
+    ]);
+    const found = (path: string) => programs.has(path);
+    expect(findGit({ PATH: ':.:./:bin:/usr/bin:/opt/git/bin' }, 'linux', found)).toBe(
+      '/usr/bin/git',
+    );
+    expect(findGit({ PATH: '/opt/git/bin:/usr/bin' }, 'darwin', found)).toBe('/opt/git/bin/git');
+    expect(findGit({ PATH: ':.:bin' }, 'linux', found)).toBeUndefined();
+    expect(findGit({ Path: '/usr/bin' }, 'linux', found)).toBeUndefined();
+    expect(findGit({}, 'linux', found)).toBeUndefined();
+  });
+
+  test('on Windows, takes git.exe from Path, whatever its case, skipping relative entries', () => {
+    const programs = new Set([
+      'C:\\Program Files\\Git\\cmd\\git.exe',
+      'git.exe',
+      '.\\git.exe',
+      'C:git.exe',
+      'tools\\git.exe',
+    ]);
+    const found = (path: string) => programs.has(path);
+    expect(findGit({ Path: '.;;C:;tools;"C:\\Program Files\\Git\\cmd"' }, 'win32', found)).toBe(
+      'C:\\Program Files\\Git\\cmd\\git.exe',
+    );
+    expect(findGit({ PATH: '.;;C:;tools' }, 'win32', found)).toBeUndefined();
+  });
+
+  test('finds this machine’s git, by an absolute path', () => {
+    const found = findGit(testGitEnvironment());
+    expect(found).toMatch(/^\/.*\/git$/);
+    expect(gitIn(root.dir, testGitEnvironment()).program).toBe(found);
+    expect(() => gitIn(root.dir, { PATH: '' })).toThrow(
+      "Git isn't installed, or isn't on your PATH.",
+    );
   });
 });
 

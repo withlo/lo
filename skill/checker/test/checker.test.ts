@@ -3,12 +3,12 @@
  * repositories it's run on, odd ones included.
  */
 
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-import { testGitEnvironment } from '@lo/testing/git';
+import { gitProgram, testGitEnvironment } from '@lo/testing/git';
 
 import { overview, repositoryOf, runChecker, runJson, scratch } from './support.ts';
 
@@ -181,6 +181,44 @@ describe('check', () => {
     expect(locked.incomplete).toEqual([
       'artifact.md couldn\'t be read: "artifact.md" couldn\'t be opened (EACCES).',
     ]);
+  });
+
+  test('never runs a git in the folder it runs in, which may be a pull request’s checkout', () => {
+    const dir = folder('planted', {
+      'artifact.md': overview(commit, ':::code src/a.ts#L1\n:::\n'),
+    });
+    const marker = join(root.dir, 'planted git ran');
+    const planted = join(repo, 'git');
+    writeFileSync(planted, `#!/bin/sh\necho ran > '${marker}'\n`);
+    chmodSync(planted, 0o755);
+    try {
+      // An empty entry and a dot both name the folder git would run in.
+      const env = { ...testGitEnvironment(), PATH: `:.:${dirname(gitProgram())}` };
+      expect(runChecker(['check', dir], repo, env)).toEqual({
+        status: 0,
+        stdout: 'No errors or warnings.\n',
+        stderr: '',
+      });
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      rmSync(planted);
+    }
+  });
+
+  test('with --json, says why it can’t check as JSON too', () => {
+    const dir = folder('json', { 'artifact.md': overview(commit) });
+    const outside = runChecker(['check', dir, '--json'], root.dir);
+    expect(outside.status).toBe(2);
+    expect(JSON.parse(outside.stdout)).toEqual({
+      error: expect.stringMatching(
+        /^Lo can't check the overview\. Run the checker in the pull request's repository/,
+      ),
+    });
+    const unknown = runChecker(['chcek', '--json'], repo);
+    expect(unknown.status).toBe(2);
+    expect(JSON.parse(unknown.stdout)).toEqual({ error: '"chcek" isn\'t a command.' });
+    // After --, it's a folder's name.
+    expect(runChecker(['check', '--', '--json'], repo).stdout).toBe('');
   });
 
   test('takes only what it knows, exiting 2 with how to use it', () => {
