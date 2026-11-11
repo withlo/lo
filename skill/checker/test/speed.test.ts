@@ -13,7 +13,7 @@ import { LIMITS } from '@lo/artifact';
 import { header, repositoryOf, runChecker, scratch } from './support.ts';
 
 /**
- * How long it may take, in milliseconds, starting Node and git included: some three times the
+ * How long it may take, in milliseconds, starting Node and git included: more than three times the
  * slowest run on a Linux CI runner, which runs test files side by side (160 ms on a laptop).
  */
 const LIMIT = 3_000;
