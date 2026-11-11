@@ -6,7 +6,16 @@
 
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { FAKE_OID, FakeGitHub, FakeServer, gitBytes, gitProgram, history } from '@lo/testing/git';
@@ -201,6 +210,8 @@ test('a fetch that stops getting further stops at its stall limit', async () => 
   );
   expect(await noProcessSoon(`127.0.0.1:${github.port}`)).toEqual([]);
   expect(tracesLeft(cache.root)).toEqual([]);
+  // Nor the third of a pack that came in.
+  expect(readdirSync(join(repo.folder, 'objects', 'pack'))).toEqual([]);
 });
 
 test('a fetch that never connects stops at the connect limit', async () => {
@@ -236,11 +247,12 @@ test('a fetch that never connects stops at the connect limit', async () => {
 });
 
 /**
- * A git, in `dir`, whose fetch leaves what one stopped halfway would: a ref's lock, packed-refs'
- * lock and its pack's keep file. It starts a process of its own, as git starts
- * git-remote-https, writes both their IDs into `dir`'s `pids`, says GitHub is counting objects,
- * and waits. Asked to stop, with SIGTERM, it writes `dir`'s `terminated` and exits, leaving its
- * locks, as a git killed before it could clean up would. Every other command is git's.
+ * A git, in `dir`, whose fetch leaves what one stopped halfway would: the lock of a ref it
+ * writes, the pack it was writing and that pack's index, and a finished pack's keep file. It
+ * starts a process of its own, as git starts git-remote-https, writes both their IDs into
+ * `dir`'s `pids`, says GitHub is counting objects, and waits. Asked to stop, with SIGTERM, it
+ * writes `dir`'s `terminated` and exits, leaving all of it, as a git killed before it could clean
+ * up would. Every other command is git's.
  */
 async function stuckGit(dir: string): Promise<Git> {
   const real = gitProgram();
@@ -251,7 +263,9 @@ async function stuckGit(dir: string): Promise<Git> {
       `case " $* " in *" fetch "*) ;; *) exec '${real}' "$@";; esac`,
       'for arg; do case "$arg" in --git-dir=*) git_dir="${arg#--git-dir=}";; esac; done',
       'mkdir -p "$git_dir/refs/lo/pull/1" "$git_dir/objects/pack"',
-      'touch "$git_dir/refs/lo/pull/1/head.lock" "$git_dir/packed-refs.lock"',
+      'touch "$git_dir/refs/lo/pull/1/head.lock"',
+      // As `index-pack` makes them, before the pack's first byte comes in.
+      'touch "$git_dir/objects/pack/tmp_pack_stuck" "$git_dir/objects/pack/tmp_idx_stuck"',
       'echo "fetch-pack $$ on test" > "$git_dir/objects/pack/pack-1.keep"',
       `trap "touch '${join(dir, 'terminated')}'; exit 143" TERM`,
       'sleep 60 &',
@@ -281,11 +295,12 @@ test('a stopped fetch leaves no process or lock behind', async () => {
   });
   const repo = await cache.open('owner', 'repo');
   // What isn't the stopped git's stays: another fetch's pack, a checkout's index lock, and the
-  // lock of a replayed tree's pin, which a comparison writes meanwhile.
+  // locks of a replayed tree's pin and of packed-refs, which a comparison takes meanwhile.
   const kept = [
     'objects/pack/pack-2.keep',
     'worktrees/x/index.lock',
     `refs/lo/replays/${FAKE_OID}/4242.lock`,
+    'packed-refs.lock',
   ];
   for (const file of kept) {
     mkdirSync(dirname(join(repo.folder, file)), { recursive: true });
@@ -303,7 +318,12 @@ test('a stopped fetch leaves no process or lock behind', async () => {
   for (const pid of pids) await eventually(() => gone(pid), 2000);
   // git was asked to stop before it was killed, so it could clean up after itself.
   expect(existsSync(join(dir, 'terminated'))).toBe(true);
-  const left = ['refs/lo/pull/1/head.lock', 'packed-refs.lock', 'objects/pack/pack-1.keep'];
+  const left = [
+    'refs/lo/pull/1/head.lock',
+    'objects/pack/tmp_pack_stuck',
+    'objects/pack/tmp_idx_stuck',
+    'objects/pack/pack-1.keep',
+  ];
   expect(left.filter((file) => existsSync(join(repo.folder, file)))).toEqual([]);
   expect(kept.filter((file) => !existsSync(join(repo.folder, file)))).toEqual([]);
   expect(tracesLeft(cache.root)).toEqual([]);
@@ -334,7 +354,105 @@ test('a panic while git fetches leaves no process behind', async () => {
   expect(pids).toHaveLength(2);
   for (const pid of pids) await eventually(() => gone(pid), 2000);
   expect(tracesLeft(cache.root)).toEqual([]);
+  // What it left goes, as when a limit stops it.
+  const left = [
+    'refs/lo/pull/1/head.lock',
+    'objects/pack/tmp_pack_stuck',
+    'objects/pack/pack-1.keep',
+  ];
+  expect(left.filter((file) => existsSync(join(repo.folder, file)))).toEqual([]);
 });
+
+/** The commands `update-ref --stdin` takes to delete `ref` in a transaction it holds open. */
+const DELETE_AND_HOLD = (ref: string) => `start\ndelete ${ref}\nprepare\n`;
+
+/** The lock a transaction that deletes a ref holds, in a repository whose refs are `format`. */
+const TRANSACTION_LOCK = { files: 'packed-refs.lock', reftable: 'reftable/tables.list.lock' };
+
+for (const format of ['files', 'reftable'] as const) {
+  test.skipIf(format === 'reftable' && !refFormats())(
+    `a pin written while a fetch is stopped keeps its lock, with ${format} refs`,
+    async () => {
+      const dir = tempFolder();
+      const cache = await cacheFor('https://127.0.0.1:1', {
+        git: await stuckGit(dir),
+        limits: { ...DEFAULT_FETCH_LIMITS, fetch: 1500, firstFetch: 1500 },
+      });
+      const folder = cache.repoFolder('owner', 'repo');
+      cloneWithRefs(folder, format, 'https://127.0.0.1:1/owner/repo.git');
+      const repo = await cache.open('owner', 'repo');
+      const pin = `refs/lo/replays/${FAKE_OID}/1`;
+      gitBytes(folder, [`--git-dir=${folder}`, 'update-ref', pin, emptyCommit(folder)]);
+      gitBytes(folder, [`--git-dir=${folder}`, 'pack-refs', '--all']);
+
+      // Once the fetch is under way, a comparison deletes its pin with a git of Lo's, and holds
+      // the transaction open, with its locks, until after the fetch is stopped.
+      const fetching = failure(repo.fetchPull(PULL_ONE));
+      await eventually(() => existsSync(join(dir, 'pids')));
+      const writer = cache.runner.command({ gitDir: repo.folder }).arg('update-ref', '--stdin');
+      const child = writer.start({ input: true });
+      onTestFinished(() => child.stop());
+      const said: string[] = [];
+      child.stdout.on('data', (chunk: Buffer) => said.push(chunk.toString('utf8')));
+      child.stdin?.write(DELETE_AND_HOLD(pin));
+      await eventually(() => said.join('').includes('prepare: ok'));
+      const lock = join(folder, TRANSACTION_LOCK[format]);
+      expect(existsSync(lock)).toBe(true);
+
+      const error = await fetching;
+
+      expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'timedOut' });
+      expect(existsSync(lock)).toBe(true);
+      child.stdin?.end('commit\n');
+      expect((await child.exited).code).toBe(0);
+      expect(said.join('')).toContain('commit: ok');
+      expect(existsSync(lock)).toBe(false);
+    },
+  );
+}
+
+/** Whether the test's git can make a repository whose refs are in a reftable. */
+function refFormats(): boolean {
+  const dir = mkdtempSync(join(tmpdir(), 'lo-git-test-'));
+  try {
+    gitBytes(dir, ['init', '--quiet', '--bare', '--ref-format=reftable', join(dir, 'probe.git')]);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Makes the clone Lo would, at `folder`, fetching from `url`, but with its refs kept as `format`
+ * says, as a git that keeps them in a reftable by default would make it.
+ */
+function cloneWithRefs(folder: string, format: 'files' | 'reftable', url: string): void {
+  mkdirSync(dirname(folder), { recursive: true });
+  // Without saying, refs are files, and a git older than 2.45 can't say.
+  const refs = format === 'files' ? [] : [`--ref-format=${format}`];
+  gitBytes(dirname(folder), ['init', '--quiet', '--bare', '--template=', ...refs, folder]);
+  for (const [key, value] of [
+    ['remote.origin.url', url],
+    ['remote.origin.promisor', 'true'],
+    ['remote.origin.partialclonefilter', 'blob:none'],
+    ['core.repositoryformatversion', '1'],
+    ['extensions.partialclone', 'origin'],
+  ] as const) {
+    gitBytes(folder, [`--git-dir=${folder}`, 'config', key, value]);
+  }
+}
+
+/** A commit with no files, made in the repository at `gitDir`. */
+function emptyCommit(gitDir: string): string {
+  const tree = gitBytes(gitDir, [`--git-dir=${gitDir}`, 'mktree'], '')
+    .toString('utf8')
+    .trim();
+  return gitBytes(gitDir, [`--git-dir=${gitDir}`, 'commit-tree', '-m', 'pin', tree])
+    .toString('utf8')
+    .trim();
+}
 
 test('gits trace never holds the token', async () => {
   const dir = tempFolder();
@@ -492,6 +610,72 @@ test('a download that brings more than it may is stopped part way', async () => 
     "can't fetch the figures: it's more than 1 MB, so Lo stopped downloading it",
   );
   expect(await noProcessSoon(`127.0.0.1:${server.port}`)).toEqual([]);
+  // What came in goes with it.
+  expect(readdirSync(join(repo.folder, 'objects', 'pack'))).toEqual([]);
+});
+
+/**
+ * A fake GitHub on `main` and `head` sending `pack` 64 KiB at a time, one piece every 50 ms, and
+ * after `stopAfter` pieces, if given, only keep-alives.
+ */
+function slowly(main: string, head: string, pack: Buffer, stopAfter?: number): Promise<FakeGitHub> {
+  const piece = 64 * 1024;
+  const pieces = Math.ceil(pack.length / piece);
+  return started(
+    FakeGitHub.start(main, head, { kind: 'pack', pack, pieces, every: 50, stopAfter }),
+  );
+}
+
+test('a file larger than a download may is stopped as it comes in', async () => {
+  // One file of 8 MB, which takes six seconds to send. git says how much has come in only once a
+  // whole file has, so only the pack growing on disk tells Lo it's past the cap.
+  const github = join(tempFolder(), 'github.git');
+  const { first: main, last: head } = history(github, 1);
+  const { blobs, pack } = packOf(github, [randomBytes(8 * MIB)]);
+  const server = await slowly(main, head, pack);
+  const cache = await cacheFor(server.url, { git: await plainGit(), limits: SHORT_STALL });
+  const repo = await cache.open('owner', 'repo');
+
+  const began = Date.now();
+  const error = await failure(repo.download(blobs.map(parseOid), 'the figure', { maxBytes: MIB }));
+
+  expect(Date.now() - began).toBeLessThan(4000);
+  expect(error.detail).toMatchObject({ kind: 'fetch', what: 'the figure', failure: 'tooLarge' });
+  expect(await noProcessSoon(`127.0.0.1:${server.port}`)).toEqual([]);
+  expect(readdirSync(join(repo.folder, 'objects', 'pack'))).toEqual([]);
+});
+
+test('a large file that stops coming in stops at the stall limit', async () => {
+  // Half a megabyte of a 4 MB file, then keep-alives only. git never says a byte has come in, and
+  // the limit on starting is long, so only the pack on disk shows that it has stopped.
+  const github = join(tempFolder(), 'github.git');
+  const { first: main, last: head } = history(github, 1);
+  const { blobs, pack } = packOf(github, [randomBytes(4 * MIB)]);
+  const server = await slowly(main, head, pack, 8);
+  const cache = await cacheFor(server.url, {
+    git: await plainGit(),
+    limits: { ...SLOW, fetch: 30_000, firstFetch: 30_000 },
+  });
+  const activities: Activity[] = [];
+  const repo = await cache.open('owner', 'repo', {
+    progress: (activity) => activities.push(activity),
+  });
+
+  const began = Date.now();
+  const error = await failure(repo.download(blobs.map(parseOid), 'the figure'));
+
+  expect(Date.now() - began).toBeLessThan(10_000);
+  expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'timedOut' });
+  expect(error.message).toBe(
+    "can't fetch the figure: it got no further for 1 s, so Lo stopped it while receiving objects",
+  );
+  // The tab heard the bytes come in.
+  const receiving = activities.filter(
+    (activity) => activity.kind === 'transferring' && (activity.progress.bytes ?? 0) > 0,
+  );
+  expect(receiving.length).toBeGreaterThan(0);
+  expect(await noProcessSoon(`127.0.0.1:${server.port}`)).toEqual([]);
+  expect(readdirSync(join(repo.folder, 'objects', 'pack'))).toEqual([]);
 });
 
 test('an overview that brings more than 50 MB is stopped part way', async () => {
@@ -525,6 +709,7 @@ test('an overview that brings more than 50 MB is stopped part way', async () => 
     "can't fetch pull request #1's overview: it's more than 50 MB, so Lo stopped downloading it",
   );
   expect(await noProcessSoon(`127.0.0.1:${server.port}`)).toEqual([]);
+  expect(readdirSync(join(repo.folder, 'lo-overviews.git', 'objects', 'pack'))).toEqual([]);
 });
 
 test('an overview of more than 50 MB that comes smaller is refused once it has come', async () => {
@@ -543,4 +728,6 @@ test('an overview of more than 50 MB that comes smaller is refused once it has c
   expect(error.message).toBe(
     "can't fetch pull request #1's overview: it's more than 50 MB, so Lo stopped downloading it",
   );
+  // The file it refused doesn't stay on disk.
+  expect(readdirSync(join(repo.folder, 'lo-overviews.git', 'objects', 'pack'))).toEqual([]);
 });

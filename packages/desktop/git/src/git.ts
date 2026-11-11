@@ -78,6 +78,8 @@ export class Runner {
   readonly git: Git;
   readonly remote: Remote;
   readonly #settings: RunnerSettings;
+  /** How many gits are running on each repository, by its folder as commands name it. */
+  readonly #running = new Map<string, number>();
 
   constructor(git: Git, settings: RunnerSettings) {
     this.git = git;
@@ -92,7 +94,34 @@ export class Runner {
    * and only then.
    */
   command(location: Location, options: { fetching?: Fetching } = {}): GitCommand {
-    return new GitCommand(this.git, this.#settings, this.remote, location, options.fetching);
+    return new GitCommand(
+      this.git,
+      this.#settings,
+      this.remote,
+      location,
+      options.fetching,
+      (child) => this.#track(location, child),
+    );
+  }
+
+  /**
+   * How many gits this runner started on the repository at `gitDir` are still running. Lo is the
+   * only process that runs git on a cache, so with none, nothing holds a lock in it.
+   */
+  running(gitDir: string): number {
+    return this.#running.get(gitDir) ?? 0;
+  }
+
+  #track(location: Location, child: Child): void {
+    if (location === 'none') return;
+    const { gitDir } = location;
+    this.#running.set(gitDir, this.running(gitDir) + 1);
+    const done = () => {
+      const left = this.running(gitDir) - 1;
+      if (left > 0) this.#running.set(gitDir, left);
+      else this.#running.delete(gitDir);
+    };
+    child.gone.then(done, done);
   }
 }
 
@@ -121,6 +150,7 @@ export class GitCommand {
   readonly #args: string[] = [];
   readonly #shown: string[] = [];
   readonly #env: Record<string, string> = {};
+  readonly #started: ((child: Child) => void) | undefined;
 
   constructor(
     git: Git,
@@ -128,12 +158,14 @@ export class GitCommand {
     remote: Remote,
     location: Location,
     fetching: Fetching | undefined,
+    started?: (child: Child) => void,
   ) {
     this.#git = git;
     this.#settings = settings;
     this.#remote = remote;
     this.#location = location;
     this.#fetching = fetching;
+    this.#started = started;
   }
 
   /** Adds arguments, which logs and errors show. */
@@ -191,7 +223,7 @@ export class GitCommand {
       fetching === undefined ? undefined : { token: token?.expose(), proxy: fetching.proxy },
     );
     const workTree = location === 'none' ? undefined : location.workTree;
-    return new Child(this.#git.program, {
+    const child = new Child(this.#git.program, {
       args: [
         ...repo,
         ...configArguments(this.#remote, token !== undefined),
@@ -203,6 +235,8 @@ export class GitCommand {
       input: options.input ?? false,
       display: this.display,
     });
+    this.#started?.(child);
+    return child;
   }
 
   /** Runs the command with `input` on its stdin, and returns how it went, whatever its exit status. */

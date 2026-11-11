@@ -11,6 +11,9 @@
  * - git's trace2 events, written to a file of the fetch's own, which say when GitHub first answers
  *   (`negotiated-version`): the end of connecting. They hold the commands git runs, never the
  *   token, which only a variable holds.
+ * - The pack git writes as it comes in, `objects/pack/tmp_pack_*`, which grows as the bytes
+ *   arrive. git says how many bytes have come in only once the first object has, which may be
+ *   all of a large file, so the pack's size is what the limits on size and stalling go by too.
  *
  * git runs in a process group of its own, so stopping it stops what it started too:
  * `git-remote-https`, which waits on the network, and `index-pack`. Each is asked to stop, then
@@ -19,7 +22,8 @@
  * open.
  */
 
-import { open, rm, type FileHandle } from 'node:fs/promises';
+import { open, readdir, rm, stat, type FileHandle } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { type FetchFailure, GitError } from './errors.ts';
 import type { GitCommand } from './git.ts';
@@ -115,8 +119,10 @@ export class FetchState {
   progress: Progress | undefined;
   /** When git last got further, once the objects come in. */
   advanced: number | undefined;
-  /** The most bytes git has said came in. */
+  /** The most bytes git has said came in, or its pack on disk has held. */
   received = 0;
+  /** The most bytes the pack git writes has held on disk. */
+  #written = 0;
   /**
    * Whether git's trace has said anything, which it does as soon as git starts. Without it, Lo
    * can't tell connecting from waiting, and only the limit on starting holds.
@@ -158,6 +164,24 @@ export class FetchState {
     this.progress = progress;
     if (changed) this.untold.push(this.activity());
     return changed;
+  }
+
+  /**
+   * Takes in how many bytes the pack git writes holds on disk. The pack starts coming in before
+   * git's first line about it, which waits for the first object, so its growth is getting further
+   * too. Returns whether what the fetch is doing changed.
+   */
+  onWritten(bytes: number): boolean {
+    if (bytes <= this.#written) return false;
+    this.#written = bytes;
+    this.received = Math.max(this.received, bytes);
+    this.advanced = this.#now();
+    if (this.stage >= Stage.Receiving) return false;
+    this.stage = Stage.Receiving;
+    // GitHub's last line was about preparing, which is over.
+    this.progress = undefined;
+    this.untold.push(this.activity());
+    return true;
   }
 
   /** Takes in one of git's trace2 events, a line of JSON. Returns whether what it's doing changed. */
@@ -206,10 +230,12 @@ export class FetchState {
         return { kind: 'preparing', elapsed, progress };
       case Stage.Receiving:
       case Stage.Resolving:
-        // Every stage after preparing starts with a progress line.
-        return progress === undefined
-          ? { kind: 'preparing', elapsed, progress }
-          : { kind: 'transferring', elapsed, progress };
+        // Until git's first line, only the pack's size on disk says how far it has got.
+        return {
+          kind: 'transferring',
+          elapsed,
+          progress: progress ?? { stage: 'Receiving objects', done: 0, bytes: this.received },
+        };
       default:
         return this.stage satisfies never;
     }
@@ -299,6 +325,16 @@ export interface WatchOptions {
   readonly input?: string | undefined;
   /** The most bytes the fetch may bring, past which it's stopped. */
   readonly maxBytes?: number | undefined;
+  /**
+   * The folder git writes the fetch's pack in, `objects/pack`, whose size on disk counts as what
+   * has come in.
+   */
+  readonly packs?: string | undefined;
+  /**
+   * Cleans up after a git Lo stopped, given its process ID, once it and everything it started
+   * have exited: whether a limit ran out or the progress function threw.
+   */
+  readonly afterStop?: ((pid: number) => Promise<void>) | undefined;
   /** Gets a line when Lo stops a fetch. */
   readonly log?: ((line: string) => void) | undefined;
 }
@@ -312,11 +348,14 @@ export type Watched =
  * Runs `command`, a `git fetch` with `--progress`, under watch: tells `options.progress` what it's
  * doing, and stops it when it runs out a limit. Lines that aren't progress are its messages. The
  * progress function is never told anything after this returns; if it throws, git is stopped and
- * the error goes on.
+ * the error goes on. Either way, a git Lo stopped is cleaned up after with `options.afterStop`.
  */
 export async function watch(command: GitCommand, options: WatchOptions): Promise<Watched> {
   const trace = await TraceFile.create(options.trace);
+  const pack = options.packs === undefined ? undefined : await PackFiles.start(options.packs);
   let child: Child | undefined;
+  // Whether what git left has been cleaned up after, or is being: it's done once.
+  let cleaned = false;
   try {
     child = command
       .env('GIT_TRACE2_EVENT', trace.path)
@@ -362,6 +401,7 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
       await Promise.race([running.gone.catch(() => undefined), sleep(POLL)]);
       if (exited) break;
       await trace.read((event) => state.onTrace(event));
+      if (pack !== undefined) state.onWritten(await pack.size());
       const over = state.over(options.limits, options.whole, options.maxBytes);
       if (over !== undefined) {
         stopped = { ...over, doing: state.doing(), pid: running.pid ?? 0 };
@@ -385,15 +425,52 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
     options.log?.(
       `stopped ${command.display} after ${formatDuration(state.elapsed)}, while ${stopped.doing}${said}`,
     );
+    cleaned = true;
+    await options.afterStop?.(stopped.pid);
     return { kind: 'stopped', stopped, messages };
   } catch (error) {
-    if (child !== undefined) {
+    if (child !== undefined && !cleaned) {
       await stopGroup(child);
       await child.exited.catch(() => undefined);
+      if (child.pid !== undefined) await options.afterStop?.(child.pid);
     }
     throw error;
   } finally {
     await trace.remove();
+  }
+}
+
+/**
+ * The packs `index-pack` writes in a folder as they come in, `tmp_pack_*`, from when a fetch
+ * starts: those already there are another fetch's, left behind.
+ */
+class PackFiles {
+  readonly #folder: string;
+  readonly #before: ReadonlySet<string>;
+
+  private constructor(folder: string, before: ReadonlySet<string>) {
+    this.#folder = folder;
+    this.#before = before;
+  }
+
+  static async start(folder: string): Promise<PackFiles> {
+    return new PackFiles(folder, new Set(await PackFiles.#names(folder)));
+  }
+
+  static async #names(folder: string): Promise<string[]> {
+    const names = await readdir(folder).catch(() => []);
+    return names.filter((name) => name.startsWith('tmp_pack_'));
+  }
+
+  /** How many bytes the fetch's packs hold on disk so far. */
+  async size(): Promise<number> {
+    let total = 0;
+    for (const name of await PackFiles.#names(this.#folder)) {
+      if (this.#before.has(name)) continue;
+      // Gone once git has finished it and named it for what it holds.
+      total += (await stat(join(this.#folder, name)).catch(() => undefined))?.size ?? 0;
+    }
+    return total;
   }
 }
 
