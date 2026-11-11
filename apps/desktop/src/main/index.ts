@@ -18,12 +18,6 @@ import { findServices } from './services.ts';
 import { StartupError } from './startup.ts';
 import { openWindow } from './window.ts';
 
-/**
- * How long Lo waits for its features to stop as it quits, in milliseconds, before it closes the
- * database and quits all the same, so one that never finishes can't keep Lo open.
- */
-const STOP_FEATURES_MS = 10_000;
-
 /** The window's build output, next to this file's. */
 const windowFiles = fileURLToPath(new URL('../window', import.meta.url));
 
@@ -81,6 +75,7 @@ function start(): void {
     proxy: async (address) => curlProxy(await session.defaultSession.resolveProxy(address)),
     log: (line) => console.error(`git: ${line}`),
   });
+  let quitting: Promise<void> | undefined;
   let stopped = false;
 
   /** Shows the window, opening it if it's closed. Nothing opens until its session is secured. */
@@ -103,23 +98,21 @@ function start(): void {
     if (process.platform !== 'darwin') app.quit();
   });
   /**
-   * Stops what Lo runs, in order: its features, the last to start first, while the database is
-   * open; then the database and the background process; then every git, so none is left running.
+   * Stops what Lo runs, in order: its features, while the database is open, each within its own
+   * time limit; then the database and the background process; then every git, so none is left
+   * running.
    */
   const stop = async (): Promise<void> => {
-    if (stopFeatures) {
-      const waited = new Promise<void>((resolve) => setTimeout(resolve, STOP_FEATURES_MS).unref());
-      await Promise.race([stopFeatures(), waited]);
-    }
+    await stopFeatures?.();
     database?.close();
     background?.stop();
     await git.stop();
   };
-  // Lo quits once everything has stopped.
+  // Lo quits once everything has stopped. Asked to quit again meanwhile, it waits for the same.
   app.on('will-quit', (event) => {
     if (stopped) return;
     event.preventDefault();
-    void stop()
+    quitting ??= stop()
       .catch((error: unknown) => console.error("Lo couldn't stop cleanly:", error))
       .finally(() => {
         stopped = true;

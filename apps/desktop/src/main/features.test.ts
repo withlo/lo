@@ -1,9 +1,17 @@
 import { z } from 'zod';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { openDatabase } from './database.ts';
 import { defineContract, reply } from '../ipc/contract.ts';
-import { createRouter, defineFeature, loadFeatures, type Feature } from './features.ts';
+import {
+  createRouter,
+  defineFeature,
+  loadFeatures,
+  STOP_LIMITS,
+  stopOrder,
+  type Feature,
+  type StopLimits,
+} from './features.ts';
 import type { LocalGit } from './git.ts';
 import { migrate } from './migrations.ts';
 import { defineService, findServices, provides, type Service } from './services.ts';
@@ -202,75 +210,148 @@ function start(features: readonly Feature[], defined: readonly Service<unknown>[
   return { routes, sent };
 }
 
-describe('stopping', () => {
-  it('stops the features the last to start first, each once the one after it has', async () => {
-    const steps: string[] = [];
-    const later = Promise.withResolvers<void>();
-    const handlers = {
-      add: () => ({ id: 1 }),
-      remove: () => null,
-      count: () => 0,
-      crash: () => null,
-    };
-    const first = defineFeature(notes, {
-      handlers,
-      start: () => void steps.push('notes starts'),
-      stop: () => void steps.push('notes stops'),
-    });
-    const second = defineFeature(digest, {
-      handlers: { read: () => ({ notes: 0 }) },
-      start: () => void steps.push('digest starts'),
-      async stop() {
-        steps.push('digest stopping');
-        await later.promise;
-        steps.push('digest stopped');
-      },
-    });
-    const { routes } = start([first, second]);
-    const stopping = routes.stop();
-    await Promise.resolve();
-    expect(steps).toEqual(['notes starts', 'digest starts', 'digest stopping']);
-    later.resolve();
-    await stopping;
-    expect(steps).toEqual([
-      'notes starts',
-      'digest starts',
-      'digest stopping',
-      'digest stopped',
-      'notes stops',
+/** A made-up feature with no requests, using `uses`, and stopping with `stop`. */
+function plain(name: string, parts: Partial<Pick<Feature, 'uses' | 'stop'>> = {}): Feature {
+  return defineFeature(defineContract(name, { requests: {}, topics: {} }), {
+    handlers: {},
+    ...parts,
+  });
+}
+
+const names = (features: readonly Feature[]) => features.map((each) => each.contract.feature);
+
+/** A router on made-up features, for stopping them, logging to `log`. */
+function routerOf(features: readonly Feature[], stopLimits?: StopLimits) {
+  const log = vi.fn<(message: string, error?: unknown) => void>();
+  const routes = createRouter(features, {
+    isAllowedSender: () => true,
+    send: () => {},
+    log,
+    database: openDatabase(':memory:'),
+    git: noGit,
+    services: [],
+    stopLimits,
+  });
+  routes.start();
+  return { routes, log };
+}
+
+describe('stopOrder', () => {
+  const tree = defineService<object>('tree.files');
+  const tab = defineService<object>('tab.tabs');
+
+  it('stops a feature before the features whose services it uses', () => {
+    const open = plain('open', { uses: [tab] });
+    const tabs = plain('tab', { uses: [tree] });
+    const trees = plain('tree');
+    expect(names(stopOrder([open, tabs, trees]))).toEqual(['open', 'tab', 'tree']);
+    expect(names(stopOrder([trees, tabs, open]))).toEqual(['open', 'tab', 'tree']);
+    expect(names(stopOrder([tabs, trees, open]))).toEqual(['open', 'tab', 'tree']);
+  });
+
+  it('otherwise stops the last to start first', () => {
+    expect(names(stopOrder([plain('a'), plain('b'), plain('c')]))).toEqual(['c', 'b', 'a']);
+    const trees = plain('tree');
+    expect(names(stopOrder([plain('a'), trees, plain('tab', { uses: [tree] })]))).toEqual([
+      'tab',
+      'tree',
+      'a',
     ]);
   });
 
-  it('stops the others when one fails to', async () => {
-    const log = vi.fn<(message: string, error: unknown) => void>();
+  it('refuses features that use each other’s services', () => {
+    expect(() =>
+      stopOrder([plain('tab', { uses: [tree] }), plain('tree', { uses: [tab] }), plain('a')]),
+    ).toThrow("tab, tree use each other's services, so none of them can stop first.");
+  });
+});
+
+describe('stopping', () => {
+  it('waits for each feature to stop before the next', async () => {
+    const steps: string[] = [];
+    const later = Promise.withResolvers<void>();
+    const { routes } = routerOf([
+      plain('a', { stop: () => void steps.push('a stops') }),
+      plain('b', {
+        async stop() {
+          steps.push('b stopping');
+          await later.promise;
+          steps.push('b stopped');
+        },
+      }),
+    ]);
+    const stopping = routes.stop();
+    await vi.waitFor(() => expect(steps).toEqual(['b stopping']));
+    later.resolve();
+    await stopping;
+    expect(steps).toEqual(['b stopping', 'b stopped', 'a stops']);
+  });
+
+  it("doesn't let a slow stop cut short a later one's save", async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => void vi.useRealTimers());
+    const notesBoard = defineService<object>('notes.board');
+    let saved = false;
+    const { routes, log } = routerOf([
+      // Provides what the other uses, so it stops last: given its own time, it saves.
+      defineFeature(notes, {
+        provide: () => [provides(notesBoard, {})],
+        handlers: { add: () => ({ id: 1 }), remove: () => null, count: () => 0, crash: () => null },
+        async stop() {
+          await new Promise((resolve) => setTimeout(resolve, 4_000));
+          saved = true;
+        },
+      }),
+      plain('stuck', { uses: [notesBoard], stop: () => new Promise<never>(() => {}) }),
+    ]);
+    let done = false;
+    void routes.stop().then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(STOP_LIMITS.each);
+    expect(log).toHaveBeenCalledWith('stuck took over 5000 ms to stop; Lo went on without it.');
+    expect([saved, done]).toEqual([false, false]);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect([saved, done]).toEqual([true, true]);
+  });
+
+  it('stops no more features past the limit for all, but gives the one stopping its own', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => void vi.useRealTimers());
     const stopped: string[] = [];
-    const handlers = {
-      add: () => ({ id: 1 }),
-      remove: () => null,
-      count: () => 0,
-      crash: () => null,
-    };
-    const routes = createRouter(
-      [
-        defineFeature(notes, { handlers, stop: () => void stopped.push('notes') }),
-        defineFeature(digest, {
-          handlers: { read: () => ({ notes: 0 }) },
-          stop: () => Promise.reject(new Error('the disk is full')),
-        }),
-      ],
-      {
-        isAllowedSender: () => true,
-        send: () => {},
-        log,
-        database: openDatabase(':memory:'),
-        git: noGit,
-        services: [],
-      },
-    );
-    routes.start();
+    const stuck = (name: string) =>
+      plain(name, { stop: () => new Promise<never>(() => void stopped.push(name)) });
+    const { routes, log } = routerOf([stuck('a'), stuck('b'), stuck('c'), stuck('d')], {
+      each: 5_000,
+      all: 12_000,
+    });
+    let done = false;
+    void routes.stop().then(() => (done = true));
+    // d, c, then b from 10 s, which may run to 15 s though the limit for all ends at 12 s.
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect([stopped, done]).toEqual([['d', 'c', 'b'], false]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect([stopped, done]).toEqual([['d', 'c', 'b'], true]);
+    expect(log).toHaveBeenCalledWith("a wasn't stopped: features had taken 12000 ms.");
+  });
+
+  it('stops once, however often it’s asked', async () => {
+    const stop = vi.fn<() => void>();
+    const { routes } = routerOf([plain('a', { stop })]);
+    const first = routes.stop();
+    expect(routes.stop()).toBe(first);
+    await first;
     await routes.stop();
-    expect(stopped).toEqual(['notes']);
-    expect(log).toHaveBeenCalledWith('digest failed to stop:', expect.any(Error));
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it('stops the others when one fails to', async () => {
+    const stopped: string[] = [];
+    const { routes, log } = routerOf([
+      plain('a', { stop: () => void stopped.push('a') }),
+      plain('b', { stop: () => Promise.reject(new Error('the disk is full')) }),
+    ]);
+    await routes.stop();
+    expect(stopped).toEqual(['a']);
+    expect(log).toHaveBeenCalledWith('b failed to stop:', expect.any(Error));
   });
 });
 
@@ -292,6 +373,7 @@ describe('services', () => {
   });
   /** digest, using the counter as it starts and in its handler. */
   const user = defineFeature(digest, {
+    uses: [counter],
     handlers: { read: (_input, { use }) => ({ notes: use(counter).next() }) },
     start: ({ publish, use }) => publish('started', { notes: use(counter).next() }),
   });
@@ -322,6 +404,7 @@ describe('services', () => {
 
   it('refuses a service used while features are still providing, in either order', () => {
     const early = defineFeature(digest, {
+      uses: [counter],
       provide({ use }) {
         use(counter).next();
         return [];
@@ -360,6 +443,22 @@ describe('services', () => {
     const silent = defineFeature(notes, { handlers });
     expect(() => start([silent, user], [board])).toThrow(
       "The notes feature defines notes.board in its service.ts, but doesn't provide it.",
+    );
+  });
+
+  it("refuses another feature's service a feature doesn't list in its uses", () => {
+    const unlisted = defineFeature(digest, {
+      handlers: { read: () => ({ notes: 0 }) },
+      start: ({ use }) => void use(counter),
+    });
+    expect(() => start([provider, unlisted])).toThrow(
+      'digest uses notes.counter without listing it in its uses, so it could stop after notes.',
+    );
+  });
+
+  it('refuses to start while a feature uses a service no feature provides', () => {
+    expect(() => start([defineFeature(notes, { handlers }), user])).toThrow(
+      'digest uses notes.counter, which no feature provides.',
     );
   });
 });

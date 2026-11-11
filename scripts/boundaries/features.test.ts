@@ -444,6 +444,78 @@ describe('a shared file', () => {
   });
 });
 
+describe('a shared file, again', () => {
+  test("exports none of its feature's other files under any name", () => {
+    expect(
+      check({
+        ...tree,
+        [`${features}/tree/service.ts`]: [
+          `import { x, y as z } from './main/store.ts';`,
+          `import * as all from './main/index.ts';`,
+          `import type { T } from './main/store.ts';`,
+          `import { type U } from './main/store.ts';`,
+          `import { contract } from './contract.ts';`,
+          `import { q } from 'zod';`,
+          `export { x };`,
+          `export { z as renamed, contract, q };`,
+          `export const aliased = (all.store as unknown)!;`,
+          `export const wrapped = () => x;`,
+          `export type { T, U };`,
+          `export default all;`,
+        ].join('\n'),
+        [`${features}/tree/window/shared.ts`]: [
+          `import store = require('./store.ts');`,
+          `export import index = require('./index.ts');`,
+          `export { store };`,
+        ].join('\n'),
+      }),
+    ).toEqual([
+      violation(
+        `${features}/tree/service.ts:7`,
+        `exports what it imports from ./main/store.ts, which is main/store.ts: a shared file names each thing it shares`,
+      ),
+      violation(`${features}/tree/service.ts:8`, `exports what it imports from ./main/store.ts`),
+      violation(`${features}/tree/service.ts:9`, `exports what it imports from ./main/index.ts`),
+      violation(`${features}/tree/service.ts:12`, `exports what it imports from ./main/index.ts`),
+      violation(`${features}/tree/window/shared.ts:2`, `exports what it imports from ./index.ts`),
+      violation(`${features}/tree/window/shared.ts:3`, `exports what it imports from ./store.ts`),
+    ]);
+  });
+});
+
+describe('a glob', () => {
+  test('follows symlinked folders, as Vite does, and ends at a loop', () => {
+    expect(
+      check(diffImporting(`const all = import.meta.glob('./**/*.ts');`), {
+        [`${features}/diff/main/linked`]: '../../tree/window',
+        [`${features}/diff/main/loop`]: '..',
+      }),
+    ).toEqual([
+      violation(
+        at(),
+        `globs ./**/*.ts, which matches linked/index.ts: that's window/index.ts in the tree feature`,
+      ),
+    ]);
+  });
+});
+
+describe('a module chosen at run time', () => {
+  test('passes in a test or fixture nothing bundles, but not once something does', () => {
+    const load = `export const load = (name: string) => import(name);`;
+    const files = {
+      ...tree,
+      [`${features}/diff/fixtures/load.ts`]: load,
+      [`${features}/diff/fixtures/used.ts`]: load,
+      [`${features}/diff/main/load.test.ts`]: load,
+      [`${features}/diff/test/load.ts`]: load,
+      [`${features}/diff/main/index.ts`]: `import { load } from '../fixtures/used';`,
+    };
+    expect(check(files)).toEqual([
+      violation(`${features}/diff/fixtures/used.ts:1`, 'the module is chosen at run time'),
+    ]);
+  });
+});
+
 test("a file that doesn't parse is left to the boundary check", () => {
   expect(check(diffImporting(`import { from '../../tree/main/store.ts';`))).toEqual([]);
 });

@@ -192,20 +192,25 @@ the window find them with `import.meta.glob`.
   `<feature>.<name>`. Objects in an input are `z.strictObject`, so unknown keys are refused; a test
   checks every contract. Main and the window both load contracts, so lint keeps Electron, Node and
   either side's code out of them.
-- `main/index.ts` exports `defineFeature(contract, { handlers, provide, start, stop })` by default:
-  a handler for every request; optionally a `provide` that returns the values of the feature's
-  services; optionally a `start` that runs before the window opens, to publish on the feature's
-  topics; and optionally a `stop` that runs as Lo quits. Features stop the last to start first, each
-  once the one after it has, and the database closes after them. Each part gets the feature's
-  context: `publish`, `database`, `git` and `use`. A handler throws an `IpcError` for a failure the
-  window should see; any other error is logged and reaches the window only as `internal`.
+- `main/index.ts` exports `defineFeature(contract, { uses, handlers, provide, start, stop })` by
+  default: the other features' services it `uses`; a handler for every request; optionally a
+  `provide` that returns the values of the feature's services; optionally a `start` that runs before
+  the window opens, to publish on the feature's topics; and optionally a `stop` that runs once as Lo
+  quits. A feature stops before the features whose services it uses, and otherwise the last to start
+  stops first, each once the one before it has. Each gets 5 s of its own, and once they've taken 30
+  s in all no more start stopping; the database closes once nothing stopping is still within its own
+  5 s. Each part gets the feature's context: `publish`, `database`, `git` and `use`. A handler
+  throws an `IpcError` for a failure the window should see; any other error is logged and reaches
+  the window only as `internal`.
 - `service.ts` names what the feature's main side offers other features, each with
   `defineService<T>('<feature>.<name>')`: the GitHub clients, say. Its `provide` pairs each with its
   value (`provides(service, value)`). Every feature's `provide` runs before any feature's `start`,
-  and features reach a service with `use(service)` in `start` or a handler, never in `provide`, so
-  it doesn't matter which feature starts first. What a feature tells others about, such as an
-  account removed, is a member of its service. Lo doesn't start while a service in a `service.ts`
-  goes unprovided, and only the feature a service is named for may provide it.
+  and features reach a service with `use(service)` in `start`, `stop` or a handler, never in
+  `provide`, so it doesn't matter which feature starts first. A feature lists the other features'
+  services it uses in its `uses`, and `use` refuses one it doesn't list. What a feature tells others
+  about, such as an account removed, is a member of its service. Lo doesn't start while a service in
+  a `service.ts` or a feature's `uses` goes unprovided, or while features use each other's services,
+  and only the feature a service is named for may provide it.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.
@@ -228,17 +233,20 @@ the window find them with `import.meta.glob`.
   a header item to another's screen without editing it. `<Slot slot={…} props={…} />` renders a
   slot's views in order, and `useViews(slot)` lists them for an owner that lays them out itself. A
   slot is named for the feature whose `window/shared.ts` exports it, and views go only in exported
-  slots. A view that throws shows a short note in its place, and its error is logged.
+  slots. Every view runs inside its own error boundary, from `<Slot>` or `useViews` alike: one that
+  throws shows a short note in its place, and its error is logged. In a build run from source, it
+  then stops the window too, so tests can't miss it.
 
 Features share only through `contract.ts`, `keys.ts`, `service.ts` and `window/shared.ts`.
 `pnpm check:boundaries` reads every file in a feature's folder that Vite could bundle, in any
 folder, and refuses an import, an `import.meta.glob`, a `new URL(…, import.meta.url)`, a
 `declare module` or a stylesheet's `@import` or `url()` that reaches anything else in another
 feature's folder, or that folder itself. It follows each to the file it lands on, follows a glob's
-`base`, and refuses a module chosen at run time and glob options that would change what a glob
-matches. A shared file names what it shares: it re-exports none of its own feature's other files,
-unless only their types. Main code reaches another feature's `service.ts`, and window code its
-`window/shared.ts`; each side's tsconfig holds only its own.
+`base` and symlinked folders as Vite does, and refuses glob options that would change what a glob
+matches, and a module chosen at run time, except in a test or fixture nothing in a feature's folder
+bundles. A shared file names what it shares: it exports none of its own feature's other files, or
+what it imports from them, in any form but their types. Main code reaches another feature's
+`service.ts`, and window code its `window/shared.ts`; each side's tsconfig holds only its own.
 
 The database is SQLite through Node's built-in `node:sqlite`, in `lo.db` in the data folder: WAL
 mode, foreign keys enforced, defensive. `src/main/database.ts` is the only module that uses

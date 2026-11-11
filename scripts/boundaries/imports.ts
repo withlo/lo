@@ -167,6 +167,12 @@ export interface References {
   urls: Reference[];
   /** Each `declare module '…'`, which adds to another module's types. */
   modules: Reference[];
+  /**
+   * The modules whose imports the file exports as its own, by another statement than
+   * `export … from`: `export { x }`, `export default x`, `export const y = x.z` or
+   * `export import x = require('…')`, each where it exports. Types aren't counted.
+   */
+  exported: Reference[];
 }
 
 /**
@@ -183,8 +189,9 @@ export function referencesOf(filename: string, source: string): References {
   if (error) throw new ParseError(error.message, lineOf(error.labels[0]?.start ?? 0));
 
   const program: unknown = result.program;
-  const found: References = { globs: [], urls: [], modules: [] };
-  for (const [node] of isNode(program) ? walk(program) : []) {
+  const nodes = isNode(program) ? walk(program) : [];
+  const found: References = { globs: [], urls: [], modules: [], exported: exportedImports(nodes) };
+  for (const [node] of nodes) {
     if (node.type === 'TSModuleDeclaration') {
       const id = child(node, 'id');
       const name = id && nameOf(id);
@@ -223,8 +230,100 @@ export function referencesOf(filename: string, source: string): References {
       found.globs.push({ patterns, options: optionsOf(options), line: lineOf(node.start) });
     }
   }
-  for (const list of [found.globs, found.urls, found.modules]) list.sort((a, b) => a.line - b.line);
+  for (const list of [found.globs, found.urls, found.modules, found.exported]) {
+    list.sort((a, b) => a.line - b.line);
+  }
   return found;
+
+  /** See `References.exported`. */
+  function exportedImports(all: readonly [Node, Node | undefined][]): Reference[] {
+    // Each name an import binds to a value, with the module it comes from.
+    const bound = new Map<string, string>();
+    for (const [node] of all) {
+      if (node.type === 'ImportDeclaration' && node.importKind !== 'type') {
+        const from = child(node, 'source');
+        const module = from && nameOf(from);
+        const specifiers: unknown[] = Array.isArray(node.specifiers) ? node.specifiers : [];
+        for (const specifier of specifiers) {
+          if (!isNode(specifier) || specifier.importKind === 'type') continue;
+          const local = identifier(child(specifier, 'local'));
+          if (local !== undefined && module !== undefined) bound.set(local, module);
+        }
+      } else if (node.type === 'TSImportEqualsDeclaration' && node.importKind !== 'type') {
+        const module = externalModule(node);
+        const local = identifier(child(node, 'id'));
+        if (local !== undefined && module !== undefined) bound.set(local, module);
+      }
+    }
+    const exported: Reference[] = [];
+    const note = (module: string | undefined, at: Node) => {
+      if (module !== undefined) exported.push({ specifier: module, line: lineOf(at.start) });
+    };
+    const named = (expression: Node | undefined) => {
+      const name = identifier(rootOf(expression));
+      return name === undefined ? undefined : bound.get(name);
+    };
+    for (const [node] of all) {
+      if (node.type === 'ExportNamedDeclaration' && node.exportKind !== 'type' && !node.source) {
+        const declaration = child(node, 'declaration');
+        if (declaration?.type === 'TSImportEqualsDeclaration') {
+          note(externalModule(declaration), node);
+        }
+        if (declaration?.type === 'VariableDeclaration') {
+          const declarators: unknown[] = Array.isArray(declaration.declarations)
+            ? declaration.declarations
+            : [];
+          for (const declarator of declarators) {
+            if (isNode(declarator)) note(named(child(declarator, 'init')), declarator);
+          }
+        }
+        const specifiers: unknown[] = Array.isArray(node.specifiers) ? node.specifiers : [];
+        for (const specifier of specifiers) {
+          if (!isNode(specifier) || specifier.exportKind === 'type') continue;
+          note(named(child(specifier, 'local')), specifier);
+        }
+      } else if (node.type === 'ExportDefaultDeclaration' || node.type === 'TSExportAssignment') {
+        note(
+          named(child(node, node.type === 'TSExportAssignment' ? 'expression' : 'declaration')),
+          node,
+        );
+      }
+    }
+    return exported;
+  }
+}
+
+/** The module `import x = require('…')` names, if it names one. */
+function externalModule(node: Node): string | undefined {
+  const reference = child(node, 'moduleReference');
+  const expression =
+    reference?.type === 'TSExternalModuleReference' && child(reference, 'expression');
+  return expression ? nameOf(expression) : undefined;
+}
+
+/**
+ * The name an expression reads, through the property reads, assertions and parentheses around it:
+ * `x` in `x`, `x.y.z`, `x!`, `(x as Y)` or `x satisfies Y`.
+ */
+function rootOf(node: Node | undefined): Node | undefined {
+  let current = node;
+  for (;;) {
+    switch (current?.type) {
+      case 'MemberExpression':
+        current = child(current, 'object');
+        break;
+      case 'TSAsExpression':
+      case 'TSSatisfiesExpression':
+      case 'TSNonNullExpression':
+      case 'ParenthesizedExpression':
+        current = child(current, 'expression');
+        break;
+      case undefined:
+        return undefined;
+      default:
+        return current;
+    }
+  }
 }
 
 /** Whether `node` is `import.meta`. */

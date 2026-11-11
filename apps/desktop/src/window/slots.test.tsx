@@ -4,7 +4,16 @@ import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { defineSlot, defineView, isSlot, Slot, Slots, useViews, type View } from './slots.tsx';
+import {
+  defineSlot,
+  defineView,
+  failViewsLoudly,
+  isSlot,
+  Slot,
+  Slots,
+  useViews,
+  type View,
+} from './slots.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -61,24 +70,15 @@ describe('Slot', () => {
   });
 
   it('shows a note in place of a view that throws, logs why, and keeps the others', () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    onTestFinished(() => error.mockRestore());
+    const error = errors();
     const withBroken = [
       ...views,
       defineView(status, { id: 'stacks.broken', order: 15, render: Broken }),
     ];
-    const page = document.body.appendChild(document.createElement('div'));
-    const root = createRoot(page);
-    onTestFinished(() => {
-      act(() => root.unmount());
-      page.remove();
-    });
-    act(() =>
-      root.render(
-        <Slots views={withBroken}>
-          <Slot slot={status} props={{ tab: '#12' }} />
-        </Slots>,
-      ),
+    const page = mount(
+      <Slots views={withBroken}>
+        <Slot slot={status} props={{ tab: '#12' }} />
+      </Slots>,
     );
     // The views in order, with the note in the broken one's place.
     expect([...page.children].map((each) => each.tagName)).toEqual(['U', 'B', 'P', 'I']);
@@ -102,6 +102,72 @@ describe('Slot', () => {
         </Slots>,
       ),
     ).toBe('<s>#7: 3</s>');
+  });
+});
+
+/** Renders `element` into the page, returning its container, until the test ends. */
+function mount(element: React.ReactNode): HTMLElement {
+  const page = document.body.appendChild(document.createElement('div'));
+  const root = createRoot(page);
+  onTestFinished(() => {
+    act(() => root.unmount());
+    page.remove();
+  });
+  act(() => root.render(element));
+  return page;
+}
+
+/** Silences and records what's logged as an error, until the test ends. */
+function errors() {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  onTestFinished(() => error.mockRestore());
+  return error;
+}
+
+/** A slot whose only view fails, and a feature's screen that shows its first view itself. */
+const middle = defineSlot<{ tab: string }>('tab.middle');
+const failing = [defineView(middle, { id: 'diff.diff', order: 0, render: Broken })];
+
+function Middle() {
+  const [first] = useViews(middle);
+  return first ? <first.render tab="#3" /> : null;
+}
+
+describe('a view that fails', () => {
+  it('shows its note when its owner renders it through useViews too', () => {
+    const error = errors();
+    const page = mount(
+      <Slots views={failing}>
+        <Middle />
+      </Slots>,
+    );
+    expect(page.querySelector('[role="alert"]')?.getAttribute('data-lo-failed-view')).toBe(
+      'diff.diff',
+    );
+    expect(error).toHaveBeenCalledWith(
+      "Lo couldn't show the view diff.diff:",
+      expect.objectContaining({ message: 'the tree is missing' }),
+    );
+  });
+
+  it('stops the window too in a build run from source, once it has logged why', () => {
+    const error = errors();
+    failViewsLoudly();
+    onTestFinished(() => failViewsLoudly(false));
+    const page = document.body.appendChild(document.createElement('div'));
+    const root = createRoot(page);
+    onTestFinished(() => page.remove());
+    expect(() =>
+      act(() =>
+        root.render(
+          <Slots views={failing}>
+            <Middle />
+          </Slots>,
+        ),
+      ),
+    ).toThrow('the tree is missing');
+    expect(error).toHaveBeenCalledWith("Lo couldn't show the view diff.diff:", expect.any(Error));
+    expect(page.innerHTML).toBe('');
   });
 });
 

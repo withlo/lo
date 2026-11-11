@@ -27,7 +27,7 @@ export function serveFeatures(
     send(channel, value) {
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, value);
     },
-    log: (message, error) => console.error(message, error),
+    log: (message, ...error) => console.error(message, ...error),
   });
   for (const channel of router.channels) {
     ipcMain.handle(channel, (event, input: unknown) =>

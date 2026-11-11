@@ -4,6 +4,7 @@ import { contract } from '../contract.ts';
 
 // It starts before notes, whose name comes after its own, and uses notes' service all the same.
 export default defineFeature(contract, {
+  uses: [board],
   handlers: {
     read: (_input, { use }) => ({ notes: use(board).count() }),
   },

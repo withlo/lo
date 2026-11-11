@@ -1,13 +1,14 @@
-import { existsSync, globSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, join, matchesGlob, relative, resolve } from 'node:path';
 
-import { mapped, realPath, splitPackage, toSlashes, type Violation } from './check.ts';
+import { isTest, mapped, realPath, splitPackage, toSlashes, type Violation } from './check.ts';
 import {
   importsOf,
   ParseError,
   referencesOf,
   type Glob,
   type Import,
+  type OptionValue,
   type References,
 } from './imports.ts';
 
@@ -96,13 +97,34 @@ export function checkFeatures(workspaceRoot: string): Violation[] {
       .map((path) => reason(path, home))
       .find((text) => text !== undefined);
 
-  const violations: Violation[] = [];
-  for (const file of featureFiles(folder)) {
+  const files = [...featureFiles(folder)].flatMap((file) => {
     const place = placeOf(file);
-    if (!place) continue;
+    if (!place) return [];
+    const parsed = file.endsWith('.css') ? undefined : parse(file);
+    return [{ file, place, from: dirname(file), parsed }];
+  });
+
+  // Every file something in a feature's folder bundles, as far as it can be followed: a test or
+  // a fixture nothing bundles never reaches the app.
+  const reached = new Set<string>();
+  const reach = (paths: readonly string[]) => {
+    for (const path of paths) for (const each of resolutions(path)) reached.add(each);
+  };
+  for (const { from, parsed } of files) {
+    if (!parsed) continue;
+    for (const { specifier, computed, loader } of parsed.imports) {
+      if (!computed && !loader) reach(land(specifier, from));
+    }
+    for (const { specifier, computed } of parsed.references.urls) {
+      if (!computed) reach(land(specifier, from));
+    }
+    for (const glob of parsed.references.globs) reach(globMatches(glob, from).map(realPath));
+  }
+
+  const violations: Violation[] = [];
+  for (const { file, place, from, parsed } of files) {
     const home = place.feature;
     const where = toSlashes(relative(root, file));
-    const from = dirname(file);
     const report = (line: number, message: string) => {
       violations.push({ where: `${where}:${line}`, message });
     };
@@ -117,17 +139,28 @@ export function checkFeatures(workspaceRoot: string): Violation[] {
       continue;
     }
 
-    const parsed = parse(file);
     // Nothing can bundle a file that doesn't parse, and the boundary check reports one it reads.
     if (!parsed) continue;
-    // A shared file names what its feature shares: handing on another of its files whole would
-    // share all of that file.
+    // A shared file names what its feature shares: handing on another of its files would share
+    // all of that file.
     const sharing = sharedFiles.includes(place.file);
+    /** What `specifier` is among its own feature's other files, if it's one of them. */
+    const ownFile = (specifier: string) => {
+      const own = land(specifier, from)
+        .map(placeOf)
+        .find((at) => at?.feature === home && !sharedFiles.includes(at.file));
+      return own && (own.file === '' ? 'its own folder' : own.name);
+    };
+    const handsOn = `a shared file names each thing it shares, so it hands on none of its feature's other files.`;
+    // A module chosen at run time stays out of the app in a test or fixture nothing bundles.
+    const unbundled =
+      (isTest(place.file) || /(?:^|\/)fixtures\//.test(place.file)) && !reached.has(file);
 
     for (const { specifier, line, reference, computed, loader, reexport } of parsed.imports) {
       // The boundary check allows these only in the files it lists.
       if (loader) continue;
       if (computed) {
+        if (unbundled) continue;
         report(
           line,
           `loads ${specifier}: the module is chosen at run time, so where it lands can't be checked. A feature loads modules by name.`,
@@ -139,22 +172,22 @@ export function checkFeatures(workspaceRoot: string): Violation[] {
         report(line, `${reference ? 'references' : 'imports'} ${specifier}: ${why}.`);
         continue;
       }
-      if (sharing && reexport === 'value') {
-        const own = land(specifier, from)
-          .map(placeOf)
-          .find((at) => at?.feature === home && !sharedFiles.includes(at.file));
+      const own = sharing && reexport === 'value' ? ownFile(specifier) : undefined;
+      if (own) report(line, `re-exports ${specifier}, which is ${own}: ${handsOn}`);
+    }
+
+    if (sharing) {
+      for (const { specifier, line } of parsed.references.exported) {
+        const own = ownFile(specifier);
         if (own) {
-          const what = own.file === '' ? 'its own folder' : own.name;
-          report(
-            line,
-            `re-exports ${specifier}, which is ${what}: a shared file names each thing it shares, so it hands on none of its feature's other files whole.`,
-          );
+          report(line, `exports what it imports from ${specifier}, which is ${own}: ${handsOn}`);
         }
       }
     }
 
     for (const { specifier, line, computed } of parsed.references.urls) {
       if (computed) {
+        if (unbundled) continue;
         report(
           line,
           `makes a URL from ${specifier}: the file is chosen at run time, so where it lands can't be checked.`,
@@ -179,6 +212,46 @@ export function checkFeatures(workspaceRoot: string): Violation[] {
   return violations.toSorted((a, b) => a.where.localeCompare(b.where, 'en', { numeric: true }));
 }
 
+/** The extensions Vite tries for a path written without one, and for a folder's `index`. */
+const extensions = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'];
+
+/** The files a path Vite resolves can be: as written, with an extension, or a folder's index. */
+function resolutions(path: string): string[] {
+  return [
+    path,
+    ...extensions.map((extension) => path + extension),
+    ...extensions.map((extension) => join(path, `index${extension}`)),
+  ];
+}
+
+/** Whether one of a glob's options would change what it matches beyond what the rule follows. */
+function unfollowed(name: string, value: OptionValue): boolean {
+  if (plainOptions.has(name) || name === 'base') return false;
+  if (name === 'caseSensitive') return value !== true;
+  if (name === 'exhaustive') return value !== false;
+  return true;
+}
+
+/** The folder a glob's patterns start from, at `from`: its `base`, when that starts with `.`. */
+function globBase(options: ReadonlyMap<string, OptionValue>, from: string): string | undefined {
+  const base = options.has('base') ? options.get('base') : '.';
+  const usable =
+    typeof base === 'string' && (base === '.' || base === '..' || /^\.\.?\//.test(base));
+  return usable ? resolve(from, base) : undefined;
+}
+
+/** The files a glob at `from` matches, through symlinks, when what it matches can be followed. */
+function globMatches({ patterns, options }: Glob, from: string): string[] {
+  if (options === undefined) return [];
+  const cwd = globBase(options, from);
+  if (cwd === undefined || [...options].some(([name, value]) => unfollowed(name, value))) {
+    return [];
+  }
+  return patterns
+    .filter((pattern) => /^\.\.?\//.test(pattern))
+    .flatMap((pattern) => expandGlob(pattern, cwd));
+}
+
 /**
  * What's wrong with a glob in a feature's folder, at `from`: an option the rule can't follow, or
  * a file it matches that `reason` refuses.
@@ -196,16 +269,15 @@ function globViolations(
   }
   const problems: string[] = [];
   for (const [name, value] of options) {
-    if (plainOptions.has(name) || name === 'base') continue;
-    if (name === 'caseSensitive' && value === true) continue;
-    if (name === 'exhaustive' && value === false) continue;
+    if (!unfollowed(name, value)) continue;
     const said = value === undefined ? name : `${name}: ${JSON.stringify(value)}`;
     problems.push(
       `globs ${written} with ${said}, which the feature rule doesn't follow, so what it matches can't be checked. Leave it out.`,
     );
   }
   const base = options.has('base') ? options.get('base') : '.';
-  if (typeof base !== 'string' || !(base === '.' || base === '..' || /^\.\.?\//.test(base))) {
+  const cwd = globBase(options, from);
+  if (cwd === undefined) {
     const said =
       typeof base === 'string' ? `the base ${JSON.stringify(base)}` : 'a base not written out';
     problems.push(
@@ -214,7 +286,6 @@ function globViolations(
     return problems;
   }
   if (problems.length > 0) return problems;
-  const cwd = resolve(from, base);
   const fromBase = options.has('base') ? ` (from ${base})` : '';
 
   // A pattern that leaves files out can only narrow what the others match.
@@ -225,17 +296,43 @@ function globViolations(
       );
       continue;
     }
-    const why = globSync(pattern, { cwd })
-      .toSorted()
-      .map((match) => ({ match, text: reason(realPath(resolve(cwd, match))) }))
+    const why = expandGlob(pattern, cwd)
+      .map((path) => ({ match: toSlashes(relative(cwd, path)), text: reason(realPath(path)) }))
       .find(({ text }) => text !== undefined);
-    if (why) {
-      problems.push(
-        `globs ${pattern}${fromBase}, which matches ${toSlashes(why.match)}: ${why.text}.`,
-      );
-    }
+    if (why) problems.push(`globs ${pattern}${fromBase}, which matches ${why.match}: ${why.text}.`);
   }
   return problems;
+}
+
+/**
+ * The files `pattern` matches from `cwd`, as Vite matches them: through symlinked folders too,
+ * leaving out `node_modules` and, unless the pattern names them, hidden files and folders.
+ */
+function expandGlob(pattern: string, cwd: string): string[] {
+  const parts = pattern.split('/');
+  const first = parts.findIndex((part) => /[*?[\]{}()!+@]/.test(part));
+  const base = resolve(cwd, ...(first === -1 ? parts : parts.slice(0, first)));
+  if (first === -1) return isFile(base) ? [base] : [];
+  const rest = parts.slice(first).join('/');
+  const found: string[] = [];
+  // Each folder once, by its real path, so a symlink back up the tree ends.
+  const seen = new Set<string>();
+  const walk = (folder: string): void => {
+    const real = realpathSync(folder);
+    if (seen.has(real)) return;
+    seen.add(real);
+    const entries = readdirSync(folder, { withFileTypes: true });
+    for (const entry of entries.toSorted((a, b) => a.name.localeCompare(b.name, 'en'))) {
+      const path = join(folder, entry.name);
+      if (isFolder(path)) {
+        if (entry.name !== 'node_modules') walk(path);
+      } else if (isFile(path) && matchesGlob(toSlashes(relative(base, path)), rest)) {
+        found.push(path);
+      }
+    }
+  };
+  if (isFolder(base)) walk(base);
+  return found;
 }
 
 /**

@@ -75,6 +75,8 @@ export interface Services {
   ready(defined: readonly Service<unknown>[]): void;
   /** A service's value. Throws while features are still providing, or if none provides it. */
   use<T>(service: Service<T>): T;
+  /** Whether a feature provides `service`. */
+  has(service: Service<unknown>): boolean;
 }
 
 export function createServices(): Services {
@@ -103,6 +105,10 @@ export function createServices(): Services {
         }
       }
       ready = true;
+    },
+
+    has(service) {
+      return values.has(service.id);
     },
 
     use<T>(service: Service<T>): T {
