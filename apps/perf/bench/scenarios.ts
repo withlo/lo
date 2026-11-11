@@ -8,7 +8,14 @@ import type { Page } from '@playwright/test';
 
 import type { KeyEntry, Recording } from './recorder.ts';
 import type { Blank, Stretch } from './results.ts';
-import { frameTimes, inRefreshes, type KeyTimes, percentile, summarizeFrames } from './stats.ts';
+import {
+  frameTimes,
+  inRefreshes,
+  type KeyTimes,
+  max,
+  percentile,
+  summarizeFrames,
+} from './stats.ts';
 import { pointAt, scrollOf, settle, sleep, type Suite } from './suite.ts';
 
 /** The Event Timing API's smallest threshold: keys under it aren't reported. */
@@ -63,7 +70,7 @@ export function stretchOf(
     frames: summarizeFrames(inRefreshes(times, refresh)),
     raw: summarizeFrames(times),
     blank,
-    worst: Math.max(0, ...frames.worst),
+    worst: max(frames.worst) ?? 0,
     misaligned: frames.worst.filter((worst) => worst > 0.5).length,
     ...done,
     readMs: percentile(frames.readMs, 95),

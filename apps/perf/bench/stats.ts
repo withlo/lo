@@ -12,8 +12,9 @@ export function percentile(values: readonly number[], p: number): number | undef
   return sorted[rank - 1];
 }
 
+/** The largest of `values`, which can be more than a call can take as arguments. */
 export function max(values: readonly number[]): number | undefined {
-  return values.length === 0 ? undefined : Math.max(...values);
+  return values.length === 0 ? undefined : values.reduce((most, value) => Math.max(most, value));
 }
 
 /** The median of `values`: the middle one, or the mean of the middle two. */
