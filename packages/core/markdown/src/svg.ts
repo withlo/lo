@@ -298,7 +298,6 @@ class Sanitizer {
       else this.drawn += 1;
       pushChildren(node, element, depth + 1, inside);
     }
-    if (this.numbers > SVG_LIMITS.numbers) return refused('numbers');
     this.resolve();
     if (this.drawn > SVG_LIMITS.drawn) return refused('drawn');
     const removed = [...this.around, ...this.within, ...this.settled]

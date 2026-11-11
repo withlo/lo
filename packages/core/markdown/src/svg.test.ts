@@ -537,12 +537,14 @@ describe('markers', () => {
       <marker id="self"><path d="M0 0L1 1" marker-end="url(#self)"/></marker>
       <marker id="a"><g><path d="M0 0L1 1" marker-mid="url(#b)"/></g></marker>
       <marker id="b"><polyline points="0 0 1 1" marker-start="url(#a)"/><marker id="inner"/></marker>
+      <marker id="c"><g><marker id="deeper"/></g></marker>
       <path d="M0 0L1 1L2 2" marker-mid="url(#a)" marker-end="url(#self)"/>
     </svg>`);
     expect(removals(made)).toEqual([
       'reference path.marker-end',
       'reference path.marker-mid',
       'reference polyline.marker-start',
+      'element marker',
       'element marker',
     ]);
     expect(elements(made).at(-1)?.attributes).toEqual({
