@@ -37,6 +37,9 @@
     },
     {
       "path": "./packages/core/markdown"
+    },
+    {
+      "path": "./packages/core/artifact"
     }
   ]
 }
