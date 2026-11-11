@@ -894,6 +894,8 @@ export class DiffView {
       case 'other-side':
         if (pane !== 'inline') this.#otherSide(pane, line);
         return;
+      default:
+        throw new Error(`an action Lo doesn't know: ${JSON.stringify(action satisfies never)}`);
     }
   }
 
