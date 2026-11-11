@@ -109,7 +109,7 @@ describe('Banner', () => {
     expect(markup).toContain('banner-warn');
     expect(markup).toContain('<strong class="font-semibold">You&#x27;re offline.</strong>');
     expect(markup).toContain('Showing what Lo saved 2 hours ago.');
-    expect(markup).toContain('>Try again</button>');
+    expect(markup).toMatch(/<button type="button" class="[^"]*">Try again<\/button>/);
     expect(markup).toContain('aria-label="Dismiss"');
   });
 

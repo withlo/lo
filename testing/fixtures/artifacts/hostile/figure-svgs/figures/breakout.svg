@@ -1,0 +1,5 @@
+<svg viewBox="0 0 860 120" xmlns="http://www.w3.org/2000/svg">
+  <text x="0" y="20">Before</text>
+  <img src="x" onerror="alert(1)">
+  <text x="0" y="40">After</text>
+</svg>

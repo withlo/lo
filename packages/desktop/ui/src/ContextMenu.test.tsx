@@ -150,6 +150,19 @@ describe('ContextMenu', () => {
     await vi.waitFor(() => expect(onClosed).toHaveBeenCalledWith(undefined));
   });
 
+  it('takes focus itself, without waiting for a frame', async () => {
+    // Keys reach the menu's scope only through focus, so none may reach the window first.
+    const frame = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(0);
+    try {
+      const page = render(<Harness />);
+      const menu = page.querySelector('[role="menu"]');
+      expect(menu).not.toBeNull();
+      await vi.waitFor(() => expect(document.activeElement).toBe(menu));
+    } finally {
+      frame.mockRestore();
+    }
+  });
+
   it('gives focus back to where it was when it closes', async () => {
     const before = document.createElement('button');
     document.body.append(before);

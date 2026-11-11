@@ -1,6 +1,8 @@
 import { cva } from 'class-variance-authority';
 import type { ReactNode } from 'react';
 
+import { Button } from './Button.tsx';
+
 const banner = cva('flex min-w-0 items-center gap-12 py-6 ps-16 pe-12 text-fg text-ui', {
   variants: {
     tone: {
@@ -50,26 +52,16 @@ export function Banner({ tone, title, detail, actions = [], onDismiss }: BannerP
       {(actions.length > 0 || onDismiss) && (
         <div className="flex flex-none items-center gap-6">
           {actions.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              onClick={action.onClick}
-              className="inline-flex h-control-h-sm flex-none items-center rounded-sm border border-border-strong bg-bg-element px-8 whitespace-nowrap text-fg text-small hover:bg-bg-element-hover focus-visible:shadow-ring active:bg-bg-element-press"
-            >
+            <Button key={action.label} size="sm" onClick={action.onClick}>
               {action.label}
-            </button>
+            </Button>
           ))}
           {onDismiss && (
-            <button
-              type="button"
-              aria-label="Dismiss"
-              onClick={onDismiss}
-              className="grid size-control-h-sm flex-none place-items-center rounded-sm text-fg-muted hover:bg-hover hover:text-fg focus-visible:shadow-ring"
-            >
+            <Button size="sm" variant="ghost" icon aria-label="Dismiss" onClick={onDismiss}>
               <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
                 <path d="M4 4l8 8M12 4l-8 8" />
               </svg>
-            </button>
+            </Button>
           )}
         </div>
       )}

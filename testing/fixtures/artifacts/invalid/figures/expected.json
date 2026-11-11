@@ -6,6 +6,8 @@
     { "code": "figure-part", "line": 22 },
     { "code": "figure-part", "line": 23 },
     { "code": "figure-part", "line": 24 },
-    { "code": "figure-part", "line": 26 }
+    { "code": "figure-part-missing", "line": 25 },
+    { "code": "figure-part", "line": 26 },
+    { "code": "figure-part", "line": 32 }
   ]
 }

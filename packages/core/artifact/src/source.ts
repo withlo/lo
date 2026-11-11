@@ -88,7 +88,7 @@ export function utf8Length(text: string, stop = Infinity): number {
 }
 
 /** The offset of the first byte of `bytes` that doesn't start valid UTF-8, or its length. */
-function firstInvalid(bytes: Uint8Array): number {
+export function firstInvalid(bytes: Uint8Array): number {
   let at = 0;
   while (at < bytes.length) {
     const lead = bytes[at]!;
@@ -116,7 +116,7 @@ function firstInvalid(bytes: Uint8Array): number {
 }
 
 /** The line, from 1, that byte `offset` of `bytes` is on. */
-function lineAt(bytes: Uint8Array, offset: number): number {
+export function lineAt(bytes: Uint8Array, offset: number): number {
   let line = 1;
   for (let at = 0; at < offset; at++) {
     const byte = bytes[at];

@@ -162,17 +162,30 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   `pnpm --filter @lo/desktop exec install-electron` fetches it ahead of time.
 - `desktop:package` runs electron-builder (`apps/desktop/build/electron-builder.yml`) on a Mac and
   makes `Lo-<version>-arm64.zip`: an Apple silicon build signed ad hoc, with no certificate, secret
-  or notarization, and registered for `lo://` and web links. Gatekeeper doesn't trust it, so a copy
-  that was downloaded opens with a right-click and "Open". The `package` workflow, which only a
-  person starts, builds the same zip on a Mac runner and uploads it as an artifact.
-  `scripts/check-package.sh` checks a zip. electron-vite bundles everything the app imports, so the
-  package holds only `dist/` and `package.json`, and no `node_modules`.
+  or notarization, registered for `lo://` and web links. It runs with the hardened runtime and only
+  the two entitlements in `build/entitlements.plist`, which the config's comments explain. Its fuses
+  are set so the debugger, `NODE_OPTIONS` and `ELECTRON_RUN_AS_NODE` do nothing, and Electron loads
+  only the asar and checks it against its hash. Gatekeeper doesn't trust an ad hoc signature: a zip
+  downloaded in a browser is quarantined, so allow it in System Settings > Privacy & Security > Open
+  Anyway, since macOS 15 has no right-click > Open. A zip from `gh run download` has no quarantine
+  flag and opens as it is. The `package` workflow, which only a person starts, builds the same zip
+  on a Mac runner and uploads it as an artifact. `scripts/check-package.sh` checks a zip: the
+  signature and its flags, the entitlements, every fuse, the asar's contents and hash, the
+  registered links, and that the app quits when given switches. electron-vite bundles everything the
+  app imports, so the package holds only `dist/` and `package.json`, and no `node_modules`.
+- A packaged Lo takes no command-line switches: first of all in main, before `ready`, it quits with
+  status 1 on any argument that starts with `-` (`src/main/arguments.ts`). Chromium's switches can
+  send main's requests, with their `Authorization` header, to another server, or open a port that
+  drives the window, and none is Lo's. Links and files reach a packaged Lo as events, not as
+  arguments. A build run from source takes every switch, as `electron-vite dev` and the tests pass
+  some.
 - A build run from source goes by `Lo Dev`, so it never touches an installed Lo's data or its key in
   the system's keychain: it keeps its data in its own folder (`Lo Dev`), or in `LO_USER_DATA_DIR`
   when that's set, and its key under "Lo Dev Safe Storage". A packaged build is `Lo`, and ignores
   `LO_USER_DATA_DIR`. Such a build reads the keymap file from `config/keymap` in that folder, rather
-  than from `~/.config/lo`, and opens it with the program `LO_KEYMAP_EDITOR` names (an absolute
-  path), if set, in place of the system's text editor, so a test starts no editor.
+  than from `~/.config/lo`, and the settings file from `config/settings.json` the same way, and
+  opens the keymap file with the program `LO_KEYMAP_EDITOR` names (an absolute path), if set, in
+  place of the system's text editor, so a test starts no editor.
 - Code that doesn't call Electron goes in its own module, with unit tests beside it. The smoke test
   in `e2e/` drives the built app with Playwright, each test on an empty data folder, and covers what
   needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`.
@@ -224,6 +237,16 @@ the window find them with `import.meta.glob`.
   about, such as an account removed, is a member of its service. Lo doesn't start while a service in
   a `service.ts` or a feature's `uses` goes unprovided, or while features use each other's services,
   and only the feature a service is named for may provide it.
+- `settings.ts` declares the settings the feature has, each with
+  `defineSetting(key, schema, default, accepts)` from `settings/contract.ts`: a flat key
+  (`diff.layout`), what its value may be as a Zod schema, the value without one, and what it accepts
+  in words. The settings feature reads `settings.json` from the config folder, watches it, reports a
+  value a schema refuses and uses the default, keeps every key no feature declared, and writes the
+  file whole, atomically, only after main has checked the value again. Main reaches the values
+  through the settings feature's `service.ts` (`use(settings).watch(setting, listener)`, which also
+  declares the setting), the window through its `window/shared.ts` (`useSetting`, `changeSetting`),
+  where a feature puts its section of Settings in the `settings.sections` slot with `defineSection`.
+  `docs/settings.md` lists every setting; a test fails when one is missing.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.

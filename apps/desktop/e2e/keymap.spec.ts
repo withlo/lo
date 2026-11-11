@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -126,6 +127,8 @@ test.describe('with no keymap file', () => {
     await expect(help.getByRole('alert')).toHaveCount(0);
 
     await openKeymap(help).click();
+    // Lo makes the file as it opens it, so there is nothing to resolve until it has.
+    await expect.poll(() => existsSync(path)).toBe(true);
     await expect.poll(opened).toEqual([realpathSync(path)]);
     expect(readFileSync(path, 'utf8')).toMatch(/^# Lo's keymap\./);
     // Key help stays, so what's wrong with the file is there when its editor is closed.
@@ -145,8 +148,10 @@ test.describe('with no keymap file', () => {
   });
 
   test('g , opens it too', async ({ page }) => {
+    const path = keymapPath(dataFolder());
     await pressOpen(page);
-    await expect.poll(opened).toEqual([realpathSync(keymapPath(dataFolder()))]);
+    await expect.poll(() => existsSync(path)).toBe(true);
+    await expect.poll(opened).toEqual([realpathSync(path)]);
     await expect(page.getByRole('status').filter({ hasText: /\w/ })).toHaveCount(0);
   });
 });

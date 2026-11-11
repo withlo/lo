@@ -21,3 +21,16 @@ export { PRHeader, type HeaderConnection, type PRHeaderProps } from './PRHeader.
 export { Skeleton, Spinner, type SpinnerProps } from './Spinner.tsx';
 export { StatePill, type PullRequestState } from './StatePill.tsx';
 export { StatusBar, StatusItem } from './StatusBar.tsx';
+export { Button, type ButtonProps } from './Button.tsx';
+export { Input, type InputProps } from './Input.tsx';
+export { Meter, type MeterProps } from './Meter.tsx';
+export {
+  Setting,
+  SettingsPage,
+  SettingsSection,
+  type SettingProps,
+  type SettingsNavItem,
+  type SettingsPageProps,
+  type SettingsSectionProps,
+} from './Settings.tsx';
+export { ThemeChoice, type ThemeChoiceProps, type ThemeName } from './ThemeChoice.tsx';

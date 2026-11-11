@@ -3,9 +3,9 @@
 // loaded, and its diff from the background process after them.
 
 import { splitLines } from '@lo/diff';
+import { DiffView, type Place } from '@lo/ui/code';
 
 import type { Loaded, PullReply, Result } from '../shared/protocol.ts';
-import { DiffView, type Place } from '../view/view.ts';
 
 declare global {
   interface Window {

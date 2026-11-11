@@ -99,3 +99,37 @@ function checked(answer: unknown, cap: number): FileAnswer | undefined {
       return undefined;
   }
 }
+
+/** Why a file wasn't read: its reader failed, or was stopped, before it answered. */
+export type Unread = { kind: 'unread'; why: 'failed' | 'stopped' };
+
+/**
+ * What `read()` answers, held to `cap`; or, when it throws, fails, gives something that isn't an
+ * answer or hasn't answered when `signal` aborts, why it's unread.
+ */
+export async function answered(
+  read: () => Promise<unknown>,
+  cap: number,
+  signal: AbortSignal,
+): Promise<FileAnswer | Unread> {
+  if (signal.aborted) return { kind: 'unread', why: 'stopped' };
+  return new Promise((resolve) => {
+    const stop = (): void => resolve({ kind: 'unread', why: 'stopped' });
+    signal.addEventListener('abort', stop, { once: true });
+    const settle = (answer: FileAnswer | undefined): void => {
+      signal.removeEventListener('abort', stop);
+      resolve(answer ?? { kind: 'unread', why: 'failed' });
+    };
+    let reading: Promise<unknown>;
+    try {
+      reading = Promise.resolve(read());
+    } catch {
+      settle(undefined);
+      return;
+    }
+    reading.then(
+      (value: unknown) => settle(checkedAnswer(value, cap)),
+      () => settle(undefined),
+    );
+  });
+}

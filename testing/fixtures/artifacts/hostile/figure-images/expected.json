@@ -1,0 +1,37 @@
+{
+  "outcome": "shown",
+  "findings": [
+    { "code": "figure-too-large", "line": 13 },
+    { "code": "figure-too-large", "line": 17 },
+    { "code": "figure-too-large", "line": 21 },
+    { "code": "figure-header", "line": 25 },
+    { "code": "figure-header", "line": 29 },
+    { "code": "figure-header", "line": 33 },
+    { "code": "figure-header", "line": 37 },
+    { "code": "figure-too-large", "line": 45 },
+    { "code": "figure-header", "line": 49 },
+    { "code": "figure-too-large", "line": 53 },
+    { "code": "figure-header", "line": 57 },
+    { "code": "figure-header", "line": 61 },
+    { "code": "figure-too-large", "line": 65 },
+    { "code": "figure-header", "line": 69 }
+  ],
+  "code": [],
+  "figures": [
+    { "line": 13, "state": "leftOut", "why": "tooLarge" },
+    { "line": 17, "state": "leftOut", "why": "tooLarge" },
+    { "line": 21, "state": "leftOut", "why": "tooLarge" },
+    { "line": 25, "state": "leftOut", "why": "header" },
+    { "line": 29, "state": "leftOut", "why": "header" },
+    { "line": 33, "state": "leftOut", "why": "header" },
+    { "line": 37, "state": "leftOut", "why": "header" },
+    { "line": 41, "state": "kept", "type": "png", "width": 1, "height": 1 },
+    { "line": 45, "state": "leftOut", "why": "tooLarge" },
+    { "line": 49, "state": "leftOut", "why": "header" },
+    { "line": 53, "state": "leftOut", "why": "tooLarge" },
+    { "line": 57, "state": "leftOut", "why": "header" },
+    { "line": 61, "state": "leftOut", "why": "header" },
+    { "line": 65, "state": "leftOut", "why": "tooLarge" },
+    { "line": 69, "state": "leftOut", "why": "header" }
+  ]
+}

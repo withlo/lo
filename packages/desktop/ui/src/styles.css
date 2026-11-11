@@ -9,8 +9,10 @@
 @import 'tailwindcss/utilities.css' layer(utilities);
 @import './theme.css';
 
-/* Classes in ui's components; the window's own are found from its stylesheet. */
+/* Classes in ui's components; the window's own are found from its stylesheet. The code view styles
+   itself in code/view.css, so its files hold none. */
 @source './';
+@source not './code';
 
 /* Where Tailwind can't reach. */
 
@@ -174,6 +176,31 @@
   background: var(--lo-bg);
   border-radius: var(--lo-r-lg) var(--lo-r-lg) 0 0;
   box-shadow: 0 0 0 1px var(--lo-border-subtle);
+}
+
+/* The interface's text at the weight between regular and strong, for buttons: Tailwind orders its
+   font weights before a type style's whole font, so a weight can't be added to text-ui. */
+@utility text-ui-medium {
+  font: var(--lo-text-ui);
+  font-weight: 500;
+}
+@utility text-small-medium {
+  font: var(--lo-text-small);
+  font-weight: 500;
+}
+
+/* Settings: the list of sections beside the sections. */
+@utility settings-page {
+  display: grid;
+  grid-template-columns: var(--lo-settings-nav-w) minmax(0, 1fr);
+}
+
+/* One setting: its name and what it does, with its controls at the end of the row. */
+@utility setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--lo-sp-4) var(--lo-sp-24);
 }
 
 /* Dialogs and palettes sit over the window. */

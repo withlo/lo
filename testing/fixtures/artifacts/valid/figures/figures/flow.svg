@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A request's way through the limiter. -->
+<svg viewBox="0 0 860 120" xmlns="http://www.w3.org/2000/svg">
+  <title>A request's way through the limiter</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="var(--fig-muted)"/>
+    </marker>
+  </defs>
+  <g id="bucket">
+    <rect x="0" y="24" width="160" height="60" rx="10" fill="var(--fig-panel)" stroke="var(--fig-line)"/>
+    <text x="14" y="50" fill="var(--fig-ink)" font-weight="600">Bucket</text>
+  </g>
+  <path d="M160 54h40" stroke="var(--fig-muted)" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect id="limiter" x="200" y="24" width="160" height="60" rx="10" fill="var(--fig-blue-soft)" stroke="var(--fig-blue)"/>
+  <text x="214" y="50" fill="var(--fig-ink)" font-weight="600">Limiter</text>
+  <text id="timeout" x="214" y="70" fill="var(--fig-blue)" font-family="monospace" font-size="11">config.ts</text>
+</svg>

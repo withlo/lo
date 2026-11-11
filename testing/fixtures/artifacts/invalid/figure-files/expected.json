@@ -6,5 +6,10 @@
     { "code": "figure-missing", "line": 16 },
     { "code": "figure-not-file", "line": 20 }
   ],
-  "code": []
+  "code": [],
+  "figures": [
+    { "line": 12, "state": "leftOut", "why": "missing" },
+    { "line": 16, "state": "leftOut", "why": "missing" },
+    { "line": 20, "state": "leftOut", "why": "notFile" }
+  ]
 }

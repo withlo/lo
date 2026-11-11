@@ -10,7 +10,13 @@
 import { article } from './commit.ts';
 import { quote, type Findings } from './findings.ts';
 import { BINARY_WINDOW, LIMITS } from './limits.ts';
-import { checkedAnswer, type CodeReader, type EntryKind, type FileAnswer } from './readers.ts';
+import {
+  answered,
+  type CodeReader,
+  type EntryKind,
+  type FileAnswer,
+  type Unread,
+} from './readers.ts';
 import type { CodeReference } from './reading.ts';
 
 /**
@@ -42,8 +48,6 @@ type Found =
   | { kind: 'notFile'; is: Exclude<EntryKind, 'file'> }
   | { kind: 'noCommit' }
   | Unread;
-
-type Unread = { kind: 'unread'; why: 'failed' | 'stopped' };
 
 /**
  * Checks the code each of `references` names at `commit`, through `readCode`, adding what's wrong
@@ -131,37 +135,6 @@ async function readLines(
 
 function text(bytes: Uint8Array): Found {
   return { kind: 'text', lines: lineCount(bytes) };
-}
-
-/**
- * What `read()` answers, held to `cap`; or, when it throws, fails, gives something that isn't an
- * answer or hasn't answered when `signal` aborts, why it's unread.
- */
-async function answered(
-  read: () => Promise<unknown>,
-  cap: number,
-  signal: AbortSignal,
-): Promise<FileAnswer | Unread> {
-  if (signal.aborted) return { kind: 'unread', why: 'stopped' };
-  return new Promise((resolve) => {
-    const stop = (): void => resolve({ kind: 'unread', why: 'stopped' });
-    signal.addEventListener('abort', stop, { once: true });
-    const settle = (answer: FileAnswer | undefined): void => {
-      signal.removeEventListener('abort', stop);
-      resolve(answer ?? { kind: 'unread', why: 'failed' });
-    };
-    let reading: Promise<unknown>;
-    try {
-      reading = Promise.resolve(read());
-    } catch {
-      settle(undefined);
-      return;
-    }
-    reading.then(
-      (value: unknown) => settle(checkedAnswer(value, cap)),
-      () => settle(undefined),
-    );
-  });
 }
 
 /** How many lines `bytes` holds: each ends at a newline, and the last may end without one. */

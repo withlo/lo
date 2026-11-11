@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./code": "./src/code/index.ts",
+    "./code/view.css": "./src/code/view.css",
     "./commands": "./src/commands/index.ts",
     "./styles.css": "./src/styles.css",
     "./fonts.css": "./src/fonts.css"
@@ -19,9 +21,19 @@
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
     "@fontsource-variable/host-grotesk": "5.3.0",
     "@fontsource/fragment-mono": "5.3.0",
+    "@lezer/highlight": "1.2.5",
     "@lo/design": "workspace:*",
+    "@lo/diff": "workspace:*",
+    "@lo/syntax": "workspace:*",
+    "@replit/codemirror-vim": "6.4.0",
     "class-variance-authority": "0.7.1",
     "react": "19.3.1",
     "tailwindcss": "4.3.5"

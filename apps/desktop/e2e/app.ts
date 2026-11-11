@@ -49,6 +49,11 @@ export function keymapPath(data: string): string {
   return join(data, 'config', 'keymap');
 }
 
+/** Where an unpackaged Lo with this data folder keeps the settings file, beside the keymap file. */
+export function settingsPath(data: string): string {
+  return join(data, 'config', 'settings.json');
+}
+
 /**
  * The program a test's Lo opens the keymap file with, in place of the system's text editor, so no
  * test starts an editor on a desktop other work shares. It adds the path it's given to `opened`,
@@ -96,6 +101,8 @@ type LaunchOptions = NonNullable<Parameters<typeof electron.launch>[0]>;
 interface Fixtures {
   /** What the keymap file says when Lo starts, or `undefined` for no file. */
   keymap: string | undefined;
+  /** What the settings file says when Lo starts, or `undefined` for no file. */
+  settings: string | undefined;
   /** Extra options for starting Lo, for tests that need it started differently. Its `env` adds to Lo's. */
   launch: LaunchOptions;
   /** Lo, started on an empty data folder with Chromium's sandbox on. */
@@ -107,13 +114,18 @@ interface Fixtures {
 export const test = base.extend<Fixtures>({
   launch: [{}, { option: true }],
   keymap: [undefined, { option: true }],
-  app: async ({ launch, keymap }, use) => {
+  settings: [undefined, { option: true }],
+  app: async ({ launch, keymap, settings }, use) => {
     const { env, ...options } = launch;
     const data = dataFolder();
     writeEditor(data);
     if (keymap !== undefined) {
       mkdirSync(join(data, 'config'), { recursive: true });
       writeFileSync(keymapPath(data), keymap);
+    }
+    if (settings !== undefined) {
+      mkdirSync(join(data, 'config'), { recursive: true });
+      writeFileSync(settingsPath(data), settings);
     }
     const app = await electron.launch({
       args: [appFolder],

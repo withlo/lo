@@ -232,11 +232,13 @@ function valid(seed: number): string {
       case 'code':
         return `:::code <${range()}>\n:::\n`;
       case 'figure': {
+        // Only an SVG has parts.
+        const type = pick(['svg', 'png', 'webp']);
         const parts = Array.from(
-          { length: Math.floor(next() * 3) },
+          { length: type === 'svg' ? Math.floor(next() * 3) : 0 },
           (_, n) => `- [p${n}](#tldr)\n`,
         );
-        return `:::figure figures/f${line()}.${pick(['svg', 'png', 'webp'])}\n${prose()}\n${parts.join('')}:::\n`;
+        return `:::figure figures/f${line()}.${type}\n${prose()}\n${parts.join('')}:::\n`;
       }
       case 'walkthrough': {
         const steps = Array.from(

@@ -21,6 +21,7 @@ import type {
   CheckedArtifact,
   CodeReader,
   EntryKind,
+  FigureState,
   FileAnswer,
   OverviewFiles,
   TreeEntry,
@@ -234,8 +235,11 @@ export interface FixtureInput {
    * with `fails`, a file its reader fails to read.
    */
   entries?: { path?: string; bytes?: string; kind: EntryKind; size?: number; fails?: boolean }[];
-  /** As many entries as `count`, named `prefix`, a number and `ending`, each `size` bytes. */
-  many?: { prefix: string; ending: string; count: number; size: number };
+  /**
+   * As many files as `count`, named `prefix`, a number and `ending`, each holding `text`, or else
+   * `size` bytes of zeros.
+   */
+  many?: { prefix: string; ending: string; count: number; size?: number; text?: string };
 }
 
 /** The files a fixture's folder holds that aren't the overview's. */
@@ -247,7 +251,10 @@ const OWN = new Set(['expected.json', 'fixture.json']);
  */
 export function folderFiles(dir: string, input: FixtureInput): OverviewFiles {
   const entries: TreeEntry[] = [];
-  const declared = new Map<string, { kind: EntryKind; size: number; fails: boolean }>();
+  const declared = new Map<
+    string,
+    { kind: EntryKind; size: number; fails: boolean; text?: Uint8Array }
+  >();
   const walk = (prefix: string): void => {
     for (const name of readdirSync(join(dir, prefix)).toSorted()) {
       if (prefix === '' && OWN.has(name)) continue;
@@ -282,11 +289,13 @@ export function folderFiles(dir: string, input: FixtureInput): OverviewFiles {
     });
   }
   if (input.many) {
-    const { prefix, ending, count, size } = input.many;
+    const { prefix, ending, count } = input.many;
+    const text = input.many.text === undefined ? undefined : encoder.encode(input.many.text);
+    const size = text?.length ?? input.many.size ?? 0;
     for (let n = 0; n < count; n++) {
       const path = encoder.encode(`${prefix}${n}${ending}`);
       entries.push({ path, kind: 'file', size });
-      declared.set(key(path), { kind: 'file', size, fails: false });
+      declared.set(key(path), { kind: 'file', size, fails: false, ...(text ? { text } : {}) });
     }
   }
   return {
@@ -299,7 +308,7 @@ export function folderFiles(dir: string, input: FixtureInput): OverviewFiles {
         return {
           kind: 'file',
           size: listed.size,
-          bytes: new Uint8Array(Math.min(listed.size, cap)),
+          bytes: listed.text?.slice(0, cap) ?? new Uint8Array(Math.min(listed.size, cap)),
         };
       }
       // Each part looked at in turn, so a link on the way is never followed.
@@ -337,6 +346,29 @@ export interface Expected {
   findings: { code: string; line?: number; file?: string }[];
   /** For an overview shown, each target's code, by the line it's on. */
   code?: { line: number; state: string; why?: string }[];
+  /**
+   * For an overview shown, each figure, by the line its block is on: kept, as its type and, for an
+   * image, its size, or for an SVG, the parts it links; or left out or unread, and why.
+   */
+  figures?: ({ line: number } & ExpectedFigure)[];
+}
+
+type ExpectedFigure =
+  | { state: 'kept'; type: string; width?: number; height?: number; parts?: string[] }
+  | { state: string; why: string };
+
+/** `figure`, as `expected.json` writes it: an SVG without its tree. */
+function expectedFigure(figure: FigureState): ExpectedFigure {
+  switch (figure.state) {
+    case 'kept':
+      return figure.type === 'svg' ? { state: 'kept', type: 'svg', parts: figure.parts } : figure;
+    case 'leftOut':
+    case 'unread':
+      return figure;
+    default:
+      figure satisfies never;
+      throw new Error(`Unknown figure ${JSON.stringify(figure)}`);
+  }
 }
 
 /** `checked`, as `expected.json` writes it. */
@@ -351,7 +383,13 @@ export function expectedOf(checked: CheckedArtifact): Expected {
       ...(file === 'artifact.md' ? {} : { file }),
     })),
     ...(outcome.kind === 'shown'
-      ? { code: outcome.code.map(({ reference, code }) => ({ line: reference.line, ...code })) }
+      ? {
+          code: outcome.code.map(({ reference, code }) => ({ line: reference.line, ...code })),
+          figures: outcome.figures.map(({ reference, figure }) => ({
+            line: reference.line,
+            ...expectedFigure(figure),
+          })),
+        }
       : {}),
   };
 }
