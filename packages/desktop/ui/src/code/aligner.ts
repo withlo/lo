@@ -45,6 +45,7 @@ import { alignRows, type RowHeights, type SideHeights } from './align.ts';
 import type { PassStats } from './api.ts';
 import type { Layout, Side } from './layout.ts';
 import type { FileRows } from './rows.ts';
+import { heldByScreenKey } from './screen.ts';
 import { SpacerWidget } from './widgets.ts';
 
 /** A spacer as a decoration: a block widget at `pos`, before (-1) or after (2) what's there. */
@@ -491,6 +492,8 @@ export class Aligner {
     const side = focused ?? this.#followSide;
     if (side === undefined) return;
     const view = this.#views[side];
+    // A screen key scrolled as far as it means to, and put the cursor where it wants it.
+    if (heldByScreenKey(view)) return;
     const head = view.state.selection.main.head;
     const line = drawnRect(view, head);
     const screen = this.#scroller.getBoundingClientRect();

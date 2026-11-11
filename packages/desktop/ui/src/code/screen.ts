@@ -11,12 +11,15 @@
 // treats as a closed fold, with the spacers, labels and threads drawn around it. Its body is the
 // line, header or collapsed block itself.
 //
-// What's drawn around a row can be taller than the screen, as a spacer facing a long run of added
-// lines is, and so can a line that wraps. Then no row's body may be wholly on screen. The cursor
-// still never stays behind the screen, where the scroll to the cursor after each key would take the
-// screen back: it goes to a row of text on screen in a line the screen cuts through, or, with only
-// what's drawn between rows on screen, to the row past that, which the scroll then brings on screen.
+// The keys that scroll go by pixels, as much of the screen as each key asks, and never by where
+// the cursor lands: what's drawn around a row, and a line that wraps, can be far taller than the
+// screen, and the other side's lines go by beside a spacer as tall as they are. The cursor then
+// goes to a row on the new screen, and the scroll to the cursor that follows every key is held
+// back for these, so the cursor never drags the view. Where the focused side shows only what's
+// drawn between its rows, as a spacer facing the other side's lines, the cursor goes to its row
+// beside the other side's nearest one on screen, which can be off screen itself.
 
+import type { EditorSelection } from '@codemirror/state';
 import { type BlockInfo, BlockType, EditorView } from '@codemirror/view';
 import { Vim } from '@replit/codemirror-vim';
 
@@ -32,22 +35,30 @@ interface Span {
 }
 
 /**
- * A place for the cursor: a row, at its start, or at `offset`, the start of a row of text in a line
- * that wraps; and the row of text there, as `caretOf` finds it.
+ * A place for the cursor on screen: a row, at its start, or at `offset`, the start of a row of text
+ * in a line that wraps; the row of text there, as `caretOf` finds it; and whether that's wholly on
+ * screen or only partly.
  */
 interface Stop {
   block: BlockInfo;
   offset?: number;
   row: Span;
+  whole: boolean;
 }
 
-/** How many rows of the last screen a page keeps on screen, as Vim does. */
+/** How many lines of the last screen a page keeps on screen, as Vim does. */
 const pageOverlap = 2;
 
 /** Whether a row's body ends this little outside the screen and still counts as on it, in px. */
 const slack = 1;
 
 let defined = false;
+
+/**
+ * The line each editor's last screen key put its cursor on, and the selection that made, for which
+ * the scroll to the cursor is held back.
+ */
+const placed = new WeakMap<EditorView, { line: number; selection?: EditorSelection }>();
 
 function viewOf(cm: { cm6: unknown }): EditorView | undefined {
   const view = cm.cm6;
@@ -69,6 +80,17 @@ function scrollerOf(view: EditorView): HTMLElement | undefined {
   return could;
 }
 
+/** The other editors shown beside this one in the same box: the other side of a diff. */
+function othersOf(view: EditorView): EditorView[] {
+  const others: EditorView[] = [];
+  for (const child of view.dom.parentElement?.children ?? []) {
+    if (child === view.dom || !(child instanceof HTMLElement) || child.hidden) continue;
+    const other = child.classList.contains('cm-editor') ? EditorView.findFromDOM(child) : null;
+    if (other) others.push(other);
+  }
+  return others;
+}
+
 /** What the scroller shows of the editor's document, by height in it. */
 function screenOf(view: EditorView, scroller: HTMLElement): Span {
   const top = scroller.getBoundingClientRect().top + scroller.clientTop - view.documentTop;
@@ -78,6 +100,11 @@ function screenOf(view: EditorView, scroller: HTMLElement): Span {
 /** Whether `span` is wholly on `screen`, give or take `slack`. */
 function within(span: Span, screen: Span): boolean {
   return span.top >= screen.top - slack && span.bottom <= screen.bottom + slack;
+}
+
+/** Whether any of `span` is on `screen`, more than `slack` of it. */
+function crosses(span: Span, screen: Span): boolean {
+  return span.bottom > screen.top + slack && span.top < screen.bottom - slack;
 }
 
 /** The row's line, header or collapsed block, without what's drawn around it. */
@@ -92,16 +119,12 @@ function next(view: EditorView, row: BlockInfo): BlockInfo | undefined {
   return row.to < view.state.doc.length ? view.lineBlockAt(row.to + 1) : undefined;
 }
 
-function previous(view: EditorView, row: BlockInfo): BlockInfo | undefined {
-  return row.from > 0 ? view.lineBlockAt(row.from - 1) : undefined;
-}
-
-/** The rows whose bodies are wholly on `screen`, top to bottom. */
+/** The rows whose bodies are on `screen`, wholly or partly, top to bottom. */
 function rowsOn(view: EditorView, screen: Span): BlockInfo[] {
   const rows: BlockInfo[] = [];
   let row: BlockInfo | undefined = view.lineBlockAtHeight(Math.max(0, screen.top));
   for (; row && row.top < screen.bottom; row = next(view, row)) {
-    if (within(bodyOf(row), screen)) rows.push(row);
+    if (crosses(bodyOf(row), screen)) rows.push(row);
   }
   return rows;
 }
@@ -213,70 +236,96 @@ function textRowsOn(view: EditorView, row: BlockInfo, screen: Span): Stop[] {
     const text = textRow(start);
     if (!within(text, screen)) continue;
     stops.push(
-      start === from ? { block: row, row: text } : { block: row, offset: start, row: text },
+      start === from
+        ? { block: row, row: text, whole: true }
+        : { block: row, offset: start, row: text, whole: true },
     );
   }
   return lost ? [] : stops;
 }
 
 /**
- * Where the cursor can go on `screen`, top to bottom: the start of each row whose body is wholly
- * on it, or, with none, rows of text in lines that wrap, which the screen cuts through.
+ * Where the cursor can go on `screen`, top to bottom: the start of each row whose body is on it,
+ * and, in a line that wraps and that the screen cuts through, the rows of text it shows wholly.
  */
 function stopsOn(view: EditorView, screen: Span): Stop[] {
-  const rows = rowsOn(view, screen);
-  if (rows.length > 0) return rows.map((row) => ({ block: row, row: bodyOf(row) }));
-  const stops: Stop[] = [];
-  let row: BlockInfo | undefined = view.lineBlockAtHeight(Math.max(0, screen.top));
-  for (; row && row.top < screen.bottom; row = next(view, row)) {
+  return rowsOn(view, screen).flatMap((row): Stop[] => {
     const body = bodyOf(row);
-    if (body.bottom > screen.top && body.top < screen.bottom) {
-      stops.push(...textRowsOn(view, row, screen));
-    }
-  }
-  return stops;
+    if (within(body, screen)) return [{ block: row, row: body, whole: true }];
+    const rows = textRowsOn(view, row, screen);
+    return rows.length > 0 ? rows : [{ block: row, row: body, whole: false }];
+  });
 }
 
 /**
- * The row past what's drawn between rows on `screen`: the first row whose body starts below the
- * screen's top, `forward`, or the last whose body ends above its bottom; else the document's last
- * row, or its first.
+ * The stops a key goes by: those wholly on screen, or, with none, those partly on it, as Vim's
+ * cursor goes only to lines its window shows whole while there are any.
  */
-function beyond(view: EditorView, screen: Span, forward: boolean): BlockInfo {
-  let row: BlockInfo | undefined = view.lineBlockAtHeight(
-    Math.max(0, forward ? screen.top : screen.bottom),
-  );
-  if (forward) {
-    for (; row; row = next(view, row)) if (bodyOf(row).top >= screen.top - slack) return row;
-    return view.lineBlockAt(view.state.doc.length);
-  }
-  for (; row; row = previous(view, row)) {
-    if (bodyOf(row).bottom <= screen.bottom + slack) return row;
-  }
-  return view.lineBlockAt(0);
+function wholeFirst(stops: readonly Stop[]): readonly Stop[] {
+  const whole = stops.filter((stop) => stop.whole);
+  return whole.length > 0 ? whole : stops;
 }
 
 /**
- * Where the cursor goes on `screen` after a key that went `forward` (down) or back: the first stop
- * on it or the last, as Vim's cursor goes to its window's first line or its last. With none, the
- * row past what's drawn there, which the scroll to the cursor then brings on screen, going on the
- * way the key went.
+ * Where the focused side shows nothing of a row on `screen`, only what's drawn between its rows,
+ * as a spacer facing the other side's lines: its row beside the other side's nearest row on
+ * screen, the first going `forward`, the last going back. Undefined where neither side shows a
+ * row.
  */
-function land(view: EditorView, screen: Span, forward: boolean): Stop {
-  const stops = stopsOn(view, screen);
-  const stop = forward ? stops[0] : stops.at(-1);
-  if (stop) return stop;
-  const block = beyond(view, screen, forward);
-  return { block, row: bodyOf(block) };
+function across(view: EditorView, scroller: HTMLElement, forward: boolean): Stop | undefined {
+  let nearest: number | undefined;
+  for (const other of othersOf(view)) {
+    const rows = rowsOn(other, screenOf(other, scroller));
+    const row = forward ? rows[0] : rows.at(-1);
+    if (!row) continue;
+    const body = bodyOf(row);
+    // The middle of its body, on the page.
+    const at = other.documentTop + (body.top + body.bottom) / 2;
+    if (nearest === undefined || (forward ? at < nearest : at > nearest)) nearest = at;
+  }
+  if (nearest === undefined) return undefined;
+  const block = view.lineBlockAtHeight(Math.max(0, nearest - view.documentTop));
+  return { block, row: bodyOf(block), whole: false };
 }
 
 /**
- * Whether the cursor's row of text is behind `screen`, for a key going `forward` (down) or back:
- * past the edge the screen moves away from, wholly or partly, where the scroll to the cursor would
- * take the screen back. Ahead of it, that scroll goes on the way the key went.
+ * Where the cursor goes on `screen`: to the first stop on it, `forward`, or the last, as Vim's
+ * goes to its window's first line or its last; else beside the other side's nearest row on it.
+ * Undefined where neither side shows a row, and the cursor stays.
  */
-function behind(row: Span, screen: Span, forward: boolean): boolean {
-  return forward ? row.top < screen.top - slack : row.bottom > screen.bottom + slack;
+function land(
+  view: EditorView,
+  scroller: HTMLElement,
+  screen: Span,
+  forward: boolean,
+): Stop | undefined {
+  const stops = wholeFirst(stopsOn(view, screen));
+  return (forward ? stops[0] : stops.at(-1)) ?? across(view, scroller, forward);
+}
+
+/**
+ * Holds back the scroll to the cursor after this key, which `pos` is where it put the cursor: the
+ * view moves only as far as the key scrolled it.
+ */
+function hold(view: EditorView, pos: Pos): Pos {
+  placed.set(view, { line: pos.line + 1 });
+  return pos;
+}
+
+/**
+ * Whether the cursor is where a screen key just put it, so the scroll to it after that key is held
+ * back, by CodeMirror and by the spacer pass alike: as long as the selection the key made stands.
+ */
+export function heldByScreenKey(view: EditorView): boolean {
+  const record = placed.get(view);
+  if (!record) return false;
+  const { selection } = view.state;
+  if (!record.selection && view.state.doc.lineAt(selection.main.head).number === record.line) {
+    record.selection = selection;
+  }
+  if (record.selection === selection) return true;
+  placed.delete(view);
+  return false;
 }
 
 /** Scrolls by `delta` and says how far it went, which an end of the scroll can cut short. */
@@ -305,65 +354,53 @@ function screenRow(
 ): Pos {
   const found = geometry(cm);
   if (!found) return head;
-  const { view, screen } = found;
+  const { view, scroller, screen } = found;
   const start = (row: BlockInfo): Pos => startOf(view, row);
-  const stops = stopsOn(view, screen);
-  if (stops.length === 0) return start(beyond(view, screen, where !== 'bottom'));
-  if (where === 'top') return posAt(view, stops[Math.min(count, stops.length) - 1]!, start);
-  if (where === 'bottom') return posAt(view, stops[Math.max(0, stops.length - count)]!, start);
+  const stops = wholeFirst(stopsOn(view, screen));
+  if (stops.length === 0) {
+    const stop = across(view, scroller, where !== 'bottom');
+    return hold(view, stop ? start(stop.block) : head);
+  }
+  if (where === 'top')
+    return hold(view, posAt(view, stops[Math.min(count, stops.length) - 1]!, start));
+  if (where === 'bottom') {
+    return hold(view, posAt(view, stops[Math.max(0, stops.length - count)]!, start));
+  }
   // The middle of what the rows on screen take up, as Vim's is of the lines its window shows.
   const middle = (stops[0]!.row.top + stops.at(-1)!.row.bottom) / 2;
   const distance = ({ row }: Stop): number => Math.max(row.top - middle, middle - row.bottom, 0);
   let nearest = stops[0]!;
   for (const stop of stops) if (distance(stop) < distance(nearest)) nearest = stop;
-  return posAt(view, nearest, start);
+  return hold(view, posAt(view, nearest, start));
 }
 
 /**
- * `Ctrl-f` and `Ctrl-b`: `count` pages on, each keeping two rows of the last on screen, and the
- * cursor on the first row on screen (or the last, going back) if the scroll left it behind. Where
- * there's no more to scroll, the cursor goes to the document's last row (or its first).
+ * `Ctrl-f` and `Ctrl-b`: `count` pages on, each a screen less two lines, so two lines of the last
+ * stay on screen, as Vim keeps them; and the cursor on the first row on screen (or the last, going
+ * back) unless it's still wholly on screen. Where there's no more to scroll, the cursor goes to
+ * the last row on screen (or the first), as Vim's goes to the document's last line.
  */
 function page(cm: { cm6: unknown }, head: Pos, forward: boolean, count: number): Pos {
   const found = geometry(cm);
   if (!found) return head;
   const { view, scroller, screen } = found;
-  const height = screen.bottom - screen.top;
-  const { doc } = view.state;
-  let top = screen.top;
-  for (let turn = 0; turn < count; turn++) {
-    const shown = { top, bottom: top + height };
-    const rows = rowsOn(view, shown);
-    if (forward) {
-      const kept = rows[Math.max(1, rows.length - pageOverlap)];
-      top = kept ? kept.top : shown.bottom;
-    } else {
-      const kept = rows[Math.min(rows.length - 2, pageOverlap - 1)];
-      top = kept ? kept.bottom - height : shown.top - height;
-    }
-  }
-  if (forward) {
-    // No further than the document's last row at the top of the screen, as Vim's last line goes,
-    // where the other side's document goes on below it.
-    const last = bodyOf(view.lineBlockAt(doc.length));
-    top = Math.min(top, Math.max(screen.top, last.top));
-  }
-  const moved = scrollBy(scroller, top - screen.top);
-  if (Math.abs(moved) < slack) {
-    return startOf(view, view.lineBlockAt(forward ? doc.length : 0));
-  }
+  const line = view.defaultLineHeight;
+  const step = Math.max(line, screen.bottom - screen.top - pageOverlap * line);
+  const moved = scrollBy(scroller, (forward ? step : -step) * count);
   const now = { top: screen.top + moved, bottom: screen.bottom + moved };
-  if (!behind(caretOf(view, offsetOf(view, head)), now, forward)) return head;
-  return posAt(view, land(view, now, forward), (row) => startOf(view, row));
+  const end = Math.abs(moved) < slack;
+  if (!end && within(caretOf(view, offsetOf(view, head)), now)) return hold(view, head);
+  const stop = land(view, scroller, now, end ? !forward : forward);
+  return hold(view, stop ? posAt(view, stop, (row) => startOf(view, row)) : head);
 }
 
-/** The rows `Ctrl-d` and `Ctrl-u` go in each editor once a count has set it, as Vim's `scroll`. */
-const halfPageRows = new WeakMap<EditorView, number>();
+/** The lines `Ctrl-d` and `Ctrl-u` go in each editor once a count has set it, as Vim's `scroll`. */
+const halfPageLines = new WeakMap<EditorView, number>();
 
 /**
- * `Ctrl-d` and `Ctrl-u`: the cursor `count` rows on, which the next ones go too, or half the rows
- * on screen until a count is given, and the scroll as far as the cursor went, so it stays where it
- * is on screen. A cursor the wheel left behind the screen goes from where a page would land it.
+ * `Ctrl-d` and `Ctrl-u`: the scroll `count` lines on, which the next ones go too, or half the
+ * screen until a count is given, and the cursor as far, so it stays where it is on screen, on the
+ * first row there or after it (before it, going back); from the screen's edge where it was off it.
  */
 function halfPage(
   cm: { cm6: unknown },
@@ -374,52 +411,41 @@ function halfPage(
   const found = geometry(cm);
   if (!found) return head;
   const { view, scroller, screen } = found;
-  if (count !== undefined) halfPageRows.set(view, count);
-  const rows = halfPageRows.get(view) ?? Math.max(1, Math.floor(rowsOn(view, screen).length / 2));
+  if (count !== undefined) halfPageLines.set(view, count);
+  const line = view.defaultLineHeight;
+  const height = screen.bottom - screen.top;
+  const lines = halfPageLines.get(view) ?? Math.max(1, Math.floor(height / line / 2));
+  const delta = (forward ? 1 : -1) * Math.min(lines * line, height);
   const caret = caretOf(view, offsetOf(view, head));
-  let from = { pos: head, row: caret, block: rowAt(view, head) };
-  if (behind(caret, screen, forward)) {
-    const stop = land(view, screen, forward);
-    from = {
-      pos: posAt(view, stop, (row) => startOf(view, row)),
-      row: stop.row,
-      block: stop.block,
-    };
-  }
-  let to = from.block;
-  for (let turn = 0; turn < rows; turn++) {
-    const step = forward ? next(view, to) : previous(view, to);
-    if (!step) break;
-    to = step;
-  }
-  if (to === from.block) return from.pos;
-  // From the cursor's own row of text, which in a line that wraps can be far below its start.
-  scrollBy(scroller, bodyOf(to).top - from.row.top);
-  return startOf(view, to);
+  const moved = scrollBy(scroller, delta);
+  const now = { top: screen.top + moved, bottom: screen.bottom + moved };
+  // Where the cursor's row of text goes: as far as the key asked, though the end of the scroll
+  // cut the scroll short.
+  const target = within(caret, screen) ? caret.top + delta : forward ? now.top : now.bottom;
+  const stops = wholeFirst(stopsOn(view, now));
+  const stop = forward
+    ? (stops.find((each) => each.row.top >= target - slack) ?? stops.at(-1))
+    : (stops.findLast((each) => each.row.top <= target + slack) ?? stops[0]);
+  const landed = stop ?? across(view, scroller, forward);
+  return hold(view, landed ? posAt(view, landed, (row) => startOf(view, row)) : head);
 }
 
 /**
- * `Ctrl-e` and `Ctrl-y`: the scroll `count` rows on, a row at the top of the screen at a time,
- * and the cursor onto the screen's first row (or last) if the scroll left it behind. A motion, so in
- * visual mode the selection keeps its other end.
+ * `Ctrl-e` and `Ctrl-y`: the scroll `count` lines on, and the cursor onto the screen's first row
+ * (or last) if the scroll left it off. A motion, so in visual mode the selection keeps its other
+ * end.
  */
 function scrollRows(cm: { cm6: unknown }, head: Pos, forward: boolean, count: number): Pos {
   const found = geometry(cm);
   if (!found) return head;
   const { view, scroller, screen } = found;
-  // The row at the top of the screen, one that starts there included.
-  let row = view.lineBlockAtHeight(Math.max(0, screen.top + slack));
-  // A row the top of the screen cuts is one step back to its top.
-  let steps = !forward && row.top < screen.top - slack ? count - 1 : count;
-  for (; steps > 0; steps--) {
-    const step: BlockInfo | undefined = forward ? next(view, row) : previous(view, row);
-    if (!step) break;
-    row = step;
-  }
-  const moved = scrollBy(scroller, row.top - screen.top);
+  const moved = scrollBy(scroller, (forward ? 1 : -1) * count * view.defaultLineHeight);
   const now = { top: screen.top + moved, bottom: screen.bottom + moved };
-  if (!behind(caretOf(view, offsetOf(view, head)), now, forward)) return head;
-  return posAt(view, land(view, now, forward), (each) => columnOf(view, each, head.ch));
+  const caret = caretOf(view, offsetOf(view, head));
+  if (within(caret, now)) return hold(view, head);
+  // Onto the edge of the screen it went past, as Vim's cursor stays on screen.
+  const stop = land(view, scroller, now, caret.top < now.top);
+  return hold(view, stop ? posAt(view, stop, (row) => columnOf(view, row, head.ch)) : head);
 }
 
 /** `zt`, `zz` and `zb`: the cursor's row (or the `count`th line's) at the top, middle or bottom. */
@@ -453,13 +479,15 @@ function scrollToCursor(
 }
 
 /**
- * Leaves a cursor whose row is wholly on screen where it is when it's brought into view, as Vim
- * does, where CodeMirror would scroll it to 5 pixels inside the screen's edge: after `H`, `L` or
- * `z<CR>`, that would move what they put at the edge. In a line that wraps, the cursor's row is
- * its own row of text. A row off screen, or partly, scrolls as usual.
+ * Leaves the scroll as it is when the cursor is brought into view, as Vim does, where its row is
+ * wholly on screen, and CodeMirror would scroll it to 5 pixels inside the screen's edge: after
+ * `H`, `L` or `z<CR>`, that would move what they put at the edge. In a line that wraps, the
+ * cursor's row is its own row of text. And after a screen key, wherever the key put the cursor.
  */
 export const leaveOnScreen = EditorView.scrollHandler.of((view, range, options) => {
-  if (options.y !== 'nearest' || !range.empty) return false;
+  if (options.y !== 'nearest') return false;
+  if (heldByScreenKey(view)) return true;
+  if (!range.empty) return false;
   const scroller = scrollerOf(view);
   if (!scroller) return false;
   return within(caretOf(view, range.head), screenOf(view, scroller));

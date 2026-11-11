@@ -10,6 +10,9 @@ import { SpacerWidget } from './widgets.ts';
 /** How tall the box that scrolls is, as the diff view's was on a laptop's screen. */
 const screenHeight = 868;
 
+/** How tall CodeMirror estimates a line, which is all it has here. */
+const lineHeight = 14;
+
 const noRects = (): DOMRectList => Object.assign([], { item: () => null });
 
 /** What jsdom lacks that the editor reaches for. */
@@ -35,70 +38,115 @@ beforeEach(() => {
   vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(-1);
 });
 
-let editor: { view: EditorView; scroller: HTMLElement } | undefined;
+const opened: { views: EditorView[]; boxes: HTMLElement[] } = { views: [], boxes: [] };
 
 afterEach(() => {
-  editor?.view.destroy();
-  editor?.scroller.remove();
-  editor = undefined;
+  for (const view of opened.views.splice(0)) view.destroy();
+  for (const box of opened.boxes.splice(0)) box.remove();
   vi.restoreAllMocks();
 });
 
 interface Spacer {
-  /** The line the spacer is drawn above, or below. */
+  /** The line the spacer is drawn above or below, or after which the document ends. */
   line: number;
   height: number;
-  below?: boolean;
+  place: 'above' | 'below' | 'end';
 }
 
-const lineCount = 200;
-const lines = Array.from({ length: lineCount }, (_, index) => `  line ${index + 1}`);
+interface Side {
+  lines: string[];
+  spacers: Spacer[];
+}
+
+const lines = (count: number, word: string): string[] =>
+  Array.from({ length: count }, (_, index) => `  ${word} ${index + 1}`);
 
 /**
- * An editor as tall as its document, in a box that scrolls, as a side of the diff is: its lines,
- * spacers taller than the screen among them, and `end`, the space after the end of a document
- * shorter than the other side's. jsdom has no layout, so the box's is made up from the editor's
- * heights.
+ * The two sides of a diff as the spacer pass lines them up: 40 lines alike; 300 removed, as a
+ * file only the old side has is, beside a spacer as tall; 40 alike; 120 added beside a spacer;
+ * 40 alike; and 100 more added at the end of the new side, the old side's document ending with
+ * space as tall. Every spacer is taller than the screen.
  */
-function open(spacers: readonly Spacer[], end = 0): { view: EditorView; scroller: HTMLElement } {
-  const doc = Text.of(lines);
-  const placed = spacers.map(({ line, height, below }) =>
+const sides: { old: Side; new: Side } = {
+  old: {
+    lines: [
+      ...lines(40, 'head'),
+      ...lines(300, 'removed'),
+      ...lines(40, 'middle'),
+      ...lines(40, 'tail'),
+    ],
+    spacers: [
+      { line: 380, height: 120 * lineHeight, place: 'below' },
+      { line: 420, height: 100 * lineHeight, place: 'end' },
+    ],
+  },
+  new: {
+    lines: [
+      ...lines(40, 'head'),
+      ...lines(40, 'middle'),
+      ...lines(120, 'added'),
+      ...lines(40, 'tail'),
+      ...lines(100, 'more'),
+    ],
+    spacers: [{ line: 41, height: 300 * lineHeight, place: 'above' }],
+  },
+};
+
+function editor(parent: HTMLElement, side: Side): EditorView {
+  const doc = Text.of(side.lines);
+  const placed = side.spacers.map(({ line, height, place }) =>
     Decoration.widget({
       widget: new SpacerWidget(height),
       block: true,
-      side: below ? 2 : -1,
-    }).range(below ? doc.line(line).to : doc.line(line).from),
+      side: place === 'above' ? -1 : place === 'below' ? 2 : 3,
+    }).range(place === 'above' ? doc.line(line).from : doc.line(line).to),
   );
-  if (end > 0) {
-    placed.push(
-      Decoration.widget({ widget: new SpacerWidget(end), block: true, side: 3 }).range(doc.length),
-    );
-  }
-  const scroller = document.createElement('div');
-  scroller.style.overflowY = 'auto';
-  document.body.append(scroller);
   const view = new EditorView({
-    parent: scroller,
+    parent,
     state: EditorState.create({
       doc,
       extensions: [vim(), leaveOnScreen, EditorView.decorations.of(Decoration.set(placed, true))],
     }),
   });
+  opened.views.push(view);
+  return view;
+}
+
+interface Diff {
+  old: EditorView;
+  new: EditorView;
+  box: HTMLElement;
+}
+
+/**
+ * Both sides, each an editor as tall as its document, side by side in one box that scrolls, as
+ * the diff view's are. jsdom has no layout, so the box's is made up from the editors' heights.
+ */
+function open(): Diff {
+  const box = document.createElement('div');
+  box.style.overflowY = 'auto';
+  document.body.append(box);
+  opened.boxes.push(box);
+  const old = editor(box, sides.old);
+  const added = editor(box, sides.new);
+  expect(old.contentHeight).toBe(added.contentHeight);
   let scrollTop = 0;
-  Object.defineProperties(scroller, {
+  Object.defineProperties(box, {
     clientHeight: { get: () => screenHeight },
-    scrollHeight: { get: () => view.contentHeight },
+    scrollHeight: { get: () => old.contentHeight },
     scrollTop: {
       get: () => scrollTop,
       set: (value: number) => {
-        scrollTop = Math.max(0, Math.min(view.contentHeight - screenHeight, value));
+        scrollTop = Math.max(0, Math.min(old.contentHeight - screenHeight, value));
       },
     },
   });
-  scroller.getBoundingClientRect = () => new DOMRect(0, 0, 800, screenHeight);
-  view.contentDOM.getBoundingClientRect = () => new DOMRect(0, -scrollTop, 800, view.contentHeight);
-  editor = { view, scroller };
-  return editor;
+  box.getBoundingClientRect = () => new DOMRect(0, 0, 800, screenHeight);
+  for (const view of [old, added]) {
+    view.contentDOM.getBoundingClientRect = () =>
+      new DOMRect(0, -scrollTop, 400, view.contentHeight);
+  }
+  return { old, new: added, box };
 }
 
 function bodyOf(row: BlockInfo): BlockInfo {
@@ -106,10 +154,21 @@ function bodyOf(row: BlockInfo): BlockInfo {
   return parts.find((part) => part.type === BlockType.Text) ?? row;
 }
 
-/** What the box shows of the document, by height in it. */
+/** What the box shows of a document, by height in it. */
 function screenOf(view: EditorView): { top: number; bottom: number } {
   const top = -view.documentTop;
   return { top, bottom: top + screenHeight };
+}
+
+/** The lines of `view` on screen, wholly or partly, from 1. */
+function linesOn(view: EditorView): number[] {
+  const screen = screenOf(view);
+  const shown: number[] = [];
+  for (let number = 1; number <= view.state.doc.lines; number++) {
+    const body = bodyOf(view.lineBlockAt(view.state.doc.line(number).from));
+    if (body.bottom > screen.top && body.top < screen.bottom) shown.push(number);
+  }
+  return shown;
 }
 
 /** The cursor's line, from 1. */
@@ -117,147 +176,122 @@ function lineOf(view: EditorView): number {
   return view.state.doc.lineAt(view.state.selection.main.head).number;
 }
 
-/** Whether the cursor's line is wholly on screen. */
-function onScreen(view: EditorView): boolean {
-  const line = bodyOf(view.lineBlockAt(view.state.selection.main.head));
-  const screen = screenOf(view);
-  return line.top >= screen.top - 1 && line.bottom <= screen.bottom + 1;
-}
-
-/**
- * Presses `key` in Vim, then brings the cursor into view as Vim has CodeMirror do after every key:
- * left alone where its line is wholly on screen, else the least scroll that shows it, 5 px inside
- * the screen's edge.
- */
-function press(view: EditorView, scroller: HTMLElement, key: string): void {
-  Vim.handleKey(getCM(view)!, key, 'user');
-  if (onScreen(view)) return;
-  const line = bodyOf(view.lineBlockAt(view.state.selection.main.head));
-  const screen = screenOf(view);
-  scroller.scrollTop +=
-    line.top < screen.top ? line.top - screen.top - 5 : line.bottom - screen.bottom + 5;
-}
-
 function mode(view: EditorView): string {
   const state = getCM(view)!.state.vim!;
   return state.insertMode ? 'insert' : state.visualMode ? 'visual' : 'normal';
 }
 
-/** Spacers taller than the screen: above a line, below one, and two that meet. */
-const tall: readonly Spacer[] = [
-  { line: 40, height: 2660 },
-  { line: 90, height: 3100, below: true },
-  { line: 130, height: 1500, below: true },
-  { line: 131, height: 1500 },
-];
+/**
+ * Presses `key` in `view`'s Vim, then brings the cursor into view as Vim has CodeMirror do after
+ * every key: left where it is if a scroll handler holds it, else, where its line is off screen,
+ * the least scroll that shows it, 5 px inside the screen's edge.
+ */
+function press(view: EditorView, box: HTMLElement, key: string): void {
+  Vim.handleKey(getCM(view)!, key, 'user');
+  const range = view.state.selection.main;
+  const options = { x: 'nearest', y: 'nearest', xMargin: 5, yMargin: 5 } as const;
+  const handlers = view.state.facet(EditorView.scrollHandler);
+  if (handlers.some((handler) => handler(view, range, options))) return;
+  const line = bodyOf(view.lineBlockAt(range.head));
+  const screen = screenOf(view);
+  if (line.top < screen.top) box.scrollTop += line.top - screen.top - 5;
+  else if (line.bottom > screen.bottom) box.scrollTop += line.bottom - screen.bottom + 5;
+}
 
-describe('paging past spacers taller than the screen', () => {
-  for (const [down, up] of [
-    ['<PageDown>', '<PageUp>'],
-    ['<C-f>', '<C-b>'],
-    ['<C-d>', '<C-u>'],
-  ] as const) {
-    test(`${down} held goes on to the end, and ${up} back to the top, never back`, () => {
-      const { view, scroller } = open(tall);
-      const max = view.contentHeight - screenHeight;
-      let scroll = scroller.scrollTop;
-      let line = lineOf(view);
-      for (let turn = 0; turn < 30; turn++) {
-        press(view, scroller, down);
-        expect(scroller.scrollTop).toBeGreaterThanOrEqual(scroll);
-        expect(lineOf(view)).toBeGreaterThanOrEqual(line);
-        expect(onScreen(view)).toBe(true);
-        expect(mode(view)).toBe('normal');
-        scroll = scroller.scrollTop;
-        line = lineOf(view);
-      }
-      expect(scroller.scrollTop).toBe(max);
-      expect(lineOf(view)).toBe(lineCount);
+/**
+ * Holds `key` in side `side` from where the scroll is until it stops moving, at most `limit` times,
+ * and checks every press: the scroll goes the key's way, by no more than one screen; the cursor
+ * goes the same way, onto a line on screen wherever the side shows one; and every line of both
+ * sides passes through the screen.
+ */
+function hold(diff: Diff, side: 'old' | 'new', key: string, way: 1 | -1, limit: number): void {
+  const { box } = diff;
+  const view = diff[side];
+  const seen = { old: new Set(linesOn(diff.old)), new: new Set(linesOn(diff.new)) };
+  let line = lineOf(view);
+  for (let turn = 0; turn < limit; turn++) {
+    const before = box.scrollTop;
+    press(view, box, key);
+    const moved = (box.scrollTop - before) * way;
+    expect(moved).toBeGreaterThanOrEqual(0);
+    expect(moved).toBeLessThanOrEqual(screenHeight);
+    expect((lineOf(view) - line) * way).toBeGreaterThanOrEqual(0);
+    // On a line on screen, unless the side shows none.
+    const shown = linesOn(view);
+    expect(shown.length === 0 || shown.includes(lineOf(view))).toBe(true);
+    expect(mode(view)).toBe('normal');
+    line = lineOf(view);
+    for (const each of ['old', 'new'] as const) {
+      for (const number of linesOn(diff[each])) seen[each].add(number);
+    }
+    if (moved === 0) break;
+  }
+  expect(box.scrollTop).toBe(way === 1 ? diff.old.contentHeight - screenHeight : 0);
+  for (const each of ['old', 'new'] as const) {
+    expect(seen[each].size).toBe(diff[each].state.doc.lines);
+  }
+}
 
-      for (let turn = 0; turn < 30; turn++) {
-        press(view, scroller, up);
-        expect(scroller.scrollTop).toBeLessThanOrEqual(scroll);
-        expect(lineOf(view)).toBeLessThanOrEqual(line);
-        expect(onScreen(view)).toBe(true);
-        expect(mode(view)).toBe('normal');
-        scroll = scroller.scrollTop;
-        line = lineOf(view);
-      }
-      expect(scroller.scrollTop).toBe(0);
-      expect(lineOf(view)).toBe(1);
-    });
+describe('paging past spacers taller than the screen, and lines on one side only', () => {
+  for (const side of ['old', 'new'] as const) {
+    // Back at the top, the cursor is on the first line; `Ctrl-y` moves it only off the screen's
+    // bottom, so it ends on the last line there.
+    for (const [down, up, limit, home] of [
+      ['<PageDown>', '<PageUp>', 30, 'first'],
+      ['<C-f>', '<C-b>', 30, 'first'],
+      ['<C-d>', '<C-u>', 60, 'first'],
+      ['<C-e>', '<C-y>', 1000, 'last'],
+    ] as const) {
+      test(`${down} held on the ${side} side goes on to the end, and ${up} back to the top`, () => {
+        const diff = open();
+        hold(diff, side, down, 1, limit);
+        hold(diff, side, up, -1, limit);
+        expect(lineOf(diff[side])).toBe(home === 'first' ? 1 : linesOn(diff[side]).at(-1));
+      });
+    }
   }
 
-  test('<C-e> held scrolls on past them a row at a time, and <C-y> back, never back', () => {
-    const { view, scroller } = open(tall);
-    let scroll = scroller.scrollTop;
-    for (let turn = 0; turn < lineCount + 10; turn++) {
-      press(view, scroller, '<C-e>');
-      expect(scroller.scrollTop).toBeGreaterThanOrEqual(scroll);
-      expect(onScreen(view)).toBe(true);
-      scroll = scroller.scrollTop;
-    }
-    expect(scroller.scrollTop).toBe(view.contentHeight - screenHeight);
-    for (let turn = 0; turn < lineCount + 10; turn++) {
-      press(view, scroller, '<C-y>');
-      expect(scroller.scrollTop).toBeLessThanOrEqual(scroll);
-      expect(onScreen(view)).toBe(true);
-      scroll = scroller.scrollTop;
-    }
-    expect(scroller.scrollTop).toBe(0);
+  test('at the end of the scroll, the cursor is on the last line', () => {
+    const diff = open();
+    hold(diff, 'new', '<PageDown>', 1, 30);
+    expect(lineOf(diff.new)).toBe(diff.new.state.doc.lines);
   });
 
-  test('on a side whose document ends first, PageDown stops with its last line on screen', () => {
-    const { view, scroller } = open(tall, 3000);
-    let scroll = scroller.scrollTop;
-    for (let turn = 0; turn < 30; turn++) {
-      press(view, scroller, '<PageDown>');
-      expect(scroller.scrollTop).toBeGreaterThanOrEqual(scroll);
-      expect(onScreen(view)).toBe(true);
-      scroll = scroller.scrollTop;
-    }
-    expect(lineOf(view)).toBe(lineCount);
+  test('on the side whose document ends first, the cursor goes beside the other side’s lines', () => {
+    const diff = open();
+    hold(diff, 'old', '<PageDown>', 1, 30);
+    expect(linesOn(diff.old)).toEqual([]);
+    expect(lineOf(diff.old)).toBe(diff.old.state.doc.lines);
   });
 });
 
-/** The screen inside the spacer above line 40, and the cursor on line `line`, far from it. */
-function inSpacer(line = 1): { view: EditorView; scroller: HTMLElement } {
-  const opened = open(tall);
-  const { doc } = opened.view.state;
-  opened.view.dispatch({ selection: { anchor: doc.line(line).from } });
-  const spacer = opened.view.lineBlockAt(doc.line(40).from);
-  opened.scroller.scrollTop = spacer.top + 500;
-  expect(bodyOf(spacer).top).toBeGreaterThan(screenOf(opened.view).bottom);
-  return opened;
+/** The screen inside the new side's spacer beside the removed lines, the cursor on line 1. */
+function inSpacer(): Diff {
+  const diff = open();
+  const spacer = diff.new.lineBlockAt(diff.new.state.doc.line(41).from);
+  diff.box.scrollTop = spacer.top + 1000;
+  expect(linesOn(diff.new)).toEqual([]);
+  expect(linesOn(diff.old).length).toBeGreaterThan(0);
+  return diff;
 }
 
-describe('with only a spacer on screen', () => {
-  test('H and M go to the row after it, and L to the row before', () => {
-    for (const [key, line] of [
-      ['H', 40],
-      ['M', 40],
-      ['L', 39],
-    ] as const) {
-      const { view, scroller } = inSpacer();
-      Vim.handleKey(getCM(view)!, key, 'user');
-      expect(lineOf(view)).toBe(line);
-      view.destroy();
-      scroller.remove();
-    }
-  });
+describe('with only a spacer on the focused side’s screen', () => {
+  for (const key of ['H', 'M', 'L']) {
+    test(`${key} puts the cursor in the row beside the other side’s lines, and nothing scrolls`, () => {
+      const diff = inSpacer();
+      const scroll = diff.box.scrollTop;
+      press(diff.new, diff.box, key);
+      expect(diff.box.scrollTop).toBe(scroll);
+      // The row the spacer is drawn in, above line 41.
+      expect(lineOf(diff.new)).toBe(41);
+    });
+  }
 
-  test('<C-d> from a cursor above it goes on from the row after it, and <C-u> from one below from the row before', () => {
-    for (const { key, from, to, way } of [
-      { key: '<C-d>', from: 1, to: 41, way: 1 },
-      { key: '<C-u>', from: lineCount, to: 38, way: -1 },
-    ]) {
-      const { view, scroller } = inSpacer(from);
-      const scroll = scroller.scrollTop;
-      press(view, scroller, key);
-      expect(Math.sign(scroller.scrollTop - scroll)).toBe(way);
-      expect(lineOf(view)).toBe(to);
-      view.destroy();
-      scroller.remove();
-    }
+  test('a page scrolls a screen less two lines, and the cursor doesn’t drag it', () => {
+    const diff = inSpacer();
+    const scroll = diff.box.scrollTop;
+    press(diff.new, diff.box, '<PageDown>');
+    expect(diff.box.scrollTop - scroll).toBe(screenHeight - 2 * lineHeight);
+    expect(lineOf(diff.new)).toBe(41);
   });
 });
