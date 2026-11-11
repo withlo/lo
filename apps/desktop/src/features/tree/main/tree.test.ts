@@ -415,8 +415,9 @@ describe('TreeTab', () => {
     remote.write('README.md', 'base\n');
     const base = remote.commitWithNames([[long, 'deep\n']], 'base');
     remote.publish('refs/heads/trunk');
+    // As it was: on Linux, `git add -A` takes a path that's only in the index for deleted.
     remote.write('short.txt', 'short\n');
-    const head = remote.commit('short');
+    const head = remote.commitWithNames([[long, 'deep\n']], 'short');
     remote.publish('refs/pull/1/head');
     const repo = await cloneOf(server.baseUrl, {
       owner: 'o',
