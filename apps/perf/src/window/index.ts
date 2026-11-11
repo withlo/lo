@@ -4,6 +4,9 @@
 // background process after them. Keys take the app's path: the registry's listener sees each first
 // and runs Lo's commands, and the view's Vim gets the rest.
 
+// First, so its observers see the rest of the page run.
+import { markFirst, markLoad, markLoaded, marks, now } from './marks.ts';
+
 import { diffText, splitLines } from '@lo/diff';
 import {
   type Composer,
@@ -32,7 +35,11 @@ declare global {
   }
 }
 
-const { pull, nonce } = await window.perf.pull();
+// The page starts opening the pull request, as a tab opens one.
+marks.asked = now();
+const reply = await window.perf.pull();
+const { pull, nonce } = reply;
+Object.assign(marks, { opened: reply.opened, read: reply.read });
 // Every face the view draws loads before it measures a line: one that loaded later would change
 // the width of text already measured, and so where lines wrap, behind the editors' backs.
 await Promise.all(
@@ -81,8 +88,12 @@ view = createDiffView(
     load: (id) => {
       const index = indexOf.get(id);
       if (index === undefined) return;
+      markLoad(index, 'asked');
       window.perf.load(index).then(
-        (loaded) => opened().setLines(id, { old: lines(loaded.old), new: lines(loaded.new) }),
+        (loaded) => {
+          opened().setLines(id, { old: lines(loaded.old), new: lines(loaded.new) });
+          markLoad(index, 'lines');
+        },
         () => opened().loadFailed(id),
       );
     },
@@ -90,6 +101,10 @@ view = createDiffView(
   },
 );
 view.setThreads(threads);
+marks.view = now();
+/** The file at the top: the first with lines to show. */
+const first = pull.files.findIndex((file) => !file.skipped);
+marks.first = first;
 // A file with gaps shows GitHub's diff at once, as the diff feature does before the local copy.
 for (const file of pull.files) {
   if (!file.gaps) continue;
@@ -218,9 +233,9 @@ const copies: (() => void)[] = [];
 Object.assign(window, {
   diffView: view.probe,
   perfCopy: () => {
-    const now = copies.splice(0);
-    for (const copy of now) copy();
-    return now.length;
+    const waiting = copies.splice(0);
+    for (const copy of waiting) copy();
+    return waiting.length;
   },
 });
 
@@ -252,6 +267,8 @@ window.addEventListener('message', (event) => {
         if (triples) opened().setTokens(id, side, triples);
       }
       opened().setDiff(id, data.diff);
+      if (data.index === first) markFirst();
+      markLoad(data.index, 'diff');
     } else if (data.type === 'moves') {
       // The moves come last: everything has arrived.
       // The background process names files by their places in the pull request.
@@ -262,6 +279,7 @@ window.addEventListener('message', (event) => {
           words: move.words,
         })),
       );
+      markLoaded();
       Object.assign(window, { diffLoaded: true });
     }
   });

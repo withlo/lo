@@ -52,6 +52,12 @@ export interface PullReply {
   pull: Pull;
   /** The nonce the content security policy lets CodeMirror's style elements use. */
   nonce: string;
+  /**
+   * When main started opening the pull request, and when it had read every file: milliseconds
+   * since the epoch, for the bench.
+   */
+  opened: number;
+  read: number;
 }
 
 /** A file to diff and highlight, as main sends it to the background process. */
