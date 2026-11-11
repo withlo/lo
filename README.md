@@ -78,9 +78,9 @@ Lo keeps to these rules. [`docs/design.md`](docs/design.md) has the detail.
 ## Status
 
 Lo is in early development, and there's no release yet: no download, Homebrew cask or Linux package.
-Today you can sign in, open pull requests and browse their files; the diff, revisions, overviews,
-stacks, comments, merging and code navigation are still being built. To try it, build it from
-source, and expect missing pieces and things that change.
+Today you can sign in, open pull requests, browse their files and read their diffs; revisions,
+overviews, stacks, comments, merging and code navigation are still being built. To try it, build it
+from source, and expect missing pieces and things that change.
 
 It's built for the Mac first. Linux builds will be published as a preview, and Lo already builds and
 runs on Linux from source: its tests drive the real app there. On Linux, Ctrl takes the place of
