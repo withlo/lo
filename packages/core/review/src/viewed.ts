@@ -234,7 +234,7 @@ function whyWriteFailed(toggle: ViewedToggle, login: string, error: GithubError)
     case 'decode':
       return error.message;
     default:
-      return detail satisfies never;
+      throw new Error(`a GitHub error Lo doesn't know: ${JSON.stringify(detail satisfies never)}`);
   }
 }
 
@@ -265,6 +265,8 @@ export function changedSinceViewed(
     case 'full':
       return 'Changed since it was viewed.';
     default:
-      return comparison satisfies never;
+      throw new Error(
+        `a comparison of a viewed file Lo doesn't know: ${JSON.stringify(comparison satisfies never)}`,
+      );
   }
 }

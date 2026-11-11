@@ -229,6 +229,8 @@ export function walk(tree: unknown, limits: Limits = DEFAULT_LIMITS): Walked {
         }
         return;
       }
+      default:
+        holds satisfies never;
     }
   };
 

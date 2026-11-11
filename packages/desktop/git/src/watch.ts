@@ -94,7 +94,9 @@ export function stoppedError(stopped: Stopped, what: string): GitError {
       message = `it's more than ${formatMegabytes(stopped.limit)}, so Lo stopped downloading it`;
       break;
     default:
-      return stopped.reason satisfies never;
+      throw new Error(
+        `a reason to stop a fetch Lo doesn't know: ${JSON.stringify(stopped.reason satisfies never)}`,
+      );
   }
   return new GitError({ kind: 'fetch', what, failure, message });
 }
@@ -234,7 +236,9 @@ export class FetchState {
           progress: progress ?? { stage: 'Receiving objects', done: 0, bytes: this.received },
         };
       default:
-        return this.stage satisfies never;
+        throw new Error(
+          `a fetch stage Lo doesn't know: ${JSON.stringify(this.stage satisfies never)}`,
+        );
     }
   }
 
@@ -256,7 +260,9 @@ export class FetchState {
       case Stage.Resolving:
         return progress ?? 'resolving deltas';
       default:
-        return this.stage satisfies never;
+        throw new Error(
+          `a fetch stage Lo doesn't know: ${JSON.stringify(this.stage satisfies never)}`,
+        );
     }
   }
 }

@@ -175,7 +175,7 @@ function describe(detail: GitErrorDetail): string {
     case 'io':
       return `${detail.context}: ${detail.message}`;
     default:
-      return detail satisfies never;
+      throw new Error(`a git error Lo doesn't know: ${JSON.stringify(detail satisfies never)}`);
   }
 }
 
@@ -211,7 +211,9 @@ function explain(failure: FetchFailure, message: string): string {
     case 'other':
       return message;
     default:
-      return failure satisfies never;
+      throw new Error(
+        `a fetch failure Lo doesn't know: ${JSON.stringify(failure satisfies never)}`,
+      );
   }
   // git's last line usually says what happened, such as "Could not resolve host: github.com".
   const detail = message

@@ -22,7 +22,9 @@ export function panelShows(filter: PanelFilter, thread: Thread, viewer: string):
     case 'yours':
       return Thread.involves(thread, viewer);
     default:
-      return filter satisfies never;
+      throw new Error(
+        `a threads panel filter Lo doesn't know: ${JSON.stringify(filter satisfies never)}`,
+      );
   }
 }
 

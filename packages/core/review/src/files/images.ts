@@ -126,7 +126,7 @@ function dimensionsOf(
     case 'webp':
       return webpDimensions(bytes);
     default:
-      return format satisfies never;
+      throw new Error(`an image format Lo doesn't know: ${JSON.stringify(format satisfies never)}`);
   }
 }
 

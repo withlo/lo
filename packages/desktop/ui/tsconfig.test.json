@@ -5,7 +5,7 @@
     "lib": ["ES2024", "DOM"],
     "jsx": "react-jsx"
   },
-  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "scripts/**/*.ts"],
+  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "scripts/**/*.ts", "test/**/*.ts"],
   "references": [
     {
       "path": "./tsconfig.lib.json"

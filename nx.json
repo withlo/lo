@@ -33,7 +33,12 @@
   "targetDefaults": {
     "lint": {
       "cache": true,
-      "inputs": ["default", "^production", "{workspaceRoot}/.oxlintrc.json"]
+      "inputs": [
+        "default",
+        "^production",
+        "{workspaceRoot}/.oxlintrc.json",
+        "{workspaceRoot}/scripts/oxlint/plugin.ts"
+      ]
     },
     "test": {
       "cache": true,
