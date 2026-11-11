@@ -20,6 +20,12 @@ for file in $files; do
     break
   fi
   case "$file" in
+    # The overview skill carries a copy, which check:generated keeps current.
+    design/figures.md)
+      echo "$file is copied into the overview skill, so the checks run." >&2
+      check=true
+      break
+      ;;
     docs/* | brand/* | design/*.md | .claude/* | .agents/* | .github/*.md | LICENSE) ;;
     */*)
       echo "$file changed, so the checks run." >&2

@@ -1,10 +1,12 @@
 /**
- * The overview checker's command line. `check` reads an overview from a folder and checks it as Lo
- * would; `commit` checks it, then writes it as a commit to push to its pull request's ref.
+ * The overview checker's command line. `install` puts the overview skill where a coding agent finds
+ * it; `check` reads an overview from a folder and checks it as Lo would; `commit` checks it, then
+ * writes it as a commit to push to its pull request's ref.
  *
- * It exits 0 when the overview has no errors (warnings are fine), 1 when it has errors, and 2 when
- * it can't be checked: no git, no repository, the commit its header names isn't there, or a file
- * couldn't be read.
+ * `check` and `commit` exit 0 when the overview has no errors (warnings are fine), 1 when it has
+ * errors, and 2 when it can't be checked: no git, no repository, the commit its header names isn't
+ * there, or a file couldn't be read. `install` exits 0 once the skill is installed, and 2 when it
+ * isn't.
  */
 
 import { ARTIFACT, type Finding } from '@lo/artifact';
@@ -13,14 +15,29 @@ import { checkFolder, type FolderCheck } from './check.ts';
 import { refOf, writeCommit, type CommitFile, type Written } from './commit.ts';
 import { FolderError } from './folder.ts';
 import { GitError, gitIn } from './git.ts';
+import {
+  AGENT_NAMES,
+  install,
+  InstallError,
+  targetsOf,
+  type Agent,
+  type Installed,
+} from './install.ts';
+import { SKILL_NAME } from './skill.ts';
 
-const USAGE = `Checks an overview for Lo, and commits it for its pull request.
+const USAGE = `Installs Lo's overview skill for coding agents, and checks an overview and commits it for
+its pull request.
 
 Usage:
+  lo-overview install [--claude] [--codex] [--dir <folder>] [--json]
   lo-overview check [<dir>] [--pr <number>] [--json]
   lo-overview commit <dir> --pr <number> [--json]
 
 Commands:
+  install   Install the ${SKILL_NAME} skill, which teaches a coding agent to write an overview,
+            check it and push it: for Claude Code, for Codex, or in a skills folder of your own.
+            With none of the options, for each of Claude Code and Codex set up here. Only the
+            skill's own files are replaced.
   check     Check the overview in <dir>, the current folder unless given: its artifact.md and
             figures/, and the code it names, read from the repository this runs in at the commit
             its header names.
@@ -29,16 +46,22 @@ Commands:
             ref, index or working tree changes.
 
 Options:
-  --pr <number>  The pull request the overview is for. Its header must name the same one.
-  --json         Print what was found as JSON.
-  --help         Print this.
+  --claude        Install the skill for Claude Code, in ~/.claude/skills, or in skills in
+                  $CLAUDE_CONFIG_DIR when that's set.
+  --codex         Install the skill for Codex, in ~/.agents/skills.
+  --dir <folder>  Install the skill in the skills folder <folder>, as <folder>/${SKILL_NAME}.
+  --pr <number>   The pull request the overview is for. Its header must name the same one.
+  --json          Print what was found, or installed, as JSON.
+  --help          Print this.
 
-Exit status: 0 when the overview has no errors, 1 when it has errors, 2 when it can't be checked.
+Exit status: check and commit exit 0 when the overview has no errors, 1 when it has errors, and 2
+when it can't be checked. install exits 0 once the skill is installed, and 2 when it isn't.
 `;
 
 /** What the command line asks for. */
 type Command =
   | { kind: 'help' }
+  | { kind: 'install'; agents: Agent[]; dir: string | undefined; json: boolean }
   | { kind: 'check'; dir: string; pr: number | undefined; json: boolean }
   | { kind: 'commit'; dir: string; pr: number; json: boolean };
 
@@ -73,6 +96,8 @@ export async function main(args: readonly string[], streams: Streams): Promise<n
         case 'help':
           streams.out(USAGE);
           return 0;
+        case 'install':
+          return installed(install(targetsOf(command, process.env)), command.json, streams);
         case 'check':
           return report(await checkFolder(command.dir, gitIn(), command.pr), command.json, streams);
         case 'commit':
@@ -82,6 +107,7 @@ export async function main(args: readonly string[], streams: Streams): Promise<n
           throw new Error(`Unknown command ${JSON.stringify(command)}`);
       }
     } catch (error) {
+      if (error instanceof InstallError) return fail(error.message);
       if (error instanceof GitError || error instanceof FolderError || isFileSystemError(error)) {
         return fail(`Lo can't check the overview. ${error.message}`);
       }
@@ -104,6 +130,8 @@ function parse(args: readonly string[]): Command {
   let json = false;
   let pr: string | undefined;
   let help = false;
+  const agents: Agent[] = [];
+  let dir: string | undefined;
   for (let at = 0; at < args.length; at++) {
     const arg = args[at]!;
     if (arg === '--') {
@@ -116,12 +144,25 @@ function parse(args: readonly string[]): Command {
       pr = args[++at];
       if (pr === undefined) throw new Error("--pr takes a pull request's number.");
     } else if (arg.startsWith('--pr=')) pr = arg.slice('--pr='.length);
-    else if (arg.startsWith('-')) throw new Error(`${JSON.stringify(arg)} isn't an option.`);
+    else if (arg === '--claude') agents.push('claude');
+    else if (arg === '--codex') agents.push('codex');
+    else if (arg === '--dir' || arg.startsWith('--dir=')) {
+      dir = arg === '--dir' ? args[++at] : arg.slice('--dir='.length);
+      if (!dir) throw new Error('--dir takes the skills folder to install the skill in.');
+    } else if (arg.startsWith('-')) throw new Error(`${JSON.stringify(arg)} isn't an option.`);
     else positional.push(arg);
   }
   const [name, ...rest] = positional;
   if (help || name === 'help' || name === undefined) return { kind: 'help' };
+  const installing = agents.length > 0 || dir !== undefined;
+  if (name !== 'install' && installing)
+    throw new Error('--claude, --codex and --dir are for install.');
   switch (name) {
+    case 'install': {
+      if (rest.length > 0) throw new Error('install takes a skills folder with --dir <folder>.');
+      if (pr !== undefined) throw new Error('install takes no --pr.');
+      return { kind: 'install', agents: [...new Set(agents)], dir, json };
+    }
     case 'check': {
       if (rest.length > 1) throw new Error('check takes one folder.');
       return { kind: 'check', dir: rest[0] ?? '.', pr: pullRequest(pr), json };
@@ -143,6 +184,20 @@ function pullRequest(given: string | undefined): number | undefined {
     throw new Error(`--pr takes a pull request's number, not ${JSON.stringify(given)}.`);
   }
   return Number(given);
+}
+
+/** Says where the skill was installed, and returns the exit status. */
+function installed(where: readonly Installed[], json: boolean, streams: Streams): number {
+  if (json) {
+    const each = where.map(({ agent, folder }) => ({ agent: agent ?? null, folder }));
+    streams.out(`${JSON.stringify({ installed: each }, null, 2)}\n`);
+    return 0;
+  }
+  for (const { agent, folder } of where) {
+    const forWhom = agent === undefined ? '' : ` for ${AGENT_NAMES[agent]},`;
+    streams.out(`Installed the ${SKILL_NAME} skill${forWhom} in ${folder}.\n`);
+  }
+  return 0;
 }
 
 /** Checks the overview in `dir`, and when it passes, commits it for `pr`. */

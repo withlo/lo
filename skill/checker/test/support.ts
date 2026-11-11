@@ -1,10 +1,21 @@
 /** Running the built checker in tests, on folders and repositories the tests make. */
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { expect } from 'vitest';
 
 import { git, testGitEnvironment } from '@lo/testing/git';
 
@@ -93,4 +104,37 @@ export function header(commit: string, pr = 4797): string {
 /** An overview at `commit`, with a tl;dr and then `body`. */
 export function overview(commit: string, body = '', pr = 4797): string {
   return `${header(commit, pr)}\n## tl;dr\n\nIt changes things.\n\n${body}`;
+}
+
+/** The skill's source, `skill/` in the repository. */
+export const SKILL = fileURLToPath(new URL('../../', import.meta.url));
+
+/** The files the skill is made of, by their paths in its folder. */
+export function skillFiles(): string[] {
+  const references = readdirSync(join(SKILL, 'references')).map((name) => `references/${name}`);
+  return ['LICENSE', 'SKILL.md', ...references].toSorted();
+}
+
+/** Every file, folder and link in `dir`, by its path there, each folder's ending in `/`. */
+export function listing(dir: string, inner = ''): string[] {
+  return readdirSync(join(dir, inner))
+    .flatMap((name) => {
+      const path = inner === '' ? name : `${inner}/${name}`;
+      const stats = lstatSync(join(dir, path));
+      if (stats.isSymbolicLink()) return [`${path} -> ${readlinkSync(join(dir, path))}`];
+      return stats.isDirectory() ? [`${path}/`, ...listing(dir, path)] : [path];
+    })
+    .toSorted();
+}
+
+/** The skill's own files in the folder `dir`, each by its path there, with its text. */
+function skillIn(dir: string): Record<string, string> {
+  return Object.fromEntries(
+    skillFiles().map((path) => [path, readFileSync(join(dir, path), 'utf8')]),
+  );
+}
+
+/** Checks the skill's folder `folder` holds the skill's own files exactly as the repository has them. */
+export function expectSkill(folder: string): void {
+  expect(skillIn(folder)).toEqual(skillIn(SKILL));
 }
