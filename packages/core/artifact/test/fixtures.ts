@@ -217,11 +217,9 @@ export function gitReader(gitDir: string): CodeReader {
         return { kind: 'notFile', is: 'folder' };
       default: {
         const size = Number(gitBytes(gitDir, ['cat-file', '-s', found.id]).toString('utf8'));
-        if (size > cap) return { kind: 'tooLarge' };
-        return {
-          kind: 'bytes',
-          bytes: new Uint8Array(gitBytes(gitDir, ['cat-file', 'blob', found.id])),
-        };
+        if (cap === 0) return { kind: 'file', size, bytes: new Uint8Array() };
+        const blob = gitBytes(gitDir, ['cat-file', 'blob', found.id]);
+        return { kind: 'file', size, bytes: new Uint8Array(blob.subarray(0, cap)) };
       }
     }
   };
@@ -231,8 +229,11 @@ export function gitReader(gitDir: string): CodeReader {
 export interface FixtureInput {
   /** The pull request whose ref the overview is on. */
   ref?: number;
-  /** Entries the folder can't hold, added to its listing. */
-  entries?: { path?: string; bytes?: string; kind: EntryKind; size?: number }[];
+  /**
+   * Entries the folder can't hold, added to its listing. A file is that many bytes of zeros, or
+   * with `fails`, a file its reader fails to read.
+   */
+  entries?: { path?: string; bytes?: string; kind: EntryKind; size?: number; fails?: boolean }[];
   /** As many entries as `count`, named `prefix`, a number and `ending`, each `size` bytes. */
   many?: { prefix: string; ending: string; count: number; size: number };
 }
@@ -246,7 +247,7 @@ const OWN = new Set(['expected.json', 'fixture.json']);
  */
 export function folderFiles(dir: string, input: FixtureInput): OverviewFiles {
   const entries: TreeEntry[] = [];
-  const declared = new Map<string, { kind: EntryKind; size: number }>();
+  const declared = new Map<string, { kind: EntryKind; size: number; fails: boolean }>();
   const walk = (prefix: string): void => {
     for (const name of readdirSync(join(dir, prefix)).toSorted()) {
       if (prefix === '' && OWN.has(name)) continue;
@@ -259,7 +260,11 @@ export function folderFiles(dir: string, input: FixtureInput): OverviewFiles {
           : 'file';
       const size =
         kind === 'link' ? encoder.encode(readlinkSync(join(dir, path))).length : stat.size;
-      entries.push({ path: encoder.encode(path), kind, ...(kind === 'folder' ? {} : { size }) });
+      entries.push(
+        kind === 'folder'
+          ? { path: encoder.encode(path), kind }
+          : { path: encoder.encode(path), kind, size },
+      );
       if (kind === 'folder') walk(path);
     }
   };
@@ -267,15 +272,21 @@ export function folderFiles(dir: string, input: FixtureInput): OverviewFiles {
   for (const entry of input.entries ?? []) {
     const path =
       entry.bytes === undefined ? encoder.encode(entry.path) : Buffer.from(entry.bytes, 'hex');
-    entries.push({ path, kind: entry.kind, size: entry.size });
-    declared.set(key(path), { kind: entry.kind, size: entry.size ?? 0 });
+    // As given: a file or a link without a size is listed so.
+    const listed: TreeEntry = JSON.parse('{}');
+    entries.push(Object.assign(listed, { path, kind: entry.kind, size: entry.size }));
+    declared.set(key(path), {
+      kind: entry.kind,
+      size: entry.size ?? 0,
+      fails: entry.fails ?? false,
+    });
   }
   if (input.many) {
     const { prefix, ending, count, size } = input.many;
     for (let n = 0; n < count; n++) {
       const path = encoder.encode(`${prefix}${n}${ending}`);
       entries.push({ path, kind: 'file', size });
-      declared.set(key(path), { kind: 'file', size });
+      declared.set(key(path), { kind: 'file', size, fails: false });
     }
   }
   return {
@@ -283,10 +294,13 @@ export function folderFiles(dir: string, input: FixtureInput): OverviewFiles {
     read: async (path, cap): Promise<FileAnswer> => {
       const listed = declared.get(key(encoder.encode(path)));
       if (listed) {
+        if (listed.fails) throw new Error(`${path} can't be read`);
         if (listed.kind !== 'file') return { kind: 'notFile', is: listed.kind };
-        return listed.size > cap
-          ? { kind: 'tooLarge' }
-          : { kind: 'bytes', bytes: new Uint8Array(listed.size) };
+        return {
+          kind: 'file',
+          size: listed.size,
+          bytes: new Uint8Array(Math.min(listed.size, cap)),
+        };
       }
       // Each part looked at in turn, so a link on the way is never followed.
       const parts = path.split('/');
@@ -304,10 +318,10 @@ export function folderFiles(dir: string, input: FixtureInput): OverviewFiles {
           return last ? { kind: 'notFile', is: 'link' } : { kind: 'missing' };
         if (!last && !stat.isDirectory()) return { kind: 'missing' };
         if (last && stat.isDirectory()) return { kind: 'notFile', is: 'folder' };
-        if (last)
-          return stat.size > cap
-            ? { kind: 'tooLarge' }
-            : { kind: 'bytes', bytes: new Uint8Array(readFileSync(at)) };
+        if (last) {
+          const bytes = cap === 0 ? new Uint8Array() : new Uint8Array(readFileSync(at));
+          return { kind: 'file', size: stat.size, bytes: bytes.subarray(0, cap) };
+        }
       }
       return { kind: 'missing' };
     },

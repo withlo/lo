@@ -13,13 +13,27 @@ export type Held = string | Uint8Array | { kind: EntryKind; size?: number };
 /** A commit's paths, by their text, and what's at each. */
 export type Paths = Readonly<Record<string, Held>>;
 
+/** An entry as a reader might list it, wrongly: with any size, or none, whatever its kind. */
+export function listed(path: string | Uint8Array, kind: EntryKind, size: unknown): TreeEntry {
+  const entry: TreeEntry = JSON.parse('{}');
+  return Object.assign(entry, {
+    path: typeof path === 'string' ? encoder.encode(path) : path,
+    kind,
+    size,
+  });
+}
+
 /** `held` as a commit's listing has it. */
 function entryOf(path: string, held: Held): TreeEntry {
   if (typeof held === 'string' || held instanceof Uint8Array) {
     const size = typeof held === 'string' ? encoder.encode(held).length : held.length;
     return { path: encoder.encode(path), kind: 'file', size };
   }
-  return { path: encoder.encode(path), kind: held.kind, size: held.size };
+  return listed(
+    path,
+    held.kind,
+    held.size ?? (held.kind === 'file' || held.kind === 'link' ? 0 : undefined),
+  );
 }
 
 /** What reading `path` from `paths` answers under `cap`, as a reader must. */
@@ -30,14 +44,12 @@ export function answer(paths: Paths, path: string, cap: number): FileAnswer {
   }
   const held = paths[path]!;
   if (typeof held === 'object' && !(held instanceof Uint8Array)) {
-    if (held.kind === 'file')
-      return (held.size ?? 0) > cap
-        ? { kind: 'tooLarge' }
-        : { kind: 'bytes', bytes: new Uint8Array(held.size ?? 0).fill(0x0a) };
-    return { kind: 'notFile', is: held.kind };
+    if (held.kind !== 'file') return { kind: 'notFile', is: held.kind };
+    const size = held.size ?? 0;
+    return { kind: 'file', size, bytes: new Uint8Array(Math.min(size, cap)).fill(0x0a) };
   }
   const bytes = typeof held === 'string' ? encoder.encode(held) : held;
-  return bytes.length > cap ? { kind: 'tooLarge' } : { kind: 'bytes', bytes };
+  return { kind: 'file', size: bytes.length, bytes: bytes.subarray(0, cap) };
 }
 
 /** An overview's commit holding `paths`, and `extra` entries listed as given. */

@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest';
 
 import { HEADER, overview, PREAMBLE_LINES } from '../test/support.ts';
-import { overviewFiles, repository, type Paths } from '../test/readers.ts';
+import { listed, overviewFiles, repository, type Paths } from '../test/readers.ts';
 import {
+  ARTIFACT_READ,
   checkArtifact,
   LIMITS,
   parseArtifact,
@@ -86,11 +87,21 @@ describe('the commit', () => {
     },
   );
 
-  test('artifact.md there but not read is invalid', async () => {
+  test('artifact.md there but not read is invalid, unless the listing says it’s too large', async () => {
     const files = overviewFiles({ 'artifact.md': overview('') });
     const checked = await checkArtifact(undefined, files, repository(COMMIT, held).readCode);
     expect(checked.outcome).toEqual({ kind: 'invalid' });
     expect(codes(checked)).toEqual(['unreadable']);
+    // Too large to read, it's too large, by the listing, with its byte-order mark allowed for.
+    for (const [size, outcome] of [
+      [ARTIFACT_READ, 'invalid'],
+      [ARTIFACT_READ + 1, 'tooLarge'],
+    ] as const) {
+      const large = overviewFiles({ 'artifact.md': { kind: 'file', size } });
+      const read = await checkArtifact(undefined, large, repository(COMMIT, held).readCode);
+      expect(read.outcome.kind).toBe(outcome);
+      expect(codes(read)).toEqual([outcome === 'invalid' ? 'unreadable' : 'too-large']);
+    }
   });
 
   test('a listing a reader got wrong is refused, never thrown', async () => {
@@ -177,7 +188,7 @@ describe('the commit', () => {
     const checked = await check(
       overview(''),
       {},
-      odd.map((path) => ({ path, kind: 'file', size: 1 })),
+      odd.map((path) => listed(path, 'file', 1)),
     );
     expect(checked.findings.map(({ code }) => code)).toEqual(Array(4).fill('tree-extra'));
     for (const { file, message } of checked.findings) {
@@ -225,14 +236,20 @@ describe('the commit', () => {
   });
 });
 
-/** `count` figures, as a commit lists them. */
-function figures(count: number): TreeEntry[] {
-  return Array.from({ length: count }, (_, n) => ({
-    path: encoder.encode(`figures/f${n}.png`),
-    kind: 'file',
-    size: 10,
-  }));
+/** `count` figures of `size` bytes, as a commit lists them. */
+function figures(count: number, size = 10): TreeEntry[] {
+  return Array.from({ length: count }, (_, n) => listed(`figures/f${n}.png`, 'file', size));
 }
+
+test('past the limit on figures, the rest aren’t looked for in the commit', async () => {
+  const blocks = Array.from(
+    { length: LIMITS.figures + 1 },
+    (_, n) => `:::figure figures/f${n}.png\nF.\n:::`,
+  );
+  // Every figure but the one past the limit is there.
+  const checked = await check(overview(`${blocks.join('\n')}\n`), {}, figures(LIMITS.figures));
+  expect(checked.findings.map(({ code }) => code)).toEqual(['figure-count']);
+});
 
 describe('the commit’s limits', () => {
   test('500 files and folders, counting the folders paths pass through', async () => {
@@ -240,11 +257,11 @@ describe('the commit’s limits', () => {
     const at = await check(overview(''), {}, figures(498));
     expect(at.findings).toEqual([]);
     // Listing the folder doesn't count it twice.
-    const listed = await check(overview(''), {}, [
+    const withFolder = await check(overview(''), {}, [
       ...figures(498),
       { path: encoder.encode('figures'), kind: 'folder' },
     ]);
-    expect(listed.findings).toEqual([]);
+    expect(withFolder.findings).toEqual([]);
     const past = await check(overview(''), {}, figures(499));
     expect(codes(past)).toEqual(['tree-count']);
     expect(past.outcome).toMatchObject({ kind: 'tooLarge', what: 'entries' });
@@ -254,11 +271,22 @@ describe('the commit’s limits', () => {
     expect(past.asked).toBe(0);
   });
 
-  test('a path through a million folders counts quickly', async () => {
-    const path = encoder.encode(`${'d/'.repeat(1_000_000)}x`);
+  test('a path longer than any target is one entry, reported quickly', async () => {
+    const deep = encoder.encode(`${'d/'.repeat(1_000_000)}x.png`);
     const started = performance.now();
-    const checked = await check(overview(''), {}, [{ path, kind: 'file', size: 1 }]);
-    expect(performance.now() - started).toBeLessThan(1_000);
+    const checked = await check(overview(''), {}, [listed(deep, 'file', 1)]);
+    expect(performance.now() - started).toBeLessThan(100);
+    expect(checked.outcome).toMatchObject({ kind: 'shown' });
+    expect(codes(checked)).toEqual([`tree-extra:${'d/'.repeat(24)}…`]);
+    expect(checked.findings[0]?.message).toBe(
+      "A path in the overview's commit is longer than 1,024 bytes, which no overview holds.",
+    );
+  });
+
+  test('a path through as many folders as fit in a target counts each', async () => {
+    const deep = `${'d/'.repeat(LIMITS.entries)}x`;
+    expect(deep.length).toBeLessThanOrEqual(LIMITS.argument);
+    const checked = await check(overview(''), {}, [listed(deep, 'file', 1)]);
     // Counting stops just past the limit.
     expect(checked.outcome).toMatchObject({
       kind: 'tooLarge',
@@ -267,14 +295,26 @@ describe('the commit’s limits', () => {
     });
   });
 
-  test('a listing of 200,000 entries is read quickly', async () => {
+  test('of a listing of a million entries, one past the limit’s worth is read', async () => {
+    const text = overview('');
+    const figure = listed('figures/f.png', 'file', 10);
+    // artifact.md last, where it's still found.
+    const entries = [
+      ...Array.from({ length: 1_000_000 }, () => figure),
+      listed('artifact.md', 'file', text.length),
+    ];
+    const files = { ...overviewFiles({}), entries };
     const started = performance.now();
-    const checked = await check(overview(''), {}, figures(200_000));
-    expect(performance.now() - started).toBeLessThan(1_500);
-    expect(checked.outcome).toMatchObject({
+    const checked = await checkArtifact(
+      parseArtifact(text),
+      files,
+      repository(COMMIT, held).readCode,
+    );
+    expect(performance.now() - started).toBeLessThan(250);
+    expect(checked.outcome).toEqual({
       kind: 'tooLarge',
       what: 'entries',
-      sizes: { entries: 200_001, bytes: 2_000_000 + overview('').length },
+      sizes: { entries: 501, bytes: 5_010, kinds: [{ kind: 'png', files: 501, bytes: 5_010 }] },
     });
   });
 
@@ -286,8 +326,8 @@ describe('the commit’s limits', () => {
     });
     expect(at.findings).toEqual([]);
     const past = await check(text, {}, [
-      ...figures(31).map((entry) => ({ ...entry, size: 2 * MIB })),
-      { path: encoder.encode('figures/flow.svg'), kind: 'file', size: 12 * MIB },
+      ...figures(31, 2 * MIB),
+      listed('figures/flow.svg', 'file', 12 * MIB),
     ]);
     expect(codes(past)).toEqual(['tree-size']);
     expect(past.findings[0]?.message).toBe(
@@ -308,23 +348,22 @@ describe('the commit’s limits', () => {
     });
   });
 
-  test('a size the listing doesn’t give, or gives wrongly, counts for nothing', async () => {
-    const sizes = [undefined, Number.NaN, -1, Infinity, 1e300, 1.5, -LIMITS.commit];
-    const odd: TreeEntry[] = sizes.map((size, n) => ({
-      path: encoder.encode(`figures/f${n}.png`),
-      kind: 'file',
-      size,
-    }));
-    const checked = await check(overview(''), {}, odd);
-    expect(checked.findings).toEqual([]);
+  test.each([undefined, Number.NaN, -1, Infinity, 1e300, 1.5])(
+    'a file whose size the listing gives as %s is refused, since the commit can’t be measured',
+    async (size) => {
+      const checked = await check(overview(''), {}, [listed('figures/f.png', 'file', size)]);
+      expect(checked.outcome).toEqual({ kind: 'invalid' });
+      expect(codes(checked)).toEqual(['unreadable']);
+      expect(checked.findings[0]?.message).toBe(
+        "Lo couldn't tell how large figures/f.png is, so it couldn't check the overview's size.",
+      );
+      expect(checked.asked).toBe(0);
+    },
+  );
+
+  test('a file of no size is 0 bytes, and counts', async () => {
+    const checked = await check(overview(''), { 'figures/f.png': new Uint8Array() });
     expect(checked.outcome.kind).toBe('shown');
-    // Nor can they hide a size the listing does give.
-    const past = await check(
-      overview(''),
-      { 'figures/big.png': { kind: 'file', size: LIMITS.commit } },
-      odd,
-    );
-    expect(past.outcome).toMatchObject({ kind: 'tooLarge', what: 'bytes' });
   });
 
   test('a folder or a submodule has no size, whatever the listing says', async () => {
@@ -412,9 +451,5 @@ describe('the outcome', () => {
 
 /** More entries than a commit may hold. */
 function figuresPast(): TreeEntry[] {
-  return Array.from({ length: LIMITS.entries + 1 }, (_, n) => ({
-    path: encoder.encode(`figures/f${n}.png`),
-    kind: 'file',
-    size: MIB,
-  }));
+  return figures(LIMITS.entries + 1, MIB);
 }

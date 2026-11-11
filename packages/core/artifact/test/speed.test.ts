@@ -6,8 +6,9 @@
 
 import { expect, test } from 'vitest';
 
-import { LIMITS, parseArtifact } from '../src/index.ts';
-import { HEADER, timed } from './support.ts';
+import { checkArtifact, LIMITS, parseArtifact } from '../src/index.ts';
+import { listed, overviewFiles, repository } from './readers.ts';
+import { COMMIT, HEADER, timed } from './support.ts';
 import { problems, walk } from './walker.ts';
 
 /**
@@ -128,6 +129,28 @@ test.each([
     expect(made.findings.map(({ code }) => code)).toContain('target-count');
     expect(made.references.length).toBeLessThanOrEqual(LIMITS.targets);
     expect(problems(made.tree)).toEqual([]);
+    expect(elapsed, `took ${elapsed} ms`).toBeLessThan(LIMIT);
+  },
+);
+
+test.each([1_000, 25_000])(
+  'the worst check, as many missing figures as fit against paths of %i bytes, is within budget',
+  async (length) => {
+    // Figures named in artifact.md that aren't in the commit, each looked up in another case.
+    let text = `${HEADER}\n## tl;dr\n\nIt draws.\n\n`;
+    for (let n = 0; text.length < 250_000; n++) text += `:::figure figures/f${n}.svg\nC.\n:::\n`;
+    // A commit at its limit on entries, its paths all as long as each other.
+    const entries = Array.from({ length: LIMITS.entries - 4 }, (_, n) =>
+      listed(`figures/${String(n).padStart(length - 12, 'a')}.svg`, 'file', 10),
+    );
+    const files = overviewFiles({ 'artifact.md': text }, entries);
+    const parsed = parseArtifact(text);
+    expect(parsed.figures.length).toBeGreaterThan(7_000);
+    const { readCode } = repository(COMMIT, {});
+    const started = performance.now();
+    const checked = await checkArtifact(parsed, files, readCode);
+    const elapsed = performance.now() - started;
+    expect(checked.findings.map(({ code }) => code)).toContain('figure-count');
     expect(elapsed, `took ${elapsed} ms`).toBeLessThan(LIMIT);
   },
 );

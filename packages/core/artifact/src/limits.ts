@@ -40,6 +40,12 @@ export const LIMITS = Object.freeze({
   code: 64 * 1024 * 1024,
 });
 
+/**
+ * The most bytes of `artifact.md` to read to parse it: its limit, and a byte-order mark. A larger
+ * one is too large, and isn't read at all.
+ */
+export const ARTIFACT_READ = LIMITS.size + 3;
+
 /** How much of the start of a file is looked at for a NUL byte, which makes it binary. */
 export const BINARY_WINDOW = 8 * 1024;
 

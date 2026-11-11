@@ -15,5 +15,13 @@ export {
   type FindingCode,
   type Severity,
 } from './findings.ts';
-export { BINARY_WINDOW, CHECK_TIMEOUT, FORMAT, LIMITS, MIN_STEPS, MIN_TABS } from './limits.ts';
+export {
+  ARTIFACT_READ,
+  BINARY_WINDOW,
+  CHECK_TIMEOUT,
+  FORMAT,
+  LIMITS,
+  MIN_STEPS,
+  MIN_TABS,
+} from './limits.ts';
 export { FIGURE_TYPES, readCode, readFigure, readPath, readTerm, termKey } from './targets.ts';

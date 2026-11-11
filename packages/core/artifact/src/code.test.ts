@@ -96,11 +96,12 @@ describe('code', () => {
       '[c](code:src/c.ts) [a](code:src/a.ts#L1) [a2](code:src/a.ts#L2) [a3](code:src/a.ts)\n\n:::code src/b.ts#L1\n:::\n',
       { 'src/a.ts': lines(2), 'src/b.ts': lines(1), 'src/c.ts': lines(1) },
     );
-    // In the order of their lines, the block's first; a file named whole only is asked for no bytes.
+    // In the order of their lines, the block's first: each file's first 8 KiB, which holds all of
+    // these. A file named whole only is asked for none of its bytes.
     expect(asked).toEqual([
       { commit: COMMIT, path: 'src/c.ts', cap: 0 },
-      { commit: COMMIT, path: 'src/a.ts', cap: LIMITS.file },
-      { commit: COMMIT, path: 'src/b.ts', cap: LIMITS.file },
+      { commit: COMMIT, path: 'src/a.ts', cap: BINARY_WINDOW },
+      { commit: COMMIT, path: 'src/b.ts', cap: BINARY_WINDOW },
     ]);
   });
 
@@ -160,14 +161,24 @@ describe('code', () => {
     binary[BINARY_WINDOW - 1] = 0;
     const late = new Uint8Array(BINARY_WINDOW + 1).fill(0x61);
     late[BINARY_WINDOW] = 0;
-    const checked = await check('[a](code:a.bin#L1) [b](code:b.bin#L1) [c](code:a.bin)\n', {
-      'a.bin': binary,
-      'b.bin': late,
-    });
+    const large = new Uint8Array(LIMITS.file).fill(0x61);
+    large[0] = 0;
+    const checked = await check(
+      '[a](code:a.bin#L1) [b](code:b.bin#L1) [c](code:a.bin) [d](code:large.bin#L1)\n',
+      { 'a.bin': binary, 'b.bin': late, 'large.bin': large },
+    );
     // Named whole, a binary file is there to open.
-    expect(checked.states).toEqual([broken('binary'), resolved, resolved]);
+    expect(checked.states).toEqual([broken('binary'), resolved, resolved, broken('binary')]);
     expect(checked.findings.map(({ message }) => message)).toEqual([
       "a.bin isn't text, so it has no lines to show.",
+      "large.bin isn't text, so it has no lines to show.",
+    ]);
+    // Only what a NUL is looked for in is read of a binary file; the rest of a text file follows.
+    expect(checked.asked.map(({ path, cap }) => `${path} ${cap}`)).toEqual([
+      `a.bin ${BINARY_WINDOW}`,
+      `b.bin ${BINARY_WINDOW}`,
+      `b.bin ${BINARY_WINDOW + 1}`,
+      `large.bin ${BINARY_WINDOW}`,
     ]);
   });
 
@@ -235,6 +246,13 @@ describe('code', () => {
     expect(checked.findings[0]?.message).toBe(
       'big.ts is larger than 10 MiB, the most Lo reads of a file to show its lines.',
     );
+    // A file too large is read no further than its first 8 KiB.
+    expect(checked.asked.map(({ path, cap }) => `${path} ${cap}`)).toEqual([
+      `big.ts ${BINARY_WINDOW}`,
+      `huge.ts ${BINARY_WINDOW}`,
+      `at.ts ${BINARY_WINDOW}`,
+      `at.ts ${LIMITS.file}`,
+    ]);
   });
 
   test('at most 64 MiB of code is read for an overview, in the order it’s named', async () => {
@@ -248,11 +266,10 @@ describe('code', () => {
     paths['whole.ts'] = { kind: 'file', size: LIMITS.file };
     links.push('[w](code:whole.ts)');
     const checked = await check(`${links.join('\n')}\n`, paths);
-    const left = LIMITS.code - 6 * LIMITS.file;
     expect(checked.asked.map(({ cap }) => cap)).toEqual([
-      ...Array.from({ length: 6 }, () => LIMITS.file),
-      left,
-      left,
+      ...Array.from({ length: 6 }, () => [BINARY_WINDOW, LIMITS.file]).flat(),
+      BINARY_WINDOW,
+      BINARY_WINDOW,
       0,
     ]);
     expect(checked.states).toEqual([
@@ -281,10 +298,35 @@ describe('code', () => {
   });
 });
 
+/** An answer whose kind can't be read. */
+function throwsOnKind(): Promise<FileAnswer> {
+  return Promise.resolve(
+    Object.defineProperty(JSON.parse('{}'), 'kind', {
+      get() {
+        throw new Error('no');
+      },
+    }),
+  );
+}
+
+/** An answer whose bytes are a proxy, saying they're as long as they should be. */
+function proxied(): Promise<FileAnswer> {
+  const bytes = new Proxy(new Uint8Array(1), {
+    get: (target, key) => (key === 'length' ? BINARY_WINDOW : Reflect.get(target, key)),
+  });
+  return Promise.resolve({ kind: 'file', size: 2 * BINARY_WINDOW, bytes });
+}
+
 /** An answer no reader may give, as JSON: it can't be typed as one. */
 function unlike(json: string): () => Promise<FileAnswer> {
   return () => Promise.resolve(JSON.parse(json).answer);
 }
+
+/** A reader that says one size, then another, for the same file. */
+const changing: CodeReader = async (_commit, _path, cap) => {
+  const size = cap === BINARY_WINDOW ? 3 * BINARY_WINDOW : 2 * BINARY_WINDOW;
+  return { kind: 'file', size, bytes: new Uint8Array(Math.min(size, cap)).fill(0x0a) };
+};
 
 describe('a reader that misbehaves', () => {
   const held: Paths = { 'a.ts': lines(3), 'b.ts': lines(3) };
@@ -306,7 +348,16 @@ describe('a reader that misbehaves', () => {
     ['answers nothing', unlike('{}')],
     ['answers null', unlike('{ "answer": null }')],
     ['answers a kind it can’t', unlike('{ "answer": { "kind": "maybe" } }')],
-    ['answers text, not bytes', unlike('{ "answer": { "kind": "bytes", "bytes": "line 1" } }')],
+    [
+      'answers text, not bytes',
+      unlike('{ "answer": { "kind": "file", "size": 6, "bytes": "line 1" } }'),
+    ],
+    [
+      'answers a size it can’t',
+      unlike('{ "answer": { "kind": "file", "size": -1, "bytes": [] } }'),
+    ],
+    ['answers with a getter that throws', throwsOnKind],
+    ['answers bytes behind a proxy', proxied],
     [
       'answers a kind of entry it can’t',
       unlike('{ "answer": { "kind": "notFile", "is": "socket" } }'),
@@ -329,13 +380,19 @@ describe('a reader that misbehaves', () => {
     expect(states(checked)).toEqual([{ state: 'unread', why: 'failed' }, resolved]);
   });
 
-  test('one that reads past the cap is taken at its cap, not its word', async () => {
-    const checked = await checkWith('[a](code:a.ts#L1) [w](code:b.ts)\n', async () => ({
-      kind: 'bytes',
-      bytes: new Uint8Array(LIMITS.file + 1),
-    }));
-    // Asked for none of b.ts, it gave bytes: b.ts is there, as a file too large to read.
-    expect(states(checked)).toEqual([broken('tooLarge'), resolved]);
+  test.each([
+    ['more than the cap', 20, BINARY_WINDOW + 1],
+    ['less than the cap of a larger file', 2 * BINARY_WINDOW, 10],
+    ['less than all of a smaller file', 20, 10],
+  ])('one that gives bytes %s isn’t taken at its word', async (_what, size, length) => {
+    const reader: CodeReader = async () => ({ kind: 'file', size, bytes: new Uint8Array(length) });
+    const checked = await checkWith('[a](code:a.ts#L1)\n', reader);
+    expect(states(checked)).toEqual([{ state: 'unread', why: 'failed' }]);
+  });
+
+  test('one that answers the same file differently the second time isn’t taken at its word', async () => {
+    const checked = await checkWith('[a](code:a.ts#L1)\n', changing);
+    expect(states(checked)).toEqual([{ state: 'unread', why: 'failed' }]);
   });
 
   test('one that never answers is stopped at the timeout', async () => {

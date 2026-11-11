@@ -11,9 +11,9 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import {
+  ARTIFACT_READ,
   checkArtifact,
   FINDING_CODES,
-  LIMITS,
   parseArtifact,
   type CodeReader,
 } from '../src/index.ts';
@@ -62,9 +62,12 @@ describe.each(fixtures)('$group/$name', ({ group, dir }) => {
       : {};
     const expected: Expected = JSON.parse(readFileSync(join(dir, 'expected.json'), 'utf8'));
     const files = folderFiles(dir, input);
-    const stop = new AbortController();
-    const artifact = await files.read('artifact.md', LIMITS.commit, stop.signal);
-    const parsed = artifact.kind === 'bytes' ? parseArtifact(artifact.bytes) : undefined;
+    // As Lo and the checker read it: whole, when it's a file no larger than it may be.
+    const artifact = await files
+      .read('artifact.md', ARTIFACT_READ, new AbortController().signal)
+      .catch(() => undefined);
+    const whole = artifact?.kind === 'file' && artifact.bytes.length === artifact.size;
+    const parsed = whole ? parseArtifact(artifact.bytes) : undefined;
     const started = performance.now();
     const checked = await checkArtifact(parsed, files, readCode, { pr: input.ref ?? PR });
     expect(performance.now() - started).toBeLessThan(5_000);
@@ -96,7 +99,5 @@ describe.each(fixtures)('$group/$name', ({ group, dir }) => {
 });
 
 test('every finding there is has a fixture', () => {
-  // The parse's backstop, and an artifact.md its reader failed to read, can't be made by a file.
-  const made = FINDING_CODES.filter((each) => each !== 'unreadable');
-  expect(made.filter((each) => !seen.has(each))).toEqual([]);
+  expect(FINDING_CODES.filter((each) => !seen.has(each))).toEqual([]);
 });

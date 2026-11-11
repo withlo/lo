@@ -6,11 +6,11 @@
  */
 
 import { checkCode, type CheckedCode } from './code.ts';
-import { article, readCommit, type CommitContents, type Sizes } from './commit.ts';
+import { article, caseIndex, readCommit, type Sizes } from './commit.ts';
 import { ARTIFACT, Findings, quote, type Finding } from './findings.ts';
 import type { Header } from './header.ts';
-import { CHECK_TIMEOUT, FORMAT } from './limits.ts';
-import type { ParsedArtifact } from './parse.ts';
+import { ARTIFACT_READ, CHECK_TIMEOUT, FORMAT, LIMITS } from './limits.ts';
+import { tooLong, type ParsedArtifact } from './parse.ts';
 import type { CodeReader, OverviewFiles } from './readers.ts';
 
 /**
@@ -50,8 +50,8 @@ export interface CheckOptions {
 /**
  * Checks `parsed`, the overview's `artifact.md` parsed, against `files`, the overview's commit, and
  * against the code its targets name, read through `readCode`. `parsed` is undefined when the commit
- * holds no file `artifact.md` to parse. Never rejects: a reader that fails or is too slow leaves
- * code unread.
+ * holds no file `artifact.md`, or one larger than {@link ARTIFACT_READ}, which isn't read. Never
+ * rejects: a reader that fails or is too slow leaves code unread.
  */
 export async function checkArtifact(
   parsed: ParsedArtifact | undefined,
@@ -76,40 +76,61 @@ async function check(
 ): Promise<CheckedArtifact> {
   const tree = new Findings();
   const commit = readCommit(files.entries, tree);
-  if (commit.artifact !== 'file') {
+  // Made once, when a path that isn't there is first looked up in another case.
+  let index: Map<string, string> | undefined;
+  const otherCase = (path: string): string => {
+    index ??= caseIndex(commit.kinds);
+    const other = index.get(path.toLowerCase());
+    return other === undefined || other === path
+      ? ''
+      : ` It has ${quote(other)}: names match exactly, in the same case.`;
+  };
+
+  const { artifact } = commit;
+  if (artifact?.kind !== 'file') {
     // What was parsed, if anything, isn't the overview's text.
     const findings = new Findings();
-    if (commit.artifact === undefined) {
+    if (artifact === undefined) {
       findings.add(
         'artifact-missing',
         undefined,
-        `The overview's commit has no artifact.md, the overview's text.${otherCase(commit, ARTIFACT)}`,
+        `The overview's commit has no artifact.md, the overview's text.${otherCase(ARTIFACT)}`,
       );
     } else {
       findings.add(
         'artifact-not-file',
         undefined,
-        `artifact.md is ${article(commit.artifact)}. It's the overview's text, a file.`,
+        `artifact.md is ${article(artifact.kind)}. It's the overview's text, a file.`,
       );
     }
     for (const finding of tree.list()) findings.keep(finding);
     return { outcome: { kind: 'invalid' }, findings: findings.list() };
   }
-  if (!parsed) return unreadable("Lo couldn't read artifact.md, for a reason it can't name.");
-  // A newer format may hold what this version doesn't know: only the parse's word on it counts.
-  if (parsed.format !== undefined && parsed.format > FORMAT) {
+  // A newer format may hold what this version doesn't know, other files or more of them included:
+  // only the parse's word on it counts.
+  if (parsed?.format !== undefined && parsed.format > FORMAT) {
     return { outcome: { kind: 'newer', format: parsed.format }, findings: parsed.findings };
   }
 
   const findings = new Findings();
-  for (const finding of parsed.findings) findings.keep(finding);
+  const long = parsed
+    ? parsed.findings.some(({ code }) => code === 'too-large')
+    : artifact.size !== undefined && artifact.size > ARTIFACT_READ;
+  if (parsed) for (const finding of parsed.findings) findings.keep(finding);
+  else if (long) tooLong(findings);
   for (const finding of tree.list()) findings.keep(finding);
-  const past = parsed.findings.some(({ code }) => code === 'too-large') ? 'text' : commit.past;
+  const past = long ? 'text' : commit.past;
   if (past !== undefined) {
     return {
       outcome: { kind: 'tooLarge', what: past, sizes: commit.sizes },
       findings: findings.list(),
     };
+  }
+  if (!parsed) return unreadable("Lo couldn't read artifact.md, for a reason it can't name.");
+  if (commit.unsized !== undefined) {
+    return unreadable(
+      `Lo couldn't tell how large ${quote(commit.unsized)} is, so it couldn't check the overview's size.`,
+    );
   }
 
   const invalid = parsed.findings.some(({ severity }) => severity === 'error');
@@ -123,13 +144,14 @@ async function check(
       `The header says pr: ${header.pr}, and the overview is on pull request #${options.pr}.`,
     );
   }
-  for (const { path, line } of parsed.figures) {
+  // Past the limit on figures, the overview is invalid, and the rest aren't looked for.
+  for (const { path, line } of parsed.figures.slice(0, LIMITS.figures)) {
     const kind = commit.kinds.get(path);
     if (kind === undefined) {
       findings.add(
         'figure-missing',
         line,
-        `${quote(path)} isn't in the overview's commit.${otherCase(commit, path)}`,
+        `${quote(path)} isn't in the overview's commit.${otherCase(path)}`,
       );
     } else if (kind !== 'file') {
       findings.add('figure-not-file', line, `${quote(path)} is ${article(kind)}, not a file.`);
@@ -177,23 +199,4 @@ function unreadable(message: string): CheckedArtifact {
   const findings = new Findings();
   findings.add('unreadable', undefined, message);
   return { outcome: { kind: 'invalid' }, findings: findings.list() };
-}
-
-/** A sentence naming a path in the commit that differs from `path` only in case, when there is one. */
-function otherCase(commit: CommitContents, path: string): string {
-  const lower = path.toLowerCase();
-  // The first in order of their paths, so a listing in any order names the same.
-  let other: string | undefined;
-  for (const listed of commit.kinds.keys()) {
-    if (
-      listed !== path &&
-      listed.toLowerCase() === lower &&
-      (other === undefined || listed < other)
-    ) {
-      other = listed;
-    }
-  }
-  return other === undefined
-    ? ''
-    : ` It has ${quote(other)}: names match exactly, in the same case.`;
 }

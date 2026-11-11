@@ -343,4 +343,6 @@ what it draws is capped.
 
 The header's `format` says which version of this format the overview is written in. A change that an
 earlier version of Lo would read wrongly makes a new format. Each version of Lo reads every format
-up to its own, and says it needs an update for a newer one.
+up to its own, and says it needs an update for a newer one. Of an overview in a newer format, Lo
+reads only the header: a newer format may allow files, or limits, that this one doesn't, so its
+commit isn't held to this format's rules either.

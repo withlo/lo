@@ -1,9 +1,10 @@
 /**
  * The code an overview's targets name, checked at the commit its header names: each file is
- * there, is a file, is text, and has the lines named. Each file is read once, in the order the
- * overview first names it, and at most {@link LIMITS.code} bytes are read in all, so which targets
- * resolve never depends on how fast the reader is. A reader that fails, or is too slow, leaves its
- * code unread, and never keeps the check waiting.
+ * there, is a file, is text, and has the lines named. Each file is read in the order the overview
+ * first names it: its first 8 KiB, then the rest only when it's text and not too large, and at most
+ * {@link LIMITS.code} bytes of files in all. So which targets resolve never depends on how fast
+ * the reader is. A reader that fails, or is too slow, leaves its code unread, and never keeps the
+ * check waiting.
  */
 
 import { article } from './commit.ts';
@@ -33,12 +34,16 @@ export interface CheckedCode {
 
 /** What reading a file found, kept for the targets that name it: never its bytes. */
 type Found =
-  | { kind: 'text'; binary: boolean; lines: number }
+  | { kind: 'there' }
+  | { kind: 'text'; lines: number }
+  | { kind: 'binary' }
   | { kind: 'tooLarge'; past: 'file' | 'code' }
   | { kind: 'missing' }
   | { kind: 'notFile'; is: Exclude<EntryKind, 'file'> }
   | { kind: 'noCommit' }
-  | { kind: 'unread'; why: 'failed' | 'stopped' };
+  | Unread;
+
+type Unread = { kind: 'unread'; why: 'failed' | 'stopped' };
 
 /**
  * Checks the code each of `references` names at `commit`, through `readCode`, adding what's wrong
@@ -59,6 +64,8 @@ export async function checkCode(
     else paths.set(target.path, { lines: target.lines !== undefined });
   }
 
+  const read = (path: string, cap: number): Promise<FileAnswer | Unread> =>
+    answered(() => readCode(commit, path, cap, signal), cap, signal);
   const found = new Map<string, Found>();
   let used = 0;
   let gone = false;
@@ -67,12 +74,12 @@ export async function checkCode(
       found.set(path, { kind: 'noCommit' });
       continue;
     }
-    // A file named whole only has to be there: a cap of 0 asks for none of its bytes.
-    const cap = lines ? Math.min(LIMITS.file, LIMITS.code - used) : 0;
-    const answer = await answered(() => readCode(commit, path, cap, signal), cap, signal);
-    if (answer.kind === 'bytes') used += answer.bytes.length;
-    if (answer.kind === 'noCommit') gone = true;
-    found.set(path, summary(answer, cap));
+    const file = lines
+      ? await readLines(read, path, LIMITS.code - used)
+      : { found: there(await read(path, 0)), size: 0 };
+    used += file.size;
+    if (file.found.kind === 'noCommit') gone = true;
+    found.set(path, file.found);
   }
 
   if (gone) {
@@ -83,11 +90,47 @@ export async function checkCode(
     );
   }
   return references.map((reference) => {
-    const read = found.get(reference.target.path) ?? { kind: 'unread', why: 'stopped' };
-    const code = stateOf(reference, read);
-    if (code.state === 'broken') report(findings, reference, read);
+    const file = found.get(reference.target.path) ?? { kind: 'unread', why: 'stopped' };
+    const code = stateOf(reference, file);
+    if (code.state === 'broken') report(findings, reference, file);
     return { reference, code };
   });
+}
+
+/** What reading a file named whole found: only whether it's there. */
+function there(answer: FileAnswer | Unread): Found {
+  return answer.kind === 'file' ? { kind: 'there' } : answer;
+}
+
+/**
+ * Reads the file at `path` for its lines, with `room` bytes left to read, and how many bytes that
+ * takes. Its first 8 KiB come first, so a file that's binary or too large is read no further.
+ */
+async function readLines(
+  read: (path: string, cap: number) => Promise<FileAnswer | Unread>,
+  path: string,
+  room: number,
+): Promise<{ found: Found; size: number }> {
+  const head = await read(path, Math.min(BINARY_WINDOW, room));
+  if (head.kind !== 'file') return { found: head, size: 0 };
+  const taken = head.bytes.length;
+  if (head.bytes.includes(0)) return { found: { kind: 'binary' }, size: taken };
+  if (head.size > LIMITS.file) return { found: { kind: 'tooLarge', past: 'file' }, size: taken };
+  if (head.size > room) return { found: { kind: 'tooLarge', past: 'code' }, size: taken };
+  if (taken === head.size) return { found: text(head.bytes), size: taken };
+  const whole = await read(path, head.size);
+  if (whole.kind !== 'file' || whole.size !== head.size) {
+    // The same file at the same commit, answered differently.
+    return {
+      found: whole.kind === 'unread' ? whole : { kind: 'unread', why: 'failed' },
+      size: taken,
+    };
+  }
+  return { found: text(whole.bytes), size: head.size };
+}
+
+function text(bytes: Uint8Array): Found {
+  return { kind: 'text', lines: lineCount(bytes) };
 }
 
 /**
@@ -98,7 +141,7 @@ async function answered(
   read: () => Promise<unknown>,
   cap: number,
   signal: AbortSignal,
-): Promise<FileAnswer | { kind: 'unread'; why: 'failed' | 'stopped' }> {
+): Promise<FileAnswer | Unread> {
   if (signal.aborted) return { kind: 'unread', why: 'stopped' };
   return new Promise((resolve) => {
     const stop = (): void => resolve({ kind: 'unread', why: 'stopped' });
@@ -121,33 +164,6 @@ async function answered(
   });
 }
 
-/** What `answer`, read under `cap`, says of the file, for every target naming it. */
-function summary(
-  answer: FileAnswer | { kind: 'unread'; why: 'failed' | 'stopped' },
-  cap: number,
-): Found {
-  switch (answer.kind) {
-    case 'bytes': {
-      const { bytes } = answer;
-      return {
-        kind: 'text',
-        binary: bytes.subarray(0, BINARY_WINDOW).includes(0),
-        lines: lineCount(bytes),
-      };
-    }
-    case 'tooLarge':
-      return { kind: 'tooLarge', past: cap < LIMITS.file ? 'code' : 'file' };
-    case 'missing':
-    case 'notFile':
-    case 'noCommit':
-    case 'unread':
-      return answer;
-    default:
-      answer satisfies never;
-      throw new Error(`Unknown answer ${JSON.stringify(answer)}`);
-  }
-}
-
 /** How many lines `bytes` holds: each ends at a newline, and the last may end without one. */
 export function lineCount(bytes: Uint8Array): number {
   let lines = 0;
@@ -156,16 +172,20 @@ export function lineCount(bytes: Uint8Array): number {
 }
 
 function stateOf(reference: CodeReference, found: Found): CodeState {
+  // A file named whole only has to be there.
   const { lines } = reference.target;
+  const whole = lines === undefined;
   switch (found.kind) {
-    case 'text':
-      if (lines === undefined) return { state: 'resolved' };
-      if (found.binary) return { state: 'broken', why: 'binary' };
-      if (lines.end > found.lines) return { state: 'broken', why: 'lines' };
+    case 'there':
       return { state: 'resolved' };
+    case 'text':
+      return lines === undefined || lines.end <= found.lines
+        ? { state: 'resolved' }
+        : { state: 'broken', why: 'lines' };
+    case 'binary':
+      return whole ? { state: 'resolved' } : { state: 'broken', why: 'binary' };
     case 'tooLarge':
-      // A file named whole was asked for none of its bytes: it's there.
-      return lines === undefined ? { state: 'resolved' } : { state: 'broken', why: 'tooLarge' };
+      return whole ? { state: 'resolved' } : { state: 'broken', why: 'tooLarge' };
     case 'missing':
       return { state: 'broken', why: 'missing' };
     case 'notFile':
@@ -185,10 +205,11 @@ function report(findings: Findings, reference: CodeReference, found: Found): voi
   const { line, target } = reference;
   const path = quote(target.path);
   switch (found.kind) {
+    case 'there':
     case 'noCommit':
     case 'unread':
-      // The commit is said to be gone once, for every target; and code unread isn't the
-      // overview's doing.
+      // Nothing's wrong with a file that's there; the commit is said to be gone once, for every
+      // target; and code unread isn't the overview's doing.
       return;
     case 'missing':
       findings.add(
@@ -200,11 +221,10 @@ function report(findings: Findings, reference: CodeReference, found: Found): voi
     case 'notFile':
       findings.add('code-not-file', line, `${path} is ${article(found.is)}, not a file.`);
       return;
+    case 'binary':
+      findings.add('code-binary', line, `${path} isn't text, so it has no lines to show.`);
+      return;
     case 'text': {
-      if (found.binary) {
-        findings.add('code-binary', line, `${path} isn't text, so it has no lines to show.`);
-        return;
-      }
       const has =
         found.lines === 0
           ? 'has no lines'

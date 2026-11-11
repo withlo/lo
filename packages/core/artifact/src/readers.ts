@@ -8,38 +8,36 @@
 /** What a path in a commit is. A link is a symbolic link, never followed. */
 export type EntryKind = 'file' | 'link' | 'folder' | 'submodule';
 
-/** One of the files and folders in the overview's commit. */
-export interface TreeEntry {
-  /** Its path from the commit's root, as the commit stores it: bytes, usually but not always UTF-8. */
-  path: Uint8Array;
-  kind: EntryKind;
-  /** Its size in bytes, when it's known: a file's contents, or the path a link holds. */
-  size?: number | undefined;
-}
+/**
+ * One of the files and folders in the overview's commit, with its path as the commit stores it:
+ * bytes, usually but not always UTF-8. A file or a link has a size, in bytes: a file's contents, or
+ * the path a link holds. Without it, the commit's size can't be checked, so the overview is refused.
+ */
+export type TreeEntry =
+  | { path: Uint8Array; kind: 'file' | 'link'; size: number }
+  | { path: Uint8Array; kind: 'folder' | 'submodule'; size?: undefined };
 
 /**
  * What reading a file at a commit gave.
  *
- * - `bytes`: the file's contents, at most the cap.
+ * - `file`: its size, and its first bytes, up to the cap: all of it when it's no larger.
  * - `missing`: nothing is at the path. That includes a path through a link or a file, as where a
  *   folder should be: a link is never followed.
  * - `notFile`: the path is a link, a folder or a submodule.
- * - `tooLarge`: the file is larger than the cap, so it wasn't read.
  * - `noCommit`: the repository doesn't have the commit.
  */
 export type FileAnswer =
-  | { kind: 'bytes'; bytes: Uint8Array }
+  | { kind: 'file'; size: number; bytes: Uint8Array }
   | { kind: 'missing' }
   | { kind: 'notFile'; is: Exclude<EntryKind, 'file'> }
-  | { kind: 'tooLarge' }
   | { kind: 'noCommit' };
 
 /**
- * Reads the file at `path` in `commit`, a commit of the repository the pull request is in, reading
- * no more than `cap` bytes. `path` is a target's path as the overview writes it: it names the file
- * whose path is its UTF-8 bytes, compared exactly, with no case folding, Unicode normalization or
- * percent decoding. Once `signal` aborts, the answer is no longer wanted. A reader may throw or
- * never answer: the check treats that as the code not read.
+ * Reads the file at `path` in `commit`, a commit of the repository the pull request is in: its
+ * size, and no more than its first `cap` bytes. `path` is a target's path as the overview writes
+ * it: it names the file whose path is its UTF-8 bytes, compared exactly, with no case folding,
+ * Unicode normalization or percent decoding. Once `signal` aborts, the answer is no longer wanted.
+ * A reader may throw or never answer: the check treats that as the code not read.
  */
 export type CodeReader = (
   commit: string,
@@ -64,15 +62,29 @@ export interface OverviewFiles {
 
 /**
  * `answer`, from a reader, if it's one of the answers {@link FileAnswer} lists and keeps to `cap`;
- * otherwise undefined. A file read past the cap is taken as too large, not trusted to be short.
+ * otherwise undefined. Bytes that aren't the file's first `cap`, by its size, aren't trusted.
+ * Never throws, whatever the answer is made of.
  */
 export function checkedAnswer(answer: unknown, cap: number): FileAnswer | undefined {
+  try {
+    return checked(answer, cap);
+  } catch {
+    // A getter or a proxy that throws.
+    return undefined;
+  }
+}
+
+function checked(answer: unknown, cap: number): FileAnswer | undefined {
   if (typeof answer !== 'object' || answer === null || !('kind' in answer)) return undefined;
   switch (answer.kind) {
-    case 'bytes': {
+    case 'file': {
+      const size = 'size' in answer ? answer.size : undefined;
       const bytes = 'bytes' in answer ? answer.bytes : undefined;
-      if (!(bytes instanceof Uint8Array)) return undefined;
-      return bytes.length > cap ? { kind: 'tooLarge' } : { kind: 'bytes', bytes };
+      // A view of a real array of bytes, never a proxy, which could say anything of its length.
+      if (!ArrayBuffer.isView(bytes) || !(bytes instanceof Uint8Array)) return undefined;
+      if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 0) return undefined;
+      if (bytes.length !== Math.min(size, cap)) return undefined;
+      return { kind: 'file', size, bytes };
     }
     case 'notFile': {
       const is = 'is' in answer ? answer.is : undefined;
@@ -81,7 +93,6 @@ export function checkedAnswer(answer: unknown, cap: number): FileAnswer | undefi
         : undefined;
     }
     case 'missing':
-    case 'tooLarge':
     case 'noCommit':
       return { kind: answer.kind };
     default:
