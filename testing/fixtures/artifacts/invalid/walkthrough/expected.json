@@ -1,0 +1,8 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "walkthrough-steps", "line": 12 },
+    { "code": "step-text", "line": 16 },
+    { "code": "tabs-tabs", "line": 20 }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "outcome": "shown",
+  "findings": [
+    { "code": "code-missing", "line": 13 },
+    { "code": "code-lines", "line": 16 },
+    { "code": "code-lines", "line": 19 },
+    { "code": "code-binary", "line": 22 },
+    { "code": "code-too-large", "line": 25 },
+    { "code": "code-not-file", "line": 28 }
+  ],
+  "code": [
+    { "line": 13, "state": "broken", "why": "missing" },
+    { "line": 16, "state": "broken", "why": "lines" },
+    { "line": 19, "state": "broken", "why": "lines" },
+    { "line": 22, "state": "broken", "why": "binary" },
+    { "line": 25, "state": "broken", "why": "tooLarge" },
+    { "line": 28, "state": "broken", "why": "notFile" }
+  ]
+}

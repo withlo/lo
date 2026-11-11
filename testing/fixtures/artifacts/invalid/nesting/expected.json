@@ -1,0 +1,6 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "block-nesting", "line": 15 }
+  ]
+}

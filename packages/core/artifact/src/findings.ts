@@ -66,6 +66,22 @@ const SEVERITIES = {
   'raw-html': 'warning',
   'outside-image': 'warning',
   'dead-link': 'warning',
+  // What the overview's commit holds.
+  'artifact-missing': 'error',
+  'artifact-not-file': 'error',
+  'pr-mismatch': 'error',
+  'tree-extra': 'error',
+  'tree-count': 'error',
+  'tree-size': 'error',
+  'figure-missing': 'error',
+  'figure-not-file': 'error',
+  // The code its targets name, at the header's commit.
+  'code-commit': 'error',
+  'code-missing': 'error',
+  'code-not-file': 'error',
+  'code-binary': 'error',
+  'code-lines': 'error',
+  'code-too-large': 'error',
 } as const;
 
 export type FindingCode = keyof typeof SEVERITIES;
@@ -74,7 +90,10 @@ export type Severity = 'error' | 'warning';
 export interface Finding {
   code: FindingCode;
   severity: Severity;
-  /** The file it's in, from the overview's root: `artifact.md`. */
+  /**
+   * The file it's in, from the overview's root: `artifact.md`, or for what the commit holds, the
+   * path it's about, quoted as a message quotes the overview's text.
+   */
   file: string;
   /** The line it's on, counting from 1, when it's on one. */
   line?: number;
@@ -82,12 +101,17 @@ export interface Finding {
   message: string;
 }
 
-/** The file every finding of the parse is in. */
+/** The file every finding of the parse, and of the code its targets name, is in. */
 export const ARTIFACT = 'artifact.md';
 
 export function severityOf(code: FindingCode): Severity {
   return SEVERITIES[code];
 }
+
+/** Every finding's code. */
+export const FINDING_CODES: readonly FindingCode[] = Object.freeze(
+  Object.keys(SEVERITIES).filter(isFindingCode),
+);
 
 /** Whether `code` is a finding's code. */
 export function isFindingCode(code: string): code is FindingCode {
@@ -102,14 +126,19 @@ export class Findings {
   private readonly errors: Finding[] = [];
   private readonly warnings: Finding[] = [];
 
-  add(code: FindingCode, line: number | undefined, message: string): void {
+  add(code: FindingCode, line: number | undefined, message: string, file = ARTIFACT): void {
     const severity = severityOf(code);
-    const list = severity === 'error' ? this.errors : this.warnings;
-    if (list.length >= LIMITS.findings) return;
-    const finding: Finding =
+    this.keep(
       line === undefined
-        ? { code, severity, file: ARTIFACT, message }
-        : { code, severity, file: ARTIFACT, line, message };
+        ? { code, severity, file, message }
+        : { code, severity, file, line, message },
+    );
+  }
+
+  /** Adds `finding`, made elsewhere, such as by the parse. */
+  keep(finding: Finding): void {
+    const list = finding.severity === 'error' ? this.errors : this.warnings;
+    if (list.length >= LIMITS.findings) return;
     list.push(finding);
   }
 

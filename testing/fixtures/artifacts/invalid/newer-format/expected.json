@@ -1,0 +1,6 @@
+{
+  "outcome": "newer",
+  "findings": [
+    { "code": "format-newer", "line": 2 }
+  ]
+}
