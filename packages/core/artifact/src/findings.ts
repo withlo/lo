@@ -132,6 +132,13 @@ export class Findings {
 const QUOTE = 60;
 
 /**
+ * A character that's invisible or moves what's around it: a control character, invisible
+ * formatting such as a right-to-left override or a zero-width joiner, a lone surrogate, or a line
+ * or paragraph separator. A message never quotes one, and a path or a term never holds one.
+ */
+export const UNSAFE = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u;
+
+/**
  * `text`, from the overview, as a message may quote it: control characters, invisible formatting
  * and lone surrogates each shown as U+FFFD, so a message can't move a terminal's cursor, reorder
  * what's around it or hide what it says, and cut to a few dozen characters.
@@ -141,7 +148,7 @@ export function quote(text: string): string {
   let count = 0;
   for (const char of text) {
     if (count === QUOTE) return `${out}…`;
-    out += /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u.test(char) ? '\uFFFD' : char;
+    out += UNSAFE.test(char) ? '\uFFFD' : char;
     count += 1;
   }
   return out;

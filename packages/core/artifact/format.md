@@ -236,7 +236,9 @@ syntax: `[the limiter](code:src/limiter.ts#L12-L40)`, `[buckets](term:bucket)`,
 
 - **Paths** are from the repository's root, without a leading `/`, and exactly as the repository
   writes them: the same case, the same Unicode form, no `%` escapes. No part is empty, `.`, `..` or
-  `.git`, and none holds `\` or a control character. The last `#` starts the lines.
+  `.git`, and none holds `\`, a control character or an invisible one, such as a zero-width space or
+  a right-to-left mark. The last `#` starts the lines, so a file whose path holds a `#` can be named
+  only with its lines: a link can't name it whole.
 - **Lines** count from 1: `L12` is one line, `L12-L44` the lines from 12 to 44. A code block and a
   step show at most 200 lines; for more, link the file.
 - **The code** is the repository's at the header's commit, so a target is any file there: changed by
@@ -263,7 +265,8 @@ Each tenant gets a [bucket](term:bucket), and its [buckets](term:bucket) refill 
 - **Bucket**: the tokens a tenant has to spend.
 ```
 
-- **Matching** ignores case and runs of spaces: `[maps](<term:Hash  Map>)` names `**hash map**`.
+- **Matching** ignores case and runs of spaces: `[maps](<term:Hash  Map>)` names `**hash map**`. A
+  term holds no control or invisible character.
 - **The glossary** is a list whose items each start with the term in bold, then a colon and the
   definition: `- **Term**: definition`. The term is plain text, without links or formatting.
 - **Every term linked is defined,** and two definitions can't differ only in case or spaces. A term

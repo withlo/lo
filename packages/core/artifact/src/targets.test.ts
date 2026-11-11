@@ -55,11 +55,18 @@ describe('paths', () => {
     ['an escape', 'src/\x1b[31ma.ts'],
     ['DEL', 'src/a\x7f.ts'],
     ['a C1 control', 'src/a\x85.ts'],
+    // Invisible characters, which would show a file under another's name.
+    ['a right-to-left override', 'src/evil\u202Est.a'],
+    ['a zero-width non-joiner', '.g\u200Cit/config'],
+    ['a zero-width space', 'src/a\u200B.ts'],
+    ['a byte-order mark', '\uFEFFsrc/a.ts'],
+    ['a line separator', 'src/a\u2028.ts'],
+    ['a paragraph separator', 'src/a\u2029.ts'],
   ])('a path %s is refused', (_what, path) => {
     const read = readPath(path);
     expect(read).toMatchObject({ ok: false, code: 'target-path' });
-    // What it quotes can't move a terminal's cursor.
-    expect(read.ok ? '' : read.message).not.toMatch(/\p{Cc}/u);
+    // What it quotes can't move a terminal's cursor, or hide or reorder text.
+    expect(read.ok ? '' : read.message).not.toMatch(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
   });
 
   test('each refusal says why', () => {
@@ -72,7 +79,7 @@ describe('paths', () => {
       'The path a\\b holds a \\. Separate folders with /.',
       'The path a/../b has an empty, . or .. part. Write it as the repository names the file.',
       'The path .git/config points into .git.',
-      'The path a\uFFFDb holds a control character.',
+      'The path a\uFFFDb holds an invisible or control character.',
     ]);
   });
 });
@@ -145,6 +152,10 @@ describe('terms', () => {
     ['empty', ''],
     ['only spaces', ' \t '],
     ['a control character', 'a\x1bb'],
+    ['a right-to-left override', 'evil\u202Eterm'],
+    ['a zero-width joiner', 'buck\u200Det'],
+    ['a line separator', 'hash\u2028map'],
+    ['a byte-order mark', '\uFEFFbucket'],
     ['too long', 'a'.repeat(LIMITS.argument + 1)],
   ])('a term %s is refused', (_what, name) => {
     expect(readTerm(name)).toMatchObject({ ok: false, code: 'target-term' });

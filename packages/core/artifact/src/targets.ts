@@ -8,7 +8,7 @@
 import { LIMITS } from './limits.ts';
 import { utf8Length } from './source.ts';
 import type { CodeRange, CodeTarget, Lines, TermTarget } from './tree.ts';
-import { quote, type FindingCode } from './findings.ts';
+import { quote, UNSAFE, type FindingCode } from './findings.ts';
 
 /** What reading some text gave: its value, or why it's refused. */
 export type Read<T> = { ok: true; value: T } | { ok: false; code: FindingCode; message: string };
@@ -26,14 +26,15 @@ export const FIGURE_TYPES = ['svg', 'png', 'jpg', 'jpeg', 'gif', 'webp'] as cons
 
 /**
  * `text` as a path in the repository: relative to its root, with no `.`, `..`, empty or `.git`
- * part, no backslash and no control character. It's kept exactly as written, so it names the file
- * whose path is these bytes and no other.
+ * part, no backslash and no invisible or control character, so the path a reader sees is the
+ * file's. It's kept exactly as written, so it names the file whose path is these bytes and no
+ * other.
  */
 export function readPath(text: string): Read<string> {
   if (text === '') return refuse('target-path', 'This names no file.');
   const shown = quote(text);
-  if (/\p{Cc}/u.test(text)) {
-    return refuse('target-path', `The path ${shown} holds a control character.`);
+  if (UNSAFE.test(text)) {
+    return refuse('target-path', `The path ${shown} holds an invisible or control character.`);
   }
   if (text.startsWith('/')) {
     return refuse(
@@ -123,8 +124,13 @@ export function readTerm(text: string): Read<TermTarget> {
   }
   const key = termKey(text);
   if (key === '') return refuse('target-term', 'This names no term.');
-  if (/\p{Cc}/u.test(key)) {
-    return refuse('target-term', `The term ${quote(text)} holds a control character.`);
+  // White space is matched as a space, but a separator or invisible formatting, which matching
+  // would also take for a space or keep unseen, is refused as written.
+  if (UNSAFE.test(key) || /[\p{Cf}\p{Zl}\p{Zp}]/u.test(text)) {
+    return refuse(
+      'target-term',
+      `The term ${quote(text)} holds an invisible or control character.`,
+    );
   }
   return { ok: true, value: { kind: 'term', key } };
 }
