@@ -1,4 +1,11 @@
-import { appendFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdtempSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -6,7 +13,7 @@ import { expect, onTestFinished, test } from 'vitest';
 
 import { DEFAULT_FETCH_LIMITS } from './limits.ts';
 import type { Progress } from './progress.ts';
-import { FetchState, type Stopped, stoppedError, TraceFile } from './watch.ts';
+import { FetchState, PackFiles, type Stopped, stoppedError, TraceFile } from './watch.ts';
 
 function progress(stage: string, done: number, total?: number, bytes?: number): Progress {
   return { stage, done, total, bytes };
@@ -152,4 +159,24 @@ test('a trace starts empty even where an old one was left', async () => {
   expect(lines).toEqual(['{"event":"version"}', '{"event":"exit"}']);
   await trace.remove();
   expect(existsSync(path)).toBe(false);
+});
+
+test('every pack a fetch writes counts toward what has come in', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'lo-packs-'));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+  // Another fetch's, there before this one started.
+  writeFileSync(join(dir, 'pack-old.pack'), Buffer.alloc(1000));
+  writeFileSync(join(dir, 'tmp_pack_left'), Buffer.alloc(1000));
+  const packs = await PackFiles.start(dir);
+  expect(await packs.size()).toBe(0);
+
+  // The first pack as it comes in, and once git has named it.
+  writeFileSync(join(dir, 'tmp_pack_first'), Buffer.alloc(300));
+  expect(await packs.size()).toBe(300);
+  renameSync(join(dir, 'tmp_pack_first'), join(dir, 'pack-first.pack'));
+  writeFileSync(join(dir, 'pack-first.idx'), Buffer.alloc(50));
+  expect(await packs.size()).toBe(300);
+  // A second one adds to it.
+  writeFileSync(join(dir, 'tmp_pack_second'), Buffer.alloc(200));
+  expect(await packs.size()).toBe(500);
 });

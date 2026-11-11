@@ -13,6 +13,7 @@ import { pr, renderRetarget } from './support.ts';
 function render(prs: readonly PullRequest[], layer: number): string[] {
   const merge = mergeOneLayerAtATime(findStacks(prs, []), layer);
   if (!merge) throw new Error('the pull request is not a layer');
+  if ('refusal' in merge) throw new Error(`refused: ${merge.refusal}`);
   return [
     ...(merge.retargetBefore ? [renderRetarget(merge.retargetBefore)] : []),
     `merge #${merge.pr} into ${merge.into}`,

@@ -41,10 +41,9 @@
 import type {
   AddPullRequestReviewMutationVariables,
   AddPullRequestReviewThreadMutationVariables,
-  AddPullRequestReviewThreadReplyMutationVariables,
   DraftPullRequestReviewThread,
   PendingReviewRead,
-  SubmitPullRequestReviewMutationVariables,
+  ReviewWrite,
   ViewerPendingReview,
 } from '@lo/github';
 
@@ -133,69 +132,22 @@ export interface NewReply {
 /** A comment you write. */
 export type NewComment = NewThread | NewReply;
 
-/** REST's `POST /repos/{owner}/{repo}/pulls/{number}/comments` body for a file-level comment. */
-export interface FileCommentBody {
-  commit_id: string;
-  path: string;
-  body: string;
-  subject_type: 'file';
-}
-
 /**
  * What to send GitHub: a GraphQL mutation's variables, or a REST request's body, with the head it
- * was planned against.
+ * was planned against, as `@lo/github`'s `sendReviewWrite` takes it.
+ *
+ * - `startReview` starts your pending review on `commitOID`, holding the line comment it was
+ *   planned for, if any: the only way to put a pending thread on a revision older than the latest
+ *   head. Without one, it starts an empty review on the latest head, for a file-level comment or a
+ *   reply, which can't go in `threads`; once it's accepted, {@link YourReview.add} plans the
+ *   comment's own mutation.
+ * - `addThread` adds a thread to your pending review, which GitHub puts on the pull request's
+ *   current head: the one it was planned against, `head`, unless someone pushed since.
+ * - `addReply` adds a reply to your pending review.
+ * - `postThread`, `postFileComment` and `postReply` post one comment at once.
+ * - `submitReview` submits your pending review, and `review` submits one with no comments.
  */
-export type Mutation =
-  /**
-   * `addPullRequestReview` with no `event`, which starts your pending review, recorded on
-   * `commitOID`. A line comment goes in its `threads`, on that commit's lines: the only way to put
-   * a pending thread on a revision older than the latest head.
-   *
-   * Without one, it starts an empty review, for a file-level comment or a reply, which can't go in
-   * `threads`. It starts on the latest head, where a file-level thread goes anyway, so approving
-   * the latest revision isn't refused later. Once it's accepted, {@link YourReview.add} plans the
-   * comment's own mutation.
-   */
-  (
-    | { kind: 'startReview'; variables: AddPullRequestReviewMutationVariables }
-    /**
-     * `addPullRequestReviewThread` to your pending review, with `subjectType: FILE` for a
-     * file-level comment. GitHub puts the thread on the pull request's current head. It refuses a
-     * line outside the diff by returning `thread: null` without an error, which isn't an acceptance.
-     */
-    | { kind: 'addThread'; variables: AddPullRequestReviewThreadMutationVariables }
-    /** `addPullRequestReviewThreadReply` to a thread, in your pending review. */
-    | { kind: 'addReply'; variables: AddPullRequestReviewThreadReplyMutationVariables }
-    /** `addPullRequestReview` with `event: COMMENT` and the line comment in `threads`: one comment, posted at once. */
-    | { kind: 'postThread'; variables: AddPullRequestReviewMutationVariables }
-    /**
-     * REST's file-level comment ({@link FileCommentBody}), posted at once:
-     * `addPullRequestReview`'s threads can't be file-level.
-     */
-    | { kind: 'postFileComment'; body: FileCommentBody }
-    /** `addPullRequestReviewThreadReply` with no `pullRequestReviewId`: a reply, posted at once. */
-    | { kind: 'postReply'; variables: AddPullRequestReviewThreadReplyMutationVariables }
-    /**
-     * `submitPullRequestReview` with the summary as `body`. No `body` keeps a summary written for
-     * the pending review on GitHub's page; an empty one would wipe it (checked against GitHub).
-     */
-    | { kind: 'submitReview'; variables: SubmitPullRequestReviewMutationVariables }
-    /**
-     * `addPullRequestReview` with `event` and the summary as `body`, or none: a review with no
-     * comments, submitted at once.
-     */
-    | { kind: 'review'; variables: AddPullRequestReviewMutationVariables }
-  ) & {
-    /**
-     * The pull request's latest head (`headRefOid`) when it was planned. For an `addThread`, GitHub
-     * picks the commit: it puts the thread on whatever head is current when it gets it, which can
-     * be a later one if someone pushed since Lo last looked, and that head's line may hold
-     * different code. The sender compares the thread's `commit.oid` in GitHub's answer with this,
-     * and undoes or flags one that landed on another head. Every other mutation names its commit,
-     * as a review started on an older revision does, or has no lines.
-     */
-    readonly head: string;
-  };
+export type Mutation = ReviewWrite;
 
 /**
  * Whether accepting `mutation` sends the comment it was planned for, so the comment's draft can

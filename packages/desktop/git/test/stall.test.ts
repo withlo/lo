@@ -214,6 +214,98 @@ test('a fetch that stops getting further stops at its stall limit', async () => 
   expect(readdirSync(join(repo.folder, 'objects', 'pack'))).toEqual([]);
 });
 
+/**
+ * The files of a pull request of `files` files, downloaded from a GitHub that keeps the download
+ * alive without ever sending them, within `limits`: the error, how long it took, and what the
+ * download said it was doing. The pull request's commits and trees were fetched first, from a
+ * folder of repositories, without its files, as Lo fetches it.
+ */
+async function stalledDownload(
+  files: number,
+  limits: FetchLimits,
+): Promise<{ error: GitError; took: number; activities: Activity[] }> {
+  const dir = tempFolder();
+  const remotes = join(dir, 'remotes');
+  const gitDir = join(remotes, 'owner', 'repo.git');
+  const { last: head } = history(gitDir, files);
+  for (const args of [
+    ['update-ref', 'refs/pull/1/head', head],
+    ['config', 'uploadpack.allowFilter', 'true'],
+    ['config', 'uploadpack.allowAnySHA1InWant', 'true'],
+  ]) {
+    gitBytes(gitDir, [`--git-dir=${gitDir}`, ...args]);
+  }
+  const root = join(dir, 'cache');
+  const git = await plainGit();
+  const first = await cacheFor(`file://${remotes}`, { root, git });
+  const fetched = await (await first.open('owner', 'repo')).fetchPull(PULL_ONE);
+  expect(fetched.head).toBe(head);
+  await first.close();
+  // Then GitHub keeps the files' download alive without ever sending them.
+  const github = await started(FakeGitHub.keepingAlive(true));
+  const folder = first.repoFolder('owner', 'repo');
+  gitBytes(folder, [
+    `--git-dir=${folder}`,
+    'config',
+    'remote.origin.url',
+    `${github.url}/owner/repo.git`,
+  ]);
+  const cache = await cacheFor(github.url, { root, git, limits });
+  const activities: Activity[] = [];
+  const repo = await cache.open('owner', 'repo', {
+    progress: (activity) => activities.push(activity),
+  });
+  const paths = (await repo.tree(parseOid(head))).map((entry) => entry.path);
+  expect(paths).toHaveLength(files);
+
+  const began = Date.now();
+  const error = await failure(repo.downloadFiles(parseOid(head), paths));
+
+  const took = Date.now() - began;
+  // It asked GitHub for the files.
+  expect(github.commands()).toContain('fetch');
+  return { error, took, activities };
+}
+
+test('a small download whose files github keeps alive stops at the usual start limit', async () => {
+  // A few files are prepared in seconds, so a pack that doesn't start in a clone's usual time
+  // isn't waited for as a repository's first fetch is, with the clone's lock held.
+  const limit = 1000;
+  const { error, took, activities } = await stalledDownload(3, {
+    ...DEFAULT_FETCH_LIMITS,
+    fetch: limit,
+    firstFetch: 30_000,
+  });
+
+  expect(took).toBeGreaterThanOrEqual(limit);
+  expect(took).toBeLessThan(limit * 5);
+  expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'timedOut' });
+  expect(error.message).toBe(
+    "can't fetch 3 files: GitHub took longer than 1 s to start sending, so Lo stopped it while " +
+      'GitHub was still preparing what to send (counting objects, 50% of 2)',
+  );
+  // The tab is told what the download is waiting on.
+  expect(activities.some((activity) => activity.kind === 'preparing')).toBe(true);
+});
+
+test('a big download whose files github keeps alive stops at a first fetchs limit', async () => {
+  // More than 500 files may be a whole tree, which GitHub takes as long to prepare as a first
+  // fetch's history.
+  const limit = 2000;
+  const { error, took } = await stalledDownload(501, {
+    ...DEFAULT_FETCH_LIMITS,
+    fetch: 1000,
+    firstFetch: limit,
+  });
+
+  expect(took).toBeGreaterThanOrEqual(limit);
+  expect(took).toBeLessThan(limit * 5);
+  expect(error.message).toBe(
+    "can't fetch 501 files: GitHub took longer than 2 s to start sending, so Lo stopped it while " +
+      'GitHub was still preparing what to send (counting objects, 50% of 2)',
+  );
+});
+
 test('a fetch that never connects stops at the connect limit', async () => {
   // It takes connections and never says anything, so a client that speaks first, as TLS does,
   // waits for its answer: still connecting, to curl.
@@ -248,13 +340,14 @@ test('a fetch that never connects stops at the connect limit', async () => {
 
 /**
  * A git, in `dir`, whose fetch leaves what one stopped halfway would: the lock of a ref it
- * writes, the pack it was writing and that pack's index, and a finished pack's keep file. It
+ * writes, with `reftableLock` the reftable stack's lock too, the pack it was writing and that
+ * pack's index, and a finished pack's keep file. It
  * starts a process of its own, as git starts git-remote-https, writes both their IDs into
  * `dir`'s `pids`, says GitHub is counting objects, and waits. Asked to stop, with SIGTERM, it
  * writes `dir`'s `terminated` and exits, leaving all of it, as a git killed before it could clean
  * up would. Every other command is git's.
  */
-async function stuckGit(dir: string): Promise<Git> {
+async function stuckGit(dir: string, options: { reftableLock?: boolean } = {}): Promise<Git> {
   const real = gitProgram();
   const pids = join(dir, 'pids');
   const program = script(
@@ -264,6 +357,8 @@ async function stuckGit(dir: string): Promise<Git> {
       'for arg; do case "$arg" in --git-dir=*) git_dir="${arg#--git-dir=}";; esac; done',
       'mkdir -p "$git_dir/refs/lo/pull/1" "$git_dir/objects/pack"',
       'touch "$git_dir/refs/lo/pull/1/head.lock"',
+      // In a clone whose refs are in a reftable, any ref git writes takes the table's lock.
+      options.reftableLock ? 'touch "$git_dir/reftable/tables.list.lock"' : '',
       // As `index-pack` makes them, before the pack's first byte comes in.
       'touch "$git_dir/objects/pack/tmp_pack_stuck" "$git_dir/objects/pack/tmp_idx_stuck"',
       'echo "fetch-pack $$ on test" > "$git_dir/objects/pack/pack-1.keep"',
@@ -410,6 +505,29 @@ for (const format of ['files', 'reftable'] as const) {
     },
   );
 }
+
+test.skipIf(!refFormats())(
+  'a stopped fetch clears the lock it took while its clone is open to read',
+  async () => {
+    const dir = tempFolder();
+    const cache = await cacheFor('https://127.0.0.1:1', {
+      git: await stuckGit(dir, { reftableLock: true }),
+      limits: { ...DEFAULT_FETCH_LIMITS, fetch: 1000, firstFetch: 1000 },
+    });
+    const folder = cache.repoFolder('owner', 'repo');
+    cloneWithRefs(folder, 'reftable', 'https://127.0.0.1:1/owner/repo.git');
+    const repo = await cache.open('owner', 'repo');
+    // A read starts the clone's long-lived reader, which runs on while the repository is open.
+    expect(await repo.readBlob(parseOid(FAKE_OID))).toBeUndefined();
+
+    const error = await failure(repo.fetchPull(PULL_ONE));
+
+    expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'timedOut' });
+    // The reader takes no lock, so the stack's lock is the stopped fetch's, and it goes.
+    expect(existsSync(join(folder, 'reftable', 'tables.list.lock'))).toBe(false);
+    expect(existsSync(join(folder, 'refs', 'lo', 'pull', '1', 'head.lock'))).toBe(false);
+  },
+);
 
 /** Whether the test's git can make a repository whose refs are in a reftable. */
 function refFormats(): boolean {

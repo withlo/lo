@@ -11,6 +11,7 @@
     "test": "vitest run --root ../../.. --project @lo/git"
   },
   "devDependencies": {
+    "@lo/github": "workspace:*",
     "@lo/testing": "workspace:*"
   },
   "nx": {

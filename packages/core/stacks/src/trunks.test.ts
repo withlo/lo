@@ -45,7 +45,7 @@ test('question marks sets and escapes', () => {
   expect(fnmatch('v?', 'v1')).toBe(true);
   expect(fnmatch('v?', 'v10')).toBe(false);
   expect(fnmatch('a?b', 'a/b')).toBe(false);
-  // zed-industries/zed's release branches.
+  // A repository whose release branches are protected.
   const releases = 'refs/heads/v[0-9].[0-9]*.x';
   expect(fnmatch(releases, 'refs/heads/v1.27.x')).toBe(true);
   expect(fnmatch(releases, 'refs/heads/v0.203.x')).toBe(true);
