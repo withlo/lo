@@ -4,9 +4,10 @@
 # - arm64, signed ad hoc with a signature that holds, with the hardened runtime and exactly the
 #   entitlements in apps/desktop/build/entitlements.plist;
 # - set with every fuse the build sets, read back from the binary;
-# - an asar of only the build's output (dist/ and package.json), with Electron's hash of it in
-#   Info.plist;
-# - registered, with the Viewer role, for `lo:` links and web links.
+# - an asar of only the build's output (dist/ and package.json), whose header hash is the one in
+#   Info.plist, which Electron checks as it loads the asar;
+# - registered, with the Viewer role, for `lo:` links and web links;
+# - quitting at once, saying why, when started with a command-line switch.
 # Usage: sh scripts/check-package.sh <zip>
 set -euf
 zip=${1:?usage: check-package.sh <zip>}
@@ -53,8 +54,18 @@ for fuse in \
   printf '%s\n' "$fuses" | grep -qxF -- "  $fuse" || fail "the fuse isn't set: $fuse"
 done
 
-plutil -extract 'ElectronAsarIntegrity.Resources/app\.asar.hash' raw -o - "$plist" > /dev/null ||
-  fail "Info.plist holds no hash of the asar"
+# Electron hashes the asar's header (SHA-256), and compares it with Info.plist's as it loads the asar.
+integrity='ElectronAsarIntegrity.Resources/app\.asar'
+recorded=$(plutil -extract "$integrity.hash" raw -o - "$plist") || fail "Info.plist holds no hash of the asar"
+algorithm=$(plutil -extract "$integrity.algorithm" raw -o - "$plist") || algorithm=
+[ "$algorithm" = SHA256 ] || fail "Info.plist's asar hash is \"$algorithm\", not SHA256"
+header=$(pnpm --silent --filter @lo/desktop exec node -e "
+const { getRawHeader } = require('@electron/asar');
+const { createHash } = require('node:crypto');
+const { headerString } = getRawHeader(process.argv[1]);
+console.log(createHash('sha256').update(headerString).digest('hex'));
+" "$app/Contents/Resources/app.asar") || fail "the asar's header can't be hashed"
+[ "$header" = "$recorded" ] || fail "the asar's header hashes to $header, and Info.plist says $recorded"
 files=$(pnpm --silent --filter @lo/desktop exec asar list "$app/Contents/Resources/app.asar") ||
   fail "the asar can't be listed"
 extra=$(printf '%s\n' "$files" | grep -vE '^/(dist(/|$)|package\.json$)' || true)
@@ -77,5 +88,25 @@ for scheme in lo http https; do
   [ -n "$found" ] || fail "Info.plist doesn't register $scheme with the Viewer role"
 done
 
-[ "$status" -eq 0 ] && echo "$zip passed: arm64, ad hoc with the hardened runtime, fuses, asar and links."
+# A packaged Lo takes no command-line switches, so each of these must end it with status 1 and its
+# reason, long before the limit. One that kept it running would have opened a port or a window.
+refuses() {
+  log=$work/refused.log
+  CFFIXED_USER_HOME=$work/home "$app/Contents/MacOS/Lo" "$1" > "$log" 2>&1 &
+  pid=$!
+  (sleep 10 && kill -9 "$pid" 2> /dev/null) &
+  watchdog=$!
+  code=0
+  wait "$pid" || code=$?
+  { kill "$watchdog" && wait "$watchdog"; } 2> /dev/null || true
+  if [ "$code" -ne 1 ] || ! grep -q 'Lo takes no command-line switches' "$log"; then
+    fail "started with $1, Lo ended with status $code instead of refusing it"
+  fi
+}
+for switch in --remote-debugging-port=0 -remote-debugging-pipe --ignore-certificate-errors \
+  '--host-resolver-rules=MAP api.github.com 127.0.0.1:9'; do
+  refuses "$switch"
+done
+
+[ "$status" -eq 0 ] && echo "$zip passed: arm64, ad hoc with the hardened runtime, fuses, asar and links, and it refuses switches."
 exit "$status"

@@ -170,9 +170,15 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   Anyway, since macOS 15 has no right-click > Open. A zip from `gh run download` has no quarantine
   flag and opens as it is. The `package` workflow, which only a person starts, builds the same zip
   on a Mac runner and uploads it as an artifact. `scripts/check-package.sh` checks a zip: the
-  signature and its flags, the entitlements, every fuse, the asar's contents and the registered
-  links. electron-vite bundles everything the app imports, so the package holds only `dist/` and
-  `package.json`, and no `node_modules`.
+  signature and its flags, the entitlements, every fuse, the asar's contents and hash, the
+  registered links, and that the app quits when given switches. electron-vite bundles everything the
+  app imports, so the package holds only `dist/` and `package.json`, and no `node_modules`.
+- A packaged Lo takes no command-line switches: first of all in main, before `ready`, it quits with
+  status 1 on any argument that starts with `-` (`src/main/arguments.ts`). Chromium's switches can
+  send main's requests, with their `Authorization` header, to another server, or open a port that
+  drives the window, and none is Lo's. Links and files reach a packaged Lo as events, not as
+  arguments. A build run from source takes every switch, as `electron-vite dev` and the tests pass
+  some.
 - A build run from source keeps its data in its own folder (`Lo Dev`, beside an installed Lo's), or
   in `LO_USER_DATA_DIR` when that's set. A packaged build ignores both. Such a build reads the
   keymap file from `config/keymap` in that folder, rather than from `~/.config/lo`, and opens it
