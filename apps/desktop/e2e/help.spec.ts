@@ -94,3 +94,19 @@ test('key help says aloud when nothing matches', async ({ page }) => {
   await page.keyboard.type('zzzz');
   await expect(help.getByRole('status')).toHaveText('No key or action matches "zzzz".');
 });
+
+test('the palette says an action’s key as aria-keyshortcuts, with its key caps hidden', async ({
+  page,
+}) => {
+  const palette = await openPalette(page);
+  const option = palette.getByRole('option').filter({ hasText: 'Command palette' }).first();
+  await expect(option).toHaveAttribute(
+    'aria-keyshortcuts',
+    mac ? 'Meta+Shift+P' : 'Control+Shift+P',
+  );
+  await expect(option.locator('kbd')).toHaveAttribute('aria-hidden', 'true');
+  // The name is the label, not the letters of its key.
+  await expect(palette.getByRole('option', { name: 'Command palette', exact: true })).toHaveCount(
+    1,
+  );
+});

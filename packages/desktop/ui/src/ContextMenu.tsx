@@ -2,7 +2,7 @@ import { Menu } from '@base-ui/react/menu';
 import { Separator } from '@base-ui/react/separator';
 import { Fragment, useMemo, useRef } from 'react';
 
-import { Key } from './Key.tsx';
+import { Key, keyAria } from './Key.tsx';
 
 /** One action in a context menu. */
 export interface ContextMenuItem {
@@ -10,6 +10,11 @@ export interface ContextMenuItem {
   readonly label: string;
   /** Its key, as the system shows each key of it: `['e']`, or `['g', 'f']` for a sequence. */
   readonly keys?: readonly string[] | undefined;
+  /**
+   * That key as `aria-keyshortcuts` says it, which a screen reader hears in place of the key caps.
+   * A sequence has none, so it's described instead.
+   */
+  readonly shortcut?: string | undefined;
   /**
    * Why it can't be done now. The item is greyed, says so, and does nothing when chosen; the
    * arrows still reach it, so its reason can be read.
@@ -112,10 +117,11 @@ export function ContextMenu({
                     key={item.id}
                     label={item.label}
                     disabled={item.disabled !== undefined}
+                    {...keyAria(item.keys, item.shortcut)}
                     onClick={() => {
                       chosen.current = item.id;
                     }}
-                    className="group flex min-h-row-h cursor-default items-center gap-12 rounded-sm px-8 py-2 text-fg outline-none select-none focus-visible:shadow-none data-disabled:text-fg-disabled data-highlighted:bg-accent data-highlighted:text-on-accent data-highlighted:data-disabled:bg-hover data-highlighted:data-disabled:text-fg-disabled"
+                    className="group flex min-h-menu-item-h cursor-default items-center gap-8 rounded-sm px-8 py-2 text-fg outline-none select-none focus-visible:shadow-none data-disabled:text-fg-disabled data-highlighted:bg-accent data-highlighted:text-on-accent data-highlighted:data-disabled:bg-hover data-highlighted:data-disabled:text-fg-disabled"
                   >
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span>{item.label}</span>
@@ -126,6 +132,7 @@ export function ContextMenu({
                     {item.keys && item.keys.length > 0 && (
                       <Key
                         keys={item.keys}
+                        decorative
                         className="group-data-highlighted:border-current group-data-highlighted:text-inherit group-data-highlighted:opacity-70 group-data-highlighted:shadow-none"
                       />
                     )}

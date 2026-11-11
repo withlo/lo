@@ -1,8 +1,8 @@
 import { fileURLToPath } from 'node:url';
 
-import { BrowserWindow, nativeTheme, type Session } from 'electron';
+import { BrowserWindow, Menu, nativeTheme, type Session } from 'electron';
 
-import { paintChrome, windowChrome, type Strip } from '../platform/index.ts';
+import { editMenu, paintChrome, windowChrome, type Strip } from '../platform/index.ts';
 import { tokens, type Theme } from './tokens.ts';
 
 /** The preload's build output, next to main's. */
@@ -45,6 +45,15 @@ export function openWindow(session: Session, url: string): BrowserWindow {
     },
   });
   window.once('ready-to-show', () => window.show());
+
+  // A right-click in a text field gets the system's Edit menu. Lo's own menus skip text fields.
+  window.webContents.on('context-menu', (_event, params) => {
+    if (!params.isEditable) return;
+    const { webContents } = window;
+    Menu.buildFromTemplate(editMenu(params, (word) => webContents.replaceMisspelling(word))).popup({
+      window,
+    });
+  });
 
   // The window's own colors follow the system's appearance, as its page does.
   const repaint = () => paintChrome(window, process.platform, strip());

@@ -91,7 +91,7 @@ describe('the right-click menu', () => {
     }
   });
 
-  it('is the window’s own: what a right-click on nothing in particular lists, in order', () => {
+  it('is the window’s own: what a right-click on nothing in particular lists, Back and Forward', () => {
     const items = commands
       .filter((command) => command.menu)
       .toSorted((a, b) => (a.menu?.order ?? 0) - (b.menu?.order ?? 0))
@@ -99,8 +99,6 @@ describe('the right-click menu', () => {
     expect(items).toEqual([
       ['keys.back', 'none'],
       ['keys.forward', 'none'],
-      ['keys.palette', 'none'],
-      ['keys.help', 'none'],
     ]);
   });
 });

@@ -29,7 +29,9 @@
   --spacing-control-h: var(--lo-control-h);
   --spacing-control-h-sm: var(--lo-control-h-sm);
   --spacing-kbd-h: var(--lo-kbd-h);
+  --spacing-menu-item-h: var(--lo-menu-item-h);
   --spacing-menu-w: var(--lo-menu-w);
+  --spacing-toast-w: var(--lo-toast-w);
   --spacing-palette-w: var(--lo-palette-w);
   --spacing-palette-list-h: var(--lo-palette-list-h);
   --spacing-keyhelp-w: var(--lo-keyhelp-w);

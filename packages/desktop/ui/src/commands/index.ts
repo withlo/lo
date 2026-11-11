@@ -80,6 +80,7 @@ export {
   type Step,
 } from './match.ts';
 export {
+  ariaShortcut,
   eventStroke,
   eventStrokes,
   isChord,

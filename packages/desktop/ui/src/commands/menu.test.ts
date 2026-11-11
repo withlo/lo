@@ -119,6 +119,15 @@ function keysOf(system: 'mac' | 'linux', target: Target = file) {
   );
 }
 
+/** The aria-keyshortcuts of each item in the menu of a file, by label. */
+function shortcutsOf(system: 'mac' | 'linux') {
+  return Object.fromEntries(
+    menuSections(registry(system), file)
+      .flat()
+      .map((item) => [item.label, item.shortcut]),
+  );
+}
+
 describe('a right-click menu', () => {
   it('lists the commands that declare a menu on the kind of target clicked', () => {
     expect(labels(file)).toContain('Show in the diff');
@@ -178,6 +187,20 @@ describe('a right-click menu', () => {
     });
     // The first of two keys; the other is in key help.
     expect(keysOf('mac', line)['Suggest a change']).toEqual(['s']);
+  });
+
+  it('gives each item’s key as aria-keyshortcuts too, for one key or a chord only', () => {
+    expect(shortcutsOf('mac')).toMatchObject({
+      'Show in the diff': 'Enter',
+      'Mark viewed': 'e',
+      'Open a PR': 'Meta+L',
+      // A sequence can't be said in the attribute, whose spaces separate alternatives.
+      'Copy the path': undefined,
+    });
+    expect(shortcutsOf('linux')).toMatchObject({
+      'Open a PR': 'Control+L',
+      'Quit Lo': 'Control+Q',
+    });
   });
 
   it('shows the keys as they are now, a remap included', () => {

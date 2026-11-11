@@ -3,7 +3,7 @@
 // run on that target, why.
 
 import type { Group } from './declare.ts';
-import { liveKeys, onSystem } from './help.ts';
+import { liveKeys, liveShortcut, onSystem } from './help.ts';
 import type { Registry } from './registry.ts';
 import type { Target } from './targets.ts';
 
@@ -13,6 +13,8 @@ export interface MenuItem {
   readonly label: string;
   /** Its first key now, as labels in this system's form, if it has one. */
   readonly keys: readonly string[] | undefined;
+  /** That key as `aria-keyshortcuts` says it, if it's one key or a chord. */
+  readonly shortcut: string | undefined;
   /** Why it can't run on the target now, as the menu greys it with. Absent when it can. */
   readonly disabled: string | undefined;
 }
@@ -43,6 +45,7 @@ export function menuSections(registry: Registry, target: Target): MenuItem[][] {
       id: command.id,
       label: command.label,
       keys: liveKeys(registry, command)[0],
+      shortcut: liveShortcut(registry, command),
       disabled: ready === true ? undefined : ready,
     };
     const last = sections.at(-1);

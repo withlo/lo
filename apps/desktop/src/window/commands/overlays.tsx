@@ -12,7 +12,7 @@ import {
   type PaletteMatch,
   type Target,
 } from '@lo/ui/commands';
-import { KeyHelp, Key, Palette, PaletteHint, type PaletteGroup } from '@lo/ui';
+import { Key, KeyHelp, keyAria, Palette, PaletteHint, type PaletteGroup } from '@lo/ui';
 import { useState, useSyncExternalStore } from 'react';
 
 import { focusedTarget } from './bar.ts';
@@ -213,6 +213,7 @@ function CommandPalette({
       }}
       groups={groups}
       itemId={(match) => match.item.id}
+      itemKeys={({ item }) => keyAria(item.keys, item.shortcut)}
       onHighlight={(match) => {
         highlighted = match?.item.id;
       }}
@@ -229,7 +230,7 @@ function CommandPalette({
           </span>
           {typed && <span className="min-w-0 truncate text-fg-muted text-small">{item.group}</span>}
           <span className="ms-auto flex flex-none items-center gap-8">
-            {item.keys && <Key keys={item.keys} />}
+            {item.keys && <Key keys={item.keys} decorative />}
           </span>
         </>
       )}

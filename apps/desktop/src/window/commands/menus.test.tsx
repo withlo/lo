@@ -1,11 +1,27 @@
 // @vitest-environment jsdom
-import { defineCommands, handlers, NO_TARGET, setScopeSource, type Target } from '@lo/ui/commands';
+import {
+  defineCommands,
+  handlers,
+  listen,
+  NO_TARGET,
+  setScopeSource,
+  type Target,
+} from '@lo/ui/commands';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import keys from '../../features/keys/window/index.ts';
-import { closeMenu, Menus, menu, openMenu, openMenuAtFocus, useMenuTarget } from './menus.tsx';
+import {
+  closeMenu,
+  currentMenu,
+  Menus,
+  openMenu,
+  openMenuAtFocus,
+  useMenuTarget,
+} from './menus.tsx';
+import { notice } from './notices.tsx';
+import { Overlays, overlay, closeOverlay } from './overlays.tsx';
 import { createRegistry, registry } from './registry.ts';
 
 beforeAll(() => {
@@ -44,6 +60,7 @@ const declared = defineCommands(
       targets: ['line'],
       menu: { on: 'line', order: 10 },
     },
+    open: { label: 'Open a PR', group: 'Find', keys: ['cmd+l'] },
     quit: {
       label: 'Quit Lo',
       group: 'Tabs and window',
@@ -81,6 +98,7 @@ function commands() {
       },
       copyPath: record('tree.copyPath'),
       comment: record('tree.comment'),
+      open: record('tree.open'),
       quit: record('tree.quit'),
     }),
   ];
@@ -116,12 +134,14 @@ const popup = () => document.querySelector('[role="menu"]');
 const items = () => [...document.querySelectorAll('[role="menuitem"]')];
 const labelOf = (item: Element) => item.querySelector('span span')?.textContent;
 const labels = () => items().map(labelOf);
-const press = (key: string) =>
+/** A key pressed where focus is, as the page sends it to the window's listener. */
+function press(key: string, init: KeyboardEventInit = {}): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
   act(() => {
-    document.activeElement?.dispatchEvent(
-      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
-    );
+    document.activeElement?.dispatchEvent(event);
   });
+  return event;
+}
 
 /** A right-click on `element`, as the page sends it: the event React hears. */
 function rightClick(element: Element, at = { x: 30, y: 40 }): MouseEvent {
@@ -191,7 +211,7 @@ describe('a right-click', () => {
     ).toEqual([['Enter'], ['e'], ['y', 'p'], ['Ctrl+Q']]);
   });
 
-  it('lists the window’s own actions where nothing in particular was clicked', () => {
+  it('lists the window’s own actions, Back and Forward, where nothing in particular was clicked', () => {
     const page = mount(
       <>
         <Clickable id="window" target={NO_TARGET}>
@@ -202,7 +222,7 @@ describe('a right-click', () => {
     );
     rightClick(page.querySelector('#empty')!);
     expect(popup()?.getAttribute('aria-label')).toBe('Actions');
-    expect(labels()).toEqual(['Back', 'Forward', 'Command palette', 'Every key']);
+    expect(labels()).toEqual(['Back', 'Forward']);
   });
 
   it('is taken by the innermost target that has a menu, and left to the next if none does', () => {
@@ -277,8 +297,8 @@ describe('a right-click', () => {
     });
     const event = rightClick(page.querySelector('#row')!, { x: 120, y: 80 });
     expect(event.defaultPrevented).toBe(true);
-    expect(menu()?.anchor).toEqual({ x: 5, y: 6 });
-    expect(menu()?.keyboard).toBe(true);
+    expect(currentMenu()?.anchor).toEqual({ x: 5, y: 6 });
+    expect(currentMenu()?.keyboard).toBe(true);
   });
 
   it('opens at the pointer', () => {
@@ -289,8 +309,8 @@ describe('a right-click', () => {
       </>,
     );
     rightClick(page.querySelector('#row')!, { x: 120, y: 80 });
-    expect(menu()?.anchor).toEqual({ x: 120, y: 80 });
-    expect(menu()?.keyboard).toBe(false);
+    expect(currentMenu()?.anchor).toEqual({ x: 120, y: 80 });
+    expect(currentMenu()?.keyboard).toBe(false);
   });
 });
 
@@ -388,7 +408,7 @@ describe('from the keyboard', () => {
       openMenuAtFocus();
     });
     expect(popup()?.getAttribute('aria-label')).toBe('File actions');
-    expect(menu()?.keyboard).toBe(true);
+    expect(currentMenu()?.keyboard).toBe(true);
     await vi.waitFor(() => expect(items()[0]?.hasAttribute('data-highlighted')).toBe(true));
     // ⏎ runs it, on the focused scope's target, as the key of the first action would.
     press('Enter');
@@ -459,14 +479,135 @@ describe('from the keyboard', () => {
 describe('the menu’s state', () => {
   it('is open only until it’s closed', () => {
     mount(<Menus />);
-    expect(menu()).toBeUndefined();
+    expect(currentMenu()).toBeUndefined();
     let opened = false;
     act(() => {
       opened = openMenu(NO_TARGET, { x: 1, y: 2 });
     });
     expect(opened).toBe(true);
-    expect(menu()?.target).toEqual(NO_TARGET);
+    expect(currentMenu()?.target).toEqual(NO_TARGET);
     act(() => closeMenu());
-    expect(menu()).toBeUndefined();
+    expect(currentMenu()).toBeUndefined();
+  });
+});
+
+describe('while a menu is open', () => {
+  let stop: (() => void) | undefined;
+
+  afterEach(() => {
+    stop?.();
+    stop = undefined;
+    act(() => closeOverlay());
+  });
+
+  /** The keys Lo gives commands for anywhere, as a keyboard sends them on macOS. */
+  const anywhere: [string, string, KeyboardEventInit][] = [
+    ['?', 'key help', { key: '?', shiftKey: true, code: 'Slash' }],
+    ['⌘⇧P', 'the palette', { key: 'p', metaKey: true, shiftKey: true, code: 'KeyP' }],
+    ['⌃o', 'back', { key: 'o', ctrlKey: true, code: 'KeyO' }],
+    ['⌃i', 'forward', { key: 'i', ctrlKey: true, code: 'KeyI' }],
+    ['⌘L', 'open a PR', { key: 'l', metaKey: true, code: 'KeyL' }],
+  ];
+
+  async function openOverRow() {
+    const page = mount(
+      <>
+        <Clickable id="row" target={file} />
+        <Menus />
+        <Overlays />
+      </>,
+    );
+    stop = listen(window, registry());
+    page.querySelector<HTMLElement>('#row')?.focus();
+    rightClick(page.querySelector('#row')!);
+    await vi.waitFor(() => expect(popup()?.contains(document.activeElement)).toBe(true));
+  }
+
+  it('runs no command but the menu’s own: not key help, the palette, back, forward or open', async () => {
+    await openOverRow();
+    for (const [label, , init] of anywhere) {
+      press(init.key ?? '', init);
+      // Nothing opened, nothing ran, and Back and Forward, which say so when they have nowhere to
+      // go, said nothing: they didn't run.
+      expect({ label, overlay: overlay(), ran, notice: notice() }).toEqual({
+        label,
+        overlay: undefined,
+        ran: [],
+        notice: undefined,
+      });
+    }
+    // The menu is still the only thing open, and Esc closes it.
+    expect(popup()).not.toBeNull();
+    press('Escape');
+    await vi.waitFor(() => expect(popup()).toBeNull());
+    expect(overlay()).toBeUndefined();
+    expect(ran).toEqual([]);
+  });
+
+  it('still moves with j and k, and runs a command it’s chosen from', async () => {
+    await openOverRow();
+    press('j');
+    expect(items().findIndex((item) => item.hasAttribute('data-highlighted'))).toBe(0);
+    press('j');
+    expect(items().findIndex((item) => item.hasAttribute('data-highlighted'))).toBe(1);
+    press('k');
+    press('Enter');
+    await vi.waitFor(() => expect(ran).toEqual([{ id: 'tree.show', target: file }]));
+  });
+
+  it('lets the same keys run again once it has closed', async () => {
+    await openOverRow();
+    press('Escape');
+    await vi.waitFor(() => expect(popup()).toBeNull());
+    await vi.waitFor(() => expect(document.activeElement?.id).toBe('row'));
+    press('?', { shiftKey: true, code: 'Slash' });
+    expect(overlay()?.kind).toBe('help');
+    act(() => closeOverlay());
+    await vi.waitFor(() => expect(overlay()).toBeUndefined());
+    press('l', { metaKey: true, code: 'KeyL' });
+    expect(ran).toEqual([{ id: 'tree.open', target: NO_TARGET }]);
+  });
+});
+
+describe('a text field', () => {
+  it('is left to the system’s Edit menu: a right-click in it opens none of Lo’s', () => {
+    const page = mount(
+      <>
+        <Clickable id="window" target={NO_TARGET}>
+          <input id="field" />
+          <textarea id="notes" />
+          <div id="editable" contentEditable />
+          <div id="plain" />
+        </Clickable>
+        <Menus />
+      </>,
+    );
+    for (const id of ['field', 'notes', 'editable']) {
+      const event = rightClick(page.querySelector(`#${id}`)!);
+      expect({ id, prevented: event.defaultPrevented, open: popup() !== null }).toEqual({
+        id,
+        prevented: false,
+        open: false,
+      });
+    }
+    // Anything else in the window still has its menu.
+    expect(rightClick(page.querySelector('#plain')!).defaultPrevented).toBe(true);
+    expect(popup()).not.toBeNull();
+  });
+
+  it('has no Lo menu from the keyboard either', () => {
+    const page = mount(
+      <>
+        <input id="field" />
+        <Menus />
+      </>,
+    );
+    page.querySelector<HTMLElement>('#field')?.focus();
+    let opened = true;
+    act(() => {
+      opened = openMenuAtFocus();
+    });
+    expect(opened).toBe(false);
+    expect(popup()).toBeNull();
   });
 });

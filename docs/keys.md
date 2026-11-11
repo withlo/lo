@@ -45,16 +45,16 @@ A key applies in a scope: the nearest part of the window around the focused elem
 or `window`. A key for a scope beats one for anywhere, so the same chord can mean one thing in a
 comment box and another elsewhere.
 
-| Scope     | What it is                                                   |
-| --------- | ------------------------------------------------------------ |
-| `window`  | Anywhere no other scope has focus.                           |
-| `menu`    | A menu. `j` and `k` move in it as `↓` and `↑` do.            |
-| `dialog`  | A dialog, which keeps the browser's `Tab`.                   |
-| `palette` | A palette, such as the command palette.                      |
-| `diff`    | The diff, a code view.                                       |
-| `file`    | A whole file, a code view.                                   |
-| `peek`    | A peek at code elsewhere, such as a definition, a code view. |
-| `box`     | A comment box, a code view with an insert mode.              |
+| Scope     | What it is                                                                            |
+| --------- | ------------------------------------------------------------------------------------- |
+| `window`  | Anywhere no other scope has focus.                                                    |
+| `menu`    | A menu. Only commands that name it run there, and `j` and `k` move as `↓` and `↑` do. |
+| `dialog`  | A dialog, which keeps the browser's `Tab`.                                            |
+| `palette` | A palette, such as the command palette.                                               |
+| `diff`    | The diff, a code view.                                                                |
+| `file`    | A whole file, a code view.                                                            |
+| `peek`    | A peek at code elsewhere, such as a definition, a code view.                          |
+| `box`     | A comment box, a code view with an insert mode.                                       |
 
 In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a
 command (after a count or an operator), only chords are Lo's, and other keys go to Vim. In a text

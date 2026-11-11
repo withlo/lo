@@ -183,6 +183,10 @@ export function holds(binding: Binding, focus: Focus, system: System): boolean {
   const { when } = command;
   const { view } = focus;
   if (when?.scope !== undefined && !listOf(when.scope).includes(focus.scope)) return false;
+  // A menu is open over the window, and no other command runs under it: key help or the palette
+  // would open over it, and each `Esc` would go back into the menu. Only a command that names the
+  // menu, as a menu's own does, takes keys there.
+  if (focus.scope === 'menu' && !listOf(when?.scope).includes('menu')) return false;
   if (when?.except?.includes(focus.scope)) return false;
   if (when?.system !== undefined && when.system !== system) return false;
   const first = strokes[0];

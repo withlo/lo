@@ -41,6 +41,11 @@ export interface RegistryOptions {
    * error is logged.
    */
   readonly onError?: (error: unknown, command: Command | undefined) => void;
+  /**
+   * `run` didn't run a command, and why: a key, a menu or the palette asked for one that can't run
+   * on its target now. So the person who asked is told, rather than nothing happening.
+   */
+  readonly onRefused?: (reason: string, id: string) => void;
 }
 
 /** A keydown, as the listener reads it. */
@@ -76,6 +81,7 @@ export class Registry {
   private readonly timeout: number;
   private readonly now: () => number;
   private readonly onError: (error: unknown, command: Command | undefined) => void;
+  private readonly onRefused: ((reason: string, id: string) => void) | undefined;
   private readonly listeners = new Set<() => void>();
   private keymap: Keymap = { lines: [], errors: [] };
   /** The keymap's errors: its lines that can't be read, then those that don't apply. */
@@ -105,6 +111,7 @@ export class Registry {
       ((error, command) => {
         console.error(`${command ? command.id : 'A code view'} failed:`, error);
       });
+    this.onRefused = options.onRefused;
     this.bindings = this.rebuild();
   }
 
@@ -169,12 +176,16 @@ export class Registry {
 
   /**
    * Runs `id` on `target`, as a key, a menu or the palette asks: `true`, or why it didn't. A
-   * `jump` command records where the tab is in its history first. A handler that throws or
-   * rejects is reported, never thrown to the caller.
+   * `jump` command records where the tab is in its history first. A command that can't run is
+   * reported to `onRefused`, and a handler that throws or rejects to `onError`, never thrown to
+   * the caller.
    */
   run(id: string, target: Target): true | string {
     const ready = this.prepare(id, target);
-    if (typeof ready === 'string') return ready;
+    if (typeof ready === 'string') {
+      this.onRefused?.(ready, id);
+      return ready;
+    }
     const { command, handler } = ready;
     if (command.jump) {
       const from = this.here?.();

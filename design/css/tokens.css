@@ -378,7 +378,9 @@
   --lo-control-h: 28px; /* Buttons and inputs. */
   --lo-control-h-sm: 22px; /* Small buttons and toolbar controls. */
   --lo-kbd-h: 18px; /* Height of a key cap, and its least width. */
+  --lo-menu-item-h: 26px; /* Height of an item in a menu. */
   --lo-menu-w: 220px; /* Least width of a menu, so its keys line up. */
+  --lo-toast-w: 380px; /* Widest a toast or notice grows. */
   --lo-palette-w: 640px; /* Width of a palette: the command palette, the file finder, open a PR. */
   --lo-palette-list-h: 440px; /* Tallest a palette's list grows before it scrolls. */
   --lo-keyhelp-w: 1240px; /* Widest the key help grows. */

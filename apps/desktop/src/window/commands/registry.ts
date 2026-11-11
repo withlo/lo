@@ -4,6 +4,8 @@
 import { Registry, type Command, type Entry, type System } from '@lo/ui/commands';
 import { useSyncExternalStore } from 'react';
 
+import { notify } from './notices.tsx';
+
 /** The view in the middle of the window, as keys see it. */
 export interface Middle {
   /** Takes focus, as `Esc` gives it back. */
@@ -17,7 +19,13 @@ let middle: Middle | undefined;
 
 /** Builds the window's registry from every feature's commands. */
 export function createRegistry(commands: readonly Command[], system: System): Registry {
-  current = new Registry({ system, commands, here: () => middle?.here() });
+  current = new Registry({
+    system,
+    commands,
+    here: () => middle?.here(),
+    // A command asked for that can't run says why, whoever asked: a key, a menu or the palette.
+    onRefused: (reason) => notify(reason),
+  });
   return current;
 }
 

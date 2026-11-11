@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  ariaShortcut,
   contradicts,
   eventStroke,
   eventStrokes,
@@ -327,4 +328,33 @@ test('Vim’s notation, as code views take held keys and motions', () => {
   expect(vim('space')).toBe('<Space>');
   expect(vim('<')).toBe('<lt>');
   expect(vimKeys([strokeOf('w', { ctrl: true }), strokeOf('j')])).toBe('<C-w>j');
+});
+
+/** `keys` as `aria-keyshortcuts` says them on `system`. */
+function aria(keys: string, system: System = 'mac') {
+  return ariaShortcut(systemStrokes(parseKeys(keys), system));
+}
+
+describe('aria-keyshortcuts', () => {
+  test('a key or a chord is written as ARIA writes it', () => {
+    expect(aria('cmd+shift+p')).toBe('Meta+Shift+P');
+    expect(aria('cmd+shift+p', 'linux')).toBe('Control+Shift+P');
+    expect(aria('ctrl+o')).toBe('Control+O');
+    expect(aria('alt+enter')).toBe('Alt+Enter');
+    expect(aria('shift+f10')).toBe('Shift+F10');
+    expect(aria('e')).toBe('e');
+    expect(aria('?')).toBe('?');
+    expect(aria('G')).toBe('G');
+    expect(aria('enter')).toBe('Enter');
+    expect(aria('esc')).toBe('Escape');
+    expect(aria('down')).toBe('ArrowDown');
+    expect(aria('menu')).toBe('ContextMenu');
+    expect(aria('cmd+plus')).toBe('Meta+Shift+=');
+  });
+
+  test('a sequence has none', () => {
+    expect(aria('] f')).toBeUndefined();
+    expect(aria('g S')).toBeUndefined();
+    expect(ariaShortcut([])).toBeUndefined();
+  });
 });

@@ -3,7 +3,7 @@
 // on the target it was opened for.
 
 import { ContextMenu, type ContextMenuAnchor } from '@lo/ui';
-import { menuSections, type Target, type TargetKind } from '@lo/ui/commands';
+import { menuSections, textKind, type Target, type TargetKind } from '@lo/ui/commands';
 import { useSyncExternalStore, type MouseEvent } from 'react';
 
 import { focusedTarget } from './bar.ts';
@@ -37,7 +37,7 @@ function subscribe(listener: () => void): () => void {
 }
 
 /** The menu that's open now. */
-export function menu(): Open | undefined {
+export function currentMenu(): Open | undefined {
   return current;
 }
 
@@ -77,9 +77,11 @@ function anchorOf(element: Element | null): ContextMenuAnchor {
 
 /**
  * Opens the menu of what has focus, where focus is, as the menu key and ⇧F10 do. The target is
- * the focused scope's, as a key's is.
+ * the focused scope's, as a key's is. A text field has none.
  */
 export function openMenuAtFocus(): boolean {
+  // A text field gets the system's Edit menu by right-click only; Lo's menus skip it.
+  if (textKind(document.activeElement) !== undefined) return false;
   return openMenu(focusedTarget(), anchorOf(document.activeElement), true);
 }
 
@@ -104,6 +106,8 @@ export function useMenuTarget(
         return;
       }
       if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
+      // A text field gets the system's Edit menu, which main shows: cut, copy, paste, spelling.
+      if (event.target instanceof Element && textKind(event.target) !== undefined) return;
       const clicked = typeof target === 'function' ? target(event) : target;
       if (clicked && openMenu(clicked, { x: event.clientX, y: event.clientY })) {
         event.preventDefault();
@@ -137,7 +141,7 @@ function nameOf(kind: TargetKind): string {
 
 /** The right-click menu, over the window. */
 export function Menus() {
-  const open = useSyncExternalStore(subscribe, menu);
+  const open = useSyncExternalStore(subscribe, currentMenu);
   useKeys();
   const shown = open ?? closing;
   const container = document.getElementById('root');

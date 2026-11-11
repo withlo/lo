@@ -2,6 +2,7 @@ import { TabBar } from '@lo/ui';
 import { NO_TARGET } from '@lo/ui/commands';
 
 import { Menus, useMenuTarget } from './commands/menus.tsx';
+import { Notices } from './commands/notices.tsx';
 import { Overlays } from './commands/overlays.tsx';
 
 /**
@@ -22,6 +23,7 @@ export function Window() {
       <main className="flex-1" data-lo-middle tabIndex={-1} />
       <Overlays />
       <Menus />
+      <Notices />
     </div>
   );
 }

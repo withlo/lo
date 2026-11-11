@@ -23,6 +23,7 @@ function setup(
 ) {
   const ran: Ran[] = [];
   const errors: [unknown, string][] = [];
+  const refused: [string, string][] = [];
   let time = 0;
   const registry = new Registry({
     system: options.system ?? 'mac',
@@ -30,6 +31,7 @@ function setup(
     ...(options.here ? { here: options.here } : {}),
     now: () => time,
     onError: (error, command) => errors.push([error, command?.id ?? 'view']),
+    onRefused: (reason, id) => refused.push([reason, id]),
   });
   /** Presses each key, written in Lo's notation, at `where`, 10 ms apart. */
   const press = (keys: readonly string[], where: KeyPlace, repeat = false) =>
@@ -44,7 +46,7 @@ function setup(
     const read = strokes.map((text) => systemStrokes(parseKeys(text), registry.system)[0]!);
     return registry.handle({ strokes: read, repeat: false, composing: false }, where).kind;
   };
-  return { registry, ran, errors, press, pressRead };
+  return { registry, ran, errors, refused, press, pressRead };
 }
 
 describe('running a command', () => {
@@ -70,6 +72,30 @@ describe('running a command', () => {
     expect(registry.run('vim.down', place(1))).toBe("Line down is Vim's.");
     expect(registry.run('diff.nope', place(1))).toBe("There's no command called diff.nope.");
     expect(ran).toEqual([]);
+  });
+
+  test('tells onRefused why a command asked for didn’t run, by key or any other way', () => {
+    const [base] = testCommands();
+    const never: Command = {
+      ...base!,
+      handler: { run() {}, enabled: () => 'Already viewed.' },
+    };
+    const { registry, refused, press } = setup({ commands: [never] });
+    registry.run(never.id, place(1));
+    expect(refused).toEqual([['Already viewed.', never.id]]);
+    // Asking whether it can run isn't asking it to.
+    registry.enabled(never.id, place(1));
+    expect(refused).toHaveLength(1);
+    // A key on a focused scope that gives it a target says so too.
+    press(['e'], scope('diff', new FakeView()));
+    expect(refused.at(-1)).toEqual(['Already viewed.', never.id]);
+    expect(refused).toHaveLength(2);
+  });
+
+  test('says nothing to onRefused when a command runs', () => {
+    const { registry, refused } = setup();
+    expect(registry.run('keys.help', { kind: 'none' })).toBe(true);
+    expect(refused).toEqual([]);
   });
 
   test('asks its handler whether it can run, and doesn’t run when it can’t', () => {

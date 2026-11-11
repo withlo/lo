@@ -1,7 +1,8 @@
 import { handlers } from '@lo/ui/commands';
 
 import { barItems, focusedTarget, runFromBar } from '../../../window/commands/bar.ts';
-import { openMenuAtFocus } from '../../../window/commands/menus.tsx';
+import { currentMenu, openMenuAtFocus } from '../../../window/commands/menus.tsx';
+import { notify } from '../../../window/commands/notices.tsx';
 import { showHighlighted, toggleHelp, togglePalette } from '../../../window/commands/overlays.tsx';
 import { focusMiddle, here, registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
@@ -18,7 +19,7 @@ function syncMenu(menu: Client<typeof contract>): void {
   let queued = false;
   const send = () => {
     queued = false;
-    const items = barItems(registry(), focusedTarget());
+    const items = barItems(registry(), focusedTarget(), currentMenu() !== undefined);
     const json = JSON.stringify(items);
     if (json === sent) return;
     sent = json;
@@ -54,12 +55,12 @@ export default {
     escape: { run: focusMiddle },
     back: {
       run() {
-        registry().history.back(here());
+        if (!registry().history.back(here())) notify("There's nowhere to go back to.");
       },
     },
     forward: {
       run() {
-        registry().history.forward();
+        if (!registry().history.forward()) notify("There's nowhere to go forward to.");
       },
     },
   }),
@@ -68,6 +69,11 @@ export default {
     // A click in the app menu runs through the registry, on what has focus, as a key would. Only
     // the menu's own commands run this way.
     menu.subscribe('run', ({ id }) => {
+      // A right-click menu is open over the window, and nothing but its own commands runs under it.
+      if (currentMenu() !== undefined) {
+        notify('Close the menu first.');
+        return;
+      }
       runFromBar(registry(), id, focusedTarget());
     });
     // Linux has no app menu.

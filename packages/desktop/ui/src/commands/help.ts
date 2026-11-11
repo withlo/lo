@@ -3,7 +3,7 @@
 
 import { listed } from './checks.ts';
 import { groups, listOf, type Command, type Group } from './declare.ts';
-import { keyLabels } from './notation.ts';
+import { ariaShortcut, keyLabels } from './notation.ts';
 import type { Registry } from './registry.ts';
 import type { Target } from './targets.ts';
 
@@ -70,6 +70,15 @@ export function liveKeys(registry: Registry, command: Command): (readonly string
 }
 
 /**
+ * `command`'s first key now as `aria-keyshortcuts` says it, which a control gives a screen reader
+ * in place of its key caps. A sequence has none.
+ */
+export function liveShortcut(registry: Registry, command: Command): string | undefined {
+  const [first] = registry.keysOf(command.id);
+  return first && ariaShortcut(first);
+}
+
+/**
  * Key help's groups, in the key table's order: every command on this system, each with its keys
  * as they are now, the keymap file's included.
  */
@@ -120,6 +129,8 @@ export interface PaletteItem {
   readonly group: Group;
   /** Its first key now, as labels in this system's form, if it has one. */
   readonly keys: readonly string[] | undefined;
+  /** That key as `aria-keyshortcuts` says it, if it's one key or a chord. */
+  readonly shortcut: string | undefined;
 }
 
 /** Whether `command`'s `when` lets it run from `scope`, ignoring Vim's mode. */
@@ -152,6 +163,7 @@ export function paletteItems(registry: Registry, scope: string, target: Target):
         label: command.label,
         group,
         keys: liveKeys(registry, command)[0],
+        shortcut: liveShortcut(registry, command),
       })),
   );
 }

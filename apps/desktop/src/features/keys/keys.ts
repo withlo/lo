@@ -1,5 +1,5 @@
-// The registry's own commands. The ones with a menu are the right-click menu of the window itself:
-// what a click on nothing in particular lists.
+// The registry's own commands. Back and Forward are the right-click menu of the window itself: what
+// a click on nothing in particular lists.
 
 import { defineCommands } from '@lo/ui/commands';
 
@@ -10,13 +10,11 @@ export default defineCommands('keys', {
     group: 'Tabs and window',
     keys: ['?'],
     overVim: true,
-    menu: { on: 'none', order: 40 },
   },
   palette: {
     label: 'Command palette',
     group: 'Find',
     keys: ['cmd+shift+p'],
-    menu: { on: 'none', order: 30 },
   },
   /** In the palette, shows the highlighted action in key help. */
   showKey: {
