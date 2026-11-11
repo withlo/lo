@@ -379,14 +379,21 @@ describe('takes a git whose folders root’s or admin’s group may write to, as
   });
 });
 
-/** Whether no process is left in the group `pid` led. */
+/** Whether nothing is left running in the group `pid` led. */
 function groupGone(pid: number): boolean {
   try {
     process.kill(-pid, 0);
-    return false;
   } catch (error) {
     return error instanceof Error && 'code' in error && error.code === 'ESRCH';
   }
+  // Something is in the group: only a process that has exited and waits to be collected, as one
+  // whose parent exited first does until the system collects it, isn't running.
+  return execFileSync('ps', ['-A', '-o', 'pgid=,stat='], { encoding: 'utf8' })
+    .split('\n')
+    .every((line) => {
+      const [group, state = ''] = line.trim().split(/\s+/);
+      return Number(group) !== pid || state.startsWith('Z');
+    });
 }
 
 /**

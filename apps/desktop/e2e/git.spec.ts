@@ -8,11 +8,14 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -63,14 +66,21 @@ function testGitVersion(): string {
   return `${major}.${minor}.${patch}`;
 }
 
-/** Whether no process is left in the group `pid` led. */
+/** Whether nothing is left running in the group `pid` led. */
 function groupGone(pid: number): boolean {
   try {
     process.kill(-pid, 0);
-    return false;
   } catch (error) {
     return error instanceof Error && 'code' in error && error.code === 'ESRCH';
   }
+  // Something is in the group: only a process that has exited and waits to be collected, as one
+  // whose parent exited first does until the system collects it, isn't running.
+  return execFileSync('ps', ['-A', '-o', 'pgid=,stat='], { encoding: 'utf8' })
+    .split('\n')
+    .every((line) => {
+      const [group, state = ''] = line.trim().split(/\s+/);
+      return Number(group) !== pid || state.startsWith('Z');
+    });
 }
 
 /** The background process's environment, read from outside it, as the system reports it. */
@@ -212,9 +222,9 @@ for (const [when, slow, clones] of [
 ] as const) {
   test(`quitting while Lo ${when} leaves no git running and nothing behind`, async () => {
     const runs = test.info().outputPath('runs');
-    const tmp = test.info().outputPath('tmp');
+    // A short path: on Linux, Chromium keeps a socket in it, and a socket's path is short.
+    const tmp = mkdtempSync(join(tmpdir(), 'lo-e2e-'));
     mkdirSync(runs, { recursive: true });
-    mkdirSync(tmp, { recursive: true });
     // The real git, noting each process it runs as, which waits half a minute before the step.
     const program = script(test.info().outputPath('git', 'git'), [
       `echo $$ >> '${runs}/pids'`,
@@ -247,6 +257,7 @@ for (const [when, slow, clones] of [
           // Gone already.
         }
       }
+      rmSync(tmp, { recursive: true, force: true });
     }
   });
 }
