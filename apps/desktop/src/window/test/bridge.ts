@@ -2,8 +2,8 @@
 
 import { vi } from 'vitest';
 
-import type { Bridge } from '../../../../ipc/bridge.ts';
-import { IpcError, type Result } from '../../../../ipc/contract.ts';
+import type { Bridge } from '../../ipc/bridge.ts';
+import { IpcError, type Result } from '../../ipc/contract.ts';
 
 type Answer = (input: unknown) => unknown;
 

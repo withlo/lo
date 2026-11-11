@@ -29,3 +29,10 @@ export {
   type SettingsSectionProps,
 } from './Settings.tsx';
 export { ThemeChoice, type ThemeChoiceProps, type ThemeName } from './ThemeChoice.tsx';
+export { Avatar, avatarHue, initials } from './Avatar.tsx';
+export { Callout, type CalloutProps, type CalloutTone } from './Callout.tsx';
+export { Choices, type ChoiceItem, type ChoicesProps } from './Choices.tsx';
+export { Dialog, DialogSpacer, type DialogProps } from './Dialog.tsx';
+export { Spinner } from './Spinner.tsx';
+export { Switch, type SwitchProps } from './Switch.tsx';
+export { Tag, type TagTone } from './Tag.tsx';

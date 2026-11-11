@@ -39,6 +39,9 @@
   --spacing-settings-w: var(--lo-settings-w);
   --spacing-swatch-w: var(--lo-swatch-w);
   --spacing-swatch-h: var(--lo-swatch-h);
+  --spacing-dialog-w: var(--lo-dialog-w);
+  --spacing-avatar-lg: var(--lo-avatar-lg);
+  --spacing-switch-w: var(--lo-switch-w);
   --spacing-file-header-h: var(--lo-file-header-h);
   --spacing-window-inset-start: var(--lo-window-inset-start);
   --spacing-window-inset-end: var(--lo-window-inset-end);
@@ -304,4 +307,8 @@
 
 @utility code-key {
   font: var(--lo-code-key);
+}
+
+@utility code-display {
+  font: var(--lo-code-display);
 }

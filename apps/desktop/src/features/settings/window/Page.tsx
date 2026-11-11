@@ -41,6 +41,11 @@ function Problems() {
   );
 }
 
+/** Whether the body is scrolled as far down as it goes, having scrolled at all. */
+function atEnd(body: HTMLElement): boolean {
+  return body.scrollTop > 0 && body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
+}
+
 /** The section whose top is the last at or above the top of the body, or the last at the end. */
 function sectionOnScreen(body: HTMLElement): string | undefined {
   const all = [...body.querySelectorAll<HTMLElement>('[data-settings-section]')];
@@ -49,8 +54,7 @@ function sectionOnScreen(body: HTMLElement): string | undefined {
   for (const section of all) {
     if (section.getBoundingClientRect().top - top <= 1) found = section;
   }
-  const end = body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
-  if (end && body.scrollTop > 0) found = all.at(-1);
+  if (atEnd(body)) found = all.at(-1);
   return found?.dataset.settingsSection;
 }
 
@@ -61,10 +65,16 @@ export function SettingsTab() {
   const root = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const [current, setCurrent] = useState<string>();
+  /**
+   * The section last gone to by the list or a key, which stays the one on screen while the body
+   * can't scroll its top up to the top, as near the end, until the person scrolls back up.
+   */
+  const chosen = useRef<string>(undefined);
   const items = views.map(({ id }) => ({ id, label: sectionInfo.get(id)?.title ?? id }));
   const here = current ?? items[0]?.id;
 
   const go = useCallback((id: string) => {
+    chosen.current = id;
     setCurrent(id);
     body.current
       ?.querySelector(`[data-settings-section="${id}"]`)
@@ -109,7 +119,12 @@ export function SettingsTab() {
         current={here}
         onGo={go}
         bodyRef={body}
-        onBodyScroll={(event) => setCurrent(sectionOnScreen(event.currentTarget))}
+        onBodyScroll={(event) => {
+          const scrolled = event.currentTarget;
+          if (chosen.current !== undefined && atEnd(scrolled)) return;
+          chosen.current = undefined;
+          setCurrent(sectionOnScreen(scrolled));
+        }}
         footer={
           file === undefined ? undefined : (
             <>

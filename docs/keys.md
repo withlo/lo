@@ -23,6 +23,12 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Back    | `⌃o` | Anywhere but `box` | `keys.back`    |
 | Forward | `⌃i` | Anywhere but `box` | `keys.forward` |
 
+## Copy and open
+
+| Action                | Keys  | Where       | Command             |
+| --------------------- | ----- | ----------- | ------------------- |
+| Copy the sign-in code | `y y` | In `dialog` | `accounts.copyCode` |
+
 ## Find
 
 | Action          | Keys  | Where    | Command        |
