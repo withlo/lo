@@ -20,10 +20,12 @@ import { type Git, Runner, type TestSettings } from './git.ts';
 import { DEFAULT_FETCH_LIMITS, type FetchLimits } from './limits.ts';
 import {
   clear,
+  collectReplays,
   DEFAULT_CAP,
   DEFAULT_MAINTENANCE,
   diskUsage,
   GEOMETRIC_LIMIT,
+  hasLooseObjects,
   keepUnder,
   type MaintenanceTimes,
   removeUnused,
@@ -44,8 +46,17 @@ import { distrust } from './trust.ts';
 /** The only host Lo fetches from, for now. */
 const HOST = 'github.com';
 
-/** Where git reaches GitHub through, read as each fetch starts: a proxy's address, or none. */
-export type ProxySource = () => Promise<string | undefined>;
+/**
+ * Where git reaches `address`, the repository a fetch fetches from, through: a proxy's address, or
+ * none. It's read as each fetch starts.
+ */
+export type ProxySource = (address: string) => Promise<string | undefined>;
+
+/**
+ * How long stopping the cache waits for writes to clones to finish once their gits have stopped,
+ * as a stopped fetch removes what it left.
+ */
+const SETTLE_LIMIT = 2000;
 
 export interface CacheOptions {
   /** The cache's folder. It's made if it's missing. */
@@ -64,12 +75,17 @@ export interface CacheOptions {
   readonly cap?: number | undefined;
   /** When maintenance runs and how it gives way: {@link DEFAULT_MAINTENANCE} unless tests say. */
   readonly maintenance?: Partial<MaintenanceTimes> | undefined;
+  /**
+   * The proxy Lo's own requests take to each address, read as each fetch starts, for every
+   * repository opened without one of its own. Without either, git goes direct.
+   */
+  readonly proxy?: ProxySource | undefined;
 }
 
 export interface OpenOptions {
   /** The account's token, read as each fetch starts. Without one, git signs in as nobody. */
   readonly token?: TokenSource | undefined;
-  /** The proxy Lo's own requests to GitHub take, read as each fetch starts. */
+  /** The proxy Lo's own requests take to each address, read as each fetch starts. */
   readonly proxy?: ProxySource | undefined;
   /** Hears what the repository's writes wait on, and what opening it waits on. */
   readonly progress?: ((activity: Activity) => void) | undefined;
@@ -88,6 +104,7 @@ export class Cache {
   readonly maintenance: MaintenanceTimes;
   readonly #log: ((line: string) => void) | undefined;
   readonly #release: Release;
+  readonly #proxy: ProxySource | undefined;
   #cap: number;
   readonly #locks = new Map<string, CloneLock>();
   /** Each open clone's reader of objects, and how many repositories open on it use it. */
@@ -119,6 +136,7 @@ export class Cache {
     this.#release = release;
     this.#cap = options.cap ?? DEFAULT_CAP;
     this.#log = options.log;
+    this.#proxy = options.proxy;
   }
 
   /** Opens the cache at `options.root`, or fails when another process has it open. */
@@ -158,6 +176,35 @@ export class Cache {
     await unlockCache(join(this.root, 'lo-cache.lock'), this.#release);
   }
 
+  /**
+   * Stops everything running in the cache, then closes it, as when Lo quits: maintenance, each
+   * clone's reader, and every fetch and read. Each git is asked to stop, so that it removes its
+   * lock files itself, and is killed with what it started if it hasn't within a second. Writes to
+   * clones then get up to {@link SETTLE_LIMIT} to finish, as a stopped fetch removes what it left.
+   * Nothing more runs in the cache, or in a repository open in it.
+   */
+  async stop(): Promise<void> {
+    this.#closing.abort();
+    for (const { reader } of this.#readers.values()) reader.close();
+    this.#readers.clear();
+    await this.runner.stop();
+    await this.#settle();
+    await this.close();
+  }
+
+  /** Waits, for at most {@link SETTLE_LIMIT}, until no write to a clone holds its lock. */
+  async #settle(): Promise<void> {
+    const signal = AbortSignal.timeout(SETTLE_LIMIT);
+    await Promise.all(
+      [...this.#locks.values()].map((lock) =>
+        lock.acquire('closing the cache', undefined, { signal }).then(
+          (release) => release(),
+          () => undefined,
+        ),
+      ),
+    );
+  }
+
   /** Aborts as the cache closes. */
   get closing(): AbortSignal {
     return this.#closing.signal;
@@ -187,10 +234,11 @@ export class Cache {
    * Removes what nobody used for a while: clones for 30 days, checkouts for 14, what crashes and
    * stopped fetches left a day or more ago, and from clones nobody has open, the trees comparisons
    * replayed. Never a clone that's open or being written to. Returns the `owner/name` of each
-   * clone removed.
+   * clone removed. It runs as maintenance, one at a time with the rest, and closing the cache waits
+   * for it, so no git it runs, such as a `prune` closing stopped, outlives the cache's lock.
    */
   async removeUnused(now = Date.now()): Promise<string[]> {
-    const removed = await removeUnused(this, now);
+    const removed = await this.#serially(() => removeUnused(this, now));
     await this.#deleted();
     return removed;
   }
@@ -237,6 +285,7 @@ export class Cache {
 
   /** Keeps the cache under its cap once a fetch has made a clone, which may have grown it most. */
   async madeClone(): Promise<void> {
+    if (this.#closing.signal.aborted) return;
     await keepUnder(this, this.#cap).catch((error: unknown) => {
       this.note(`can't keep the cache under its cap: ${String(error)}`);
     });
@@ -251,9 +300,10 @@ export class Cache {
 
   /**
    * Looks at the clone of `owner/name`, whose folders are named so, again once its lock has gone
-   * unheld for {@link MaintenanceTimes.idleFor}, and repacks it if it needs it, at most
-   * {@link MaintenanceTimes.attempts} times each launch: the clones restored or fetched right after
-   * launch are the busiest, and may never be idle at launch.
+   * unheld for {@link MaintenanceTimes.idleFor}: repacks it if it needs it, and once nobody has it
+   * open, removes the trees comparisons replayed in it, at most {@link MaintenanceTimes.attempts}
+   * times each launch. The clones restored or fetched right after launch are the busiest, and may
+   * never be idle at launch, and a clone's replays pile up while a pull request is reviewed.
    */
   #lockFree(owner: string, name: string): void {
     const key = `${owner}/${name}`;
@@ -264,14 +314,18 @@ export class Cache {
       void this.#serially(async () => {
         const lock = this.cloneLock(owner, name);
         if (this.#closed || lock.holder !== undefined) return;
-        const packs = await readdir(join(this.repoFolder(owner, name), 'objects', 'pack')).catch(
-          () => [],
-        );
-        if (packs.filter((pack) => pack.endsWith('.pack')).length <= GEOMETRIC_LIMIT) return;
+        const folder = this.repoFolder(owner, name);
+        const packs = await readdir(join(folder, 'objects', 'pack')).catch(() => []);
+        const tooManyPacks =
+          packs.filter((pack) => pack.endsWith('.pack')).length > GEOMETRIC_LIMIT;
+        // With nobody to show a comparison from the clone, what they replayed can go.
+        const collect = lock.users === 0 && (await hasLooseObjects(folder));
+        if (!tooManyPacks && !collect) return;
         this.#attempts.set(key, (this.#attempts.get(key) ?? 0) + 1);
-        await repackClone(this, { owner, name }, GEOMETRIC_LIMIT);
+        if (tooManyPacks) await repackClone(this, { owner, name }, GEOMETRIC_LIMIT);
+        if (collect) await collectReplays(this, { owner, name });
       }).catch((error: unknown) => {
-        this.note(`can't repack ${key}: ${String(error)}`);
+        this.note(`can't look after ${key}: ${String(error)}`);
       });
     }, this.maintenance.idleFor);
     timer.unref();
@@ -410,7 +464,7 @@ export class Cache {
       },
       reader: reader.reader,
       token: options.token,
-      proxy: options.proxy,
+      proxy: options.proxy ?? this.#proxy,
       progress: options.progress,
       replays: this.#replaysOf(owner, name),
       checkouts: this.checkoutsFolder(owner, name),

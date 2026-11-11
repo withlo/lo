@@ -762,6 +762,35 @@ test('a geometric repack rolls the small packs into one and leaves the big one b
   }
 });
 
+test('a geometric repack never rolls a pack with a keep file, and leaves the keep file be', async () => {
+  const found = await foundGit();
+  // git's own geometric repack, and Lo's roll-up for older gits.
+  for (const program of [
+    found,
+    new Git(found.program, { major: 2, minor: 41, patch: 0 }, found.inherited),
+  ]) {
+    const { cache, gitDir } = await manyPacks({ git: program, history: 30 });
+    const folder = join(gitDir, 'objects', 'pack');
+    const [, kept, ...rest] = packFiles(gitDir).toSorted(
+      (a, b) => statSync(join(folder, b.name)).size - statSync(join(folder, a.name)).size,
+    );
+    expect(rest.length).toBeGreaterThanOrEqual(2);
+    // As a fetch git was stopped in leaves one, or as anyone may ask git to keep a pack.
+    const keep = join(folder, kept?.name.replace(/\.pack$/u, '.keep') ?? '');
+    writeFileSync(keep, 'kept\n');
+    const objects = packedObjects(gitDir);
+
+    expect(await cache.repack(1)).toEqual(['owner/repo']);
+
+    const after = packFiles(gitDir).map((pack) => pack.name);
+    // The big pack, the kept one, and the rest rolled into one.
+    expect(after).toHaveLength(3);
+    expect(after).toContain(kept?.name);
+    expect(readFileSync(keep, 'utf8')).toBe('kept\n');
+    expect(packedObjects(gitDir)).toBe(objects);
+  }
+});
+
 test('a clone whose packs piled up is repacked whole only while nobody has it open', async () => {
   const files = Array.from({ length: PACK_LIMIT + 2 }, (_, index) => `${index}.txt`);
   for (const open of [true, false]) {
@@ -1150,6 +1179,24 @@ test('a clone is looked at again once its lock is idle, a few times each launch 
   expect(tried()).toBe(2);
 });
 
+test('replayed trees are collected once nobody has the clone open and its lock is idle', async () => {
+  const cache = await cacheFor(server(), { maintenance: { idleFor: 100 } });
+  const repo = await cache.open('owner', 'old');
+  await fetch(repo);
+  // A loose object, as a replay writes.
+  const loose = gitBytes(repo.folder, ['hash-object', '-w', '--stdin'], 'replayed\n')
+    .toString()
+    .trim();
+
+  // While it's open, a comparison from it may be shown.
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  expect(hasObject(repo.folder, loose)).toBe(true);
+
+  repo.close();
+
+  await eventually(() => !hasObject(repo.folder, loose));
+});
+
 test('closing the cache stops its maintenance at once, and starts no more', async () => {
   const slow = await slowGit(REPACKS);
   const logged: string[] = [];
@@ -1173,4 +1220,31 @@ test('closing the cache stops its maintenance at once, and starts no more', asyn
   expect(logged).toContain('stopped repacking owner/repo for closing the cache, to do again later');
   expect(await cache.repack(1)).toEqual([]);
   expect(existsSync(join(cache.root, 'lo-cache.lock'))).toBe(false);
+});
+
+test('closing the cache waits for a prune it stopped, so no git outlives the cache’s lock', async () => {
+  // A prune that only SIGKILL stops, which takes the grace a git gets to stop by itself.
+  const slow = await slowGit('*" prune --expire=now "*', { stubborn: true });
+  const logged: string[] = [];
+  const cache = await cacheFor(server(), {
+    git: slow.git,
+    log: (line) => logged.push(line),
+    maintenance: { grace: 60_000 },
+  });
+  const folder = await useRepo(cache, 'old');
+  // A loose object, as a replay writes.
+  gitBytes(folder, ['hash-object', '-w', '--stdin'], 'replayed\n');
+  const cleaning = cache.removeUnused();
+  await eventually(() => existsSync(slow.started));
+
+  await cache.close();
+
+  // The prune is gone, and so is what it left, before the cache's lock is.
+  expect(processesMentioning(slow.marker)).toEqual([]);
+  expect(existsSync(join(folder, 'packed-refs.lock'))).toBe(false);
+  expect(existsSync(join(cache.root, 'lo-cache.lock'))).toBe(false);
+  await cleaning;
+  expect(logged).toContain(
+    "stopped removing owner/old's replayed trees for closing the cache, to do again later",
+  );
 });

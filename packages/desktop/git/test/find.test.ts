@@ -1,13 +1,22 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, statSync, symlinkSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  symlinkSync,
+} from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
 import { gitProgram } from '@lo/testing/git';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, onTestFinished, test, vi } from 'vitest';
 
 import { defaultPlaces, findGit, gitAt } from '../src/find.ts';
+import { STOP_GRACE } from '../src/spawn.ts';
 import { compareVersions, MINIMUM_VERSION } from '../src/version.ts';
-import { fakeGit, script, tempFolder, wrappedGit } from './support.ts';
+import { eventually, fakeGit, script, tempFolder, wrappedGit } from './support.ts';
 
 const env = process.env;
 const { platform } = process;
@@ -95,6 +104,52 @@ describe('on a Mac', () => {
     expect(status.status === 'found' && status.git.program).toBe(git);
     expect(existsSync(marker)).toBe(true);
   });
+
+  test('takes a newer git from Homebrew over Apple’s', async () => {
+    const { dir, places } = apple(true);
+    const brew = join(dir, 'homebrew');
+    mkdirSync(brew);
+    // Newer than any git Apple ships.
+    const newer = wrappedGit(join(brew, 'git'), { version: '3.0.0' });
+    const status = await findGit({
+      env: { PATH: '' },
+      platform: 'darwin',
+      places: { ...places, folders: [brew] },
+    });
+    expect(status.status === 'found' && status.git.program).toBe(newer);
+  });
+});
+
+test('takes the newest git new enough wherever it’s found, and the first found of those as new', async () => {
+  const dir = tempFolder();
+  const folder = (name: string) => {
+    mkdirSync(join(dir, name));
+    return join(dir, name);
+  };
+  const [onPath, system] = [folder('path'), folder('system')];
+  wrappedGit(join(onPath, 'git'), { version: '2.45.1' });
+  const newest = wrappedGit(join(system, 'git'), { version: '2.47.0' });
+  const places = { folders: [system], groups };
+
+  const found = await findGit({ env: { PATH: onPath }, platform, places });
+  if (found.status !== 'found') throw new Error(found.status);
+  expect(found.git.program).toBe(newest);
+  expect(found.git.version).toEqual({ major: 2, minor: 47, patch: 0 });
+
+  // Two as new as each other: the first found, as PATH comes before the system's folders.
+  const same = folder('same');
+  const first = wrappedGit(join(same, 'git'), { version: '2.47.0' });
+  const tie = await findGit({ env: { PATH: same }, platform, places });
+  expect(tie.status === 'found' && tie.git.program).toBe(first);
+
+  // A newer git that can't be kept from downloading is passed over for the next newest.
+  const eager = folder('eager');
+  wrappedGit(join(eager, 'git'), {
+    version: '2.48.0',
+    before: 'GIT_NO_LAZY_FETCH=0; export GIT_NO_LAZY_FETCH',
+  });
+  const next = await findGit({ env: { PATH: `${eager}:${onPath}` }, platform, places });
+  expect(next.status === 'found' && next.git.program).toBe(newest);
 });
 
 test('looks on PATH, then in the system’s folders, and takes the first git new enough', async () => {
@@ -321,5 +376,102 @@ describe('takes a git whose folders root’s or admin’s group may write to, as
     for (const folder of folders) execFileSync('chgrp', ['admin', folder]);
 
     expect((await findGit({ env: { PATH: bin }, platform })).status).toBe('found');
+  });
+});
+
+/** Whether nothing is left running in the group `pid` led. */
+function groupGone(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+  } catch (error) {
+    return error instanceof Error && 'code' in error && error.code === 'ESRCH';
+  }
+  // Something is in the group: only a process that has exited and waits to be collected, as one
+  // whose parent exited first does until the system collects it, isn't running.
+  return execFileSync('ps', ['-A', '-o', 'pgid=,stat='], { encoding: 'utf8' })
+    .split('\n')
+    .every((line) => {
+      const [group, state = ''] = line.trim().split(/\s+/);
+      return Number(group) !== pid || state.startsWith('Z');
+    });
+}
+
+/**
+ * The real git, in a folder of its own, noting each process it runs as. The command `slow`
+ * matches, a `case` pattern, waits half a minute first, having made `started`.
+ */
+function slowGit(slow: string) {
+  const dir = tempFolder();
+  const bin = join(dir, 'bin');
+  mkdirSync(bin);
+  const [pids, started] = [join(dir, 'pids'), join(dir, 'started')];
+  const program = wrappedGit(join(bin, 'git'), {
+    before: [
+      `echo $$ >> '${pids}'`,
+      // By their paths, since the look may give git no PATH to find them on.
+      `case " $* " in ${slow}) /usr/bin/touch '${started}'; /bin/sleep 30;; esac`,
+    ].join('\n'),
+  });
+  // Where the probe makes its throwaway clone.
+  const tmp = join(dir, 'tmp');
+  mkdirSync(tmp);
+  vi.stubEnv('TMPDIR', tmp);
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  const ran = () =>
+    existsSync(pids) ? readFileSync(pids, 'utf8').trim().split('\n').map(Number) : [];
+  return { bin, program, started, tmp, ran };
+}
+
+describe('a look that’s stopped stops every git it runs, and leaves nothing behind', () => {
+  test('while it asks a git its version', async () => {
+    const slow = slowGit('*" --version "*');
+    const stopping = new AbortController();
+    const looking = gitAt(slow.program, { env, platform, signal: stopping.signal });
+    await eventually(() => existsSync(slow.started));
+
+    const reason = new Error('Lo is quitting');
+    const began = Date.now();
+    stopping.abort(reason);
+
+    await expect(looking).rejects.toBe(reason);
+    // Within the grace a git gets to stop by itself.
+    expect(Date.now() - began).toBeLessThan(STOP_GRACE + 1000);
+    expect(slow.ran().length).toBeGreaterThan(0);
+    expect(slow.ran().filter((pid) => !groupGone(pid))).toEqual([]);
+  });
+
+  test('while it asks a git whether it can be kept from downloading', async () => {
+    const slow = slowGit('*" mktree "*');
+    const stopping = new AbortController();
+    const looking = findGit({
+      env: { PATH: slow.bin },
+      platform,
+      places: { folders: [], groups },
+      signal: stopping.signal,
+    });
+    await eventually(() => existsSync(slow.started));
+    expect(readdirSync(slow.tmp)).toHaveLength(1);
+
+    const reason = new Error('Lo is quitting');
+    const began = Date.now();
+    stopping.abort(reason);
+
+    await expect(looking).rejects.toBe(reason);
+    // Within the grace a git gets to stop by itself.
+    expect(Date.now() - began).toBeLessThan(STOP_GRACE + 1000);
+    expect(slow.ran().filter((pid) => !groupGone(pid))).toEqual([]);
+    // The probe's throwaway clone is gone.
+    expect(readdirSync(slow.tmp)).toEqual([]);
+  });
+
+  test('before it starts', async () => {
+    const slow = slowGit('*');
+    const reason = new Error('Lo is quitting');
+    const signal = AbortSignal.abort(reason);
+    await expect(findGit({ env: { PATH: slow.bin }, platform, signal })).rejects.toBe(reason);
+    await expect(gitAt(slow.program, { env, platform, signal })).rejects.toBe(reason);
+    expect(slow.ran()).toEqual([]);
   });
 });
