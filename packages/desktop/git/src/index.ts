@@ -1,4 +1,15 @@
+export { type Attribute, linguistBoolean, MAX_ATTRIBUTE_FILES } from './attributes.ts';
 export { Cache, type CacheOptions, type OpenOptions, type ProxySource } from './cache.ts';
+export {
+  type Change,
+  type ChangedFile,
+  changedPath,
+  changedSize,
+  type FileVersion,
+  isModeChangeOnly,
+  isSubmodule,
+  type LineCounts,
+} from './diff.ts';
 export * from './errors.ts';
 export {
   defaultPlaces,
@@ -12,6 +23,7 @@ export {
 export { Git, type TestSettings } from './git.ts';
 export * from './limits.ts';
 export * from './oid.ts';
+export { type FilePatch } from './patch.ts';
 export * from './progress.ts';
 export {
   type FetchedPull,
@@ -22,4 +34,5 @@ export {
   Repo,
 } from './repo.ts';
 export * from './token.ts';
+export { displayPath, type FileMode, type TreeEntry } from './tree.ts';
 export * from './version.ts';

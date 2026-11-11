@@ -8,6 +8,9 @@
   "references": [
     {
       "path": "../../../testing"
+    },
+    {
+      "path": "../../core/github/tsconfig.lib.json"
     }
   ]
 }

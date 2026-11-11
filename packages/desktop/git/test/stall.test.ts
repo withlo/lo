@@ -214,6 +214,98 @@ test('a fetch that stops getting further stops at its stall limit', async () => 
   expect(readdirSync(join(repo.folder, 'objects', 'pack'))).toEqual([]);
 });
 
+/**
+ * The files of a pull request of `files` files, downloaded from a GitHub that keeps the download
+ * alive without ever sending them, within `limits`: the error, how long it took, and what the
+ * download said it was doing. The pull request's commits and trees were fetched first, from a
+ * folder of repositories, without its files, as Lo fetches it.
+ */
+async function stalledDownload(
+  files: number,
+  limits: FetchLimits,
+): Promise<{ error: GitError; took: number; activities: Activity[] }> {
+  const dir = tempFolder();
+  const remotes = join(dir, 'remotes');
+  const gitDir = join(remotes, 'owner', 'repo.git');
+  const { last: head } = history(gitDir, files);
+  for (const args of [
+    ['update-ref', 'refs/pull/1/head', head],
+    ['config', 'uploadpack.allowFilter', 'true'],
+    ['config', 'uploadpack.allowAnySHA1InWant', 'true'],
+  ]) {
+    gitBytes(gitDir, [`--git-dir=${gitDir}`, ...args]);
+  }
+  const root = join(dir, 'cache');
+  const git = await plainGit();
+  const first = await cacheFor(`file://${remotes}`, { root, git });
+  const fetched = await (await first.open('owner', 'repo')).fetchPull(PULL_ONE);
+  expect(fetched.head).toBe(head);
+  await first.close();
+  // Then GitHub keeps the files' download alive without ever sending them.
+  const github = await started(FakeGitHub.keepingAlive(true));
+  const folder = first.repoFolder('owner', 'repo');
+  gitBytes(folder, [
+    `--git-dir=${folder}`,
+    'config',
+    'remote.origin.url',
+    `${github.url}/owner/repo.git`,
+  ]);
+  const cache = await cacheFor(github.url, { root, git, limits });
+  const activities: Activity[] = [];
+  const repo = await cache.open('owner', 'repo', {
+    progress: (activity) => activities.push(activity),
+  });
+  const paths = (await repo.tree(parseOid(head))).map((entry) => entry.path);
+  expect(paths).toHaveLength(files);
+
+  const began = Date.now();
+  const error = await failure(repo.downloadFiles(parseOid(head), paths));
+
+  const took = Date.now() - began;
+  // It asked GitHub for the files.
+  expect(github.commands()).toContain('fetch');
+  return { error, took, activities };
+}
+
+test('a small download whose files github keeps alive stops at the usual start limit', async () => {
+  // A few files are prepared in seconds, so a pack that doesn't start in a clone's usual time
+  // isn't waited for as a repository's first fetch is, with the clone's lock held.
+  const limit = 1000;
+  const { error, took, activities } = await stalledDownload(3, {
+    ...DEFAULT_FETCH_LIMITS,
+    fetch: limit,
+    firstFetch: 30_000,
+  });
+
+  expect(took).toBeGreaterThanOrEqual(limit);
+  expect(took).toBeLessThan(limit * 5);
+  expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'timedOut' });
+  expect(error.message).toBe(
+    "can't fetch 3 files: GitHub took longer than 1 s to start sending, so Lo stopped it while " +
+      'GitHub was still preparing what to send (counting objects, 50% of 2)',
+  );
+  // The tab is told what the download is waiting on.
+  expect(activities.some((activity) => activity.kind === 'preparing')).toBe(true);
+});
+
+test('a big download whose files github keeps alive stops at a first fetchs limit', async () => {
+  // More than 500 files may be a whole tree, which GitHub takes as long to prepare as a first
+  // fetch's history.
+  const limit = 2000;
+  const { error, took } = await stalledDownload(501, {
+    ...DEFAULT_FETCH_LIMITS,
+    fetch: 1000,
+    firstFetch: limit,
+  });
+
+  expect(took).toBeGreaterThanOrEqual(limit);
+  expect(took).toBeLessThan(limit * 5);
+  expect(error.message).toBe(
+    "can't fetch 501 files: GitHub took longer than 2 s to start sending, so Lo stopped it while " +
+      'GitHub was still preparing what to send (counting objects, 50% of 2)',
+  );
+});
+
 test('a fetch that never connects stops at the connect limit', async () => {
   // It takes connections and never says anything, so a client that speaks first, as TLS does,
   // waits for its answer: still connecting, to curl.

@@ -47,6 +47,13 @@ export type GitErrorDetail =
    * would bring its whole history with no progress shown and no ref keeping it: fetch it first.
    */
   | { kind: 'notFetched'; oid: string }
+  /**
+   * Files whose contents the local copy lacks, by blob ID. Reading never downloads them, which
+   * would wait on GitHub with no limit or progress: download them first.
+   */
+  | { kind: 'notDownloaded'; oids: readonly string[] }
+  /** More `.gitattributes` files apply to the paths asked about than Lo reads, so it reads none. */
+  | { kind: 'tooManyAttributeFiles'; found: number; limit: number }
   /** A revision whose base isn't its head or an ancestor, so its changes can't be told apart. */
   | { kind: 'baseNotAncestor'; base: string; head: string }
   /** The disk is full. The app offers to clear the cache. */
@@ -131,6 +138,14 @@ function describe(detail: GitErrorDetail): string {
       return `commit ${detail.oid.slice(0, 7)} is no longer available`;
     case 'notFetched':
       return `commit ${detail.oid.slice(0, 7)} isn't in the local copy`;
+    case 'notDownloaded': {
+      const [first = ''] = detail.oids;
+      return detail.oids.length === 1
+        ? `file ${first.slice(0, 7)} isn't in the local copy yet`
+        : `${detail.oids.length} files aren't in the local copy yet, such as ${first.slice(0, 7)}`;
+    }
+    case 'tooManyAttributeFiles':
+      return `${detail.found} .gitattributes files apply, more than the ${detail.limit} Lo reads`;
     case 'baseNotAncestor':
       return (
         `commit ${detail.base.slice(0, 7)} isn't an ancestor of ${detail.head.slice(0, 7)}, so ` +
