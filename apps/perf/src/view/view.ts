@@ -950,13 +950,19 @@ export class DiffView {
     return this.#layout.files[file]![other].header;
   }
 
-  /** `Tab`: the cursor goes to the same row on the other side, which takes focus. */
+  /**
+   * `Tab`: the cursor goes to the same row on the other side, which takes focus, and into view: in
+   * a long file on one side alone, the other side's row is its header, screens away.
+   */
   #otherSide(side: Side, line: number): void {
     const other: Side = side === 'old' ? 'new' : 'old';
     const view = this.views[other];
     const target = this.#otherSideLine(side, line);
-    view.dispatch({ selection: { anchor: view.state.doc.line(target).from } });
     view.focus();
+    view.dispatch({
+      selection: { anchor: view.state.doc.line(target).from },
+      scrollIntoView: true,
+    });
   }
 
   // Comments ---------------------------------------------------------------------------------
