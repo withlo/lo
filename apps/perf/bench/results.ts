@@ -87,6 +87,8 @@ export interface RunResult {
     /** Main reading every file, and the window starting, before the page opens it, in ms. */
     read: number | undefined;
     window: number | undefined;
+    /** How long the background process had been diffing when the page started opening it, in ms. */
+    headStart: number | undefined;
     /** Where the time went, each step from the one before, in ms. */
     steps: Record<string, number | undefined>;
     longTasks: { start: number; duration: number }[];
@@ -94,8 +96,10 @@ export interface RunResult {
   };
   /** Scrolling from the top to the bottom, at `speed` px a second. */
   scroll: Stretch & { speed: number };
-  /** Blank rows at other speeds, each a stretch from the top. */
+  /** Blank rows at each speed, each over the same distance from the top. */
   speeds: SpeedCheck[];
+  /** Flings that slow down as a trackpad's do, over the same distance from the top. */
+  fling: Stretch;
   pageDown: Stretch;
   /** Where PageDown stopped moving short of the bottom, and the bench scrolled past with the wheel. */
   stuck: { at: string; scrollTop: number }[];

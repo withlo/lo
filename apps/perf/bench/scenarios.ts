@@ -110,6 +110,61 @@ export async function scrollDown(
   return stretchOf(recording, { scrolled: to.top - from.top, ms, inputs: gestures }, refresh);
 }
 
+/**
+ * Flings down from where the scroll is, one after another, each once the last has come to rest,
+ * until `distance` px. Records every frame on the way.
+ */
+export async function flingDown(
+  suite: Suite,
+  side: 'old' | 'new',
+  refresh: number,
+  distance: number,
+): Promise<Stretch> {
+  const { page } = suite;
+  const at = await pointAt(page, side);
+  await page.mouse.move(at.x, at.y);
+  const from = await scrollOf(page);
+  await record(page, true);
+  const started = performance.now();
+  let flings = 0;
+  let last = from.top;
+  while (last - from.top < distance) {
+    await fling(suite, at);
+    flings++;
+    const now = await scrollOf(page);
+    if (now.top <= last + 1 || now.top >= now.max - 1) break;
+    last = now.top;
+  }
+  const ms = performance.now() - started;
+  await settle(page, 300);
+  const recording = await stopRecording(page);
+  const to = await scrollOf(page);
+  return stretchOf(recording, { scrolled: to.top - from.top, ms, inputs: flings }, refresh);
+}
+
+/**
+ * One fling, as a finger flicks a trackpad: a quick swipe of 3,000 px at 12,000 px a second
+ * through Chromium's gesture synthesizer, as touch, which Chromium then carries on, slowing down,
+ * as its own fling. Resolves once the scroll has come to rest.
+ */
+export async function fling(suite: Suite, at: { x: number; y: number }): Promise<void> {
+  await suite.cdp.send('Input.synthesizeScrollGesture', {
+    x: Math.round(at.x),
+    y: Math.round(at.y),
+    yDistance: -3000,
+    speed: 12_000,
+    gestureSourceType: 'touch',
+    preventFling: false,
+  });
+  let last = (await scrollOf(suite.page)).top;
+  for (let wait = 0; wait < 100; wait++) {
+    await sleep(100);
+    const now = (await scrollOf(suite.page)).top;
+    if (Math.abs(now - last) < 1) return;
+    last = now;
+  }
+}
+
 /** How far one gesture scrolls, in px: a long scroll is a run of them. */
 const gestureLength = 20_000;
 

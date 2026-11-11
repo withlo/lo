@@ -21,13 +21,20 @@ export interface Bar {
   strict?: boolean;
   unit: 'ms' | 'px' | 'MB' | '%' | 'count';
   read: (run: RunResult) => Reading;
-  /** For a key: its reading less the floor, the run's minimal-paint key at the median. */
-  aboveFloor?: (run: RunResult) => Reading;
+  /**
+   * A second reading the report shows beside the bar's, which isn't judged: for a key, its time
+   * above the floor; for blank rows, the widest blank.
+   */
+  detail?: { label: string; unit: Bar['unit']; read: (run: RunResult) => Reading };
 }
 
-/** How fast the full scrolls go, and the other speeds blank rows are checked at, in px a second. */
+/**
+ * How fast the full scrolls go, and the speeds blank rows are compared at, each over the same
+ * distance from the top, in px a second; and that distance, which the flings cover too, in px.
+ */
 export const scrollSpeed = 8000;
-export const checkSpeeds = [3000, 15_000];
+export const checkSpeeds = [3000, 8000, 15_000];
+export const checkLength = 40_000;
 
 const kubernetes = (pull: string): boolean => pull.startsWith('kubernetes');
 
@@ -61,14 +68,18 @@ export const bars: Bar[] = [
     `Scrolling, top to bottom, ${scrollSpeed.toLocaleString('en-US')} px/s`,
     (run) => run.scroll,
   ),
-  ...checkSpeeds.map((speed): Bar => ({
-    id: `blank${speed}`,
-    label: `Scrolling at ${speed.toLocaleString('en-US')} px/s: frames with blank rows`,
-    shown: () => 'none',
-    limit: () => 0,
-    unit: 'count',
-    read: (run) => run.speeds.find((check) => check.speed === speed)?.stretch.blank.frames,
-  })),
+  ...checkSpeeds.map((speed) =>
+    blankBar(
+      `blank${speed}`,
+      `Scrolling at ${speed.toLocaleString('en-US')} px/s, ${checkLength.toLocaleString('en-US')} px`,
+      (run) => run.speeds.find((check) => check.speed === speed)?.stretch,
+    ),
+  ),
+  blankBar(
+    'flingBlank',
+    `Flings, slowing down, ${checkLength.toLocaleString('en-US')} px`,
+    (run) => run.fling,
+  ),
   // PageDown's frames say nothing about the whole document while it stops short of the bottom.
   ...frameBars('pageDown', 'PageDown, top to bottom', (run) =>
     run.stuck.length === 0 && run.reached >= 1 ? run.pageDown : undefined,
@@ -146,15 +157,34 @@ function frameBars(
       unit: 'ms',
       read: (run) => stretch(run)?.frames.max,
     },
-    {
-      id: `${id}Blank`,
-      label: `${label}: frames with blank rows`,
-      shown: () => 'none',
-      limit: () => 0,
-      unit: 'count',
-      read: (run) => stretch(run)?.blank.frames,
-    },
+    blankBar(`${id}Blank`, label, stretch),
   ];
+}
+
+/**
+ * The share of a stretch's frames with blank rows, which should be none, with the widest blank
+ * beside it.
+ */
+function blankBar(
+  id: string,
+  label: string,
+  stretch: (run: RunResult) => Stretch | undefined,
+): Bar {
+  return {
+    id,
+    label: `${label}: frames with blank rows`,
+    shown: () => 'none',
+    limit: () => 0,
+    unit: '%',
+    read: (run) => blankShare(stretch(run)),
+    detail: { label: 'widest', unit: 'px', read: (run) => stretch(run)?.blank.worstPx },
+  };
+}
+
+/** The share of a stretch's frames with blank rows, in %. */
+export function blankShare(stretch: Stretch | undefined): number | undefined {
+  if (!stretch || stretch.frames.frames === 0) return undefined;
+  return (stretch.blank.frames / stretch.frames.frames) * 100;
 }
 
 /** A key's bar: its reading at the `p`th percentile, and that less the run's floor. */
@@ -171,18 +201,28 @@ function keyBar(
     limit: () => limit,
     unit: 'ms',
     read: (run) => keyReading(run.keys[id], p),
-    aboveFloor: (run) => aboveFloor(keyReading(run.keys[id], p), run.keys.floor),
+    detail: {
+      label: 'above the floor',
+      unit: 'ms',
+      read: (run) => aboveFloor(run.keys[id], run.keys.floor, p),
+    },
   };
 }
 
 /**
- * A key's reading less the floor: the minimal-paint key's time at the median. A reading under the
- * Event Timing threshold is under the floor too, so nothing above it.
+ * A key's time above the floor, the minimal-paint key's, each at the same statistic: the `p`th
+ * percentile, or the slowest press at 100. A time under the Event Timing threshold is under the
+ * floor too, so nothing above it.
  */
-export function aboveFloor(reading: Reading, floor: KeyTimes | undefined): Reading {
+export function aboveFloor(
+  times: KeyTimes | undefined,
+  floor: KeyTimes | undefined,
+  p: number,
+): Reading {
+  const reading = keyReading(times, p);
   if (reading === undefined || !floor) return undefined;
   if (typeof reading !== 'number') return 0;
-  const base = keyReading(floor, 50);
+  const base = keyReading(floor, p);
   return Math.max(0, reading - (typeof base === 'number' ? base : 0));
 }
 

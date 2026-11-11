@@ -7,6 +7,7 @@ import {
   aboveFloor,
   type Bar,
   bars,
+  checkLength,
   checkSpeeds,
   judge,
   type Judged,
@@ -38,7 +39,8 @@ export function showReading(reading: Reading, unit: Bar['unit']): string {
     case 'ms':
       return `${shown(reading, reading >= 100 ? 0 : 1)} ms`;
     case 'px':
-      return `${shown(reading, 2)} px`;
+      // Under 10 px is alignment, which counts in hundredths; more is a blank's height.
+      return `${shown(reading, reading >= 10 ? 0 : 2)} px`;
     case 'MB':
       return `${shown(reading, 0)} MB`;
     case '%':
@@ -128,7 +130,7 @@ export function reportMarkdown(results: Results, notes?: string): string {
       results.runs.some((run) => run.pull === pull && run.width === width),
     );
     lines.push(
-      '| Metric | Width | Bar | Median | Worst run | Result | Above the floor |',
+      '| Metric | Width | Bar | Median | Worst run | Result | Beside it (median / worst run) |',
       '| --- | --- | --- | --- | --- | --- | --- |',
     );
     for (const bar of bars) {
@@ -136,15 +138,15 @@ export function reportMarkdown(results: Results, notes?: string): string {
         const runs = results.runs.filter((run) => run.pull === pull && run.width === width);
         const result = judged(results, pull, width).find((row) => row.bar.id === bar.id)!.judged;
         lines.push(
-          `| ${bar.label} | ${widthName(width, results)} | ${bar.shown(pull)} | ${showReading(result.median, bar.unit)} | ${showReading(result.worst, bar.unit)} | ${verdict(result)} | ${floorCell(bar, runs)} |`,
+          `| ${bar.label} | ${widthName(width, results)} | ${bar.shown(pull)} | ${showReading(result.median, bar.unit)} | ${showReading(result.worst, bar.unit)} | ${verdict(result)} | ${detailCell(bar, runs)} |`,
         );
       }
     }
     lines.push(
       '',
-      'The keys’ last column takes off the floor: the time to paint a key whose only effect is ' +
-        'to recolour a 4 px square, at the median, in the same run. The result is judged on the ' +
-        'time as measured.',
+      'The last column isn’t judged. For a key, it’s the time above the floor: the same ' +
+        'statistic (p95, or the slowest press) of a key in the same run whose only effect is to ' +
+        'recolour a 4 px square. For blank rows, it’s the widest blank in any frame.',
       '',
       ...openingLines(
         results.runs.filter((run) => run.pull === pull),
@@ -159,7 +161,7 @@ export function reportMarkdown(results: Results, notes?: string): string {
   if (results.zR.length > 0) {
     lines.push('## `zR` on `src/compiler/checker.ts`, microsoft/TypeScript#54820', '');
     lines.push(
-      '| Width | Bar | Median | Worst run | Result | Above the floor |',
+      '| Width | Bar | Median | Worst run | Result | Above the floor (median / worst run) |',
       '| --- | --- | --- | --- | --- | --- |',
     );
     for (const width of widthsOf(results)) {
@@ -170,7 +172,7 @@ export function reportMarkdown(results: Results, notes?: string): string {
         zRBar.limit,
       );
       const above = judge(
-        runs.map((run) => aboveFloor(keyReading(run.keyToPaint, 100), run.floor)),
+        runs.map((run) => aboveFloor(run.keyToPaint, run.floor, 100)),
         zRBar.limit,
       );
       lines.push(
@@ -226,15 +228,16 @@ export function reportMarkdown(results: Results, notes?: string): string {
   return `${lines.join('\n')}\n`;
 }
 
-/** A key bar's reading less the floor, at the median and the worst of the runs. */
-function floorCell(bar: Bar, runs: RunResult[]): string {
-  if (!bar.aboveFloor) return '';
-  const read = bar.aboveFloor;
+/** A bar's second reading, at the median and the worst of the runs, with what it is. */
+function detailCell(bar: Bar, runs: RunResult[]): string {
+  if (!bar.detail) return '';
+  const { read, unit, label } = bar.detail;
   const result = judge(
     runs.map((run) => read(run)),
-    bar.limit(runs[0]?.pull ?? ''),
+    Infinity,
   );
-  return `${showReading(result.median, 'ms')} / ${showReading(result.worst, 'ms')}`;
+  if (result.median === undefined) return '';
+  return `${showReading(result.median, unit)} / ${showReading(result.worst, unit)} ${label}`;
 }
 
 /** What comes before the page opens the pull request, which the opening's timer leaves out. */
@@ -250,7 +253,10 @@ function openingLines(runs: RunResult[], results: Results): string[] {
         `every file in ${show((run) => run.open.read)}, and the window starts and loads the ` +
         `page in ${show((run) => run.open.window)}. The suite does both before the page starts ` +
         'opening the pull request; the app reads files as it needs them, and starts its window ' +
-        'once.',
+        'once. The background process starts diffing as soon as main has read the files, ' +
+        `${show((run) => run.open.headStart)} before the page starts opening the pull request, ` +
+        'so the open figure can read up to that much low: the first file’s diff may be under way ' +
+        'when its timer starts.',
     );
   }
   return out;
@@ -305,8 +311,10 @@ function keysTable(runs: RunResult[], results: Results): string[] {
 /** What else the runs saw: the document, scroll speeds, readings' cost, notes. */
 /** A stretch's frames with blank rows, and what was blank in them. */
 function blankOf(stretch: Stretch): string {
+  const share =
+    stretch.frames.frames === 0 ? 0 : (stretch.blank.frames / stretch.frames.frames) * 100;
   return (
-    `${stretch.blank.frames} with blank rows (${stretch.blank.oneSided} with a row on one side, ` +
+    `${stretch.blank.frames} (${shown(share, 0)}%) with blank rows (${stretch.blank.oneSided} with a row on one side, ` +
     `${stretch.blank.undrawn} undrawn, ${stretch.blank.past} scrolled past what was drawn; at ` +
     `worst ${shown(stretch.blank.worstPx, 0)} px)`
   );
@@ -334,6 +342,9 @@ function detailsOf(runs: RunResult[], results: Results): string[] {
               `${check.stretch.frames.frames} frames, ${blankOf(check.stretch)}.`,
           )
           .join(' ') +
+        ` Flings over ${shown(run.fling.scrolled / 1000, 0)}k px: ${run.fling.inputs} flings in ` +
+        `${shown(run.fling.ms / 1000, 1)} s, ${run.fling.frames.frames} frames (p95 ` +
+        `${shown(run.fling.frames.p95)} ms, longest ${shown(run.fling.frames.max)} ms), ${blankOf(run.fling)}.` +
         ` The readings cost ${shown(run.scroll.readMs, 2)} ms a frame (p95).`,
       `  - PageDown: ${run.pageDown.inputs} presses, ${shown(run.pageDown.ms / 1000, 1)} s, ` +
         `${shown(run.reached * 100, 0)}% of the way down, stopped short ${run.stuck.length} times; ` +
@@ -400,7 +411,13 @@ function timersOf(): string[] {
       'from a mouse), with the pointer over the right side: one gesture of wheel events paced by the ' +
       `display, as a trackpad’s are, at a steady ${scrollSpeed.toLocaleString('en-US')} px a second, ` +
       'in gestures of 20,000 px until the scroll stops at the bottom, with no fling at the end. Blank ' +
-      `rows are also checked over 40,000 px from the top at ${checkSpeeds.map((speed) => speed.toLocaleString('en-US')).join(' and ')} px a second.`,
+      `rows are compared at ${checkSpeeds.map((speed) => speed.toLocaleString('en-US')).join(', ')} px a ` +
+      `second, each over the same ${checkLength.toLocaleString('en-US')} px from the top, as a share ` +
+      'of the frames, with the widest blank beside it.',
+    `- **Flings:** a quick swipe of 3,000 px at 12,000 px a second through the same synthesizer, ` +
+      'as touch, which Chromium carries on, slowing down, as its own fling, as a trackpad’s ' +
+      'momentum does; then another once it has come to rest, over ' +
+      `${checkLength.toLocaleString('en-US')} px from the top.`,
     '- **PageDown:** held, with focus in the right side: a keydown every 33 ms, macOS’s fastest key ' +
       'repeat, sent on the clock without waiting for the page, until the bottom. Where PageDown ' +
       'stops moving short of the bottom, the bench lets go, notes the place, scrolls a screen past ' +
@@ -517,6 +534,7 @@ function whereTheTimeWent(
             `scrolling at ${shown(check.speed, 0)} px/s`,
             check.stretch,
           ]),
+          ['flings', run.fling],
           ['PageDown', run.pageDown],
         ];
         const where = parts
@@ -549,6 +567,7 @@ function whereTheTimeWent(
 /** The stretch a frame or blank-row bar reads, by the bar's ID. */
 function stretchFor(id: string, run: RunResult): Stretch | undefined {
   if (id.startsWith('pageDown')) return run.pageDown;
+  if (id.startsWith('fling')) return run.fling;
   const speed = /^blank(\d+)$/.exec(id)?.[1];
   if (speed) return run.speeds.find((check) => check.speed === Number(speed))?.stretch;
   return run.scroll;

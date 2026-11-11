@@ -138,9 +138,9 @@ a keyboard sends them. Each run:
   `Tab`, timing each key from its keydown to the next frame on the display with the Event Timing
   API; it also holds F7, whose only effect is to recolour a 4 px square, the floor any key that
   paints stands on, and `Esc`, which paints nothing;
-- scrolls from the top to the bottom at 8,000 px a second, twice, then 40,000 px at 3,000 and at
-  15,000 px a second, noting each frame's time, how level the rows on screen are, and anything blank
-  on screen;
+- scrolls from the top to the bottom at 8,000 px a second, twice; then 40,000 px from the top at
+  each of 3,000, 8,000 and 15,000 px a second, and in flings that slow down as a trackpad's do,
+  noting each frame's time, how level the rows on screen are, and anything blank on screen;
 - holds PageDown from the top to the bottom; where PageDown stops moving short of the bottom, it
   notes the place and scrolls past it with the wheel, and where PageDown keeps going back there, it
   says how far down it got;

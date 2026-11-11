@@ -5,10 +5,11 @@
 import { readManifest } from '../src/data/manifest.ts';
 import type { Marks } from '../src/window/marks.ts';
 import type { Recording } from './recorder.ts';
-import { checkSpeeds, scrollSpeed } from './bars.ts';
+import { checkLength, checkSpeeds, scrollSpeed } from './bars.ts';
 import type { RunResult, SpeedCheck, Stretch, Width, ZRResult } from './results.ts';
 import {
   addTimes,
+  flingDown,
   goToFile,
   holdKey,
   noKeys,
@@ -141,14 +142,17 @@ async function measureOpened(
   await scrollDown(suite, 'new', refresh, scrollSpeed, options.limit);
   const afterSecond = await memoryOf(suite);
 
-  // Blank rows at other speeds, each from the top.
+  // Blank rows at each speed, each over the same distance from the top, then flings that slow down.
   const speeds: SpeedCheck[] = [];
   for (const speed of checkSpeeds) {
     await focusSide(page, 'new');
     await top();
-    const stretch = await scrollDown(suite, 'new', refresh, speed, speedCheckLength);
+    const stretch = await scrollDown(suite, 'new', refresh, speed, checkLength);
     speeds.push({ speed, stretch });
   }
+  await focusSide(page, 'new');
+  await top();
+  const fling = await flingDown(suite, 'new', refresh, checkLength);
 
   // PageDown from the top.
   await focusSide(page, 'new');
@@ -172,6 +176,7 @@ async function measureOpened(
     scroll,
     paged.stretch,
     ...speeds.map((check) => check.stretch),
+    fling,
   ];
   return {
     pull,
@@ -182,6 +187,7 @@ async function measureOpened(
     open: openOf(marks),
     scroll: { ...scroll, speed: scrollSpeed },
     speeds,
+    fling,
     pageDown: paged.stretch,
     stuck: paged.stuck,
     reached: paged.reached,
@@ -222,9 +228,6 @@ function gpuMemory(pid: number | undefined): RunResult['memory']['gpu'] {
   return { footprint: now, peak };
 }
 
-/** How far each check of blank rows at another speed scrolls, in px. */
-const speedCheckLength = 40_000;
-
 /**
  * The opening's times: from the page starting to open the pull request, as a tab opens one, to its
  * first file drawn; and from the background process getting the files to the moves arriving.
@@ -240,6 +243,7 @@ function openOf(marks: Marks): RunResult['open'] {
     longestTask: Math.max(0, ...longTasks.map((task) => task.duration)),
     read: since(marks.read, marks.opened),
     window: since(marks.started, marks.read),
+    headStart: since(marks.asked, marks.read),
     steps: {
       'main reads every file': since(marks.read, marks.opened),
       'the window starts and loads the page': since(marks.started, marks.read),
