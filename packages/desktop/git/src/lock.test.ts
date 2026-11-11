@@ -1,5 +1,13 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -234,6 +242,44 @@ test('a lock a process that’s gone left is taken over', async () => {
   ]) {
     const path = join(dir, `${left.length}.lock`);
     writeFileSync(path, left);
+
+    const release = await lockCache(path);
+
+    expect(parseCacheLock(readFileSync(path, 'utf8'))?.pid).toBe(process.pid);
+    expect(readdirSync(dir).filter((name) => name.includes('.lock.'))).toEqual([]);
+    await unlockCache(path, release);
+  }
+});
+
+test('a takeover that stalls keeps its hold while its process runs, however long', async () => {
+  const dir = folder();
+  const path = join(dir, 'lo-cache.lock');
+  const gone = Number(spawnSync('sh', ['-c', 'echo $$']).stdout.toString('utf8').trim());
+  const stale = cacheLockRecord(gone, 'Thu Jan  1 00:00:00 1970');
+  writeFileSync(path, stale);
+  // A running process took the takeover's lock an hour ago, and hasn't finished, as when the
+  // computer slept: the lock is its to replace once it wakes, so nobody else may.
+  const taking = await parentsRecord();
+  writeFileSync(`${path}.takeover`, taking);
+  const hourAgo = new Date(Date.now() - 3_600_000);
+  utimesSync(`${path}.takeover`, hourAgo, hourAgo);
+
+  await expect(lockCache(path)).rejects.toThrow(
+    `another program, process ${process.ppid}, is using ${path}`,
+  );
+  expect(readFileSync(path, 'utf8')).toBe(stale);
+  expect(readFileSync(`${path}.takeover`, 'utf8')).toBe(taking);
+});
+
+test('a takeover a process that’s gone left is cleared, and the lock taken over', async () => {
+  const dir = folder();
+  const gone = Number(spawnSync('sh', ['-c', 'echo $$']).stdout.toString('utf8').trim());
+  const left = [cacheLockRecord(gone, 'Thu Jan  1 00:00:00 1970'), 'half written', ''];
+  for (const [index, taking] of left.entries()) {
+    const path = join(dir, `${index}.lock`);
+    writeFileSync(path, cacheLockRecord(gone, 'Thu Jan  1 00:00:00 1970'));
+    // Just now, so its age says nothing.
+    writeFileSync(`${path}.takeover`, taking);
 
     const release = await lockCache(path);
 
