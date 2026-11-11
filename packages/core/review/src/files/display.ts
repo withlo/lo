@@ -43,7 +43,9 @@ export function collapsedLabel(collapsed: Collapsed, loadKey: string): string {
     case 'noChanges':
       return 'no visible change';
     default:
-      return collapsed satisfies never;
+      throw new Error(
+        `a collapsed file Lo doesn't know: ${JSON.stringify(collapsed satisfies never)}`,
+      );
   }
 }
 
@@ -71,7 +73,9 @@ export function collapsedDetail(collapsed: Collapsed, loadKey: string): string {
         "line endings or bytes that aren't UTF-8 changed."
       );
     default:
-      return collapsed satisfies never;
+      throw new Error(
+        `a collapsed file Lo doesn't know: ${JSON.stringify(collapsed satisfies never)}`,
+      );
   }
 }
 
@@ -87,7 +91,9 @@ function generatedLabel(generated: Generated): string {
     case 'lockfile':
       return 'lockfile';
     default:
-      return generated satisfies never;
+      throw new Error(
+        `a kind of generated file Lo doesn't know: ${JSON.stringify(generated satisfies never)}`,
+      );
   }
 }
 

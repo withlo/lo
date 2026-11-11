@@ -5,6 +5,7 @@
 import type { z } from 'zod';
 
 import type { Database } from './database.ts';
+import type { LocalGit } from './git.ts';
 import {
   channel,
   IpcError,
@@ -32,6 +33,8 @@ export interface FeatureContext<C extends Contract> {
   ) => void;
   /** Lo's database. A feature reads and writes only its own tables, named `<feature>_…`. */
   readonly database: Database;
+  /** Git, which only main runs: what Lo found, and the cache of repositories once it's open. */
+  readonly git: LocalGit;
 }
 
 /** A function whose parameters are checked both ways, so any handler fits in a list of them. */
@@ -109,6 +112,7 @@ export function createRouter(
     log(message: string, error: unknown): void;
     /** Lo's database, migrated, for every feature's handlers. */
     database: Database;
+    git: LocalGit;
   },
 ): Router {
   const context = (contract: Contract): FeatureContext<Contract> => ({
@@ -118,6 +122,7 @@ export function createRouter(
       options.send(channel(contract.feature, topic), schema.parse(value));
     },
     database: options.database,
+    git: options.git,
   });
 
   const requests = new Map<

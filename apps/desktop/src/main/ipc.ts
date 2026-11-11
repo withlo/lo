@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain } from 'electron';
 
 import type { Database } from './database.ts';
 import { createRouter, type Feature } from './features.ts';
+import type { LocalGit } from './git.ts';
 import { isAppPage } from './policy.ts';
 
 /**
@@ -9,9 +10,15 @@ import { isAppPage } from './policy.ts';
  * reaches its handler only from Lo's own page and only once its input matches the contract.
  * Pushes go to every window.
  */
-export function serveFeatures(features: readonly Feature[], database: Database, dev?: URL): void {
+export function serveFeatures(
+  features: readonly Feature[],
+  database: Database,
+  git: LocalGit,
+  dev?: URL,
+): void {
   const router = createRouter(features, {
     database,
+    git,
     isAllowedSender: (address) => isAppPage(address, dev),
     send(channel, value) {
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send(channel, value);

@@ -659,6 +659,7 @@ function reviewer(requested: ReviewerNode): RequestedReviewer | undefined {
     case 'EnterpriseTeam':
       return { kind: 'team', slug: requested.slug };
     default:
+      typename satisfies never;
       return undefined;
   }
 }
@@ -682,6 +683,7 @@ function referenceSource(source: SourceNode): ReferenceSource | undefined {
         url: source.url,
       };
     default:
+      typename satisfies never;
       return undefined;
   }
 }
@@ -914,8 +916,10 @@ function itemOf(node: Node): TimelineItem {
     case 'UnpinnedEvent':
     case 'UnsubscribedEvent':
     case 'UserBlockedEvent':
-    // A type newer than Lo's schema too.
+      return other(typename);
+    // A type newer than Lo's schema.
     default:
+      typename satisfies never;
       return other(typename);
   }
 }

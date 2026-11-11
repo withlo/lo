@@ -28,7 +28,7 @@ export function changeLetter(change: FileChange): string {
     case 'typeChanged':
       return 'T';
     default:
-      return change satisfies never;
+      throw new Error(`a file change Lo doesn't know: ${JSON.stringify(change satisfies never)}`);
   }
 }
 
@@ -63,7 +63,7 @@ export function githubChange(status: FileStatus): FileChange {
     case 'other':
       return 'modified';
     default:
-      return status satisfies never;
+      throw new Error(`a file status Lo doesn't know: ${JSON.stringify(status satisfies never)}`);
   }
 }
 

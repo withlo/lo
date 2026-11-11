@@ -339,7 +339,7 @@ export function describeEvent(event: PollEvent): string {
     case 'readFailed':
       return `failed to read ${event.name} #${event.pull.number}: ${new GithubError(event.error).message}`;
     default:
-      return event satisfies never;
+      throw new Error(`a poll event Lo doesn't know: ${JSON.stringify(event satisfies never)}`);
   }
 }
 

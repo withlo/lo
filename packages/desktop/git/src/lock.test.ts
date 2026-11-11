@@ -130,6 +130,32 @@ test('shared holders keep out anyone alone', () => {
   expect(lock.tryRemove('removing it')).toBeDefined();
 });
 
+test('says the clone is free when its holder or its last user lets go, and only then', () => {
+  let free = 0;
+  const lock = new CloneLock(() => (free += 1));
+  const first = lock.use();
+  const second = lock.use();
+  const held = lock.tryAcquire('fetching');
+  expect(held).toBeDefined();
+  first();
+  second();
+  // Still held.
+  expect(free).toBe(0);
+  held?.();
+  expect(free).toBe(1);
+
+  const user = lock.use();
+  const other = lock.use();
+  other();
+  // Another is still open.
+  expect(free).toBe(1);
+  user();
+  expect(free).toBe(2);
+  // Letting go twice counts once.
+  user();
+  expect(free).toBe(2);
+});
+
 test('what a holder records goes when it lets go', async () => {
   const path = join(folder(), 'lo-cache.lock');
 

@@ -45,6 +45,7 @@ import {
   parseRawRecords,
   rawDiffBlobs,
 } from './diff.ts';
+import type { ProxySource } from './cache.ts';
 import { checkoutGitDir } from './cleanup.ts';
 import { removeLocksLeft, removeTemporaryPacks, removeUnfinishedPacks } from './leftovers.ts';
 import { type FetchFailure, GitError } from './errors.ts';
@@ -125,7 +126,7 @@ export interface RepoParts {
   /** The clone's one long-lived reader of objects, which every repository open on it shares. */
   readonly reader: ObjectReader;
   readonly token?: TokenSource | undefined;
-  readonly proxy?: (() => Promise<string | undefined>) | undefined;
+  readonly proxy?: ProxySource | undefined;
   readonly progress?: ((activity: Activity) => void) | undefined;
   /** The replayed trees this process has pinned in the clone, shared by every repository open on it. */
   readonly replays: Set<Oid>;
@@ -242,7 +243,7 @@ export class Repo {
   readonly #lock: CloneLock;
   readonly #done: Release;
   readonly #token: TokenSource | undefined;
-  readonly #proxy: (() => Promise<string | undefined>) | undefined;
+  readonly #proxy: ProxySource | undefined;
   readonly #progress: ((activity: Activity) => void) | undefined;
   /** The clone's reader of objects, started on the first read that needs it. */
   readonly #reader: ObjectReader;
@@ -1841,12 +1842,13 @@ export class Repo {
     }
     if (options.shallow) await rm(join(gitDir, 'shallow.lock'), { force: true });
     await this.#removeHalfWritten(gitDir);
-    const fetching: Fetching = { token, proxy: await this.#proxy?.() };
+    const url = options.url ?? this.#url;
+    const fetching: Fetching = { token, proxy: await this.#proxy?.(url) };
     const command = this.#runner.command({ gitDir }, { fetching });
     // Where the fetch goes, and that it's a promisor, on the command line alone: never the clone's
     // own settings, which only Lo writes, but a fetch shouldn't have to trust.
     for (const setting of [
-      `remote.${REMOTE}.url=${options.url ?? this.#url}`,
+      `remote.${REMOTE}.url=${url}`,
       `remote.${REMOTE}.promisor=true`,
       `remote.${REMOTE}.partialclonefilter=blob:none`,
     ]) {

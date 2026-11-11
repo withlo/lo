@@ -169,7 +169,9 @@ export function sendsComment(mutation: Mutation): boolean {
     case 'review':
       return false;
     default:
-      return mutation satisfies never;
+      throw new Error(
+        `a review mutation Lo doesn't know: ${JSON.stringify(mutation satisfies never)}`,
+      );
   }
 }
 
@@ -324,7 +326,9 @@ export class YourReview {
           },
         };
       default:
-        return comment satisfies never;
+        throw new Error(
+          `a new comment Lo doesn't know: ${JSON.stringify(comment satisfies never)}`,
+        );
     }
   }
 
@@ -364,7 +368,9 @@ export class YourReview {
           },
         };
       default:
-        return comment satisfies never;
+        throw new Error(
+          `a new comment Lo doesn't know: ${JSON.stringify(comment satisfies never)}`,
+        );
     }
   }
 
@@ -401,6 +407,8 @@ export class YourReview {
       case 'review':
         this.#pending = undefined;
         return;
+      default:
+        mutation satisfies never;
     }
   }
 
