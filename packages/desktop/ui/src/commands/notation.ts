@@ -62,6 +62,7 @@ export const keyNames: readonly string[] = [
   'pageup',
   'pagedown',
   'insert',
+  'menu',
   ...Array.from({ length: 20 }, (_, index) => `f${index + 1}`),
 ];
 const names = new Set(keyNames);
@@ -83,6 +84,7 @@ const eventNames: Readonly<Record<string, string>> = {
   PageUp: 'pageup',
   PageDown: 'pagedown',
   Insert: 'insert',
+  ContextMenu: 'menu',
   ...Object.fromEntries(
     Array.from({ length: 20 }, (_, index) => [`F${index + 1}`, `f${index + 1}`]),
   ),
@@ -457,6 +459,7 @@ const macNames: Readonly<Record<string, string>> = {
   pageup: 'PgUp',
   pagedown: 'PgDn',
   insert: 'Ins',
+  menu: 'Menu',
 };
 
 /** How Linux shows them. */
@@ -476,6 +479,7 @@ const linuxNames: Readonly<Record<string, string>> = {
   pageup: 'PgUp',
   pagedown: 'PgDn',
   insert: 'Insert',
+  menu: 'Menu',
 };
 
 /**
@@ -512,6 +516,49 @@ export function keyLabels(strokes: readonly Stroke[], system: System): string[] 
   return strokes.map((each) => strokeLabel(each, system));
 }
 
+/** The names `aria-keyshortcuts` gives the keys Lo names, as `KeyboardEvent.key` has them. */
+const ariaNames: Readonly<Record<string, string>> = {
+  esc: 'Escape',
+  space: 'Space',
+  up: 'ArrowUp',
+  down: 'ArrowDown',
+  left: 'ArrowLeft',
+  right: 'ArrowRight',
+  pageup: 'PageUp',
+  pagedown: 'PageDown',
+  menu: 'ContextMenu',
+  '+': 'Plus',
+};
+
+/**
+ * One key as `aria-keyshortcuts` writes it: `Meta+Shift+P`, `Control+O`, `Enter`, `?`. A character
+ * with a modifier is a capital, as in the menus' own labels.
+ */
+function ariaKey(stroke: Stroke): string {
+  const { key } = stroke;
+  const held = [
+    ...(stroke.meta ? ['Meta'] : []),
+    ...(stroke.ctrl ? ['Control'] : []),
+    ...(stroke.alt ? ['Alt'] : []),
+    ...(stroke.shift ? ['Shift'] : []),
+  ];
+  let name = ariaNames[key];
+  if (name === undefined) {
+    if (isCharacter(key)) name = held.length > 0 ? key.toUpperCase() : key;
+    else name = `${key.slice(0, 1).toUpperCase()}${key.slice(1)}`;
+  }
+  return [...held, name].join('+');
+}
+
+/**
+ * A key as `aria-keyshortcuts` says it, so a control can tell a screen reader its key without the
+ * key caps being read out. A sequence has none: the attribute's spaces separate alternatives.
+ */
+export function ariaShortcut(strokes: readonly Stroke[]): string | undefined {
+  const [only, ...rest] = strokes;
+  return only !== undefined && rest.length === 0 ? ariaKey(only) : undefined;
+}
+
 /** Vim's names for the keys Lo names. */
 const vimNames: Readonly<Record<string, string>> = {
   enter: 'CR',
@@ -529,6 +576,7 @@ const vimNames: Readonly<Record<string, string>> = {
   pageup: 'PageUp',
   pagedown: 'PageDown',
   insert: 'Insert',
+  menu: 'Menu',
   ...Object.fromEntries(
     Array.from({ length: 20 }, (_, index) => [`f${index + 1}`, `F${index + 1}`]),
   ),

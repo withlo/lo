@@ -8,9 +8,10 @@ import type { BarItem } from '../../features/keys/contract.ts';
 /**
  * The app menu's items for `registry`'s commands, as they'd run on `target`. A command shows its
  * first key that's a single chord: a menu can't show a sequence, and a key without a modifier
- * would fire from the menu as it's typed.
+ * would fire from the menu as it's typed. With `blocked`, a right-click menu is open over the window,
+ * and none can run.
  */
-export function barItems(registry: Registry, target: Target): BarItem[] {
+export function barItems(registry: Registry, target: Target, blocked = false): BarItem[] {
   return registry.commands().flatMap((command): BarItem[] => {
     if (!command.bar || !command.handler) return [];
     const chord = registry
@@ -30,7 +31,7 @@ export function barItems(registry: Registry, target: Target): BarItem[] {
         menu: command.bar.menu,
         order: command.bar.order,
         ...(key ? { key } : {}),
-        enabled: registry.enabled(command.id, target) === true,
+        enabled: !blocked && registry.enabled(command.id, target) === true,
       },
     ];
   });

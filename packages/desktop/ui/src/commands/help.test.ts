@@ -143,6 +143,12 @@ describe('key help', () => {
   });
 });
 
+/** The aria-keyshortcuts of a command in the palette, on `system`. */
+function shortcutOf(system: 'mac' | 'linux', id: string) {
+  return paletteItems(registry(system), 'window', NO_TARGET).find((item) => item.id === id)
+    ?.shortcut;
+}
+
 describe('the palette', () => {
   it('lists every command that applies where focus was and can run on its target', () => {
     const ids = (scope: string, disabled: readonly string[] = []) =>
@@ -172,7 +178,16 @@ describe('the palette', () => {
       label: 'Command palette',
       group: 'Find',
       keys: ['Ctrl+Shift+P'],
+      shortcut: 'Control+Shift+P',
     });
+  });
+
+  it('gives each command’s key as aria-keyshortcuts too, for one key or a chord only', () => {
+    expect(shortcutOf('mac', 'diff.palette')).toBe('Meta+Shift+P');
+    expect(shortcutOf('mac', 'diff.escape')).toBe('Escape');
+    // A sequence can't be said in the attribute, whose spaces separate alternatives.
+    expect(shortcutOf('mac', 'diff.nextFile')).toBeUndefined();
+    expect(shortcutOf('linux', 'diff.open')).toBe('Control+L');
   });
 
   it('narrows to labels with the letters typed in order, the best first, marking them', () => {

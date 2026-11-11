@@ -30,13 +30,14 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Tabs and window
 
-| Action                  | Keys        | Where                                                                                  | Command          |
-| ----------------------- | ----------- | -------------------------------------------------------------------------------------- | ---------------- |
-| Zoom in                 | `⌘=`, `⌘⇧=` | Anywhere                                                                               | `app.zoomIn`     |
-| Zoom out                | `⌘-`        | Anywhere                                                                               | `app.zoomOut`    |
-| Actual size             | `⌘0`        | Anywhere                                                                               | `app.actualSize` |
-| Every key               | `?`         | Anywhere                                                                               | `keys.help`      |
-| Back to the middle view | `Esc`       | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`    |
+| Action                    | Keys           | Where                                                                                  | Command          |
+| ------------------------- | -------------- | -------------------------------------------------------------------------------------- | ---------------- |
+| Zoom in                   | `⌘=`, `⌘⇧=`    | Anywhere                                                                               | `app.zoomIn`     |
+| Zoom out                  | `⌘-`           | Anywhere                                                                               | `app.zoomOut`    |
+| Actual size               | `⌘0`           | Anywhere                                                                               | `app.actualSize` |
+| Every key                 | `?`            | Anywhere                                                                               | `keys.help`      |
+| Show the right-click menu | `Menu`, `⇧F10` | Anywhere but `menu`, `dialog` and `palette`                                            | `keys.menu`      |
+| Back to the middle view   | `Esc`          | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`    |
 
 ## Where keys apply
 
@@ -44,16 +45,16 @@ A key applies in a scope: the nearest part of the window around the focused elem
 or `window`. A key for a scope beats one for anywhere, so the same chord can mean one thing in a
 comment box and another elsewhere.
 
-| Scope     | What it is                                                   |
-| --------- | ------------------------------------------------------------ |
-| `window`  | Anywhere no other scope has focus.                           |
-| `menu`    | A menu. `j` and `k` move in it as `↓` and `↑` do.            |
-| `dialog`  | A dialog, which keeps the browser's `Tab`.                   |
-| `palette` | A palette, such as the command palette.                      |
-| `diff`    | The diff, a code view.                                       |
-| `file`    | A whole file, a code view.                                   |
-| `peek`    | A peek at code elsewhere, such as a definition, a code view. |
-| `box`     | A comment box, a code view with an insert mode.              |
+| Scope     | What it is                                                                            |
+| --------- | ------------------------------------------------------------------------------------- |
+| `window`  | Anywhere no other scope has focus.                                                    |
+| `menu`    | A menu. Only commands that name it run there, and `j` and `k` move as `↓` and `↑` do. |
+| `dialog`  | A dialog, which keeps the browser's `Tab`.                                            |
+| `palette` | A palette, such as the command palette.                                               |
+| `diff`    | The diff, a code view.                                                                |
+| `file`    | A whole file, a code view.                                                            |
+| `peek`    | A peek at code elsewhere, such as a definition, a code view.                          |
+| `box`     | A comment box, a code view with an insert mode.                                       |
 
 In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a
 command (after a count or an operator), only chords are Lo's, and other keys go to Vim. In a text
@@ -129,6 +130,6 @@ Keys are written the same way in the keymap file and in Lo's code:
   Linux, `ctrl` is `⌃` on macOS and Ctrl on Linux, `alt` is `⌥` (Alt) and `shift` is `⇧`.
 - A sequence separates its keys with spaces: `] f`, `g S`.
 - A key is one character, or one of `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, `up`,
-  `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, `insert`, and `f1` to `f20`. `plus`
-  is `+`.
+  `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, `insert`, `menu`, and `f1` to `f20`.
+  `plus` is `+`.
 - A lone letter's case is its key: `G` is Shift and G, as is `shift+g`.

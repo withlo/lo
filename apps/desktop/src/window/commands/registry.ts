@@ -2,6 +2,9 @@
 // through here, since the registry is built from their commands.
 
 import { Registry, type Command, type Entry, type System } from '@lo/ui/commands';
+import { useSyncExternalStore } from 'react';
+
+import { notify } from './notices.tsx';
 
 /** The view in the middle of the window, as keys see it. */
 export interface Middle {
@@ -16,7 +19,13 @@ let middle: Middle | undefined;
 
 /** Builds the window's registry from every feature's commands. */
 export function createRegistry(commands: readonly Command[], system: System): Registry {
-  current = new Registry({ system, commands, here: () => middle?.here() });
+  current = new Registry({
+    system,
+    commands,
+    here: () => middle?.here(),
+    // A command asked for that can't run says why, whoever asked: a key, a menu or the palette.
+    onRefused: (reason) => notify(reason),
+  });
   return current;
 }
 
@@ -24,6 +33,20 @@ export function createRegistry(commands: readonly Command[], system: System): Re
 export function registry(): Registry {
   if (!current) throw new Error("The window's registry isn't built yet.");
   return current;
+}
+
+let version = 0;
+
+/** Re-renders when the registry's keys change, as the keymap file does. */
+export function useKeys(): number {
+  return useSyncExternalStore(
+    (listener) =>
+      registry().subscribe(() => {
+        version++;
+        listener();
+      }),
+    () => version,
+  );
 }
 
 /** Makes `view` the middle view. Returns a function that takes it back, for when the view goes. */

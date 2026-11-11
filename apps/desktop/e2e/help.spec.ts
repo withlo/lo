@@ -20,7 +20,7 @@ test('? shows every key in this system’s form, and Esc closes it', async ({ pa
   await page.keyboard.press('?');
   const help = page.getByRole('dialog', { name: 'Every key' });
   await expect(help).toBeVisible();
-  await expect(help.getByRole('region', { name: 'Code' })).toContainText('Back');
+  await expect(help.getByRole('group', { name: 'Code' })).toContainText('Back');
   await expect(help.locator('[data-command="keys.back"] kbd')).toHaveText(mac ? '⌃o' : 'Ctrl+O');
   await expect(help.locator('[data-command="keys.palette"] kbd')).toHaveText(
     mac ? '⌘⇧P' : 'Ctrl+Shift+P',
@@ -57,5 +57,56 @@ test('⌥⏎ in the palette shows the highlighted command in key help', async ({
   await expect(help.locator('[aria-current="true"]')).toHaveAttribute(
     'data-command',
     'keys.forward',
+  );
+});
+
+test('⌥⏎ in the palette says why when no action matches', async ({ page }) => {
+  const palette = await openPalette(page);
+  await page.keyboard.type('zzzz');
+  await expect(palette.getByRole('option')).toHaveCount(0);
+  await expect(palette.getByRole('status').filter({ hasText: 'No action matches' })).toHaveCount(1);
+  await page.keyboard.press('Alt+Enter');
+  await expect(palette).toBeVisible();
+  await expect(
+    palette.getByRole('status').filter({ hasText: "so there's no key to show" }),
+  ).toBeVisible();
+  // Typing something that matches clears it.
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type('forward');
+  await expect(palette.getByRole('status').filter({ hasText: 'no key to show' })).toHaveCount(0);
+});
+
+test('the palette’s list is named', async ({ page }) => {
+  const palette = await openPalette(page);
+  await expect(palette.getByRole('listbox', { name: 'Command palette results' })).toBeVisible();
+});
+
+test('key help says aloud when nothing matches', async ({ page }) => {
+  await page.locator('main[data-lo-middle]').focus();
+  await page.keyboard.press('?');
+  const help = page.getByRole('dialog', { name: 'Every key' });
+  await expect(help.getByRole('searchbox', { name: 'Find a key or an action' })).toBeFocused();
+  // The live region is there before it has anything to say.
+  await expect(help.getByRole('status')).toHaveText('');
+  await page.keyboard.type('zzzz');
+  await expect(help.getByRole('status')).toHaveText('No key or action matches "zzzz".');
+});
+
+test('the palette says an action’s key as aria-keyshortcuts, with its key caps hidden', async ({
+  page,
+}) => {
+  const palette = await openPalette(page);
+  const option = palette.getByRole('option').filter({ hasText: 'Command palette' }).first();
+  await expect(option).toHaveAttribute(
+    'aria-keyshortcuts',
+    mac ? 'Meta+Shift+P' : 'Control+Shift+P',
+  );
+  await expect(option.locator('kbd')).toHaveAttribute('aria-hidden', 'true');
+  // The name is the label, not the letters of its key.
+  await expect(palette.getByRole('option', { name: 'Command palette', exact: true })).toHaveCount(
+    1,
   );
 });

@@ -10,6 +10,7 @@ import {
   type Outcome,
   type Pending,
 } from './match.ts';
+import { commandsOf, defineCommands } from './declare.ts';
 import { parseKeys, systemStrokes, vimKeys, type System } from './notation.ts';
 import type { Mode } from './scopes.ts';
 
@@ -289,6 +290,43 @@ describe('text', () => {
     const menu: Focus = { scope: 'menu', text: false };
     expect(type(['j', 'k'], menu).said).toEqual(['ArrowDown', 'ArrowUp']);
     expect(type(['j'], { scope: 'menu', text: true }).said).toEqual(['pass']);
+  });
+
+  test('in a menu, no command runs but the menu’s own', () => {
+    const menu: Focus = { scope: 'menu', text: false };
+    // Commands for anywhere stay out of it: key help or the palette over a menu would leave two
+    // open, with each Esc going back into the menu.
+    for (const key of ['?', 'cmd+shift+p', 'ctrl+o', 'ctrl+i', 'cmd+l', '-', 'esc']) {
+      for (const system of ['mac', 'linux'] as const) {
+        expect(type([key], menu, { system }), `${key} on ${system}`).toEqual({
+          said: ['pass'],
+          pending: undefined,
+        });
+      }
+    }
+    // Commands for other scopes do too, but not beyond it: the same keys run outside a menu.
+    expect(type(['?'], anywhere).said).toEqual(['run keys.help']);
+    expect(type(['cmd+shift+p'], anywhere).said).toEqual(['run keys.palette']);
+    // A command that names the menu runs there.
+    const own = defineCommands('menu', {
+      pick: { label: 'Pick', group: 'Act', keys: ['p'], when: { scope: 'menu' } },
+      both: { label: 'Both', group: 'Act', keys: ['b'], when: { scope: ['menu', 'tree'] } },
+    });
+    const bindings = new Bindings('mac', declaredBindings(commandsOf(own), 'mac'));
+    const press = (key: string, focus: Focus) => {
+      const [stroke] = systemStrokes(parseKeys(key), 'mac');
+      return said(
+        match(
+          bindings,
+          undefined,
+          { stroke: stroke!, repeat: false, composing: false, time: 0 },
+          focus,
+        ).outcome,
+      );
+    };
+    expect(press('p', menu)).toBe('run menu.pick');
+    expect(press('b', menu)).toBe('run menu.both');
+    expect(press('p', anywhere)).toBe('pass');
   });
 });
 

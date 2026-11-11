@@ -51,6 +51,7 @@ export {
   type PaletteItem,
   type PaletteMatch,
 } from './help.ts';
+export { menuSections, type MenuItem } from './menu.ts';
 export { HISTORY_LIMIT, History, type Entry, type Reveal, type View } from './history.ts';
 export {
   applyKeymap,
@@ -79,6 +80,7 @@ export {
   type Step,
 } from './match.ts';
 export {
+  ariaShortcut,
   eventStroke,
   eventStrokes,
   isChord,

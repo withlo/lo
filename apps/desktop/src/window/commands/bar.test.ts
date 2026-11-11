@@ -55,6 +55,13 @@ describe('the app menu’s items', () => {
     expect(barItems(registry, none).map((item) => item.enabled)).toEqual([true, false]);
   });
 
+  it('can none run while a right-click menu is open over the window', () => {
+    const registry = new Registry({ system: 'mac', commands });
+    expect(
+      barItems(registry, { kind: 'file', file: 'a.ts' }, true).map((item) => item.enabled),
+    ).toEqual([false, false]);
+  });
+
   it('show the keys the keymap gives, in the system’s keys', () => {
     const registry = new Registry({ system: 'linux', commands });
     registry.setKeymap('bind ctrl+alt+t view.threads\nunbind cmd+shift+\\');

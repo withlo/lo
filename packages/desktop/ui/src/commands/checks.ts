@@ -5,7 +5,8 @@
 // - handlers: one for every command but Vim's own, and none for a command `keys.ts` doesn't
 //   declare;
 // - keys: every command has a default key on each system it's on;
-// - menus: every item in a right-click menu or the app menu has a key;
+// - menus: every item in a right-click menu or the app menu has a key, and a right-click menu's
+//   target is one its command takes;
 // - clashes: in each scope, mode and system, no key or start of a sequence is claimed twice, and
 //   none is one the engine takes first;
 // - Vim: in a code view, no key of Lo's meets one of Vim's unless its command says `overVim`.
@@ -23,6 +24,7 @@ import {
 } from './match.ts';
 import { parseKeys, systemStrokes, writeStrokes, type Stroke, type System } from './notation.ts';
 import { codeScopes, engineScopes, type Mode } from './scopes.ts';
+import { fit, NO_TARGET, type Target, type TargetKind } from './targets.ts';
 import { vimDefaults } from './vim.ts';
 
 /** The systems Lo runs on, as the checks try each. */
@@ -241,9 +243,32 @@ export function checkKeys(features: readonly Declarations[]): string[] {
   );
 }
 
+/** A target of `kind`, with all it can give: a line has a thread on it, so it gives a file too. */
+function sampleTarget(kind: TargetKind): Target {
+  switch (kind) {
+    case 'line':
+      return { kind, at: { file: 'f', side: 'new', line: 1 }, thread: 't' };
+    case 'file':
+      return { kind, file: 'f' };
+    case 'thread':
+      return { kind, thread: 't' };
+    case 'layer':
+      return { kind, layer: 1 };
+    case 'block':
+      return { kind, block: 'b' };
+    case 'tab':
+      return { kind, tab: 't' };
+    case 'none':
+      return NO_TARGET;
+    default:
+      kind satisfies never;
+      throw new Error(`There's no target of kind ${String(kind)}.`);
+  }
+}
+
 /**
- * Menus: an item in a right-click menu has a key on each system its command is on, and one in the
- * app menu has a key on macOS, the only system with one.
+ * Menus: an item in a right-click menu has a key on each system its command is on, and takes the
+ * kind of target the menu is for; one in the app menu has a key on macOS, the only system with one.
  */
 export function checkMenus(features: readonly Declarations[]): string[] {
   const problems: string[] = [];
@@ -253,6 +278,12 @@ export function checkMenus(features: readonly Declarations[]): string[] {
       for (const system of on.filter((each) => !hasKey(command, each))) {
         problems.push(
           `${command.id} is in the right-click menu of a ${command.menu.on}, with no key on ${systemNames[system]}.`,
+        );
+      }
+      const takes = command.targets ?? ['none'];
+      if (fit(takes, sampleTarget(command.menu.on)) === undefined) {
+        problems.push(
+          `${command.id} is in the right-click menu of a ${command.menu.on}, but acts on ${listed(takes, 'or')}.`,
         );
       }
     }
