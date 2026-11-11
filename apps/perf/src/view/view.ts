@@ -44,7 +44,7 @@ import { type Action, diffKeys, type DiffKeys, registerDiffEditor, type Target }
 import { Layout, type Side } from './layout.ts';
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
 import { collapsedRuns, type FileRows, fileRows, runAt, shownRuns } from './rows.ts';
-import type { ThreadComment } from './widgets.ts';
+import { type ThreadComment, ThreadSizes } from './widgets.ts';
 
 /** A file as the view is given it. */
 export interface DiffViewFile extends ViewFile {
@@ -154,7 +154,9 @@ export class DiffView {
   /** Counts the layout's switches, so the comment boxes' threads are drawn again after one. */
   #drawing = 0;
   readonly #aligner: Aligner;
-  #inline: { view: EditorView; layout: InlineLayout } | undefined;
+  #inline: { view: EditorView; layout: InlineLayout; sizes: ThreadSizes } | undefined;
+  /** The sizes of the threads each side's editor draws. */
+  readonly #sizes: Record<Side, ThreadSizes>;
   #pane: 'split' | 'inline' = 'split';
   /** The scroll input asked for since `movement()` was last called: wheel and moved cursors. */
   #asked = 0;
@@ -205,6 +207,10 @@ export class DiffView {
         }),
       });
     this.views = { old: make('old'), new: make('new') };
+    this.#sizes = {
+      old: new ThreadSizes(this.views.old.contentDOM),
+      new: new ThreadSizes(this.views.new.contentDOM),
+    };
     this.#aligner = new Aligner(this.views, this.#layout, (file) => this.#rows[file]!, this.dom);
     // What the input asks the scroll to do, for `movement()`: the wheel's distance, and the
     // scroll CodeMirror makes to bring a moved cursor into view.
@@ -406,6 +412,7 @@ export class DiffView {
     document.fonts.removeEventListener('loadingdone', this.#measure);
     this.#aligner.destroy();
     for (const box of this.#boxes.values()) box.destroy();
+    for (const sizes of [this.#sizes.old, this.#sizes.new, this.#inline?.sizes]) sizes?.destroy();
     for (const view of this.#editors()) {
       forgetJumps(view);
       view.destroy();
@@ -501,7 +508,7 @@ export class DiffView {
       }),
     });
     view.dom.classList.add('lo-diffinline');
-    this.#inline = { view, layout };
+    this.#inline = { view, layout, sizes: new ThreadSizes(view.contentDOM) };
     registerDiffEditor(view, this.#keysFor('inline'));
     const ranges = this.#files.flatMap((_, index) => this.#inlineBlocks(index));
     view.dispatch({ effects: setFile.of({ file: -1, from: 0, to: 0, decorations: ranges }) });
@@ -611,6 +618,7 @@ export class DiffView {
       lines: lines[side],
       otherLines: lines[side === 'old' ? 'new' : 'old'].count > 0,
       doc: this.views[side].state.doc,
+      sizes: this.#sizes[side],
     });
   }
 
@@ -621,6 +629,7 @@ export class DiffView {
       lines: inline.layout.files[file]!,
       inline: inline.layout.lines[file],
       doc: inline.view.state.doc,
+      sizes: inline.sizes,
     });
   }
 

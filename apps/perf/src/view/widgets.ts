@@ -162,28 +162,69 @@ export interface BoxHost {
   attach(parent: HTMLElement): void;
 }
 
-/**
- * What a thread's height is worked out from before it's drawn: the width its comments' text wraps
- * at, in characters, from the last thread drawn, and the heights threads were drawn at. Estimates
- * that are off move what's drawn when CodeMirror measures, which a far jump to a thread can't
- * settle in one measure.
- */
-const threadText = { charsPerLine: 100 };
-const drawnThreads = new Map<string, number>();
 /** The average width of a character of the comments' face, in pixels. */
 const charWidth = 6.05;
-const threadSizes = new ResizeObserver((entries) => {
-  for (const entry of entries) {
-    const { target } = entry;
-    const size = entry.borderBoxSize[0];
-    if (!size || !(target instanceof HTMLElement)) continue;
-    if (target.classList.contains('lo-diffthread__body')) {
-      threadText.charsPerLine = Math.max(20, Math.floor(size.inlineSize / charWidth));
-    } else if (target.dataset.thread) {
-      drawnThreads.set(target.dataset.thread, size.blockSize);
-    }
+
+/**
+ * What one editor's threads' heights are worked out from before they're drawn: the heights its
+ * threads were drawn at, at the width they were drawn at, and how much narrower than the editor's
+ * content a comment's text is, for the characters it wraps at. Estimates that are off move what's
+ * drawn when CodeMirror measures, which a far jump to a thread can't settle in one measure.
+ */
+export class ThreadSizes {
+  /** The width of the editor's content, in whole pixels; 0 before it's been seen. */
+  #width = 0;
+  /** How much narrower than the content a comment's text is, once one has been drawn. */
+  #inset: number | undefined;
+  /** The heights threads were drawn at, by the width and the thread. */
+  readonly #drawn = new Map<string, number>();
+  readonly #observer: ResizeObserver;
+
+  constructor(content: HTMLElement) {
+    this.#observer = new ResizeObserver((entries) => {
+      // The content's width first, which the others' sizes are kept by.
+      for (const entry of entries) {
+        const size = entry.borderBoxSize[0];
+        if (size && entry.target === content) this.#width = Math.round(size.inlineSize);
+      }
+      for (const entry of entries) {
+        const { target } = entry;
+        const size = entry.borderBoxSize[0];
+        if (!size || target === content || !(target instanceof HTMLElement)) continue;
+        if (target.classList.contains('lo-diffthread__body')) {
+          if (this.#width > 0) this.#inset = this.#width - size.inlineSize;
+        } else if (target.dataset.thread) {
+          this.#drawn.set(`${this.#width}:${target.dataset.thread}`, size.blockSize);
+        }
+      }
+    });
+    this.#observer.observe(content);
   }
-});
+
+  observe(target: Element): void {
+    this.#observer.observe(target);
+  }
+
+  unobserve(target: Element): void {
+    this.#observer.unobserve(target);
+  }
+
+  /** The height the thread `key` was drawn at, at the content's width now, if it was. */
+  drawn(key: string): number | undefined {
+    return this.#drawn.get(`${this.#width}:${key}`);
+  }
+
+  /** The characters a comment's text wraps at: 100 until a thread has been drawn. */
+  get charsPerLine(): number {
+    if (this.#inset === undefined || this.#width === 0) return 100;
+    return Math.max(20, Math.floor((this.#width - this.#inset) / charWidth));
+  }
+
+  destroy(): void {
+    this.#observer.disconnect();
+    this.#drawn.clear();
+  }
+}
 
 /**
  * A review thread under a line, and the comment box being written there, if there is one: one
@@ -194,12 +235,23 @@ export class ThreadWidget extends WidgetType {
   readonly comments: readonly ThreadComment[];
   readonly box: BoxHost | undefined;
   readonly drawing: number;
+  readonly sizes: ThreadSizes;
 
-  /** `drawing` changes when the box must be drawn again, to move it into another editor. */
-  constructor(id: string, comments: readonly ThreadComment[], box?: BoxHost, drawing = 0) {
+  /**
+   * `drawing` changes when the box must be drawn again, to move it into another editor; `sizes`
+   * are the editor's.
+   */
+  constructor(
+    id: string,
+    comments: readonly ThreadComment[],
+    sizes: ThreadSizes,
+    box?: BoxHost,
+    drawing = 0,
+  ) {
     super();
     this.id = id;
     this.comments = comments;
+    this.sizes = sizes;
     this.box = box;
     this.drawing = drawing;
   }
@@ -209,7 +261,8 @@ export class ThreadWidget extends WidgetType {
       other.id === this.id &&
       other.comments.length === this.comments.length &&
       other.box === this.box &&
-      other.drawing === this.drawing
+      other.drawing === this.drawing &&
+      other.sizes === this.sizes
     );
   }
 
@@ -221,7 +274,7 @@ export class ThreadWidget extends WidgetType {
     block.append(thread);
     if (!this.box) {
       block.dataset.thread = this.#key;
-      threadSizes.observe(block);
+      this.sizes.observe(block);
     }
     this.comments.forEach((comment, index) => {
       const item = element('div', 'lo-diffthread__comment');
@@ -237,15 +290,15 @@ export class ThreadWidget extends WidgetType {
       thread.append(item);
     });
     const body = thread.querySelector('.lo-diffthread__body');
-    if (body) threadSizes.observe(body);
+    if (body) this.sizes.observe(body);
     if (this.box) this.box.attach(thread);
     return block;
   }
 
   override destroy(dom: HTMLElement): void {
-    threadSizes.unobserve(dom);
+    this.sizes.unobserve(dom);
     const body = dom.querySelector('.lo-diffthread__body');
-    if (body) threadSizes.unobserve(body);
+    if (body) this.sizes.unobserve(body);
   }
 
   /** The thread's size as drawn, for drawing it again. */
@@ -254,15 +307,16 @@ export class ThreadWidget extends WidgetType {
   }
 
   /**
-   * As tall as it was last drawn, if it was. Else its comments' lines of 18 pixels, at the width
-   * the last thread drawn wraps at, under each comment's author line and padding.
+   * As tall as it was last drawn in its editor at this width, if it was. Else its comments' lines
+   * of 18 pixels, at the characters the editor's threads wrap at, under each comment's author line
+   * and padding.
    */
   override get estimatedHeight(): number {
-    const drawn = this.box ? undefined : drawnThreads.get(this.#key);
+    const drawn = this.box ? undefined : this.sizes.drawn(this.#key);
     if (drawn !== undefined) return drawn;
     const comments = this.comments.reduce<number>((total, comment) => {
       const length = typeof comment === 'string' ? comment.length : comment;
-      return total + 36 + Math.max(1, Math.ceil(length / threadText.charsPerLine)) * 18;
+      return total + 36 + Math.max(1, Math.ceil(length / this.sizes.charsPerLine)) * 18;
     }, 0);
     return 16 + comments + (this.box ? this.box.dom.offsetHeight || 60 : 0);
   }
