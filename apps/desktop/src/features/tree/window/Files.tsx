@@ -56,6 +56,7 @@ function drawn(row: Row): FileTreeRow {
         generated: row.generated !== null,
         viewed: row.viewed,
         folder: row.folder,
+        title: row.title,
       };
     default:
       row satisfies never;
@@ -70,7 +71,7 @@ function noteOf(state: TreeState | undefined, omitted: number): ReactNode {
   const long = state.omitted + omitted;
   if (long > 0) {
     notes.push(
-      `${long.toLocaleString('en')} ${long === 1 ? 'file has a path' : 'files have paths'} longer than ${PATH_LIMIT.toLocaleString('en')} bytes, which the tree leaves out.`,
+      `${long.toLocaleString('en')} unchanged ${long === 1 ? 'file has a path' : 'files have paths'} longer than ${PATH_LIMIT.toLocaleString('en')} bytes, which the tree leaves out.`,
     );
   }
   if (state.listing.kind === 'changed') notes.push(state.listing.why);

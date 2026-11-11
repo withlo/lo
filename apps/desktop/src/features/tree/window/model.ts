@@ -16,7 +16,7 @@ import {
   type TreePath,
   type TreeState,
 } from '../contract.ts';
-import { folderText, keyOf, nameOf, parentOf } from './paths.ts';
+import { folderText, keyOf, middleOut, nameOf, parentOf, placeOf } from './paths.ts';
 
 /** Whether the account marked a changed file viewed, as GitHub says. */
 export type Viewed = 'viewed' | 'unviewed' | 'dismissed';
@@ -76,6 +76,8 @@ export interface FileRow {
   readonly viewed: Viewed | undefined;
   /** In review order, the folder it's in, shown after its name. */
   readonly folder?: string | undefined;
+  /** The whole path, when the name shows only part of it. */
+  readonly title?: string | undefined;
 }
 
 /** A label over a group of review order's files. */
@@ -96,31 +98,45 @@ export interface Model {
   readonly folders: readonly string[];
   /** Folders open with nothing yet from main, which the window asks for. */
   readonly wanted: readonly TreePath[];
-  /** Files left out, since their paths are longer than `PATH_LIMIT` bytes. */
+  /** Unchanged files left out, since their paths are longer than `PATH_LIMIT` bytes. */
   readonly omitted: number;
 }
 
-/** Whether the tree shows `path`: one no longer than `PATH_LIMIT` bytes, which it may key by. */
-function shows(path: TreePath): boolean {
+/** Whether `path` is short enough to key a map by: no longer than `PATH_LIMIT` bytes. */
+function short(path: TreePath): boolean {
   return pathBytes(path) <= PATH_LIMIT;
 }
 
 /**
- * The changes the tree shows, and how many it leaves out: a path too long to key a map by is left
- * out, and a rename from one keeps its change without its old path.
+ * Where a changed file goes in the tree, and what it's called there: in its folder, by its name; or
+ * for a path too long to key a map by, in the deepest of its folders short enough, named by the
+ * rest of its path, shortened in the middle.
  */
-function shownChanges(changes: readonly Changed[]): { changes: Changed[]; omitted: number } {
-  const kept: Changed[] = [];
-  let omitted = 0;
-  for (const change of changes) {
-    if (!shows(change.path)) {
-      omitted++;
-      continue;
-    }
-    const { previous } = change;
-    kept.push(previous !== null && !shows(previous) ? { ...change, previous: null } : change);
+function placed(path: TreePath): Place {
+  let place = places.get(path);
+  if (!place) {
+    place = short(path)
+      ? { folder: parentOf(path), name: nameOf(path), long: false }
+      : { ...placeOf(path), long: true };
+    places.set(path, place);
   }
-  return { changes: kept, omitted };
+  return place;
+}
+
+/** Where a changed file goes in the tree. */
+interface Place {
+  readonly folder: TreePath | undefined;
+  readonly name: string;
+  readonly long: boolean;
+}
+
+/** Each path's place, worked out once: a path is the same object from one build to the next. */
+const places = new WeakMap<TreePath, Place>();
+
+/** A changed file's path as review order reads it: the place it shows at, short in any case. */
+function readAs(path: TreePath): string {
+  const { folder, name } = placed(path);
+  return folder === undefined ? name : `${folder.text}/${name}`;
 }
 
 /** A folder or file of the tree, as it's built. */
@@ -136,13 +152,22 @@ interface Node {
   change: Changed | undefined;
   /** How many changed files it holds, however deep, or 1 for a changed file. */
   changes: number;
+  /** Whether its name is only the end of a path too long to show whole. */
+  long: boolean;
 }
 
-function node(path: TreePath | undefined, kind: EntryKind, listed: boolean, parent?: Node): Node {
+function node(
+  path: TreePath | undefined,
+  kind: EntryKind,
+  listed: boolean,
+  parent?: Node,
+  name?: string,
+): Node {
   return {
     key: path === undefined ? '' : keyOf(path),
     path: path ?? { text: '' },
-    name: path === undefined ? '' : nameOf(path),
+    name: name ?? (path === undefined ? '' : nameOf(path)),
+    long: name !== undefined,
     kind,
     parent,
     children: new Map(),
@@ -177,7 +202,7 @@ function build(
     return found;
   };
   const list = (entry: Entry) => {
-    if (shows(entry.path)) add(entry.path, entry.kind);
+    if (short(entry.path)) add(entry.path, entry.kind);
     else omitted++;
   };
   if (listing.kind === 'whole') {
@@ -187,14 +212,26 @@ function build(
     for (const entries of folders.values()) for (const entry of entries) list(entry);
   }
   for (const change of changes) {
-    const file = add(change.path, 'file');
+    let file: Node;
+    const place = placed(change.path);
+    if (place.long) {
+      // Every change shows, however long its path: by its digest, in a folder short enough.
+      const parent = place.folder === undefined ? root : add(place.folder, 'folder');
+      const key = keyOf(change.path);
+      file = parent.children.get(key) ?? node(change.path, 'file', false, parent, place.name);
+      parent.children.set(key, file);
+    } else {
+      file = add(change.path, 'file');
+    }
     // The same path listed twice counts once.
     if (file.change) continue;
     file.change = change;
     file.changes = 1;
     for (let folder = file.parent; folder !== undefined; folder = folder.parent) folder.changes++;
   }
-  return { root, omitted };
+  // The listing's long paths the pull request changes show, so aren't left out.
+  const shownLong = changes.filter((change) => change.change !== 'deleted' && !short(change.path));
+  return { root, omitted: Math.max(0, omitted - shownLong.length) };
 }
 
 /** Folders first, then files, each by name in git's order. */
@@ -207,8 +244,11 @@ function byName(a: Node, b: Node): number {
 function previousOf(change: Changed): string | undefined {
   const { previous } = change;
   if (previous === null) return undefined;
+  if (!short(previous)) return middleOut(withoutBidi(previous.text));
   return withoutBidi(
-    folderText(previous) === folderText(change.path) ? nameOf(previous) : previous.text,
+    short(change.path) && folderText(previous) === folderText(change.path)
+      ? nameOf(previous)
+      : previous.text,
   );
 }
 
@@ -218,10 +258,10 @@ function viewedOf(
   viewed: ReadonlyMap<string, Viewed>,
 ): Viewed | undefined {
   if (!change) return undefined;
-  return (
-    viewed.get(change.path.text) ??
-    (change.previous === null ? undefined : viewed.get(change.previous.text))
-  );
+  // GitHub's marks are kept only for paths short enough to key a map by.
+  const mark = short(change.path) ? viewed.get(change.path.text) : undefined;
+  const { previous } = change;
+  return mark ?? (previous === null || !short(previous) ? undefined : viewed.get(previous.text));
 }
 
 function fileRow(
@@ -243,6 +283,7 @@ function fileRow(
     generated: change?.generated ?? null,
     viewed: viewedOf(change, viewed),
     ...(folder === undefined ? {} : { folder }),
+    ...(file.long ? { title: file.path.text } : {}),
   };
 }
 
@@ -260,8 +301,9 @@ function reviewModel(
   viewed: ReadonlyMap<string, Viewed>,
 ): Pick<Model, 'rows' | 'order'> {
   const files: ChangedFile[] = changes.map((change) => ({
-    path: change.path.text,
-    previousPath: change.previous?.text,
+    // A path too long to key a map by is read as the short place it shows at.
+    path: readAs(change.path),
+    previousPath: change.previous === null ? undefined : readAs(change.previous),
     additions: 0,
     deletions: 0,
     binary: false,
@@ -279,10 +321,11 @@ function reviewModel(
       rows.push({ kind: 'group', key: `\0group:${label}`, label });
       group = label;
     }
-    const file = node(change.path, 'file', false);
+    const place = placed(change.path);
+    const file = node(change.path, 'file', false, undefined, place.long ? place.name : undefined);
     file.change = change;
     rows.push(
-      fileRow(file, follows === undefined ? 0 : 1, viewed, withoutBidi(folderText(change.path))),
+      fileRow(file, follows === undefined ? 0 : 1, viewed, withoutBidi(place.folder?.text ?? '')),
     );
     order.push(file.key);
   }
@@ -299,10 +342,8 @@ export function model(
   viewed: ReadonlyMap<string, Viewed>,
   choices: Choices,
 ): Model {
-  const shown = shownChanges(state.changes ?? []);
-  const { root, omitted: unlisted } = build(state, shown.changes, folders);
-  const omitted =
-    state.listing.kind === 'changed' || state.listing.kind === 'loading' ? shown.omitted : unlisted;
+  const changes = state.changes ?? [];
+  const { root, omitted } = build(state, changes, folders);
   const allFolders: string[] = [];
   const collect = (folder: Node) => {
     for (const child of folder.children.values()) {
@@ -314,10 +355,10 @@ export function model(
   collect(root);
   if (choices.mode === 'review') {
     return {
-      ...reviewModel(shown.changes, viewed),
+      ...reviewModel(changes, viewed),
       folders: allFolders,
       wanted: [],
-      omitted: shown.omitted,
+      omitted,
     };
   }
   // Only the changed files show while the reader asks, or main has nothing else.
@@ -370,7 +411,7 @@ export function model(
   walk(root, 0);
   return {
     rows,
-    order: panelOrder(shown.changes, 'tree'),
+    order: panelOrder(changes, 'tree'),
     folders: allFolders,
     wanted,
     omitted,
@@ -381,15 +422,15 @@ export function model(
  * The changed files, by key, in the order the panel lists them, which is the order the diff shows
  * them in: the tree's (each folder's folders, then its files, by name) or review order.
  */
-export function panelOrder(all: readonly Changed[], mode: Mode): readonly string[] {
-  const { changes } = shownChanges(all);
+export function panelOrder(changes: readonly Changed[], mode: Mode): readonly string[] {
   if (mode === 'review') {
     return reviewModel(changes, new Map()).order;
   }
-  const split = changes.map((change) => ({
-    key: keyOf(change.path),
-    names: change.path.text.split('/'),
-  }));
+  // Each by the place it shows at, which for a path too long to key a map by is short.
+  const split = changes.map((change) => {
+    const { folder, name } = placed(change.path);
+    return { key: keyOf(change.path), names: [...(folder?.text.split('/') ?? []), name] };
+  });
   return split
     .toSorted((a, b) => {
       const length = Math.min(a.names.length, b.names.length);
@@ -428,7 +469,7 @@ export function parentRow(rows: readonly Row[], index: number): number {
  */
 export function foldersOf(path: TreePath): string[] {
   const keys: string[] = [];
-  for (let parent = parentOf(path); parent !== undefined; parent = parentOf(parent)) {
+  for (let parent = placed(path).folder; parent !== undefined; parent = parentOf(parent)) {
     keys.unshift(keyOf(parent));
   }
   return keys;

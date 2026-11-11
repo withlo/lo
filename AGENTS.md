@@ -438,13 +438,17 @@ Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `c
   never one restored from what Lo saved, and a read that fails is tried again after 5 s, doubling to
   5 minutes.
 - Up to 20,000 files go to the window whole, on `tree.state`. Past that, main sends the root's
-  entries, and the window asks for each folder's (`tree.folder`) as it opens one. Past 500,000, the
-  tree shows only the changed files.
+  entries, and the window asks for each folder's (`tree.folder`) as it opens one, 500 folders a
+  request at most. Past 500,000, the tree shows only the changed files.
 - A path travels as its text, with its bytes in hex beside it when they aren't UTF-8, since git
-  stores paths as bytes. A path longer than 1,024 bytes is left out of the tree, and counted in a
-  note: V8 hashes a long string by its length alone, so nothing keys a map by one. The window keys a
-  file by its text, or by a NUL and its bytes for such a path; that key is the file's id in targets
-  and to other features.
+  stores paths as bytes. The window keys a file by its text, or by a NUL and its bytes for such a
+  path (`fileKey` in the contract); that key is the file's id in targets and to other features. V8
+  hashes a long string by its length alone, so nothing keys a map by a path longer than 1,024 bytes.
+  A changed file with one still shows everywhere, in both orders, `fileOrder`, `find` and the
+  counts, known by a NUL, `#` and its path's SHA-256: under the deepest of its folders short enough,
+  its name shortened in the middle, with the whole path in its tooltip and from Copy path. An
+  unchanged one is left out, and counted in a note. A listing whose paths come to more than 32 MB
+  shows only the changed files.
 - `tree.find` finds files by name, the changed ones first, 100 at most, matching in chunks so main
   stays free; a newer search for the same tab stops the one before.
 - Other features reach the tree through its `window/shared.ts`: `fileOrder` and `useFileOrder`, the

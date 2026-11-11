@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { contract, FOLDERS_LIMIT, treePath } from './contract.ts';
+import { contract, fileKey, FOLDERS_LIMIT, PATH_LIMIT, treePath } from './contract.ts';
 
 const paths = (count: number) =>
   Array.from({ length: count }, (_, index) => ({ text: `f${index}` }));
@@ -35,5 +35,20 @@ describe("the tree feature's contract", () => {
     const { input } = contract.requests.find;
     expect(input.safeParse({ id: 't1', query: 'a'.repeat(1000) }).success).toBe(true);
     expect(input.safeParse({ id: 't1', query: 'a'.repeat(1001) }).success).toBe(false);
+  });
+
+  it('keys a path too long to key a map by by its digest, and takes no such folder', () => {
+    const digest = 'f'.repeat(64);
+    const long = { text: 'a'.repeat(PATH_LIMIT + 1), digest };
+    expect(treePath.parse(long)).toEqual(long);
+    expect(fileKey(long)).toBe(`\u0000#${digest}`);
+    expect(fileKey({ text: 'src/a.ts' })).toBe('src/a.ts');
+    expect(fileKey({ text: 'caf\uFFFD', hex: '636166e9' })).toBe('\u0000636166e9');
+    const { input } = contract.requests.folder;
+    const at = 'a'.repeat(40);
+    expect(
+      input.safeParse({ id: 't1', at, paths: [{ text: 'a'.repeat(PATH_LIMIT) }] }).success,
+    ).toBe(true);
+    expect(input.safeParse({ id: 't1', at, paths: [long] }).success).toBe(false);
   });
 });

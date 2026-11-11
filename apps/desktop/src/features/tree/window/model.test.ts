@@ -342,35 +342,91 @@ describe('a deleted file’s folder that the head no longer has', () => {
 });
 
 describe('paths too long to key a map by', () => {
-  it('are left out, quickly, however many there are', () => {
-    // 4,000 files under a folder of 8,200 bytes that aren't UTF-8, keyed by their bytes in hex:
-    // over 16,400 characters each, which a map would hash by their length alone.
-    const folder = 'e9'.repeat(8_200);
-    const entries: Entry[] = Array.from({ length: 4_000 }, (_, index) => ({
-      path: {
-        text: `${'\uFFFD'.repeat(8_200)}/f${index}.txt`,
-        hex: `${folder}2f${Buffer.from(`f${index}.txt`).toString('hex')}`,
-      },
-      kind: 'file',
-    }));
+  // 4,000 files under a folder of 8,200 bytes that aren't UTF-8: keyed by their bytes in hex,
+  // over 16,400 characters each, a map would hash them all by their length alone.
+  const folder = 'e9'.repeat(8_200);
+  const paths = Array.from({ length: 4_000 }, (_, index) => ({
+    text: `${'\uFFFD'.repeat(8_200)}/f${index}.txt`,
+    hex: `${folder}2f${Buffer.from(`f${index}.txt`).toString('hex')}`,
+    // As main gives such a path: the digest it's known by.
+    digest: index.toString(16).padStart(64, '0'),
+  }));
+  const entries: Entry[] = paths.map((path) => ({ path, kind: 'file' }));
+
+  it('leave unchanged files out, quickly, however many there are', () => {
     const state: TreeState = {
       ...E2E,
       listing: { kind: 'whole', entries: [...entries, file('README.md')] },
-      changes: [{ ...changed('x', 'added'), path: entries[0]?.path ?? { text: 'x' } }],
+      changes: [],
     };
     const start = performance.now();
     const shown = model(state, new Map(), none, NO_CHOICES);
-    const closed = model(state, new Map(), none, { ...NO_CHOICES, changedOnly: true });
     expect(performance.now() - start).toBeLessThan(2_000);
     expect(lines(shown.rows)).toEqual(['README.md [dim]']);
     expect(shown.omitted).toBe(4_000);
-    expect(closed.omitted).toBe(4_000);
-    expect(panelOrder(state.changes ?? [], 'tree')).toEqual([]);
   });
 
-  it('drop a rename’s old path, keeping the change', () => {
+  it('show every changed file, by its digest, in the tree, its order and review order, quickly', () => {
+    const changes = paths.map((path) => ({ ...changed('x', 'modified'), path }));
+    const state: TreeState = {
+      ...E2E,
+      listing: { kind: 'whole', entries: [...entries, file('README.md')] },
+      changes,
+    };
+    const start = performance.now();
+    const tree = model(state, new Map(), none, NO_CHOICES);
+    const review = model(state, new Map(), none, { ...NO_CHOICES, mode: 'review' });
+    const order = panelOrder(changes, 'tree');
+    expect(performance.now() - start).toBeLessThan(2_000);
+    const keys = paths.map((path) => `\u0000#${path.digest}`);
+    expect(new Set(order)).toEqual(new Set(keys));
+    expect(new Set(tree.order)).toEqual(new Set(keys));
+    expect(new Set(review.order)).toEqual(new Set(keys));
+    expect(tree.omitted).toBe(0);
+    // They show in the root, the deepest of their folders short enough, each shortened.
+    const first = tree.rows.find((row) => row.key === keys[0]);
+    expect(first).toMatchObject({
+      kind: 'file',
+      depth: 0,
+      change: 'modified',
+      title: paths[0]?.text,
+    });
+    expect(first?.kind === 'file' && first.name.length).toBe(80);
+  });
+});
+
+/** A changed file's path of `bytes` bytes, many folders deep under src. */
+const long = (bytes: number) => {
+  const folders = 'deep/'.repeat(Math.ceil((bytes - 'evil.ts'.length) / 5));
+  return `src/${folders.slice(0, bytes - 'src/evil.ts'.length)}evil.ts`;
+};
+
+describe('a changed file with a long path', () => {
+  it('shows in the tree under its shortest folders, in both orders, with its whole path', () => {
+    const changes: Changed[] = [1_207, 20_000].map((bytes, index) => ({
+      ...changed(long(bytes), 'added'),
+      path: { text: long(bytes), digest: String(index + 1).repeat(64) },
+    }));
+    const state = whole(['src/a.ts'], [...changes, changed('src/a.ts', 'modified')]);
+    const keys = [`\u0000#${'1'.repeat(64)}`, `\u0000#${'2'.repeat(64)}`];
+    const tree = model(state, new Map(), none, NO_CHOICES);
+    for (const key of keys) {
+      expect(tree.order).toContain(key);
+      expect(panelOrder(state.changes ?? [], 'review')).toContain(key);
+      const row = tree.rows.find((each) => each.key === key);
+      expect(row?.kind === 'file' && row.name.endsWith('evil.ts')).toBe(true);
+    }
+    // src counts all three, and a closed src says so.
+    const closed = model(state, new Map(), none, { ...NO_CHOICES, closed: new Set(['src']) });
+    expect(lines(closed.rows)).toContain('> src (3)');
+    expect(tree.rows.find((row) => row.key === keys[1])).toMatchObject({ title: long(20_000) });
+  });
+
+  it('keeps a rename’s long old path, shortened', () => {
     const state = whole(['b.ts'], [changed('b.ts', 'renamed', `a/${'x'.repeat(2_000)}.ts`)]);
-    expect(lines(model(state, new Map(), none, NO_CHOICES).rows)).toEqual(['b.ts [R]']);
+    const [row] = model(state, new Map(), none, NO_CHOICES).rows;
+    expect(row?.kind === 'file' && row.previous?.length).toBe(80);
+    expect(row?.kind === 'file' && row.previous?.endsWith('xx.ts')).toBe(true);
   });
 });
 

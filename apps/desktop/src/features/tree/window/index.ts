@@ -14,6 +14,7 @@ import {
   goToTree,
   move,
   openRow,
+  pathOf,
   pullOnScreen,
   setAll,
   show,
@@ -106,7 +107,9 @@ export default {
     },
     copyPath: {
       run: async (target) => {
-        await tabs().copy({ text: pathOfKey(target.file).text });
+        const tab = pullOnScreen();
+        const path = typeof tab === 'string' ? pathOfKey(target.file) : pathOf(tab.id, target.file);
+        await tabs().copy({ text: path.text });
       },
     },
     openOnGithub: {

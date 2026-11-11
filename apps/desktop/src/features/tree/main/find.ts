@@ -75,6 +75,25 @@ export function match(query: string, text: string): Match | undefined {
   return starts.score > ends.score ? starts : ends;
 }
 
+/** How much of each end of a long path is searched. */
+export const ENDS = 512;
+
+/**
+ * {@link match} on a path, of which only the ends are searched when it's long, so a path of any
+ * length costs no more than a short one. Where it matched is still by the whole text's indices.
+ */
+export function matchPath(query: string, text: string): Match | undefined {
+  if (text.length <= ENDS * 2) return match(query, text);
+  const ends = `${text.slice(0, ENDS)}\u0000${text.slice(-ENDS)}`;
+  const found = match(query, ends);
+  if (!found) return undefined;
+  const skipped = text.length - ENDS * 2 - 1;
+  return {
+    score: found.score - skipped / 64,
+    matched: found.matched.flatMap((at) => (at < ENDS ? [at] : at === ENDS ? [] : [at + skipped])),
+  };
+}
+
 /** A path to search, and whether the pull request changes it. */
 export interface Searched {
   readonly path: TreePath;
@@ -124,7 +143,7 @@ export async function find(
       const error = stopped();
       if (error) throw error;
     }
-    const found = match(wanted, path.text);
+    const found = matchPath(wanted, path.text);
     if (!found) continue;
     total++;
     kept.push({ found: { path, changed, matched: found.matched }, score: found.score });

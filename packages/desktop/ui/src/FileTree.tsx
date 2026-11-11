@@ -57,6 +57,8 @@ export interface FileTreeFile {
   viewed?: FileTreeViewed | undefined;
   /** In review order, the folder it's in, after its name. */
   folder?: string | undefined;
+  /** The whole path, as the name's tooltip, when the name shows only part of it. */
+  title?: string | undefined;
 }
 
 /** A label over a group of files, in review order. */
@@ -355,6 +357,7 @@ function Row({
       <FileIcon entry={each.entry} dim={dim} />
       <span
         className={`min-w-0 overflow-hidden text-ellipsis ${each.change === 'deleted' ? 'text-fg-muted line-through decoration-fg-subtle' : ''}`}
+        title={each.title}
       >
         {each.name}
       </span>

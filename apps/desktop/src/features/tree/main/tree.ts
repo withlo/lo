@@ -34,10 +34,10 @@ import {
   type TreePath,
   type TreeState,
 } from '../contract.ts';
-import { githubChanged, listedAt, localChange, withinLimit } from './changes.ts';
+import { githubChanged, listedAt, localChange, longAtHead } from './changes.ts';
 import { find, type Searched } from './find.ts';
 import { Files, fromGithub, fromLocal } from './listing.ts';
-import { keyOf } from './paths.ts';
+import { changeKey } from './paths.ts';
 
 /** Requests GitHub's API keeps for the poller: the tree reads no page of files past them. */
 export const KEEP_REQUESTS = 100;
@@ -69,6 +69,8 @@ export interface TreeTabOptions {
   readonly log: (line: string) => void;
   /** The most files sent whole: `WHOLE_LIMIT` unless said otherwise. */
   readonly wholeLimit?: number | undefined;
+  /** The most bytes a listing's paths may hold: `LISTING_BYTES` unless said otherwise. */
+  readonly listingBytes?: number | undefined;
   /** How long to wait to read again after failures in a row: {@link retryWait} unless said. */
   readonly retryWait?: ((failures: number) => number) | undefined;
 }
@@ -85,9 +87,6 @@ interface At {
   problem: string | undefined;
   /** Files of the listing left out, since their paths are longer than `PATH_LIMIT` bytes. */
   listedOmitted: number;
-  /** Changed files left out the same way, and of those, the deleted ones, which no listing has. */
-  changesOmitted: number;
-  deletedOmitted: number;
   /** What's been started for it, so nothing starts twice. */
   readonly started: Set<Read>;
   /** Whether to read from GitHub: the local copy isn't ready, or couldn't say what changed. */
@@ -97,6 +96,10 @@ interface At {
   /** Reads waiting to be tried again. */
   readonly timers: Set<ReturnType<typeof setTimeout>>;
 }
+
+/** Why the tree shows only the changed files of a repository whose paths are too much to list. */
+const TOO_MANY_BYTES =
+  'This repository’s file paths come to more than 32 MB, so the tree shows only the changed ones.';
 
 /** Where a tree is read from. */
 type Read = 'local' | 'github';
@@ -162,8 +165,6 @@ export class TreeTab {
         partial: false,
         problem: undefined,
         listedOmitted: 0,
-        changesOmitted: 0,
-        deletedOmitted: 0,
         started: new Set(),
         wantsGithub: false,
         failures: { local: 0, github: 0 },
@@ -199,7 +200,7 @@ export class TreeTab {
     const at = this.#at;
     if (!at) return { found: [], total: 0, at: null };
     const changes = at.changes ?? [];
-    const changed = new Set(changes.map((file) => keyOf(file.path)));
+    const changed = new Set(changes.map((file) => changeKey(file.path)));
     function* paths(): Iterable<Searched> {
       for (const file of changes) yield { path: file.path, changed: true };
       for (const file of at?.files?.files ?? []) {
@@ -261,12 +262,19 @@ export class TreeTab {
     let failed = false;
     // The files.
     try {
-      const listed = fromLocal(await repo.tree(at.head, { maxEntries: MAX_ENTRIES }));
-      const files = new Files(listed.files, this.#options.wholeLimit);
+      const listed = fromLocal(
+        await repo.tree(at.head, { maxEntries: MAX_ENTRIES }),
+        this.#options.listingBytes,
+      );
       if (!this.#current(at)) return;
-      at.files = files;
-      at.listing = files.listing();
-      at.listedOmitted = listed.omitted;
+      if (listed.tooLarge) {
+        at.files = undefined;
+        at.listing = { kind: 'changed', why: TOO_MANY_BYTES };
+      } else {
+        at.files = new Files(listed.files, this.#options.wholeLimit);
+        at.listing = at.files.listing();
+        at.listedOmitted = listed.omitted;
+      }
       at.from = 'local';
       at.problem = undefined;
     } catch (error) {
@@ -305,23 +313,13 @@ export class TreeTab {
         if (failed) this.#retry(at, 'local');
         return;
       }
-      // Paths too long to show are left out before anything reads them.
-      let omitted = 0;
-      let deleted = 0;
-      const files = compared.files.flatMap((file) => {
-        const { change } = file;
-        if (!change) return [];
-        if (changedPath(change).length <= PATH_LIMIT) return [change];
-        omitted++;
-        if (change.change.kind === 'deleted') deleted++;
-        return [];
-      });
-      const generated = await this.#generated(repo, at.head, files.map(changedPath));
+      const files = compared.files.flatMap((file) => (file.change ? [file.change] : []));
+      // `.gitattributes` is asked only about paths short enough to key a map by.
+      const short = files.filter((file) => changedPath(file).length <= PATH_LIMIT);
+      const generated = await this.#generated(repo, at.head, short.map(changedPath));
       if (!this.#current(at)) return;
-      const kept = withinLimit(files.map((file, index) => localChange(file, generated[index])));
-      at.changes = kept.changes;
-      at.changesOmitted = omitted;
-      at.deletedOmitted = deleted;
+      const attributes = new Map(short.map((file, index) => [file, generated[index]]));
+      at.changes = files.map((file) => localChange(file, attributes.get(file)));
       at.changesFrom = 'local';
       at.partial = false;
     } catch (error) {
@@ -409,10 +407,14 @@ export class TreeTab {
             why: 'GitHub lists only part of this repository’s files, so the tree shows the changed ones until the local copy is ready.',
           };
         } else {
-          const listed = fromGithub(tree.value.items);
-          at.files = new Files(listed.files, this.#options.wholeLimit);
-          at.listing = at.files.listing();
-          at.listedOmitted = listed.omitted;
+          const listed = fromGithub(tree.value.items, this.#options.listingBytes);
+          if (listed.tooLarge) {
+            at.listing = { kind: 'changed', why: TOO_MANY_BYTES };
+          } else {
+            at.files = new Files(listed.files, this.#options.wholeLimit);
+            at.listing = at.files.listing();
+            at.listedOmitted = listed.omitted;
+          }
         }
         at.from = 'github';
       } else if (tree.status === 'rejected') {
@@ -428,10 +430,7 @@ export class TreeTab {
       if (files.status === 'fulfilled' && files.value) {
         const listed = files.value;
         if (listedAt(listed.files, at.head)) {
-          const kept = withinLimit(listed.files.map(githubChanged));
-          at.changes = kept.changes;
-          at.changesOmitted = kept.omitted;
-          at.deletedOmitted = kept.deleted;
+          at.changes = listed.files.map(githubChanged);
           at.changesFrom = 'github';
           at.partial = listed.cutShort !== undefined || listed.files.length >= MAX_FILES;
           if (at.problem?.startsWith('Lo couldn’t read the changed files from GitHub')) {
@@ -456,10 +455,10 @@ export class TreeTab {
 }
 
 /**
- * How many files the tree leaves out of what it shows, since their paths are too long: the
- * listing's, with the deleted files it doesn't have; or the changed files', when there's no
- * listing.
+ * How many files the tree leaves out, since their paths are too long to key a map by: the
+ * listing's, but those the pull request changes, which it shows all the same.
  */
 function omittedOf(at: At): number {
-  return at.files !== undefined ? at.listedOmitted + at.deletedOmitted : at.changesOmitted;
+  if (at.files === undefined) return 0;
+  return Math.max(0, at.listedOmitted - longAtHead(at.changes ?? []));
 }

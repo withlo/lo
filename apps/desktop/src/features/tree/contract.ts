@@ -8,9 +8,10 @@ import { defineContract, reply } from '../../ipc/contract.ts';
 import { oid, tabId } from '../tab/contract.ts';
 
 /**
- * The longest path the tree shows, in bytes. Lo never keys a map by a longer one: V8 hashes a long
- * string by its length alone, so a repository of many long paths of one length would make every
- * lookup compare them all. A longer path is left out of the tree, and counted.
+ * The longest path Lo keys a map by, in bytes. V8 hashes a long string by its length alone, so a
+ * repository of many long paths of one length would make every lookup compare them all. A changed
+ * file with a longer path is known by its path's digest instead, and still shows; an unchanged one
+ * is left out of the tree, and counted.
  */
 export const PATH_LIMIT = 1_024;
 
@@ -29,21 +30,48 @@ export function pathBytes(path: TreePath): number {
   return bytes;
 }
 
+/** The fields of a path. */
+const pathFields = {
+  text: z.string().min(1),
+  hex: z
+    .string()
+    .regex(/^(?:[0-9a-f]{2})+$/)
+    .optional(),
+  digest: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+};
+
 /**
  * A path in the repository, from its root, `/`-separated: its text as Lo shows it, and its bytes
  * in hex beside it when they aren't UTF-8, since git stores a path as bytes. The text then holds
  * U+FFFD for the bytes it can't show, so two such paths can read the same; their bytes tell them
- * apart.
+ * apart. A path longer than {@link PATH_LIMIT} bytes carries the SHA-256 of its bytes, in hex, by
+ * which it's known: see {@link fileKey}.
  */
-export const treePath = z.strictObject({
-  text: z.string().min(1).max(PATH_LIMIT),
-  hex: z
-    .string()
-    .regex(/^(?:[0-9a-f]{2})+$/)
+export const treePath = z.strictObject(pathFields);
+
+/** A folder's path, as the window asks for one: no longer than {@link PATH_LIMIT} bytes. */
+export const folderPath = z.strictObject({
+  text: pathFields.text.max(PATH_LIMIT),
+  hex: pathFields.hex
+    .unwrap()
     .max(PATH_LIMIT * 2)
     .optional(),
 });
+
 export type TreePath = z.output<typeof treePath>;
+
+/**
+ * The key a file is known by, in the tree and to other features, such as the diff: its path's text
+ * when it's UTF-8, else a NUL and its bytes in hex; and for a path longer than {@link PATH_LIMIT}
+ * bytes, a NUL, `#` and its digest, so no key is long. No path holds a NUL.
+ */
+export function fileKey(path: TreePath): string {
+  if (path.digest !== undefined) return `\0#${path.digest}`;
+  return path.hex === undefined ? path.text : `\0${path.hex}`;
+}
 
 /** What an entry is: a file, a symlink, a submodule (another repository's commit) or a folder. */
 export const entryKind = z.enum(['file', 'symlink', 'submodule', 'folder']);
@@ -109,7 +137,7 @@ export const treeState = z.strictObject({
   changesFrom: source.nullable(),
   partial: z.boolean(),
   problem: z.string().nullable(),
-  /** How many files it leaves out, since their paths are longer than {@link PATH_LIMIT} bytes. */
+  /** How many unchanged files it leaves out, since their paths are longer than {@link PATH_LIMIT} bytes. */
   omitted: z.number().int().nonnegative(),
 });
 export type TreeState = z.output<typeof treeState>;
@@ -146,7 +174,7 @@ export const contract = defineContract('tree', {
       input: z.strictObject({
         id: tabId,
         at: oid,
-        paths: z.array(treePath).min(1).max(FOLDERS_LIMIT),
+        paths: z.array(folderPath).min(1).max(FOLDERS_LIMIT),
       }),
       reply: reply<Folder[]>(),
     },

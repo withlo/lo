@@ -31,12 +31,12 @@ describe('a commit’s files', () => {
     let found: unknown;
     const took = timed(() => {
       listed = fromGithub(items);
-      const files = new Files(listed.files, 0);
+      const files = new Files(listed.tooLarge ? [] : listed.files, 0);
       sent = files.listing();
       found = files.folders([{ text: `${folder}/d1` }, { text: folder }]);
     });
     expect(took).toBeLessThan(2_000);
-    expect(listed?.omitted).toBe(4_000);
+    expect(listed?.tooLarge ? undefined : listed?.omitted).toBe(4_000);
     expect(sent).toEqual({
       kind: 'folders',
       root: [{ path: { text: 'README.md' }, kind: 'file' }],
@@ -52,6 +52,7 @@ describe('a commit’s files', () => {
       mode: 'regular',
     });
     const listed = fromLocal([entry(PATH_LIMIT), entry(PATH_LIMIT + 1)]);
+    if (listed.tooLarge) throw new Error('the listing is small');
     expect(listed.omitted).toBe(1);
     expect(listed.files.map((file) => file.path.hex?.length)).toEqual([PATH_LIMIT * 2]);
     // é is two bytes in UTF-8.
@@ -61,5 +62,26 @@ describe('a commit’s files', () => {
       omitted: 1,
       files: [],
     });
+  });
+});
+
+describe('a listing’s size', () => {
+  it('is capped by its paths’ bytes as well as their count', () => {
+    const oid = parseOid('1'.repeat(40));
+    // Paths of a thousand bytes, each short enough to show, that together are too much to list.
+    const entries: TreeEntry[] = Array.from({ length: 100 }, (_, index) => ({
+      path: Buffer.from(`${'d'.repeat(990)}/${String(index).padStart(5, '0')}.txt`),
+      oid,
+      mode: 'regular',
+    }));
+    expect(fromLocal(entries, 50_000)).toEqual({ tooLarge: true });
+    expect(fromLocal(entries.slice(0, 40), 50_000)).toMatchObject({ omitted: 0 });
+    const items = entries.map((entry): TreeItem => ({
+      path: entry.path.toString(),
+      type: 'blob',
+      mode: '100644',
+      sha: 'a',
+    }));
+    expect(fromGithub(items, 50_000)).toEqual({ tooLarge: true });
   });
 });

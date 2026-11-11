@@ -6,8 +6,8 @@ import { changedPath, type ChangedFile } from '@lo/git';
 import { fileHead, type PullFile } from '@lo/github';
 import { githubChange, whyGenerated } from '@lo/review';
 
-import { type Change, type Changed, PATH_LIMIT, pathBytes } from '../contract.ts';
-import { treePathOf } from './paths.ts';
+import type { Change, Changed } from '../contract.ts';
+import { textPathOf, treePathOf } from './paths.ts';
 
 /** How git's change shows in the tree. */
 function changeOf(file: ChangedFile): Change {
@@ -52,9 +52,9 @@ export function githubChanged(file: PullFile): Changed {
   const change = githubChange(file.status);
   const previous = file.status === 'renamed' ? file.previous_filename : undefined;
   return {
-    path: { text: file.filename },
+    path: textPathOf(file.filename),
     change,
-    previous: previous === undefined ? null : { text: previous },
+    previous: previous === undefined ? null : textPathOf(previous),
     generated: whyGenerated({ ...counts, path: file.filename }) ?? null,
   };
 }
@@ -72,30 +72,10 @@ export function listedAt(files: readonly PullFile[], head: string): boolean {
 }
 
 /**
- * The changes whose paths the tree shows, and how many it leaves out: those whose paths are longer
- * than `PATH_LIMIT` bytes, and of those, the deleted ones, which no listing of the head has. A
- * rename from a longer path keeps its change without its old path.
+ * How many of `changes` are files at the head with paths longer than `PATH_LIMIT` bytes: the
+ * listing leaves them out, but the tree shows them, as every changed file.
  */
-export function withinLimit(changes: readonly Changed[]): {
-  changes: Changed[];
-  omitted: number;
-  deleted: number;
-} {
-  const kept: Changed[] = [];
-  let omitted = 0;
-  let deleted = 0;
-  for (const change of changes) {
-    if (pathBytes(change.path) > PATH_LIMIT) {
-      omitted++;
-      if (change.change === 'deleted') deleted++;
-      continue;
-    }
-    const { previous } = change;
-    kept.push(
-      previous !== null && pathBytes(previous) > PATH_LIMIT
-        ? { ...change, previous: null }
-        : change,
-    );
-  }
-  return { changes: kept, omitted, deleted };
+export function longAtHead(changes: readonly Changed[]): number {
+  return changes.filter((change) => change.path.digest !== undefined && change.change !== 'deleted')
+    .length;
 }

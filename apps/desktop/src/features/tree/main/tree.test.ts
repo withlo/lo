@@ -26,6 +26,10 @@ function changes(state: TreeState): string[] {
     .toSorted();
 }
 
+/** A path of `bytes` bytes, many folders deep under src, to `evil.ts`. */
+const longPath = (bytes: number) =>
+  `src/${'deep/'.repeat(Math.ceil(bytes / 5)).slice(0, bytes - 11)}evil.ts`;
+
 /** #78's changes, as the local copy and GitHub both list them. */
 const E2E_CHANGES = [
   'added data/numbers.txt',
@@ -401,38 +405,95 @@ describe('TreeTab', () => {
     expect(lines).toContain(`listing the files at ${APP_PULL.head}: the clone is busy`);
   });
 
-  it('leaves out a path too long to show, and says how many', async () => {
+  it('leaves out an unchanged file whose path is too long to key a map by, and says how many', async () => {
     const server = new RepoServer();
     onTestFinished(() => server.remove());
     const remote = server.repo('o', 'r');
-    remote.write('README.md', 'base\n').commit('base');
-    remote.publish('refs/heads/trunk');
-    const base = remote.head();
-    // Folders a disk takes, in a path longer than the tree shows, which goes straight into the
-    // index, beside a short one.
+    // Folders a disk takes, in a path longer than the tree keys a map by, which goes straight into
+    // the index.
     const long = Buffer.from(`${'abcdefgh/'.repeat(120)}deep.txt`);
+    remote.write('README.md', 'base\n');
+    const base = remote.commitWithNames([[long, 'deep\n']], 'base');
+    remote.publish('refs/heads/trunk');
     remote.write('short.txt', 'short\n');
-    const withShort = remote.commitWithNames([[long, 'deep\n']], 'deep and short');
+    const head = remote.commit('short');
     remote.publish('refs/pull/1/head');
     const repo = await cloneOf(server.baseUrl, {
       owner: 'o',
       name: 'r',
       number: 1,
-      head: withShort,
+      head,
       baseBranch: 'trunk',
       base,
     });
+    expect((await repo.tree(parseOid(head))).map((entry) => entry.path.length)).toContain(
+      long.length,
+    );
     const { tree, settled } = treeTab({ clone: () => Promise.resolve(repo) });
     tree.update({
-      ...e2eInfo({ kind: 'ready', head: withShort, base, mergeBase: base, offline: false }),
-      shown: withShort,
+      ...e2eInfo({ kind: 'ready', head, base, mergeBase: base, offline: false }),
+      shown: head,
     });
     const state = await settled((sent) => sent.changes !== null);
     expect(listed(state)).toEqual(['README.md', 'short.txt']);
     expect(changes(state)).toEqual(['added short.txt']);
     expect(state.omitted).toBe(1);
-    expect((await repo.tree(parseOid(withShort))).map((entry) => entry.path.length)).toContain(
-      long.length,
-    );
+  });
+
+  it('shows every changed file, however long its path, known by its digest, and finds it', async () => {
+    const paths = [longPath(1_207), longPath(20_480)];
+    const head = APP_PULL.head;
+    // GitHub as it would answer for a pull request adding them.
+    const answer = (url: string): unknown =>
+      url.includes('/git/trees/')
+        ? {
+            sha: head,
+            truncated: false,
+            tree: [
+              { path: 'README.md', type: 'blob', mode: '100644', sha: 'a'.repeat(40) },
+              ...paths.map((path) => ({ path, type: 'blob', mode: '100644', sha: 'b'.repeat(40) })),
+            ],
+          }
+        : paths.map((filename) => ({
+            filename,
+            status: 'added',
+            additions: 1,
+            deletions: 0,
+            changes: 1,
+            contents_url: `https://api.github.com/repos/o/r/contents/x?ref=${head}`,
+          }));
+    const client = new GithubClient({
+      token: new Token('gho_FAKE'),
+      fetch: (input) =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify(answer(input instanceof Request ? input.url : input.toString())),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        ),
+    });
+    const { tree, settled } = treeTab({ github: (_acting, request) => request(client) });
+    tree.update(e2eInfo());
+    const state = await settled((sent) => sent.changes !== null && sent.from === 'github');
+    expect(
+      state.changes?.map((change) => [change.path.text.length, change.path.digest?.length]),
+    ).toEqual([
+      [1_207, 64],
+      [20_480, 64],
+    ]);
+    // Neither is in the listing, which keys maps by its paths, and neither counts as left out.
+    expect(listed(state)).toEqual(['README.md']);
+    expect(state.omitted).toBe(0);
+    const start = performance.now();
+    const found = await tree.find('evil');
+    expect(performance.now() - start).toBeLessThan(1_000);
+    expect(found.found.map((file) => file.path.text.length).toSorted((a, b) => a - b)).toEqual([
+      1_207, 20_480,
+    ]);
+    expect(found.found.every((file) => file.changed)).toBe(true);
+    // Where it matched is by the whole path's indices: the name at its end.
+    expect(found.found.find((file) => file.path.text.length === 20_480)?.matched).toEqual([
+      20_473, 20_474, 20_475, 20_476,
+    ]);
   });
 });

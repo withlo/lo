@@ -45,23 +45,35 @@ function kindOfMode(mode: FileMode): Listed['kind'] {
 }
 
 /**
- * A commit's files, as the tree has them: those whose paths are no longer than `PATH_LIMIT` bytes,
- * and how many it left out, which nothing then keys a map by.
+ * The most bytes the paths of a listing may hold in all. Past it, as when a small repository holds
+ * half a million paths of a thousand bytes each, the tree shows only the changed files.
  */
-export interface Listing {
-  readonly files: Listed[];
-  readonly omitted: number;
-}
+export const LISTING_BYTES = 32 * 2 ** 20;
+
+/**
+ * A commit's files, as the tree has them: those whose paths are no longer than `PATH_LIMIT` bytes,
+ * and how many it left out, which nothing then keys a map by; or none, when their paths hold more
+ * than the bytes a listing may.
+ */
+export type Listing =
+  | { readonly files: Listed[]; readonly omitted: number; readonly tooLarge?: undefined }
+  | { readonly tooLarge: true };
 
 /** The files of `entries`, a commit's tree as the local copy lists it. */
-export function fromLocal(entries: readonly TreeEntry[]): Listing {
+export function fromLocal(
+  entries: readonly TreeEntry[],
+  bytesLimit: number = LISTING_BYTES,
+): Listing {
   const files: Listed[] = [];
   let omitted = 0;
+  let bytes = 0;
   for (const entry of entries) {
     if (entry.path.length > PATH_LIMIT) {
       omitted++;
       continue;
     }
+    bytes += entry.path.length;
+    if (bytes > bytesLimit) return { tooLarge: true };
     files.push({
       key: keyOfBytes(entry.path),
       path: treePathOf(entry.path),
@@ -72,16 +84,23 @@ export function fromLocal(entries: readonly TreeEntry[]): Listing {
 }
 
 /** The files of `items`, a commit's tree as GitHub lists it: its folders are implied. */
-export function fromGithub(items: readonly TreeItem[]): Listing {
+export function fromGithub(
+  items: readonly TreeItem[],
+  bytesLimit: number = LISTING_BYTES,
+): Listing {
   const files: Listed[] = [];
   let omitted = 0;
+  let bytes = 0;
   for (const item of items) {
     if (item.type === 'tree') continue;
     const path = { text: item.path };
-    if (pathBytes(path) > PATH_LIMIT) {
+    const size = pathBytes(path);
+    if (size > PATH_LIMIT) {
       omitted++;
       continue;
     }
+    bytes += size;
+    if (bytes > bytesLimit) return { tooLarge: true };
     const kind = item.type === 'commit' ? 'submodule' : item.mode === '120000' ? 'symlink' : 'file';
     files.push({ key: keyOf(path), path, kind });
   }

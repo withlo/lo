@@ -4,7 +4,8 @@
 import { activeTab, type PullTab } from '../../tab/window/shared.ts';
 import { canShow, showFile } from './shared.ts';
 import { foldersOf, parentRow, rowAt, type Row } from './model.ts';
-import { addressPath, pathOfKey } from './paths.ts';
+import type { TreePath } from '../contract.ts';
+import { addressPath, keyOf, pathOfKey } from './paths.ts';
 import { choices, focus, onScreen, reveal, setOpen, shown, states } from './store.ts';
 
 /** The pull request's tab on screen, or why a key for the tree can't run. */
@@ -93,11 +94,18 @@ export function setAll(tab: string, open: boolean): void {
 
 /** A changed file of `tab`'s, by key. */
 function changeOf(tab: string, key: string) {
-  return states.get(tab)?.changes?.find((change) => keyOfChange(change.path) === key);
+  return states.get(tab)?.changes?.find((change) => keyOf(change.path) === key);
 }
 
-function keyOfChange(path: { text: string; hex?: string | undefined }): string {
-  return path.hex === undefined ? path.text : `\0${path.hex}`;
+/**
+ * The whole path of the file `key` names in `tab`'s tree: a key made of a path's digest doesn't
+ * hold its path, but the change it names does.
+ */
+export function pathOf(tab: string, key: string): TreePath {
+  if (!key.startsWith('\0#') && !key.startsWith('\0~')) return pathOfKey(key);
+  const row = shown.get(tab)?.rows.find((each) => each.key === key);
+  if (row !== undefined && row.kind !== 'group') return row.path;
+  return changeOf(tab, key)?.path ?? pathOfKey(key);
 }
 
 /** Why the file `key` can't be shown, or `true`: a changed file in the diff, any whole. */
@@ -141,7 +149,7 @@ export function goToTree(tab: string): void {
     choices.update(tab, (current) => {
       const opened = new Set(current.opened);
       const closed = new Set(current.closed);
-      for (const folder of foldersOf(pathOfKey(key))) {
+      for (const folder of foldersOf(pathOf(tab, key))) {
         opened.add(folder);
         closed.delete(folder);
       }
@@ -166,7 +174,7 @@ export function treeShown(): true | string {
  */
 export async function githubPage(tab: PullTab, key: string): Promise<string> {
   const base = `https://github.com/${tab.owner}/${tab.repo}`;
-  const path = pathOfKey(key);
+  const path = pathOf(tab.id, key);
   const change = changeOf(tab.id, key);
   if (change) {
     const files = `${base}/pull/${tab.number}/files`;
