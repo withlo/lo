@@ -1,0 +1,36 @@
+{
+  "name": "@lo/skill",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The overview skill: how a coding agent writes an overview of a pull request for Lo, checks it and pushes it.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./SKILL.md": "./SKILL.md",
+    "./LICENSE": "./LICENSE",
+    "./references/*": "./references/*"
+  },
+  "scripts": {
+    "codegen": "node scripts/references.mjs",
+    "lint": "oxlint scripts"
+  },
+  "nx": {
+    "name": "skill",
+    "tags": [
+      "license:mit"
+    ],
+    "targets": {
+      "codegen": {
+        "inputs": [
+          "{projectRoot}/scripts/references.mjs",
+          "{workspaceRoot}/packages/core/artifact/format.md",
+          "{workspaceRoot}/design/figures.md"
+        ],
+        "outputs": [
+          "{projectRoot}/references/format.md",
+          "{projectRoot}/references/figures.md"
+        ]
+      }
+    }
+  }
+}

@@ -34,7 +34,7 @@ These bind every change (design section 1).
 | `apps/`             | The desktop app (`apps/desktop`) and the performance suite (`apps/perf`) |
 | `packages/core/`    | Packages that run anywhere: no Node, no Electron, no git                 |
 | `packages/desktop/` | Packages for the desktop app only                                        |
-| `skill/`            | The overview skill, with the checker's command line in `skill/checker`   |
+| `skill/`            | The overview skill, with its checker and installer in `skill/checker`    |
 | `testing/`          | Test helpers and recorded fixtures, for tests only                       |
 | `design/`           | The design system: rules, tokens, and the CSS Tailwind can't reach       |
 | `docs/`             | The design and the product's docs                                        |
@@ -43,7 +43,8 @@ These bind every change (design section 1).
 
 Every package is a private pnpm workspace package named `@lo/<name>`, and an Nx project named after
 its folder (`"nx": { "name": "<name>", "tags": [...] }` in its `package.json`). Names are one short
-word, without hyphens, unless clarity needs two.
+word, without hyphens, unless clarity needs two. The one package made for npm, `skill/checker`, is
+named `@withlo/overview`: it holds the checker and, built in, the skill it installs.
 
 ## Set up
 
