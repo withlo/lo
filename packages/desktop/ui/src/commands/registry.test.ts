@@ -29,7 +29,7 @@ function setup(
     commands: options.commands ?? testCommands(ran),
     ...(options.here ? { here: options.here } : {}),
     now: () => time,
-    onError: (error, command) => errors.push([error, command.id]),
+    onError: (error, command) => errors.push([error, command?.id ?? 'view']),
   });
   /** Presses each key, written in Lo's notation, at `where`, 10 ms apart. */
   const press = (keys: readonly string[], where: KeyPlace, repeat = false) =>
@@ -220,6 +220,29 @@ describe('keys', () => {
     expect(ran).toHaveLength(2);
   });
 
+  test('a code view that can’t say its state gets no keys, and Lo’s chords still run', () => {
+    const { ran, errors, press } = setup();
+    const view = new FakeView();
+    view.keyState = () => {
+      throw new Error('gone');
+    };
+    expect(press(['e', 'j', 'tab', 'cmd+shift+p'], scope('diff', view))).toEqual([
+      'stop',
+      'stop',
+      'stop',
+      'stop',
+    ]);
+    expect(ran.map(([id]) => id)).toEqual(['keys.palette']);
+    expect(
+      errors.map(([error, id]) => [error instanceof Error ? error.message : error, id]),
+    ).toEqual([
+      ['gone', 'view'],
+      ['gone', 'view'],
+      ['gone', 'view'],
+      ['gone', 'view'],
+    ]);
+  });
+
   describe('after the timeout', () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -251,6 +274,20 @@ describe('keys', () => {
       // Back in the view, `e` marks the file viewed: it isn't Vim's `ge`.
       expect(press(['e'], scope('diff', view))).toEqual(['stop']);
       expect(ran.map(([id]) => id)).toEqual(['diff.markViewed']);
+    });
+
+    test('a code view that throws taking the held key is reported, and nothing else breaks', () => {
+      const { registry, errors, press } = setup();
+      const view = new FakeView();
+      view.passKeys = () => {
+        throw new Error('broken');
+      };
+      press(['g'], scope('diff', view));
+      expect(() => vi.advanceTimersByTime(1000)).not.toThrow();
+      expect(registry.isPending()).toBe(false);
+      expect(
+        errors.map(([error, id]) => [error instanceof Error ? error.message : error, id]),
+      ).toEqual([['broken', 'view']]);
     });
 
     test('a key held anywhere else is dropped', () => {

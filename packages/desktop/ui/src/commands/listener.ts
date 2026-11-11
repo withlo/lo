@@ -3,7 +3,7 @@
 // change and the window's blur drop the pending sequence and clear the code view focus left; a
 // pointer down drops the pending sequence.
 
-import { eventStrokes, type Layout } from './notation.ts';
+import { contradicts, eventStrokes, type KeyEventLike, type Layout } from './notation.ts';
 import type { Registry } from './registry.ts';
 import { endsTab, findScope, textKind } from './scopes.ts';
 
@@ -29,27 +29,57 @@ export function listen(win: Win, registry: Registry): () => void {
   /** A `Tab` the browser may still act on, pressed in a scope that ends it. */
   let tab: { event: KeyboardEvent; from: Element; scope: Element } | undefined;
   let tabTimer: ReturnType<typeof setTimeout> | undefined;
-  /** What the keyboard's keys type on their own, once Chromium has said. */
+  /**
+   * What the keyboard's keys type on their own, once Chromium has said. Chromium says nothing when
+   * the layout changes, so a key pressed on its own that disagrees with it drops it and asks
+   * again; until the answer comes, keys are read as on a US keyboard.
+   */
   let layout: Layout | undefined;
+  /** The last key pressed on its own, which a layout must agree with to be taken. */
+  let lastPlain: KeyEventLike | undefined;
+  /** The newest read of the layout: an older one that answers later is ignored. */
+  let reads = 0;
 
   const readLayout = () => {
     const keyboard: Keyboard | undefined = Reflect.get(win.navigator, 'keyboard');
+    const read = ++reads;
     keyboard
       ?.getLayoutMap?.()
       .then((map) => {
-        layout = map;
+        if (read !== reads) return;
+        layout = lastPlain && contradicts(map, lastPlain) ? undefined : map;
       })
       .catch(() => {
         // Keys are read as on a US keyboard.
       });
   };
 
+  /** Notes a key pressed on its own, and drops a layout it shows is out of date. */
+  const checkLayout = (event: KeyboardEvent) => {
+    if (event.metaKey || event.ctrlKey || event.altKey || event.key.length !== 1) return;
+    const plain = {
+      key: event.key,
+      code: event.code,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: event.shiftKey,
+      getModifierState: (name: string) => event.getModifierState(name),
+    };
+    lastPlain = plain;
+    if (!contradicts(layout, plain)) return;
+    layout = undefined;
+    readLayout();
+  };
+
   const onKey = (event: KeyboardEvent) => {
     tab = undefined;
+    checkLayout(event);
     const element = focused(win, event);
     const scope = findScope(element);
+    const reading = { system: registry.system, layout };
     const handled = registry.handle(
-      { strokes: eventStrokes(event, layout), repeat: event.repeat, composing: composing(event) },
+      { strokes: eventStrokes(event, reading), repeat: event.repeat, composing: composing(event) },
       { scope, text: textKind(element) },
     );
     if (handled.kind === 'pass') {
@@ -94,9 +124,11 @@ export function listen(win: Win, registry: Registry): () => void {
 
   const onFocusOut = (event: FocusEvent) => {
     const from = event.target instanceof win.Element ? findScope(event.target) : undefined;
-    const to = event.relatedTarget instanceof win.Node ? event.relatedTarget : null;
-    // Focus moving within one code view, to Vim's prompt say, leaves Vim as it is.
-    const leaving = from?.element && !(to && from.element.contains(to)) ? from.source : undefined;
+    const to = event.relatedTarget instanceof win.Element ? event.relatedTarget : null;
+    // Focus moving within one scope, to Vim's prompt say, leaves its Vim as it is. A box nested
+    // in the diff is a scope of its own: focus moving there leaves the diff.
+    const leaving =
+      from?.element && findScope(to).element !== from.element ? from.source : undefined;
     registry.leave(leaving);
   };
 

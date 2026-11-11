@@ -24,7 +24,7 @@ import {
   type TextKind,
   type VimKey,
 } from './scopes.ts';
-import { fit, type Target } from './targets.ts';
+import { fit, NO_TARGET, type Target } from './targets.ts';
 
 export interface RegistryOptions {
   readonly system: System;
@@ -36,8 +36,11 @@ export interface RegistryOptions {
   readonly timeout?: number;
   /** A clock in ms, for timing sequences. */
   readonly now?: () => number;
-  /** A handler threw or rejected. Without it, the error is logged. */
-  readonly onError?: (error: unknown, command: Command) => void;
+  /**
+   * A handler threw or rejected, or a code view did, with no command to blame. Without it, the
+   * error is logged.
+   */
+  readonly onError?: (error: unknown, command: Command | undefined) => void;
 }
 
 /** A keydown, as the listener reads it. */
@@ -72,7 +75,7 @@ export class Registry {
   private readonly here: (() => Entry | undefined) | undefined;
   private readonly timeout: number;
   private readonly now: () => number;
-  private readonly onError: (error: unknown, command: Command) => void;
+  private readonly onError: (error: unknown, command: Command | undefined) => void;
   private readonly listeners = new Set<() => void>();
   private keymap: Keymap = { lines: [], errors: [] };
   /** The keymap's errors: its lines that can't be read, then those that don't apply. */
@@ -100,7 +103,7 @@ export class Registry {
     this.onError =
       options.onError ??
       ((error, command) => {
-        console.error(`${command.id} failed:`, error);
+        console.error(`${command ? command.id : 'A code view'} failed:`, error);
       });
     this.bindings = this.rebuild();
   }
@@ -190,18 +193,32 @@ export class Registry {
     return true;
   }
 
-  /** What becomes of a keydown pressed at `place`. The listener stops the event unless it passes. */
+  /**
+   * What becomes of a keydown pressed at `place`. The listener stops the event unless it passes.
+   * A code view that can't say its state is broken: Lo's chords still run there, and every other
+   * key is dropped rather than handed to a Vim in a state nobody knows.
+   */
   handle(press: KeyPress, place: KeyPlace): Handled {
     const time = this.now();
     const { source } = place.scope;
     this.active = isKeySource(source) ? source : undefined;
-    let step = matchAny(this.bindings, this.pending, { ...press, time }, this.focus(place));
+    let broken = false;
+    const focus = (): Focus => {
+      try {
+        return this.focus(place);
+      } catch (error) {
+        if (!broken) this.onError(error, undefined);
+        broken = true;
+        return { scope: place.scope.name, text: true, view: { mode: 'insert', pending: true } };
+      }
+    };
+    let step = matchAny(this.bindings, this.pending, { ...press, time }, focus());
     if (step?.outcome.kind === 'replay') {
       this.replay(step.outcome.strokes);
       // Vim has the held keys now, and may be in the middle of a command.
-      step = matchAny(this.bindings, undefined, { ...press, time }, this.focus(place));
+      step = matchAny(this.bindings, undefined, { ...press, time }, focus());
     }
-    if (!step) return PASS;
+    if (!step) return broken ? STOP : PASS;
     this.pending = step.pending;
     const { outcome } = step;
     switch (outcome.kind) {
@@ -214,13 +231,15 @@ export class Registry {
         return STOP;
       case 'run': {
         this.settle();
-        // The key is Lo's whatever happens next: it never falls through to the widget.
-        let target: Target;
-        try {
-          target = scopeTarget(place.scope);
-        } catch (error) {
-          this.onError(error, outcome.command);
-          return STOP;
+        // The key is Lo's whatever happens next: it never falls through to the widget. A scope
+        // that can't say what it acts on gives nothing, which a command that needs more refuses.
+        let target: Target = NO_TARGET;
+        if (!broken) {
+          try {
+            target = scopeTarget(place.scope);
+          } catch (error) {
+            this.onError(error, outcome.command);
+          }
         }
         this.run(outcome.command.id, target);
         return STOP;
@@ -232,7 +251,7 @@ export class Registry {
       case 'replay':
         // A second replay can't happen: nothing was pending the second time.
         this.settle();
-        return PASS;
+        return broken ? STOP : PASS;
       default:
         outcome satisfies never;
         this.settle();
@@ -255,7 +274,11 @@ export class Registry {
     this.drop();
     if (!isKeySource(left)) return;
     if (left === this.active) this.active = undefined;
-    left.clearPending();
+    try {
+      left.clearPending();
+    } catch (error) {
+      this.onError(error, undefined);
+    }
   }
 
   /**
@@ -288,7 +311,12 @@ export class Registry {
   private replay(strokes: readonly Stroke[]): void {
     const holder = this.holder;
     this.drop();
-    if (isKeySource(holder)) holder.passKeys(strokes.map(vimKey));
+    if (!isKeySource(holder)) return;
+    try {
+      holder.passKeys(strokes.map(vimKey));
+    } catch (error) {
+      this.onError(error, undefined);
+    }
   }
 
   /** After the timeout, the held keys go to the code view, as Vim's do after its `timeoutlen`. */

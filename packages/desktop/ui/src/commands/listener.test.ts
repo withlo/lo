@@ -66,6 +66,24 @@ afterEach(() => {
   stop();
 });
 
+/** Makes `navigator.keyboard.getLayoutMap()` answer each map in turn, then the last again. */
+function stubLayouts(...maps: Map<string, string>[]): void {
+  let calls = 0;
+  const keyboard = {
+    getLayoutMap: () => Promise.resolve(maps[Math.min(calls++, maps.length - 1)]!),
+  };
+  Object.defineProperty(window.navigator, 'keyboard', { value: keyboard, configurable: true });
+}
+
+function unstubLayouts(): void {
+  Reflect.deleteProperty(window.navigator, 'keyboard');
+}
+
+/** Lets promises already answered run their callbacks. */
+async function settle(): Promise<void> {
+  for (let turn = 0; turn < 5; turn++) await Promise.resolve();
+}
+
 /** Listens with a registry for `system` in place of the Mac's, with `keymap` applied. */
 function listenAs(system: 'mac' | 'linux', keymap = ''): void {
   stop();
@@ -304,17 +322,84 @@ describe('keyboard layouts', () => {
     expect(ids()).toEqual(['keys.nextView']);
   });
 
-  test('reads keys by the keyboard’s layout, where Chromium gives it', async () => {
+  test('reads ⌥ chords by the keyboard’s layout, where Chromium gives it', async () => {
     // German has z where US has y.
-    const keyboard = { getLayoutMap: () => Promise.resolve(new Map([['KeyY', 'z']])) };
-    Object.defineProperty(window.navigator, 'keyboard', { value: keyboard, configurable: true });
+    stubLayouts(new Map([['KeyY', 'z']]));
     try {
-      listenAs('linux', 'bind alt+z keys.help');
-      await Promise.resolve();
-      expect(press('row', 'z', { altKey: true, code: 'KeyY' }).defaultPrevented).toBe(true);
+      listenAs('mac', 'bind alt+z keys.help');
+      await settle();
+      expect(press('row', 'Ω', { altKey: true, code: 'KeyY' }).defaultPrevented).toBe(true);
       expect(ids()).toEqual(['keys.help']);
     } finally {
-      Reflect.deleteProperty(window.navigator, 'keyboard');
+      unstubLayouts();
+    }
+  });
+
+  test('Linux’s Alt+Z is Alt+Z on a US keyboard, whatever a stale German layout says', async () => {
+    stubLayouts(new Map([['KeyZ', 'y']]));
+    try {
+      listenAs('linux', 'bind alt+z keys.help');
+      await settle();
+      expect(press('row', 'z', { altKey: true, code: 'KeyZ' }).defaultPrevented).toBe(true);
+      expect(ids()).toEqual(['keys.help']);
+    } finally {
+      unstubLayouts();
+    }
+  });
+
+  test('a key on its own that a layout gets wrong drops it, before ⌥Z or ⌘⌥Z read through it', async () => {
+    // German, then the user switches to US. Chromium keeps the German map until asked again.
+    const german = new Map([
+      ['KeyY', 'z'],
+      ['KeyZ', 'y'],
+    ]);
+    stubLayouts(german, german);
+    try {
+      listenAs('mac', 'bind alt+z keys.help\nbind cmd+alt+z keys.palette');
+      await settle();
+      // `z` where German has y: the map is out of date. The key is read by its own event.key.
+      press('row', 'z', { code: 'KeyZ' });
+      await settle();
+      // The stale map came back again, and isn't taken.
+      expect(press('row', 'Ω', { altKey: true, code: 'KeyZ' }).defaultPrevented).toBe(true);
+      expect(
+        press('row', 'Ω', { altKey: true, metaKey: true, code: 'KeyZ' }).defaultPrevented,
+      ).toBe(true);
+      expect(ids()).toEqual(['keys.help', 'keys.palette']);
+    } finally {
+      unstubLayouts();
+    }
+  });
+
+  test('French Alt+Z then R runs nothing in the tree, with no layout map', () => {
+    listenAs('linux');
+    widget('row');
+    // French z is where US has w.
+    expect(press('row', 'z', { altKey: true, code: 'KeyW' }).defaultPrevented).toBe(false);
+    expect(press('row', 'R', { shiftKey: true, code: 'KeyR' }).defaultPrevented).toBe(false);
+    expect(registry.isPending()).toBe(false);
+    expect(ids()).toEqual([]);
+  });
+
+  test('of two layout reads, the newer wins, whichever answers last', async () => {
+    const older = Promise.withResolvers<Map<string, string>>();
+    const newer = Promise.withResolvers<Map<string, string>>();
+    const answers = [older.promise, newer.promise];
+    let calls = 0;
+    const keyboard = { getLayoutMap: () => answers[Math.min(calls++, 1)]! };
+    Object.defineProperty(window.navigator, 'keyboard', { value: keyboard, configurable: true });
+    try {
+      listenAs('mac', 'bind alt+z keys.help');
+      window.dispatchEvent(new FocusEvent('focus'));
+      // The newer read says US; the older, answering after it, says German.
+      newer.resolve(new Map([['KeyZ', 'z']]));
+      await settle();
+      older.resolve(new Map([['KeyZ', 'y']]));
+      await settle();
+      expect(press('row', 'Ω', { altKey: true, code: 'KeyZ' }).defaultPrevented).toBe(true);
+      expect(ids()).toEqual(['keys.help']);
+    } finally {
+      unstubLayouts();
     }
   });
 });
@@ -330,6 +415,23 @@ describe('leaving a code view', () => {
     diffView.pending = true;
     window.dispatchEvent(new FocusEvent('blur'));
     expect(log).toEqual(['clearPending', 'clearPending']);
+  });
+
+  test('leaves the diff when focus moves to a box nested in it, so a timed-out g dies there', () => {
+    vi.useFakeTimers();
+    try {
+      press('editor', 'g');
+      vi.advanceTimersByTime(1000);
+      expect(log).toEqual(['passKeys g']);
+      element('text').focus();
+      expect(log).toEqual(['passKeys g', 'clearPending']);
+      expect(diffView.pending).toBe(false);
+      // Back in the diff, `e` marks the file viewed: it isn't Vim's `ge`.
+      expect(press('editor', 'e').defaultPrevented).toBe(true);
+      expect(ids()).toEqual(['diff.markViewed']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('leaves Vim as it is when focus moves within the view, to its prompt', () => {

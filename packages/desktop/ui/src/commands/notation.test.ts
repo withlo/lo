@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  contradicts,
   eventStroke,
   eventStrokes,
   keyLabels,
@@ -11,6 +12,7 @@ import {
   vimKeys,
   writeKeys,
   type KeyEventLike,
+  type Reading,
   type System,
 } from './notation.ts';
 
@@ -33,9 +35,12 @@ function event(key: string, held: Partial<KeyEventLike> = {}): KeyEventLike {
 
 const altGraph = (key: string) => key === 'AltGraph';
 
+const mac: Reading = { system: 'mac' };
+const linux: Reading = { system: 'linux' };
+
 /** The ids of the strokes a keydown can be, the likelier first. */
-function read(key: string, held: Partial<KeyEventLike>): string[] {
-  return eventStrokes(event(key, held)).map((each) => each.id);
+function read(key: string, held: Partial<KeyEventLike>, reading: Reading = mac): string[] {
+  return eventStrokes(event(key, held), reading).map((each) => each.id);
 }
 
 /** How `system` shows `text`. */
@@ -103,36 +108,42 @@ describe('notation', () => {
 
 describe('key events', () => {
   test('a character typed on its own carries its Shift', () => {
-    expect(eventStroke(event('g'))?.id).toBe('g');
-    expect(eventStroke(event('G', { shiftKey: true }))?.id).toBe('G');
-    expect(eventStroke(event('?', { shiftKey: true, code: 'Slash' }))?.id).toBe('?');
-    expect(eventStroke(event(']'))?.id).toBe(']');
+    expect(eventStroke(event('g'), mac)?.id).toBe('g');
+    expect(eventStroke(event('G', { shiftKey: true }), mac)?.id).toBe('G');
+    expect(eventStroke(event('?', { shiftKey: true, code: 'Slash' }), mac)?.id).toBe('?');
+    expect(eventStroke(event(']'), mac)?.id).toBe(']');
   });
 
   test('named keys keep Shift as a modifier', () => {
-    expect(eventStroke(event('Tab', { shiftKey: true }))?.id).toBe('shift+tab');
-    expect(eventStroke(event(' '))?.id).toBe('space');
-    expect(eventStroke(event('Escape'))?.id).toBe('esc');
-    expect(eventStroke(event('ArrowDown'))?.id).toBe('down');
-    expect(eventStroke(event('F5'))?.id).toBe('f5');
+    expect(eventStroke(event('Tab', { shiftKey: true }), mac)?.id).toBe('shift+tab');
+    expect(eventStroke(event(' '), mac)?.id).toBe('space');
+    expect(eventStroke(event('Escape'), mac)?.id).toBe('esc');
+    expect(eventStroke(event('ArrowDown'), mac)?.id).toBe('down');
+    expect(eventStroke(event('F5'), mac)?.id).toBe('f5');
   });
 
   test('with ⌘ or Ctrl, a letter is lowercase and Shift a modifier, whatever event.key says', () => {
-    expect(eventStroke(event('p', { metaKey: true, shiftKey: true }))?.id).toBe('meta+shift+p');
-    expect(eventStroke(event('P', { metaKey: true, shiftKey: true }))?.id).toBe('meta+shift+p');
+    expect(eventStroke(event('p', { metaKey: true, shiftKey: true }), mac)?.id).toBe(
+      'meta+shift+p',
+    );
+    expect(eventStroke(event('P', { metaKey: true, shiftKey: true }), mac)?.id).toBe(
+      'meta+shift+p',
+    );
     // Caps Lock gives a capital without Shift.
-    expect(eventStroke(event('P', { metaKey: true }))?.id).toBe('meta+p');
-    expect(eventStroke(event('O', { ctrlKey: true, shiftKey: true }))?.id).toBe('ctrl+shift+o');
+    expect(eventStroke(event('P', { metaKey: true }), mac)?.id).toBe('meta+p');
+    expect(eventStroke(event('O', { ctrlKey: true, shiftKey: true }), mac)?.id).toBe(
+      'ctrl+shift+o',
+    );
   });
 
   test('with ⌘ or Ctrl, a shifted symbol is read by its code', () => {
     const next = { metaKey: true, shiftKey: true, code: 'BracketRight' };
-    expect(eventStroke(event('}', next))?.id).toBe('meta+shift+]');
-    expect(eventStroke(event(']', next))?.id).toBe('meta+shift+]');
-    expect(eventStroke(event(']', next))?.id).toBe(ids('cmd+shift+]')[0]);
-    expect(eventStroke(event('|', { ctrlKey: true, shiftKey: true, code: 'Backslash' }))?.id).toBe(
-      'ctrl+shift+\\',
-    );
+    expect(eventStroke(event('}', next), mac)?.id).toBe('meta+shift+]');
+    expect(eventStroke(event(']', next), mac)?.id).toBe('meta+shift+]');
+    expect(eventStroke(event(']', next), mac)?.id).toBe(ids('cmd+shift+]')[0]);
+    expect(
+      eventStroke(event('|', { ctrlKey: true, shiftKey: true, code: 'Backslash' }), mac)?.id,
+    ).toBe('ctrl+shift+\\');
   });
 
   test('⌥ reads as the character the layout typed, then as ⌥ and the key’s place', () => {
@@ -151,32 +162,66 @@ describe('key events', () => {
 
   test('⌘ and Ctrl read a letter outside A to Z by its place', () => {
     // Russian: з is where P is.
-    expect(eventStroke(event('з', { ctrlKey: true, code: 'KeyP' }))?.id).toBe('ctrl+p');
-    expect(eventStroke(event('З', { metaKey: true, shiftKey: true, code: 'KeyP' }))?.id).toBe(
+    expect(eventStroke(event('з', { ctrlKey: true, code: 'KeyP' }), mac)?.id).toBe('ctrl+p');
+    expect(eventStroke(event('З', { metaKey: true, shiftKey: true, code: 'KeyP' }), mac)?.id).toBe(
       'meta+shift+p',
     );
     // German ü is where [ is: Vim's Ctrl+[ there.
-    expect(eventStroke(event('ü', { ctrlKey: true, code: 'BracketLeft' }))?.id).toBe('ctrl+[');
+    expect(eventStroke(event('ü', { ctrlKey: true, code: 'BracketLeft' }), mac)?.id).toBe('ctrl+[');
     // A letter outside A to Z with no known place is kept.
-    expect(eventStroke(event('ß', { ctrlKey: true, code: 'IntlRo' }))?.id).toBe('ctrl+ß');
+    expect(eventStroke(event('ß', { ctrlKey: true, code: 'IntlRo' }), mac)?.id).toBe('ctrl+ß');
   });
 
   test('a dead key on its own matches nothing, so the accent it starts is typed', () => {
     // US-International's `, German's ^ where US has `, and French's ^ where US has [.
-    expect(eventStrokes(event('Dead', { code: 'Backquote' }))).toEqual([]);
-    expect(eventStrokes(event('Dead', { shiftKey: true, code: 'Backquote' }))).toEqual([]);
-    expect(eventStrokes(event('Dead', { code: 'BracketLeft' }))).toEqual([]);
+    expect(eventStrokes(event('Dead', { code: 'Backquote' }), mac)).toEqual([]);
+    expect(eventStrokes(event('Dead', { shiftKey: true, code: 'Backquote' }), mac)).toEqual([]);
+    expect(eventStrokes(event('Dead', { code: 'BracketLeft' }), mac)).toEqual([]);
   });
 
-  test('Linux’s Alt leaves the key as it is, so it reads only as a chord', () => {
-    expect(read('e', { altKey: true, code: 'KeyE' })).toEqual(['alt+e']);
-    expect(read('E', { altKey: true, shiftKey: true, code: 'KeyE' })).toEqual(['alt+shift+e']);
-    expect(read(']', { altKey: true, code: 'BracketRight' })).toEqual(['alt+]']);
-    expect(read('}', { altKey: true, shiftKey: true, code: 'BracketRight' })).toEqual([
+  test('Linux’s Alt types nothing, so it’s read as Ctrl is, by the key itself', () => {
+    expect(read('e', { altKey: true, code: 'KeyE' }, linux)).toEqual(['alt+e']);
+    expect(read('E', { altKey: true, shiftKey: true, code: 'KeyE' }, linux)).toEqual([
+      'alt+shift+e',
+    ]);
+    expect(read(']', { altKey: true, code: 'BracketRight' }, linux)).toEqual(['alt+]']);
+    expect(read('}', { altKey: true, shiftKey: true, code: 'BracketRight' }, linux)).toEqual([
       'alt+shift+]',
     ]);
-    // A US Mac's ⌥⇧` types a plain `, which is the key's own: not the `` ` `` key.
+    // French has z where US has w; with no layout map, Alt+Z is still Alt+Z.
+    expect(read('z', { altKey: true, code: 'KeyW' }, linux)).toEqual(['alt+z']);
+    // A German map left over from before a switch to US says KeyZ types y: it isn't used.
+    const staleGerman = new Map([['KeyZ', 'y']]);
+    expect(
+      read('z', { altKey: true, code: 'KeyZ' }, { system: 'linux', layout: staleGerman }),
+    ).toEqual(['alt+z']);
+    // Russian з is where P is.
+    expect(read('з', { altKey: true, code: 'KeyP' }, linux)).toEqual(['alt+p']);
+  });
+
+  test('a US Mac’s ⌥⇧` types a plain `, the key’s own, so it’s only ⌥ with the key', () => {
     expect(read('`', { altKey: true, shiftKey: true, code: 'Backquote' })).toEqual(['alt+shift+`']);
+  });
+
+  test('a key pressed on its own shows a layout is out of date', () => {
+    const german = new Map([
+      ['KeyY', 'z'],
+      ['KeyZ', 'y'],
+    ]);
+    // A US keyboard's z, where German has y.
+    expect(contradicts(german, event('z', { code: 'KeyZ' }))).toBe(true);
+    expect(contradicts(german, event('Z', { shiftKey: true, code: 'KeyZ' }))).toBe(true);
+    expect(contradicts(german, event('y', { code: 'KeyZ' }))).toBe(false);
+    expect(contradicts(undefined, event('z', { code: 'KeyZ' }))).toBe(false);
+    // On no map, a US keyboard is assumed: German z where US has y disagrees.
+    expect(contradicts(undefined, event('z', { code: 'KeyY' }))).toBe(true);
+    // Only keys the layout can speak for: not chords, dead keys, AltGr or a shifted symbol.
+    expect(contradicts(german, event('z', { ctrlKey: true, code: 'KeyZ' }))).toBe(false);
+    expect(contradicts(german, event('Dead', { code: 'KeyZ' }))).toBe(false);
+    expect(contradicts(german, event('?', { shiftKey: true, code: 'Minus' }))).toBe(false);
+    expect(contradicts(german, event('@', { code: 'KeyZ', getModifierState: altGraph }))).toBe(
+      false,
+    );
   });
 
   test('the keyboard’s layout says what each key types on its own', () => {
@@ -184,29 +229,39 @@ describe('key events', () => {
     const german = new Map([['KeyY', 'z']]);
     const azerty = new Map([['KeyQ', 'a']]);
     expect(
-      eventStrokes(event('z', { altKey: true, code: 'KeyY' }), german).map((each) => each.id),
+      eventStrokes(event('z', { altKey: true, code: 'KeyY' }), {
+        system: 'mac',
+        layout: german,
+      }).map((each) => each.id),
     ).toEqual(['alt+z']);
     expect(
-      eventStrokes(event('a', { altKey: true, code: 'KeyQ' }), azerty).map((each) => each.id),
+      eventStrokes(event('a', { altKey: true, code: 'KeyQ' }), {
+        system: 'mac',
+        layout: azerty,
+      }).map((each) => each.id),
     ).toEqual(['alt+a']);
     // Without the layout, the place is a US keyboard's.
     expect(read('z', { altKey: true, code: 'KeyY' })).toEqual(['z', 'alt+y']);
     // A layout outside ASCII, such as Russian, still reads ⌥ chords by their US place.
     const russian = new Map([['KeyP', 'з']]);
     expect(
-      eventStrokes(event('з', { altKey: true, code: 'KeyP' }), russian).map((each) => each.id),
+      eventStrokes(event('з', { altKey: true, code: 'KeyP' }), {
+        system: 'mac',
+        layout: russian,
+      }).map((each) => each.id),
     ).toEqual(['alt+p']);
   });
 
   test('modifier keys, dead keys and AltGr’s characters are no chord', () => {
-    expect(eventStroke(event('Shift', { shiftKey: true }))).toBeUndefined();
-    expect(eventStroke(event('Meta', { metaKey: true }))).toBeUndefined();
-    expect(eventStroke(event('Dead'))).toBeUndefined();
-    expect(eventStroke(event('Unidentified'))).toBeUndefined();
-    expect(eventStroke(event('Process'))).toBeUndefined();
+    expect(eventStroke(event('Shift', { shiftKey: true }), mac)).toBeUndefined();
+    expect(eventStroke(event('Meta', { metaKey: true }), mac)).toBeUndefined();
+    expect(eventStroke(event('Dead'), mac)).toBeUndefined();
+    expect(eventStroke(event('Unidentified'), mac)).toBeUndefined();
+    expect(eventStroke(event('Process'), mac)).toBeUndefined();
     expect(
       eventStroke(
         event('@', { ctrlKey: true, altKey: true, code: 'KeyQ', getModifierState: altGraph }),
+        linux,
       )?.id,
     ).toBe('@');
   });
