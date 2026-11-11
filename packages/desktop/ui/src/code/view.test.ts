@@ -149,7 +149,8 @@ function diffOf(lines: { old: readonly string[]; new: readonly string[] }) {
 }
 
 function textOf(lines: readonly string[]): string | undefined {
-  return lines.length === 0 ? undefined : lines.join('\n');
+  // A line break ends every line, so blank lines at the end count.
+  return lines.length === 0 ? undefined : `${lines.join('\n')}\n`;
 }
 
 /** jsdom focuses only what it knows can take focus. */
@@ -234,6 +235,11 @@ function labels(label: string): (string | null)[] {
 /** Lines 8 to 22 of `lines` as placeholders, as GitHub's diff leaves them out. */
 function placeholders(lines: string[]): string[] {
   return lines.map((each, index) => (index >= 7 && index <= 21 ? '' : each));
+}
+
+/** Lines 1 and 9 on of `lines` as placeholders. */
+function blank(lines: string[]): string[] {
+  return lines.map((each, index) => (index === 0 || index >= 8 ? '' : each));
 }
 
 /** What each block of collapsed lines drawn on the new side says. */
@@ -892,6 +898,63 @@ describe('gaps', () => {
     shown.fold(onLine('e', 'new', 12), 'open');
     shown.fold(onLine('e', 'new', 1), 'file');
     expect(runs()).toHaveLength(1);
+  });
+
+  test('a gap of one line, or one next to a change, collapses on both sides', () => {
+    // Lines 4 and 8 changed, with the context around them reaching lines 1 and 9 to 11.
+    const fOld = numbered(12, 'f');
+    const fNew = fOld.map((each, index) => (index === 3 || index === 7 ? `${each}!` : each));
+    const lines = { old: blank(fOld), new: blank(fNew) };
+    const shown = open(events(), {
+      files: [
+        {
+          id: 'f',
+          path: 'src/f.ts',
+          change: 'modified',
+          lines,
+          gaps: (['old', 'new'] as const).flatMap((side) => [
+            { side, from: 1, to: 1 },
+            { side, from: 9, to: 12 },
+          ]),
+          header: { additions: 2, deletions: 2 },
+        },
+      ],
+    });
+    shown.setDiff('f', diffOf(lines));
+    for (const label of ['Before', 'After']) {
+      const content = parent!.querySelector(`.cm-content[aria-label="${label}"]`)!;
+      const blocks = [...content.querySelectorAll('.lo-collapsed')].map((each) => each.textContent);
+      expect(blocks).toEqual([
+        'lines 1–11 unchanged line, not loaded yet',
+        'lines 9–124 unchanged lines, not loaded yet',
+      ]);
+      // No placeholder is drawn as a line.
+      const drawn = [...content.querySelectorAll('.cm-line')].map((each) => each.textContent);
+      expect(drawn).not.toContain('');
+    }
+  });
+
+  test('the whole file comes at the same place, with its diff, and the cursor stays', () => {
+    const on = events();
+    const shown = open(on, { files: [gapped] });
+    shown.setDiff('e', diffOf(gapped.lines!));
+    focusable();
+    shown.reveal(onLine('e', 'new', 26, 2));
+    shown.focus();
+    const content = vimIn('After').content;
+    const lineOf = (text: string) =>
+      [...content.querySelectorAll('.cm-line')].find((each) => each.textContent === text);
+    const drawn = lineOf('e 26');
+    on.cursor.mockClear();
+    shown.setLines('e', { old: eOld, new: eNew }, diffOf({ old: eOld, new: eNew }));
+    expect(shown.probe.cursor()?.at).toEqual(onLine('e', 'new', 26, 2));
+    expect(on.cursor).not.toHaveBeenCalled();
+    expect(notes()).toEqual([]);
+    expect(runs()).toEqual(['18 unchanged lines']);
+    // The line under the cursor wasn't drawn again: what's on screen didn't move.
+    expect(lineOf('e 26')).toBe(drawn);
+    shown.setLayout('inline');
+    expect(shown.probe.cursor()?.at).toEqual(onLine('e', 'new', 26, 0));
   });
 
   test('the whole file fills them, and they open', () => {

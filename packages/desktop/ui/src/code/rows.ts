@@ -17,7 +17,13 @@ export type FileState =
    * Its diff, with unchanged code outside its hunks collapsed, except the lines in `keep` and the
    * runs in `open`.
    */
-  | { kind: 'diff'; diff: FileDiff; keep?: Keep | undefined; open?: Open | undefined }
+  | {
+      kind: 'diff';
+      diff: FileDiff;
+      keep?: Keep | undefined;
+      open?: Open | undefined;
+      gaps?: readonly Gap[] | undefined;
+    }
   /** One collapsed block: the diff isn't ready, or the file isn't shown as a diff. */
   | { kind: 'collapsed' };
 
@@ -54,43 +60,6 @@ export interface Keep {
 /** The collapsed runs opened, by their first old line. */
 export type Open = ReadonlySet<number>;
 
-/**
- * The unchanged runs a file's diff collapses: everything outside its hunks, in file lines, around
- * the lines in `keep`. A single line stays shown, since the block that would replace it takes as
- * much room.
- */
-export function collapsedRuns(
-  diff: FileDiff,
-  keep?: Keep,
-  least = 2,
-): { old: LineRange; new: LineRange }[] {
-  const runs: { old: LineRange; new: LineRange }[] = [];
-  /** Collapses old lines `[from, to)`, which line up with new lines `offset` further on. */
-  const collapse = (from: number, to: number, offset: number): void => {
-    let start = from;
-    for (let line = from; line <= to; line++) {
-      const kept = line < to && (keep?.old.has(line) || keep?.new.has(line + offset));
-      if (line < to && !kept) continue;
-      if (line - start >= least) {
-        runs.push({
-          old: { first: start, last: line - 1 },
-          new: { first: start + offset, last: line - 1 + offset },
-        });
-      }
-      start = line + 1;
-    }
-  };
-  let old = 1;
-  let added = 1;
-  for (const hunk of diff.hunks) {
-    collapse(old, hunk.old.start, added - old);
-    old = hunk.old.end;
-    added = hunk.new.end;
-  }
-  collapse(old, diff.oldLineCount + 1, added - old);
-  return runs;
-}
-
 /** Lines, first to last, on one side, that a file holds only as placeholders. */
 export interface Gap {
   side: 'old' | 'new';
@@ -98,19 +67,74 @@ export interface Gap {
   to: number;
 }
 
+/**
+ * The unchanged runs a file's diff collapses: everything outside its hunks, in file lines, around
+ * the lines in `keep`. A single line stays shown, since the block that would replace it takes as
+ * much room. Lines in `gaps` collapse wherever they are, a single one, or one a hunk's context
+ * would show, too: they're placeholders, with nothing to show.
+ */
+export function collapsedRuns(
+  diff: FileDiff,
+  keep?: Keep,
+  least = 2,
+  gaps: readonly Gap[] = [],
+): { old: LineRange; new: LineRange }[] {
+  const runs: { old: LineRange; new: LineRange }[] = [];
+  const inGapLine = (side: 'old' | 'new', line: number): boolean =>
+    gaps.some((gap) => gap.side === side && gap.from <= line && line <= gap.to);
+  let hunk = 0;
+  /** Whether old line `line` is outside every hunk. Asked in order. */
+  const outside = (line: number): boolean => {
+    while (hunk < diff.hunks.length && diff.hunks[hunk]!.old.end <= line) hunk++;
+    const next = diff.hunks[hunk];
+    return !next || line < next.old.start;
+  };
+  for (const block of diff.rows) {
+    if (block.changed) continue;
+    const offset = block.new - block.old;
+    let start: number | undefined;
+    let gapped = false;
+    const end = (line: number): void => {
+      if (start !== undefined && (line - start >= least || gapped)) {
+        runs.push({
+          old: { first: start, last: line - 1 },
+          new: { first: start + offset, last: line - 1 + offset },
+        });
+      }
+      start = undefined;
+      gapped = false;
+    };
+    for (let line = block.old; line < block.old + block.oldCount; line++) {
+      const gap = inGapLine('old', line) || inGapLine('new', line + offset);
+      const kept = keep?.old.has(line) || keep?.new.has(line + offset);
+      if (gap || (outside(line) && !kept)) {
+        start ??= line;
+        gapped ||= gap;
+      } else {
+        end(line);
+      }
+    }
+    end(block.old + block.oldCount);
+  }
+  return runs;
+}
+
 /** Whether `run` takes in any of `gaps`' lines, on either side. */
 export function inGap(run: { old: LineRange; new: LineRange }, gaps: readonly Gap[]): boolean {
   return gaps.some((gap) => run[gap.side].first <= gap.to && run[gap.side].last >= gap.from);
 }
 
-/** The runs `collapsedRuns` gives, less those in `open`. */
+/** The runs `collapsedRuns` gives, less those in `open`, which never take in a gap. */
 export function shownRuns(
   diff: FileDiff,
   keep?: Keep,
   open?: Open,
+  gaps: readonly Gap[] = [],
 ): { old: LineRange; new: LineRange }[] {
-  const runs = collapsedRuns(diff, keep);
-  return open && open.size > 0 ? runs.filter((run) => !open.has(run.old.first)) : runs;
+  const runs = collapsedRuns(diff, keep, 2, gaps);
+  return open && open.size > 0
+    ? runs.filter((run) => !open.has(run.old.first) || inGap(run, gaps))
+    : runs;
 }
 
 /** The run of `runs` with file line `line` on `side`, if there is one. */
@@ -140,7 +164,7 @@ export function fileRows(old: FileLines, added: FileLines, state: FileState): Fi
     }
     return rows.done();
   }
-  const runs = shownRuns(state.diff, state.keep, state.open);
+  const runs = shownRuns(state.diff, state.keep, state.open, state.gaps);
   let run = 0;
   for (const block of state.diff.rows) {
     if (block.changed) {

@@ -111,7 +111,7 @@ export function fileBlocks(
   }
   if (!diff || lines.count === 0) return out;
 
-  for (const run of shownRuns(diff, keep, open)) {
+  for (const run of shownRuns(diff, keep, open, gaps)) {
     const { first, last } = run[side];
     const widget = collapsed(index, run.old.first, first, last, inGap(run, gaps));
     out.push(
@@ -151,7 +151,7 @@ export function inlineBlocks(
   const at = (side: Side, number: number): { from: number; to: number } =>
     doc.line(lines.header + (side === 'old' ? inline.ofOld : inline.ofNew)[number]!);
 
-  for (const run of shownRuns(diff, keep, open)) {
+  for (const run of shownRuns(diff, keep, open, gaps)) {
     // An unchanged run's lines are both sides' lines at once.
     const widget = collapsed(index, run.old.first, run.new.first, run.new.last, inGap(run, gaps));
     out.push(

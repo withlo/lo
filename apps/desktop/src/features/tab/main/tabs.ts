@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Database, Row } from '../../../main/database.ts';
+import { login as accountLogin } from '../../accounts/contract.ts';
 import {
   opening as openingSchema,
   tab as tabSchema,
@@ -14,14 +15,28 @@ import {
   type Tab,
   type Tabs,
 } from '../contract.ts';
-import { findTab, shows, tabKey } from './pulls.ts';
+import { findTab, shows, tabKey, type TabKey } from './pulls.ts';
 
 /** Recent pull requests: the tab that stands in for an empty strip. */
 export const RECENT: Tab = { id: 'recent', kind: 'recent' };
 
-/** A tab main keeps: a pull request's or Settings'. */
-type Kept = Exclude<Tab, { kind: 'recent' }>;
-type PullTab = Extract<Tab, { kind: 'pull' }>;
+/**
+ * A tab main keeps: a pull request's or Settings'. A pull request's also keeps the account it acts
+ * as and its repository's name as GitHub last gave it, which the window isn't sent.
+ */
+type Kept =
+  | (Extract<Tab, { kind: 'pull' }> & {
+      login?: string | undefined;
+      repository?: string | undefined;
+    })
+  | Extract<Tab, { kind: 'settings' }>;
+type PullTab = Extract<Kept, { kind: 'pull' }>;
+
+/** What's kept with a pull request's tab beyond what the strip shows. */
+export interface PullKept {
+  readonly login?: string | undefined;
+  readonly repository?: string | undefined;
+}
 
 /** The tabs main keeps, in order, and the one on screen: one of them, or none when there are none. */
 interface State {
@@ -48,6 +63,16 @@ export interface TabList {
   move(id: string, to: number): void;
   /** Keeps what GitHub said of a pull request's tab, so the strip shows it from then on. */
   describe(id: string, details: { title: string; state: PullState }): void;
+  /** What's kept with a pull request's tab: its account and repository, if known. */
+  kept(id: string): PullKept;
+  /**
+   * Keeps a pull request's tab's account, or forgets it with `null`, and its repository's name.
+   * The window hears nothing of it.
+   */
+  remember(
+    id: string,
+    kept: { login?: string | null | undefined; repository?: string | undefined },
+  ): void;
 }
 
 export interface TabListOptions {
@@ -69,7 +94,7 @@ export function createTabs(options: TabListOptions): TabList {
   const list = (): Tabs => {
     const [first] = state.kept;
     if (!first) return { tabs: [RECENT], active: RECENT.id };
-    return { tabs: [...state.kept], active: state.active ?? first.id };
+    return { tabs: state.kept.map(shown), active: state.active ?? first.id };
   };
 
   /** Writes `next`, then makes it the tabs and says so. A write that fails changes nothing. */
@@ -77,6 +102,12 @@ export function createTabs(options: TabListOptions): TabList {
     save(database, next);
     state = next;
     changed(list());
+  };
+
+  /** Writes `next` and makes it the tabs, without a word to the window, which sees no change. */
+  const quietly = (next: State): void => {
+    save(database, next);
+    state = next;
   };
 
   /** Shows `id`, a kept tab, unless it's on screen already. */
@@ -98,10 +129,7 @@ export function createTabs(options: TabListOptions): TabList {
         case 'pull': {
           const link = { owner: opening.owner, repo: opening.repo, number: opening.number };
           const pulls = state.kept.filter((tab): tab is PullTab => tab.kind === 'pull');
-          const at = findTab(
-            pulls.map(({ owner, repo, number }) => tabKey({ owner, repo, number })),
-            link,
-          );
+          const at = findTab(pulls.map(keyOf), link);
           const found = at === undefined ? undefined : pulls[at];
           if (found) {
             show(found.id);
@@ -161,7 +189,33 @@ export function createTabs(options: TabListOptions): TabList {
       if (tab?.kind !== 'pull' || (tab.title === title && tab.state === pullState)) return;
       commit({ ...state, kept: state.kept.with(index, { ...tab, title, state: pullState }) });
     },
+
+    kept(id) {
+      const tab = state.kept.find((each) => each.id === id);
+      if (tab?.kind !== 'pull') return {};
+      return { login: tab.login, repository: tab.repository };
+    },
+
+    remember(id, { login, repository }) {
+      const index = state.kept.findIndex((tab) => tab.id === id);
+      const tab = state.kept[index];
+      if (tab?.kind !== 'pull') return;
+      const next: PullTab = {
+        ...tab,
+        login: login === undefined ? tab.login : (login ?? undefined),
+        repository: repository ?? tab.repository,
+      };
+      if (next.login === tab.login && next.repository === tab.repository) return;
+      quietly({ ...state, kept: state.kept.with(index, next) });
+    },
   };
+}
+
+/** A kept tab as the strip shows it: without what main keeps for itself. */
+function shown(tab: Kept): Tab {
+  if (tab.kind !== 'pull') return tab;
+  const { login: _login, repository: _repository, ...rest } = tab;
+  return rest;
 }
 
 /**
@@ -172,7 +226,7 @@ export function createTabs(options: TabListOptions): TabList {
 function load(database: Database, log: (message: string) => void): State {
   const rows = database
     .prepare(
-      'SELECT id, kind, owner, repo, number, title, state, active FROM tab_tabs ORDER BY position, id',
+      'SELECT id, kind, owner, repo, number, title, state, active, login, repository FROM tab_tabs ORDER BY position, id',
     )
     .all();
   const kept: Kept[] = [];
@@ -191,6 +245,17 @@ function load(database: Database, log: (message: string) => void): State {
   return { kept, active: active ?? kept[0]?.id };
 }
 
+/**
+ * A pull request's tab's key: the link it was opened by, and its repository's name as GitHub last
+ * gave it, so a link by either name finds it after a rename or a transfer.
+ */
+function keyOf({ owner, repo, number, repository }: PullTab): TabKey {
+  const key = tabKey({ owner, repo, number });
+  const [canonicalOwner, canonicalRepo] = repository?.split('/') ?? [];
+  if (canonicalOwner === undefined || canonicalRepo === undefined) return key;
+  return { ...key, canonical: { owner: canonicalOwner, repo: canonicalRepo } };
+}
+
 /** Whether `a` and `b` hold the same thing: both Settings, or the same pull request. */
 function isSameTab(a: Kept, b: Kept): boolean {
   if (a.kind !== 'pull' || b.kind !== 'pull') return a.kind === b.kind;
@@ -200,7 +265,7 @@ function isSameTab(a: Kept, b: Kept): boolean {
 
 /** A row as a kept tab, if it's one: what Lo saved is read as carefully as any outside value. */
 function readRow(row: Row): Kept | undefined {
-  const { id, kind, owner, repo, number, title, state } = row;
+  const { id, kind, owner, repo, number, title, state, login, repository } = row;
   if (kind === 'pull' && !openingSchema.safeParse({ kind, owner, repo, number }).success) {
     return undefined;
   }
@@ -217,7 +282,16 @@ function readRow(row: Row): Kept | undefined {
         }
       : { id, kind },
   );
-  return read.success && read.data.kind !== 'recent' ? read.data : undefined;
+  if (!read.success || read.data.kind === 'recent') return undefined;
+  if (read.data.kind !== 'pull') return read.data;
+  return {
+    ...read.data,
+    login: typeof login === 'string' && accountLogin.safeParse(login).success ? login : undefined,
+    repository:
+      typeof repository === 'string' && /^[^/\s]+\/[^/\s]+$/.test(repository)
+        ? repository
+        : undefined,
+  };
 }
 
 /** Writes `state` over what `tab_tabs` held, in one transaction. */
@@ -225,15 +299,27 @@ function save(database: Database, { kept, active }: State): void {
   database.transaction(() => {
     database.prepare('DELETE FROM tab_tabs').run();
     const insert = database.prepare(
-      'INSERT INTO tab_tabs (id, position, kind, owner, repo, number, title, state, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO tab_tabs (id, position, kind, owner, repo, number, title, state, active, login, repository) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     );
     kept.forEach((tab, position) => {
-      const shown = tab.id === active ? 1 : 0;
+      const onScreen = tab.id === active ? 1 : 0;
       if (tab.kind === 'pull') {
-        const { id, owner, repo, number, title, state } = tab;
-        insert.run(id, position, 'pull', owner, repo, number, title ?? null, state ?? null, shown);
+        const { id, owner, repo, number, title, state, login, repository } = tab;
+        insert.run(
+          id,
+          position,
+          'pull',
+          owner,
+          repo,
+          number,
+          title ?? null,
+          state ?? null,
+          onScreen,
+          login ?? null,
+          repository ?? null,
+        );
       } else {
-        insert.run(tab.id, position, tab.kind, null, null, null, null, null, shown);
+        insert.run(tab.id, position, tab.kind, null, null, null, null, null, onScreen, null, null);
       }
     });
   });

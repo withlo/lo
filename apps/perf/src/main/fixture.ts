@@ -22,8 +22,14 @@ export const Fixture = z.strictObject({
       /** Each version's text, none for a side the file isn't on. */
       old: z.string().optional(),
       new: z.string().optional(),
+      /** Lines shown as GitHub's diff leaves them out, until the whole file comes. */
+      gaps: z
+        .array(z.strictObject({ side: z.enum(['old', 'new']), from: count, to: count }))
+        .optional(),
     }),
   ),
+  /** How long after its diff a file with gaps gets its whole lines, in ms. */
+  copyAfterMs: z.int().nonnegative().optional(),
   threads: z.array(
     z.strictObject({
       path: z.string().min(1),
@@ -59,7 +65,14 @@ export function readFixture(path: string): { pull: Pull; jobs: Job[]; large: Map
     new: file.new,
   }));
   return {
-    pull: { name: 'fixture', repo: fixture.repo, number: fixture.number, files, threads },
+    pull: {
+      name: 'fixture',
+      repo: fixture.repo,
+      number: fixture.number,
+      files,
+      threads,
+      copyAfterMs: fixture.copyAfterMs,
+    },
     jobs,
     large: new Map(),
   };

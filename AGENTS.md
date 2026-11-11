@@ -397,6 +397,31 @@ repositories, which account opens a repository, and the pull requests opened lat
   GitHub. It opens web pages with the program `LO_BROWSER` names, rather than the system's browser,
   so a test opens no browser. A packaged build ignores all four.
 
+### A pull request's tab
+
+The `tab` feature keeps the window's tabs and draws a pull request's: its header, two banners at
+most, the left panel, the middle and the right panel other features fill through its slots, and its
+status bar.
+
+- Main watches each pull request's tab with its account's poller, so the strip has its title, and
+  the one on screen most often. A tab keeps the account it acts as, and its repository's name as
+  GitHub gives it, so it comes back as it was, offline too. A tab with no account yet works it out
+  as a link does the first time it's shown: the one that can see the repository, the one remembered
+  for it, nobody for a public repository, or a question.
+- The first time a tab is shown, main reads the pull request and fetches it into the local copy
+  through `@lo/git`, with the account's token, read as each fetch starts. A fetch that fails is
+  tried again after 5 s, doubling to 5 minutes, unless waiting won't help, and a tab reads what an
+  earlier fetch brought while GitHub can't be reached.
+- The head on screen is GitHub's when the tab opened. A newer push says so in a banner, and moves
+  nothing until it's loaded.
+- The window gets what it shows on `tab.pull`, `tab.files` and `tab.local`, each sent only when it
+  changes, and asks for all three with `tab.state`. None of it holds a token. `tab.copy` puts up to
+  1 MiB of text on the clipboard, and `tab.openExternal` opens pages on `https://github.com/` only,
+  for every feature.
+- Its smoke test opens rozed-dev/e2e#78, whose repository `testing/fixtures/app.sh` builds with
+  GitHub's commit IDs, as `LO_GIT_REMOTE`, while the replay server answers from the `app_e2e`
+  cassette, recorded from the app itself (`testing/README.md`).
+
 ## The interface
 
 Lo's React components live in `packages/desktop/ui` (`@lo/ui`), ported from the design system's

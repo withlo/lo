@@ -1,4 +1,5 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +20,23 @@ export const electronBinary = binary(createRequire(import.meta.url)('electron'))
 function binary(path: unknown): string {
   if (typeof path !== 'string') throw new Error('The electron package gave no path to its binary.');
   return path;
+}
+
+/**
+ * Chromium's stand-ins for the system's keychain, so tests never touch a real one: the Mac's
+ * stand-in keychain, and Linux's fallback store. Lo takes either only in a test run.
+ */
+export const KEYCHAIN =
+  process.platform === 'darwin' ? ['--use-mock-keychain'] : ['--password-store=basic'];
+
+/** A port on this machine nothing listens on: a GitHub that can't be reached. */
+export async function closedPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  if (address === null || typeof address === 'string') throw new Error('the server had no port');
+  return address.port;
 }
 
 /** The data folder a test's copy of Lo starts on: empty, and the test's own. */

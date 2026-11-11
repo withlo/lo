@@ -6,11 +6,24 @@ import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
 import { defineSlot } from '../../../window/slots.tsx';
-import type { Tab } from '../contract.ts';
-import { activeOf, tabsStore, type TabsState } from './store.ts';
+import type { Files, LocalState, PullView, Tab } from '../contract.ts';
+import { activeOf, pullsStore, tabsStore, type TabsState } from './store.ts';
 
-export type { Kind, Tab } from '../contract.ts';
+export type {
+  Acting,
+  Connection,
+  Files,
+  Header,
+  Kind,
+  LocalState,
+  Problem,
+  PullView,
+  Tab,
+} from '../contract.ts';
 export type { TabsState } from './store.ts';
+
+/** A pull request's tab. */
+export type PullTab = Extract<Tab, { kind: 'pull' }>;
 
 /**
  * Where each kind of tab draws what it holds, under the strip. The feature that owns a kind puts
@@ -19,6 +32,51 @@ export type { TabsState } from './store.ts';
  * each time it's shown, so a view keeps what it needs across switches in a {@link tabState}.
  */
 export const kinds = defineSlot<{ tab: Tab }>('tab.kinds');
+
+/**
+ * What covers the tab on screen, whatever its kind, such as the welcome screen while no account is
+ * signed in. A view here draws itself over the tab, or nothing when it doesn't apply.
+ */
+export const cover = defineSlot<{ tab: Tab }>('tab.cover');
+
+/** What goes on a pull request's header's second row, after its branches: the revision picker. */
+export const header = defineSlot<{ tab: PullTab }>('tab.header');
+
+/**
+ * Banners of other features' about a pull request's tab, under Lo's own: a view draws one banner
+ * or nothing. Two show at most, the most urgent first.
+ */
+export const banners = defineSlot<{ tab: PullTab }>('tab.banners');
+
+/** The left panel of a pull request's tab: the stack, then the files. */
+export const left = defineSlot<{ tab: PullTab }>('tab.left');
+
+/**
+ * The middle of a pull request's tab: its overview, its diff or its timeline. Each view here is
+ * one of the middle views, in order; `` ` `` and `~` go from one to the next.
+ */
+export const middle = defineSlot<{ tab: PullTab }>('tab.middle');
+
+/** The right panel of a pull request's tab: its threads. */
+export const right = defineSlot<{ tab: PullTab }>('tab.right');
+
+/** Items in a pull request's tab's status bar, after Lo's own. */
+export const status = defineSlot<{ tab: PullTab }>('tab.status');
+
+/** What main last said of a pull request's tab, re-rendering when it changes. */
+export function usePull(tab: string): PullView | undefined {
+  return useStore(pullsStore, (state) => state.views.get(tab));
+}
+
+/** A pull request's tab's local copy, re-rendering when it changes. */
+export function useLocalCopy(tab: string): LocalState | undefined {
+  return useStore(pullsStore, (state) => state.locals.get(tab));
+}
+
+/** The files a pull request's tab's pull request changes, re-rendering when they change. */
+export function useChangedFiles(tab: string): Files | undefined {
+  return useStore(pullsStore, (state) => state.files.get(tab));
+}
 
 /**
  * Dialogs over the whole window, whatever tab is on screen: signing in, say. A feature puts one view
