@@ -232,9 +232,9 @@ function labels(label: string): (string | null)[] {
   );
 }
 
-/** Lines 8 to 22 of `lines` as placeholders, as GitHub's diff leaves them out. */
+/** Lines 7 to 24 of `lines` as placeholders, as GitHub's diff leaves them out. */
 function placeholders(lines: string[]): string[] {
-  return lines.map((each, index) => (index >= 7 && index <= 21 ? '' : each));
+  return lines.map((each, index) => (index >= 6 && index <= 23 ? '' : each));
 }
 
 /** Lines 1 and 9 on of `lines` as placeholders. */
@@ -870,7 +870,10 @@ describe('loading', () => {
 });
 
 describe('gaps', () => {
-  /** `e`: GitHub's diff of a 30-line file, which left out lines 8 to 22 on both sides. */
+  /**
+   * `e`: GitHub's diff of a 30-line file whose lines 3 and 28 changed, which left out lines 7 to
+   * 24 on both sides, outside its three lines of context.
+   */
   const eOld = numbered(30, 'e');
   const eNew = eOld.map((each, index) => (index === 2 || index === 27 ? `${each}!` : each));
   const gapped: DiffFile = {
@@ -879,8 +882,8 @@ describe('gaps', () => {
     change: 'modified',
     lines: { old: placeholders(eOld), new: placeholders(eNew) },
     gaps: [
-      { side: 'old', from: 8, to: 22 },
-      { side: 'new', from: 8, to: 22 },
+      { side: 'old', from: 7, to: 24 },
+      { side: 'new', from: 7, to: 24 },
     ],
     header: { additions: 2, deletions: 2 },
   };
@@ -932,6 +935,34 @@ describe('gaps', () => {
       const drawn = [...content.querySelectorAll('.cm-line')].map((each) => each.textContent);
       expect(drawn).not.toContain('');
     }
+  });
+
+  test('real unchanged lines beside a gap collapse and open as usual', () => {
+    // Line 3 changed: lines 7 to 10 are outside the hunk, and only line 10 is a placeholder.
+    const gOld = numbered(10, 'g');
+    const gNew = gOld.map((each, index) => (index === 2 ? `${each}!` : each));
+    const last = (lines: string[]) => lines.map((each, index) => (index === 9 ? '' : each));
+    const lines = { old: last(gOld), new: last(gNew) };
+    const shown = open(events(), {
+      files: [
+        {
+          id: 'g',
+          path: 'src/g.ts',
+          change: 'modified',
+          lines,
+          gaps: [
+            { side: 'old', from: 10, to: 10 },
+            { side: 'new', from: 10, to: 10 },
+          ],
+          header: { additions: 1, deletions: 1 },
+        },
+      ],
+    });
+    shown.setDiff('g', diffOf(lines));
+    expect(runs()).toEqual(['3 unchanged lines', '1 unchanged line, not loaded yet']);
+    shown.fold(onLine('g', 'new', 8), 'open');
+    expect(runs()).toEqual(['1 unchanged line, not loaded yet']);
+    expect(shown.lines({ file: 'g', side: 'new', from: 7, to: 9 })).toEqual(['g 7', 'g 8', 'g 9']);
   });
 
   test('the whole file comes at the same place, with its diff, and the cursor stays', () => {

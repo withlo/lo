@@ -118,6 +118,20 @@ describe('collapsedRuns with gaps', () => {
   test('stay collapsed when opened', () => {
     expect(shownRuns(diff, undefined, new Set([1, 9]), gapsOn('new'))).toHaveLength(2);
   });
+
+  test('keep apart from the real unchanged lines beside them, which open as usual', () => {
+    // Line 3 changed: lines 7 to 10 are outside the hunk, and line 10 is a placeholder.
+    const ten = numbered(10);
+    const changed = diffText(ten, ten.replace('line 3\n', 'three\n'));
+    const gaps = [{ side: 'new', from: 10, to: 10 } as const];
+    expect(collapsedRuns(changed, undefined, 2, gaps)).toEqual([
+      { old: { first: 7, last: 9 }, new: { first: 7, last: 9 } },
+      { old: { first: 10, last: 10 }, new: { first: 10, last: 10 } },
+    ]);
+    expect(shownRuns(changed, undefined, new Set([7, 10]), gaps)).toEqual([
+      { old: { first: 10, last: 10 }, new: { first: 10, last: 10 } },
+    ]);
+  });
 });
 
 describe('shownRuns', () => {

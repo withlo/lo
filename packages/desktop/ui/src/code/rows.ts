@@ -71,7 +71,8 @@ export interface Gap {
  * The unchanged runs a file's diff collapses: everything outside its hunks, in file lines, around
  * the lines in `keep`. A single line stays shown, since the block that would replace it takes as
  * much room. Lines in `gaps` collapse wherever they are, a single one, or one a hunk's context
- * would show, too: they're placeholders, with nothing to show.
+ * would show, too: they're placeholders, with nothing to show. A run holds placeholders or real
+ * lines, never both, so real lines beside a gap collapse and open as any others do.
  */
 export function collapsedRuns(
   diff: FileDiff,
@@ -108,8 +109,9 @@ export function collapsedRuns(
       const gap = inGapLine('old', line) || inGapLine('new', line + offset);
       const kept = keep?.old.has(line) || keep?.new.has(line + offset);
       if (gap || (outside(line) && !kept)) {
+        if (start !== undefined && gap !== gapped) end(line);
         start ??= line;
-        gapped ||= gap;
+        gapped = gap;
       } else {
         end(line);
       }
