@@ -130,6 +130,9 @@ test('a pending review starts with a line thread and gathers threads and replies
     expect(sent.thread).toBeDefined();
     expect(sent.comment).toBeDefined();
   }
+  // Nobody pushed: GitHub put the line thread on the head it was written on, which its answer
+  // names, so Lo kept it there rather than taking it back.
+  expect(seen.range.landedOn).toBeUndefined();
   // A range from the base starts on the base's side; GitHub's default would be the head's.
   // A file-level thread has no lines.
   const added = variables(fetch, 'AddPullRequestReviewThread');

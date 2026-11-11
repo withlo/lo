@@ -108,12 +108,13 @@ test('a line thread github put on a newer head is taken back out', async () => {
 });
 
 test('a line thread on a head github doesnt name is taken back out', async () => {
-  const { sent } = sendThrough([added(LINE, null), deleted], {
+  const { sent, operations } = sendThrough([added(LINE, null), deleted], {
     kind: 'addThread',
     head: PLANNED,
     variables: LINE,
   });
   expect(await sent).toEqual({ refusal: 'headMoved', head: undefined });
+  expect(operations()).toEqual(['AddPullRequestReviewThread', 'DeletePullRequestReviewComment']);
 });
 
 test('a line thread lo cant take back says where it landed', async () => {
@@ -123,7 +124,7 @@ test('a line thread lo cant take back says where it landed', async () => {
     { message: 'Server Error' },
     502,
   );
-  const { sent } = sendThrough([added(LINE, PUSHED), failed], {
+  const { sent, operations } = sendThrough([added(LINE, PUSHED), failed], {
     kind: 'addThread',
     head: PLANNED,
     variables: LINE,
@@ -134,6 +135,8 @@ test('a line thread lo cant take back says where it landed', async () => {
     comment: 'PRRC_1',
     landedOn: PUSHED,
   });
+  // It tried to take it back first.
+  expect(operations()).toEqual(['AddPullRequestReviewThread', 'DeletePullRequestReviewComment']);
 });
 
 test('a file thread goes on the latest head whatever it is', async () => {
