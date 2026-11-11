@@ -1,6 +1,15 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { diffLines, diffText, linesOf, lineWords, rowCount, rowOf, splitLines } from './file.ts';
+import {
+  diffLines,
+  diffOfChanges,
+  diffText,
+  linesOf,
+  lineWords,
+  rowCount,
+  rowOf,
+  splitLines,
+} from './file.ts';
 import { DefaultLinesDiffComputer } from './vscode/editor/common/diff/defaultLinesDiffComputer/defaultLinesDiffComputer.ts';
 
 /** Lines `line 1` to `line count`. */
@@ -377,5 +386,68 @@ describe('a file built to break the diff', () => {
     ).changes;
 
     expect(change?.newWords).toEqual([{ line: 1, from: 2, to: 16 }]);
+  });
+});
+
+describe('diffOfChanges', () => {
+  test('keeps the changes as given, where a diff of the lines would find others', () => {
+    // GitHub's patch swaps two lines as one change; a diff finds one line kept.
+    const oldLines = ['x', 'a', 'b', 'y'];
+    const newLines = ['x', 'b', 'a', 'y'];
+    const diff = diffOfChanges(
+      [{ old: { start: 2, end: 4 }, new: { start: 2, end: 4 } }],
+      oldLines,
+      newLines,
+    );
+
+    expect(diff.changes.map(({ old, new: added }) => ({ old, new: added }))).toEqual([
+      { old: { start: 2, end: 4 }, new: { start: 2, end: 4 } },
+    ]);
+    expect(diffText(oldLines.join('\n'), newLines.join('\n')).changes).not.toHaveLength(1);
+    expect(diff.rows).toEqual([
+      { row: 0, old: 1, new: 1, oldCount: 1, newCount: 1, changed: false },
+      { row: 1, old: 2, new: 2, oldCount: 2, newCount: 2, changed: true },
+      { row: 3, old: 4, new: 4, oldCount: 1, newCount: 1, changed: false },
+    ]);
+    expect(diff.approximate).toBe(false);
+  });
+
+  test('finds the words that changed inside a change, at the file’s line numbers', () => {
+    const oldLines = ['', '', 'const total = price + tax;'];
+    const newLines = ['', '', '', 'const total = price + taxes;'];
+    const diff = diffOfChanges(
+      [{ old: { start: 3, end: 4 }, new: { start: 4, end: 5 } }],
+      oldLines,
+      newLines,
+    );
+
+    expect(diff.changes[0]?.oldWords).toEqual([{ line: 3, from: 22, to: 25 }]);
+    expect(diff.changes[0]?.newWords).toEqual([{ line: 4, from: 22, to: 27 }]);
+  });
+
+  test('never reads the lines outside its changes', () => {
+    const diff = diffOfChanges(
+      [{ old: { start: 3, end: 3 }, new: { start: 3, end: 4 } }],
+      ['', ''],
+      ['', '', 'added'],
+      { noNewlineAtEnd: { old: false, new: true } },
+    );
+
+    expect(diff.oldLineCount).toBe(2);
+    expect(diff.newLineCount).toBe(3);
+    expect(diff.noNewlineAtEnd).toEqual({ old: false, new: true });
+    expect(diff.hunks).toEqual([
+      { old: { start: 1, end: 3 }, new: { start: 1, end: 4 }, changes: { start: 0, end: 1 } },
+    ]);
+  });
+
+  test('refuses changes out of order or past the lines', () => {
+    const lines = ['a', 'b', 'c'];
+    const one = { old: { start: 2, end: 3 }, new: { start: 2, end: 3 } };
+    const before = { old: { start: 1, end: 2 }, new: { start: 1, end: 2 } };
+    expect(() => diffOfChanges([one, before], lines, lines)).toThrow(RangeError);
+    expect(() =>
+      diffOfChanges([{ old: { start: 3, end: 5 }, new: { start: 3, end: 3 } }], lines, lines),
+    ).toThrow(RangeError);
   });
 });

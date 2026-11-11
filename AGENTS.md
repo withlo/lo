@@ -459,6 +459,28 @@ Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `c
   `onShowFile`, through which the diff shows a changed file the tree asks for, and the whole-file
   view any file. Until a view has asked, `⏎` and "Whole file" say there's nowhere to show the file.
 
+### A pull request's diff
+
+The `diff` feature draws a pull request's tab's middle: every changed file in one scroll, in the
+order the tree lists them, through `@lo/ui/code`'s diff view.
+
+- Main lists each changed file's versions at the head on screen (`diff.state`): from the local
+  copy's comparison once it's ready, with each side's blob and size, and from GitHub's list of the
+  pull request's files until then. Each says how the file starts out: shown, closed as generated,
+  kept out as large until `za`, binary, or unchanged. Files are named by their place in the list,
+  never by their paths.
+- The window asks for files' texts in batches (`diff.texts`), first files first, and the background
+  process diffs and highlights them (`diff.files`) and finds moved code (`diff.moves`). The view is
+  drawn once every file that shows its lines has them. A new order is a new view, which comes back
+  to the cursor's place.
+- GitHub's diff is drawn as GitHub gives it: its hunks at their real line numbers, and placeholders
+  between them that stay collapsed. Its lines are never diffed again; only the words inside each
+  change are looked for. When the local copy's files are the same ones, each is swapped in place as
+  its diff arrives; otherwise the view is drawn anew once they're all in.
+- Once the view is drawn, the window says so (`diff.drawn`), and the tab keeps that head on screen,
+  even one it took from what it saved: a newer one from GitHub is offered as a newer push.
+- `diff.layout` and `diff.whitespace` are settings; `gi` and `gw` change them.
+
 ## The interface
 
 Lo's React components live in `packages/desktop/ui` (`@lo/ui`), ported from the design system's

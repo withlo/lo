@@ -116,6 +116,11 @@ export class Watcher {
     return this.#tabs.get(id)?.snapshot();
   }
 
+  /** A pull request's tab's diff is drawn at `head`, which stays on screen if it's there now. */
+  drawn(id: string, head: string): void {
+    this.#tabs.get(id)?.drawn(head);
+  }
+
   reload(id: string): void {
     this.#tabs.get(id)?.reload();
   }

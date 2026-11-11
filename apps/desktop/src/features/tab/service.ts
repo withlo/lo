@@ -49,6 +49,13 @@ export interface TabService {
    * the tab first fetches. The tab closes it as the tab closes, so a reader never does.
    */
   clone(id: string): Promise<Repo> | undefined;
+  /**
+   * Says a pull request's tab's diff is drawn at `head`. If that's the head on screen, it stays
+   * there from now on, until the reader loads a newer one: a head taken from what Lo saved, which
+   * GitHub's first answer would otherwise replace, is no longer replaced, and a newer head from
+   * GitHub is offered as a newer push instead, so the diff never moves under the reader.
+   */
+  drawn(id: string, head: string): void;
 }
 
 export const tabs = defineService<TabService>('tab.tabs');

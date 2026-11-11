@@ -121,6 +121,30 @@ describe('a local copy', { timeout: 60_000 }, () => {
     local.close();
   });
 
+  it('finds where a merged pull request branched from GitHub’s base, not the branch it merged into', async () => {
+    // The base branch fast-forwarded to the head, as a merge can leave it.
+    const remote = writeAppRemote(folder());
+    git(
+      join(new URL(remote).pathname, 'rozed-dev', 'e2e.git'),
+      'update-ref',
+      'refs/heads/app/base',
+      APP_PULL.head,
+    );
+    const localGit = await testGit(remote);
+    const { local, last } = copyIn(localGit);
+    local.want(REFS);
+    local.show(APP_PULL.head);
+
+    await expect.poll(last, { timeout: 40_000 }).toEqual({
+      kind: 'ready',
+      head: APP_PULL.head,
+      base: APP_PULL.head,
+      mergeBase: APP_PULL.base,
+      offline: false,
+    });
+    local.close();
+  });
+
   it('fetches a head GitHub has moved on from by its ID, and shows it once asked', async () => {
     const localGit = await testGit();
     const { local, last } = copyIn(localGit);

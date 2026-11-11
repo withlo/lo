@@ -3,9 +3,10 @@
 // its pull request with its account's poller, and fetches its local copy once it's shown. It also
 // copies text and opens github.com pages for every feature.
 
-import { clipboard, shell } from 'electron';
+import { clipboard } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { openPage } from '../../../main/browser.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
@@ -63,6 +64,7 @@ export default defineFeature(contract, {
         };
       },
       clone: (id) => watcher?.clone(id),
+      drawn: (id, head) => watcher?.drawn(id, head),
     }),
   ],
   handlers: {
@@ -93,7 +95,7 @@ export default defineFeature(contract, {
     async openExternal({ url }) {
       // The contract refuses anything else; this holds even if it's loosened.
       if (!isGithubPage(url)) throw new IpcError('refused', 'Lo opens only pages on github.com.');
-      await shell.openExternal(url);
+      await openPage(url);
     },
   },
   start(context) {

@@ -148,6 +148,12 @@ export class PullTab {
   #opening: Promise<void> | undefined;
   #readFailures = 0;
   #readTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Set after GitHub refused the account's token while reading the pull request: it's read again
+   * once the account's poller is signed in again, or hears the pull request, rather than on a
+   * timer of the tab's own. `signedOut` once the poller has said it's signed out.
+   */
+  #waitingForSignIn: { signedOut: boolean } | undefined;
   /** What was last sent, so nothing is sent twice. */
   #saidPull: string | undefined;
   #saidFiles: string | undefined;
@@ -205,6 +211,7 @@ export class PullTab {
     this.#readFailures = 0;
     clearTimeout(this.#readTimer);
     this.#readTimer = undefined;
+    this.#waitingForSignIn = undefined;
     this.#started = true;
     void this.#open();
     this.#local?.retry();
@@ -232,6 +239,16 @@ export class PullTab {
     this.#shown = latest;
     this.#provisional = false;
     this.#local?.show(latest);
+    this.#publish();
+  }
+
+  /**
+   * The diff is drawn at `head`. If that's the head on screen, it stays: a head taken only from the
+   * cache is no longer replaced by GitHub's first answer, which shows as a newer push instead.
+   */
+  drawn(head: string): void {
+    if (this.#closed || head !== this.#shown || !this.#provisional) return;
+    this.#provisional = false;
     this.#publish();
   }
 
@@ -411,7 +428,10 @@ export class PullTab {
     this.#poller = poller;
     this.#unsubscribe.push(
       poller.onEvent((event) => this.#heard(event)),
-      poller.onChange(() => this.#publish()),
+      poller.onChange(() => {
+        this.#signInChanged(poller);
+        this.#publish();
+      }),
     );
     await poller.watch(this.pull);
     // What the cache had, from before: its header, but never the head on screen.
@@ -510,9 +530,9 @@ export class PullTab {
         this.#startLocal();
       } else if (error instanceof GithubError && error.isUnauthorized()) {
         // The account is signed out, which its poller says. What it fetched before still shows,
-        // and reading again finds it once it's signed in again.
+        // and it's read again once the poller is signed in again.
         this.#problem = undefined;
-        this.#scheduleRead();
+        this.#waitForSignIn();
         this.#useSaved();
         this.#startLocal();
       } else {
@@ -523,6 +543,40 @@ export class PullTab {
         this.#options.log(`reading ${this.pull.toString()}: ${describe(error)}`);
       }
     }
+  }
+
+  /**
+   * Reads the pull request again once the account's poller is signed in again, or hears it, so
+   * the read waits for the account rather than asking GitHub on a timer of its own. Without a
+   * poller, as for nobody, it reads again after a wait.
+   */
+  #waitForSignIn(): void {
+    const poller = this.#poller;
+    if (!poller) {
+      this.#scheduleRead();
+      return;
+    }
+    clearTimeout(this.#readTimer);
+    this.#readTimer = undefined;
+    this.#waitingForSignIn = { signedOut: poller.status().signedOut };
+  }
+
+  /** The poller's status changed: once it's signed in again after being signed out, read. */
+  #signInChanged(poller: Poller): void {
+    const waiting = this.#waitingForSignIn;
+    if (!waiting || poller !== this.#poller || this.#closed) return;
+    if (poller.status().signedOut) {
+      waiting.signedOut = true;
+    } else if (waiting.signedOut) {
+      this.#signedInAgain();
+    }
+  }
+
+  /** The account works again: the read that GitHub refused is made again. */
+  #signedInAgain(): void {
+    if (!this.#waitingForSignIn) return;
+    this.#waitingForSignIn = undefined;
+    void this.#open();
   }
 
   #actingFor(
@@ -557,11 +611,14 @@ export class PullTab {
         if (!event.pull.equals(this.pull)) return;
         this.#problem = undefined;
         this.#takeSummary(event.summary);
+        // The poller read it with the account's token, so the token works again.
+        this.#signedInAgain();
         break;
       case 'details':
         if (!event.pull.equals(this.pull)) return;
         this.#problem = undefined;
         this.#takeDetails(event.details, Date.now(), { live: true });
+        this.#signedInAgain();
         break;
       case 'failed': {
         if (!(event.target instanceof PullRef) || !event.target.equals(this.pull)) return;
@@ -642,17 +699,20 @@ export class PullTab {
   }
 
   /**
-   * GitHub can't be reached: the head and base the cache had stand in for GitHub's, if nothing
-   * newer has come, so the tab shows what it fetched before.
+   * GitHub can't be reached: the head and base GitHub last gave, from a poll since Lo started or
+   * else from the cache, stand in for its answer, so the tab shows what it fetched before.
    */
   #useSaved(): void {
     const saved = this.#saved;
-    if (!saved || (this.#latest !== undefined && !this.#usingSaved)) return;
-    this.#usingSaved = true;
-    this.#latest = saved.head;
-    this.#base = saved.base;
-    if (this.#shown === undefined) {
-      this.#shown = saved.head;
+    if (saved && (this.#latest === undefined || this.#usingSaved)) {
+      this.#usingSaved = true;
+      this.#latest = saved.head;
+      this.#base = saved.base;
+    }
+    // A head GitHub gave a poll before the tab was shown stands in too, ahead of the cache's: it's
+    // newer. Either is GitHub's head only as it was, so the first answer now replaces it.
+    if (this.#shown === undefined && this.#latest !== undefined) {
+      this.#shown = this.#latest;
       this.#provisional = true;
     }
   }

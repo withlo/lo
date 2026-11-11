@@ -4,13 +4,15 @@ import { join } from 'node:path';
 import {
   GithubClient,
   GithubError,
+  Poller,
+  Token,
   type GitHubUrls,
   type PullSummary,
   type RepoAccount,
 } from '@lo/github';
-import { MemoryPollCache } from '@lo/testing';
+import { MemoryPollCache, replayFetch } from '@lo/testing';
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { LocalGit } from '../../../main/git.ts';
 import { PullTab, type Kept, type TabGithub } from './pull.ts';
@@ -102,6 +104,32 @@ function restored(cache: MemoryPollCache, git: Awaited<ReturnType<typeof testGit
   const opened = tabFor({ github, git, login: 'rozed-bot', repository: 'rozed-dev/e2e' });
   opened.tab.show();
   return { ...opened, calls: () => calls };
+}
+
+/** GitHub's answer to a token it refuses. */
+function badCredentials(): Response {
+  return new Response(JSON.stringify({ message: 'Bad credentials' }), {
+    status: 401,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+/** A replay of `cassette` that answers nothing until it's opened. */
+function gated(cassette: string) {
+  const replay = replayFetch(cassette);
+  let opened = false;
+  const waiting: (() => void)[] = [];
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    if (!opened) await new Promise<void>((resolve) => waiting.push(resolve));
+    return replay(input, init);
+  };
+  return {
+    fetch,
+    open() {
+      opened = true;
+      for (const resume of waiting.splice(0)) resume();
+    },
+  };
 }
 
 describe('a pull request’s tab', { timeout: 60_000 }, () => {
@@ -412,6 +440,118 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
       });
     expect(sent.pull?.shown).toBe(APP_PULL.firstHead);
     expect(sent.pull?.newer).toBe(null);
+    tab.close();
+  });
+
+  it('keeps a head from the cache on screen once its diff is drawn, and offers GitHub’s as a newer push', async () => {
+    const { cache, git } = await saved(true);
+    const gate = gated('app_e2e');
+    const replay = replayGithub('app_e2e', { cache, fetch: gate.fetch });
+    let calls = 0;
+    const github: TabGithub = {
+      ...replay.github,
+      client: (login) => {
+        calls += 1;
+        return calls === 1 ? Promise.reject(unanswered()) : replay.github.client(login);
+      },
+    };
+    const { tab, sent } = tabFor({ github, git, login: 'rozed-bot', repository: 'rozed-dev/e2e' });
+    tab.show();
+
+    // GitHub can't be asked yet: the cache's older head stands in, and the diff is drawn at it.
+    await expect.poll(() => sent.pull?.shown, { timeout: 20_000 }).toBe(APP_PULL.firstHead);
+    tab.drawn(APP_PULL.firstHead);
+    gate.open();
+
+    // GitHub's answer no longer replaces it: it's a newer push to load.
+    await expect.poll(() => sent.pull?.newer, { timeout: 40_000 }).toBe(APP_PULL.head);
+    expect(sent.pull?.shown).toBe(APP_PULL.firstHead);
+    expect(sent.pulls.some(({ shown }) => shown === APP_PULL.head)).toBe(false);
+    tab.close();
+  });
+
+  it('shows the head a poll brought before it was shown, when it opens while GitHub can’t be reached', async () => {
+    // GitHub never answers this test: the poll below is the only head it hears of.
+    const replay = replayGithub('app_e2e', { fetch: gated('app_e2e').fetch });
+    const github: TabGithub = { ...replay.github, client: () => Promise.reject(unanswered()) };
+    const git = await testGit();
+    const { tab, sent } = tabFor({ github, git, login: 'rozed-bot', repository: 'rozed-dev/e2e' });
+    await tab.watch();
+    replay.pollEvent('rozed-bot', {
+      kind: 'summary',
+      pull: tab.pull,
+      summary: {
+        number: APP_PULL.number,
+        title: TITLE,
+        state: 'open',
+        draft: false,
+        updated_at: '2026-11-11T14:00:00Z',
+        head: { ref: 'app/head', sha: APP_PULL.firstHead },
+        base: { ref: 'app/base', sha: APP_PULL.firstBase },
+      },
+    });
+
+    tab.show();
+
+    await expect.poll(() => sent.pull?.shown, { timeout: 10_000 }).toBe(APP_PULL.firstHead);
+    tab.close();
+  });
+
+  it('reads again once its poller is signed in again after GitHub refuses the token, not on a timer of its own', async () => {
+    const replay = replayFetch('app_e2e');
+    let answering = false;
+    let signedOut = true;
+    const fetch: typeof globalThis.fetch = (input, init) =>
+      answering ? replay(input, init) : Promise.resolve(badCredentials());
+    const client = new GithubClient({
+      fetch,
+      urls: {
+        api: 'https://api.github.com',
+        web: 'https://github.com',
+        uploads: 'https://uploads.github.com',
+      },
+      token: new Token(TOKEN),
+    });
+    const listeners = new Set<() => void>();
+    const poller = new Poller({
+      accounts: {
+        client: () => Promise.resolve(client),
+        account: () => ({}),
+        isSignedOut: () => signedOut,
+        onChange: (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      },
+      login: 'rozed-bot',
+      cache: new MemoryPollCache(),
+    });
+    onTestFinished(() => poller.stop());
+    let reads = 0;
+    const github: TabGithub = {
+      ...replayGithub('app_e2e').github,
+      client: () => {
+        reads += 1;
+        return Promise.resolve(client);
+      },
+      poller: () => Promise.resolve(poller),
+    };
+    const git = await testGit();
+    const { tab, sent } = tabFor({ github, git, login: 'rozed-bot', repository: 'rozed-dev/e2e' });
+    tab.show();
+
+    await expect.poll(() => reads, { timeout: 10_000 }).toBe(1);
+    await expect.poll(() => poller.status().signedOut, { timeout: 10_000 }).toBe(true);
+    // Past the first wait a read of its own would have taken, nothing more is asked.
+    await new Promise((resolve) => setTimeout(resolve, 6_500));
+    expect(reads).toBe(1);
+
+    // Signed in again: the poller polls once more, and the tab reads at once.
+    answering = true;
+    signedOut = false;
+    for (const listener of listeners) listener();
+    await expect.poll(() => reads, { timeout: 10_000 }).toBe(2);
+    await expect.poll(() => sent.pull?.header?.author, { timeout: 20_000 }).toBe('rozed-bot');
     tab.close();
   });
 

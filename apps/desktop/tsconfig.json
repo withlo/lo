@@ -3,10 +3,16 @@
   "files": [],
   "references": [
     {
+      "path": "../../packages/desktop/syntax"
+    },
+    {
       "path": "../../packages/core/review"
     },
     {
       "path": "../../packages/desktop/git"
+    },
+    {
+      "path": "../../packages/core/diff"
     },
     {
       "path": "../../packages/desktop/ui"
