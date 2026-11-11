@@ -1964,7 +1964,7 @@ export class Poller {
       case 'watched':
         return settle(this.#queue.read(() => pollPull(client, job)));
       default:
-        return job satisfies never;
+        throw new Error(`a poll Lo doesn't know: ${JSON.stringify(job satisfies never)}`);
     }
   }
 
@@ -2298,7 +2298,9 @@ export class Poller {
         return writes;
       }
       default:
-        return outcome satisfies never;
+        throw new Error(
+          `a poll's outcome Lo doesn't know: ${JSON.stringify(outcome satisfies never)}`,
+        );
     }
   }
 

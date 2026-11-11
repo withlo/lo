@@ -163,7 +163,9 @@ function describeFailure(detail: DeviceFlowFailure): string {
       return `The token is missing the ${detail.scopes.join(', ')} scope${plural}.`;
     }
     default:
-      return detail satisfies never;
+      throw new Error(
+        `a sign-in failure Lo doesn't know: ${JSON.stringify(detail satisfies never)}`,
+      );
   }
 }
 
@@ -316,7 +318,9 @@ export async function waitForToken(options: SignInOptions, codes: DeviceCodes): 
       case 'refused':
         throw new DeviceFlowError({ kind: 'refused', message: poll.message });
       default:
-        return poll satisfies never;
+        throw new Error(
+          `an answer to a sign-in poll Lo doesn't know: ${JSON.stringify(poll satisfies never)}`,
+        );
     }
     if (last) throw new DeviceFlowError({ kind: 'expired' });
   }

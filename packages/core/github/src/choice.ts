@@ -156,7 +156,9 @@ export function decideAccount(found: RepoAccount | undefined): AccountDecision {
       };
     }
     default:
-      return choice satisfies never;
+      throw new Error(
+        `a choice of account Lo doesn't know: ${JSON.stringify(choice satisfies never)}`,
+      );
   }
 }
 

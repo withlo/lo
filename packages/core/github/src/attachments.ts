@@ -123,7 +123,9 @@ export function bytesAgree(kind: AttachmentKind, bytes: Uint8Array): boolean {
     case 'webm':
       return startsWith(bytes, [0x1a, 0x45, 0xdf, 0xa3]);
     default:
-      return kind satisfies never;
+      throw new Error(
+        `an attachment kind Lo doesn't know: ${JSON.stringify(kind satisfies never)}`,
+      );
   }
 }
 
@@ -200,7 +202,9 @@ export function describeRefusal(refusal: AttachmentRefusal): string {
     case 'unreadable':
       return `Lo couldn't read through its metadata: ${refusal.why}`;
     default:
-      return refusal satisfies never;
+      throw new Error(
+        `a refusal of an attachment Lo doesn't know: ${JSON.stringify(refusal satisfies never)}`,
+      );
   }
 }
 

@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "unicorn", "oxc", "import", "vitest"],
+  "jsPlugins": ["./scripts/oxlint/plugin.ts"],
   "options": {
     "typeAware": true,
     "denyWarnings": true,
@@ -25,7 +26,12 @@
     "typescript/restrict-plus-operands": "error",
     "typescript/restrict-template-expressions": "error",
     "typescript/return-await": "error",
-    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/switch-exhaustiveness-check": [
+      "error",
+      { "considerDefaultExhaustiveForUnions": false, "allowDefaultCaseForExhaustiveSwitch": true }
+    ],
+    "default-case": "error",
+    "lo/no-returned-never": "error",
     "typescript/consistent-type-imports": "error",
     "typescript/no-explicit-any": "error",
     "import/no-cycle": "error"

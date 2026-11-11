@@ -243,7 +243,10 @@ function placeText(place: DraftPlace): string {
     case 'conversation':
       return JSON.stringify([place.kind]);
     default:
-      return place satisfies never;
+      // A kind of place this version of Lo doesn't know, in drafts a later one saved: kept by all
+      // of it, so its text is saved again as it was, not lost.
+      place satisfies never;
+      return JSON.stringify(['unknown', place]);
   }
 }
 
