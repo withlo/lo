@@ -1,0 +1,10 @@
+{
+  "outcome": "shown",
+  "findings": [
+    { "code": "code-commit" }
+  ],
+  "code": [
+    { "line": 13, "state": "broken", "why": "commit" },
+    { "line": 16, "state": "broken", "why": "commit" }
+  ]
+}

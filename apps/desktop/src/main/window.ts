@@ -46,7 +46,10 @@ export function openWindow(session: Session, url: string): BrowserWindow {
   });
   window.once('ready-to-show', () => window.show());
 
-  // A right-click in a text field gets the system's Edit menu. Lo's own menus skip text fields.
+  // A right-click in a form field, or in editable text that isn't code, such as a comment box, gets
+  // the system's Edit menu, and Lo's own menus skip it. A code view's text is editable to the page
+  // as well, but the window takes its right-clicks (for Lo's menu, or for none), so they never
+  // get here.
   window.webContents.on('context-menu', (_event, params) => {
     if (!params.isEditable) return;
     const { webContents } = window;

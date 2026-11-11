@@ -1,0 +1,11 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "figure-path", "line": 12 },
+    { "code": "figure-caption", "line": 16 },
+    { "code": "figure-part", "line": 22 },
+    { "code": "figure-part", "line": 23 },
+    { "code": "figure-part", "line": 24 },
+    { "code": "figure-part", "line": 26 }
+  ]
+}

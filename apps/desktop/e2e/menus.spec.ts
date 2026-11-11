@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { ElectronApplication, Page } from '@playwright/test';
 
 import { expect, test } from './app.ts';
 
@@ -12,6 +12,25 @@ const highlighted = (page: Page) => menuOf(page).locator('[role="menuitem"][data
 
 /** The note Lo says at the bottom of the window. */
 const said = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
+
+/** Records the native menus main pops up, rather than showing one on the desktop. */
+async function recordNativeMenus(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ Menu }) => {
+    const shown: string[][] = [];
+    Reflect.set(globalThis, 'shownMenus', shown);
+    Reflect.set(Menu.prototype, 'popup', function popup(this: Electron.Menu) {
+      shown.push(this.items.map((item) => item.role ?? item.type));
+    });
+  });
+}
+
+/** The native menus main has popped up since `recordNativeMenus`, each as its items' roles. */
+function nativeMenus(app: ElectronApplication): Promise<string[]> {
+  return app.evaluate(() => {
+    const shown: unknown = Reflect.get(globalThis, 'shownMenus');
+    return Array.isArray(shown) ? shown.map((menu) => String(menu)) : [];
+  });
+}
 
 test('a right-click lists Back and Forward with their keys in this system’s form', async ({
   page,
@@ -169,14 +188,7 @@ test('a right-click in a text field gets the system’s Edit menu, not Lo’s', 
   app,
   page,
 }) => {
-  // Records the native menus main pops up, rather than showing one on the desktop.
-  await app.evaluate(({ Menu }) => {
-    const shown: string[][] = [];
-    Reflect.set(globalThis, 'shownMenus', shown);
-    Reflect.set(Menu.prototype, 'popup', function popup(this: Electron.Menu) {
-      shown.push(this.items.map((item) => item.role ?? item.type));
-    });
-  });
+  await recordNativeMenus(app);
   await page.locator('main[data-lo-middle]').focus();
   await page.keyboard.press('?');
   const search = page
@@ -184,13 +196,38 @@ test('a right-click in a text field gets the system’s Edit menu, not Lo’s', 
     .getByRole('searchbox', { name: 'Find a key or an action' });
   await expect(search).toBeFocused();
   await search.click({ button: 'right' });
-  await expect
-    .poll(() =>
-      app.evaluate(() => {
-        const shown: unknown = Reflect.get(globalThis, 'shownMenus');
-        return Array.isArray(shown) ? shown.map((menu) => String(menu)) : [];
-      }),
-    )
-    .toEqual(['cut,copy,paste,separator,selectall']);
+  await expect.poll(() => nativeMenus(app)).toEqual(['cut,copy,paste,separator,selectall']);
+  await expect(page.getByRole('menu')).toHaveCount(0);
+});
+
+test('a right-click in a code view’s text gets Lo’s menu, and one in a comment box the Edit menu', async ({
+  app,
+  page,
+}) => {
+  await recordNativeMenus(app);
+  // CodeMirror's text is editable content to the page, in a diff and in a comment box alike.
+  await page.evaluate(() => {
+    const window = document.querySelector('[data-lo-scope="window"]');
+    for (const scope of ['diff', 'box']) {
+      const view = document.createElement('div');
+      view.dataset.loScope = scope;
+      const text = document.createElement('div');
+      text.id = scope;
+      text.className = 'cm-content';
+      text.contentEditable = 'true';
+      text.textContent = 'const a = 1;';
+      view.append(text);
+      window?.append(view);
+    }
+  });
+  await page.locator('#diff').click({ button: 'right' });
+  await expect(menuOf(page)).toBeVisible();
+  await expect(menuOf(page)).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menuOf(page)).toBeHidden();
+  expect(await nativeMenus(app)).toEqual([]);
+
+  await page.locator('#box').click({ button: 'right' });
+  await expect.poll(() => nativeMenus(app)).toEqual(['cut,copy,paste,separator,selectall']);
   await expect(page.getByRole('menu')).toHaveCount(0);
 });

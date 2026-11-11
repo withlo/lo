@@ -19,13 +19,14 @@ let middle: Middle | undefined;
 
 /** Builds the window's registry from every feature's commands. */
 export function createRegistry(commands: readonly Command[], system: System): Registry {
-  current = new Registry({
+  const created: Registry = new Registry({
     system,
     commands,
     here: () => middle?.here(),
     // A command asked for that can't run says why, whoever asked: a key, a menu or the palette.
-    onRefused: (reason) => notify(reason),
+    onRefused: (reason, id) => notify(created.command(id)?.label ?? 'Not now', reason),
   });
+  current = created;
   return current;
 }
 

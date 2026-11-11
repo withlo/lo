@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "path": "artifact.md",
+      "kind": "file",
+      "size": 120,
+      "fails": true
+    }
+  ]
+}

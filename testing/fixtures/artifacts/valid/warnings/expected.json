@@ -1,0 +1,11 @@
+{
+  "outcome": "shown",
+  "findings": [
+    { "code": "raw-html", "line": 11 },
+    { "code": "raw-html", "line": 11 },
+    { "code": "outside-image", "line": 11 },
+    { "code": "dead-link", "line": 11 },
+    { "code": "term-unused", "line": 16 }
+  ],
+  "code": []
+}

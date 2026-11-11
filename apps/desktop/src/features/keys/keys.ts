@@ -63,4 +63,14 @@ export default defineCommands('keys', {
     bar: { menu: 'Go', order: 20 },
     menu: { on: 'none', order: 20 },
   },
+  /**
+   * Opens the keymap file in the system's app for it, making it first if there is none. Not where
+   * `g` goes to the widget or to Vim: in menus, dialogs, the palette and comment boxes.
+   */
+  openKeymap: {
+    label: 'Open the keymap file',
+    group: 'Tabs and window',
+    keys: ['g ,'],
+    when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
+  },
 });

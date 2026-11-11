@@ -1,0 +1,37 @@
+{
+  "entries": [
+    {
+      "path": "links/passwd",
+      "link": "/etc/passwd"
+    },
+    {
+      "path": "links/src",
+      "link": "../src"
+    },
+    {
+      "path": "vendor/lib",
+      "submodule": "1111111111111111111111111111111111111111"
+    },
+    {
+      "path": "src/cache.ts",
+      "text": "/** The cache, in lower case: another file than src/Cache.ts. */\nexport const cache = 'lower';\n"
+    },
+    {
+      "path": "names/caf\u00e9.ts",
+      "text": "export const name = 'composed';\n"
+    },
+    {
+      "path": "names/cafe\u0301.ts",
+      "text": "export const name = 'decomposed';\n"
+    },
+    {
+      "bytes": "6e616d65732f6361ff2e7473",
+      "text": "export const name = 'not UTF-8';\n"
+    },
+    {
+      "path": "big/huge.txt",
+      "repeat": "0123456789abcde\n",
+      "size": 10485776
+    }
+  ]
+}

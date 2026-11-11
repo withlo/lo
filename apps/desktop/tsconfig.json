@@ -3,13 +3,16 @@
   "files": [],
   "references": [
     {
+      "path": "../../packages/core/review"
+    },
+    {
+      "path": "../../packages/desktop/git"
+    },
+    {
       "path": "../../packages/desktop/ui"
     },
     {
       "path": "../../packages/core/github"
-    },
-    {
-      "path": "../../packages/desktop/git"
     },
     {
       "path": "../../testing"

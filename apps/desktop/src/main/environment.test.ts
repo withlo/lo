@@ -4,10 +4,12 @@ import {
   appName,
   backgroundEnvironment,
   backgroundSettings,
+  configFolder,
   dataFolder,
   devServer,
   devTools,
   githubSettings,
+  keymapEditor,
 } from './environment.ts';
 
 describe('appName', () => {
@@ -38,6 +40,72 @@ describe('dataFolder', () => {
 
   it('refuses a relative LO_USER_DATA_DIR', () => {
     expect(() => dataFolder({ packaged: false, appData, env: { LO_USER_DATA_DIR: 'lo' } })).toThrow(
+      'absolute path',
+    );
+  });
+});
+
+describe('configFolder', () => {
+  const base = { home: '/home/me', appData: '/home/me/.config' };
+
+  it('is ~/.config/lo in a packaged build on a Mac, whatever XDG_CONFIG_HOME says', () => {
+    expect(configFolder({ ...base, packaged: true, platform: 'darwin', env: {} })).toBe(
+      '/home/me/.config/lo',
+    );
+    expect(
+      configFolder({
+        ...base,
+        packaged: true,
+        platform: 'darwin',
+        env: { XDG_CONFIG_HOME: '/elsewhere' },
+      }),
+    ).toBe('/home/me/.config/lo');
+  });
+
+  it('follows XDG_CONFIG_HOME on Linux, when it is an absolute path', () => {
+    const linux = { ...base, packaged: true, platform: 'linux' } as const;
+    expect(configFolder({ ...linux, env: {} })).toBe('/home/me/.config/lo');
+    expect(configFolder({ ...linux, env: { XDG_CONFIG_HOME: '/srv/config' } })).toBe(
+      '/srv/config/lo',
+    );
+    expect(configFolder({ ...linux, env: { XDG_CONFIG_HOME: 'config' } })).toBe(
+      '/home/me/.config/lo',
+    );
+    expect(configFolder({ ...linux, env: { XDG_CONFIG_HOME: '' } })).toBe('/home/me/.config/lo');
+  });
+
+  it('joins the data folder in a build run from source', () => {
+    const source = { ...base, packaged: false, platform: 'linux' } as const;
+    expect(configFolder({ ...source, env: {} })).toBe('/home/me/.config/Lo Dev/config');
+    expect(
+      configFolder({
+        ...source,
+        env: { LO_USER_DATA_DIR: '/tmp/lo', XDG_CONFIG_HOME: '/srv/config' },
+      }),
+    ).toBe('/tmp/lo/config');
+    expect(() => configFolder({ ...source, env: { LO_USER_DATA_DIR: 'lo' } })).toThrow(
+      'absolute path',
+    );
+  });
+});
+
+describe('keymapEditor', () => {
+  it('names the program a build run from source opens the keymap file with', () => {
+    const env = { LO_KEYMAP_EDITOR: '/tmp/editor' };
+    expect(keymapEditor({ packaged: false, env })).toBe('/tmp/editor');
+    expect(keymapEditor({ packaged: false, env: {} })).toBeUndefined();
+    expect(keymapEditor({ packaged: false, env: { LO_KEYMAP_EDITOR: '' } })).toBeUndefined();
+  });
+
+  it('is ignored in a packaged build, so nothing the environment says picks what Lo runs', () => {
+    expect(keymapEditor({ packaged: true, env: { LO_KEYMAP_EDITOR: '/tmp/editor' } })).toBe(
+      undefined,
+    );
+    expect(keymapEditor({ packaged: true, env: { LO_KEYMAP_EDITOR: 'relative' } })).toBe(undefined);
+  });
+
+  it('refuses a relative path', () => {
+    expect(() => keymapEditor({ packaged: false, env: { LO_KEYMAP_EDITOR: 'editor' } })).toThrow(
       'absolute path',
     );
   });

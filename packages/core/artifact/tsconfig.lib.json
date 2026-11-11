@@ -8,6 +8,9 @@
   "references": [
     {
       "path": "../markdown/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../testing"
     }
   ]
 }

@@ -1,0 +1,6 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "figure-count", "line": 311 }
+  ]
+}

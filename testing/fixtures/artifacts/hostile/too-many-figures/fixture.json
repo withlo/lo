@@ -1,0 +1,8 @@
+{
+  "many": {
+    "prefix": "figures/f",
+    "ending": ".svg",
+    "count": 101,
+    "size": 300
+  }
+}

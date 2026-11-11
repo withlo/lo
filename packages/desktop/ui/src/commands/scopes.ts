@@ -140,6 +140,25 @@ export function isTextField(element: Element | null | undefined): boolean {
 }
 
 /**
+ * Whether the system's Edit menu (cut, copy, paste, spelling) is `element`'s right-click menu,
+ * rather than Lo's: a form field (an input that takes text, or a text area), and editable content
+ * outside a code view, such as a comment box's text. A code view's own text is editable content
+ * too, but it is code: in a diff, a file or a peek, and in CodeMirror's text wherever it is, a
+ * right-click gets Lo's menu for the line.
+ */
+export function hasEditMenu(element: Element | null | undefined): boolean {
+  const kind = textKind(element);
+  if (kind === undefined) return false;
+  if (kind === 'field') return true;
+  const scope = findScope(element).name;
+  if (scope === 'box') return true;
+  return !readingScopes.includes(scope) && element?.closest('.cm-content') === null;
+}
+
+/** The code views that are read, not written in. A comment box is the one that's written in. */
+const readingScopes: readonly string[] = codeScopes.filter((scope) => scope !== 'box');
+
+/**
  * Whether an unhandled `Tab` pressed on `element`, in `scope`, is ended rather than moving focus:
  * focus moves through Lo's scopes only by commands, so a box can't hand its next letters to the
  * diff, nor the tree its keys to whatever follows it. A `dialog`, a scope marked

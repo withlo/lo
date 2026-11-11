@@ -1,0 +1,8 @@
+{
+  "many": {
+    "prefix": "figures/f",
+    "ending": ".png",
+    "count": 500,
+    "size": 100
+  }
+}

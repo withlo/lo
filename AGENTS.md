@@ -152,17 +152,27 @@ bridge to it, `src/window/` the window, `src/platform/` the code that differs be
 Linux, and `src/features/` the features.
 
 ```sh
-pnpm nx run desktop:dev    # run it with hot reloading
-pnpm nx run desktop:start  # build it, then run the build
-pnpm nx run desktop:e2e    # build it, then run its smoke test
+pnpm nx run desktop:dev      # run it with hot reloading
+pnpm nx run desktop:start    # build it, then run the build
+pnpm nx run desktop:e2e      # build it, then run its smoke test
+pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/release/
 ```
 
 - The `electron` package downloads Electron's binary the first time it's needed.
   `pnpm --filter @lo/desktop exec install-electron` fetches it ahead of time.
+- `desktop:package` runs electron-builder (`apps/desktop/build/electron-builder.yml`) on a Mac and
+  makes `Lo-<version>-arm64.zip`: an Apple silicon build signed ad hoc, with no certificate, secret
+  or notarization, and registered for `lo://` and web links. Gatekeeper doesn't trust it, so a copy
+  that was downloaded opens with a right-click and "Open". The `package` workflow, which only a
+  person starts, builds the same zip on a Mac runner and uploads it as an artifact.
+  `scripts/check-package.sh` checks a zip. electron-vite bundles everything the app imports, so the
+  package holds only `dist/` and `package.json`, and no `node_modules`.
 - A build run from source goes by `Lo Dev`, so it never touches an installed Lo's data or its key in
   the system's keychain: it keeps its data in its own folder (`Lo Dev`), or in `LO_USER_DATA_DIR`
   when that's set, and its key under "Lo Dev Safe Storage". A packaged build is `Lo`, and ignores
-  `LO_USER_DATA_DIR`.
+  `LO_USER_DATA_DIR`. Such a build reads the keymap file from `config/keymap` in that folder, rather
+  than from `~/.config/lo`, and opens it with the program `LO_KEYMAP_EDITOR` names (an absolute
+  path), if set, in place of the system's text editor, so a test starts no editor.
 - Code that doesn't call Electron goes in its own module, with unit tests beside it. The smoke test
   in `e2e/` drives the built app with Playwright, each test on an empty data folder, and covers what
   needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`.

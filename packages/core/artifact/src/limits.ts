@@ -30,7 +30,27 @@ export const LIMITS = Object.freeze({
   argument: 1_024,
   /** The most findings reported; errors are kept before warnings. */
   findings: 100,
+  /** The most files and folders in the overview's commit. */
+  entries: 500,
+  /** The most bytes in the overview's commit, figures included. */
+  commit: 50 * 1024 * 1024,
+  /** The most bytes of a file a target names that Lo reads to show its lines. */
+  file: 10 * 1024 * 1024,
+  /** The most bytes of code Lo reads for one overview: every file its targets name, together. */
+  code: 64 * 1024 * 1024,
 });
+
+/**
+ * The most bytes of `artifact.md` to read to parse it: its limit, and a byte-order mark. A larger
+ * one is too large, and isn't read at all.
+ */
+export const ARTIFACT_READ = LIMITS.size + 3;
+
+/** How much of the start of a file is looked at for a NUL byte, which makes it binary. */
+export const BINARY_WINDOW = 8 * 1024;
+
+/** How long checking an overview's code may take unless the caller says, in milliseconds. */
+export const CHECK_TIMEOUT = 30_000;
 
 /** The fewest steps in a walkthrough: with fewer, prose reads better. */
 export const MIN_STEPS = 3;

@@ -1,0 +1,7 @@
+{
+  "outcome": "tooLarge",
+  "what": "text",
+  "findings": [
+    { "code": "too-large" }
+  ]
+}

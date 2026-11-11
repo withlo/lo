@@ -1,0 +1,15 @@
+{
+  "outcome": "shown",
+  "findings": [
+    { "code": "tree-extra", "file": "Artifact.md" },
+    { "code": "tree-extra", "file": "README.md" },
+    { "code": "tree-extra", "file": "docs" },
+    { "code": "tree-extra", "file": "figures/ca�.svg" },
+    { "code": "tree-extra", "file": "figures/flow.SVG" },
+    { "code": "tree-extra", "file": "figures/module.png" },
+    { "code": "tree-extra", "file": "figures/notes.txt" },
+    { "code": "tree-extra", "file": "figures/passwd.svg" },
+    { "code": "tree-extra", "file": "figures/sub" }
+  ],
+  "code": []
+}
