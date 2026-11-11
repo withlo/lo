@@ -45,6 +45,25 @@ export interface FileRows {
   collapsed: Uint8Array;
 }
 
+/**
+ * `rows` moved down by `old` document lines on the old side and `added` on the new: a file's rows
+ * once the lines of a file before it change in number, which moves it and nothing else.
+ */
+export function shiftRows(rows: FileRows, old: number, added: number): FileRows {
+  return {
+    oldFirst: shift(rows.oldFirst, old),
+    oldLast: shift(rows.oldLast, old),
+    newFirst: shift(rows.newFirst, added),
+    newLast: shift(rows.newLast, added),
+    collapsed: rows.collapsed,
+  };
+}
+
+/** A column of document lines moved down by `by`, its -1s, for no line, kept. */
+function shift(column: Int32Array, by: number): Int32Array {
+  return by === 0 ? column : column.map((line) => (line < 0 ? line : line + by));
+}
+
 /** A collapsed run of a file's lines, by its lines on each side. Either side may be empty. */
 export interface Collapsed {
   old?: LineRange;

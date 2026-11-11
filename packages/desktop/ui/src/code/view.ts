@@ -88,6 +88,7 @@ import {
   vimPending,
 } from './keys.ts';
 import { Layout } from './layout.ts';
+import { swapLines } from './lines.ts';
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
 import {
   collapsedRuns,
@@ -98,6 +99,7 @@ import {
   isGapLine,
   type LineRange,
   runAt,
+  shiftRows,
   shownRuns,
 } from './rows.ts';
 import { ThreadSizes } from './widgets.ts';
@@ -408,10 +410,13 @@ class View implements DiffView {
   }
 
   setMoves(moves: readonly MovedCode[]): void {
-    const before = this.#moves;
+    const before = movesByFile(this.#moves);
     this.#moves = moves.flatMap((move) => this.#movedBlock(move) ?? []);
-    const ends = [...before, ...this.#moves].flatMap((move) => [move.from.file, move.to.file]);
-    for (const file of new Set(ends)) this.#refresh(file);
+    const after = movesByFile(this.#moves);
+    // Only the files whose moves changed are drawn again: a pull request's moves come all at once.
+    for (const file of new Set([...before.keys(), ...after.keys()])) {
+      if (before.get(file) !== after.get(file)) this.#refresh(file);
+    }
   }
 
   setTokens(id: string, side: Side, triples: Uint32Array): void {
@@ -1519,9 +1524,16 @@ class View implements DiffView {
         swapLines(this.views[side], header, before[side], lines, fits[side]);
         this.#layout.setCount(side, file, lines.length);
       }
-      // Every file after it has moved.
-      for (let index = file; index < this.#rows.length; index++) {
-        this.#rows[index] = this.#rowsOf(index);
+      // Every file after it has moved by as many lines as it grew.
+      this.#rows[file] = this.#rowsOf(file);
+      const grew = {
+        old: given.old.length - before.old.length,
+        new: given.new.length - before.new.length,
+      };
+      if (grew.old !== 0 || grew.new !== 0) {
+        for (let index = file + 1; index < this.#rows.length; index++) {
+          this.#rows[index] = shiftRows(this.#rows[index]!, grew.old, grew.new);
+        }
       }
       if (this.#inline) this.#replaceInline(file, gaps);
       this.#refresh(file, [tokensChanged.of(null)]);
@@ -1798,62 +1810,18 @@ function sameCounts(
   return before.old.length === after.old.length && before.new.length === after.new.length;
 }
 
-/**
- * Puts lines `after` in place of `before`, after document line `header` of `view`. `inPlace`, as
- * `fitsInPlace` says, changes only the lines that differ, and adds or removes lines at the end, so
- * a cursor or a scroll anchor on a line that stays keeps its place. Otherwise every line is
- * replaced, and a cursor on one goes to the nearest new line with the same text, at its column, or
- * to the same line if none has it.
- */
-function swapLines(
-  view: EditorView,
-  header: number,
-  before: readonly string[],
-  after: readonly string[],
-  inPlace: boolean,
-): void {
-  const { doc, selection } = view.state;
-  const from = doc.line(header).to;
-  const changes: { from: number; to?: number; insert?: string }[] = [];
-  if (!inPlace) {
-    const to = doc.line(header + before.length).to;
-    const head = selection.main.head;
-    const on = head > from && head <= to ? doc.lineAt(head) : undefined;
-    if (from === to && after.length === 0) return;
-    view.dispatch({
-      changes: { from, to, insert: after.length === 0 ? '' : `\n${after.join('\n')}` },
-      annotations: ownChange.of(true),
-    });
-    if (!on) return;
-    const index = on.number - header - 1;
-    const now = view.state.doc;
-    const line = now.line(header + 1 + nearestLine(after, before[index]!, index));
-    view.dispatch({ selection: { anchor: line.from + Math.min(head - on.from, line.length) } });
-    return;
+/** The moves at each file's ends, by file, written out to compare. */
+function movesByFile(moves: readonly MovedBlock[]): Map<number, string> {
+  const byFile = new Map<number, string[]>();
+  for (const move of moves) {
+    const written = JSON.stringify(move);
+    for (const file of new Set([move.from.file, move.to.file])) {
+      const list = byFile.get(file);
+      if (list) list.push(written);
+      else byFile.set(file, [written]);
+    }
   }
-  const common = Math.min(before.length, after.length);
-  for (let index = 0; index < common; index++) {
-    if (before[index] === after[index]) continue;
-    const line = doc.line(header + 1 + index);
-    changes.push({ from: line.from, to: line.to, insert: after[index] });
-  }
-  const end = doc.line(header + common).to;
-  if (after.length > common)
-    changes.push({ from: end, insert: `\n${after.slice(common).join('\n')}` });
-  if (before.length > common) changes.push({ from: end, to: doc.line(header + before.length).to });
-  if (changes.length > 0) view.dispatch({ changes, annotations: ownChange.of(true) });
-}
-
-/**
- * The index of the line of `lines` that reads `text` nearest to `index`, or of the line at `index`,
- * or the last, when none does. -1 for no lines: the header's.
- */
-function nearestLine(lines: readonly string[], text: string, index: number): number {
-  for (let distance = 0; index - distance >= 0 || index + distance < lines.length; distance++) {
-    if (lines[index - distance] === text) return index - distance;
-    if (lines[index + distance] === text) return index + distance;
-  }
-  return Math.min(index, lines.length - 1);
+  return new Map([...byFile].map(([file, list]) => [file, list.join('\n')]));
 }
 
 /** Whether a file's threads are the same threads, in the same places. */
