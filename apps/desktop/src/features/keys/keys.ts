@@ -3,6 +3,25 @@
 import { defineCommands } from '@lo/ui/commands';
 
 export default defineCommands('keys', {
+  /** Every key. `?` is Vim's backward search in code views; Lo searches with `/` alone. */
+  help: {
+    label: 'Every key',
+    group: 'Tabs and window',
+    keys: ['?'],
+    overVim: true,
+  },
+  palette: {
+    label: 'Command palette',
+    group: 'Find',
+    keys: ['cmd+shift+p'],
+  },
+  /** In the palette, shows the highlighted action in key help. */
+  showKey: {
+    label: "Show an action's key",
+    group: 'Palettes',
+    keys: ['alt+enter'],
+    when: { scope: 'palette' },
+  },
   /**
    * Back to the middle view, from anywhere but the widgets that close on `Esc` themselves (menus,
    * dialogs, the palette), a comment box, whose `Esc` is Vim's, and Vim's visual mode.

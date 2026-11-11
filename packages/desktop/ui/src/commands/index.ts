@@ -19,6 +19,17 @@ export {
   type TargetFor,
   type When,
 } from './declare.ts';
+export {
+  filterHelp,
+  filterPalette,
+  helpGroups,
+  paletteItems,
+  whereText,
+  type HelpGroup,
+  type HelpRow,
+  type PaletteItem,
+  type PaletteMatch,
+} from './help.ts';
 export { HISTORY_LIMIT, History, type Entry, type Reveal, type View } from './history.ts';
 export {
   applyKeymap,

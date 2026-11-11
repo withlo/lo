@@ -1,6 +1,7 @@
 import { handlers } from '@lo/ui/commands';
 
 import { barItems, focusedTarget } from '../../../window/commands/bar.ts';
+import { showHighlighted, toggleHelp, togglePalette } from '../../../window/commands/overlays.tsx';
 import { focusMiddle, here, registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client, type Client } from '../../../window/ipc.ts';
@@ -37,6 +38,13 @@ function syncMenu(menu: Client<typeof contract>): void {
 
 export default {
   commands: handlers(keys, {
+    help: { run: toggleHelp },
+    palette: { run: togglePalette },
+    showKey: {
+      run() {
+        showHighlighted();
+      },
+    },
     escape: { run: focusMiddle },
     back: {
       run() {
