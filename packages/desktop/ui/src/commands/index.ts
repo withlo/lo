@@ -54,6 +54,7 @@ export {
 export { HISTORY_LIMIT, History, type Entry, type Reveal, type View } from './history.ts';
 export {
   applyKeymap,
+  KEYMAP_LINE_LIMIT,
   parseKeymap,
   type Applied,
   type Keymap,

@@ -30,13 +30,14 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Tabs and window
 
-| Action                  | Keys        | Where                                                                                  | Command          |
-| ----------------------- | ----------- | -------------------------------------------------------------------------------------- | ---------------- |
-| Zoom in                 | `⌘=`, `⌘⇧=` | Anywhere                                                                               | `app.zoomIn`     |
-| Zoom out                | `⌘-`        | Anywhere                                                                               | `app.zoomOut`    |
-| Actual size             | `⌘0`        | Anywhere                                                                               | `app.actualSize` |
-| Every key               | `?`         | Anywhere                                                                               | `keys.help`      |
-| Back to the middle view | `Esc`       | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`    |
+| Action                  | Keys        | Where                                                                                  | Command           |
+| ----------------------- | ----------- | -------------------------------------------------------------------------------------- | ----------------- |
+| Zoom in                 | `⌘=`, `⌘⇧=` | Anywhere                                                                               | `app.zoomIn`      |
+| Zoom out                | `⌘-`        | Anywhere                                                                               | `app.zoomOut`     |
+| Actual size             | `⌘0`        | Anywhere                                                                               | `app.actualSize`  |
+| Every key               | `?`         | Anywhere                                                                               | `keys.help`       |
+| Back to the middle view | `Esc`       | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`     |
+| Open the keymap file    | `g ,`       | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.openKeymap` |
 
 ## Where keys apply
 
@@ -120,6 +121,13 @@ A line that can't be read or applied is reported with its number, and the others
 `bind` doesn't apply when it names one of Vim's own keys, repeats a key the command already has, or
 would keep another command's key from running: one of the two being the start of the other where
 both apply.
+
+Lo watches the file, so a saved change applies within a second, with no restart, and key help (`?`)
+shows the new keys and the lines Lo can't use. To open the file, use the button in key help, the
+command palette or `g ,`: Lo opens it in your system's app for text, writing it first, with a header
+of comments, if there isn't one. Lo reads a file of up to 1 MiB and lines of up to 1,000 characters;
+a longer line is reported and skipped, and a longer file isn't read. Nothing in the file is ever
+run.
 
 ### Writing keys
 

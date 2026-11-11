@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   backgroundEnvironment,
   backgroundSettings,
+  configFolder,
   dataFolder,
   devServer,
   devTools,
@@ -29,6 +30,50 @@ describe('dataFolder', () => {
 
   it('refuses a relative LO_USER_DATA_DIR', () => {
     expect(() => dataFolder({ packaged: false, appData, env: { LO_USER_DATA_DIR: 'lo' } })).toThrow(
+      'absolute path',
+    );
+  });
+});
+
+describe('configFolder', () => {
+  const base = { home: '/home/me', appData: '/home/me/.config' };
+
+  it('is ~/.config/lo in a packaged build on a Mac, whatever XDG_CONFIG_HOME says', () => {
+    expect(configFolder({ ...base, packaged: true, platform: 'darwin', env: {} })).toBe(
+      '/home/me/.config/lo',
+    );
+    expect(
+      configFolder({
+        ...base,
+        packaged: true,
+        platform: 'darwin',
+        env: { XDG_CONFIG_HOME: '/elsewhere' },
+      }),
+    ).toBe('/home/me/.config/lo');
+  });
+
+  it('follows XDG_CONFIG_HOME on Linux, when it is an absolute path', () => {
+    const linux = { ...base, packaged: true, platform: 'linux' } as const;
+    expect(configFolder({ ...linux, env: {} })).toBe('/home/me/.config/lo');
+    expect(configFolder({ ...linux, env: { XDG_CONFIG_HOME: '/srv/config' } })).toBe(
+      '/srv/config/lo',
+    );
+    expect(configFolder({ ...linux, env: { XDG_CONFIG_HOME: 'config' } })).toBe(
+      '/home/me/.config/lo',
+    );
+    expect(configFolder({ ...linux, env: { XDG_CONFIG_HOME: '' } })).toBe('/home/me/.config/lo');
+  });
+
+  it('joins the data folder in a build run from source', () => {
+    const source = { ...base, packaged: false, platform: 'linux' } as const;
+    expect(configFolder({ ...source, env: {} })).toBe('/home/me/.config/Lo Dev/config');
+    expect(
+      configFolder({
+        ...source,
+        env: { LO_USER_DATA_DIR: '/tmp/lo', XDG_CONFIG_HOME: '/srv/config' },
+      }),
+    ).toBe('/tmp/lo/config');
+    expect(() => configFolder({ ...source, env: { LO_USER_DATA_DIR: 'lo' } })).toThrow(
       'absolute path',
     );
   });

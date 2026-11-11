@@ -1,4 +1,6 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -24,6 +26,11 @@ export function dataFolder(): string {
   return base.info().outputPath('data');
 }
 
+/** Where an unpackaged Lo with this data folder reads its keymap file. */
+export function keymapPath(data: string): string {
+  return join(data, 'config', 'keymap');
+}
+
 /**
  * The environment Lo starts with: this one, without anything that would point it at a dev server
  * or run Electron as plain Node, and with the test's data folder.
@@ -42,6 +49,8 @@ export function appEnvironment(data: string): Record<string, string> {
 type LaunchOptions = NonNullable<Parameters<typeof electron.launch>[0]>;
 
 interface Fixtures {
+  /** What the keymap file says when Lo starts, or `undefined` for no file. */
+  keymap: string | undefined;
   /** Extra options for starting Lo, for tests that need it started differently. Its `env` adds to Lo's. */
   launch: LaunchOptions;
   /** Lo, started on an empty data folder with Chromium's sandbox on. */
@@ -52,11 +61,17 @@ interface Fixtures {
 
 export const test = base.extend<Fixtures>({
   launch: [{}, { option: true }],
-  app: async ({ launch }, use) => {
+  keymap: [undefined, { option: true }],
+  app: async ({ launch, keymap }, use) => {
     const { env, ...options } = launch;
+    const data = dataFolder();
+    if (keymap !== undefined) {
+      mkdirSync(join(data, 'config'), { recursive: true });
+      writeFileSync(keymapPath(data), keymap);
+    }
     const app = await electron.launch({
       args: [appFolder],
-      env: { ...appEnvironment(dataFolder()), ...env },
+      env: { ...appEnvironment(data), ...env },
       // Playwright turns the sandbox off on Linux unless asked; Lo must run with it.
       chromiumSandbox: true,
       ...options,

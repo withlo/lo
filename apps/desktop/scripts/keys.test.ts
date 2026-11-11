@@ -99,6 +99,9 @@ describe('docs/keys.md', () => {
     expect(doc).toContain('```\n# Open the command palette with ⌘K as well');
     expect(doc).toContain('\nbind cmd+k keys.palette\n');
     expect(section('### Writing keys').join('\n')).toContain('`f1` to `f20`');
+    // How it is opened, and what Lo reads of it.
+    expect(doc).toContain('the command palette or `g ,`: Lo opens it');
+    expect(doc).toContain('a file of up to 1 MiB and lines of up to 1,000 characters');
     expect(() => keysDoc([diff, tree])).toThrow(
       "The example keymap no longer applies: line 2: There's no command called keys.palette.",
     );

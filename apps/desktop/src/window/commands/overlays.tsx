@@ -9,6 +9,7 @@ import {
   paletteItems,
   parseKeys,
   systemStrokes,
+  NO_TARGET,
   type PaletteMatch,
   type Target,
 } from '@lo/ui/commands';
@@ -16,6 +17,7 @@ import { KeyHelp, Key, Palette, PaletteHint, type PaletteGroup } from '@lo/ui';
 import { useState, useSyncExternalStore } from 'react';
 
 import { focusedTarget } from './bar.ts';
+import { keymapProblem, subscribeProblem } from './keymap.ts';
 import { registry } from './registry.ts';
 
 /** What's open over the window. */
@@ -134,6 +136,7 @@ function keyOf(id: string): string[] | undefined {
 /** Key help and the command palette, over the window. */
 export function Overlays() {
   const open = useSyncExternalStore(subscribe, overlay);
+  const problem = useSyncExternalStore(subscribeProblem, keymapProblem);
   useKeys();
   const container = document.getElementById('root');
   return (
@@ -145,6 +148,10 @@ export function Overlays() {
         }}
         groups={helpGroups(registry())}
         errors={registry().keymapErrors()}
+        problem={problem}
+        onOpenKeymap={() => {
+          registry().run('keys.openKeymap', NO_TARGET);
+        }}
         show={open?.kind === 'help' ? open.show : undefined}
         container={container}
         onClosed={closed}

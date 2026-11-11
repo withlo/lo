@@ -6,7 +6,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildCss, hasRule } from '../scripts/stylesheet.ts';
 import type { HelpGroup } from './commands/index.ts';
 import { Key } from './Key.tsx';
-import { KeyHelp } from './KeyHelp.tsx';
+import { ERRORS_SHOWN, KeyHelp } from './KeyHelp.tsx';
 import { Palette, PaletteHint } from './Palette.tsx';
 
 beforeAll(() => {
@@ -167,6 +167,52 @@ describe('KeyHelp', () => {
     expect(alert?.textContent).toContain('Line 5: A line starts with bind');
   });
 
+  it('lists only the first of the keymap file’s errors, and counts the rest', () => {
+    const errors = Array.from({ length: 5000 }, (_, index) => ({
+      line: index + 1,
+      message: 'No good.',
+    }));
+    const page = render(<KeyHelp open onOpenChange={() => {}} groups={groups} errors={errors} />);
+    const alert = page.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("The keymap file has 5000 lines Lo can't use:");
+    const items = [...(alert?.querySelectorAll('li') ?? [])].map((item) => item.textContent);
+    expect(items).toHaveLength(ERRORS_SHOWN + 1);
+    expect(items[0]).toBe('Line 1: No good.');
+    expect(items.at(-1)).toBe(`And ${5000 - ERRORS_SHOWN} more.`);
+  });
+
+  it('says what is wrong with the keymap file as a whole', () => {
+    const none = render(<KeyHelp open onOpenChange={() => {}} groups={groups} />);
+    expect(none.querySelector('[role="alert"]')).toBeNull();
+    act(() => root?.unmount());
+    const page = render(
+      <KeyHelp
+        open
+        onOpenChange={() => {}}
+        groups={groups}
+        problem="The keymap file is over 1 MiB, so Lo didn't read it."
+      />,
+    );
+    expect(page.querySelector('[role="alert"]')?.textContent).toBe(
+      "The keymap file is over 1 MiB, so Lo didn't read it.",
+    );
+  });
+
+  it('offers to open the keymap file when it can', () => {
+    const none = render(<KeyHelp open onOpenChange={() => {}} groups={groups} />);
+    expect(none.textContent).not.toContain('Open the keymap file');
+    act(() => root?.unmount());
+    const onOpenKeymap = vi.fn<() => void>();
+    const page = render(
+      <KeyHelp open onOpenChange={() => {}} groups={groups} onOpenKeymap={onOpenKeymap} />,
+    );
+    const button = [...page.querySelectorAll('button')].find(
+      (each) => each.textContent === 'Open the keymap file',
+    );
+    act(() => button?.click());
+    expect(onOpenKeymap).toHaveBeenCalledOnce();
+  });
+
   it('closes on Esc', () => {
     const onOpenChange = vi.fn<(open: boolean) => void>();
     const page = render(<KeyHelp open onOpenChange={onOpenChange} groups={groups} />);
@@ -248,6 +294,7 @@ describe('the styles', () => {
           groups={groups}
           show="keys.back"
           errors={[{ line: 1, message: 'x' }]}
+          problem="x"
           onOpenKeymap={() => {}}
         />
       </>,

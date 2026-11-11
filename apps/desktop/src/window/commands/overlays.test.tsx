@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import keys from '../../features/keys/window/index.ts';
+import type { Bridge } from '../../ipc/bridge.ts';
 import {
   closeOverlay,
   openPalette,
@@ -13,6 +14,7 @@ import {
   toggleHelp,
   togglePalette,
 } from './overlays.tsx';
+import { applyKeymapFile } from './keymap.ts';
 import { createRegistry, registry } from './registry.ts';
 
 beforeAll(() => {
@@ -56,6 +58,11 @@ function type(field: HTMLInputElement, text: string): void {
   });
 }
 
+/** What key help's alerts say. */
+function alerts(): (string | null)[] {
+  return [...document.querySelectorAll('[role="alert"]')].map((each) => each.textContent);
+}
+
 /** The keys key help shows for Back. */
 function backKeys(): (string | null)[] {
   return [...document.querySelectorAll('[data-command="keys.back"] kbd')].map(
@@ -84,6 +91,40 @@ describe('key help', () => {
     });
     expect(backKeys()).toEqual(['⌃o']);
     expect(document.querySelector('[role="alert"]')?.textContent).toContain('Line 1:');
+  });
+});
+
+describe('key help and the keymap file', () => {
+  it('shows what is wrong with the file, and its lines that can’t be used, as they change', () => {
+    act(() => toggleHelp());
+    expect(alerts()).toEqual([]);
+    act(() =>
+      applyKeymapFile({
+        text: '',
+        problem: "The keymap file is over 1 MiB, so Lo didn't read it.",
+      }),
+    );
+    expect(alerts()).toEqual(["The keymap file is over 1 MiB, so Lo didn't read it."]);
+    act(() => applyKeymapFile({ text: 'bind x nope.nothing\n# fine\nbnid y keys.back' }));
+    expect(alerts()).toEqual([
+      "The keymap file has 2 lines Lo can't use:Line 1: There's no command called nope.nothing.Line 3: A line starts with bind, unbind, vim or #, not bnid.",
+    ]);
+    act(() => applyKeymapFile({ text: 'bind ctrl+b keys.back' }));
+    expect(alerts()).toEqual([]);
+    expect(backKeys()).toEqual(['⌃b', '⌃o']);
+  });
+
+  it('opens the keymap file from its button, through the command', async () => {
+    const invoke = vi.fn<Bridge['invoke']>(async () => ({ ok: true, value: undefined }));
+    Reflect.set(window, 'lo', { invoke, subscribe: () => () => undefined });
+    act(() => toggleHelp());
+    const button = [...document.querySelectorAll('button')].find(
+      (each) => each.textContent === 'Open the keymap file',
+    );
+    act(() => button?.click());
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('keys.openKeymap', undefined));
+    // Key help stays up, so the file's errors are there when Lo is back.
+    expect(dialog('Every key')).toBeDefined();
   });
 });
 

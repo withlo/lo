@@ -158,7 +158,8 @@ pnpm nx run desktop:e2e    # build it, then run its smoke test
 - The `electron` package downloads Electron's binary the first time it's needed.
   `pnpm --filter @lo/desktop exec install-electron` fetches it ahead of time.
 - A build run from source keeps its data in its own folder (`Lo Dev`, beside an installed Lo's), or
-  in `LO_USER_DATA_DIR` when that's set. A packaged build ignores both.
+  in `LO_USER_DATA_DIR` when that's set. A packaged build ignores both. Such a build reads the
+  keymap file from `config/keymap` in that folder, rather than from `~/.config/lo`.
 - Code that doesn't call Electron goes in its own module, with unit tests beside it. The smoke test
   in `e2e/` drives the built app with Playwright, each test on an empty data folder, and covers what
   needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`.
