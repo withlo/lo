@@ -4,14 +4,15 @@
 
 import { join } from 'node:path';
 
-import { app, Menu, shell } from 'electron';
+import { app, Menu } from 'electron';
 
-import { configFolder, devTools } from '../../../main/environment.ts';
+import { configFolder, devTools, keymapEditor } from '../../../main/environment.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { appMenu } from '../../../platform/index.ts';
 import { IpcError } from '../../../ipc/contract.ts';
 import { contract, keymapFile, type BarItem } from '../contract.ts';
-import { ensureKeymap, watchKeymap, type KeymapWatch } from './keymap.ts';
+import { watchKeymap, type KeymapWatch } from './keymap.ts';
+import { launch, openKeymapFile } from './open.ts';
 
 const tools = devTools({ packaged: app.isPackaged, env: process.env });
 
@@ -48,19 +49,13 @@ export default defineFeature(contract, {
       return keymapFile.parse(await keymap.latest());
     },
     async openKeymap() {
-      const path = keymapPath();
-      try {
-        await ensureKeymap(path);
-      } catch (error) {
-        console.error("Lo couldn't create the keymap file:", error);
-        throw new IpcError('unopened', "Lo couldn't create the keymap file.");
-      }
-      // An empty answer is success; anything else says why the system couldn't open it.
-      const failure = await shell.openPath(path);
-      if (failure !== '') {
-        console.error("The system couldn't open the keymap file:", failure);
-        throw new IpcError('unopened', "Lo couldn't open the keymap file.");
-      }
+      // The only file it opens is the keymap file's. It is checked and opened as text, never run.
+      const result = await openKeymapFile(keymapPath(), {
+        platform: process.platform,
+        launch,
+        editor: keymapEditor({ packaged: app.isPackaged, env: process.env }),
+      });
+      if (!result.ok) throw new IpcError('unopened', result.reason);
     },
   },
   start({ publish }) {

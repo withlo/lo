@@ -2,7 +2,7 @@ import { handlers } from '@lo/ui/commands';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { barItems, focusedTarget, runFromBar } from '../../../window/commands/bar.ts';
-import { applyKeymapFile, setOpenProblem } from '../../../window/commands/keymap.ts';
+import { applyKeymapFile, keymapOpenable } from '../../../window/commands/keymap.ts';
 import { currentMenu, openMenuAtFocus } from '../../../window/commands/menus.tsx';
 import { notify } from '../../../window/commands/notices.tsx';
 import { showHighlighted, toggleHelp, togglePalette } from '../../../window/commands/overlays.tsx';
@@ -62,14 +62,14 @@ function syncKeymap(file: Client<typeof contract>): void {
     .catch((error: unknown) => console.error("Lo couldn't read the keymap file:", error));
 }
 
-/** Opens the keymap file, and tells key help if it can't be. */
+/** Opens the keymap file, and says why in a toast if it can't be. */
 async function openKeymap(): Promise<void> {
   try {
     await main().openKeymap();
-    setOpenProblem(undefined);
   } catch (error) {
     console.error("Lo couldn't open the keymap file:", error);
-    setOpenProblem(
+    notify(
+      'Open the keymap file',
       error instanceof IpcError && error.code === 'unopened'
         ? error.message
         : "Lo couldn't open the keymap file.",
@@ -102,7 +102,8 @@ export default {
         if (!registry().history.forward()) notify('Forward', "There's nowhere to go forward to.");
       },
     },
-    openKeymap: { run: openKeymap },
+    // A file Lo won't open says why when asked, as any command that can't run does.
+    openKeymap: { run: openKeymap, enabled: keymapOpenable },
   }),
   start() {
     const menu = main();

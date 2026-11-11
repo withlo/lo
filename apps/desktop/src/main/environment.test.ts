@@ -7,6 +7,7 @@ import {
   dataFolder,
   devServer,
   devTools,
+  keymapEditor,
 } from './environment.ts';
 
 describe('dataFolder', () => {
@@ -74,6 +75,28 @@ describe('configFolder', () => {
       }),
     ).toBe('/tmp/lo/config');
     expect(() => configFolder({ ...source, env: { LO_USER_DATA_DIR: 'lo' } })).toThrow(
+      'absolute path',
+    );
+  });
+});
+
+describe('keymapEditor', () => {
+  it('names the program a build run from source opens the keymap file with', () => {
+    const env = { LO_KEYMAP_EDITOR: '/tmp/editor' };
+    expect(keymapEditor({ packaged: false, env })).toBe('/tmp/editor');
+    expect(keymapEditor({ packaged: false, env: {} })).toBeUndefined();
+    expect(keymapEditor({ packaged: false, env: { LO_KEYMAP_EDITOR: '' } })).toBeUndefined();
+  });
+
+  it('is ignored in a packaged build, so nothing the environment says picks what Lo runs', () => {
+    expect(keymapEditor({ packaged: true, env: { LO_KEYMAP_EDITOR: '/tmp/editor' } })).toBe(
+      undefined,
+    );
+    expect(keymapEditor({ packaged: true, env: { LO_KEYMAP_EDITOR: 'relative' } })).toBe(undefined);
+  });
+
+  it('refuses a relative path', () => {
+    expect(() => keymapEditor({ packaged: false, env: { LO_KEYMAP_EDITOR: 'editor' } })).toThrow(
       'absolute path',
     );
   });

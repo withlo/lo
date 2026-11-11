@@ -3,10 +3,12 @@
 //
 // The file is the person's own, but it is text from outside Lo, so it is read as such: a file that
 // isn't a plain file, or is over the limit, is left unread, and nothing in it is ever run. Main
-// sends the window its text; the window parses it.
+// sends the window its text; the window parses it. The checks that decide whether the file is read
+// also decide whether Lo may open it in an editor (`canOpen`), so what key help offers and what
+// main will do agree.
 
 import { constants } from 'node:fs';
-import { mkdir, open, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, stat, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { KEYMAP_SIZE_LIMIT, type KeymapFile } from '../contract.ts';
@@ -22,13 +24,23 @@ export const keymapHeader = `# Lo's keymap. Lo applies a change as soon as you s
 # Press ? in Lo to see every key and the name of each command.
 `;
 
-/** The file, read: no text and no problem while it doesn't exist. */
-const MISSING: KeymapFile = { text: '' };
+/** The file as it is when there is none: the empty keymap, which opening the file makes. */
+const MISSING: KeymapFile = { text: '', canOpen: true };
+
+/** A file Lo reads and opens for nothing: no text, and why. */
+function refused(problem: string): KeymapFile {
+  return { text: '', problem, canOpen: false };
+}
 
 /**
- * Reads the keymap file at `path`. A file that isn't there is the empty keymap; one that is there
- * and can't be used (a folder, a pipe, over the size limit, not text, or not readable) is no text
- * and a `problem` to show. It never throws, and never reads more than the limit and a byte.
+ * Reads the keymap file at `path`, following links. A file that isn't there is the empty keymap;
+ * one that is there and can't be used (a folder or an app, a pipe, over the size limit, not text,
+ * or not readable) is no text and a `problem` to show. It never throws, and never reads more than
+ * the limit and a byte.
+ *
+ * `canOpen` says whether Lo will open the file in an editor: only a plain file of text within the
+ * limit that isn't executable. An executable file is read, since reading runs nothing, but opening
+ * it could run it (in Terminal, say), so it has a problem and can't be opened.
  */
 export async function readKeymap(path: string): Promise<KeymapFile> {
   let handle;
@@ -36,15 +48,16 @@ export async function readKeymap(path: string): Promise<KeymapFile> {
     // Without O_NONBLOCK, opening a named pipe waits for someone to write to it.
     handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch (error) {
-    return failure(error);
+    return failure(error, path);
   }
   try {
     const info = await handle.stat();
-    if (!info.isFile()) return { text: '', problem: "The keymap file isn't a file." };
-    const tooBig = {
-      text: '',
-      problem: `The keymap file is over ${KEYMAP_SIZE_LIMIT / 1024 ** 2} MiB, so Lo didn't read it.`,
-    };
+    if (!info.isFile()) {
+      return refused("The keymap file isn't a plain file, so Lo doesn't read or open it.");
+    }
+    const tooBig = refused(
+      `The keymap file is over ${KEYMAP_SIZE_LIMIT / 1024 ** 2} MiB, so Lo didn't read it.`,
+    );
     if (info.size > KEYMAP_SIZE_LIMIT) return tooBig;
     // One byte past the limit, in case the file grew since `stat`.
     const buffer = Buffer.alloc(KEYMAP_SIZE_LIMIT + 1);
@@ -56,23 +69,40 @@ export async function readKeymap(path: string): Promise<KeymapFile> {
     }
     if (length > KEYMAP_SIZE_LIMIT) return tooBig;
     const text = new TextDecoder('utf-8').decode(buffer.subarray(0, length));
-    if (text.includes('\0')) return { text: '', problem: "The keymap file isn't text." };
-    return { text };
+    if (text.includes('\0')) return refused("The keymap file isn't text.");
+    // Any of the owner's, group's or others' execute bits.
+    if ((info.mode & 0o111) !== 0) {
+      return {
+        text,
+        problem:
+          "The keymap file is executable, so Lo won't open it, which could run it. Clear its execute permission to open it from here.",
+        canOpen: false,
+      };
+    }
+    return { text, canOpen: true };
   } catch (error) {
-    return failure(error);
+    return await failure(error, path);
   } finally {
     await handle.close().catch(() => undefined);
   }
 }
 
 /** A failed read or open: no file is the empty keymap, anything else a problem. */
-function failure(error: unknown): KeymapFile {
+async function failure(error: unknown, path: string): Promise<KeymapFile> {
   const code = errorCode(error);
-  if (code === 'ENOENT' || code === 'ENOTDIR') return MISSING;
-  if (code === 'EACCES' || code === 'EPERM') {
-    return { text: '', problem: "Lo isn't allowed to read the keymap file." };
+  if (code === 'ENOENT') {
+    // A link to nothing is there, though nothing is at the end of it.
+    const link = await lstat(path).then(
+      () => true,
+      () => false,
+    );
+    return link ? refused("The keymap file is a link to a file that isn't there.") : MISSING;
   }
-  return { text: '', problem: `Lo couldn't read the keymap file${code ? ` (${code})` : ''}.` };
+  if (code === 'ENOTDIR') return MISSING;
+  if (code === 'EACCES' || code === 'EPERM') {
+    return refused("Lo isn't allowed to read the keymap file.");
+  }
+  return refused(`Lo couldn't read the keymap file${code ? ` (${code})` : ''}.`);
 }
 
 function errorCode(error: unknown): string | undefined {
@@ -107,7 +137,7 @@ async function signature(path: string): Promise<string> {
 }
 
 function same(a: KeymapFile, b: KeymapFile | undefined): boolean {
-  return b !== undefined && a.text === b.text && a.problem === b.problem;
+  return b !== undefined && a.text === b.text && a.problem === b.problem && a.canOpen === b.canOpen;
 }
 
 export interface KeymapWatch {

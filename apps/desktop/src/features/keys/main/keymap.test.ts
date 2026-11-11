@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -17,6 +18,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { KEYMAP_SIZE_LIMIT, type KeymapFile } from '../contract.ts';
 import { ensureKeymap, keymapHeader, readKeymap, watchKeymap } from './keymap.ts';
+
+const NOT_PLAIN = "The keymap file isn't a plain file, so Lo doesn't read or open it.";
 
 let folder: string;
 let path: string;
@@ -39,26 +42,29 @@ function write(text: string | Uint8Array, at = path): void {
 describe('readKeymap', () => {
   it('reads the file’s text', async () => {
     write('bind x diff.markViewed\n# a comment\n');
-    expect(await readKeymap(path)).toEqual({ text: 'bind x diff.markViewed\n# a comment\n' });
+    expect(await readKeymap(path)).toEqual({
+      text: 'bind x diff.markViewed\n# a comment\n',
+      canOpen: true,
+    });
   });
 
   it('reads no file, and no folder for it, as the empty keymap', async () => {
-    expect(await readKeymap(path)).toEqual({ text: '' });
+    expect(await readKeymap(path)).toEqual({ text: '', canOpen: true });
     // A file where the folder should be.
     write('x', join(folder, 'config'));
-    expect(await readKeymap(path)).toEqual({ text: '' });
+    expect(await readKeymap(path)).toEqual({ text: '', canOpen: true });
   });
 
   it('reads an empty file as the empty keymap', async () => {
     write('');
-    expect(await readKeymap(path)).toEqual({ text: '' });
+    expect(await readKeymap(path)).toEqual({ text: '', canOpen: true });
   });
 
   it('follows a link, as a keymap kept with other dotfiles is one', async () => {
     write('bind x diff.markViewed', join(folder, 'dotfiles', 'keymap'));
     mkdirSync(join(folder, 'config'), { recursive: true });
     symlinkSync(join(folder, 'dotfiles', 'keymap'), path);
-    expect(await readKeymap(path)).toEqual({ text: 'bind x diff.markViewed' });
+    expect(await readKeymap(path)).toEqual({ text: 'bind x diff.markViewed', canOpen: true });
   });
 
   it('reads a file of exactly the limit, and leaves one a byte over unread', async () => {
@@ -68,6 +74,7 @@ describe('readKeymap', () => {
     expect(await readKeymap(path)).toEqual({
       text: '',
       problem: "The keymap file is over 1 MiB, so Lo didn't read it.",
+      canOpen: false,
     });
   });
 
@@ -84,19 +91,23 @@ describe('readKeymap', () => {
 
   it('reports a folder, a pipe and a file that isn’t text, without waiting on any', async () => {
     mkdirSync(path, { recursive: true });
-    expect(await readKeymap(path)).toEqual({ text: '', problem: "The keymap file isn't a file." });
+    expect(await readKeymap(path)).toEqual({ text: '', problem: NOT_PLAIN, canOpen: false });
     rmSync(path, { recursive: true });
     // Opening a pipe for reading would otherwise wait for a writer for ever.
     execFileSync('mkfifo', [path]);
-    expect(await readKeymap(path)).toEqual({ text: '', problem: "The keymap file isn't a file." });
+    expect(await readKeymap(path)).toEqual({ text: '', problem: NOT_PLAIN, canOpen: false });
     rmSync(path);
     write(Uint8Array.from([0x62, 0x69, 0x6e, 0x64, 0x00, 0xff, 0x0a]));
-    expect(await readKeymap(path)).toEqual({ text: '', problem: "The keymap file isn't text." });
+    expect(await readKeymap(path)).toEqual({
+      text: '',
+      problem: "The keymap file isn't text.",
+      canOpen: false,
+    });
   });
 
   it('reads invalid UTF-8 as replacement characters, and drops a byte order mark', async () => {
     write(Uint8Array.from([0xef, 0xbb, 0xbf, 0x23, 0x20, 0xff, 0x0a]));
-    expect(await readKeymap(path)).toEqual({ text: '# �\n' });
+    expect(await readKeymap(path)).toEqual({ text: '# �\n', canOpen: true });
   });
 
   // Root reads whatever it likes.
@@ -106,6 +117,30 @@ describe('readKeymap', () => {
     expect(await readKeymap(path)).toEqual({
       text: '',
       problem: "Lo isn't allowed to read the keymap file.",
+      canOpen: false,
+    });
+  });
+
+  it('reads an executable file, which runs nothing, but won’t have it opened', async () => {
+    write('bind x diff.markViewed\n');
+    chmodSync(path, 0o755);
+    expect(await readKeymap(path)).toEqual({
+      text: 'bind x diff.markViewed\n',
+      problem:
+        "The keymap file is executable, so Lo won't open it, which could run it. Clear its execute permission to open it from here.",
+      canOpen: false,
+    });
+    chmodSync(path, 0o644);
+    expect(await readKeymap(path)).toEqual({ text: 'bind x diff.markViewed\n', canOpen: true });
+  });
+
+  it('reports a link to nothing, which is neither no file nor one to open', async () => {
+    mkdirSync(join(folder, 'config'), { recursive: true });
+    symlinkSync(join(folder, 'elsewhere'), path);
+    expect(await readKeymap(path)).toEqual({
+      text: '',
+      problem: "The keymap file is a link to a file that isn't there.",
+      canOpen: false,
     });
   });
 
@@ -115,6 +150,7 @@ describe('readKeymap', () => {
     expect(await readKeymap(path)).toEqual({
       text: '',
       problem: "Lo couldn't read the keymap file (ELOOP).",
+      canOpen: false,
     });
   });
 });
@@ -138,7 +174,7 @@ describe('ensureKeymap', () => {
     mkdirSync(join(folder, 'config'), { recursive: true });
     symlinkSync(join(folder, 'elsewhere'), path);
     await expect(ensureKeymap(path)).resolves.toBeUndefined();
-    expect(await readKeymap(join(folder, 'elsewhere'))).toEqual({ text: '' });
+    expect(await readKeymap(join(folder, 'elsewhere'))).toEqual({ text: '', canOpen: true });
   });
 
   it('has a header that changes no key and has nothing wrong with it', () => {
@@ -175,20 +211,20 @@ describe('watchKeymap', () => {
   it('starts with the file as it is, reporting no change for it', async () => {
     write('bind x diff.markViewed');
     const { watcher, changes } = watch();
-    expect(await watcher.latest()).toEqual({ text: 'bind x diff.markViewed' });
+    expect(await watcher.latest()).toEqual({ text: 'bind x diff.markViewed', canOpen: true });
     await settle(watcher);
     expect(changes).toEqual([]);
   });
 
   it('starts with no file, then reports it when it is made, folder and all', async () => {
     const { watcher, changes } = watch();
-    expect(await watcher.latest()).toEqual({ text: '' });
+    expect(await watcher.latest()).toEqual({ text: '', canOpen: true });
     await settle(watcher);
     expect(changes).toEqual([]);
     write('bind x diff.markViewed');
     await settle(watcher);
-    expect(changes).toEqual([{ text: 'bind x diff.markViewed' }]);
-    expect(await watcher.latest()).toEqual({ text: 'bind x diff.markViewed' });
+    expect(changes).toEqual([{ text: 'bind x diff.markViewed', canOpen: true }]);
+    expect(await watcher.latest()).toEqual({ text: 'bind x diff.markViewed', canOpen: true });
   });
 
   it('reports a change written in place, and then the file’s removal', async () => {
@@ -199,7 +235,10 @@ describe('watchKeymap', () => {
     await settle(watcher);
     rmSync(path);
     await settle(watcher);
-    expect(changes).toEqual([{ text: 'bind y diff.markViewed' }, { text: '' }]);
+    expect(changes).toEqual([
+      { text: 'bind y diff.markViewed', canOpen: true },
+      { text: '', canOpen: true },
+    ]);
   });
 
   it('reports a change saved by renaming a new file over the old, as editors do', async () => {
@@ -212,8 +251,8 @@ describe('watchKeymap', () => {
       await settle(watcher);
     }
     expect(changes).toEqual([
-      { text: 'bind y diff.markViewed' },
-      { text: 'bind z diff.markViewed' },
+      { text: 'bind y diff.markViewed', canOpen: true },
+      { text: 'bind z diff.markViewed', canOpen: true },
     ]);
   });
 
@@ -223,10 +262,10 @@ describe('watchKeymap', () => {
     mkdirSync(join(folder, 'config'), { recursive: true });
     symlinkSync(target, path);
     const { watcher, changes } = watch();
-    expect(await watcher.latest()).toEqual({ text: 'bind x diff.markViewed' });
+    expect(await watcher.latest()).toEqual({ text: 'bind x diff.markViewed', canOpen: true });
     write('bind y diff.markViewed', target);
     await settle(watcher);
-    expect(changes).toEqual([{ text: 'bind y diff.markViewed' }]);
+    expect(changes).toEqual([{ text: 'bind y diff.markViewed', canOpen: true }]);
   });
 
   it('reads a change only once it has held still for a poll, so a save part-written is never read', async () => {
@@ -239,7 +278,7 @@ describe('watchKeymap', () => {
     await watcher.check();
     expect(changes).toEqual([]);
     await watcher.check();
-    expect(changes).toEqual([{ text: 'bind y diff.markViewed' }]);
+    expect(changes).toEqual([{ text: 'bind y diff.markViewed', canOpen: true }]);
   });
 
   it('reports nothing for a save that leaves the file saying the same', async () => {
@@ -262,9 +301,21 @@ describe('watchKeymap', () => {
     write('bind y diff.markViewed');
     await settle(watcher);
     expect(changes).toEqual([
-      { text: '', problem: "The keymap file is over 1 MiB, so Lo didn't read it." },
-      { text: 'bind y diff.markViewed' },
+      { text: '', problem: "The keymap file is over 1 MiB, so Lo didn't read it.", canOpen: false },
+      { text: 'bind y diff.markViewed', canOpen: true },
     ]);
+  });
+
+  it('reports a change to the file’s permissions, which decide whether it can be opened', async () => {
+    write('bind x diff.markViewed');
+    const { watcher, changes } = watch();
+    await watcher.latest();
+    chmodSync(path, 0o755);
+    await settle(watcher);
+    chmodSync(path, 0o644);
+    await settle(watcher);
+    expect(changes.map((change) => change.canOpen)).toEqual([false, true]);
+    expect(changes[0]?.text).toBe('bind x diff.markViewed');
   });
 
   it('looks at the file by itself, and stops when told to', async () => {
@@ -272,7 +323,9 @@ describe('watchKeymap', () => {
     const { watcher, changes } = watch({ interval: 10 });
     await watcher.latest();
     write('bind y diff.markViewed');
-    await vi.waitFor(() => expect(changes).toEqual([{ text: 'bind y diff.markViewed' }]));
+    await vi.waitFor(() =>
+      expect(changes).toEqual([{ text: 'bind y diff.markViewed', canOpen: true }]),
+    );
     watcher.stop();
     write('bind z diff.markViewed');
     await new Promise((done) => setTimeout(done, 100));

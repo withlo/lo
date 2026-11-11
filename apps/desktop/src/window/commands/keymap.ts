@@ -1,54 +1,57 @@
-// The keymap file in the window: what main reads from it goes to the registry, and what went wrong
-// with the file as a whole waits here for key help to show, beside the registry's errors by line.
+// The keymap file in the window: what main reads from it goes to the registry, and what is wrong with
+// the file as a whole, and whether Lo may open it, wait here for key help and the command.
 
 import { registry } from './registry.ts';
 
 /** The keymap file, as main sends it. */
 export interface KeymapFile {
   readonly text: string;
-  /** Why main couldn't read it, if it couldn't. */
+  /** What is wrong with the file, if anything is. */
   readonly problem?: string | undefined;
+  /** Whether Lo will open it in an editor. */
+  readonly canOpen: boolean;
 }
 
-let unreadable: string | undefined;
-let unopened: string | undefined;
+/** What the window knows of the keymap file besides its keys. */
+export interface KeymapState {
+  readonly problem: string | undefined;
+  readonly canOpen: boolean;
+}
+
+// Before main has said, there's no problem, and opening the file is allowed: main decides.
+let state: KeymapState = { problem: undefined, canOpen: true };
 const listeners = new Set<() => void>();
 
-function changed(): void {
-  for (const listener of listeners) listener();
-}
-
-/** Calls `listener` when `keymapProblem` may have changed. Returns a function that stops it. */
-export function subscribeProblem(listener: () => void): () => void {
+/** Calls `listener` when `keymapState` changes. Returns a function that stops it. */
+export function subscribeKeymap(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
   };
 }
 
-/** What's wrong with the keymap file as a whole, for key help to show, if anything is. */
-export function keymapProblem(): string | undefined {
-  return unreadable ?? unopened;
+/** What is wrong with the keymap file as a whole, and whether it can be opened. */
+export function keymapState(): KeymapState {
+  return state;
+}
+
+/** `true` if the keymap file can be opened, or why not. */
+export function keymapOpenable(): true | string {
+  return state.canOpen ? true : (state.problem ?? "Lo won't open the keymap file.");
 }
 
 /**
  * Applies the keymap file over the default keys, in place of the last one. Its lines that can't be
- * used are the registry's errors, and the file itself being unusable is `keymapProblem`.
+ * used are the registry's errors, and `keymapState` holds the rest.
  */
 export function applyKeymapFile(file: KeymapFile): void {
-  unreadable = file.problem;
+  state = { problem: file.problem, canOpen: file.canOpen };
   try {
     registry().setKeymap(file.text);
   } catch (error) {
     // The parser reports bad lines; this is a bug, and the keys stay as they were.
     console.error("Lo couldn't apply the keymap file:", error);
-    unreadable = "Lo couldn't apply the keymap file.";
+    state = { problem: "Lo couldn't apply the keymap file.", canOpen: file.canOpen };
   }
-  changed();
-}
-
-/** Says why the keymap file couldn't be opened, or clears the message after one that could. */
-export function setOpenProblem(message: string | undefined): void {
-  unopened = message;
-  changed();
+  for (const listener of listeners) listener();
 }

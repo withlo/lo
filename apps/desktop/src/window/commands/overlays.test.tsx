@@ -102,14 +102,17 @@ describe('key help and the keymap file', () => {
       applyKeymapFile({
         text: '',
         problem: "The keymap file is over 1 MiB, so Lo didn't read it.",
+        canOpen: false,
       }),
     );
     expect(alerts()).toEqual(["The keymap file is over 1 MiB, so Lo didn't read it."]);
-    act(() => applyKeymapFile({ text: 'bind x nope.nothing\n# fine\nbnid y keys.back' }));
+    act(() =>
+      applyKeymapFile({ text: 'bind x nope.nothing\n# fine\nbnid y keys.back', canOpen: true }),
+    );
     expect(alerts()).toEqual([
       "The keymap file has 2 lines Lo can't use:Line 1: There's no command called nope.nothing.Line 3: A line starts with bind, unbind, vim or #, not bnid.",
     ]);
-    act(() => applyKeymapFile({ text: 'bind ctrl+b keys.back' }));
+    act(() => applyKeymapFile({ text: 'bind ctrl+b keys.back', canOpen: true }));
     expect(alerts()).toEqual([]);
     expect(backKeys()).toEqual(['⌃b', '⌃o']);
   });
@@ -125,6 +128,31 @@ describe('key help and the keymap file', () => {
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('keys.openKeymap', undefined));
     // Key help stays up, so the file's errors are there when Lo is back.
     expect(dialog('Every key')).toBeDefined();
+  });
+});
+
+/** Key help's button for the keymap file, if it has one. */
+const button = () =>
+  [...document.querySelectorAll('button')].find(
+    (each) => each.textContent === 'Open the keymap file',
+  );
+
+describe('key help’s button for the keymap file', () => {
+  it('is there when Lo will open the file, and gone when it won’t', () => {
+    act(() => applyKeymapFile({ text: '', canOpen: true }));
+    act(() => toggleHelp());
+    expect(button()).toBeDefined();
+    for (const problem of [
+      "The keymap file isn't a plain file, so Lo doesn't read or open it.",
+      "The keymap file is executable, so Lo won't open it, which could run it.",
+    ]) {
+      act(() => applyKeymapFile({ text: '', problem, canOpen: false }));
+      expect(button()).toBeUndefined();
+      expect(alerts()).toEqual([problem]);
+    }
+    act(() => applyKeymapFile({ text: '', canOpen: true }));
+    expect(button()).toBeDefined();
+    expect(alerts()).toEqual([]);
   });
 });
 

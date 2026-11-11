@@ -125,10 +125,12 @@ both apply.
 
 Lo watches the file, so a saved change applies within a second, with no restart, and key help (`?`)
 shows the new keys and the lines Lo can't use. To open the file, use the button in key help, the
-command palette or `g ,`: Lo opens it in your system's app for text, writing it first, with a header
-of comments, if there isn't one. Lo reads a file of up to 1 MiB and lines of up to 1,000 characters;
-a longer line is reported and skipped, and a longer file isn't read. Nothing in the file is ever
-run.
+command palette or `g ,`: Lo opens it as text in your system's text editor, writing it first, with a
+header of comments, if there isn't one. Opening never runs anything, so Lo doesn't open a file that
+is executable, isn't a plain file (a folder, or an app a link leads to) or is over the limit below:
+key help says why, and has no button. A link to a file in a dotfiles folder is followed. Lo reads a
+file of up to 1 MiB and lines of up to 1,000 characters; a longer line is reported and skipped, and
+a longer file isn't read. Nothing in the file is ever run.
 
 ### Writing keys
 

@@ -38,12 +38,18 @@ export const KEYMAP_SIZE_LIMIT = 1024 * 1024;
 
 /**
  * The keymap file as main read it. The window parses `text` and applies it; a file that is missing
- * is no text and no problem, and one Lo can't read is no text and a `problem` to show.
+ * is no text and no problem, and one Lo can't read is no text and a `problem` to show. An
+ * executable file's text is applied, with a `problem` that says why Lo won't open it.
  */
 export const keymapFile = z.strictObject({
   text: z.string().max(KEYMAP_SIZE_LIMIT),
-  /** Why Lo couldn't read the file, in words for the person who wrote it. */
+  /** What is wrong with the file, in words for the person who wrote it, if anything is. */
   problem: z.string().max(300).optional(),
+  /**
+   * Whether Lo will open the file in an editor: a plain, non-executable text file within the limit,
+   * or none yet, which opening makes.
+   */
+  canOpen: z.boolean(),
 });
 
 export type KeymapFile = z.output<typeof keymapFile>;
@@ -55,8 +61,10 @@ export const contract = defineContract('keys', {
     /** The keymap file as it is now. The `keymap` topic then keeps the window up to date. */
     readKeymap: { input: z.undefined(), reply: reply<KeymapFile>() },
     /**
-     * Opens the keymap file in the system's app for it, writing the file with a commented header
-     * first if there is none. It takes no path: only the keymap file can be opened this way.
+     * Opens the keymap file as text in the system's editor, writing the file with a commented
+     * header first if there is none. It takes no path: only the keymap file can be opened this
+     * way, and only if it is a plain, non-executable text file (`canOpen`); otherwise it fails
+     * with `unopened` and the reason.
      */
     openKeymap: { input: z.undefined(), reply: reply<void>() },
   },

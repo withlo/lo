@@ -1,8 +1,18 @@
-import { readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { join } from 'node:path';
 
-import type { ElectronApplication, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { dataFolder, expect, keymapPath, test } from './app.ts';
+import { dataFolder, expect, keymapPath, opened, test } from './app.ts';
 
 const mac = process.platform === 'darwin';
 
@@ -13,26 +23,6 @@ async function openHelp(page: Page) {
   const help = page.getByRole('dialog', { name: 'Every key' });
   await expect(help).toBeVisible();
   return help;
-}
-
-/**
- * Replaces the system's way of opening a file with one that records the path and answers `result`,
- * so a test never starts an editor on a desktop that other work shares.
- */
-async function stubOpenPath(app: ElectronApplication, result = ''): Promise<void> {
-  await app.evaluate(({ shell }, answer) => {
-    const opened: string[] = [];
-    Reflect.set(globalThis, 'loOpened', opened);
-    shell.openPath = async (path) => {
-      opened.push(path);
-      return answer;
-    };
-  }, result);
-}
-
-/** The paths the stub was asked to open. */
-function openedPaths(app: ElectronApplication): Promise<unknown> {
-  return app.evaluate((): unknown => Reflect.get(globalThis, 'loOpened'));
 }
 
 /** Saves the keymap file as editors that write a new file and rename it over the old one do. */
@@ -114,18 +104,29 @@ test.describe('with a keymap file over the limit', () => {
   });
 });
 
+/** Presses `g` and `,` in the middle of the window, which open the keymap file. */
+async function pressOpen(page: Page): Promise<void> {
+  await page.locator('main[data-lo-middle]').focus();
+  await page.keyboard.press('g');
+  await page.keyboard.press(',');
+}
+
+/** The toast Lo says why something didn't happen in. */
+const toast = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
+
+const openKeymap = (help: ReturnType<Page['locator']>) =>
+  help.getByRole('button', { name: 'Open the keymap file' });
+
 test.describe('with no keymap file', () => {
   test('key help opens the keymap file, making it first, and never writes over one', async ({
-    app,
     page,
   }) => {
-    await stubOpenPath(app);
     const path = keymapPath(dataFolder());
     const help = await openHelp(page);
     await expect(help.getByRole('alert')).toHaveCount(0);
 
-    await help.getByRole('button', { name: 'Open the keymap file' }).click();
-    await expect.poll(() => openedPaths(app)).toEqual([path]);
+    await openKeymap(help).click();
+    await expect.poll(opened).toEqual([realpathSync(path)]);
     expect(readFileSync(path, 'utf8')).toMatch(/^# Lo's keymap\./);
     // Key help stays, so what's wrong with the file is there when its editor is closed.
     await expect(help).toBeVisible();
@@ -138,18 +139,98 @@ test.describe('with no keymap file', () => {
       mac ? '⌘J' : 'Ctrl+J',
       mac ? '⌘⇧P' : 'Ctrl+Shift+P',
     ]);
-    await help.getByRole('button', { name: 'Open the keymap file' }).click();
-    await expect.poll(() => openedPaths(app)).toEqual([path, path]);
+    await openKeymap(help).click();
+    await expect.poll(opened).toEqual([realpathSync(path), realpathSync(path)]);
     expect(readFileSync(path, 'utf8')).toBe(mine);
   });
 
-  test('g , opens it, and key help says when the system can’t', async ({ app, page }) => {
-    await stubOpenPath(app, 'No application is set to open it.');
-    await page.locator('main[data-lo-middle]').focus();
-    await page.keyboard.press('g');
-    await page.keyboard.press(',');
-    await expect.poll(() => openedPaths(app)).toEqual([keymapPath(dataFolder())]);
+  test('g , opens it too', async ({ page }) => {
+    await pressOpen(page);
+    await expect.poll(opened).toEqual([realpathSync(keymapPath(dataFolder()))]);
+    await expect(page.getByRole('status').filter({ hasText: /\w/ })).toHaveCount(0);
+  });
+});
+
+test.describe('with a keymap file that is a link into a dotfiles folder', () => {
+  test('opens the file the link leads to', async ({ page }) => {
+    const dotfiles = join(dataFolder(), 'dotfiles');
+    mkdirSync(dotfiles, { recursive: true });
+    const target = join(dotfiles, 'lo-keymap');
+    writeFileSync(target, 'bind cmd+j keys.palette\n');
+    mkdirSync(join(dataFolder(), 'config'), { recursive: true });
+    symlinkSync(target, keymapPath(dataFolder()));
+    // Only now does Lo read the file: it was started before the link was made.
     const help = await openHelp(page);
-    await expect(help.getByRole('alert')).toHaveText("Lo couldn't open the keymap file.");
+    await expect(help.locator('[data-command="keys.palette"] kbd').first()).toHaveText(
+      mac ? '⌘J' : 'Ctrl+J',
+    );
+    await openKeymap(help).click();
+    await expect.poll(opened).toEqual([realpathSync(target)]);
+  });
+});
+
+test.describe('with a keymap file that opening could run', () => {
+  const script = '#!/bin/sh\necho hello\nbind cmd+j keys.palette\n';
+  test.use({ keymap: script });
+
+  test('an executable one is not opened: key help says why and has no button, and g , says why too', async ({
+    page,
+  }) => {
+    const path = keymapPath(dataFolder());
+    chmodSync(path, 0o755);
+    const help = await openHelp(page);
+    await expect(help.getByRole('alert').first()).toContainText(
+      "The keymap file is executable, so Lo won't open it, which could run it.",
+    );
+    await expect(openKeymap(help)).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(help).toBeHidden();
+
+    await pressOpen(page);
+    await expect(toast(page, 'executable, so Lo won')).toBeVisible();
+    await expect(toast(page, 'Open the keymap file')).toBeVisible();
+    // Nothing was started.
+    await page.waitForTimeout(300);
+    expect(opened()).toEqual([]);
+
+    // Once it is a plain file, key help offers it again, and it opens.
+    chmodSync(path, 0o644);
+    await openHelp(page);
+    await expect(openKeymap(help)).toBeVisible();
+    await openKeymap(help).click();
+    await expect.poll(opened).toEqual([realpathSync(path)]);
+  });
+
+  test('a link to an app is not opened, whatever is at the end of it', async ({ page }) => {
+    const path = keymapPath(dataFolder());
+    const app = join(dataFolder(), 'Calculator.app');
+    mkdirSync(join(app, 'Contents', 'MacOS'), { recursive: true });
+    writeFileSync(join(app, 'Contents', 'MacOS', 'Calculator'), '#!/bin/sh\n');
+    chmodSync(join(app, 'Contents', 'MacOS', 'Calculator'), 0o755);
+    rmSync(path);
+    symlinkSync(app, path);
+
+    const help = await openHelp(page);
+    await expect(help.getByRole('alert')).toHaveText(
+      "The keymap file isn't a plain file, so Lo doesn't read or open it.",
+    );
+    await expect(openKeymap(help)).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(help).toBeHidden();
+
+    await pressOpen(page);
+    await expect(toast(page, "isn't a plain file")).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(opened()).toEqual([]);
+  });
+});
+
+test.describe('when the system has no editor to open it with', () => {
+  test.use({ launch: { env: { LO_KEYMAP_EDITOR: '/no/such/editor' } } });
+
+  test('g , says so in a toast', async ({ page }) => {
+    await pressOpen(page);
+    await expect(toast(page, "Lo couldn't open the keymap file in a text editor.")).toBeVisible();
+    await expect(toast(page, 'Open the keymap file')).toBeVisible();
   });
 });

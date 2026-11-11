@@ -31,14 +31,22 @@ it('opens the keymap file without being told which file: it takes no input', () 
 });
 
 it('sends the keymap file as text within the limit, and a problem with it', () => {
-  expect(keymapFile.safeParse({ text: 'bind x diff.markViewed' }).success).toBe(true);
-  expect(keymapFile.safeParse({ text: '', problem: 'Too big.' }).success).toBe(true);
-  expect(keymapFile.safeParse({ text: 'x'.repeat(KEYMAP_SIZE_LIMIT) }).success).toBe(true);
+  expect(keymapFile.safeParse({ text: 'bind x diff.markViewed', canOpen: true }).success).toBe(
+    true,
+  );
+  expect(keymapFile.safeParse({ text: '', problem: 'Too big.', canOpen: false }).success).toBe(
+    true,
+  );
+  expect(keymapFile.safeParse({ text: 'x'.repeat(KEYMAP_SIZE_LIMIT), canOpen: true }).success).toBe(
+    true,
+  );
   for (const given of [
-    { text: 'x'.repeat(KEYMAP_SIZE_LIMIT + 1) },
-    { text: '', problem: 'x'.repeat(301) },
-    { text: '', path: '/etc/passwd' },
-    { problem: 'No text.' },
+    { text: 'x'.repeat(KEYMAP_SIZE_LIMIT + 1), canOpen: true },
+    { text: '', problem: 'x'.repeat(301), canOpen: false },
+    { text: '', path: '/etc/passwd', canOpen: true },
+    { problem: 'No text.', canOpen: false },
+    // Whether it can be opened is always said.
+    { text: '' },
   ]) {
     expect(keymapFile.safeParse(given).success).toBe(false);
     expect(contract.topics.keymap.safeParse(given).success).toBe(false);

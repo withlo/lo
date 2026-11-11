@@ -84,6 +84,20 @@ export interface BackgroundSettings {
 }
 
 /**
+ * The program that opens the keymap file in place of the system's text editor, from
+ * `LO_KEYMAP_EDITOR`, so a test can see what Lo opens without starting an editor. It gets the
+ * file's path as its one argument. A packaged build ignores it.
+ */
+export function keymapEditor(options: { packaged: boolean; env: Environment }): string | undefined {
+  const program = options.env.LO_KEYMAP_EDITOR;
+  if (options.packaged || !program) return undefined;
+  if (!isAbsolute(program)) {
+    throw new Error(`LO_KEYMAP_EDITOR must be an absolute path, not "${program}".`);
+  }
+  return program;
+}
+
+/**
  * The background process's settings. Its memory cap is 2 GB. A build run from source offers the
  * smoke test's jobs with `LO_TEST_JOBS=1`, and takes another cap from `LO_BACKGROUND_MEMORY_CAP_MB`
  * so the test can pass it without taking 2 GB. A packaged build ignores both.

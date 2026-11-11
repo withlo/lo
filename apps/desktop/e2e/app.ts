@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +32,32 @@ export function keymapPath(data: string): string {
 }
 
 /**
+ * The program a test's Lo opens the keymap file with, in place of the system's text editor, so no
+ * test starts an editor on a desktop other work shares. It adds the path it's given to `opened`,
+ * beside it in the data folder.
+ */
+function editorPath(data: string): string {
+  return join(data, 'editor');
+}
+
+/** Writes the program that stands in for the system's editor. */
+function writeEditor(data: string): void {
+  const log = join(data, 'opened').replaceAll("'", `'\\''`);
+  mkdirSync(data, { recursive: true });
+  writeFileSync(editorPath(data), `#!/bin/sh\nprintf '%s\\n' "$1" >> '${log}'\n`);
+  chmodSync(editorPath(data), 0o755);
+}
+
+/** The paths Lo has opened the keymap file by in this test, in order, as the editor got them. */
+export function opened(): string[] {
+  try {
+    return readFileSync(join(dataFolder(), 'opened'), 'utf8').split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * The environment Lo starts with: this one, without anything that would point it at a dev server
  * or run Electron as plain Node, and with the test's data folder.
  */
@@ -43,6 +69,7 @@ export function appEnvironment(data: string): Record<string, string> {
   delete env.ELECTRON_RENDERER_URL;
   delete env.ELECTRON_RUN_AS_NODE;
   env.LO_USER_DATA_DIR = data;
+  env.LO_KEYMAP_EDITOR = editorPath(data);
   return env;
 }
 
@@ -65,6 +92,7 @@ export const test = base.extend<Fixtures>({
   app: async ({ launch, keymap }, use) => {
     const { env, ...options } = launch;
     const data = dataFolder();
+    writeEditor(data);
     if (keymap !== undefined) {
       mkdirSync(join(data, 'config'), { recursive: true });
       writeFileSync(keymapPath(data), keymap);
