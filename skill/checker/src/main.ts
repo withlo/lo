@@ -9,6 +9,9 @@
  * isn't.
  */
 
+import { statSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { ARTIFACT, type Finding } from '@lo/artifact';
 
 import { checkFolder, type FolderCheck } from './check.ts';
@@ -30,8 +33,8 @@ its pull request.
 
 Usage:
   lo-overview install [--claude] [--codex] [--dir <folder>] [--json]
-  lo-overview check [<dir>] [--pr <number>] [--json]
-  lo-overview commit <dir> --pr <number> [--json]
+  lo-overview check [<dir>] [--pr <number>] [--repo <folder>] [--json]
+  lo-overview commit <dir> --pr <number> [--repo <folder>] [--json]
 
 Commands:
   install   Install the ${SKILL_NAME} skill, which teaches a coding agent to write an overview,
@@ -39,11 +42,11 @@ Commands:
             With none of the options, for each of Claude Code and Codex set up here. Only the
             skill's own files are replaced.
   check     Check the overview in <dir>, the current folder unless given: its artifact.md and
-            figures/, and the code it names, read from the repository this runs in at the commit
-            its header names.
-  commit    Check the overview, then write exactly what was checked as a commit whose parent is
-            refs/lo/pr/<number>, if that ref is here. Prints the commit's id and how to push it. No
-            ref, index or working tree changes.
+            figures/, and the code it names, read from the repository at the commit its header
+            names.
+  commit    Check the overview, then write exactly what was checked as a commit in the repository,
+            whose parent is refs/lo/pr/<number>, if that ref is there. Prints the commit's id and
+            how to push it. No ref, index or working tree changes.
 
 Options:
   --claude        Install the skill for Claude Code, in ~/.claude/skills, or in skills in
@@ -51,6 +54,7 @@ Options:
   --codex         Install the skill for Codex, in ~/.agents/skills.
   --dir <folder>  Install the skill in the skills folder <folder>, as <folder>/${SKILL_NAME}.
   --pr <number>   The pull request the overview is for. Its header must name the same one.
+  --repo <folder> The pull request's repository: the one the current folder is in unless given.
   --json          Print what was found, or installed, as JSON.
   --help          Print this.
 
@@ -62,8 +66,8 @@ when it can't be checked. install exits 0 once the skill is installed, and 2 whe
 type Command =
   | { kind: 'help' }
   | { kind: 'install'; agents: Agent[]; dir: string | undefined; json: boolean }
-  | { kind: 'check'; dir: string; pr: number | undefined; json: boolean }
-  | { kind: 'commit'; dir: string; pr: number; json: boolean };
+  | { kind: 'check'; dir: string; pr: number | undefined; repo: string | undefined; json: boolean }
+  | { kind: 'commit'; dir: string; pr: number; repo: string | undefined; json: boolean };
 
 /** Where the checker writes. */
 export interface Streams {
@@ -98,10 +102,12 @@ export async function main(args: readonly string[], streams: Streams): Promise<n
           return 0;
         case 'install':
           return installed(install(targetsOf(command, process.env)), command.json, streams);
-        case 'check':
-          return report(await checkFolder(command.dir, gitIn(), command.pr), command.json, streams);
+        case 'check': {
+          const git = gitIn(repository(command.repo));
+          return report(await checkFolder(command.dir, git, command.pr), command.json, streams);
+        }
         case 'commit':
-          return await commit(command.dir, command.pr, command.json, streams);
+          return await commit(command, streams);
         default:
           command satisfies never;
           throw new Error(`Unknown command ${JSON.stringify(command)}`);
@@ -132,6 +138,7 @@ function parse(args: readonly string[]): Command {
   let help = false;
   const agents: Agent[] = [];
   let dir: string | undefined;
+  let repo: string | undefined;
   for (let at = 0; at < args.length; at++) {
     const arg = args[at]!;
     if (arg === '--') {
@@ -149,6 +156,9 @@ function parse(args: readonly string[]): Command {
     else if (arg === '--dir' || arg.startsWith('--dir=')) {
       dir = arg === '--dir' ? args[++at] : arg.slice('--dir='.length);
       if (!dir) throw new Error('--dir takes the skills folder to install the skill in.');
+    } else if (arg === '--repo' || arg.startsWith('--repo=')) {
+      repo = arg === '--repo' ? args[++at] : arg.slice('--repo='.length);
+      if (!repo) throw new Error("--repo takes the pull request's repository.");
     } else if (arg.startsWith('-')) throw new Error(`${JSON.stringify(arg)} isn't an option.`);
     else positional.push(arg);
   }
@@ -160,17 +170,18 @@ function parse(args: readonly string[]): Command {
   switch (name) {
     case 'install': {
       if (rest.length > 0) throw new Error('install takes a skills folder with --dir <folder>.');
-      if (pr !== undefined) throw new Error('install takes no --pr.');
+      if (pr !== undefined || repo !== undefined)
+        throw new Error('install takes no --pr or --repo.');
       return { kind: 'install', agents: [...new Set(agents)], dir, json };
     }
     case 'check': {
       if (rest.length > 1) throw new Error('check takes one folder.');
-      return { kind: 'check', dir: rest[0] ?? '.', pr: pullRequest(pr), json };
+      return { kind: 'check', dir: rest[0] ?? '.', pr: pullRequest(pr), repo, json };
     }
     case 'commit': {
       if (rest.length !== 1) throw new Error("commit takes the overview's folder.");
       if (pr === undefined) throw new Error("commit needs --pr, the pull request's number.");
-      return { kind: 'commit', dir: rest[0]!, pr: pullRequest(pr)!, json };
+      return { kind: 'commit', dir: rest[0]!, pr: pullRequest(pr)!, repo, json };
     }
     default:
       throw new Error(`${JSON.stringify(name)} isn't a command.`);
@@ -200,9 +211,25 @@ function installed(where: readonly Installed[], json: boolean, streams: Streams)
   return 0;
 }
 
+/**
+ * The folder git runs in: `given`, the repository `--repo` names, from the current folder, or the
+ * current folder. Throws when `given` isn't a folder, which git couldn't start in.
+ */
+function repository(given: string | undefined): string {
+  if (given === undefined) return process.cwd();
+  const path = resolve(given);
+  if (!statSync(path, { throwIfNoEntry: false })?.isDirectory()) {
+    throw new FolderError(`There's no folder at ${JSON.stringify(path)} for --repo.`);
+  }
+  return path;
+}
+
 /** Checks the overview in `dir`, and when it passes, commits it for `pr`. */
-async function commit(dir: string, pr: number, json: boolean, streams: Streams): Promise<number> {
-  const git = gitIn();
+async function commit(
+  { dir, pr, repo, json }: Extract<Command, { kind: 'commit' }>,
+  streams: Streams,
+): Promise<number> {
+  const git = gitIn(repository(repo));
   const found = await checkFolder(dir, git, pr);
   const status = exitStatus(found);
   const { outcome } = found.checked;

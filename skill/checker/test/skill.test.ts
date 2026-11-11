@@ -52,27 +52,45 @@ describe('SKILL.md', () => {
     for (const link of links) expect(skillFiles()).toContain(link);
   });
 
-  test('runs this package’s checker, whose commands work as it says', () => {
+  test('single-quotes every value its commands take, and never uses double quotes', () => {
+    const lines = [...text.matchAll(/^ *```sh\n([\s\S]*?)^ *```$/gm)].flatMap((match) =>
+      match[1]!.split('\n').filter((line) => line.trim() !== ''),
+    );
+    expect(lines.length).toBeGreaterThan(20);
+    const unquoted = lines.filter((line) => /<[^>]*>|"/.test(line.replace(/'[^']*'/g, '')));
+    expect(unquoted).toEqual([]);
+  });
+
+  test('runs this package’s checker from a folder of its own, and its commands work as it says', () => {
     const repo = join(root.dir, 'repo');
     mkdirSync(repo);
     const commit = repositoryOf(repo, { 'src/a.ts': 'one\n' });
     const dir = join(root.dir, 'overview');
     mkdirSync(dir);
     writeFileSync(join(dir, 'artifact.md'), overview(commit, ':::code src/a.ts#L1\n:::\n'));
+    const tools = join(root.dir, 'tools');
+    mkdirSync(tools);
 
-    const commands = [...text.matchAll(/^npx --yes (\S+) (.+)$/gm)].map((match) => ({
-      spec: match[1],
-      args: match[2]!.split(' ').map((arg) => ({ '<dir>': dir, '<n>': '4797' })[arg] ?? arg),
-    }));
+    // Every npx runs from <tools>, with it as npm's prefix, so nothing in the clone counts.
+    const npx = text.split('\n').filter((line) => /\bnpx\b/.test(line) && line.includes('--'));
+    const shape = /^\(cd '<tools>' && npx --prefix '<tools>' --yes (\S+) (.+)\)$/;
+    expect(npx.length).toBe(2);
+    expect(npx.filter((line) => !shape.test(line))).toEqual([]);
+    const values: Record<string, string> = { '<dir>': dir, '<n>': '4797', '<clone>': repo };
+    const commands = npx.map((line) => {
+      const [, spec, rest] = shape.exec(line) ?? [];
+      const args = (rest ?? '').split(' ').map((arg) => arg.replace(/^'(.*)'$/, '$1'));
+      return { spec, args: args.map((arg) => values[arg] ?? arg) };
+    });
     expect(commands.map(({ spec, args }) => `${spec} ${args[0]}`)).toEqual([
       `${manifest.name}@latest check`,
       `${manifest.name}@latest commit`,
     ]);
-    const [check, commitIt] = commands.map(({ args }) => runChecker(args, repo));
+    const [check, commitIt] = commands.map(({ args }) => runChecker(args, tools));
     expect(check).toEqual({ status: 0, stdout: 'No errors or warnings.\n', stderr: '' });
     expect(commitIt?.status).toBe(0);
     const id = /Committed the overview as ([0-9a-f]{40})/.exec(commitIt?.stdout ?? '')?.[1];
     expect(commitIt?.stdout).toContain(`git push <remote> ${id}:refs/lo/pr/4797\n`);
-    expect(text).toContain('git push <remote> <id>:refs/lo/pr/<n>\n');
+    expect(text).toContain("git push '<remote>' '<id>:refs/lo/pr/<n>'\n");
   });
 });

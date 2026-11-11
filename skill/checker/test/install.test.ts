@@ -284,6 +284,7 @@ describe('install refuses', () => {
     for (const args of [
       ['install', 'skills'],
       ['install', '--pr', '1'],
+      ['install', '--dir', 'skills', '--repo', '.'],
       ['install', '--dir'],
       ['install', '--dir='],
       ['install', '--claud'],
