@@ -56,6 +56,7 @@ const LOCAL: TreeState = {
   changesFrom: 'local',
   partial: false,
   problem: null,
+  omitted: 0,
 };
 
 afterEach(() => {

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { currentMenu, openMenu } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { useChangedFiles, useTabState, type PullTab } from '../../tab/window/shared.ts';
-import type { TreeState } from '../contract.ts';
+import { PATH_LIMIT, pathBytes, type TreeState } from '../contract.ts';
 import { model as modelOf, type Row, type Viewed } from './model.ts';
 import {
   askFolders,
@@ -64,9 +64,15 @@ function drawn(row: Row): FileTreeRow {
 }
 
 /** What the panel says over the files, when only some of them can show. */
-function noteOf(state: TreeState | undefined): ReactNode {
+function noteOf(state: TreeState | undefined, omitted: number): ReactNode {
   if (!state) return undefined;
   const notes: string[] = [];
+  const long = state.omitted + omitted;
+  if (long > 0) {
+    notes.push(
+      `${long.toLocaleString('en')} ${long === 1 ? 'file has a path' : 'files have paths'} longer than ${PATH_LIMIT.toLocaleString('en')} bytes, which the tree leaves out.`,
+    );
+  }
   if (state.listing.kind === 'changed') notes.push(state.listing.why);
   if (state.partial) {
     notes.push(
@@ -124,7 +130,13 @@ export function Files({
   }, [tab.id]);
 
   const viewed = useMemo(
-    () => new Map<string, Viewed>(changed?.files.map((file) => [file.path, file.viewed]) ?? []),
+    () =>
+      new Map<string, Viewed>(
+        // GitHub's paths, kept only while they're short enough to key a map by.
+        changed?.files.flatMap((file) =>
+          pathBytes({ text: file.path }) <= PATH_LIMIT ? [[file.path, file.viewed] as const] : [],
+        ) ?? [],
+      ),
     [changed],
   );
   const model = useMemo(
@@ -168,7 +180,7 @@ export function Files({
       changedOnly={chosen.changedOnly}
       onChangedOnly={(changedOnly) => choices.update(tab.id, (now) => ({ ...now, changedOnly }))}
       changedOnlyKeys={keyOf('tree.changedOnly')}
-      note={noteOf(state)}
+      note={noteOf(state, model?.omitted ?? 0)}
     >
       {loading ? (
         <Loading />

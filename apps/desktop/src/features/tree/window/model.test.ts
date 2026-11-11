@@ -33,6 +33,7 @@ function whole(files: readonly string[], changes: readonly Changed[]): TreeState
     changesFrom: 'local',
     partial: false,
     problem: null,
+    omitted: 0,
   };
 }
 
@@ -337,5 +338,54 @@ describe('a deleted file’s folder that the head no longer has', () => {
     const shown = model(state, answered, none, NO_CHOICES);
     expect(shown.wanted).toEqual([]);
     expect(lines(shown.rows)).toEqual(['v old', '  x.ts [D]', 'README.md [dim]']);
+  });
+});
+
+describe('paths too long to key a map by', () => {
+  it('are left out, quickly, however many there are', () => {
+    // 4,000 files under a folder of 8,200 bytes that aren't UTF-8, keyed by their bytes in hex:
+    // over 16,400 characters each, which a map would hash by their length alone.
+    const folder = 'e9'.repeat(8_200);
+    const entries: Entry[] = Array.from({ length: 4_000 }, (_, index) => ({
+      path: {
+        text: `${'\uFFFD'.repeat(8_200)}/f${index}.txt`,
+        hex: `${folder}2f${Buffer.from(`f${index}.txt`).toString('hex')}`,
+      },
+      kind: 'file',
+    }));
+    const state: TreeState = {
+      ...E2E,
+      listing: { kind: 'whole', entries: [...entries, file('README.md')] },
+      changes: [{ ...changed('x', 'added'), path: entries[0]?.path ?? { text: 'x' } }],
+    };
+    const start = performance.now();
+    const shown = model(state, new Map(), none, NO_CHOICES);
+    const closed = model(state, new Map(), none, { ...NO_CHOICES, changedOnly: true });
+    expect(performance.now() - start).toBeLessThan(2_000);
+    expect(lines(shown.rows)).toEqual(['README.md [dim]']);
+    expect(shown.omitted).toBe(4_000);
+    expect(closed.omitted).toBe(4_000);
+    expect(panelOrder(state.changes ?? [], 'tree')).toEqual([]);
+  });
+
+  it('drop a rename’s old path, keeping the change', () => {
+    const state = whole(['b.ts'], [changed('b.ts', 'renamed', `a/${'x'.repeat(2_000)}.ts`)]);
+    expect(lines(model(state, new Map(), none, NO_CHOICES).rows)).toEqual(['b.ts [R]']);
+  });
+});
+
+describe('names with bidirectional controls', () => {
+  it('show without the controls that would turn the text after them around', () => {
+    const name = 'invoice\u202Etxt.exe';
+    const state = whole(
+      [`a\u2067b/${name}`],
+      [changed(`a\u2067b/${name}`, 'renamed', `a\u2067b/old\u202Dname.ts`)],
+    );
+    const rows = model(state, new Map(), none, NO_CHOICES).rows;
+    expect(lines(rows)).toEqual(['v ab', '  invoicetxt.exe [R, ← oldname.ts]']);
+    // The key, which names the file, stays the path as it is.
+    expect(rows[1]?.key).toBe(`a\u2067b/${name}`);
+    const review = model(state, new Map(), none, { ...NO_CHOICES, mode: 'review' }).rows;
+    expect(lines(review)).toContain('invoicetxt.exe [R, ← oldname.ts, in ab]');
   });
 });

@@ -434,13 +434,17 @@ Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `c
   `.gitattributes` and the lockfiles `@lo/review` names. Until then it reads GitHub's tree of the
   head and the pull request's files from the REST API. A tree GitHub lists only in part, or one that
   couldn't be read, leaves the changed files alone, saying why. What the copy says replaces what
-  GitHub said, and a new head on screen starts again.
+  GitHub said, and a new head on screen starts again. GitHub is asked only about a head it gave,
+  never one restored from what Lo saved, and a read that fails is tried again after 5 s, doubling to
+  5 minutes.
 - Up to 20,000 files go to the window whole, on `tree.state`. Past that, main sends the root's
   entries, and the window asks for each folder's (`tree.folder`) as it opens one. Past 500,000, the
   tree shows only the changed files.
 - A path travels as its text, with its bytes in hex beside it when they aren't UTF-8, since git
-  stores paths as bytes. The window keys a file by its text, or by a NUL and its bytes for such a
-  path; that key is the file's id in targets and to other features.
+  stores paths as bytes. A path longer than 1,024 bytes is left out of the tree, and counted in a
+  note: V8 hashes a long string by its length alone, so nothing keys a map by one. The window keys a
+  file by its text, or by a NUL and its bytes for such a path; that key is the file's id in targets
+  and to other features.
 - `tree.find` finds files by name, the changed ones first, 100 at most, matching in chunks so main
   stays free; a newer search for the same tab stops the one before.
 - Other features reach the tree through its `window/shared.ts`: `fileOrder` and `useFileOrder`, the

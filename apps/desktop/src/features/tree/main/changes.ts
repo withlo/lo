@@ -6,7 +6,7 @@ import { changedPath, type ChangedFile } from '@lo/git';
 import { fileHead, type PullFile } from '@lo/github';
 import { githubChange, whyGenerated } from '@lo/review';
 
-import type { Change, Changed } from '../contract.ts';
+import { type Change, type Changed, PATH_LIMIT, pathBytes } from '../contract.ts';
 import { treePathOf } from './paths.ts';
 
 /** How git's change shows in the tree. */
@@ -69,4 +69,33 @@ export function listedAt(files: readonly PullFile[], head: string): boolean {
     const at = fileHead(file);
     return at === undefined || at === head;
   });
+}
+
+/**
+ * The changes whose paths the tree shows, and how many it leaves out: those whose paths are longer
+ * than `PATH_LIMIT` bytes, and of those, the deleted ones, which no listing of the head has. A
+ * rename from a longer path keeps its change without its old path.
+ */
+export function withinLimit(changes: readonly Changed[]): {
+  changes: Changed[];
+  omitted: number;
+  deleted: number;
+} {
+  const kept: Changed[] = [];
+  let omitted = 0;
+  let deleted = 0;
+  for (const change of changes) {
+    if (pathBytes(change.path) > PATH_LIMIT) {
+      omitted++;
+      if (change.change === 'deleted') deleted++;
+      continue;
+    }
+    const { previous } = change;
+    kept.push(
+      previous !== null && pathBytes(previous) > PATH_LIMIT
+        ? { ...change, previous: null }
+        : change,
+    );
+  }
+  return { changes: kept, omitted, deleted };
 }

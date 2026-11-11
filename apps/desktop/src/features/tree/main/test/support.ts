@@ -124,7 +124,11 @@ export function e2eInfo(
 }
 
 /** A tab's tree, reading with `reads`, with what it sends the window and logs collected. */
-export function treeTab(reads: Partial<TreeReads>, wholeLimit?: number) {
+export function treeTab(
+  reads: Partial<TreeReads>,
+  wholeLimit?: number,
+  retryWait?: (failures: number) => number,
+) {
   const sent: TreeState[] = [];
   const lines: string[] = [];
   const tree = new TreeTab({
@@ -137,6 +141,7 @@ export function treeTab(reads: Partial<TreeReads>, wholeLimit?: number) {
     publish: (state) => sent.push(state),
     log: (line) => lines.push(line),
     wholeLimit,
+    retryWait,
   });
   onTestFinished(() => tree.close());
   /** Waits until what it last sent passes `ready`, and returns it. */

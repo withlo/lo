@@ -322,4 +322,114 @@ describe('TreeTab', () => {
       'src/legacy.ts',
     ]);
   });
+
+  it('asks GitHub what the local copy couldn’t say only once GitHub has given the head', async () => {
+    const repo = await e2eClone();
+    const github = githubFrom('rest_tree_e2e');
+    const { tree, settled } = treeTab({
+      clone: () => Promise.resolve(repo),
+      github: github.github,
+    });
+    // No history in common with the base, so the copy can't say what changed.
+    const unrelated = {
+      ...e2eInfo({
+        kind: 'ready',
+        head: APP_PULL.head,
+        base: APP_PULL.base,
+        mergeBase: null,
+        offline: false,
+      }),
+      provisional: true,
+    };
+    tree.update(unrelated);
+    await settled((state) => state.from === 'local');
+    expect(github.requests).toBe(0);
+    tree.update({ ...unrelated, provisional: false });
+    const state = await settled((sent) => sent.changes !== null);
+    expect(state).toMatchObject({ from: 'local', changesFrom: 'github' });
+    // Only the files: the copy listed the tree.
+    expect(github.requests).toBe(1);
+  });
+
+  it('tries GitHub again, waiting longer each time, after it fails', async () => {
+    const replay = githubFrom('rest_tree_e2e');
+    let failures = 0;
+    const waits: number[] = [];
+    const { tree, settled } = treeTab(
+      {
+        github: (acting, request) =>
+          failures++ < 2
+            ? Promise.reject(new Error('GitHub is down'))
+            : replay.github(acting, request),
+      },
+      undefined,
+      (count) => {
+        waits.push(count);
+        return 5;
+      },
+    );
+    tree.update(e2eInfo());
+    const state = await settled((sent) => sent.changes !== null && sent.from === 'github');
+    expect(changes(state)).toEqual(E2E_CHANGES);
+    expect(state.problem).toBeNull();
+    // Both reads failed once, as one failure in a row, then worked.
+    expect(waits).toEqual([1]);
+  });
+
+  it('tries the local copy again after it fails', async () => {
+    const repo = await e2eClone();
+    let failed = false;
+    const flaky = new Proxy(repo, {
+      get(target, property) {
+        if (property === 'tree' && !failed) {
+          failed = true;
+          return () => Promise.reject(new Error('the clone is busy'));
+        }
+        const value: unknown = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const { tree, settled, lines } = treeTab(
+      { clone: () => Promise.resolve(flaky) },
+      undefined,
+      () => 5,
+    );
+    tree.update(e2eInfo(READY));
+    const state = await settled((sent) => sent.listing.kind === 'whole' && sent.changes !== null);
+    expect(state).toMatchObject({ from: 'local', problem: null });
+    expect(lines).toContain(`listing the files at ${APP_PULL.head}: the clone is busy`);
+  });
+
+  it('leaves out a path too long to show, and says how many', async () => {
+    const server = new RepoServer();
+    onTestFinished(() => server.remove());
+    const remote = server.repo('o', 'r');
+    remote.write('README.md', 'base\n').commit('base');
+    remote.publish('refs/heads/trunk');
+    const base = remote.head();
+    // Folders a disk takes, in a path longer than the tree shows.
+    const long = Buffer.from(`${'abcdefgh/'.repeat(120)}deep.txt`);
+    const head = remote.commitWithNames([[long, 'deep\n']], 'deep');
+    remote.write('short.txt', 'short\n');
+    const withShort = remote.commit('short');
+    remote.publish('refs/pull/1/head');
+    const repo = await cloneOf(server.baseUrl, {
+      owner: 'o',
+      name: 'r',
+      number: 1,
+      head: withShort,
+      baseBranch: 'trunk',
+      base,
+    });
+    expect(head).not.toBe(withShort);
+    const { tree, settled } = treeTab({ clone: () => Promise.resolve(repo) });
+    tree.update({
+      ...e2eInfo({ kind: 'ready', head: withShort, base, mergeBase: base, offline: false }),
+      shown: withShort,
+    });
+    const state = await settled((sent) => sent.changes !== null);
+    expect(listed(state)).toEqual(['README.md', 'short.txt']);
+    expect(changes(state)).toEqual(['added short.txt']);
+    expect(state.omitted).toBe(1);
+  });
 });

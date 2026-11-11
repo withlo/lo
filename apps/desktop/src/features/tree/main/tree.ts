@@ -24,8 +24,17 @@ import {
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { Changed, Folder, Found, Listing, Source, TreePath, TreeState } from '../contract.ts';
-import { githubChanged, listedAt, localChange } from './changes.ts';
+import {
+  type Changed,
+  type Folder,
+  type Found,
+  type Listing,
+  PATH_LIMIT,
+  type Source,
+  type TreePath,
+  type TreeState,
+} from '../contract.ts';
+import { githubChanged, listedAt, localChange, withinLimit } from './changes.ts';
 import { find, type Searched } from './find.ts';
 import { Files, fromGithub, fromLocal } from './listing.ts';
 import { keyOf } from './paths.ts';
@@ -35,6 +44,14 @@ export const KEEP_REQUESTS = 100;
 
 /** The same, without an account. */
 export const KEEP_ANONYMOUS = 10;
+
+/**
+ * How long to wait before reading again after the `failures`th failed read in a row: 5 s,
+ * doubling, 5 minutes at most, as the tab waits to fetch its local copy again.
+ */
+export function retryWait(failures: number): number {
+  return Math.min(5_000 * 2 ** Math.max(0, failures - 1), 5 * 60_000);
+}
 
 /** What a tab's tree reads with. */
 export interface TreeReads {
@@ -52,6 +69,8 @@ export interface TreeTabOptions {
   readonly log: (line: string) => void;
   /** The most files sent whole: `WHOLE_LIMIT` unless said otherwise. */
   readonly wholeLimit?: number | undefined;
+  /** How long to wait to read again after failures in a row: {@link retryWait} unless said. */
+  readonly retryWait?: ((failures: number) => number) | undefined;
 }
 
 /** What's known of the commit on screen. */
@@ -64,9 +83,23 @@ interface At {
   changesFrom: Source | undefined;
   partial: boolean;
   problem: string | undefined;
+  /** Files of the listing left out, since their paths are longer than `PATH_LIMIT` bytes. */
+  listedOmitted: number;
+  /** Changed files left out the same way, and of those, the deleted ones, which no listing has. */
+  changesOmitted: number;
+  deletedOmitted: number;
   /** What's been started for it, so nothing starts twice. */
-  readonly started: Set<'local' | 'github'>;
+  readonly started: Set<Read>;
+  /** Whether to read from GitHub: the local copy isn't ready, or couldn't say what changed. */
+  wantsGithub: boolean;
+  /** Failed reads in a row, of each kind. */
+  readonly failures: Record<Read, number>;
+  /** Reads waiting to be tried again. */
+  readonly timers: Set<ReturnType<typeof setTimeout>>;
 }
+
+/** Where a tree is read from. */
+type Read = 'local' | 'github';
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -98,6 +131,7 @@ export class TreeTab {
       changesFrom: at?.changesFrom ?? null,
       partial: at?.partial ?? false,
       problem: at?.problem ?? null,
+      omitted: at === undefined ? 0 : omittedOf(at),
     };
   }
 
@@ -117,6 +151,7 @@ export class TreeTab {
       return;
     }
     if (this.#at?.head !== head) {
+      if (this.#at) this.#stopRetries(this.#at);
       this.#at = {
         head,
         files: undefined,
@@ -126,7 +161,13 @@ export class TreeTab {
         changesFrom: undefined,
         partial: false,
         problem: undefined,
+        listedOmitted: 0,
+        changesOmitted: 0,
+        deletedOmitted: 0,
         started: new Set(),
+        wantsGithub: false,
+        failures: { local: 0, github: 0 },
+        timers: new Set(),
       };
       this.#publish();
     }
@@ -137,11 +178,10 @@ export class TreeTab {
         at.started.add('local');
         void this.#fromLocal(at, local.mergeBase === null ? undefined : parseOid(local.mergeBase));
       }
-    } else if (info.acting !== undefined && !info.provisional && !at.started.has('github')) {
-      // A head Lo saved may not be GitHub's any more: GitHub is asked about the one it says.
-      at.started.add('github');
-      void this.#fromGithub(at, info.acting);
+    } else {
+      at.wantsGithub = true;
     }
+    this.#fromGithubIfWanted(at);
   }
 
   /** The entries of the folders at `paths`, of the tree at `head`. */
@@ -177,6 +217,29 @@ export class TreeTab {
   close(): void {
     this.#closed = true;
     this.#search++;
+    if (this.#at) this.#stopRetries(this.#at);
+  }
+
+  #stopRetries(at: At): void {
+    for (const timer of at.timers) clearTimeout(timer);
+    at.timers.clear();
+  }
+
+  /**
+   * Reads from `read` again after a wait that grows with each failure in a row, while `at` is still
+   * the commit on screen.
+   */
+  #retry(at: At, read: Read): void {
+    at.failures[read] += 1;
+    const wait = (this.#options.retryWait ?? retryWait)(at.failures[read]);
+    const timer = setTimeout(() => {
+      at.timers.delete(timer);
+      if (!this.#current(at)) return;
+      at.started.delete(read);
+      const info = this.#info;
+      if (info) this.update(info);
+    }, wait);
+    at.timers.add(timer);
   }
 
   /** Whether `at` is still the commit on screen. */
@@ -192,17 +255,18 @@ export class TreeTab {
       repo = await opening;
     } catch (error) {
       this.#options.log(`opening the local copy: ${describe(error)}`);
+      if (this.#current(at)) this.#retry(at, 'local');
       return;
     }
+    let failed = false;
     // The files.
     try {
-      const files = new Files(
-        fromLocal(await repo.tree(at.head, { maxEntries: MAX_ENTRIES })),
-        this.#options.wholeLimit,
-      );
+      const listed = fromLocal(await repo.tree(at.head, { maxEntries: MAX_ENTRIES }));
+      const files = new Files(listed.files, this.#options.wholeLimit);
       if (!this.#current(at)) return;
       at.files = files;
       at.listing = files.listing();
+      at.listedOmitted = listed.omitted;
       at.from = 'local';
       at.problem = undefined;
     } catch (error) {
@@ -217,6 +281,7 @@ export class TreeTab {
       } else {
         this.#options.log(`listing the files at ${at.head}: ${describe(error)}`);
         at.problem = `Lo couldn't list the files in the local copy: ${describe(error)}`;
+        failed = true;
       }
     }
     this.#publish();
@@ -224,6 +289,7 @@ export class TreeTab {
     // copy can't say, and GitHub's list stands.
     if (mergeBase === undefined) {
       this.#fallBackToGithub(at);
+      if (failed) this.#retry(at, 'local');
       return;
     }
     try {
@@ -236,12 +302,26 @@ export class TreeTab {
         at.problem = `The changed files are larger than ${Math.round(compared.limit / 2 ** 20)} MB, so the tree marks them as GitHub lists them.`;
         this.#publish();
         this.#fallBackToGithub(at);
+        if (failed) this.#retry(at, 'local');
         return;
       }
-      const files = compared.files.flatMap((file) => (file.change ? [file.change] : []));
+      // Paths too long to show are left out before anything reads them.
+      let omitted = 0;
+      let deleted = 0;
+      const files = compared.files.flatMap((file) => {
+        const { change } = file;
+        if (!change) return [];
+        if (changedPath(change).length <= PATH_LIMIT) return [change];
+        omitted++;
+        if (change.change.kind === 'deleted') deleted++;
+        return [];
+      });
       const generated = await this.#generated(repo, at.head, files.map(changedPath));
       if (!this.#current(at)) return;
-      at.changes = files.map((file, index) => localChange(file, generated[index]));
+      const kept = withinLimit(files.map((file, index) => localChange(file, generated[index])));
+      at.changes = kept.changes;
+      at.changesOmitted = omitted;
+      at.deletedOmitted = deleted;
       at.changesFrom = 'local';
       at.partial = false;
     } catch (error) {
@@ -249,7 +329,10 @@ export class TreeTab {
       this.#options.log(`finding what changed at ${at.head}: ${describe(error)}`);
       at.problem = `Lo couldn't read what changed from the local copy: ${describe(error)}`;
       this.#fallBackToGithub(at);
+      failed = true;
     }
+    if (failed) this.#retry(at, 'local');
+    else at.failures.local = 0;
     this.#publish();
   }
 
@@ -278,10 +361,21 @@ export class TreeTab {
 
   /** Reads what changed from GitHub, when the local copy couldn't say, if it hasn't yet. */
   #fallBackToGithub(at: At): void {
-    const acting = this.#info?.acting;
-    if (acting === undefined || at.changesFrom === 'github' || at.started.has('github')) return;
+    if (at.changesFrom !== undefined) return;
+    at.wantsGithub = true;
+    this.#fromGithubIfWanted(at);
+  }
+
+  /**
+   * Reads from GitHub what's still wanted of `at`, unless it's under way: once the tab knows who
+   * it acts as, and only of the head GitHub gave, never one Lo saved, which it may replace.
+   */
+  #fromGithubIfWanted(at: At): void {
+    const info = this.#info;
+    if (!info || !at.wantsGithub || at.started.has('github')) return;
+    if (info.acting === undefined || info.provisional) return;
     at.started.add('github');
-    void this.#fromGithub(at, acting);
+    void this.#fromGithub(at, info.acting);
   }
 
   async #fromGithub(at: At, acting: Acting): Promise<void> {
@@ -294,15 +388,18 @@ export class TreeTab {
       at.from === undefined
         ? reads.github(acting, (client) => repoTree(client, repository, at.head))
         : Promise.resolve(undefined),
-      reads.github(acting, (client) =>
-        readPullFiles(client, pull, {
-          maxPages: MAX_PAGES,
-          // Without an account, GitHub allows 60 requests an hour, and nothing else polls.
-          keepRequests: acting.kind === 'anonymous' ? KEEP_ANONYMOUS : KEEP_REQUESTS,
-        }),
-      ),
+      at.changesFrom === undefined
+        ? reads.github(acting, (client) =>
+            readPullFiles(client, pull, {
+              maxPages: MAX_PAGES,
+              // Without an account, GitHub allows 60 requests an hour, and nothing else polls.
+              keepRequests: acting.kind === 'anonymous' ? KEEP_ANONYMOUS : KEEP_REQUESTS,
+            }),
+          )
+        : Promise.resolve(undefined),
     ]);
     if (!this.#current(at)) return;
+    let failed = false;
     // The local copy's say wins.
     if (at.from === undefined) {
       if (tree.status === 'fulfilled' && tree.value) {
@@ -312,8 +409,10 @@ export class TreeTab {
             why: 'GitHub lists only part of this repository’s files, so the tree shows the changed ones until the local copy is ready.',
           };
         } else {
-          at.files = new Files(fromGithub(tree.value.items), this.#options.wholeLimit);
+          const listed = fromGithub(tree.value.items);
+          at.files = new Files(listed.files, this.#options.wholeLimit);
           at.listing = at.files.listing();
+          at.listedOmitted = listed.omitted;
         }
         at.from = 'github';
       } else if (tree.status === 'rejected') {
@@ -322,21 +421,31 @@ export class TreeTab {
           kind: 'changed',
           why: `Lo couldn’t read the repository’s files from GitHub (${describe(tree.reason)}), so the tree shows the changed ones until the local copy is ready.`,
         };
+        failed = true;
       }
     }
     if (at.changesFrom === undefined) {
-      if (files.status === 'fulfilled') {
+      if (files.status === 'fulfilled' && files.value) {
         const listed = files.value;
         if (listedAt(listed.files, at.head)) {
-          at.changes = listed.files.map(githubChanged);
+          const kept = withinLimit(listed.files.map(githubChanged));
+          at.changes = kept.changes;
+          at.changesOmitted = kept.omitted;
+          at.deletedOmitted = kept.deleted;
           at.changesFrom = 'github';
           at.partial = listed.cutShort !== undefined || listed.files.length >= MAX_FILES;
+          if (at.problem?.startsWith('Lo couldn’t read the changed files from GitHub')) {
+            at.problem = undefined;
+          }
         }
-      } else {
+      } else if (files.status === 'rejected') {
         this.#options.log(`reading the changed files from GitHub: ${describe(files.reason)}`);
         at.problem ??= `Lo couldn’t read the changed files from GitHub: ${describe(files.reason)}`;
+        failed = true;
       }
     }
+    if (failed) this.#retry(at, 'github');
+    else at.failures.github = 0;
     this.#publish();
   }
 
@@ -344,4 +453,13 @@ export class TreeTab {
     if (this.#closed) return;
     this.#options.publish(this.state());
   }
+}
+
+/**
+ * How many files the tree leaves out of what it shows, since their paths are too long: the
+ * listing's, with the deleted files it doesn't have; or the changed files', when there's no
+ * listing.
+ */
+function omittedOf(at: At): number {
+  return at.files !== undefined ? at.listedOmitted + at.deletedOmitted : at.changesOmitted;
 }

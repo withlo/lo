@@ -5,7 +5,17 @@
 
 import { type ChangedFile, comparePaths, type FileKind, reviewRows } from '@lo/review';
 
-import type { Change, Changed, Entry, EntryKind, TreePath, TreeState } from '../contract.ts';
+import { withoutBidi } from '../../tab/window/shared.ts';
+import {
+  type Change,
+  type Changed,
+  type Entry,
+  type EntryKind,
+  PATH_LIMIT,
+  pathBytes,
+  type TreePath,
+  type TreeState,
+} from '../contract.ts';
 import { folderText, keyOf, nameOf, parentOf } from './paths.ts';
 
 /** Whether the account marked a changed file viewed, as GitHub says. */
@@ -86,6 +96,31 @@ export interface Model {
   readonly folders: readonly string[];
   /** Folders open with nothing yet from main, which the window asks for. */
   readonly wanted: readonly TreePath[];
+  /** Files left out, since their paths are longer than `PATH_LIMIT` bytes. */
+  readonly omitted: number;
+}
+
+/** Whether the tree shows `path`: one no longer than `PATH_LIMIT` bytes, which it may key by. */
+function shows(path: TreePath): boolean {
+  return pathBytes(path) <= PATH_LIMIT;
+}
+
+/**
+ * The changes the tree shows, and how many it leaves out: a path too long to key a map by is left
+ * out, and a rename from one keeps its change without its old path.
+ */
+function shownChanges(changes: readonly Changed[]): { changes: Changed[]; omitted: number } {
+  const kept: Changed[] = [];
+  let omitted = 0;
+  for (const change of changes) {
+    if (!shows(change.path)) {
+      omitted++;
+      continue;
+    }
+    const { previous } = change;
+    kept.push(previous !== null && !shows(previous) ? { ...change, previous: null } : change);
+  }
+  return { changes: kept, omitted };
 }
 
 /** A folder or file of the tree, as it's built. */
@@ -121,8 +156,13 @@ function node(path: TreePath | undefined, kind: EntryKind, listed: boolean, pare
  * The tree of what main sent: every file listed, and each folder's entries main sent folder by
  * folder, with the changed files added where they are, deleted ones included.
  */
-function build(state: TreeState, folders: ReadonlyMap<string, readonly Entry[]>): Node {
+function build(
+  state: TreeState,
+  changes: readonly Changed[],
+  folders: ReadonlyMap<string, readonly Entry[]>,
+): { root: Node; omitted: number } {
   const { listing } = state;
+  let omitted = 0;
   const whole = listing.kind === 'whole';
   const root = node(undefined, 'folder', whole || listing.kind === 'folders');
   const add = (path: TreePath, kind: EntryKind): Node => {
@@ -136,15 +176,17 @@ function build(state: TreeState, folders: ReadonlyMap<string, readonly Entry[]>)
     }
     return found;
   };
+  const list = (entry: Entry) => {
+    if (shows(entry.path)) add(entry.path, entry.kind);
+    else omitted++;
+  };
   if (listing.kind === 'whole') {
-    for (const entry of listing.entries) add(entry.path, entry.kind);
+    for (const entry of listing.entries) list(entry);
   } else if (listing.kind === 'folders') {
-    for (const entry of listing.root) add(entry.path, entry.kind);
-    for (const entries of folders.values()) {
-      for (const entry of entries) add(entry.path, entry.kind);
-    }
+    for (const entry of listing.root) list(entry);
+    for (const entries of folders.values()) for (const entry of entries) list(entry);
   }
-  for (const change of state.changes ?? []) {
+  for (const change of changes) {
     const file = add(change.path, 'file');
     // The same path listed twice counts once.
     if (file.change) continue;
@@ -152,7 +194,7 @@ function build(state: TreeState, folders: ReadonlyMap<string, readonly Entry[]>)
     file.changes = 1;
     for (let folder = file.parent; folder !== undefined; folder = folder.parent) folder.changes++;
   }
-  return root;
+  return { root, omitted };
 }
 
 /** Folders first, then files, each by name in git's order. */
@@ -165,7 +207,9 @@ function byName(a: Node, b: Node): number {
 function previousOf(change: Changed): string | undefined {
   const { previous } = change;
   if (previous === null) return undefined;
-  return folderText(previous) === folderText(change.path) ? nameOf(previous) : previous.text;
+  return withoutBidi(
+    folderText(previous) === folderText(change.path) ? nameOf(previous) : previous.text,
+  );
 }
 
 /** The viewed mark of `change`, from GitHub's marks by path: a rename's by its old path too. */
@@ -191,7 +235,7 @@ function fileRow(
     kind: 'file',
     key: file.key,
     path: file.path,
-    name: file.name,
+    name: withoutBidi(file.name),
     depth,
     entry: file.kind === 'folder' ? 'file' : file.kind,
     change: change?.change,
@@ -237,7 +281,9 @@ function reviewModel(
     }
     const file = node(change.path, 'file', false);
     file.change = change;
-    rows.push(fileRow(file, follows === undefined ? 0 : 1, viewed, folderText(change.path)));
+    rows.push(
+      fileRow(file, follows === undefined ? 0 : 1, viewed, withoutBidi(folderText(change.path))),
+    );
     order.push(file.key);
   }
   return { rows, order };
@@ -253,7 +299,10 @@ export function model(
   viewed: ReadonlyMap<string, Viewed>,
   choices: Choices,
 ): Model {
-  const root = build(state, folders);
+  const shown = shownChanges(state.changes ?? []);
+  const { root, omitted: unlisted } = build(state, shown.changes, folders);
+  const omitted =
+    state.listing.kind === 'changed' || state.listing.kind === 'loading' ? shown.omitted : unlisted;
   const allFolders: string[] = [];
   const collect = (folder: Node) => {
     for (const child of folder.children.values()) {
@@ -264,7 +313,12 @@ export function model(
   };
   collect(root);
   if (choices.mode === 'review') {
-    return { ...reviewModel(state.changes ?? [], viewed), folders: allFolders, wanted: [] };
+    return {
+      ...reviewModel(shown.changes, viewed),
+      folders: allFolders,
+      wanted: [],
+      omitted: shown.omitted,
+    };
   }
   // Only the changed files show while the reader asks, or main has nothing else.
   const changedOnly = choices.changedOnly || state.listing.kind === 'changed';
@@ -303,7 +357,7 @@ export function model(
         kind: 'folder',
         key: last.key,
         path: last.path,
-        names: chain.map((link) => link.name),
+        names: chain.map((link) => withoutBidi(link.name)),
         depth,
         open,
         changes: last.changes,
@@ -314,14 +368,21 @@ export function model(
     }
   };
   walk(root, 0);
-  return { rows, order: panelOrder(state.changes ?? [], 'tree'), folders: allFolders, wanted };
+  return {
+    rows,
+    order: panelOrder(shown.changes, 'tree'),
+    folders: allFolders,
+    wanted,
+    omitted,
+  };
 }
 
 /**
  * The changed files, by key, in the order the panel lists them, which is the order the diff shows
  * them in: the tree's (each folder's folders, then its files, by name) or review order.
  */
-export function panelOrder(changes: readonly Changed[], mode: Mode): readonly string[] {
+export function panelOrder(all: readonly Changed[], mode: Mode): readonly string[] {
+  const { changes } = shownChanges(all);
   if (mode === 'review') {
     return reviewModel(changes, new Map()).order;
   }

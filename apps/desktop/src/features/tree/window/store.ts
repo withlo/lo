@@ -3,7 +3,13 @@
 // the tab closes.
 
 import { tabState } from '../../tab/window/shared.ts';
-import type { Entry, Folder, TreePath, TreeState } from '../contract.ts';
+import {
+  type Entry,
+  type Folder,
+  FOLDERS_LIMIT,
+  type TreePath,
+  type TreeState,
+} from '../contract.ts';
 import { main } from './main.ts';
 import { NO_CHOICES, type Choices, type Model } from './model.ts';
 import { keyOf } from './paths.ts';
@@ -66,24 +72,30 @@ export function addFolders(
 /** Folders asked for and not yet answered, by tab, so none is asked for twice. */
 const asked = new Map<string, Set<string>>();
 
-/** Asks main for `paths`' entries, of the tree at `at`, but those already asked for. */
+/**
+ * Asks main for `paths`' entries, of the tree at `at`, but those already asked for: as many
+ * requests as it takes, each of `FOLDERS_LIMIT` folders at most.
+ */
 export function askFolders(id: string, at: string, paths: readonly TreePath[]): void {
   let waiting = asked.get(id);
   if (!waiting) {
     waiting = new Set();
     asked.set(id, waiting);
   }
-  const wanted = paths.filter((path) => !waiting.has(`${at}\0${keyOf(path)}`));
-  if (wanted.length === 0) return;
-  const keys = wanted.map((path) => `${at}\0${keyOf(path)}`);
-  for (const key of keys) waiting.add(key);
-  main()
-    .folder({ id, at, paths: wanted })
-    .then((sent) => addFolders(id, at, wanted, sent))
-    .catch((error: unknown) => console.error("Lo couldn't read a folder of the tree:", error))
-    .finally(() => {
-      for (const key of keys) waiting.delete(key);
-    });
+  const pending = waiting;
+  const wanted = paths.filter((path) => !pending.has(`${at}\0${keyOf(path)}`));
+  for (let start = 0; start < wanted.length; start += FOLDERS_LIMIT) {
+    const batch = wanted.slice(start, start + FOLDERS_LIMIT);
+    const keys = batch.map((path) => `${at}\0${keyOf(path)}`);
+    for (const key of keys) pending.add(key);
+    main()
+      .folder({ id, at, paths: batch })
+      .then((sent) => addFolders(id, at, batch, sent))
+      .catch((error: unknown) => console.error("Lo couldn't read a folder of the tree:", error))
+      .finally(() => {
+        for (const key of keys) pending.delete(key);
+      });
+  }
 }
 
 /** Asks main what it has of a tab's tree, unless a newer one arrived meanwhile. */

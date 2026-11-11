@@ -7,8 +7,27 @@ import { z } from 'zod';
 import { defineContract, reply } from '../../ipc/contract.ts';
 import { oid, tabId } from '../tab/contract.ts';
 
-/** The longest path Lo takes back from the window, in bytes: Linux's own limit is 4,096. */
-export const PATH_LIMIT = 16_384;
+/**
+ * The longest path the tree shows, in bytes. Lo never keys a map by a longer one: V8 hashes a long
+ * string by its length alone, so a repository of many long paths of one length would make every
+ * lookup compare them all. A longer path is left out of the tree, and counted.
+ */
+export const PATH_LIMIT = 1_024;
+
+/** How many bytes `path` holds. */
+export function pathBytes(path: TreePath): number {
+  if (path.hex !== undefined) return path.hex.length / 2;
+  let bytes = 0;
+  for (let at = 0; at < path.text.length; at++) {
+    const unit = path.text.charCodeAt(at);
+    if (unit < 0x80) bytes += 1;
+    else if (unit < 0x800) bytes += 2;
+    // A surrogate pair is four bytes, two for each half.
+    else if (unit >= 0xd800 && unit <= 0xdfff) bytes += 2;
+    else bytes += 3;
+  }
+  return bytes;
+}
 
 /**
  * A path in the repository, from its root, `/`-separated: its text as Lo shows it, and its bytes
@@ -90,6 +109,8 @@ export const treeState = z.strictObject({
   changesFrom: source.nullable(),
   partial: z.boolean(),
   problem: z.string().nullable(),
+  /** How many files it leaves out, since their paths are longer than {@link PATH_LIMIT} bytes. */
+  omitted: z.number().int().nonnegative(),
 });
 export type TreeState = z.output<typeof treeState>;
 

@@ -5,7 +5,15 @@
 import type { FileMode, TreeEntry } from '@lo/git';
 import type { TreeItem } from '@lo/github';
 
-import type { Entry, EntryKind, Folder, Listing, TreePath } from '../contract.ts';
+import {
+  type Entry,
+  type EntryKind,
+  type Folder,
+  type Listing as Sent,
+  PATH_LIMIT,
+  pathBytes,
+  type TreePath,
+} from '../contract.ts';
 import { keyOf, keyOfBytes, parentKey, pathOfKey, treePathOf } from './paths.ts';
 
 /**
@@ -36,25 +44,48 @@ function kindOfMode(mode: FileMode): Listed['kind'] {
   }
 }
 
+/**
+ * A commit's files, as the tree has them: those whose paths are no longer than `PATH_LIMIT` bytes,
+ * and how many it left out, which nothing then keys a map by.
+ */
+export interface Listing {
+  readonly files: Listed[];
+  readonly omitted: number;
+}
+
 /** The files of `entries`, a commit's tree as the local copy lists it. */
-export function fromLocal(entries: readonly TreeEntry[]): Listed[] {
-  return entries.map((entry) => ({
-    key: keyOfBytes(entry.path),
-    path: treePathOf(entry.path),
-    kind: kindOfMode(entry.mode),
-  }));
+export function fromLocal(entries: readonly TreeEntry[]): Listing {
+  const files: Listed[] = [];
+  let omitted = 0;
+  for (const entry of entries) {
+    if (entry.path.length > PATH_LIMIT) {
+      omitted++;
+      continue;
+    }
+    files.push({
+      key: keyOfBytes(entry.path),
+      path: treePathOf(entry.path),
+      kind: kindOfMode(entry.mode),
+    });
+  }
+  return { files, omitted };
 }
 
 /** The files of `items`, a commit's tree as GitHub lists it: its folders are implied. */
-export function fromGithub(items: readonly TreeItem[]): Listed[] {
+export function fromGithub(items: readonly TreeItem[]): Listing {
   const files: Listed[] = [];
+  let omitted = 0;
   for (const item of items) {
     if (item.type === 'tree') continue;
     const path = { text: item.path };
+    if (pathBytes(path) > PATH_LIMIT) {
+      omitted++;
+      continue;
+    }
     const kind = item.type === 'commit' ? 'submodule' : item.mode === '120000' ? 'symlink' : 'file';
     files.push({ key: keyOf(path), path, kind });
   }
-  return files;
+  return { files, omitted };
 }
 
 /** A commit's files, and its folders' entries once asked for. */
@@ -70,7 +101,7 @@ export class Files {
   }
 
   /** What the window gets: every file while there are few enough, else the root's entries. */
-  listing(): Listing {
+  listing(): Sent {
     if (this.files.length <= this.#wholeLimit) {
       return { kind: 'whole', entries: this.files.map(({ path, kind }) => ({ path, kind })) };
     }
@@ -87,6 +118,8 @@ export class Files {
     const seen = new Set<string>();
     const found: Folder[] = [];
     for (const path of paths) {
+      // No folder holds a path longer than the files the tree lists.
+      if (pathBytes(path) > PATH_LIMIT) continue;
       const key = keyOf(path);
       if (seen.has(key)) continue;
       seen.add(key);
