@@ -6,6 +6,7 @@ import type { z } from 'zod';
 
 import type { Database } from './database.ts';
 import type { LocalGit } from './git.ts';
+import { createServices, type Provided, type Service } from './services.ts';
 import {
   channel,
   IpcError,
@@ -24,7 +25,7 @@ export type Handlers<C extends Contract> = {
   ) => ReplyOf<C['requests'][Name]> | Promise<ReplyOf<C['requests'][Name]>>;
 };
 
-/** What a feature's main side has to work with, in its handlers and its `start`. */
+/** What a feature's main side has to work with, in its `provide`, its handlers and its `start`. */
 export interface FeatureContext<C extends Contract> {
   /** Pushes a value to the window on one of the feature's topics. */
   readonly publish: <Topic extends keyof C['topics'] & string>(
@@ -35,6 +36,12 @@ export interface FeatureContext<C extends Contract> {
   readonly database: Database;
   /** Git, which only main runs: what Lo found, and the cache of repositories once it's open. */
   readonly git: LocalGit;
+  /**
+   * One of this feature's own services, or another feature's that it lists in its `uses`. It
+   * answers once every feature has provided its services: in `start`, `stop` and handlers, not in
+   * `provide`.
+   */
+  readonly use: <T>(service: Service<T>) => T;
 }
 
 /** A function whose parameters are checked both ways, so any handler fits in a list of them. */
@@ -45,20 +52,77 @@ type AnyHandler = {
 /** A feature as main runs it, its types checked where it was defined. */
 export interface Feature {
   readonly contract: Contract;
+  /** Other features' services it uses, so it stops before the features that provide them. */
+  readonly uses: readonly Service<unknown>[];
   readonly handlers: Readonly<Record<string, AnyHandler>>;
+  readonly provide?: ((context: FeatureContext<Contract>) => readonly Provided[]) | undefined;
   readonly start?: ((context: FeatureContext<Contract>) => void) | undefined;
+  readonly stop?: ((context: FeatureContext<Contract>) => void | Promise<void>) | undefined;
 }
 
 /**
- * Defines a feature's main side: a handler for each request in its contract, and optionally a
- * `start` that runs once before the window opens, for pushing to its topics. Both get the
- * feature's context. A feature's `main/index.ts` exports this as its default export.
+ * Defines a feature's main side: the other features' services it `uses`; a handler for each
+ * request in its contract; optionally a `provide` that returns the values of the services its
+ * `service.ts` defines, each paired with its service by `provides`; optionally a `start` that runs
+ * once before the window opens, for pushing to its topics; and optionally a `stop` that runs as Lo
+ * quits, while the database is still open. Every feature's `provide` runs before any feature's
+ * `start`. A feature stops before the features whose services it uses, and otherwise the last to
+ * start stops first. Each part gets the feature's context. A feature's `main/index.ts` exports
+ * this as its default export.
  */
 export function defineFeature<C extends Contract>(
   contract: C,
-  parts: { handlers: Handlers<C>; start?: (context: FeatureContext<C>) => void },
+  parts: {
+    uses?: readonly Service<unknown>[];
+    handlers: Handlers<C>;
+    provide?: (context: FeatureContext<C>) => readonly Provided[];
+    start?: (context: FeatureContext<C>) => void;
+    stop?: (context: FeatureContext<C>) => void | Promise<void>;
+  },
 ): Feature {
-  return { contract, handlers: parts.handlers, start: parts.start };
+  const { uses = [], handlers, provide, start, stop } = parts;
+  return { contract, uses, handlers, provide, start, stop };
+}
+
+/** How long features may take to stop, in milliseconds. */
+export interface StopLimits {
+  /** Each feature's own: past it, Lo goes on to the next without waiting. */
+  each: number;
+  /** All of them: past it, the features not yet stopped aren't, but one stopping goes on to its own limit. */
+  all: number;
+}
+
+export const STOP_LIMITS: StopLimits = { each: 5_000, all: 30_000 };
+
+/**
+ * The order features stop in: each before the features whose services it uses, and otherwise the
+ * last to start first. Throws when features use each other's services, since none of them could
+ * stop first.
+ */
+export function stopOrder(features: readonly Feature[]): Feature[] {
+  const byName = new Map(features.map((feature) => [feature.contract.feature, feature]));
+  /** The features that use each one's services, which stop before it. */
+  const users = new Map(features.map((feature) => [feature, new Set<Feature>()]));
+  for (const user of features) {
+    for (const service of user.uses) {
+      const provider = byName.get(service.feature);
+      if (provider && provider !== user) users.get(provider)?.add(user);
+    }
+  }
+  const order: Feature[] = [];
+  const left = [...features];
+  while (left.length > 0) {
+    const next = left.findLast((feature) =>
+      [...(users.get(feature) ?? [])].every((user) => order.includes(user)),
+    );
+    if (!next) {
+      const names = left.map((feature) => feature.contract.feature).join(', ');
+      throw new Error(`${names} use each other's services, so none of them can stop first.`);
+    }
+    order.push(next);
+    left.splice(left.indexOf(next), 1);
+  }
+  return order;
 }
 
 /**
@@ -98,8 +162,19 @@ export interface Router {
    * error is reported to `log` and reaches the window only as `internal`.
    */
   answer(channel: string, sender: string | undefined, input: unknown): Promise<Result<unknown>>;
-  /** Runs each feature's `start`. */
+  /**
+   * Runs each feature's `provide`, checks that every service the features define was provided,
+   * then runs each feature's `start`.
+   */
   start(): void;
+  /**
+   * Runs each feature's `stop` once, in {@link stopOrder}, each once the one before it has
+   * finished or used up its own limit. Past the limit for them all, the rest aren't stopped. One
+   * that fails, or runs late, is reported to `log`, and the others still stop. Resolves once
+   * nothing still stopping is within its own limit, so the database can close. Asked again, it
+   * answers the same.
+   */
+  stop(): Promise<void>;
 }
 
 export function createRouter(
@@ -109,13 +184,19 @@ export function createRouter(
     isAllowedSender(address: string): boolean;
     /** Sends a pushed value to the window. */
     send(channel: string, value: unknown): void;
-    log(message: string, error: unknown): void;
+    log(message: string, error?: unknown): void;
     /** Lo's database, migrated, for every feature's handlers. */
     database: Database;
     git: LocalGit;
+    /** Every service the features' `service.ts` files define, which they must all provide. */
+    services: readonly Service<unknown>[];
+    /** How long features may take to stop: {@link STOP_LIMITS} unless said otherwise. */
+    stopLimits?: StopLimits | undefined;
   },
 ): Router {
-  const context = (contract: Contract): FeatureContext<Contract> => ({
+  const services = createServices();
+  const ordered = stopOrder(features);
+  const context = ({ contract, uses }: Feature): FeatureContext<Contract> => ({
     publish(topic, value) {
       const schema = Object.hasOwn(contract.topics, topic) ? contract.topics[topic] : undefined;
       if (!schema) throw new Error(`${contract.feature} has no topic named ${topic}.`);
@@ -123,13 +204,23 @@ export function createRouter(
     },
     database: options.database,
     git: options.git,
+    use(service) {
+      const own = service.feature === contract.feature;
+      if (!own && !uses.some((used) => used.id === service.id)) {
+        throw new Error(
+          `${contract.feature} uses ${service.id} without listing it in its uses, so it could stop after ${service.feature}.`,
+        );
+      }
+      return services.use(service);
+    },
   });
+  let stopping: Promise<void> | undefined;
 
   const requests = new Map<
     string,
     { input: z.ZodType; handle: AnyHandler; context: FeatureContext<Contract> }
   >();
-  const contexts = new Map(features.map((feature) => [feature, context(feature.contract)]));
+  const contexts = new Map(features.map((feature) => [feature, context(feature)]));
   for (const [{ contract, handlers }, shared] of contexts) {
     for (const [name, spec] of Object.entries(contract.requests)) {
       const handle = Object.hasOwn(handlers, name) ? handlers[name] : undefined;
@@ -167,7 +258,52 @@ export function createRouter(
     },
 
     start() {
+      for (const [{ contract, provide }, shared] of contexts) {
+        services.add(contract.feature, provide?.(shared) ?? []);
+      }
+      services.ready(options.services);
+      for (const { contract, uses } of features) {
+        for (const service of uses) {
+          if (!services.has(service)) {
+            throw new Error(`${contract.feature} uses ${service.id}, which no feature provides.`);
+          }
+        }
+      }
       for (const [{ start }, shared] of contexts) start?.(shared);
     },
+
+    stop() {
+      stopping ??= stopAll();
+      return stopping;
+    },
   };
+
+  async function stopAll(): Promise<void> {
+    const limits = options.stopLimits ?? STOP_LIMITS;
+    const deadline = Date.now() + limits.all;
+    for (const feature of ordered) {
+      const { contract, stop } = feature;
+      const shared = contexts.get(feature);
+      if (!stop || !shared) continue;
+      if (Date.now() >= deadline) {
+        options.log(`${contract.feature} wasn't stopped: features had taken ${limits.all} ms.`);
+        continue;
+      }
+      const stopped = Promise.resolve()
+        .then(() => stop(shared))
+        .catch((error: unknown) => options.log(`${contract.feature} failed to stop:`, error))
+        .then(() => true);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), limits.each);
+      });
+      const done = await Promise.race([stopped, late]);
+      clearTimeout(timer);
+      if (!done) {
+        options.log(
+          `${contract.feature} took over ${limits.each} ms to stop; Lo went on without it.`,
+        );
+      }
+    }
+  }
 }

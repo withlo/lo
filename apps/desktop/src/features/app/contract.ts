@@ -36,6 +36,8 @@ export const appInfo = z.strictObject({
   theme,
   /** Whether Lo has a git it can run, which `app.git` then keeps up to date. */
   git: gitInfo,
+  /** Whether Lo runs as it ships, rather than built from source, as for its tests. */
+  packaged: z.boolean(),
 });
 export type AppInfo = z.output<typeof appInfo>;
 
