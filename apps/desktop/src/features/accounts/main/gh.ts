@@ -122,7 +122,7 @@ export interface GhOptions {
   readonly timeout?: number | undefined;
 }
 
-/** gh, as Lo finds and runs it. Nothing is remembered between calls, so a gh installed since is found. */
+/** gh, as Lo finds and runs it. Nothing is kept between calls, so a gh installed since is found. */
 export class Gh {
   readonly #options: GhOptions;
   readonly #places: Places;
@@ -272,7 +272,7 @@ export function summarize(stderr: string): string {
 /** A login as GitHub allows them, which is all Lo takes from gh. */
 const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
 
-/** Where gh says a token came from when it's from the environment, which isn't an account gh keeps. */
+/** Where gh says a token came from when it's the environment's, not an account gh keeps. */
 const FROM_ENVIRONMENT = new Set([
   'GH_TOKEN',
   'GITHUB_TOKEN',

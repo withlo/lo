@@ -301,7 +301,7 @@ describe("Linux's built-in key, and other stand-in keychains", () => {
     const read = kept.read('bot');
     await expect(read).rejects.toBeInstanceOf(NoKeychain);
     await expect(read).rejects.toThrow('none answered');
-    // While a keyring still encrypts, it's the keychain refusing just now, as when the person says no.
+    // While a keyring still encrypts, the keychain is refusing just now, as when the person says no.
     storage.mark = 'v12';
     const refused = kept.read('bot');
     await expect(refused).rejects.not.toBeInstanceOf(NoKeychain);

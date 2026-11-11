@@ -133,7 +133,7 @@ export class SignIns {
     this.cancel();
   }
 
-  /** Polls until GitHub hands over a token, then keeps the account, telling the window how it went. */
+  /** Polls until GitHub hands over a token, then keeps the account, and tells the window how. */
   async #finish(running: Running, codes: DeviceCodes): Promise<void> {
     const { id, controller } = running;
     const { signal } = controller;
