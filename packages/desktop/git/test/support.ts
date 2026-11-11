@@ -4,9 +4,10 @@ import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { gitProgram } from '@lo/testing/git';
+import { gitProgram, RepoServer } from '@lo/testing/git';
 import { onTestFinished } from 'vitest';
 
+import { Cache, type CacheOptions } from '../src/cache.ts';
 import { type Environment, GITHUB } from '../src/environment.ts';
 import { findGit } from '../src/find.ts';
 import { type Git, Runner, type RunnerSettings } from '../src/git.ts';
@@ -100,4 +101,31 @@ export async function eventually(
     if (Date.now() > until) throw new Error(`still not so after ${limit} ms`);
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
+}
+
+/** A server of repositories in a folder, removed when the test ends. */
+export function repoServer(): RepoServer {
+  const server = new RepoServer();
+  onTestFinished(() => server.remove());
+  return server;
+}
+
+/**
+ * A cache in a new folder, fetching from `remote` (a {@link RepoServer}'s, or a server's
+ * address), with `config` after Lo's settings, closed when the test ends.
+ */
+export async function cacheFor(
+  remote: RepoServer | string,
+  options: Partial<CacheOptions> & { config?: string[] | undefined } = {},
+): Promise<Cache> {
+  const address = typeof remote === 'string' ? remote : remote.baseUrl;
+  const ownSettings = address === GITHUB && options.config === undefined;
+  const cache = await Cache.open({
+    root: options.root ?? join(tempFolder(), 'cache'),
+    git: options.git ?? (await foundGit()),
+    log: options.log,
+    test: ownSettings ? undefined : { remote: address, config: options.config },
+  });
+  onTestFinished(() => cache.close());
+  return cache;
 }

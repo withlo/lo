@@ -149,6 +149,7 @@ test('hostile config has no effect', async () => {
     'core.fsmonitor=false',
     'core.attributesfile=/dev/null',
     'transfer.bundleuri=false',
+    'fetch.bundleuri=',
     'promisor.acceptfromserver=None',
     'fetch.uriprotocols=',
     'core.precomposeunicode=false',

@@ -14,7 +14,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
-import { FakeServer, git, missingObjects, RepoServer } from '@lo/testing/git';
+import { FakeServer, git, GitHttpServer, missingObjects, RepoServer } from '@lo/testing/git';
 import { expect, onTestFinished, test } from 'vitest';
 
 import { gitAt } from '../src/find.ts';
@@ -262,4 +262,58 @@ test('a redirect is never followed, and the host it names never gets the token',
   await list(['http.followRedirects=true']);
   expect(elsewhere.requests().length).toBeGreaterThan(0);
   expect(elsewhere.saw(SECRET)).toBe(false);
+});
+
+/** `owner/repo`, with a commit on `main`, served over HTTP to `token`, and a host elsewhere. */
+async function served(token: string) {
+  const server = repoServer();
+  const remote = server.repo('owner', 'repo');
+  remote.write('a.txt', 'a\n').commit('first');
+  remote.publish('refs/heads/main');
+  const http = await GitHttpServer.start(server.remotes, token);
+  const elsewhere = await FakeServer.asksForAPassword();
+  onTestFinished(async () => {
+    await Promise.all([http.close(), elsewhere.close()]);
+  });
+  return { remote, http, elsewhere };
+}
+
+/** A bare repository with `settings` of its own, fetching `owner/repo` from `http`. */
+async function withSettings(http: GitHttpServer, settings: [string, string][]) {
+  const dir = tempFolder();
+  const lo = await runnerIn(dir, { remote: http.url });
+  const clone = join(dir, 'clone.git');
+  git(dir, 'init', '-q', '--bare', clone);
+  git(clone, 'config', 'remote.origin.url', `${http.url}/owner/repo.git`);
+  for (const [key, value] of settings) git(clone, 'config', key, value);
+  return { lo, clone };
+}
+
+test('a bundle a repository’s settings name is never downloaded', async () => {
+  const { http, elsewhere } = await served(SECRET);
+  const { lo, clone } = await withSettings(http, [
+    ['fetch.bundleURI', `${elsewhere.url}/everything.bundle`],
+  ]);
+
+  await lo
+    .command({ gitDir: clone }, { fetching: { token: new Token(SECRET) } })
+    .arg('fetch', 'origin', '+refs/heads/main:refs/lo/main')
+    .run(undefined, { what: 'owner/repo' });
+
+  expect(git(clone, 'for-each-ref', '--format=%(refname)')).toBe('refs/lo/main');
+  expect(elsewhere.requests()).toEqual([]);
+});
+
+test('a repository’s settings can’t take promisors or packfiles a server offers from elsewhere', async () => {
+  const { http } = await served(SECRET);
+  const { lo, clone } = await withSettings(http, [
+    ['promisor.acceptFromServer', 'All'],
+    ['fetch.uriProtocols', 'http,https'],
+  ]);
+  const setting = async (key: string) =>
+    (await lo.command({ gitDir: clone }).arg('config', '--get', key).run()).toString('utf8');
+
+  // The settings git goes by when a server offers them, whatever the repository says.
+  expect(await setting('promisor.acceptFromServer')).toBe('None\n');
+  expect(await setting('fetch.uriProtocols')).toBe('\n');
 });

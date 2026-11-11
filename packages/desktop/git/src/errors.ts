@@ -52,6 +52,10 @@ export type GitErrorDetail =
   | { kind: 'invalid'; what: string; value: string }
   /** A git command wrote more than `limit` bytes, so Lo stopped it. */
   | { kind: 'tooLarge'; command: string; limit: number }
+  /** The cache is open in another process, or already in this one. */
+  | { kind: 'busy'; message: string }
+  /** Writing to a clone opened to read offline, which never writes. */
+  | { kind: 'readOnly'; name: string; what: string }
   /** A git command failed for a reason none of the others covers. */
   | { kind: 'git'; command: string; message: string }
   /** Reading or writing the cache failed. */
@@ -135,6 +139,10 @@ function describe(detail: GitErrorDetail): string {
       return `\`${detail.value}\` isn't a valid ${detail.what}`;
     case 'tooLarge':
       return `\`${detail.command}\` wrote more than ${detail.limit} bytes, so Lo stopped it`;
+    case 'busy':
+      return detail.message;
+    case 'readOnly':
+      return `${detail.name}'s local copy was opened to read offline, so it can't ${detail.what}`;
     case 'git':
       return `\`${detail.command}\` failed: ${detail.message}`;
     case 'io':

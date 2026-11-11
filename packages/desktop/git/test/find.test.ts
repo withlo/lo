@@ -1,14 +1,16 @@
-import { chmodSync, existsSync, mkdirSync, symlinkSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, statSync, symlinkSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
 import { describe, expect, test } from 'vitest';
 
-import { findGit, gitAt } from '../src/find.ts';
+import { defaultPlaces, findGit, gitAt } from '../src/find.ts';
 import { compareVersions, MINIMUM_VERSION } from '../src/version.ts';
 import { fakeGit, script, tempFolder, wrappedGit } from './support.ts';
 
 const env = process.env;
 const { platform } = process;
+const { groups } = defaultPlaces(platform);
 
 test('finds a git new enough', async () => {
   const status = await findGit({ env, platform });
@@ -71,7 +73,7 @@ function apple(commandLineTools: boolean) {
       ? `echo '${developer}'`
       : 'echo "xcode-select: error: unable to get active developer directory" >&2; exit 2',
   );
-  return { dir, bin, git, marker, places: { apple: { git, xcodeSelect }, folders: [] } };
+  return { dir, bin, git, marker, places: { apple: { git, xcodeSelect }, folders: [], groups } };
 }
 
 describe('on a Mac', () => {
@@ -103,7 +105,7 @@ test('looks on PATH, then in the system’s folders, and takes the first git new
   const [first, second, third] = [folder('first'), folder('second'), folder('third')];
   fakeGit(join(first, 'git'), '2.39.5');
   const newEnough = wrappedGit(join(third, 'git'));
-  const places = { folders: [third] };
+  const places = { folders: [third], groups };
 
   const found = await findGit({ env: { PATH: `${first}:${second}` }, platform, places });
   expect(found.status === 'found' && found.git.program).toBe(newEnough);
@@ -112,7 +114,7 @@ test('looks on PATH, then in the system’s folders, and takes the first git new
   const tooOld = await findGit({
     env: { PATH: first },
     platform: 'linux',
-    places: { folders: [] },
+    places: { folders: [], groups },
   });
   expect(tooOld).toMatchObject({ status: 'tooOld', program: join(first, 'git') });
   if (tooOld.status !== 'tooOld') return;
@@ -123,7 +125,7 @@ test('finds a git installed since it last looked', async () => {
   const dir = tempFolder();
   const bin = join(dir, 'bin');
   mkdirSync(bin);
-  const options = { env: { PATH: bin }, platform, places: { folders: [] } };
+  const options = { env: { PATH: bin }, platform, places: { folders: [], groups } };
   expect((await findGit(options)).status).toBe('missing');
 
   wrappedGit(join(bin, 'git'));
@@ -174,25 +176,54 @@ test('takes a maintenance release that says lazy fetching is off', async () => {
   expect(await gitAt(twice, { env, platform })).toMatchObject({ check: 'lazyFetch' });
 });
 
-describe('passes over a git someone else could have changed', () => {
+describe('passes over a git someone else could change, and says so', () => {
   test.each([
-    ['a git others may write to', 0o700, 0o777],
-    ['a git its group may write to', 0o700, 0o775],
-    ['a git in a folder anyone may write to', 0o777, 0o755],
-    ['a git in a folder anyone may write to, sticky as /tmp is', 0o1777, 0o755],
-  ])('%s', async (_, folderMode, fileMode) => {
+    ['a git others may write to', 0o700, 0o777, 'other users can change it'],
+    ['a git its group may write to', 0o700, 0o775, 'other users can change it'],
+    ['a git in a folder its group may write to', 0o775, 0o755, 'other users can change {bin}'],
+    ['a git in a folder anyone may write to', 0o777, 0o755, 'other users can change {bin}'],
+    [
+      'a git in a folder anyone may write to, sticky as /tmp is',
+      0o1777,
+      0o755,
+      'other users can change {bin}',
+    ],
+  ])('%s', async (_, folderMode, fileMode, reason) => {
     const dir = tempFolder();
     const bin = join(dir, 'bin');
     mkdirSync(bin);
     const git = wrappedGit(join(bin, 'git'));
     chmodSync(git, fileMode);
     chmodSync(bin, folderMode);
-    const options = { env: { PATH: bin }, platform, places: { folders: [] } };
+    const options = { env: { PATH: bin }, platform, places: { folders: [], groups } };
 
-    expect((await findGit(options)).status).toBe('missing');
+    expect(await findGit(options)).toMatchObject({
+      status: 'missing',
+      message: `Lo found git at ${git}, but ${reason.replace('{bin}', bin)}, so Lo won't run it.`,
+    });
 
     chmodSync(git, 0o755);
     chmodSync(bin, 0o755);
+    expect((await findGit(options)).status).toBe('found');
+  });
+
+  test('a git whose folder sits in a folder anyone may write to, unless it’s sticky', async () => {
+    const dir = tempFolder();
+    const open = join(dir, 'open');
+    const bin = join(open, 'bin');
+    mkdirSync(bin, { recursive: true });
+    wrappedGit(join(bin, 'git'));
+    // Anyone could move `bin` aside and put another in its place.
+    chmodSync(open, 0o777);
+    const options = { env: { PATH: bin }, platform, places: { folders: [], groups } };
+
+    expect(await findGit(options)).toMatchObject({
+      status: 'missing',
+      message: expect.stringContaining(`other users can change ${open}`),
+    });
+
+    // Sticky, nobody else can move what's this user's in it, as in /tmp.
+    chmodSync(open, 0o1777);
     expect((await findGit(options)).status).toBe('found');
   });
 
@@ -204,11 +235,64 @@ describe('passes over a git someone else could have changed', () => {
     const git = wrappedGit(join(open, 'git'));
     symlinkSync(git, join(bin, 'git'));
     chmodSync(open, 0o777);
-    const options = { env: { PATH: bin }, platform, places: { folders: [] } };
+    const options = { env: { PATH: bin }, platform, places: { folders: [], groups } };
 
-    expect((await findGit(options)).status).toBe('missing');
+    expect(await findGit(options)).toMatchObject({
+      status: 'missing',
+      message: expect.stringContaining(`other users can change ${open}`),
+    });
 
     chmodSync(open, 0o755);
     expect((await findGit(options)).status).toBe('found');
+  });
+});
+
+/** Homebrew's layout: `bin/git` links to the git in `Cellar`, and its folders are 775. */
+function homebrew(): { bin: string; folders: string[] } {
+  const prefix = join(tempFolder(), 'homebrew');
+  const cellar = join(prefix, 'Cellar', 'git', '2.51.0', 'bin');
+  mkdirSync(cellar, { recursive: true });
+  mkdirSync(join(prefix, 'bin'));
+  const git = wrappedGit(join(cellar, 'git'));
+  symlinkSync(git, join(prefix, 'bin', 'git'));
+  const folders = [join(prefix, 'bin'), join(prefix, 'Cellar'), cellar];
+  for (const folder of folders) chmodSync(folder, 0o775);
+  return { bin: join(prefix, 'bin'), folders };
+}
+
+/** Whether this user is in the Mac's `admin` group, and so may give it a folder. */
+const admin =
+  platform === 'darwin' &&
+  execFileSync('id', ['-G'], { encoding: 'utf8' }).trim().split(' ').includes('80');
+
+describe('takes a git whose folders root’s or admin’s group may write to, as Homebrew’s are', () => {
+  test('only in a group trusted to', async () => {
+    const { bin } = homebrew();
+    const gid = statSync(bin).gid;
+    const options = (trusted: readonly number[]) => ({
+      env: { PATH: bin },
+      platform,
+      places: { folders: [], groups: trusted },
+    });
+
+    // The folders' group here is the user's, not root's or admin's, so its members could change git.
+    expect(groups).not.toContain(gid);
+    expect(await findGit(options(groups))).toMatchObject({
+      status: 'missing',
+      message: expect.stringContaining('other users can change'),
+    });
+    expect((await findGit(options([...groups, gid]))).status).toBe('found');
+  });
+
+  test('trusted are root’s group, and on a Mac admin’s, Homebrew’s', () => {
+    expect(defaultPlaces('darwin').groups).toEqual([0, 80]);
+    expect(defaultPlaces('linux').groups).toEqual([0]);
+  });
+
+  test.runIf(admin)('in admin, on a Mac', async () => {
+    const { bin, folders } = homebrew();
+    for (const folder of folders) execFileSync('chgrp', ['admin', folder]);
+
+    expect((await findGit({ env: { PATH: bin }, platform })).status).toBe('found');
   });
 });

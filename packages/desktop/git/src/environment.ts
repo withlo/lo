@@ -158,9 +158,10 @@ export function configArguments(remote: Remote, signIn: boolean): string[] {
     // No attributes: not the user's file, and not a repository's own `.gitattributes`, whatever a
     // clone's config says. `--attr-source` reads them from the empty tree instead.
     `core.attributesFile=${devNull}`,
-    // Nothing a server offers makes git fetch from another host, which would ask for
-    // credentials: no bundles, no other promisor remotes, no packfile URIs.
+    // Nothing a server offers, or a clone's settings name, makes git fetch from another host:
+    // no bundles, no other promisor remotes, no packfile URIs.
     'transfer.bundleURI=false',
+    'fetch.bundleURI=',
     'promisor.acceptFromServer=None',
     'fetch.uriProtocols=',
     // The remote's protocol only: no ssh, git or ext transports, and no local paths.
