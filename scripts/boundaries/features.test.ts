@@ -272,6 +272,178 @@ describe("a feature can't reach another's other files", () => {
   });
 });
 
+describe("a feature can't reach another's other files", () => {
+  test("through the other feature's folder itself, which loads its index", () => {
+    expect(
+      check(
+        diffImporting(
+          [
+            `import tree from '../../tree';`,
+            `const lazy = await import('../../tree/');`,
+            `import { x } from '../../tree/window';`,
+          ].join('\n'),
+        ),
+      ),
+    ).toEqual([
+      violation(
+        at(1),
+        `imports ../../tree: that's the tree feature's folder, which loads its index`,
+      ),
+      violation(at(2), `imports ../../tree/: that's the tree feature's folder`),
+      violation(at(3), `imports ../../tree/window: that's window/ in the tree feature`),
+    ]);
+  });
+
+  test('from any file Vite could bundle, in whatever folder it sits', () => {
+    const store = `import { x } from '../../tree/main/store.ts';`;
+    expect(
+      check({
+        ...tree,
+        [`${features}/diff/fixtures/store.ts`]: store,
+        [`${features}/diff/.hidden/store.ts`]: store,
+        [`${features}/diff/dist/store.js`]: store,
+        [`${features}/diff/node_modules/store.mjs`]: store,
+        [`${features}/diff/window/style.css`]: [
+          `/* @import '../../tree/window/hidden.css'; */`,
+          `@import '../../tree/window/tree.css';`,
+          `.icon { background: url("../../tree/window/icon.svg"); }`,
+          `.mark { background: url(mark.svg) }`,
+          `.page { background: url(data:image/png;base64,AAAA) url(/icon.svg) url(#mask); }`,
+        ].join('\n'),
+        [`${features}/diff/window/mark.svg`]: '<svg/>',
+      }),
+    ).toEqual([
+      violation(`${features}/diff/.hidden/store.ts:1`, `that's main/store.ts in the tree feature`),
+      violation(`${features}/diff/dist/store.js:1`, `that's main/store.ts in the tree feature`),
+      violation(`${features}/diff/fixtures/store.ts:1`, `that's main/store.ts in the tree feature`),
+      violation(
+        `${features}/diff/node_modules/store.mjs:1`,
+        `that's main/store.ts in the tree feature`,
+      ),
+      violation(
+        `${features}/diff/window/style.css:2`,
+        `refers to ../../tree/window/tree.css: that's window/tree.css in the tree feature`,
+      ),
+      violation(
+        `${features}/diff/window/style.css:3`,
+        `refers to ../../tree/window/icon.svg: that's window/icon.svg in the tree feature`,
+      ),
+    ]);
+  });
+
+  test('by a URL Vite bundles, or a module declaration', () => {
+    expect(
+      check(
+        diffImporting(
+          [
+            `const icon = new URL('../../tree/window/icon.svg', import.meta.url);`,
+            `const own = new URL('./store.ts', import.meta.url);`,
+            `const any = new URL(\`../../\${name}/icon.svg\`, import.meta.url);`,
+            `declare module '../../tree/main/store.ts' { interface X { y: 1 } }`,
+            `declare module 'zod' { interface X { y: 1 } }`,
+          ].join('\n'),
+        ),
+      ),
+    ).toEqual([
+      violation(at(1), `makes a URL to ../../tree/window/icon.svg: that's window/icon.svg`),
+      violation(at(3), 'the file is chosen at run time'),
+      violation(at(4), `declares module ../../tree/main/store.ts: that's main/store.ts`),
+    ]);
+  });
+});
+
+describe("a glob's options", () => {
+  test('are followed where they change what it matches, and refused where they can’t be', () => {
+    expect(
+      check(
+        diffImporting(
+          [
+            `const a = import.meta.glob('./main/*.ts', { base: '../../tree', eager: true });`,
+            `const b = import.meta.glob('./*.ts', { base: '../../tree', import: 'contract' });`,
+            `const c = import.meta.glob('../../*/KEYS.ts', { caseSensitive: false });`,
+            `const d = import.meta.glob('../../*/keys.ts', { exhaustive: true });`,
+            `const e = import.meta.glob('../../*/keys.ts', { [name]: true });`,
+            `const f = import.meta.glob('../../*/keys.ts', options);`,
+            `const g = import.meta.glob('../../*/keys.ts', { base: '/src/features' });`,
+            `const h = import.meta.glob('../../*/keys.ts', { base: folder });`,
+            `const i = import.meta.glob('../../*/keys.ts', { later: 1 });`,
+            `const j = import.meta.glob('../migrations/*.sql', {`,
+            `  query: '?raw', import: 'default', eager: true, caseSensitive: true, exhaustive: false,`,
+            `});`,
+          ].join('\n'),
+        ),
+      ),
+    ).toEqual([
+      violation(
+        at(1),
+        `globs ./main/*.ts (from ../../tree), which matches main/index.ts: that's main/index.ts in the tree feature`,
+      ),
+      violation(at(2), `globs ./*.ts (from ../../tree), which matches jobs.ts`),
+      violation(
+        at(3),
+        `globs ../../*/KEYS.ts with caseSensitive: false, which the feature rule doesn't follow`,
+      ),
+      violation(
+        at(4),
+        `globs ../../*/keys.ts with exhaustive: true, which the feature rule doesn't follow`,
+      ),
+      violation(at(5), `with options that aren't written out as an object`),
+      violation(at(6), `with options that aren't written out as an object`),
+      violation(
+        at(7),
+        `from the base "/src/features": a feature's globs and their base start with ./ or ../`,
+      ),
+      violation(at(8), `from a base not written out`),
+      violation(
+        at(9),
+        `globs ../../*/keys.ts with later: 1, which the feature rule doesn't follow`,
+      ),
+    ]);
+  });
+});
+
+describe('a shared file', () => {
+  test("hands on none of its feature's other files whole", () => {
+    expect(
+      check({
+        ...tree,
+        [`${features}/tree/service.ts`]: [
+          `export * from './main/store.ts';`,
+          `export { x as y } from './main/index.ts';`,
+          `export type { X } from './main/store.ts';`,
+          `export { type Y, type Z } from './main/store.ts';`,
+          `export { contract } from './contract.ts';`,
+          `export { z } from 'zod';`,
+          `export { middle } from '../open/window/shared.ts';`,
+        ].join('\n'),
+        [`${features}/tree/window/shared.ts`]: [
+          `import { store } from './store.ts';`,
+          `export const reveal = () => store;`,
+          `export * as store from './store.ts';`,
+          `export * from '.';`,
+        ].join('\n'),
+        [`${features}/tree/keys.ts`]: `export * from './window/index.ts';`,
+        [`${features}/tree/contract.ts`]: `export * from './jobs.ts';`,
+        [`${features}/tree/main/index.ts`]: `export * from './store.ts';`,
+        [`${features}/open/window/shared.ts`]: `export const middle = 1;`,
+      }),
+    ).toEqual([
+      violation(`${features}/tree/contract.ts:1`, `re-exports ./jobs.ts, which is jobs.ts`),
+      violation(`${features}/tree/keys.ts:1`, `re-exports ./window/index.ts`),
+      violation(
+        `${features}/tree/service.ts:1`,
+        `re-exports ./main/store.ts, which is main/store.ts: a shared file names each thing it shares`,
+      ),
+      violation(`${features}/tree/service.ts:2`, `re-exports ./main/index.ts`),
+      violation(
+        `${features}/tree/window/shared.ts:3`,
+        `re-exports ./store.ts, which is window/store.ts`,
+      ),
+      violation(`${features}/tree/window/shared.ts:4`, `re-exports ., which is window/`),
+    ]);
+  });
+});
+
 test("a file that doesn't parse is left to the boundary check", () => {
   expect(check(diffImporting(`import { from '../../tree/main/store.ts';`))).toEqual([]);
 });

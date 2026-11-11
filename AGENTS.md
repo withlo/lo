@@ -192,12 +192,13 @@ the window find them with `import.meta.glob`.
   `<feature>.<name>`. Objects in an input are `z.strictObject`, so unknown keys are refused; a test
   checks every contract. Main and the window both load contracts, so lint keeps Electron, Node and
   either side's code out of them.
-- `main/index.ts` exports `defineFeature(contract, { handlers, provide, start })` by default: a
-  handler for every request; optionally a `provide` that returns the values of the feature's
-  services; and optionally a `start` that runs before the window opens, to publish on the feature's
-  topics. Each gets the feature's context: `publish`, `database`, `git` and `use`. A handler throws
-  an `IpcError` for a failure the window should see; any other error is logged and reaches the
-  window only as `internal`.
+- `main/index.ts` exports `defineFeature(contract, { handlers, provide, start, stop })` by default:
+  a handler for every request; optionally a `provide` that returns the values of the feature's
+  services; optionally a `start` that runs before the window opens, to publish on the feature's
+  topics; and optionally a `stop` that runs as Lo quits. Features stop the last to start first, each
+  once the one after it has, and the database closes after them. Each part gets the feature's
+  context: `publish`, `database`, `git` and `use`. A handler throws an `IpcError` for a failure the
+  window should see; any other error is logged and reaches the window only as `internal`.
 - `service.ts` names what the feature's main side offers other features, each with
   `defineService<T>('<feature>.<name>')`: the GitHub clients, say. Its `provide` pairs each with its
   value (`provides(service, value)`). Every feature's `provide` runs before any feature's `start`,
@@ -225,13 +226,19 @@ the window find them with `import.meta.glob`.
   state they may read. Other features fill a slot by listing views in their `WindowFeature`'s
   `views`, each from `defineView(slot, { id, order, render })`, so a feature adds a view, a panel or
   a header item to another's screen without editing it. `<Slot slot={…} props={…} />` renders a
-  slot's views in order, and `useViews(slot)` lists them for an owner that lays them out itself.
+  slot's views in order, and `useViews(slot)` lists them for an owner that lays them out itself. A
+  slot is named for the feature whose `window/shared.ts` exports it, and views go only in exported
+  slots. A view that throws shows a short note in its place, and its error is logged.
 
-Features share only through `contract.ts`, `keys.ts`, `service.ts` and `window/shared.ts`. From a
-feature's folder, nothing else in another feature's folder is imported or matched by
-`import.meta.glob`: `pnpm check:boundaries` follows each import and glob to the file it lands on,
-and refuses a module chosen at run time. Main code reaches another feature's `service.ts`, and
-window code its `window/shared.ts`; each side's tsconfig holds only its own.
+Features share only through `contract.ts`, `keys.ts`, `service.ts` and `window/shared.ts`.
+`pnpm check:boundaries` reads every file in a feature's folder that Vite could bundle, in any
+folder, and refuses an import, an `import.meta.glob`, a `new URL(…, import.meta.url)`, a
+`declare module` or a stylesheet's `@import` or `url()` that reaches anything else in another
+feature's folder, or that folder itself. It follows each to the file it lands on, follows a glob's
+`base`, and refuses a module chosen at run time and glob options that would change what a glob
+matches. A shared file names what it shares: it re-exports none of its own feature's other files,
+unless only their types. Main code reaches another feature's `service.ts`, and window code its
+`window/shared.ts`; each side's tsconfig holds only its own.
 
 The database is SQLite through Node's built-in `node:sqlite`, in `lo.db` in the data folder: WAL
 mode, foreign keys enforced, defensive. `src/main/database.ts` is the only module that uses

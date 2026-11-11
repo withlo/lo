@@ -1,8 +1,14 @@
-import { useState } from 'react';
+// @vitest-environment jsdom
+import { act, useState } from 'react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { defineSlot, defineView, Slot, Slots, useViews, type View } from './slots.tsx';
+import { defineSlot, defineView, isSlot, Slot, Slots, useViews, type View } from './slots.tsx';
+
+beforeAll(() => {
+  Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
+});
 
 // Two slots a made-up tab feature defines, and the views other features put in them.
 const status = defineSlot<{ tab: string }>('tab.status');
@@ -11,6 +17,11 @@ const left = defineSlot('tab.left');
 function Counter({ tab }: { tab: string }) {
   const [count] = useState(3);
   return <s>{`${tab}: ${count}`}</s>;
+}
+
+/** A view that always fails. */
+function Broken(): never {
+  throw new Error('the tree is missing');
 }
 
 /** Renders only the first of the status slot's views. */
@@ -49,6 +60,39 @@ describe('Slot', () => {
     expect(renderToStaticMarkup(<Slot slot={left} props={{}} />)).toBe('');
   });
 
+  it('shows a note in place of a view that throws, logs why, and keeps the others', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    onTestFinished(() => error.mockRestore());
+    const withBroken = [
+      ...views,
+      defineView(status, { id: 'stacks.broken', order: 15, render: Broken }),
+    ];
+    const page = document.body.appendChild(document.createElement('div'));
+    const root = createRoot(page);
+    onTestFinished(() => {
+      act(() => root.unmount());
+      page.remove();
+    });
+    act(() =>
+      root.render(
+        <Slots views={withBroken}>
+          <Slot slot={status} props={{ tab: '#12' }} />
+        </Slots>,
+      ),
+    );
+    // The views in order, with the note in the broken one's place.
+    expect([...page.children].map((each) => each.tagName)).toEqual(['U', 'B', 'P', 'I']);
+    const note = page.querySelector('[role="alert"]');
+    expect(note?.getAttribute('data-lo-failed-view')).toBe('stacks.broken');
+    expect(note?.textContent).toBe(
+      "Lo couldn't show this part of the window. Restart Lo to try again.",
+    );
+    expect(error).toHaveBeenCalledWith(
+      "Lo couldn't show the view stacks.broken:",
+      expect.objectContaining({ message: 'the tree is missing' }),
+    );
+  });
+
   it('renders each view as a component of its own, with its own state', () => {
     const counted = [defineView(status, { id: 'stacks.count', order: 0, render: Counter })];
     expect(
@@ -70,6 +114,14 @@ describe('useViews', () => {
         </Slots>,
       ),
     ).toBe('<u>r1 → r2</u>');
+  });
+});
+
+describe('defineSlot', () => {
+  it('marks what it makes, so the slots a feature shares can be found', () => {
+    expect(isSlot(status)).toBe(true);
+    expect(isSlot({ id: 'tab.status' })).toBe(false);
+    expect(isSlot(undefined)).toBe(false);
   });
 });
 

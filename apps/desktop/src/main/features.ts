@@ -55,14 +55,17 @@ export interface Feature {
   readonly handlers: Readonly<Record<string, AnyHandler>>;
   readonly provide?: ((context: FeatureContext<Contract>) => readonly Provided[]) | undefined;
   readonly start?: ((context: FeatureContext<Contract>) => void) | undefined;
+  readonly stop?: ((context: FeatureContext<Contract>) => void | Promise<void>) | undefined;
 }
 
 /**
  * Defines a feature's main side: a handler for each request in its contract; optionally a
  * `provide` that returns the values of the services its `service.ts` defines, each paired with
- * its service by `provides`; and optionally a `start` that runs once before the window opens, for
- * pushing to its topics. Every feature's `provide` runs before any feature's `start`. Each part
- * gets the feature's context. A feature's `main/index.ts` exports this as its default export.
+ * its service by `provides`; optionally a `start` that runs once before the window opens, for
+ * pushing to its topics; and optionally a `stop` that runs as Lo quits, while the database is
+ * still open. Every feature's `provide` runs before any feature's `start`, and features stop in
+ * the reverse of the order they started in, each once the one after it has. Each part gets the
+ * feature's context. A feature's `main/index.ts` exports this as its default export.
  */
 export function defineFeature<C extends Contract>(
   contract: C,
@@ -70,9 +73,11 @@ export function defineFeature<C extends Contract>(
     handlers: Handlers<C>;
     provide?: (context: FeatureContext<C>) => readonly Provided[];
     start?: (context: FeatureContext<C>) => void;
+    stop?: (context: FeatureContext<C>) => void | Promise<void>;
   },
 ): Feature {
-  return { contract, handlers: parts.handlers, provide: parts.provide, start: parts.start };
+  const { handlers, provide, start, stop } = parts;
+  return { contract, handlers, provide, start, stop };
 }
 
 /**
@@ -117,6 +122,11 @@ export interface Router {
    * then runs each feature's `start`.
    */
   start(): void;
+  /**
+   * Runs each feature's `stop`, the last to start first, each once the one before it has
+   * finished. One that fails is reported to `log`, and the others still stop.
+   */
+  stop(): Promise<void>;
 }
 
 export function createRouter(
@@ -193,6 +203,16 @@ export function createRouter(
       }
       services.ready(options.services);
       for (const [{ start }, shared] of contexts) start?.(shared);
+    },
+
+    async stop() {
+      for (const [{ contract, stop }, shared] of [...contexts].toReversed()) {
+        try {
+          await stop?.(shared);
+        } catch (error) {
+          options.log(`${contract.feature} failed to stop:`, error);
+        }
+      }
     },
   };
 }

@@ -202,6 +202,78 @@ function start(features: readonly Feature[], defined: readonly Service<unknown>[
   return { routes, sent };
 }
 
+describe('stopping', () => {
+  it('stops the features the last to start first, each once the one after it has', async () => {
+    const steps: string[] = [];
+    const later = Promise.withResolvers<void>();
+    const handlers = {
+      add: () => ({ id: 1 }),
+      remove: () => null,
+      count: () => 0,
+      crash: () => null,
+    };
+    const first = defineFeature(notes, {
+      handlers,
+      start: () => void steps.push('notes starts'),
+      stop: () => void steps.push('notes stops'),
+    });
+    const second = defineFeature(digest, {
+      handlers: { read: () => ({ notes: 0 }) },
+      start: () => void steps.push('digest starts'),
+      async stop() {
+        steps.push('digest stopping');
+        await later.promise;
+        steps.push('digest stopped');
+      },
+    });
+    const { routes } = start([first, second]);
+    const stopping = routes.stop();
+    await Promise.resolve();
+    expect(steps).toEqual(['notes starts', 'digest starts', 'digest stopping']);
+    later.resolve();
+    await stopping;
+    expect(steps).toEqual([
+      'notes starts',
+      'digest starts',
+      'digest stopping',
+      'digest stopped',
+      'notes stops',
+    ]);
+  });
+
+  it('stops the others when one fails to', async () => {
+    const log = vi.fn<(message: string, error: unknown) => void>();
+    const stopped: string[] = [];
+    const handlers = {
+      add: () => ({ id: 1 }),
+      remove: () => null,
+      count: () => 0,
+      crash: () => null,
+    };
+    const routes = createRouter(
+      [
+        defineFeature(notes, { handlers, stop: () => void stopped.push('notes') }),
+        defineFeature(digest, {
+          handlers: { read: () => ({ notes: 0 }) },
+          stop: () => Promise.reject(new Error('the disk is full')),
+        }),
+      ],
+      {
+        isAllowedSender: () => true,
+        send: () => {},
+        log,
+        database: openDatabase(':memory:'),
+        git: noGit,
+        services: [],
+      },
+    );
+    routes.start();
+    await routes.stop();
+    expect(stopped).toEqual(['notes']);
+    expect(log).toHaveBeenCalledWith('digest failed to stop:', expect.any(Error));
+  });
+});
+
 describe('services', () => {
   const counter = defineService<{ next(): number }>('notes.counter');
   const handlers = {

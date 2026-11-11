@@ -9,7 +9,8 @@ import type { Service } from './services.ts';
 /**
  * Answers each feature's requests over Electron's IPC, and runs each feature's `provide`, then
  * each one's `start`. A request reaches its handler only from Lo's own page and only once its
- * input matches the contract. Pushes go to every window.
+ * input matches the contract. Pushes go to every window. Returns what stops the features, as Lo
+ * quits.
  */
 export function serveFeatures(
   features: readonly Feature[],
@@ -17,7 +18,7 @@ export function serveFeatures(
   database: Database,
   git: LocalGit,
   dev?: URL,
-): void {
+): () => Promise<void> {
   const router = createRouter(features, {
     database,
     git,
@@ -34,4 +35,5 @@ export function serveFeatures(
     );
   }
   router.start();
+  return () => router.stop();
 }

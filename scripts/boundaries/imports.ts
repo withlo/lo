@@ -10,6 +10,11 @@ export interface Import {
   /** `import()` or `require()` of an expression, so the module is only known at run time. */
   computed?: true;
   /**
+   * From `export … from`, which hands the module's exports on as the file's own: `type` when only
+   * types are, as with `export type { X } from`, which loads nothing.
+   */
+  reexport?: 'value' | 'type';
+  /**
    * A way to load modules that the check can't follow, which `specifier` shows: a use of `require`
    * other than a call that names its module, or any mention of `createRequire` or
    * `getBuiltinModule`.
@@ -49,6 +54,11 @@ export function importsOf(filename: string, source: string): Import[] {
   const add = (literal: StringLiteral | null | undefined) => {
     if (literal) found.push({ specifier: literal.value, line: lineOf(literal.start) });
   };
+  const reexport = (literal: StringLiteral | null | undefined, types: boolean) => {
+    if (!literal) return;
+    const kind = types ? 'type' : 'value';
+    found.push({ specifier: literal.value, line: lineOf(literal.start), reexport: kind });
+  };
   const load = (argument: unknown) => {
     if (!isNode(argument)) return;
     const name = nameOf(argument);
@@ -62,8 +72,14 @@ export function importsOf(filename: string, source: string): Import[] {
 
   new Visitor({
     ImportDeclaration: (node) => add(node.source),
-    ExportNamedDeclaration: (node) => add(node.source),
-    ExportAllDeclaration: (node) => add(node.source),
+    ExportNamedDeclaration: (node) =>
+      reexport(
+        node.source,
+        node.exportKind === 'type' ||
+          (node.specifiers.length > 0 &&
+            node.specifiers.every((specifier) => specifier.exportKind === 'type')),
+      ),
+    ExportAllDeclaration: (node) => reexport(node.source, node.exportKind === 'type'),
     ImportExpression: (node) => load(node.source),
     TSImportType: (node) => add(node.source),
     TSExternalModuleReference: (node) => add(node.expression),
@@ -124,43 +140,130 @@ export function importsOf(filename: string, source: string): Import[] {
 export interface Glob {
   /** Its patterns, as written. One that starts with `!` leaves files out. */
   patterns: string[];
+  /**
+   * Its options, by name, each with its value when that's written out as a string, number,
+   * boolean or `null`, else `undefined`. Nothing when they aren't an object written out with
+   * plain names, which can't be read without running the code.
+   */
+  options: ReadonlyMap<string, OptionValue> | undefined;
   line: number;
 }
 
+export type OptionValue = string | number | boolean | null | undefined;
+
+/** A module or file a file refers to by a string, and the line it does so on. */
+export interface Reference {
+  /** Its path or name, or for one that's computed, the expression's source. */
+  specifier: string;
+  line: number;
+  computed?: true;
+}
+
+/** What a file refers to beyond its imports: what Vite bundles, and what TypeScript reads. */
+export interface References {
+  /** Its `import.meta.glob` calls. */
+  globs: Glob[];
+  /** Each `new URL(…, import.meta.url)`, whose file Vite bundles. */
+  urls: Reference[];
+  /** Each `declare module '…'`, which adds to another module's types. */
+  modules: Reference[];
+}
+
 /**
- * Lists a file's `import.meta.glob` calls. Vite takes only patterns written out, as a string or a
- * list of them, and a call with anything else doesn't build, so it's left out. Throws a
- * `ParseError` for a file that doesn't parse.
+ * Lists what a file refers to beyond its imports: its `import.meta.glob` calls, the files its
+ * `new URL(…, import.meta.url)` expressions name, and the modules it adds types to with
+ * `declare module`. Vite takes only globs whose patterns are written out, as a string or a list of
+ * them, and a call with anything else doesn't build, so it's left out. Throws a `ParseError` for a
+ * file that doesn't parse.
  */
-export function globsOf(filename: string, source: string): Glob[] {
+export function referencesOf(filename: string, source: string): References {
   const result = parseSync(filename, source);
   const lineOf = lineFinder(source);
   const [error] = result.errors;
   if (error) throw new ParseError(error.message, lineOf(error.labels[0]?.start ?? 0));
 
   const program: unknown = result.program;
-  const globs: Glob[] = [];
+  const found: References = { globs: [], urls: [], modules: [] };
   for (const [node] of isNode(program) ? walk(program) : []) {
+    if (node.type === 'TSModuleDeclaration') {
+      const id = child(node, 'id');
+      const name = id && nameOf(id);
+      if (name !== undefined) found.modules.push({ specifier: name, line: lineOf(node.start) });
+      continue;
+    }
+    if (node.type === 'NewExpression' && identifier(child(node, 'callee')) === 'URL') {
+      const [path, base] = Array.isArray(node.arguments) ? node.arguments : [];
+      if (!isNode(path) || !isNode(base) || !isImportMeta(child(base, 'object'))) continue;
+      if (base.type !== 'MemberExpression' || propertyName(base, 'property') !== 'url') continue;
+      const name = nameOf(path);
+      found.urls.push(
+        name === undefined
+          ? {
+              specifier: source.slice(path.start, path.end),
+              line: lineOf(path.start),
+              computed: true,
+            }
+          : { specifier: name, line: lineOf(path.start) },
+      );
+      continue;
+    }
     const callee = node.type === 'CallExpression' ? child(node, 'callee') : undefined;
-    const meta = child(callee, 'object');
     const glob =
       callee?.type === 'MemberExpression' &&
       !callee.computed &&
       identifier(child(callee, 'property')) === 'glob' &&
-      meta?.type === 'MetaProperty' &&
-      identifier(child(meta, 'meta')) === 'import' &&
-      identifier(child(meta, 'property')) === 'meta';
+      isImportMeta(child(callee, 'object'));
     if (!glob) continue;
-    const argument = firstArgument(node);
+    const [argument, options] = Array.isArray(node.arguments) ? node.arguments : [];
     const list = isNode(argument) && argument.type === 'ArrayExpression';
     const items: unknown[] =
       list && Array.isArray(argument.elements) ? argument.elements : [argument];
     const patterns = items.map((item) => (isNode(item) ? nameOf(item) : undefined));
     if (patterns.every((pattern) => pattern !== undefined)) {
-      globs.push({ patterns, line: lineOf(node.start) });
+      found.globs.push({ patterns, options: optionsOf(options), line: lineOf(node.start) });
     }
   }
-  return globs.toSorted((a, b) => a.line - b.line);
+  for (const list of [found.globs, found.urls, found.modules]) list.sort((a, b) => a.line - b.line);
+  return found;
+}
+
+/** Whether `node` is `import.meta`. */
+function isImportMeta(node: Node | undefined): boolean {
+  return (
+    node?.type === 'MetaProperty' &&
+    identifier(child(node, 'meta')) === 'import' &&
+    identifier(child(node, 'property')) === 'meta'
+  );
+}
+
+/** A glob's options (see `Glob`): none when there's no argument for them. */
+function optionsOf(argument: unknown): Map<string, OptionValue> | undefined {
+  const options = new Map<string, OptionValue>();
+  if (argument === undefined) return options;
+  if (!isNode(argument) || argument.type !== 'ObjectExpression') return undefined;
+  const properties: unknown[] = Array.isArray(argument.properties) ? argument.properties : [];
+  for (const property of properties) {
+    if (!isNode(property) || property.type !== 'Property' || property.computed) return undefined;
+    const key = child(property, 'key');
+    const name = key?.type === 'Identifier' ? identifier(key) : key && nameOf(key);
+    if (name === undefined) return undefined;
+    options.set(name, literalOf(child(property, 'value')));
+  }
+  return options;
+}
+
+/** The value of a string, number, boolean or `null` written out, else `undefined`. */
+function literalOf(node: Node | undefined): OptionValue {
+  if (node === undefined) return undefined;
+  if (node.type === 'TemplateLiteral') return nameOf(node);
+  if (node.type !== 'Literal' || 'regex' in node || 'bigint' in node) return undefined;
+  const { value } = node;
+  return typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    value === null
+    ? value
+    : undefined;
 }
 
 /** Finds the line, counted from 1, that an offset into `source` is on. */

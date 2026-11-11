@@ -1,9 +1,10 @@
 // Slots: places in one feature's screens that other features fill, so a feature adds a view, a
 // panel or a header item to another's screen without editing it. The owner defines each slot with
 // `defineSlot` in its `window/shared.ts` and renders it with `<Slot>`. Other features list what they
-// put in it as `views` in their WindowFeature, each made with `defineView`.
+// put in it as `views` in their WindowFeature, each made with `defineView`. A view that fails shows
+// a short note in its place, and the rest of the window goes on.
 
-import { createContext, createElement, use, useMemo, type ReactNode } from 'react';
+import { Component, createContext, createElement, use, useMemo, type ReactNode } from 'react';
 
 import { channelName } from '../ipc/contract.ts';
 
@@ -23,7 +24,17 @@ export function defineSlot<Props extends object = object>(id: string): Slot<Prop
   if (!channelName.test(id)) {
     throw new Error(`A slot is named <feature>.<name>, as tab.middle is, not "${id}".`);
   }
-  return { id };
+  const slot = { id };
+  defined.add(slot);
+  return slot;
+}
+
+/** Every slot `defineSlot` made. */
+const defined = new WeakSet<object>();
+
+/** Whether `value` is a slot `defineSlot` made. */
+export function isSlot(value: unknown): value is Slot<unknown> {
+  return typeof value === 'object' && value !== null && defined.has(value);
 }
 
 /** What a feature puts in a slot: a component, rendered with the slot's props. */
@@ -72,7 +83,40 @@ export function useViews<Props>(slot: Slot<Props>): readonly View<Props>[] {
   return (use(SlotViews).get(slot.id) ?? []) as readonly View<Props>[];
 }
 
-/** Renders every view features put in `slot`, in order, each with `props`. */
+/**
+ * Renders every view features put in `slot`, in order, each with `props`. A view that throws
+ * shows a short note in its place, and its error is logged; the slot's other views stay.
+ */
 export function Slot<Props extends object>({ slot, props }: { slot: Slot<Props>; props: Props }) {
-  return useViews(slot).map((view) => createElement(view.render, { ...props, key: view.id }));
+  return useViews(slot).map((view) => (
+    <Contained key={view.id} id={view.id}>
+      {createElement(view.render, props)}
+    </Contained>
+  ));
+}
+
+/** One view, which shows a note in its place, and logs why, when it throws. */
+class Contained extends Component<{ id: string; children: ReactNode }, { failed: boolean }> {
+  override state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  override componentDidCatch(error: unknown): void {
+    console.error(`Lo couldn't show the view ${this.props.id}:`, error);
+  }
+
+  override render(): ReactNode {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <p
+        className="px-8 py-4 text-fg-muted text-ui"
+        role="alert"
+        data-lo-failed-view={this.props.id}
+      >
+        Lo couldn't show this part of the window. Restart Lo to try again.
+      </p>
+    );
+  }
 }
