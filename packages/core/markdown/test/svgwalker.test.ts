@@ -126,6 +126,11 @@ test('the caps fail too', () => {
   expect(svgProblems(figure(...many))).not.toEqual([]);
 });
 
+/** What an element may hold, in an order to compare. */
+function holds(rule: { children: readonly string[]; text: boolean }) {
+  return { children: rule.children.toSorted(), text: rule.text };
+}
+
 test("the walker's rules are the allowlist's", () => {
   // Written out twice, so a change to one without the other fails here.
   const exported = Object.fromEntries(
@@ -138,10 +143,6 @@ test("the walker's rules are the allowlist's", () => {
     Object.entries(ATTRIBUTES).map(([name, attributes]) => [name, attributes.toSorted()]),
   );
   expect(walker).toEqual(exported);
-  const holds = (rule: { children: readonly string[]; text: boolean }) => ({
-    children: rule.children.toSorted(),
-    text: rule.text,
-  });
   expect(
     Object.fromEntries(Object.entries(HOLDS).map(([name, rule]) => [name, holds(rule)])),
   ).toEqual(

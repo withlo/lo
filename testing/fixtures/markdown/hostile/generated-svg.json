@@ -1,0 +1,32 @@
+{
+  "about": "Hostile SVG too large to keep as files. Each input is its parts joined, each part a string written that many times, `{i}` in it standing for the time it is written, from 0. `refused`, when given, is why the whole figure must be refused.",
+  "inputs": [
+    {"name": "one byte past the size", "parts": [["<svg>", 1], [" ", 524278], ["</svg>", 1]], "refused": "size"},
+    {"name": "far past the size", "parts": [["<svg>", 1], ["<rect/>", 2000000]], "refused": "size"},
+    {"name": "an element past the cap", "parts": [["<svg>", 1], ["<rect/>", 4096]], "refused": "elements"},
+    {"name": "elements Lo removes, past the cap", "parts": [["<svg>", 1], ["<animate/>", 5000]], "refused": "elements"},
+    {"name": "formatting rebuilt past the cap", "parts": [["<svg><p>", 1], ["<b id={i}>", 100], ["<p>x", 2000]], "refused": "elements"},
+    {"name": "groups nested past the depth", "parts": [["<svg>", 1], ["<g>", 32]], "refused": "depth"},
+    {"name": "groups nested as deep as the elements go", "parts": [["<svg>", 1], ["<g>", 4000]], "refused": "depth"},
+    {"name": "text spans nested past the depth", "parts": [["<svg><text>", 1], ["<tspan>", 40]], "refused": "depth"},
+    {"name": "a path with more numbers than the cap", "parts": [["<svg><path d=\"M", 1], ["0 0 ", 32769], ["\"/></svg>", 1]], "refused": "numbers"},
+    {"name": "a coordinate flood in points", "parts": [["<svg><polyline points=\"", 1], ["1,1 ", 40000], ["\"/></svg>", 1]], "refused": "numbers"},
+    {"name": "numbers spread over many elements", "parts": [["<svg>", 1], ["<polyline points=\"0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\"/>", 2000]], "refused": "numbers"},
+    {"name": "a marker drawn at every vertex of a long path", "parts": [["<svg><marker id=\"m\">", 1], ["<circle r=\"1\"/>", 100], ["</marker><path marker-mid=\"url(#m)\" d=\"M0 0", 1], ["L{i} 1", 500], ["\"/></svg>", 1]], "refused": "drawn"},
+    {"name": "a path at the cap on numbers", "parts": [["<svg><path d=\"M", 1], ["0 0 ", 32768], ["\"/></svg>", 1]]},
+    {"name": "huge numbers", "parts": [["<svg>", 1], ["<rect x=\"1e309\" y=\"-1e309\" width=\"99999999999999999999999\" height=\"0.0000000000000000000000000000001\"/>", 2000]]},
+    {"name": "a huge number in a path", "parts": [["<svg><path d=\"M", 1], ["9", 300000], [" 0\"/></svg>", 1]]},
+    {"name": "many attributes", "parts": [["<svg><rect ", 1], ["a{i}=\"1\" ", 40000], ["/></svg>", 1]]},
+    {"name": "one huge attribute", "parts": [["<svg><rect fill=\"", 1], ["r", 500000], ["\"/></svg>", 1]]},
+    {"name": "a huge tag name", "parts": [["<svg><", 1], ["x", 500000], ["/></svg>", 1]]},
+    {"name": "many ids, all the same", "parts": [["<svg>", 1], ["<g id=\"same\"/>", 4000]]},
+    {"name": "many marker references to nothing", "parts": [["<svg>", 1], ["<path d=\"M0 0\" marker-end=\"url(#none{i})\"/>", 3000]]},
+    {"name": "many markers referencing each other", "parts": [["<svg>", 1], ["<marker id=\"m{i}\"><path d=\"M0 0L1 1\" marker-end=\"url(#m{i})\"/></marker>", 1500]]},
+    {"name": "a long text", "parts": [["<svg><text>", 1], ["word ", 100000], ["</text></svg>", 1]]},
+    {"name": "many entities", "parts": [["<svg><text>", 1], ["&lol;&amp;&#x1F600;", 25000], ["</text></svg>", 1]]},
+    {"name": "nul characters", "parts": [["<svg><text>", 1], ["\u0000", 400000], ["</text></svg>", 1]]},
+    {"name": "lone surrogates", "parts": [["<svg><text>", 1], ["\ud800", 400000], ["</text></svg>", 1]]},
+    {"name": "an unclosed comment", "parts": [["<svg><!--", 1], ["<script>", 60000]]},
+    {"name": "breakouts, over and over", "parts": [["<svg>", 1], ["<p><svg><rect/>", 1300]]}
+  ]
+}

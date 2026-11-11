@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 860 200">
+  <style>@import url("https://evil.example/style.css"); rect { fill: url(https://evil.example/paint.svg#p) }</style>
+  <image href="https://evil.example/track.png" width="10" height="10"/>
+  <image xlink:href="data:image/png;base64,iVBORw0KGgo=" width="10" height="10"/>
+  <image href="//evil.example/protocol-relative.png"/>
+  <use href="https://evil.example/sprite.svg#icon"/>
+  <use xlink:href="figures/other.svg#part"/>
+  <a href="https://evil.example/"><rect width="10" height="10"/></a>
+  <feImage href="https://evil.example/f.png"/>
+  <rect width="10" height="10" fill="url(https://evil.example/paint.svg#p)" stroke="url('data:image/svg+xml,&lt;svg/&gt;')"/>
+  <rect width="10" height="10" filter="url(#blur)" mask="url(#m)" clip-path="url(#c)" cursor="url(https://evil.example/c.cur), auto"/>
+  <rect width="10" height="10" style="background: url(https://evil.example/bg.png)"/>
+  <text x="0" y="40" font-family="url(https://evil.example/font.woff)" src="https://evil.example/">Text</text>
+  <path d="M0 0h10" marker-end="url(https://evil.example/markers.svg#arrow)" marker-start="url(data:image/svg+xml,x#a)"/>
+  <rect width="10" height="10" xml:base="https://evil.example/" xlink:href="https://evil.example/"/>
+  <text x="0" y="60">Text that stays</text>
+</svg>

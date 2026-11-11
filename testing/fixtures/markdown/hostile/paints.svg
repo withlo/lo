@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 120">
+  <rect width="1" height="1" fill="url(#gradient)"/>
+  <rect width="1" height="1" fill="var(--lo-accent)"/>
+  <rect width="1" height="1" fill="var(--fig-blue, url(https://evil.example/))"/>
+  <rect width="1" height="1" fill="var(--fig-font)"/>
+  <rect width="1" height="1" fill="var(var(--fig-blue))"/>
+  <rect width="1" height="1" fill="expression(alert(1))"/>
+  <rect width="1" height="1" fill="\75 rl(https://evil.example/)"/>
+  <rect width="1" height="1" fill="&#x75;rl(https://evil.example/)"/>
+  <rect width="1" height="1" fill="r\65 d"/>
+  <rect width="1" height="1" fill="red/**/;fill:url(https://evil.example/)"/>
+  <rect width="1" height="1" fill="red !important"/>
+  <rect width="1" height="1" fill="@import 'https://evil.example/x.css'"/>
+  <rect width="1" height="1" fill="rgb(from var(--lo-accent) r g b)"/>
+  <rect width="1" height="1" fill="inherit"/>
+  <rect width="1" height="1" stroke-width="calc(1px + 1px)"/>
+  <rect width="1" height="1" transform="translate(var(--x))"/>
+  <rect width="1" height="1" font-family="Comic Sans MS"/>
+  <rect width="1" height="1" fill=" &#x76;ar( --fig-blue ) " stroke="CurrentColor" opacity="&#48;.5"/>
+  <rect width="1" height="1" fill="#A5C5E9" stroke="rgb(1, 2, 3)"/>
+</svg>

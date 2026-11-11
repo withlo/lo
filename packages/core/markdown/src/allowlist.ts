@@ -452,6 +452,7 @@ export function readValue(kind: SvgValue, text: string): Read | undefined {
       return name !== undefined && isName(name) ? { value: name, numbers: 0 } : undefined;
     }
   }
+  return undefined;
 }
 
 /** The CSS named colors, which draw as written. */

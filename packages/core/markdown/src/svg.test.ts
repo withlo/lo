@@ -372,7 +372,7 @@ describe('HTML in SVG', () => {
   });
 
   test('`</svg>` and integration points let nothing out', () => {
-    for (const html of [
+    const leaking = [
       '<svg><desc></svg><script>alert(1)</script></desc></svg>',
       '<svg><title></svg><img src=x onerror=alert(1)></title></svg>',
       '<svg><foreignObject><iframe srcdoc="<script>alert(1)</script>"></iframe></foreignObject></svg>',
@@ -382,10 +382,8 @@ describe('HTML in SVG', () => {
       '<svg><![CDATA[</svg><script>alert(1)</script>]]></svg>',
       '<svg><noscript><img src=x onerror=alert(1)></noscript></svg>',
       '<svg><template><script>alert(1)</script></template></svg>',
-    ]) {
-      const made = sanitized(html);
-      expect(JSON.stringify(made.svg), html).not.toMatch(/alert|script|img/);
-    }
+    ].filter((html) => /alert|script|img/.test(JSON.stringify(sanitized(html).svg)));
+    expect(leaking).toEqual([]);
   });
 
   test('MathML inside is only an element Lo removes', () => {
@@ -571,6 +569,21 @@ describe('markers', () => {
   });
 });
 
+/** `count` rectangles in a figure. */
+function rects(count: number): string {
+  return `<svg>${'<rect/>'.repeat(count)}</svg>`;
+}
+
+/** Groups in a figure, `depth` deep with the figure. */
+function nested(depth: number): string {
+  return `<svg>${'<g>'.repeat(depth - 1)}`;
+}
+
+/** `count` pairs of numbers. */
+function pairs(count: number): string {
+  return '0 0 '.repeat(count).trim();
+}
+
 describe('the caps', () => {
   test('on size', () => {
     const at = `<svg>${' '.repeat(SVG_LIMITS.size - 11)}</svg>`;
@@ -580,7 +593,6 @@ describe('the caps', () => {
   });
 
   test('on elements, kept or not', () => {
-    const rects = (count: number) => `<svg>${'<rect/>'.repeat(count)}</svg>`;
     expect(sanitized(rects(SVG_LIMITS.elements - 1)).svg?.children).toHaveLength(
       SVG_LIMITS.elements - 1,
     );
@@ -593,7 +605,6 @@ describe('the caps', () => {
   });
 
   test('on depth', () => {
-    const nested = (depth: number) => `<svg>${'<g>'.repeat(depth - 1)}`;
     expect(sanitized(nested(SVG_LIMITS.depth)).svg).toBeDefined();
     expect(sanitizeSvg(nested(SVG_LIMITS.depth + 1)).removed).toEqual([
       { reason: 'depth', element: 'svg' },
@@ -605,7 +616,6 @@ describe('the caps', () => {
   });
 
   test('on numbers: a flood of coordinates is refused', () => {
-    const pairs = (count: number) => '0 0 '.repeat(count).trim();
     expect(
       sanitized(`<svg><polyline points="${pairs(SVG_LIMITS.numbers / 2)}"/></svg>`).svg,
     ).toBeDefined();
@@ -676,10 +686,12 @@ describe('whatever the text', () => {
     ];
     let seed = 1;
     const next = () => (seed = (seed * 48_271) % 2_147_483_647);
+    const failing: [string, string[]][] = [];
     for (let run = 0; run < 300; run++) {
       const text = Array.from({ length: 40 }, () => pieces[next() % pieces.length]).join('');
-      const made = sanitizeSvg(text);
-      expect(svgProblems(made), text).toEqual([]);
+      const found = svgProblems(sanitizeSvg(text));
+      if (found.length > 0) failing.push([text, found]);
     }
+    expect(failing).toEqual([]);
   });
 });

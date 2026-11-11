@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 860 120">
+  <defs>
+    <rect id="u0" width="1" height="1"/>
+    <g id="u1"><use href="#u0"/><use href="#u0"/><use href="#u0"/><use href="#u0"/></g>
+    <g id="u2"><use href="#u1"/><use href="#u1"/><use href="#u1"/><use href="#u1"/></g>
+    <g id="u3"><use href="#u2"/><use href="#u2"/><use href="#u2"/><use href="#u2"/></g>
+    <symbol id="s"><use xlink:href="#u3"/></symbol>
+    <linearGradient id="lg"><stop offset="0" stop-color="red"/></linearGradient>
+    <radialGradient id="rg"><stop offset="1" stop-color="blue"/></radialGradient>
+    <pattern id="p" width="1" height="1"><use href="#u3"/></pattern>
+    <filter id="f"><feGaussianBlur stdDeviation="1000"/><feTurbulence numOctaves="1000"/><feImage href="#u3"/></filter>
+    <mask id="m"><rect width="1" height="1"/></mask>
+    <clipPath id="c"><rect width="1" height="1"/></clipPath>
+  </defs>
+  <use href="#u3"/><use href="#s"/>
+  <rect width="10" height="10" fill="url(#lg)" filter="url(#f)" mask="url(#m)" clip-path="url(#c)">
+    <animate attributeName="width" from="10" to="1000000" dur="1ms" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="scale" to="1000" repeatCount="indefinite"/>
+    <animateMotion path="M0 0h1000" repeatCount="indefinite"/>
+    <set attributeName="fill" to="url(https://evil.example/)"/>
+  </rect>
+  <discard begin="0s"/>
+  <foreignObject width="10" height="10"><div xmlns="http://www.w3.org/1999/xhtml">HTML</div></foreignObject>
+  <switch><rect width="1" height="1"/><text>One of these</text></switch>
+  <textPath href="#u0">Along a path</textPath>
+  <view id="v" viewBox="0 0 1 1"/>
+  <metadata><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"/></metadata>
+  <text x="0" y="20">Text that stays</text>
+</svg>

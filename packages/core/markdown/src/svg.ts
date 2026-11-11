@@ -125,8 +125,10 @@ export const SVG_LIMITS: Readonly<SvgLimits> = Object.freeze({
 /** The longest name a removal gives. */
 export const MAX_SVG_NAME = 64;
 
+const XMLNS: string = namespaces.NS.XMLNS;
+
 /** Namespace declarations that change nothing, since Lo makes every element in SVG's namespace. */
-const DECLARATIONS = new Map([
+const DECLARATIONS = new Map<string, string>([
   ['xmlns', namespaces.NS.SVG],
   ['xmlns:xlink', namespaces.NS.XLINK],
 ]);
@@ -300,9 +302,9 @@ class Sanitizer {
     this.resolve();
     if (this.drawn > SVG_LIMITS.drawn) return refused('drawn');
     const removed = [...this.around, ...this.within, ...this.settled]
-      .sort((a, b) => a.offset - b.offset)
+      .toSorted((a, b) => a.offset - b.offset)
       .slice(0, MAX_DIAGNOSTICS)
-      .map(({ removal }) => removal);
+      .map((entry) => entry.removal);
     return { svg, removed };
   }
 
@@ -320,7 +322,7 @@ class Sanitizer {
       const place = attributePlace(node, written);
       const remove = (reason: SvgReason): void =>
         this.remove(this.within, reason, name, written, place);
-      if (attribute.namespace === namespaces.NS.XMLNS) {
+      if (attribute.namespace === XMLNS) {
         if (DECLARATIONS.get(written) !== value) remove('attribute');
         continue;
       }
@@ -404,8 +406,7 @@ class Sanitizer {
       element.attributes[attribute] = name;
       this.drawn += times * (this.markers.get(target) ?? 1);
     }
-    removed.sort((a, b) => a.offset - b.offset);
-    this.settled.push(...removed.slice(0, MAX_DIAGNOSTICS));
+    this.settled.push(...removed.toSorted((a, b) => a.offset - b.offset).slice(0, MAX_DIAGNOSTICS));
   }
 
   private remove(
