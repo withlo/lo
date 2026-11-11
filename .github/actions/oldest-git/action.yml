@@ -1,0 +1,64 @@
+# The oldest git Lo takes, built from its release tarball and put first on PATH. The runner's own
+# git is far newer, so without it nothing would show that the oldest one still works.
+name: oldest-git
+description: Builds git 2.45.4, the oldest Lo takes, caches the build, and puts it first on PATH.
+
+inputs:
+  save:
+    description: >-
+      Whether to save a build that wasn't cached. A cache saved on main is visible to every pull
+      request, while one saved on a pull request's ref is visible to that ref alone.
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Name the version
+      id: git
+      shell: bash
+      run: |
+        {
+          echo "version=2.45.4"
+          # From kernel.org's sha256sums.asc, which its maintainers sign.
+          echo "sha256=93f82ed1cab772acf3167db3be2bd2e54876e0ab53c6a9af744940752b961d88"
+          echo "prefix=$HOME/.local/git-2.45.4"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Look for this version's build
+      id: cached
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.git.outputs.prefix }}
+        key: git-${{ steps.git.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Build git
+      if: steps.cached.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ steps.git.outputs.version }}
+        SHA256: ${{ steps.git.outputs.sha256 }}
+        PREFIX: ${{ steps.git.outputs.prefix }}
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq --no-install-recommends libcurl4-openssl-dev zlib1g-dev
+        tarball="$RUNNER_TEMP/git-$VERSION.tar.xz"
+        curl -fsSL "https://mirrors.edge.kernel.org/pub/software/scm/git/git-$VERSION.tar.xz" -o "$tarball"
+        echo "$SHA256  $tarball" | sha256sum -c -
+        tar -xJf "$tarball" -C "$RUNNER_TEMP"
+        # What the tests need: git, its HTTP transport and http-backend. No GUI, translations,
+        # Perl, Python or WebDAV.
+        make -C "$RUNNER_TEMP/git-$VERSION" -j"$(nproc)" prefix="$PREFIX" \
+          NO_TCLTK=1 NO_GETTEXT=1 NO_PERL=1 NO_PYTHON=1 NO_EXPAT=1 NO_OPENSSL=1 install
+
+    - name: Save the build
+      if: inputs.save == 'true' && steps.cached.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.git.outputs.prefix }}
+        key: git-${{ steps.git.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Put it first on PATH
+      shell: bash
+      env:
+        PREFIX: ${{ steps.git.outputs.prefix }}
+      run: echo "$PREFIX/bin" >> "$GITHUB_PATH"

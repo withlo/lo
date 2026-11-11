@@ -1,0 +1,26 @@
+{
+  "name": "@lo/review",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "oxlint",
+    "test": "vitest run --root ../../.. --project @lo/review"
+  },
+  "dependencies": {
+    "@lo/diff": "workspace:*",
+    "@lo/github": "workspace:*"
+  },
+  "devDependencies": {
+    "@lo/testing": "workspace:*"
+  },
+  "nx": {
+    "name": "review",
+    "tags": [
+      "platform:core"
+    ]
+  }
+}

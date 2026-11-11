@@ -1,6 +1,6 @@
-# Saves pnpm's store, Electron's binary and tree-sitter's toolchain from main. A cache saved on a
-# pull request's or the merge queue's ref is only visible to that ref, while one saved on main is
-# visible to every pull request, so the other workflows only restore it.
+# Saves pnpm's store, Electron's binary, tree-sitter's toolchain and the oldest git's build from
+# main. A cache saved on a pull request's or the merge queue's ref is only visible to that ref,
+# while one saved on main is visible to every pull request, so the other workflows only restore it.
 name: cache
 
 on:
@@ -112,3 +112,17 @@ jobs:
           key:
             tree-sitter-${{ runner.os }}-${{ hashFiles('packages/desktop/syntax/scripts/build.ts')
             }}
+
+  # The build of the oldest git Lo takes, which the oldest-git job in ci.yml restores.
+  oldest-git:
+    name: oldest-git
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/oldest-git
+        with:
+          save: 'true'

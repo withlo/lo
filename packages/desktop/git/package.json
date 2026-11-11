@@ -1,0 +1,23 @@
+{
+  "name": "@lo/git",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "oxlint",
+    "test": "vitest run --root ../../.. --project @lo/git"
+  },
+  "devDependencies": {
+    "@lo/github": "workspace:*",
+    "@lo/testing": "workspace:*"
+  },
+  "nx": {
+    "name": "git",
+    "tags": [
+      "platform:desktop"
+    ]
+  }
+}

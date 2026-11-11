@@ -12,6 +12,7 @@ import type { components } from '@octokit/openapi-types';
 
 import type { GithubClient, RestResponse } from './client.ts';
 import { GithubError } from './errors.ts';
+import { isRecord } from './graphql.ts';
 import { unchecked } from './json.ts';
 import type { RepoRef } from './refs.ts';
 import { nextLink } from './files.ts';
@@ -275,20 +276,44 @@ function pageFrom(
   };
 }
 
-/** The pushes in the API's answer, keeping what Lo reads of each. */
+/**
+ * The pushes in the API's answer, keeping what Lo reads of each. A push without its id, its heads
+ * before and after, a time or a type fails the page: read as GitHub's answer, a missing head before
+ * would make a push look like the branch's creation, and a time that isn't one would slip past
+ * every comparison of times.
+ */
 function readEntries(json: unknown): ActivityEntry[] {
   if (!Array.isArray(json)) {
     throw new GithubError({ kind: 'decode', message: 'the activity API answered without a list' });
   }
-  return json.map((value) => {
-    const activity = unchecked<Activity>(value);
+  return json.map((value: unknown) => {
+    if (!isRecord(value)) throw unreadable('that is not an object');
+    const { id, before, after, timestamp, activity_type: type, actor } = value;
+    if (typeof id !== 'number' || !Number.isSafeInteger(id)) throw unreadable('without an id');
+    if (typeof before !== 'string') throw unreadable('without its head before');
+    if (typeof after !== 'string') throw unreadable('without its head after');
+    if (typeof timestamp !== 'string' || !isTime(timestamp)) throw unreadable('without a time');
+    if (typeof type !== 'string') throw unreadable('without a type');
+    const login = isRecord(actor) ? actor['login'] : undefined;
+    if (actor != null && typeof login !== 'string') throw unreadable('by an actor without a login');
     return {
-      id: activity.id,
-      before: activity.before,
-      after: activity.after,
-      timestamp: activity.timestamp,
-      activity_type: activity.activity_type,
-      actor: activity.actor ? { login: activity.actor.login } : undefined,
+      id,
+      before,
+      after,
+      timestamp,
+      activity_type: unchecked<Activity['activity_type']>(type),
+      actor: typeof login === 'string' ? { login } : undefined,
     };
   });
+}
+
+/** A push the activity API listed that Lo can't read, `what` saying why. */
+function unreadable(what: string): GithubError {
+  return new GithubError({ kind: 'decode', message: `the activity API listed a push ${what}` });
+}
+
+/** Whether `text` is a time as GitHub writes them, RFC 3339's, such as `2026-11-06T19:27:51Z`. */
+function isTime(text: string): boolean {
+  const rfc3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+  return rfc3339.test(text) && Number.isFinite(Date.parse(text));
 }
