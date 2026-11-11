@@ -12,47 +12,65 @@ button.
 ## What a rule matches
 
 A rule sends Lo a pull request's page and its Files, Commits and Checks pages:
-`https://github.com/<owner>/<repo>/pull/<number>` and what follows it. It leaves every other GitHub
-link to your browser: issues, repositories, files, gists.
+`https://github.com/<owner>/<repo>/pull/<number>` and what follows it, such as a file's anchor or a
+query. It leaves every other GitHub link to your browser: issues, repositories, files, gists, and a
+sign-in page that happens to mention a pull request.
 
 Lo opens a link to a pull request in a tab. A link it doesn't show, such as an issue, it hands to
-your browser. If a router sends Lo links that aren't pull requests, they would go back and forth, so
-Lo hands the same link on once, and says so in a note if it comes straight back. Keep a rule to pull
-requests.
+your browser.
+
+## Links Lo opens itself
+
+Each rule skips links that Lo itself opened. Lo opens some GitHub pages in the browser: any link it
+doesn't show, and "Open on GitHub", which is a pull request's own page. A link router is your
+system's browser, so that link reaches the router first. A rule that sent it back to Lo would send
+it round in a circle, since Lo would only hand it to the browser again, and the page would never
+open. Lo hands a link on once, and says in a note if it comes straight back.
+
+Each router tells Lo's own links apart by the app that opened them. Lo's bundle ID is
+`com.scornz.lo`.
 
 ## Finicky
 
-Add this handler to the `handlers` in `~/.finicky.js`:
+These rules are for Finicky 4, which reads `~/.finicky.js` and exports its configuration with
+`export default`. Add this handler to its `handlers`. It matches only when the app that opened the
+link isn't Lo (`opener.bundleId`), and opens Lo by its bundle ID:
 
 ```js
 {
-  match: (url) =>
+  match: (url, { opener }) =>
+    opener?.bundleId !== "com.scornz.lo" &&
     url.host === "github.com" &&
     /^\/[^/]+\/[^/]+\/pull\/\d+(\/|$)/.test(url.pathname),
-  browser: "Lo",
+  browser: "com.scornz.lo",
 },
 ```
 
 ## Velja
 
-In Velja's settings, open Rules and add a rule. Give it a URL Matchers matcher with this pattern,
-and set the rule to open in Lo:
+In Velja's settings, open Rules. Velja's matchers include "Source Apps", the app a link was clicked
+in, and "URL Matchers". Add two rules:
+
+1. A rule with a Source Apps matcher set to Lo, that opens in your browser, so the links Lo opens go
+   to the browser. Keep it above the second rule.
+2. A rule that opens in Lo, with a URL Matchers matcher with this pattern:
 
 ```text
-github.com/*/*/pull/*
+^(?:https://)?github\.com/[^/?#]+/[^/?#]+/pull/\d+(?:[/?#]|$)
 ```
-
-The pattern also matches GitHub's page for starting a new pull request (`…/pull/new/<branch>`),
-which Lo hands back to your browser.
 
 ## Choosy
 
-In Choosy's settings, open Rules and add a URL rule that matches this regular expression, and set it
-to open in Lo. Choosy matches the whole link, so the expression ends with `.*`:
+In Choosy's settings, open Rules and add a rule that opens in Lo when all of these hold:
 
-```text
-https://github\.com/.+/.+/pull/\d+.*
-```
+- The URL matches this regular expression. Choosy matches the whole link, so it ends by allowing
+  anything after the pull request's number:
+
+  ```text
+  https://github\.com/[^/?#]+/[^/?#]+/pull/\d+(?:[/?#].*)?
+  ```
+
+- The Source application is not Lo.
 
 ## From a terminal
 

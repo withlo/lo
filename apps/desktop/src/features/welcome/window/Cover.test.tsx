@@ -16,6 +16,7 @@ import { cover, dialogs, type Tab } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import { enter, setScreen } from './actions.ts';
 import feature from './index.ts';
+import { routers } from './routers.ts';
 import { welcomeStore } from './store.ts';
 
 const recent: Tab = { id: 'recent', kind: 'recent' };
@@ -562,7 +563,7 @@ describe('the optional steps', () => {
     if (!copy) throw new Error('No copy button.');
     click(copy);
     await settle();
-    expect(bridge.calls).toContainEqual(['tab.copy', { text: 'github.com/*/*/pull/*' }]);
+    expect(bridge.calls).toContainEqual(['tab.copy', { text: routers[1]?.rule }]);
     click(button('Read the docs'));
     await settle();
     expect(bridge.calls).toContainEqual([

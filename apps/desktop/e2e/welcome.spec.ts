@@ -314,9 +314,9 @@ test('copies a router’s rule to the clipboard', async ({ app, page }) => {
   await dialog.getByRole('button', { name: 'Copy the rule for Finicky' }).click();
   await expect
     .poll(() => app.evaluate(({ clipboard }) => clipboard.readText()))
-    .toContain('browser: "Lo"');
+    .toContain('browser: "com.scornz.lo"');
   await dialog.getByRole('button', { name: 'Copy the rule for Choosy' }).click();
   await expect
     .poll(() => app.evaluate(({ clipboard }) => clipboard.readText()))
-    .toContain('/pull/');
+    .toContain('https://github\\.com/');
 });
