@@ -29,7 +29,7 @@ import {
   usePull,
   type PullTab,
 } from './shared.ts';
-import { panels, useTabPanels, viewCounts } from './panels.ts';
+import { middleIds, panels, useTabPanels, viewCounts } from './panels.ts';
 
 /** The time now, ticking each second while `ticking`, for what counts down. */
 function useNow(ticking: boolean): number {
@@ -213,6 +213,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const rights = useViews(right);
   viewCounts.left = lefts.length;
   viewCounts.middle = middles.length;
+  if (middleIds.ids.length !== middles.length) middleIds.ids = middles.map((each) => each.id);
   const heading = view?.header;
   const acting = view?.acting;
   const showLeft = leftOpen && lefts.length > 0;

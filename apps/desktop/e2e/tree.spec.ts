@@ -210,12 +210,18 @@ test('gives a file a right-click menu: the whole file, its path and the file on 
   await expect(menu).toBeVisible();
   const items = menu.getByRole('menuitem');
   await expect(items).toHaveText([/^Whole file/, /^Copy path/, /^Open on GitHub/]);
-  // The whole-file view isn't there yet, so it says why.
-  await expect(items.first()).toHaveAttribute('data-disabled');
-  await expect(items.first()).toContainText('Lo has no whole-file view to open it in.');
+  await expect(items.first()).not.toHaveAttribute('data-disabled');
+  await expect(items.first()).toContainText('gf');
   await expect(items.nth(1)).toContainText('yp');
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
+  // "Whole file" opens it in the middle, in place of the diff.
+  await row(page, 'src/format.ts').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: /^Whole file/ }).click();
+  await expect(page.locator('[data-lo-whole] .lo-fileview')).toContainText(
+    'export function format(lines',
+  );
+  await expect(page.locator('.lo-diffview')).toHaveCount(0);
   // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
   test.skip(process.platform === 'darwin', "The Mac's clipboard is its user's.");
   await row(page, 'src/parser.ts').click({ button: 'right' });

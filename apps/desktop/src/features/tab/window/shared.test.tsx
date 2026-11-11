@@ -4,7 +4,8 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 
 import type { Tab } from '../contract.ts';
-import { activeTab, tabState, useActiveTab, useTabState } from './shared.ts';
+import { middleIds, panels } from './panels.ts';
+import { activeTab, showMiddle, tabState, useActiveTab, useTabState } from './shared.ts';
 import { showTabs } from './store.ts';
 
 beforeAll(() => {
@@ -93,5 +94,23 @@ describe('state kept for each tab', () => {
     const before = renders;
     act(() => count.set('bat', 9));
     expect(renders).toBe(before);
+  });
+});
+
+describe('the middle views', () => {
+  it('show one by its id, as the tab draws them, and say when the tab has no such view', () => {
+    showTabs({ tabs: [fd, bat], active: 'fd' });
+    const drawn = middleIds.ids;
+    onTestFinished(() => {
+      middleIds.ids = drawn;
+    });
+    middleIds.ids = ['overview.view', 'diff.view', 'diff.whole'];
+    expect(showMiddle('fd', 'diff.whole')).toBe(true);
+    expect(panels.get('fd').middle).toBe(2);
+    expect(panels.get('bat').middle).toBe(0);
+    expect(showMiddle('fd', 'timeline.view')).toBe(false);
+    expect(panels.get('fd').middle).toBe(2);
+    expect(showMiddle('fd', 'diff.view')).toBe(true);
+    expect(panels.get('fd')).toEqual({ leftOpen: true, middle: 1 });
   });
 });

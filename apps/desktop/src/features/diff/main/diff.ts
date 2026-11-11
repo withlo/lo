@@ -2,11 +2,13 @@
 // their texts on request. Both come from the local copy once it's ready at that head, and from
 // GitHub's list of the pull request's files, with their patches, until then; what the copy says
 // replaces what GitHub said, and a new head on screen starts again. Files are named by their place
-// in the list, never by their paths, which can be long enough to slow any map keyed by them.
-// Nothing here calls Electron.
+// in the list, never by their paths, which can be long enough to slow any map keyed by them. A
+// whole file, for the whole-file view, comes from the local copy alone: any file of the head on
+// screen, or the base's version of one the comparison changes. Nothing here calls Electron.
 
 import {
   changedPath,
+  GitError,
   linguistBoolean,
   type ChangedFile,
   type Oid,
@@ -21,12 +23,13 @@ import {
   readPullFiles,
   RepoRef,
 } from '@lo/github';
-import { MAX_SHOWN_BYTES, tooLargeToShow } from '@lo/review';
+import { LARGE_FILE_BYTES, MAX_SHOWN_BYTES, tooLargeToShow } from '@lo/review';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { DiffState, FileText, FileVersions, Source } from '../contract.ts';
+import type { TreePath } from '../../tree/contract.ts';
+import type { DiffState, FileText, FileVersions, Source, Version, WholeText } from '../contract.ts';
 import { listedAt } from './listed.ts';
 import { githubVersions, localVersions } from './versions.ts';
 
@@ -74,6 +77,40 @@ const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** How far into a file git looks for a NUL byte, which says it isn't text. */
+const BINARY_PROBE = 8000;
+
+/** Whether `bytes` look binary to git: a NUL among their first few thousand. */
+export function looksBinary(bytes: Uint8Array): boolean {
+  return bytes.subarray(0, BINARY_PROBE).includes(0);
+}
+
+/** The bytes git stores `path` as: its bytes in hex when it isn't UTF-8, else its text's. */
+export function pathBytesOf(path: TreePath): Buffer {
+  return path.hex === undefined ? Buffer.from(path.text, 'utf8') : Buffer.from(path.hex, 'hex');
+}
+
+/** Whether two paths are one, byte for byte. A digest says nothing: the bytes do. */
+function samePath(a: TreePath, b: TreePath): boolean {
+  if (a.hex !== undefined || b.hex !== undefined) return a.hex === b.hex;
+  return a.text === b.text;
+}
+
+/** The path a changed file had in the base, if it was there. */
+function basePath(file: FileVersions): TreePath | undefined {
+  if (file.change === 'added') return undefined;
+  return file.previous ?? file.path;
+}
+
+/** Whether `error` is a download that brought more than it was allowed. */
+function downloadTooLarge(error: unknown): boolean {
+  return (
+    error instanceof GitError &&
+    error.detail.kind === 'fetch' &&
+    error.detail.failure === 'tooLarge'
+  );
 }
 
 export class DiffTab {
@@ -200,6 +237,84 @@ export class DiffTab {
       }
     }
     return texts;
+  }
+
+  /**
+   * A whole file from the local copy, at the head on screen, `head`: the head's version of the file
+   * at `path`, or for `old`, the base's version of a file the comparison changes, by its path in
+   * the base. Only those are read, and only once the local copy has the head. A file larger than
+   * Lo loads at once is read only when `large` asks for it anyway.
+   */
+  async whole(head: string, version: Version, path: TreePath, large: boolean): Promise<WholeText> {
+    const at = this.#at;
+    if (!at || at.head !== head) throw new IpcError('moved', 'The head on screen is another now.');
+    const local = this.#info?.local;
+    if (local?.kind !== 'ready' || local.head !== at.head) return { kind: 'waiting' };
+    let rev: Oid;
+    if (version === 'new') {
+      rev = at.head;
+    } else {
+      // The base's files only as the comparison names them: a file it changes, where it was.
+      const known = at.files?.some((file) => {
+        const was = basePath(file);
+        return was !== undefined && samePath(was, path);
+      });
+      if (!known) {
+        throw new IpcError('invalid', 'The pull request changes no file that was at that path.');
+      }
+      if (local.mergeBase === null) {
+        return { kind: 'refused', why: 'the pull request has no history in common with its base' };
+      }
+      rev = parseOid(local.mergeBase);
+    }
+    const opening = this.#options.reads.clone();
+    if (!opening) return { kind: 'waiting' };
+    const repo = await opening;
+    const bytes = pathBytesOf(path);
+    const where = version === 'new' ? 'the head on screen' : 'the base';
+    const find = async () => {
+      try {
+        return await repo.fileVersion(rev, bytes);
+      } catch (error) {
+        this.#options.log(`finding a file to show whole: ${describe(error)}`);
+        throw new IpcError('invalid', `There’s no file at that path in ${where}.`);
+      }
+    };
+    const found = await find();
+    if (found === undefined) {
+      throw new IpcError('invalid', `There’s no file at that path in ${where}.`);
+    }
+    if (found.mode === 'submodule') {
+      return { kind: 'refused', why: 'it’s a submodule: another repository’s commit' };
+    }
+    let { size } = found;
+    if (size === undefined && !repo.offline) {
+      try {
+        await repo.download([found.oid], 'the file to show', { maxBytes: MAX_SHOWN_BYTES });
+      } catch (error) {
+        if (downloadTooLarge(error)) {
+          return { kind: 'refused', why: 'it’s more than the 50 MiB Lo shows' };
+        }
+        this.#options.log(`downloading a file to show whole: ${describe(error)}`);
+        throw new IpcError('unavailable', `Lo couldn’t download the file: ${describe(error)}`);
+      }
+      size = (await find())?.size;
+    }
+    if (size === undefined) {
+      throw new IpcError('unavailable', 'The local copy doesn’t have this file’s contents.');
+    }
+    const tooLarge = tooLargeToShow(size, []);
+    if (tooLarge !== undefined) return { kind: 'refused', why: tooLarge };
+    if (size > LARGE_FILE_BYTES && !large) return { kind: 'large', size };
+    const contents = await repo.readBlob(found.oid, { maxBytes: MAX_SHOWN_BYTES });
+    if (contents === undefined) {
+      throw new IpcError('unavailable', 'The local copy doesn’t have this file’s contents.');
+    }
+    if (looksBinary(contents)) return { kind: 'binary', size: contents.length };
+    // A minified bundle on one line is as slow to lay out as it is large.
+    const long = tooLargeToShow(contents.length, [contents]);
+    if (long !== undefined) return { kind: 'refused', why: long };
+    return { kind: 'text', text: decoder.decode(contents) };
   }
 
   close(): void {

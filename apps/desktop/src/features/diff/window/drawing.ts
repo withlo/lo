@@ -16,12 +16,12 @@ import {
 import { openMenu } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle } from '../../../window/commands/registry.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
-import { followFile, onShowFile } from '../../tree/window/shared.ts';
+import { followFile } from '../../tree/window/shared.ts';
 import type { Start } from '../contract.ts';
 import { diffFileOf, headerOf } from './files.ts';
 import type { Entry, Loader, Moved, Shown } from './loader.ts';
 import { main } from './main.ts';
-import { setDrawn } from './tabs.ts';
+import { setDrawn, takeReveal } from './tabs.ts';
 
 declare global {
   interface Window {
@@ -393,16 +393,6 @@ export function draw(options: DrawOptions): Drawing {
       focus: () => view.focus(),
       here: () => ({ view: 'diff', at: view.keyState().target }),
     }),
-    keys.history.register(tab.id, 'diff', (target) => {
-      if (!view.reveal(target)) return false;
-      view.focus();
-      return true;
-    }),
-    // A changed file the tree asks for: its header comes on screen, focus staying in the tree.
-    onShowFile('diff', (id, key) => {
-      const file = id === tab.id ? loader.ids.find(key) : undefined;
-      if (file !== undefined) view.reveal({ kind: 'file', file });
-    }),
     keys.subscribe(() => view.setVimKeys(keys.vimKeys())),
   ];
   const testing = options.packaged
@@ -425,6 +415,10 @@ export function draw(options: DrawOptions): Drawing {
     // what was at the top of the screen.
     if (!(before.cursorAt && view.scrollTo(before.cursorAt))) view.scrollTo(before.viewport);
   }
+  // A place asked for while another middle view was on screen, as `⌃o` back from a whole file
+  // asks for the place it left.
+  const waiting = takeReveal(tab.id);
+  if (waiting && view.reveal(waiting.target) && waiting.focus) view.focus();
   // Focus that's nowhere in particular comes to the diff, as it does to any middle view.
   const focused = document.activeElement;
   if (!focused || focused === document.body || focused.hasAttribute('data-lo-middle')) {
