@@ -322,6 +322,12 @@ describe('hunks', () => {
   });
 });
 
+function everyMarker(): string {
+  let text = '';
+  for (let code = 0xe000; code <= 0xf8ff; code++) text += String.fromCharCode(code);
+  return text;
+}
+
 describe('a file built to break the diff', () => {
   test('holds every private-use character and still diffs a missing final line break', () => {
     let every = '';
@@ -341,6 +347,26 @@ describe('a file built to break the diff', () => {
       ],
     ]);
     expect(elapsed).toBeLessThan(process.env.CI ? 3000 : 1000);
+  });
+
+  test('changes last lines that both lack a line break but no longer pair', () => {
+    const diff = diffText(`${everyMarker()}\nx\na`, `${everyMarker()}\nx\na\nb`);
+
+    expect(diff.changes.map(({ old: o, new: n }) => [o, n])).toEqual([
+      [
+        { start: 3, end: 4 },
+        { start: 3, end: 5 },
+      ],
+    ]);
+  });
+
+  test('never joins word ranges into one that covers its whole line', () => {
+    const [change] = diffText(
+      '\u{1F468}\u200D\u{1F469}\u200D\u{1F466}\n',
+      ' \u{1F468}\u200D\u{1F469}\u200D\u{1F467}\n',
+    ).changes;
+
+    expect(change?.newWords).toEqual([]);
   });
 
   test('joins word ranges that land in one character people see', () => {

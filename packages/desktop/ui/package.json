@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/styles.css",
+    "./fonts.css": "./src/fonts.css"
   },
   "bin": {
     "lo-check-classes": "./scripts/check-classes.ts"

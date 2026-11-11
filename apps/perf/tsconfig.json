@@ -1,8 +1,30 @@
 {
-  "extends": "../../tsconfig.node.json",
-  "compilerOptions": {
-    "outDir": ".tsbuild"
-  },
-  "include": ["**/*.ts"],
-  "exclude": [".tsbuild", "node_modules"]
+  "extends": "../../tsconfig.base.json",
+  "files": [],
+  "references": [
+    {
+      "path": "../../packages/desktop/ui"
+    },
+    {
+      "path": "../../packages/desktop/syntax"
+    },
+    {
+      "path": "../../packages/core/diff"
+    },
+    {
+      "path": "./tsconfig.shared.json"
+    },
+    {
+      "path": "./tsconfig.main.json"
+    },
+    {
+      "path": "./tsconfig.preload.json"
+    },
+    {
+      "path": "./tsconfig.window.json"
+    },
+    {
+      "path": "./tsconfig.test.json"
+    }
+  ]
 }
