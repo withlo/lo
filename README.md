@@ -48,8 +48,8 @@ Lo keeps to these rules.
   request can carry an overview, an explanation written by a coding agent with push access, and Lo
   displays it whichever agent wrote it. The overview format and the skill that teaches an agent to
   write one are open source under the MIT license, and the skill installs for Claude Code or Codex.
-  When a pull request has no overview, Lo offers a prompt to copy into your agent; it never starts
-  one itself.
+  Lo never starts an agent itself: when a pull request has no overview, it will offer a prompt to
+  copy into yours.
 - **Built on GitHub.** Lo talks to GitHub directly and uses GitHub's own state: reviews, comments,
   viewed marks and merges are all GitHub's, so github.com shows what you did in Lo. An overview is
   kept in the pull request's repository, on a git ref of its own. Lo keeps nothing of yours on a
@@ -66,9 +66,10 @@ Lo keeps to these rules.
   overviews can't contain scripts. Language servers are the one exception, since some of them run
   code from the project they read: they run only on repositories you trust, and a pull request from
   a fork must be trusted on its own.
-- **Keyboard first.** Every action you use while reviewing has a key, `?` lists them all, and a
-  keymap file changes any of them. The few actions you need once in a while, such as installing the
-  `lo` command, are in the menus and the command palette.
+- **Keyboard first.** Lo is built to be used from the keyboard: every action is meant to have a key,
+  `?` lists the keys, and a keymap file changes any of them. A few rare actions, such as installing
+  the `lo` command, have no key: they're in the command palette instead, and on macOS in the app
+  menu too.
 
 ## Features
 
@@ -79,9 +80,11 @@ Lo keeps to these rules.
   and when more than one can, Lo asks which and remembers your answer for that owner.
 - **A welcome screen,** while no account is signed in. It signs you in, opens a public pull request
   without signing in, and offers to install the `lo` command and to send pull request links to Lo.
-- **Opening pull requests.** `⌘L` opens a pull request from its link, and so do the `lo` command,
-  `lo://` links and link routers such as Finicky, Velja and Choosy. Public pull requests open
-  read-only without signing in. With nothing open, Lo lists the pull requests you opened recently.
+- **Opening pull requests.** `⌘L` opens a pull request from its link, and so do the `lo` command and
+  `lo://` links. Lo can also take pull request links from a link router: there are rules for
+  Finicky, Velja and Choosy, though they haven't been tried in those apps yet. Public pull requests
+  open read-only without signing in. With nothing open, Lo lists the pull requests you opened
+  recently.
 - **Pull request tabs.** Each pull request opens in a tab of its own, with a header and with banners
   for anything that needs you, such as a newer push or a lost connection. Lo keeps a partial clone
   of each repository in its cache.
@@ -156,11 +159,12 @@ Keys are written as macOS shows them. On Linux, Ctrl takes the place of `⌘`.
   `https://github.com/owner/repo/pull/123`. In the list of recent pull requests, `⌘V` opens the link
   on the clipboard.
 - **From a terminal:** install the `lo` command from the welcome screen, or with "Install
-  command-line tool" in the app menu or the command palette. Then run `lo <link>`.
+  command-line tool" in the command palette (on macOS, the app menu has it too). Then run
+  `lo <link>`.
 - **From a link:** Lo opens `lo://` links, such as `lo://github.com/owner/repo/pull/123`. To have
   pull request links you click in other apps open in Lo while your browser stays the default, use a
   link router: [`docs/link-routers.md`](docs/link-routers.md) has rules for Finicky, Velja and
-  Choosy.
+  Choosy. They follow each app's documentation, and haven't been tried in the apps themselves yet.
 
 Public pull requests open without signing in, read-only. To open private ones, sign in from the
 welcome screen, through GitHub's device flow or by importing your accounts from `gh`.
