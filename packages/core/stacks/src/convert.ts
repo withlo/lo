@@ -9,6 +9,8 @@
  * The plan is data: the steps say what to send GitHub, and running them is up to the caller.
  */
 
+import type { ConversionStep } from '@lo/github';
+
 import { layerOf, type Gap, type Retarget, type Stacks } from './stacks.ts';
 
 /**
@@ -27,23 +29,13 @@ export interface Plan {
   readonly steps: readonly Step[];
 }
 
-/** One request in a {@link Plan}. */
-export type Step =
-  /**
-   * Change a pull request's base branch to the head branch of the layer below it, or to the root
-   * branch for the bottom layer, as each layer of a GitHub stack must have.
-   */
-  | { readonly kind: 'retarget'; readonly retarget: Retarget }
-  /**
-   * Create a GitHub stack from these pull requests, bottom to top:
-   * `POST /repos/{owner}/{repo}/stacks` with `{"pull_requests": prs}`.
-   */
-  | { readonly kind: 'createStack'; readonly prs: readonly number[] }
-  /**
-   * Add these pull requests, bottom to top, to the top of GitHub stack `stack`:
-   * `POST /repos/{owner}/{repo}/stacks/{stack}/add` with `{"pull_requests": prs}`.
-   */
-  | { readonly kind: 'addToStack'; readonly stack: number; readonly prs: readonly number[] };
+/**
+ * One request in a {@link Plan}, as `@lo/github`'s `runConversionStep` runs it: a base-branch
+ * change, to the head branch of the layer below or to the root branch for the bottom layer, as each
+ * layer of a GitHub stack must have; creating a GitHub stack from pull requests, bottom to top; or
+ * adding them, bottom to top, to the top of an existing one.
+ */
+export type Step = ConversionStep;
 
 /** What only the caller knows, beyond the stacks. */
 export interface Facts {

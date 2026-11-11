@@ -11,6 +11,8 @@
  * Everything here is plain data: the forest crosses between processes as it is.
  */
 
+import type { Retarget as GithubRetarget } from '@lo/github';
+
 /**
  * A pull request, with the fields finding stacks reads. The doc on each field names the GraphQL
  * `PullRequest` field it comes from.
@@ -222,15 +224,9 @@ export interface NeedsRebase {
 
 /**
  * A change to a pull request's base branch: `PATCH /repos/{owner}/{repo}/pulls/{pr}` with
- * `{"base": to}`.
+ * `{"base": to}`, as `@lo/github`'s writer sends it.
  */
-export interface Retarget {
-  readonly pr: number;
-  /** Its base branch now. */
-  readonly from: string;
-  /** The base branch it gets. */
-  readonly to: string;
-}
+export type Retarget = GithubRetarget;
 
 /**
  * One tree: a bottom layer sitting on a root branch, and every layer above it. Each pull request

@@ -8,7 +8,7 @@
 
 import type { GithubClient, RestResponse } from './client.ts';
 import { GithubError } from './errors.ts';
-import { isRecord } from './graphql.ts';
+import { Fields } from './json.ts';
 import { RepoRef, type PullRef } from './refs.ts';
 
 /** One side of a pull request. */
@@ -432,66 +432,4 @@ function withContext(context: string, error: unknown): Error {
 
 function unexpected(message: string): GithubError {
   return new GithubError({ kind: 'decode', message });
-}
-
-/**
- * An object in GitHub's answer, read field by field: a field that isn't what Lo reads it as is a
- * decode error naming it. A field GitHub may leave out also reads as nothing when it's `null`.
- */
-class Fields {
-  readonly #json: Record<string, unknown>;
-  readonly #path: string;
-
-  constructor(json: unknown, path: string) {
-    if (!isRecord(json)) throw unexpected(`${path} isn't an object`);
-    this.#json = json;
-    this.#path = path;
-  }
-
-  text(key: string): string {
-    const value = this.#json[key];
-    if (typeof value !== 'string') throw this.#wrong(key, 'a string');
-    return value;
-  }
-
-  maybeText(key: string): string | undefined {
-    return this.#present(key) ? this.text(key) : undefined;
-  }
-
-  integer(key: string): number {
-    const value = this.#json[key];
-    if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
-      throw this.#wrong(key, 'a whole number');
-    }
-    return value;
-  }
-
-  maybeInteger(key: string): number | undefined {
-    return this.#present(key) ? this.integer(key) : undefined;
-  }
-
-  /** A boolean that reads as `false` when GitHub leaves it out. */
-  flag(key: string): boolean {
-    const value = this.#json[key];
-    if (value === undefined) return false;
-    if (typeof value !== 'boolean') throw this.#wrong(key, 'true or false');
-    return value;
-  }
-
-  fields(key: string): Fields {
-    return new Fields(this.#json[key], `${this.#path}.${key}`);
-  }
-
-  maybeFields(key: string): Fields | undefined {
-    return this.#present(key) ? this.fields(key) : undefined;
-  }
-
-  #present(key: string): boolean {
-    const value = this.#json[key];
-    return value !== undefined && value !== null;
-  }
-
-  #wrong(key: string, what: string): GithubError {
-    return unexpected(`${this.#path}.${key} isn't ${what}`);
-  }
 }

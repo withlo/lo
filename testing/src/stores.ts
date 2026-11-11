@@ -160,3 +160,88 @@ function byLowerCase(a: string, b: string): number {
   const [x, y] = [a.toLowerCase(), b.toLowerCase()];
   return x < y ? -1 : x > y ? 1 : 0;
 }
+
+/** What {@link MemoryPollCache} keeps of something the poller read. */
+export interface PollCacheEntry {
+  value: unknown;
+  fetchedAt: number;
+  stamp?: string | undefined;
+}
+
+/** A pull request noted as opened, as {@link MemoryPollCache} keeps it. */
+export interface RecentEntry {
+  pull: { key: string };
+  title: string | undefined;
+  login: string;
+  openedAt: number;
+}
+
+/**
+ * What a poller keeps between runs, in memory: each account's entries by target and name, each
+ * value copied through JSON as a store on disk would, and the pull requests opened.
+ */
+export class MemoryPollCache {
+  readonly entries = new Map<string, PollCacheEntry>();
+  /** The pull requests opened, newest first. */
+  readonly recent: RecentEntry[] = [];
+  /** When set, every read and write fails, as a database that can't be opened does. */
+  failing = false;
+
+  #key(login: string, target: string, name: string): string {
+    return `${login.toLowerCase()} ${target} ${name}`;
+  }
+
+  get(login: string, target: string, name: string): Promise<PollCacheEntry | undefined> {
+    if (this.failing) return Promise.reject(new Error('the cache refused the read'));
+    const entry = this.entries.get(this.#key(login, target, name));
+    return Promise.resolve(entry && copy(entry));
+  }
+
+  put(
+    login: string,
+    target: string,
+    entries: readonly { name: string; entry: PollCacheEntry }[],
+  ): Promise<void> {
+    if (this.failing) return Promise.reject(new Error('the cache refused the write'));
+    for (const { name, entry } of entries)
+      this.entries.set(this.#key(login, target, name), copy(entry));
+    return Promise.resolve();
+  }
+
+  touch(
+    login: string,
+    target: string,
+    name: string,
+    fetchedAt: number,
+    stamp?: { stamp: string | undefined },
+  ): Promise<void> {
+    if (this.failing) return Promise.reject(new Error('the cache refused the write'));
+    const entry = this.entries.get(this.#key(login, target, name));
+    if (entry) {
+      entry.fetchedAt = fetchedAt;
+      if (stamp) entry.stamp = stamp.stamp;
+    }
+    return Promise.resolve();
+  }
+
+  remove(login: string, target: string, name: string): Promise<void> {
+    if (this.failing) return Promise.reject(new Error('the cache refused the write'));
+    this.entries.delete(this.#key(login, target, name));
+    return Promise.resolve();
+  }
+
+  recordRecent(recent: RecentEntry): Promise<void> {
+    if (this.failing) return Promise.reject(new Error('the cache refused the write'));
+    const at = this.recent.findIndex((known) => known.pull.key === recent.pull.key);
+    if (at >= 0) this.recent.splice(at, 1);
+    this.recent.unshift({ ...recent });
+    return Promise.resolve();
+  }
+}
+
+/** `entry`, with its value copied through JSON. */
+function copy(entry: PollCacheEntry): PollCacheEntry {
+  const value: unknown =
+    entry.value === undefined ? undefined : JSON.parse(JSON.stringify(entry.value));
+  return { value, fetchedAt: entry.fetchedAt, stamp: entry.stamp };
+}
