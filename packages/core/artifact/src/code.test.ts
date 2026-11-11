@@ -255,6 +255,29 @@ describe('code', () => {
     ]);
   });
 
+  test('a file past 10 MiB is too large by its size, whatever its reader gives of its bytes', async () => {
+    const size = LIMITS.file + 1;
+    // A NUL at its start would make it binary, if it were read.
+    const head = new Uint8Array(BINARY_WINDOW);
+    const readers: CodeReader[] = [
+      // A reader that asks for sizes first, and reads none of a file this large.
+      async () => ({ kind: 'file', size, bytes: new Uint8Array() }),
+      async (_commit, _path, cap) => ({ kind: 'file', size, bytes: head.subarray(0, cap) }),
+    ];
+    for (const readCode of readers) {
+      const checked = await checkWith('[a](code:big.ts#L1)\n\n[b](code:other.ts#L1)\n', readCode);
+      expect(states(checked)).toEqual([broken('tooLarge'), broken('tooLarge')]);
+      expect(found(checked)).toEqual([`code-too-large@${LINE}`, `code-too-large@${LINE + 2}`]);
+    }
+    // No larger than that, a file is read: one answered without its bytes is unread.
+    const unsized = await checkWith('[a](code:small.ts#L1)\n', async () => ({
+      kind: 'file',
+      size: LIMITS.file,
+      bytes: new Uint8Array(),
+    }));
+    expect(states(unsized)).toEqual([{ state: 'unread', why: 'failed' }]);
+  });
+
   test('at most 64 MiB of code is read for an overview, in the order it’s named', async () => {
     const paths: Record<string, { kind: 'file'; size: number }> = {};
     const links: string[] = [];

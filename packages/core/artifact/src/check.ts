@@ -55,8 +55,9 @@ export interface CheckOptions {
 /**
  * Checks `parsed`, the overview's `artifact.md` parsed, against `files`, the overview's commit, and
  * against the code its targets name, read through `readCode`. `parsed` is undefined when the commit
- * holds no file `artifact.md`, or one larger than {@link ARTIFACT_READ}, which isn't read. Never
- * rejects: a reader that fails or is too slow leaves code, or a figure, unread.
+ * holds no file `artifact.md`, or one larger than {@link ARTIFACT_READ}, which isn't read: when the
+ * listing gives it a larger size, it's too large, whatever was parsed. Never rejects: a reader that
+ * fails or is too slow leaves code, or a figure, unread.
  */
 export async function checkArtifact(
   parsed: ParsedArtifact | undefined,
@@ -74,7 +75,7 @@ export async function checkArtifact(
 }
 
 async function check(
-  parsed: ParsedArtifact | undefined,
+  given: ParsedArtifact | undefined,
   files: OverviewFiles,
   readCode: CodeReader,
   options: CheckOptions,
@@ -111,6 +112,10 @@ async function check(
     for (const finding of tree.list()) findings.keep(finding);
     return { outcome: { kind: 'invalid' }, findings: findings.list() };
   }
+  // The listing's size comes first: a file it says is too large to read isn't what was parsed, so
+  // that parse is set aside, whatever it found.
+  const listedLong = artifact.size !== undefined && artifact.size > ARTIFACT_READ;
+  const parsed = listedLong ? undefined : given;
   // A newer format may hold what this version doesn't know, other files or more of them included:
   // only the parse's word on it counts.
   if (parsed?.format !== undefined && parsed.format > FORMAT) {
@@ -118,9 +123,7 @@ async function check(
   }
 
   const findings = new Findings();
-  const long = parsed
-    ? parsed.findings.some(({ code }) => code === 'too-large')
-    : artifact.size !== undefined && artifact.size > ARTIFACT_READ;
+  const long = listedLong || (parsed?.findings.some(({ code }) => code === 'too-large') ?? false);
   if (parsed) for (const finding of parsed.findings) findings.keep(finding);
   else if (long) tooLong(findings);
   for (const finding of tree.list()) findings.keep(finding);

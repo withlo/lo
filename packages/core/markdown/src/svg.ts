@@ -102,6 +102,11 @@ export interface SanitizedSvg {
   svg?: SvgElement;
   /** What was removed, and why, at most `MAX_DIAGNOSTICS` of them. */
   removed: SvgRemoval[];
+  /**
+   * How much the figure draws, as `SvgLimits.drawn` counts it, when it wasn't refused: at most
+   * that limit. A caller showing several figures can hold them to a budget of its own with it.
+   */
+  drawn?: number;
 }
 
 export interface SvgLimits {
@@ -331,7 +336,7 @@ class Sanitizer {
       .toSorted((a, b) => a.offset - b.offset)
       .slice(0, MAX_DIAGNOSTICS)
       .map((entry) => entry.removal);
-    return { svg, removed };
+    return { svg, removed, drawn: this.drawn };
   }
 
   /** `node` as an element of the tree, with the attributes it may have. */

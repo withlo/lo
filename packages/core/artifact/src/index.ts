@@ -5,7 +5,14 @@ export type { CheckedCode, CodeState } from './code.ts';
 export type { CheckedFigure, FigureState, FigureType } from './figures.ts';
 export type { ImageType } from './images.ts';
 export type { SizeKind, Sizes } from './commit.ts';
-export type { CodeReader, EntryKind, FileAnswer, OverviewFiles, TreeEntry } from './readers.ts';
+export {
+  SIZE_ONLY,
+  type CodeReader,
+  type EntryKind,
+  type FileAnswer,
+  type OverviewFiles,
+  type TreeEntry,
+} from './readers.ts';
 export type { Header } from './header.ts';
 export type { CodeReference, FigureReference, PartReference } from './reading.ts';
 export {

@@ -134,6 +134,7 @@ describe('what figures.md allows, it keeps', () => {
     expect(made).toEqual({
       svg: { kind: 'element', name: 'svg', attributes: {}, children: [rect()] },
       removed: [],
+      drawn: 2,
     });
   });
 });
@@ -606,6 +607,17 @@ describe('markers', () => {
     expect(sanitizeSvg(longText(SVG_LIMITS.drawn - 1)).removed).toEqual([
       { reason: 'drawn', element: 'svg' },
     ]);
+  });
+
+  test('a figure says how much it draws, and one refused says nothing', () => {
+    expect(sanitized(longText(10)).drawn).toBe(12);
+    expect(sanitized(longText(SVG_LIMITS.drawn - 2)).drawn).toBe(SVG_LIMITS.drawn);
+    // Its markers count each time they're drawn: 4n + 2 for a polygon of n points.
+    expect(sanitized(polygon(10)).drawn).toBe(42);
+    // What's removed draws nothing.
+    expect(sanitized('<svg><script>x</script><rect width="1"/></svg>').drawn).toBe(3);
+    expect(sanitizeSvg(longText(SVG_LIMITS.drawn - 1))).not.toHaveProperty('drawn');
+    expect(sanitizeSvg('<p>not a figure</p>')).not.toHaveProperty('drawn');
   });
 });
 

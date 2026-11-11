@@ -48,6 +48,11 @@ export const LIMITS = Object.freeze({
   svg: 512 * 1024,
   /** The most bytes of SVG Lo reads for one overview: every SVG figure it shows, together. */
   svgs: 2 * 1024 * 1024,
+  /**
+   * The most Lo draws for one overview's figures, as `SVG_LIMITS.drawn` counts what one draws: four
+   * figures at their limit, with each SVG counted every time a block shows it.
+   */
+  drawn: 4 * 131_072,
 });
 
 /**
