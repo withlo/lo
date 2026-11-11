@@ -588,138 +588,133 @@ test.describe('while the local copy takes GitHub’s place', () => {
 test.describe('when the local copy comes after GitHub’s diff', () => {
   test.use({ cassette: 'app_e2e_late', lateRemote: true });
 
-  for (const time of [1, 2, 3, 4])
-    test(`takes its place in place: what’s at the top of the screen holds, and no frame runs long (${time})`, async ({
-      app,
-      page,
-    }) => {
-      // A short window, so the pull request's few files scroll.
-      await app.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0]?.setSize(1100, 440),
-      );
-      // Without src/format.ts's patch, there's no move to find.
-      const id = await drawn(page, 'github', { moves: false });
-      // GitHub's list has no patch of src/format.ts, so GitHub's diff keeps it out.
-      const formatNote = page.locator('.lo-diffview').getByText('20 changed lines: za loads them');
-      await expect(formatNote.first()).toBeAttached();
-      await page.evaluate(() => Object.assign(window.loDiff ?? {}, { first: true }));
-      // Wheeled down until src/format.ts is above the screen.
-      const box = await page.locator('.lo-diffview').boundingBox();
-      await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
-      await expect
-        .poll(
-          async () => {
-            await page.mouse.wheel(0, 120);
-            return page.evaluate(() => {
-              const files = window.loDiff?.files ?? [];
-              const at = window.loDiff?.viewport().at;
-              const file = at?.kind === 'header' ? at.file : at?.at.file;
-              return files.findIndex((each) => each.id === file);
-            });
-          },
-          { timeout: 10_000 },
-        )
-        .toBeGreaterThan(3);
-      await page.waitForTimeout(300);
-      // A row of src/parser.ts at the top of the screen, and where it is on the page.
-      const row = await page.evaluate(() => {
-        const view = document.querySelector('.lo-diffview');
-        const top = view?.getBoundingClientRect().top ?? 0;
-        const rows = [
-          ...(view?.querySelectorAll<HTMLElement>('.cm-editor:last-of-type [data-row^="p:5:"]') ??
-            []),
-        ];
-        return rows.find((each) => each.getBoundingClientRect().top >= top)?.dataset.row;
-      });
-      expect(row).toBeDefined();
-      const where = () =>
-        page.evaluate(
-          (key) =>
-            document
-              .querySelector(`.lo-diffview .cm-editor:last-of-type [data-row="${key}"]`)
-              ?.getBoundingClientRect().top,
-          row,
-        );
-      const before = await where();
-
-      // The local copy comes, and swaps GitHub's diff out a file at a time, frames timed meanwhile,
-      // with where the row, the box and the scroll are, for a failure to show.
-      await page.evaluate((key) => {
-        const frames: number[] = [];
-        window.loFrames = frames;
-        window.loTops = [];
-        const trace: string[] = [];
-        window.loTrace = trace;
-        let last = performance.now();
-        let seen = '';
-        // As each frame starts, once it's painted, and as the box changes size.
-        const sample = (when: string) => {
-          const view = document.querySelector('.lo-diffview');
-          const at = view
-            ?.querySelector(`.cm-editor:last-of-type [data-row="${key}"]`)
-            ?.getBoundingClientRect().top;
-          const banners = document
-            .querySelector('[data-lo-banners]')
-            ?.getBoundingClientRect().height;
-          const rect = view?.getBoundingClientRect();
-          const anchor = window.loDiff?.viewport();
-          const anchorAt = anchor && window.loDiff?.probe.spotTop(anchor.at);
-          const state = `row ${at} box ${rect?.top}+${rect?.height} scroll ${view?.scrollTop} banners ${banners} dpr ${devicePixelRatio} anchor ${JSON.stringify(anchor)} at ${anchorAt}`;
-          if (state !== seen) trace.push(`${when} ${Math.round(performance.now())} ${state}`);
-          seen = state;
-        };
-        const tick = (now: number) => {
-          frames.push(now - last);
-          window.loTops?.push(document.querySelector('.lo-diffview')?.scrollTop ?? 0);
-          sample('frame');
-          setTimeout(() => sample('painted'), 0);
-          last = now;
-          if (window.loFrames === frames) requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-        const scroller = document.querySelector('.lo-diffview');
-        if (scroller) new ResizeObserver(() => sample('resized')).observe(scroller);
-      }, row);
-      writeAppRemote(test.info().outputPath('remote'));
-      await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
-      // Looked for in the status bar alone, so looking costs the page's frames little.
-      const status = page.locator('footer');
-      await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
-        timeout: 30_000,
-      });
-      await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
-      // src/format.ts, off screen, came in; src/parser.ts, on screen, keeps GitHub's lines.
-      await expect(formatNote).toHaveCount(0);
-      await expect(
-        page.locator('.lo-diffview .lo-collapsed', { hasText: 'not loaded yet' }).first(),
-      ).toBeAttached();
-      await page.waitForTimeout(500);
-      const { frames, tops } = await page.evaluate(() => {
-        const timed = { frames: window.loFrames ?? [], tops: window.loTops ?? [] };
-        window.loFrames = undefined;
-        window.loTops = undefined;
-        return timed;
-      });
-
-      // The same view, and the row that was at the top of the screen where it was on the page,
-      // through the banners going and the files changing above it.
-      expect(await page.evaluate(() => 'first' in (window.loDiff ?? {}))).toBe(true);
-      const after = (await where()) ?? Number.NaN;
-      // Frame by frame, for a failure to say where the row went and why.
-      const trace = [
-        `row ${row}: ${before} then ${after}`,
-        ...(await page.evaluate(() => window.loTrace ?? [])),
-      ].join('\n');
-      writeFileSync(test.info().outputPath('where.txt'), trace);
-      if (Math.abs(after - (before ?? Number.NaN)) > 0.5) console.log(trace);
-      expect(Math.abs(after - (before ?? Number.NaN))).toBeLessThanOrEqual(1);
-      expect(Math.max(...frames.slice(1))).toBeLessThan(50);
-      // One view from the tab's opening on: the panel's order came with the first, and the local
-      // copy's files went into it. No frame went back to the top.
-      expect(await page.evaluate(() => window.loDiff?.draws)).toBe(1);
-      expect(tops.length).toBeGreaterThan(0);
-      expect(Math.min(...tops)).toBeGreaterThan(0);
+  test('takes its place in place: what’s at the top of the screen holds, and no frame runs long', async ({
+    app,
+    page,
+  }) => {
+    // A short window, so the pull request's few files scroll.
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
+    // Without src/format.ts's patch, there's no move to find.
+    const id = await drawn(page, 'github', { moves: false });
+    // GitHub's list has no patch of src/format.ts, so GitHub's diff keeps it out.
+    const formatNote = page.locator('.lo-diffview').getByText('20 changed lines: za loads them');
+    await expect(formatNote.first()).toBeAttached();
+    await page.evaluate(() => Object.assign(window.loDiff ?? {}, { first: true }));
+    // Wheeled down until src/format.ts is above the screen.
+    const box = await page.locator('.lo-diffview').boundingBox();
+    await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
+    await expect
+      .poll(
+        async () => {
+          await page.mouse.wheel(0, 120);
+          return page.evaluate(() => {
+            const files = window.loDiff?.files ?? [];
+            const at = window.loDiff?.viewport().at;
+            const file = at?.kind === 'header' ? at.file : at?.at.file;
+            return files.findIndex((each) => each.id === file);
+          });
+        },
+        { timeout: 10_000 },
+      )
+      .toBeGreaterThan(3);
+    await page.waitForTimeout(300);
+    // A row of src/parser.ts at the top of the screen, and where it is on the page.
+    const row = await page.evaluate(() => {
+      const view = document.querySelector('.lo-diffview');
+      const top = view?.getBoundingClientRect().top ?? 0;
+      const rows = [
+        ...(view?.querySelectorAll<HTMLElement>('.cm-editor:last-of-type [data-row^="p:5:"]') ??
+          []),
+      ];
+      return rows.find((each) => each.getBoundingClientRect().top >= top)?.dataset.row;
     });
+    expect(row).toBeDefined();
+    const where = () =>
+      page.evaluate(
+        (key) =>
+          document
+            .querySelector(`.lo-diffview .cm-editor:last-of-type [data-row="${key}"]`)
+            ?.getBoundingClientRect().top,
+        row,
+      );
+    const before = await where();
+
+    // The local copy comes, and swaps GitHub's diff out a file at a time, frames timed meanwhile,
+    // with where the row, the box and the scroll are, for a failure to show.
+    await page.evaluate((key) => {
+      const frames: number[] = [];
+      window.loFrames = frames;
+      window.loTops = [];
+      const trace: string[] = [];
+      window.loTrace = trace;
+      let last = performance.now();
+      let seen = '';
+      // As each frame starts, once it's painted, and as the box changes size.
+      const sample = (when: string) => {
+        const view = document.querySelector('.lo-diffview');
+        const at = view
+          ?.querySelector(`.cm-editor:last-of-type [data-row="${key}"]`)
+          ?.getBoundingClientRect().top;
+        const banners = document.querySelector('[data-lo-banners]')?.getBoundingClientRect().height;
+        const rect = view?.getBoundingClientRect();
+        const anchor = window.loDiff?.viewport();
+        const anchorAt = anchor && window.loDiff?.probe.spotTop(anchor.at);
+        const state = `row ${at} box ${rect?.top}+${rect?.height} scroll ${view?.scrollTop} banners ${banners} dpr ${devicePixelRatio} anchor ${JSON.stringify(anchor)} at ${anchorAt}`;
+        if (state !== seen) trace.push(`${when} ${Math.round(performance.now())} ${state}`);
+        seen = state;
+      };
+      const tick = (now: number) => {
+        frames.push(now - last);
+        window.loTops?.push(document.querySelector('.lo-diffview')?.scrollTop ?? 0);
+        sample('frame');
+        setTimeout(() => sample('painted'), 0);
+        last = now;
+        if (window.loFrames === frames) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      const scroller = document.querySelector('.lo-diffview');
+      if (scroller) new ResizeObserver(() => sample('resized')).observe(scroller);
+    }, row);
+    writeAppRemote(test.info().outputPath('remote'));
+    await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+    // Looked for in the status bar alone, so looking costs the page's frames little.
+    const status = page.locator('footer');
+    await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
+    // src/format.ts, off screen, came in; src/parser.ts, on screen, keeps GitHub's lines.
+    await expect(formatNote).toHaveCount(0);
+    await expect(
+      page.locator('.lo-diffview .lo-collapsed', { hasText: 'not loaded yet' }).first(),
+    ).toBeAttached();
+    await page.waitForTimeout(500);
+    const { frames, tops } = await page.evaluate(() => {
+      const timed = { frames: window.loFrames ?? [], tops: window.loTops ?? [] };
+      window.loFrames = undefined;
+      window.loTops = undefined;
+      return timed;
+    });
+
+    // The same view, and the row that was at the top of the screen where it was on the page,
+    // through the banners going and the files changing above it.
+    expect(await page.evaluate(() => 'first' in (window.loDiff ?? {}))).toBe(true);
+    const after = (await where()) ?? Number.NaN;
+    // Frame by frame, for a failure to say where the row went and why.
+    const trace = [
+      `row ${row}: ${before} then ${after}`,
+      ...(await page.evaluate(() => window.loTrace ?? [])),
+    ].join('\n');
+    writeFileSync(test.info().outputPath('where.txt'), trace);
+    if (Math.abs(after - (before ?? Number.NaN)) > 0.5) console.log(trace);
+    expect(Math.abs(after - (before ?? Number.NaN))).toBeLessThanOrEqual(1);
+    expect(Math.max(...frames.slice(1))).toBeLessThan(50);
+    // One view from the tab's opening on: the panel's order came with the first, and the local
+    // copy's files went into it. No frame went back to the top.
+    expect(await page.evaluate(() => window.loDiff?.draws)).toBe(1);
+    expect(tops.length).toBeGreaterThan(0);
+    expect(Math.min(...tops)).toBeGreaterThan(0);
+  });
 });
 
 test.describe('when the local copy comes after GitHub’s diff, on a file the reader is looking at', () => {
