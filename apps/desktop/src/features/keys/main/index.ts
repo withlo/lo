@@ -68,7 +68,6 @@ export default defineFeature(contract, {
       log: (message, error) => console.error(message, error),
     });
     keymap = watch;
-    app.once('will-quit', () => watch.stop());
     // Before the window opens, so Electron's default menu never handles a key.
     setMenu([], (id) => publish('run', { id }));
     // With no menu on Linux, the developer tools get their usual key here.
@@ -82,5 +81,8 @@ export default defineFeature(contract, {
         }
       });
     });
+  },
+  stop() {
+    keymap?.stop();
   },
 });
