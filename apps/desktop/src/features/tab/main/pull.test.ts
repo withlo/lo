@@ -22,7 +22,7 @@ const TITLE = "App: the pull request Lo's end-to-end tests open";
 /** A tab for `link`, as the watcher makes one, with what it keeps and sends collected. */
 function tabFor(options: {
   link?: { owner: string; repo: string; number: number };
-  github: ReturnType<typeof replayGithub>['github'];
+  github: TabGithub;
   git: Awaited<ReturnType<typeof testGit>>;
   login?: string;
   repository?: string;
@@ -65,6 +65,43 @@ function keptFromTheFirstPush(cache: MemoryPollCache): number {
     }
   }
   return changed;
+}
+
+/**
+ * A cache from a run that opened the pull request, as before the last push when `stale`, and
+ * git with the clone that run fetched.
+ */
+async function saved(stale: boolean) {
+  const cache = new MemoryPollCache();
+  const first = replayGithub('app_e2e', { cache });
+  const git = await testGit();
+  const before = tabFor({ github: first.github, git });
+  before.tab.show();
+  await expect.poll(() => before.sent.local, { timeout: 40_000 }).toMatchObject({ kind: 'ready' });
+  before.tab.close();
+  for (const poller of first.pollers.values()) poller.stop();
+  if (stale) keptFromTheFirstPush(cache);
+  // The repository's list would be asked about with its ETag, which the cassette never was.
+  for (const key of cache.entries.keys()) {
+    if (!key.split(' ')[1]?.includes('#')) cache.entries.delete(key);
+  }
+  return { cache, git };
+}
+
+/** A tab restored on `cache`, whose first ask for the account's client fails with `error`. */
+function restored(cache: MemoryPollCache, git: Awaited<ReturnType<typeof testGit>>, error: Error) {
+  const replay = replayGithub('app_e2e', { cache });
+  let calls = 0;
+  const github: TabGithub = {
+    ...replay.github,
+    client: (login) => {
+      calls += 1;
+      return calls === 1 ? Promise.reject(error) : replay.github.client(login);
+    },
+  };
+  const opened = tabFor({ github, git, login: 'rozed-bot', repository: 'rozed-dev/e2e' });
+  opened.tab.show();
+  return { ...opened, calls: () => calls };
 }
 
 describe('a pull request’s tab', { timeout: 60_000 }, () => {
@@ -287,6 +324,54 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     ).toEqual([]);
     expect(after.sent.pull?.header?.title).toBe(TITLE);
     after.tab.close();
+  });
+
+  describe('when the first read of it fails', () => {
+    it('shows what it fetched before when the token is refused, and reads again once it works', async () => {
+      const { cache, git } = await saved(false);
+      const refused = new GithubError({ kind: 'unauthorized', message: 'Bad credentials' });
+      const { tab, sent, calls } = restored(cache, git, refused);
+
+      await expect.poll(() => sent.pull?.shown, { timeout: 10_000 }).toBe(APP_PULL.head);
+      await expect
+        .poll(() => sent.local, { timeout: 40_000 })
+        .toMatchObject({ kind: 'ready', head: APP_PULL.head });
+      // Read again after a wait, which works now.
+      await expect.poll(calls, { timeout: 20_000 }).toBeGreaterThan(1);
+      await expect.poll(() => sent.pull?.header?.author, { timeout: 10_000 }).toBe('rozed-bot');
+      expect(sent.pull).toMatchObject({ shown: APP_PULL.head, newer: null, problem: null });
+      tab.close();
+    });
+
+    for (const [why, error] of [
+      [
+        'a rate limit',
+        new GithubError({
+          kind: 'rateLimited',
+          message: 'slow down',
+          secondary: true,
+          retryAfter: 1,
+        }),
+      ],
+      [
+        'GitHub out of reach',
+        new GithubError({ kind: 'network', failure: 'offline', message: 'offline' }),
+      ],
+    ] as const) {
+      it(`shows the cache's older head through ${why}, then GitHub's once it answers, without a newer push`, async () => {
+        const { cache, git } = await saved(true);
+        const { tab, sent } = restored(cache, git, error);
+
+        await expect.poll(() => sent.pull?.shown, { timeout: 20_000 }).toBe(APP_PULL.head);
+        await expect
+          .poll(() => sent.local, { timeout: 40_000 })
+          .toMatchObject({ kind: 'ready', head: APP_PULL.head });
+        // The older head stood in while GitHub couldn't be asked, and went quietly.
+        expect(sent.pulls.some(({ shown }) => shown === APP_PULL.firstHead)).toBe(true);
+        expect(sent.pulls.filter(({ newer }) => newer !== null)).toEqual([]);
+        tab.close();
+      });
+    }
   });
 
   it('keeps the head it opened at on screen when GitHub says another, until that one is loaded', async () => {

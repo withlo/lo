@@ -123,6 +123,13 @@ export class PullTab {
   #saved: { head: string; base: { branch: string; sha: string } } | undefined;
   /** The head on screen: GitHub's when the tab opened, until the newer push is loaded. */
   #shown: string | undefined;
+  /**
+   * Whether the head on screen came only from the cache, while GitHub couldn't be asked: the first
+   * head GitHub gives replaces it, without saying there's a newer push.
+   */
+  #provisional = false;
+  /** Whether what the cache had stands in for GitHub's answers, which it does only until one. */
+  #usingSaved = false;
   /** GitHub's newest head. */
   #latest: string | undefined;
   /** The base branch and its tip, as GitHub last said. */
@@ -219,6 +226,7 @@ export class PullTab {
     const latest = this.#latest;
     if (this.#closed || latest === undefined || latest === this.#shown) return;
     this.#shown = latest;
+    this.#provisional = false;
     this.#local?.show(latest);
     this.#publish();
   }
@@ -437,9 +445,7 @@ export class PullTab {
       this.#savedAt = Date.now();
       this.#keepHeader();
       const { summary } = opened;
-      this.#latest = summary.head.sha;
-      this.#shown ??= summary.head.sha;
-      this.#base = { branch: summary.base.ref, sha: summary.base.sha };
+      this.#adopt(summary.head.sha, { branch: summary.base.ref, sha: summary.base.sha });
       this.#startLocal();
     } catch (error) {
       if (this.#closed) return;
@@ -471,8 +477,12 @@ export class PullTab {
         this.#useSaved();
         this.#startLocal();
       } else if (error instanceof GithubError && error.isUnauthorized()) {
-        // The account is signed out, which its poller says.
+        // The account is signed out, which its poller says. What it fetched before still shows,
+        // and reading again finds it once it's signed in again.
         this.#problem = undefined;
+        this.#scheduleRead();
+        this.#useSaved();
+        this.#startLocal();
       } else {
         const problem = problemOf(error, this.pull, this.#actingFor(acting), undefined);
         const retryAt = problem.kind === 'failed' ? this.#scheduleRead() : undefined;
@@ -557,12 +567,14 @@ export class PullTab {
   #takeSummary(summary: PullSummary): void {
     this.#header = withSummary(this.#header, summary);
     this.#keepHeader();
-    this.#latest = summary.head.sha;
-    this.#base = { branch: summary.base.ref, sha: summary.base.sha };
+    const base = { branch: summary.base.ref, sha: summary.base.sha };
     // Only once the tab is shown is the head on screen chosen, and the local copy fetched.
     if (this.#started) {
-      this.#shown ??= summary.head.sha;
+      this.#adopt(summary.head.sha, base);
       this.#startLocal();
+    } else {
+      this.#latest = summary.head.sha;
+      this.#base = base;
     }
   }
 
@@ -576,9 +588,10 @@ export class PullTab {
     this.#savedAt = fetchedAt;
     this.#keepHeader();
     const base = { branch: details.baseRefName, sha: details.baseRefOid };
-    if (live) {
+    if (live && this.#started) {
+      this.#adopt(details.headRefOid, base);
+    } else if (live) {
       this.#latest = details.headRefOid;
-      if (this.#started) this.#shown ??= details.headRefOid;
       this.#base = base;
     } else {
       this.#saved = { head: details.headRefOid, base };
@@ -601,10 +614,29 @@ export class PullTab {
    */
   #useSaved(): void {
     const saved = this.#saved;
-    if (!saved || this.#latest !== undefined) return;
+    if (!saved || (this.#latest !== undefined && !this.#usingSaved)) return;
+    this.#usingSaved = true;
     this.#latest = saved.head;
-    this.#shown ??= saved.head;
     this.#base = saved.base;
+    if (this.#shown === undefined) {
+      this.#shown = saved.head;
+      this.#provisional = true;
+    }
+  }
+
+  /**
+   * GitHub gave `head` as the pull request's, on `base`: the newest head, and the one on screen if
+   * none is yet, or if the one on screen came only from the cache, which it replaces without
+   * saying there's a newer push. A head the tab showed from GitHub stays until it's reloaded.
+   */
+  #adopt(head: string, base: { branch: string; sha: string }): void {
+    this.#usingSaved = false;
+    this.#latest = head;
+    this.#base = base;
+    if (this.#shown === undefined || this.#provisional) {
+      this.#provisional = false;
+      this.#shown = head;
+    }
   }
 
   #keepHeader(): void {
