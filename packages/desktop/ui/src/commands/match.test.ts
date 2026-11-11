@@ -38,7 +38,7 @@ function said(outcome: Outcome): string {
     case 'stop':
       return outcome.kind;
     default:
-      return outcome satisfies never;
+      throw new Error(`an outcome Lo doesn't know: ${JSON.stringify(outcome satisfies never)}`);
   }
 }
 
