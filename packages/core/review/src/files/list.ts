@@ -3,7 +3,7 @@
  * viewed marks (`docs/design.md`, "Modes" and "Viewed marks").
  */
 
-import type { FileViewedState } from '@lo/github';
+import type { FileStatus, FileViewedState, PullFile } from '@lo/github';
 
 import type { ChangedFile } from './changed.ts';
 import { pathOrder, reviewOrder } from './order.ts';
@@ -45,6 +45,47 @@ export interface FileEntry {
    * answered, or without signing in.
    */
   readonly viewed: FileViewedState | undefined;
+}
+
+/** How GitHub's status for a file shows in the list. A copy shows as added, with its own path. */
+export function githubChange(status: FileStatus): FileChange {
+  switch (status) {
+    case 'added':
+    case 'copied':
+      return 'added';
+    case 'removed':
+      return 'deleted';
+    case 'renamed':
+      return 'renamed';
+    case 'modified':
+    case 'changed':
+    case 'unchanged':
+    case 'other':
+      return 'modified';
+    default:
+      return status satisfies never;
+  }
+}
+
+/**
+ * How the list shows a file from GitHub's list of the pull request's files, until the local copy
+ * lists them. GitHub's list gives no sizes, and without a patch or a changed line it doesn't say
+ * how many lines changed, as for a binary file or a rename or mode change alone: such a file counts
+ * as binary, so its line counts read as unknown rather than none.
+ */
+export function githubFileEntry(file: PullFile): FileEntry {
+  const renamed = file.status === 'renamed' || file.status === 'copied';
+  return {
+    file: {
+      path: file.filename,
+      previousPath: renamed ? file.previous_filename : undefined,
+      additions: file.additions,
+      deletions: file.deletions,
+      binary: file.patch === undefined && file.changes === 0,
+    },
+    change: githubChange(file.status),
+    viewed: undefined,
+  };
 }
 
 /**

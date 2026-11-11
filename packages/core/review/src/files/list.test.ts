@@ -1,7 +1,14 @@
-import type { FileViewedState } from '@lo/github';
+import type { FileViewedState, PullFile } from '@lo/github';
 import { expect, test } from 'vitest';
 
-import { changeLetter, FileList, type FileChange, type FileEntry } from './list.ts';
+import {
+  changeLetter,
+  FileList,
+  githubChange,
+  githubFileEntry,
+  type FileChange,
+  type FileEntry,
+} from './list.ts';
 
 function entry(name: string, previousPath?: string): FileEntry {
   return {
@@ -210,4 +217,66 @@ test('a renamed file shows the mark github keeps at its old path', () => {
 test('each change shows the letter git gives it', () => {
   const changes: FileChange[] = ['added', 'deleted', 'modified', 'renamed', 'typeChanged'];
   expect(changes.map((change) => changeLetter(change))).toEqual(['A', 'D', 'M', 'R', 'T']);
+});
+
+/** A file in GitHub's list of a pull request's files. */
+function pullFile(status: PullFile['status'], patch?: string): PullFile {
+  return {
+    filename: 'src/new.rs',
+    status,
+    additions: patch === undefined ? 0 : 1,
+    deletions: patch === undefined ? 0 : 1,
+    changes: patch === undefined ? 0 : 2,
+    patch,
+  };
+}
+
+test('files from githubs list keep renames and say when line counts are unknown', () => {
+  // A rename alone: GitHub gives no patch and no changed lines.
+  const renamed = githubFileEntry({ ...pullFile('renamed'), previous_filename: 'src/old.rs' });
+  expect(renamed).toEqual({
+    file: {
+      path: 'src/new.rs',
+      previousPath: 'src/old.rs',
+      additions: 0,
+      deletions: 0,
+      binary: true,
+    },
+    change: 'renamed',
+    viewed: undefined,
+  } satisfies FileEntry);
+  // Its line counts aren't known, rather than none; a patch's are.
+  expect(githubFileEntry(pullFile('modified', '@@ -1 +1 @@\n-a\n+b')).file.binary).toBe(false);
+  // A copy shows as a new file, though GitHub names where it came from.
+  const copied = githubFileEntry({
+    ...pullFile('copied', '@@ -0,0 +1 @@\n+a'),
+    previous_filename: 'src/old.rs',
+  });
+  expect([copied.change, copied.file.previousPath]).toEqual(['added', 'src/old.rs']);
+  // Only a rename or copy keeps the old path.
+  const modified = githubFileEntry({ ...pullFile('modified'), previous_filename: 'src/old.rs' });
+  expect(modified.file.previousPath).toBeUndefined();
+});
+
+test('githubs statuses show as git shows changes', () => {
+  const statuses = [
+    'added',
+    'copied',
+    'removed',
+    'renamed',
+    'modified',
+    'changed',
+    'unchanged',
+    'other',
+  ] as const;
+  expect(statuses.map((status) => changeLetter(githubChange(status)))).toEqual([
+    'A',
+    'A',
+    'D',
+    'R',
+    'M',
+    'M',
+    'M',
+    'M',
+  ]);
 });
