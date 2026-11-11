@@ -105,19 +105,31 @@ A package's folder says where it runs, and its Nx tags (`"nx": { "tags": [...] }
   `license:mit`, and every `license:mit` project carries the MIT license in its own `LICENSE`;
 - core projects import only core projects, and use no Node built-in, Electron or child process
   (their tests may use Node);
-- core projects load modules by name: an `import()` or `require()` of anything but a literal fails;
+- core projects load modules by name: an `import()` of anything but a literal fails;
 - `license:mit` projects import only `license:mit` projects;
 - nothing imports an app;
 - only tests import `testing/`. Tests are `*.test.*` files and anything in `test/` or `e2e/`, and
   `testing` belongs in `devDependencies`.
 
-Imports resolve the way Node finds them, through `node_modules` and symlinks to the project they
-reach, so a name or path can't disguise where an import goes. The same rules apply to type and path
-references, to what a project's `package.json` lists in its dependencies (aliases included) and
-points to in its `imports` and `exports`, and to every edge in Nx's project graph. Also:
+Imports resolve the way Node finds them, through `node_modules`, symlinks, and the `imports` and
+`exports` in a `package.json`, to the project they reach, so a name or path can't disguise where an
+import goes. The same rules apply to type and path references, to a `require` that `createRequire()`
+makes, to what a project's `package.json` lists in its dependencies (aliases included) and points to
+in its `imports` and `exports`, and to every edge in Nx's project graph. Also:
 
-- a relative import stays inside its project's folder; projects reach each other by package name;
-- no tsconfig sets `paths`;
+- a relative import stays inside its project's folder, and so does where a symlink takes it, unless
+  that's in the workspace's `node_modules` (the root's, or a project's own); projects reach each
+  other by package name. What a project's `imports` and `exports` map to stays in its folder too;
+- nothing imports files outside every project, other than packages in the workspace's
+  `node_modules`;
+- a module's name or path has no percent escapes or backslashes, since Node decodes the one and
+  reads the other as `/`, and isn't a URL other than `node:`;
+- a `#name` import is one the `package.json`'s `imports` map;
+- `require` appears only in a call that names its module, such as `require('./x.js')`;
+- only the files that `scripts/boundaries/check.ts` lists use `createRequire` or `getBuiltinModule`,
+  since what they load can't be followed;
+- pnpm's overrides and package extensions point no dependency at a folder with `link:` or `file:`;
+- no tsconfig sets `paths`, nor any tsconfig it extends or references;
 - the root `package.json` holds the repo's tooling only: no workspace package, and no alias besides
   TypeScript's two.
 
