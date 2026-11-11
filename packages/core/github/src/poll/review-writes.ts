@@ -21,7 +21,7 @@
  * - a deleted comment's review, in the timeline, whose count of comments it shows;
  * - your pending review, when a reply sent to be posted at once joined it, when GitHub's refusal
  *   says it changed elsewhere (a second one refused, something it names gone, or a thread refused
- *   that may have started one);
+ *   that may have started one), or when a thread landed on another head than the one planned;
  * - a comment whose answer was lost, which may be in the threads and your pending review, or in
  *   neither.
  *
@@ -141,9 +141,10 @@ export function sendReview(
           changedElsewhere =
             sent.refusal === 'pendingReviewExists' ||
             sent.refusal === 'gone' ||
+            sent.refusal === 'headMoved' ||
             (sent.refusal === 'notInDiff' && namedReview);
         } else {
-          changedElsewhere = sent.joinedPending !== undefined;
+          changedElsewhere = sent.joinedPending !== undefined || sent.landedOn !== undefined;
         }
       } else {
         changedElsewhere =

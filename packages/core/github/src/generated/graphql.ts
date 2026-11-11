@@ -445,7 +445,7 @@ export type AddPullRequestReviewThreadMutationVariables = Exact<{
 }>;
 
 
-export type AddPullRequestReviewThreadMutation = { addPullRequestReviewThread: { thread: { id: string, comments: { nodes: Array<{ id: string, pullRequestReview: { id: string } | null } | null> | null } } | null } | null };
+export type AddPullRequestReviewThreadMutation = { addPullRequestReviewThread: { thread: { id: string, comments: { nodes: Array<{ id: string, commit: { oid: string } | null, pullRequestReview: { id: string } | null } | null> | null } } | null } | null };
 
 export type AddPullRequestReviewThreadReplyMutationVariables = Exact<{
   pullRequestReviewThreadId: string;
@@ -3487,6 +3487,9 @@ export const AddPullRequestReviewThreadDocument = new TypedDocumentString(`
       comments(first: 1) {
         nodes {
           id
+          commit {
+            oid
+          }
           pullRequestReview {
             id
           }

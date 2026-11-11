@@ -12,6 +12,9 @@
  *   the same way. So after a `null`, Lo asks whether the review is still pending: if it is, that's
  *   `notInDiff`, and otherwise `gone`, never an acceptance. `addPullRequestReview` refuses a line
  *   outside the diff with "Line could not be resolved", and REST with "could not be resolved".
+ * - `addPullRequestReviewThread` puts the thread on the pull request's head when GitHub gets it,
+ *   which may be newer than the one the comment was written on, where the line may hold other
+ *   code. Lo takes such a thread back out and refuses it as `headMoved`.
  * - A reply to a review submitted since is answered `comment: null`, explained the same way. A
  *   review, thread or comment deleted since is "not found" (`gone`).
  * - While you have a pending review, GitHub refuses another, even one posted at once: "User can only
@@ -106,10 +109,12 @@ export type ReviewWrite =
     | { kind: 'review'; variables: AddPullRequestReviewMutationVariables }
   ) & {
     /**
-     * The pull request's latest head (`headRefOid`) when it was planned. For an `addThread`,
+     * The pull request's latest head (`headRefOid`) when it was planned. For an `addThread` on lines,
      * GitHub picks the commit: it puts the thread on whatever head is current when it gets it, which
-     * can be a later one if someone pushed since Lo last looked. Every other write names its
-     * commit, as a review started on an older revision does, or has no lines.
+     * can be a later one if someone pushed since Lo last looked, and that head's line may hold
+     * different code. The writer compares the thread's `commit.oid` in GitHub's answer with this.
+     * Every other write names its commit, as a review started on an older revision does, or has no
+     * lines.
      */
     readonly head: string;
   };
@@ -122,6 +127,12 @@ export type ReviewWriteRefusal =
    * but its API doesn't, so the UI offers a comment on the file instead.
    */
   | { refusal: 'notInDiff' }
+  /**
+   * Someone pushed after the comment was written, and GitHub put its thread on the new head, `head`,
+   * where its lines may hold other code. Lo took the thread back out. Nothing when GitHub didn't
+   * say which commit it used.
+   */
+  | { refusal: 'headMoved'; head: string | undefined }
   /**
    * You have a pending review already, perhaps started elsewhere, and GitHub allows one per person
    * per pull request. It also refuses a comment or review posted at once while you have one.
@@ -152,6 +163,8 @@ export function describeReviewRefusal(refusal: ReviewWriteRefusal): string {
   switch (refusal.refusal) {
     case 'notInDiff':
       return "GitHub takes comments only on lines and files in the pull request's diff";
+    case 'headMoved':
+      return 'Someone pushed to the pull request since Lo showed it, so Lo took the comment back';
     case 'pendingReviewExists':
       return 'You have a pending review on this pull request already, and GitHub allows only one';
     case 'ownPullRequest':
@@ -252,6 +265,12 @@ export interface Sent {
    * hasn't read yet. The UI says the reply was added to your pending review.
    */
   joinedPending?: string | undefined;
+  /**
+   * For a thread GitHub put on another head than the one planned, which Lo couldn't take back out:
+   * the head it's on. It's in your pending review there, where its lines may hold other code, so
+   * the UI flags it.
+   */
+  landedOn?: string | undefined;
 }
 
 /** A comment Lo can edit or delete, by node ID. */
@@ -300,7 +319,7 @@ export async function sendReviewWrite(
     case 'review':
       return addReview(client, write.variables);
     case 'addThread':
-      return addThread(client, write.variables);
+      return addThread(client, write.variables, write.head);
     case 'addReply':
     case 'postReply':
       return reply(client, write.variables);
@@ -335,10 +354,14 @@ async function addReview(
   return { review: review.id, comment };
 }
 
-/** `addPullRequestReviewThread` to your pending review, on lines or on the file. */
+/**
+ * `addPullRequestReviewThread` to your pending review, on lines or on the file. A line thread GitHub
+ * put on another head than `head`, the one planned, is taken back out and refused as `headMoved`.
+ */
 async function addThread(
   client: GithubClient,
   variables: AddPullRequestReviewThreadMutationVariables,
+  head: string,
 ): Promise<Sent | ReviewWriteRefusal> {
   const review = variables.pullRequestReviewId;
   const answer = await mutate(client, AddPullRequestReviewThreadDocument, variables, UNEXPLAINED);
@@ -348,11 +371,23 @@ async function addThread(
   const thread = answer.data.addPullRequestReviewThread?.thread;
   if (!thread) return refusedIn(client, review, { refusal: 'notInDiff' });
   const comment = (thread.comments.nodes ?? []).find((node) => node != null);
-  return {
+  const sent: Sent = {
     review: comment?.pullRequestReview?.id ?? undefined,
     thread: thread.id,
     comment: comment?.id,
   };
+  // A file-level thread names no line, and goes on the latest head from any revision.
+  if (variables.subjectType === 'FILE') return sent;
+  const landed = comment?.commit?.oid;
+  if (landed !== undefined && landed.toLowerCase() === head.toLowerCase()) return sent;
+  if (comment === undefined) return { ...sent, landedOn: landed };
+  try {
+    await client.graphql(DeletePullRequestReviewCommentDocument, { id: comment.id });
+  } catch {
+    // It stays in your pending review, on the other head, where the UI shows it as it is.
+    return { ...sent, landedOn: landed };
+  }
+  return { refusal: 'headMoved', head: landed };
 }
 
 /** `addPullRequestReviewThreadReply` to a thread: in the pending review its variables name, or without one, posted at once. */

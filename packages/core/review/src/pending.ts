@@ -142,7 +142,8 @@ export type NewComment = NewThread | NewReply;
  *   reply, which can't go in `threads`; once it's accepted, {@link YourReview.add} plans the
  *   comment's own mutation.
  * - `addThread` adds a thread to your pending review, which GitHub puts on the pull request's
- *   current head: the one it was planned against, `head`, unless someone pushed since.
+ *   current head. The sender checks that it's the head planned, `head`, and takes back a line
+ *   thread that landed on a later one.
  * - `addReply` adds a reply to your pending review.
  * - `postThread`, `postFileComment` and `postReply` post one comment at once.
  * - `submitReview` submits your pending review, and `review` submits one with no comments.
