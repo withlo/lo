@@ -28,11 +28,25 @@ function render(element: ReactNode): HTMLElement {
   return container;
 }
 
+/** A click on `element`, as a person's. */
+function click(element: Element | null | undefined): void {
+  act(() => {
+    element?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+}
+
+/** The cards of a theme choice. */
+const cards = (container: HTMLElement) => [...container.querySelectorAll('[role="radio"]')];
+
+/** The markup of a button. */
+const buttonMarkup = (props: Parameters<typeof Button>[0]) =>
+  renderToStaticMarkup(<Button {...props} />);
+
 /** Every class a markup uses that isn't the design system's own (`lo-…`). */
-function classesIn(markup: string): string[] {
+function classesIn(html: string): string[] {
   return [
     ...new Set(
-      [...markup.matchAll(/class="([^"]*)"/g)].flatMap(([, value]) => (value ?? '').split(/\s+/)),
+      [...html.matchAll(/class="([^"]*)"/g)].flatMap(([, value]) => (value ?? '').split(/\s+/)),
     ),
   ].filter((name) => name !== '' && !name.startsWith('lo-'));
 }
@@ -64,16 +78,16 @@ describe('Button', () => {
   });
 
   it('draws each variant and size, a square one for an icon', () => {
-    const markup = (props: Parameters<typeof Button>[0]) =>
-      renderToStaticMarkup(<Button {...props} />);
-    expect(markup({ variant: 'primary' })).toContain('bg-accent');
-    expect(markup({ variant: 'primary' })).toContain('text-on-accent');
-    expect(markup({ variant: 'ghost' })).toContain('bg-transparent');
-    expect(markup({ variant: 'danger' })).toContain('text-danger');
-    expect(markup({})).toContain('h-control-h ');
-    expect(markup({ size: 'sm' })).toContain('h-control-h-sm');
-    expect(markup({ icon: true, 'aria-label': 'Close' })).toContain('w-control-h');
-    expect(markup({ icon: true, size: 'sm', 'aria-label': 'Close' })).toContain('w-control-h-sm');
+    expect(buttonMarkup({ variant: 'primary' })).toContain('bg-accent');
+    expect(buttonMarkup({ variant: 'primary' })).toContain('text-on-accent');
+    expect(buttonMarkup({ variant: 'ghost' })).toContain('bg-transparent');
+    expect(buttonMarkup({ variant: 'danger' })).toContain('text-danger');
+    expect(buttonMarkup({})).toContain('h-control-h ');
+    expect(buttonMarkup({ size: 'sm' })).toContain('h-control-h-sm');
+    expect(buttonMarkup({ icon: true, 'aria-label': 'Close' })).toContain('w-control-h');
+    expect(buttonMarkup({ icon: true, size: 'sm', 'aria-label': 'Close' })).toContain(
+      'w-control-h-sm',
+    );
   });
 
   it('uses only utilities Lo’s stylesheet has, and its medium weight is not overridden by the type style', async () => {
@@ -177,7 +191,7 @@ describe('Settings', () => {
       />,
     );
     const [, second] = container.querySelectorAll('nav button');
-    act(() => second?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    click(second);
     expect(chosen).toHaveBeenCalledWith('a.two');
   });
 
@@ -221,8 +235,6 @@ describe('Settings', () => {
 });
 
 describe('ThemeChoice', () => {
-  const cards = (container: HTMLElement) => [...container.querySelectorAll('[role="radio"]')];
-
   it('offers each theme as a card that shows it, the chosen one checked', () => {
     const container = render(<ThemeChoice value="light" onChange={() => undefined} />);
     expect(container.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe(
@@ -249,9 +261,9 @@ describe('ThemeChoice', () => {
     const chosen = vi.fn<(theme: ThemeName) => void>();
     const container = render(<ThemeChoice value="dark" onChange={chosen} />);
     const [, light, system] = cards(container);
-    act(() => light?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    click(light);
     expect(chosen).toHaveBeenLastCalledWith('light');
-    act(() => system?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    click(system);
     expect(chosen).toHaveBeenLastCalledWith('system');
     expect(cards(container)[0]?.getAttribute('aria-checked')).toBe('true');
   });

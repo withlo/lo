@@ -167,6 +167,21 @@ describe('Cache', () => {
     expect(container.querySelector<HTMLInputElement>('input')?.value).toBe('20');
   });
 
+  it('says it is measuring until main has answered, and that there are no copies if it can’t be asked', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    onTestFinished(() => quiet.mockRestore());
+    installBridge({
+      'settings.cacheUsage': () => {
+        throw new IpcError('internal', 'settings.cacheUsage failed.');
+      },
+    });
+    const container = render(Cache);
+    expect(container.textContent).toContain('Measuring the cache');
+    await settle();
+    expect(container.textContent).toContain('No local copies');
+    expect(container.textContent).not.toContain('Measuring');
+  });
+
   it('says it is looking for git, asks again until Lo has looked, then shows the copies', async () => {
     vi.useFakeTimers();
     const bridge = installBridge({

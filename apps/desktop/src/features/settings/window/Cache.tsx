@@ -94,15 +94,17 @@ function Usage({
     }
   };
 
-  const looking = usage === undefined || (usage.status === 'checking' && !gaveUp);
   const ready = usage?.status === 'ready' ? usage : undefined;
   const limit = cap * GB;
   let label: ReactNode = 'No local copies';
   let description = 'Lo keeps them with git, and has none to use right now.';
-  if (looking) {
+  if (usage === undefined) {
+    label = 'Measuring the cache';
+    description = 'Local copies of repos, and answers saved from GitHub.';
+  } else if (usage.status === 'checking' && !gaveUp) {
     label = 'Looking for git';
     description = 'Lo keeps its local copies with git.';
-  } else if (usage?.status === 'checking') {
+  } else if (usage.status === 'checking') {
     description = "Lo couldn't open the folder it keeps them in. Restart Lo to try again.";
   } else if (ready) {
     label = <span className="tabular-nums">{formatBytes(ready.used)}</span>;
@@ -148,6 +150,8 @@ function Cache() {
       .cacheUsage()
       .then(setUsage, (error: unknown) => {
         console.error("Lo couldn't measure the cache:", error);
+        // Better to say Lo has no copies to show than to go on saying it is measuring them.
+        setUsage({ status: 'unavailable' });
       });
   }, []);
   useEffect(refresh, [refresh]);
