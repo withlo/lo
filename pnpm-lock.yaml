@@ -269,12 +269,6 @@ importers:
       '@codemirror/view':
         specifier: 6.43.15
         version: 6.43.15
-      '@fontsource-variable/host-grotesk':
-        specifier: 5.3.0
-        version: 5.3.0
-      '@fontsource/fragment-mono':
-        specifier: 5.3.0
-        version: 5.3.0
       '@lo/design':
         specifier: workspace:*
         version: link:../../design
@@ -284,6 +278,9 @@ importers:
       '@lo/syntax':
         specifier: workspace:*
         version: link:../../packages/desktop/syntax
+      '@lo/ui':
+        specifier: workspace:*
+        version: link:../../packages/desktop/ui
       web-tree-sitter:
         specifier: 0.27.2
         version: 0.27.2

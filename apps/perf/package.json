@@ -15,11 +15,10 @@
   "dependencies": {
     "@codemirror/state": "6.7.6",
     "@codemirror/view": "6.43.15",
-    "@fontsource-variable/host-grotesk": "5.3.0",
-    "@fontsource/fragment-mono": "5.3.0",
     "@lo/design": "workspace:*",
     "@lo/diff": "workspace:*",
     "@lo/syntax": "workspace:*",
+    "@lo/ui": "workspace:*",
     "web-tree-sitter": "0.27.2",
     "zod": "4.6.7"
   },
