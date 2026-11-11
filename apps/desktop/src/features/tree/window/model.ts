@@ -253,7 +253,7 @@ function previousOf(change: Changed): string | undefined {
 }
 
 /** The viewed mark of `change`, from GitHub's marks by path: a rename's by its old path too. */
-function viewedOf(
+export function viewedOf(
   change: Changed | undefined,
   viewed: ReadonlyMap<string, Viewed>,
 ): Viewed | undefined {

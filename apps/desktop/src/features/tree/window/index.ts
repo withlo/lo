@@ -5,7 +5,7 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { contract as tabContract } from '../../tab/contract.ts';
-import { left } from '../../tab/window/shared.ts';
+import { dialogs, left } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import {
   closeRow,
@@ -23,6 +23,8 @@ import {
   wholeShowable,
 } from './actions.ts';
 import { Files } from './Files.tsx';
+import { Finder } from './Finder.tsx';
+import { openFinder, openWhole, toggleChangedOnly, wholeReady } from './finding.ts';
 import { main } from './main.ts';
 import { pathOfKey } from './paths.ts';
 import { choices, showState } from './store.ts';
@@ -51,6 +53,9 @@ const tabs = () => client(tabContract);
 
 export default {
   commands: handlers(keys, {
+    find: { run: openFinder, enabled: inPull },
+    findChanged: { run: toggleChangedOnly },
+    findWhole: { run: openWhole, enabled: wholeReady },
     focus: {
       run: onTab(goToTree),
       enabled: () => {
@@ -122,6 +127,8 @@ export default {
     },
   }),
   views: [
+    // After the accounts' dialogs and the open box.
+    defineView(dialogs, { id: 'tree.finder', order: 20, render: () => createElement(Finder) }),
     defineView(left, {
       id: 'tree.files',
       order: 20,

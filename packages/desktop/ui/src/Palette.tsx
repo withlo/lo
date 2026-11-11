@@ -40,8 +40,17 @@ export interface PaletteProps<T> {
   foot?: ReactNode;
   /** Where the dialog is put in the page: an element inside `.lo-app`. */
   container?: HTMLElement | null | undefined;
-  /** The palette has closed, and focus has gone back to where it was. */
+  /**
+   * The palette has closed. Focus has gone back to where it was, unless `returnFocus` is false:
+   * then it's where the palette's input had it, for this to place.
+   */
   onClosed?: (() => void) | undefined;
+  /**
+   * Whether closing gives focus back to the element that had it. It goes to that element's first
+   * tabbable part, which for a container that takes focus but isn't tabbable is something inside
+   * it; a palette whose caller knows better turns this off and places focus in `onClosed`.
+   */
+  returnFocus?: boolean | undefined;
 }
 
 /**
@@ -67,6 +76,7 @@ export function Palette<T>({
   foot,
   container,
   onClosed,
+  returnFocus = true,
 }: PaletteProps<T>) {
   const input = useRef<HTMLInputElement>(null);
   return (
@@ -82,6 +92,7 @@ export function Palette<T>({
         <Dialog.Viewport className="fixed inset-0 z-dialog flex items-start justify-center px-16 pt-64 pb-16">
           <Dialog.Popup
             initialFocus={input}
+            finalFocus={returnFocus}
             aria-label={label}
             data-lo-scope="palette"
             className="flex max-h-full w-palette-w max-w-full flex-col overflow-hidden rounded-lg bg-bg-overlay text-fg shadow-dialog"
