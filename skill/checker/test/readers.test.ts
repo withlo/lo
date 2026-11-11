@@ -269,8 +269,9 @@ describe('an overview from a folder', () => {
       [
         'another file',
         (dir) => {
-          rmSync(join(dir, 'figures/a.svg'));
-          writeFileSync(join(dir, 'figures/a.svg'), '<svg/>');
+          // Made while the first is still there, so it can't take the first's inode.
+          writeFileSync(join(dir, 'figures/b.svg'), '<svg/>');
+          renameSync(join(dir, 'figures/b.svg'), join(dir, 'figures/a.svg'));
         },
       ],
       [
