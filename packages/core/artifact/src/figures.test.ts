@@ -235,6 +235,105 @@ describe('an SVG figure', () => {
   });
 });
 
+/** The first `cap` bytes of a file of another type than `path` names. */
+function wrong(path: string, cap: number): Uint8Array {
+  return join(path.endsWith('.svg') ? png(1, 1) : SVG, new Uint8Array(cap)).subarray(0, cap);
+}
+
+describe('a figure past 10 MiB', () => {
+  test('is too large by its size, whatever its reader gives of its bytes', async () => {
+    const size = LIMITS.image + 1;
+    const paths = ['figures/a.svg', 'figures/b.png', 'figures/c.svg', 'figures/d.png'];
+    const checked = await check(
+      shown(...paths),
+      Object.fromEntries(paths.map((path) => [path, { kind: 'file', size }])),
+      (path, cap) =>
+        path === 'figures/a.svg' || path === 'figures/b.png'
+          ? { kind: 'file', size, bytes: new Uint8Array() }
+          : // Bytes of another type than the name says, the wrong type if they were read.
+            { kind: 'file', size, bytes: wrong(path, cap) },
+    );
+    expect(summary(checked)).toEqual(Array(4).fill('leftOut tooLarge'));
+    expect(checked.findings.map(({ message }) => message)).toEqual([
+      'figures/a.svg is larger than 512 KiB, the most an SVG figure may be.',
+      'figures/b.png is larger than 10 MiB, the most an image figure may be.',
+      'figures/c.svg is larger than 512 KiB, the most an SVG figure may be.',
+      'figures/d.png is larger than 10 MiB, the most an image figure may be.',
+    ]);
+  });
+
+  test('is too large only past 10 MiB: a figure no larger is read', async () => {
+    const checked = await check(
+      shown('figures/a.png'),
+      { 'figures/a.png': { kind: 'file', size: LIMITS.image } },
+      () => ({ kind: 'file', size: LIMITS.image, bytes: new Uint8Array() }),
+    );
+    expect(summary(checked)).toEqual(['unread failed']);
+  });
+});
+
+/** An SVG figure that draws `drawn`: one text, with the figure and its viewBox drawing six. */
+function drawing(drawn: number): string {
+  return `<svg viewBox="0 0 860 120"><text>${'x'.repeat(drawn - 6)}</text></svg>`;
+}
+
+/** The most one figure draws: what four can draw together. */
+const MOST = LIMITS.drawn / 4;
+
+describe('what the SVGs an overview shows draw', () => {
+  test('counts each time a block shows one, up to the limit together', async () => {
+    const checked = await check(
+      shown('figures/a.svg', 'figures/b.svg', 'figures/a.svg', 'figures/b.svg', 'figures/c.svg'),
+      {
+        'figures/a.svg': drawing(MOST),
+        'figures/b.svg': drawing(MOST),
+        'figures/c.svg': drawing(6),
+      },
+    );
+    expect(summary(checked)).toEqual([
+      'kept svg',
+      'kept svg',
+      'kept svg',
+      'kept svg',
+      'leftOut tooLarge',
+    ]);
+    expect(codes(checked)).toEqual([`figure-too-large@${LINE + 16}`]);
+    expect(checked.findings[0]?.message).toBe(
+      "figures/c.svg would draw more than is left of the 524,288 Lo draws for all of an overview's figures, which the figures shown before it take up.",
+    );
+    // Each file is still read once.
+    expect(checked.asked.filter(({ cap }) => cap === FIGURE_HEAD)).toHaveLength(3);
+  });
+
+  test('doesn’t count a figure left out, and fits a smaller one after a larger one', async () => {
+    const paths = ['a', 'b', 'c'].map((name) => `figures/${name}.svg`);
+    const checked = await check(
+      shown(...paths, 'figures/d.svg', 'figures/script.svg', 'figures/e.svg', 'figures/f.svg'),
+      {
+        ...Object.fromEntries(paths.map((path) => [path, drawing(MOST)])),
+        'figures/d.svg': drawing(100_000),
+        // What it would draw is more than is left, if it counted.
+        'figures/script.svg': `<svg viewBox="0 0 860 120"><script>x</script><text>${'x'.repeat(40_000)}</text></svg>`,
+        'figures/e.svg': drawing(MOST),
+        'figures/f.svg': drawing(MOST - 100_000),
+      },
+    );
+    expect(summary(checked)).toEqual([
+      'kept svg',
+      'kept svg',
+      'kept svg',
+      'kept svg',
+      'leftOut content',
+      'leftOut tooLarge',
+      'kept svg',
+    ]);
+    expect(codes(checked)).toEqual([
+      `figure-content@${LINE + 16}`,
+      `figure-too-large@${LINE + 20}`,
+    ]);
+  });
+});
+
 /** An SVG of `bytes` bytes, drawing nothing. */
 function sized(bytes: number): string {
   return `${SVG}${' '.repeat(bytes - SVG.length - 6)}</svg>`;

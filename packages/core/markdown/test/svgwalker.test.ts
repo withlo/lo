@@ -20,7 +20,11 @@ function text(value: string): Node {
 }
 
 function figure(...children: Node[]): unknown {
-  return { svg: element('svg', { viewBox: '0 0 860 120' }, ...children), removed: [] };
+  return {
+    svg: element('svg', { viewBox: '0 0 860 120' }, ...children),
+    removed: [],
+    drawn: SVG_LIMITS.drawn,
+  };
 }
 
 const MARKER = element(

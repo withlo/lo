@@ -53,8 +53,8 @@ const ARTIFACT_PATH = new TextEncoder().encode(ARTIFACT);
  * Reads `entries`, the overview's commit, adding to `findings` what the commit can't hold. Past
  * the limit on files and folders, only that is reported, and only one past the limit's worth of
  * entries is read, besides looking for `artifact.md`. With a file of no size, the commit's bytes
- * aren't counted. A path longer than any target counts as one entry, however many folders it
- * passes through.
+ * aren't counted. Every path counts the folders it passes through, a path longer than any target
+ * too, so a listing of files alone counts as one that lists their folders as well.
  */
 export function readCommit(entries: readonly TreeEntry[], findings: Findings): CommitContents {
   const artifact = artifactEntry(entries);
@@ -94,11 +94,7 @@ export function readCommit(entries: readonly TreeEntry[], findings: Findings): C
     listed.push({ text, utf8, kind: entry.kind, long });
   }
 
-  const count =
-    read === entries
-      ? entryCount(listed.filter(({ long }) => !long).map(({ text }) => text)) +
-        listed.filter(({ long }) => long).length
-      : read.length;
+  const count = read === entries ? entryCount(read.map(({ path }) => path)) : read.length;
   const sizes: Sizes = {
     bytes,
     entries: count,
@@ -209,18 +205,79 @@ function sizeKind(path: string): SizeKind {
 
 /**
  * How many files and folders `paths` make, counting each folder a path passes through, listed or
- * not. It stops counting just past the limit, so a path of a million folders costs no more than
- * the limit's worth of them.
+ * not, each once, by its bytes. It stops counting just past the limit, so a path of a million
+ * folders costs no more than the limit's worth of them.
  */
-function entryCount(paths: readonly string[]): number {
-  const seen = new Set(paths);
+function entryCount(paths: readonly Uint8Array[]): number {
+  const index = new PathIndex();
   for (const path of paths) {
-    for (let at = path.indexOf('/'); at > 0; at = path.indexOf('/', at + 1)) {
-      seen.add(path.slice(0, at));
-      if (seen.size > LIMITS.entries) return seen.size;
+    let at = PathIndex.ROOT;
+    let start = 0;
+    for (;;) {
+      const slash = path.indexOf(SLASH, start);
+      const end = slash === -1 ? path.length : slash;
+      at = index.child(at, path.subarray(start, end));
+      if (index.size > LIMITS.entries) return index.size;
+      if (slash === -1) break;
+      start = slash + 1;
     }
   }
-  return seen.size;
+  return index.size;
+}
+
+const SLASH = 0x2f;
+
+/**
+ * Paths as a tree of their parts, each part a node under the one before it, numbered as it's first
+ * found. A part no longer than any target is looked up by its bytes; a longer one, which no
+ * overview holds, by its length and a digest of it, and then compared byte for byte, so no long
+ * string is ever a key: a map hashes those by their length alone, which makes lookups slow.
+ */
+class PathIndex {
+  /** The node above every path's first part. */
+  static readonly ROOT = 0;
+  /** How many nodes there are: paths and the folders they pass through. */
+  size = 0;
+  readonly #short = new Map<string, number>();
+  readonly #long = new Map<string, { part: Uint8Array; node: number }[]>();
+  /** Varies the digest from one index to the next, so no listing can be made to collide. */
+  readonly #seed = Math.floor(Math.random() * 2 ** 32);
+
+  /** The node for `part` under `parent`, made if it's new. */
+  child(parent: number, part: Uint8Array): number {
+    if (part.length <= LIMITS.argument) {
+      const key = `${parent}/${String.fromCharCode(...part)}`;
+      const known = this.#short.get(key);
+      if (known !== undefined) return known;
+      this.size += 1;
+      this.#short.set(key, this.size);
+      return this.size;
+    }
+    const key = `${parent}/${part.length}/${digest(part, this.#seed)}`;
+    const same = this.#long.get(key) ?? [];
+    const known = same.find((each) => equal(each.part, part));
+    if (known) return known.node;
+    this.size += 1;
+    same.push({ part, node: this.size });
+    this.#long.set(key, same);
+    return this.size;
+  }
+}
+
+/** Two 32-bit hashes of `bytes`, started from `seed`. */
+function digest(bytes: Uint8Array, seed: number): string {
+  let a = seed ^ 0x811c9dc5;
+  let b = seed ^ 0x9e3779b9;
+  for (const byte of bytes) {
+    a = Math.imul(a ^ byte, 0x01000193);
+    b = Math.imul(b ^ byte, 0x5bd1e995);
+    b ^= b >>> 15;
+  }
+  return `${a >>> 0}/${b >>> 0}`;
+}
+
+function equal(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((byte, at) => byte === b[at]);
 }
 
 /**

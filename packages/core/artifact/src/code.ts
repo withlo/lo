@@ -108,7 +108,8 @@ function there(answer: FileAnswer | Unread): Found {
 
 /**
  * Reads the file at `path` for its lines, with `room` bytes left to read, and how many bytes that
- * takes. Its first 8 KiB come first, so a file that's binary or too large is read no further.
+ * takes. Its first 8 KiB come first, so a file that's binary or too large is read no further. A file
+ * past {@link LIMITS.file} is too large by its size alone, and takes nothing.
  */
 async function readLines(
   read: (path: string, cap: number) => Promise<FileAnswer | Unread>,
@@ -117,9 +118,10 @@ async function readLines(
 ): Promise<{ found: Found; size: number }> {
   const head = await read(path, Math.min(BINARY_WINDOW, room));
   if (head.kind !== 'file') return { found: head, size: 0 };
+  // Too large by its size, whatever its bytes: a reader may have read none of it.
+  if (head.size > LIMITS.file) return { found: { kind: 'tooLarge', past: 'file' }, size: 0 };
   const taken = head.bytes.length;
   if (head.bytes.includes(0)) return { found: { kind: 'binary' }, size: taken };
-  if (head.size > LIMITS.file) return { found: { kind: 'tooLarge', past: 'file' }, size: taken };
   if (head.size > room) return { found: { kind: 'tooLarge', past: 'code' }, size: taken };
   if (taken === head.size) return { found: text(head.bytes), size: taken };
   const whole = await read(path, head.size);

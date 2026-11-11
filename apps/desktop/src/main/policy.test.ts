@@ -6,26 +6,39 @@ import {
   isAllowedNavigation,
   isAllowedRequest,
   isAppPage,
+  newNonce,
 } from './policy.ts';
 
 const dev = new URL('http://localhost:5173');
 
 describe('contentSecurityPolicy', () => {
-  it("allows only Lo's own files, with no inline code", () => {
-    expect(contentSecurityPolicy()).toBe(
-      "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; " +
-        "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; " +
-        "frame-ancestors 'none'",
+  it("allows only Lo's own files, with no inline code but style elements with the nonce", () => {
+    expect(contentSecurityPolicy('bm9uY2U=')).toBe(
+      "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-bm9uY2U='; img-src 'self'; " +
+        "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; " +
+        "form-action 'none'; frame-ancestors 'none'",
     );
   });
 
-  it("loosens only what Vite's dev server needs", () => {
-    const policy = contentSecurityPolicy(dev);
+  it("loosens only what Vite's dev server needs, with no nonce to turn inline styles off", () => {
+    const policy = contentSecurityPolicy('bm9uY2U=', dev);
     expect(policy).toContain("script-src 'self' 'unsafe-inline';");
     expect(policy).toContain("style-src 'self' 'unsafe-inline';");
     expect(policy).toContain("connect-src 'self' ws://localhost:5173;");
     expect(policy).toContain("default-src 'none';");
     expect(policy).toContain("img-src 'self';");
+    expect(policy).not.toContain('nonce');
+  });
+});
+
+describe('newNonce', () => {
+  it('is 18 random bytes in base64, new each time', () => {
+    const nonces = Array.from({ length: 100 }, () => newNonce());
+    for (const nonce of nonces) {
+      expect(nonce).toMatch(/^[A-Za-z0-9+/]{24}$/);
+      expect(Buffer.from(nonce, 'base64')).toHaveLength(18);
+    }
+    expect(new Set(nonces).size).toBe(nonces.length);
   });
 });
 

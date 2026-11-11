@@ -30,6 +30,7 @@ test('app.info answers', async ({ page }) => {
         status: expect.stringMatching(/^(checking|found|missing|tooOld)$/),
       }),
       packaged: false,
+      nonce: expect.stringMatching(/^[A-Za-z0-9+/]{24}$/),
     },
   });
 });

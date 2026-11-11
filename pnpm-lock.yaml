@@ -516,6 +516,18 @@ importers:
         specifier: 0.158.0
         version: 0.158.0
 
+  skill/checker:
+    devDependencies:
+      '@lo/artifact':
+        specifier: workspace:*
+        version: link:../../packages/core/artifact
+      '@lo/testing':
+        specifier: workspace:*
+        version: link:../../testing
+      vite:
+        specifier: 8.3.7
+        version: 8.3.7(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.0)
+
   testing:
     dependencies:
       graphql:

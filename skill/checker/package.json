@@ -1,0 +1,59 @@
+{
+  "name": "@lo/checker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Checks an overview for Lo, and writes it as a commit for its pull request's ref.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "lo-overview": "./dist/checker.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "vite build",
+    "lint": "oxlint",
+    "test": "vitest run --root ../.. --project @lo/checker"
+  },
+  "devDependencies": {
+    "@lo/artifact": "workspace:*",
+    "@lo/testing": "workspace:*",
+    "vite": "8.3.7"
+  },
+  "nx": {
+    "name": "checker",
+    "tags": [
+      "license:mit"
+    ],
+    "targets": {
+      "build": {
+        "inputs": [
+          "production",
+          "^production",
+          "{workspaceRoot}/pnpm-lock.yaml"
+        ],
+        "outputs": [
+          "{projectRoot}/dist"
+        ]
+      },
+      "test": {
+        "dependsOn": [
+          "build"
+        ],
+        "inputs": [
+          "default",
+          "^production",
+          "{workspaceRoot}/vitest.config.ts",
+          {
+            "dependentTasksOutputFiles": "**/*"
+          }
+        ]
+      }
+    }
+  }
+}

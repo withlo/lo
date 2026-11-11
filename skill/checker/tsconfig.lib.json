@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.node.json",
+  "compilerOptions": {
+    "outDir": ".tsbuild/lib"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [
+    {
+      "path": "../../testing"
+    },
+    {
+      "path": "../../packages/core/artifact/tsconfig.lib.json"
+    }
+  ]
+}

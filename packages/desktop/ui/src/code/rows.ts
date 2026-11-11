@@ -71,7 +71,8 @@ export interface Gap {
  * The unchanged runs a file's diff collapses: everything outside its hunks, in file lines, around
  * the lines in `keep`. A single line stays shown, since the block that would replace it takes as
  * much room. Lines in `gaps` collapse wherever they are, a single one, or one a hunk's context
- * would show, too: they're placeholders, with nothing to show.
+ * would show, too: they're placeholders, with nothing to show. A run holds placeholders or real
+ * lines, never both, so real lines beside a gap collapse and open as any others do.
  */
 export function collapsedRuns(
   diff: FileDiff,
@@ -80,8 +81,6 @@ export function collapsedRuns(
   gaps: readonly Gap[] = [],
 ): { old: LineRange; new: LineRange }[] {
   const runs: { old: LineRange; new: LineRange }[] = [];
-  const inGapLine = (side: 'old' | 'new', line: number): boolean =>
-    gaps.some((gap) => gap.side === side && gap.from <= line && line <= gap.to);
   let hunk = 0;
   /** Whether old line `line` is outside every hunk. Asked in order. */
   const outside = (line: number): boolean => {
@@ -105,11 +104,12 @@ export function collapsedRuns(
       gapped = false;
     };
     for (let line = block.old; line < block.old + block.oldCount; line++) {
-      const gap = inGapLine('old', line) || inGapLine('new', line + offset);
+      const gap = isGapLine(gaps, 'old', line) || isGapLine(gaps, 'new', line + offset);
       const kept = keep?.old.has(line) || keep?.new.has(line + offset);
       if (gap || (outside(line) && !kept)) {
+        if (start !== undefined && gap !== gapped) end(line);
         start ??= line;
-        gapped ||= gap;
+        gapped = gap;
       } else {
         end(line);
       }
@@ -117,6 +117,11 @@ export function collapsedRuns(
     end(block.old + block.oldCount);
   }
   return runs;
+}
+
+/** Whether line `line` on `side` is one of `gaps`' placeholders. */
+export function isGapLine(gaps: readonly Gap[], side: 'old' | 'new', line: number): boolean {
+  return gaps.some((gap) => gap.side === side && gap.from <= line && line <= gap.to);
 }
 
 /** Whether `run` takes in any of `gaps`' lines, on either side. */

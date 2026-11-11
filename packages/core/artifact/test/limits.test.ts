@@ -6,7 +6,7 @@
 
 import { expect, test } from 'vitest';
 
-import { LIMITS, parseArtifact } from '../src/index.ts';
+import { ARTIFACT_READ, LIMITS, parseArtifact, SIZE_ONLY } from '../src/index.ts';
 import { errors, found, overview, PREAMBLE_LINES } from './support.ts';
 import { walk } from './walker.ts';
 
@@ -108,4 +108,10 @@ test('an overview nests at most 16 deep', () => {
   const past = parseArtifact(overview(quotes(16)));
   expect(errors(past)).toEqual(['too-deep']);
   expect(walk(past.tree).depth).toBeLessThanOrEqual(LIMITS.depth);
+});
+
+test('a file past the size readers may answer with alone is past every limit on a file read', () => {
+  for (const limit of [ARTIFACT_READ, LIMITS.file, LIMITS.image, LIMITS.svg]) {
+    expect(limit).toBeLessThanOrEqual(SIZE_ONLY);
+  }
 });

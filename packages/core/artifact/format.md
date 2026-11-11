@@ -342,12 +342,13 @@ Past these, Lo shows the overview without the one block or figure, with a note i
 | An image                         | 10 MiB, 16,384 pixels a side, 40 MP |
 | An SVG                           | 512 KiB, 4,096 elements, 32 deep    |
 | The SVGs figures show, together  | 2 MiB                               |
+| What SVG figures draw, together  | 4 times what one SVG may draw       |
 
 A file a target names is text unless one of its first 8 KiB is a NUL byte. The files targets name
 count in the order the overview first names them, and a file named only whole, by a link, counts for
-nothing. SVGs count in the order the overview first shows them, each once however often it's shown.
-An SVG also may be no taller than 8 times its width or wider than 32 times its height, and what it
-draws is capped.
+nothing. SVGs count in the order the overview first shows them, each once however often it's shown,
+but what they draw counts each time a block shows one. An SVG also may be no taller than 8 times its
+width or wider than 32 times its height, and what it draws is capped.
 
 ## Versions
 

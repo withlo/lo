@@ -1,8 +1,19 @@
 import { readFile } from 'node:fs/promises';
 
-import type { ElectronApplication } from '@playwright/test';
+import type { ElectronApplication, Page } from '@playwright/test';
 
 import { expect, test } from './app.ts';
+
+declare global {
+  interface Window {
+    /** Code views on their own, which a build run from source gives the smoke test. */
+    loCodeViews?: {
+      mount(kind: 'diff' | 'file'): Promise<void>;
+      unmount(): void;
+      readonly heard: { event: string; args: unknown[] }[];
+    };
+  }
+}
 
 /** Settings of the window's web contents, as Electron reads them back. */
 async function windowSettings(app: ElectronApplication, names: string[]) {
@@ -29,10 +40,22 @@ async function inSandbox(app: ElectronApplication, pid: number): Promise<boolean
   );
 }
 
-const policy =
-  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; " +
-  "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; " +
-  "frame-ancestors 'none'";
+/** The policy of a page whose style elements may carry `nonce`. */
+function policy(nonce: string): string {
+  return (
+    `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; img-src 'self'; ` +
+    "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; " +
+    "form-action 'none'; frame-ancestors 'none'"
+  );
+}
+
+/** The nonce `app.info` hands the page. */
+async function infoNonce(page: Page): Promise<unknown> {
+  const reply = await page.evaluate(() => window.lo.invoke('app.info'));
+  return reply.ok && typeof reply.value === 'object' && reply.value !== null
+    ? Reflect.get(reply.value, 'nonce')
+    : undefined;
+}
 
 test('the window runs sandboxed, isolated and without Node', async ({ app, page }) => {
   const settings = await windowSettings(app, [
@@ -96,8 +119,64 @@ test('the page loads with its content security policy and no violations', async 
   const header = await page.evaluate(async () =>
     (await fetch('/index.html')).headers.get('content-security-policy'),
   );
-  expect(header).toBe(policy);
+  const nonce = await infoNonce(page);
+  expect(nonce).toEqual(expect.any(String));
+  expect(header).toBe(policy(String(nonce)));
   expect(messages).toEqual([]);
+});
+
+test('each load of the page has a nonce of its own, in its policy and in app.info', async ({
+  page,
+}) => {
+  const nonces: unknown[] = [];
+  for (let load = 0; load < 3; load++) {
+    const response = await page.reload();
+    await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+    const nonce = await infoNonce(page);
+    expect(nonce).toMatch(/^[A-Za-z0-9+/]{24}$/);
+    expect(response?.headers()['content-security-policy']).toBe(policy(String(nonce)));
+    nonces.push(nonce);
+  }
+  expect(new Set(nonces).size).toBe(nonces.length);
+});
+
+test('code views style themselves with the nonce, with no inline style refused', async ({
+  page,
+}) => {
+  const messages: string[] = [];
+  page.on('console', (message) => messages.push(message.text()));
+  page.on('pageerror', (error) => messages.push(error.message));
+  const violations = await page.evaluateHandle(() => {
+    const violated: string[] = [];
+    document.addEventListener('securitypolicyviolation', (event) => {
+      violated.push(`${event.effectiveDirective} ${event.blockedURI}`);
+    });
+    return violated;
+  });
+  await page.waitForFunction(() => window.loCodeViews !== undefined);
+  for (const kind of ['diff', 'file'] as const) {
+    await page.evaluate((each) => window.loCodeViews?.mount(each), kind);
+    const editor = page.locator('.cm-editor').first();
+    await expect(editor).toBeVisible();
+    // CodeMirror's own styles, from its style element, lay the editor out.
+    expect(await editor.evaluate((element) => getComputedStyle(element).display)).toBe('flex');
+    // Keys that move, select and open Vim's prompt, whose panel brings styles of its own.
+    for (const key of ['j', 'Shift+G', 'v', 'Escape', ':', 'Escape'])
+      await page.keyboard.press(key);
+    expect(
+      await page
+        .locator('.cm-vimCursorLayer')
+        .first()
+        .evaluate((element) => getComputedStyle(element).animationName),
+    ).toBe('none');
+  }
+  // The file view's jump went to its caller.
+  expect(
+    await page.evaluate(() => window.loCodeViews?.heard.some(({ event }) => event === 'jumped')),
+  ).toBe(true);
+  await page.evaluate(() => window.loCodeViews?.unmount());
+  expect(await violations.evaluate((violated) => violated)).toEqual([]);
+  expect(messages.filter((message) => /security policy/i.test(message))).toEqual([]);
 });
 
 test('the content security policy blocks inline code and outside content', async ({ page }) => {
