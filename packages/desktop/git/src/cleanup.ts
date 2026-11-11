@@ -1,8 +1,10 @@
 /**
  * Keeping the cache in bounds: removing what nobody used for a while, past a cap on its size the
- * least recently used clones, and repacking busy clones. Nothing follows a symlink, so nothing
- * outside the cache is ever measured or removed, and a clone that's open or being written to is
- * never taken.
+ * least recently used checkouts and clones, and repacking busy clones. Nothing follows a symlink,
+ * so nothing outside the cache is ever measured or removed, and a clone that's open or being
+ * written to is never taken. Maintenance that can take minutes, repacking and collecting what
+ * comparisons replayed, gives way: anyone who waits for the clone stops it, and it's done again at
+ * the next cleanup.
  */
 
 import { lstat, readdir, readFile, realpath, rm, rmdir } from 'node:fs/promises';
@@ -10,7 +12,7 @@ import { join } from 'node:path';
 
 import { REPLAYS } from './compare.ts';
 import type { Runner } from './git.ts';
-import type { CloneLock } from './lock.ts';
+import type { CloneLock, Release } from './lock.ts';
 import { checkName } from './refs.ts';
 import { LAST_USED_FILE } from './stamp.ts';
 import { compareVersions, type GitVersion } from './version.ts';
@@ -57,8 +59,66 @@ export interface CleanupHost {
   repoFolder(owner: string, name: string): string;
   checkoutsFolder(owner: string, name: string): string;
   cloneLock(owner: string, name: string): CloneLock;
-  trash(path: string): Promise<void>;
+  trash(path: string): Promise<boolean>;
   note(line: string): void;
+}
+
+/** Why maintenance stopped: someone waits for the clone, to do `waiter`. */
+class GaveWay extends Error {
+  readonly waiter: string;
+
+  constructor(waiter: string) {
+    super(`stopped for ${waiter}`);
+    this.waiter = waiter;
+  }
+}
+
+/**
+ * Holds `clone`'s lock to do `what`, maintenance that can stop part way and be done again later,
+ * if nobody holds it, and with `remove`, if nobody has it open. Anyone who then waits for the clone
+ * aborts `signal`, with a {@link GaveWay} as its reason, which stops the maintenance's gits.
+ */
+function maintain(
+  host: CleanupHost,
+  clone: CloneName,
+  what: string,
+  remove = false,
+): { release: Release; signal: AbortSignal } | undefined {
+  const controller = new AbortController();
+  const lock = host.cloneLock(clone.owner, clone.name);
+  const giveWay = (waiter: string) => controller.abort(new GaveWay(waiter));
+  const release = remove ? lock.tryRemove(what, giveWay) : lock.tryAcquire(what, giveWay);
+  return release === undefined ? undefined : { release, signal: controller.signal };
+}
+
+/**
+ * Whether someone waiting for the clone stopped the maintenance holding `signal`, which was doing
+ * `stopped`, and if so, notes it.
+ */
+function gaveWay(host: CleanupHost, signal: AbortSignal, stopped: string): boolean {
+  const reason: unknown = signal.reason;
+  if (!(reason instanceof GaveWay)) return false;
+  host.note(`stopped ${stopped} for ${reason.waiter}, to do again at the next cleanup`);
+  return true;
+}
+
+/**
+ * Removes the ref locks a maintenance git stopped part way may have left in `gitDir` since
+ * `since`: one asked to stop removes its own, but one killed can't. Only while no other git of
+ * Lo's runs there, so they're the stopped git's.
+ */
+async function removeLocksLeft(host: CleanupHost, gitDir: string, since: number): Promise<void> {
+  if (host.runner.running(gitDir) > 0) return;
+  // File systems that keep whole seconds round a time down.
+  const after = Math.floor(since / 1000) * 1000;
+  for (const name of ['packed-refs.lock', join('reftable', 'tables.list.lock')]) {
+    const path = join(gitDir, name);
+    const made = await lstat(path).catch(() => undefined);
+    if (made === undefined || made.mtimeMs < after) continue;
+    await rm(path, { force: true }).catch((error: unknown) => {
+      host.note(`can't remove ${path}: ${String(error)}`);
+    });
+  }
 }
 
 /** Whether `path` is a folder itself, not a link to one. */
@@ -126,6 +186,7 @@ export async function lastUsed(gitDir: string): Promise<number | undefined> {
  * there, which could find some other repository.
  */
 export async function checkoutGitDir(clone: string, folder: string): Promise<string | undefined> {
+  if (!(await isFolder(folder))) return undefined;
   const dotGit = join(folder, '.git');
   if (!(await lstat(dotGit).catch(() => undefined))?.isFile()) return undefined;
   const text = await readFile(dotGit, 'utf8').catch(() => '');
@@ -206,19 +267,27 @@ async function removeUnusedCheckouts(host: CleanupHost, clone: CloneName, now: n
   const release = host.cloneLock(clone.owner, clone.name).tryRemove('removing unused checkouts');
   if (release === undefined) return;
   try {
-    for (const { path } of stale) {
-      await host.trash(path);
-      await rmdir(join(path, '..')).catch(() => undefined);
-    }
-    // Forget the checkouts whose folders are gone.
-    await host.runner
-      .command({ gitDir: host.repoFolder(clone.owner, clone.name) })
-      .arg('worktree', 'prune')
-      .run();
+    await removeCheckouts(host, clone, stale);
     host.note(`removed ${stale.length} unused checkouts of ${clone.owner}/${clone.name}`);
   } finally {
     release();
   }
+}
+
+/** Removes `checkouts` of `clone`, and has the clone forget them. Its lock is held. */
+async function removeCheckouts(
+  host: CleanupHost,
+  clone: CloneName,
+  checkouts: readonly { path: string }[],
+): Promise<void> {
+  for (const { path } of checkouts) {
+    await host.trash(path);
+    await rmdir(join(path, '..')).catch(() => undefined);
+  }
+  await host.runner
+    .command({ gitDir: host.repoFolder(clone.owner, clone.name) })
+    .arg('worktree', 'prune')
+    .run();
 }
 
 /**
@@ -254,25 +323,29 @@ async function removeOldPacks(host: CleanupHost, clone: CloneName, now: number) 
  */
 async function collectReplays(host: CleanupHost, clone: CloneName): Promise<void> {
   if (!(await hasLooseObjects(host.repoFolder(clone.owner, clone.name)))) return;
-  const release = host.cloneLock(clone.owner, clone.name).tryRemove('removing replayed trees');
-  if (release === undefined) return;
+  const held = maintain(host, clone, 'removing replayed trees', true);
+  if (held === undefined) return;
+  const { signal } = held;
   const gitDir = host.repoFolder(clone.owner, clone.name);
+  const started = Date.now();
   try {
     const deletes = await host.runner
       .command({ gitDir })
       .arg('for-each-ref', '--format=delete %(refname)', REPLAYS)
-      .run();
+      .run(undefined, { signal });
     if (deletes.length > 0) {
-      await host.runner.command({ gitDir }).arg('update-ref', '--stdin').run(deletes);
+      await host.runner.command({ gitDir }).arg('update-ref', '--stdin').run(deletes, { signal });
     }
     await host.runner
       .command({ gitDir })
       .arg('prune', '--expire=now')
-      .run(undefined, { timeout: REPACK_LIMIT });
+      .run(undefined, { timeout: REPACK_LIMIT, signal });
   } catch (error) {
-    host.note(`can't remove ${clone.owner}/${clone.name}'s replayed trees: ${String(error)}`);
+    const what = `removing ${clone.owner}/${clone.name}'s replayed trees`;
+    if (gaveWay(host, signal, what)) await removeLocksLeft(host, gitDir, started);
+    else host.note(`can't remove ${clone.owner}/${clone.name}'s replayed trees: ${String(error)}`);
   } finally {
-    release();
+    held.release();
   }
 }
 
@@ -352,22 +425,53 @@ export async function clear(host: CleanupHost): Promise<string[]> {
 }
 
 /**
- * Keeps the cache under `cap` bytes: past it, removes the least recently used clones, with their
- * checkouts, until it's under, never one open or being written to. Returns the `owner/name` of
- * each clone removed.
+ * Keeps the cache under `cap` bytes, removing only as much as gets it there: first the checkouts
+ * of clones nobody has open, least recently used first, then those clones themselves, least
+ * recently used first, each only while the cache is still over. A clone that's open or being
+ * written to is never touched, nor are its checkouts, and the most recently used clone always
+ * stays, so the cache is never emptied: a clone over the cap alone loses its checkouts and stays.
+ * Returns the `owner/name` of each clone removed.
  */
 export async function keepUnder(host: CleanupHost, cap: number): Promise<string[]> {
   let total = await diskUsage(host.root);
   if (total <= cap) return [];
-  const used = await Promise.all(
-    (await clones(host)).map(async (clone) => ({
-      clone,
-      used: (await lastUsed(host.repoFolder(clone.owner, clone.name))) ?? 0,
-    })),
-  );
-  const removed: string[] = [];
-  for (const { clone } of used.toSorted((a, b) => a.used - b.used)) {
+  const byUse = (
+    await Promise.all(
+      (await clones(host)).map(async (clone) => ({
+        clone,
+        used: (await lastUsed(host.repoFolder(clone.owner, clone.name))) ?? 0,
+      })),
+    )
+  ).toSorted((a, b) => a.used - b.used);
+  const newest = byUse.at(-1)?.clone;
+  const checkouts = (
+    await Promise.all(
+      byUse.map(async ({ clone }) =>
+        (await checkoutsOf(host, clone)).map((checkout) => ({ clone, ...checkout })),
+      ),
+    )
+  )
+    .flat()
+    .toSorted((a, b) => (a.used ?? 0) - (b.used ?? 0));
+  let trimmed = 0;
+  for (const checkout of checkouts) {
     if (total <= cap) break;
+    const { owner, name } = checkout.clone;
+    const release = host.cloneLock(owner, name).tryRemove('keeping the cache small');
+    if (release === undefined) continue;
+    try {
+      const size = await diskUsage(checkout.path);
+      await removeCheckouts(host, checkout.clone, [checkout]);
+      total -= size;
+      trimmed += 1;
+    } finally {
+      release();
+    }
+  }
+  const removed: string[] = [];
+  for (const { clone } of byUse) {
+    if (total <= cap) break;
+    if (clone === newest) continue;
     const release = host.cloneLock(clone.owner, clone.name).tryRemove('keeping the cache small');
     if (release === undefined) continue;
     try {
@@ -381,9 +485,11 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
       release();
     }
   }
+  if (trimmed > 0) host.note(`removed ${trimmed} checkouts past the cache's cap`);
   if (removed.length > 0) {
     host.note(`removed the least recently used clones past the cache's cap: ${removed.join(', ')}`);
   }
+  if (total > cap) host.note(`the cache is still over its cap of ${cap} bytes, at ${total}`);
   return removed;
 }
 
@@ -404,7 +510,8 @@ async function packCount(folder: string): Promise<number> {
 /**
  * Repacks every clone with more than `limit` packs, and packs its refs, holding its lock: every
  * fetch and download adds a pack, and every lookup searches them all. A clone being written to is
- * skipped, and one that fails is noted and skipped. Needs no network: what was downloaded stays,
+ * skipped, one that fails is noted and skipped, and anyone who waits for a clone being repacked
+ * stops the repack, which is done again next time. Needs no network: what was downloaded stays,
  * and what wasn't stays downloadable. Returns the `owner/name` of each clone repacked.
  */
 export async function repack(host: CleanupHost, limit: number): Promise<string[]> {
@@ -413,27 +520,34 @@ export async function repack(host: CleanupHost, limit: number): Promise<string[]
     const folder = host.repoFolder(clone.owner, clone.name);
     const before = await packCount(folder);
     if (before <= limit) continue;
-    const release = host.cloneLock(clone.owner, clone.name).tryAcquire('repacking it');
-    if (release === undefined) continue;
+    const held = maintain(host, clone, 'repacking it');
+    if (held === undefined) continue;
+    const { signal } = held;
     const started = Date.now();
     try {
       await host.runner
         .command({ gitDir: folder })
         .arg(...repackArguments(host.runner.git.version))
-        .run(undefined, { timeout: REPACK_LIMIT });
+        .run(undefined, { timeout: REPACK_LIMIT, signal });
       await host.runner
         .command({ gitDir: folder })
         .arg('pack-refs', '--all')
-        .run(undefined, { timeout: REPACK_LIMIT });
+        .run(undefined, { timeout: REPACK_LIMIT, signal });
       host.note(
         `repacked ${clone.owner}/${clone.name} from ${before} packs to ` +
           `${await packCount(folder)} in ${Date.now() - started} ms`,
       );
       repacked.push(`${clone.owner}/${clone.name}`);
     } catch (error) {
-      host.note(`can't repack ${clone.owner}/${clone.name}: ${String(error)}`);
+      // Both are safe to stop: a pack is in place only once whole, the packs it replaces go only
+      // after, and the half-written ones go before the next fetch.
+      if (gaveWay(host, signal, `repacking ${clone.owner}/${clone.name}`)) {
+        await removeLocksLeft(host, folder, started);
+      } else {
+        host.note(`can't repack ${clone.owner}/${clone.name}: ${String(error)}`);
+      }
     } finally {
-      release();
+      held.release();
     }
   }
   return repacked;

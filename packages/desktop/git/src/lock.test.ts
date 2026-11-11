@@ -61,6 +61,62 @@ test('a waiter whose signal aborts leaves the queue to those behind it', async (
   );
 });
 
+test('a holder that gives way hears once what the first waiter wants', async () => {
+  const lock = new CloneLock();
+  const told: string[] = [];
+  const held = lock.tryAcquire('repacking it', (waiter) => told.push(waiter));
+  expect(held).toBeDefined();
+  // Another holder that doesn't give way can't take it.
+  expect(lock.tryAcquire('testing', () => undefined)).toBeUndefined();
+
+  const first = lock.acquire('opening its local copy');
+  const second = lock.acquire('fetching pull request #1');
+
+  expect(told).toEqual(['opening its local copy']);
+  held?.();
+  (await first)();
+  (await second)();
+  // The next holder gives way only if it says so.
+  const plain = lock.tryAcquire('removing partial packs');
+  void lock.acquire('testing').then((release) => release());
+  expect(told).toEqual(['opening its local copy']);
+  plain?.();
+});
+
+test('passing a removal waits for a holder that removes, and for no other', async () => {
+  const lock = new CloneLock();
+  const fetching = await lock.acquire('fetching pull request #1');
+  // A fetch removes nothing, so it's never waited for.
+  await lock.passRemoval('reading its local copy');
+  fetching();
+
+  const told: string[] = [];
+  const done = lock.use();
+  // Nobody else can start removing once the clone has a user...
+  expect(lock.tryRemove('removing it')).toBeUndefined();
+  done();
+  // ...but one that started is waited for, and told.
+  const removing = lock.tryRemove('removing replayed trees', (waiter) => told.push(waiter));
+  let passed = false;
+  const passing = lock.passRemoval('reading its local copy').then(() => {
+    passed = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect([passed, told]).toEqual([false, ['reading its local copy']]);
+  removing?.();
+  await passing;
+  expect(lock.holder).toBeUndefined();
+
+  // Its signal stops it waiting.
+  const again = lock.tryRemove('removing it');
+  const controller = new AbortController();
+  const reason = new Error('the tab was closed');
+  const waiting = lock.passRemoval('reading its local copy', controller.signal);
+  controller.abort(reason);
+  await expect(waiting).rejects.toBe(reason);
+  again?.();
+});
+
 test('shared holders keep out anyone alone', () => {
   const lock = new CloneLock();
   const first = lock.use();

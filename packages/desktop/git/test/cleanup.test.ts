@@ -1,5 +1,6 @@
 // The cache's size, clearing it, removing what nobody used for a while, its cap, and repacking.
 
+import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -14,15 +15,17 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
-import { git, type RepoServer } from '@lo/testing/git';
+import { git, gitBytes, type RepoServer } from '@lo/testing/git';
 import { expect, test } from 'vitest';
 
 import type { Cache } from '../src/cache.ts';
 import { CHECKOUTS_UNUSED_FOR, repackArguments, UNUSED_FOR } from '../src/cleanup.ts';
 import { Git } from '../src/git.ts';
 import { type Oid, parseOid } from '../src/oid.ts';
-import type { Repo } from '../src/repo.ts';
 import { gitAt } from '../src/find.ts';
+import type { Activity } from '../src/progress.ts';
+import type { Repo } from '../src/repo.ts';
+import { STOP_GRACE } from '../src/spawn.ts';
 import {
   cacheFor,
   compared,
@@ -399,40 +402,115 @@ test('the limits are a month for clones and two weeks for checkouts', () => {
   expect([UNUSED_FOR, CHECKOUTS_UNUSED_FOR]).toEqual([30 * DAY, 14 * DAY]);
 });
 
-test('past its cap the least recently used clones go never one open or being written to', async () => {
+/** The one checkout of `owner/name`'s pull request #1. */
+function checkoutOf(cache: Cache, name: string): string {
+  const folder = join(cache.checkoutsFolder('owner', name), 'pull-1');
+  const [head, ...more] = readdirSync(folder);
+  if (head === undefined || more.length > 0) throw new Error(`${folder} doesn't hold one checkout`);
+  return join(folder, head);
+}
+
+test('past its cap the least recently used checkouts go first, only until the cache is under', async () => {
+  const cache = await cacheFor(server());
+  const [old, fresh] = [await useRepo(cache, 'old'), await useRepo(cache, 'new')];
+  const [oldCheckout, newCheckout] = [checkoutOf(cache, 'old'), checkoutOf(cache, 'new')];
+  stampDaysAgo(old, 10);
+  stampDaysAgo(fresh, 1);
+  checkoutUsedDaysAgo(oldCheckout, 10);
+  checkoutUsedDaysAgo(newCheckout, 1);
+
+  // A byte under: a checkout is enough, so no clone goes.
+  expect(await cache.setCap((await cache.size()) - 1)).toEqual([]);
+
+  expect(await cache.size()).toBeLessThanOrEqual(cache.cap);
+  expect([existsSync(oldCheckout), existsSync(newCheckout)]).toEqual([false, true]);
+  expect([existsSync(old), existsSync(fresh)]).toEqual([true, true]);
+  // The clone forgot it.
+  expect(git(old, 'worktree', 'list')).not.toContain(oldCheckout);
+});
+
+test('then the least recently used clones go, only until the cache is under', async () => {
+  const cache = await cacheFor(server(['old', 'new', 'third']));
+  const folders: string[] = [];
+  for (const [name, days] of [
+    ['old', 10],
+    ['new', 5],
+    ['third', 1],
+  ] as const) {
+    const repo = await cache.open('owner', name);
+    await fetch(repo);
+    repo.close();
+    stampDaysAgo(repo.folder, days);
+    folders.push(repo.folder);
+  }
+
+  // A byte under: the least recently used clone is enough.
+  expect(await cache.setCap((await cache.size()) - 1)).toEqual(['owner/old']);
+
+  expect(await cache.size()).toBeLessThanOrEqual(cache.cap);
+  expect(folders.map((folder) => existsSync(folder))).toEqual([false, true, true]);
+});
+
+test('past its cap a clone open or being written to keeps everything, and the newest stays', async () => {
   const cache = await cacheFor(server(['old', 'new', 'third', 'fourth']));
-  const folders = {
-    old: await useRepo(cache, 'old'),
-    new: await useRepo(cache, 'new'),
-    third: await useRepo(cache, 'third'),
-    fourth: await useRepo(cache, 'fourth'),
-  };
-  stampDaysAgo(folders.old, 10);
-  stampDaysAgo(folders.new, 5);
-  stampDaysAgo(folders.third, 3);
-  stampDaysAgo(folders.fourth, 1);
-  const kept = () => Object.values(folders).map((folder) => existsSync(folder));
+  const names = ['old', 'new', 'third', 'fourth'] as const;
+  const folders: string[] = [];
+  for (const name of names) folders.push(await useRepo(cache, name));
+  const checkouts = names.map((name) => checkoutOf(cache, name));
   // A fetch holds the least recently used clone, and the third is open.
   const release = await cache.cloneLock('owner', 'old').acquire('fetching pull request #1');
   const open = await cache.open('owner', 'third');
+  for (const [index, days] of [10, 5, 3, 1].entries()) stampDaysAgo(folders[index] ?? '', days);
+  const kept = () => folders.map((folder) => existsSync(folder));
+  const checkedOut = () => checkouts.map((checkout) => existsSync(checkout));
 
-  // A byte under: one clone has to go, and the least recently used free one does.
-  expect(await cache.setCap((await cache.size()) - 1)).toEqual(['owner/new']);
-  expect(await cache.size()).toBeLessThanOrEqual(cache.cap);
+  // Nothing fits, but only what's free goes, and never the clone used last.
+  expect(await cache.setCap(0)).toEqual(['owner/new']);
   expect(kept()).toEqual([true, false, true, true]);
-  expect(existsSync(join(cache.root, 'checkouts/github.com/owner/new'))).toBe(false);
+  expect(checkedOut()).toEqual([true, false, true, false]);
 
-  // Nothing fits, but only what's free goes.
-  expect(await cache.setCap(0)).toEqual(['owner/fourth']);
   release();
   expect(await cache.setCap(0)).toEqual(['owner/old']);
-  expect(kept()).toEqual([false, false, true, false]);
   open.close();
+  expect(await cache.setCap(0)).toEqual(['owner/third']);
+  expect(kept()).toEqual([false, false, false, true]);
+
+  // The cache is never emptied, however often it's kept under.
+  expect(await cache.cleanUp()).toMatchObject({ overCap: [] });
+  expect(kept()).toEqual([false, false, false, true]);
+});
+
+test('a clone over the cap alone loses its checkouts, least recently used first, and stays', async () => {
+  const made = repoServer();
+  const remote = made.repo('owner', 'solo');
+  remote.write('README.md', '# solo\n').commit('base');
+  remote.publish('refs/heads/trunk');
+  remote.switch('feature').write('a.txt', 'first\n').commit('r1');
+  remote.publish('refs/pull/1/head');
+  const cache = await cacheFor(made);
+  const repo = await cache.open('owner', 'solo');
+  const first = await repo.checkout(1, await fetch(repo));
+  remote.write('a.txt', 'second\n').commit('r2');
+  remote.publish('refs/pull/1/head');
+  const second = await repo.checkout(1, await fetch(repo));
+  repo.close();
+  checkoutUsedDaysAgo(first, 3);
+  checkoutUsedDaysAgo(second, 1);
+
+  expect(await cache.setCap((await cache.size()) - 1)).toEqual([]);
+  expect([existsSync(first), existsSync(second)]).toEqual([false, true]);
+
+  // However often: at every launch, it stays.
+  for (let launch = 0; launch < 2; launch++) {
+    expect(await cache.setCap(1)).toEqual([]);
+    expect([existsSync(second), existsSync(repo.folder)]).toEqual([false, true]);
+  }
 });
 
 test('a fetch that makes a clone keeps the cache under its cap', async () => {
   const cache = await cacheFor(server(), { cap: 1 });
   const old = await useRepo(cache, 'old');
+  stampDaysAgo(old, 1);
 
   // Making `new` grows the cache past its cap, so the clone least recently used goes, but never
   // the one just made, which is open.
@@ -544,10 +622,10 @@ function looseRefs(gitDir: string): string[] {
 }
 
 /**
- * A cache using `program`, with `owner/repo`: a pack for its fetch and one for each file downloaded
- * on its own.
+ * A cache using `options.git`, noting to `options.log`, with `owner/repo`: a pack for its fetch and
+ * one for each file downloaded on its own.
  */
-async function manyPacks(program?: Git) {
+async function manyPacks(options: { git?: Git; log?: (line: string) => void } = {}) {
   const made = repoServer();
   const remote = made.repo('owner', 'repo');
   remote.write('README.md', '# repo\n').commit('base');
@@ -556,7 +634,7 @@ async function manyPacks(program?: Git) {
   for (const file of FILES) remote.write(file, `${file}\n`);
   remote.commit('files');
   remote.publish('refs/pull/1/head');
-  const cache = await cacheFor(made, { git: program ?? (await foundGit()) });
+  const cache = await cacheFor(made, { git: options.git ?? (await foundGit()), log: options.log });
   const repo = await cache.open('owner', 'repo');
   const head = await fetch(repo);
   for (const file of FILES.slice(0, -1)) await repo.downloadFiles(head, [Buffer.from(file)]);
@@ -571,7 +649,7 @@ test('repacks a clone with too many packs', async () => {
     found,
     new Git(found.program, { major: 2, minor: 41, patch: 0 }, found.inherited),
   ]) {
-    const { cache, remote, head, gitDir } = await manyPacks(program);
+    const { cache, remote, head, gitDir } = await manyPacks({ git: program });
     const before = packFiles(gitDir).length;
     expect(before).toBeGreaterThanOrEqual(FILES.length);
     expect(looseRefs(gitDir)).not.toEqual([]);
@@ -615,34 +693,155 @@ test('leaves clones under the limit or being written to alone', async () => {
   release();
 });
 
-test('a fetch waits for a repack and leaves the packs it writes alone', async () => {
+/** The command lines of the processes on this machine that mention `text`. */
+function processesMentioning(text: string): string[] {
+  return execFileSync('ps', ['axww', '-o', 'command='], { encoding: 'utf8' })
+    .split('\n')
+    .filter((line) => line.includes(text) && !line.includes('ps axww'));
+}
+
+/**
+ * A git that runs `command`, such as `repack`, only once `go` exists, until then waiting in a shell
+ * named `marker`, having made `started`. With `stubborn`, it makes a lock in the clone first and
+ * ignores SIGTERM, as a git that only SIGKILL stops, which can't remove its own lock.
+ */
+async function slowGit(command: string, options: { stubborn?: boolean } = {}) {
   const dir = tempFolder();
   const [started, go] = [join(dir, 'started'), join(dir, 'go')];
-  // A repack that waits for `go` before it starts.
+  const marker = `lo-slow-${command.replaceAll(/\W+/gu, '-')}-${Date.now()}`;
+  const wait = `while [ ! -e '${go}' ]; do sleep 0.05; done`;
   const program = wrappedGit(join(dir, 'git'), {
     before: [
-      'case " $* " in',
-      `  *" repack "*) touch '${started}'; while [ ! -e '${go}' ]; do sleep 0.05; done;;`,
-      'esac',
+      'for arg; do case $arg in --git-dir=*) gitdir=${arg#--git-dir=};; esac; done',
+      `if [ ! -e '${go}' ]; then`,
+      '  case " $* " in',
+      `    *" ${command} "*)`,
+      ...(options.stubborn ? ["      trap '' TERM", '      touch "$gitdir/packed-refs.lock"'] : []),
+      `      touch '${started}'`,
+      `      sh -c "${wait}" ${marker};;`,
+      '  esac',
+      'fi',
     ].join('\n'),
   });
   const found = await gitAt(program, { env: process.env, platform: process.platform });
   if (found.status !== 'found') throw new Error(found.message);
-  const { cache, head, gitDir } = await manyPacks(found.git);
+  return { git: found.git, started, go, marker };
+}
+
+test('an open behind a long repack gets the clone at once, and the repack runs again later', async () => {
+  const slow = await slowGit('repack');
+  const logged: string[] = [];
+  const { cache, gitDir } = await manyPacks({ git: slow.git, log: (line) => logged.push(line) });
+  const before = packFiles(gitDir).length;
+  const repacking = cache.repack(1);
+  await eventually(() => existsSync(slow.started));
+
+  const began = Date.now();
+  const repo = await cache.open('owner', 'repo');
+
+  // In the second a git has to stop, not the half hour a repack may take.
+  expect(Date.now() - began).toBeLessThan(STOP_GRACE + 1000);
+  expect(await repacking).toEqual([]);
+  expect(packFiles(gitDir)).toHaveLength(before);
+  expect(logged).toContain(
+    'stopped repacking owner/repo for opening its local copy, to do again at the next cleanup',
+  );
+  await eventually(() => processesMentioning(slow.marker).length === 0, 2000);
+  repo.close();
+
+  writeFileSync(slow.go, '');
+  expect(await cache.repack(1)).toEqual(['owner/repo']);
+  expect(packFiles(gitDir).length).toBeLessThan(before);
+});
+
+test('a pack-refs killed part way leaves no lock behind, so the next repack works', async () => {
+  const slow = await slowGit('pack-refs', { stubborn: true });
+  const { cache, gitDir } = await manyPacks({ git: slow.git });
+  const repacking = cache.repack(1);
+  await eventually(() => existsSync(slow.started));
+  expect(existsSync(join(gitDir, 'packed-refs.lock'))).toBe(true);
+
+  const began = Date.now();
+  const repo = await cache.open('owner', 'repo');
+
+  // Killed once the second it had to stop by itself was up.
+  expect(Date.now() - began).toBeLessThan(STOP_GRACE + 1000);
+  expect(await repacking).toEqual([]);
+  expect(existsSync(join(gitDir, 'packed-refs.lock'))).toBe(false);
+  repo.close();
+  writeFileSync(slow.go, '');
+  expect(await cache.repack(0)).toEqual(['owner/repo']);
+  expect(looseRefs(gitDir)).toEqual([]);
+});
+
+test('a fetch behind a repack stops it, and only then removes the packs it was writing', async () => {
+  const slow = await slowGit('repack');
+  const { cache, head, gitDir } = await manyPacks({ git: slow.git });
   const repo = await cache.open('owner', 'repo');
   const repacking = cache.repack(1);
-  await eventually(() => existsSync(started));
+  await eventually(() => existsSync(slow.started));
   // As the repack writes its pack.
   const writing = join(gitDir, 'objects', 'pack', `.tmp-${process.pid}-pack-repacking.pack`);
   writeFileSync(writing, '');
 
-  const fetching = repo.downloadFiles(head, [Buffer.from('unread.txt')]);
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  expect(existsSync(writing)).toBe(true);
+  await repo.downloadFiles(head, [Buffer.from('unread.txt')]);
 
-  writeFileSync(go, '');
-  expect(await repacking).toEqual(['owner/repo']);
-  await fetching;
+  expect(await repacking).toEqual([]);
+  expect(processesMentioning(slow.marker)).toEqual([]);
+  expect(existsSync(writing)).toBe(false);
   expect((await repo.readFile(head, Buffer.from('unread.txt')))?.toString()).toBe('unread.txt\n');
   repo.close();
+});
+
+test('an open waiting for a fetch stops once its signal aborts', async () => {
+  const cache = await cacheFor(server());
+  await useRepo(cache, 'old');
+  const release = await cache.cloneLock('owner', 'old').acquire('fetching pull request #1');
+  const activities: Activity[] = [];
+  const controller = new AbortController();
+  const reason = new Error('the tab was closed');
+  const opening = cache.open('owner', 'old', {
+    progress: (activity) => activities.push(activity),
+    signal: controller.signal,
+  });
+  await eventually(() => activities.some((activity) => activity.kind === 'waitingForLock'));
+
+  controller.abort(reason);
+
+  await expect(opening).rejects.toBe(reason);
+  // It left the queue: the next open gets the clone once the fetch is done.
+  release();
+  const repo = await cache.open('owner', 'old');
+  expect(cache.cloneLock('owner', 'old').users).toBe(1);
+  repo.close();
+});
+
+test('reading offline stops cleanup collecting replays, and waits for it', async () => {
+  const slow = await slowGit('prune --expire=now');
+  const logged: string[] = [];
+  const cache = await cacheFor(server(), { git: slow.git, log: (line) => logged.push(line) });
+  const folder = await useRepo(cache, 'old');
+  // A loose object, as a replay writes.
+  const loose = gitBytes(folder, ['hash-object', '-w', '--stdin'], 'replayed\n').toString().trim();
+  const cleaning = cache.removeUnused();
+  await eventually(() => existsSync(slow.started));
+
+  const began = Date.now();
+  const repo = await cache.openOffline('owner', 'old');
+
+  expect(repo).toBeDefined();
+  expect(Date.now() - began).toBeLessThan(STOP_GRACE + 1000);
+  await cleaning;
+  expect(logged).toContain(
+    "stopped removing owner/old's replayed trees for reading its local copy, to do again at the " +
+      'next cleanup',
+  );
+  expect(hasObject(folder, loose)).toBe(true);
+  // While it's open, cleanup leaves the clone alone.
+  writeFileSync(slow.go, '');
+  await cache.removeUnused();
+  expect(hasObject(folder, loose)).toBe(true);
+  repo?.close();
+  await cache.removeUnused();
+  expect(hasObject(folder, loose)).toBe(false);
 });

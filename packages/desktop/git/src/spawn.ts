@@ -18,6 +18,9 @@ import type { Readable, Writable } from 'node:stream';
 
 import { GitError } from './errors.ts';
 
+/** How long a child has to stop by itself, once asked to, before it's killed. */
+export const STOP_GRACE = 1000;
+
 /** How a child ended: its exit code, or the signal that stopped it. */
 export interface Exit {
   readonly code: number | null;
@@ -163,8 +166,21 @@ export class Child {
   }
 
   /**
+   * Stops the child's group: asks first, with SIGTERM, so that git removes its lock files and
+   * temporary files itself, then kills whatever is still running {@link STOP_GRACE} later.
+   */
+  async stopGently(): Promise<void> {
+    this.stop('SIGTERM');
+    await Promise.race([
+      this.gone.catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, STOP_GRACE)),
+    ]);
+    this.stop('SIGKILL');
+  }
+
+  /**
    * Writes `input` to the child's stdin and ends it, while its output is read, and waits for it to
-   * finish. A command that answers each line as it reads it, such as `cat-file --batch-check`,
+   * finish. Once `signal` aborts, or past `timeout`, the child is stopped gently. A command that answers each line as it reads it, such as `cat-file --batch-check`,
    * would otherwise fill its output pipe and stop reading. Past `maxBytes` of output, it stops
    * the child and fails as `tooLarge`.
    */
@@ -178,13 +194,18 @@ export class Child {
     } = {},
   ): Promise<Finished> {
     const { signal, maxBytes = OUTPUT_LIMIT, timeout } = options;
+    // Once stopping, it returns only when nothing it started can still be writing.
+    let stopping: Promise<void> | undefined;
+    const stop = () => {
+      stopping ??= this.stopGently();
+    };
     let tooSlow = false;
     const timer =
       timeout === undefined
         ? undefined
         : setTimeout(() => {
             tooSlow = true;
-            this.stop();
+            stop();
           }, timeout);
     const chunks: Buffer[] = [];
     let length = 0;
@@ -198,12 +219,12 @@ export class Child {
       }
       chunks.push(chunk);
     });
-    const stop = () => this.stop();
     signal?.addEventListener('abort', stop, { once: true });
     if (signal?.aborted) stop();
     try {
       this.stdin?.end(input);
       const exit = await this.exited;
+      await stopping;
       if (tooLarge) {
         throw new GitError({ kind: 'tooLarge', command: this.display, limit: maxBytes });
       }

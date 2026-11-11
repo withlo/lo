@@ -66,8 +66,13 @@ export interface OpenOptions {
   readonly token?: TokenSource | undefined;
   /** The proxy Lo's own requests to GitHub take, read as each fetch starts. */
   readonly proxy?: ProxySource | undefined;
-  /** Hears what the repository's writes wait on. */
+  /** Hears what the repository's writes wait on, and what opening it waits on. */
   readonly progress?: ((activity: Activity) => void) | undefined;
+  /**
+   * Stops waiting for the clone once it aborts, and the open fails with its reason. Opening waits
+   * for whatever writes to the clone, but maintenance, such as repacking, stops for it.
+   */
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** Lo's local copies of repositories, in one folder, open in one process at a time. */
@@ -155,9 +160,10 @@ export class Cache {
   }
 
   /**
-   * Removes what nobody used for a while: clones for 30 days, checkouts for 14, and what crashes
-   * and stopped fetches left a day or more ago.
-   * Never a clone that's open or being written to. Returns the `owner/name` of each clone removed.
+   * Removes what nobody used for a while: clones for 30 days, checkouts for 14, what crashes and
+   * stopped fetches left a day or more ago, and from clones nobody has open, the trees comparisons
+   * replayed. Never a clone that's open or being written to. Returns the `owner/name` of each
+   * clone removed.
    */
   removeUnused(now = Date.now()): Promise<string[]> {
     return removeUnused(this, now);
@@ -170,15 +176,19 @@ export class Cache {
 
   /**
    * Sets the size to keep the cache under, from Settings, and keeps it there: past it, the least
-   * recently used clones go, with their checkouts, never one open or being written to. Returns the
-   * `owner/name` of each clone removed.
+   * recently used checkouts go, then the least recently used clones, only until it's under, and
+   * never a clone that's open or being written to, its checkouts, or the most recently used clone.
+   * Returns the `owner/name` of each clone removed.
    */
   setCap(bytes: number): Promise<string[]> {
     this.#cap = bytes;
     return keepUnder(this, bytes);
   }
 
-  /** Repacks every clone with more than `limit` packs that isn't being written to. */
+  /**
+   * Repacks every clone with more than `limit` packs that isn't being written to. Anyone who
+   * waits for a clone being repacked stops its repack, which is done again next time.
+   */
   repack(limit = PACK_LIMIT): Promise<string[]> {
     return repack(this, limit);
   }
@@ -275,7 +285,9 @@ export class Cache {
     const folder = this.repoFolder(owner, name);
     const url = `${this.runner.remote.base}/${owner}/${name}.git`;
     const lock = this.cloneLock(owner, name);
-    const release = await lock.acquire('opening its local copy', options.progress);
+    const release = await lock.acquire('opening its local copy', options.progress, {
+      signal: options.signal,
+    });
     let done: Release;
     try {
       if (await isFile(join(folder, 'HEAD'))) {
@@ -337,22 +349,38 @@ export class Cache {
    * The clone of `owner/name` to read offline, or `undefined` when there's none, or none to
    * trust. It never makes a clone or fetches into one, never waits for a fetch, and its reads never
    * download. A comparison writes only the trees it replays, which exist only in the clone, and
-   * their pins.
+   * their pins. Like {@link Cache.open}, it counts as a user of the clone at once, so cleanup takes
+   * nothing from it while it's open, and waits for cleanup that already started on it, which stops
+   * for it if it can. Once `options.signal` aborts, it stops waiting and fails with its reason.
    */
-  async openOffline(owner: string, name: string): Promise<Repo | undefined> {
+  async openOffline(
+    owner: string,
+    name: string,
+    options: Pick<OpenOptions, 'signal'> = {},
+  ): Promise<Repo | undefined> {
     checkName('repository owner', owner);
     checkName('repository name', name);
     const folder = this.repoFolder(owner, name);
-    if (!(await isFile(join(folder, 'HEAD')))) return undefined;
-    const reason = await distrust(this.runner, folder, {
-      checkouts: this.checkoutsFolder(owner, name),
-    });
-    if (reason !== undefined) {
-      this.#log?.(`${owner}/${name}: not reading its local copy, since ${reason}`);
-      return undefined;
-    }
     const lock = this.cloneLock(owner, name);
     const done = lock.use();
+    try {
+      await lock.passRemoval('reading its local copy', options.signal);
+      if (!(await isFile(join(folder, 'HEAD')))) {
+        done();
+        return undefined;
+      }
+      const reason = await distrust(this.runner, folder, {
+        checkouts: this.checkoutsFolder(owner, name),
+      });
+      if (reason !== undefined) {
+        this.#log?.(`${owner}/${name}: not reading its local copy, since ${reason}`);
+        done();
+        return undefined;
+      }
+    } catch (error) {
+      done();
+      throw error;
+    }
     const reader = this.#reader(owner, name, folder);
     return new Repo({
       cache: this,
@@ -377,37 +405,44 @@ export class Cache {
   }
 
   /**
-   * Moves `path` out of the way in one rename, so nobody finds it half deleted, then deletes it.
+   * Whether `path` is in the cache with a real folder, never a link, at each step above it that
+   * exists: anything written there stays in the cache.
    */
-  async trash(path: string): Promise<void> {
-    // Never through a link, which would move what it points at, out of the cache, aside: only a
-    // path in the cache with a real folder at each step above it. A link at the path itself goes,
-    // and what it points at stays.
+  async linkFree(path: string): Promise<boolean> {
     const inside = relative(this.root, path);
-    if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
-      this.#log?.(`not removing ${path}, which isn't in the cache`);
-      return;
-    }
+    if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) return false;
     let above = this.root;
     for (const name of inside.split(sep).slice(0, -1)) {
       above = join(above, name);
       const found = await lstat(above).catch(() => undefined);
-      if (found === undefined) return;
-      if (!found.isDirectory()) {
-        this.#log?.(`not removing ${path}, which is past a link`);
-        return;
-      }
+      if (found === undefined) return true;
+      if (!found.isDirectory()) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Moves `path` out of the way in one rename, so nobody finds it half deleted, then deletes it.
+   * Returns whether it's gone: never through a link, which would move what it points at, out of
+   * the cache, aside, so a path outside the cache or past a link is left, and noted. A link at the
+   * path itself goes, and what it points at stays.
+   */
+  async trash(path: string): Promise<boolean> {
+    if (!(await this.linkFree(path))) {
+      this.#log?.(`not removing ${path}, which isn't in the cache or is past a link`);
+      return false;
     }
     const trash = this.temporaryPath('.trash');
     try {
       await rename(path, trash);
     } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return;
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return true;
       throw GitError.io(`moving ${path} aside`, error);
     }
     await rm(trash, { recursive: true, force: true }).catch((error: unknown) => {
       this.#log?.(`can't remove ${trash}: ${String(error)}`);
     });
+    return true;
   }
 
   /**

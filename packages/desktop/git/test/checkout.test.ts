@@ -1,12 +1,15 @@
 // Checkouts of pull requests' heads.
 
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -199,15 +202,44 @@ test('hashes a checkouts files as git would', async () => {
   // Not regular files: missing, a folder, a submodule's empty folder.
   for (const path of ['missing.txt', 'src', 'vendor/lib'])
     expect.soft(await hash(path)).toBeUndefined();
+  // Never through a link, to a file or a folder, even one that stays in the checkout.
+  symlinkSync(join(dir, 'README.md'), join(dir, 'link.md'));
+  symlinkSync(join(dir, 'src'), join(dir, 'linked'));
+  for (const path of ['link.md', 'linked/lib.rs']) expect.soft(await hash(path)).toBeUndefined();
+  // Nor a pipe, which is never waited on.
+  execFileSync('mkfifo', [join(dir, 'pipe')]);
+  expect(await hash('pipe')).toBeUndefined();
   // A file changed on disk no longer hashes to its blob.
   writeFileSync(join(dir, 'README.md'), 'changed on disk\n');
   expect(await hash('README.md')).not.toBe(blob('README.md'));
-  // Nothing outside the checkout.
-  for (const path of ['../repo.git/HEAD', '/etc/passwd', '']) {
+  // Nothing outside the checkout, nor a path a Windows disk splits at a backslash.
+  for (const path of ['../repo.git/HEAD', '/etc/passwd', '', 'src\\lib.rs', '..\\repo.git']) {
     await expect.soft(hash(path)).rejects.toThrow(GitError);
   }
   // Nor in a folder that isn't one of the clone's checkouts, such as another repository.
   await expect(hash('README.md', f.remote.work)).rejects.toThrow("isn't a valid checkout");
+});
+
+test('a checkout never writes through a link in the cache', async () => {
+  const f = await fixture();
+  const dir = await f.repo.checkout(1, f.r1);
+  writeFileSync(join(dir, 'untracked.txt'), 'kept\n');
+  // The pull request's folder moved out of the cache, with a link to it in its place.
+  const pull = join(f.cache.checkoutsFolder('owner', 'repo'), 'pull-1');
+  const outside = join(tempFolder(), 'pull-1');
+  renameSync(pull, outside);
+  symlinkSync(outside, pull);
+  const before = readdirSync(outside);
+
+  // Neither checked out again in place, which would clean it, nor made anew there.
+  for (const head of [f.r1, f.r2]) {
+    if (head === f.r2) await pushR2(f);
+    await expect.soft(f.repo.checkout(1, head)).rejects.toThrow('leads out of the cache');
+  }
+
+  expect(readdirSync(outside)).toEqual(before);
+  expect(read(join(outside, f.r1, 'untracked.txt'))).toBe('kept\n');
+  expect(lstatSync(pull).isSymbolicLink()).toBe(true);
 });
 
 /** A program that leaves a marker named `name` in `markers` when it runs. */

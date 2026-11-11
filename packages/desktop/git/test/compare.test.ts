@@ -1,7 +1,7 @@
 // Comparing two revisions of a pull request, across a rebase.
 
 import { randomBytes } from 'node:crypto';
-import { chmodSync, renameSync } from 'node:fs';
+import { chmodSync, existsSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { blobId, git, missingObjects, packs, type RemoteRepo } from '@lo/testing/git';
@@ -11,11 +11,14 @@ import type { Cache } from '../src/cache.ts';
 import { type ComparedFile, type Comparison, isConflicted, type Revision } from '../src/compare.ts';
 import { type ChangedFile, changedPath, isModeChangeOnly, isSubmodule } from '../src/diff.ts';
 import { GitError } from '../src/errors.ts';
+import { gitAt } from '../src/find.ts';
+import type { Git } from '../src/git.ts';
 import { type Oid, parseOid } from '../src/oid.ts';
 import type { Activity } from '../src/progress.ts';
 import type { Repo } from '../src/repo.ts';
+import { STOP_GRACE } from '../src/spawn.ts';
 import { displayPath } from '../src/tree.ts';
-import { cacheFor, compared, eventually, repoServer } from './support.ts';
+import { cacheFor, compared, eventually, repoServer, tempFolder, wrappedGit } from './support.ts';
 
 /** Twenty lines, `<name> line <n>`, with `changes` in place of some. Changes to lines far enough apart merge cleanly. */
 function text(name: string, edits: Record<number, string> = {}): string {
@@ -40,11 +43,12 @@ interface Fixture {
   logged: string[];
 }
 
-async function fixture(): Promise<Fixture> {
+/** The fixture, with the cache running `program` when given. */
+async function fixture(program?: Git): Promise<Fixture> {
   const server = repoServer();
   const remote = server.repo('owner', 'repo');
   const logged: string[] = [];
-  const cache = await cacheFor(server, { log: (line) => logged.push(line) });
+  const cache = await cacheFor(server, { log: (line) => logged.push(line), git: program });
   return { remote, cache, repo: await cache.open('owner', 'repo'), logged };
 }
 
@@ -923,8 +927,8 @@ test('a comparison can go to another thread', async () => {
  * Pull request #1 changes line 6 of a.txt, b.txt and c.txt; trunk then changes line 19 of each,
  * and the rebased r2 also changes line 12 of c.txt. Replaying r1 merges all three files.
  */
-async function contentMerges(): Promise<{ f: Fixture; old: Revision; now: Revision }> {
-  const f = await fixture();
+async function contentMerges(program?: Git): Promise<{ f: Fixture; old: Revision; now: Revision }> {
+  const f = await fixture(program);
   const { remote } = f;
   for (const name of ['a', 'b', 'c', 'untouched']) remote.write(`${name}.txt`, text(name));
   const m1 = parseOid(remote.commit('m1'));
@@ -1098,6 +1102,28 @@ test('an aborted comparison stops waiting for the clone', async () => {
   // It left the queue, so the next comparison isn't kept waiting for it.
   expect(paths((await compared(repo, old, now)).files)).toEqual(['c.txt']);
   repo.close();
+});
+
+test('an aborted comparison stops its replay', async () => {
+  const dir = tempFolder();
+  const started = join(dir, 'started');
+  // Replays that take a minute.
+  const program = wrappedGit(join(dir, 'git'), {
+    before: `case " $* " in *" merge-tree "*) touch '${started}'; sleep 60;; esac`,
+  });
+  const found = await gitAt(program, { env: process.env, platform: process.platform });
+  if (found.status !== 'found') throw new Error(found.message);
+  const { f, old, now } = await contentMerges(found.git);
+  const controller = new AbortController();
+  const reason = new Error('the comparison was closed');
+  const comparing = f.repo.compareRevisions(old, now, { signal: controller.signal });
+  await eventually(() => existsSync(started));
+
+  const began = Date.now();
+  controller.abort(reason);
+
+  await expect(comparing).rejects.toBe(reason);
+  expect(Date.now() - began).toBeLessThan(STOP_GRACE + 1000);
 });
 
 test('a commit the clone lacks is an error and never downloaded', async () => {

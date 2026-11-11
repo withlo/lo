@@ -233,13 +233,20 @@ jobs:
             echo run=true >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # They're skipped only when Nx's answers parse, name the project, and leave it out. jq -e
+          # exits 1 for false, and something else for output it can't read.
+          projects=$(pnpm -s nx show projects --json)
           affected=$(pnpm -s nx show projects --affected --base="$BASE_SHA" --head=HEAD --json)
-          if echo "$affected" | jq -e 'any(. == "git")' > /dev/null; then
-            echo "Nx finds @lo/git affected, so the tests run."
-            echo run=true >> "$GITHUB_OUTPUT"
-          else
+          known=0
+          echo "$projects" | jq -e 'any(. == "git")' > /dev/null || known=$?
+          unaffected=0
+          echo "$affected" | jq -e 'any(. == "git")' > /dev/null || unaffected=$?
+          if [ "$known" -eq 0 ] && [ "$unaffected" -eq 1 ]; then
             echo "Nx finds @lo/git unaffected, so the tests don't run."
             echo run=false >> "$GITHUB_OUTPUT"
+          else
+            echo "Nx finds @lo/git affected, or can't say, so the tests run."
+            echo run=true >> "$GITHUB_OUTPUT"
           fi
 
       - if: steps.affected.outputs.run == 'true'

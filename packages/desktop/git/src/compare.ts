@@ -88,7 +88,8 @@ export interface Comparison {
 
 /**
  * The most a comparison's downloads may bring, in bytes, unless the caller says otherwise: both
- * sides of every file it lists, and what its replay merges.
+ * sides of every file it lists, and what its replay merges, counted as they come, compressed, so
+ * the files can take more once they're in.
  */
 export const COMPARE_LIMIT = 200 * 1024 * 1024;
 

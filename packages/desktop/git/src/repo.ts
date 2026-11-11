@@ -1,8 +1,18 @@
 /** One repository's clone: fetching into it, and reading its commits. */
 
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import {
+  type FileHandle,
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 
 import {
@@ -86,8 +96,10 @@ export interface RepoHost {
   readonly runner: Runner;
   /** Makes a bare clone at `folder`, set up to fetch from `url`. */
   create(folder: string, url: string): Promise<void>;
-  /** Moves `path` aside and deletes it. */
-  trash(path: string): Promise<void>;
+  /** Moves `path` aside and deletes it, and says whether it's gone: never past a link. */
+  trash(path: string): Promise<boolean>;
+  /** Whether `path` is in the cache with no link above it. */
+  linkFree(path: string): Promise<boolean>;
   /** How long fetches may take. */
   readonly limits: FetchLimits;
   /** A new path for a temporary file, ending in `extension`. */
@@ -1054,8 +1066,9 @@ export class Repo {
    *   alone needs no file. Opened offline, it downloads nothing, and lacking anything is
    *   `notDownloaded`.
    * - Its downloads may bring `maxBytes` in all, {@link COMPARE_LIMIT} unless it says otherwise,
-   *   past which they're stopped and the comparison is refused: never part of one. Once `signal`
-   *   aborts, they stop, and the comparison fails with its reason.
+   *   counted as they come, compressed, past which they're stopped and the comparison is refused:
+   *   never part of one. Once `signal` aborts, its downloads and its replay stop, and the
+   *   comparison fails with its reason.
    * - The replay's tree, and the files merged into it, exist only in the clone. The tree is
    *   pinned, at `refs/lo/replays/<tree>`, while a repository has the clone open, so keep one open
    *   while showing a comparison; the next open of the clone with none open removes the pins.
@@ -1198,7 +1211,8 @@ export class Repo {
         onto,
         old.head,
       );
-      const finished = await command.finish();
+      const finished = await command.finish(undefined, { signal: downloads.signal });
+      downloads.signal?.throwIfAborted();
       const lacked = finished.code === 0 ? undefined : lackedObject(finished.stderr);
       if (lacked === undefined) return readReplay(command.display, finished);
       if (attempt > 0 || this.offline)
@@ -1328,12 +1342,14 @@ export class Repo {
    * since they may be the whole tree. No hook, filter or attribute runs or applies, symlinks
    * become plain files holding their target, so nothing in a checkout points outside it, and no
    * path a Mac's or Windows' disk would take for `.git` is written. The commit must be in the
-   * clone already, or it's `notFetched`.
+   * clone already, or it's `notFetched`. A link anywhere on the way to the checkout's folder, in
+   * the cache, is an error: nothing is written through it.
    */
   async checkout(number: number, head: Oid): Promise<string> {
     checkNumber(number);
     const folder = join(this.#checkouts, `pull-${number}`, head);
     return this.#locked(`checking out pull request #${number}`, async () => {
+      if (!(await this.#cache.linkFree(folder))) throw linkInTheWay(folder);
       if (!(await this.hasCommit(head))) throw new GitError({ kind: 'notFetched', oid: head });
       await this.#downloadTree(`pull request #${number}'s files`, head);
       const gitDir = await checkoutGitDir(this.folder, folder);
@@ -1351,7 +1367,7 @@ export class Repo {
           );
         }
       }
-      await this.#cache.trash(folder);
+      if (!(await this.#cache.trash(folder))) throw linkInTheWay(folder);
       try {
         await mkdir(dirname(folder), { recursive: true });
       } catch (error) {
@@ -1393,7 +1409,8 @@ export class Repo {
    * The blob ID git would give the file at `path` in `checkout`, one of this clone's checkouts,
    * hashing its bytes as they are on disk, without the conversions `.gitattributes` asks for:
    * `undefined` when there's no regular file there, as for a folder, a submodule's empty folder or
-   * a link. A path that would leave the checkout, or a folder that isn't one of the clone's
+   * a link, or a link on the way to it. A path that would leave the checkout, or one holding a
+   * backslash, which Windows takes as a separator, or a folder that isn't one of the clone's
    * checkouts, is `invalid`.
    *
    * A checkout's file can differ from the head's blob: changed on disk, or two names that differ
@@ -1403,7 +1420,7 @@ export class Repo {
   async hashCheckoutFile(checkout: string, path: Uint8Array): Promise<Oid | undefined> {
     const bytes = Buffer.from(path);
     const names = bytes.toString('latin1').split('/');
-    if (names.some((name) => name === '' || name === '.' || name === '..' || name.includes('\0'))) {
+    if (names.some(badCheckoutName)) {
       throw new GitError({
         kind: 'invalid',
         what: 'path in a checkout',
@@ -1413,27 +1430,43 @@ export class Repo {
     if ((await checkoutGitDir(this.folder, checkout)) === undefined) {
       throw new GitError({ kind: 'invalid', what: 'checkout', value: checkout });
     }
-    // Every folder on the way a folder itself, and the file a plain file: never through a link.
+    // Every folder on the way a folder itself, never a link.
     let at = Buffer.from(checkout);
-    let size = 0;
-    for (const [index, name] of names.entries()) {
+    for (const name of names.slice(0, -1)) {
       at = Buffer.concat([at, Buffer.from('/'), Buffer.from(name, 'latin1')]);
-      const found = await lstat(at).catch(() => undefined);
-      const last = index === names.length - 1;
-      if (found === undefined || (last ? !found.isFile() : !found.isDirectory())) return undefined;
-      size = found.size;
+      if (!(await lstat(at).catch(() => undefined))?.isDirectory()) return undefined;
     }
-    // As git hashes a blob, read a piece at a time, however large the file.
-    const hash = createHash('sha1');
-    hash.update(`blob ${size}\0`);
+    at = Buffer.concat([at, Buffer.from('/'), Buffer.from(names.at(-1) ?? '', 'latin1')]);
+    // And the file opened without following a link, so one put there since is never read through,
+    // and without waiting, so a pipe put there is never waited on.
+    const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
+    let file: FileHandle;
     try {
-      for await (const chunk of createReadStream(at)) {
-        if (Buffer.isBuffer(chunk)) hash.update(chunk);
-      }
+      file = await open(at, flags);
     } catch (error) {
+      if (error instanceof Error && 'code' in error && FILE_NOT_THERE.has(String(error.code))) {
+        return undefined;
+      }
       throw GitError.io(`reading ${displayPath(bytes)} in ${checkout}`, error);
     }
-    return parseOid(hash.digest('hex'));
+    try {
+      const found = await file.stat();
+      if (!found.isFile()) return undefined;
+      // As git hashes a blob, read a piece at a time, however large the file.
+      const hash = createHash('sha1');
+      hash.update(`blob ${found.size}\0`);
+      const buffer = Buffer.alloc(64 * 1024);
+      for (;;) {
+        const { bytesRead } = await file.read(buffer, 0, buffer.length);
+        if (bytesRead === 0) break;
+        hash.update(buffer.subarray(0, bytesRead));
+      }
+      return parseOid(hash.digest('hex'));
+    } catch (error) {
+      throw GitError.io(`reading ${displayPath(bytes)} in ${checkout}`, error);
+    } finally {
+      await file.close().catch(() => undefined);
+    }
   }
 
   /**
@@ -1996,6 +2029,29 @@ function describePins(pins: Pins, number: number, missing: readonly Oid[]): stri
   return missing.length === 1 && only !== undefined
     ? `a base of pull request #${number}'s revisions, ${only.slice(0, 7)}`
     : `${missing.length} bases of pull request #${number}'s revisions`;
+}
+
+/**
+ * Whether `name`, one step of a path in a checkout, would leave the checkout, isn't a name, or holds
+ * a backslash, which Windows takes as a separator.
+ */
+function badCheckoutName(name: string): boolean {
+  return name === '' || name === '.' || name === '..' || name.includes('\0') || name.includes('\\');
+}
+
+/**
+ * Why opening a checkout's file can fail when there's no plain file there: nothing at the path, a
+ * link (`O_NOFOLLOW`'s `ELOOP`, or `EMLINK` on some BSDs), or a folder on the way that isn't one.
+ */
+const FILE_NOT_THERE = new Set(['ENOENT', 'ELOOP', 'EMLINK', 'ENOTDIR']);
+
+/** The error for a checkout's folder that a link on the way would put outside the cache. */
+function linkInTheWay(folder: string): GitError {
+  return new GitError({
+    kind: 'io',
+    context: `checking out into ${folder}`,
+    message: 'a link on the way leads out of the cache, so Lo writes nothing there',
+  });
 }
 
 /** Whether `error` is a fetch that failed as `failure`. */

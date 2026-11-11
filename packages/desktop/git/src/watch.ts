@@ -43,9 +43,6 @@ const POLL = 50;
 /** How often the progress function hears what the fetch is doing, when nothing changes. */
 export const TELL_EVERY = 1000;
 
-/** How long git has to stop by itself, once asked to, before it's killed. */
-export const STOP_GRACE = 1000;
-
 /**
  * Which limit a stopped fetch ran out: GitHub didn't answer in time (`connect`), no objects came
  * in in time (`start`), once objects came in git got no further for too long (`stall`), or more
@@ -418,7 +415,7 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
       const over = state.over(options.limits, options.whole, options.maxBytes);
       if (over !== undefined) {
         stopped = { ...over, doing: state.doing(), pid: running.pid ?? 0 };
-        await stopGroup(running);
+        await running.stopGently();
         break;
       }
       if (state.untold.length > 0 || Date.now() - told >= TELL_EVERY) {
@@ -445,7 +442,7 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
     return { kind: 'stopped', stopped, messages };
   } catch (error) {
     if (child !== undefined && !cleaned) {
-      await stopGroup(child);
+      await child.stopGently();
       await child.exited.catch(() => undefined);
       if (child.pid !== undefined) await options.afterStop?.(child.pid);
     }
@@ -491,16 +488,6 @@ export class PackFiles {
     }
     return total;
   }
-}
-
-/**
- * Stops `child`'s process group: asks first, with SIGTERM, so that git removes its lock files and
- * temporary files itself, then kills whatever is still running {@link STOP_GRACE} later.
- */
-async function stopGroup(child: Child): Promise<void> {
-  child.stop('SIGTERM');
-  await Promise.race([child.gone.catch(() => undefined), sleep(STOP_GRACE)]);
-  child.stop('SIGKILL');
 }
 
 function sleep(milliseconds: number): Promise<void> {
