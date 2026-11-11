@@ -709,7 +709,8 @@ async function slowGit(command: string, options: { stubborn?: boolean } = {}) {
   const dir = tempFolder();
   const [started, go] = [join(dir, 'started'), join(dir, 'go')];
   const marker = `lo-slow-${command.replaceAll(/\W+/gu, '-')}-${Date.now()}`;
-  const wait = `while [ ! -e '${go}' ]; do sleep 0.05; done`;
+  // A minute at most, so a test that fails leaves nothing running for long.
+  const wait = `i=0; while [ ! -e '${go}' ] && [ \\$i -lt 1200 ]; do sleep 0.05; i=\\$((i+1)); done`;
   const program = wrappedGit(join(dir, 'git'), {
     before: [
       'for arg; do case $arg in --git-dir=*) gitdir=${arg#--git-dir=};; esac; done',
