@@ -118,6 +118,7 @@ export function e2eInfo(
     number: APP_PULL.number,
     acting: { kind: 'account', login: 'rozed-bot' },
     shown: APP_PULL.head,
+    provisional: false,
     local,
   };
 }

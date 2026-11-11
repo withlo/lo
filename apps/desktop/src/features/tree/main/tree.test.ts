@@ -119,6 +119,16 @@ describe('TreeTab', () => {
     expect(github.requests).toBe(0);
   });
 
+  it('asks GitHub nothing about a head Lo saved until GitHub says it’s still the head', async () => {
+    const github = githubFrom('rest_tree_e2e');
+    const { tree, settled } = treeTab({ github: github.github });
+    tree.update({ ...e2eInfo(), provisional: true });
+    expect(github.requests).toBe(0);
+    tree.update(e2eInfo());
+    await settled((state) => state.changes !== null);
+    expect(github.requests).toBe(2);
+  });
+
   it('shows only the changed files while GitHub lists the repository’s files only in part', async () => {
     // GitHub's answer for a tree it cut short, standing in for #78's.
     const truncated = replayFetch('rest_tree_truncated');

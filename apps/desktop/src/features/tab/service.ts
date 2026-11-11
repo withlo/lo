@@ -16,6 +16,11 @@ export interface PullTabInfo {
    * until the newer push is loaded.
    */
   readonly shown: string | undefined;
+  /**
+   * Whether the head on screen is the one Lo saved, shown until GitHub says which head the pull
+   * request is at now, which replaces it.
+   */
+  readonly provisional: boolean;
   /** Its local copy. */
   readonly local: LocalState;
 }

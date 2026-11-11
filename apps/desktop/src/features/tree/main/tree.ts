@@ -137,7 +137,8 @@ export class TreeTab {
         at.started.add('local');
         void this.#fromLocal(at, local.mergeBase === null ? undefined : parseOid(local.mergeBase));
       }
-    } else if (info.acting !== undefined && !at.started.has('github')) {
+    } else if (info.acting !== undefined && !info.provisional && !at.started.has('github')) {
+      // A head Lo saved may not be GitHub's any more: GitHub is asked about the one it says.
       at.started.add('github');
       void this.#fromGithub(at, info.acting);
     }

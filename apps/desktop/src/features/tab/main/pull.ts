@@ -152,6 +152,7 @@ export class PullTab {
   #saidPull: string | undefined;
   #saidFiles: string | undefined;
   #saidLocal: string | undefined;
+  #saidInfo: string | undefined;
 
   constructor(options: PullTabOptions) {
     this.#options = options;
@@ -291,8 +292,18 @@ export class PullTab {
       number: this.pull.number,
       acting: this.#acting,
       shown: this.#started ? this.#shown : undefined,
+      provisional: this.#provisional,
       local: this.#localState(),
     };
+  }
+
+  /** Tells the features that follow the tab, if what {@link PullTab.info} says changed. */
+  #tellInfo(): void {
+    if (this.#closed) return;
+    const said = JSON.stringify(this.info());
+    if (said === this.#saidInfo) return;
+    this.#saidInfo = said;
+    this.#options.changed?.();
   }
 
   /** The local copy's clone, once it's opened, to read from. It closes with the tab. */
@@ -535,7 +546,7 @@ export class PullTab {
     if (this.#repository?.toString() !== repo.toString()) {
       this.#repository = repo;
       this.#options.keep({ repository: repo.toString() });
-      this.#options.changed?.();
+      this.#tellInfo();
     }
   }
 
@@ -777,7 +788,6 @@ export class PullTab {
     if (said !== this.#saidPull) {
       this.#saidPull = said;
       this.#options.publish.pull(view);
-      this.#options.changed?.();
     }
     this.#publishLocal();
   }
@@ -786,10 +796,11 @@ export class PullTab {
     if (this.#closed) return;
     const local = { id: this.id, state: this.#localState() };
     const said = JSON.stringify(local);
-    if (said === this.#saidLocal) return;
-    this.#saidLocal = said;
-    this.#options.publish.local(local);
-    this.#options.changed?.();
+    if (said !== this.#saidLocal) {
+      this.#saidLocal = said;
+      this.#options.publish.local(local);
+    }
+    this.#tellInfo();
   }
 }
 
