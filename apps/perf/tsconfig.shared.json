@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.core.json",
+  "compilerOptions": {
+    "outDir": ".tsbuild/shared"
+  },
+  "include": ["src/shared/**/*.ts"],
+  "references": [{ "path": "../../packages/core/diff" }]
+}

@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
-import { dirname, join, sep } from 'node:path';
+import { delimiter, dirname, join, sep } from 'node:path';
 
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, onTestFinished, test, vi } from 'vitest';
 
 import {
   cacheFolder,
@@ -256,6 +256,25 @@ describe('repoFolder', () => {
   );
 });
 
+/** A `git` first on the PATH that prints `said` for `cat-file`, and runs the real git otherwise. */
+function fakeGit(said: string): void {
+  const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+  const folder = mkdtempSync(join(tmpdir(), 'lo-perf-fake-git-'));
+  onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
+  const script = [
+    '#!/bin/sh',
+    'for arg in "$@"; do',
+    `  if [ "$arg" = cat-file ]; then printf '%b\\n' ${JSON.stringify(said)} >&2; exit 1; fi`,
+    'done',
+    `exec '${real}' "$@"`,
+  ];
+  writeFileSync(join(folder, 'git'), `${script.join('\n')}\n`, { mode: 0o755 });
+  vi.stubEnv('PATH', `${folder}${delimiter}${process.env.PATH ?? ''}`);
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+}
+
 describe('lazyFetchIsOff', () => {
   test('is true when git honors GIT_NO_LAZY_FETCH', async () => {
     expect(await lazyFetchIsOff()).toBe(true);
@@ -264,6 +283,18 @@ describe('lazyFetchIsOff', () => {
   test('is false when git would fetch a missing object', async () => {
     // As a git that doesn't know the variable behaves.
     expect(await lazyFetchIsOff({ GIT_NO_LAZY_FETCH: '0' })).toBe(false);
+  });
+
+  test('accepts the warning older maintenance releases print', async () => {
+    fakeGit('warning: lazy fetching disabled; some objects may not be available');
+
+    expect(await lazyFetchIsOff()).toBe(true);
+  });
+
+  test('refuses anything else on top of that warning', async () => {
+    fakeGit('warning: lazy fetching disabled; some objects may not be available\nfatal: no');
+
+    expect(await lazyFetchIsOff()).toBe(false);
   });
 });
 

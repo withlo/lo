@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.window.json",
+  "compilerOptions": {
+    "outDir": ".tsbuild/window",
+    "types": ["vite/client"]
+  },
+  "include": ["src/window/**/*.ts", "src/view/**/*.ts"],
+  "exclude": ["**/*.test.ts"],
+  "references": [
+    { "path": "./tsconfig.shared.json" },
+    { "path": "../../packages/desktop/syntax" },
+    { "path": "../../packages/core/diff" }
+  ]
+}
