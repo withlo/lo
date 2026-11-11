@@ -44,10 +44,12 @@ beforeEach(() => {
       <div data-lo-scope="box" id="box"><div id="text" contenteditable="true" tabindex="0"></div></div>
     </div>
     <div data-lo-scope="tree" id="tree"><button id="row">a.ts</button><button id="other">b.ts</button></div>
-    <form data-lo-scope="settings"><input id="first"><input id="second"></form>
+    <form data-lo-scope="settings" data-lo-tab="browser"><input id="first"><input id="second"></form>
     <div data-lo-scope="dialog"><input id="name"><button id="ok">OK</button></div>
     <div data-lo-scope="menu"><div role="menuitem" tabindex="-1" id="item">Copy</div></div>
     <div data-lo-scope="palette"><input id="query"></div>
+    <div data-lo-scope="overview"><div id="block" tabindex="0"></div></div>
+    <input id="loose"><button id="plain">Plain</button>
   `;
   ran = [];
   log = [];
@@ -63,6 +65,14 @@ beforeEach(() => {
 afterEach(() => {
   stop();
 });
+
+/** Listens with a registry for `system` in place of the Mac's, with `keymap` applied. */
+function listenAs(system: 'mac' | 'linux', keymap = ''): void {
+  stop();
+  registry = new Registry({ system, commands: testCommands(ran) });
+  registry.setKeymap(keymap);
+  stop = listen(window, registry);
+}
 
 const ids = () => ran.map(([id]) => id);
 
@@ -151,12 +161,47 @@ describe('the Tab backstop', () => {
     expect(press('prompt', 'Tab').defaultPrevented).toBe(true);
   });
 
-  test('leaves the browser’s Tab to form fields and every other scope', () => {
-    expect(press('first', 'Tab').defaultPrevented).toBe(false);
-    expect(press('second', 'Tab', { shiftKey: true }).defaultPrevented).toBe(false);
+  test('ends an unhandled Tab in every Lo scope: the tree, the palette, a menu, the overview', () => {
+    for (const id of ['row', 'query', 'item', 'block', 'plain']) {
+      expect(press(id, 'Tab').defaultPrevented).toBe(true);
+      expect(press(id, 'Tab', { shiftKey: true }).defaultPrevented).toBe(true);
+    }
+    expect(ids()).toEqual([]);
+  });
+
+  test('leaves the browser’s Tab to dialogs, scopes that ask for it, and loose form fields', () => {
     expect(press('name', 'Tab').defaultPrevented).toBe(false);
     expect(press('ok', 'Tab', { shiftKey: true }).defaultPrevented).toBe(false);
-    expect(press('row', 'Tab').defaultPrevented).toBe(false);
+    expect(press('first', 'Tab').defaultPrevented).toBe(false);
+    expect(press('second', 'Tab', { shiftKey: true }).defaultPrevented).toBe(false);
+    expect(press('loose', 'Tab').defaultPrevented).toBe(false);
+  });
+
+  test('leaves focus where a widget moved it while handling a Tab, as into a dialog', () => {
+    for (const order of ['prevent first', 'focus first']) {
+      const move = (event: KeyboardEvent) => {
+        if (order === 'prevent first') event.preventDefault();
+        element('name').focus();
+        if (order === 'focus first') event.preventDefault();
+      };
+      element('text').addEventListener('keydown', move);
+      press('text', 'Tab');
+      expect(document.activeElement).toBe(element('name'));
+      element('text').removeEventListener('keydown', move);
+    }
+  });
+
+  test('forgets a noted Tab on a pointer down', () => {
+    vi.useFakeTimers();
+    try {
+      element('text').addEventListener('keydown', (event) => event.stopPropagation());
+      press('text', 'Tab');
+      element('row').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+      element('row').focus();
+      expect(document.activeElement).toBe(element('row'));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('sends focus back when a widget stopped an unhandled Tab and the browser moved it', () => {
@@ -233,6 +278,44 @@ describe('a pending sequence', () => {
     expect(after.defaultPrevented).toBe(false);
     expect(ids()).toEqual([]);
     expect(log).toEqual(['clearPending', 'editor i']);
+  });
+});
+
+describe('keyboard layouts', () => {
+  test('Linux’s Alt with a letter runs nothing the letter alone would', () => {
+    listenAs('linux');
+    expect(press('row', 'e', { altKey: true, code: 'KeyE' }).defaultPrevented).toBe(false);
+    expect(press('editor', 'c', { altKey: true, code: 'KeyC' }).defaultPrevented).toBe(false);
+    expect(ids()).toEqual([]);
+  });
+
+  test('a dead key runs nothing, wherever its layout puts it', () => {
+    widget('row');
+    widget('block');
+    // German ^ is where US has `, which runs the next view.
+    expect(press('row', 'Dead', { code: 'Backquote' }).defaultPrevented).toBe(false);
+    // French ^ is where US has [, which starts `[ b` in the overview.
+    expect(press('block', 'Dead', { code: 'BracketLeft' }).defaultPrevented).toBe(false);
+    expect(registry.isPending()).toBe(false);
+    expect(ids()).toEqual([]);
+    expect(log).toEqual(['row Dead', 'block Dead']);
+    // The key itself still runs.
+    press('row', '`', { code: 'Backquote' });
+    expect(ids()).toEqual(['keys.nextView']);
+  });
+
+  test('reads keys by the keyboard’s layout, where Chromium gives it', async () => {
+    // German has z where US has y.
+    const keyboard = { getLayoutMap: () => Promise.resolve(new Map([['KeyY', 'z']])) };
+    Object.defineProperty(window.navigator, 'keyboard', { value: keyboard, configurable: true });
+    try {
+      listenAs('linux', 'bind alt+z keys.help');
+      await Promise.resolve();
+      expect(press('row', 'z', { altKey: true, code: 'KeyY' }).defaultPrevented).toBe(true);
+      expect(ids()).toEqual(['keys.help']);
+    } finally {
+      Reflect.deleteProperty(window.navigator, 'keyboard');
+    }
   });
 });
 

@@ -120,6 +120,7 @@ export const keys = defineCommands('keys', {
   },
   tree: { label: 'Tree at this file', group: 'Files', keys: ['-'] },
   erase: { label: 'Never on its own', group: 'Find', keys: ['backspace'] },
+  nextView: { label: 'Next view', group: 'View', keys: ['`'] },
 });
 
 export const tab = defineCommands('tab', {
@@ -171,6 +172,13 @@ export const overview = defineCommands(
       keys: ['] b'],
       targets: ['block', 'none'],
       repeat: true,
+      when: { scope: 'overview' },
+    },
+    previousBlock: {
+      label: 'Previous block',
+      group: 'Overview',
+      keys: ['[ b'],
+      targets: ['block', 'none'],
       when: { scope: 'overview' },
     },
   },

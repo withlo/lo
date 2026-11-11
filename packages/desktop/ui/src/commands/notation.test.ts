@@ -161,11 +161,41 @@ describe('key events', () => {
     expect(eventStroke(event('ß', { ctrlKey: true, code: 'IntlRo' }))?.id).toBe('ctrl+ß');
   });
 
-  test('a dead key on its own is the character at its place', () => {
-    // US-International: ` and ~ start accents.
-    expect(eventStroke(event('Dead', { code: 'Backquote' }))?.id).toBe('`');
-    expect(eventStroke(event('Dead', { shiftKey: true, code: 'Backquote' }))?.id).toBe('~');
-    expect(eventStroke(event('Dead', { shiftKey: true, code: 'Digit6' }))?.id).toBe('^');
+  test('a dead key on its own matches nothing, so the accent it starts is typed', () => {
+    // US-International's `, German's ^ where US has `, and French's ^ where US has [.
+    expect(eventStrokes(event('Dead', { code: 'Backquote' }))).toEqual([]);
+    expect(eventStrokes(event('Dead', { shiftKey: true, code: 'Backquote' }))).toEqual([]);
+    expect(eventStrokes(event('Dead', { code: 'BracketLeft' }))).toEqual([]);
+  });
+
+  test('Linux’s Alt leaves the key as it is, so it reads only as a chord', () => {
+    expect(read('e', { altKey: true, code: 'KeyE' })).toEqual(['alt+e']);
+    expect(read('E', { altKey: true, shiftKey: true, code: 'KeyE' })).toEqual(['alt+shift+e']);
+    expect(read(']', { altKey: true, code: 'BracketRight' })).toEqual(['alt+]']);
+    expect(read('}', { altKey: true, shiftKey: true, code: 'BracketRight' })).toEqual([
+      'alt+shift+]',
+    ]);
+    // A US Mac's ⌥⇧` types a plain `, which is the key's own: not the `` ` `` key.
+    expect(read('`', { altKey: true, shiftKey: true, code: 'Backquote' })).toEqual(['alt+shift+`']);
+  });
+
+  test('the keyboard’s layout says what each key types on its own', () => {
+    // German has z where US has y, and AZERTY a where US has q.
+    const german = new Map([['KeyY', 'z']]);
+    const azerty = new Map([['KeyQ', 'a']]);
+    expect(
+      eventStrokes(event('z', { altKey: true, code: 'KeyY' }), german).map((each) => each.id),
+    ).toEqual(['alt+z']);
+    expect(
+      eventStrokes(event('a', { altKey: true, code: 'KeyQ' }), azerty).map((each) => each.id),
+    ).toEqual(['alt+a']);
+    // Without the layout, the place is a US keyboard's.
+    expect(read('z', { altKey: true, code: 'KeyY' })).toEqual(['z', 'alt+y']);
+    // A layout outside ASCII, such as Russian, still reads ⌥ chords by their US place.
+    const russian = new Map([['KeyP', 'з']]);
+    expect(
+      eventStrokes(event('з', { altKey: true, code: 'KeyP' }), russian).map((each) => each.id),
+    ).toEqual(['alt+p']);
   });
 
   test('modifier keys, dead keys and AltGr’s characters are no chord', () => {

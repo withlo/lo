@@ -14,16 +14,13 @@ export const SCOPE_ATTRIBUTE = 'data-lo-scope';
 export const engineScopes = ['window', 'menu', 'dialog', 'palette'] as const;
 
 /** The code views' scopes, whose elements have a `KeySource`. */
-export const codeScopes: readonly string[] = ['diff', 'file', 'peek', 'box'];
+export const codeScopes = ['diff', 'file', 'peek', 'box'] as const;
 
 /**
- * Whether `Tab` must never move focus out of the scope named `name`: a code view's or a box's,
- * whose next keys would otherwise run somewhere else. Elsewhere, form fields keep the browser's
- * `Tab`.
+ * The attribute that gives a scope the browser's `Tab`, as `data-lo-tab="browser"`: a form, such
+ * as Settings', whose fields `Tab` moves between.
  */
-export function keepsTab(name: string): boolean {
-  return codeScopes.includes(name);
-}
+export const TAB_ATTRIBUTE = 'data-lo-tab';
 
 /** A code view's Vim mode. */
 export type Mode = 'normal' | 'visual' | 'insert';
@@ -140,4 +137,23 @@ export function textKind(element: Element | null | undefined): TextKind | undefi
 /** Whether `element` takes typed text: an input, a text area or editable content. */
 export function isTextField(element: Element | null | undefined): boolean {
   return textKind(element) !== undefined;
+}
+
+/**
+ * Whether an unhandled `Tab` pressed on `element`, in `scope`, is ended rather than moving focus:
+ * focus moves through Lo's scopes only by commands, so a box can't hand its next letters to the
+ * diff, nor the tree its keys to whatever follows it. A `dialog`, a scope marked
+ * `data-lo-tab="browser"` and a form field outside any other scope keep the browser's `Tab`.
+ */
+export function endsTab(scope: FoundScope, element: Element | null | undefined): boolean {
+  if (scope.name === 'dialog') return false;
+  if (scope.element?.getAttribute(TAB_ATTRIBUTE) === 'browser') return false;
+  return !(scope.name === 'window' && isFormField(element));
+}
+
+/** Whether `element` is a form field: an input, a list to choose from or a text area. */
+function isFormField(element: Element | null | undefined): boolean {
+  const tag = element?.tagName.toLowerCase();
+  if (tag === 'select' || tag === 'textarea') return true;
+  return tag === 'input' && element?.getAttribute('type')?.toLowerCase() !== 'hidden';
 }

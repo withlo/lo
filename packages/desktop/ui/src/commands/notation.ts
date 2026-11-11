@@ -219,19 +219,32 @@ export interface KeyEventLike {
 }
 
 /**
- * The strokes a keydown event can be, the likelier first: none for a modifier key on its own or a
- * key the system didn't identify. Keyboard layouts differ, so:
+ * What each key types on its own on the keyboard's layout, by `event.code`, as
+ * `navigator.keyboard.getLayoutMap()` gives it. Without it, keys are taken to be where a US
+ * keyboard has them.
+ */
+export interface Layout {
+  get(code: string): string | undefined;
+}
+
+/**
+ * The strokes a keydown event can be, the likelier first: none for a modifier key on its own, a
+ * dead key on its own (the start of an accent), or a key the system didn't identify. Keyboard
+ * layouts differ, so:
  *
  * - With ⌘ or Ctrl, a letter outside A to Z (Russian з where P is) or a symbol outside ASCII is read
  *   by its place, `event.code`, so Ctrl+P is Ctrl+P on any layout. A symbol with Shift is read by
  *   its place too, since systems disagree on whether `event.key` is shifted then.
- * - With ⌥ alone, `event.key` is what the layout typed: German types `]` with ⌥6, US types å with
- *   ⌥A. That character comes first, so `] b` works on German; ⌥ with the key's place comes second,
- *   so a binding such as `alt+a` still matches. With ⌘ or Ctrl as well, or when ⌥ makes a dead key
- *   (⌥E on macOS), only the place counts.
- * - A dead key on its own (`` ` `` on US-International) is the character at its place.
+ * - With ⌥ alone, `event.key` can be a character the layout types with ⌥: German types `]` with
+ *   ⌥6, a US Mac types å with ⌥A. When it differs from what the key types on its own, it comes
+ *   first, so `] b` works on German; ⌥ with the key comes second, so a binding such as `alt+a` still
+ *   matches. When it doesn't differ, as on Linux, where Alt+E's key is `e`, or a US Mac's ⌥⇧`,
+ *   it's only ⌥ with the key. With ⌘ or Ctrl as well, or a dead key (⌥E on a Mac), it's only the
+ *   key's place.
+ * - A dead key on its own matches nothing, so composing an accent goes on: which character it
+ *   starts differs from layout to layout (`^` where US has `` ` `` on German).
  */
-export function eventStrokes(event: KeyEventLike): readonly Stroke[] {
+export function eventStrokes(event: KeyEventLike, layout?: Layout): readonly Stroke[] {
   const { key, code } = event;
   if (modifierKeys.has(key) || key === 'Unidentified' || key === 'Process') return [];
   // AltGr types characters: what it gives is text, not a chord.
@@ -242,28 +255,43 @@ export function eventStrokes(event: KeyEventLike): readonly Stroke[] {
   const shift = event.shiftKey;
   const named = eventNames[key];
   if (named !== undefined) return [strokeOf(named, { meta, ctrl, alt, shift })];
-  const place = codeKey(code);
   const dead = key === 'Dead';
-  if (!meta && !ctrl && !alt) {
-    if (dead) return place === undefined ? [] : [strokeOf(place, { shift })];
-    return isCharacter(key) ? [strokeOf(key)] : [];
-  }
+  if (!meta && !ctrl && !alt) return !dead && isCharacter(key) ? [strokeOf(key)] : [];
+  /** What the key types on its own, on this layout if it's known. */
+  const own = ownKey(layout, code);
+  /** The key as a chord reads it: its own character in ASCII, or else its US place. */
+  const place = own !== undefined && /^[!-~]$/.test(own) ? own : codeKey(code);
   if (alt && !meta && !ctrl) {
-    const typed = !dead && isPrintable(key) ? [strokeOf(key)] : [];
     const chord = place === undefined ? [] : [strokeOf(place, { alt, shift })];
-    return [...typed, ...chord];
+    const changed = !dead && isPrintable(key) && (own === undefined || !typesAlike(key, own));
+    return changed ? [strokeOf(key), ...chord] : chord;
   }
   let base: string | undefined;
   if (alt || dead) base = place;
   else if (/^[a-z]$/i.test(key)) base = key.toLowerCase();
-  else if (/^[!-~]$/.test(key)) base = shift ? (place ?? unshiftedForm(key).key) : key;
-  else base = place ?? (isCharacter(key) ? key.toLowerCase() : undefined);
+  else if (/^[!-~]$/.test(key)) base = shift ? (codeKey(code) ?? unshiftedForm(key).key) : key;
+  else base = codeKey(code) ?? (isCharacter(key) ? key.toLowerCase() : undefined);
   return base === undefined ? [] : [strokeOf(base, { meta, ctrl, alt, shift })];
 }
 
+/** What the key at `code` types on its own: on `layout` if it knows, or on a US keyboard. */
+function ownKey(layout: Layout | undefined, code: string): string | undefined {
+  const typed = layout?.get(code);
+  if (typed !== undefined && isCharacter(typed)) return typed.toLowerCase();
+  const us = codeKey(code);
+  return us === 'space' ? undefined : us;
+}
+
+/** Whether `typed` is what the key that types `own` on its own types, with or without Shift. */
+function typesAlike(typed: string, own: string): boolean {
+  return (
+    typed === own || typed.toLowerCase() === own.toLowerCase() || shiftedSymbols[own] === typed
+  );
+}
+
 /** The likeliest stroke a keydown event is, as `eventStrokes` reads it. */
-export function eventStroke(event: KeyEventLike): Stroke | undefined {
-  return eventStrokes(event)[0];
+export function eventStroke(event: KeyEventLike, layout?: Layout): Stroke | undefined {
+  return eventStrokes(event, layout)[0];
 }
 
 /** Whether `key` is one character that shows: not a space or a control character. */

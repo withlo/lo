@@ -3,39 +3,59 @@
 // change and the window's blur drop the pending sequence and clear the code view focus left; a
 // pointer down drops the pending sequence.
 
-import { eventStrokes } from './notation.ts';
+import { eventStrokes, type Layout } from './notation.ts';
 import type { Registry } from './registry.ts';
-import { findScope, keepsTab, textKind } from './scopes.ts';
+import { endsTab, findScope, textKind } from './scopes.ts';
 
 type Win = Window & typeof globalThis;
+
+/** The part of `navigator.keyboard` Lo reads, where Chromium has it. */
+interface Keyboard {
+  getLayoutMap?(): Promise<Layout>;
+}
 
 /**
  * Starts listening for keys in `win`. Returns a function that stops.
  *
- * The backstop keeps `Tab` from moving focus out of a code view or a box, whose next letters would
- * otherwise run somewhere else: focus leaves them only through commands. A `Tab` that reaches
- * `window` unhandled there, with any modifiers, is ended in the bubble phase. One a widget stopped
- * on the way without preventing it never reaches `window`, so the capture phase notes each such
- * `Tab`, and focus it moves out of the scope is sent back. Everywhere else, form fields keep the
- * browser's `Tab`.
+ * The backstop keeps `Tab` from moving focus between Lo's scopes, where it only moves by commands:
+ * otherwise a box would hand its next letters to the diff, or the tree its keys to whatever follows
+ * it. A `Tab` that reaches `window` unhandled, with any modifiers, is ended in the bubble phase,
+ * except where `endsTab` leaves it to the browser. One a widget stopped on the way never reaches
+ * `window`, so the capture phase notes each `Tab` in a scope, and when the browser then moves focus
+ * out of it, focus is sent back. Focus a widget moves itself, while handling the key, stays where
+ * it went.
  */
 export function listen(win: Win, registry: Registry): () => void {
-  /** A `Tab` the browser may still act on, pressed in a scope that keeps `Tab`. */
-  let tab: { from: Element; scope: Element } | undefined;
+  /** A `Tab` the browser may still act on, pressed in a scope that ends it. */
+  let tab: { event: KeyboardEvent; from: Element; scope: Element } | undefined;
   let tabTimer: ReturnType<typeof setTimeout> | undefined;
+  /** What the keyboard's keys type on their own, once Chromium has said. */
+  let layout: Layout | undefined;
+
+  const readLayout = () => {
+    const keyboard: Keyboard | undefined = Reflect.get(win.navigator, 'keyboard');
+    keyboard
+      ?.getLayoutMap?.()
+      .then((map) => {
+        layout = map;
+      })
+      .catch(() => {
+        // Keys are read as on a US keyboard.
+      });
+  };
 
   const onKey = (event: KeyboardEvent) => {
     tab = undefined;
     const element = focused(win, event);
     const scope = findScope(element);
     const handled = registry.handle(
-      { strokes: eventStrokes(event), repeat: event.repeat, composing: composing(event) },
+      { strokes: eventStrokes(event, layout), repeat: event.repeat, composing: composing(event) },
       { scope, text: textKind(element) },
     );
     if (handled.kind === 'pass') {
-      const kept = element && scope.element && keepsTab(scope.name);
-      if (event.key === 'Tab' && !composing(event) && kept) {
-        tab = { from: element, scope: scope.element };
+      const ended = element && scope.element && endsTab(scope, element);
+      if (event.key === 'Tab' && !composing(event) && ended) {
+        tab = { event, from: element, scope: scope.element };
         // The browser moves focus after the event, before any task runs.
         clearTimeout(tabTimer);
         tabTimer = setTimeout(() => {
@@ -54,7 +74,8 @@ export function listen(win: Win, registry: Registry): () => void {
 
   const backstop = (event: KeyboardEvent) => {
     if (event.key !== 'Tab' || event.defaultPrevented || composing(event)) return;
-    if (keepsTab(findScope(focused(win, event)).name)) event.preventDefault();
+    const element = focused(win, event);
+    if (endsTab(findScope(element), element)) event.preventDefault();
   };
 
   const onFocusIn = (event: FocusEvent) => {
@@ -62,7 +83,9 @@ export function listen(win: Win, registry: Registry): () => void {
     const noted = tab;
     if (!noted || !(event.target instanceof win.Node)) return;
     if (noted.scope.contains(event.target) || !noted.from.isConnected) return;
-    // An unhandled `Tab` moved focus out of a scope that keeps it: send it back.
+    // Only the browser's own move, after the event and because nothing prevented it. A widget's
+    // move while it handles the key happens during the event, and is the widget's to make.
+    if (noted.event.eventPhase !== Event.NONE || noted.event.defaultPrevented) return;
     tab = undefined;
     if (noted.from instanceof win.HTMLElement || noted.from instanceof win.SVGElement) {
       noted.from.focus();
@@ -83,7 +106,8 @@ export function listen(win: Win, registry: Registry): () => void {
     registry.leave(findScope(win.document.activeElement).source);
   };
 
-  const drop = () => {
+  const onPointer = () => {
+    tab = undefined;
     registry.drop();
   };
 
@@ -92,16 +116,20 @@ export function listen(win: Win, registry: Registry): () => void {
   win.addEventListener('keydown', backstop);
   win.addEventListener('focusin', onFocusIn, capture);
   win.addEventListener('focusout', onFocusOut, capture);
-  win.addEventListener('pointerdown', drop, capture);
+  win.addEventListener('pointerdown', onPointer, capture);
   win.addEventListener('blur', onBlur, capture);
+  // The keyboard's layout, read again whenever the window comes back, in case it changed.
+  win.addEventListener('focus', readLayout);
+  readLayout();
   return () => {
     clearTimeout(tabTimer);
     win.removeEventListener('keydown', onKey, capture);
     win.removeEventListener('keydown', backstop);
     win.removeEventListener('focusin', onFocusIn, capture);
     win.removeEventListener('focusout', onFocusOut, capture);
-    win.removeEventListener('pointerdown', drop, capture);
+    win.removeEventListener('pointerdown', onPointer, capture);
     win.removeEventListener('blur', onBlur, capture);
+    win.removeEventListener('focus', readLayout);
   };
 }
 
