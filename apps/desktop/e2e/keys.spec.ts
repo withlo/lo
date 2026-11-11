@@ -1,6 +1,6 @@
 import type { ElectronApplication, Page } from '@playwright/test';
 
-import { expect, test, middleOf } from './app.ts';
+import { expect, signedIn, test, middleOf } from './app.ts';
 
 const mac = process.platform === 'darwin';
 
@@ -69,7 +69,7 @@ test('reload and developer-tools keys do nothing in the built app', async ({ app
   ).toBe(false);
 });
 
-test('Esc gives focus back to the middle of the window', async ({ page }) => {
+signedIn('Esc gives focus back to the middle of the window', async ({ page }) => {
   const open = page.getByRole('button', { name: 'Open a pull request' });
   await open.focus();
   await expect(open).toBeFocused();
@@ -77,22 +77,22 @@ test('Esc gives focus back to the middle of the window', async ({ page }) => {
   await expect(middleOf(page)).toBeFocused();
 });
 
-test('the window runs only the app menu’s own commands that main sends back', async ({
-  app,
-  page,
-}) => {
-  const open = page.getByRole('button', { name: 'Open a pull request' });
-  await open.focus();
-  // Esc's command isn't in the app menu, so a click can't have sent it.
-  await app.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows()[0]?.webContents.send('keys.run', { id: 'keys.escape' });
-  });
-  await page.waitForTimeout(200);
-  await expect(open).toBeFocused();
-  // The same command by its key.
-  await page.keyboard.press('Escape');
-  await expect(middleOf(page)).toBeFocused();
-});
+signedIn(
+  'the window runs only the app menu’s own commands that main sends back',
+  async ({ app, page }) => {
+    const open = page.getByRole('button', { name: 'Open a pull request' });
+    await open.focus();
+    // Esc's command isn't in the app menu, so a click can't have sent it.
+    await app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.webContents.send('keys.run', { id: 'keys.escape' });
+    });
+    await page.waitForTimeout(200);
+    await expect(open).toBeFocused();
+    // The same command by its key.
+    await page.keyboard.press('Escape');
+    await expect(middleOf(page)).toBeFocused();
+  },
+);
 
 test('a click in the macOS app menu runs its command once, and its key never through the menu', async ({
   app,

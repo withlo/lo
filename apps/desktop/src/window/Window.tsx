@@ -22,7 +22,7 @@ export function Window() {
       {...menu}
     >
       <TabStrip />
-      <main className="flex min-h-0 flex-1 flex-col" data-lo-middle tabIndex={-1}>
+      <main className="relative flex min-h-0 flex-1 flex-col" data-lo-middle tabIndex={-1}>
         <TabPage />
       </main>
       <Overlays />
