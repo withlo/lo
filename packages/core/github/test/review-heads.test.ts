@@ -1,12 +1,22 @@
 // A line comment added to a pending review goes on whatever head GitHub has when it gets it. When
 // that isn't the head the comment was written on, its line may hold other code, so Lo takes the
-// thread back out in a write of its own, and says where it is when it can't. Run through the
+// thread back out in the add's own turn, and says where it is when it can't. Run through the
 // poller on a fake clock, so each write takes its turn in the account's queue.
 
 import type { Interaction, Json } from '@lo/testing';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import { answer, at, log, Polling, pr, recorded, useFakeClock, wall } from './support/polling.ts';
+import {
+  at,
+  log,
+  Polling,
+  pr,
+  rateLimit,
+  recorded,
+  useFakeClock,
+  wall,
+  withHeaders,
+} from './support/polling.ts';
 import type { ReviewWrite } from '../src/review-writes.ts';
 
 beforeEach(useFakeClock);
@@ -153,7 +163,7 @@ test('a line thread on the head it was written on is kept', async () => {
   expect(t.requests()).toEqual(log([0, 'AddPullRequestReviewThread']));
 });
 
-test('a line thread github put on a newer head is taken back in a write of its own', async () => {
+test('a line thread github put on a newer head is taken back in the adds turn', async () => {
   const { t, send } = await sending('heads_taken_back', [added(3, PUSHED), deleted(3, 'deleted')]);
   expect(await send(addThread(3))).toEqual({ refusal: 'headMoved', head: PUSHED });
   // A second after the add, as between any two writes.
@@ -230,25 +240,48 @@ test('a delete github refuses for the rate limit leaves the thread flagged and h
   expect(t.poller.writesHeldUntil()).toBe(wall(61));
 });
 
-test('a delete isnt sent while github asks lo to hold off, and the thread is flagged', async () => {
-  const r = recorded();
-  const limited = answer(
-    at(r, 0),
-    403,
-    [['retry-after', '60']],
-    '{"message":"You have exceeded a secondary rate limit."}',
+test('a delete isnt sent once github asks lo to hold off, and the thread is flagged', async () => {
+  // The add's answer used up GraphQL's limit, until 600 s.
+  const usedUp = withHeaders(added(3, PUSHED), rateLimit('graphql', 0, 600));
+  const { t, send } = await sending('heads_held', [usedUp]);
+  expect(await send(addThread(3))).toEqual({ ...made(3, PUSHED), landedOn: { head: PUSHED } });
+  expect(t.requests()).toEqual(log([0, 'AddPullRequestReviewThread']));
+  expect(t.poller.writesHeldUntil()).toBe(wall(600));
+});
+
+test('a write asked for while a thread is added waits until its taken back', async () => {
+  const submit: ReviewWrite = {
+    kind: 'submitReview',
+    head: PLANNED,
+    variables: { pullRequestReviewId: 'PRR_1', event: 'COMMENT', body: undefined },
+  };
+  const submitted = graphql(
+    'SubmitPullRequestReview',
+    { pullRequestReviewId: 'PRR_1', event: 'COMMENT' },
+    {
+      data: { submitPullRequestReview: { pullRequestReview: { id: 'PRR_1', state: 'COMMENTED' } } },
+    },
   );
-  const t = await Polling.start('heads_held', [added(3, PUSHED), limited], { delay: 1000 });
-  // The open PR's poll waits for the add (0–1 s), and GitHub answers it with a secondary limit
-  // before the delete's turn comes.
+  const t = await Polling.start(
+    'heads_submit_waits',
+    [added(3, PUSHED), deleted(3, 'deleted'), submitted],
+    { delay: 1000 },
+  );
+  // Your review's submit is asked for while the add is in flight (0–1 s). It waits for the add's
+  // turn, which holds the delete too, so it can't publish the thread on the newer head.
   const sent = t.poller.sendReview(pr(1), addThread(3));
-  await t.run();
-  void t.poller.setOpen(pr(1));
-  expect(await t.finish(sent)).toEqual({ ...made(3, PUSHED), landedOn: { head: PUSHED } });
-  expect(t.requests().map(([, what]) => what)).toEqual([
-    'AddPullRequestReviewThread',
-    'GET /pulls/1',
-  ]);
+  await t.runUntil(0.5);
+  const submitting = t.poller.sendReview(pr(1), submit);
+  expect(await t.finish(sent)).toEqual({ refusal: 'headMoved', head: PUSHED });
+  expect(await t.finish(submitting)).toEqual({ review: 'PRR_1' });
+  expect(t.requests()).toEqual(
+    log(
+      [0, 'AddPullRequestReviewThread'],
+      // A second after the add's answer, and the submit a second after the delete's.
+      [2, 'DeletePullRequestReviewComment'],
+      [4, 'SubmitPullRequestReview'],
+    ),
+  );
 });
 
 test('a thread github answers without its comment is flagged', async () => {
