@@ -268,6 +268,83 @@
   }
 }
 
+/* The file tree's rows: indented by their depth, with a hairline down each level they're in. */
+@utility tree-row {
+  padding-inline: calc(var(--lo-sp-6) + var(--depth, 0) * var(--lo-sp-12)) var(--lo-sp-8);
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(var(--lo-sp-12) - 1px),
+    var(--lo-border-subtle) calc(var(--lo-sp-12) - 1px) var(--lo-sp-12)
+  );
+  background-size: calc(var(--depth, 0) * var(--lo-sp-12)) 100%;
+  background-position: var(--lo-sp-6) 0;
+  background-repeat: no-repeat;
+}
+
+/* The file on screen, in the tree: its row on the current ground, with a Powder ball before it. */
+@utility tree-current {
+  background-color: var(--lo-current);
+  &::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: calc(var(--lo-sp-2) * -1.5);
+    top: 50%;
+    width: var(--lo-sp-6);
+    height: var(--lo-sp-6);
+    margin-top: calc(var(--lo-sp-6) / -2);
+    border-radius: 50%;
+    background: var(--lo-accent);
+  }
+}
+
+/* What gives way first when a row runs out of room: a rename's old name, before the new one. */
+@utility shrink-first {
+  flex-shrink: 100;
+}
+
+/* A change's letter, A, M, D, R or T, in the code font at the tags' weight. */
+@utility change-letter {
+  display: inline-block;
+  width: var(--lo-sp-12);
+  flex: none;
+  text-align: center;
+  font: var(--lo-code-key);
+  font-weight: 600;
+}
+
+/* A closed folder's count of the changed files it holds. */
+@utility tree-badge {
+  min-width: calc(var(--lo-sp-16) + var(--lo-sp-2));
+  height: var(--lo-sp-16);
+  padding-inline: var(--lo-sp-4);
+  border-radius: var(--lo-r-pill);
+  background: var(--lo-bg-element);
+  color: var(--lo-fg-muted);
+  font: var(--lo-text-micro);
+  font-weight: 600;
+  line-height: var(--lo-sp-16);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The viewed mark: an empty ring not yet, a filled ball viewed, an amber ring with a dot when a push
+   changed it since. */
+@utility ball {
+  width: calc(var(--lo-sp-12) - var(--lo-sp-2));
+  height: calc(var(--lo-sp-12) - var(--lo-sp-2));
+  flex: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--lo-fg-dim);
+}
+@utility ball-viewed {
+  background: var(--lo-fg-muted);
+  box-shadow: none;
+}
+@utility ball-stale {
+  box-shadow: inset 0 0 0 1.5px var(--lo-warning);
+  background: radial-gradient(circle, var(--lo-warning) 0 2px, transparent 2.5px);
+}
+
 /* On Linux the system's window controls sit over the end of the strip, and the overlay's geometry
    says where they start. */
 :root[data-lo-platform][data-lo-frame='custom'] {

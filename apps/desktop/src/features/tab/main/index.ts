@@ -17,6 +17,8 @@ import { Watcher } from './watcher.ts';
 
 let kept: TabList | undefined;
 let watcher: Watcher | undefined;
+/** Other features following pull requests' tabs, which may start listening before the watcher. */
+const following = new Set<(id: string) => void>();
 
 const log = (line: string) => console.error(`tab: ${line}`);
 
@@ -58,6 +60,14 @@ export default defineFeature(contract, {
           openingSchema.parse(opening),
           as === undefined ? undefined : { login: accountLogin.parse(as.login) },
         ),
+      pull: (id) => watcher?.info(id),
+      onPull(listener) {
+        following.add(listener);
+        return () => {
+          following.delete(listener);
+        };
+      },
+      clone: (id) => watcher?.clone(id),
     }),
   ],
   handlers: {
@@ -112,9 +122,13 @@ export default defineFeature(contract, {
       },
       log,
     });
+    watcher.onChange((id) => {
+      for (const listener of following) listener(id);
+    });
     watcher.follow(list.list());
   },
   stop() {
+    following.clear();
     watcher?.stop();
   },
 });

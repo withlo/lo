@@ -252,6 +252,14 @@ export class LocalCopy {
     if (this.#fetching.kind === 'idle' && this.#ready === undefined) this.#fetch();
   }
 
+  /**
+   * The clone, opened, once a fetch has opened it: for reading what's fetched, while the copy is
+   * open. It closes with the copy, so a reader never closes it.
+   */
+  get clone(): Promise<Repo> | undefined {
+    return this.#closed ? undefined : this.#repo;
+  }
+
   /** Stops fetching and lets go of the clone, once the fetch under way, if any, ends. */
   close(): void {
     if (this.#closed) return;

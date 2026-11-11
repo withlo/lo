@@ -63,6 +63,16 @@ export const right = defineSlot<{ tab: PullTab }>('tab.right');
 /** Items in a pull request's tab's status bar, after Lo's own. */
 export const status = defineSlot<{ tab: PullTab }>('tab.status');
 
+/**
+ * `text` without the characters that turn the direction of the text after them around until
+ * they're closed (embeddings, overrides and isolates), which a pull request's author could use to
+ * make a title or a file's name read as something else. The marks right-to-left text places numbers
+ * and punctuation with (LRM, RLM, ALM) stay: they change no more than their neighbours.
+ */
+export function withoutBidi(text: string): string {
+  return text.replaceAll(/[\u202A-\u202E\u2066-\u2069]/g, '');
+}
+
 /** What main last said of a pull request's tab, re-rendering when it changes. */
 export function usePull(tab: string): PullView | undefined {
   return useStore(pullsStore, (state) => state.views.get(tab));

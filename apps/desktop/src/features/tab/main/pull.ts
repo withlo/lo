@@ -4,7 +4,7 @@
 // shown. What's on screen stays on the head the tab opened at until the newer push is loaded.
 // Nothing here calls Electron.
 
-import { type PullRequestRefs, parseOid } from '@lo/git';
+import { type PullRequestRefs, parseOid, type Repo } from '@lo/git';
 import {
   decideAccount,
   GithubError,
@@ -20,6 +20,7 @@ import {
 import { IpcError } from '../../../ipc/contract.ts';
 import type { LocalGit } from '../../../main/git.ts';
 import type { GithubAccess } from '../../accounts/service.ts';
+import type { PullTabInfo } from '../service.ts';
 import type {
   Acting,
   Connection,
@@ -83,6 +84,8 @@ export interface PullTabOptions {
   readonly publish: TabPublish;
   /** Keeps what changed of the pull request with the tab. */
   readonly keep: (kept: Kept) => void;
+  /** Hears that what {@link PullTab.info} says may have changed. */
+  readonly changed?: (() => void) | undefined;
   readonly log: (line: string) => void;
   /** How long GitHub must be out of reach before the tab says so: {@link OFFLINE_AFTER}. */
   readonly offlineAfter?: number | undefined;
@@ -151,6 +154,7 @@ export class PullTab {
   #saidPull: string | undefined;
   #saidFiles: string | undefined;
   #saidLocal: string | undefined;
+  #saidInfo: string | undefined;
 
   constructor(options: PullTabOptions) {
     this.#options = options;
@@ -279,6 +283,34 @@ export class PullTab {
     clearTimeout(this.#offlineTimer);
     this.#detach();
     this.#local?.close();
+  }
+
+  /** What other features in main follow of the tab. */
+  info(): PullTabInfo {
+    const repository = this.#repository ?? this.pull.repo;
+    return {
+      id: this.id,
+      repository: { owner: repository.owner, name: repository.name },
+      number: this.pull.number,
+      acting: this.#acting,
+      shown: this.#started ? this.#shown : undefined,
+      provisional: this.#provisional,
+      local: this.#localState(),
+    };
+  }
+
+  /** Tells the features that follow the tab, if what {@link PullTab.info} says changed. */
+  #tellInfo(): void {
+    if (this.#closed) return;
+    const said = JSON.stringify(this.info());
+    if (said === this.#saidInfo) return;
+    this.#saidInfo = said;
+    this.#options.changed?.();
+  }
+
+  /** The local copy's clone, once it's opened, to read from. It closes with the tab. */
+  clone(): Promise<Repo> | undefined {
+    return this.#local?.clone;
   }
 
   snapshot(): Snapshot {
@@ -518,6 +550,7 @@ export class PullTab {
     if (this.#repository?.toString() !== repo.toString()) {
       this.#repository = repo;
       this.#options.keep({ repository: repo.toString() });
+      this.#tellInfo();
     }
   }
 
@@ -767,9 +800,11 @@ export class PullTab {
     if (this.#closed) return;
     const local = { id: this.id, state: this.#localState() };
     const said = JSON.stringify(local);
-    if (said === this.#saidLocal) return;
-    this.#saidLocal = said;
-    this.#options.publish.local(local);
+    if (said !== this.#saidLocal) {
+      this.#saidLocal = said;
+      this.#options.publish.local(local);
+    }
+    this.#tellInfo();
   }
 }
 

@@ -31,6 +31,9 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Action                | Keys  | Where       | Command             |
 | --------------------- | ----- | ----------- | ------------------- |
 | Copy the sign-in code | `y y` | In `dialog` | `accounts.copyCode` |
+| Whole file            | `g f` | In `tree`   | `tree.wholeFile`    |
+| Copy path             | `y p` | In `tree`   | `tree.copyPath`     |
+| Open on GitHub        | `g x` | In `tree`   | `tree.openOnGithub` |
 
 ## Find
 
@@ -48,6 +51,21 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | -------------------- | ------- | -------------------------------------------------------------------------------------- | ------------------ |
 | Next middle view     | `` ` `` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `tab.nextView`     |
 | Previous middle view | `~`     | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `tab.previousView` |
+
+## Files
+
+| Action                   | Keys     | Where                                                                                  | Command            |
+| ------------------------ | -------- | -------------------------------------------------------------------------------------- | ------------------ |
+| Go to the file tree      | `-`      | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `tree.focus`       |
+| Tree or review order     | `t`      | In `tree`                                                                              | `tree.mode`        |
+| Changed files only       | `f`      | In `tree`                                                                              | `tree.changedOnly` |
+| Next row of the tree     | `j`, `↓` | In `tree`                                                                              | `tree.down`        |
+| Previous row of the tree | `k`, `↑` | In `tree`                                                                              | `tree.up`          |
+| Open the folder          | `l`, `→` | In `tree`                                                                              | `tree.open`        |
+| Close the folder         | `h`, `←` | In `tree`                                                                              | `tree.close`       |
+| Open every folder        | `z R`    | In `tree`                                                                              | `tree.openAll`     |
+| Close every folder       | `z M`    | In `tree`                                                                              | `tree.closeAll`    |
+| Show the file            | `⏎`      | In `tree`                                                                              | `tree.show`        |
 
 ## Panels
 
@@ -106,6 +124,7 @@ comment box and another elsewhere.
 | `box`      | A comment box, a code view with an insert mode.                                       |
 | `recent`   | Named by `open`.                                                                      |
 | `settings` | Named by `settings`.                                                                  |
+| `tree`     | Named by `tree`.                                                                      |
 
 In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a
 command (after a count or an operator), only chords are Lo's, and other keys go to Vim. In a text
@@ -148,6 +167,7 @@ these, which run Lo's command in place of Vim's key:
 | `⌃i`             | Forward              | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`     |
 | `` ` ``          | Next middle view     | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`     |
 | `~`              | Previous middle view | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView` |
+| `-`              | Go to the file tree  | `-`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tree.focus`       |
 | `Ctrl+Q` (Linux) | Quit Lo              | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `app.quit`         |
 | `Ctrl+W` (Linux) | Close tab            | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`        |
 
