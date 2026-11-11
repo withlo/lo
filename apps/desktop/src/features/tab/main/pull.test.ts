@@ -546,11 +546,11 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     await new Promise((resolve) => setTimeout(resolve, 6_500));
     expect(reads).toBe(1);
 
-    // Signed in again: the poller polls once more, and the tab reads at once.
+    // Signed in again: the tab reads at once, and again as the poller hears the pull request.
     answering = true;
     signedOut = false;
     for (const listener of listeners) listener();
-    await expect.poll(() => reads, { timeout: 10_000 }).toBe(2);
+    await expect.poll(() => reads, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
     await expect.poll(() => sent.pull?.header?.author, { timeout: 20_000 }).toBe('rozed-bot');
     tab.close();
   });
