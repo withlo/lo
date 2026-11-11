@@ -21,7 +21,7 @@ import {
   type HeaderInfo,
   HeaderWidget,
   MovedLabelWidget,
-  type ThreadComment,
+  type ThreadDraw,
   type ThreadSizes,
   ThreadWidget,
 } from './widgets.ts';
@@ -29,22 +29,23 @@ import {
 /** A file as the view shows it. */
 export interface ViewFile extends HeaderInfo {
   /** Why the file isn't shown as a diff, if it isn't. */
-  skipped?: 'too-large' | 'binary' | undefined;
+  skipped?: 'too-large' | 'binary' | 'empty' | undefined;
 }
 
-/** A thread under one of a file's lines, or a comment box there, or both. */
+/** The threads under one of a file's lines, or a comment box there, or both. */
 export interface ViewThread {
   id: string;
   side: Side;
   line: number;
-  comments: readonly ThreadComment[];
+  threads: readonly ThreadDraw[];
   box?: BoxHost | undefined;
   /** Changes when the box must be drawn again, to move it into the editor showing. */
   drawing?: number | undefined;
 }
 
 /** What a file shows where its lines would be, when they aren't shown as a diff. */
-export type FileNote = 'pending' | 'too-large' | 'loading' | 'failed' | 'binary' | 'closed';
+export type FileNote =
+  'pending' | 'too-large' | 'loading' | 'failed' | 'binary' | 'empty' | 'closed';
 
 export interface Common {
   index: number;
@@ -63,13 +64,15 @@ export interface Common {
 }
 
 function noteText(file: ViewFile, note: FileNote): string {
+  const { additions, deletions } = file.header;
   const texts: Record<FileNote, string> = {
-    'too-large': `${file.additions + file.deletions} changed lines: za loads them`,
+    'too-large': `${additions + deletions} changed lines: za loads them`,
     loading: 'Loading the file…',
     failed: 'The file couldn’t be loaded: za tries again',
     binary: 'A binary file',
+    empty: 'No lines changed',
     pending: 'Working out the diff…',
-    closed: `+${file.additions} −${file.deletions}, closed: za opens it`,
+    closed: `+${additions} −${deletions}, closed: za opens it`,
   };
   return texts[note];
 }
@@ -217,7 +220,7 @@ function threadAt(
   tag: { file: number },
   at: number,
 ): Range<Decoration> {
-  const widget = new ThreadWidget(thread.id, thread.comments, sizes, thread.box, thread.drawing);
+  const widget = new ThreadWidget(thread.id, thread.threads, sizes, thread.box, thread.drawing);
   return Decoration.widget({ widget, block: true, side: 1, ...tag }).range(at);
 }
 

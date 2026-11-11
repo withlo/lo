@@ -1,11 +1,24 @@
-// The harness's page: the diff view of one pull request, filled in as the background process sends
-// each file's diff and highlighting, then the moves. A large file's lines come from main when it's
-// loaded, and its diff from the background process after them.
+// The suite's page: the diff view of one pull request, opened as the diff feature opens it, through
+// `@lo/ui/code`, and filled in as the background process sends each file's diff and highlighting,
+// then the moves. A file kept out gets its lines from main when it's loaded, and its diff from the
+// background process after them. Keys take the app's path: the registry's listener sees each first
+// and runs Lo's commands, and the view's Vim gets the rest.
 
 import { splitLines } from '@lo/diff';
-import { DiffView, type Place } from '@lo/ui/code';
+import {
+  type Composer,
+  createDiffView,
+  type DiffFile,
+  type DiffView,
+  type Place,
+  type Span,
+  type ThreadView,
+} from '@lo/ui/code';
+import { type Entry, listen, Registry } from '@lo/ui/commands';
 
-import type { Loaded, PullReply, Result } from '../shared/protocol.ts';
+import type { Loaded, PullFile, PullReply, Result } from '../shared/protocol.ts';
+import { commandsFor } from './commands.ts';
+import { fillerText } from './filler.ts';
 
 declare global {
   interface Window {
@@ -29,53 +42,167 @@ await Promise.all(
 );
 const root = document.getElementById('root');
 if (!root) throw new Error('The page has no root.');
-const view = new DiffView(
-  root,
-  pull.files.map((file) => ({
-    ...file,
-    oldLines: file.old === undefined ? [] : splitLines(file.old),
-    newLines: file.new === undefined ? [] : splitLines(file.new),
-  })),
-  pull.threads,
-  {
-    nonce,
-    load: (file) => {
-      void window.perf.load(file).then(
-        (loaded) => view.addLines(file, lines(loaded.old), lines(loaded.new)),
-        () => view.loadFailed(file),
-      );
-    },
+
+/** Files are named by their paths, which a pull request's file list doesn't repeat. */
+const ids = pull.files.map((file) => file.path);
+const indexOf = new Map(ids.map((id, index) => [id, index]));
+
+/** The threads drawn, with the comments written here, which go nowhere. */
+let threads = threadsOf(pull);
+/** Drafts kept when a box closed, by where they were written. */
+const drafts = new Map<string, string>();
+const tab = 'pull';
+let view: DiffView | undefined;
+
+const registry: Registry = new Registry({
+  system: navigator.platform.startsWith('Mac') ? 'mac' : 'linux',
+  commands: commandsFor({
+    view: opened,
+    registry: () => registry,
+    here,
+    compose,
     copyLink: (place) => {
       void linkTo(place).then((link) => window.perf.copy(link));
     },
+  }),
+  here,
+});
+registry.tab(tab);
+listen(window, registry);
+
+view = createDiffView(
+  root,
+  { files: pull.files.map(diffFile), layout: 'split', vimKeys: registry.vimKeys(), nonce },
+  {
+    cursor() {},
+    mode() {},
+    file() {},
+    jumped: (from) => registry.history.record({ view: 'diff', at: { kind: 'line', at: from } }),
+    load: (id) => {
+      const index = indexOf.get(id);
+      if (index === undefined) return;
+      window.perf.load(index).then(
+        (loaded) => opened().setLines(id, { old: lines(loaded.old), new: lines(loaded.new) }),
+        () => opened().loadFailed(id),
+      );
+    },
+    menu() {},
   },
 );
+view.setThreads(threads);
+registry.history.register(tab, 'diff', (at) => {
+  if (at.kind !== 'line') return false;
+  const place = at.at;
+  opened().reveal('line' in place ? place : { ...place, line: Math.max(place.from, place.to) });
+  return true;
+});
+
+function opened(): DiffView {
+  if (!view) throw new Error("The diff view isn't open yet.");
+  return view;
+}
+
+/** Where the tab is, for history: the cursor's line. */
+function here(): Entry | undefined {
+  return view && { view: 'diff', at: view.keyState().target };
+}
+
+function diffFile(file: PullFile): DiffFile {
+  const change =
+    file.status === 'added' ? 'added' : file.status === 'removed' ? 'deleted' : 'modified';
+  const shown: DiffFile = {
+    id: file.path,
+    path: file.path,
+    change,
+    header: { additions: file.additions, deletions: file.deletions },
+  };
+  if (file.previousPath !== undefined) shown.previousPath = file.previousPath;
+  if (file.skipped === 'binary') shown.skip = 'binary';
+  else if (file.skipped === 'too-large') shown.skip = 'large';
+  else shown.lines = { old: lines(file.old), new: lines(file.new) };
+  return shown;
+}
 
 function lines(text: string | undefined): string[] {
   return text === undefined ? [] : splitLines(text);
 }
 
+/**
+ * The pull request's threads as the view draws them, one under a line: the line's last. Their
+ * comments are made up to their recorded lengths.
+ */
+function threadsOf(shown: PullReply['pull']): ThreadView[] {
+  const byPlace = new Map<string, ThreadView>();
+  shown.threads.forEach((thread, index) => {
+    const at: Place = { file: ids[thread.file]!, side: thread.side, line: thread.line };
+    const comments = thread.comments.map((length, number) => ({
+      author: number === 0 ? 'reviewer' : 'author',
+      body: fillerText(length, number),
+    }));
+    const key = placeKey(at);
+    byPlace.set(key, { id: byPlace.get(key)?.id ?? `thread-${index}`, at, comments });
+  });
+  return [...byPlace.values()];
+}
+
+function placeKey(place: Place): string {
+  return `${place.file}:${place.side}:${place.line}`;
+}
+
+/** A comment box at a line, or under the last of the lines `v` selected, with its draft. */
+function compose(at: Place | Span): Composer {
+  const place: Place = 'line' in at ? at : { ...at, line: Math.max(at.from, at.to) };
+  const key = placeKey(place);
+  const box: Composer = opened().compose(at, drafts.get(key) ?? '', {
+    change() {},
+    submit() {
+      // The comment joins the line's thread, or starts one, and goes nowhere else.
+      const comment = { author: 'you', body: box.text.trim() };
+      const there = threads.find((thread) => placeKey(thread.at) === key);
+      threads = there
+        ? threads.map((thread) =>
+            thread === there ? { ...thread, comments: [...thread.comments, comment] } : thread,
+          )
+        : [...threads, { id: `thread-${threads.length}`, at: place, comments: [comment] }];
+      drafts.delete(key);
+      opened().setThreads(threads);
+      box.close();
+    },
+    close(keep) {
+      if (keep) drafts.set(key, box.text);
+      else drafts.delete(key);
+    },
+  });
+  return box;
+}
+
 /** GitHub's link to a line in the pull request's diff: the file's path hashed, and L or R. */
 async function linkTo(place: Place): Promise<string> {
-  const path = pull.files[place.file]!.path;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(path));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(place.file));
   const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0'));
   const side = place.side === 'old' ? 'L' : 'R';
   return `https://github.com/${pull.repo}/pull/${pull.number}/files#diff-${hash.join('')}${side}${place.line}`;
 }
 
-// For the measurements, which drive the page from outside.
-Object.assign(window, { diffView: view });
+// For the measurements and the key spec, which drive the page from outside.
+Object.assign(window, { diffView: view.probe });
 
 window.addEventListener('message', (event) => {
   if (event.source !== window || event.data !== 'perf:port') return;
   const [port] = event.ports;
   if (!port) return;
   port.addEventListener('message', ({ data }: MessageEvent<Result>) => {
-    if (data.type === 'file') view.setResult(data.index, data.diff, data.tokens);
-    else if (data.type === 'moves') {
+    if (data.type === 'file') {
+      const id = ids[data.index]!;
+      // The highlighting first, so the file is drawn once, with its diff.
+      for (const side of ['old', 'new'] as const) {
+        const triples = data.tokens[side];
+        if (triples) opened().setTokens(id, side, triples);
+      }
+      opened().setDiff(id, data.diff);
+    } else if (data.type === 'moves') {
       // The moves come last: everything has arrived.
-      view.setMoves(data.moves);
+      opened().setMoves(data.moves);
       Object.assign(window, { diffLoaded: true });
     }
   });

@@ -5,7 +5,7 @@
     "lib": ["ES2024", "DOM"],
     "types": ["node", "vite/client"]
   },
-  "include": ["src/**/*.test.ts", "scripts/**/*.test.ts", "*.config.ts"],
+  "include": ["src/**/*.test.ts", "scripts/**/*.test.ts", "e2e/**/*.ts", "*.config.ts"],
   "references": [
     { "path": "./tsconfig.main.json" },
     { "path": "./tsconfig.window.json" },

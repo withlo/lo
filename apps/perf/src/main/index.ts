@@ -1,8 +1,11 @@
-// The harness's main process: it reads one recorded pull request from the cache, opens a window
-// set up as the app's is, and starts a background process that diffs and highlights the files
-// and sends the results straight to the window over a MessagePort, as the app will.
+// The suite's main process: it reads one recorded pull request from the cache, opens a window set
+// up as the app's is, and starts a background process that diffs and highlights the files and
+// sends the results straight to the window over a MessagePort, as the app will.
 //
 //   pnpm nx run perf:open -- kubernetes-125488
+//
+// With `LO_PERF_PULL` naming a JSON file, it opens the small pull request written there instead,
+// as the key spec does (`fixture.ts`).
 
 import { randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -26,13 +29,21 @@ import backgroundEntry from '../background/index.ts?modulePath';
 // oxlint-disable-next-line import/default
 import workerEntry from '../background/worker.ts?modulePath';
 import type { LaterJob, Loaded, PullReply, Work } from '../shared/protocol.ts';
+import { readFixture } from './fixture.ts';
 import { loadPull } from './pull.ts';
 import { pageUrl, registerScheme, secureContents, secureSession } from './security.ts';
 
+const fixture = process.env.LO_PERF_PULL;
 // The last argument that names a manifest, such as `kubernetes-125488`: Electron and the tools
 // that start it put the app's folder and their own flags before it.
 const name = process.argv.toReversed().find((arg) => /^[a-z0-9.]+(?:-[a-z0-9.]+)*-\d+$/.test(arg));
-if (!name) {
+/** Reads the pull request to open. */
+const read = fixture
+  ? () => Promise.resolve(readFixture(fixture))
+  : name
+    ? () => loadPull(name)
+    : undefined;
+if (!read) {
   console.error('Name a recorded pull request to open, such as kubernetes-125488.');
   process.exit(1);
 }
@@ -49,7 +60,7 @@ registerScheme();
 app
   .whenReady()
   .then(async () => {
-    const loaded = loadPull(name);
+    const loaded = read();
     const nonce = randomBytes(18).toString('base64');
     const windowSession = session.fromPartition('perf');
     await secureSession(windowSession, windowFiles, nonce);
@@ -105,7 +116,7 @@ app
     await window.loadURL(pageUrl);
   })
   .catch((error: unknown) => {
-    console.error("The harness couldn't start:", error);
+    console.error("The suite couldn't start:", error);
     app.exit(1);
   });
 
