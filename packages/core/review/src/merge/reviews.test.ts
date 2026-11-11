@@ -1,3 +1,4 @@
+import { unchecked } from '@lo/github';
 import { expect, test } from 'vitest';
 
 import { reviewRules, snapshot } from '../../test/snapshot.ts';
@@ -193,4 +194,16 @@ test('review blockers come in their groups', () => {
 test('missing approvals are a wait and requested changes are not', () => {
   expect(isWait(missing(1, [user('erin')]))).toBe(true);
   expect(isWait(changesRequested(['alice']))).toBe(false);
+});
+
+test('a request for a reviewer without a login is covered by no approval', () => {
+  // A request GitHub gave in a shape newer than Lo.
+  const nobody = unchecked<Reviewer>({ kind: 'user' });
+  const unnamed = deciding('REVIEW_REQUIRED', {
+    reviews: [review('alice', 'APPROVED')],
+    reviewRequests: [codeOwner(nobody)],
+    rules: requiringCodeOwners(1),
+  });
+
+  expect(blockers(unnamed)).toEqual([missing(0, [nobody])]);
 });

@@ -491,7 +491,12 @@ function pullRequestFacts(
     for (const request of read) {
       const asked = requestedReviewer(request.requestedReviewer, login);
       // A team the account can't see, or an enterprise team, is left out.
-      if (asked === undefined) continue;
+      if (asked === 'hidden') continue;
+      // A reviewer of a kind newer than Lo can't be named, but may be what GitHub waits for.
+      if (asked === 'unknown') {
+        lists.leftOutAltogether('review requests');
+        continue;
+      }
       if (asked.member && !facts.viewerTeams.includes(asked.reviewer)) {
         facts.viewerTeams.push(asked.reviewer);
       }
@@ -549,7 +554,9 @@ function pullRequestFacts(
   if (running || pendingStatus) facts.checksPending = true;
   const nodes = given(contexts.nodes);
   if (nodes.missing > 0) lists.leftOutAltogether('checks');
-  facts.checks = nodes.read.flatMap(requiredCheck);
+  const { checks, unknown } = requiredChecks(nodes.read);
+  if (unknown) lists.leftOutAltogether('checks');
+  facts.checks = checks;
   const next = contexts.pageInfo.hasNextPage
     ? { total: contexts.totalCount, cursor: contexts.pageInfo.endCursor }
     : undefined;
@@ -562,13 +569,14 @@ type RequestedReviewer = NonNullable<
 
 /**
  * Who a review request asks, and for a team, whether the account with login `login` is in it:
- * nothing for a team the account can't see, or an enterprise team.
+ * `hidden` for a team the account can't see, or an enterprise team, and `unknown` for a reviewer
+ * of a kind newer than Lo.
  */
 function requestedReviewer(
   asked: RequestedReviewer,
   login: string,
-): { reviewer: string; team: boolean; member: boolean } | undefined {
-  if (asked === null) return undefined;
+): { reviewer: string; team: boolean; member: boolean } | 'hidden' | 'unknown' {
+  if (asked === null) return 'hidden';
   const { __typename: typename } = asked;
   switch (typename) {
     case 'User':
@@ -583,14 +591,18 @@ function requestedReviewer(
         member: given(asked.members.nodes).read.some((user) => sameAsciiCase(user.login, login)),
       };
     case 'EnterpriseTeam':
-      return undefined;
+      return 'hidden';
     default:
-      return typename satisfies never;
+      typename satisfies never;
+      return 'unknown';
   }
 }
 
-/** A required check run or commit status, or none for one that isn't required. */
-function requiredCheck(node: MergeCheckFragment): CheckFacts[] {
+/**
+ * A required check run or commit status, or none for one that isn't required. Nothing at all for a
+ * check of a kind newer than Lo, which may be a required one.
+ */
+function requiredCheck(node: MergeCheckFragment): CheckFacts[] | undefined {
   const { __typename: typename } = node;
   switch (typename) {
     case 'CheckRun':
@@ -615,8 +627,24 @@ function requiredCheck(node: MergeCheckFragment): CheckFacts[] {
         },
       ];
     default:
-      return [];
+      typename satisfies never;
+      return undefined;
   }
+}
+
+/**
+ * The required checks among `nodes`, and whether one was of a kind newer than Lo: GitHub may
+ * require it, so it's a check left out.
+ */
+function requiredChecks(nodes: readonly MergeCheckFragment[]): {
+  checks: CheckFacts[];
+  unknown: boolean;
+} {
+  const read = nodes.map(requiredCheck);
+  return {
+    checks: read.flatMap((checks) => checks ?? []),
+    unknown: read.includes(undefined),
+  };
 }
 
 /**
@@ -746,7 +774,9 @@ async function readOtherChecks(
     const { contexts } = rollup;
     const nodes = given(contexts.nodes);
     if (nodes.missing > 0) add(facts.leftOut, 'checks');
-    facts.pullRequest.checks.push(...nodes.read.flatMap(requiredCheck));
+    const { checks, unknown } = requiredChecks(nodes.read);
+    if (unknown) add(facts.leftOut, 'checks');
+    facts.pullRequest.checks.push(...checks);
     pages += 1;
     after = pager.next(contexts.pageInfo.hasNextPage, contexts.pageInfo.endCursor);
   }

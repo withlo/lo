@@ -23,6 +23,16 @@ export function githubEnum<const T extends string>(values: readonly T[], value: 
 }
 
 /**
+ * What a switch over a closed set gives for a value outside it, which only data newer than Lo can
+ * hold: `fallback`, chosen so such a value never reads as passing or permissive. `value` is typed
+ * `never`, so a case the switch leaves out fails to compile.
+ */
+export function outsideCase<T>(value: never, fallback: T): T {
+  void value;
+  return fallback;
+}
+
+/**
  * Reads `value` as one of `values`, as {@link githubEnum} does, or gives nothing for anything else,
  * for a caller that reads a value newer than Lo as something of its own.
  */

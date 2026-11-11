@@ -1270,3 +1270,46 @@ test('a branch a pull request moves onto decides its methods and queue', async (
   // GitHub's verdict is still the one read for main.
   expect(there.mergeState).toBe(here.mergeState);
 });
+
+// Values newer than Lo.
+
+test('a reviewer of a kind lo doesnt know leaves the review requests out', async () => {
+  // pnpm#17816, its code owner asked as a kind of reviewer GitHub's schema here doesn't have.
+  const fetch = edited('merge_pnpm_17816', (file, interaction) => {
+    if (!file.startsWith('001-')) return;
+    const requests = object(pullRequestOf(interaction)['reviewRequests']);
+    const reviewer = object(object(list(requests['nodes'])[0])['requestedReviewer']);
+    reviewer['__typename'] = 'SomethingNew';
+  });
+  const facts = await readMergeFacts(client(fetch), new PullRef('pnpm', 'pnpm', 17816), BOT);
+
+  expect(facts.leftOut).toContain('review requests');
+  expect(facts.pullRequest.reviewRequests).toEqual([]);
+  const snapshot = onScreen(facts);
+  expect(snapshot.complete).toBe(false);
+  expect(snapshot.seesEveryRule).toBe(false);
+  // GitHub still wants a code owner's review, which Lo can't name.
+  expect(blockers(snapshot)).toEqual([{ kind: 'approvals', more: 0, codeOwners: [] }]);
+  expect(mergeStatus(snapshot).kind).toBe('waiting');
+  expect(mergeAction(snapshot)).toEqual({ kind: 'notPossible', reason: { kind: 'blocked' } });
+  expect(approveAndShip(snapshot)).toEqual({ kind: 'incomplete', incomplete: 'readAgain' });
+});
+
+test('a check of a kind lo doesnt know is left out', async () => {
+  // vscode#346714, its first check of a kind GitHub's schema here doesn't have.
+  const fetch = edited('merge_vscode_346714', (file, interaction) => {
+    if (!file.startsWith('001-')) return;
+    const contexts = object(object(pullRequestOf(interaction)['statusCheckRollup'])['contexts']);
+    object(list(contexts['nodes'])[0])['__typename'] = 'SomethingNew';
+  });
+  const facts = await readMergeFacts(client(fetch), VSCODE, BOT);
+
+  expect(facts.leftOut).toEqual(['checks']);
+  const snapshot = onScreen(facts);
+  expect(snapshot.complete).toBe(false);
+  // GitHub may require it, so none of the required names is taken as one nothing will report.
+  expect(checkStates(snapshot)).toEqual([
+    ['Dependencies Check', 'passed'],
+    ['license/cla', 'passed'],
+  ]);
+});

@@ -6,6 +6,7 @@
  * approved.
  */
 
+import { outsideCase } from '../enums.ts';
 import type { MergeSnapshot, Review, Reviewer } from '../merge.ts';
 
 /**
@@ -83,13 +84,16 @@ function covers(review: Review, reviewer: Reviewer): boolean {
     case 'team':
       return review.onBehalfOf.some((team) => sameLogin(team, reviewer.slug));
     default:
-      return reviewer satisfies never;
+      return outsideCase(reviewer, false);
   }
 }
 
-/** Whether two GitHub logins or team slugs name the same account. GitHub ignores their (ASCII) case. */
-export function sameLogin(a: string, b: string): boolean {
-  return asciiLower(a) === asciiLower(b);
+/**
+ * Whether two GitHub logins or team slugs name the same account. GitHub ignores their (ASCII) case.
+ * A missing one names nobody, so it matches nothing.
+ */
+export function sameLogin(a: string | undefined, b: string | undefined): boolean {
+  return typeof a === 'string' && typeof b === 'string' && asciiLower(a) === asciiLower(b);
 }
 
 function asciiLower(text: string): string {

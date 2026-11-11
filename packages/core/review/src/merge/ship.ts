@@ -20,6 +20,7 @@ import {
   type MergeSnapshot,
   type Review,
 } from '../merge.ts';
+import { outsideCase } from '../enums.ts';
 import type { ReviewRefusal } from '../pending.ts';
 import { blockers, isWait, type Blocker } from './blockers.ts';
 import type { MergeMethod, ReviewDecision, ReviewState } from './github.ts';
@@ -141,7 +142,7 @@ function nextStep(likely: Ship): string {
     case 'stop':
       return `will likely stop: ${stopReason(likely.stop)}`;
     default:
-      return likely satisfies never;
+      return outsideCase(likely, 'will likely stop');
   }
 }
 
@@ -164,7 +165,7 @@ function stopReason(stop: Stop): string {
         ? 'GitHub left part of its answer out'
         : 'Lo read only the first 1,000 checks';
     default:
-      return stop satisfies never;
+      return outsideCase(stop, "GitHub's answer isn't one Lo knows");
   }
 }
 
@@ -204,7 +205,7 @@ function waitKind(blocker: Blocker): string | undefined {
     case 'unexplained':
       return undefined;
     default:
-      return blocker satisfies never;
+      return outsideCase(blocker, undefined);
   }
 }
 
@@ -239,7 +240,7 @@ export function approves(approval: Approval): boolean {
     case 'alreadyApproved':
       return false;
     default:
-      return approval satisfies never;
+      return outsideCase(approval, false);
   }
 }
 
@@ -395,7 +396,7 @@ export function approveAndShip(snapshot: MergeSnapshot): ApproveAndShip {
       mayAutoMerge = false;
       break;
     default:
-      mayAutoMerge = likely satisfies never;
+      mayAutoMerge = outsideCase(likely, true);
   }
   const approvalOutlivesPush =
     approval.kind !== 'ownPullRequest' && !pushNeedsNewApproval(snapshot.rules);
@@ -476,7 +477,7 @@ export function asAsked(plan: Plan, now: Ship): boolean {
       if (asked.kind === 'enqueueWhenReady') return true;
       return asked.kind === 'enqueue' && warned;
     default:
-      return now satisfies never;
+      return outsideCase(now, false);
   }
 }
 
@@ -680,7 +681,7 @@ function githubLetsItMerge(snapshot: MergeSnapshot): boolean {
     case 'UNKNOWN':
       return false;
     default:
-      return snapshot.mergeState satisfies never;
+      return outsideCase(snapshot.mergeState, false);
   }
 }
 
@@ -735,7 +736,7 @@ function withYourApproval(snapshot: MergeSnapshot): MergeSnapshot {
       reviewDecision = required();
       break;
     default:
-      reviewDecision = snapshot.reviewDecision satisfies never;
+      reviewDecision = outsideCase(snapshot.reviewDecision, 'REVIEW_REQUIRED');
   }
 
   const unexplained = blockers(snapshot).some((blocker) => blocker.kind === 'unexplained');

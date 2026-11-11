@@ -1,3 +1,4 @@
+import { unchecked } from '@lo/github';
 import { expect, test } from 'vitest';
 
 import { snapshot } from '../test/snapshot.ts';
@@ -11,7 +12,7 @@ import {
   pickedMethod,
   type AllowedMethods,
 } from './merge.ts';
-import type { CheckConclusion, CheckStatus } from './merge/github.ts';
+import type { CheckConclusion, CheckStatus, MergeMethod, StatusState } from './merge/github.ts';
 
 const NONE: AllowedMethods = { merge: false, squash: false, rebase: false };
 
@@ -97,4 +98,11 @@ test('the method is the remembered one then githubs default for you', () => {
 
   expect(pickedMethod(remembered)).toBe('SQUASH');
   expect(pickedMethod(rememberedAllowed)).toBe('MERGE');
+});
+
+test('a method or status lo doesnt know is never allowed or passing', () => {
+  const all: AllowedMethods = { merge: true, squash: true, rebase: true };
+
+  expect(allows(all, unchecked<MergeMethod>('OCTOPUS'))).toBe(false);
+  expect(commitStatusState(unchecked<StatusState>('SOMETHING_NEW'))).toBe('running');
 });

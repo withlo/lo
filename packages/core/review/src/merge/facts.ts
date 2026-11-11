@@ -9,7 +9,7 @@
 
 import type { CheckFacts, CheckRequirement, MergeFacts, MergeList, StackFacts } from '@lo/github';
 
-import { knownGithubValue } from '../enums.ts';
+import { knownGithubValue, outsideCase } from '../enums.ts';
 import {
   checkRunState,
   commitStatusState,
@@ -157,7 +157,7 @@ export function seesEveryRule(facts: MergeFacts): boolean {
       case 'other':
         return false;
       default:
-        return rule satisfies never;
+        return outsideCase(rule, false);
     }
   });
   const stackBaseRead = facts.stack === undefined || facts.stack.baseRead;

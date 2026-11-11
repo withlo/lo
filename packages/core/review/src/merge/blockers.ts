@@ -1,5 +1,6 @@
 /** Why a pull request can't merge (`docs/design.md`, "Merge status"). */
 
+import { outsideCase } from '../enums.ts';
 import type { CheckState, MergeSnapshot, RequiredCheck, UnmetRule } from '../merge.ts';
 import {
   changesRequestedBy,
@@ -87,7 +88,7 @@ export function isWait(blocker: Blocker): boolean {
     case 'unexplained':
       return false;
     default:
-      return blocker satisfies never;
+      return outsideCase(blocker, false);
   }
 }
 
@@ -175,7 +176,7 @@ export function blockers(snapshot: MergeSnapshot): Blocker[] {
       approvalsMissing = mergeState === 'BLOCKED' && !nothingMissing(missing);
       break;
     default:
-      approvalsMissing = decision satisfies never;
+      approvalsMissing = outsideCase(decision, true);
   }
   if (approvalsMissing) found.push({ kind: 'approvals', ...missing });
   found.push(...asChecks('awaitingApproval'), ...asChecks('running'));

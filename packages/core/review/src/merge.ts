@@ -30,6 +30,7 @@ import type {
   ReviewState,
   StatusState,
 } from './merge/github.ts';
+import { outsideCase } from './enums.ts';
 import { MERGE_METHODS } from './merge/github.ts';
 import type { PendingReview } from './pending.ts';
 
@@ -345,7 +346,7 @@ export function commitStatusState(state: StatusState): CheckState {
     case 'EXPECTED':
       return 'missing';
     default:
-      return state satisfies never;
+      return outsideCase(state, 'running');
   }
 }
 
@@ -411,7 +412,7 @@ export function allows(methods: AllowedMethods, method: MergeMethod): boolean {
     case 'REBASE':
       return methods.rebase;
     default:
-      return method satisfies never;
+      return outsideCase(method, false);
   }
 }
 

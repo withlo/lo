@@ -1,3 +1,4 @@
+import { unchecked } from '@lo/github';
 import { expect, test } from 'vitest';
 
 import { reviewRules, snapshot, viewer } from '../../test/snapshot.ts';
@@ -1152,4 +1153,18 @@ test('it stops once approved when you cannot merge or turn on auto merge', () =>
 
   expect(afterApproving(clean, given)).toEqual({ kind: 'stop', stop: { kind: 'noPermission' } });
   expect(afterApproving(waiting, given)).toEqual(noAutoMerge([approvals(0)]));
+});
+
+test('a merge state or step lo doesnt know never merges', () => {
+  // GitHub's merge state is one newer than Lo, with nothing Lo sees blocking.
+  const unknown = {
+    ...approved(reviewing(), 'APPROVED', 'CLEAN'),
+    mergeState: unchecked<MergeStateStatus>('MERGE_QUEUED'),
+  };
+  const now = afterApproving(unknown, thePlan(reviewing()));
+
+  expect(now.kind).not.toBe('merge');
+  expect(now.kind).not.toBe('enqueue');
+  // And a step of a kind Lo doesn't know is never what the confirmation asked about.
+  expect(asAsked(thePlan(reviewing()), unchecked<Ship>({ kind: 'somethingNew' }))).toBe(false);
 });
