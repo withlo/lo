@@ -118,22 +118,28 @@ export function keymapEditor(options: { packaged: boolean; env: Environment }): 
  * The background process's settings. Its memory cap is 2 GB. A build run from source offers the
  * smoke test's jobs with `LO_TEST_JOBS=1`, and takes another cap from `LO_BACKGROUND_MEMORY_CAP_MB`
  * so the test can pass it without taking 2 GB. A packaged build ignores both.
+ *
+ * A cap the process couldn't take back from its environment, such as one that isn't a whole number
+ * of megabytes or is too large to be one exactly, is refused: `warn` hears why, and the process
+ * gets 2 GB. Handed on, the process would refuse it at every start, and be started again forever.
  */
 export function backgroundSettings(options: {
   packaged: boolean;
   env: Environment;
+  warn?: ((message: string) => void) | undefined;
 }): BackgroundSettings {
   const settings = { testJobs: false, memoryCap: 2 * 1024 ** 3 };
   if (options.packaged) return settings;
   const cap = options.env.LO_BACKGROUND_MEMORY_CAP_MB;
-  if (cap !== undefined && !/^[1-9]\d*$/.test(cap)) {
-    throw new Error(
-      `LO_BACKGROUND_MEMORY_CAP_MB must be a whole number of megabytes, not "${cap}".`,
+  const usable = cap !== undefined && /^[1-9]\d*$/.test(cap) && Number.isSafeInteger(Number(cap));
+  if (cap !== undefined && !usable) {
+    options.warn?.(
+      `LO_BACKGROUND_MEMORY_CAP_MB must be a whole number of megabytes, up to ${Number.MAX_SAFE_INTEGER}, not ${JSON.stringify(cap)}, so the background process has the usual 2 GB.`,
     );
   }
   return {
     testJobs: options.env.LO_TEST_JOBS === '1',
-    memoryCap: cap === undefined ? settings.memoryCap : Number(cap) * 1024 ** 2,
+    memoryCap: usable ? Number(cap) * 1024 ** 2 : settings.memoryCap,
   };
 }
 

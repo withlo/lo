@@ -334,7 +334,8 @@ files or the network for the window.
   quick failure, and the window gets a new port.
 - A build run from source with `LO_TEST_JOBS=1` adds the smoke test's jobs and exposes the window's
   connection to it, and takes another cap from `LO_BACKGROUND_MEMORY_CAP_MB`. A packaged build
-  ignores both.
+  ignores both. Main refuses a cap it couldn't hand the process whole, such as one too large to be a
+  whole number exactly: it logs a warning and keeps 2 GB.
 - Main always puts the cap in the process's environment, and the process sizes its pool of workers
   from it. A missing or invalid cap is a startup error: the process reports it and exits, and main
   starts it again like after any other exit. It never runs on a pool without a bound.
