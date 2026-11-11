@@ -131,10 +131,13 @@ const DECLARATIONS = new Map([
   ['xmlns:xlink', namespaces.NS.XLINK],
 ]);
 
+/** The elements the parser makes of its own for a fragment: a root and a stand-in document. */
+const PARSER_ELEMENTS = 2;
+
 /** `text`, an SVG file, as Lo's tree of SVG, and what was removed from it. Never throws. */
 export function sanitizeSvg(text: string): SanitizedSvg {
   if (text.length > SVG_LIMITS.size) return refused('size');
-  const fragment = parseHtml(text.toWellFormed(), SVG_LIMITS.elements, true);
+  const fragment = parseHtml(text.toWellFormed(), SVG_LIMITS.elements + PARSER_ELEMENTS, true);
   if (!fragment) return refused('elements');
   return new Sanitizer().run(fragment);
 }
@@ -147,15 +150,22 @@ function isElement(node: ChildNode): node is Element {
   return 'tagName' in node;
 }
 
-function lineOf(node: Element): number | undefined {
-  return node.sourceCodeLocation?.startLine;
+/** Where something is in the text: its line, from 1, and its offset, which orders removals. */
+interface Place {
+  line: number | undefined;
+  offset: number;
 }
 
-function attributeLine(node: Element, name: string): number | undefined {
+function placeOf(node: Element): Place {
+  const at = node.sourceCodeLocation;
+  return { line: at?.startLine, offset: at?.startOffset ?? 0 };
+}
+
+function attributePlace(node: Element, name: string): Place {
   const attributes = node.sourceCodeLocation?.attrs;
   const key = name.toLowerCase();
   const at = attributes && Object.hasOwn(attributes, key) ? attributes[key] : undefined;
-  return at?.startLine ?? lineOf(node);
+  return at ? { line: at.startLine, offset: at.startOffset } : placeOf(node);
 }
 
 function named(name: string): string {
@@ -188,26 +198,39 @@ interface Reference {
   element: SvgElement;
   attribute: string;
   name: string;
-  line: number | undefined;
+  place: Place;
   /** How many times the marker would be drawn on its element. */
   times: number;
 }
 
-interface Frame {
-  node: Element;
-  made: SvgElement;
+/** A node to read, and where it goes. */
+interface Entry {
+  node: ChildNode;
+  parent: SvgElement;
+  /** How deep it is, the `<svg>` one deep. */
   depth: number;
   /** The marker it's in, if any. */
   marker: SvgElement | undefined;
 }
 
+interface Removed {
+  removal: SvgRemoval;
+  offset: number;
+}
+
 class Sanitizer {
-  private readonly removed: SvgRemoval[] = [];
+  /**
+   * What was removed, in three lists each in the text's order: what's around the figure, what's
+   * in it, and what settling the names removed. Each keeps at most as many as the result does.
+   */
+  private readonly around: Removed[] = [];
+  private readonly within: Removed[] = [];
+  private readonly settled: Removed[] = [];
   private numbers = 0;
   /** Elements drawn once each: all but markers' content. */
   private drawn = 0;
   /** Each kept element with an id, by the id. */
-  private readonly ids = new Map<string, { element: SvgElement; line: number | undefined }[]>();
+  private readonly ids = new Map<string, { element: SvgElement; place: Place }[]>();
   private readonly references: Reference[] = [];
   /** How many elements each marker holds, itself included. */
   private readonly markers = new Map<SvgElement, number>();
@@ -220,46 +243,67 @@ class Sanitizer {
         root = node;
       } else {
         // What the HTML parser closed the figure for, and anything else around it.
-        this.remove(elementReason(node.tagName), node.tagName, undefined, lineOf(node));
+        this.remove(
+          this.around,
+          elementReason(node.tagName),
+          node.tagName,
+          undefined,
+          placeOf(node),
+        );
       }
     }
     if (!root) return refused('root');
     const svg = this.element(root, 'svg', undefined);
     this.drawn += 1;
-    const stack: Frame[] = [{ node: root, made: svg, depth: 1, marker: undefined }];
-    while (stack.length > 0) {
-      const { node, made, depth, marker } = stack.pop()!;
-      const rule = svgRule(made.name)!;
-      const holds: readonly string[] = rule.children;
-      for (const child of node.childNodes) {
-        if (child.nodeName === '#text' && 'value' in child) {
-          // SVG draws text only in its text elements.
-          if (rule.text) made.children.push({ kind: 'text', value: child.value });
-          continue;
-        }
-        if (!isElement(child)) continue;
-        const name = child.tagName;
-        const allowed =
-          child.namespaceURI === namespaces.NS.SVG &&
-          holds.includes(name) &&
-          !(name === 'marker' && marker);
-        if (!allowed || !isSvgName(name)) {
-          this.remove(elementReason(name), name, undefined, lineOf(child));
-          continue;
-        }
-        if (depth + 1 > SVG_LIMITS.depth) return refused('depth');
-        const element = this.element(child, name, marker);
-        made.children.push(element);
-        const within = name === 'marker' ? element : marker;
-        if (within) this.markers.set(within, (this.markers.get(within) ?? 0) + 1);
-        else this.drawn += 1;
-        stack.push({ node: child, made: element, depth: depth + 1, marker: within });
+    // Each node in the text's order, with an explicit stack.
+    const stack: Entry[] = [];
+    const pushChildren = (
+      node: Element,
+      parent: SvgElement,
+      depth: number,
+      marker?: SvgElement,
+    ) => {
+      for (let i = node.childNodes.length - 1; i >= 0; i--) {
+        stack.push({ node: node.childNodes[i]!, parent, depth, marker });
       }
+    };
+    pushChildren(root, svg, 2);
+    while (stack.length > 0) {
+      const { node, parent, depth, marker } = stack.pop()!;
+      const rule = svgRule(parent.name)!;
+      if (node.nodeName === '#text' && 'value' in node) {
+        // SVG draws text only in its text elements.
+        if (rule.text) parent.children.push({ kind: 'text', value: node.value });
+        continue;
+      }
+      if (!isElement(node)) continue;
+      const name = node.tagName;
+      const holds: readonly string[] = rule.children;
+      const allowed =
+        node.namespaceURI === namespaces.NS.SVG &&
+        holds.includes(name) &&
+        !(name === 'marker' && marker);
+      if (!allowed || !isSvgName(name)) {
+        this.remove(this.within, elementReason(name), name, undefined, placeOf(node));
+        continue;
+      }
+      if (depth > SVG_LIMITS.depth) return refused('depth');
+      const element = this.element(node, name, marker);
       if (this.numbers > SVG_LIMITS.numbers) return refused('numbers');
+      parent.children.push(element);
+      const inside = name === 'marker' ? element : marker;
+      if (inside) this.markers.set(inside, (this.markers.get(inside) ?? 0) + 1);
+      else this.drawn += 1;
+      pushChildren(node, element, depth + 1, inside);
     }
+    if (this.numbers > SVG_LIMITS.numbers) return refused('numbers');
     this.resolve();
     if (this.drawn > SVG_LIMITS.drawn) return refused('drawn');
-    return { svg, removed: this.removed };
+    const removed = [...this.around, ...this.within, ...this.settled]
+      .sort((a, b) => a.offset - b.offset)
+      .slice(0, MAX_DIAGNOSTICS)
+      .map(({ removal }) => removal);
+    return { svg, removed };
   }
 
   /** `node` as an element of the tree, with the attributes it may have. */
@@ -273,8 +317,9 @@ class Sanitizer {
     for (const attribute of node.attrs) {
       const written = attribute.prefix ? `${attribute.prefix}:${attribute.name}` : attribute.name;
       const { value } = attribute;
-      const line = attributeLine(node, written);
-      const remove = (reason: SvgReason): void => this.remove(reason, name, written, line);
+      const place = attributePlace(node, written);
+      const remove = (reason: SvgReason): void =>
+        this.remove(this.within, reason, name, written, place);
       if (attribute.namespace === namespaces.NS.XMLNS) {
         if (DECLARATIONS.get(written) !== value) remove('attribute');
         continue;
@@ -305,7 +350,7 @@ class Sanitizer {
           continue;
         }
         const read = readValue(kind, value);
-        if (read) references.push({ element: made, attribute: written, name: read.value, line });
+        if (read) references.push({ element: made, attribute: written, name: read.value, place });
         else remove(attributeReason(value, 'value'));
         continue;
       }
@@ -319,7 +364,7 @@ class Sanitizer {
       if (read.vertices !== undefined) vertices = read.vertices;
       if (kind === 'id') {
         const holders = this.ids.get(read.value) ?? [];
-        holders.push({ element: made, line });
+        holders.push({ element: made, place });
         this.ids.set(read.value, holders);
       }
     }
@@ -335,32 +380,56 @@ class Sanitizer {
    * only when it names a marker defined once. Counts what the markers draw.
    */
   private resolve(): void {
+    const removed: Removed[] = [];
+    const remove = (reason: SvgReason, element: string, attribute: string, place: Place): void => {
+      removed.push({
+        removal: removal(reason, element, attribute, place.line),
+        offset: place.offset,
+      });
+    };
     for (const holders of this.ids.values()) {
       if (holders.length < 2) continue;
-      for (const { element, line } of holders) {
+      for (const { element, place } of holders) {
         delete element.attributes['id'];
-        this.remove('id', element.name, 'id', line);
+        remove('id', element.name, 'id', place);
       }
     }
-    for (const { element, attribute, name, line, times } of this.references) {
+    for (const { element, attribute, name, place, times } of this.references) {
       const holders = this.ids.get(name);
       const target = holders?.length === 1 ? holders[0]!.element : undefined;
       if (target?.name !== 'marker') {
-        this.remove('reference', element.name, attribute, line);
+        remove('reference', element.name, attribute, place);
         continue;
       }
       element.attributes[attribute] = name;
       this.drawn += times * (this.markers.get(target) ?? 1);
     }
+    removed.sort((a, b) => a.offset - b.offset);
+    this.settled.push(...removed.slice(0, MAX_DIAGNOSTICS));
   }
 
-  private remove(reason: SvgReason, element: string, attribute?: string, line?: number): void {
-    if (this.removed.length >= MAX_DIAGNOSTICS) return;
-    const removal: SvgRemoval = { reason, element: named(element) };
-    if (attribute !== undefined) removal.attribute = named(attribute);
-    if (line !== undefined) removal.line = line;
-    this.removed.push(removal);
+  private remove(
+    list: Removed[],
+    reason: SvgReason,
+    element: string,
+    attribute: string | undefined,
+    place: Place,
+  ): void {
+    if (list.length >= MAX_DIAGNOSTICS) return;
+    list.push({ removal: removal(reason, element, attribute, place.line), offset: place.offset });
   }
+}
+
+function removal(
+  reason: SvgReason,
+  element: string,
+  attribute: string | undefined,
+  line: number | undefined,
+): SvgRemoval {
+  const made: SvgRemoval = { reason, element: named(element) };
+  if (attribute !== undefined) made.attribute = named(attribute);
+  if (line !== undefined) made.line = line;
+  return made;
 }
 
 function isSvgName(name: string): name is SvgName {
