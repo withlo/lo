@@ -1,5 +1,7 @@
 /** What can go wrong, in terms the app can show and act on. */
 
+import { formatDuration } from './limits.ts';
+
 /**
  * Why a fetch failed:
  *
@@ -65,6 +67,8 @@ export type GitErrorDetail =
    * file's lines or a tree's entries, so Lo stopped it or never read it.
    */
   | { kind: 'tooLarge'; command: string; limit: number; unit?: 'lines' | 'entries' | undefined }
+  /** A git command took longer than `limit` milliseconds, so Lo stopped it. */
+  | { kind: 'tooSlow'; command: string; limit: number }
   /** The cache is open in another process, or already in this one. */
   | { kind: 'busy'; message: string }
   /** Writing to a clone opened to read offline, which never writes. */
@@ -160,6 +164,8 @@ function describe(detail: GitErrorDetail): string {
       return `\`${detail.value}\` isn't a valid ${detail.what}`;
     case 'tooLarge':
       return `\`${detail.command}\` wrote more than ${detail.limit} ${detail.unit ?? 'bytes'}, so Lo stopped it`;
+    case 'tooSlow':
+      return `\`${detail.command}\` took longer than ${formatDuration(detail.limit)}, so Lo stopped it`;
     case 'busy':
       return detail.message;
     case 'readOnly':

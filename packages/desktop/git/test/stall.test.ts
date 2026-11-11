@@ -29,14 +29,22 @@ import { parseOid } from '../src/oid.ts';
 import type { Activity } from '../src/progress.ts';
 import { OVERVIEW_LIMIT, type Overview, type PullRequestRefs } from '../src/repo.ts';
 import { Token } from '../src/token.ts';
-import { cacheFor, eventually, foundGit, runnerIn, script, tempFolder } from './support.ts';
+import {
+  cacheFor,
+  eventually,
+  foundGit,
+  runnerIn,
+  script,
+  systemPath,
+  tempFolder,
+} from './support.ts';
 
 /** Pull request #1 into `main`, as an API that knows nothing else describes it. */
 const PULL_ONE: PullRequestRefs = { number: 1, baseBranch: 'main' };
 
 /** git, as if Lo's environment held only `PATH`: no proxy, whatever the machine has. */
 function plainGit(): Promise<Git> {
-  return foundGit({ PATH: '/usr/bin:/bin' });
+  return foundGit({ PATH: systemPath() });
 }
 
 async function failure(promise: Promise<unknown>): Promise<GitError> {

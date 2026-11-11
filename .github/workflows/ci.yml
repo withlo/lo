@@ -29,6 +29,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       check: ${{ steps.filter.outputs.check }}
+      git: ${{ steps.git.outputs.git }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -38,6 +39,15 @@ jobs:
       - name: Decide whether the check job runs
         id: filter
         run: sh scripts/changes.sh "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+      # The oldest-git job runs only for changes to @lo/git, its test support, or the job itself.
+      - name: Decide whether the oldest-git job runs
+        id: git
+        run: |
+          changed=$(git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA" -- \
+            packages/desktop/git testing/src/git testing/fixtures/trees.sh \
+            .github/actions/oldest-git .github/workflows/ci.yml)
+          if [ -n "$changed" ]; then echo git=true; else echo git=false; fi >> "$GITHUB_OUTPUT"
 
   commitlint:
     name: commitlint
@@ -202,12 +212,41 @@ jobs:
           path: apps/desktop/test-results/
           retention-days: 7
 
+  # @lo/git's tests with the oldest git Lo takes, 2.45, built from source: the runner's own is far
+  # newer.
+  oldest-git:
+    name: oldest-git
+    needs: changes
+    if: needs.changes.outputs.git == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/oldest-git
+
+      - name: Show the git the tests run
+        run: |
+          git --version
+          command -v git
+
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          cache: true
+          save-cache: false
+          require-lockfile: true
+
+      - name: Test @lo/git
+        run: pnpm --filter @lo/git test
+
   # The one check to require besides pr-title, so adding jobs never changes the ruleset. Skipped
   # jobs pass.
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, commitlint, symlinks, shellcheck, format, check, app]
+    needs: [changes, commitlint, symlinks, shellcheck, format, check, app, oldest-git]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

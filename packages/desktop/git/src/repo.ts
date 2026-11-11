@@ -12,7 +12,25 @@ import {
   MAX_ATTRIBUTE_FILES,
   parseCheckAttr,
 } from './attributes.ts';
-import { type ChangedFile, type FileVersion, parseChanges, rawDiffBlobs } from './diff.ts';
+import {
+  type Comparison,
+  conflictedPaths,
+  lackedObject,
+  readReplay,
+  REPLAYS,
+  type Replayed,
+  replayPinned,
+  type Revision,
+  withConflicts,
+} from './compare.ts';
+import {
+  type ChangedFile,
+  changedPath,
+  type FileVersion,
+  parseChanges,
+  parseRawRecords,
+  rawDiffBlobs,
+} from './diff.ts';
 import { GitError } from './errors.ts';
 import { type Fetching, failureMessage, type GitCommand, type Runner } from './git.ts';
 import type { FetchLimits } from './limits.ts';
@@ -89,7 +107,9 @@ export interface RepoParts {
   readonly token?: TokenSource | undefined;
   readonly proxy?: (() => Promise<string | undefined>) | undefined;
   readonly progress?: ((activity: Activity) => void) | undefined;
-  /** Opened to read offline: it never writes. */
+  /** The replayed trees this process has pinned in the clone, shared by every repository open on it. */
+  readonly replays: Set<Oid>;
+  /** Opened to read offline: it never fetches. */
   readonly offline: boolean;
 }
 
@@ -204,6 +224,7 @@ export class Repo {
   readonly #progress: ((activity: Activity) => void) | undefined;
   /** The clone's reader of objects, started on the first read that needs it. */
   readonly #reader: ObjectReader;
+  readonly #replays: Set<Oid>;
 
   constructor(parts: RepoParts) {
     this.name = parts.name;
@@ -217,6 +238,7 @@ export class Repo {
     this.#proxy = parts.proxy;
     this.#progress = parts.progress;
     this.#reader = parts.reader;
+    this.#replays = parts.replays;
   }
 
   /**
@@ -978,6 +1000,261 @@ export class Repo {
       });
     }
     return answers;
+  }
+
+  /**
+   * Compares revision `old` of a pull request with `now`, showing only what the author changed
+   * between them, even when the base moved.
+   *
+   * When the bases differ, as after a rebase, the old revision's changes are replayed onto the new
+   * base in the clone (`git merge-tree --write-tree --merge-base=<old base> <new base> <old head>`,
+   * following folders the base renamed), and the tree that makes is compared with the new head, so
+   * changes that came with the new base cancel out. When the bases match, it compares the heads.
+   * When the replay conflicts, it compares the heads too, and lists every file it conflicted on
+   * with how the author resolved it; any other failure is an error. An unchanged head whose base
+   * moved still gets the replay, which shows how its patch changed; that, and a base that moved
+   * anywhere but forward, is flagged as `retargeted`.
+   *
+   * - Every commit must be in the clone already, or it's `notFetched`, and a base that isn't its
+   *   head or one of its ancestors is `baseNotAncestor`.
+   * - It downloads what it needs, as {@link Repo.downloadFiles} does: first the files both sides
+   *   changed, which the replay merges, and what finding the files either side moved needs; then
+   *   both sides of each file the comparison lists. A replay of changes each made on one side
+   *   alone needs no file. Opened offline, it downloads nothing, and lacking anything is
+   *   `notDownloaded`.
+   * - The replay's tree, and the files merged into it, exist only in the clone. The tree is
+   *   pinned, at `refs/lo/replays/<tree>`, while a repository has the clone open, so keep one open
+   *   while showing a comparison; the next open of the clone with none open removes the pins.
+   *   Comparing the same revisions again makes the same tree.
+   * - With `paths`, only files at those paths, on either side, are listed, as
+   *   {@link Repo.changedFiles} lists them.
+   */
+  async compareRevisions(
+    old: Revision,
+    now: Revision,
+    options: { paths?: readonly Uint8Array[] | undefined } = {},
+  ): Promise<Comparison> {
+    // Never downloaded: git would bring a missing commit with all its history.
+    for (const oid of [old.base, old.head, now.base, now.head]) {
+      if (!(await this.hasCommit(oid))) throw new GitError({ kind: 'notFetched', oid });
+    }
+    // A base the head doesn't contain would show the changes between them as the author's.
+    for (const revision of [old, now]) {
+      if (!(await this.isAncestor(revision.base, revision.head))) {
+        throw new GitError({ kind: 'baseNotAncestor', base: revision.base, head: revision.head });
+      }
+    }
+    const { paths } = options;
+    if (old.base === now.base) {
+      const files = await this.#compared([[old.head, now.head]], paths);
+      return {
+        files: (files[0] ?? []).map((change) => ({ path: changedPath(change), change })),
+        old: old.head,
+        new: now.head,
+        replay: { kind: 'sameBase' },
+      };
+    }
+    // A rebase moves the base forward and the head with it. Otherwise what shows can have come
+    // with the base.
+    const retargeted = old.head === now.head || !(await this.isAncestor(old.base, now.base));
+    const replayed = await replayPinned(
+      () => this.#replay(old, now.base),
+      (tree) => this.#pinReplay(tree),
+      this.#replays,
+      (line) => this.#cache.note(`${this.name}: ${line}`),
+    );
+    if (replayed.kind === 'clean') {
+      const [files = []] = await this.#compared([[replayed.tree, now.head]], paths);
+      return {
+        files: files.map((change) => ({ path: changedPath(change), change })),
+        old: replayed.tree,
+        new: now.head,
+        replay: { kind: retargeted ? 'retargeted' : 'clean' },
+      };
+    }
+    const labels = [now.base, old.head];
+    let conflicted = conflictedPaths(replayed.paths, labels);
+    if (paths !== undefined) {
+      const wanted = new Set(paths.map((path) => Buffer.from(path).toString('latin1')));
+      conflicted = conflicted.filter((path) => wanted.has(path.toString('latin1')));
+    }
+    this.#cache.note(
+      `${this.name}: replaying ${old.head.slice(0, 7)} onto ${now.base.slice(0, 7)} conflicted ` +
+        `(${conflicted.length === 0 ? 'no file left conflicted' : countFiles(conflicted.length)}), ` +
+        'so comparing the heads',
+    );
+    const [plain = [], resolutions = []] = await this.#compared(
+      [
+        [old.head, now.head],
+        [replayed.tree, now.head],
+      ],
+      paths,
+    );
+    return {
+      files: withConflicts(plain, conflicted, resolutions, labels),
+      old: old.head,
+      new: now.head,
+      replay: { kind: 'conflicted', tree: replayed.tree, retargeted },
+    };
+  }
+
+  /**
+   * The files that changed between each pair of `pairs`, both sides of every one downloaded first
+   * in one go, unless the clone was opened offline.
+   */
+  async #compared(
+    pairs: readonly (readonly [Oid, Oid])[],
+    paths: readonly Uint8Array[] | undefined,
+  ): Promise<ChangedFile[][]> {
+    const needs: Oid[] = [];
+    for (const [from, to] of pairs) needs.push(...(await this.changedObjects(from, to)));
+    await this.#downloadMissing(needs);
+    const lists: ChangedFile[][] = [];
+    for (const [from, to] of pairs) lists.push(await this.changedFiles(from, to, { paths }));
+    return lists;
+  }
+
+  /**
+   * Replays `old`'s changes onto `onto`, writing the tree but no ref, with what the merge needs
+   * downloaded first. A git that gives up on a file the clone lacks names it: what finding moved
+   * files needs is hard to tell beforehand, so the replay is tried once more with every file
+   * either side changed.
+   */
+  async #replay(old: Revision, onto: Oid): Promise<Replayed> {
+    await this.#downloadMissing(await this.#replayNeeds(old, onto));
+    for (let attempt = 0; ; attempt++) {
+      const command = this.#git().arg(
+        // A file the old revision added to a folder the base renamed goes where a rebase puts it,
+        // into the renamed folder, rather than conflicting. If the author put it somewhere else,
+        // the comparison shows that as a rename.
+        '-c',
+        'merge.directoryRenames=true',
+        'merge-tree',
+        '--write-tree',
+        '-z',
+        '--name-only',
+        '--no-messages',
+        `--merge-base=${old.base}`,
+        onto,
+        old.head,
+      );
+      const finished = await command.finish();
+      const lacked = finished.code === 0 ? undefined : lackedObject(finished.stderr);
+      if (lacked === undefined) return readReplay(command.display, finished);
+      if (attempt > 0 || this.offline)
+        throw new GitError({ kind: 'notDownloaded', oids: [lacked] });
+      this.#cache.note(
+        `${this.name}: replaying ${old.head.slice(0, 7)} needed ${lacked}, so downloading what either side changed`,
+      );
+      const everything = [
+        ...(await this.changedObjects(old.base, onto)),
+        ...(await this.changedObjects(old.base, old.head)),
+      ];
+      const still = await this.#downloadMissing(everything);
+      if (still.size > 0) throw new GitError({ kind: 'notDownloaded', oids: [...still] });
+    }
+  }
+
+  /**
+   * The files replaying `old` onto `onto` reads, as git's merge finds them: the three versions of
+   * each file both sides changed, which it merges; and, where one side deleted a file the other
+   * changed, or emptied a folder the other added to, the files that side deleted and added, among
+   * which it looks for where the file or folder went. A file moved without a change is found by
+   * its ID, with no contents.
+   */
+  async #replayNeeds(old: Revision, onto: Oid): Promise<Oid[]> {
+    const raw = async (to: Oid) => {
+      const output = await this.#git()
+        .arg(
+          'diff',
+          '--no-ext-diff',
+          '--no-textconv',
+          '--no-color',
+          '--no-renames',
+          '-z',
+          '--raw',
+          '--no-abbrev',
+          old.base,
+          to,
+          '--',
+        )
+        .run();
+      return new Map(
+        parseRawRecords(output).map((record) => [record.path.toString('latin1'), record]),
+      );
+    };
+    const sides = [
+      { changes: await raw(onto), tree: onto },
+      { changes: await raw(old.head), tree: old.head },
+    ];
+    const needs = new Set<Oid>();
+    const need = (mode: string | undefined, oid: Oid) => {
+      if (mode !== undefined && mode !== 'submodule' && !/^0+$/.test(oid)) needs.add(oid);
+    };
+    const [baseSide, headSide] = sides;
+    if (baseSide === undefined || headSide === undefined) return [];
+    for (const [path, change] of baseSide.changes) {
+      const other = headSide.changes.get(path);
+      if (other === undefined) continue;
+      need(change.oldMode, change.oldOid);
+      need(change.newMode, change.newOid);
+      need(other.newMode, other.newOid);
+    }
+    const walk = new TreeWalk(this.#reader);
+    for (const [side, other] of [
+      [baseSide, headSide],
+      [headSide, baseSide],
+    ] as const) {
+      const records = [...side.changes.values()];
+      const added = records.filter((record) => record.status === 'A');
+      const addedOids = new Set(added.map((record) => record.newOid));
+      const otherAdded = [...other.changes.values()]
+        .filter((record) => record.status === 'A')
+        .map((record) => record.path.toString('latin1'));
+      const root = await walk.root(side.tree);
+      const relevant = [];
+      for (const record of records) {
+        // Moved without a change, it's found by its ID.
+        if (record.status !== 'D' || addedOids.has(record.oldOid)) continue;
+        const path = record.path.toString('latin1');
+        const changedThere = other.changes.get(path);
+        if (changedThere !== undefined && changedThere.status !== 'D') {
+          relevant.push(record);
+          continue;
+        }
+        // A folder this side emptied, which the other side added to.
+        for (let end = path.indexOf('/'); end !== -1; end = path.indexOf('/', end + 1)) {
+          const folder = path.slice(0, end);
+          const emptied = (await walk.find(root, Buffer.from(folder, 'latin1'))) === undefined;
+          if (emptied && otherAdded.some((each) => each.startsWith(`${folder}/`))) {
+            relevant.push(record);
+            break;
+          }
+        }
+      }
+      if (relevant.length === 0) continue;
+      for (const record of relevant) {
+        need(record.oldMode, record.oldOid);
+        const there = other.changes.get(record.path.toString('latin1'));
+        if (there !== undefined) need(there.newMode, there.newOid);
+      }
+      for (const record of added) need(record.newMode, record.newOid);
+    }
+    return [...needs];
+  }
+
+  /**
+   * Pins replayed tree `tree` at `refs/lo/replays/<tree>`, and says whether the tree is there once
+   * pinned. No lock: only replays write these refs, each always to its own tree.
+   */
+  async #pinReplay(tree: Oid): Promise<boolean> {
+    await this.#git().arg('update-ref', `${REPLAYS}${tree}`, tree).run();
+    return this.hasTree(tree);
+  }
+
+  /** Whether tree `oid` is in the clone. Never downloads anything. */
+  async hasTree(oid: Oid): Promise<boolean> {
+    return (await this.#reader.info(oid))?.type === 'tree';
   }
 
   /**

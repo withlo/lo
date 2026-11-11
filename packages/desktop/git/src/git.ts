@@ -65,6 +65,11 @@ export interface RunnerSettings extends Folders {
   readonly log?: ((line: string) => void) | undefined;
   /** What only tests may change. Without it, git fetches from GitHub with Lo's settings alone. */
   readonly test?: TestSettings | undefined;
+  /**
+   * The most milliseconds a git that doesn't fetch may take, past which it's stopped, with what it
+   * started, and fails as `tooSlow`. Without it, there's no limit.
+   */
+  readonly readLimit?: number | undefined;
 }
 
 /**
@@ -145,6 +150,11 @@ export interface RunOptions {
    * {@link OUTPUT_LIMIT} unless it says otherwise.
    */
   readonly maxBytes?: number | undefined;
+  /**
+   * The most milliseconds it may take, past which Lo stops it and fails as `tooSlow`: the
+   * runner's limit for a git that doesn't fetch, unless it says otherwise.
+   */
+  readonly timeout?: number | undefined;
 }
 
 /**
@@ -207,6 +217,11 @@ export class GitCommand {
     return this;
   }
 
+  /** How long the command may take: what `options` say, or the runner's limit unless it fetches. */
+  #timeout(options: RunOptions): number | undefined {
+    return options.timeout ?? (this.#fetching === undefined ? this.#settings.readLimit : undefined);
+  }
+
   /** The command as logs and errors show it: `git` and the arguments added to it. */
   get display(): string {
     return ['git', ...this.#shown].join(' ');
@@ -253,7 +268,7 @@ export class GitCommand {
   async finish(input?: Uint8Array | string, options: RunOptions = {}): Promise<Finished> {
     const started = Date.now();
     const child = this.start({ input: input !== undefined });
-    const finished = await child.finish(input, options);
+    const finished = await child.finish(input, { ...options, timeout: this.#timeout(options) });
     if (finished.code !== 0) {
       const status = finished.code ?? String(finished.signal);
       this.#settings.log?.(
@@ -281,18 +296,31 @@ export class GitCommand {
     const child = this.start({ input: input !== undefined });
     const stop = () => child.stop();
     options.signal?.addEventListener('abort', stop, { once: true });
+    const timeout = this.#timeout(options);
+    let tooSlow = false;
+    const timer =
+      timeout === undefined
+        ? undefined
+        : setTimeout(() => {
+            tooSlow = true;
+            child.stop();
+          }, timeout);
     let done = false;
     try {
       child.stdin?.end(input);
       yield* streamRecords(limited(child.stdout, options.maxBytes ?? OUTPUT_LIMIT, this.display));
       const exit = await child.exited;
       done = true;
+      if (tooSlow && timeout !== undefined) {
+        throw new GitError({ kind: 'tooSlow', command: this.display, limit: timeout });
+      }
       if (options.signal?.aborted) throw options.signal.reason;
       if (exit.code !== 0) {
         const message = failureMessage({ ...exit, stderr: child.stderr });
         throw GitError.fromGit(this.display, message, options.what);
       }
     } finally {
+      clearTimeout(timer);
       options.signal?.removeEventListener('abort', stop);
       if (!done) {
         child.stop();

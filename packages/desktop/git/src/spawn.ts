@@ -170,9 +170,22 @@ export class Child {
    */
   async finish(
     input?: Uint8Array | string,
-    options: { signal?: AbortSignal | undefined; maxBytes?: number | undefined } = {},
+    options: {
+      signal?: AbortSignal | undefined;
+      maxBytes?: number | undefined;
+      /** The most milliseconds it may take, past which it's stopped and fails as `tooSlow`. */
+      timeout?: number | undefined;
+    } = {},
   ): Promise<Finished> {
-    const { signal, maxBytes = OUTPUT_LIMIT } = options;
+    const { signal, maxBytes = OUTPUT_LIMIT, timeout } = options;
+    let tooSlow = false;
+    const timer =
+      timeout === undefined
+        ? undefined
+        : setTimeout(() => {
+            tooSlow = true;
+            this.stop();
+          }, timeout);
     const chunks: Buffer[] = [];
     let length = 0;
     let tooLarge = false;
@@ -194,8 +207,12 @@ export class Child {
       if (tooLarge) {
         throw new GitError({ kind: 'tooLarge', command: this.display, limit: maxBytes });
       }
+      if (tooSlow && timeout !== undefined) {
+        throw new GitError({ kind: 'tooSlow', command: this.display, limit: timeout });
+      }
       return { ...exit, stdout: Buffer.concat(chunks), stderr: this.#stderr };
     } finally {
+      clearTimeout(timer);
       signal?.removeEventListener('abort', stop);
     }
   }

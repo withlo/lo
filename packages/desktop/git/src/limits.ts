@@ -1,6 +1,6 @@
 /**
- * How long Lo waits for a fetch. Without limits, a fetch can wait forever and say nothing, in two
- * ways, each with a limit here:
+ * How long Lo waits for a fetch, and for any other git. Without limits, a fetch can wait forever
+ * and say nothing, in two ways, each with a limit here:
  *
  * - git's stall guard (`http.lowSpeedLimit`) gives up only on a connection that sends nothing for
  *   a minute, and GitHub's keep-alives, sent while it prepares what to send, count as something.
@@ -9,9 +9,12 @@
  *   needs, as long as it gets further: {@link FetchLimits.stall}.
  * - curl's stall guard doesn't cover connecting, which it gives 300 s per request, and git has no
  *   setting for that. So Lo watches for GitHub's first answer: {@link FetchLimits.connect}.
+ *
+ * Any other git, a diff or a merge of files a pull request's author chose, has a limit too:
+ * {@link FetchLimits.read}.
  */
 
-/** How long Lo waits for each part of a fetch, in milliseconds. Tests make them short. */
+/** How long Lo waits for each part of a fetch, and for other gits, in milliseconds. Tests make them short. */
 export interface FetchLimits {
   /**
    * The longest git may take to get GitHub's first answer: looking its name up, connecting, TLS
@@ -34,6 +37,11 @@ export interface FetchLimits {
    * or bytes in, no more deltas resolved.
    */
   readonly stall: number;
+  /**
+   * The longest any other git may take, such as a diff, a listing, a merge or a read of a file:
+   * the contents a repository's author pushed can keep one busy for as long as they like.
+   */
+  readonly read: number;
 }
 
 const SECOND = 1000;
@@ -55,6 +63,8 @@ export const DEFAULT_FETCH_LIMITS: FetchLimits = {
   // connection that sends nothing for a minute; this ends one GitHub keeps alive without sending
   // more.
   stall: 2 * MINUTE,
+  // A diff of a large pull request, or a replay of one, takes seconds.
+  read: MINUTE,
 };
 
 /**

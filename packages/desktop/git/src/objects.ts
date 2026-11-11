@@ -40,13 +40,19 @@ class Died extends Error {
 
 /** A clone's object reader. It starts on the first request, and one request runs at a time. */
 export class ObjectReader {
+  readonly #limit: number;
   readonly #command: () => GitCommand;
   #running: Running | undefined;
   #queue: Promise<unknown> = Promise.resolve();
   #closed = false;
 
-  /** A reader that starts `command()`, a `git cat-file --batch-command` on the clone. */
-  constructor(command: () => GitCommand) {
+  /**
+   * A reader that starts `command()`, a `git cat-file --batch-command` on the clone, and gives
+   * each request `limit` milliseconds: one that takes longer stops the reader and fails as
+   * `tooSlow`.
+   */
+  constructor(limit: number, command: () => GitCommand) {
+    this.#limit = limit;
     this.#command = command;
   }
 
@@ -106,16 +112,26 @@ export class ObjectReader {
           });
         }
         const running = this.#running ?? this.#start();
+        let tooSlow = false;
+        const timer = setTimeout(() => {
+          tooSlow = true;
+          running.stop();
+        }, this.#limit);
         try {
           return await work(running);
         } catch (error) {
           if (error instanceof GitError && error.detail.kind === 'tooLarge') throw error;
           running.stop();
           if (this.#running === running) this.#running = undefined;
+          if (tooSlow) {
+            throw new GitError({ kind: 'tooSlow', command: running.display, limit: this.#limit });
+          }
           if (!(error instanceof Died)) throw error;
           if (attempt === 0 && error.stderr.trim() === '' && !this.#closed) continue;
           const message = error.stderr.trim() || 'git exited without saying why';
           throw GitError.fromGit(running.display, message);
+        } finally {
+          clearTimeout(timer);
         }
       }
     };
