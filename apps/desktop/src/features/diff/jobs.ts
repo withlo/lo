@@ -18,6 +18,32 @@ export const FILES_PER_JOB = 64;
  */
 export const FAR_LINES = 100_000;
 
+/**
+ * The most lines GitHub's diffs of a tab's files draw between them, placeholders included: past
+ * it, a file waits for the local copy, as one reaching past {@link FAR_LINES} does.
+ */
+export const TAB_LINES = 1_000_000;
+
+/**
+ * The most lines GitHub's diffs of one `diff.files` job's files draw between them, placeholders
+ * included: a batch of files reaching further is split over several jobs.
+ */
+export const JOB_LINES = 200_000;
+
+/** How far down a patch's hunks reach, on the side that reaches further, in lines. */
+export function patchReach(patch: string): number {
+  let reach = 0;
+  for (const match of patch.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
+    const [, oldStart = '0', oldCount = '1', newStart = '0', newCount = '1'] = match;
+    reach = Math.max(
+      reach,
+      Number(oldStart) + Number(oldCount),
+      Number(newStart) + Number(newCount),
+    );
+  }
+  return reach;
+}
+
 /** The most files one `diff.highlight` job takes. */
 export const HIGHLIGHTS_PER_JOB = 200;
 

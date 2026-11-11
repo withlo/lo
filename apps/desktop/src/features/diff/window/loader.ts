@@ -11,6 +11,8 @@ import { fileKey } from '../../tree/contract.ts';
 import type { DiffState, FileText, FileVersions, Source } from '../contract.ts';
 import {
   HIGHLIGHTS_PER_JOB,
+  JOB_LINES,
+  patchReach,
   type ChangedRuns,
   type FileJob,
   type FileResult,
@@ -396,7 +398,7 @@ export class Loader {
       files: batch.map((entry) => entry.place),
     });
     if (run.stopped) return;
-    const jobs: { entry: Entry; job: FileJob; lines?: Shown['lines'] }[] = [];
+    const jobs: Job[] = [];
     batch.forEach((entry, index) => {
       const text = texts[index];
       const path = entry.versions.path.text;
@@ -412,13 +414,29 @@ export class Loader {
         this.#fail(run, entry, text?.why ?? 'main sent nothing for it');
       }
     });
-    if (jobs.length === 0) return;
     const whitespace = this.#whitespace;
-    const results = await this.#work.files(
-      { files: jobs.map(({ job }) => job), whitespace, highlight, budget },
-      run.controller.signal,
-    );
-    if (run.stopped) return;
+    // GitHub's diffs draw their placeholders too: files reaching far between them go over several
+    // jobs, so no one job holds more than so many lines.
+    for (const part of byReach(jobs)) {
+      if (run.stopped) return;
+      const results = await this.#work.files(
+        { files: part.map(({ job }) => job), whitespace, highlight, budget },
+        run.controller.signal,
+      );
+      if (run.stopped) return;
+      this.#took(run, part, results, whitespace);
+    }
+    this.#readyIfDone(run);
+    this.#changed();
+  }
+
+  /** Keeps and gives what a job worked out of `jobs`' files, or says which it couldn't. */
+  #took(
+    run: Run,
+    jobs: readonly Job[],
+    results: readonly (FileResult | undefined)[],
+    whitespace: boolean,
+  ): void {
     jobs.forEach(({ entry, lines }, index) => {
       const result = results[index];
       if (!result?.ok) {
@@ -444,8 +462,6 @@ export class Loader {
       if (this.#ready?.at === run.at && this.#ready.from === run.from)
         this.#sink?.lines(entry.id, shown);
     });
-    this.#readyIfDone(run);
-    this.#changed();
   }
 
   #fail(run: Run, entry: Entry, why: string): void {
@@ -660,6 +676,32 @@ function sizeOf(lines: readonly string[]): number {
 }
 
 /** Entries in batches of a megabyte or so of text, as main's sizes say, or 48 files at most. */
+/** A file to work out, its lines when the window has them already. */
+interface Job {
+  readonly entry: Entry;
+  readonly job: FileJob;
+  readonly lines?: Shown['lines'];
+}
+
+/** `jobs` in runs whose patches draw {@link JOB_LINES} lines at most between them, if they can. */
+function byReach(jobs: readonly Job[]): Job[][] {
+  const parts: Job[][] = [];
+  let part: Job[] = [];
+  let lines = 0;
+  for (const each of jobs) {
+    const reach = each.job.kind === 'patch' ? patchReach(each.job.patch) : 0;
+    if (part.length > 0 && lines + reach > JOB_LINES) {
+      parts.push(part);
+      part = [];
+      lines = 0;
+    }
+    part.push(each);
+    lines += reach;
+  }
+  if (part.length > 0) parts.push(part);
+  return parts;
+}
+
 function batchesOf(entries: readonly Entry[]): Entry[][] {
   const batches: Entry[][] = [];
   let batch: Entry[] = [];

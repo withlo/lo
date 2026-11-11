@@ -24,7 +24,7 @@ import {
 
 import { PATH_LIMIT, type Change, type TreePath } from '../../tree/contract.ts';
 import type { FileSide, FileVersions, Start } from '../contract.ts';
-import { FAR_LINES } from '../jobs.ts';
+import { FAR_LINES, patchReach, TAB_LINES } from '../jobs.ts';
 
 /**
  * `bytes`, a path as git stores it, as the window takes it: one longer than the tree's limit with
@@ -136,18 +136,28 @@ function submoduleSides(file: ChangedFile): FileVersions['submodule'] {
   return added ? 'new' : 'old';
 }
 
-/** How far down a patch's hunks reach, on the side that reaches further, in lines. */
-export function patchReach(patch: string): number {
-  let reach = 0;
-  for (const match of patch.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
-    const [, oldStart = '0', oldCount = '1', newStart = '0', newCount = '1'] = match;
-    reach = Math.max(
-      reach,
-      Number(oldStart) + Number(oldCount),
-      Number(newStart) + Number(newCount),
-    );
-  }
-  return reach;
+/**
+ * The files GitHub lists, until the local copy lists them, as {@link githubVersions} has each:
+ * past {@link TAB_LINES} lines drawn for the files before it, placeholders included, a file waits
+ * for the local copy too, so many files reaching far can't fill the documents between them.
+ */
+export function githubFiles(files: readonly PullFile[]): FileVersions[] {
+  let drawn = 0;
+  return files.map((file) => {
+    const versions = githubVersions(file);
+    const shows = versions.start === 'shown' || versions.start === 'collapsed';
+    if (!shows || file.patch === undefined) return versions;
+    const reach = patchReach(file.patch);
+    if (drawn + reach <= TAB_LINES) {
+      drawn += reach;
+      return versions;
+    }
+    return {
+      ...versions,
+      start: 'large',
+      large: `GitHub’s diffs of the files before it reach ${TAB_LINES.toLocaleString('en-US')} lines between them: it loads from the local copy`,
+    };
+  });
 }
 
 /**

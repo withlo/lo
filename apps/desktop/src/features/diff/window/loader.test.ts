@@ -2,7 +2,7 @@ import { diffText, type FileDiff } from '@lo/diff';
 import { describe, expect, it } from 'vitest';
 
 import type { DiffState, FileText, FileVersions, Source, Start } from '../contract.ts';
-import type { FileJob, FileResult } from '../jobs.ts';
+import { type FileJob, type FileResult, JOB_LINES, patchReach } from '../jobs.ts';
 import { Loader, type LoaderWork, type Shown, type Sink } from './loader.ts';
 
 const HEAD = 'a'.repeat(40);
@@ -93,6 +93,13 @@ function work(order: readonly string[] = []) {
     },
     failing,
   };
+}
+
+/** `count` things in runs of `size`, the last one shorter: the runs' lengths. */
+function chunks(count: number, size: number): number[] {
+  return Array.from({ length: Math.ceil(count / size) }, (_, index) =>
+    Math.min(size, count - index * size),
+  );
 }
 
 /** What the view hears, in order. */
@@ -259,6 +266,41 @@ describe('a tab’s diff in the window', () => {
     expect(loader.ids.of('x.ts')).toBe('d0');
     expect(loader.ids.keyOf('d1')).toBe('y.ts');
     expect(loader.ids.find('z.ts')).toBe(undefined);
+  });
+
+  it('splits a batch whose patches reach far between them over several jobs', async () => {
+    // Files whose hunks end near line 99,000, each drawn with its placeholders.
+    const files = Array.from({ length: 6 }, (_, index) => versions(`f${index}.ts`));
+    const near = '@@ -98990,10 +98990,10 @@\n-a\n+b\n c';
+    const { done, asked, list } = work();
+    list(files);
+    const loader = new Loader({
+      ...done,
+      texts: ({ files: places }) =>
+        Promise.resolve(places.map(() => ({ kind: 'patch' as const, patch: near }))),
+      files: (input) => {
+        asked.jobs.push(input);
+        return Promise.resolve(
+          input.files.map(() => ({
+            ok: true as const,
+            lines: { old: ['a'], new: ['b'] },
+            diff: diffText('a\n', 'b\n'),
+            tokens: {},
+            changes: { deleted: [], added: [] },
+          })),
+        );
+      },
+    });
+    loader.setWhitespace(true);
+    loader.take(state(files, 'github'));
+    await settle(loader);
+
+    expect(loader.snapshot().ready?.from).toBe('github');
+    const reach = patchReach(near);
+    expect(asked.jobs.map((job) => job.files.length)).toEqual(
+      chunks(6, Math.floor(JOB_LINES / reach)),
+    );
+    for (const job of asked.jobs) expect(job.files.length * reach).toBeLessThanOrEqual(JOB_LINES);
   });
 
   it('takes the local copy’s files in place of GitHub’s when they’re the same, a file at a time', async () => {
