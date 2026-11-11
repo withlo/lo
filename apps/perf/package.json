@@ -5,6 +5,7 @@
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
+    "bench": "node bench/bench.ts",
     "build": "electron-vite build",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "fetch": "node scripts/fetch.ts",
@@ -25,6 +26,7 @@
     "@playwright/test": "1.65.0",
     "electron": "45.2.3",
     "electron-vite": "6.0.0",
+    "mediabunny": "1.65.2",
     "prettier": "3.9.10",
     "vite": "8.3.7"
   },
@@ -41,6 +43,13 @@
       "e2e": {
         "dependsOn": [
           "build"
+        ],
+        "cache": false
+      },
+      "bench": {
+        "dependsOn": [
+          "build",
+          "fetch"
         ],
         "cache": false
       }

@@ -4,7 +4,7 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import type { CursorReading, Misalignment, Spot } from '@lo/ui/code';
+import type { CursorReading, Probe, Spot } from '@lo/ui/code';
 import { _electron as electron, test as base, type Page } from '@playwright/test';
 // Imported from Node, the electron package is the path to its binary, whatever its types say.
 import electronPackage from 'electron';
@@ -86,11 +86,7 @@ function text(lines: readonly string[]): string {
 
 declare global {
   interface Window {
-    diffView: {
-      cursor(): CursorReading | undefined;
-      misalignment(): Misalignment;
-      readonly layout: 'split' | 'inline';
-    };
+    diffView: Probe;
     diffLoaded?: boolean;
   }
 }
