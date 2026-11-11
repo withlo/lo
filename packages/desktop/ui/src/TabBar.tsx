@@ -1,15 +1,33 @@
 import { cva } from 'class-variance-authority';
 
-/** A pull request (or a whole stack) open in a tab. */
-export interface Tab {
+/** A tab in the strip: a pull request's (or a whole stack's), or one of Lo's own. */
+export type Tab = PullTab | RecentTab | SettingsTab;
+
+/** A pull request, or a whole stack, open in a tab. */
+export interface PullTab {
+  kind: 'pull';
   id: string;
   /** The repository's name, without its owner. */
   repo: string;
   number: number;
-  title: string;
-  state: 'open' | 'draft' | 'merged' | 'closed';
+  /** Its title, once known. Until then the tab shows the repository and number alone. */
+  title?: string | undefined;
+  /** Its state, once known. */
+  state?: 'open' | 'draft' | 'merged' | 'closed' | undefined;
   /** How many pull requests the tab's stack holds, when it holds one. */
   stack?: number | undefined;
+}
+
+/** "Recent pull requests": the only tab while nothing else is open. It has no close button. */
+export interface RecentTab {
+  kind: 'recent';
+  id: string;
+}
+
+/** Lo's settings. */
+export interface SettingsTab {
+  kind: 'settings';
+  id: string;
 }
 
 export interface TabBarProps {
@@ -46,9 +64,10 @@ const state = cva('size-8 flex-none rounded-full', {
 });
 
 /**
- * The strip of pull request tabs at the top of the window, which Lo draws on every system. It's
- * where the window is dragged from; its tabs and buttons aren't. It starts after macOS's traffic
- * lights and ends before Linux's window controls (`--lo-window-inset-start` and `-end`).
+ * The strip of tabs at the top of the window, which Lo draws on every system. It's where the
+ * window is dragged from; its tabs and buttons aren't. It starts after macOS's traffic lights and
+ * ends before Linux's window controls (`--lo-window-inset-start` and `-end`). Each tab carries its
+ * id in `data-tab`, for what a right-click on it acts on.
  */
 export function TabBar({ tabs, selected, onSelect, onClose, onNew }: TabBarProps) {
   return (
@@ -85,7 +104,7 @@ export function TabBar({ tabs, selected, onSelect, onClose, onNew }: TabBarProps
 }
 
 function TabItem({
-  tab: { id, repo, number, title, state: prState, stack },
+  tab: item,
   selected,
   onSelect,
   onClose,
@@ -95,45 +114,85 @@ function TabItem({
   onSelect: TabBarProps['onSelect'];
   onClose: TabBarProps['onClose'];
 }) {
+  const { id } = item;
   return (
     <div
       role="tab"
       aria-selected={selected}
       tabIndex={selected ? 0 : -1}
+      data-tab={id}
       onClick={() => onSelect?.(id)}
       className={`group ${tab({ selected })}`}
     >
-      <span className={state({ state: prState })} title={prState} />
-      <span className="flex-none text-fg-muted">
-        {repo} <span className="lo-num">#{number}</span>
-      </span>
-      <span className={`min-w-0 flex-1 truncate ${selected ? 'font-medium' : ''}`}>{title}</span>
-      {stack !== undefined && (
-        <span
-          className="inline-flex flex-none items-center gap-4 text-fg-muted text-micro"
-          title={`Stack of ${stack}`}
+      <TabLabel tab={item} selected={selected} />
+      {item.kind !== 'recent' && (
+        <button
+          type="button"
+          aria-label="Close tab"
+          tabIndex={-1}
+          onClick={(event) => {
+            event.stopPropagation();
+            onClose?.(id);
+          }}
+          className={`grid size-20 flex-none place-items-center rounded-xs text-fg-muted hover:bg-press hover:text-fg ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
         >
           <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M8 2.25 13.75 5 8 7.75 2.25 5Z" />
-            <path d="M2.25 8 8 10.75 13.75 8M2.25 11 8 13.75 13.75 11" />
+            <path d="M4 4l8 8M12 4l-8 8" />
           </svg>
-          {stack}
-        </span>
+        </button>
       )}
-      <button
-        type="button"
-        aria-label="Close tab"
-        tabIndex={-1}
-        onClick={(event) => {
-          event.stopPropagation();
-          onClose?.(id);
-        }}
-        className={`grid size-20 flex-none place-items-center rounded-xs text-fg-muted hover:bg-press hover:text-fg ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-      >
-        <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M4 4l8 8M12 4l-8 8" />
-        </svg>
-      </button>
     </div>
   );
+}
+
+/** What a tab says: a pull request's state, place and title, or the name of one of Lo's own. */
+function TabLabel({ tab: item, selected }: { tab: Tab; selected: boolean }) {
+  const title = `min-w-0 flex-1 truncate ${selected ? 'font-medium' : ''}`;
+  switch (item.kind) {
+    case 'pull':
+      return (
+        <>
+          {item.state && <span className={state({ state: item.state })} title={item.state} />}
+          <span className="flex-none text-fg-muted">
+            {item.repo} <span className="lo-num">#{item.number}</span>
+          </span>
+          <span className={title}>{item.title}</span>
+          {item.stack !== undefined && (
+            <span
+              className="inline-flex flex-none items-center gap-4 text-fg-muted text-micro"
+              title={`Stack of ${item.stack}`}
+            >
+              <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 2.25 13.75 5 8 7.75 2.25 5Z" />
+                <path d="M2.25 8 8 10.75 13.75 8M2.25 11 8 13.75 13.75 11" />
+              </svg>
+              {item.stack}
+            </span>
+          )}
+        </>
+      );
+    case 'recent':
+      return (
+        <>
+          <svg className="lo-i lo-i--sm flex-none" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.25" />
+            <path d="M8 4.75V8l2 1.5" />
+          </svg>
+          <span className={title}>Recent pull requests</span>
+        </>
+      );
+    case 'settings':
+      return (
+        <>
+          <svg className="lo-i lo-i--sm flex-none" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="2.25" />
+            <path d="M8 1.75v2M8 12.25v2M1.75 8h2M12.25 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M3.6 12.4 5 11M11 5l1.4-1.4" />
+          </svg>
+          <span className={title}>Settings</span>
+        </>
+      );
+    default:
+      item satisfies never;
+      throw new Error('A tab of an unknown kind.');
+  }
 }

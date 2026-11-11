@@ -1,4 +1,11 @@
-export { TabBar, type Tab, type TabBarProps } from './TabBar.tsx';
+export {
+  TabBar,
+  type PullTab,
+  type RecentTab,
+  type SettingsTab,
+  type Tab,
+  type TabBarProps,
+} from './TabBar.tsx';
 export {
   ContextMenu,
   type ContextMenuAnchor,

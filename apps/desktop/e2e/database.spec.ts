@@ -15,15 +15,26 @@ function rows(path: string, sql: string): unknown[] {
   }
 }
 
+/** One column of what `sql` reads, as text. */
+function column(path: string, sql: string, name: string): string[] {
+  return rows(path, sql).map((row) =>
+    typeof row === 'object' && row !== null ? String(Reflect.get(row, name)) : '',
+  );
+}
+
 test('the database opens on a fresh data folder, with its migrations table', async ({ page }) => {
   await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
   const file = join(dataFolder(), 'lo.db');
   expect(rows(file, 'PRAGMA journal_mode')).toEqual([{ journal_mode: 'wal' }]);
-  expect(rows(file, "SELECT name FROM sqlite_schema WHERE type = 'table'")).toEqual([
-    { name: 'migrations' },
-  ]);
-  // Lo itself has no tables yet; each feature brings its own.
-  expect(rows(file, 'SELECT * FROM migrations')).toEqual([]);
+  // Lo itself has only the migrations table; each feature brings its own, named for it, and its
+  // migrations are recorded.
+  const tables = column(file, "SELECT name FROM sqlite_schema WHERE type = 'table'", 'name');
+  const features = new Set(column(file, 'SELECT feature FROM migrations', 'feature'));
+  expect(tables).toContain('migrations');
+  expect(features).toContain('tab');
+  expect(
+    tables.filter((name) => name !== 'migrations' && !features.has(name.split('_')[0] ?? '')),
+  ).toEqual([]);
 });
 
 test("a database a newer Lo wrote isn't opened, and Lo says why", async () => {
