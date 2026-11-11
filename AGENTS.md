@@ -93,8 +93,8 @@ applies) as scripts. Add `test` with the package's first test: Vitest fails a pr
   `default` still runs for a value outside the union. When the value can come from outside Lo, such
   as GitHub's answer or what Lo saved, it returns a safe answer (`review`'s `outsideCase` does
   both); otherwise it throws an error naming the value. Lint requires the cases and the `default`,
-  and refuses returning, assigning or yielding `value satisfies never`, which would hand the value
-  on as an answer.
+  and refuses handing `value satisfies never` on (returning, assigning or yielding it, or making it
+  a branch or a member of an object or array), which would pass the value off as an answer.
 
 ## Boundaries
 
