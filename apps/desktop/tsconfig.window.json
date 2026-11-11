@@ -14,6 +14,9 @@
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/test/**"],
   "references": [
     {
+      "path": "../../packages/core/review"
+    },
+    {
       "path": "./tsconfig.shared.json"
     }
   ]
