@@ -206,6 +206,51 @@ test('with a test git and remote, Lo finds git, cleans its cache up, and leaves 
   }
 });
 
+for (const [when, slow, clones] of [
+  ['asks git its version', '*" --version "*', 0],
+  ['asks whether git can be kept from downloading', '*" mktree "*', 1],
+] as const) {
+  test(`quitting while Lo ${when} leaves no git running and nothing behind`, async () => {
+    const runs = test.info().outputPath('runs');
+    const tmp = test.info().outputPath('tmp');
+    mkdirSync(runs, { recursive: true });
+    mkdirSync(tmp, { recursive: true });
+    // The real git, noting each process it runs as, which waits half a minute before the step.
+    const program = script(test.info().outputPath('git', 'git'), [
+      `echo $$ >> '${runs}/pids'`,
+      `case " $* " in ${slow}) /usr/bin/touch '${runs}/started'; /bin/sleep 30;; esac`,
+      `exec '${gitProgram()}' "$@"`,
+    ]);
+    // Where the look makes the throwaway clone it asks git about.
+    const { app, page } = await launch({ LO_GIT: program, TMPDIR: tmp });
+    const throwaway = () => readdirSync(tmp).filter((name) => name.startsWith('lo-git-'));
+    let pids: number[] = [];
+    try {
+      await expect.poll(() => existsSync(join(runs, 'started')), { timeout: 15_000 }).toBe(true);
+      expect(await gitInfo(page)).toEqual({ status: 'checking' });
+      expect(throwaway()).toHaveLength(clones);
+      pids = readFileSync(join(runs, 'pids'), 'utf8').trim().split('\n').map(Number);
+
+      const began = Date.now();
+      await app.close();
+
+      // Well within the half minute the git would take, and the most quitting waits for git.
+      expect(Date.now() - began).toBeLessThan(4000);
+      expect(pids.filter((pid) => !groupGone(pid))).toEqual([]);
+      expect(throwaway()).toEqual([]);
+    } finally {
+      await app.close();
+      for (const pid of pids) {
+        try {
+          process.kill(-pid, 'SIGKILL');
+        } catch {
+          // Gone already.
+        }
+      }
+    }
+  });
+}
+
 test('with no git, the window opens and says so, and Lo keeps no cache', async () => {
   const { app, page } = await launch({ LO_GIT: 'none' });
   try {

@@ -2,7 +2,7 @@ import { formatVersion, type GitStatus } from '@lo/git';
 import { app, nativeTheme } from 'electron';
 
 import { defineFeature } from '../../../main/features.ts';
-import { contract, type GitInfo, type Theme } from '../contract.ts';
+import { appInfo, contract, type GitInfo, type Theme } from '../contract.ts';
 
 // Lo follows the system's appearance.
 const currentTheme = (): Theme => (nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
@@ -22,12 +22,14 @@ function gitInfo(status: GitStatus | undefined): GitInfo {
 
 export default defineFeature(contract, {
   handlers: {
-    info: (_input, { git }) => ({
-      version: app.getVersion(),
-      platform: process.platform,
-      theme: currentTheme(),
-      git: gitInfo(git.status),
-    }),
+    // Checked as a push is, so the window gets nothing but what the contract says.
+    info: (_input, { git }) =>
+      appInfo.parse({
+        version: app.getVersion(),
+        platform: process.platform,
+        theme: currentTheme(),
+        git: gitInfo(git.status),
+      }),
   },
   start({ publish, git }) {
     nativeTheme.on('updated', () => publish('theme', currentTheme()));

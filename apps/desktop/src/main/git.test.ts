@@ -1,12 +1,30 @@
-import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { type Cache, DEFAULT_CAP, type GitStatus } from '@lo/git';
 import { gitProgram } from '@lo/testing/git';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { cacheFolder, createGit, curlProxy, type GitOptions, gitSettings } from './git.ts';
+import {
+  cacheFolder,
+  createGit,
+  curlProxy,
+  type GitOptions,
+  gitSettings,
+  GitStopped,
+  onceUp,
+} from './git.ts';
 
 /** A new folder, removed when the test ends. */
 function folder(): string {
@@ -131,6 +149,32 @@ describe('curlProxy', () => {
   });
 });
 
+/**
+ * The real git, noting each process it runs as, which waits half a minute before the command
+ * `slow`, a `case` pattern, matches, having made `started`.
+ */
+function slowGit(slow: string) {
+  const dir = folder();
+  const tmp = join(dir, 'tmp');
+  mkdirSync(tmp);
+  // Where the look makes the throwaway clone it asks git about.
+  vi.stubEnv('TMPDIR', tmp);
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  const [pids, started] = [join(dir, 'pids'), join(dir, 'started')];
+  const program = script(
+    join(dir, 'git'),
+    [
+      `echo $$ >> '${pids}'`,
+      `case " $* " in ${slow}) /usr/bin/touch '${started}'; /bin/sleep 30;; esac`,
+      `exec '${gitProgram()}' "$@"`,
+    ].join('\n'),
+  );
+  const ran = () => readFileSync(pids, 'utf8').trim().split('\n').map(Number);
+  return { program, started, tmp, ran };
+}
+
 describe('createGit', () => {
   it('looks for nothing until asked, then finds git, says so, and opens the cache', async () => {
     const opened: Cache[] = [];
@@ -240,22 +284,91 @@ describe('createGit', () => {
 
     expect(git.cache).toBe(undefined);
     expect(existsSync(join(root, 'lo-cache.lock'))).toBe(false);
-    // Looking again finds git, but opens nothing.
-    expect((await git.check()).status).toBe('found');
+    // Looking again is refused, and runs nothing.
+    await expect(git.check()).rejects.toBeInstanceOf(GitStopped);
     expect(git.cache).toBe(undefined);
     expect(existsSync(join(root, 'lo-cache.lock'))).toBe(false);
   });
 
-  it('stopping while it looks waits for the look, which then opens nothing', async () => {
-    // A git that takes a moment to say its version.
-    const slow = script(join(folder(), 'git'), `sleep 0.3; exec '${gitProgram()}' "$@"`);
-    const { git, root } = testGit({ settings: { program: slow } });
+  it('looks for nothing once stopped', async () => {
+    const dir = folder();
+    const program = script(
+      join(dir, 'git'),
+      `echo ran >> '${dir}/ran'; exec '${gitProgram()}' "$@"`,
+    );
+    const { git } = testGit({ settings: { program } });
 
-    const looking = git.check();
     await git.stop();
 
-    expect((await looking).status).toBe('found');
-    expect(git.cache).toBe(undefined);
-    expect(existsSync(join(root, 'lo-cache.lock'))).toBe(false);
+    await expect(git.check()).rejects.toBeInstanceOf(GitStopped);
+    expect(existsSync(join(dir, 'ran'))).toBe(false);
+  });
+
+  describe('stopping while it looks stops the look’s git at once, and leaves nothing behind', () => {
+    it.each([
+      ['asking it its version', '*" --version "*', 0],
+      ['asking whether it can be kept from downloading', '*" mktree "*', 1],
+    ])('while %s', async (_, pattern, clones) => {
+      const slow = slowGit(pattern);
+      const { git, root } = testGit({ settings: { program: slow.program } });
+      const looking = git.check();
+      await expect.poll(() => existsSync(slow.started)).toBe(true);
+      const throwaway = () => readdirSync(slow.tmp).filter((name) => name.startsWith('lo-git-'));
+      expect(throwaway()).toHaveLength(clones);
+
+      const began = Date.now();
+      await git.stop();
+
+      // Well within the half minute the git would take.
+      expect(Date.now() - began).toBeLessThan(3000);
+      await expect(looking).rejects.toBeInstanceOf(GitStopped);
+      expect(slow.ran().filter((pid) => !groupGone(pid))).toEqual([]);
+      expect(throwaway()).toEqual([]);
+      expect(git.status).toBe(undefined);
+      expect(existsSync(root)).toBe(false);
+    });
   });
 });
+
+describe('onceUp', () => {
+  it('looks once the window is up, and only once', () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const look = vi.fn<() => void>();
+    let up: (() => void) | undefined;
+
+    onceUp((ready) => (up = ready), look, 3000);
+    expect(look).not.toHaveBeenCalled();
+    up?.();
+    expect(look).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(5000);
+    up?.();
+    expect(look).toHaveBeenCalledTimes(1);
+  });
+
+  it('looks anyway when the window never says it’s up', () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const look = vi.fn<() => void>();
+
+    onceUp(() => undefined, look, 3000);
+    vi.advanceTimersByTime(2999);
+    expect(look).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(look).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** Whether no process is left in the group `pid` led. */
+function groupGone(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return false;
+  } catch (error) {
+    return error instanceof Error && 'code' in error && error.code === 'ESRCH';
+  }
+}

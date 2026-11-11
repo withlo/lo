@@ -113,7 +113,10 @@ export interface LocalGit {
    * fetch starts; the cache adds the proxy Lo's own requests take.
    */
   readonly cache: Cache | undefined;
-  /** Looks for git again, as "Check again" asks, and opens the cache once there's one. */
+  /**
+   * Looks for git again, as "Check again" asks, and opens the cache once there's one. Once git has
+   * stopped, as Lo quits, it fails with {@link GitStopped} and runs nothing.
+   */
   check(): Promise<GitStatus>;
   /** Sets the size the cache is kept under, in bytes, as Settings will. */
   setCap(bytes: number): Promise<void>;
@@ -122,10 +125,18 @@ export interface LocalGit {
 /** Git as main runs it. */
 export interface MainGit extends LocalGit {
   /**
-   * Stops every git running and closes the cache, as Lo quits, waiting {@link STOP_LIMIT} at most.
-   * Nothing runs git after.
+   * Stops every git running, a look for git's included, and closes the cache, as Lo quits, waiting
+   * {@link STOP_LIMIT} at most. Nothing runs git after.
    */
   stop(): Promise<void>;
+}
+
+/** Why a look for git failed, or was refused: git has stopped, as Lo quits. */
+export class GitStopped extends Error {
+  constructor() {
+    super('Lo has stopped running git, as it quits.');
+    this.name = 'GitStopped';
+  }
 }
 
 export interface GitOptions {
@@ -146,6 +157,29 @@ export interface GitOptions {
 /** How long quitting waits, at most, for git to stop and the cache to close. */
 export const STOP_LIMIT = 5000;
 
+/** How long main waits for the window to say it's up before it looks for git anyway. */
+export const LOOK_AFTER = 3000;
+
+/**
+ * Calls `look` once: as soon as `whenUp` hears the window is up, or after `limit` milliseconds if
+ * it hasn't by then, so a window that never says so doesn't keep Lo from looking for git.
+ */
+export function onceUp(
+  whenUp: (up: () => void) => void,
+  look: () => void,
+  limit = LOOK_AFTER,
+): void {
+  let looked = false;
+  const once = () => {
+    clearTimeout(timer);
+    if (looked) return;
+    looked = true;
+    look();
+  };
+  const timer = setTimeout(once, limit);
+  whenUp(once);
+}
+
 /**
  * Git for main. It looks for nothing until asked to {@link LocalGit.check}, which main does once
  * the window is up.
@@ -162,7 +196,8 @@ class GitHost implements MainGit {
   #cap = DEFAULT_CAP;
   /** The look for git under way, which every check asked for meanwhile shares. */
   #checking: Promise<GitStatus> | undefined;
-  #stopped = false;
+  /** Aborted as Lo quits, which stops a look under way. */
+  readonly #stopping = new AbortController();
 
   constructor(options: GitOptions) {
     this.#options = options;
@@ -181,6 +216,7 @@ class GitHost implements MainGit {
   }
 
   check(): Promise<GitStatus> {
+    if (this.#stopped) return Promise.reject(new GitStopped());
     this.#checking ??= this.#look().finally(() => {
       this.#checking = undefined;
     });
@@ -195,18 +231,25 @@ class GitHost implements MainGit {
     await this.#cache?.setCap(bytes);
   }
 
+  get #stopped(): boolean {
+    return this.#stopping.signal.aborted;
+  }
+
   async stop(): Promise<void> {
-    this.#stopped = true;
+    // A look under way stops its gits, or, if it's opening the cache, stops that itself.
+    this.#stopping.abort(new GitStopped());
     const cache = this.#cache;
     this.#cache = undefined;
     const log = (error: unknown) => this.#options.log(`can't stop git: ${describe(error)}`);
-    // A look under way may be opening the cache, which it stops itself, having seen this.
-    await within(STOP_LIMIT, Promise.all([cache?.stop().catch(log), this.#checking?.catch(log)]));
+    const looked = this.#checking?.catch((error: unknown) => {
+      if (!(error instanceof GitStopped)) log(error);
+    });
+    await within(STOP_LIMIT, Promise.all([cache?.stop().catch(log), looked]));
   }
 
   async #look(): Promise<GitStatus> {
     const status = await this.#find();
-    if (this.#stopped) return status;
+    if (this.#stopped) throw new GitStopped();
     this.#status = status;
     for (const listener of this.#listeners) {
       try {
@@ -228,8 +271,9 @@ class GitHost implements MainGit {
         install: installAdvice(platform),
       });
     }
-    if (settings.program !== undefined) return gitAt(settings.program, { env, platform });
-    return findGit({ env, platform });
+    const { signal } = this.#stopping;
+    if (settings.program !== undefined) return gitAt(settings.program, { env, platform, signal });
+    return findGit({ env, platform, signal });
   }
 
   async #open(git: Git): Promise<void> {

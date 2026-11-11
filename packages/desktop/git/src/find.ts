@@ -63,6 +63,11 @@ export interface FindOptions {
   readonly platform: NodeJS.Platform;
   /** Where to look besides `PATH`. Each system has its own; tests point them at fakes. */
   readonly places?: Places | undefined;
+  /**
+   * Stops the look once it aborts: each git it's running is stopped, with what it started, as a
+   * watched git is, and the look fails with the signal's reason, leaving nothing behind.
+   */
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** Where git is on each system, besides `PATH`. */
@@ -85,13 +90,15 @@ export function defaultPlaces(platform: NodeJS.Platform): Places {
  * that was too old, else the first passed over, else that there's none.
  */
 export async function findGit(options: FindOptions): Promise<GitStatus> {
+  const { signal } = options;
+  signal?.throwIfAborted();
   const places = options.places ?? defaultPlaces(options.platform);
   const inherited = inheritedEnvironment(options.env);
   const folders = (options.env.PATH ?? '').split(delimiter).filter((folder) => isAbsolute(folder));
   const candidates: string[] = [];
   let stub: string | undefined;
   if (places.apple !== undefined) {
-    if (await hasCommandLineTools(places.apple.xcodeSelect, inherited)) {
+    if (await hasCommandLineTools(places.apple.xcodeSelect, inherited, signal)) {
       candidates.push(places.apple.git);
     } else {
       stub = await realpath(places.apple.git).catch(() => places.apple?.git);
@@ -118,37 +125,46 @@ export async function findGit(options: FindOptions): Promise<GitStatus> {
       };
       continue;
     }
-    const version = await readVersion(candidate, inherited);
+    const version = await readVersion(candidate, inherited, signal);
     if (version !== undefined) versions.push({ program: candidate, version });
   }
   // The newest first, and of those as new, the first found: the sort keeps their order.
   const newestFirst = versions.toSorted((a, b) => compareVersions(b.version, a.version));
   let tooOld: GitStatus | undefined;
   for (const { program, version } of newestFirst) {
-    const status = await check(program, inherited, options.platform, version);
+    const status = await check(program, inherited, options.platform, { known: version, signal });
     if (status.status === 'found') return status;
     if (status.status === 'tooOld') tooOld ??= status;
   }
   return tooOld ?? passedOver ?? missing(options.platform);
 }
 
-/** The git at `program`, if it runs and is new enough: for a git the user named. */
+/**
+ * The git at `program`, if it runs and is new enough: for a git the user named. Once
+ * `options.signal` aborts, it stops as {@link FindOptions.signal} says.
+ */
 export async function gitAt(
   program: string,
-  options: { env: Environment; platform: NodeJS.Platform },
+  options: { env: Environment; platform: NodeJS.Platform; signal?: AbortSignal | undefined },
 ): Promise<GitStatus> {
+  options.signal?.throwIfAborted();
   if (!isAbsolute(program) || !(await isExecutableFile(program))) return missing(options.platform);
-  return check(program, inheritedEnvironment(options.env), options.platform);
+  return check(program, inheritedEnvironment(options.env), options.platform, {
+    signal: options.signal,
+  });
 }
 
-/** Checks the git at `program`, which says it's `known`, or asks it when that's not given. */
+/**
+ * Checks the git at `program`, which says it's `options.known`, or asks it when that's not given.
+ */
 async function check(
   program: string,
   inherited: Record<string, string>,
   platform: NodeJS.Platform,
-  known?: GitVersion,
+  options: { known?: GitVersion | undefined; signal?: AbortSignal | undefined } = {},
 ): Promise<GitStatus> {
-  const version = known ?? (await readVersion(program, inherited));
+  const { signal } = options;
+  const version = options.known ?? (await readVersion(program, inherited, signal));
   if (version === undefined) return missing(platform);
   const install = installAdvice(platform);
   if (compareVersions(version, MINIMUM_VERSION) < 0) {
@@ -164,7 +180,10 @@ async function check(
     };
   }
   const git = new Git(program, version, inherited);
-  const lazyFetchOff = await lazyFetchIsOff(git).catch(() => undefined);
+  const lazyFetchOff = await lazyFetchIsOff(git, signal).catch((error: unknown) => {
+    if (signal?.aborted) throw error;
+    return undefined;
+  });
   if (lazyFetchOff === undefined) return missing(platform);
   if (!lazyFetchOff) {
     return {
@@ -206,39 +225,47 @@ const VERSION_LIMIT = 10_000;
 async function readVersion(
   program: string,
   inherited: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<GitVersion | undefined> {
-  const finished = await runLimited(program, ['--version'], {
-    ...inherited,
-    LC_ALL: 'C',
-    GIT_CONFIG_NOSYSTEM: '1',
-    GIT_CONFIG_GLOBAL: devNull,
-  });
+  const finished = await runLimited(
+    program,
+    ['--version'],
+    { ...inherited, LC_ALL: 'C', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: devNull },
+    signal,
+  );
   if (finished?.code !== 0) return undefined;
   return parseVersion(finished.stdout.toString('utf8'));
 }
 
-/** Runs `program` with `args` for at most {@link VERSION_LIMIT}, or `undefined` if it can't. */
+/**
+ * Runs `program` with `args` for at most {@link VERSION_LIMIT}, or `undefined` if it can't. Past
+ * the limit, or once `signal` aborts, it's stopped with what it started; on an abort, this fails
+ * with the signal's reason once they've exited.
+ */
 async function runLimited(
   program: string,
   args: string[],
   env: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<Finished | undefined> {
-  let timer: NodeJS.Timeout | undefined;
+  signal?.throwIfAborted();
+  let child: Child;
   try {
-    const child = new Child(program, {
+    child = new Child(program, {
       args,
       env,
       cwd: '/',
       input: false,
       display: [program, ...args].join(' '),
     });
-    timer = setTimeout(() => child.stop(), VERSION_LIMIT);
-    return await child.finish();
   } catch {
     return undefined;
-  } finally {
-    clearTimeout(timer);
   }
+  const finished = await child
+    .finish(undefined, { timeout: VERSION_LIMIT, signal })
+    .catch(() => undefined);
+  signal?.throwIfAborted();
+  return finished;
 }
 
 /**
@@ -254,16 +281,24 @@ const LAZY_FETCH_WARNING = 'warning: lazy fetching disabled; some objects may no
  * them. A git that honors `GIT_NO_LAZY_FETCH` just says the file is missing; one that doesn't
  * tries to download it and fails loudly; and the May 2024 updates of 2.41 to 2.44, which honor the
  * variable, give up on such a file with a fatal error, which would fail every read of a clone.
- * None reaches the network: the remote is a folder, which git may not fetch from.
+ * None reaches the network: the remote is a folder, which git may not fetch from. Once `signal`
+ * aborts, the git it's running is stopped with what it started, the throwaway clone is removed,
+ * and it fails with the signal's reason.
  */
-export async function lazyFetchIsOff(git: Git): Promise<boolean> {
+export async function lazyFetchIsOff(git: Git, signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   const folder = await mkdtemp(join(tmpdir(), 'lo-git-'));
   try {
     const home = join(folder, 'home');
     const clone = join(folder, 'probe.git');
     await mkdir(home);
     const runner = new Runner(git, { home, ceiling: folder });
-    await runner.command('none').arg('init', '--bare', '--quiet', '--template=').path(clone).run();
+    const run = { signal };
+    await runner
+      .command('none')
+      .arg('init', '--bare', '--quiet', '--template=')
+      .path(clone)
+      .run(undefined, run);
     const missingRemote = `file://${join(folder, 'missing')}`.replaceAll(/["\\]/g, '\\$&');
     await appendFile(
       join(clone, 'config'),
@@ -271,20 +306,21 @@ export async function lazyFetchIsOff(git: Git): Promise<boolean> {
         `[remote "origin"]\n\turl = "${missingRemote}"\n\tpromisor = true\n`,
     );
     const inClone = () => runner.command({ gitDir: clone });
-    const file = oidFromOutput(await inClone().arg('hash-object', '--stdin').run('probe\n'));
+    const file = oidFromOutput(await inClone().arg('hash-object', '--stdin').run('probe\n', run));
     // A tree that names the file, in a pack from the promisor remote, without the file.
     const tree = oidFromOutput(
-      await inClone().arg('mktree', '--missing').run(`100644 blob ${file}\tprobe\n`),
+      await inClone().arg('mktree', '--missing').run(`100644 blob ${file}\tprobe\n`, run),
     );
     const packs = join(clone, 'objects', 'pack');
     const written = await inClone()
       .arg('pack-objects', '--quiet')
       .path(join(packs, 'pack'))
-      .run(`${tree}\n`);
+      .run(`${tree}\n`, run);
     const pack = written.toString('utf8').trim();
     if (!/^[0-9a-f]+$/.test(pack)) return false;
     await appendFile(join(packs, `pack-${pack}.promisor`), '');
-    const finished = await inClone().arg('cat-file', '-e', file).finish();
+    const finished = await inClone().arg('cat-file', '-e', file).finish(undefined, run);
+    signal?.throwIfAborted();
     const said = finished.stderr.trim();
     return finished.code === 1 && (said === '' || said === LAZY_FETCH_WARNING);
   } finally {
@@ -299,9 +335,10 @@ export async function lazyFetchIsOff(git: Git): Promise<boolean> {
 async function hasCommandLineTools(
   xcodeSelect: string,
   inherited: Record<string, string>,
+  signal: AbortSignal | undefined,
 ): Promise<boolean> {
   if (!(await isExecutableFile(xcodeSelect))) return false;
-  const finished = await runLimited(xcodeSelect, ['-p'], { ...inherited, LC_ALL: 'C' });
+  const finished = await runLimited(xcodeSelect, ['-p'], { ...inherited, LC_ALL: 'C' }, signal);
   const folder = finished?.stdout.toString('utf8').trim() ?? '';
   if (finished?.code !== 0 || !isAbsolute(folder)) return false;
   return isExecutableFile(join(folder, 'usr', 'bin', 'git'));

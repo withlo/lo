@@ -9,7 +9,7 @@ import { startBackground, type Background } from './background.ts';
 import { openDatabase } from './database.ts';
 import { backgroundSettings, dataFolder, devServer } from './environment.ts';
 import { loadFeatures, type Feature } from './features.ts';
-import { cacheFolder, createGit, curlProxy, gitSettings } from './git.ts';
+import { cacheFolder, createGit, curlProxy, GitStopped, gitSettings, onceUp } from './git.ts';
 import { serveFeatures } from './ipc.ts';
 import { migrate } from './migrations.ts';
 import { windowUrl } from './policy.ts';
@@ -116,10 +116,18 @@ function start(): void {
       app.once('will-quit', () => background?.stop());
       windowSession = secured;
       // Once the window is up, Lo looks for git, then opens its cache and cleans it up: none of
-      // it holds the window up.
-      show()?.once('ready-to-show', () => {
-        git.check().catch((error: unknown) => console.error("Lo couldn't look for git:", error));
-      });
+      // it holds the window up. A window that never says it's up holds the look back no more
+      // than a few seconds.
+      const shown = show();
+      onceUp(
+        (up) => shown?.once('ready-to-show', up),
+        () => {
+          git.check().catch((error: unknown) => {
+            // Lo quit while it looked.
+            if (!(error instanceof GitStopped)) console.error("Lo couldn't look for git:", error);
+          });
+        },
+      );
     })
     .catch((error: unknown) => {
       if (error instanceof StartupError) {

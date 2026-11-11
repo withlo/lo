@@ -26,16 +26,18 @@ export const gitInfo = z.discriminatedUnion('status', [
 ]);
 export type GitInfo = z.output<typeof gitInfo>;
 
-export interface AppInfo {
+/** What `app.info` answers, which main checks against this before it answers. */
+export const appInfo = z.strictObject({
   /** Lo's version. */
-  version: string;
+  version: z.string(),
   /** The system Lo runs on, as Node names it: `darwin` or `linux`. */
-  platform: string;
+  platform: z.string(),
   /** The current theme, which `app.theme` then keeps up to date. */
-  theme: Theme;
+  theme,
   /** Whether Lo has a git it can run, which `app.git` then keeps up to date. */
-  git: GitInfo;
-}
+  git: gitInfo,
+});
+export type AppInfo = z.output<typeof appInfo>;
 
 export const contract = defineContract('app', {
   requests: {

@@ -231,17 +231,19 @@ files or the network for the window.
 Only main runs git, through `@lo/git`, and the background process never sees git or a token.
 `src/main/git.ts` holds it, and features reach it as `git` in their context.
 
-- Once the window is up, main looks for git: on a Mac, Apple's git once the Command Line Tools are
-  installed, then each on `PATH`, then the system's usual folders, and the newest new enough wins.
-  `app.info` says what it found, `checking` until it has, and `app.git` pushes each answer. Asking
-  again (`git.check()`) finds a git installed since.
+- Once the window is up, or a few seconds after it opens if it never says so, main looks for git: on
+  a Mac, Apple's git once the Command Line Tools are installed, then each on `PATH`, then the
+  system's usual folders, and the newest new enough wins. `app.info` says what it found, `checking`
+  until it has, and `app.git` pushes each answer. Asking again (`git.check()`) finds a git installed
+  since.
 - With git, main opens the cache, `Lo` in the system's folder for caches (`Lo Dev` for a build run
   from source, or `cache` in `LO_USER_DATA_DIR`), as `git.cache`, and cleans it up without anyone
   waiting. `git.setCap()` sets the size it's kept under.
 - Every git gets an environment of Lo's own making, never main's, and only a fetch gets the
   account's token, from a source read as each fetch starts. Fetches take the proxy Lo's own requests
   take.
-- Lo quits once every git has stopped: each is asked to stop, then killed with what it started.
+- Lo quits once every git has stopped, a look for git's included: each is asked to stop, then killed
+  with what it started.
 - A build run from source takes the git to run from `LO_GIT`, a path or `none`, and fetches from
   `LO_GIT_REMOTE`, a server or folder on this machine, for its tests. A packaged build ignores both.
 
