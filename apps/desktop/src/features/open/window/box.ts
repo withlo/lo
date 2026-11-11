@@ -139,18 +139,19 @@ export async function openText(text: string, login?: string): Promise<Opened | u
 
 /**
  * Opens the pull request in the box as `login`, one of the accounts that can see it, and
- * remembers that account for its owner, as the account picker does by default.
+ * remembers that account for its owner, or for its repository alone when the owner's repositories
+ * open with another account, as the account picker does by default.
  */
 export async function openAs(login: string): Promise<void> {
   const state = boxStore.getState();
   const preview = currentPreview(state);
-  if (preview?.kind !== 'pull') return;
+  if (preview?.kind !== 'pull' || preview.as.kind !== 'ask') return;
   try {
     await client(accounts).choose({
       owner: preview.owner,
       name: preview.repo,
       login,
-      remember: 'owner',
+      remember: preview.as.remember,
     });
   } catch (error) {
     // Opening as the account chosen matters more than remembering it.

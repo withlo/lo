@@ -205,7 +205,9 @@ function footNote(preview: Preview | undefined): string | undefined {
     return 'Links to a pull request’s files, commits and checks open the pull request.';
   }
   if (preview.kind === 'pull' && preview.as.kind === 'ask') {
-    return `Lo remembers the account you choose for ${preview.owner}.`;
+    const where =
+      preview.as.remember === 'owner' ? preview.owner : `${preview.owner}/${preview.repo}`;
+    return `Lo remembers the account you choose for ${where}.`;
   }
   return undefined;
 }
@@ -244,15 +246,7 @@ export function OpenBox() {
       renderItem={(row) =>
         preview?.kind === 'pull' ? <RowView row={row} preview={preview} /> : null
       }
-      message={
-        typeof message === 'string' ? (
-          <Message icon={WARN_ICON} title="Lo didn’t open it">
-            <span className="text-fg-muted text-small">{message}</span>
-          </Message>
-        ) : (
-          message
-        )
-      }
+      message={typeof message === 'string' ? <Message icon={WARN_ICON} title={message} /> : message}
       empty={null}
       foot={
         <>

@@ -24,12 +24,18 @@ const pullRequest = {
 
 /**
  * Whom a pull request opens as: the account that can see its repository, nobody for a public
- * repository no account can see (read only), or the person's choice among the accounts that can.
+ * repository no account can see (read only), or the person's choice among the accounts that can,
+ * which Lo remembers for every repository of the owner, or for this one alone when the owner's
+ * repositories open with another account, which can't see this one.
  */
 export const opener = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('account'), login }),
   z.strictObject({ kind: z.literal('anonymous') }),
-  z.strictObject({ kind: z.literal('ask'), logins: z.array(login).min(2) }),
+  z.strictObject({
+    kind: z.literal('ask'),
+    logins: z.array(login).min(2),
+    remember: z.enum(['owner', 'repo']),
+  }),
 ]);
 export type Opener = z.output<typeof opener>;
 

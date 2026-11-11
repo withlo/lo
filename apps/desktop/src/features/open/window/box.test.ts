@@ -127,9 +127,9 @@ describe('the open box', () => {
     expect(enterAction(undefined, '')).toBeUndefined();
     expect(enterAction(undefined, E2E)).toBe('Open');
     expect(enterAction(pull, E2E)).toBe('Open');
-    expect(enterAction({ ...pull, as: { kind: 'ask', logins: ['a', 'b'] } }, E2E)).toBe(
-      'Open as the account chosen',
-    );
+    expect(
+      enterAction({ ...pull, as: { kind: 'ask', logins: ['a', 'b'], remember: 'owner' } }, E2E),
+    ).toBe('Open as the account chosen');
     expect(enterAction({ kind: 'web', url: E2E, title: '', message: '' }, E2E)).toBe(
       'Open in the browser',
     );

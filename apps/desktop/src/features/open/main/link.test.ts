@@ -377,8 +377,21 @@ describe('look', () => {
     );
     expect(await look(E2E, github)).toMatchObject({
       kind: 'pull',
-      as: { kind: 'ask', logins: ['rozed-bot', 'work-bot'] },
+      as: { kind: 'ask', logins: ['rozed-bot', 'work-bot'], remember: 'owner' },
       title: TITLE,
+    });
+  });
+
+  it('remembers the choice for the repository alone when the owner’s account can’t see it', async () => {
+    const seeing = replayFetch('app_e2e');
+    const github = await signedIn(
+      ['old-bot', 'rozed-bot', 'work-bot'],
+      byToken({ 'old-bot': notFound, 'rozed-bot': seeing, 'work-bot': seeing }, nothing),
+    );
+    await github.remember('rozed-dev', 'old-bot');
+    expect(await look(E2E, github)).toMatchObject({
+      kind: 'pull',
+      as: { kind: 'ask', logins: ['rozed-bot', 'work-bot'], remember: 'repo' },
     });
   });
 

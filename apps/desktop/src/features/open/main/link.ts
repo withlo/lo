@@ -337,7 +337,12 @@ async function lookAtPull(named: PullLink, github: LinkGithub): Promise<Preview>
         owner,
         repo,
         number,
-        as: { kind: 'ask', logins: choice.logins },
+        as: {
+          kind: 'ask',
+          logins: choice.logins,
+          // An account chosen for the owner that can't see this repository keeps the owner's.
+          remember: choice.found.remembered.owner === undefined ? 'owner' : 'repo',
+        },
         ...shown,
       };
     }
