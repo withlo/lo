@@ -136,6 +136,7 @@ export function sendReview(
     write.kind === 'addThread' || (Array.isArray(threads) ? threads.length > 0 : threads != null);
   return writer.writeChanging([pull], (client) => sendReviewWrite(client, pull, write), {
     whilePaused: paused,
+    content: true,
     again: (result) => {
       const again = unchecked ? [THREADS] : [];
       let changedElsewhere: boolean;
@@ -190,6 +191,7 @@ export function editCommentOn(
     again: (result) =>
       inThread ? (gone(result) ? [THREADS, PENDING] : [THREADS]) : [TIMELINE_IN_FULL],
     whilePaused: paused,
+    content: true,
   });
 }
 
@@ -232,6 +234,6 @@ export function addConversationCommentOn(
   return writer.writeChanging(
     [pull],
     (client) => addConversationComment(client, pullRequestId, body),
-    { whilePaused: paused },
+    { whilePaused: paused, content: true },
   );
 }

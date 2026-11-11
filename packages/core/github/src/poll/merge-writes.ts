@@ -17,8 +17,10 @@
  * once GitHub allows, on what's on screen then. Lo doesn't merge by itself minutes after the click.
  * A write to a GitHub stack or a base branch waits instead, and is sent once the pause is over: it's
  * a step of a plan Lo runs in order (making a stack, rolling one back, merging a chain a layer at a
- * time), each step checks what it changes before it changes it, and a refusal partway would leave
- * the stack half changed, with the writes that would put it back refused by the same pause.
+ * time), and a refusal partway would leave the stack half changed, with the writes that would put it
+ * back refused by the same pause. Each is checked against its plan when it's sent, however long it
+ * waited: a base branch change and an unstack read what they change first, in the same turn, and
+ * GitHub checks a stack made or added to as it does it. Each can be given up on through a signal.
  */
 
 import type { GithubClient } from '../client.ts';
@@ -34,7 +36,7 @@ import {
   mergeAsyncResult,
   retarget,
   runConversionStep,
-  unstack,
+  unstackHolding,
   type AsyncMerge,
   type AutoMergeRequest,
   type AutoMergeState,
@@ -194,64 +196,96 @@ export function disableAutoMergeOn(
   });
 }
 
-/** Makes `prs`, bottom to top, a GitHub stack in `repo`. Never sent again by itself. */
+/**
+ * Makes `prs`, bottom to top, a GitHub stack in `repo`. GitHub checks the plan as it makes it: each
+ * pull request open, in no other stack, and based on the head branch of the one below. Given up on
+ * through `signal`, it's never sent. Never sent again by itself.
+ */
 export function createStackIn(
   writer: MergeWriter,
   repo: RepoRef,
   prs: readonly number[],
+  signal?: AbortSignal,
 ): Promise<GithubStack | MergeRefusal> {
-  return writer.writeChanging(stackTargets(repo, prs), (client) => createStack(client, repo, prs));
+  return writer.writeChanging(stackTargets(repo, prs), (client) => createStack(client, repo, prs), {
+    signal,
+  });
 }
 
-/** Adds `prs`, bottom to top, to the top of GitHub stack `stack` in `repo`. Never sent again by itself. */
+/**
+ * Adds `prs`, bottom to top, to the top of GitHub stack `stack` in `repo`. GitHub checks the plan as
+ * it adds them: the first based on the head branch of the stack's top, as it is then. Given up on
+ * through `signal`, it's never sent. Never sent again by itself.
+ */
 export function addToStackIn(
   writer: MergeWriter,
   repo: RepoRef,
   stack: number,
   prs: readonly number[],
+  signal?: AbortSignal,
 ): Promise<GithubStack | MergeRefusal> {
-  return writer.writeChanging(stackTargets(repo, prs), (client) =>
-    addToStack(client, repo, stack, prs),
+  return writer.writeChanging(
+    stackTargets(repo, prs),
+    (client) => addToStack(client, repo, stack, prs),
+    { signal },
   );
 }
 
 /**
- * Takes every pull request that isn't merged or queued out of GitHub stack `stack` in `repo`. `prs`
- * are the pull requests Lo knows are in it, which are read again. Never sent again by itself.
+ * Takes every pull request that isn't merged or queued out of GitHub stack `stack` in `repo`, as
+ * rolling back a stack Lo made does. `prs` are every pull request Lo knows is in it, bottom to top:
+ * it reads the stack first, in the same turn, and refuses (`stackChanged`) when it holds others, as
+ * after layers were added while the write waited, since GitHub's unstack would take those out too.
+ * Given up on through `signal`, it's never sent. Never sent again by itself.
  */
 export function unstackIn(
   writer: MergeWriter,
   repo: RepoRef,
   stack: number,
   prs: readonly number[],
+  signal?: AbortSignal,
 ): Promise<{ left: GithubStack | undefined } | MergeRefusal> {
-  return writer.writeChanging(stackTargets(repo, prs), (client) => unstack(client, repo, stack));
+  return writer.writeChanging(
+    stackTargets(repo, prs),
+    (client) => unstackHolding(client, repo, stack, prs),
+    { signal },
+  );
 }
 
 /**
  * Moves a pull request in `repo` from `move.from` to `move.to`, as "Make this a GitHub stack", its
  * rollback and merging a chain a layer at a time do: it reads the pull request first, in the same
  * turn, and leaves it where it is when it's on `to` already, or refuses when it's on another branch
- * than `from`. Never sent again by itself.
+ * than `from`. Given up on through `signal`, it's never sent. Never sent again by itself.
  */
 export function retargetIn(
   writer: MergeWriter,
   repo: RepoRef,
   move: Retarget,
+  signal?: AbortSignal,
 ): Promise<PullSummary | MergeRefusal> {
-  return writer.writeChanging(stackTargets(repo, [move.pr]), (client) =>
-    retarget(client, repo, move),
+  return writer.writeChanging(
+    stackTargets(repo, [move.pr]),
+    (client) => retarget(client, repo, move),
+    { signal },
   );
 }
 
-/** Runs one step of "Make this a GitHub stack", or a base branch change of its rollback. Never sent again by itself. */
+/**
+ * Runs one step of "Make this a GitHub stack", or a base branch change of its rollback, each checked
+ * as {@link retargetIn}, {@link createStackIn} and {@link addToStackIn} say. Given up on through
+ * `signal`, it's never sent. Never sent again by itself.
+ */
 export function runConversionStepIn(
   writer: MergeWriter,
   repo: RepoRef,
   step: ConversionStep,
+  signal?: AbortSignal,
 ): Promise<StepDone | MergeRefusal> {
   const prs = step.kind === 'retarget' ? [step.retarget.pr] : step.prs;
-  return writer.writeChanging(stackTargets(repo, prs), (client) =>
-    runConversionStep(client, repo, step),
+  return writer.writeChanging(
+    stackTargets(repo, prs),
+    (client) => runConversionStep(client, repo, step),
+    { signal },
   );
 }
