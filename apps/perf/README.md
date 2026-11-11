@@ -109,6 +109,52 @@ as GitHub's diff leaves it, unchanged lines between hunks left out, then fills i
 local copy would (`gaps` and `copyAfterMs` in the file): the cursor and the scroll stay put. CI runs
 them on Linux.
 
+## The bench
+
+```sh
+pnpm nx run perf:bench
+```
+
+This measures the diff view against its bars, on kubernetes#125488 and TypeScript#51387, at 1440 px
+wide and at the screen's full width, and `zR` on TypeScript#54820's `checker.ts`, three runs of
+each. It runs only on a Mac, logged in with the display awake, and never in CI: frame times mean
+nothing without a display to pace them. It stops if the screen is locked, or if frames don't come at
+the display's rate. Give it a quiet machine; a full run takes about two hours.
+
+It starts the built suite unpackaged, as Playwright can't drive a packaged build, with
+`--js-flags=--expose-gc` so it can read the heap after a collection. The window opens at 1440 by 900
+px, or with `LO_PERF_WINDOW=screen` as large as the screen allows. The page notes when the pull
+request started opening and when its first file and everything else arrived (`window.perfMarks`),
+and the bench adds a recorder that reads every frame after its layout and before its paint. Input is
+real: wheel events and keys go through Chromium's input pipeline, sent on a clock as hardware sends
+them. Each run:
+
+- opens the pull request, and times it from main starting to open it to the first file drawn with
+  its diff and highlighting, and to every diff and the moves arriving, with the window's long tasks;
+- presses `]f`, `]c` and `G` from the top, holds `j`, holds `Esc`, types a comment on each side and
+  crosses with `Tab`, timing each key from its keydown to the next paint with the Event Timing API;
+- flings from the top to the bottom, then holds PageDown from the top to the bottom, noting each
+  frame's time, how level the rows on screen are, and anything blank on screen;
+- reads the renderer's memory from `app.getAppMetrics()` and the heap after each full scroll;
+- in TypeScript#51387, loads `checker.ts`, which stays out of the documents until `za`.
+
+Then a run with Chromium tracing writes traces of the opening, the keys, the flings and PageDown,
+which open in DevTools' Performance panel or at ui.perfetto.dev, and a last run records a video of
+each pull request at 1440 px, converted to MP4 in a hidden window with Chromium's own encoder. The
+report, `report.md` and `report.json`, the traces, the videos and every frame recorded go to
+`bench/results/<date>/`, which git ignores. `report.md` says what each timer starts and stops on.
+
+For a short trial, run one of each and stop each full scroll early:
+
+```sh
+pnpm nx run perf:bench -- --runs 1 --pull kubernetes-125488 --width 1440 --limit 50000 --no-traces --no-videos
+```
+
+`--pull` and `--width` (`1440` or `screen`) can each be given more than once; `--no-zr`,
+`--no-traces` and `--no-videos` leave those out. `--report <folder>` writes a folder's `report.md`
+again from its `report.json`, with the folder's `notes.md`, if it has one, under the summary.
+Recording a video needs Playwright's own ffmpeg, which the bench downloads the first time.
+
 ## Recording the manifests
 
 The manifests are committed, so only a maintainer adding or refreshing a PR needs this:
