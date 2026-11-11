@@ -94,12 +94,12 @@ export default {
     escape: { run: focusMiddle },
     back: {
       run() {
-        if (!registry().history.back(here())) notify("There's nowhere to go back to.");
+        if (!registry().history.back(here())) notify('Back', "There's nowhere to go back to.");
       },
     },
     forward: {
       run() {
-        if (!registry().history.forward()) notify("There's nowhere to go forward to.");
+        if (!registry().history.forward()) notify('Forward', "There's nowhere to go forward to.");
       },
     },
     openKeymap: { run: openKeymap },
@@ -112,7 +112,7 @@ export default {
     menu.subscribe('run', ({ id }) => {
       // A right-click menu is open over the window, and nothing but its own commands runs under it.
       if (currentMenu() !== undefined) {
-        notify('Close the menu first.');
+        notify(registry().command(id)?.label ?? 'Menu', 'Close the menu first.');
         return;
       }
       runFromBar(registry(), id, focusedTarget());

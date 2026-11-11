@@ -1,5 +1,5 @@
-// The system's Edit menu, for a right-click in a text field: what a person expects of any text box.
-// Lo's own right-click menus skip text fields, which this stands in for.
+// The system's Edit menu, for a right-click in a form field or a comment box: what a person expects
+// of any text box. Lo's own right-click menus skip those, which this stands in for.
 
 import type { ContextMenuParams, MenuItemConstructorOptions } from 'electron';
 

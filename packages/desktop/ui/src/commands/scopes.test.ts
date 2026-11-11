@@ -2,7 +2,7 @@
 
 import { beforeEach, expect, test } from 'vitest';
 
-import { findScope, isTextField, scopeTarget, setScopeSource } from './scopes.ts';
+import { findScope, hasEditMenu, isTextField, scopeTarget, setScopeSource } from './scopes.ts';
 
 beforeEach(() => {
   document.body.innerHTML = `
@@ -53,4 +53,27 @@ test('text fields are the inputs that take text, text areas and editable content
   expect(isTextField(at('fixed'))).toBe(false);
   expect(isTextField(at('line'))).toBe(false);
   expect(isTextField(null)).toBe(false);
+});
+
+test('the Edit menu is for form fields and editable content that is not code', () => {
+  document.body.innerHTML = `
+    <input id="input"><textarea id="area"></textarea><input id="check" type="checkbox">
+    <div contenteditable="true"><b id="plain"></b></div>
+    <div data-lo-scope="diff"><div class="cm-editor"><div class="cm-content" contenteditable="true"><span id="diff-text"></span></div>
+      <div class="cm-panels"><input id="prompt"></div></div></div>
+    <div data-lo-scope="file"><div class="cm-content" contenteditable="true" id="file-text"></div></div>
+    <div data-lo-scope="peek"><div class="cm-content" contenteditable="true" id="peek-text"></div></div>
+    <div data-lo-scope="box"><div class="cm-content" contenteditable="true" id="box-text"></div></div>
+    <div class="cm-content" contenteditable="true" id="bare-text"></div>
+    <div data-lo-scope="tree"><div contenteditable="true" id="tree-edit"></div></div>
+    <div id="nothing"></div>
+  `;
+  for (const id of ['input', 'area', 'plain', 'prompt', 'box-text', 'tree-edit']) {
+    expect({ id, edit: hasEditMenu(at(id)) }).toEqual({ id, edit: true });
+  }
+  // Code gets Lo's menu, whatever scope CodeMirror's text sits in.
+  for (const id of ['diff-text', 'file-text', 'peek-text', 'bare-text', 'check', 'nothing']) {
+    expect({ id, edit: hasEditMenu(at(id)) }).toEqual({ id, edit: false });
+  }
+  expect(hasEditMenu(null)).toBe(false);
 });

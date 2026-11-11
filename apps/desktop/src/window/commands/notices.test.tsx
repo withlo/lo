@@ -34,25 +34,48 @@ afterEach(() => {
 
 const status = () => document.querySelector('[role="status"]');
 
+/** The toast's parts, as a screen reader hears them in order. */
+function toast(): { title: string | null; body: string | null; icon: boolean } | undefined {
+  const card = status()?.querySelector('.toast');
+  if (!card) return undefined;
+  const [title, body] = [...card.querySelectorAll('div')].map((each) => each.textContent);
+  return {
+    title: title ?? null,
+    body: body ?? null,
+    icon: card.querySelector('svg.lo-i[aria-hidden="true"]') !== null,
+  };
+}
+
 describe('notices', () => {
-  it('keep a live region that says each note, and take it away after a few seconds', () => {
+  it('keep a live region that says each note as a toast, and take it away after a few seconds', () => {
     expect(status()?.textContent).toBe('');
-    act(() => notify("There's nowhere to go back to."));
-    expect(status()?.textContent).toBe("There's nowhere to go back to.");
+    expect(toast()).toBeUndefined();
+    act(() => notify('Back', "There's nowhere to go back to."));
+    expect(toast()).toEqual({
+      title: 'Back',
+      body: "There's nowhere to go back to.",
+      icon: true,
+    });
     // A newer note takes the older one's place, and its time starts again.
     act(() => {
       vi.advanceTimersByTime(NOTICE_TIME - 1);
-      notify('Another.');
+      notify('Forward', 'Another.');
     });
     act(() => {
       vi.advanceTimersByTime(NOTICE_TIME - 1);
     });
-    expect(status()?.textContent).toBe('Another.');
+    expect(toast()).toMatchObject({ title: 'Forward', body: 'Another.' });
     act(() => {
       vi.advanceTimersByTime(1);
     });
     expect(status()?.textContent).toBe('');
     expect(notice()).toBeUndefined();
+  });
+
+  it('float at the bottom right, above the status bar, as the design’s toast does', () => {
+    act(() => notify('Back', 'Nowhere.'));
+    expect(status()?.className).toContain('toast-floating');
+    expect(status()?.querySelector('.toast')?.className).toContain('shadow-pop');
   });
 });
 
@@ -71,7 +94,8 @@ describe('a command that did nothing', () => {
     act(() => {
       registry().run('keys.help', NO_TARGET);
     });
-    expect(status()?.textContent).toBe('Key help is busy.');
+    // Titled by what was asked for.
+    expect(toast()).toMatchObject({ title: 'Every key', body: 'Key help is busy.' });
   });
 
   it('says nothing when it ran', () => {
@@ -85,10 +109,13 @@ describe('a command that did nothing', () => {
     act(() => {
       registry().run('keys.back', NO_TARGET);
     });
-    expect(status()?.textContent).toBe("There's nowhere to go back to.");
+    expect(toast()).toMatchObject({ title: 'Back', body: "There's nowhere to go back to." });
     act(() => {
       registry().run('keys.forward', NO_TARGET);
     });
-    expect(status()?.textContent).toBe("There's nowhere to go forward to.");
+    expect(toast()).toMatchObject({
+      title: 'Forward',
+      body: "There's nowhere to go forward to.",
+    });
   });
 });

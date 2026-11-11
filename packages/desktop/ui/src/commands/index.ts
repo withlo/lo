@@ -114,6 +114,7 @@ export {
   codeScopes,
   engineScopes,
   findScope,
+  hasEditMenu,
   isKeySource,
   isTextField,
   endsTab,
