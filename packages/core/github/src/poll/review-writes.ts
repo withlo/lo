@@ -122,7 +122,9 @@ function heldComment(
  * it. When that isn't the head the comment was planned on, or GitHub doesn't say which it is
  * ({@link offHead}), Lo takes the thread back ({@link takeBack}) and refuses the write as
  * `headMoved`, so the draft stays for the head it was written on. One it can't take back comes
- * back flagged with where it landed ({@link Sent.landedOn}).
+ * back flagged with where it landed ({@link Sent.landedOn}). The delete goes in the add's own turn
+ * in the account's queue, so no write waiting there, such as your review's submit, can go before
+ * it and publish the thread where it landed.
  *
  * It's never sent again by itself. When it fails in a way that may have posted it anyway
  * ({@link GithubError.mayHavePosted}), the UI compares the draft with your newest comments, as the
@@ -143,6 +145,8 @@ export async function sendReview(
   const threads = write.kind === 'startReview' ? write.variables.threads : undefined;
   const namedReview =
     write.kind === 'addThread' || (Array.isArray(threads) ? threads.length > 0 : threads != null);
+  // The delete that takes back a thread GitHub put on another head, once it's sent.
+  let deleting: Promise<undefined | ReviewWriteRefusal> | undefined;
   const sent = await writer.writeChanging(
     [pull],
     (client) => sendReviewWrite(client, pull, write),
@@ -168,40 +172,39 @@ export async function sendReview(
         }
         return changedElsewhere ? [...again, PENDING, THREADS] : again;
       },
+      followUp: (answer) => {
+        const comment = 'refusal' in answer || !offHead(write, answer) ? undefined : answer.comment;
+        if (comment === undefined) return undefined;
+        return (client) => (deleting = deleteComment(client, { kind: 'thread', id: comment }));
+      },
     },
   );
   if ('refusal' in sent || !offHead(write, sent)) return sent;
-  return takeBack(writer, pull, sent);
+  return takeBack(writer, sent, deleting);
 }
 
 /**
- * Takes back the line thread `sent`, which GitHub put on another head than the one planned, or on
- * one it didn't name: deletes its comment, which takes the thread with it, in a write of its own,
- * held, spaced and paused like any other. Once GitHub says the comment is deleted, or gone, the
- * write is refused as `headMoved`. When GitHub's answer doesn't say so, or is lost, Lo reads
- * whether the comment is still there. When it is, when that can't be read, when the delete wasn't
- * sent (GitHub asked Lo to hold off, or refused it) or there's no comment to delete, the thread
- * comes back flagged with the head it landed on.
+ * Settles the taking back of the line thread `sent`, which GitHub put on another head than the one
+ * planned, or on one it didn't name. `deleting` is the delete of its comment, which takes the
+ * thread with it, sent the spacing after the add in the add's own turn, or nothing when it wasn't
+ * sent: GitHub asked Lo to hold off by then, or there's no comment to delete. Once GitHub says the
+ * comment is deleted, or gone, the write is refused as `headMoved`. When GitHub's answer doesn't
+ * say so, or is lost, Lo reads whether the comment is still there. When it is, when that can't be
+ * read, or when the delete wasn't sent or was refused, the thread comes back flagged with the head
+ * it landed on.
  */
 async function takeBack(
   writer: ReviewWriter,
-  pull: PullRef,
   sent: Sent,
+  deleting: Promise<undefined | ReviewWriteRefusal> | undefined,
 ): Promise<Sent | ReviewWriteRefusal> {
   const moved: ReviewWriteRefusal = { refusal: 'headMoved', head: sent.commit };
   const flagged: Sent = { ...sent, landedOn: { head: sent.commit } };
   const { comment, thread } = sent;
-  if (comment === undefined) return flagged;
+  if (comment === undefined || deleting === undefined) return flagged;
   let deleted: { ok: true; value: undefined | ReviewWriteRefusal } | { ok: false; error: unknown };
   try {
-    deleted = {
-      ok: true,
-      value: await writer.writeChanging(
-        [pull],
-        (client) => deleteComment(client, { kind: 'thread', id: comment }),
-        { whilePaused: paused, again: () => [PENDING, THREADS] },
-      ),
-    };
+    deleted = { ok: true, value: await deleting };
   } catch (error) {
     deleted = { ok: false, error };
   }
