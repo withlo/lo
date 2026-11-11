@@ -129,7 +129,9 @@ test('⌘P lists the files by name, the changed ones first and marked, and Esc g
 
   // The foot says what the keys do.
   const foot = finder(page).locator('kbd');
-  await expect(foot).toContainText([mac ? '⌘P' : 'Ctrl+P', '⏎', mac ? '⌘⏎' : 'Ctrl+⏎', 'Tab']);
+  await expect(foot).toContainText(
+    mac ? ['⌘P', '⏎', '⌘⏎', 'Tab'] : ['Ctrl+P', 'Enter', 'Ctrl+Enter', 'Tab'],
+  );
 
   // Typing narrows the list, with the letters that matched marked.
   await page.keyboard.type('parser');
