@@ -2,7 +2,6 @@
 
 import { GitError } from './errors.ts';
 import { type Oid, parseOid } from './oid.ts';
-import { splitRecords } from './records.ts';
 import { displayPath, type FileMode, MAX_ENTRIES, parseMode, tooManyEntries } from './tree.ts';
 
 /**
@@ -147,14 +146,72 @@ function parseRawHeader(header: string): RawHeader {
   };
 }
 
+/** git's `-z` output, a record at a time, so none is made before it's needed. */
+class Fields {
+  readonly #bytes: Buffer;
+  #at = 0;
+
+  constructor(output: Uint8Array) {
+    this.#bytes = Buffer.from(output.buffer, output.byteOffset, output.byteLength);
+  }
+
+  get done(): boolean {
+    return this.#at >= this.#bytes.length;
+  }
+
+  /** Whether the next record starts with `byte`. */
+  startsWith(byte: number): boolean {
+    return !this.done && this.#bytes[this.#at] === byte;
+  }
+
+  /** The next record, without its NUL; a last one without a NUL is kept. */
+  next(): Buffer | undefined {
+    if (this.done) return undefined;
+    const end = this.#bytes.indexOf(0, this.#at);
+    const stop = end === -1 ? this.#bytes.length : end;
+    const field = this.#bytes.subarray(this.#at, stop);
+    this.#at = stop + 1;
+    return field;
+  }
+}
+
+/**
+ * Counts the files the raw records at the start of `output` describe, a header and its path, or
+ * two for a rename or a copy, and fails as `tooLarge` once there are more than `max`, before
+ * anything is made of them. Empty records between them, as `git diff --raw` writes none, are
+ * skipped.
+ */
+function checkCount(output: Uint8Array, max: number, command: string): void {
+  const bytes = Buffer.from(output.buffer, output.byteOffset, output.byteLength);
+  let at = 0;
+  let count = 0;
+  for (;;) {
+    while (at < bytes.length && bytes[at] === 0) at++;
+    if (at >= bytes.length || bytes[at] !== 0x3a) return;
+    const end = bytes.indexOf(0, at);
+    if (end === -1) return;
+    // The status is the last field of the header: `R087`, `M`…
+    const space = bytes.lastIndexOf(0x20, end);
+    const status = space > at ? bytes[space + 1] : undefined;
+    const paths = status === 0x52 || status === 0x43 ? 2 : 1;
+    at = end + 1;
+    for (let path = 0; path < paths && at <= bytes.length; path++) {
+      const next = bytes.indexOf(0, at);
+      at = next === -1 ? bytes.length : next + 1;
+    }
+    count++;
+    if (count > max) throw tooManyEntries(command, max);
+  }
+}
+
 /**
  * Reads `git diff -z --raw --numstat --no-abbrev`: a raw record for each file, its header then
  * its path or two, then a numstat record for each, in the same order. Paths are bytes; the rest
  * is ASCII. More than `maxEntries` files is `tooLarge`.
  */
 export function parseChanges(output: Uint8Array, maxEntries = MAX_ENTRIES): ChangedFile[] {
-  const fields = splitRecords(output);
-  let at = 0;
+  checkCount(output, maxEntries, 'git diff --raw --numstat');
+  const fields = new Fields(output);
   const files: {
     change: Change;
     old: FileVersion | undefined;
@@ -162,15 +219,13 @@ export function parseChanges(output: Uint8Array, maxEntries = MAX_ENTRIES): Chan
     binary: boolean;
     lines: LineCounts | undefined;
   }[] = [];
-  for (;;) {
-    const field = fields[at];
-    if (field === undefined || field[0] !== 0x3a) break;
-    if (files.length === maxEntries) throw tooManyEntries('git diff --raw --numstat', maxEntries);
-    at++;
+  while (fields.startsWith(0x3a)) {
+    const field = fields.next();
+    if (field === undefined) break;
     const header = ascii(field);
     const raw = parseRawHeader(header);
     const path = () => {
-      const next = fields[at++];
+      const next = fields.next();
       if (next === undefined || next.length === 0) throw unexpected(`${header} without a path`);
       return next;
     };
@@ -208,8 +263,8 @@ export function parseChanges(output: Uint8Array, maxEntries = MAX_ENTRIES): Chan
   }
 
   let index = 0;
-  while (at < fields.length) {
-    const field = fields[at++];
+  while (!fields.done) {
+    const field = fields.next();
     if (field === undefined) break;
     const first = field.indexOf(0x09);
     const second = first === -1 ? -1 : field.indexOf(0x09, first + 1);
@@ -221,8 +276,8 @@ export function parseChanges(output: Uint8Array, maxEntries = MAX_ENTRIES): Chan
     let path = field.subarray(second + 1);
     if (path.length === 0) {
       // A rename: its old and new paths follow as fields of their own.
-      at++;
-      const renamed = fields[at++];
+      fields.next();
+      const renamed = fields.next();
       if (renamed === undefined) {
         throw unexpected(`--numstat rename ${JSON.stringify(displayPath(field))}`);
       }
@@ -265,13 +320,16 @@ function side(path: Buffer, mode: FileMode | undefined, oid: Oid): FileVersion |
  * or the zeros of a side that isn't there. Each entry is its header, then its path, so a path
  * that starts with `:` is never taken for an entry.
  */
-export function rawDiffBlobs(output: Uint8Array): Oid[] {
-  const fields = splitRecords(output).filter((field) => field.length > 0);
-  if (fields.length > 2 * MAX_ENTRIES) throw tooManyEntries('git diff --raw', MAX_ENTRIES);
+export function rawDiffBlobs(output: Uint8Array, maxEntries = MAX_ENTRIES): Oid[] {
+  checkCount(output, maxEntries, 'git diff --raw');
+  const fields = new Fields(output);
   const blobs: Oid[] = [];
-  for (let at = 0; at < fields.length; at += 2) {
-    const field = fields[at];
+  while (!fields.done) {
+    const field = fields.next();
     if (field === undefined) break;
+    if (field.length === 0) continue;
+    // Its path.
+    fields.next();
     const header = field.toString('latin1');
     if (!header.startsWith(':')) {
       throw new GitError({
@@ -307,12 +365,13 @@ export interface RawRecord {
 }
 
 /** Reads `git diff --raw -z --no-renames --no-abbrev`: a header, then a path, for each file. */
-export function parseRawRecords(output: Uint8Array): RawRecord[] {
-  const fields = splitRecords(output);
+export function parseRawRecords(output: Uint8Array, maxEntries = MAX_ENTRIES): RawRecord[] {
+  checkCount(output, maxEntries, 'git diff --raw');
+  const fields = new Fields(output);
   const records: RawRecord[] = [];
-  for (let at = 0; at < fields.length; at += 2) {
-    const field = fields[at];
-    const path = fields[at + 1];
+  while (!fields.done) {
+    const field = fields.next();
+    const path = fields.next();
     if (field === undefined || field[0] !== 0x3a || path === undefined || path.length === 0) {
       throw unexpected(`entry ${JSON.stringify(displayPath(field ?? Buffer.alloc(0)))}`);
     }

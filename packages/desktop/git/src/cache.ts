@@ -97,13 +97,14 @@ export class Cache {
       throw GitError.io(`making ${options.root}`, error);
     }
     const release = await lockCache(join(options.root, 'lo-cache.lock'));
+    const limits = options.limits ?? DEFAULT_FETCH_LIMITS;
     const runner = new Runner(options.git, {
       home,
       ceiling: options.root,
       log: options.log,
       test: options.test,
+      readLimit: limits.read,
     });
-    const limits = options.limits ?? DEFAULT_FETCH_LIMITS;
     return new Cache(options.root, runner, release, limits, options.log);
   }
 
@@ -137,7 +138,7 @@ export class Cache {
     const key = `${owner.toLowerCase()}/${name.toLowerCase()}`;
     let shared = this.#readers.get(key);
     if (shared === undefined) {
-      const reader = new ObjectReader(() =>
+      const reader = new ObjectReader(this.limits.read, () =>
         this.runner
           .command({ gitDir: folder }, { readsOnly: true })
           .arg('cat-file', '--batch-command'),
