@@ -405,10 +405,12 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
     });
     writeAppRemote(test.info().outputPath('remote'));
     await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
-    await expect(page.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
+    // Looked for in the status bar alone, so looking costs the page's frames little.
+    const status = page.locator('footer');
+    await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
       timeout: 30_000,
     });
-    await expect(page.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
+    await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
     // src/format.ts, off screen, came in; the lines GitHub left out of src/parser.ts are there.
     await expect(
       page.locator('.lo-diffview .lo-collapsed', { hasText: 'not loaded yet' }),

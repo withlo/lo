@@ -35,8 +35,15 @@ export interface Clock {
 
 /** A clock in the system's locale. */
 export function systemClock(now: number): Clock {
-  const format = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
-  return { now, time: (at) => format.format(at) };
+  return { now, time: (at) => timeFormat().format(at) };
+}
+
+let format: Intl.DateTimeFormat | undefined;
+
+/** The system's way of writing a time of day, made once: making one takes a while. */
+function timeFormat(): Intl.DateTimeFormat {
+  format ??= new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+  return format;
 }
 
 /** "12 s", "4 minutes", "2 hours": a wait, for what counts down, rounded up. */

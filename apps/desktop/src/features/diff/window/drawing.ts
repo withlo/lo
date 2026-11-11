@@ -74,12 +74,13 @@ function changeFor(drawn: Drawn, start: Start): Change | undefined {
 }
 
 /**
- * Runs work a few milliseconds at a time, so a lot of it never holds a frame up. It runs in tasks
- * of its own, not in a frame's callbacks, so the view measures what it changed before the page is
- * painted.
+ * Runs work a few milliseconds a frame, so a lot of it never holds a frame up. Each frame's share
+ * runs in a task of its own just after the frame is painted, not in its callbacks, so the view
+ * measures what it changed before the next one is.
  */
 class Pacer {
   readonly #tasks: (() => void)[] = [];
+  #frame: number | undefined;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #stopped = false;
 
@@ -87,20 +88,30 @@ class Pacer {
   run(task: () => void): void {
     if (this.#stopped) return;
     this.#tasks.push(task);
-    this.#timer ??= setTimeout(this.#pump, 0);
+    this.#next();
   }
 
   stop(): void {
     this.#stopped = true;
     this.#tasks.length = 0;
+    if (this.#frame !== undefined) cancelAnimationFrame(this.#frame);
     clearTimeout(this.#timer);
+  }
+
+  /** Runs the next share once the next frame is painted. */
+  #next(): void {
+    if (this.#frame !== undefined || this.#timer !== undefined) return;
+    this.#frame = requestAnimationFrame(() => {
+      this.#frame = undefined;
+      this.#timer = setTimeout(this.#pump, 0);
+    });
   }
 
   readonly #pump = (): void => {
     this.#timer = undefined;
-    const until = performance.now() + 8;
+    const until = performance.now() + 4;
     while (this.#tasks.length > 0 && performance.now() < until) this.#tasks.shift()?.();
-    if (this.#tasks.length > 0) this.#timer = setTimeout(this.#pump, 0);
+    if (this.#tasks.length > 0) this.#next();
   };
 }
 
@@ -155,14 +166,18 @@ export function draw(options: DrawOptions): Drawing {
     view.scrollTo(top);
   };
 
-  const setLines = (id: string, shown: Shown) =>
-    steady(() => {
-      view.setLines(id, shown.lines, shown.diff);
-      for (const side of ['old', 'new'] as const) {
-        const triples = shown.tokens[side];
-        if (triples) view.setTokens(id, side, triples);
-      }
-    });
+  const setTokens = (id: string, tokens: Shown['tokens']) => {
+    for (const side of ['old', 'new'] as const) {
+      const triples = tokens[side];
+      if (triples) view.setTokens(id, side, triples);
+    }
+  };
+
+  const setLines = (id: string, shown: Shown) => {
+    steady(() => view.setLines(id, shown.lines, shown.diff));
+    // Its colors in a task of their own, so a frame takes a file's lines or its colors.
+    pacer.run(() => setTokens(id, shown.tokens));
+  };
 
   /** Makes a change to a file now. Returns whether it could. */
   const apply = (id: string, change: Change, start: Start): boolean => {
@@ -189,30 +204,45 @@ export function draw(options: DrawOptions): Drawing {
     }
   };
 
-  /** Makes the changes waiting on files the reader isn't looking at now. */
+  /** Whether a pass of `settleOne` is waiting its turn. */
+  let settling = false;
+
+  /** Makes the changes waiting on files the reader isn't looking at now, a file a task. */
   const settle = () => {
-    if (pending.size === 0 && held.size === 0) return;
+    if (settling || (pending.size === 0 && held.size === 0)) return;
+    settling = true;
+    pacer.run(settleOne);
+  };
+
+  const settleOne = () => {
+    settling = false;
     const looked = new Set(view.filesOnScreen());
-    for (const [id, shown] of held) {
-      if (looked.has(id)) continue;
-      held.delete(id);
-      setLines(id, shown);
-    }
-    for (const [id, { change, start }] of pending) {
-      if (looked.has(id) || held.has(id)) continue;
-      if (apply(id, change, start)) pending.delete(id);
-    }
+    const made = (): boolean => {
+      for (const [id, shown] of held) {
+        if (looked.has(id)) continue;
+        held.delete(id);
+        setLines(id, shown);
+        return true;
+      }
+      for (const [id, { change, start }] of pending) {
+        if (looked.has(id) || held.has(id) || !apply(id, change, start)) continue;
+        pending.delete(id);
+        return true;
+      }
+      return false;
+    };
+    if (made()) settle();
   };
 
   const view = createDiffView(
     parent,
     { files, layout: options.layout, vimKeys: keys.vimKeys(), nonce: options.nonce },
     {
-      cursor: () => pacer.run(settle),
+      cursor: settle,
       mode() {},
       file(id) {
         followFile(tab.id, loader.ids.keyOf(id));
-        pacer.run(settle);
+        settle();
       },
       jumped: (from) => keys.history.record({ view: 'diff', at: from }),
       load(id) {
@@ -261,13 +291,7 @@ export function draw(options: DrawOptions): Drawing {
     failed: (id) => pacer.run(() => steady(() => view.loadFailed(id))),
     // Labels at moves' ends change the height of files above the screen too.
     moves: (moves) => pacer.run(() => steady(() => view.setMoves(moves))),
-    tokens: (id, tokens) =>
-      pacer.run(() => {
-        for (const side of ['old', 'new'] as const) {
-          const triples = tokens[side];
-          if (triples) view.setTokens(id, side, triples);
-        }
-      }),
+    tokens: (id, tokens) => pacer.run(() => setTokens(id, tokens)),
   });
   const stops = [
     setDrawn(tab.id, {
@@ -330,14 +354,15 @@ export function draw(options: DrawOptions): Drawing {
         const said = JSON.stringify(header);
         if (headers.has(entry.id) && headers.get(entry.id) !== said) {
           headers.set(entry.id, said);
-          view.setHeader(entry.id, header);
+          // A header at a time, as a new list can change every file's.
+          pacer.run(() => steady(() => view.setHeader(entry.id, header)));
         }
         const now = drawn.get(entry.id);
         const change = now === undefined ? undefined : changeFor(now, entry.versions.start);
         if (change) pending.set(entry.id, { change, start: entry.versions.start });
         else pending.delete(entry.id);
       }
-      pacer.run(settle);
+      settle();
     },
     place: () => ({ cursor: view.keyState().target, viewport: view.viewport() }),
     stop() {
