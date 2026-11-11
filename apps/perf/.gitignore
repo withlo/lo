@@ -1,3 +1,6 @@
 # Playwright's results and report.
 test-results/
 playwright-report/
+
+# The bench's reports, traces and videos.
+bench/results/
