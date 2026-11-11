@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 
 import { GitError } from './errors.ts';
 import { type Git, Runner, type TestSettings } from './git.ts';
+import { DEFAULT_FETCH_LIMITS, type FetchLimits } from './limits.ts';
 import { CloneLock, lockCache, type Release, unlockCache } from './lock.ts';
 import type { Activity } from './progress.ts';
 import { checkName } from './refs.ts';
@@ -37,6 +38,8 @@ export interface CacheOptions {
   readonly git: Git;
   /** Gets a line for each git that fails and each clone made again. */
   readonly log?: ((line: string) => void) | undefined;
+  /** How long fetches may take: {@link DEFAULT_FETCH_LIMITS} unless tests make them short. */
+  readonly limits?: FetchLimits | undefined;
   /**
    * Where repositories are fetched from instead of GitHub, and settings after Lo's own: only a
    * build run from source, for its tests, sets it.
@@ -57,6 +60,7 @@ export interface OpenOptions {
 export class Cache {
   readonly root: string;
   readonly runner: Runner;
+  readonly limits: FetchLimits;
   readonly #log: ((line: string) => void) | undefined;
   readonly #release: Release;
   readonly #locks = new Map<string, CloneLock>();
@@ -66,10 +70,12 @@ export class Cache {
     root: string,
     runner: Runner,
     release: Release,
+    limits: FetchLimits,
     log?: (line: string) => void,
   ) {
     this.root = root;
     this.runner = runner;
+    this.limits = limits;
     this.#release = release;
     this.#log = log;
   }
@@ -90,7 +96,8 @@ export class Cache {
       log: options.log,
       test: options.test,
     });
-    return new Cache(options.root, runner, release, options.log);
+    const limits = options.limits ?? DEFAULT_FETCH_LIMITS;
+    return new Cache(options.root, runner, release, limits, options.log);
   }
 
   /** Lets another process open the cache. Repositories still open keep working until closed. */

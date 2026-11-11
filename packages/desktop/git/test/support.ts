@@ -124,6 +124,7 @@ export async function cacheFor(
     root: options.root ?? join(tempFolder(), 'cache'),
     git: options.git ?? (await foundGit()),
     log: options.log,
+    limits: options.limits,
     test: ownSettings ? undefined : { remote: address, config: options.config },
   });
   onTestFinished(() => cache.close());
