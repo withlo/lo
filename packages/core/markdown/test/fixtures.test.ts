@@ -7,8 +7,15 @@ import { readdirSync, readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'vitest';
 
-import { githubTree, markdownTree, type Tree } from '../src/index.ts';
+import {
+  githubTree,
+  markdownTree,
+  sanitizeSvg,
+  type SanitizedSvg,
+  type Tree,
+} from '../src/index.ts';
 import { collect, textOf } from './support.ts';
+import { svgProblems } from './svgwalker.ts';
 import { isRecord, problems } from './walker.ts';
 
 const HOSTILE = new URL('../../../../testing/fixtures/markdown/hostile/', import.meta.url);
@@ -281,6 +288,193 @@ describe('hostile HTML', () => {
       undefined,
     ]);
     expect(textOf(made.blocks)).toContain('A link hidden as a permalink');
+  });
+});
+
+/** Each removal as `reason element[.attribute]`. */
+function removals(made: SanitizedSvg): string[] {
+  return made.removed.map(
+    (removal) =>
+      `${removal.reason} ${removal.element}${removal.attribute ? `.${removal.attribute}` : ''}`,
+  );
+}
+
+describe('hostile SVGs', () => {
+  const files = readdirSync(HOSTILE).filter((name) => name.endsWith('.svg'));
+
+  function figure(name: string): SanitizedSvg {
+    return sanitizeSvg(readFileSync(new URL(name, HOSTILE), 'utf8'));
+  }
+
+  test('there are some', () => {
+    expect(files.length).toBeGreaterThanOrEqual(7);
+  });
+
+  test.each(files)('%s holds only what figures may, and keeps its text', (name) => {
+    const { made, elapsed } = timed(() => figure(name));
+    expect(svgProblems(made)).toEqual([]);
+    expect(elapsed).toBeLessThan(LIMIT);
+    const shown = JSON.stringify(made.svg);
+    for (const hidden of ['alert', 'script', 'evil', 'data:', 'url(', 'HTML']) {
+      expect(shown).not.toContain(hidden);
+    }
+    expect(made.removed.length).toBeGreaterThan(0);
+    // The figure itself is never refused for what it holds, only cut down to what Lo draws.
+    expect(made.svg).toBeDefined();
+  });
+
+  test('scripts and handlers, in every form', () => {
+    const made = figure('scripts.svg');
+    expect(new Set(made.removed.map((removal) => removal.reason))).toEqual(
+      // An id is refused as a name, and `on load`, split, is no handler but no attribute of Lo's.
+      new Set(['script', 'attribute', 'element', 'id']),
+    );
+    expect(textOf(made.svg?.children)).toBe('This text stays');
+  });
+
+  test('every address outside the figure', () => {
+    const made = figure('references.svg');
+    expect(removals(made)).toEqual([
+      'style style',
+      'element image',
+      'element image',
+      'element image',
+      'element use',
+      'element use',
+      'element a',
+      'element feImage',
+      'reference rect.fill',
+      'reference rect.stroke',
+      'reference rect.filter',
+      'reference rect.mask',
+      'reference rect.clip-path',
+      'reference rect.cursor',
+      'style rect.style',
+      'reference text.font-family',
+      'reference text.src',
+      'reference path.marker-end',
+      'reference path.marker-start',
+      'reference rect.xml:base',
+      'reference rect.xlink:href',
+    ]);
+  });
+
+  test('paints that are CSS, and paints mangled to look like colors', () => {
+    const made = figure('paints.svg');
+    const kept = made.svg?.children.flatMap((node) =>
+      node.kind === 'element' ? [node.attributes] : [],
+    );
+    expect(kept?.slice(-2)).toEqual([
+      { width: '1', height: '1', fill: 'var(--fig-blue)', stroke: 'currentColor', opacity: '0.5' },
+      { width: '1', height: '1', fill: '#a5c5e9', stroke: 'rgb(1,2,3)' },
+    ]);
+    expect(
+      kept?.slice(0, -2).every((attributes) => Object.keys(attributes).join() === 'width,height'),
+    ).toBe(true);
+  });
+
+  test('entities stay their names, however many', () => {
+    const made = figure('entities.svg');
+    expect(textOf(made.svg?.children)).toBe('&lol9;&ext; &remote; &inner;<kept> & A');
+    expect(removals(made)).toEqual(['value rect.width', 'value rect.fill']);
+  });
+
+  test('effects, animations and use chains are gone, with all they held', () => {
+    const made = figure('effects.svg');
+    expect(textOf(made.svg?.children)).toBe('Text that stays');
+    expect(made.removed.map((removal) => removal.element)).toEqual([
+      'rect',
+      'g',
+      'g',
+      'g',
+      'symbol',
+      'linearGradient',
+      'radialGradient',
+      'pattern',
+      'filter',
+      'mask',
+      'clipPath',
+      'use',
+      'use',
+      'rect',
+      'rect',
+      'rect',
+      'rect',
+      'animate',
+      'animateTransform',
+      'animateMotion',
+      'set',
+      'discard',
+      'foreignObject',
+      'switch',
+      'textPath',
+      'view',
+      'metadata',
+    ]);
+  });
+
+  test('HTML can only close the figure, never get into it', () => {
+    const made = figure('breakout.svg');
+    // The image in the style sheet closes the figure; everything after it is outside.
+    expect(textOf(made.svg?.children)).toBe('Before');
+    // Including the image after it, and a second figure.
+    expect(removals(made).slice(-2)).toEqual(['element img', 'element svg']);
+  });
+
+  test('markers draw no markers, and name only a marker defined once', () => {
+    const made = figure('markers.svg');
+    expect(removals(made)).toEqual([
+      'reference path.marker-end',
+      'reference path.marker-mid',
+      'reference polyline.marker-mid',
+      'reference line.marker-start',
+      'element marker',
+      'id marker.id',
+      'id marker.id',
+      'reference path.marker-start',
+      'reference path.marker-end',
+      'reference path.marker-start',
+      'reference g.marker-end',
+    ]);
+    const ids = JSON.stringify(made.svg).match(/"id":"[^"]+"/g);
+    expect(ids).toEqual(
+      [
+        'self',
+        'a',
+        'b',
+        'arrow',
+        'root',
+        'app',
+        'lo',
+        '__proto__',
+        'constructor',
+        'document',
+        'window',
+      ].map((id) => `"id":"${id}"`),
+    );
+  });
+});
+
+describe('generated SVG', () => {
+  const json: unknown = JSON.parse(readFileSync(new URL('generated-svg.json', HOSTILE), 'utf8'));
+  const inputs = generated(json);
+  const refusals = new Map<string, unknown>();
+  for (const input of isRecord(json) && Array.isArray(json['inputs']) ? json['inputs'] : []) {
+    if (isRecord(input)) refusals.set(String(input['name']), input['refused']);
+  }
+
+  test('there are some', () => {
+    expect(inputs.length).toBeGreaterThanOrEqual(20);
+  });
+
+  test.each(inputs.map((input) => [input.name, input] as const))('%s', (_name, input) => {
+    const { made, elapsed } = timed(() => sanitizeSvg(inputText(input)));
+    expect(svgProblems(made)).toEqual([]);
+    expect(elapsed).toBeLessThan(LIMIT);
+    const refused = refusals.get(input.name);
+    expect(made.svg === undefined ? made.removed : undefined).toEqual(
+      refused === undefined ? undefined : [{ reason: refused, element: 'svg' }],
+    );
   });
 });
 

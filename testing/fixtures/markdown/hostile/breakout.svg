@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 120">
+  <text x="0" y="20">Before</text>
+  <desc></svg><script>alert('after a closing tag in a description')</script></desc>
+  <title><svg><script>alert('nested in a title')</script></svg></title>
+  <style><img src="x" onerror="alert('img in a style')"></style>
+  <text><math><mtext><table><mglyph><style><img src="x" onerror="alert('mutation')"></style></mglyph></table></mtext></math></text>
+  <![CDATA[</svg><script>alert('CDATA')</script>]]>
+  <noscript><img src="x" onerror="alert('noscript')"></noscript>
+  <template><script>alert('template')</script></template>
+  <text x="0" y="40">Kept<p>closes the figure</p>lost</text>
+</svg>
+<img src="x" onerror="alert('after the figure')">
+<svg><text>A second figure</text></svg>
