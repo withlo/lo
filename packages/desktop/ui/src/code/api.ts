@@ -225,10 +225,17 @@ export interface DiffView extends KeySource {
   setTokens(file: string, side: Side, triples: Uint32Array): void;
   /**
    * Brings in a file's lines: those of a file kept out, as after `load`, or the whole of one in
-   * place of what it showed, its gaps filled. Its diff and highlighting follow with `setDiff` and
-   * `setTokens`.
+   * place of what it showed, its gaps filled, as when the local copy replaces GitHub's diff. In
+   * place, only the lines that differ change, so the cursor keeps its line and the scroll its
+   * place. `diff`, given, shows with the new lines at once: pass it when swapping a shown file.
+   * Without it, a kept-out file's diff follows with `setDiff`, and a shown file keeps its own
+   * while its line counts stay. Highlighting follows with `setTokens`.
    */
-  setLines(file: string, lines: { old: readonly string[]; new: readonly string[] }): void;
+  setLines(
+    file: string,
+    lines: { old: readonly string[]; new: readonly string[] },
+    diff?: FileDiff,
+  ): void;
   /** Says a file asked for with `load` couldn't be loaded: its note says so, and `za` asks again. */
   loadFailed(file: string): void;
   setHeader(file: string, header: FileHeader): void;

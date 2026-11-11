@@ -216,6 +216,8 @@ class View implements DiffView {
   #lastSide: Side = 'new';
   /** The thread `]t` last landed on, while the cursor stays on its line. */
   #landed: (At & { thread: string }) | undefined;
+  /** Above 0 while the view changes its own documents, which says nothing until it's done. */
+  #quiet = 0;
   /** What the events last said, so each says only what changed. */
   #said: { cursor?: string; mode: Mode; file: number } = { mode: 'normal', file: -1 };
   readonly #stops: (() => void)[] = [];
@@ -334,7 +336,7 @@ class View implements DiffView {
   setDiff(id: string, diff: FileDiff): void {
     const file = this.#fileOf(id);
     this.#diffs[file] = diff;
-    if (this.#inline) this.#addInline(file);
+    if (this.#inline) this.#replaceInline(file);
     this.#refresh(file, [tokensChanged.of(null)]);
   }
 
@@ -354,8 +356,12 @@ class View implements DiffView {
     for (const view of this.#editors()) view.dispatch({ effects: tokensChanged.of(null) });
   }
 
-  setLines(id: string, lines: { old: readonly string[]; new: readonly string[] }): void {
-    this.#bringIn(this.#fileOf(id), lines);
+  setLines(
+    id: string,
+    lines: { old: readonly string[]; new: readonly string[] },
+    diff?: FileDiff,
+  ): void {
+    this.#bringIn(this.#fileOf(id), lines, diff);
   }
 
   loadFailed(id: string): void {
@@ -482,7 +488,7 @@ class View implements DiffView {
       case 'file': {
         const diff = this.#diffs[file];
         if (!diff || this.#noteOf(file)) return;
-        for (const run of collapsedRuns(diff, this.#keep[file])) {
+        for (const run of collapsedRuns(diff, this.#keep[file], 2, this.#gaps[file])) {
           if (!this.#inGap(file, run)) this.#open[file]!.add(run.old.first);
         }
         this.#refresh(file);
@@ -894,7 +900,7 @@ class View implements DiffView {
       fileField,
       leaveOnScreen,
       EditorView.updateListener.of((update) => {
-        if (!update.view.hasFocus || handlingKey(update.view)) return;
+        if (!update.view.hasFocus || handlingKey(update.view) || this.#quiet > 0) return;
         if (update.selectionSet || update.focusChanged || update.docChanged) this.#tell(pane);
       }),
     ];
@@ -1106,7 +1112,13 @@ class View implements DiffView {
       lines.old,
       lines.new,
       diff && !this.#noteOf(file)
-        ? { kind: 'diff', diff, keep: this.#keep[file], open: this.#open[file] }
+        ? {
+            kind: 'diff',
+            diff,
+            keep: this.#keep[file],
+            open: this.#open[file],
+            gaps: this.#gaps[file],
+          }
         : { kind: 'collapsed' },
     );
   }
@@ -1311,57 +1323,96 @@ class View implements DiffView {
     for (const file of files) this.#refresh(file);
   }
 
-  /** Puts a kept-out file's lines in the documents. Its diff follows with `setDiff`. */
   /**
    * Puts a file's lines in the documents: a file kept out, or the whole of one in place of what it
-   * held, whose diff and highlighting don't fit the new lines and come again.
+   * showed, at the same place. Only the lines that differ change, so the cursor keeps its line and
+   * the scroll its anchor. `diff`, when given, is shown with the new lines at once; without it, a
+   * shown file keeps its diff while its lines keep their counts. Highlighting comes again.
    */
-  #bringIn(file: number, given: { old: readonly string[]; new: readonly string[] }): void {
-    if (this.#loaded.has(file)) this.#forgetLines(file);
+  #bringIn(
+    file: number,
+    given: { old: readonly string[]; new: readonly string[] },
+    diff: FileDiff | undefined,
+  ): void {
+    const shown = this.#loaded.has(file);
+    const before = this.#lines[file]!;
+    const sameCounts =
+      before.old.length === given.old.length && before.new.length === given.new.length;
     this.#loaded.add(file);
     this.#loading.delete(file);
     this.#failed.delete(file);
     this.#gaps[file] = [];
     this.#lines[file] = { old: given.old, new: given.new };
-    for (const side of ['old', 'new'] as const) {
-      const lines = given[side];
-      const triples = this.#triples[file]![side];
-      if (triples) this.#tokens[file]![side] = { tokens: triples, starts: lineStarts(lines) };
-      const view = this.views[side];
-      const { header, count } = this.#layout.files[file]![side];
-      const { doc } = view.state;
-      const from = doc.line(header).to;
-      const to = doc.line(header + count).to;
-      if (from === to && lines.length === 0) continue;
-      view.dispatch({
-        changes: { from, to, insert: lines.length === 0 ? '' : `\n${lines.join('\n')}` },
-        annotations: ownChange.of(true),
-      });
-      this.#layout.setCount(side, file, lines.length);
+    if (diff) this.#diffs[file] = diff;
+    else if (shown && !sameCounts) this.#diffs[file] = undefined;
+    if (shown) {
+      // Offsets into the old text: the highlighting of the new comes with `setTokens`.
+      this.#triples[file] = {};
+      this.#tokens[file] = {};
     }
-    // Every file after it has moved.
-    for (let index = file; index < this.#rows.length; index++) {
-      this.#rows[index] = this.#rowsOf(index);
+    // The lines change under the editors: what the cursor is on is said once they settle.
+    this.#quiet++;
+    try {
+      for (const side of ['old', 'new'] as const) {
+        const lines = given[side];
+        const triples = this.#triples[file]![side];
+        if (triples) this.#tokens[file]![side] = { tokens: triples, starts: lineStarts(lines) };
+        const { header } = this.#layout.files[file]![side];
+        replaceLines(this.views[side], header, before[side], lines);
+        this.#layout.setCount(side, file, lines.length);
+      }
+      // Every file after it has moved.
+      for (let index = file; index < this.#rows.length; index++) {
+        this.#rows[index] = this.#rowsOf(index);
+      }
+      if (this.#inline) this.#replaceInline(file);
+      this.#refresh(file, [tokensChanged.of(null)]);
+    } finally {
+      this.#quiet--;
     }
-    if (this.#inline) this.#addInline(file);
-    this.#refresh(file, [tokensChanged.of(null)]);
+    const pane = this.#activePane();
+    if (this.#viewOf(pane).hasFocus) this.#tell(pane);
   }
 
-  /** Drops what a file showed of its lines: its diff, highlighting, open runs and inline lines. */
-  #forgetLines(file: number): void {
-    this.#diffs[file] = undefined;
-    this.#triples[file] = {};
-    this.#tokens[file] = {};
-    this.#open[file]!.clear();
-    const inline = this.#inline;
-    if (!inline?.layout.lines[file]) return;
+  /** Gives the inline document file `file`'s lines from its diff now, in place of those it had. */
+  #replaceInline(file: number): void {
+    const inline = this.#inline!;
+    const had = inline.layout.lines[file];
+    if (!had) {
+      this.#addInline(file);
+      return;
+    }
+    const diff = this.#diffs[file];
+    const lines = this.#lines[file]!;
     const { header, count } = inline.layout.files[file]!;
-    const { doc } = inline.view.state;
-    inline.view.dispatch({
-      changes: { from: doc.line(header).to, to: doc.line(header + count).to },
-      annotations: ownChange.of(true),
-    });
+    const { view } = inline;
+    const was = view.state.doc.sliceString(
+      view.state.doc.line(header).to,
+      view.state.doc.line(header + count).to,
+    );
+    const before = was === '' ? [] : was.slice(1).split('\n');
+    if (diff && this.#loaded.has(file)) {
+      const now = inlineLines(diff);
+      const text = inlineText(now, lines.old, lines.new);
+      if (text.length === before.length) {
+        // The same rows: line for line, so the cursor stays where it is.
+        replaceLines(view, header, before, text);
+        inline.layout.setLines(file, now);
+        return;
+      }
+    }
+    // Other rows: the file's inline lines go, and come again from its diff, the cursor kept on
+    // the same file line if it was in the file.
+    const head = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(head).number;
+    const at = this.#fileAt('inline', line) === file ? this.#placeAt('inline', line) : undefined;
+    replaceLines(view, header, before, []);
     inline.layout.clearLines(file);
+    this.#addInline(file);
+    if (at)
+      view.dispatch({
+        selection: { anchor: view.state.doc.line(this.#docLine('inline', at)).from },
+      });
   }
 
   // Jumps and folds --------------------------------------------------------------------------
@@ -1459,7 +1510,8 @@ class View implements DiffView {
     if (!diff || place.line === 0 || this.#noteOf(place.file)) return;
     const keep = this.#keep[place.file];
     const opened = this.#open[place.file]!;
-    const runs = open ? shownRuns(diff, keep, opened) : collapsedRuns(diff, keep);
+    const gaps = this.#gaps[place.file];
+    const runs = open ? shownRuns(diff, keep, opened, gaps) : collapsedRuns(diff, keep, 2, gaps);
     const run = runAt(runs, place.side, place.line);
     // Lines the view has only as placeholders stay collapsed.
     if (!run || opened.has(run.old.first) === open || this.#inGap(place.file, run)) return;
@@ -1562,6 +1614,32 @@ class ViewProbe implements Probe {
   cursor(): CursorReading | undefined {
     return this.#read.cursor();
   }
+}
+
+/**
+ * Replaces lines `before` after document line `header` of `view` with `after`, changing only the
+ * lines that differ, and adding or removing lines at the end: a cursor or a scroll anchor on a line
+ * that stays keeps its place.
+ */
+function replaceLines(
+  view: EditorView,
+  header: number,
+  before: readonly string[],
+  after: readonly string[],
+): void {
+  const { doc } = view.state;
+  const changes: { from: number; to?: number; insert?: string }[] = [];
+  const common = Math.min(before.length, after.length);
+  for (let index = 0; index < common; index++) {
+    if (before[index] === after[index]) continue;
+    const line = doc.line(header + 1 + index);
+    changes.push({ from: line.from, to: line.to, insert: after[index] });
+  }
+  const end = doc.line(header + common).to;
+  if (after.length > common)
+    changes.push({ from: end, insert: `\n${after.slice(common).join('\n')}` });
+  if (before.length > common) changes.push({ from: end, to: doc.line(header + before.length).to });
+  if (changes.length > 0) view.dispatch({ changes, annotations: ownChange.of(true) });
 }
 
 /** Whether a file's threads are the same threads, in the same places. */
