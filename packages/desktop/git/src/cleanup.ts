@@ -6,12 +6,26 @@
  *
  * Maintenance that can take minutes, repacking and collecting what comparisons replayed, holds
  * the clone's lock giving way: anyone who then waits for the clone gives it a few seconds to
- * finish, then stops it, and it's done again later. Repacks are geometric, rolling the small packs
- * that fetches and downloads add into one and leaving the big ones be, so they usually finish in
- * seconds; a clone whose packs piled up anyway is repacked whole only while nobody has it open.
+ * finish, then stops it, and it's done again later. Closing the cache stops it at once. Repacks
+ * are geometric, rolling the small packs that fetches and downloads add into one and leaving the
+ * big ones be, so they usually finish in seconds: git 2.53 and later do it themselves, and for
+ * older gits Lo does it with `git pack-objects --stdin-packs`. A clone whose packs piled up anyway
+ * is repacked whole only while nobody has it open, loosening what nothing reaches rather than
+ * dropping it, for `prune` to remove once nobody has the clone open.
  */
 
-import { lstat, open, readdir, readFile, realpath, rm, rmdir } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { REPLAYS } from './compare.ts';
@@ -74,10 +88,11 @@ export const DEFAULT_MAINTENANCE: MaintenanceTimes = {
 };
 
 /**
- * The first git that repacks a partial clone's promisor packs geometrically. Older ones refuse
- * ("cannot use internal rev list with --stdin-packs").
+ * The first git that repacks a partial clone's promisor packs geometrically, as its release notes
+ * say ("git repack --geometric" did not work with promisor packs, which has been corrected). Older
+ * ones die ("cannot use internal rev list with --stdin-packs").
  */
-const GEOMETRIC_WITH_PROMISORS: GitVersion = { major: 2, minor: 52, patch: 0 };
+const GEOMETRIC_WITH_PROMISORS: GitVersion = { major: 2, minor: 53, patch: 0 };
 
 /** A clone in the cache, by its folders' names, which are lowercase. */
 export interface CloneName {
@@ -94,7 +109,11 @@ export interface CleanupHost {
   cloneLock(owner: string, name: string): CloneLock;
   trash(path: string): Promise<boolean>;
   note(line: string): void;
+  /** A new path in the cache's `tmp/`, ending in `extension`. */
+  temporaryPath(extension: string): string;
   readonly maintenance: MaintenanceTimes;
+  /** Aborts as the cache closes, which stops maintenance at once and starts no more. */
+  readonly closing: AbortSignal;
 }
 
 /** Why maintenance stopped: someone waits for the clone, to do `waiter`. */
@@ -119,6 +138,7 @@ function maintain(
   what: string,
   remove = false,
 ): { release: Release; signal: AbortSignal; users: number } | undefined {
+  if (host.closing.aborted) return undefined;
   const controller = new AbortController();
   const lock = host.cloneLock(clone.owner, clone.name);
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -127,9 +147,13 @@ function maintain(
   };
   const release = remove ? lock.tryRemove(what, giveWay) : lock.tryAcquire(what, giveWay);
   if (release === undefined) return undefined;
+  // Closing the cache stops it at once.
+  const close = () => controller.abort(new GaveWay('closing the cache'));
+  host.closing.addEventListener('abort', close, { once: true });
   return {
     release: () => {
       clearTimeout(timer);
+      host.closing.removeEventListener('abort', close);
       release();
     },
     signal: controller.signal,
@@ -541,22 +565,32 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
 }
 
 /**
- * How a clone is repacked: its small packs rolled into one, keeping the big ones, `keep`, as git's
- * geometric repack does; or everything into one.
+ * How a clone is repacked: its small promisor packs, `roll`, rolled into one, leaving the big
+ * ones, `keep`, be, as git's geometric repack does; or everything into one.
  */
 export type RepackPlan =
-  { readonly kind: 'geometric'; readonly keep: readonly string[] } | { readonly kind: 'full' };
+  | {
+      readonly kind: 'geometric';
+      readonly roll: readonly string[];
+      readonly keep: readonly string[];
+    }
+  | { readonly kind: 'full' };
 
-/** How `git repack` runs with git `version` to follow `plan`. */
-export function repackArguments(version: GitVersion, plan: RepackPlan): string[] {
+/**
+ * How `git repack` runs for `plan`. A whole repack loosens what nothing reaches any more rather
+ * than dropping it (`-A`): a comparison may have just pinned a tree it found already there, which
+ * only `prune` removes once nobody has the clone open. A geometric one keeps everything in the
+ * packs it rolls.
+ */
+export function repackArguments(plan: RepackPlan): string[] {
   // Bitmaps need every object, which a partial clone doesn't have.
   const base = ['repack', '-d', '-q', '--no-write-bitmap-index'];
-  if (plan.kind === 'full') return [...base, '-a'];
-  if (compareVersions(version, GEOMETRIC_WITH_PROMISORS) >= 0) return [...base, '--geometric=2'];
-  // Older gits refuse a geometric repack of a partial clone's promisor packs, but repack the rest
-  // of them, as promisor packs, when told which to keep. In a clone whose packs are all promisor
-  // packs, that reads only the packs rolled.
-  return [...base, '-a', ...plan.keep.map((name) => `--keep-pack=${name}`)];
+  return plan.kind === 'full' ? [...base, '-A'] : [...base, '--geometric=2'];
+}
+
+/** Whether git `version` repacks a partial clone geometrically itself. */
+export function repacksGeometrically(version: GitVersion): boolean {
+  return compareVersions(version, GEOMETRIC_WITH_PROMISORS) >= 0;
 }
 
 /**
@@ -579,14 +613,24 @@ export function geometricSplit(objects: readonly number[]): number {
   return split;
 }
 
-/** The packs of the clone at `folder`, `pack-<hash>.pack`, with how many objects each holds, fewest first. */
-async function packsOf(folder: string): Promise<{ name: string; objects: number }[]> {
+/** A finished pack of a clone: `pack-<hash>.pack`, how many objects it holds, and whether it's a promisor pack. */
+interface Pack {
+  readonly name: string;
+  readonly objects: number;
+  readonly promisor: boolean;
+}
+
+/** The finished packs of the clone at `folder`, fewest objects first. */
+async function packsOf(folder: string): Promise<Pack[]> {
   const pack = join(folder, 'objects', 'pack');
-  const found: { name: string; objects: number }[] = [];
-  for (const name of await readdir(pack).catch(() => [])) {
+  const names: string[] = await readdir(pack).catch(() => []);
+  const found: Pack[] = [];
+  for (const name of names) {
     if (!name.startsWith('pack-') || !name.endsWith('.pack')) continue;
-    const objects = await indexedObjects(join(pack, `${name.slice(0, -'.pack'.length)}.idx`));
-    if (objects !== undefined) found.push({ name, objects });
+    const base = name.slice(0, -'.pack'.length);
+    const objects = await indexedObjects(join(pack, `${base}.idx`));
+    if (objects !== undefined)
+      found.push({ name, objects, promisor: names.includes(`${base}.promisor`) });
   }
   return found.toSorted((a, b) => a.objects - b.objects);
 }
@@ -612,18 +656,71 @@ async function indexedObjects(path: string): Promise<number | undefined> {
 /**
  * What repacking a clone with `packs` would do, when it has more than `limit`: whole, when they're
  * more than {@link PACK_LIMIT} and nobody has the clone open (`users`); otherwise geometrically,
- * when that rolls two packs or more. `undefined` when it needs neither.
+ * when that rolls two promisor packs or more, the packs fetches and downloads add. A pack of Lo's
+ * own replays, which a whole repack writes, isn't a promisor pack, and stays as it is. `undefined`
+ * when it needs neither.
  */
-function planRepack(
-  packs: readonly { name: string; objects: number }[],
-  limit: number,
-  users: number,
-): RepackPlan | undefined {
+function planRepack(packs: readonly Pack[], limit: number, users: number): RepackPlan | undefined {
   if (packs.length <= limit) return undefined;
   if (packs.length > PACK_LIMIT && users === 0) return { kind: 'full' };
-  const split = geometricSplit(packs.map((pack) => pack.objects));
+  const promisor = packs.filter((pack) => pack.promisor);
+  const split = geometricSplit(promisor.map((pack) => pack.objects));
   if (split < 2) return undefined;
-  return { kind: 'geometric', keep: packs.slice(split).map((pack) => pack.name) };
+  const names = promisor.map((pack) => pack.name);
+  return { kind: 'geometric', roll: names.slice(0, split), keep: names.slice(split) };
+}
+
+/**
+ * Rolls the promisor packs `plan.roll` of the clone at `folder` into one, leaving `plan.keep` be,
+ * as git 2.53 and later's geometric repack does, for older gits: their geometric repack dies on a
+ * partial clone, and their whole repack rewrites even the packs it's told to keep.
+ * `git pack-objects --stdin-packs` writes everything in the rolled packs that the kept ones lack
+ * into a new pack, outside the clone, without walking history or downloading anything. It goes in
+ * as git puts a pack in place: marked as a promisor pack first and its index last, so it's never
+ * seen as anything else; and only then do the rolled packs go, each's index first, so no reader
+ * finds part of one. Stopped part way, it leaves the clone as it was, or with objects in two packs.
+ */
+async function rollUp(
+  host: CleanupHost,
+  folder: string,
+  plan: Extract<RepackPlan, { kind: 'geometric' }>,
+  signal: AbortSignal,
+): Promise<void> {
+  const scratch = host.temporaryPath('.repack');
+  await mkdir(scratch, { recursive: true });
+  try {
+    const input = [...plan.roll, ...plan.keep.map((name) => `^${name}`)].join('\n');
+    const written = await host.runner
+      .command({ gitDir: folder })
+      .arg('pack-objects', '--stdin-packs', '--delta-base-offset', '-q')
+      .path(join(scratch, 'pack'))
+      .run(`${input}\n`, { timeout: REPACK_LIMIT, signal });
+    const hash = written.toString('utf8').trim();
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(hash)) {
+      throw new Error(`git pack-objects printed ${JSON.stringify(hash)} for the pack it wrote`);
+    }
+    const made = `pack-${hash}`;
+    const packs = join(folder, 'objects', 'pack');
+    await writeFile(join(packs, `${made}.promisor`), '');
+    for (const extension of ['.pack', '.rev', '.idx']) {
+      await rename(join(scratch, `${made}${extension}`), join(packs, `${made}${extension}`)).catch(
+        (error: unknown) => {
+          // Older gits write no reverse index.
+          if (extension !== '.rev') throw error;
+        },
+      );
+    }
+    for (const name of plan.roll) {
+      const base = name.slice(0, -'.pack'.length);
+      // The same objects as the new pack's, which took its name.
+      if (base === made) continue;
+      for (const extension of ['.idx', '.pack', '.rev', '.mtimes', '.bitmap', '.promisor']) {
+        await rm(join(packs, `${base}${extension}`), { force: true });
+      }
+    }
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -660,10 +757,14 @@ export async function repackClone(
     const packs = await packsOf(folder);
     const plan = planRepack(packs, limit, held.users);
     if (plan === undefined) return false;
-    await host.runner
-      .command({ gitDir: folder })
-      .arg(...repackArguments(host.runner.git.version, plan))
-      .run(undefined, { timeout: REPACK_LIMIT, signal });
+    if (plan.kind === 'full' || repacksGeometrically(host.runner.git.version)) {
+      await host.runner
+        .command({ gitDir: folder })
+        .arg(...repackArguments(plan))
+        .run(undefined, { timeout: REPACK_LIMIT, signal });
+    } else {
+      await rollUp(host, folder, plan, signal);
+    }
     await host.runner
       .command({ gitDir: folder })
       .arg('pack-refs', '--all')

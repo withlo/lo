@@ -102,6 +102,8 @@ export class Cache {
   #maintaining: Promise<unknown> = Promise.resolve();
   /** What's being deleted, once moved aside. */
   readonly #deleting = new Set<Promise<void>>();
+  /** Aborted as the cache closes, which stops maintenance. */
+  readonly #closing = new AbortController();
   #closed = false;
 
   private constructor(
@@ -141,16 +143,24 @@ export class Cache {
   }
 
   /**
-   * Lets another process open the cache, once what's being deleted is gone. Repositories still
-   * open keep working until closed, but no more maintenance starts.
+   * Lets another process open the cache: stops any maintenance running, as it stops for anyone
+   * who waits for its clone but without its grace, and waits for it and for what's being deleted.
+   * Repositories still open keep working until closed, but no more maintenance starts.
    */
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
     for (const timer of this.#idle.values()) clearTimeout(timer);
     this.#idle.clear();
+    this.#closing.abort();
+    await this.#maintaining;
     await this.#deleted();
     await unlockCache(join(this.root, 'lo-cache.lock'), this.#release);
+  }
+
+  /** Aborts as the cache closes. */
+  get closing(): AbortSignal {
+    return this.#closing.signal;
   }
 
   /** Notes a line for the log. */

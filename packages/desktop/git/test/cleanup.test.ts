@@ -16,7 +16,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
-import { git, gitBytes, type RepoServer } from '@lo/testing/git';
+import { git, gitBytes, gitProgram, packedObjects, type RepoServer } from '@lo/testing/git';
 import { expect, test } from 'vitest';
 
 import type { Cache } from '../src/cache.ts';
@@ -27,6 +27,7 @@ import {
   type MaintenanceTimes,
   PACK_LIMIT,
   repackArguments,
+  repacksGeometrically,
   UNUSED_FOR,
 } from '../src/cleanup.ts';
 import { Git } from '../src/git.ts';
@@ -41,6 +42,7 @@ import {
   eventually,
   foundGit,
   repoServer,
+  script,
   tempFolder,
   wrappedGit,
 } from './support.ts';
@@ -595,28 +597,16 @@ test('cleanup collects the trees comparisons replayed', async () => {
   expect(hasObject(repo.folder, r2)).toBe(true);
 });
 
-/** How `git repack` runs with git 2.`minor` for a geometric repack that keeps `pack-big.pack`. */
-function repackWith(minor: number): string[] {
-  return repackArguments(
-    { major: 2, minor, patch: 0 },
-    { kind: 'geometric', keep: ['pack-big.pack'] },
-  );
-}
-
 test('repacks with gits own geometric repack only where it takes promisor packs', () => {
-  expect(repackWith(54)).toContain('--geometric=2');
-  expect(repackWith(52)).toContain('--geometric=2');
-  // Older gits are told which packs to keep instead.
-  for (const minor of [51, 45]) {
-    expect(repackWith(minor)).toEqual(expect.arrayContaining(['-a', '--keep-pack=pack-big.pack']));
-    expect(repackWith(minor)).not.toContain('--geometric=2');
-  }
-  // A whole repack keeps nothing.
-  const whole = repackArguments({ major: 2, minor: 54, patch: 0 }, { kind: 'full' });
-  expect(whole).toContain('-a');
-  expect(whole.some((arg) => arg.startsWith('--geometric') || arg.startsWith('--keep-pack'))).toBe(
-    false,
-  );
+  // 2.53's release notes: "git repack --geometric" did not work with promisor packs.
+  expect(
+    [54, 53, 52, 45].map((minor) => repacksGeometrically({ major: 2, minor, patch: 0 })),
+  ).toEqual([true, true, false, false]);
+  expect(repackArguments({ kind: 'geometric', roll: [], keep: [] })).toContain('--geometric=2');
+  // A whole repack loosens what nothing reaches rather than dropping it.
+  const whole = repackArguments({ kind: 'full' });
+  expect(whole).toEqual(expect.arrayContaining(['-A', '-d']));
+  expect(whole).not.toContain('-a');
 });
 
 test('splits packs as gits geometric repack does', () => {
@@ -730,6 +720,8 @@ test('repacks a clone with too many packs', async () => {
 
 test('a geometric repack rolls the small packs into one and leaves the big one be', async () => {
   const found = await foundGit();
+  // The git found, and one that says it's too old to repack a partial clone geometrically, which
+  // Lo rolls up itself: the oldest-git job runs both with git 2.45.
   for (const program of [
     found,
     new Git(found.program, { major: 2, minor: 41, patch: 0 }, found.inherited),
@@ -742,12 +734,21 @@ test('a geometric repack rolls the small packs into one and leaves the big one b
         statSync(join(gitDir, 'objects', 'pack', a.name)).size,
     );
     expect(small).toHaveLength(FILES.length - 1);
+    const bigPath = join(gitDir, 'objects', 'pack', big?.name ?? '');
+    const unrolled = statSync(bigPath);
+    const objects = packedObjects(gitDir);
 
     expect(await cache.repack(1)).toEqual(['owner/repo']);
 
     const after = packFiles(gitDir);
     expect(after).toHaveLength(2);
+    // The big pack is the same file, never rewritten, and no object is in both packs.
     expect(after.map((pack) => pack.name)).toContain(big?.name);
+    expect([statSync(bigPath).ino, statSync(bigPath).mtimeMs]).toEqual([
+      unrolled.ino,
+      unrolled.mtimeMs,
+    ]);
+    expect(packedObjects(gitDir)).toBe(objects);
     expect(after.every((pack) => pack.promisor)).toBe(true);
     const repo = await cache.open('owner', 'repo');
     renameSync(remote.gitDir, `${remote.gitDir}.moved`);
@@ -786,6 +787,93 @@ test('a clone whose packs piled up is repacked whole only while nobody has it op
   }
 });
 
+test('a tree pinned while a whole repack runs stays, though the repack found nothing reaching it', async () => {
+  // A git whose repack, once its pack-objects of everything reachable is done, waits for `go`
+  // before telling repack what it wrote: repack removes the old packs only after the test pins.
+  const dir = tempFolder();
+  const [packed, go] = [join(dir, 'packed'), join(dir, 'go')];
+  const exec = execFileSync(gitProgram(), ['--exec-path'], { encoding: 'utf8' }).trim();
+  const children = join(dir, 'exec');
+  mkdirSync(children);
+  script(
+    join(children, 'git'),
+    [
+      `export GIT_EXEC_PATH='${exec}'`,
+      'case " $* " in',
+      '  *" pack-objects "*" --all "*)',
+      `    '${exec}/git' "$@" > '${dir}/written'; status=$?`,
+      `    touch '${packed}'`,
+      `    i=0; while [ ! -e '${go}' ] && [ $i -lt 1200 ]; do sleep 0.05; i=$((i+1)); done`,
+      `    cat '${dir}/written'; exit $status;;`,
+      'esac',
+      `exec '${exec}/git' "$@"`,
+    ].join('\n'),
+  );
+  const program = wrappedGit(join(dir, 'git'), {
+    before: `case " $* " in *" repack "*) export GIT_EXEC_PATH='${children}';; esac`,
+  });
+  const found = await gitAt(program, { env: process.env, platform: process.platform });
+  if (found.status !== 'found') throw new Error(found.message);
+  // Pull request #1 changes line 3 of a.txt, trunk then line 18 and adds enough files that
+  // downloading them one by one piles up packs, and r2 is r1 rebased with line 10 changed too.
+  const made = repoServer();
+  const remote = made.repo('owner', 'repo');
+  const m1 = parseOid(remote.write('a.txt', lines({})).commit('m1'));
+  remote.publish('refs/heads/trunk');
+  remote
+    .switch('feature')
+    .write('a.txt', lines({ 3: "the PR's" }))
+    .commit('r1');
+  remote.publish('refs/pull/1/head');
+  const cache = await cacheFor(made, { git: found.git });
+  const repo = await cache.open('owner', 'repo');
+  const r1 = await fetch(repo);
+  remote.switch('trunk').write('a.txt', lines({ 18: "trunk's" }));
+  const files = Array.from({ length: PACK_LIMIT + 1 }, (_, index) => `${index}.txt`);
+  for (const file of files) remote.write(file, `${file}\n`);
+  const m2 = parseOid(remote.commit('m2'));
+  remote.publish('refs/heads/trunk');
+  remote
+    .switch('feature-2')
+    .write('a.txt', lines({ 3: "the PR's", 10: 'rebased', 18: "trunk's" }))
+    .commit('r2');
+  remote.publish('refs/pull/1/head');
+  const r2 = await fetch(repo);
+  const [old, now] = [
+    { base: m1, head: r1 },
+    { base: m2, head: r2 },
+  ];
+  // 1. The replayed tree is packed, then no longer pinned.
+  const tree = (await compared(repo, old, now)).old;
+  git(repo.folder, 'repack', '-a', '-d', '-q');
+  repo.close();
+  (await cache.open('owner', 'repo')).close();
+  expect(git(repo.folder, 'for-each-ref', 'refs/lo/replays/')).toBe('');
+  expect(hasObject(repo.folder, tree)).toBe(true);
+  const downloading = await cache.open('owner', 'repo');
+  for (const file of files) await downloading.downloadFiles(r2, [Buffer.from(file)]);
+  downloading.close();
+  expect(packFiles(repo.folder).length).toBeGreaterThan(PACK_LIMIT);
+
+  // 2. A whole repack, with nobody having the clone open, finds nothing reaching the tree.
+  const repacking = cache.repack(1);
+  await eventually(() => existsSync(packed));
+  // 3. Compared again, offline, the replay finds the tree already there, and pins it.
+  const offline = await cache.openOffline('owner', 'repo');
+  if (offline === undefined) throw new Error('the clone is gone');
+  expect((await compared(offline, old, now)).old).toBe(tree);
+  expect(git(repo.folder, 'for-each-ref', '--format=%(objectname)', 'refs/lo/replays/')).toBe(tree);
+  writeFileSync(go, '');
+  expect(await repacking).toEqual(['owner/repo']);
+
+  // 4. The pinned tree is still there.
+  expect(hasObject(repo.folder, tree)).toBe(true);
+  expect((await offline.readFile(tree, Buffer.from('a.txt')))?.toString()).toBe(
+    lines({ 3: "the PR's", 18: "trunk's" }),
+  );
+  offline.close();
+});
+
 test('leaves clones under the limit or being written to alone', async () => {
   const { cache, gitDir } = await manyPacks();
   const before = packFiles(gitDir).length;
@@ -811,15 +899,22 @@ function processesMentioning(text: string): string[] {
 }
 
 /**
- * A git that runs `command`, such as `repack`, only once `go` exists, until then waiting in a shell
- * named `marker`, having made `started`. With `stubborn`, it makes locks in the clone first, on
- * packed refs and on a loose ref, as packing refs takes them, and
- * ignores SIGTERM, as a git that only SIGKILL stops, which can't remove its own lock.
+ * The commands a repack runs, as `case` patterns: `git repack`, or for a git too old to repack a
+ * partial clone geometrically, the `git pack-objects` Lo rolls packs up with.
  */
-async function slowGit(command: string, options: { stubborn?: boolean } = {}) {
+const REPACKS = '*" repack "*|*" pack-objects --stdin-packs "*';
+
+/**
+ * A git that runs the commands `pattern` matches, `case` patterns such as {@link REPACKS}, only
+ * once `go` exists, until then waiting in a shell named `marker`, having made `started`. With
+ * `stubborn`, it makes locks in the clone first, on packed refs and on a loose ref, as packing refs
+ * takes them, and ignores SIGTERM, as a git that only SIGKILL stops, which can't remove its own
+ * lock.
+ */
+async function slowGit(pattern: string, options: { stubborn?: boolean } = {}) {
   const dir = tempFolder();
   const [started, go] = [join(dir, 'started'), join(dir, 'go')];
-  const marker = `lo-slow-${command.replaceAll(/\W+/gu, '-')}-${Date.now()}`;
+  const marker = `lo-slow-${pattern.replaceAll(/\W+/gu, '-')}-${Date.now()}`;
   // A minute at most, so a test that fails leaves nothing running for long.
   const wait = `i=0; while [ ! -e '${go}' ] && [ \\$i -lt 1200 ]; do sleep 0.05; i=\\$((i+1)); done`;
   const program = wrappedGit(join(dir, 'git'), {
@@ -827,7 +922,7 @@ async function slowGit(command: string, options: { stubborn?: boolean } = {}) {
       'for arg; do case $arg in --git-dir=*) gitdir=${arg#--git-dir=};; esac; done',
       `if [ ! -e '${go}' ]; then`,
       '  case " $* " in',
-      `    *" ${command} "*)`,
+      `    ${pattern})`,
       ...(options.stubborn
         ? [
             "      trap '' TERM",
@@ -846,7 +941,7 @@ async function slowGit(command: string, options: { stubborn?: boolean } = {}) {
 }
 
 test('an open behind a long repack gets the clone at once, and the repack runs again later', async () => {
-  const slow = await slowGit('repack');
+  const slow = await slowGit(REPACKS);
   const logged: string[] = [];
   const { cache, gitDir } = await manyPacks({
     git: slow.git,
@@ -878,7 +973,7 @@ test('an open behind a long repack gets the clone at once, and the repack runs a
 });
 
 test('a pack-refs killed part way leaves no lock behind, so refs pack again', async () => {
-  const slow = await slowGit('pack-refs', { stubborn: true });
+  const slow = await slowGit('*" pack-refs "*', { stubborn: true });
   const { cache, gitDir } = await manyPacks({ git: slow.git, maintenance: { grace: GRACE } });
   const locks = ['packed-refs.lock', 'refs/lo/pull/1/head.lock'].map((lock) => join(gitDir, lock));
   const repacking = cache.repack(1);
@@ -920,7 +1015,7 @@ test('cleanup removes a pack git never finished, once nobody holds the clone', a
 });
 
 test('a fetch behind a repack stops it, and only then removes the packs it was writing', async () => {
-  const slow = await slowGit('repack');
+  const slow = await slowGit(REPACKS);
   const { cache, head, gitDir } = await manyPacks({ git: slow.git, maintenance: { grace: GRACE } });
   const repo = await cache.open('owner', 'repo');
   const repacking = cache.repack(1);
@@ -962,7 +1057,7 @@ test('an open waiting for a fetch stops once its signal aborts', async () => {
 });
 
 test('reading offline stops cleanup collecting replays, and waits for it', async () => {
-  const slow = await slowGit('prune --expire=now');
+  const slow = await slowGit('*" prune --expire=now "*');
   const logged: string[] = [];
   const cache = await cacheFor(server(), {
     git: slow.git,
@@ -998,7 +1093,7 @@ test('a clone opened over and over still gets repacked, and its opens wait secon
   // Each repack takes a second, more than the clone's lock goes unheld between opens.
   const dir = tempFolder();
   const program = wrappedGit(join(dir, 'git'), {
-    before: 'case " $* " in *" repack "*) sleep 1;; esac',
+    before: `case " $* " in ${REPACKS}) sleep 1;; esac`,
   });
   const found = await gitAt(program, { env: process.env, platform: process.platform });
   if (found.status !== 'found') throw new Error(found.message);
@@ -1035,7 +1130,7 @@ test('a clone is looked at again once its lock is idle, a few times each launch 
   // are used up.
   const dir = tempFolder();
   const program = wrappedGit(join(dir, 'git'), {
-    before: 'case " $* " in *" repack "*) exit 1;; esac',
+    before: `case " $* " in ${REPACKS}) exit 1;; esac`,
   });
   const found = await gitAt(program, { env: process.env, platform: process.platform });
   if (found.status !== 'found') throw new Error(found.message);
@@ -1053,4 +1148,29 @@ test('a clone is looked at again once its lock is idle, a few times each launch 
   }
 
   expect(tried()).toBe(2);
+});
+
+test('closing the cache stops its maintenance at once, and starts no more', async () => {
+  const slow = await slowGit(REPACKS);
+  const logged: string[] = [];
+  const { cache, gitDir } = await manyPacks({
+    git: slow.git,
+    log: (line) => logged.push(line),
+    maintenance: { grace: 60_000 },
+  });
+  const before = packFiles(gitDir).length;
+  const repacking = cache.repack(1);
+  await eventually(() => existsSync(slow.started));
+
+  const began = Date.now();
+  await cache.close();
+
+  // Without the grace someone waiting for the clone gives it.
+  expect(Date.now() - began).toBeLessThan(STOP_GRACE + 1000);
+  expect(await repacking).toEqual([]);
+  expect(processesMentioning(slow.marker)).toEqual([]);
+  expect(packFiles(gitDir)).toHaveLength(before);
+  expect(logged).toContain('stopped repacking owner/repo for closing the cache, to do again later');
+  expect(await cache.repack(1)).toEqual([]);
+  expect(existsSync(join(cache.root, 'lo-cache.lock'))).toBe(false);
 });
