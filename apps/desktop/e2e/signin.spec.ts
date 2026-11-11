@@ -305,6 +305,7 @@ test.describe('importing from gh', () => {
     await expect(dialog.getByRole('alert')).toContainText(
       "someone-else: gh's token for someone-else is rozed-bot's.",
     );
+    await expect(dialog.getByRole('button', { name: /Done/ })).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(dialog).toBeHidden();
 
