@@ -479,7 +479,13 @@ export class PullTab {
           this.#actingFor(acting),
           undefined,
         );
-        // The poller tries again at its next interval by itself.
+        // Only what lasts: a pull request that's gone, or an organization that blocks the account.
+        // Anything else the poller tries again at its next interval, and what's shown stays, since
+        // no event says when a poll that changed nothing went well.
+        if (problem.kind === 'failed') {
+          this.#options.log(`polling ${this.pull.toString()}: ${problem.message}`);
+          return;
+        }
         this.#problem = problem;
         break;
       }
