@@ -186,6 +186,12 @@ interface Anchor {
 /** Rounds of measuring, lining up and restoring the scroll a pass may take to settle. */
 const rounds = 3;
 
+/** How long after a cursor moves the pass sees that it ends up on screen, in ms. */
+const cursorFollow = 1000;
+
+/** How far inside the screen's edges a cursor brought into view sits, as CodeMirror's own does. */
+const cursorMargin = 5;
+
 /** How long after a wheel event over an editor CodeMirror anchors the scroll to it, and more. */
 const wheelAnchoring = 250;
 
@@ -222,6 +228,13 @@ export class Aligner {
   #travelledFrom = 0;
   /** Whether a cursor moved since the last pass, so a scroll CodeMirror makes is the cursor's. */
   #selected = false;
+  /**
+   * When a cursor last moved, and how often the pass has had CodeMirror scroll to it since: after
+   * a far jump, CodeMirror keeps the top of the screen still as it measures what it drew, and the
+   * cursor can end up off screen.
+   */
+  #cursorMoved = 0;
+  #cursorTries = 0;
   /** The lines the last pass lined up on each side, which keep their spacers when others go. */
   #lined: { old?: { from: number; to: number }; new?: { from: number; to: number } } = {};
   /** Told of each scroll CodeMirror makes to bring a moved cursor into view, for the measurements. */
@@ -283,7 +296,11 @@ export class Aligner {
         if (update.docChanged && anchor && update.view === this.#views[anchor.side]) {
           this.#anchor = { ...anchor, pos: update.changes.mapPos(anchor.pos) };
         }
-        if (update.selectionSet) this.#selected = true;
+        if (update.selectionSet) {
+          this.#selected = true;
+          this.#cursorMoved = Date.now();
+          this.#cursorTries = 0;
+        }
         if (this.#running) return;
         if (update.heightChanged || update.viewportChanged || update.geometryChanged) {
           this.schedule();
@@ -381,6 +398,47 @@ export class Aligner {
       this.stats.totalMs += ms;
       this.stats.maxMs = Math.max(this.stats.maxMs, ms);
     }
+    if (Date.now() - this.#cursorMoved < cursorFollow) this.#cursorInView();
+  }
+
+  /**
+   * Brings a focused editor's cursor back on screen, the least scroll that shows its line, when
+   * the measuring after a far jump left it off: a line it draws by scrolling, one it doesn't by
+   * having CodeMirror scroll there again, a few times at most.
+   */
+  #cursorInView(): void {
+    const side = this.#anchorSide();
+    const view = this.#views[side];
+    if (!view.hasFocus) return;
+    const head = view.state.selection.main.head;
+    const line = drawnRect(view, head);
+    const screen = this.#scroller.getBoundingClientRect();
+    if (!line) {
+      if (this.#cursorTries++ < 3) {
+        requestAnimationFrame(() => {
+          if (view.state.selection.main.head === head) {
+            view.dispatch({ effects: EditorView.scrollIntoView(head, { yMargin: cursorMargin }) });
+          }
+        });
+      }
+      return;
+    }
+    let shift = 0;
+    if (line.bottom > screen.bottom - cursorMargin)
+      shift = line.bottom - screen.bottom + cursorMargin;
+    if (line.top - shift < screen.top + cursorMargin) shift = line.top - screen.top - cursorMargin;
+    if (Math.abs(shift) <= 0.5) return;
+    this.#scroller.scrollTop += shift;
+    const offset = drawnRect(view, head)!.top - screen.top;
+    this.#anchor = {
+      for: side,
+      side,
+      pos: view.lineBlockAt(head).from,
+      offset,
+      scrollTop: this.#scroller.scrollTop,
+    };
+    this.#scrolled = true;
+    this.schedule();
   }
 
   /**
@@ -939,16 +997,37 @@ export class Aligner {
 
 /**
  * Where on the page the line at `pos` is drawn, its own top below any blocks drawn above it, if
- * the editor draws it as a line.
+ * the editor draws it: its text, or the block that replaces it, as a file's header does.
  */
 function drawnTop(view: EditorView, pos: number): number | undefined {
+  return drawnRect(view, pos)?.top;
+}
+
+/** The box the line at `pos` is drawn in, without the blocks drawn around it, if it's drawn. */
+function drawnRect(view: EditorView, pos: number): DOMRect | undefined {
   if (pos < view.viewport.from || pos > view.viewport.to) return undefined;
-  const { node, offset } = view.domAtPos(pos, 1);
+  const block = view.lineBlockAt(pos);
+  const parts = Array.isArray(block.type) ? block.type : [block];
+  const own = parts.findIndex(
+    (part) => part.type === BlockType.Text || part.type === BlockType.WidgetRange,
+  );
+  if (own === -1) return undefined;
+  // The element drawn for one of the block's parts, then for its first, then for its own.
+  const { node, offset } = view.domAtPos(block.from);
   let element: Node | null | undefined = node === view.contentDOM ? node.childNodes[offset] : node;
-  if (element && element.nodeType !== Node.ELEMENT_NODE) element = element.parentElement;
-  const line = element instanceof HTMLElement ? element.closest('.cm-line') : null;
-  if (!line || !view.contentDOM.contains(line) || view.posAtDOM(line) !== pos) return undefined;
-  return line.getBoundingClientRect().top;
+  while (element && element.parentNode !== view.contentDOM) element = element.parentNode;
+  const starts = (candidate: Node | null): candidate is Element =>
+    candidate instanceof Element &&
+    !candidate.classList.contains('cm-gap') &&
+    view.posAtDOM(candidate) === block.from;
+  const found = element ?? null;
+  if (!starts(found)) return undefined;
+  let first: Element = found;
+  while (starts(first.previousSibling)) first = first.previousSibling;
+  let mine: Element | null = first;
+  for (let index = 0; index < own && mine; index++) mine = mine.nextElementSibling;
+  if (!mine || view.posAtDOM(mine) !== block.from) return undefined;
+  return mine.getBoundingClientRect();
 }
 
 function otherSide(side: Side): Side {

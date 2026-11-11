@@ -163,6 +163,29 @@ export interface BoxHost {
 }
 
 /**
+ * What a thread's height is worked out from before it's drawn: the width its comments' text wraps
+ * at, in characters, from the last thread drawn, and the heights threads were drawn at. Estimates
+ * that are off move what's drawn when CodeMirror measures, which a far jump to a thread can't
+ * settle in one measure.
+ */
+const threadText = { charsPerLine: 100 };
+const drawnThreads = new Map<string, number>();
+/** The average width of a character of the comments' face, in pixels. */
+const charWidth = 6.05;
+const threadSizes = new ResizeObserver((entries) => {
+  for (const entry of entries) {
+    const { target } = entry;
+    const size = entry.borderBoxSize[0];
+    if (!size || !(target instanceof HTMLElement)) continue;
+    if (target.classList.contains('lo-diffthread__body')) {
+      threadText.charsPerLine = Math.max(20, Math.floor(size.inlineSize / charWidth));
+    } else if (target.dataset.thread) {
+      drawnThreads.set(target.dataset.thread, size.blockSize);
+    }
+  }
+});
+
+/**
  * A review thread under a line, and the comment box being written there, if there is one: one
  * block a line, for the same reason as a header's note.
  */
@@ -196,6 +219,10 @@ export class ThreadWidget extends WidgetType {
     const block = element('div', 'lo-diffthread');
     const thread = element('div', 'lo-diffthread__card');
     block.append(thread);
+    if (!this.box) {
+      block.dataset.thread = this.#key;
+      threadSizes.observe(block);
+    }
     this.comments.forEach((comment, index) => {
       const item = element('div', 'lo-diffthread__comment');
       const text = typeof comment === 'string' ? comment : fillerText(comment, index);
@@ -209,17 +236,34 @@ export class ThreadWidget extends WidgetType {
       );
       thread.append(item);
     });
+    const body = thread.querySelector('.lo-diffthread__body');
+    if (body) threadSizes.observe(body);
     if (this.box) this.box.attach(thread);
     return block;
   }
 
-  /** About 90 characters a line of 20 pixels, plus each comment's author line and padding. */
+  override destroy(dom: HTMLElement): void {
+    threadSizes.unobserve(dom);
+    const body = dom.querySelector('.lo-diffthread__body');
+    if (body) threadSizes.unobserve(body);
+  }
+
+  /** The thread's size as drawn, for drawing it again. */
+  get #key(): string {
+    return `${this.id}:${this.comments.length}`;
+  }
+
+  /**
+   * As tall as it was last drawn, if it was. Else its comments' lines of 18 pixels, at the width
+   * the last thread drawn wraps at, under each comment's author line and padding.
+   */
   override get estimatedHeight(): number {
-    const comments = this.comments.reduce<number>(
-      (total, comment) =>
-        total + 38 + Math.ceil((typeof comment === 'string' ? comment.length : comment) / 90) * 20,
-      0,
-    );
+    const drawn = this.box ? undefined : drawnThreads.get(this.#key);
+    if (drawn !== undefined) return drawn;
+    const comments = this.comments.reduce<number>((total, comment) => {
+      const length = typeof comment === 'string' ? comment.length : comment;
+      return total + 36 + Math.max(1, Math.ceil(length / threadText.charsPerLine)) * 18;
+    }, 0);
     return 16 + comments + (this.box ? this.box.dom.offsetHeight || 60 : 0);
   }
 
