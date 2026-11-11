@@ -121,18 +121,46 @@ const spacerField = StateField.define<DecorationSet>({
 });
 
 /**
- * Lines far from the screen, replaced for one transaction by a block as tall as they are, so that
- * CodeMirror builds them again as estimates when it's taken away. CodeMirror keeps every line it
- * has measured in its height map, and every transaction walks the whole map, so without this a
- * long session makes every transaction slower.
+ * Lines far from the screen, forgotten: each stretch is replaced by one block as tall as its lines
+ * were, so CodeMirror's height map holds one entry for it, not one for every line it measured, and
+ * no height changes, so the scroll doesn't move. CodeMirror keeps every line it has measured, and
+ * every transaction walks them all, so without this a long session makes every transaction
+ * slower. A stretch comes back, as CodeMirror's estimates of lines it hasn't drawn, when the
+ * screen nears it, the cursor goes into it, or its text changes.
  */
-const setForgotten = StateEffect.define<DecorationSet>();
+const forget = StateEffect.define<readonly { from: number; to: number; height: number }[]>();
+const remember = StateEffect.define<{ from: number; to: number }>();
 
 const forgottenField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
   update(forgotten, transaction) {
-    for (const effect of transaction.effects) if (effect.is(setForgotten)) return effect.value;
-    return forgotten.map(transaction.changes);
+    let next = forgotten;
+    // A change inside a stretch leaves its height wrong: it comes back.
+    transaction.changes.iterChangedRanges((fromA, toA) => {
+      next = next.update({ filterFrom: fromA, filterTo: toA, filter: () => false });
+    });
+    next = next.map(transaction.changes);
+    for (const effect of transaction.effects) {
+      if (effect.is(forget)) {
+        next = next.update({
+          add: effect.value.map(({ from, to, height }) =>
+            Decoration.replace({ widget: new ForgottenWidget(height), block: true }).range(
+              from,
+              to,
+            ),
+          ),
+          sort: true,
+        });
+      } else if (effect.is(remember)) {
+        const { from, to } = effect.value;
+        next = next.update({ filterFrom: from, filterTo: to, filter: () => false });
+      }
+    }
+    if (transaction.selection) {
+      const { head } = transaction.selection.main;
+      next = next.update({ filterFrom: head, filterTo: head, filter: () => false });
+    }
+    return next;
   },
   provide: (field) => EditorView.decorations.from(field),
 });
@@ -166,6 +194,15 @@ const forgetEvery = 100_000;
 
 /** How many lines around the drawn ones keep their measured heights when the rest are forgotten. */
 const keptLines = 2000;
+
+/** How near what's drawn, in lines, forgotten lines come back: nearer than they're forgotten. */
+const rememberedLines = 1000;
+
+/** How many lines are forgotten at a time, while the page is idle. */
+const forgetChunk = 2000;
+
+/** How long forgetting waits for the page to be idle before it does a chunk anyway, in ms. */
+const forgetWait = 250;
 
 /** A row, by its file and its index among the file's rows. */
 interface RowRef {
@@ -207,10 +244,12 @@ export interface PassStats {
   changed: number;
   totalMs: number;
   maxMs: number;
+  /** The longest an editor took to forget a chunk of heights, while the page was idle. */
+  forgetMaxMs: number;
 }
 
 export class Aligner {
-  readonly stats: PassStats = { passes: 0, changed: 0, totalMs: 0, maxMs: 0 };
+  readonly stats: PassStats = { passes: 0, changed: 0, totalMs: 0, maxMs: 0, forgetMaxMs: 0 };
   readonly #views: { old: EditorView; new: EditorView };
   readonly #layout: Layout;
   readonly #rows: (file: number) => FileRows;
@@ -231,6 +270,12 @@ export class Aligner {
   /** How far the scroll has gone since lines were last forgotten, and where it was then. */
   #travel = 0;
   #travelledFrom = 0;
+  /** The chunks of lines still to forget, and the idle callback that forgets them. */
+  #forgetting: { view: EditorView; first: number; last: number }[] = [];
+  #idle = 0;
+  /** The lines each editor has drawn since it last forgot, which are all it has measured. */
+  readonly #seen: { old?: { first: number; last: number }; new?: { first: number; last: number } } =
+    {};
   /** Whether a cursor moved since the last pass, so a scroll CodeMirror makes is the cursor's. */
   #selected = false;
   /**
@@ -347,6 +392,7 @@ export class Aligner {
   destroy(): void {
     this.#resized.disconnect();
     this.#paused = true;
+    if (this.#idle !== 0) cancelIdleCallback(this.#idle);
   }
 
   /**
@@ -370,12 +416,22 @@ export class Aligner {
         anchor = this.#anchorNow();
       }
       this.#scrolled = false;
+      for (const seenSide of ['old', 'new'] as const) {
+        const { state, viewport } = this.#views[seenSide];
+        const first = state.doc.lineAt(viewport.from).number;
+        const last = state.doc.lineAt(viewport.to).number;
+        const seen = this.#seen[seenSide];
+        this.#seen[seenSide] = seen
+          ? { first: Math.min(seen.first, first), last: Math.max(seen.last, last) }
+          : { first, last };
+      }
       this.#travel += Math.abs(this.#scroller.scrollTop - this.#travelledFrom);
       this.#travelledFrom = this.#scroller.scrollTop;
       if (this.#travel > forgetEvery) {
         this.#travel = 0;
-        this.#forget();
+        this.#planForgetting();
       }
+      this.#remember();
       this.#trim();
       for (let turn = 0; turn <= rounds; turn++) {
         const scrolled = this.#scroller.scrollTop;
@@ -466,36 +522,170 @@ export class Aligner {
   }
 
   /**
-   * Has both editors forget the heights they measured far from what they draw: those lines are
-   * replaced by a block as tall as they are, then put back, so CodeMirror builds them again as
-   * estimates, in a height map that stays small. The pass then measures and anchors as usual.
+   * Plans for both editors to forget the heights they measured far from what they draw, a chunk
+   * of lines at a time while the page is idle: forgetting the whole rest of a large document at
+   * once takes long enough to drop frames.
    */
-  #forget(): void {
-    for (const view of [this.#views.old, this.#views.new]) {
+  #planForgetting(): void {
+    this.#forgetting = [];
+    for (const side of ['old', 'new'] as const) {
+      const view = this.#views[side];
       const { doc } = view.state;
-      const first = doc.lineAt(view.viewport.from).number - keptLines;
-      const last = doc.lineAt(view.viewport.to).number + keptLines;
-      const ranges = [];
-      if (first > 1) ranges.push({ from: 0, to: doc.line(first - 1).to });
-      if (last < doc.lines) ranges.push({ from: doc.line(last + 1).from, to: doc.length });
-      if (ranges.length === 0) continue;
-      const blocks = ranges.map(({ from, to }) => {
-        const height = view.lineBlockAt(to).bottom - view.lineBlockAt(from).top;
-        return Decoration.replace({ widget: new ForgottenWidget(height), block: true }).range(
-          from,
-          to,
-        );
+      const seen = this.#seen[side];
+      if (!seen) continue;
+      const used = this.#usedLines(side);
+      const first = used.first - keptLines;
+      const last = used.last + keptLines;
+      // Only what it drew since it last forgot: the rest it never measured.
+      for (let line = seen.first; line < Math.min(first, seen.last + 1); line += forgetChunk) {
+        this.#forgetting.push({
+          view,
+          first: line,
+          last: Math.min(first - 1, line + forgetChunk - 1),
+        });
+      }
+      for (let line = Math.max(last + 1, seen.first); line <= seen.last; line += forgetChunk) {
+        this.#forgetting.push({
+          view,
+          first: line,
+          last: Math.min(seen.last, line + forgetChunk - 1),
+        });
+      }
+      this.#seen[side] = { first: Math.max(1, first), last: Math.min(doc.lines, last) };
+    }
+    this.#forgetWhenIdle();
+  }
+
+  /**
+   * Forgets the chunks planned while the page is idle, or one at a time if it stays busy, as through
+   * a long fling, so the height map can't grow without end while the scroll keeps moving.
+   */
+  #forgetWhenIdle(): void {
+    if (this.#idle !== 0 || this.#forgetting.length === 0 || this.#paused) return;
+    this.#idle = requestIdleCallback(
+      (deadline) => {
+        this.#idle = 0;
+        // Planning again, as the scroll travels, can empty the list before this runs.
+        for (let chunk = this.#forgetting.pop(); chunk; chunk = this.#forgetting.pop()) {
+          this.#forget(chunk);
+          if (deadline.timeRemaining() <= 8) break;
+        }
+        this.#forgetWhenIdle();
+      },
+      { timeout: forgetWait },
+    );
+  }
+
+  /**
+   * Has an editor forget the heights it measured for lines `first` to `last`, unless it draws near
+   * them now: each stretch of them it hasn't forgotten already, whole rows at a time, becomes one
+   * block as tall as it was, and nothing moves.
+   */
+  #forget({ view, first, last }: { view: EditorView; first: number; last: number }): void {
+    const started = performance.now();
+    const { doc } = view.state;
+    if (last > doc.lines) return;
+    const used = this.#usedLines(view === this.#views.old ? 'old' : 'new');
+    if (last >= used.first - keptLines && first <= used.last + keptLines) return;
+    const anchor = this.#anchorNow();
+    // The stretches between those already forgotten, which a new one mustn't overlap.
+    const stretches: { from: number; to: number }[] = [];
+    let from = doc.line(first).from;
+    const to = doc.line(last).to;
+    view.state.field(forgottenField).between(from, to, (start, end) => {
+      if (start > from) stretches.push({ from, to: start - 1 });
+      from = Math.max(from, end + 1);
+    });
+    if (from <= to) stretches.push({ from, to });
+    const head = view.state.selection.main.head;
+    const forgotten = [];
+    for (const stretch of stretches) {
+      // Whole rows: a collapsed run or a header is one block, which a stretch can't cut.
+      const firstRow = view.lineBlockAt(stretch.from);
+      const lastRow = view.lineBlockAt(stretch.to);
+      let taken = false;
+      view.state.field(forgottenField).between(firstRow.from, lastRow.to, () => {
+        taken = true;
+        return false;
       });
-      view.dispatch({ effects: setForgotten.of(Decoration.set(blocks)) });
-      view.dispatch({ effects: setForgotten.of(Decoration.none) });
+      if (taken || (head >= firstRow.from && head <= lastRow.to)) continue;
+      // The blocks drawn before its first line and after its last stay, outside it.
+      const top = ownParts(firstRow).at(0)?.top;
+      const bottom = ownParts(lastRow).at(-1)?.bottom;
+      if (top === undefined || bottom === undefined || bottom <= top) continue;
+      forgotten.push({ from: firstRow.from, to: lastRow.to, height: bottom - top });
+    }
+    if (forgotten.length === 0) return;
+    // The spacers inside stay, hidden, so the lines come back as tall as their rows lined up.
+    const before = view.contentHeight;
+    view.dispatch({ effects: forget.of(forgotten) });
+    // A stretch that starts or ends inside lines CodeMirror only estimated splits them, and it
+    // estimates the parts afresh, a little shorter or taller than their share was: the last block
+    // makes up the difference, so the document stays as tall as it was.
+    const off = view.contentHeight - before;
+    const final = forgotten.at(-1)!;
+    if (Math.abs(off) > 0.5 && final.height - off > 0) {
+      view.dispatch({
+        effects: [
+          remember.of({ from: final.from, to: final.to }),
+          forget.of([{ ...final, height: final.height - off }]),
+        ],
+      });
+    }
+    this.#restore(anchor);
+    this.stats.forgetMaxMs = Math.max(this.stats.forgetMaxMs, performance.now() - started);
+  }
+
+  /**
+   * The first and last lines an editor draws or the pass lines up, which can reach further, past
+   * rows on its side alone: what it forgets must stay clear of them, and what it remembers covers
+   * them, or the pass would measure a forgotten block for rows inside it.
+   */
+  #usedLines(side: Side): { first: number; last: number } {
+    const view = this.#views[side];
+    const { doc } = view.state;
+    let first = doc.lineAt(view.viewport.from).number;
+    let last = doc.lineAt(view.viewport.to).number;
+    const region = this.#region();
+    for (const ref of region.end ? [...region.refs, region.end] : region.refs) {
+      const rows = this.#rows(ref.file);
+      const firstLine = side === 'old' ? rows.oldFirst[ref.row]! : rows.newFirst[ref.row]!;
+      const lastLine = side === 'old' ? rows.oldLast[ref.row]! : rows.newLast[ref.row]!;
+      if (firstLine === -1) continue;
+      first = Math.min(first, firstLine);
+      last = Math.max(last, lastLine);
+    }
+    return { first, last };
+  }
+
+  /**
+   * Has each editor remember the lines it forgot near what it draws or the pass lines up, as
+   * CodeMirror's estimates, before it draws them: the scroll keeps its anchor as their heights
+   * change.
+   */
+  #remember(): void {
+    for (const side of ['old', 'new'] as const) {
+      const view = this.#views[side];
+      const { doc } = view.state;
+      const forgotten = view.state.field(forgottenField);
+      if (forgotten.size === 0) continue;
+      const used = this.#usedLines(side);
+      const from = doc.line(Math.max(1, used.first - rememberedLines));
+      const to = doc.line(Math.min(doc.lines, used.last + rememberedLines));
+      let found = false;
+      forgotten.between(from.from, to.to, () => {
+        found = true;
+        return false;
+      });
+      if (found) view.dispatch({ effects: remember.of({ from: from.from, to: to.to }) });
     }
   }
 
   /**
-   * Keeps the spacers to those near what's drawn, so they don't pile up over a long session, and
-   * every transaction goes through them. Those far below go: the pass lines those rows up again
-   * when they're drawn. Those far above become one, as tall as they were, at the first line kept,
-   * so nothing below it moves.
+   * Keeps the spacers below what's drawn to those near it, so they don't pile up over a long
+   * session, and every transaction goes through them: the rows are lined up again when they're
+   * drawn. Those above stay, and go into the blocks their lines are forgotten into: taking them
+   * would move the scroll back by as much as they're tall.
    */
   #trim(): void {
     for (const side of ['old', 'new'] as const) {
@@ -503,46 +693,16 @@ export class Aligner {
       const { doc } = view.state;
       // What it draws and what the pass last lined up, which can reach further.
       const lined = this.#lined[side];
-      const near = {
-        from: Math.min(view.viewport.from, lined?.from ?? doc.length),
-        to: Math.max(view.viewport.to, Math.min(lined?.to ?? 0, doc.length)),
-      };
-      const first = Math.max(1, doc.lineAt(near.from).number - keptLines);
-      const last = Math.min(doc.lines, doc.lineAt(near.to).number + keptLines);
-      const from = doc.line(first).from;
-      const to = doc.line(last).to;
-      const spacers = view.state.field(spacerField);
-      let above = 0;
-      let aboveCount = 0;
-      if (from > 0) {
-        spacers.between(0, from, (pos, _to, decoration) => {
-          const widget: unknown = decoration.spec.widget;
-          if (!(widget instanceof SpacerWidget)) return;
-          // Below the first line kept, when it's empty, it's kept.
-          if (pos === from && decoration.startSide >= 0) return;
-          above += widget.height;
-          aboveCount++;
-        });
-      }
-      let below = false;
-      if (to < doc.length) {
-        spacers.between(to + 1, doc.length, () => {
-          below = true;
-          return false;
-        });
-      }
-      if (aboveCount <= 1 && !below) continue;
-      const effects = below ? [setSpacers.of({ from: to + 1, to: doc.length, spacers: [] })] : [];
-      if (aboveCount > 1) {
-        effects.push(
-          setSpacers.of({
-            from: 0,
-            to: from,
-            spacers: above > 0 ? [{ pos: from, side: -1, height: round(above) }] : [],
-          }),
-        );
-      }
-      view.dispatch({ effects });
+      const bottom = Math.max(view.viewport.to, Math.min(lined?.to ?? 0, doc.length));
+      const to = doc.line(Math.min(doc.lines, doc.lineAt(bottom).number + keptLines)).to;
+      if (to >= doc.length) continue;
+      let far = false;
+      view.state.field(spacerField).between(to + 1, doc.length, () => {
+        far = true;
+        return false;
+      });
+      if (far)
+        view.dispatch({ effects: setSpacers.of({ from: to + 1, to: doc.length, spacers: [] }) });
     }
   }
 
@@ -756,6 +916,33 @@ export class Aligner {
         ? { first: rows.oldFirst[ref.row]!, last: rows.oldLast[ref.row]! }
         : { first: rows.newFirst[ref.row]!, last: rows.newLast[ref.row]! };
     };
+    // Rows it lines up are never forgotten: a forgotten block hides their lines, and their heights.
+    // Those that are come back first, and the pass goes round again.
+    let remembered = false;
+    for (const side of ['old', 'new'] as const) {
+      const view = this.#views[side];
+      const { doc } = view.state;
+      let first = Infinity;
+      let last = -Infinity;
+      for (const ref of refs) {
+        const row = lines(ref, side);
+        if (row.first === -1) continue;
+        first = Math.min(first, row.first);
+        last = Math.max(last, row.last);
+      }
+      if (first > last) continue;
+      const from = doc.line(Math.max(1, first - rememberedLines)).from;
+      const to = doc.line(Math.min(doc.lines, last + rememberedLines)).to;
+      let forgotten = false;
+      view.state.field(forgottenField).between(from, to, () => {
+        forgotten = true;
+        return false;
+      });
+      if (!forgotten) continue;
+      view.dispatch({ effects: remember.of({ from, to }) });
+      remembered = true;
+    }
+    if (remembered) return true;
     const measured: RowHeights[] = [];
     const tops = { old: 0, new: 0 };
     refs.forEach((ref, index) => {
@@ -1089,6 +1276,16 @@ function origin(view: EditorView): number {
     return element.getBoundingClientRect().top - ownTop(view.lineBlockAt(pos));
   }
   return view.documentTop;
+}
+
+/** A row's parts without the blocks drawn before its first line and after its last. */
+function ownParts(block: BlockInfo): readonly BlockInfo[] {
+  const parts: readonly BlockInfo[] = Array.isArray(block.type) ? block.type : [block];
+  let start = 0;
+  let end = parts.length;
+  while (start < end && parts[start]!.type === BlockType.WidgetBefore) start++;
+  while (end > start && parts[end - 1]!.type === BlockType.WidgetAfter) end--;
+  return parts.slice(start, end);
 }
 
 /**
