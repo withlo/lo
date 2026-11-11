@@ -1,0 +1,11 @@
+<svg id="figure" viewBox="0 0 860 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" orient="auto">
+      <path id="tip" d="M0 0L10 5L0 10z" fill="var(--fig-muted)"/>
+    </marker>
+  </defs>
+  <rect id="box" x="0" y="24" width="160" height="60" fill="var(--fig-panel)"/>
+  <g id="group"><circle cx="300" cy="54" r="20" fill="var(--fig-blue-soft)"/></g>
+  <text id="label" x="14" y="50" fill="var(--fig-ink)">The <tspan id="span" font-weight="600">limiter</tspan></text>
+  <path d="M160 54h100" stroke="var(--fig-muted)" marker-end="url(#arrow)"/>
+</svg>

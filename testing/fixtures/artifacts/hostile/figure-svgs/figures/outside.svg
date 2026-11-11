@@ -1,0 +1,6 @@
+<svg viewBox="0 0 860 120" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <image href="https://evil.example/track.png" width="1" height="1"/>
+  <use xlink:href="https://evil.example/sprite.svg#icon"/>
+  <a href="javascript:alert(1)"><text x="0" y="20">Click</text></a>
+  <rect width="10" height="10" fill="url(https://evil.example/paint.svg#p)"/>
+</svg>

@@ -38,7 +38,7 @@ export type BlockKind = (typeof BLOCKS)[number];
 /** What a block that's kept is built from. */
 export type BlockMeta =
   | { kind: 'code'; target: CodeRange }
-  | { kind: 'figure'; path: string }
+  | { kind: 'figure'; path: string; reference: FigureReference }
   | { kind: 'walkthrough'; title: string }
   | { kind: 'step'; target: CodeRange }
   | { kind: 'tabs' }
@@ -58,6 +58,17 @@ export interface CodeReference {
 export interface FigureReference {
   /** `figures/` and the file's name. */
   path: string;
+  line: number;
+  /**
+   * The parts its list links, in the order written: each by an id it may have, linked once to
+   * code, a term or a section. Only an SVG has parts.
+   */
+  parts: PartReference[];
+}
+
+/** A part of a figure, by its id, and the line of `artifact.md` its link is on. */
+export interface PartReference {
+  id: string;
   line: number;
 }
 
@@ -307,11 +318,12 @@ export class Reading {
           this.add(read.code, line, read.message);
           return undefined;
         }
-        this.figures.push({ path: read.value, line });
+        const reference: FigureReference = { path: read.value, line, parts: [] };
+        this.figures.push(reference);
         if (this.figures.length === LIMITS.figures + 1) {
           this.add('figure-count', line, `An overview has at most ${LIMITS.figures} figures.`);
         }
-        return { kind, path: read.value };
+        return { kind, path: read.value, reference };
       }
       case 'tabs':
         if (argument !== '') {
@@ -420,7 +432,18 @@ export class Reading {
       case 'figure': {
         const last = opened.last < 0 ? undefined : tokens[opened.last];
         const list = last !== undefined && isList(last) ? opened.last : -1;
-        if (list >= 0 && this.blocks.has(opened.token)) this.partList(tokens, close, list);
+        const meta = this.blocks.get(opened.token);
+        if (list >= 0 && meta?.kind === 'figure') {
+          if (meta.path.endsWith('.svg')) {
+            meta.reference.parts = this.partList(tokens, close, list);
+          } else {
+            this.add(
+              'figure-part',
+              lineOf(tokens[list]!),
+              `Only an SVG's parts can be linked, and ${quote(meta.path)} isn't one. Leave the list of parts out.`,
+            );
+          }
+        }
         if (opened.text < 0 || (list >= 0 && opened.text >= list)) {
           this.add(
             'figure-caption',
@@ -441,9 +464,13 @@ export class Reading {
     }
   }
 
-  /** A figure's last list, at `at`: each item one link to a part, `- [part-id](target)`. */
-  private partList(tokens: Token[], close: Int32Array, at: number): void {
+  /**
+   * A figure's last list, at `at`: each item one link to a part, `- [part-id](target)`. Returns the
+   * parts kept.
+   */
+  private partList(tokens: Token[], close: Int32Array, at: number): PartReference[] {
     const ids = new Set<string>();
+    const kept: PartReference[] = [];
     for (let j = at + 1; j < close[at]!; j = close[j]! + 1) {
       const item = tokens[j]!;
       if (item.type !== 'list_item_open') continue;
@@ -479,12 +506,14 @@ export class Reading {
         continue;
       }
       ids.add(id);
+      kept.push({ id, line: line ?? lineOf(tokens[at]!) ?? 1 });
       this.parts.set(item, id);
       item.type = PART_OPEN;
       tokens[close[j]!]!.type = PART_CLOSE;
     }
     tokens[at]!.type = PARTS_OPEN;
     tokens[close[at]!]!.type = PARTS_CLOSE;
+    return kept;
   }
 
   private heading(token: Token, inBlock: boolean, line: number | undefined): void {

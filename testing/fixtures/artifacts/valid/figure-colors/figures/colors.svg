@@ -1,0 +1,8 @@
+<svg viewBox="0 0 860 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="24" width="160" height="60" fill="#e11d48" stroke="var(--fig-line)"/>
+  <rect x="200" y="24" width="160" height="60" fill="none" stroke="rgb(30, 30, 30)"/>
+  <text x="214" y="50" fill="black">Limiter</text>
+  <text x="414" y="50" fill="currentColor" color="var(--fig-ink)">Bucket</text>
+  <path d="M0 100h860" stroke="transparent"/>
+  <path d="M0 110h860" stroke="white"/>
+</svg>

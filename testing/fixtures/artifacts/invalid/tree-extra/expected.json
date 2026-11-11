@@ -11,5 +11,6 @@
     { "code": "tree-extra", "file": "figures/passwd.svg" },
     { "code": "tree-extra", "file": "figures/sub" }
   ],
-  "code": []
+  "code": [],
+  "figures": []
 }

@@ -1,0 +1,24 @@
+{
+  "outcome": "shown",
+  "findings": [
+    { "code": "figure-type", "line": 13 },
+    { "code": "figure-type", "line": 17 },
+    { "code": "figure-type", "line": 21 },
+    { "code": "figure-type", "line": 25 },
+    { "code": "figure-type", "line": 29 },
+    { "code": "figure-type", "line": 33 },
+    { "code": "figure-encoding", "line": 37 },
+    { "code": "figure-encoding", "line": 41 }
+  ],
+  "code": [],
+  "figures": [
+    { "line": 13, "state": "leftOut", "why": "type" },
+    { "line": 17, "state": "leftOut", "why": "type" },
+    { "line": 21, "state": "leftOut", "why": "type" },
+    { "line": 25, "state": "leftOut", "why": "type" },
+    { "line": 29, "state": "leftOut", "why": "type" },
+    { "line": 33, "state": "leftOut", "why": "type" },
+    { "line": 37, "state": "leftOut", "why": "encoding" },
+    { "line": 41, "state": "leftOut", "why": "encoding" }
+  ]
+}

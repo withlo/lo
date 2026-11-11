@@ -15,5 +15,6 @@
     { "line": 22, "state": "broken", "why": "binary" },
     { "line": 25, "state": "broken", "why": "tooLarge" },
     { "line": 28, "state": "broken", "why": "notFile" }
-  ]
+  ],
+  "figures": []
 }

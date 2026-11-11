@@ -5,7 +5,7 @@
 
 import { readFileSync } from 'node:fs';
 
-import { DEFAULT_LIMITS } from '@lo/markdown';
+import { DEFAULT_LIMITS, SVG_LIMITS } from '@lo/markdown';
 import { expect, test } from 'vitest';
 
 import { BINARY_WINDOW, FORMAT, LIMITS, MIN_STEPS, MIN_TABS, parseArtifact } from '../src/index.ts';
@@ -66,5 +66,24 @@ test('format.md gives the limits the parse keeps', () => {
   );
   expect(spec).toMatch(
     new RegExp(`\\| The files targets name, together +\\| ${LIMITS.code / MIB} MiB `),
+  );
+});
+
+test('format.md gives the limits figures are checked under', () => {
+  // An SVG's limit in bytes is sanitizeSvg's in characters, which it never has more of.
+  expect(LIMITS.svg).toBe(SVG_LIMITS.size);
+  const row = (what: string, limit: string) =>
+    expect(spec).toMatch(new RegExp(`\\| ${what} +\\| ${limit} +\\|`));
+  row(
+    'An image',
+    `${LIMITS.image / MIB} MiB, ${number(LIMITS.side)} pixels a side, ${LIMITS.pixels / 1_000_000} MP`,
+  );
+  row(
+    'An SVG',
+    `${LIMITS.svg / 1024} KiB, ${number(SVG_LIMITS.elements)} elements, ${SVG_LIMITS.depth} deep`,
+  );
+  row('The SVGs figures show, together', `${LIMITS.svgs / MIB} MiB`);
+  expect(spec.replace(/\s+/g, ' ')).toContain(
+    `no taller than ${SVG_LIMITS.tallest} times its width or wider than ${SVG_LIMITS.widest} times its height`,
   );
 });

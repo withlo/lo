@@ -7,6 +7,7 @@
 
 import { checkCode, type CheckedCode } from './code.ts';
 import { article, caseIndex, readCommit, type Sizes } from './commit.ts';
+import { checkFigures, type CheckedFigure } from './figures.ts';
 import { ARTIFACT, Findings, quote, type Finding } from './findings.ts';
 import type { Header } from './header.ts';
 import { ARTIFACT_READ, CHECK_TIMEOUT, FORMAT, LIMITS } from './limits.ts';
@@ -20,14 +21,15 @@ import type { CodeReader, OverviewFiles } from './readers.ts';
  *   request's diff instead.
  * - `newer`: it's written in a format newer than this version reads.
  * - `tooLarge`: its text, or its commit's files and folders or bytes, are past their limits.
- * - `shown`: Lo shows it, with each target's code resolved, broken or unread. Its commit may still
- *   hold what an overview can't, which Lo never reads and the checker refuses.
+ * - `shown`: Lo shows it, with each target's code resolved, broken or unread, and each figure kept,
+ *   left out or unread. Its commit may still hold what an overview can't, which Lo never reads and
+ *   the checker refuses.
  */
 export type Outcome =
   | { kind: 'invalid' }
   | { kind: 'newer'; format: number }
   | { kind: 'tooLarge'; what: 'text' | 'entries' | 'bytes'; sizes: Sizes }
-  | { kind: 'shown'; header: Header; code: CheckedCode[] };
+  | { kind: 'shown'; header: Header; code: CheckedCode[]; figures: CheckedFigure[] };
 
 export interface CheckedArtifact {
   outcome: Outcome;
@@ -41,9 +43,12 @@ export interface CheckedArtifact {
 export interface CheckOptions {
   /** The pull request whose ref the overview is on. A header naming another makes it invalid. */
   pr?: number | undefined;
-  /** How long reading its code may take, in milliseconds: {@link CHECK_TIMEOUT} unless given. */
+  /**
+   * How long reading its code and figures may take, in milliseconds: {@link CHECK_TIMEOUT} unless
+   * given.
+   */
   timeout?: number | undefined;
-  /** Stops reading its code: what isn't read by then is left unread. */
+  /** Stops reading its code and figures: what isn't read by then is left unread. */
   signal?: AbortSignal | undefined;
 }
 
@@ -51,7 +56,7 @@ export interface CheckOptions {
  * Checks `parsed`, the overview's `artifact.md` parsed, against `files`, the overview's commit, and
  * against the code its targets name, read through `readCode`. `parsed` is undefined when the commit
  * holds no file `artifact.md`, or one larger than {@link ARTIFACT_READ}, which isn't read. Never
- * rejects: a reader that fails or is too slow leaves code unread.
+ * rejects: a reader that fails or is too slow leaves code, or a figure, unread.
  */
 export async function checkArtifact(
   parsed: ParsedArtifact | undefined,
@@ -144,35 +149,33 @@ async function check(
       `The header says pr: ${header.pr}, and the overview is on pull request #${options.pr}.`,
     );
   }
-  // Past the limit on figures, the overview is invalid, and the rest aren't looked for.
-  for (const { path, line } of parsed.figures.slice(0, LIMITS.figures)) {
-    const kind = commit.kinds.get(path);
-    if (kind === undefined) {
-      findings.add(
-        'figure-missing',
-        line,
-        `${quote(path)} isn't in the overview's commit.${otherCase(path)}`,
-      );
-    } else if (kind !== 'file') {
-      findings.add('figure-not-file', line, `${quote(path)} is ${article(kind)}, not a file.`);
-    }
-  }
-  // An invalid overview's code is checked too, so the checker reports all that's wrong at once.
-  const code = header ? await codeOf(parsed, header, readCode, findings, options) : [];
+  // An invalid overview's figures and code are checked too, so the checker reports all that's
+  // wrong at once. Past the limit on figures, the overview is invalid, and the rest aren't looked
+  // for.
+  const { code, figures } = await withDeadline(options, async (signal) => ({
+    figures: await checkFigures(
+      parsed.figures.slice(0, LIMITS.figures),
+      commit.kinds,
+      (path, cap, stop) => files.read(path, cap, stop),
+      findings,
+      signal,
+      otherCase,
+    ),
+    code: header
+      ? await checkCode(parsed.references, header.commit, readCode, findings, signal)
+      : [],
+  }));
   if (invalid || mismatch || !header) {
     return { outcome: { kind: 'invalid' }, findings: findings.list() };
   }
-  return { outcome: { kind: 'shown', header, code }, findings: findings.list() };
+  return { outcome: { kind: 'shown', header, code, figures }, findings: findings.list() };
 }
 
-/** Checks the code `parsed` names at `header`'s commit, within the time `options` allows. */
-async function codeOf(
-  parsed: ParsedArtifact,
-  header: Header,
-  readCode: CodeReader,
-  findings: Findings,
+/** Runs `read` with a signal that aborts once `options`' signal does, or its time is up. */
+async function withDeadline<T>(
   options: CheckOptions,
-): Promise<CheckedCode[]> {
+  read: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
   const stop = new AbortController();
   const outer = options.signal;
   const abort = (): void => stop.abort();
@@ -180,7 +183,7 @@ async function codeOf(
   outer?.addEventListener('abort', abort, { once: true });
   const timer = setTimeout(abort, timeoutOf(options.timeout));
   try {
-    return await checkCode(parsed.references, header.commit, readCode, findings, stop.signal);
+    return await read(stop.signal);
   } finally {
     clearTimeout(timer);
     outer?.removeEventListener('abort', abort);

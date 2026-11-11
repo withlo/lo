@@ -7,5 +7,6 @@
     { "code": "dead-link", "line": 11 },
     { "code": "term-unused", "line": 16 }
   ],
-  "code": []
+  "code": [],
+  "figures": []
 }

@@ -1,0 +1,7 @@
+<svg viewBox="0 0 860 120" xmlns="http://www.w3.org/2000/svg">
+  <style>rect { fill: url(https://evil.example/style.png); }</style>
+  <filter id="blur"><feGaussianBlur stdDeviation="99"/></filter>
+  <linearGradient id="fade"><stop offset="0" stop-color="red"/></linearGradient>
+  <rect width="10" height="10" style="fill: red" filter="url(#blur)"/>
+  <rect width="10" height="10"><animate attributeName="width" to="100000" dur="1s"/></rect>
+</svg>
