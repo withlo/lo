@@ -37,7 +37,7 @@ open. It talks to GitHub directly and has no backend of its own.
 Lo is built around what a reviewer does all day: read an overview that a coding agent wrote to
 explain the change, see the changed files among the rest of the repository, review a stack of pull
 requests layer by layer, see what changed since your last review even after a rebase, follow code to
-where it's defined, and approve and merge on one key. [Status](#status) says how far along it is.
+where it's defined, and approve and merge on one key.
 
 ## Principles
 
@@ -77,14 +77,9 @@ Lo keeps to these rules. [`docs/design.md`](docs/design.md) has the detail.
 
 ## Status
 
-Lo is in early development, and there's no release yet: no download, Homebrew cask or Linux package.
-Today you can sign in, open pull requests, browse their files and read their diffs; revisions,
-overviews, stacks, comments, merging and code navigation are still being built. To try it, build it
-from source, and expect missing pieces and things that change.
-
-It's built for the Mac first. Linux builds will be published as a preview, and Lo already builds and
-runs on Linux from source: its tests drive the real app there. On Linux, Ctrl takes the place of
-`⌘`.
+Lo is in early development and isn't released yet. To try it,
+[build it from source](#build-from-source), and expect missing pieces and things that change. It's
+made for the Mac first, and Linux builds will come as a preview.
 
 [`docs/design.md`](docs/design.md) describes everything Lo is meant to do, and how it's built.
 
@@ -119,7 +114,7 @@ Keys are written as macOS shows them. On Linux, Ctrl takes the place of `⌘`.
 - **From a link:** Lo opens `lo://` links, such as `lo://github.com/owner/repo/pull/123`. To have
   pull request links you click in other apps open in Lo while your browser stays the default, use a
   link router: [`docs/link-routers.md`](docs/link-routers.md) has rules for Finicky, Velja and
-  Choosy. They follow each app's documentation, and haven't been tried in the apps themselves yet.
+  Choosy. They follow each app's documentation.
 
 Public pull requests open without signing in, read-only. To open private ones, sign in from the
 welcome screen, through GitHub's device flow or by importing your accounts from `gh`.
