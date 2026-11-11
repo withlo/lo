@@ -1,5 +1,5 @@
 // The file finder over the window (`⌘P`): any file in the repository, found by name, the changed
-// ones first and marked, on the same palette the command palette and the open box use.
+// ones first and marked, on the same palette the command palette uses.
 
 import { FileIcon, FileMarks, Palette, PaletteHint, Spinner, Tag } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
