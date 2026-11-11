@@ -178,6 +178,8 @@ export class Polling {
   readonly cache = new MemoryPollCache();
   /** Each head the poller noted it saw, by pull request, with when it was first seen. */
   readonly heads = new Map<string, [head: string, firstSeen: number][]>();
+  /** What the poller logged. */
+  readonly logs: string[] = [];
   readonly #options: PollingOptions;
   readonly #events: string[] = [];
   #unsubscribe: () => void = () => {};
@@ -236,6 +238,7 @@ export class Polling {
       login: LOGIN,
       cache: this.cache,
       config: { jitter: 0 },
+      log: (message) => this.logs.push(message),
       lookUpMerged: this.#options.lookUpMerged,
       seen: (_login, pull, heads, when) => {
         const seen = this.heads.get(pull.key) ?? [];
