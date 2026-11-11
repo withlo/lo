@@ -143,6 +143,26 @@ describe('the palette', () => {
     expect(dialog('Command palette')).toBeUndefined();
   });
 
+  it('says why ⌥⏎ did nothing when no action matches, until what’s typed changes', () => {
+    act(() => openPalette());
+    const palette = dialog('Command palette');
+    const input = palette?.querySelector('input');
+    type(input!, 'zzzz');
+    expect(palette?.querySelector('[role="option"]')).toBeNull();
+    let shown: true | string = true;
+    act(() => {
+      shown = showHighlighted();
+    });
+    expect(shown).toBe("No action matches, so there's no key to show.");
+    // The palette stays open and says it, in a live region.
+    expect(dialog('Command palette')).toBeDefined();
+    const said = () =>
+      [...(palette?.querySelectorAll('[role="status"]') ?? [])].map((each) => each.textContent);
+    expect(said()).toContain("No action matches, so there's no key to show.");
+    type(input!, 'forward');
+    expect(said()).not.toContain("No action matches, so there's no key to show.");
+  });
+
   it('shows the highlighted command in key help on ⌥⏎', async () => {
     expect(showHighlighted()).toBe('No action is highlighted.');
     act(() => openPalette());

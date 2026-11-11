@@ -107,3 +107,31 @@ describe('key help and the palette', () => {
     expect(runs('alt+enter', { scope: 'palette', text: true }, 'linux')).toBe('keys.showKey');
   });
 });
+
+describe('the right-click menu', () => {
+  it('the menu key and ⇧F10 show it, anywhere but a menu, a dialog or a palette', () => {
+    for (const system of ['mac', 'linux'] as const) {
+      for (const key of ['menu', 'shift+f10']) {
+        expect(runs(key, { scope: 'window', text: false }, system)).toBe('keys.menu');
+        expect(runs(key, { scope: 'tree', text: false }, system)).toBe('keys.menu');
+        expect(runs(key, view('diff'), system)).toBe('keys.menu');
+        // Neither types anything, so a text field leaves them to the registry.
+        expect(runs(key, { scope: 'window', text: true }, system)).toBe('keys.menu');
+        for (const scope of ['menu', 'dialog', 'palette']) {
+          expect(runs(key, { scope, text: false }, system)).toBeUndefined();
+        }
+      }
+    }
+  });
+
+  it('is the window’s own: what a right-click on nothing in particular lists, Back and Forward', () => {
+    const items = commands
+      .filter((command) => command.menu)
+      .toSorted((a, b) => (a.menu?.order ?? 0) - (b.menu?.order ?? 0))
+      .map((command) => [command.id, command.menu?.on]);
+    expect(items).toEqual([
+      ['keys.back', 'none'],
+      ['keys.forward', 'none'],
+    ]);
+  });
+});

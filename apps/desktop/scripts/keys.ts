@@ -60,7 +60,7 @@ function specOf(spec: KeySpec): { keys: string; on: System | undefined } {
 /** What each of the engine's and the code views' scopes is. */
 const scopeMeanings: Readonly<Record<string, string>> = {
   window: 'Anywhere no other scope has focus.',
-  menu: 'A menu. `j` and `k` move in it as `↓` and `↑` do.',
+  menu: 'A menu. Only commands that name it run there, and `j` and `k` move as `↓` and `↑` do.',
   dialog: "A dialog, which keeps the browser's `Tab`.",
   palette: 'A palette, such as the command palette.',
   diff: 'The diff, a code view.',

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  ariaShortcut,
   contradicts,
   eventStroke,
   eventStrokes,
@@ -120,6 +121,13 @@ describe('key events', () => {
     expect(eventStroke(event('Escape'), mac)?.id).toBe('esc');
     expect(eventStroke(event('ArrowDown'), mac)?.id).toBe('down');
     expect(eventStroke(event('F5'), mac)?.id).toBe('f5');
+  });
+
+  test('the context-menu key and Shift and F10 are keys of their own', () => {
+    expect(eventStroke(event('ContextMenu'), mac)?.id).toBe('menu');
+    expect(eventStroke(event('F10', { shiftKey: true }), mac)?.id).toBe('shift+f10');
+    expect(ids('menu', 'linux')).toEqual(['menu']);
+    expect(ids('shift+f10', 'mac')).toEqual(['shift+f10']);
   });
 
   test('with ⌘ or Ctrl, a letter is lowercase and Shift a modifier, whatever event.key says', () => {
@@ -288,6 +296,8 @@ describe('display forms', () => {
     expect(forms('esc esc', 'mac')).toEqual(['Esc', 'Esc']);
     expect(forms('enter', 'mac')).toEqual(['⏎']);
     expect(forms('left right', 'mac')).toEqual(['←', '→']);
+    expect(forms('menu', 'mac')).toEqual(['Menu']);
+    expect(forms('shift+f10', 'mac')).toEqual(['⇧F10']);
   });
 
   test('Linux spells modifiers out, with Ctrl for cmd', () => {
@@ -301,6 +311,8 @@ describe('display forms', () => {
     expect(forms('] f', 'linux')).toEqual([']', 'f']);
     expect(forms('enter', 'linux')).toEqual(['Enter']);
     expect(forms('esc esc', 'linux')).toEqual(['Esc', 'Esc']);
+    expect(forms('menu', 'linux')).toEqual(['Menu']);
+    expect(forms('shift+f10', 'linux')).toEqual(['Shift+F10']);
   });
 });
 
@@ -316,4 +328,33 @@ test('Vim’s notation, as code views take held keys and motions', () => {
   expect(vim('space')).toBe('<Space>');
   expect(vim('<')).toBe('<lt>');
   expect(vimKeys([strokeOf('w', { ctrl: true }), strokeOf('j')])).toBe('<C-w>j');
+});
+
+/** `keys` as `aria-keyshortcuts` says them on `system`. */
+function aria(keys: string, system: System = 'mac') {
+  return ariaShortcut(systemStrokes(parseKeys(keys), system));
+}
+
+describe('aria-keyshortcuts', () => {
+  test('a key or a chord is written as ARIA writes it', () => {
+    expect(aria('cmd+shift+p')).toBe('Meta+Shift+P');
+    expect(aria('cmd+shift+p', 'linux')).toBe('Control+Shift+P');
+    expect(aria('ctrl+o')).toBe('Control+O');
+    expect(aria('alt+enter')).toBe('Alt+Enter');
+    expect(aria('shift+f10')).toBe('Shift+F10');
+    expect(aria('e')).toBe('e');
+    expect(aria('?')).toBe('?');
+    expect(aria('G')).toBe('G');
+    expect(aria('enter')).toBe('Enter');
+    expect(aria('esc')).toBe('Escape');
+    expect(aria('down')).toBe('ArrowDown');
+    expect(aria('menu')).toBe('ContextMenu');
+    expect(aria('cmd+plus')).toBe('Meta+Shift+=');
+  });
+
+  test('a sequence has none', () => {
+    expect(aria('] f')).toBeUndefined();
+    expect(aria('g S')).toBeUndefined();
+    expect(ariaShortcut([])).toBeUndefined();
+  });
 });

@@ -1,5 +1,5 @@
 import { Dialog } from '@base-ui/react/dialog';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { filterHelp, type HelpGroup, type KeymapError } from './commands/index.ts';
 import { Key } from './Key.tsx';
@@ -43,6 +43,7 @@ export function KeyHelp({
   onClosed,
 }: KeyHelpProps) {
   const [query, setQuery] = useState('');
+  const ids = useId();
   const search = useRef<HTMLInputElement>(null);
   const shown = useRef<HTMLDivElement>(null);
   const found = filterHelp(groups, query);
@@ -129,13 +130,27 @@ export function KeyHelp({
                   </ul>
                 </div>
               )}
+              {/* Said aloud when nothing matches; the same words show below. */}
+              <div role="status" className="sr-only">
+                {found.length === 0 && `No key or action matches "${query}".`}
+              </div>
               {found.length === 0 ? (
                 <p className="m-0 py-16 text-fg-muted">No key or action matches "{query}".</p>
               ) : (
                 <div className="columns-4 gap-x-24">
-                  {found.map(({ group, rows }) => (
-                    <section key={group} aria-label={group} className="mb-16 break-inside-avoid">
-                      <h3 className="m-0 mb-2 label-caps text-fg-muted text-label">{group}</h3>
+                  {found.map(({ group, rows }, index) => (
+                    <div
+                      key={group}
+                      role="group"
+                      aria-labelledby={`${ids}-${index}`}
+                      className="mb-16 break-inside-avoid"
+                    >
+                      <h3
+                        id={`${ids}-${index}`}
+                        className="m-0 mb-2 label-caps text-fg-muted text-label"
+                      >
+                        {group}
+                      </h3>
                       {rows.map((row) => (
                         <div
                           key={row.id}
@@ -163,7 +178,7 @@ export function KeyHelp({
                           </span>
                         </div>
                       ))}
-                    </section>
+                    </div>
                   ))}
                 </div>
               )}

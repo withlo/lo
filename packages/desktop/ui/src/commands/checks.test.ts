@@ -225,6 +225,47 @@ describe('menu items', () => {
       "diff.merge is in the app menu's Review menu, with no key on macOS.",
     ]);
   });
+
+  test('fail an item whose menu is for a target its command doesn’t take', () => {
+    const problems = checkMenus([
+      feature({
+        // A line gives its file and its thread, and a command for nothing in particular takes any.
+        file: {
+          label: 'File',
+          group: 'Act',
+          keys: ['e'],
+          targets: ['file'],
+          menu: { on: 'line', order: 1 },
+        },
+        thread: {
+          label: 'Thread',
+          group: 'Threads',
+          keys: ['r'],
+          targets: ['thread', 'layer'],
+          menu: { on: 'line', order: 2 },
+        },
+        window: { label: 'Window', group: 'Find', keys: ['?'], menu: { on: 'block', order: 3 } },
+        layer: {
+          label: 'Layer',
+          group: 'Review',
+          keys: ['m'],
+          targets: ['layer'],
+          menu: { on: 'file', order: 4 },
+        },
+        line: {
+          label: 'Line',
+          group: 'Act',
+          keys: ['c'],
+          targets: ['line', 'thread'],
+          menu: { on: 'file', order: 5 },
+        },
+      }),
+    ]);
+    expect(problems).toEqual([
+      'diff.layer is in the right-click menu of a file, but acts on layer.',
+      'diff.line is in the right-click menu of a file, but acts on line or thread.',
+    ]);
+  });
 });
 
 describe('clashes', () => {

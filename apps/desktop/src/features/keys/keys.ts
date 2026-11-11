@@ -1,4 +1,5 @@
-// The registry's own commands.
+// The registry's own commands. Back and Forward are the right-click menu of the window itself: what
+// a click on nothing in particular lists.
 
 import { defineCommands } from '@lo/ui/commands';
 
@@ -23,6 +24,17 @@ export default defineCommands('keys', {
     when: { scope: 'palette' },
   },
   /**
+   * The right-click menu of what has focus, for the keyboard: the context-menu key on keyboards
+   * that have one, and ⇧F10 on every system. Not in a menu or a dialog, which have no target of
+   * their own.
+   */
+  menu: {
+    label: 'Show the right-click menu',
+    group: 'Tabs and window',
+    keys: ['menu', 'shift+f10'],
+    when: { except: ['menu', 'dialog', 'palette'] },
+  },
+  /**
    * Back to the middle view, from anywhere but the widgets that close on `Esc` themselves (menus,
    * dialogs, the palette), a comment box, whose `Esc` is Vim's, and Vim's visual mode.
    */
@@ -40,6 +52,7 @@ export default defineCommands('keys', {
     overVim: true,
     when: { except: ['box'] },
     bar: { menu: 'Go', order: 10 },
+    menu: { on: 'none', order: 10 },
   },
   forward: {
     label: 'Forward',
@@ -48,6 +61,7 @@ export default defineCommands('keys', {
     overVim: true,
     when: { except: ['box'] },
     bar: { menu: 'Go', order: 20 },
+    menu: { on: 'none', order: 20 },
   },
   /**
    * Opens the keymap file in the system's app for it, making it first if there is none. Not where

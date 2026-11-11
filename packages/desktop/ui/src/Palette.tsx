@@ -2,7 +2,7 @@ import { Autocomplete } from '@base-ui/react/autocomplete';
 import { Dialog } from '@base-ui/react/dialog';
 import { useRef, type ReactNode } from 'react';
 
-import { Key } from './Key.tsx';
+import { Key, type KeyAria } from './Key.tsx';
 
 /** A run of a palette's items, under a label or none. */
 export interface PaletteGroup<T> {
@@ -25,6 +25,11 @@ export interface PaletteProps<T> {
   itemId: (item: T) => string;
   /** An item's row: its label, a detail, and its marks or keys at the end. */
   renderItem: (item: T) => ReactNode;
+  /**
+   * What a screen reader hears of an item's key in place of its key caps, which its row marks
+   * `decorative`: `keyAria` makes it.
+   */
+  itemKeys?: ((item: T) => KeyAria) | undefined;
   /** `⏎` on the highlighted item, or a click on one. */
   onRun: (item: T) => void;
   /** The highlighted item changed, as the arrows, the pointer or typing moved it. */
@@ -55,6 +60,7 @@ export function Palette<T>({
   groups,
   itemId,
   renderItem,
+  itemKeys,
   onRun,
   onHighlight,
   empty,
@@ -102,7 +108,10 @@ export function Palette<T>({
                 />
                 {keys && <Key keys={keys} quiet />}
               </div>
-              <Autocomplete.List className="max-h-palette-list-h min-h-0 overflow-auto p-6">
+              <Autocomplete.List
+                aria-label={`${label} results`}
+                className="max-h-palette-list-h min-h-0 overflow-auto p-6"
+              >
                 {(group: PaletteGroup<T>) => (
                   <Autocomplete.Group
                     key={group.label ?? ''}
@@ -119,6 +128,7 @@ export function Palette<T>({
                         <Autocomplete.Item
                           key={itemId(item)}
                           value={item}
+                          {...itemKeys?.(item)}
                           onClick={() => onRun(item)}
                           className="flex min-h-32 cursor-default items-center gap-12 rounded-sm px-12 py-6 text-fg text-ui data-highlighted:bg-current-strong"
                         >

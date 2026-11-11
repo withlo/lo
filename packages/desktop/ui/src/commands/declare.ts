@@ -80,7 +80,11 @@ export interface Declaration {
   readonly jump?: boolean;
   /** A held key runs it again with each repeat. Without it, a held key runs it once. */
   readonly repeat?: boolean;
-  /** It's in the right-click menu of targets of this kind. */
+  /**
+   * It's in the right-click menu of targets of this kind, after the commands with a lower `order`.
+   * A menu draws a separator wherever the key table's `group` changes between neighbours, so
+   * commands of one group sit together.
+   */
   readonly menu?: { readonly on: TargetKind; readonly order: number };
   /** It's in this menu of the macOS app menu. */
   readonly bar?: { readonly menu: BarMenu; readonly order: number };

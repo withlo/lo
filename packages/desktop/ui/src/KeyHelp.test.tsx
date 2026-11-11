@@ -115,7 +115,7 @@ describe('KeyHelp', () => {
     const page = render(<KeyHelp open onOpenChange={() => {}} groups={groups} />);
     const dialog = page.querySelector('[role="dialog"]');
     expect(dialog?.getAttribute('data-lo-scope')).toBe('dialog');
-    expect([...page.querySelectorAll('section h3')].map((h3) => h3.textContent)).toEqual([
+    expect([...page.querySelectorAll('[role="group"] h3')].map((h3) => h3.textContent)).toEqual([
       'Move',
       'Code',
       'Find',
@@ -140,6 +140,30 @@ describe('KeyHelp', () => {
     ).toEqual(['keys.forward']);
     type(search!, 'nothing like it');
     expect(page.textContent).toContain('No key or action matches "nothing like it".');
+  });
+
+  it('names each group without making it a landmark', () => {
+    const page = render(<KeyHelp open onOpenChange={() => {}} groups={groups} />);
+    const named = [...page.querySelectorAll('[role="group"]')].map((group) => {
+      const label = group.getAttribute('aria-labelledby');
+      return page.ownerDocument.getElementById(label ?? '')?.textContent;
+    });
+    expect(named).toEqual(['Move', 'Code', 'Find']);
+    expect(page.querySelector('section, [role="region"]')).toBeNull();
+  });
+
+  it('says aloud, in a live region, when nothing matches', async () => {
+    const page = render(<KeyHelp open onOpenChange={() => {}} groups={groups} />);
+    const status = page.querySelector('[role="status"]');
+    // The region is there before it has anything to say, so the change is announced.
+    expect(status?.textContent).toBe('');
+    const search = page.querySelector<HTMLInputElement>('input[type="search"]');
+    await vi.waitFor(() => expect(document.activeElement).toBe(search));
+    type(search!, 'nothing like it');
+    expect(page.querySelector('[role="status"]')).toBe(status);
+    expect(status?.textContent).toBe('No key or action matches "nothing like it".');
+    type(search!, '');
+    expect(status?.textContent).toBe('');
   });
 
   it('marks the command it was asked to show', () => {
@@ -275,6 +299,12 @@ describe('Palette', () => {
     expect(onHighlight).toHaveBeenLastCalledWith(items[1]);
     press(input, 'Enter');
     expect(onRun).toHaveBeenCalledWith(items[1]);
+  });
+
+  it('names its list, so a screen reader can say what it is', () => {
+    const { page } = palette();
+    const list = page.querySelector('[role="listbox"]');
+    expect(list?.getAttribute('aria-label')).toBe('Command palette results');
   });
 
   it('says so when nothing matches', () => {
