@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./tokens.json": "./tokens.json",
+    "./syntax.json": "./syntax.json",
     "./css/*": "./css/*"
   },
   "scripts": {

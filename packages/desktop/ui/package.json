@@ -32,7 +32,6 @@
     "@lezer/highlight": "1.2.5",
     "@lo/design": "workspace:*",
     "@lo/diff": "workspace:*",
-    "@lo/syntax": "workspace:*",
     "@replit/codemirror-vim": "6.4.0",
     "class-variance-authority": "0.7.1",
     "react": "19.3.1",

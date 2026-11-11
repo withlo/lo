@@ -8,8 +8,9 @@ export type Side = 'old' | 'new';
 export interface Place {
   file: string;
   side: Side;
-  /** From 1. */
+  /** From 1, or 0 for the file's header in a code view that shows one. */
   line: number;
+  /** From 0, in UTF-16 code units. */
   column?: number;
 }
 

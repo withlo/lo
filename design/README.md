@@ -224,6 +224,7 @@ what happened and what to do next.
 | Path                                       | What                                                                                              |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | `tokens.json`                              | Every color (both themes), shadow, space, radius, size and type style. The one source for values. |
+| `syntax.json`                              | The syntax tokens `code.css` styles as `lo-syn-*` classes, numbered as highlights number them.    |
 | `css/index.css`                            | Imports the stylesheets in order. The app imports this file.                                      |
 | `css/tokens.css`, `css/type.css`           | Generated from `tokens.json`. Don't edit.                                                         |
 | `css/foundation.css`                       | Focus rings, font aliases, tracking, motion, layers, platform insets.                             |
