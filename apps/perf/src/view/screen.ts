@@ -185,9 +185,13 @@ function page(cm: { cm6: unknown }, head: Pos, forward: boolean, count: number):
   return head;
 }
 
+/** The rows `Ctrl-d` and `Ctrl-u` go in each editor once a count has set it, as Vim's `scroll`. */
+const halfPageRows = new WeakMap<EditorView, number>();
+
 /**
- * `Ctrl-d` and `Ctrl-u`: the cursor `count` rows on, or half the rows on screen, and the scroll
- * as far as the cursor went, so it stays where it is on screen.
+ * `Ctrl-d` and `Ctrl-u`: the cursor `count` rows on, which the next ones go too, or half the rows
+ * on screen until a count is given, and the scroll as far as the cursor went, so it stays where it
+ * is on screen.
  */
 function halfPage(
   cm: { cm6: unknown },
@@ -198,7 +202,8 @@ function halfPage(
   const found = geometry(cm);
   if (!found) return head;
   const { view, scroller, screen } = found;
-  const rows = count ?? Math.max(1, Math.floor(rowsOn(view, screen).length / 2));
+  if (count !== undefined) halfPageRows.set(view, count);
+  const rows = halfPageRows.get(view) ?? Math.max(1, Math.floor(rowsOn(view, screen).length / 2));
   const from = rowAt(view, head);
   let to = from;
   for (let turn = 0; turn < rows; turn++) {
@@ -212,15 +217,12 @@ function halfPage(
 
 /**
  * `Ctrl-e` and `Ctrl-y`: the scroll `count` rows on, a row at the top of the screen at a time,
- * and the cursor onto the screen's first row (or last) if the scroll left it off.
+ * and the cursor onto the screen's first row (or last) if the scroll left it off. A motion, so in
+ * visual mode the selection keeps its other end.
  */
-function scrollRows(
-  cm: { cm6: unknown; getCursor(): Pos; setCursor(pos: Pos): void },
-  forward: boolean,
-  count: number,
-): void {
+function scrollRows(cm: { cm6: unknown }, head: Pos, forward: boolean, count: number): Pos {
   const found = geometry(cm);
-  if (!found) return;
+  if (!found) return head;
   const { view, scroller, screen } = found;
   // The row at the top of the screen, one that starts there included.
   let row = view.lineBlockAtHeight(Math.max(0, screen.top + slack));
@@ -233,14 +235,13 @@ function scrollRows(
   }
   const moved = scrollBy(scroller, row.top - screen.top);
   const now = { top: screen.top + moved, bottom: screen.bottom + moved };
-  const cursor = cm.getCursor();
-  const body = bodyOf(rowAt(view, cursor));
+  const body = bodyOf(rowAt(view, head));
   const rows = rowsOn(view, now);
-  if (forward && body.top < now.top - slack && rows[0]) {
-    cm.setCursor(columnOf(view, rows[0], cursor.ch));
-  } else if (!forward && body.bottom > now.bottom + slack && rows.at(-1)) {
-    cm.setCursor(columnOf(view, rows.at(-1)!, cursor.ch));
+  if (forward && body.top < now.top - slack && rows[0]) return columnOf(view, rows[0], head.ch);
+  if (!forward && body.bottom > now.bottom + slack && rows.at(-1)) {
+    return columnOf(view, rows.at(-1)!, head.ch);
   }
+  return head;
 }
 
 /** `zt`, `zz` and `zb`: the cursor's row (or the `count`th line's) at the top, middle or bottom. */
@@ -293,7 +294,9 @@ export function defineScreenKeys(): void {
   Vim.defineMotion('loHalfPage', (cm, head, args) =>
     halfPage(cm, head, args.forward ?? true, args.repeatIsExplicit ? args.repeat : undefined),
   );
-  Vim.defineAction('loScrollRows', (cm, args) => scrollRows(cm, args.forward ?? true, args.repeat));
+  Vim.defineMotion('loScrollRows', (cm, head, args) =>
+    scrollRows(cm, head, args.forward ?? true, args.repeat),
+  );
   Vim.defineAction('loScrollToCursor', (cm, args) => {
     const where = args.position;
     if (where !== 'top' && where !== 'center' && where !== 'bottom') return;
@@ -324,7 +327,7 @@ export function defineScreenKeys(): void {
     ['<C-e>', true],
     ['<C-y>', false],
   ] as const) {
-    Vim.mapCommand(keys, 'action', 'loScrollRows', { forward }, {});
+    Vim.mapCommand(keys, 'motion', 'loScrollRows', { forward }, {});
   }
   for (const [keys, position, firstCharacter] of [
     ['zz', 'center', false],
