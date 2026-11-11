@@ -33,7 +33,7 @@ test('a web link opens as parsed', () => {
 
 test('relative links read from the page they are on', () => {
   const page = 'https://github.com/octo/repo/pull/1#issuecomment-2';
-  expect(webLink('../blob/main/a.rs', page)).toBe('https://github.com/octo/repo/blob/main/a.rs');
+  expect(webLink('../blob/main/a.ts', page)).toBe('https://github.com/octo/repo/blob/main/a.ts');
   expect(webLink('/octo/repo/issues', page)).toBe('https://github.com/octo/repo/issues');
   expect(webLink('//example.com/x', page)).toBe('https://example.com/x');
   expect(webLink('?q=1', page)).toBe('https://github.com/octo/repo/pull/1?q=1');

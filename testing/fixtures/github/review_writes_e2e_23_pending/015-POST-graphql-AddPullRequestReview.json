@@ -9,9 +9,9 @@
       "event": "COMMENT",
       "threads": [
         {
+          "path": "e11/review.txt",
           "body": "Fixture E11: never posted.",
           "line": 50,
-          "path": "e11/review.txt",
           "side": "RIGHT"
         }
       ]
@@ -23,10 +23,10 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4985",
-      "x-ratelimit-reset": "1794201713",
+      "x-ratelimit-remaining": "4986",
+      "x-ratelimit-reset": "1794371223",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "15"
+      "x-ratelimit-used": "14"
     },
     "body": {
       "data": {
@@ -40,8 +40,8 @@
           ],
           "locations": [
             {
-              "line": 13,
-              "column": 4
+              "line": 3,
+              "column": 3
             }
           ],
           "message": "User can only have one pending review per pull request"

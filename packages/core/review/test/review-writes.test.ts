@@ -130,6 +130,9 @@ test('a pending review starts with a line thread and gathers threads and replies
     expect(sent.thread).toBeDefined();
     expect(sent.comment).toBeDefined();
   }
+  // Nobody pushed: GitHub's answer names the head the line thread was written on, the commit the
+  // poller checks a new thread against before it keeps it.
+  expect(seen.range.commit).toBe(seen.head);
   // A range from the base starts on the base's side; GitHub's default would be the head's.
   // A file-level thread has no lines.
   const added = variables(fetch, 'AddPullRequestReviewThread');
@@ -439,7 +442,7 @@ test('comments edited and deleted read as lo reads them', async () => {
   const replyEdited = here(seen.replyAfterEdit);
   expect(replyEdited.thread.isResolved).toBe(true);
   expect(replyEdited.comment.editor?.login).toBe(BOT);
-  expect(replyEdited.comment.lastEditedAt).not.toBeNull();
+  expect(replyEdited.comment.lastEditedAt).toBe('2026-11-09T17:56:21Z');
   expect(seen.firstDeleted).toBeUndefined();
   const after = seen.threadsAfter.nodes.find((thread) => thread.id === seen.postedThread);
   expect(after, 'the thread stays').toBeDefined();

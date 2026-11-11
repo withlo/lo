@@ -1,0 +1,19 @@
+<h1>Scripts and event handlers</h1>
+<script>alert(1)</script>
+<SCRIPT SRC=//evil.example/x.js></SCRIPT>
+<p>Before <img src=x onerror=alert(1)> after.</p>
+<svg onload=alert(1)><script>alert(1)</script><a href="javascript:alert(1)"><text>svg link</text></a></svg>
+<math><mtext><table><mglyph><style><img src=x onerror=alert(1)></style></mglyph></table></mtext></math>
+<iframe src="javascript:alert(1)"></iframe><iframe srcdoc="<script>alert(1)</script>"></iframe>
+<object data="javascript:alert(1)"></object><embed src="data:text/html,<script>alert(1)</script>">
+<form action="javascript:alert(1)"><button formaction="javascript:alert(1)">submit</button><input autofocus onfocus=alert(1)></form>
+<details open ontoggle=alert(1)><summary onclick=alert(1)>A fold</summary>Inside.</details>
+<div style="background:url(javascript:alert(1))" onmouseover="alert(1)">Styled</div>
+<meta http-equiv="refresh" content="0;url=javascript:alert(1)"><base href="javascript:alert(1)//"><link rel=stylesheet href=//evil.example/x.css>
+<style>@import 'https://evil.example/x.css'; body { background: url(https://evil.example/t.png) }</style>
+<template><script>alert(1)</script><p>In a template.</p></template>
+<noscript><p title="</noscript><img src=x onerror=alert(1)>">Noscript</p></noscript>
+<textarea><script>alert(1)</script></textarea>
+<select><option>One</option></select>
+<p><a href="javascript:alert(1)" onclick="alert(1)">A script link</a> and <a href="https://example.com/" onclick="alert(1)">a web link with a handler</a>.</p>
+<p>Unclosed: <script>alert(1)

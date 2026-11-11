@@ -1,8 +1,19 @@
 export { type Attribute, linguistBoolean, MAX_ATTRIBUTE_FILES } from './attributes.ts';
 export { Cache, type CacheOptions, type OpenOptions, type ProxySource } from './cache.ts';
 export {
+  CHECKOUTS_UNUSED_FOR,
+  DEFAULT_CAP,
+  DEFAULT_MAINTENANCE,
+  GEOMETRIC_LIMIT,
+  type MaintenanceTimes,
+  PACK_LIMIT,
+  UNUSED_FOR,
+} from './cleanup.ts';
+export {
+  COMPARE_LIMIT,
   type ComparedFile,
   type Comparison,
+  type ComparisonRefused,
   isConflicted,
   type Replay,
   type Revision,

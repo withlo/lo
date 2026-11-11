@@ -87,6 +87,12 @@ applies) as scripts. Add `test` with the package's first test: Vitest fails a pr
   extends `tsconfig.node.json`.
 - `nx sync` keeps the project references in step with the dependencies in each `package.json`. Run
   it after adding a dependency between packages; CI runs `nx sync:check`.
+- A `switch` over a union names every member and ends with a `default` that checks the value is
+  `never` (`value satisfies never`), so a new member fails to compile wherever it isn't handled. The
+  `default` still runs for a value outside the union. When the value can come from outside Lo, such
+  as GitHub's answer or what Lo saved, it returns a safe answer (`review`'s `outsideCase` does
+  both); otherwise it throws an error naming the value. Lint requires the cases and the `default`,
+  and refuses `return value satisfies never`, which would hand the value back as the answer.
 
 ## Boundaries
 
@@ -99,19 +105,31 @@ A package's folder says where it runs, and its Nx tags (`"nx": { "tags": [...] }
   `license:mit`, and every `license:mit` project carries the MIT license in its own `LICENSE`;
 - core projects import only core projects, and use no Node built-in, Electron or child process
   (their tests may use Node);
-- core projects load modules by name: an `import()` or `require()` of anything but a literal fails;
+- core projects load modules by name: an `import()` of anything but a literal fails;
 - `license:mit` projects import only `license:mit` projects;
 - nothing imports an app;
 - only tests import `testing/`. Tests are `*.test.*` files and anything in `test/` or `e2e/`, and
   `testing` belongs in `devDependencies`.
 
-Imports resolve the way Node finds them, through `node_modules` and symlinks to the project they
-reach, so a name or path can't disguise where an import goes. The same rules apply to type and path
-references, to what a project's `package.json` lists in its dependencies (aliases included) and
-points to in its `imports` and `exports`, and to every edge in Nx's project graph. Also:
+Imports resolve the way Node finds them, through `node_modules`, symlinks, and the `imports` and
+`exports` in a `package.json`, to the project they reach, so a name or path can't disguise where an
+import goes. The same rules apply to type and path references, to a `require` that `createRequire()`
+makes, to what a project's `package.json` lists in its dependencies (aliases included) and points to
+in its `imports` and `exports`, and to every edge in Nx's project graph. Also:
 
-- a relative import stays inside its project's folder; projects reach each other by package name;
-- no tsconfig sets `paths`;
+- a relative import stays inside its project's folder, and so does where a symlink takes it, unless
+  that's in the workspace's `node_modules` (the root's, or a project's own); projects reach each
+  other by package name. What a project's `imports` and `exports` map to stays in its folder too;
+- nothing imports files outside every project, other than packages in the workspace's
+  `node_modules`;
+- a module's name or path has no percent escapes or backslashes, since Node decodes the one and
+  reads the other as `/`, and isn't a URL other than `node:`;
+- a `#name` import is one the `package.json`'s `imports` map;
+- `require` appears only in a call that names its module, such as `require('./x.js')`;
+- only the files that `scripts/boundaries/check.ts` lists use `createRequire` or `getBuiltinModule`,
+  since what they load can't be followed;
+- pnpm's overrides and package extensions point no dependency at a folder with `link:` or `file:`;
+- no tsconfig sets `paths`, nor any tsconfig it extends or references;
 - the root `package.json` holds the repo's tooling only: no workspace package, and no alias besides
   TypeScript's two.
 
@@ -174,9 +192,9 @@ the window find them with `import.meta.glob`.
   either side's code out of them.
 - `main/index.ts` exports `defineFeature(contract, { handlers, start })` by default: a handler for
   every request, and optionally a `start` that runs before the window opens, to publish on the
-  feature's topics. Both get the feature's context: `publish` and `database`. A handler throws an
-  `IpcError` for a failure the window should see; any other error is logged and reaches the window
-  only as `internal`.
+  feature's topics. Both get the feature's context: `publish`, `database` and `git`. A handler
+  throws an `IpcError` for a failure the window should see; any other error is logged and reaches
+  the window only as `internal`.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.
@@ -225,6 +243,27 @@ files or the network for the window.
 - Main always puts the cap in the process's environment, and the process sizes its pool of workers
   from it. A missing or invalid cap is a startup error: the process reports it and exits, and main
   starts it again like after any other exit. It never runs on a pool without a bound.
+
+### Git
+
+Only main runs git, through `@lo/git`, and the background process never sees git or a token.
+`src/main/git.ts` holds it, and features reach it as `git` in their context.
+
+- Once the window is up, or a few seconds after it opens if it never says so, main looks for git: on
+  a Mac, Apple's git once the Command Line Tools are installed, then each on `PATH`, then the
+  system's usual folders, and the newest new enough wins. `app.info` says what it found, `checking`
+  until it has, and `app.git` pushes each answer. Asking again (`git.check()`) finds a git installed
+  since.
+- With git, main opens the cache, `Lo` in the system's folder for caches (`Lo Dev` for a build run
+  from source, or `cache` in `LO_USER_DATA_DIR`), as `git.cache`, and cleans it up without anyone
+  waiting. `git.setCap()` sets the size it's kept under.
+- Every git gets an environment of Lo's own making, never main's, and only a fetch gets the
+  account's token, from a source read as each fetch starts. Fetches take the proxy Lo's own requests
+  take.
+- Lo quits once every git has stopped, a look for git's included: each is asked to stop, then killed
+  with what it started.
+- A build run from source takes the git to run from `LO_GIT`, a path or `none`, and fetches from
+  `LO_GIT_REMOTE`, a server or folder on this machine, for its tests. A packaged build ignores both.
 
 ## The interface
 

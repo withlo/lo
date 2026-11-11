@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
 
 import { listenForBackground } from './background.ts';
+import { startCommands } from './commands/index.ts';
 import { startFeatures } from './features.ts';
 import { Window } from './Window.tsx';
 
@@ -19,6 +20,8 @@ if (navigator.platform.startsWith('Linux')) {
 
 // Main hands the window a port to the background process as soon as the page loads.
 listenForBackground();
+// The registry listens before any feature starts, so it sees every key.
+startCommands();
 startFeatures();
 
 const root = document.getElementById('root');

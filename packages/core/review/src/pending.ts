@@ -142,7 +142,8 @@ export type NewComment = NewThread | NewReply;
  *   reply, which can't go in `threads`; once it's accepted, {@link YourReview.add} plans the
  *   comment's own mutation.
  * - `addThread` adds a thread to your pending review, which GitHub puts on the pull request's
- *   current head: the one it was planned against, `head`, unless someone pushed since.
+ *   current head. The sender checks that it's the head planned, `head`, and takes back a line
+ *   thread that landed on a later one.
  * - `addReply` adds a reply to your pending review.
  * - `postThread`, `postFileComment` and `postReply` post one comment at once.
  * - `submitReview` submits your pending review, and `review` submits one with no comments.
@@ -168,7 +169,9 @@ export function sendsComment(mutation: Mutation): boolean {
     case 'review':
       return false;
     default:
-      return mutation satisfies never;
+      throw new Error(
+        `a review mutation Lo doesn't know: ${JSON.stringify(mutation satisfies never)}`,
+      );
   }
 }
 
@@ -323,7 +326,9 @@ export class YourReview {
           },
         };
       default:
-        return comment satisfies never;
+        throw new Error(
+          `a new comment Lo doesn't know: ${JSON.stringify(comment satisfies never)}`,
+        );
     }
   }
 
@@ -363,7 +368,9 @@ export class YourReview {
           },
         };
       default:
-        return comment satisfies never;
+        throw new Error(
+          `a new comment Lo doesn't know: ${JSON.stringify(comment satisfies never)}`,
+        );
     }
   }
 
@@ -400,6 +407,8 @@ export class YourReview {
       case 'review':
         this.#pending = undefined;
         return;
+      default:
+        mutation satisfies never;
     }
   }
 

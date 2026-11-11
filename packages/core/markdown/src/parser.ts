@@ -9,6 +9,7 @@ import MarkdownIt, {
   type Env,
   type MarkdownIt as Parser,
   type StateCore,
+  type StateInline,
   type Token,
 } from 'markdown-it';
 import footnote from 'markdown-it-footnote';
@@ -21,9 +22,20 @@ export type Plugin = (md: Parser) => void;
 /** The key under which a parse's environment holds what Lo gives it beyond its text. */
 const LO = 'lo';
 
-/** markdown-it's environment for one parse of text in `repo`. */
+/**
+ * markdown-it's environment for one parse of text in `repo`. Footnote labels are looked up
+ * whatever their case, as GitHub matches `[^A]` to `[^a]:`.
+ */
 export function environment(repo: Repo | undefined): Env {
-  return { [LO]: { repo } };
+  const labels: Record<string, unknown> = Object.create(null);
+  const refs = new Proxy(labels, {
+    get: (target, key) => (typeof key === 'string' ? target[key.toLowerCase()] : undefined),
+    set: (target, key, value) => {
+      if (typeof key === 'string') target[key.toLowerCase()] = value;
+      return true;
+    },
+  });
+  return { [LO]: { repo }, footnotes: { refs } };
 }
 
 function repoOf(env: Env): Repo | undefined {
@@ -75,6 +87,10 @@ function create(nesting: number, plugins: readonly Plugin[]): Parser {
   md.use(footnote);
   // GitHub has no inline footnotes, `^[like this]`.
   md.inline.ruler.disable('footnote_inline');
+  md.core.ruler.at('footnote_tail', footnoteTail);
+  // GitHub strikes through text between one tilde or two.
+  md.inline.ruler.at('strikethrough', tildes);
+  md.inline.ruler2.at('strikethrough', strikes);
   // GitHub's autolinks: addresses with `http://` or `https://`, and `www.` ones (`lo_text` drops
   // the bare domains linkify-it also finds). Email addresses would become `mailto:` links, which
   // Lo shows as text anyway.
@@ -85,6 +101,123 @@ function create(nesting: number, plugins: readonly Plugin[]): Parser {
   md.core.ruler.push('lo_text', loText);
   for (const plugin of plugins) md.use(plugin);
   return md;
+}
+
+/**
+ * Moves footnotes' definitions to a block at the end, in the order they're first referenced,
+ * each found whatever its case, as the environment looks them up, and labelled as its definition
+ * writes it, as GitHub names it. Adapted from the footnote
+ * plugin's own rule (MIT), which copies every token so far for each footnote, taking time in
+ * proportion to the square of the footnotes; this takes each token once. A label's first
+ * definition counts, and a footnote's backlinks are left to the renderer.
+ */
+function footnoteTail(state: StateCore): boolean {
+  const kept: Token[] = [];
+  const definitions = new Map<string, { label: string; tokens: Token[] }>();
+  const open: { label: string; tokens: Token[] }[] = [];
+  for (const token of state.tokens) {
+    if (token.type === 'footnote_reference_open') {
+      const label: unknown = token.meta?.['label'];
+      open.push({ label: typeof label === 'string' ? label : '', tokens: [] });
+      continue;
+    }
+    if (token.type === 'footnote_reference_close') {
+      const done = open.pop();
+      const key = done?.label.toLowerCase();
+      if (done && key !== undefined && !definitions.has(key)) definitions.set(key, done);
+      continue;
+    }
+    (open.at(-1)?.tokens ?? kept).push(token);
+  }
+  state.tokens = kept;
+  const footnotes: unknown = state.env['footnotes'];
+  const list: unknown =
+    typeof footnotes === 'object' && footnotes !== null && 'list' in footnotes
+      ? footnotes.list
+      : undefined;
+  if (!Array.isArray(list) || list.length === 0) return true;
+  state.tokens.push(new state.Token('footnote_block_open', '', 1));
+  for (const [id, item] of list.entries()) {
+    const raw: unknown =
+      typeof item === 'object' && item !== null && 'label' in item ? item.label : '';
+    const definition = definitions.get(typeof raw === 'string' ? raw.toLowerCase() : '');
+    const opening = new state.Token('footnote_open', '', 1);
+    opening.meta = { id, label: definition?.label ?? raw };
+    state.tokens.push(opening);
+    for (const token of definition?.tokens ?? []) state.tokens.push(token);
+    state.tokens.push(new state.Token('footnote_close', '', -1));
+  }
+  state.tokens.push(new state.Token('footnote_block_close', '', -1));
+  return true;
+}
+
+/**
+ * Runs of tildes, as GitHub reads them: a run of one or two that can open or close a
+ * strikethrough, by the rules for emphasis, is marked for `strikes`; three or more are text.
+ * Adapted from markdown-it's own strikethrough rule (MIT), which takes runs of two only.
+ */
+function tildes(state: StateInline, silent: boolean): boolean {
+  if (silent || state.src.charCodeAt(state.pos) !== 0x7e) return false;
+  const scanned = state.scanDelims(state.pos, true);
+  const token = state.push('text', '', 0);
+  token.content = '~'.repeat(scanned.length);
+  if (scanned.length <= 2) {
+    token.meta = {
+      tilde: { length: scanned.length, open: scanned.can_open, close: scanned.can_close },
+    };
+  }
+  state.pos += scanned.length;
+  return true;
+}
+
+/**
+ * Pairs runs of tildes as GitHub does: a closing run takes the nearest opening run before it, in
+ * the same link, and strikes through only if the two are the same length. With a stack, so in
+ * time in proportion to the runs.
+ */
+function strikes(state: StateInline): boolean {
+  const levels: Token[][] = [[]];
+  for (const token of state.tokens) {
+    if (token.type === 'link_open') {
+      levels.push([]);
+      continue;
+    }
+    if (token.type === 'link_close') {
+      if (levels.length > 1) levels.pop();
+      continue;
+    }
+    const run = tildeRun(token);
+    if (!run) continue;
+    const openers = levels.at(-1)!;
+    const opener = openers.at(-1);
+    const openerRun = opener && tildeRun(opener);
+    if (run.close && opener && openerRun?.length === run.length) {
+      openers.pop();
+      strike(opener, 's_open', 1);
+      strike(token, 's_close', -1);
+      continue;
+    }
+    if (run.open) openers.push(token);
+  }
+  return true;
+}
+
+function tildeRun(token: Token): { length: number; open: boolean; close: boolean } | undefined {
+  const run: unknown = token.meta?.['tilde'];
+  if (typeof run !== 'object' || run === null) return undefined;
+  if (!('length' in run) || !('open' in run) || !('close' in run)) return undefined;
+  const { length, open, close } = run;
+  return typeof length === 'number' && typeof open === 'boolean' && typeof close === 'boolean'
+    ? { length, open, close }
+    : undefined;
+}
+
+function strike(token: Token, type: 's_open' | 's_close', nesting: 1 | -1): void {
+  token.type = type;
+  token.tag = 's';
+  token.nesting = nesting;
+  token.content = '';
+  token.meta = null;
 }
 
 /**

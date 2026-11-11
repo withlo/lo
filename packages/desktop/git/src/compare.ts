@@ -86,6 +86,22 @@ export interface Comparison {
   readonly replay: Replay;
 }
 
+/**
+ * The most a comparison's downloads may bring, in bytes, unless the caller says otherwise: both
+ * sides of every file it lists, and what its replay merges, counted as they come, compressed, so
+ * the files can take more once they're in.
+ */
+export const COMPARE_LIMIT = 200 * 1024 * 1024;
+
+/**
+ * A comparison Lo refused to make, rather than show part of one: its downloads would have brought
+ * more than `limit` bytes.
+ */
+export interface ComparisonRefused {
+  readonly refused: 'tooLarge';
+  readonly limit: number;
+}
+
 /** Whether the replay conflicted on `file`, so the author resolved a conflict in it. */
 export function isConflicted(file: ComparedFile): boolean {
   return file.resolution !== undefined;

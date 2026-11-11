@@ -1,17 +1,18 @@
 /**
- * Markdown to Lo's tree: the comment box's preview, offline drafts and overviews. The text comes
- * from anyone, so every step is bounded: the text is cut to a length, nothing past the depth limit
- * reaches a step that recurses, the tree's size is capped, and the mapping is a closed switch over
- * the parser's tokens, each kind with only the fields Lo sets. Raw HTML shows as its text, and
- * links and images pass Lo's rules or become text.
+ * Markdown to Lo's tree: the comment box's preview, offline drafts, overviews, and a post whose
+ * HTML is too long to read. The text comes from anyone, so every step is bounded: the text is cut
+ * to a length, nothing nested far past the depth limit reaches a step that recurses, and the tree
+ * is assembled under the depth and node limits as built. The mapping is a closed switch over the
+ * parser's tokens, each kind with only the fields Lo sets. Raw HTML shows as its text, and links
+ * and images pass Lo's rules or become text.
  */
 
 import type { Token } from 'markdown-it';
 
-import { Anchors } from './anchors.ts';
-import { imageAddress } from './images.ts';
-import { cut, MAX_ADDRESS, MAX_DIAGNOSTICS, resolveLimits, type Limits } from './limits.ts';
-import { fragmentName, webLink } from './links.ts';
+import { append, assemble, plainBlocks, type FootnotePart, type Part } from './assemble.ts';
+import { Builder } from './build.ts';
+import { withoutComments } from './html.ts';
+import { cut, resolveLimits, type Limits } from './limits.ts';
 import { environment, parser, type Plugin } from './parser.ts';
 import { isLogin, isRepoName, type Repo } from './references.ts';
 import type {
@@ -19,14 +20,12 @@ import type {
   Block,
   Diagnostic,
   Extension,
-  Footnote,
   Inline,
   ListItem,
   Note,
   Paragraph,
   Plain,
   Table,
-  Target,
   Text,
   Tree,
 } from './tree.ts';
@@ -77,8 +76,11 @@ export type InlineHandler<X extends Extension> = (
   context: HandlerContext,
 ) => Inline<X> | undefined;
 
-/** The nodes of a stretch of plain text standing in for content Lo doesn't show as it is. */
-const PLAIN_NODES = 2;
+/**
+ * How far past the depth limit tokens may nest before the part holding them shows as its lines
+ * without being built. What is built is measured again, exactly.
+ */
+const SLACK = 4;
 
 /** `text`, Markdown from anyone, as Lo's tree. Pure and synchronous; never throws on any text. */
 export function markdownTree<X extends Extension = Plain>(
@@ -86,82 +88,54 @@ export function markdownTree<X extends Extension = Plain>(
   options: MarkdownOptions<X> = {},
 ): Tree<X> {
   const limits = resolveLimits(options.limits);
-  const notes = new Set<Note>();
   const kept = cut(text, limits.length);
-  if (kept.cut) notes.add('cut');
+  const notes = new Set<Note>(kept.cut ? ['cut'] : []);
   // As markdown-it reads it, so its line numbers count the same lines.
   const source = kept.text.toWellFormed().replace(/\r\n?/g, '\n').replaceAll('\0', '�');
   const repo = options.repo && isLogin(options.repo.owner) && isRepoName(options.repo.name);
   const env = environment(repo ? options.repo : undefined);
   try {
-    // A few levels past the limit, so whatever is too deep is seen to be.
-    const tokens = parser(limits.depth + 4, options.syntax?.plugins).parse(source, env);
+    // Past this markdown-it reads no deeper; whatever it reaches is more than the slack past the
+    // limit, so the part shows as its own lines and nothing markdown-it skipped is lost.
+    const nesting = limits.depth + SLACK + 2;
+    const tokens = parser(nesting, options.syntax?.plugins).parse(source, env);
     const mapper = new Mapper<X>(tokens, source, options, limits, notes);
-    return finish({ blocks: mapper.map(), notes, diagnostics: mapper.diagnostics });
+    return finish(mapper.map(), notes, mapper.builder.diagnostics);
   } catch (error) {
-    // Nothing recurses past the nesting limit, so this is a backstop: text that overflows the
-    // stack anyway shows as plain text rather than failing the job.
+    // Nothing recurses far past the depth limit, so this is a backstop: text that overflows the
+    // stack anyway shows as plain text rather than failing the job, saying only that.
     if (!(error instanceof RangeError)) throw error;
-    notes.add('deep');
-    return finish({ blocks: plainBlocks(source), notes, diagnostics: [] });
+    const fallback = new Set<Note>(kept.cut ? ['cut', 'deep'] : ['deep']);
+    return finish(plainBlocks(source), fallback, []);
   }
 }
 
-function finish<X extends Extension>(tree: {
-  blocks: Block<X>[];
-  notes: Set<Note>;
-  diagnostics: Diagnostic[];
-}): Tree<X> {
+export function finish<X extends Extension>(
+  blocks: Block<X>[],
+  notes: ReadonlySet<Note>,
+  diagnostics: Diagnostic[],
+): Tree<X> {
   const order: Note[] = ['cut', 'deep', 'nodes'];
-  return {
-    blocks: tree.blocks,
-    notes: order.filter((note) => tree.notes.has(note)),
-    diagnostics: tree.diagnostics,
-  };
+  return { blocks, notes: order.filter((note) => notes.has(note)), diagnostics };
 }
 
-/** `text` as one plain paragraph, or nothing when it's empty. */
-function plainBlocks<X extends Extension>(text: string): Block<X>[] {
-  const value = text.replace(/\n+$/, '');
-  return value === '' ? [] : [{ kind: 'paragraph', children: [{ kind: 'text', value }] }];
-}
-
-/** A stretch of tokens, `[start, end)`, and how it's shown. */
+/** A stretch of tokens, `[start, end)`. */
 interface Region {
   start: number;
   end: number;
-  /** Shown as the text of these lines, `[from, to)`, instead of its tokens. */
-  plain?: [number, number];
 }
-
-/** What the guard measured of a stretch of tokens. */
-interface Measure {
-  depth: number;
-  nodes: number;
-}
-
-/** Tokens that wrap others without a node of their own in Lo's tree. */
-const WRAPPERS = new Set(['thead_open', 'thead_close', 'tbody_open', 'tbody_close']);
-/** Tokens that make no node of their own. */
-const UNCOUNTED = new Set(['inline', 'footnote_anchor']);
 
 class Mapper<X extends Extension> {
-  readonly diagnostics: Diagnostic[] = [];
-  private readonly close: Int32Array;
-  private readonly lineStarts: number[];
-  private readonly anchors = new Anchors();
-  private readonly headingNames = new Map<number, string>();
-  private readonly footnoteNames = new Map<number, string>();
-  private readonly syntax: Syntax<X>;
-  private readonly page: string | undefined;
-  private readonly breaks: boolean;
+  readonly builder: Builder<X>;
   private readonly tokens: Token[];
   private readonly source: string;
   private readonly limits: Limits;
-  private readonly notes: Set<Note>;
-  private images = 0;
-  private addresses = 0;
-  private line: number | undefined;
+  private readonly close: Int32Array;
+  private readonly lineStarts: number[];
+  private readonly headingNames = new Map<number, string>();
+  private readonly footnoteNames = new Map<number, string>();
+  private readonly syntax: Syntax<X>;
+  private readonly breaks: boolean;
 
   constructor(
     tokens: Token[],
@@ -173,133 +147,77 @@ class Mapper<X extends Extension> {
     this.tokens = tokens;
     this.source = source;
     this.limits = limits;
-    this.notes = notes;
     this.close = matchingCloses(tokens);
     this.lineStarts = lineStarts(source);
     this.syntax = options.syntax ?? {};
-    this.page = options.page;
     this.breaks = options.breaks ?? true;
+    this.builder = new Builder<X>(limits, notes, options.page, this.syntax.link);
   }
 
   map(): Block<X>[] {
-    const { main, footnotes } = this.guard();
-    for (const [, item] of footnotes) this.footnoteNames.set(item.id, item.name);
-    for (const [, item] of footnotes) this.anchors.reserve(item.name);
-    for (const region of [...main, ...[...footnotes.values()].map((item) => item.region)]) {
-      if (!region.plain) this.nameHeadings(region);
-    }
-    const blocks: Block<X>[] = [];
-    for (const region of main) blocks.push(...this.region(region));
-    if (footnotes.size > 0) {
-      const items: Footnote<X>[] = [];
-      for (const item of footnotes.values()) {
-        items.push({ name: item.name, number: item.id + 1, children: this.region(item.region) });
-      }
-      blocks.push({ kind: 'footnotes', items });
-    }
-    return blocks;
-  }
-
-  // The guard: measures every stretch of tokens with an explicit stack, before anything that
-  // recurses sees it, and decides what shows as plain text.
-
-  private guard(): {
-    main: Region[];
-    footnotes: Map<number, { id: number; name: string; region: Region }>;
-  } {
-    const main: Region[] = [];
-    const footnotes = new Map<number, { id: number; name: string; region: Region }>();
-    let nodes = 0;
-    let full = false;
+    const parts: (Part<X> & { region: Region })[] = [];
+    const footnotes: (FootnotePart<X> & { region: Region })[] = [];
     for (let i = 0; i < this.tokens.length; i = this.after(i)) {
-      const token = this.tokens[i];
-      if (!token) break;
-      if (token.type === 'footnote_block_open') {
-        for (let j = i + 1; j < this.close[i]!; j = this.after(j)) {
-          const item = this.tokens[j];
-          if (item?.type !== 'footnote_open') continue;
-          const id = Number(item.meta?.['id']);
-          const label = labelOf(item);
-          if (!Number.isSafeInteger(id) || id < 0) continue;
-          const { region, nodes: inside } = this.fit({ start: j + 1, end: this.close[j]! }, 2);
-          const size = 1 + inside;
-          if (full || nodes + size > this.limits.nodes) {
-            full = true;
-            this.notes.add('nodes');
-            continue;
-          }
-          nodes += size;
-          footnotes.set(id, { id, name: `fn-${label}`, region });
-        }
+      const token = this.tokens[i]!;
+      if (token.type !== 'footnote_block_open') {
+        parts.push(this.part({ start: i, end: this.after(i) }, 0));
         continue;
       }
-      if (full) continue;
-      const { region, nodes: size } = this.fit({ start: i, end: this.after(i) }, 0);
-      if (nodes + size > this.limits.nodes) {
-        // The rest of the text, from this block on, shows as its lines.
-        full = true;
-        this.notes.add('nodes');
-        const from = this.firstLine(i, this.tokens.length);
-        if (from !== undefined) {
-          main.push({ start: i, end: this.tokens.length, plain: [from, this.lineStarts.length] });
-          nodes += PLAIN_NODES;
-        }
-        continue;
+      for (let j = i + 1; j < this.close[i]!; j = this.after(j)) {
+        const item = this.tokens[j]!;
+        const id = Number(item.meta?.['id']);
+        if (item.type !== 'footnote_open' || !Number.isSafeInteger(id) || id < 0) continue;
+        const label = labelOf(item);
+        const name = `fn-${label}`;
+        this.footnoteNames.set(id, name);
+        this.builder.references.set(name, `[^${label}]`);
+        footnotes.push({
+          ...this.part({ start: j + 1, end: this.close[j]! }, 2),
+          name,
+          number: id + 1,
+        });
       }
-      nodes += size;
-      main.push(region);
     }
-    return { main, footnotes };
+    // Every name first, so a link can go to a heading or footnote further on.
+    for (const footnote of footnotes) this.builder.anchors.reserve(footnote.name);
+    for (const part of [...parts, ...footnotes]) this.nameHeadings(part.region);
+    return assemble(this.builder, parts, footnotes, (index) => {
+      const from = parts[index]?.line;
+      return from === undefined ? '' : this.lines(from, this.lineStarts.length);
+    });
   }
 
   /**
-   * `region`, at `depth` levels in, shown as plain text when it nests past the depth limit, and
-   * how many nodes it makes.
+   * The part of the document in `region`, `depth` levels in. Tokens nested far past the depth
+   * limit aren't built at all, so nothing that recurses meets them: the part shows as its lines.
    */
-  private fit(region: Region, depth: number): { region: Region; nodes: number } {
-    const measure = this.measure(region.start, region.end, depth);
-    if (measure.depth <= this.limits.depth) return { region, nodes: measure.nodes };
-    this.notes.add('deep');
-    const from = this.firstLine(region.start, region.end);
-    const to = this.lastLine(region.start, region.end);
-    const plain: [number, number] = from === undefined || to === undefined ? [0, 0] : [from, to];
-    return { region: { ...region, plain }, nodes: PLAIN_NODES };
+  private part(region: Region, depth: number): Part<X> & { region: Region } {
+    const from = this.firstLine(region);
+    const to = this.lastLine(region);
+    const plain = (): string =>
+      from === undefined || to === undefined ? '' : this.lines(from, to);
+    if (this.nesting(region, depth) > this.limits.depth + SLACK) {
+      this.builder.notes.add('deep');
+      return { region: { start: 0, end: 0 }, build: () => plainBlocks(plain()), plain, line: from };
+    }
+    return { region, build: () => this.blocks(region.start, region.end), plain, line: from };
   }
 
-  /** How deep tokens `[start, end)` nest, starting `depth` levels in, and how many nodes they make. */
-  private measure(start: number, end: number, depth: number): Measure {
+  /** How deep tokens in `region` nest, starting `depth` levels in, read with an explicit stack. */
+  private nesting(region: Region, depth: number): number {
     let level = depth;
     let deepest = depth;
-    let nodes = 0;
-    for (let i = start; i < end; i++) {
-      const token = this.tokens[i];
-      if (!token) break;
-      if (WRAPPERS.has(token.type)) continue;
-      if (token.nesting === 1) {
-        level += 1;
-        nodes += 1;
-        deepest = Math.max(deepest, level);
-      } else if (token.nesting === -1) {
-        level = Math.max(depth, level - 1);
-      } else if (!UNCOUNTED.has(token.type)) {
-        nodes += 1;
-      }
-      if (token.type === 'inline' && token.children) {
-        let inner = level;
-        for (const child of token.children) {
-          if (child.nesting === 1) {
-            inner += 1;
-            nodes += 1;
-            deepest = Math.max(deepest, inner);
-          } else if (child.nesting === -1) {
-            inner = Math.max(level, inner - 1);
-          } else {
-            nodes += 1;
-          }
-        }
+    for (let i = region.start; i < region.end; i++) {
+      const token = this.tokens[i]!;
+      level = Math.max(depth, level + token.nesting);
+      deepest = Math.max(deepest, level);
+      let inner = level;
+      for (const child of token.children ?? []) {
+        inner = Math.max(level, inner + child.nesting);
+        deepest = Math.max(deepest, inner);
       }
     }
-    return { depth: deepest, nodes };
+    return deepest;
   }
 
   /** The index after the token at `i` and, when it opens, everything up to its close. */
@@ -308,7 +226,7 @@ class Mapper<X extends Extension> {
     return close >= 0 ? close + 1 : i + 1;
   }
 
-  private firstLine(start: number, end: number): number | undefined {
+  private firstLine({ start, end }: Region): number | undefined {
     for (let i = start; i < end; i++) {
       const map = this.tokens[i]?.map;
       if (map) return map[0];
@@ -316,7 +234,7 @@ class Mapper<X extends Extension> {
     return undefined;
   }
 
-  private lastLine(start: number, end: number): number | undefined {
+  private lastLine({ start, end }: Region): number | undefined {
     let last: number | undefined;
     for (let i = start; i < end; i++) {
       const map = this.tokens[i]?.map;
@@ -325,43 +243,40 @@ class Mapper<X extends Extension> {
     return last;
   }
 
-  private lines([from, to]: [number, number]): string {
+  /** The text of lines `[from, to)`. */
+  private lines(from: number, to: number): string {
     const start = this.lineStarts[from] ?? this.source.length;
     const end = this.lineStarts[to] ?? this.source.length;
     return this.source.slice(start, end);
   }
 
-  private nameHeadings(region: Region): void {
-    for (let i = region.start; i < region.end; i++) {
-      const token = this.tokens[i];
-      if (token?.type !== 'heading_open') continue;
+  private nameHeadings({ start, end }: Region): void {
+    for (let i = start; i < end; i++) {
+      if (this.tokens[i]?.type !== 'heading_open') continue;
       const inline = this.tokens[i + 1];
-      this.headingNames.set(
-        i,
-        this.anchors.heading(inline?.children ? textOf(inline.children) : ''),
-      );
+      const text = inline?.children ? textOf(inline.children) : '';
+      this.headingNames.set(i, this.builder.anchors.heading(text));
     }
   }
 
-  // The mapping: a closed switch over token types. The guard has bounded how deep it recurses.
+  // The mapping: a closed switch over token types, recursing no deeper than the tokens nest.
 
-  private region(region: Region): Block<X>[] {
-    if (region.plain) return plainBlocks(this.lines(region.plain));
-    return this.blocks(region.start, region.end);
-  }
-
-  private blocks(start: number, end: number): Block<X>[] {
+  private blocks(start: number, end: number, top = start === 0 || this.isTop(start)): Block<X>[] {
     const out: Block<X>[] = [];
     for (let i = start; i < end; i = this.after(i)) {
-      const token = this.tokens[i];
-      if (!token) break;
-      if (token.map) this.line = token.map[0] + 1;
-      out.push(...this.block(i));
+      const token = this.tokens[i]!;
+      if (token.map) this.builder.line = token.map[0] + 1;
+      append(out, this.block(i, top));
     }
     return out;
   }
 
-  private block(i: number): Block<X>[] {
+  /** Whether the token at `i` sits at the document's top level. */
+  private isTop(i: number): boolean {
+    return this.tokens[i]?.level === 0 && this.tokens[i]?.type !== 'footnote_open';
+  }
+
+  private block(i: number, top: boolean): Block<X>[] {
     const token = this.tokens[i]!;
     const close = this.close[i]!;
     switch (token.type) {
@@ -377,28 +292,27 @@ class Mapper<X extends Extension> {
           },
         ];
       case 'blockquote_open':
-        return [this.quote(i, close)];
+        return [this.quote(i, close, top)];
       case 'bullet_list_open':
       case 'ordered_list_open':
         return [this.list(i, close)];
       case 'fence':
-        return [this.fence(token)];
+        return [fence(token)];
       case 'code_block':
         return [{ kind: 'code', text: withoutNewline(token.content) }];
       case 'hr':
         return [{ kind: 'rule' }];
       case 'html_block':
-        this.diagnose('html');
-        return plainBlocks(withoutComments(token.content));
+        this.builder.diagnose('html');
+        return plainBlocks(withoutComments(token.content, 4 * this.limits.nodes));
       case 'table_open':
         return [this.table(i, close)];
       default: {
         // An extension's token, which its handler maps; or anything else, as its children or its
         // text. Never dropped, never passed through.
-        const children = close >= 0 ? this.blocks(i + 1, close) : undefined;
-        const made = own(this.syntax.blocks, token.type)?.(token, children ?? [], {
-          line: this.line,
-        });
+        const children = close >= 0 ? this.blocks(i + 1, close, false) : undefined;
+        const handler = own(this.syntax.blocks, token.type);
+        const made = handler?.(token, children ?? [], { line: this.builder.line });
         if (made) return [made];
         return children ?? plainBlocks(token.content);
       }
@@ -415,20 +329,21 @@ class Mapper<X extends Extension> {
     return out;
   }
 
-  private quote(i: number, close: number): Block<X> {
-    const type = alertType(this.tokens, i);
+  /** A quote, or GitHub's alert: a quote at the top level whose first line is its marker alone. */
+  private quote(i: number, close: number, top: boolean): Block<X> {
+    const type = top ? alertType(this.tokens, i, close) : undefined;
     if (type) {
       // The marker and the line break after it.
       const inline = this.tokens[i + 2]!;
       const skip = inline.children?.[1]?.type.endsWith('break') ? 2 : 1;
       inline.children = inline.children?.slice(skip) ?? null;
-      const children = this.blocks(i + 1, close).filter(
+      const children = this.blocks(i + 1, close, false).filter(
         (block, index) => index > 0 || !isParagraph(block) || block.children.length > 0,
       );
       const alert: Alert<X> = { kind: 'alert', type, children };
       return alert;
     }
-    return { kind: 'quote', children: this.blocks(i + 1, close) };
+    return { kind: 'quote', children: this.blocks(i + 1, close, false) };
   }
 
   private list(i: number, close: number): Block<X> {
@@ -446,7 +361,7 @@ class Mapper<X extends Extension> {
         if (child?.type === 'paragraph_open' && !child.hidden) tight = false;
       }
       const checked = taskMarker(this.tokens, j);
-      const children = this.blocks(j + 1, itemClose);
+      const children = this.blocks(j + 1, itemClose, false);
       items.push(checked === undefined ? { children } : { checked, children });
     }
     return {
@@ -456,15 +371,6 @@ class Mapper<X extends Extension> {
       tight,
       items,
     };
-  }
-
-  private fence(token: Token): Block<X> {
-    const text = withoutNewline(token.content);
-    const language = token.info.trim().split(/\s/, 1)[0] ?? '';
-    if (language === 'suggestion') return { kind: 'suggestion', text };
-    return /^[A-Za-z0-9][\w+#.-]{0,63}$/.test(language)
-      ? { kind: 'code', language, text }
-      : { kind: 'code', text };
   }
 
   private table(i: number, close: number): Table<X> {
@@ -512,6 +418,7 @@ class Mapper<X extends Extension> {
   /** Inline tokens as Lo's inline nodes. */
   private inlines(children: Token[]): Inline<X>[] {
     const close = matchingCloses(children);
+    const { builder } = this;
     // `linked` when inside a link, where another link can't go.
     const walk = (start: number, end: number, linked: boolean): Inline<X>[] => {
       const out: Inline<X>[] = [];
@@ -543,30 +450,29 @@ class Mapper<X extends Extension> {
             push(out, [{ kind: 'strike', children: inner() }]);
             break;
           case 'link_open':
-            push(out, linked ? inner() : this.link(token.attrGet('href'), inner(true)));
+            push(out, linked ? inner() : builder.link(token.attrGet('href'), inner(true)));
             break;
           case 'image':
-            push(out, this.image(token, linked));
+            push(out, builder.image(token.attrGet('src'), textOf(token.children ?? []), linked));
             break;
-          case 'html_inline': {
-            this.diagnose('html');
-            const value = withoutComments(token.content);
-            if (value !== '') push(out, [{ kind: 'text', value }]);
+          case 'html_inline':
+            builder.diagnose('html');
+            // An inline HTML comment is a token of its own, which GitHub never shows.
+            if (!token.content.startsWith('<!--'))
+              push(out, [{ kind: 'text', value: token.content }]);
             break;
-          }
           case 'footnote_ref':
             push(out, this.footnoteReference(token));
             break;
           case 'lo_mention':
-            push(out, this.mention(token));
+            push(out, builder.mention(String(token.meta?.['name']), token.content));
             break;
           default: {
             // An extension's token, which its handler maps; or anything else, as its children
             // or its text.
             const mapped = to >= 0 ? inner() : undefined;
-            const made = own(this.syntax.inlines, token.type)?.(token, mapped ?? [], {
-              line: this.line,
-            });
+            const handler = own(this.syntax.inlines, token.type);
+            const made = handler?.(token, mapped ?? [], { line: builder.line });
             if (made) push(out, [made]);
             else push(out, mapped ?? [{ kind: 'text', value: token.content }]);
           }
@@ -578,89 +484,11 @@ class Mapper<X extends Extension> {
     return walk(0, children.length, false);
   }
 
-  /** A link to `href` holding `children`, or the children alone when Lo won't follow it. */
-  private link(href: string | number | null, children: Inline<X>[]): Inline<X>[] {
-    const target = typeof href === 'string' ? this.target(href) : undefined;
-    if (target) return [{ kind: 'link', target, children }];
-    this.diagnose('link');
-    return children;
-  }
-
-  /** Where a link to `href` goes, or undefined when Lo won't follow it. */
-  private target(href: string): Target<X> | undefined {
-    const claimed = this.syntax.link?.(href);
-    if (claimed) return claimed;
-    const name = fragmentName(href);
-    if (name !== undefined && this.anchors.has(name)) {
-      const charged = this.address(href, () => name);
-      return charged === undefined ? undefined : { kind: 'anchor', name: charged };
-    }
-    const url = this.address(href, (address) => webLink(address, this.page));
-    return url === undefined ? undefined : { kind: 'web', url };
-  }
-
-  /**
-   * `read(href)`, charged against the limit on addresses, or undefined when it's refused or the
-   * limit is spent. An address too long to keep isn't read at all, so a huge one named by
-   * reference over and over costs nothing.
-   */
-  private address(href: string, read: (href: string) => string | undefined): string | undefined {
-    if (href.length > MAX_ADDRESS) return undefined;
-    const url = read(href);
-    // Normalizing can lengthen an address, so the limits hold for what's kept.
-    if (url === undefined || url.length > MAX_ADDRESS) return undefined;
-    if (this.addresses + url.length > this.limits.addresses) return undefined;
-    this.addresses += url.length;
-    return url;
-  }
-
-  /** An image, or when Lo won't load it, a link to it (unless `linked`) or its alt text. */
-  private image(token: Token, linked: boolean): Inline<X>[] {
-    const src = token.attrGet('src');
-    const alt = token.children ? textOf(token.children) : token.content;
-    if (typeof src !== 'string') return alt === '' ? [] : [{ kind: 'text', value: alt }];
-    if (this.images < this.limits.images) {
-      const url = this.address(src, (address) => imageAddress(address, this.page));
-      if (url !== undefined) {
-        this.images += 1;
-        return [{ kind: 'image', url, alt }];
-      }
-      this.diagnose('image');
-    }
-    // Shown as a link to where it is, by its alt text, or as the alt text alone.
-    const url = linked ? undefined : this.address(src, (address) => webLink(address, this.page));
-    if (url !== undefined) {
-      return [
-        {
-          kind: 'link',
-          target: { kind: 'web', url },
-          children: [{ kind: 'text', value: alt === '' ? url : alt }],
-        },
-      ];
-    }
-    return alt === '' ? [] : [{ kind: 'text', value: alt }];
-  }
-
   private footnoteReference(token: Token): Inline<X>[] {
     const id = Number(token.meta?.['id']);
     const name = this.footnoteNames.get(id);
     if (name === undefined) return [{ kind: 'text', value: `[^${labelOf(token)}]` }];
     return [{ kind: 'footnoteReference', name, number: id + 1 }];
-  }
-
-  private mention(token: Token): Inline<X>[] {
-    const name = token.meta?.['name'];
-    const url = token.meta?.['url'];
-    if (typeof name === 'string' && typeof url === 'string') {
-      const charged = this.address(url, (address) => webLink(address));
-      if (charged !== undefined) return [{ kind: 'mention', name, url: charged }];
-    }
-    return [{ kind: 'text', value: token.content }];
-  }
-
-  private diagnose(code: Diagnostic['code']): void {
-    if (this.diagnostics.length >= MAX_DIAGNOSTICS) return;
-    this.diagnostics.push(this.line === undefined ? { code } : { code, line: this.line });
   }
 }
 
@@ -710,9 +538,9 @@ function textOf(children: readonly Token[]): string {
       text += ' ';
     } else if (token.type === 'lo_mention') {
       text += token.content;
-    } else if (token.type === 'html_inline') {
-      // Raw HTML is its text, here as everywhere.
-      text += withoutComments(token.content);
+    } else if (token.type === 'html_inline' && !token.content.startsWith('<!--')) {
+      // Raw HTML is its text, here as everywhere; a comment, nothing.
+      text += token.content;
     } else if (token.type === 'image' && token.children) {
       stack.push(token.children);
       at.push(0);
@@ -791,49 +619,50 @@ const ALERTS = new Map<string, Alert['type']>([
   ['[!caution]', 'caution'],
 ]);
 
-/** The alert the quote opening at `i` is, when its first line is GitHub's marker alone. */
-function alertType(tokens: readonly Token[], i: number): Alert['type'] | undefined {
+/**
+ * The alert the quote opening at `i` and closing at `close` is, when its first line is GitHub's
+ * marker alone, in any case, and something follows it.
+ */
+function alertType(tokens: readonly Token[], i: number, close: number): Alert['type'] | undefined {
   if (tokens[i + 1]?.type !== 'paragraph_open') return undefined;
   const children = tokens[i + 2]?.children;
   const first = children?.[0];
   if (first?.type !== 'text') return undefined;
   const second = children?.[1];
   if (second && second.type !== 'softbreak' && second.type !== 'hardbreak') return undefined;
-  return ALERTS.get(first.content.trimEnd().toLowerCase());
+  const type = ALERTS.get(first.content.trimEnd().toLowerCase());
+  // GitHub leaves a marker with nothing after it a quote: more in its paragraph, or another block.
+  const more = (children?.length ?? 0) > 2 || i + 4 < close;
+  return more ? type : undefined;
 }
 
 /**
- * Whether the list item opening at `i` is a task, `[ ]` or `[x]` at the start of its first
- * paragraph, and if so whether it's ticked. The marker is taken out of the paragraph.
+ * Whether the list item opening at `i` is a task, `[ ]` or `[x]` and a space at the start of its
+ * first paragraph, and if so whether it's ticked. The marker is taken out of the paragraph.
  */
 function taskMarker(tokens: readonly Token[], i: number): boolean | undefined {
   if (tokens[i + 1]?.type !== 'paragraph_open') return undefined;
-  const first = tokens[i + 2]?.children?.[0];
+  const children = tokens[i + 2]?.children;
+  const first = children?.[0];
   if (first?.type !== 'text') return undefined;
-  const marker = /^\[([ xX])\](?:[ \t]+|$)/.exec(first.content);
+  // Space must follow, so `[ ]` with nothing after it is text, as on GitHub: markdown-it has
+  // already taken the space off a paragraph's end.
+  const marker = /^\[([ xX])\][ \t]+/.exec(first.content);
   if (!marker) return undefined;
   first.content = first.content.slice(marker[0].length);
   return marker[1] !== ' ';
 }
 
-function withoutNewline(text: string): string {
-  return text.endsWith('\n') ? text.slice(0, -1) : text;
+/** A fenced block: a suggestion, or code, with its language when that's a plain name. */
+function fence<X extends Extension>(token: Token): Block<X> {
+  const text = withoutNewline(token.content);
+  const language = token.info.trim().split(/\s/, 1)[0] ?? '';
+  if (language === 'suggestion') return { kind: 'suggestion', text };
+  return /^[A-Za-z0-9][\w+#.-]{0,63}$/.test(language)
+    ? { kind: 'code', language, text }
+    : { kind: 'code', text };
 }
 
-/**
- * `html` without its comments, which GitHub never shows either. An unclosed comment stays, so no
- * text is hidden that GitHub would show.
- */
-function withoutComments(html: string): string {
-  let out = '';
-  let at = 0;
-  for (;;) {
-    const open = html.indexOf('<!--', at);
-    if (open === -1) break;
-    const end = html.indexOf('-->', open + 4);
-    if (end === -1) break;
-    out += html.slice(at, open);
-    at = end + 3;
-  }
-  return out + html.slice(at);
+function withoutNewline(text: string): string {
+  return text.endsWith('\n') ? text.slice(0, -1) : text;
 }

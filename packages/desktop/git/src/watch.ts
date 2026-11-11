@@ -43,9 +43,6 @@ const POLL = 50;
 /** How often the progress function hears what the fetch is doing, when nothing changes. */
 export const TELL_EVERY = 1000;
 
-/** How long git has to stop by itself, once asked to, before it's killed. */
-export const STOP_GRACE = 1000;
-
 /**
  * Which limit a stopped fetch ran out: GitHub didn't answer in time (`connect`), no objects came
  * in in time (`start`), once objects came in git got no further for too long (`stall`), or more
@@ -97,7 +94,9 @@ export function stoppedError(stopped: Stopped, what: string): GitError {
       message = `it's more than ${formatMegabytes(stopped.limit)}, so Lo stopped downloading it`;
       break;
     default:
-      return stopped.reason satisfies never;
+      throw new Error(
+        `a reason to stop a fetch Lo doesn't know: ${JSON.stringify(stopped.reason satisfies never)}`,
+      );
   }
   return new GitError({ kind: 'fetch', what, failure, message });
 }
@@ -237,7 +236,9 @@ export class FetchState {
           progress: progress ?? { stage: 'Receiving objects', done: 0, bytes: this.received },
         };
       default:
-        return this.stage satisfies never;
+        throw new Error(
+          `a fetch stage Lo doesn't know: ${JSON.stringify(this.stage satisfies never)}`,
+        );
     }
   }
 
@@ -259,7 +260,9 @@ export class FetchState {
       case Stage.Resolving:
         return progress ?? 'resolving deltas';
       default:
-        return this.stage satisfies never;
+        throw new Error(
+          `a fetch stage Lo doesn't know: ${JSON.stringify(this.stage satisfies never)}`,
+        );
     }
   }
 }
@@ -337,20 +340,32 @@ export interface WatchOptions {
   readonly afterStop?: ((pid: number) => Promise<void>) | undefined;
   /** Gets a line when Lo stops a fetch. */
   readonly log?: ((line: string) => void) | undefined;
+  /** Stops the fetch once it aborts, which then fails with its reason. */
+  readonly signal?: AbortSignal | undefined;
 }
 
-/** How a watched fetch ended: git exited by itself, whatever its status, or Lo stopped it. */
+/**
+ * How a watched fetch ended: git exited by itself, whatever its status, having brought `received`
+ * bytes as far as Lo could tell, or Lo stopped it.
+ */
 export type Watched =
-  | { readonly kind: 'finished'; readonly exit: Exit; readonly messages: string }
+  | {
+      readonly kind: 'finished';
+      readonly exit: Exit;
+      readonly messages: string;
+      readonly received: number;
+    }
   | { readonly kind: 'stopped'; readonly stopped: Stopped; readonly messages: string };
 
 /**
  * Runs `command`, a `git fetch` with `--progress`, under watch: tells `options.progress` what it's
  * doing, and stops it when it runs out a limit. Lines that aren't progress are its messages. The
- * progress function is never told anything after this returns; if it throws, git is stopped and
- * the error goes on. Either way, a git Lo stopped is cleaned up after with `options.afterStop`.
+ * progress function is never told anything after this returns; if it throws, or `options.signal`
+ * aborts, git is stopped and the error goes on. Either way, a git Lo stopped is cleaned up after
+ * with `options.afterStop`.
  */
 export async function watch(command: GitCommand, options: WatchOptions): Promise<Watched> {
+  options.signal?.throwIfAborted();
   const trace = await TraceFile.create(options.trace);
   const pack = options.packs === undefined ? undefined : await PackFiles.start(options.packs);
   let child: Child | undefined;
@@ -400,12 +415,13 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
     for (;;) {
       await Promise.race([running.gone.catch(() => undefined), sleep(POLL)]);
       if (exited) break;
+      options.signal?.throwIfAborted();
       await trace.read((event) => state.onTrace(event));
       if (pack !== undefined) state.onWritten(await pack.size());
       const over = state.over(options.limits, options.whole, options.maxBytes);
       if (over !== undefined) {
         stopped = { ...over, doing: state.doing(), pid: running.pid ?? 0 };
-        await stopGroup(running);
+        await running.stopGently();
         break;
       }
       if (state.untold.length > 0 || Date.now() - told >= TELL_EVERY) {
@@ -419,7 +435,9 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
     take(line);
     if (stopped === undefined) {
       if (state.untold.length > 0) tell();
-      return { kind: 'finished', exit, messages };
+      // A fetch that finished between two looks wrote packs the watch never saw.
+      const written = pack === undefined ? 0 : await pack.size();
+      return { kind: 'finished', exit, messages, received: Math.max(state.received, written) };
     }
     const said = messages.trim() === '' ? '' : `; git said: ${messages.trim()}`;
     options.log?.(
@@ -430,7 +448,7 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
     return { kind: 'stopped', stopped, messages };
   } catch (error) {
     if (child !== undefined && !cleaned) {
-      await stopGroup(child);
+      await child.stopGently();
       await child.exited.catch(() => undefined);
       if (child.pid !== undefined) await options.afterStop?.(child.pid);
     }
@@ -476,16 +494,6 @@ export class PackFiles {
     }
     return total;
   }
-}
-
-/**
- * Stops `child`'s process group: asks first, with SIGTERM, so that git removes its lock files and
- * temporary files itself, then kills whatever is still running {@link STOP_GRACE} later.
- */
-async function stopGroup(child: Child): Promise<void> {
-  child.stop('SIGTERM');
-  await Promise.race([child.gone.catch(() => undefined), sleep(STOP_GRACE)]);
-  child.stop('SIGKILL');
 }
 
 function sleep(milliseconds: number): Promise<void> {

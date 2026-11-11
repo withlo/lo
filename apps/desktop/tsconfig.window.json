@@ -8,7 +8,8 @@
     "src/window/**/*.ts",
     "src/window/**/*.tsx",
     "src/features/*/window/**/*.ts",
-    "src/features/*/window/**/*.tsx"
+    "src/features/*/window/**/*.tsx",
+    "src/features/*/keys.ts"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/test/**"],
   "references": [

@@ -14,8 +14,7 @@ also work. Every key can be remapped in `~/.config/lo/keymap`.
 - **Write keys in their macOS form in docs.** On Linux, Ctrl replaces `⌘`; the app shows each
   platform its own. The exceptions are under Linux, below.
 - **Don't take a key that's already used,** by Lo or by Vim habits people bring with them
-  (`j k w b gg G v / n`). Check the key table in section 12 of [`docs/design.md`](../docs/design.md)
-  before adding one.
+  (`j k w b gg G v / n`). Check [`docs/keys.md`](../docs/keys.md) before adding one.
 - **Copying is `y` plus a letter** (`yy`, `yl`, `yp`, `ya`). There is no single-key `y`, so none
   collides with them.
 - **Families stay families.** `]`/`[` jump forward and back, `g` goes somewhere, `z` folds, `⌘` acts

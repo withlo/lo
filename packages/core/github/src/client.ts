@@ -5,6 +5,7 @@ import {
   classifyNetworkError,
   GithubError,
   parseSsoHeader,
+  type GithubErrorDetail,
   type NetworkFailure,
   type SsoHeader,
 } from './errors.ts';
@@ -146,7 +147,38 @@ export interface SendOptions {
 interface Shared {
   token: Token | undefined;
   state: ClientState;
+  /** GitHub's latest refusals for the rate limit, oldest first ({@link GithubClient.rateLimited}). */
+  limited: HeardLimit[];
+  /** GitHub's latest run of writes turned away as content sent too fast ({@link GithubClient.tooFast}). */
+  tooFast: TooFast | undefined;
 }
+
+/** A refusal for the rate limit, used up or secondary. */
+export type RateLimited = Extract<GithubErrorDetail, { kind: 'rateLimited' }>;
+
+/**
+ * A refusal for the rate limit as a client heard it: what GitHub said, and when, in milliseconds:
+ * `at` since the Unix epoch, and `monotonic` by `performance.now()`, a clock that only moves
+ * forward, which times the waits GitHub asks for.
+ */
+export interface HeardLimit {
+  readonly detail: RateLimited;
+  readonly at: number;
+  readonly monotonic: number;
+}
+
+/**
+ * A run of writes GitHub turned away as content sent too fast ("was submitted too quickly"), as the
+ * account's poller heard it: how many in a row, and until when writes wait after the last, in
+ * milliseconds by the monotonic clock.
+ */
+export interface TooFast {
+  readonly inARow: number;
+  readonly until: number;
+}
+
+/** How many of GitHub's latest refusals for the rate limit a client keeps. */
+const LIMITED_KEPT = 8;
 
 /**
  * One account's client, or one without an account. Clients made from it with
@@ -168,6 +200,8 @@ export class GithubClient {
     this.#shared = shared ?? {
       token: options.token,
       state: { rateLimits: new RateLimits(), sso: undefined },
+      limited: [],
+      tooFast: undefined,
     };
     this.#store = options.store;
     this.#onUnauthorized = options.onUnauthorized;
@@ -217,6 +251,39 @@ export class GithubClient {
   }
 
   /**
+   * GitHub's latest refusals for the rate limit, to this client and those sharing its state, oldest
+   * first: the last few, each the same object every time it's asked for. Each is recorded before the
+   * request's gate lets the next request go, so whatever waits for its turn behind the request can
+   * see that GitHub asked to wait before it sends anything.
+   */
+  rateLimited(): readonly HeardLimit[] {
+    return [...this.#shared.limited];
+  }
+
+  /**
+   * GitHub's latest run of writes it turned away as content sent too fast, to this client and those
+   * sharing its state, as {@link GithubClient.setTooFast} last recorded it. It's kept here with the
+   * refusals for the rate limit, so a poller that replaces another holds writes as long.
+   */
+  tooFast(): TooFast | undefined {
+    return this.#shared.tooFast;
+  }
+
+  /** Records GitHub's latest run of writes turned away as content sent too fast ({@link GithubClient.tooFast}). */
+  setTooFast(tooFast: TooFast | undefined): void {
+    this.#shared.tooFast = tooFast;
+  }
+
+  /** Records `error`, if it's a refusal for the rate limit ({@link GithubClient.rateLimited}). */
+  #heard(error: GithubError): void {
+    const { detail } = error;
+    if (detail.kind !== 'rateLimited') return;
+    const { limited } = this.#shared;
+    limited.push({ detail, at: Date.now(), monotonic: performance.now() });
+    if (limited.length > LIMITED_KEPT) limited.splice(0, limited.length - LIMITED_KEPT);
+  }
+
+  /**
    * The URL for `path`, which is either relative to the API or a full URL under the API's or
    * the uploads' address. Anything else is refused, so the token goes nowhere else.
    */
@@ -248,15 +315,25 @@ export class GithubClient {
    * sent again once with it.
    */
   async send(method: string, path: string, options: SendOptions = {}): Promise<RestResponse> {
+    return this.#request(method, path, options, (response) => response);
+  }
+
+  /** {@link GithubClient.send}, with `inspect` run on a successful answer before the gate lets the next request go. */
+  async #request<T>(
+    method: string,
+    path: string,
+    options: SendOptions,
+    inspect: (response: RestResponse) => T,
+  ): Promise<T> {
     const token = this.token;
     try {
-      return await this.#sendWith(token, method, path, options);
+      return await this.#sendWith(token, method, path, options, inspect);
     } catch (error) {
       if (!(error instanceof GithubError) || !error.isUnauthorized() || token === undefined)
         throw error;
       const renewed = await this.tokenAfterRefusal(token);
       if (renewed === undefined) throw error;
-      return this.#sendWith(renewed, method, path, options);
+      return this.#sendWith(renewed, method, path, options, inspect);
     }
   }
 
@@ -272,19 +349,23 @@ export class GithubClient {
     return renewed;
   }
 
-  async #sendWith(
+  async #sendWith<T>(
     token: Token | undefined,
     method: string,
     path: string,
     options: SendOptions,
-  ): Promise<RestResponse> {
-    const response = await this.sendUnchecked(token, method, path, options);
-    const ok =
-      (response.status >= 200 && response.status < 300) ||
-      response.status === 304 ||
-      (options.answers ?? []).includes(response.status);
-    if (ok) return response;
-    throw GithubError.fromResponse(response.status, response.headers, response.text());
+    inspect: (response: RestResponse) => T,
+  ): Promise<T> {
+    return this.#held(token, method, path, options, (response) => {
+      const ok =
+        (response.status >= 200 && response.status < 300) ||
+        response.status === 304 ||
+        (options.answers ?? []).includes(response.status);
+      if (ok) return inspect(response);
+      const error = GithubError.fromResponse(response.status, response.headers, response.text());
+      this.#heard(error);
+      throw error;
+    });
   }
 
   /**
@@ -297,6 +378,21 @@ export class GithubClient {
     path: string,
     options: SendOptions = {},
   ): Promise<RestResponse> {
+    return this.#held(token, method, path, options, (response) => response);
+  }
+
+  /**
+   * {@link GithubClient.sendUnchecked}, running `inspect` on the answer while the request still
+   * holds its gate, so what the answer says about the rate limit is recorded before the next
+   * request goes.
+   */
+  async #held<T>(
+    token: Token | undefined,
+    method: string,
+    path: string,
+    options: SendOptions,
+    inspect: (response: RestResponse) => T,
+  ): Promise<T> {
     let url = this.url(path);
     let currentMethod = method;
     let body = options.body;
@@ -308,7 +404,7 @@ export class GithubClient {
         const redirected = [301, 302, 303, 307, 308].includes(response.status);
         const follow = options.followRedirects ?? true;
         if (!follow || !redirected || location === undefined || redirects === MAX_REDIRECTS) {
-          return response;
+          return inspect(response);
         }
         url = this.url(new URL(location, url).href);
         if (
@@ -482,20 +578,41 @@ export class GithubClient {
     document: TypedDocumentString<TResult, TVariables>,
     variables: TVariables,
   ): Promise<GraphQLResponse<TResult> & { headers: Headers }> {
+    const { response } = await this.#graphqlAnswer(document, variables);
+    return response;
+  }
+
+  /**
+   * A GraphQL operation's answer, and the error its errors make, if any, built and recorded while
+   * the request still holds its gate, as a rate limit GitHub reports in them must be.
+   */
+  async #graphqlAnswer<TResult, TVariables>(
+    document: TypedDocumentString<TResult, TVariables>,
+    variables: TVariables,
+  ): Promise<{
+    response: GraphQLResponse<TResult> & { headers: Headers };
+    error: GithubError | undefined;
+  }> {
     const query = String(document);
     const operationName = /\b(?:query|mutation|subscription)\s+(\w+)/.exec(query)?.[1];
     const body = JSON.stringify({ query, operationName, variables });
-    const response = await this.send('POST', '/graphql', { body });
-    let decoded: GraphQLResponse;
-    try {
-      decoded = decodeGraphQL(response.text());
-    } catch (error) {
-      throw new GithubError({ kind: 'decode', message: String(error) }, { cause: error });
-    }
-    if (decoded.rateLimit) this.#shared.state.rateLimits.recordGraphQLField(decoded.rateLimit);
-    // The generated types follow GitHub's schema, and the data is taken as they describe it.
-    const data = decoded.data === undefined ? undefined : unchecked<TResult>(decoded.data);
-    return { ...decoded, data, headers: response.headers };
+    return this.#request('POST', '/graphql', { body }, (answer) => {
+      let decoded: GraphQLResponse;
+      try {
+        decoded = decodeGraphQL(answer.text());
+      } catch (error) {
+        throw new GithubError({ kind: 'decode', message: String(error) }, { cause: error });
+      }
+      if (decoded.rateLimit) this.#shared.state.rateLimits.recordGraphQLField(decoded.rateLimit);
+      const error =
+        decoded.errors.length > 0
+          ? GithubError.fromGraphQL(decoded.errors, answer.headers)
+          : undefined;
+      if (error) this.#heard(error);
+      // The generated types follow GitHub's schema, and the data is taken as they describe it.
+      const data = decoded.data === undefined ? undefined : unchecked<TResult>(decoded.data);
+      return { response: { ...decoded, data, headers: answer.headers }, error };
+    });
   }
 
   /**
@@ -506,8 +623,9 @@ export class GithubClient {
     document: TypedDocumentString<TResult, TVariables>,
     variables: TVariables,
   ): Promise<TResult> {
-    const { data, errors, headers } = await this.graphqlPartial(document, variables);
-    if (errors.length > 0) throw GithubError.fromGraphQL(errors, headers);
+    const { response, error } = await this.#graphqlAnswer(document, variables);
+    if (error) throw error;
+    const { data } = response;
     if (data === undefined)
       throw new GithubError({ kind: 'decode', message: 'the response had no data' });
     return data;
@@ -524,13 +642,14 @@ export class GithubClient {
     variables: TVariables,
     depth: number,
   ): Promise<{ data: TResult; errors: GraphQLError[] }> {
-    const { data, errors, headers } = await this.graphqlPartial(document, variables);
-    if (data !== undefined && errors.every((error) => isBelow(error, depth))) {
+    const { response, error } = await this.#graphqlAnswer(document, variables);
+    const { data, errors } = response;
+    if (data !== undefined && errors.every((found) => isBelow(found, depth))) {
       return { data, errors };
     }
-    if (errors.length === 0)
+    if (error === undefined)
       throw new GithubError({ kind: 'decode', message: 'the response had no data' });
-    throw GithubError.fromGraphQL(errors, headers);
+    throw error;
   }
 
   /** The signed-in user and the token's scopes (`GET /user`). */

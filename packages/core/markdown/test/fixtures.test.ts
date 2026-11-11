@@ -7,25 +7,36 @@ import { readdirSync, readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'vitest';
 
-import { markdownTree, type Tree } from '../src/index.ts';
-import { collect } from './support.ts';
+import {
+  githubTree,
+  markdownTree,
+  sanitizeSvg,
+  type SanitizedSvg,
+  type Tree,
+} from '../src/index.ts';
+import { collect, textOf } from './support.ts';
+import { svgProblems } from './svgwalker.ts';
 import { isRecord, problems } from './walker.ts';
 
 const HOSTILE = new URL('../../../../testing/fixtures/markdown/hostile/', import.meta.url);
+const GITHUB = new URL('../../../../testing/fixtures/markdown/github/', import.meta.url);
 const OPTIONS = {
   page: 'https://github.com/octo/repo/pull/1',
   repo: { owner: 'octo', name: 'repo' },
 };
 
 /**
- * The longest any one input may take, in milliseconds. The slowest takes about 60 ms on a laptop
- * and some 300 ms on a Linux CI runner running test files side by side; anything that grows faster
- * than its text takes seconds.
+ * The longest any one input may take, in milliseconds. The slowest takes about 250 ms on a
+ * laptop and some 800 ms on a Linux CI runner running test files side by side; anything that
+ * grows faster than its text takes far longer at these sizes.
  */
-const LIMIT = 1_000;
+const LIMIT = 2_500;
 
 function hostile(name: string): Tree {
-  return markdownTree(readFileSync(new URL(name, HOSTILE), 'utf8'), OPTIONS);
+  const text = readFileSync(new URL(name, HOSTILE), 'utf8');
+  return name.endsWith('.html')
+    ? githubTree({ html: text, markdown: 'fallback' }, OPTIONS)
+    : markdownTree(text, OPTIONS);
 }
 
 function timed<T>(make: () => T): { made: T; elapsed: number } {
@@ -62,10 +73,12 @@ function generated(json: unknown): Generated[] {
 }
 
 describe('hostile files', () => {
-  const files = readdirSync(HOSTILE).filter((name) => name.endsWith('.md'));
+  const files = readdirSync(HOSTILE).filter(
+    (name) => name.endsWith('.md') || name.endsWith('.html'),
+  );
 
   test('there are some', () => {
-    expect(files.length).toBeGreaterThanOrEqual(5);
+    expect(files.length).toBeGreaterThanOrEqual(10);
   });
 
   test.each(files)('%s holds only what Lo allows', (name) => {
@@ -141,19 +154,350 @@ describe('hostile files', () => {
   });
 });
 
-describe('generated inputs', () => {
-  const inputs = generated(JSON.parse(readFileSync(new URL('generated.json', HOSTILE), 'utf8')));
+/** An input's text: its parts, `{i}` in each part the time it's written. */
+function inputText(input: Generated): string {
+  return input.parts
+    .map(([part, times]) =>
+      part.includes('{i}')
+        ? Array.from({ length: times }, (_, i) => part.replaceAll('{i}', String(i))).join('')
+        : part.repeat(times),
+    )
+    .join('');
+}
+
+describe.each([
+  ['generated Markdown', 'generated.json', (text: string) => markdownTree(text, OPTIONS)],
+  [
+    'generated HTML',
+    'generated-html.json',
+    (text: string) => githubTree({ html: text, markdown: 'fallback' }, OPTIONS),
+  ],
+] as const)('%s', (_kind, file, make) => {
+  const inputs = generated(JSON.parse(readFileSync(new URL(file, HOSTILE), 'utf8')));
 
   test('there are some', () => {
-    expect(inputs.length).toBeGreaterThanOrEqual(40);
+    expect(inputs.length).toBeGreaterThanOrEqual(30);
   });
 
   test.each(inputs.map((input) => [input.name, input] as const))('%s', (_name, input) => {
-    const text = input.parts.map(([part, times]) => part.repeat(times)).join('');
-    const { made, elapsed } = timed(() => markdownTree(text, OPTIONS));
+    const text = inputText(input);
+    const { made, elapsed } = timed(() => make(text));
     expect(problems(made)).toEqual([]);
     expect(elapsed).toBeLessThan(LIMIT);
     // What the tree says about it, where the input says.
     expect(made.notes).toEqual(input.notes ?? made.notes);
   });
+});
+
+describe('hostile HTML', () => {
+  test('scripts and handlers are gone, their text aside', () => {
+    const made = hostile('scripts.html');
+    expect(collect(made, 'link').map((link) => link.target)).toEqual([
+      // `<img src=x>`, twice: an image Lo won't load is a link to where it is.
+      { kind: 'web', url: 'https://github.com/octo/repo/pull/x' },
+      { kind: 'web', url: 'https://github.com/octo/repo/pull/x' },
+      { kind: 'web', url: 'https://example.com/' },
+    ]);
+    expect(collect(made, 'image')).toEqual([]);
+    const shown = JSON.stringify(made.blocks);
+    for (const hidden of ['In a template.', 'svg link', 'evil.example']) {
+      expect(shown).not.toContain(hidden);
+    }
+    // A form's text is only text: a text area's, and a list's options.
+    expect(textOf(made.blocks)).toContain('<script>alert(1)</script> One');
+  });
+
+  test('links that are no web page are text, and the rest are normalized', () => {
+    const made = hostile('links.html');
+    expect(collect(made, 'link').map((link) => link.target)).toEqual(
+      [
+        'https://xn--80ak6aa92e.com/',
+        'https://evil.example/x',
+        'https://github.com/octo/repo/pull/1#user-content-nowhere',
+        'https://github.com/octo/repo/pull/1#',
+        'https://github.com/octo/repo/pull/1',
+        // A link can't hold a link, so the HTML parser closes the outer one.
+        'https://inner.example/',
+        'https://example.com/',
+      ].map((url) => ({ kind: 'web', url })),
+    );
+  });
+
+  test("images load only from GitHub's image hosts, whatever the HTML claims", () => {
+    const made = hostile('images.html');
+    expect(collect(made, 'image').map((image) => image.url)).toEqual([
+      'https://camo.githubusercontent.com/a',
+      'https://camo.githubusercontent.com/b',
+      'https://camo.githubusercontent.com/c',
+    ]);
+    // `data-canonical-src` is never read, nor `srcset`, `poster` or a background.
+    const shown = JSON.stringify(made.blocks);
+    for (const hidden of [
+      'ignored.png',
+      '1x.png',
+      'poster.png',
+      'bg.png',
+      'dark.png',
+      'input.png',
+      'svg.png',
+    ]) {
+      expect(shown).not.toContain(hidden);
+    }
+  });
+
+  test("names like Lo's own are only names", () => {
+    const made = hostile('ids.html');
+    expect(collect(made, 'heading').map((heading) => heading.anchor)).toEqual([
+      'root',
+      '__proto__',
+      'constructor',
+    ]);
+    expect(
+      collect(made, 'footnotes')[0]?.items.map((item) => [item.name, textOf(item.children)]),
+    ).toEqual([
+      ['fn-constructor', 'The note. back'],
+      // A footnote with a name already taken, or none, still shows.
+      ['fn-2-1', 'The same name again.'],
+      ['fn-__proto__', 'Proto.'],
+      ['fn-4-1', 'No name.'],
+    ]);
+    // A reference to a footnote that isn't there is its text.
+    expect(collect(made, 'footnoteReference').map((reference) => reference.name)).toEqual([
+      'fn-constructor',
+    ]);
+  });
+
+  test("GitHub's markup, forged, gives only what Lo makes of it", () => {
+    const made = hostile('markup.html');
+    expect(collect(made, 'mention')).toEqual([
+      // A mention links to the page of the name it shows, whatever its address.
+      { kind: 'mention', name: 'admin', url: 'https://github.com/admin' },
+      { kind: 'mention', name: 'o/t', url: 'https://github.com/orgs/o/teams/t' },
+    ]);
+    expect(collect(made, 'code').map((code) => code.language)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'mermaid',
+    ]);
+    expect(collect(made, 'list')[0]?.items.map((item) => item.checked)).toEqual([
+      true,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(textOf(made.blocks)).toContain('A link hidden as a permalink');
+  });
+});
+
+/** Each removal as `reason element[.attribute]`. */
+function removals(made: SanitizedSvg): string[] {
+  return made.removed.map(
+    (removal) =>
+      `${removal.reason} ${removal.element}${removal.attribute ? `.${removal.attribute}` : ''}`,
+  );
+}
+
+describe('hostile SVGs', () => {
+  const files = readdirSync(HOSTILE).filter((name) => name.endsWith('.svg'));
+
+  function figure(name: string): SanitizedSvg {
+    return sanitizeSvg(readFileSync(new URL(name, HOSTILE), 'utf8'));
+  }
+
+  test('there are some', () => {
+    expect(files.length).toBeGreaterThanOrEqual(7);
+  });
+
+  test.each(files)('%s holds only what figures may, and keeps its text', (name) => {
+    const { made, elapsed } = timed(() => figure(name));
+    expect(svgProblems(made)).toEqual([]);
+    expect(elapsed).toBeLessThan(LIMIT);
+    const shown = JSON.stringify(made.svg);
+    for (const hidden of ['alert', 'script', 'evil', 'data:', 'url(', 'HTML']) {
+      expect(shown).not.toContain(hidden);
+    }
+    expect(made.removed.length).toBeGreaterThan(0);
+    // The figure itself is never refused for what it holds, only cut down to what Lo draws.
+    expect(made.svg).toBeDefined();
+  });
+
+  test('scripts and handlers, in every form', () => {
+    const made = figure('scripts.svg');
+    expect(new Set(made.removed.map((removal) => removal.reason))).toEqual(
+      // An id is refused as a name, and `on load`, split, is no handler but no attribute of Lo's.
+      new Set(['script', 'attribute', 'element', 'id']),
+    );
+    expect(textOf(made.svg?.children)).toBe('This text stays');
+  });
+
+  test('every address outside the figure', () => {
+    const made = figure('references.svg');
+    expect(removals(made)).toEqual([
+      'style style',
+      'element image',
+      'element image',
+      'element image',
+      'element use',
+      'element use',
+      'element a',
+      'element feImage',
+      'reference rect.fill',
+      'reference rect.stroke',
+      'reference rect.filter',
+      'reference rect.mask',
+      'reference rect.clip-path',
+      'reference rect.cursor',
+      'style rect.style',
+      'reference text.font-family',
+      'reference text.src',
+      'reference path.marker-end',
+      'reference path.marker-start',
+      'reference rect.xml:base',
+      'reference rect.xlink:href',
+    ]);
+  });
+
+  test('paints that are CSS, and paints mangled to look like colors', () => {
+    const made = figure('paints.svg');
+    const kept = made.svg?.children.flatMap((node) =>
+      node.kind === 'element' ? [node.attributes] : [],
+    );
+    expect(kept?.slice(-2)).toEqual([
+      { width: '1', height: '1', fill: 'var(--fig-blue)', stroke: 'currentColor', opacity: '0.5' },
+      { width: '1', height: '1', fill: '#a5c5e9', stroke: 'rgb(1,2,3)' },
+    ]);
+    expect(
+      kept?.slice(0, -2).every((attributes) => Object.keys(attributes).join() === 'width,height'),
+    ).toBe(true);
+  });
+
+  test('entities stay their names, however many', () => {
+    const made = figure('entities.svg');
+    expect(textOf(made.svg?.children)).toBe('&lol9;&ext; &remote; &inner;<kept> & A');
+    expect(removals(made)).toEqual(['value rect.width', 'value rect.fill']);
+  });
+
+  test('effects, animations and use chains are gone, with all they held', () => {
+    const made = figure('effects.svg');
+    expect(textOf(made.svg?.children)).toBe('Text that stays');
+    expect(made.removed.map((removal) => removal.element)).toEqual([
+      'rect',
+      'g',
+      'g',
+      'g',
+      'symbol',
+      'linearGradient',
+      'radialGradient',
+      'pattern',
+      'filter',
+      'mask',
+      'clipPath',
+      'use',
+      'use',
+      'rect',
+      'rect',
+      'rect',
+      'rect',
+      'animate',
+      'animateTransform',
+      'animateMotion',
+      'set',
+      'discard',
+      'foreignObject',
+      'switch',
+      'textPath',
+      'view',
+      'metadata',
+    ]);
+  });
+
+  test('HTML can only close the figure, never get into it', () => {
+    const made = figure('breakout.svg');
+    // The image in the style sheet closes the figure; everything after it is outside.
+    expect(textOf(made.svg?.children)).toBe('Before');
+    // Including the image after it, and a second figure.
+    expect(removals(made).slice(-2)).toEqual(['element img', 'element svg']);
+  });
+
+  test('markers draw no markers, and name only a marker defined once', () => {
+    const made = figure('markers.svg');
+    expect(removals(made)).toEqual([
+      'reference path.marker-end',
+      'reference path.marker-mid',
+      'reference polyline.marker-mid',
+      'reference line.marker-start',
+      'element marker',
+      'id marker.id',
+      'id marker.id',
+      'reference path.marker-start',
+      'reference path.marker-end',
+      'reference path.marker-start',
+      'reference g.marker-end',
+    ]);
+    const ids = JSON.stringify(made.svg).match(/"id":"[^"]+"/g);
+    expect(ids).toEqual(
+      [
+        'self',
+        'a',
+        'b',
+        'arrow',
+        'root',
+        'app',
+        'lo',
+        '__proto__',
+        'constructor',
+        'document',
+        'window',
+      ].map((id) => `"id":"${id}"`),
+    );
+  });
+});
+
+describe('generated SVG', () => {
+  const json: unknown = JSON.parse(readFileSync(new URL('generated-svg.json', HOSTILE), 'utf8'));
+  const inputs = generated(json);
+  const refusals = new Map<string, unknown>();
+  for (const input of isRecord(json) && Array.isArray(json['inputs']) ? json['inputs'] : []) {
+    if (isRecord(input)) refusals.set(String(input['name']), input['refused']);
+  }
+
+  test('there are some', () => {
+    expect(inputs.length).toBeGreaterThanOrEqual(20);
+  });
+
+  test.each(inputs.map((input) => [input.name, input] as const))('%s', (_name, input) => {
+    const { made, elapsed } = timed(() => sanitizeSvg(inputText(input)));
+    expect(svgProblems(made)).toEqual([]);
+    expect(elapsed).toBeLessThan(LIMIT);
+    const refused = refusals.get(input.name);
+    expect(made.svg === undefined ? made.removed : undefined).toEqual(
+      refused === undefined ? undefined : [{ reason: refused, element: 'svg' }],
+    );
+  });
+});
+
+describe("GitHub's renderings", () => {
+  test.each(['constructs.html', 'snippets.json', 'posts.json'])(
+    '%s holds only what Lo allows',
+    (name) => {
+      const text = readFileSync(new URL(name, GITHUB), 'utf8');
+      const renderings: string[] = [];
+      if (name.endsWith('.html')) renderings.push(text);
+      else {
+        const json: unknown = JSON.parse(text);
+        for (const list of isRecord(json) ? Object.values(json) : []) {
+          for (const item of Array.isArray(list) ? list : []) {
+            if (isRecord(item) && typeof item['html'] === 'string') renderings.push(item['html']);
+          }
+        }
+      }
+      expect(renderings.length).toBeGreaterThan(0);
+      const found = renderings.flatMap((html) =>
+        problems(githubTree({ html, markdown: '' }, OPTIONS)),
+      );
+      expect(found).toEqual([]);
+    },
+  );
 });

@@ -29,6 +29,11 @@ mutation AddPullRequestReviewThread(
       comments(first: 1) {
         nodes {
           id
+          # The head GitHub put the thread on: the pull request's head when it got the mutation,
+          # which may be newer than the one the comment was written on.
+          commit {
+            oid
+          }
           pullRequestReview {
             id
           }
