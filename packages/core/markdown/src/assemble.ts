@@ -41,7 +41,13 @@ const LEAVES = new Set([
 
 /** `text` as one plain paragraph, or nothing when it's empty. */
 export function plainBlocks<X extends Extension = Plain>(text: string): Block<X>[] {
-  const value = text.replace(/^\n+|\n+$/g, '');
+  // Trimmed by hand: a regular expression for a run at the end tries again at every newline of a
+  // run inside, which takes time in the square of its length.
+  let start = 0;
+  let end = text.length;
+  while (start < end && text[start] === '\n') start += 1;
+  while (end > start && text[end - 1] === '\n') end -= 1;
+  const value = text.slice(start, end);
   return value === '' ? [] : [{ kind: 'paragraph', children: [{ kind: 'text', value }] }];
 }
 

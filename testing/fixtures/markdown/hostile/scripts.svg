@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 860 120" onload="alert('svg onload')">
+  <script>alert('a script')</script>
+  <script type="text/ecmascript"><![CDATA[ alert('in CDATA') ]]></script>
+  <SCRIPT>alert('upper case')</SCRIPT>
+  <script xlink:href="data:text/javascript,alert('script by address')"/>
+  <script href="https://evil.example/script.js"></script>
+  <svg:script>alert('prefixed')</svg:script>
+  <handler type="application/ecmascript">alert('handler')</handler>
+  <rect width="10" height="10" onclick="alert('onclick')" ONMOUSEOVER="alert('upper')" OnFocus="alert('mixed')" onbegin="alert('onbegin')" xlink:onload="alert('prefixed handler')"/>
+  <circle r="5" on load="alert('split')" onerror ="alert('spaced')"/>
+  <animate attributeName="onclick" to="alert('set by animation')"/>
+  <set attributeName="href" to="javascript:alert('set')" begin="0s"/>
+  <a href="javascript:alert('link')"><text x="0" y="20">click</text></a>
+  <a xlink:href="&#106;avascript:alert('entity')"><rect width="1" height="1"/></a>
+  <path d="M0 0h10" fill="javascript:alert('paint')" stroke="java&#x09;script:alert('tab')" id="javascript:alert(1)"/>
+  <desc><script>alert('HTML in a description')</script><img src="x" onerror="alert('img')"></desc>
+  <title><iframe srcdoc="&lt;script&gt;alert('srcdoc')&lt;/script&gt;"></iframe></title>
+  <foreignObject width="100" height="100"><body xmlns="http://www.w3.org/1999/xhtml"><script>alert('foreign')</script></body></foreignObject>
+  <text x="0" y="40">This text stays</text>
+</svg>
