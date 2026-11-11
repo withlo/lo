@@ -1,7 +1,7 @@
-// The blocks the diff view draws between lines: file headers, collapsed code, notes on files not
-// shown, threads, the labels on moved code, and the spacers that keep the two sides lined up. A
-// block that starts a row with lines on both sides carries the row's key as `data-row`, as the
-// first line of a row does, so the alignment drawn on screen can be checked row by row.
+// The blocks the diff view draws between lines: file headers, with notes on files not shown,
+// collapsed code, threads, the labels on moved code, and the spacers that keep the two sides lined
+// up. A block that starts a row with lines on both sides carries the row's key as `data-row`, as
+// the first line of a row does, so the alignment drawn on screen can be checked row by row.
 
 import { WidgetType } from '@codemirror/view';
 
@@ -13,22 +13,39 @@ export interface HeaderInfo {
   deletions: number;
 }
 
-/** A file's header, the same on both sides. */
+/**
+ * A file's header, the same on both sides, with a note under it on why a file with no lines isn't
+ * shown. The note is part of the header's block, not a block after it: CodeMirror's decoration
+ * cursor can lose a block that sits after another at the same place when a chunk of decorations
+ * ends between them, and then draws it where it shouldn't, above the lines it draws.
+ */
 export class HeaderWidget extends WidgetType {
   readonly file: number;
   readonly info: HeaderInfo;
+  readonly note: string | undefined;
 
-  constructor(file: number, info: HeaderInfo) {
+  constructor(file: number, info: HeaderInfo, note?: string) {
     super();
     this.file = file;
     this.info = info;
+    this.note = note;
   }
 
   override eq(other: HeaderWidget): boolean {
-    return other.file === this.file;
+    return other.file === this.file && other.note === this.note;
   }
 
   toDOM(): HTMLElement {
+    const head = this.#head();
+    if (this.note === undefined) return head;
+    const block = element('div', 'lo-fileblock');
+    const note = element('div', 'lo-collapsed lo-filenote', this.note);
+    note.dataset.row = `n:${this.file}`;
+    block.append(head, note);
+    return block;
+  }
+
+  #head(): HTMLElement {
     const head = element('div', 'lo-filehead lo-diffhead');
     head.dataset.row = `h:${this.file}`;
     const path = element('span', 'lo-path');
@@ -47,7 +64,7 @@ export class HeaderWidget extends WidgetType {
   }
 
   override get estimatedHeight(): number {
-    return 38;
+    return this.note === undefined ? 38 : 66;
   }
 
   override ignoreEvent(): boolean {
@@ -133,69 +150,60 @@ export function fillerText(length: number, seed: number): string {
   return text.slice(0, length);
 }
 
-/** A review thread under a line, with its comments' lengths. */
-export class ThreadWidget extends WidgetType {
-  readonly id: string;
-  readonly comments: readonly number[];
+/** A review thread, by its id, with its comments' lengths. */
+export interface ThreadInfo {
+  id: string;
+  comments: readonly number[];
+}
 
-  constructor(id: string, comments: readonly number[]) {
+/**
+ * The review threads under a line, with their comments' lengths: one block for all of a line's
+ * threads, for the same reason as a header's note.
+ */
+export class ThreadWidget extends WidgetType {
+  readonly threads: readonly ThreadInfo[];
+
+  constructor(threads: readonly ThreadInfo[]) {
     super();
-    this.id = id;
-    this.comments = comments;
+    this.threads = threads;
   }
 
   override eq(other: ThreadWidget): boolean {
-    return other.id === this.id;
+    return (
+      other.threads.length === this.threads.length &&
+      other.threads.every((thread, index) => thread.id === this.threads[index]!.id)
+    );
   }
 
   toDOM(): HTMLElement {
-    // The space around the card is padding, not margin: the editor measures a block by its box,
-    // which leaves margins out.
-    const block = element('div', 'lo-diffthread');
-    const thread = element('div', 'lo-diffthread__card');
-    block.append(thread);
-    this.comments.forEach((length, index) => {
-      const comment = element('div', 'lo-diffthread__comment');
-      comment.append(
-        element('div', 'lo-diffthread__author', index === 0 ? 'reviewer' : 'author'),
-        element('p', 'lo-diffthread__body', fillerText(length, index)),
-      );
-      thread.append(comment);
-    });
+    const block = element('div', 'lo-diffthreads');
+    for (const { comments } of this.threads) {
+      // The space around the card is padding, not margin: the editor measures a block by its
+      // box, which leaves margins out.
+      const space = element('div', 'lo-diffthread');
+      const thread = element('div', 'lo-diffthread__card');
+      space.append(thread);
+      comments.forEach((length, index) => {
+        const comment = element('div', 'lo-diffthread__comment');
+        comment.append(
+          element('div', 'lo-diffthread__author', index === 0 ? 'reviewer' : 'author'),
+          element('p', 'lo-diffthread__body', fillerText(length, index)),
+        );
+        thread.append(comment);
+      });
+      block.append(space);
+    }
     return block;
   }
 
   /** About 90 characters a line of 20 pixels, plus each comment's author line and padding. */
   override get estimatedHeight(): number {
-    return (
-      16 + this.comments.reduce((total, length) => total + 38 + Math.ceil(length / 90) * 20, 0)
-    );
-  }
-}
-
-/** A note under a file's header where it has no lines: it's too large to show, or binary. */
-export class FileNoteWidget extends WidgetType {
-  readonly file: number;
-  readonly text: string;
-
-  constructor(file: number, text: string) {
-    super();
-    this.file = file;
-    this.text = text;
-  }
-
-  override eq(other: FileNoteWidget): boolean {
-    return other.file === this.file && other.text === this.text;
-  }
-
-  toDOM(): HTMLElement {
-    const note = element('div', 'lo-collapsed lo-filenote', this.text);
-    note.dataset.row = `n:${this.file}`;
-    return note;
-  }
-
-  override get estimatedHeight(): number {
-    return 28;
+    let height = 0;
+    for (const { comments } of this.threads) {
+      height +=
+        16 + comments.reduce((total, length) => total + 38 + Math.ceil(length / 90) * 20, 0);
+    }
+    return height;
   }
 }
 

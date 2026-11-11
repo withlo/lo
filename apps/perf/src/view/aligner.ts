@@ -4,7 +4,10 @@
 // drawn carries any difference left above it, so what's on screen lines up even where rows above
 // were never measured. Rows on screen that one editor draws and the other doesn't yet, after a
 // jump, start the region earlier; rows on one side at its end are caught up with above the next
-// row with lines on both.
+// row with lines on both. When no row is drawn on both, the anchored editor's rows are lined up
+// from the other's estimates, which brings the other's on screen. The shorter document gets space
+// after its end, so its editor always reaches the screen. Spacers far from what's drawn are let go,
+// and the heights measured far from it forgotten, so a long session costs no more than a short one.
 //
 // It runs after CodeMirror has measured, and before the page is painted: an editor's measure
 // schedules it, and it first has both editors finish any measuring they have waiting, so it works
@@ -14,20 +17,25 @@
 // a block's size where CodeMirror doesn't look, such as a thread that grows or a window resized,
 // the editors' content resizes, and the pass runs then, also before the paint.
 //
-// It owns the scroll's anchor: a line kept at the same place on screen while heights above it
-// change. CodeMirror anchors the scroll too, in an editor that has focus or was just scrolled
-// with the wheel, to the line at the top of that editor, so the pass anchors to the same editor's
-// line. It takes the anchor when the scroll moves, before the next measure, and again after each
-// pass; a scroll it didn't make since, CodeMirror's or the user's, it takes as it finds it.
+// It owns the scroll's anchor: a line kept at the same place on screen while heights change, by
+// its own top, below any spacers and labels. It's the line on screen furthest from where rows come
+// into view, the top one on the way down and the bottom one on the way up, since rows coming in
+// are where spacers change and heights are first measured; or, in a focused editor, the cursor's.
+// It takes the anchor when the scroll moves, before the editors measure, and again after each
+// pass. CodeMirror anchors the scroll too, as it measures, to the top of an editor that has focus
+// or was just wheeled, and its tops take in the pass's spacers; the pass puts that right, but for
+// the scroll that brings a moved cursor into view.
 
-import { StateEffect, StateField } from '@codemirror/state';
+import { type Extension, StateEffect, StateField } from '@codemirror/state';
 import {
+  type BlockInfo,
   BlockType,
   Decoration,
   type DecorationSet,
   EditorView,
   ViewPlugin,
   type ViewUpdate,
+  WidgetType,
 } from '@codemirror/view';
 
 import { alignRows, type RowHeights, type SideHeights } from './align.ts';
@@ -45,7 +53,49 @@ interface Placed {
 /** Replaces the spacers between `from` and `to` with `spacers`. */
 const setSpacers = StateEffect.define<{ from: number; to: number; spacers: readonly Placed[] }>();
 
-export const spacerField = StateField.define<DecorationSet>({
+/** The aligner's fields, which every editor it lines up needs. */
+export function alignerFields(): Extension {
+  return [spacerField, endField, forgottenField];
+}
+
+/** Sets the height of the space after the document's end. */
+const setEnd = StateEffect.define<number>();
+
+/**
+ * Space after the end of the shorter document, so its editor reaches as far down as the other's:
+ * an editor that ended above the screen would draw nothing there, and the pass would have nothing
+ * of it to line up.
+ */
+const endField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(end, transaction) {
+    for (const effect of transaction.effects) {
+      if (!effect.is(setEnd)) continue;
+      const height = effect.value;
+      const at = transaction.state.doc.length;
+      return height > 0
+        ? Decoration.set(
+            Decoration.widget({ widget: new SpacerWidget(height), block: true, side: 3 }).range(at),
+          )
+        : Decoration.none;
+    }
+    return end.map(transaction.changes);
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+/** The height of `view`'s document without the space after its end. */
+function ownHeight(view: EditorView): number {
+  return view.contentHeight - endHeight(view);
+}
+
+/** The height of the space after `view`'s document. */
+function endHeight(view: EditorView): number {
+  const widget: unknown = view.state.field(endField).iter().value?.spec.widget;
+  return widget instanceof SpacerWidget ? widget.height : 0;
+}
+
+const spacerField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
   update(spacers, transaction) {
     let next = spacers.map(transaction.changes);
@@ -67,6 +117,53 @@ export const spacerField = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field),
 });
 
+/**
+ * Lines far from the screen, replaced for one transaction by a block as tall as they are, so that
+ * CodeMirror builds them again as estimates when it's taken away. CodeMirror keeps every line it
+ * has measured in its height map, and every transaction walks the whole map, so without this a
+ * long session makes every transaction slower.
+ */
+const setForgotten = StateEffect.define<DecorationSet>();
+
+const forgottenField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(forgotten, transaction) {
+    for (const effect of transaction.effects) if (effect.is(setForgotten)) return effect.value;
+    return forgotten.map(transaction.changes);
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+/** A stretch of forgotten lines, as tall as they were. */
+class ForgottenWidget extends WidgetType {
+  readonly height: number;
+
+  constructor(height: number) {
+    super();
+    this.height = height;
+  }
+
+  override eq(other: ForgottenWidget): boolean {
+    return other.height === this.height;
+  }
+
+  toDOM(): HTMLElement {
+    const block = document.createElement('div');
+    block.style.height = `${this.height}px`;
+    return block;
+  }
+
+  override get estimatedHeight(): number {
+    return this.height;
+  }
+}
+
+/** How far the scroll travels, in pixels, between forgetting the lines far from the screen. */
+const forgetEvery = 100_000;
+
+/** How many lines around the drawn ones keep their measured heights when the rest are forgotten. */
+const keptLines = 2000;
+
 /** A row, by its file and its index among the file's rows. */
 interface RowRef {
   file: number;
@@ -75,6 +172,9 @@ interface RowRef {
 
 /** A line the scroll keeps in place: how far below the top of the scroller it starts. */
 interface Anchor {
+  /** The editor the scroll was anchored to when it was taken. */
+  for: Side;
+  /** The editor the line is in: that one, unless it had no line on screen. */
   side: Side;
   pos: number;
   offset: number;
@@ -108,7 +208,18 @@ export class Aligner {
   #running = false;
   #paused = false;
   #anchor: Anchor | undefined;
+  /** Which way the scroll last went: down (1) or up (-1). */
+  #direction: 1 | -1 = 1;
   readonly #wheel = { old: 0, new: 0 };
+  /** How far the scroll has gone since lines were last forgotten, and where it was then. */
+  #travel = 0;
+  #travelledFrom = 0;
+  /** Whether a cursor moved since the last pass, so a scroll CodeMirror makes is the cursor's. */
+  #selected = false;
+  /** The lines the last pass lined up on each side, which keep their spacers when others go. */
+  #lined: { old?: { from: number; to: number }; new?: { from: number; to: number } } = {};
+  /** Told of each scroll CodeMirror makes to bring a moved cursor into view, for the measurements. */
+  onCursorScroll: ((delta: number) => void) | undefined;
   readonly #resized: ResizeObserver;
 
   constructor(
@@ -126,7 +237,9 @@ export class Aligner {
     scroller.addEventListener(
       'scroll',
       () => {
-        if (this.#running || this.#scroller.scrollTop === this.#anchor?.scrollTop) return;
+        const top = this.#scroller.scrollTop;
+        if (this.#running || top === this.#anchor?.scrollTop) return;
+        if (this.#anchor) this.#direction = top > this.#anchor.scrollTop ? 1 : -1;
         this.#anchor = this.#anchorNow();
         this.schedule();
       },
@@ -162,9 +275,14 @@ export class Aligner {
         if (update.docChanged && anchor && update.view === this.#views[anchor.side]) {
           this.#anchor = { ...anchor, pos: update.changes.mapPos(anchor.pos) };
         }
+        if (update.selectionSet) this.#selected = true;
         if (this.#running) return;
         if (update.heightChanged || update.viewportChanged || update.geometryChanged) {
           this.schedule();
+        } else if (update.selectionSet) {
+          // A moved cursor can scroll the editor in its next measure, without its viewport
+          // changing: line up after that measure, before the paint, so the other side follows.
+          update.view.requestMeasure({ key: this, read: () => null, write: () => this.schedule() });
         }
       },
     }));
@@ -199,20 +317,36 @@ export class Aligner {
       let anchor = this.#anchor;
       if (
         !anchor ||
-        anchor.side !== side ||
+        anchor.for !== side ||
         Math.abs(anchor.scrollTop - this.#scroller.scrollTop) > 0.5
       ) {
         anchor = this.#anchorNow();
       }
+      this.#travel += Math.abs(this.#scroller.scrollTop - this.#travelledFrom);
+      this.#travelledFrom = this.#scroller.scrollTop;
+      if (this.#travel > forgetEvery) {
+        this.#travel = 0;
+        this.#forget();
+      }
+      this.#trim();
       for (let turn = 0; turn <= rounds; turn++) {
         const scrolled = this.#scroller.scrollTop;
         this.#measure();
-        // CodeMirror scrolled as it measured, to bring the cursor into view or to anchor an editor
-        // it anchors: that scroll stands, so the anchor is taken again from where it left things.
-        if (Math.abs(this.#scroller.scrollTop - scrolled) > 0.5) anchor = this.#anchorNow();
+        // CodeMirror scrolled as it measured. To bring a moved cursor into view, that scroll stands,
+        // so the anchor is taken again from where it left things. Otherwise it's CodeMirror's own
+        // anchoring, from the top of a block that can hold the pass's spacers, and the pass's
+        // anchor, taken before CodeMirror measured, puts it right.
+        if (turn === 0 && this.#selected && Math.abs(this.#scroller.scrollTop - scrolled) > 0.5) {
+          this.onCursorScroll?.(this.#scroller.scrollTop - scrolled);
+          anchor = this.#anchorNow();
+        }
         // The last round only measures, so what's drawn covers where the scroll ended up.
-        if (turn === rounds) break;
+        if (turn === rounds) {
+          this.#restore(anchor);
+          break;
+        }
         const spaced = this.#align();
+        this.#extend();
         const moved = this.#restore(anchor);
         anchor = this.#anchor!;
         changed ||= spaced;
@@ -220,11 +354,114 @@ export class Aligner {
       }
     } finally {
       this.#running = false;
+      this.#selected = false;
       const ms = performance.now() - started;
       this.stats.passes++;
       if (changed) this.stats.changed++;
       this.stats.totalMs += ms;
       this.stats.maxMs = Math.max(this.stats.maxMs, ms);
+    }
+  }
+
+  /**
+   * Has both editors forget the heights they measured far from what they draw: those lines are
+   * replaced by a block as tall as they are, then put back, so CodeMirror builds them again as
+   * estimates, in a height map that stays small. The pass then measures and anchors as usual.
+   */
+  #forget(): void {
+    for (const view of [this.#views.old, this.#views.new]) {
+      const { doc } = view.state;
+      const first = doc.lineAt(view.viewport.from).number - keptLines;
+      const last = doc.lineAt(view.viewport.to).number + keptLines;
+      const ranges = [];
+      if (first > 1) ranges.push({ from: 0, to: doc.line(first - 1).to });
+      if (last < doc.lines) ranges.push({ from: doc.line(last + 1).from, to: doc.length });
+      if (ranges.length === 0) continue;
+      const blocks = ranges.map(({ from, to }) => {
+        const height = view.lineBlockAt(to).bottom - view.lineBlockAt(from).top;
+        return Decoration.replace({ widget: new ForgottenWidget(height), block: true }).range(
+          from,
+          to,
+        );
+      });
+      view.dispatch({ effects: setForgotten.of(Decoration.set(blocks)) });
+      view.dispatch({ effects: setForgotten.of(Decoration.none) });
+    }
+  }
+
+  /**
+   * Keeps the spacers to those near what's drawn, so they don't pile up over a long session, and
+   * every transaction goes through them. Those far below go: the pass lines those rows up again
+   * when they're drawn. Those far above become one, as tall as they were, at the first line kept,
+   * so nothing below it moves.
+   */
+  #trim(): void {
+    for (const side of ['old', 'new'] as const) {
+      const view = this.#views[side];
+      const { doc } = view.state;
+      // What it draws and what the pass last lined up, which can reach further.
+      const lined = this.#lined[side];
+      const near = {
+        from: Math.min(view.viewport.from, lined?.from ?? doc.length),
+        to: Math.max(view.viewport.to, Math.min(lined?.to ?? 0, doc.length)),
+      };
+      const first = Math.max(1, doc.lineAt(near.from).number - keptLines);
+      const last = Math.min(doc.lines, doc.lineAt(near.to).number + keptLines);
+      const from = doc.line(first).from;
+      const to = doc.line(last).to;
+      const spacers = view.state.field(spacerField);
+      let above = 0;
+      let aboveCount = 0;
+      if (from > 0) {
+        spacers.between(0, from, (pos, _to, decoration) => {
+          const widget: unknown = decoration.spec.widget;
+          if (!(widget instanceof SpacerWidget)) return;
+          // Below the first line kept, when it's empty, it's kept.
+          if (pos === from && decoration.startSide >= 0) return;
+          above += widget.height;
+          aboveCount++;
+        });
+      }
+      let below = false;
+      if (to < doc.length) {
+        spacers.between(to + 1, doc.length, () => {
+          below = true;
+          return false;
+        });
+      }
+      if (aboveCount <= 1 && !below) continue;
+      const effects = below ? [setSpacers.of({ from: to + 1, to: doc.length, spacers: [] })] : [];
+      if (aboveCount > 1) {
+        effects.push(
+          setSpacers.of({
+            from: 0,
+            to: from,
+            spacers: above > 0 ? [{ pos: from, side: -1, height: round(above) }] : [],
+          }),
+        );
+      }
+      view.dispatch({ effects });
+    }
+  }
+
+  /**
+   * Makes the shorter editor reach as far down as the other, when it would otherwise end above the
+   * bottom of the screen, or beyond the other's end. It changes only the space after its end, so
+   * nothing drawn moves.
+   */
+  #extend(): void {
+    const reach = this.#scroller.scrollTop + 2 * this.#scroller.clientHeight;
+    for (const [view, beside] of [
+      [this.#views.old, this.#views.new],
+      [this.#views.new, this.#views.old],
+    ] as const) {
+      const end = endHeight(view);
+      const height = round(Math.max(0, ownHeight(beside) - ownHeight(view)));
+      if (end === height) continue;
+      // Short of the other's end, and a screen past this one, it can stay as it is.
+      const bottom = ownHeight(view) + end;
+      if (height > 0 && bottom <= ownHeight(beside) + 0.5 && bottom >= reach) continue;
+      view.dispatch({ effects: setEnd.of(height) });
     }
   }
 
@@ -243,7 +480,7 @@ export class Aligner {
    * draw has only an estimated height, which CodeMirror estimates again whenever a decoration next
    * to it changes, so measuring it or putting a spacer by it would leave the pass chasing its own
    * changes. Only when no row with lines on both sides is drawn on both, as while a jump has the
-   * sides far apart, does the pass work from the rows either editor draws.
+   * sides far apart, does the pass work from the rows the anchored editor draws alone.
    */
   #region(): { refs: RowRef[]; end?: RowRef | undefined } {
     const lines = (side: Side): { first: number; last: number } => {
@@ -256,12 +493,23 @@ export class Aligner {
     const old = lines('old');
     const added = lines('new');
     const layout = this.#layout;
-    const firstFile = Math.min(layout.fileAt('old', old.first), layout.fileAt('new', added.first));
-    const lastFile = Math.max(layout.fileAt('old', old.last), layout.fileAt('new', added.last));
-    const files = { first: firstFile, last: Math.min(lastFile + 1, layout.files.length - 1) };
-    const drawn = this.#drawn(files, old, added);
-    if (!drawn) return { refs: this.#either(files, old, added) };
-    return { refs: [...this.#leading(drawn[0]!, old, added), ...drawn], end: this.#endOf(drawn) };
+    const fileRange = (first: number, last: number): { first: number; last: number } => ({
+      first,
+      last: Math.min(last + 1, layout.files.length - 1),
+    });
+    // Rows both editors draw are in files both draw.
+    const both = fileRange(
+      Math.max(layout.fileAt('old', old.first), layout.fileAt('new', added.first)),
+      Math.min(layout.fileAt('old', old.last), layout.fileAt('new', added.last)),
+    );
+    const drawn = both.first <= both.last ? this.#drawn(both, old, added) : undefined;
+    if (drawn) {
+      return { refs: [...this.#leading(drawn[0]!, old, added), ...drawn], end: this.#endOf(drawn) };
+    }
+    const side = this.#anchor?.side ?? this.#anchorSide();
+    const range = side === 'old' ? old : added;
+    const files = fileRange(layout.fileAt(side, range.first), layout.fileAt(side, range.last));
+    return { refs: this.#either(side, files, range) };
   }
 
   /** The rows both editors draw, from the first with lines on both sides, if there's one. */
@@ -300,6 +548,7 @@ export class Aligner {
     added: { first: number; last: number },
   ): RowRef[] {
     const screen = this.#scroller.getBoundingClientRect().top;
+    const origins = { old: origin(this.#views.old), new: origin(this.#views.new) };
     const onScreen = (
       side: Side,
       line: number,
@@ -308,7 +557,7 @@ export class Aligner {
       if (line === -1 || line < range.first || line > range.last) return false;
       const view = this.#views[side];
       const block = view.lineBlockAt(view.state.doc.line(line).from);
-      return block.bottom + view.documentTop > screen;
+      return block.bottom + origins[side] > screen;
     };
     const rows: RowRef[] = [];
     let shown = false;
@@ -325,11 +574,15 @@ export class Aligner {
     return [];
   }
 
-  /** The rows either editor draws, widened to start and end on rows with lines on both sides. */
+  /**
+   * The rows `side`'s editor draws, the one the scroll is anchored to, widened to start and end on
+   * rows with lines on both sides: the other side's are lined up with them from its estimated
+   * heights, which brings them on screen, so it draws them next.
+   */
   #either(
+    side: Side,
     files: { first: number; last: number },
-    old: { first: number; last: number },
-    added: { first: number; last: number },
+    range: { first: number; last: number },
   ): RowRef[] {
     const refs: RowRef[] = [];
     let start = -1;
@@ -338,8 +591,9 @@ export class Aligner {
       const rows = this.#rows(file);
       for (let row = 0; row < rows.oldFirst.length; row++) {
         const inView =
-          overlaps(rows.oldFirst[row]!, rows.oldLast[row]!, old) ||
-          overlaps(rows.newFirst[row]!, rows.newLast[row]!, added);
+          side === 'old'
+            ? overlaps(rows.oldFirst[row]!, rows.oldLast[row]!, range)
+            : overlaps(rows.newFirst[row]!, rows.newLast[row]!, range);
         const paired = rows.oldFirst[row] !== -1 && rows.newFirst[row] !== -1;
         if (inView && start === -1) {
           // Back to the last row with lines on both sides.
@@ -409,36 +663,62 @@ export class Aligner {
         if (first === -1) continue;
         const { top, ...rest } = this.#heights(side, first, last);
         heights[side] = rest;
-        if (index === 0) tops[side] = top;
+        // Where it's drawn, which is what has to line up.
+        if (index === 0)
+          tops[side] = top + origin(this.#views[side]) - this.#views[side].documentTop;
       }
       if (end && index === refs.length - 1) heights.end = true;
       measured.push(heights);
     });
-    const current = { old: this.#current('old'), new: this.#current('new') };
-    const spacers = alignRows(measured, tops.old, tops.new, (side, row, place) => {
-      const { first, last } = lines(refs[row]!, side);
-      if (first === -1) return undefined;
-      const doc = this.#views[side].state.doc;
-      return place === 'above'
-        ? current[side].get(`${doc.line(first).from}:-1`)
-        : current[side].get(`${doc.line(last).to}:2`);
-    });
+    // The lines the region covers on each side, which its spacers replace: the end row's only
+    // where this side draws it.
+    const ranges: { old?: { from: number; to: number }; new?: { from: number; to: number } } = {};
+    for (const side of ['old', 'new'] as const) {
+      const { state, viewport } = this.#views[side];
+      let firstLine = -1;
+      let lastLine = -1;
+      for (const ref of refs) {
+        const { first, last } = lines(ref, side);
+        if (first === -1 || (ref === end && state.doc.line(first).from > viewport.to)) continue;
+        if (firstLine === -1) firstLine = first;
+        lastLine = ref === end ? first : last;
+      }
+      if (firstLine !== -1) {
+        ranges[side] = { from: state.doc.line(firstLine).from, to: state.doc.line(lastLine).to };
+      }
+    }
+    const current = {
+      old: this.#current('old', ranges.old),
+      new: this.#current('new', ranges.new),
+    };
+    const spacers = alignRows(
+      measured,
+      tops.old,
+      tops.new,
+      (side, row, place) => {
+        const { first, last } = lines(refs[row]!, side);
+        if (first === -1) return undefined;
+        const doc = this.#views[side].state.doc;
+        return place === 'above'
+          ? current[side].get(`${doc.line(first).from}:-1`)
+          : current[side].get(`${doc.line(last).to}:2`);
+      },
+      // Below lines a side doesn't draw, a spacer stays as it is: CodeMirror estimates the lines
+      // around a block widget again when one comes or goes, which would move the row's top, and
+      // the pass would go back and forth between the two.
+      (side, row) => {
+        const { last } = lines(refs[row]!, side);
+        const { state, viewport } = this.#views[side];
+        const to = state.doc.line(last).to;
+        return to < viewport.from || to > viewport.to;
+      },
+    );
 
     let changed = false;
     for (const side of ['old', 'new'] as const) {
       const view = this.#views[side];
       const doc = view.state.doc;
       const { viewport } = view;
-      let firstLine = -1;
-      let lastLine = -1;
-      for (const ref of refs) {
-        const { first, last } = lines(ref, side);
-        // The end row counts only where this side draws it.
-        if (first === -1 || (ref === end && doc.line(first).from > viewport.to)) continue;
-        if (firstLine === -1) firstLine = first;
-        lastLine = ref === end ? first : last;
-      }
-      if (firstLine === -1) continue;
       const placed = spacers
         // The end row's spacer goes only where this side draws it.
         .filter(
@@ -454,8 +734,10 @@ export class Aligner {
             ? { pos: doc.line(first).from, side: -1, height: round(height) }
             : { pos: doc.line(last).to, side: 2, height: round(height) };
         });
-      const from = doc.line(firstLine).from;
-      const to = doc.line(lastLine).to;
+      const range = ranges[side];
+      if (!range) continue;
+      const { from, to } = range;
+      this.#lined[side] = range;
       if (!sameSpacers(view, from, to, placed)) {
         view.dispatch({ effects: setSpacers.of({ from, to, spacers: placed }) });
         changed = true;
@@ -464,16 +746,18 @@ export class Aligner {
     return changed;
   }
 
-  /** The spacers `side`'s editor draws now, by position and side. */
-  #current(side: Side): Map<string, number> {
+  /** The spacers between `range`'s ends on `side`, by position and side. */
+  #current(side: Side, range: { from: number; to: number } | undefined): Map<string, number> {
     const current = new Map<string, number>();
-    const { from, to } = this.#views[side].viewport;
-    this.#views[side].state.field(spacerField).between(from, to, (pos, _to, decoration) => {
-      const widget: unknown = decoration.spec.widget;
-      if (widget instanceof SpacerWidget) {
-        current.set(`${pos}:${decoration.startSide < 0 ? -1 : 2}`, widget.height);
-      }
-    });
+    if (!range) return current;
+    this.#views[side].state
+      .field(spacerField)
+      .between(range.from, range.to, (pos, _to, decoration) => {
+        const widget: unknown = decoration.spec.widget;
+        if (widget instanceof SpacerWidget) {
+          current.set(`${pos}:${decoration.startSide < 0 ? -1 : 2}`, widget.height);
+        }
+      });
     return current;
   }
 
@@ -507,6 +791,19 @@ export class Aligner {
     return { top: top!, above, body };
   }
 
+  /** How many spacers each editor holds, drawn or not, for the measurements. */
+  get spacers(): { old: number; new: number } {
+    return {
+      old: this.#views.old.state.field(spacerField).size,
+      new: this.#views.new.state.field(spacerField).size,
+    };
+  }
+
+  /** The editor the scroll is anchored to now. */
+  get anchoring(): Side {
+    return this.#anchorSide();
+  }
+
   /** The editor CodeMirror anchors the scroll to: the focused one, else one just wheeled. */
   #anchorSide(): Side {
     if (this.#views.old.hasFocus) return 'old';
@@ -518,22 +815,72 @@ export class Aligner {
   }
 
   /**
-   * The anchoring editor's line at the top of the scroller, and how far below the top it starts,
-   * from the height map as it is: taking it doesn't make the editor measure.
+   * A line the anchoring editor draws on screen, and how far below the top of the scroller it
+   * starts: the line's own top, not its block's, which takes in the spacers and labels drawn above
+   * it, which the pass itself changes. Taken from the height map as it is, without making the
+   * editor measure. In a focused editor, the cursor's line, where the cursor is on screen: a
+   * motion's jump keeps the cursor where CodeMirror scrolled it.
    */
   #anchorNow(): Anchor {
     const side = this.#anchorSide();
     const view = this.#views[side];
-    const screen = this.#scroller.getBoundingClientRect();
-    const y = screen.top - view.documentTop;
-    let block = blockAtHeight(view, Math.max(0, y));
-    // In a focused editor, the cursor's line, where the cursor is on screen: a motion's jump keeps
-    // the cursor where CodeMirror scrolled it.
     if (view.hasFocus) {
+      const y = this.#scroller.getBoundingClientRect().top - origin(view);
       const cursor = view.lineBlockAt(view.state.selection.main.head);
-      if (cursor.top >= y && cursor.top < y + screen.height) block = cursor;
+      const top = ownTop(cursor);
+      if (top >= y && top < y + this.#scroller.clientHeight) {
+        return {
+          for: side,
+          side,
+          pos: cursor.from,
+          offset: top - y,
+          scrollTop: this.#scroller.scrollTop,
+        };
+      }
     }
-    return { side, pos: block.from, offset: block.top - y, scrollTop: this.#scroller.scrollTop };
+    // Beside a long stretch on the other side, an editor can have nothing of its own on screen,
+    // or only below a spacer that grows as the stretch's lines are measured on the way down: then
+    // the other editor's line higher up.
+    const mine = this.#screenLine(side);
+    const theirs = this.#screenLine(otherSide(side));
+    const higher = this.#direction > 0 && mine && theirs && theirs.offset < mine.offset;
+    const found = (higher ? theirs : mine) ?? theirs;
+    if (found) return { for: side, ...found };
+    // Nothing of its own starts on screen on either side, as inside a block taller than the screen.
+    const y = this.#scroller.getBoundingClientRect().top - origin(view);
+    const block = view.lineBlockAtHeight(Math.max(0, y));
+    return {
+      for: side,
+      side,
+      pos: block.from,
+      offset: ownTop(block) - y,
+      scrollTop: this.#scroller.scrollTop,
+    };
+  }
+
+  /**
+   * The line `side`'s editor draws on screen furthest from where rows come into view, if it draws
+   * one: the first when the scroll last went down, and rows come in at the bottom, the last when it
+   * went up. The pass changes the spacers of rows as they come in, and heights CodeMirror measures
+   * for the first time are theirs, so what was on screen already stays where it was.
+   */
+  #screenLine(side: Side): Omit<Anchor, 'for'> | undefined {
+    const view = this.#views[side];
+    const screen = this.#scroller.getBoundingClientRect();
+    const y = screen.top - origin(view);
+    const blocks = view.viewportLineBlocks;
+    let found: { pos: number; top: number } | undefined;
+    for (let index = blockIndex(blocks, y); index < blocks.length; index++) {
+      const block = blocks[index]!;
+      if (block.top >= y + screen.height) break;
+      const top = ownTop(block);
+      if (top < y || top >= y + screen.height) continue;
+      found = { pos: block.from, top };
+      if (this.#direction > 0) break;
+    }
+    return (
+      found && { side, pos: found.pos, offset: found.top - y, scrollTop: this.#scroller.scrollTop }
+    );
   }
 
   /** Puts the anchored line back where it was on screen. Says whether the scroll moved. */
@@ -543,9 +890,8 @@ export class Aligner {
       this.#anchor = this.#anchorNow();
       return false;
     }
-    const y = this.#scroller.getBoundingClientRect().top - view.documentTop;
-    const block = view.lineBlockAt(anchor.pos);
-    const shift = block.top - anchor.offset - y;
+    const y = this.#scroller.getBoundingClientRect().top - origin(view);
+    const shift = ownTop(view.lineBlockAt(anchor.pos)) - anchor.offset - y;
     const moved = Math.abs(shift) > 0.5;
     if (moved) this.#scroller.scrollTop += shift;
     this.#anchor = { ...anchor, scrollTop: this.#scroller.scrollTop };
@@ -553,20 +899,49 @@ export class Aligner {
   }
 }
 
-/** The block at `height` among the editor's drawn blocks, without making it measure. */
-function blockAtHeight(view: EditorView, height: number): { from: number; top: number } {
-  const blocks = view.viewportLineBlocks;
+function otherSide(side: Side): Side {
+  return side === 'old' ? 'new' : 'old';
+}
+
+/**
+ * Where on the page the editor draws the top of its document, for the lines in its viewport. It's
+ * `documentTop`, give or take a fraction of a pixel: CodeMirror sizes the space it leaves for the
+ * lines above its viewport from its estimate for the last of them, which with wrapped lines can
+ * end a little past where the next line starts. The two editors are off by different fractions,
+ * so the pass lines up, and anchors, what's drawn.
+ */
+function origin(view: EditorView): number {
+  const { from } = view.viewport;
+  for (const element of view.contentDOM.querySelectorAll<HTMLElement>(':scope > .cm-line')) {
+    const pos = view.posAtDOM(element);
+    if (pos < from) continue;
+    return element.getBoundingClientRect().top - ownTop(view.lineBlockAt(pos));
+  }
+  return view.documentTop;
+}
+
+/**
+ * Where a line's own content starts in its block: its text, or the block that replaces it, below
+ * any spacers, labels or other blocks drawn above it.
+ */
+function ownTop(block: BlockInfo): number {
+  if (!Array.isArray(block.type)) return block.top;
+  for (const part of block.type) {
+    if (part.type === BlockType.Text || part.type === BlockType.WidgetRange) return part.top;
+  }
+  return block.top;
+}
+
+/** The index of the block at `height` among `blocks`, which are in order, or the nearest. */
+function blockIndex(blocks: readonly BlockInfo[], height: number): number {
   let low = 0;
   let high = blocks.length - 1;
-  if (high < 0 || height < blocks[0]!.top || height > blocks[high]!.bottom) {
-    return view.lineBlockAtHeight(height);
-  }
   while (low < high) {
     const middle = (low + high + 1) >>> 1;
     if (blocks[middle]!.top <= height) low = middle;
     else high = middle - 1;
   }
-  return blocks[low]!;
+  return Math.max(0, low);
 }
 
 function overlaps(first: number, last: number, range: { first: number; last: number }): boolean {

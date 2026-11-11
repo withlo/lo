@@ -1,6 +1,7 @@
-// Marks on the lines an editor draws: changed lines and words, moved lines and their edits, and
-// each row's key on its first line. Only what's drawn is marked, so the decorations a transaction
-// goes through stay as few as the lines on screen, whatever the pull request's size.
+// Marks on the lines an editor draws: changed lines and words, moved lines and their edits, each
+// line's number, and each row's key on its first line. Only what's drawn is marked, so the
+// decorations a transaction goes through stay as few as the lines on screen, whatever the pull
+// request's size.
 
 import { type Range, StateEffect, type Text } from '@codemirror/state';
 import {
@@ -44,6 +45,11 @@ function build(view: EditorView, source: MarkSource): DecorationSet {
   const { doc } = view.state;
   const { from, to } = view.viewport;
   return Decoration.set(source(doc, doc.lineAt(from).number, doc.lineAt(to).number), true);
+}
+
+/** A line's number in its document, for following it on screen. */
+export function lineKey(line: number): Decoration {
+  return Decoration.line({ attributes: { 'data-line': String(line) } });
 }
 
 /** A row's key on its first line, for checking what's drawn row by row. */

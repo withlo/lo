@@ -15,11 +15,11 @@ import {
 import { Decoration, type DecorationSet, EditorView, lineNumbers } from '@codemirror/view';
 import { type FileDiff, type MovedBlock } from '@lo/diff';
 
-import { Aligner, type PassStats, spacerField } from './aligner.ts';
+import { Aligner, alignerFields, type PassStats } from './aligner.ts';
 import { fileBlocks, fileMarks, type ViewFile, type ViewThread } from './decorations.ts';
 import { highlighting, setTokens, tokensField } from './highlight.ts';
 import { Layout, type Side } from './layout.ts';
-import { marking, marksChanged, rowKey } from './marks.ts';
+import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
 import { type FileRows, fileRows, type Keep } from './rows.ts';
 
 /** A file as the view is given it. */
@@ -77,10 +77,19 @@ export class DiffView {
   readonly #keep: Keep[];
   #moves: readonly MovedBlock[] = [];
   readonly #aligner: Aligner;
+  /** The scroll input asked for since `movement()` was last called: wheel and moved cursors. */
+  #asked = 0;
+  /** The line `movement()` follows, by its side and document line, and where it was on screen. */
+  #followed: { side: Side; line: number; top: number } | undefined;
 
   /** What the spacer pass has cost so far, for the measurements. */
   get passStats(): PassStats {
     return this.#aligner.stats;
+  }
+
+  /** How many spacers each editor holds, drawn or not, for the measurements. */
+  get spacers(): { old: number; new: number } {
+    return this.#aligner.spacers;
   }
 
   constructor(
@@ -116,6 +125,22 @@ export class DiffView {
       });
     this.views = { old: make('old'), new: make('new') };
     this.#aligner = new Aligner(this.views, this.#layout, (file) => this.#rows[file]!, this.dom);
+    // What the input asks the scroll to do, for `movement()`: the wheel's distance, and the
+    // scroll CodeMirror makes to bring a moved cursor into view.
+    this.dom.addEventListener(
+      'wheel',
+      (event) => {
+        const line = this.views.new.defaultLineHeight;
+        const page = this.dom.clientHeight;
+        const scale = event.deltaMode === 1 ? line : event.deltaMode === 2 ? page : 1;
+        const room = this.dom.scrollHeight - this.dom.clientHeight;
+        const top = this.dom.scrollTop;
+        // The scroll can't go past either end.
+        this.#asked += Math.max(-top, Math.min(room - top, event.deltaY * scale));
+      },
+      { passive: true },
+    );
+    this.#aligner.onCursorScroll = (delta) => (this.#asked += delta);
     for (const side of ['old', 'new'] as const) {
       this.views[side].dispatch({ effects: StateEffect.appendConfig.of(this.#aligner.plugin()) });
       const ranges = files.flatMap((_, index) => this.#blocks(side, index));
@@ -195,6 +220,45 @@ export class DiffView {
     return at ? { rows, worst, blank, at } : { rows, worst, blank };
   }
 
+  /**
+   * How far what's on screen moved since the last call, against what the input asked: the wheel's
+   * distance and the scroll that brought a moved cursor into view. Follows a line on screen near
+   * its middle, on the side the scroll is anchored to where it has one; `moved` is how far it went
+   * up, so with nothing else moving it, it equals `asked`. Undefined when the line followed isn't
+   * drawn now. Call it every frame.
+   */
+  movement(): { asked: number; moved?: number } {
+    const asked = this.#asked;
+    this.#asked = 0;
+    const screen = this.dom.getBoundingClientRect();
+    const followed = this.#followed;
+    let moved: number | undefined;
+    if (followed) {
+      const element = this.views[followed.side].contentDOM.querySelector(
+        `[data-line="${followed.line}"]`,
+      );
+      if (element) moved = followed.top - element.getBoundingClientRect().top;
+    }
+    // Follow, next, the line on screen nearest its middle, on the side the scroll is anchored to,
+    // or on the other where that side has none, as beside a deleted file.
+    const anchoring = this.#aligner.anchoring;
+    const middle = (screen.top + screen.bottom) / 2;
+    this.#followed = undefined;
+    for (const side of [anchoring, anchoring === 'old' ? 'new' : 'old'] as const) {
+      for (const element of this.views[side].contentDOM.querySelectorAll<HTMLElement>(
+        '[data-line]',
+      )) {
+        const top = element.getBoundingClientRect().top;
+        if (top < screen.top || top >= screen.bottom) continue;
+        if (!this.#followed || Math.abs(top - middle) < Math.abs(this.#followed.top - middle)) {
+          this.#followed = { side, line: Number(element.dataset.line), top };
+        }
+      }
+      if (this.#followed) break;
+    }
+    return moved === undefined ? { asked } : { asked, moved };
+  }
+
   destroy(): void {
     document.fonts.removeEventListener('loadingdone', this.#measure);
     this.#aligner.destroy();
@@ -219,7 +283,7 @@ export class DiffView {
         },
       }),
       fileField,
-      spacerField,
+      alignerFields(),
       tokensField,
       highlighting(layout, side),
       marking((doc, first, last) => this.#marks(side, doc, first, last)),
@@ -259,6 +323,7 @@ export class DiffView {
   /** The marks on document lines `first` to `last` of `side`, and each row's key on its first. */
   #marks(side: Side, doc: Text, first: number, last: number): Range<Decoration>[] {
     const out: Range<Decoration>[] = [];
+    for (let line = first; line <= last; line++) out.push(lineKey(line).range(doc.line(line).from));
     const layout = this.#layout;
     for (let file = layout.fileAt(side, first); file < layout.files.length; file++) {
       const lines = layout.files[file]![side];

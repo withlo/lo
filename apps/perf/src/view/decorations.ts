@@ -1,6 +1,6 @@
 // A file's decorations on one side, in two kinds. Its blocks, which change the document's
-// heights: its header, a note where it has no lines, its collapsed code, the labels on its moved
-// code and its threads; each carries the file's index, so a file's can be replaced alone when its
+// heights: its header, with a note where it has no lines, its collapsed code, the labels on its
+// moved code and its threads; each carries the file's index, so a file's can be replaced alone when its
 // diff or the moves arrive. And its marks: changed lines and words, and moved lines and their
 // edits, which the view makes only for the lines it draws, so a transaction's cost doesn't grow
 // with the pull request.
@@ -13,7 +13,6 @@ import type { Side } from './layout.ts';
 import { collapsedRuns, type FileLines, type Keep } from './rows.ts';
 import {
   CollapsedWidget,
-  FileNoteWidget,
   type HeaderInfo,
   HeaderWidget,
   MovedLabelWidget,
@@ -55,31 +54,22 @@ export function fileBlocks(input: FileDecorationsInput): Range<Decoration>[] {
   const tag = { file: index };
   const line = (number: number): { from: number; to: number } => doc.line(lines.header + number);
   const header = doc.line(lines.header);
+  // A file with no lines on either side says why under its header; a side without lines beside
+  // one with them gets a spacer.
+  let note: string | undefined;
+  if (lines.count === 0 && !input.otherLines && file.skipped) {
+    note =
+      file.skipped === 'binary'
+        ? 'A binary file'
+        : `${file.additions + file.deletions} changed lines: too many to show here`;
+  }
   const out: Range<Decoration>[] = [
-    Decoration.replace({ widget: new HeaderWidget(index, file), block: true, ...tag }).range(
+    Decoration.replace({ widget: new HeaderWidget(index, file, note), block: true, ...tag }).range(
       header.from,
       header.to,
     ),
   ];
-  if (lines.count === 0) {
-    // A file with no lines on either side says why under its header; a side without lines beside
-    // one with them gets a spacer.
-    if (!input.otherLines && file.skipped) {
-      const text =
-        file.skipped === 'binary'
-          ? 'A binary file'
-          : `${file.additions + file.deletions} changed lines: too many to show here`;
-      out.push(
-        Decoration.widget({
-          widget: new FileNoteWidget(index, text),
-          block: true,
-          side: 1,
-          ...tag,
-        }).range(header.to),
-      );
-    }
-    return out;
-  }
+  if (lines.count === 0) return out;
 
   if (!diff) {
     const widget = new CollapsedWidget(
@@ -123,12 +113,17 @@ export function fileBlocks(input: FileDecorationsInput): Range<Decoration>[] {
     );
   }
 
+  // A line's threads go in one block, for the same reason as the header's note.
+  const byLine = new Map<number, ViewThread[]>();
   for (const thread of threads) {
     if (thread.side !== side) continue;
-    const widget = new ThreadWidget(thread.id, thread.comments);
-    out.push(
-      Decoration.widget({ widget, block: true, side: 1, ...tag }).range(line(thread.line).to),
-    );
+    const list = byLine.get(thread.line);
+    if (list) list.push(thread);
+    else byLine.set(thread.line, [thread]);
+  }
+  for (const [number, list] of byLine) {
+    const widget = new ThreadWidget(list.map(({ id, comments }) => ({ id, comments })));
+    out.push(Decoration.widget({ widget, block: true, side: 1, ...tag }).range(line(number).to));
   }
   return out;
 }

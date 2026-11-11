@@ -56,7 +56,10 @@ rows with lines on both sides start at the same height on both, so a block of ad
 empty space. It runs after the editors measure and before the page is painted, from the heights
 CodeMirror measured. The page sets `window.diffView`: `misalignment()` says how far apart, as drawn,
 the rows on screen start on the two sides, headers and collapsed blocks included, and how many are
-drawn on one side only, cheaply enough to call every frame; `passStats` says what the pass has cost.
+drawn on one side only, cheaply enough to call every frame; `movement()` says how far a line on
+screen moved since it was last called against what the wheel or a moved cursor asked, to call every
+frame too; `passStats` says what the pass has cost, and `spacers` how many spacers each side holds.
+`window.diffLoaded` is set once everything has arrived.
 
 ## Recording the manifests
 

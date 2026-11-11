@@ -43,7 +43,11 @@ window.addEventListener('message', (event) => {
   if (!port) return;
   port.addEventListener('message', ({ data }: MessageEvent<Result>) => {
     if (data.type === 'file') view.setResult(data.index, data.diff, data.tokens);
-    else if (data.type === 'moves') view.setMoves(data.moves);
+    else if (data.type === 'moves') {
+      // The moves come last: everything has arrived.
+      view.setMoves(data.moves);
+      Object.assign(window, { diffLoaded: true });
+    }
   });
   port.start();
 });

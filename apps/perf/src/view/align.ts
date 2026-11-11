@@ -46,19 +46,24 @@ export type CurrentSpacer = (
   place: 'above' | 'below',
 ) => number | undefined;
 
+/** Whether the spacer below a row's lines on one side has to stay as it is. */
+export type HeldBelow = (side: 'old' | 'new', row: number) => boolean;
+
 /**
  * The spacers that line up `rows`, which start at height `oldTop` on the old side and `newTop` on
  * the new. Every row with lines on both sides then starts at the same height on both sides, and
  * ends at the same height. A row with lines on one side only pushes that side down, and the other
  * side catches up above the next row with lines on both. Where `current` has a spacer within
  * `tolerance` of the height needed, it stays, and what it leaves over is caught up at the next
- * place.
+ * place. Where `held` says the spacer below a row's lines stays, it does, and that side catches up
+ * at the next place.
  */
 export function alignRows(
   rows: readonly RowHeights[],
   oldTop: number,
   newTop: number,
   current: CurrentSpacer = () => undefined,
+  held: HeldBelow = () => false,
 ): Spacer[] {
   const spacers: Spacer[] = [];
   let oldAt = oldTop;
@@ -82,8 +87,18 @@ export function alignRows(
   return spacers;
 
   function catchUp(row: number, place: 'above' | 'below'): void {
+    if (place === 'below') {
+      for (const side of ['old', 'new'] as const) {
+        if (!held(side, row)) continue;
+        const height = current(side, row, place) ?? 0;
+        if (height > 0) spacers.push({ side, row, place, height });
+        if (side === 'new') newAt += height;
+        else oldAt += height;
+      }
+    }
     const ahead = oldAt - newAt;
     const side = ahead > 0 ? 'new' : 'old';
+    if (place === 'below' && held(side, row)) return;
     const kept = current(side, row, place);
     const height =
       kept !== undefined && Math.abs(kept - Math.abs(ahead)) < tolerance

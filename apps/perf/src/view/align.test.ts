@@ -10,6 +10,10 @@ function closeSpacer(side: string, row: number, place: string): number | undefin
 }
 
 /** A spacer of 25 everywhere. */
+function heldSpacer(side: string, row: number, place: string): number | undefined {
+  return side === 'old' && row === 0 && place === 'below' ? 5 : undefined;
+}
+
 function farSpacer(): number {
   return 25;
 }
@@ -97,6 +101,24 @@ describe('alignRows', () => {
   test('changes a spacer already there that is too far off', () => {
     expect(alignRows([{ old: line, new: { above: 0, body: 40 } }], 0, 0, farSpacer)).toEqual([
       { side: 'old', row: 0, place: 'below', height: 20 },
+    ]);
+  });
+
+  test('keeps a spacer below lines it has to leave alone, and catches up at the next place', () => {
+    expect(
+      alignRows(
+        [
+          { old: line, new: { above: 0, body: 40 } },
+          { old: line, new: line },
+        ],
+        0,
+        0,
+        heldSpacer,
+        (side, row) => side === 'old' && row === 0,
+      ),
+    ).toEqual([
+      { side: 'old', row: 0, place: 'below', height: 5 },
+      { side: 'old', row: 1, place: 'above', height: 15 },
     ]);
   });
 });
