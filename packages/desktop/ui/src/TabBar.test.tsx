@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { buildCss, hasRule } from '../scripts/stylesheet.ts';
-import { TabBar, type Tab } from './TabBar.tsx';
+import { foldTabs, TabBar, tabsThatFit, type Tab } from './TabBar.tsx';
 
 const tabs: Tab[] = [
   {
@@ -78,7 +78,7 @@ describe('TabBar', () => {
     const markup = renderToStaticMarkup(
       <TabBar tabs={[{ kind: 'pull', id: 'a', repo: 'fd', number: 2212 }]} selected="a" />,
     );
-    expect(markup).toContain('fd <span class="lo-num">#2212</span>');
+    expect(markup).toMatch(/>fd <\/span><span[^>]*>#2212<\/span>/);
     expect(markup).not.toContain('title="open"');
     expect(markup).toContain('aria-label="Close tab"');
   });
@@ -98,6 +98,46 @@ describe('TabBar', () => {
     expect(recent).not.toContain('Close tab');
     expect(settings).toContain('Settings');
     expect(settings).toContain('aria-label="Close tab"');
+  });
+});
+
+/** The ids of `list`, in order. */
+function ids(list: readonly { id: string }[]): string[] {
+  return list.map(({ id }) => id);
+}
+
+describe('tabs that don’t fit', () => {
+  const ten = Array.from({ length: 10 }, (_, index) => ({ id: `t${index + 1}` }));
+
+  it('fold after the first that fit, in order', () => {
+    const { shown, folded } = foldTabs(ten, 't2', 4);
+    expect(ids(shown)).toEqual(['t1', 't2', 't3', 't4']);
+    expect(ids(folded)).toEqual(['t5', 't6', 't7', 't8', 't9', 't10']);
+  });
+
+  it('never fold the tab on screen, which takes the last place that fits', () => {
+    const { shown, folded } = foldTabs(ten, 't9', 4);
+    expect(ids(shown)).toEqual(['t1', 't2', 't3', 't9']);
+    expect(ids(folded)).toEqual(['t4', 't5', 't6', 't7', 't8', 't10']);
+    // With room for one, it's the one.
+    expect(ids(foldTabs(ten, 't7', 1).shown)).toEqual(['t7']);
+    expect(ids(foldTabs(ten, 't7', 0).shown)).toEqual(['t7']);
+  });
+
+  it('don’t exist while every tab fits, or while the room isn’t known', () => {
+    expect(foldTabs(ten, 't9', 10).folded).toEqual([]);
+    expect(foldTabs(ten, 't9', undefined).folded).toEqual([]);
+  });
+
+  it('are counted against the strip’s room: all beside +, or as many as fit beside "N more" too', () => {
+    const room = { width: 1010, tab: 120, gap: 2, plus: 28, more: 80 };
+    // Eight at 122 px and + fit in 1,010 px.
+    expect(tabsThatFit(room, 8)).toBe(8);
+    // Nine don't, so seven fit beside both buttons.
+    expect(tabsThatFit(room, 9)).toBe(7);
+    expect(tabsThatFit(room, 40)).toBe(7);
+    // However narrow the strip, the tab on screen shows.
+    expect(tabsThatFit({ ...room, width: 100 }, 3)).toBe(1);
   });
 });
 

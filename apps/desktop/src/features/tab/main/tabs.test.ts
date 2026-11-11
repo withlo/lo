@@ -239,6 +239,26 @@ describe('restoring the tabs', () => {
     expect(logged).toEqual(["Lo left out a tab it couldn't read back (bad)."]);
   });
 
+  it('keeps one tab for Settings and for each pull request, on screen if any of them was', () => {
+    const on = database();
+    const insert = on.prepare(
+      'INSERT INTO tab_tabs (id, position, kind, owner, repo, number, active) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    );
+    insert.run('s1', 0, 'settings', null, null, null, 0);
+    insert.run('fd', 1, 'pull', 'sharkdp', 'fd', 2212, 0);
+    insert.run('s2', 2, 'settings', null, null, null, 0);
+    insert.run('FD', 3, 'pull', 'SharkDP', 'FD', 2212, 1);
+    insert.run('bat', 4, 'pull', 'sharkdp', 'bat', 7, 0);
+    const logged: string[] = [];
+    const tabs = createTabs({ database: on, changed: () => {}, log: (line) => logged.push(line) });
+    expect(tabs.list().tabs.map(({ id }) => id)).toEqual(['s1', 'fd', 'bat']);
+    expect(tabs.list().active).toBe('fd');
+    expect(logged).toEqual([
+      'Lo left out a second tab for what s1 shows (s2).',
+      'Lo left out a second tab for what fd shows (FD).',
+    ]);
+  });
+
   it('changes nothing when the change can’t be written', () => {
     const on = database();
     const { tabs, heard } = tabsOn(on);

@@ -14,7 +14,7 @@ import {
   type Tab,
   type Tabs,
 } from '../contract.ts';
-import { findTab, tabKey } from './pulls.ts';
+import { findTab, shows, tabKey } from './pulls.ts';
 
 /** Recent pull requests: the tab that stands in for an empty strip. */
 export const RECENT: Tab = { id: 'recent', kind: 'recent' };
@@ -119,7 +119,7 @@ export function createTabs(options: TabListOptions): TabList {
         }
         default:
           opening satisfies never;
-          throw new Error(`There's no kind of tab called ${String(opening)}.`);
+          throw new Error(`There's no kind of tab for ${JSON.stringify(opening)}.`);
       }
     },
 
@@ -164,7 +164,11 @@ export function createTabs(options: TabListOptions): TabList {
   };
 }
 
-/** The kept tabs, in order, and the one on screen. A row that can't be read is left out. */
+/**
+ * The kept tabs, in order, and the one on screen. A row that can't be read is left out, and so is
+ * one for a tab already read, Settings or the same pull request, since each opens in one tab: the
+ * first stays, on screen if either was.
+ */
 function load(database: Database, log: (message: string) => void): State {
   const rows = database
     .prepare(
@@ -179,10 +183,19 @@ function load(database: Database, log: (message: string) => void): State {
       log(`Lo left out a tab it couldn't read back (${String(row.id)}).`);
       continue;
     }
-    kept.push(tab);
-    if (row.active === 1) active = tab.id;
+    const same = kept.find((other) => isSameTab(other, tab));
+    if (same) log(`Lo left out a second tab for what ${same.id} shows (${tab.id}).`);
+    else kept.push(tab);
+    if (row.active === 1) active = (same ?? tab).id;
   }
   return { kept, active: active ?? kept[0]?.id };
+}
+
+/** Whether `a` and `b` hold the same thing: both Settings, or the same pull request. */
+function isSameTab(a: Kept, b: Kept): boolean {
+  if (a.kind !== 'pull' || b.kind !== 'pull') return a.kind === b.kind;
+  const { owner, repo, number } = a;
+  return shows(tabKey({ owner, repo, number }), b);
 }
 
 /** A row as a kept tab, if it's one: what Lo saved is read as carefully as any outside value. */

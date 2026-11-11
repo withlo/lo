@@ -31,7 +31,7 @@ function stripTab(tab: Tab): StripTab {
       return { kind: tab.kind, id: tab.id };
     default:
       tab satisfies never;
-      throw new Error('A tab of an unknown kind.');
+      throw new Error(`A tab of an unknown kind: ${JSON.stringify(tab)}.`);
   }
 }
 
@@ -62,6 +62,7 @@ export function TabStrip() {
             .catch((error: unknown) => console.error("Lo couldn't show the tab:", error));
         }}
         onClose={(id) => registry().run('tab.close', { kind: 'tab', tab: id })}
+        menuContainer={document.getElementById('root')}
       />
     </div>
   );

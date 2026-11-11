@@ -1,5 +1,10 @@
 import type { History } from '@lo/ui/commands';
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import {
+  _electron as electron,
+  type ElectronApplication,
+  type Locator,
+  type Page,
+} from '@playwright/test';
 
 import { appEnvironment, appFolder, dataFolder, expect, test } from './app.ts';
 
@@ -18,6 +23,52 @@ const strip = (page: Page) => page.getByRole('tablist', { name: 'Pull requests' 
 const tabs = (page: Page) => strip(page).getByRole('tab');
 /** The tab on screen. */
 const shown = (page: Page) => strip(page).getByRole('tab', { selected: true });
+
+/** The button that holds the tabs that don't fit, when some don't. */
+const more = (page: Page) => strip(page).getByRole('button', { name: /^\d+ more tabs$/ });
+
+/** How many tabs are open: those the strip shows and those folded into its menu. */
+async function openCount(page: Page): Promise<number> {
+  const folded = (await more(page).count()) > 0 ? await more(page).getAttribute('aria-label') : '0';
+  return (await tabs(page).count()) + Number.parseInt(folded ?? '', 10);
+}
+
+/** Expects `locator` wholly inside the window and the strip, clear of the window's controls. */
+async function expectInside(page: Page, locator: Locator): Promise<void> {
+  await expect(locator).toBeVisible();
+  const box = await locator.boundingBox();
+  const room = await strip(page).evaluate((element) => {
+    const { left, right } = element.getBoundingClientRect();
+    return { left: Math.max(0, left), right: Math.min(window.innerWidth, right) };
+  });
+  expect(box?.x).toBeGreaterThanOrEqual(room.left);
+  expect((box?.x ?? Infinity) + (box?.width ?? 0)).toBeLessThanOrEqual(room.right);
+}
+
+/** Expects the strip to fit the window: no tab past its end, and the tab on screen and `+` in it. */
+async function expectFits(page: Page): Promise<void> {
+  expect(await strip(page).evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+    true,
+  );
+  await expectInside(page, shown(page));
+  await expectInside(page, strip(page).getByRole('button', { name: 'Open a pull request' }));
+  if ((await more(page).count()) > 0) await expectInside(page, more(page));
+}
+
+/** Makes the window `width` pixels wide, or as wide as the screen, and returns the width. */
+async function resize(app: ElectronApplication, page: Page, width: number | 'screen') {
+  const wanted = await app.evaluate(({ BrowserWindow, screen }, asked) => {
+    const across = asked === 'screen' ? screen.getPrimaryDisplay().workAreaSize.width : asked;
+    BrowserWindow.getAllWindows()[0]?.setContentSize(across, 700);
+    return across;
+  }, width);
+  await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(wanted);
+  return wanted;
+}
+
+/** `count` pull requests, `r1 #1` to `rN #N`. */
+const many = (count: number) =>
+  Array.from({ length: count }, (_, index) => pull('withlo', `r${index + 1}`, index + 1));
 
 /** The note Lo says at the bottom of the window. */
 const said = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
@@ -87,7 +138,7 @@ test('⌘1 to ⌘8 show a tab by its place, and ⌘9 the last however many are o
 }) => {
   const repos = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
   await open(page, ...repos.map((repo, index) => pull('withlo', repo, index + 1)));
-  await expect(tabs(page)).toHaveCount(10);
+  await expect.poll(() => openCount(page)).toBe(10);
   for (const [index, repo] of repos.slice(0, 8).entries()) {
     await page.keyboard.press(`${cmd}+Digit${index + 1}`);
     await expect(shown(page)).toHaveText(`${repo} #${index + 1}`);
@@ -255,6 +306,68 @@ test('macOS’s File and Window menus list closing a tab and stepping through th
       'Window: Next tab Command+Shift+]',
       'Window: Previous tab Command+Shift+[',
     ]);
+});
+
+for (const width of [1440, 'screen'] as const) {
+  for (const count of [1, 8, 16, 40]) {
+    const across = width === 'screen' ? 'the screen’s width' : `${width} px`;
+    test(`${count} tabs at ${across}: the tab on screen and + stay in the window, and the keys reach every tab`, async ({
+      app,
+      page,
+    }) => {
+      await resize(app, page, width);
+      await open(page, ...many(count));
+      await expect(shown(page)).toHaveText(`r${count} #${count}`);
+      await expect.poll(() => openCount(page)).toBe(count);
+      await expectFits(page);
+      if (width === 1440) await expect(more(page)).toHaveCount(count > 8 ? 1 : 0);
+
+      // ⌘1, ⌘9 and stepping round both ends, to tabs folded away or not.
+      const steps: [string, number][] = [
+        [`${cmd}+Digit1`, 1],
+        [`${cmd}+Digit9`, count],
+        [`${cmd}+Shift+BracketRight`, 1],
+        [`${cmd}+Shift+BracketLeft`, count],
+        [`${cmd}+Shift+BracketLeft`, Math.max(1, count - 1)],
+        ['Control+Tab', count],
+      ];
+      for (const [key, number] of steps) {
+        await page.keyboard.press(key);
+        await expect(shown(page)).toHaveText(`r${number} #${number}`);
+        await expectFits(page);
+      }
+      await expect.poll(() => openCount(page)).toBe(count);
+    });
+  }
+}
+
+test('the tabs that don’t fit are in the "N more" menu, and choosing one shows it', async ({
+  app,
+  page,
+}) => {
+  await resize(app, page, 1440);
+  await open(page, ...many(16));
+  await page.keyboard.press(`${cmd}+Digit1`);
+  await expect(shown(page)).toHaveText('r1 #1');
+  const folded = Number.parseInt((await more(page).getAttribute('aria-label')) ?? '', 10);
+  expect(folded).toBeGreaterThan(0);
+  await expect(more(page)).toHaveText(`${folded} more`);
+
+  await more(page).click();
+  const menu = page.getByRole('menu', { name: 'More tabs' });
+  const items = menu.getByRole('menuitem');
+  // In the strip's order, after the last it shows.
+  await expect(items).toHaveCount(folded);
+  await expect(items.first()).toHaveText(`r${17 - folded} #${17 - folded}`);
+  await expect(items.last()).toHaveText('r16 #16');
+  await items.last().click();
+  await expect(menu).toBeHidden();
+  await expect(shown(page)).toHaveText('r16 #16');
+  await expectFits(page);
+  // The tab it took the place of is in the menu now.
+  await more(page).click();
+  await expect(items.first()).toHaveText(`r${16 - folded} #${16 - folded}`);
+  await page.keyboard.press('Escape');
 });
 
 /** Starts Lo on the test's data folder, and waits for its window. */
