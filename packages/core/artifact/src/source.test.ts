@@ -90,6 +90,9 @@ describe('the file', () => {
 
   test('a long string is measured only until it is past the limit', () => {
     const huge = 'x'.repeat(100_000_000);
+    // Read once first: a repeated string is built as it's first read, which takes time in
+    // proportion to it whoever reads it.
+    expect(huge.at(-1)).toBe('x');
     const { made, elapsed } = timed(() => utf8Length(huge, LIMITS.size + 1));
     expect(made).toBe(LIMITS.size + 1);
     expect(elapsed).toBeLessThan(50);

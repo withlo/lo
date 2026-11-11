@@ -12,9 +12,9 @@ import { problems, walk } from './walker.ts';
 
 /**
  * How long it may take, in milliseconds: three times the slowest run on a Linux CI runner, which
- * runs test files side by side (about 420 ms, against 60 ms on a laptop).
+ * runs test files side by side (about 310 ms, against 60 ms on a laptop).
  */
-const LIMIT = 1_250;
+const LIMIT = 1_000;
 
 /** Prose that points nowhere, about 1.2 KB of it, as long overviews hold. */
 function filler(n: number): string {
@@ -103,6 +103,5 @@ test('the largest overview the format allows is read within budget', () => {
   expect(walked.problems).toEqual([]);
   expect(walked.targets).toBe(LIMITS.targets);
   expect(problems(made.tree)).toEqual([]);
-  console.log(`took ${elapsed} ms for ${size} bytes`);
   expect(elapsed, `took ${elapsed} ms for ${size} bytes`).toBeLessThan(LIMIT);
 });
