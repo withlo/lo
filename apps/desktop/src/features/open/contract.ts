@@ -47,7 +47,8 @@ export type Opener = z.output<typeof opener>;
  * - `blocked`, a pull request none of the accounts can open, with why: GitHub's links to fix it,
  *   whether signing in with an account might, and whether opening it anyway may work once GitHub
  *   answers, as when it couldn't be reached;
- * - `web`, a link Lo doesn't show, which goes to the browser;
+ * - `web`, a link Lo doesn't show, which goes to the browser when it's `https`, and is only copied
+ *   when it isn't;
  * - `invalid`, text that isn't a link Lo can do anything with.
  */
 export const preview = z.discriminatedUnion('kind', [
@@ -73,6 +74,8 @@ export const preview = z.discriminatedUnion('kind', [
     url: z.string(),
     title: z.string(),
     message: z.string(),
+    /** Whether `⏎` hands it to the browser, as it does an `https` link; else it copies it. */
+    browse: z.boolean(),
   }),
   z.strictObject({ kind: z.literal('invalid'), message: z.string() }),
 ]);
@@ -136,7 +139,7 @@ export const contract = defineContract('open', {
     look: { input: z.strictObject({ text: linkText }), reply: reply<Preview>() },
     /**
      * Opens `text`: a pull request in a tab, as `login` when that account can see it and as the
-     * account Lo chooses otherwise; any other web link in the browser.
+     * account Lo chooses otherwise; any other `https` link in the browser.
      */
     open: {
       input: z.strictObject({ text: linkText, login: login.optional() }),

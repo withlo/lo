@@ -113,8 +113,11 @@ function tabs() {
   };
 }
 
-/** What `link` needs, with GitHub as given and a browser that keeps what it's handed. */
-function options(github: LinkGithub) {
+/**
+ * What `link` needs, with GitHub as given and a browser that keeps what it's handed: for links
+ * from the window unless said otherwise, which hand the browser `https` links only.
+ */
+function options(github: LinkGithub, { httpsOnly = true }: { httpsOnly?: boolean } = {}) {
   const browsed: string[] = [];
   const logged: string[] = [];
   const opened = tabs();
@@ -129,6 +132,7 @@ function options(github: LinkGithub) {
         browsed.push(url);
         return Promise.resolve(undefined);
       },
+      httpsOnly,
       log: (line: string) => logged.push(line),
     },
   };
@@ -300,6 +304,24 @@ describe('link', () => {
     expect(made.browsed).toHaveLength(1);
     expect(made.tabs.opened).toEqual([]);
   });
+
+  it('hands the browser no plain http link from the window, but opens an http pull request link', async () => {
+    const made = options(await signedIn([], nothing));
+    for (const text of ['http://example.com/', 'http://github.com/rozed-dev/e2e/issues/12']) {
+      expect(await link(text, made.options)).toEqual({
+        kind: 'refused',
+        message: expect.stringContaining('It’s http, not https'),
+      });
+    }
+    expect(made.browsed).toEqual([]);
+    expect(await link('http://github.com/rozed-dev/e2e/pull/78', made.options)).toMatchObject({
+      kind: 'tab',
+    });
+    // From another app, as a link router hands it back, it goes on to the browser.
+    const outside = options(await signedIn([], nothing), { httpsOnly: false });
+    expect(await link('http://example.com/', outside.options)).toEqual({ kind: 'browser' });
+    expect(outside.browsed).toEqual(['http://example.com/']);
+  });
 });
 
 describe('look', () => {
@@ -410,8 +432,18 @@ describe('look', () => {
       kind: 'web',
       url: 'https://github.com/rozed-dev/e2e/issues/12',
       title: 'That’s an issue, not a pull request',
+      browse: true,
     });
     expect(await look('rozed-dev/e2e#78', github)).toMatchObject({ kind: 'invalid' });
+    // Plain http goes nowhere: the box offers to copy it.
+    expect(await look('http://example.com/x', github)).toEqual({
+      kind: 'web',
+      url: 'http://example.com/x',
+      title: 'That link isn’t secure',
+      message:
+        'It’s http, not https, so Lo won’t hand it to your browser. Copy it, and open it yourself if you trust it.',
+      browse: false,
+    });
   });
 });
 

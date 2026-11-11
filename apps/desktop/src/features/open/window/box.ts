@@ -5,6 +5,7 @@
 import { createStore } from 'zustand/vanilla';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { notify } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { contract as accounts } from '../../accounts/contract.ts';
 import { signIn } from '../../accounts/window/shared.ts';
@@ -170,7 +171,7 @@ export function enterAction(preview: Preview | undefined, text: string): string 
     case 'pull':
       return preview.as.kind === 'ask' ? 'Open as the account chosen' : 'Open';
     case 'web':
-      return 'Open in the browser';
+      return preview.browse ? 'Open in the browser' : 'Copy the link';
     case 'blocked': {
       const [first] = preview.links;
       if (first) return first.label;
@@ -198,8 +199,11 @@ export function submit(): void {
     case 'invalid':
       return;
     case 'pull':
-    case 'web':
       void openText(state.text);
+      return;
+    case 'web':
+      if (preview.browse) void openText(state.text);
+      else void copyLink(preview.url);
       return;
     case 'blocked': {
       const [first] = preview.links;
@@ -224,6 +228,21 @@ export async function openPage(url: string): Promise<void> {
   } catch (error) {
     console.error("Lo couldn't open GitHub's page:", error);
     boxStore.setState({ error: "Lo couldn't open GitHub's page." });
+  }
+}
+
+/**
+ * Copies a link Lo won't hand to the browser, for the person to open themselves, and closes the
+ * box; or says why it couldn't.
+ */
+export async function copyLink(url: string): Promise<void> {
+  try {
+    await client(tabs).copy({ text: url });
+    closeBox();
+    notify('Copy the link', `Copied ${url}.`);
+  } catch (error) {
+    console.error("Lo couldn't copy the link:", error);
+    boxStore.setState({ error: "Lo couldn't copy the link." });
   }
 }
 

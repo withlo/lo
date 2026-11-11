@@ -14,6 +14,7 @@ import {
   boxClosed,
   boxStore,
   closeBox,
+  copyLink,
   currentPreview,
   enterAction,
   openAs,
@@ -110,6 +111,13 @@ function messageFor(preview: Preview | undefined, text: string, opening: boolean
       return (
         <Message icon={WARN_ICON} title={preview.title}>
           <span className="text-fg-muted text-small">{preview.message}</span>
+          {!preview.browse && (
+            <span className="mt-6 flex">
+              <Button size="sm" onClick={() => void copyLink(preview.url)}>
+                Copy the link
+              </Button>
+            </span>
+          )}
         </Message>
       );
     case 'blocked':

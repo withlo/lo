@@ -52,6 +52,7 @@ function linkOptions(context: FeatureContext<typeof contract>, fromOutside: bool
     github: context.use(github),
     tabs: context.use(tabs),
     browse: (url) => browser.hand(url, { fromOutside }),
+    httpsOnly: !fromOutside,
     log,
   };
 }

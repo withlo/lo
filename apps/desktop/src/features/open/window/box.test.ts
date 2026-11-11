@@ -130,8 +130,11 @@ describe('the open box', () => {
     expect(
       enterAction({ ...pull, as: { kind: 'ask', logins: ['a', 'b'], remember: 'owner' } }, E2E),
     ).toBe('Open as the account chosen');
-    expect(enterAction({ kind: 'web', url: E2E, title: '', message: '' }, E2E)).toBe(
+    expect(enterAction({ kind: 'web', url: E2E, title: '', message: '', browse: true }, E2E)).toBe(
       'Open in the browser',
+    );
+    expect(enterAction({ kind: 'web', url: E2E, title: '', message: '', browse: false }, E2E)).toBe(
+      'Copy the link',
     );
     expect(enterAction({ kind: 'invalid', message: '' }, 'x')).toBeUndefined();
     expect(enterAction(restricted, E2E)).toBe('Request approval on GitHub');
@@ -155,6 +158,20 @@ describe('the open box', () => {
     expect(bridge.calls.some(([channel]) => channel === 'open.open')).toBe(false);
   });
 
+  it('copies a plain http link on ⏎, and hands it to nothing', async () => {
+    const insecure = 'http://example.com/x';
+    answering({
+      'open.look': () => ({ kind: 'web', url: insecure, title: '', message: '', browse: false }),
+      'tab.copy': () => undefined,
+    });
+    openBox(insecure);
+    await settle();
+    submit();
+    await settle();
+    expect(bridge.calls.slice(1)).toEqual([['tab.copy', { text: insecure }]]);
+    expect(boxStore.getState().open).toBe(false);
+  });
+
   it('opens a pull request and closes, or stays open and says why main didn’t', async () => {
     const opened: unknown[] = [];
     answering({
@@ -172,7 +189,7 @@ describe('the open box', () => {
     expect(boxStore.getState().open).toBe(false);
 
     answering({
-      'open.look': () => ({ kind: 'web', url: E2E, title: '', message: '' }),
+      'open.look': () => ({ kind: 'web', url: E2E, title: '', message: '', browse: true }),
       'open.open': () => ({ kind: 'refused', message: 'It came straight back.' }),
     });
     openBox('https://github.com/rozed-dev/e2e/issues/1');

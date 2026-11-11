@@ -30,8 +30,8 @@ export type LinkGithub = Pick<GithubAccess, 'anonymous' | 'accounts' | 'client' 
 export type ReadLink =
   | { kind: 'empty' }
   | { kind: 'pull'; pull: PullLink }
-  /** A web link Lo doesn't show, with what it is, in words. */
-  | { kind: 'web'; url: string; title: string; message: string }
+  /** A web link Lo doesn't show, with what it is, in words, and whether it's over `https`. */
+  | { kind: 'web'; url: string; title: string; message: string; secure: boolean }
   | { kind: 'invalid'; message: string };
 
 /** A pull request's page, or one under it, on GitHub: its files, a commit, its checks. */
@@ -66,7 +66,7 @@ export function readLink(text: string): ReadLink {
       message: `Lo opens links to pull requests, such as ${EXAMPLE}.`,
     };
   }
-  return { kind: 'web', url: url.href, ...describeWeb(url) };
+  return { kind: 'web', url: url.href, ...describeWeb(url), secure: url.protocol === 'https:' };
 }
 
 /** The pull request `text` links to, by its page or one under it, if it's one. */
@@ -124,6 +124,10 @@ function describeWeb(url: URL): { title: string; message: string } {
       'Lo opens pull requests, and their files, commits and checks pages. This one goes to your browser.',
   };
 }
+
+/** Why a link over plain `http` goes nowhere from the window. */
+const INSECURE =
+  'It’s http, not https, so Lo won’t hand it to your browser. Copy it, and open it yourself if you trust it.';
 
 /** A pull request's link as Lo writes one. */
 export function pullLink({ owner, repo, number }: PullLink): string {
@@ -184,6 +188,11 @@ export interface LinkOptions {
    * moments ago and it came back.
    */
   readonly browse: (url: string) => Promise<string | undefined>;
+  /**
+   * Whether only `https` links go to the browser, as for links from the window, which main can't
+   * tell from links a page made up: the browser gets nothing over plain `http` from there.
+   */
+  readonly httpsOnly: boolean;
   readonly log: (line: string) => void;
 }
 
@@ -204,6 +213,7 @@ export async function link(
     case 'invalid':
       return { kind: 'refused', message: read.message };
     case 'web': {
+      if (options.httpsOnly && !read.secure) return { kind: 'refused', message: INSECURE };
       const refused = await options.browse(read.url);
       return refused === undefined ? { kind: 'browser' } : { kind: 'refused', message: refused };
     }
@@ -257,7 +267,15 @@ export async function look(text: string, github: LinkGithub): Promise<Preview> {
     case 'invalid':
       return { kind: 'invalid', message: read.message };
     case 'web':
-      return { kind: 'web', url: read.url, title: read.title, message: read.message };
+      return read.secure
+        ? { kind: 'web', url: read.url, title: read.title, message: read.message, browse: true }
+        : {
+            kind: 'web',
+            url: read.url,
+            title: 'That link isn’t secure',
+            message: INSECURE,
+            browse: false,
+          };
     case 'pull':
       return lookAtPull(read.pull, github);
     default:
