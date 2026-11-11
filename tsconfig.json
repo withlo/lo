@@ -34,6 +34,9 @@
     },
     {
       "path": "./packages/core/stacks"
+    },
+    {
+      "path": "./packages/core/markdown"
     }
   ]
 }
