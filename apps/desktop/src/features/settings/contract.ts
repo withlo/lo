@@ -109,7 +109,11 @@ export const contract = defineContract('settings', {
     },
     /** How much room the local copies take. */
     cacheUsage: { input: z.undefined(), reply: reply<CacheUsage>() },
-    /** Removes the local copies that aren't in use, to fetch again when they're next needed. */
+    /**
+     * Clears what Lo keeps to open pull requests fast, to fetch again when it's next needed: the
+     * local copies that aren't in use, and the answers saved from GitHub. Never accounts, the pull
+     * requests opened lately or marks.
+     */
     clearCache: { input: z.undefined(), reply: reply<CacheCleared>() },
   },
   topics: {

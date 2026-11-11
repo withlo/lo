@@ -1,5 +1,5 @@
 import { Button, Input, Meter, Setting } from '@lo/ui';
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 
 import { notify } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
@@ -94,45 +94,44 @@ function Usage({
     }
   };
 
-  if (usage === undefined || (usage.status === 'checking' && !gaveUp)) {
-    return <Setting label="Looking for git" description="Lo keeps its local copies with git." />;
-  }
-  if (usage.status === 'checking') {
-    return (
-      <Setting
-        label="No local copies"
-        description="Lo couldn't open the folder it keeps them in. Restart Lo to try again."
-      />
-    );
-  }
-  if (usage.status === 'unavailable') {
-    return (
-      <Setting
-        label="No local copies"
-        description="Lo keeps them with git, and has none to use right now."
-      />
-    );
-  }
+  const looking = usage === undefined || (usage.status === 'checking' && !gaveUp);
+  const ready = usage?.status === 'ready' ? usage : undefined;
   const limit = cap * GB;
+  let label: ReactNode = 'No local copies';
+  let description = 'Lo keeps them with git, and has none to use right now.';
+  if (looking) {
+    label = 'Looking for git';
+    description = 'Lo keeps its local copies with git.';
+  } else if (usage?.status === 'checking') {
+    description = "Lo couldn't open the folder it keeps them in. Restart Lo to try again.";
+  } else if (ready) {
+    label = <span className="tabular-nums">{formatBytes(ready.used)}</span>;
+    description =
+      'Local copies of repos, and answers saved from GitHub. Clearing them means fetching again the next time.';
+  }
   return (
     <>
-      <Setting
-        label={<span className="tabular-nums">{formatBytes(usage.used)}</span>}
-        description="Local copies of repos. Clearing them means fetching again the next time."
-      >
+      <Setting label={label} description={description}>
         <Button disabled={clearing} onClick={() => void clear()}>
           Clear the cache
         </Button>
       </Setting>
-      <div className="flex flex-col gap-6 pb-12">
-        <Meter value={usage.used} max={limit} label="Room the local copies take" />
-        <div className="text-fg-muted text-small" role="status">
-          <span className="tabular-nums">
-            {formatBytes(usage.used)} of {formatBytes(limit)}
-          </span>
-          . {said ?? 'Lo removes the oldest copies past that.'}
+      {(ready || said !== undefined) && (
+        <div className="flex flex-col gap-6 pb-12">
+          {ready && <Meter value={ready.used} max={limit} label="Room the local copies take" />}
+          <div className="text-fg-muted text-small" role="status">
+            {ready && (
+              <>
+                <span className="tabular-nums">
+                  {formatBytes(ready.used)} of {formatBytes(limit)}
+                </span>
+                .{' '}
+              </>
+            )}
+            {said ?? (ready ? 'Lo removes the oldest copies past that.' : undefined)}
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
@@ -172,7 +171,8 @@ function Cache() {
 export default defineSection({
   id: 'settings.cache',
   title: 'Cache',
-  description: 'Local copies of repos, kept so a pull request opens fast.',
+  description:
+    'Local copies of repos and saved answers from GitHub, kept so a pull request opens fast.',
   order: 50,
   render: Cache,
 });

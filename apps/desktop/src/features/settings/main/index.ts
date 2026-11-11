@@ -10,6 +10,7 @@ import { configFolder } from '../../../main/environment.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { IpcError } from '../../../ipc/contract.ts';
+import { github } from '../../accounts/service.ts';
 import { contract } from '../contract.ts';
 import { settings as service } from '../service.ts';
 import { applySettings } from './apply.ts';
@@ -39,6 +40,8 @@ function settings(): Settings {
 }
 
 export default defineFeature(contract, {
+  // Clearing the cache clears the answers the accounts keep, too.
+  uses: [github],
   provide({ publish }) {
     const path = settingsPath();
     kept = createSettings({
@@ -53,7 +56,7 @@ export default defineFeature(contract, {
     read: () => settings().state(),
     set: ({ key, value }) => settings().set(key, value),
     cacheUsage: (_input, { git }) => measure(git),
-    clearCache: (_input, { git }) => clear(git),
+    clearCache: (_input, { git, use }) => clear(git, use(github)),
   },
   start({ git }) {
     // The window follows the system's appearance, which this sets: the app feature reports it.

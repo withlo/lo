@@ -208,15 +208,23 @@ describe('Cache', () => {
     expect(container.textContent).toContain("Lo couldn't open the folder it keeps them in");
   });
 
-  it('says there are no local copies without git, and has nothing to clear', async () => {
-    installBridge({ 'settings.cacheUsage': usage({ status: 'unavailable' }) });
+  it('says there are no local copies without git, though the answers saved from GitHub can still be cleared', async () => {
+    const bridge = installBridge({
+      'settings.cacheUsage': usage({ status: 'unavailable' }),
+      'settings.clearCache': () => ({ kept: 0 }),
+    });
     const container = render(Cache);
     await settle();
     expect(container.textContent).toContain('No local copies');
-    expect([...container.querySelectorAll('button')].map((button) => button.textContent)).toEqual(
-      [],
-    );
+    expect(container.textContent).toContain('Lo keeps them with git');
     expect(container.querySelector('[role="meter"]')).toBeNull();
+    const clear = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Clear the cache',
+    );
+    click(clear);
+    await settle();
+    expect(bridge.calls.map(([channel]) => channel)).toContain('settings.clearCache');
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Cleared.');
   });
 
   it('clears the cache, says how it went, and measures again', async () => {

@@ -1,9 +1,8 @@
-// What Settings asks of the cache of local copies: how much room it takes, and clearing it. Nothing
-// here calls Electron, so it runs under unit tests.
+// What Settings asks of the cache: how much room the local copies take, and clearing them with the
+// answers Lo saved from GitHub. Nothing here calls Electron, so it runs under unit tests.
 
 import type { Cache, GitStatus } from '@lo/git';
 
-import { IpcError } from '../../../ipc/contract.ts';
 import { cacheCleared, cacheUsage, type CacheCleared, type CacheUsage } from '../contract.ts';
 
 /** What these need of git: the cache of local copies once it's open, and what Lo found of git. */
@@ -23,11 +22,22 @@ export async function measure({ cache, status }: Copies): Promise<CacheUsage> {
   return cacheUsage.parse({ status: looking ? 'checking' : 'unavailable' });
 }
 
+/** What clears the answers Lo saved from GitHub, which are kept with the accounts. */
+export interface Answers {
+  clearAnswers(): void;
+}
+
 /**
- * Removes the local copies that aren't in use, and says how many it had to leave. Accounts, marks
- * and everything else Lo keeps are elsewhere, and stay.
+ * Clears what Lo keeps to open pull requests fast: the answers it saved from GitHub, and the local
+ * copies that aren't in use, which it says how many it had to leave. Accounts, the pull requests
+ * opened lately and every mark are elsewhere, and stay. With no cache, there are no copies to clear
+ * but the answers go all the same.
  */
-export async function clear({ cache }: Pick<Copies, 'cache'>): Promise<CacheCleared> {
-  if (!cache) throw new IpcError('unavailable', 'Lo has no local copies to clear.');
-  return cacheCleared.parse({ kept: (await cache.clear()).length });
+export async function clear(
+  { cache }: Pick<Copies, 'cache'>,
+  answers: Answers,
+): Promise<CacheCleared> {
+  answers.clearAnswers();
+  const left = cache ? await cache.clear() : [];
+  return cacheCleared.parse({ kept: left.length });
 }

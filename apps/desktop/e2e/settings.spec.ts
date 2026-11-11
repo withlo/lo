@@ -276,20 +276,24 @@ test('main refuses a setting the window sends that no feature declared, or its s
   page,
 }) => {
   // As the page itself could, whatever Settings would send.
-  const replies = await page.evaluate(async () => {
-    const send = (input: unknown) => window.lo.invoke('settings.set', input);
-    return [
-      await send({ key: 'theme', value: 'purple' }),
-      await send({ key: 'theme', value: 3 }),
-      await send({ key: 'cache.cap', value: 99_999 }),
-      await send({ key: 'cache.cap', value: 2.5 }),
-      await send({ key: 'not.a.setting', value: true }),
-      await send({ key: '__proto__', value: true }),
-      await send({ key: 'theme', value: 'dark', path: '/etc/passwd' }),
-      await send({ key: 'theme' }),
-      await send('theme'),
-    ];
-  });
+  const replies = await page.evaluate(
+    async (inputs) => {
+      const sent = [];
+      for (const input of inputs) sent.push(await window.lo.invoke('settings.set', input));
+      return sent;
+    },
+    [
+      { key: 'theme', value: 'purple' },
+      { key: 'theme', value: 3 },
+      { key: 'cache.cap', value: 99_999 },
+      { key: 'cache.cap', value: 2.5 },
+      { key: 'not.a.setting', value: true },
+      { key: '__proto__', value: true },
+      { key: 'theme', value: 'dark', path: '/etc/passwd' },
+      { key: 'theme' },
+      'theme',
+    ],
+  );
   expect(replies.map((reply) => reply.ok)).toEqual(replies.map(() => false));
   expect(replies.map((reply) => (reply.ok ? '' : reply.error.code))).toEqual([
     'invalid',
@@ -309,11 +313,15 @@ test('main refuses a setting the window sends that no feature declared, or its s
 test.describe('with no git', () => {
   test.use({ launch: { env: { LO_GIT: 'none' } } });
 
-  test('Settings says Lo keeps no local copies, and has nothing to clear', async ({ page }) => {
+  test('Settings says Lo keeps no local copies, and can still clear the answers it saved', async ({
+    page,
+  }) => {
     await openSettings(page);
     const cache = page.locator('section[data-settings-section="settings.cache"]');
     await expect(cache.getByText('No local copies')).toBeVisible();
-    await expect(cache.getByRole('button')).toHaveCount(0);
+    await expect(cache.getByRole('meter')).toHaveCount(0);
+    await cache.getByRole('button', { name: 'Clear the cache' }).click();
+    await expect(cache.getByRole('status')).toHaveText('Cleared.');
     // The size limit is still the person's to set: it applies once there is a cache.
     await expect(sizeLimit(page)).toHaveValue('10');
   });

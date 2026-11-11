@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { IpcError } from '../../../ipc/contract.ts';
 import { clear, measure, type Copies } from './cache.ts';
 
 /** An open cache that takes `size` bytes under `cap`, with `copies` that are in use. */
@@ -51,20 +50,43 @@ describe('measure', () => {
   });
 });
 
+/** What clears answers, and how often it was asked to. */
+function answers() {
+  return { clearAnswers: vi.fn<() => void>() };
+}
+
 describe('clear', () => {
   it('clears the cache, and says how many copies it had to leave', async () => {
     const cache = open(5, 10, ['withlo/lo', 'sharkdp/fd']);
-    expect(await clear({ cache })).toEqual({ kept: 2 });
+    expect(await clear({ cache }, answers())).toEqual({ kept: 2 });
     expect(cache.clear).toHaveBeenCalledTimes(1);
-    expect(await clear({ cache: open(5, 10) })).toEqual({ kept: 0 });
+    expect(await clear({ cache: open(5, 10) }, answers())).toEqual({ kept: 0 });
   });
 
-  it('fails as unavailable when there is no cache', async () => {
-    const failure = clear({ cache: undefined });
-    await expect(failure).rejects.toBeInstanceOf(IpcError);
-    await expect(failure).rejects.toMatchObject({
-      code: 'unavailable',
-      message: 'Lo has no local copies to clear.',
-    });
+  it('clears the answers saved from GitHub with them', async () => {
+    const saved = answers();
+    await clear({ cache: open(5, 10) }, saved);
+    expect(saved.clearAnswers).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the answers, and nothing else, when there is no cache', async () => {
+    const saved = answers();
+    expect(await clear({ cache: undefined }, saved)).toEqual({ kept: 0 });
+    expect(saved.clearAnswers).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails, as anything else would, when the answers can’t be cleared, leaving the copies', async () => {
+    const cache = open(5, 10);
+    await expect(
+      clear(
+        { cache },
+        {
+          clearAnswers: () => {
+            throw new Error('The database is locked.');
+          },
+        },
+      ),
+    ).rejects.toThrow('The database is locked.');
+    expect(cache.clear).not.toHaveBeenCalled();
   });
 });

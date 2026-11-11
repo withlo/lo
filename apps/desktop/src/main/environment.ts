@@ -1,6 +1,23 @@
 import { isAbsolute, join } from 'node:path';
 
+import { GITHUB_URLS, type GitHubUrls } from '@lo/github';
+
 type Environment = Readonly<Record<string, string | undefined>>;
+
+/** What a build run from source goes by, beside an installed Lo: its data folder and cache too. */
+export const DEV_NAME = 'Lo Dev';
+
+/**
+ * The name Lo goes by, or undefined to keep the one Electron takes from `package.json` ("Lo").
+ *
+ * A build run from source goes by {@link DEV_NAME}, so it never shares the installed Lo's key in the
+ * system's keychain ("Lo Safe Storage"), which `safeStorage` names after the app. A build run from
+ * source runs on Electron's own app, which every project built on it shares, so the installed
+ * Lo's key must never trust it.
+ */
+export function appName(options: { packaged: boolean }): string | undefined {
+  return options.packaged ? undefined : DEV_NAME;
+}
 
 /**
  * Where Lo keeps its data, or undefined to keep Electron's default (`<appData>/Lo`).
@@ -22,7 +39,7 @@ export function dataFolder(options: {
     }
     return chosen;
   }
-  return join(options.appData, 'Lo Dev');
+  return join(options.appData, DEV_NAME);
 }
 
 /**
@@ -131,5 +148,49 @@ export function backgroundEnvironment(settings: BackgroundSettings): Record<stri
     LO_BACKGROUND: '1',
     LO_BACKGROUND_MEMORY_CAP_MB: String(Math.floor(settings.memoryCap / 1024 ** 2)),
     ...(settings.testJobs ? { LO_TEST_JOBS: '1' } : {}),
+  };
+}
+
+/** Which GitHub Lo talks to, and the account a test starts with. */
+export interface GithubSettings {
+  /** GitHub's addresses: github.com's, or a server on this machine standing in for it. */
+  urls: GitHubUrls;
+  /**
+   * Whether this is a test run: a build run from source, talking to a GitHub on this machine.
+   * Only then does Lo keep a token where the system's keychain is a stand-in.
+   */
+  testRun: boolean;
+  /** A file holding a token, for an account added as Lo starts. */
+  tokenFile: string | undefined;
+}
+
+/**
+ * Which GitHub Lo talks to. A build run from source talks to a server on this machine instead,
+ * such as the tests' replay server, when `LO_GITHUB` names its address (`http://127.0.0.1:<port>`,
+ * which serves GitHub's API under `/api`, its website under `/web` and its uploads under
+ * `/uploads`), and adds the account whose token is in the file `LO_TEST_TOKEN_FILE` names as it
+ * starts. A packaged build ignores both, and always talks to github.com.
+ */
+export function githubSettings(options: { packaged: boolean; env: Environment }): GithubSettings {
+  const settings = { urls: GITHUB_URLS, testRun: false, tokenFile: undefined };
+  if (options.packaged) return settings;
+  const address = options.env.LO_GITHUB;
+  const tokenFile = options.env.LO_TEST_TOKEN_FILE;
+  if (tokenFile !== undefined && !isAbsolute(tokenFile)) {
+    throw new Error(`LO_TEST_TOKEN_FILE must be an absolute path, not "${tokenFile}".`);
+  }
+  if (address === undefined) return { ...settings, tokenFile };
+  const url = URL.parse(address);
+  const local = ['127.0.0.1', 'localhost', '[::1]'].includes(url?.hostname ?? '');
+  const bare =
+    url?.username === '' && url.password === '' && url.pathname === '/' && !url.search && !url.hash;
+  if (!url || url.protocol !== 'http:' || !local || !bare) {
+    throw new Error(`LO_GITHUB must be an http address on this machine, not "${address}".`);
+  }
+  const { origin } = url;
+  return {
+    urls: { api: `${origin}/api`, web: `${origin}/web`, uploads: `${origin}/uploads` },
+    testRun: true,
+    tokenFile,
   };
 }
