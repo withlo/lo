@@ -7,7 +7,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { LIMITS, parseArtifact, type ParsedArtifact } from '../src/index.ts';
-import { errors, found, overview, PREAMBLE_LINES, timed } from './support.ts';
+import { collect, errors, found, overview, PREAMBLE_LINES, timed } from './support.ts';
 import { problems } from './walker.ts';
 
 const LINE = PREAMBLE_LINES + 1;
@@ -28,6 +28,7 @@ function hostile(text: string | Uint8Array): ParsedArtifact {
     expect(message).not.toMatch(/[\p{Cc}\p{Cf}\u2028\u2029]/u);
   }
   expect(made.findings.map(({ code }) => code)).not.toContain('unreadable');
+  expect(made.references.length).toBeLessThanOrEqual(LIMITS.targets);
   return made;
 }
 
@@ -142,6 +143,19 @@ describe('Markdown', () => {
   test('a glossary of as many terms as fit', () => {
     const made = hostile(filled('- **t**: d\n', overview('## Glossary\n\n')));
     expect(new Set(errors(made))).toEqual(new Set(['term-twice']));
+  });
+
+  test.each([
+    ['code', `code:${'a'.repeat(1_000)}#L1`],
+    ['a term', `term:${'t'.repeat(1_000)}`],
+  ])('one long link to %s, named by reference as often as fits', (_what, address) => {
+    const made = hostile(filled('[a][x] ', overview(`[x]: <${address}>\n\n`)));
+    expect(errors(made)).toContain('target-count');
+    // The tree keeps the limit's worth of links, and the rest are their text: it's no larger than
+    // those links' targets and the text it came from.
+    const tree = JSON.stringify(made.tree).length;
+    expect(tree).toBeLessThan(LIMITS.targets * 1_100 + 2 * LIMITS.size);
+    expect(collect(made, 'link')).toHaveLength(LIMITS.targets);
   });
 
   test('10,000 terms that aren’t defined', () => {

@@ -27,7 +27,10 @@ export interface ParsedArtifact {
   size: number;
   /** What the overview shows. Empty when its text wasn't read. */
   tree: OverviewTree;
-  /** Every place it points at code, in the order of their lines. */
+  /**
+   * Every place it points at code, in the order of their lines. Past the limit on targets, which
+   * makes it invalid, those past the limit aren't kept.
+   */
   references: CodeReference[];
   /** Every figure it shows, in order. */
   figures: FigureReference[];

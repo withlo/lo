@@ -1,7 +1,7 @@
 /**
  * Reading the largest overview the format allows stays fast: `artifact.md` at its size limit,
- * pointing 500 times, with 100 figures. It's timed on its first run in a fresh module, as a
- * background job runs it.
+ * pointing 500 times, with 100 figures, timed on its first run in a fresh module, as a background
+ * job runs it. So does reading the worst: one long target named as often as fits.
  */
 
 import { expect, test } from 'vitest';
@@ -105,3 +105,29 @@ test('the largest overview the format allows is read within budget', () => {
   expect(problems(made.tree)).toEqual([]);
   expect(elapsed, `took ${elapsed} ms for ${size} bytes`).toBeLessThan(LIMIT);
 });
+
+/**
+ * The most a reference can make of one long target: a definition, then as many uses of it as fit
+ * at the size limit, each of which would be a link holding the whole target.
+ */
+function amplified(address: string): string {
+  const start = `${HEADER}\n## tl;dr\n\nIt points.\n\n[x]: <${address}>\n\n`;
+  const room = LIMITS.size - new TextEncoder().encode(start).length;
+  return start + '[a][x] '.repeat(Math.floor(room / 7));
+}
+
+test.each([
+  ['code', `code:${'a'.repeat(1_000)}#L1`],
+  ['a term', `term:${'t'.repeat(1_000)}`],
+])(
+  'the worst overview, one long link to %s used as often as fits, is read within budget',
+  (_what, address) => {
+    const text = amplified(address);
+    expect(new TextEncoder().encode(text).length).toBeGreaterThan(LIMITS.size - 8);
+    const { made, elapsed } = timed(() => parseArtifact(text));
+    expect(made.findings.map(({ code }) => code)).toContain('target-count');
+    expect(made.references.length).toBeLessThanOrEqual(LIMITS.targets);
+    expect(problems(made.tree)).toEqual([]);
+    expect(elapsed, `took ${elapsed} ms`).toBeLessThan(LIMIT);
+  },
+);

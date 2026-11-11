@@ -10,7 +10,6 @@ import type { Block, Extension, Syntax, Tree } from '@lo/markdown';
 
 import type { BlockMeta, Reading } from './reading.ts';
 import { fences, GLOSSARY_OPEN, OPEN, PART_OPEN, PARTS_OPEN, TERM_OPEN } from './syntax.ts';
-import { CODE, readCode, readTerm, TERM } from './targets.ts';
 import type {
   Definition,
   FigurePart,
@@ -79,7 +78,8 @@ export function syntax(reading: Reading): Syntax<Building> {
         return { kind: PART, part: { id, target: only.target } };
       },
     },
-    link: claim,
+    // Only the links to code and terms reading kept, each address read once.
+    link: (href) => reading.claim(href),
   };
 }
 
@@ -134,19 +134,6 @@ function settled(children: Built[]): OverviewBlock[] {
 
 function isSettled(built: Built): built is OverviewBlock {
   return !isStandin(built);
-}
-
-/** Claims a link to the format's own targets: code and terms. `Reading` refused the invalid. */
-export function claim(href: string): Overview['target'] | undefined {
-  if (href.startsWith(CODE)) {
-    const read = readCode(href.slice(CODE.length), 'any');
-    return read.ok ? read.value : undefined;
-  }
-  if (href.startsWith(TERM)) {
-    const read = readTerm(href.slice(TERM.length));
-    return read.ok ? read.value : undefined;
-  }
-  return undefined;
 }
 
 const STANDINS = new Set<unknown>([STEP, TAB, DEFINITION, PARTS, PART]);

@@ -22,8 +22,19 @@ test('an overview points at most 500 times', () => {
   expect(at.findings).toEqual([]);
   expect(at.references).toHaveLength(LIMITS.targets);
   const past = parseArtifact(overview(`${links(LIMITS.targets + 1)}\n`));
-  // At the target past the limit.
+  // At the target past the limit, which isn't kept.
   expect(found(past)).toEqual([`target-count@${LINE + LIMITS.targets}`]);
+  expect(past.references).toHaveLength(LIMITS.targets);
+});
+
+test('the limit is passed at the 501st target in the document, wherever blocks and links sit', () => {
+  const block = ':::code a.ts#L1\n:::';
+  // Blocks are read before links, but the finding is where the document passes the limit.
+  const last = parseArtifact(overview(`${links(LIMITS.targets)}\n\n${block}\n`));
+  expect(found(last)).toEqual([`target-count@${LINE + LIMITS.targets + 1}`]);
+  const first = parseArtifact(overview(`${block}\n\n${links(LIMITS.targets)}\n`));
+  expect(found(first)).toEqual([`target-count@${LINE + LIMITS.targets + 2}`]);
+  for (const parsed of [last, first]) expect(parsed.references).toHaveLength(LIMITS.targets);
 });
 
 test('targets of every kind count, from blocks, steps, parts and links', () => {

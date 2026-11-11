@@ -28,8 +28,8 @@ import {
   TERM_CLOSE,
   TERM_OPEN,
 } from './syntax.ts';
-import { bytes, CODE, readCode, readFigure, readTerm, TERM } from './targets.ts';
-import type { CodeRange, CodeTarget } from './tree.ts';
+import { bytes, CODE, readCode, readFigure, readTerm, TERM, type Read } from './targets.ts';
+import type { CodeRange, CodeTarget, Overview } from './tree.ts';
 
 /** The kinds of block. */
 export const BLOCKS = ['code', 'figure', 'walkthrough', 'step', 'tabs', 'tab', 'fold'] as const;
@@ -82,6 +82,15 @@ interface Opened {
 
 type Section = 'start' | 'tldr' | 'glossary' | 'other' | 'footnotes';
 
+/**
+ * The most characters of code and term targets the links in the tree may hold together: as many
+ * as the limit on targets lets through, each at the longest a target may be. A link to the format's
+ * own target is claimed before `@lo/markdown` charges it against its limit on addresses, so this is
+ * that limit's stand-in, and one definition of a reference used over and over can't make the tree
+ * far larger than the text.
+ */
+const CLAIMED = LIMITS.targets * LIMITS.argument;
+
 export class Reading {
   readonly references: CodeReference[] = [];
   readonly figures: FigureReference[] = [];
@@ -95,8 +104,17 @@ export class Reading {
   private readonly findings: Findings;
   private readonly definitions = new Map<string, { name: string; line: number }>();
   private readonly uses: { key: string; line: number }[] = [];
-  /** The line of each target, for the limit on them. */
-  private readonly targets: number[] = [];
+  /** How many targets the overview has, past the limit or not. */
+  private targets = 0;
+  /**
+   * The lines of the first targets in the document, one past the limit's worth, in order: only
+   * these are kept, however many there are, and the last is where the limit was passed.
+   */
+  private readonly firstTargets: number[] = [];
+  /** Each code or term link's address, read once however many links name it. */
+  private readonly linked = new Map<string, Read<Overview['target']>>();
+  /** The characters of the code and term targets claimed for the tree so far. */
+  private claimed = 0;
 
   private section: Section = 'start';
   private seen = { tldr: false, glossary: false, first: false };
@@ -266,7 +284,13 @@ export class Reading {
           this.add(read.code, line, read.message);
           return undefined;
         }
-        this.reference(read.value, line, kind === 'code' ? 'block' : 'step');
+        if (this.target(line)) {
+          this.references.push({
+            target: read.value,
+            line,
+            from: kind === 'code' ? 'block' : 'step',
+          });
+        }
         return { kind, target: read.value };
       }
       case 'figure': {
@@ -668,40 +692,76 @@ export class Reading {
     return dropped.size === 0 ? children : children.filter((_, index) => !dropped.has(index));
   }
 
-  /** Reads a link to `href` on `line`: false when it names a target of the format's wrongly. */
+  /**
+   * Reads a link to `href` on `line`: false when it names a target of the format's wrongly, or
+   * past the limit on targets, so it shows as its text.
+   */
   private linkTarget(href: string, line: number): boolean {
-    if (href.startsWith(CODE)) {
-      const read = readCode(href.slice(CODE.length), 'any');
-      if (!read.ok) {
-        this.add(read.code, line, read.message);
-        return false;
-      }
-      this.reference(read.value, line, 'link');
+    const read = this.readLink(href);
+    if (read === undefined) {
+      if (href.startsWith('#')) this.target(line);
       return true;
     }
-    if (href.startsWith(TERM)) {
-      const read = readTerm(href.slice(TERM.length));
-      if (!read.ok) {
-        this.add(read.code, line, read.message);
-        return false;
-      }
+    if (!read.ok) {
+      this.add(read.code, line, read.message);
+      return false;
+    }
+    // Past the limit, the overview is invalid, and what's past it isn't kept.
+    if (!this.target(line)) return false;
+    if (read.value.kind === 'code') {
+      this.references.push({ target: read.value, line, from: 'link' });
+    } else {
       this.uses.push({ key: read.value.key, line });
-      this.targets.push(line);
-      return true;
     }
-    if (href.startsWith('#')) this.targets.push(line);
     return true;
   }
 
-  private reference(target: CodeTarget, line: number, from: CodeReference['from']): void {
-    this.references.push({ target, line, from });
-    this.targets.push(line);
+  /** A link's address read as code or a term, once for each address; undefined for any other. */
+  private readLink(href: string): Read<Overview['target']> | undefined {
+    const known = this.linked.get(href);
+    if (known) return known;
+    let read: Read<Overview['target']>;
+    if (href.startsWith(CODE)) read = readCode(href.slice(CODE.length), 'any');
+    else if (href.startsWith(TERM)) read = readTerm(href.slice(TERM.length));
+    else return undefined;
+    this.linked.set(href, read);
+    return read;
+  }
+
+  /**
+   * The target a link to `href` goes to in the tree, when it's to code or a term: only one this
+   * reading kept, and only while the tree's targets stay within {@link CLAIMED}.
+   */
+  claim(href: string): Overview['target'] | undefined {
+    const read = this.linked.get(href);
+    if (!read?.ok) return undefined;
+    const size = read.value.kind === 'code' ? read.value.path.length : read.value.key.length;
+    if (this.claimed + size > CLAIMED) return undefined;
+    this.claimed += size;
+    return read.value;
+  }
+
+  /**
+   * Counts a target on `line`: whether it's within the limit. Only the first lines in the document
+   * are kept, one past the limit's worth.
+   */
+  private target(line: number): boolean {
+    this.targets += 1;
+    const lines = this.firstTargets;
+    if (lines.length <= LIMITS.targets || line < lines.at(-1)!) {
+      // Blocks are read before links, so a line can come before those already kept.
+      let at = lines.length;
+      while (at > 0 && lines[at - 1]! > line) at -= 1;
+      lines.splice(at, 0, line);
+      if (lines.length > LIMITS.targets + 1) lines.pop();
+    }
+    return this.targets <= LIMITS.targets;
   }
 
   /** What needs the whole document read: the limit on targets, and the terms. */
   private settle(): void {
-    if (this.targets.length > LIMITS.targets) {
-      const line = this.targets.toSorted((a, b) => a - b)[LIMITS.targets];
+    if (this.targets > LIMITS.targets) {
+      const line = this.firstTargets[LIMITS.targets];
       this.add(
         'target-count',
         line,
