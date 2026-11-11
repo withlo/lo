@@ -248,7 +248,9 @@ syntax: `[the limiter](code:src/limiter.ts#L12-L40)`, `[buckets](term:bucket)`,
 - **At most 500 targets** in all: code, terms and sections, from blocks, steps, parts and links.
 
 A link to a web page works as on GitHub. A link to anything else, such as a relative path, shows as
-plain text, with a warning.
+plain text, with a warning. So does a link to a web page or a section once the links before it to
+web pages and sections have taken 131,072 characters of addresses in all, counting every link, even
+one to the same place.
 
 ## Terms
 

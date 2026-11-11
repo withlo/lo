@@ -5,6 +5,7 @@
 
 import { readFileSync } from 'node:fs';
 
+import { DEFAULT_LIMITS } from '@lo/markdown';
 import { expect, test } from 'vitest';
 
 import { FORMAT, LIMITS, MIN_STEPS, MIN_TABS, parseArtifact } from '../src/index.ts';
@@ -51,6 +52,8 @@ test('format.md gives the limits the parse keeps', () => {
     `| Figures                                | ${LIMITS.figures}`,
     `${LIMITS.steps}, and at least ${MIN_STEPS}`,
     `${LIMITS.tabs}, and at least ${MIN_TABS}`,
+    // The parse leaves Markdown's limit on addresses as it is.
+    `${number(DEFAULT_LIMITS.addresses)} characters of addresses`,
   ]) {
     expect(spec).toContain(phrase);
   }
