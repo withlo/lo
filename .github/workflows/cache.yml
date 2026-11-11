@@ -1,6 +1,6 @@
-# Saves pnpm's store, Electron's binary and the oldest git's build from main. A cache saved on a pull request's or the
-# merge queue's ref is only visible to that ref, while one saved on main is visible to every pull
-# request, so the other workflows only restore it.
+# Saves pnpm's store, Electron's binary, tree-sitter's toolchain and the oldest git's build from
+# main. A cache saved on a pull request's or the merge queue's ref is only visible to that ref,
+# while one saved on main is visible to every pull request, so the other workflows only restore it.
 name: cache
 
 on:
@@ -71,6 +71,47 @@ jobs:
         with:
           path: ~/.cache/electron
           key: electron-${{ runner.os }}-${{ steps.electron.outputs.version }}
+
+  # The WebAssembly toolchain the syntax package's build downloads and checks, which the check job
+  # in ci.yml restores when it builds the grammars. The build script pins it, so its hash is the key.
+  tree-sitter:
+    name: tree-sitter
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Look for this toolchain
+        id: cached
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/lo/tree-sitter
+          key:
+            tree-sitter-${{ runner.os }}-${{ hashFiles('packages/desktop/syntax/scripts/build.ts')
+            }}
+          lookup-only: true
+
+      - if: steps.cached.outputs.cache-hit != 'true'
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          cache: true
+          save-cache: false
+          require-lockfile: true
+
+      # Building the grammars downloads the toolchain.
+      - name: Build the grammars
+        if: steps.cached.outputs.cache-hit != 'true'
+        run: pnpm nx run syntax:build --output-style=static
+
+      - if: steps.cached.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/lo/tree-sitter
+          key:
+            tree-sitter-${{ runner.os }}-${{ hashFiles('packages/desktop/syntax/scripts/build.ts')
+            }}
 
   # The build of the oldest git Lo takes, which the oldest-git job in ci.yml restores.
   oldest-git:

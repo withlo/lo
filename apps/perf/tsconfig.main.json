@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.node.json",
+  "compilerOptions": {
+    "outDir": ".tsbuild/main",
+    "types": ["node", "electron-vite/node"]
+  },
+  "include": ["src/main/**/*.ts", "src/background/**/*.ts", "src/data/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["**/*.test.ts"],
+  "references": [
+    { "path": "./tsconfig.shared.json" },
+    { "path": "../../packages/desktop/syntax" },
+    { "path": "../../packages/core/diff" }
+  ]
+}

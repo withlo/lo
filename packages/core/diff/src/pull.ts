@@ -107,13 +107,18 @@ export function findMoves(
       const oldLine = deleted[moved.from.file]!.get(edit.old) ?? '';
       const newLine = added[moved.to.file]!.get(edit.new) ?? '';
       const left = deadline - Date.now();
-      const found =
-        left > 0
-          ? lineWords(oldLine, newLine, { budget: left === Infinity ? 0 : Math.ceil(left) })
-          : {
-              old: oldLine === '' ? [] : [{ line: 1, from: 0, to: oldLine.length }],
-              new: newLine === '' ? [] : [{ line: 1, from: 0, to: newLine.length }],
-            };
+      const whole = {
+        old: oldLine === '' ? [] : [{ line: 1, from: 0, to: oldLine.length }],
+        new: newLine === '' ? [] : [{ line: 1, from: 0, to: newLine.length }],
+      };
+      let found = whole;
+      if (left > 0) {
+        try {
+          found = lineWords(oldLine, newLine, { budget: left === Infinity ? 0 : Math.ceil(left) });
+        } catch {
+          // A line whose words can't be found is highlighted whole, and the rest go on.
+        }
+      }
       words.old.push(...found.old.map((range) => ({ ...range, line: edit.old })));
       words.new.push(...found.new.map((range) => ({ ...range, line: edit.new })));
     }
