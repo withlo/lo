@@ -9,7 +9,7 @@
  * The plan is data: the steps say what to send GitHub, and running them is up to the caller.
  */
 
-import { layerOf, type Retarget, type Stacks } from './stacks.ts';
+import { layerOf, type Gap, type Retarget, type Stacks } from './stacks.ts';
 
 /**
  * What "Make this a GitHub stack" will do. Show the steps in its confirmation, then run them in
@@ -59,6 +59,11 @@ export interface Facts {
 
 /** Why "Make this a GitHub stack" isn't offered, in the order they're listed. */
 export type Reason =
+  /**
+   * The reads the stacks were found from left something out (`gaps`), so a layer may sit on the
+   * wrong pull request or branch. The only reason given when it applies.
+   */
+  | { readonly kind: 'incomplete'; readonly gaps: readonly Gap[] }
   /**
    * The pull request asked about isn't a layer: it isn't open, or wasn't passed to `findStacks`.
    * The only reason given when it applies.
@@ -119,6 +124,7 @@ function notOffered(reasons: readonly Reason[]): Conversion {
  * those about one pull request are grouped, bottom to top.
  */
 export function planConversion(stacks: Stacks, layer: number, facts: Facts): Conversion {
+  if (stacks.gaps.length > 0) return notOffered([{ kind: 'incomplete', gaps: stacks.gaps }]);
   const through = pathThrough(stacks, layer);
   if (through === undefined) return notOffered([{ kind: 'notOpen' }]);
   const { root, path } = through;

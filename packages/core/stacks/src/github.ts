@@ -25,6 +25,7 @@ import {
 import {
   branchesToLookUp,
   findStacks,
+  type Gap,
   type NativeStackEntry,
   type PullRequest,
   type Stacks,
@@ -129,6 +130,9 @@ export function trunksOf(list: OpenPullRequestList, rules: TrunkRuleList): Trunk
  * Until the rulesets have been read once, a tree is "loading", not one built without them: a branch
  * only a ruleset protects, such as a `develop` with a release pull request open from it, would hold
  * every layer on it.
+ *
+ * The stacks' `gaps` say what the reads left out, which keeps every plan from being made until
+ * they're read again whole.
  */
 export function stacksOf(
   list: OpenPullRequestList,
@@ -136,7 +140,17 @@ export function stacksOf(
   more: readonly MergedPullRequest[] = [],
 ): Stacks {
   const prs = stackPullRequests(list, more);
-  return findStacks(prs, trunksAmong(trunksOf(list, rules), prs));
+  const stacks = findStacks(prs, trunksAmong(trunksOf(list, rules), prs));
+  return { ...stacks, gaps: gapsIn(list, rules) };
+}
+
+/** What `list` and `rules` left out that can put a layer on the wrong pull request or branch. */
+export function gapsIn(list: OpenPullRequestList, rules: TrunkRuleList): Gap[] {
+  const gaps: Gap[] = [];
+  if (list.truncated) gaps.push({ kind: 'openPullRequests' });
+  if (list.mergedTruncated) gaps.push({ kind: 'mergedPullRequests' });
+  if (rules.unavailable !== undefined) gaps.push({ kind: 'rulesets', why: rules.unavailable });
+  return gaps;
 }
 
 /**

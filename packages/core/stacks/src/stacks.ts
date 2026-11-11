@@ -286,7 +286,32 @@ export interface Stacks {
   readonly stackIndex: Readonly<Record<number, readonly [number, number]>>;
   /** The cycles found and broken, by the number of the pull request whose link was dropped. */
   readonly cycles: readonly Cycle[];
+  /**
+   * What the reads the stacks were found from left out, which can put a layer on the wrong pull
+   * request or branch, such as a merged pull request's dead branch. No plan is made while there's
+   * any. Empty from {@link findStacks}, which takes what it's given as everything; `stacksOf` says
+   * what the reads it's given left out.
+   */
+  readonly gaps: readonly Gap[];
 }
+
+/** Something the reads stacks were found from left out. */
+export type Gap =
+  /**
+   * The repository has more open pull requests than Lo reads, so the oldest were left out, and a
+   * layer above one of them sits on its branch as a root.
+   */
+  | { readonly kind: 'openPullRequests' }
+  /**
+   * Some branches' merged pull requests weren't looked up, so a layer above one of them sits on its
+   * dead branch as a root. They're looked up again after a wait.
+   */
+  | { readonly kind: 'mergedPullRequests' }
+  /**
+   * The repository's rulesets couldn't be read, for the reason `why`, so a branch only a ruleset
+   * protects may be taken for a layer's. They're read again after a wait.
+   */
+  | { readonly kind: 'rulesets'; readonly why: string };
 
 /** The layer for an open pull request, or nothing for any other number. */
 export function layerOf(stacks: Stacks, number: number): Layer | undefined {
@@ -318,7 +343,7 @@ export function findStacks(prs: readonly PullRequest[], trunks: readonly string[
   const placed = graph.prs.flatMap((pr, index) =>
     isOpen(pr) ? [graph.place(index, links, landings)] : [],
   );
-  return { ...build(placed, trunks), cycles };
+  return { ...build(placed, trunks), cycles, gaps: [] };
 }
 
 /** An open pull request and where it sits. */
@@ -331,7 +356,10 @@ interface Placed {
 }
 
 /** Lays out the open pull requests, each with what it sits on, as trees. */
-function build(open: readonly Placed[], trunks: readonly string[]): Omit<Stacks, 'cycles'> {
+function build(
+  open: readonly Placed[],
+  trunks: readonly string[],
+): Omit<Stacks, 'cycles' | 'gaps'> {
   const order = new Map(open.map(({ pr }) => [pr.number, pr.createdAt]));
   const byCreation = (a: number, b: number) => (order.get(a) ?? 0) - (order.get(b) ?? 0) || a - b;
 
