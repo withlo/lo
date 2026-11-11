@@ -583,6 +583,27 @@ test('content github finds too fast holds every write a minute doubling with eac
   expect(await t.poller.sendReview(pr(1), write)).toMatchObject({ refusal: 'paused' });
 });
 
+test('a poller that replaces another holds writes after content github found too fast', async () => {
+  const r = recorded();
+  const t = await Polling.start('too_fast_replaced', fileComments(r, ['tooFast', 'tooFast']));
+  const write: ReviewWrite = { kind: 'postFileComment', body: FILE_COMMENT, head: FULL_SHA };
+  const send = () => t.finish(t.poller.sendReview(pr(1), write));
+  const refused = { refusal: 'tooFast', message: 'was submitted too quickly' };
+
+  expect(await send()).toEqual(refused);
+  // Half a minute later the poller is replaced, as when Lo starts it again: the new one holds
+  // writes for the half minute left.
+  await t.runUntil(30);
+  await t.restart();
+  expect(await send()).toEqual({ refusal: 'paused', until: wall(60) });
+  expect(t.poller.writesHeldUntil()).toBe(wall(60));
+  // And it counts on from the old one's run: the next refusal is the second in a row, two minutes.
+  await t.runUntil(60);
+  expect(await send()).toEqual(refused);
+  expect(t.poller.writesHeldUntil()).toBe(wall(180));
+  expect(t.requests()).toEqual(log([0, 'POST /pulls/1/comments'], [60, 'POST /pulls/1/comments']));
+});
+
 test('writes waiting behind a poll github answers with a secondary limit are held', async () => {
   const r = recorded();
   const limited = answer(
@@ -1169,19 +1190,19 @@ test('a thread github put on a newer head reads the threads and your pending rev
   const { t, runs } = await reviewing('thread_on_newer_head', answers, reviewThreads(1));
   t.requests();
 
-  // Taken back out and refused: the threads and your pending review are read again after the add,
-  // and again after the delete.
+  // Taken back out and refused: the threads and your pending review are read again once the delete,
+  // in the add's turn, is done.
   let sent = t.poller.sendReview(pr(1), addThread(5));
   await t.run();
   await t.runUntil(20);
   expect(await t.finish(sent)).toEqual({ refusal: 'headMoved', head: pushed });
-  expect([runs.threads, runs.pending]).toEqual([3, 3]);
+  expect([runs.threads, runs.pending]).toEqual([2, 2]);
   // Left on the newer head when it couldn't be taken back: read again, so the UI shows it there.
   sent = t.poller.sendReview(pr(1), addThread(6));
   await t.run();
   await t.runUntil(30);
   expect(await t.finish(sent)).toMatchObject({ comment: 'PRRC_6', landedOn: { head: pushed } });
-  expect([runs.threads, runs.pending]).toEqual([5, 5]);
+  expect([runs.threads, runs.pending]).toEqual([3, 3]);
   const writes = t.requests().filter(([, what]) => /^(Add|Delete|Review)/.test(what));
   expect(writes.map(([, what]) => what)).toEqual([
     'AddPullRequestReviewThread',

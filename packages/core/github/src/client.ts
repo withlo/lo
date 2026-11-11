@@ -149,15 +149,32 @@ interface Shared {
   state: ClientState;
   /** GitHub's latest refusals for the rate limit, oldest first ({@link GithubClient.rateLimited}). */
   limited: HeardLimit[];
+  /** GitHub's latest run of writes turned away as content sent too fast ({@link GithubClient.tooFast}). */
+  tooFast: TooFast | undefined;
 }
 
 /** A refusal for the rate limit, used up or secondary. */
 export type RateLimited = Extract<GithubErrorDetail, { kind: 'rateLimited' }>;
 
-/** A refusal for the rate limit as a client heard it: what GitHub said, and when, in milliseconds since the Unix epoch. */
+/**
+ * A refusal for the rate limit as a client heard it: what GitHub said, and when, in milliseconds:
+ * `at` since the Unix epoch, and `monotonic` by `performance.now()`, a clock that only moves
+ * forward, which times the waits GitHub asks for.
+ */
 export interface HeardLimit {
   readonly detail: RateLimited;
   readonly at: number;
+  readonly monotonic: number;
+}
+
+/**
+ * A run of writes GitHub turned away as content sent too fast ("was submitted too quickly"), as the
+ * account's poller heard it: how many in a row, and until when writes wait after the last, in
+ * milliseconds by the monotonic clock.
+ */
+export interface TooFast {
+  readonly inARow: number;
+  readonly until: number;
 }
 
 /** How many of GitHub's latest refusals for the rate limit a client keeps. */
@@ -184,6 +201,7 @@ export class GithubClient {
       token: options.token,
       state: { rateLimits: new RateLimits(), sso: undefined },
       limited: [],
+      tooFast: undefined,
     };
     this.#store = options.store;
     this.#onUnauthorized = options.onUnauthorized;
@@ -242,12 +260,26 @@ export class GithubClient {
     return [...this.#shared.limited];
   }
 
+  /**
+   * GitHub's latest run of writes it turned away as content sent too fast, to this client and those
+   * sharing its state, as {@link GithubClient.setTooFast} last recorded it. It's kept here with the
+   * refusals for the rate limit, so a poller that replaces another holds writes as long.
+   */
+  tooFast(): TooFast | undefined {
+    return this.#shared.tooFast;
+  }
+
+  /** Records GitHub's latest run of writes turned away as content sent too fast ({@link GithubClient.tooFast}). */
+  setTooFast(tooFast: TooFast | undefined): void {
+    this.#shared.tooFast = tooFast;
+  }
+
   /** Records `error`, if it's a refusal for the rate limit ({@link GithubClient.rateLimited}). */
   #heard(error: GithubError): void {
     const { detail } = error;
     if (detail.kind !== 'rateLimited') return;
     const { limited } = this.#shared;
-    limited.push({ detail, at: Date.now() });
+    limited.push({ detail, at: Date.now(), monotonic: performance.now() });
     if (limited.length > LIMITED_KEPT) limited.splice(0, limited.length - LIMITED_KEPT);
   }
 

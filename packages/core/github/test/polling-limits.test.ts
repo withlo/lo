@@ -280,6 +280,36 @@ test('a secondary limit waits as long as github asks then backs off', async () =
   );
 });
 
+test('a secondary limits wait is timed from the refusal whatever the wall clock says', async () => {
+  const r = recorded();
+  const message = '{"message":"You have exceeded a secondary rate limit."}';
+  const interactions = recorded();
+  interactions.splice(6, 0, answer(at(r, 6), 403, [['retry-after', '90']], message));
+  const t = await Polling.start('secondary_clock_set', interactions);
+  void t.poller.setOpen(pr(1));
+  await t.run();
+  await t.runUntil(20);
+  expect(t.status().rateLimit).toEqual({
+    kind: 'paused',
+    until: wall(110),
+    reason: { kind: 'secondary' },
+  });
+  t.requests();
+  const left = () => (t.poller.writesHeldUntil() ?? 0) - Date.now();
+  // At 30 s the wall clock is set forward an hour: the pause still has 80 s to go.
+  await t.runUntil(30);
+  t.sleep(3600);
+  expect(left()).toBe(80_000);
+  // At 50 s it's set back two hours: 60 s to go, no more.
+  await t.runUntil(50);
+  t.sleep(-7200);
+  expect(left()).toBe(60_000);
+  await t.runUntil(109);
+  expect(t.requests()).toEqual([]);
+  await t.runUntil(110);
+  expect(t.requests()[0]).toEqual([110, 'GET /pulls/1 (since)']);
+});
+
 /**
  * The recorded poll with the open PR's second check answered by a GraphQL rate-limit error, with
  * `remaining` of GraphQL's limit left in a window that resets at 600 s.
