@@ -248,6 +248,8 @@ function sampleTarget(kind: TargetKind): Target {
   switch (kind) {
     case 'line':
       return { kind, at: { file: 'f', side: 'new', line: 1 }, thread: 't' };
+    case 'header':
+      return { kind, file: 'f', side: 'new' };
     case 'file':
       return { kind, file: 'f' };
     case 'thread':

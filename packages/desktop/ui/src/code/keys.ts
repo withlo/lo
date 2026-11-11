@@ -6,12 +6,13 @@
 //   mode and operators work with them, and the keymap file's `vim` lines are Vim mappings.
 // - A code view's own editors are read-only: no key changes their text, and none enters insert or
 //   replace mode. Vim refuses most such keys itself in a read-only editor, but `o` and `O` would
-//   leave it in insert mode, so a key that does is undone, the cursor back where it was.
+//   leave it in insert mode, and a refused edit still moves the cursor, so what such a key, or an Ex
+//   command from Vim's prompt, started is undone, the cursor back where it was.
 // - Vim's jumplist goes (`jumps.ts`), and the keys that go by the screen go by the box that scrolls
 //   (`screen.ts`).
 
 import { Annotation, EditorState, type Extension } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { EditorView, ViewPlugin } from '@codemirror/view';
 import { CodeMirror, type CodeMirrorV, getCM, Vim } from '@replit/codemirror-vim';
 
 import type { JumpTo, Mode, VimKey } from './api.ts';
@@ -49,14 +50,101 @@ export function readOnly(): Extension {
   return [
     EditorState.readOnly.of(true),
     EditorState.changeFilter.of((transaction) => transaction.annotation(ownChange) === true),
+    noCompositions,
   ];
 }
+
+const compositionEvents = ['compositionstart', 'compositionupdate', 'compositionend'] as const;
+
+/**
+ * Cancels an input method's composition in a read-only editor's text, before CodeMirror sees it:
+ * CodeMirror would follow the composed text, which the editor refuses, and a later focus change
+ * would then fail on text no longer in the page. Moving focus out and back ends the composition.
+ * Vim's prompt, outside the text, composes as any field does.
+ */
+const noCompositions = ViewPlugin.define((view) => {
+  const cancel = (event: Event): void => {
+    if (!(event.target instanceof Node) || !view.contentDOM.contains(event.target)) return;
+    event.stopPropagation();
+    if (event.type !== 'compositionstart') return;
+    view.contentDOM.blur();
+    view.focus();
+  };
+  for (const type of compositionEvents) view.dom.addEventListener(type, cancel, true);
+  return {
+    destroy() {
+      for (const type of compositionEvents) view.dom.removeEventListener(type, cancel, true);
+    },
+  };
+});
 
 /** Makes `view` one of a code view's own editors, before any key is typed in it. */
 export function addCodeEditor(view: EditorView, editor: CodeEditor): void {
   installVim();
   editors.set(view, editor);
   sendJumps(view, editor.jumped);
+  // Vim's prompt runs an Ex command as its `Enter` is pressed, outside `handleKey`.
+  view.dom.addEventListener('keydown', (event) => guardEx(view, editor, event), { capture: true });
+}
+
+/**
+ * The Ex commands that would edit text or enter insert mode, by their names and the shortest each
+ * is written: refused in a read-only editor, they still move the cursor, so it goes back.
+ */
+const editingEx: readonly { name: string; shortest: string }[] = [
+  { name: 'delete', shortest: 'd' },
+  { name: 'global', shortest: 'g' },
+  { name: 'join', shortest: 'j' },
+  { name: 'normal', shortest: 'norm' },
+  { name: 'put', shortest: 'pu' },
+  { name: 'redo', shortest: 'red' },
+  { name: 'sort', shortest: 'sor' },
+  { name: 'startinsert', shortest: 'start' },
+  { name: 'substitute', shortest: 's' },
+  { name: 'undo', shortest: 'u' },
+  { name: 'vglobal', shortest: 'v' },
+];
+
+/** A range before an Ex command's name: lines, marks, patterns and offsets, joined by `,` or `;`. */
+const exRange =
+  /^(?:\s*(?:\d+|[.$%]|'.|\/(?:\\.|[^\\/])*\/?|\?(?:\\.|[^\\?])*\??)?(?:\s*[+-]\s*\d*)*\s*[,;]?)*\s*/;
+
+/** Whether the Ex command `input`, as typed at Vim's `:` prompt, would edit text or insert. */
+export function editsText(input: string): boolean {
+  const word = /^[a-z]+/i.exec(input.replace(/^[\s:]*/, '').replace(exRange, ''))?.[0];
+  if (!word) return false;
+  return editingEx.some(
+    ({ name, shortest }) => name.startsWith(word) && word.length >= shortest.length,
+  );
+}
+
+/**
+ * As `Enter` in Vim's `:` prompt runs an Ex command in `view`, keeps the cursor where it was if
+ * the command would edit, and never leaves insert mode on: as `handleKey` does for a key.
+ */
+function guardEx(view: EditorView, editor: CodeEditor, event: KeyboardEvent): void {
+  const input = event.target;
+  if (event.key !== 'Enter' || !(input instanceof HTMLInputElement) || busy.has(view)) return;
+  if (input.previousSibling?.textContent !== ':' || view.contentDOM.contains(input)) return;
+  const before = view.state.selection;
+  const edits = editsText(input.value);
+  busy.add(view);
+  let done = false;
+  const after = (): void => {
+    if (done) return;
+    done = true;
+    busy.delete(view);
+    const cm = getCM(view);
+    if (cm && hasVim(cm) && cm.state.vim.insertMode) {
+      delete cm.state.vim.insertModeRepeat;
+      Vim.exitInsertMode(cm, true);
+    }
+    if (edits) view.dispatch({ selection: before, scrollIntoView: true });
+    editor.settled();
+  };
+  // Vim's own listener on the prompt runs the command; this one, added later, runs after it.
+  input.addEventListener('keydown', after, { once: true });
+  setTimeout(after, 0);
 }
 
 function viewOf(cm: unknown): EditorView | undefined {
@@ -140,6 +228,11 @@ let mapped: { keys: string; context: Mode | undefined }[] = [];
  */
 export function setVimKeys(keys: readonly VimKey[]): void {
   installVim();
+  for (const key of keys) {
+    if (key.kind === 'motion' && !Object.hasOwn(diffMotions, key.command)) {
+      throw new Error(`No code view runs ${key.command} as a motion: diffMotions doesn't list it.`);
+    }
+  }
   for (const { keys: lhs, context } of mapped.toReversed()) {
     // Vim's types want a mode, but a mapping made for every mode has none.
     Reflect.apply(Vim.unmap, Vim, [lhs, context]);
@@ -147,8 +240,7 @@ export function setVimKeys(keys: readonly VimKey[]): void {
   mapped = [];
   for (const key of keys) {
     if (key.kind === 'motion') {
-      const motion = Object.hasOwn(diffMotions, key.command) ? diffMotions[key.command] : undefined;
-      if (!motion) continue;
+      const motion = diffMotions[key.command]!;
       const args = { forward: motion.forward, to: motion.to, linewise: true, toJumplist: true };
       Vim.mapCommand(key.keys, 'motion', 'loJump', args, {});
       mapped.push({ keys: key.keys, context: undefined });

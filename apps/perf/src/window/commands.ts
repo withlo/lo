@@ -87,7 +87,7 @@ export const diffKeys = defineCommands('diff', {
     label: 'Open every unchanged line in the file',
     group: 'Diff view',
     keys: ['z R'],
-    targets: ['line'],
+    targets: ['line', 'header'],
     overVim: true,
     when: { scope: 'diff', mode: 'normal' },
   },
@@ -95,7 +95,7 @@ export const diffKeys = defineCommands('diff', {
     label: 'Load, close or open the file',
     group: 'Diff view',
     keys: ['z a'],
-    targets: ['line'],
+    targets: ['line', 'header'],
     overVim: true,
     when: { scope: 'diff', mode: 'normal' },
   },
@@ -157,17 +157,11 @@ function placeOf(target: LineTarget): Place {
   return 'line' in at ? at : { file: at.file, side: at.side, line: Math.max(at.from, at.to) };
 }
 
-/** A line of a file, not its header. */
-function onALine(target: Target): true | string {
-  if (target.kind !== 'line') return 'Put the cursor on a line.';
-  return placeOf(target).line > 0 ? true : 'Put the cursor on a line, not the header.';
-}
-
 export function commandsFor(suite: Suite) {
   const jump = (to: 'change' | 'file' | 'thread', count: number) => (): void =>
     suite.view().jump(to, count);
-  const fold = (how: 'open' | 'close' | 'file' | 'toggle') => (target: LineTarget) =>
-    suite.view().fold(placeOf(target), how);
+  const fold = (how: 'open' | 'close' | 'file' | 'toggle') => (target: Target) =>
+    suite.view().fold(target, how);
   return [
     ...handlers(diffKeys, {
       nextChange: { run: jump('change', 1) },
@@ -177,8 +171,8 @@ export function commandsFor(suite: Suite) {
       nextThread: { run: jump('thread', 1) },
       previousThread: { run: jump('thread', -1) },
       otherSide: { run: () => suite.view().otherSide() },
-      openRun: { run: fold('open'), enabled: onALine },
-      closeRun: { run: fold('close'), enabled: onALine },
+      openRun: { run: fold('open') },
+      closeRun: { run: fold('close') },
       openFile: { run: fold('file') },
       toggleFile: { run: fold('toggle') },
       inline: {
@@ -191,9 +185,8 @@ export function commandsFor(suite: Suite) {
         run(target) {
           suite.compose(target.at);
         },
-        enabled: onALine,
       },
-      copyLink: { run: (target) => suite.copyLink(placeOf(target)), enabled: onALine },
+      copyLink: { run: (target) => suite.copyLink(placeOf(target)) },
     }),
     ...handlers(historyKeys, {
       back: {

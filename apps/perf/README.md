@@ -104,7 +104,10 @@ pnpm nx run perf:e2e
 This writes a small PR of its own, a few files with a rename, a move and threads on both sides,
 opens it with `LO_PERF_PULL` naming the file, so nothing is fetched, and presses real keys: the
 cursor stays on screen, `Tab` and `Ctrl-o` cross and come back, a comment box keeps its keys and
-stays level as it grows, a held key dies on blur, and `y w` still reaches Vim. CI runs it on Linux.
+stays level as it grows, a held key dies on blur, and `y w` still reaches Vim. Another shows a file
+as GitHub's diff leaves it, unchanged lines between hunks left out, then fills it in place as the
+local copy would (`gaps` and `copyAfterMs` in the file): the cursor and the scroll stay put. CI runs
+them on Linux.
 
 ## Recording the manifests
 

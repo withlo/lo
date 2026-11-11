@@ -138,6 +138,7 @@ export {
   targetKinds,
   type BlockTarget,
   type FileTarget,
+  type HeaderTarget,
   type LayerTarget,
   type LineTarget,
   type NoTarget,

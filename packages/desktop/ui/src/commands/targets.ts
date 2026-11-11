@@ -8,7 +8,7 @@ export type Side = 'old' | 'new';
 export interface Place {
   file: string;
   side: Side;
-  /** From 1, or 0 for the file's header in a code view that shows one. */
+  /** From 1. */
   line: number;
   /** From 0, in UTF-16 code units. */
   column?: number;
@@ -33,6 +33,13 @@ export interface LineTarget {
 export interface FileTarget {
   kind: 'file';
   file: string;
+}
+
+/** A file's header in a code view that shows one, on one side: where `]f` lands. */
+export interface HeaderTarget {
+  kind: 'header';
+  file: string;
+  side: Side;
 }
 
 export interface ThreadTarget {
@@ -63,7 +70,14 @@ export interface NoTarget {
 }
 
 export type Target =
-  LineTarget | FileTarget | ThreadTarget | LayerTarget | BlockTarget | TabTarget | NoTarget;
+  | LineTarget
+  | HeaderTarget
+  | FileTarget
+  | ThreadTarget
+  | LayerTarget
+  | BlockTarget
+  | TabTarget
+  | NoTarget;
 
 export type TargetKind = Target['kind'];
 
@@ -73,6 +87,7 @@ export type TargetOf<K extends TargetKind> = Extract<Target, { kind: K }>;
 /** Every kind of target. */
 export const targetKinds: readonly TargetKind[] = [
   'line',
+  'header',
   'file',
   'thread',
   'layer',
@@ -85,7 +100,7 @@ export const NO_TARGET: NoTarget = { kind: 'none' };
 
 /**
  * `target` as one of `kinds`, which a command takes, or undefined if it's none of them. A target of
- * one of the kinds is taken as it is. Otherwise, in `kinds`' order: a line gives its file and its
+ * one of the kinds is taken as it is. Otherwise, in `kinds`' order: a line or a header gives its file, a line its
  * thread, and a command that takes `none` takes anything.
  */
 export function fit<K extends TargetKind>(
@@ -110,12 +125,14 @@ function derive(kind: TargetKind, target: Target): Target | undefined {
     case 'none':
       return NO_TARGET;
     case 'file':
-      return target.kind === 'line' ? { kind: 'file', file: target.at.file } : undefined;
+      if (target.kind === 'line') return { kind: 'file', file: target.at.file };
+      return target.kind === 'header' ? { kind: 'file', file: target.file } : undefined;
     case 'thread':
       return target.kind === 'line' && target.thread !== undefined
         ? { kind: 'thread', thread: target.thread }
         : undefined;
     case 'line':
+    case 'header':
     case 'layer':
     case 'block':
     case 'tab':
@@ -138,6 +155,8 @@ export function plainTarget(target: Target): Target {
         ? { kind: 'line', at }
         : { kind: 'line', at, thread: target.thread };
     }
+    case 'header':
+      return { kind: 'header', file: target.file, side: target.side };
     case 'file':
       return { kind: 'file', file: target.file };
     case 'thread':
