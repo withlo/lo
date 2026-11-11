@@ -205,6 +205,7 @@ export async function videoRun(
   const webm = await video.path();
   const mp4 = join(folder, `${zR ? `${pull}-zR` : pull}.mp4`);
   const seconds = await toMp4(webm, mp4);
+  rmSync(webm);
   return { mp4, seconds };
 }
 
