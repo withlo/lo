@@ -423,9 +423,9 @@ export class Aligner {
   }
 
   /**
-   * Brings a focused editor's cursor back on screen, the least scroll that shows its line, when
-   * the measuring after a key's far jump left it off: a line it draws by scrolling, one it doesn't by
-   * having CodeMirror scroll there again, a few times at most.
+   * Brings a focused editor's cursor back on screen, the least scroll that shows it, when the
+   * measuring after a key's far jump left it off: in a line it draws by scrolling, in one it doesn't
+   * by having CodeMirror scroll there again, a few times at most.
    */
   #cursorInView(): void {
     const side = this.#anchorSide();
@@ -445,11 +445,13 @@ export class Aligner {
       }
       return;
     }
+    // The cursor's own row of text, as CodeMirror scrolls to it, not the whole of a line that
+    // wraps: a cursor on screen is left where it is, as a key that scrolls, such as `zt`, put it.
+    const cursor = cursorRow(view, head, line);
+    if (cursor.top >= screen.top - 1 && cursor.bottom <= screen.bottom + 1) return;
     let shift = 0;
-    if (line.bottom > screen.bottom - cursorMargin)
-      shift = line.bottom - screen.bottom + cursorMargin;
-    if (line.top - shift < screen.top + cursorMargin) shift = line.top - screen.top - cursorMargin;
-    if (Math.abs(shift) <= 0.5) return;
+    if (cursor.bottom > screen.bottom) shift = cursor.bottom - screen.bottom + cursorMargin;
+    if (cursor.top - shift < screen.top) shift = cursor.top - screen.top - cursorMargin;
     this.#scroller.scrollTop += shift;
     const offset = drawnRect(view, head)!.top - screen.top;
     this.#anchor = {
@@ -1050,6 +1052,22 @@ function drawnRect(view: EditorView, pos: number): DOMRect | undefined {
   for (let index = 0; index < own && mine; index++) mine = mine.nextElementSibling;
   if (!mine || view.posAtDOM(mine) !== block.from) return undefined;
   return mine.getBoundingClientRect();
+}
+
+/**
+ * The row of text the cursor at `pos` is on, in its line drawn at `line`, where CodeMirror finds
+ * it to scroll to: the character after it, or the one before at the end of its text. The whole
+ * line where it has no text.
+ */
+function cursorRow(view: EditorView, pos: number, line: DOMRect): { top: number; bottom: number } {
+  const { node, offset } = view.domAtPos(pos);
+  if (!(node instanceof Text) || node.length === 0) return line;
+  const from = Math.min(offset, node.length - 1);
+  const range = document.createRange();
+  range.setStart(node, from);
+  range.setEnd(node, from + 1);
+  const row = range.getClientRects()[0];
+  return row && row.top >= line.top - 1 && row.bottom <= line.bottom + 1 ? row : line;
 }
 
 function otherSide(side: Side): Side {
