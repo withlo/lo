@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./server": "./src/server.ts"
+    "./server": "./src/server.ts",
+    "./git": "./src/git/index.ts"
   },
   "scripts": {
     "lint": "oxlint",

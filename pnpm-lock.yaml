@@ -313,6 +313,12 @@ importers:
         specifier: workspace:*
         version: link:../../../testing
 
+  packages/desktop/git:
+    devDependencies:
+      '@lo/testing':
+        specifier: workspace:*
+        version: link:../../../testing
+
   packages/desktop/syntax:
     dependencies:
       web-tree-sitter:

@@ -28,6 +28,9 @@
     },
     {
       "path": "./packages/core/review"
+    },
+    {
+      "path": "./packages/desktop/git"
     }
   ]
 }
