@@ -1,53 +1,11 @@
-// The syntax tokens `design/css/code.css` styles, as `lo-syn-<token>` classes, and how a capture
-// in a highlight query picks one.
+// How a capture in a highlight query picks one of the syntax tokens `design/css/code.css` styles,
+// as `lo-syn-<token>` classes. The tokens are listed in `design/syntax.json`, which the code views
+// read too, so they draw the classes without loading this package.
+
+import names from '@lo/design/syntax.json' with { type: 'json' };
 
 /** Every token, by its number in a highlight's triples. */
-export const tokens = [
-  'attribute',
-  'boolean',
-  'comment',
-  'comment-doc',
-  'constant',
-  'constant-builtin',
-  'constructor',
-  'emphasis',
-  'emphasis-strong',
-  'enum',
-  'function',
-  'function-method',
-  'keyword',
-  'label',
-  'link_text',
-  'link_uri',
-  'namespace',
-  'number',
-  'operator',
-  'preproc',
-  'property',
-  'punctuation',
-  'punctuation-bracket',
-  'punctuation-delimiter',
-  'punctuation-list_marker',
-  'punctuation-special',
-  'selector',
-  'selector-pseudo',
-  'string',
-  'string-escape',
-  'string-regex',
-  'string-special',
-  'string-special-symbol',
-  'tag',
-  'text-literal',
-  'title',
-  'type',
-  'type-builtin',
-  'variable',
-  'variable-parameter',
-  'variable-special',
-  'variant',
-] as const;
-
-export type Token = (typeof tokens)[number];
+export const tokens: readonly string[] = names;
 
 const numbers = new Map<string, number>(tokens.map((token, index) => [token, index]));
 

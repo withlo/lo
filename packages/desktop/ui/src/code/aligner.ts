@@ -42,6 +42,7 @@ import {
 } from '@codemirror/view';
 
 import { alignRows, type RowHeights, type SideHeights } from './align.ts';
+import type { PassStats } from './api.ts';
 import type { Layout, Side } from './layout.ts';
 import type { FileRows } from './rows.ts';
 import { SpacerWidget } from './widgets.ts';
@@ -238,16 +239,6 @@ const cursorMargin = 5;
 const wheelAnchoring = 250;
 
 /** What the pass has cost, for the measurements. */
-export interface PassStats {
-  passes: number;
-  /** Passes that changed a spacer. */
-  changed: number;
-  totalMs: number;
-  maxMs: number;
-  /** The longest an editor took to forget a chunk of heights, while the page was idle. */
-  forgetMaxMs: number;
-}
-
 export class Aligner {
   readonly stats: PassStats = { passes: 0, changed: 0, totalMs: 0, maxMs: 0, forgetMaxMs: 0 };
   readonly #views: { old: EditorView; new: EditorView };
@@ -340,6 +331,14 @@ export class Aligner {
     });
     this.#resized.observe(views.old.contentDOM);
     this.#resized.observe(views.new.contentDOM);
+  }
+
+  /**
+   * Has the pass keep the cursor on screen after the move that comes next, as after a key: for a
+   * move the view makes itself, from a key the registry took before it reached the view.
+   */
+  follow(): void {
+    this.#keyed = performance.now();
   }
 
   /** Stops the pass, or starts it again. */

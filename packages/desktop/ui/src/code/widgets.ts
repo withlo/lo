@@ -6,12 +6,13 @@
 
 import { WidgetType } from '@codemirror/view';
 
+import type { FileHeader, ThreadComment } from './api.ts';
+
 /** What a file header shows. */
 export interface HeaderInfo {
   path: string;
   previousPath?: string | undefined;
-  additions: number;
-  deletions: number;
+  header: FileHeader;
 }
 
 /**
@@ -33,7 +34,7 @@ export class HeaderWidget extends WidgetType {
   }
 
   override eq(other: HeaderWidget): boolean {
-    return other.file === this.file && other.note === this.note;
+    return other.file === this.file && other.note === this.note && other.info === this.info;
   }
 
   toDOM(): HTMLElement {
@@ -47,7 +48,8 @@ export class HeaderWidget extends WidgetType {
   }
 
   #head(): HTMLElement {
-    const head = element('div', 'lo-filehead lo-diffhead');
+    const { header } = this.info;
+    const head = element('div', `lo-filehead lo-diffhead${header.viewed ? ' is-viewed' : ''}`);
     head.dataset.row = `h:${this.file}`;
     const path = element('span', 'lo-path');
     if (this.info.previousPath && this.info.previousPath !== this.info.path) {
@@ -57,10 +59,15 @@ export class HeaderWidget extends WidgetType {
     path.append(this.info.path.slice(0, slash), element('b', '', this.info.path.slice(slash)));
     const stat = element('span', 'lo-stat');
     stat.append(
-      element('span', 'add', `+${this.info.additions}`),
-      element('span', 'del', `−${this.info.deletions}`),
+      element('span', 'add', `+${header.additions}`),
+      element('span', 'del', `−${header.deletions}`),
     );
     head.append(path, stat);
+    const end = [
+      ...(header.tags ?? []),
+      ...(header.comments ? [`${header.comments} comment${header.comments === 1 ? '' : 's'}`] : []),
+    ];
+    if (end.length > 0) head.append(element('span', 'lo-filehead__end', end.join(' · ')));
     return head;
   }
 
@@ -131,28 +138,6 @@ export class MovedLabelWidget extends WidgetType {
     return 26;
   }
 }
-
-/** Sentences to fill a comment with, since the recordings keep only each comment's length. */
-const filler = [
-  'This reads well, but the error path still needs a test.',
-  'Could we keep the old name for one release, so callers have time to move?',
-  'Nit: the comment above no longer matches what the function does.',
-  'I think this check belongs before the loop, not inside it.',
-  'Does this hold when the list is empty?',
-  'Good catch. The cache would have gone stale here.',
-];
-
-/** Text of exactly `length` characters, made of whole sentences where it can be. */
-export function fillerText(length: number, seed: number): string {
-  let text = '';
-  for (let index = seed; text.length < length; index++) {
-    text += `${text ? ' ' : ''}${filler[index % filler.length]}`;
-  }
-  return text.slice(0, length);
-}
-
-/** A comment in a thread: its length, for a recorded one, or its text. */
-export type ThreadComment = number | string;
 
 /** What a thread widget needs from the comment box it holds. */
 export interface BoxHost {
@@ -226,13 +211,19 @@ export class ThreadSizes {
   }
 }
 
+/** A thread as a thread widget draws it. */
+export interface ThreadDraw {
+  readonly id: string;
+  readonly comments: readonly ThreadComment[];
+}
+
 /**
- * A review thread under a line, and the comment box being written there, if there is one: one
- * block a line, for the same reason as a header's note.
+ * The review threads under a line, each a card, and the comment box being written there, if there
+ * is one, in the last: one block a line, for the same reason as a header's note.
  */
 export class ThreadWidget extends WidgetType {
   readonly id: string;
-  readonly comments: readonly ThreadComment[];
+  readonly threads: readonly ThreadDraw[];
   readonly box: BoxHost | undefined;
   readonly drawing: number;
   readonly sizes: ThreadSizes;
@@ -243,14 +234,14 @@ export class ThreadWidget extends WidgetType {
    */
   constructor(
     id: string,
-    comments: readonly ThreadComment[],
+    threads: readonly ThreadDraw[],
     sizes: ThreadSizes,
     box?: BoxHost,
     drawing = 0,
   ) {
     super();
     this.id = id;
-    this.comments = comments;
+    this.threads = threads;
     this.sizes = sizes;
     this.box = box;
     this.drawing = drawing;
@@ -259,7 +250,11 @@ export class ThreadWidget extends WidgetType {
   override eq(other: ThreadWidget): boolean {
     return (
       other.id === this.id &&
-      other.comments.length === this.comments.length &&
+      other.threads.length === this.threads.length &&
+      other.threads.every(
+        (thread, index) =>
+          thread.id === this.threads[index]?.id && thread.comments === this.threads[index].comments,
+      ) &&
       other.box === this.box &&
       other.drawing === this.drawing &&
       other.sizes === this.sizes
@@ -270,28 +265,33 @@ export class ThreadWidget extends WidgetType {
     // The space around the card is padding, not margin: the editor measures a block by its box,
     // which leaves margins out.
     const block = element('div', 'lo-diffthread');
-    const thread = element('div', 'lo-diffthread__card');
-    block.append(thread);
     if (!this.box) {
       block.dataset.thread = this.#key;
       this.sizes.observe(block);
     }
-    this.comments.forEach((comment, index) => {
-      const item = element('div', 'lo-diffthread__comment');
-      const text = typeof comment === 'string' ? comment : fillerText(comment, index);
-      item.append(
-        element(
-          'div',
-          'lo-diffthread__author',
-          typeof comment === 'string' ? 'you' : index === 0 ? 'reviewer' : 'author',
-        ),
-        element('p', 'lo-diffthread__body', text),
-      );
-      thread.append(item);
-    });
-    const body = thread.querySelector('.lo-diffthread__body');
+    let card: HTMLElement | undefined;
+    for (const thread of this.threads) {
+      card = element('div', 'lo-diffthread__card');
+      card.dataset.threadId = thread.id;
+      for (const comment of thread.comments) {
+        const item = element('div', 'lo-diffthread__comment');
+        item.append(
+          element('div', 'lo-diffthread__author', comment.author),
+          element('p', 'lo-diffthread__body', comment.body),
+        );
+        card.append(item);
+      }
+      block.append(card);
+    }
+    const body = block.querySelector('.lo-diffthread__body');
     if (body) this.sizes.observe(body);
-    if (this.box) this.box.attach(thread);
+    if (this.box) {
+      if (!card) {
+        card = element('div', 'lo-diffthread__card');
+        block.append(card);
+      }
+      this.box.attach(card);
+    }
     return block;
   }
 
@@ -301,9 +301,9 @@ export class ThreadWidget extends WidgetType {
     if (body) this.sizes.unobserve(body);
   }
 
-  /** The thread's size as drawn, for drawing it again. */
+  /** The threads' size as drawn, for drawing them again. */
   get #key(): string {
-    return `${this.id}:${this.comments.length}`;
+    return `${this.id}:${this.threads.map((thread) => thread.comments.length).join(',')}`;
   }
 
   /**
@@ -314,10 +314,12 @@ export class ThreadWidget extends WidgetType {
   override get estimatedHeight(): number {
     const drawn = this.box ? undefined : this.sizes.drawn(this.#key);
     if (drawn !== undefined) return drawn;
-    const comments = this.comments.reduce<number>((total, comment) => {
-      const length = typeof comment === 'string' ? comment.length : comment;
-      return total + 36 + Math.max(1, Math.ceil(length / this.sizes.charsPerLine)) * 18;
-    }, 0);
+    let comments = 0;
+    for (const thread of this.threads) {
+      for (const comment of thread.comments) {
+        comments += 36 + Math.max(1, Math.ceil(comment.body.length / this.sizes.charsPerLine)) * 18;
+      }
+    }
     return 16 + comments + (this.box ? this.box.dom.offsetHeight || 60 : 0);
   }
 

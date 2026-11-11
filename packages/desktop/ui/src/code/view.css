@@ -1,6 +1,11 @@
-/* The diff view: two editors side by side in one scroll, which the view itself keeps level. */
+/*
+ * The diff view: two editors side by side in one scroll, which the view itself keeps level, under
+ * a note on the comparison, when it has one.
+ */
 .lo-diffview {
   display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
   align-items: flex-start;
   height: 100%;
   overflow-x: hidden;
@@ -11,6 +16,9 @@
 .lo-diffview > .cm-editor {
   flex: 1 1 0;
   min-width: 0;
+}
+.lo-diffview > .lo-diffnote {
+  flex: 1 0 100%;
 }
 .lo-diffview > .cm-editor + .cm-editor {
   box-shadow: inset 1px 0 0 var(--lo-border);
