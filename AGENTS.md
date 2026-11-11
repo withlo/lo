@@ -111,9 +111,10 @@ A package's folder says where it runs, and its Nx tags (`"nx": { "tags": [...] }
 - only tests import `testing/`. Tests are `*.test.*` files and anything in `test/` or `e2e/`, and
   `testing` belongs in `devDependencies`;
 - only `packages/desktop/ui/src/code/` uses CodeMirror (`@codemirror/*`, `@lezer/*`,
-  `@replit/codemirror-vim`), and only `ui`'s `package.json` lists it. Everything else, tests
-  included, reaches the code views through that folder's `index.ts`, `@lo/ui/code`, whose types name
-  nothing of CodeMirror's (`ui`'s `lint` checks), so that changing editors rewrites one folder;
+  `@replit/codemirror-vim`), and only `ui`'s `package.json` lists it, or a package that depends on
+  it. Everything else, tests included, reaches the code views through that folder's `index.ts`,
+  `@lo/ui/code`, and no type `ui` hands out names CodeMirror (`ui`'s `lint` checks), so that
+  changing editors rewrites one folder;
 - in the desktop app, a feature imports from another feature only the files it shares through (see
   "Features" under "The desktop app").
 
@@ -131,6 +132,10 @@ in its `imports` and `exports`, and to every edge in Nx's project graph. Also:
 - a module's name or path has no percent escapes or backslashes, since Node decodes the one and
   reads the other as `/`, and isn't a URL other than `node:`;
 - a `#name` import is one the `package.json`'s `imports` map;
+- an `import.meta.glob` counts as an import of each file it matches, so its patterns and its base
+  start with `./` or `../`, and it has no option that changes what it matches;
+- nothing imports a source file in a folder the check skips (`node_modules`, `dist`, `fixtures` or a
+  hidden folder), since what that file imports isn't checked;
 - `require` appears only in a call that names its module, such as `require('./x.js')`;
 - only the files that `scripts/boundaries/check.ts` lists use `createRequire` or `getBuiltinModule`,
   since what they load can't be followed;

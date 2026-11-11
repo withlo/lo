@@ -4,7 +4,15 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 
 import { parseJson } from '@nx/devkit';
 
-import { importsOf, ParseError, referencesOf, type Import, type References } from './imports.ts';
+import { expandGlob, globBase, unfollowed } from './globs.ts';
+import {
+  importsOf,
+  ParseError,
+  referencesOf,
+  type Glob,
+  type Import,
+  type References,
+} from './imports.ts';
 
 /** A project as Nx describes it. */
 export interface Project {
@@ -56,6 +64,19 @@ const toolingAliases = new Map([
 const sourceFile = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 /** Dependencies, build output and test data. Folders starting with a dot are skipped too. */
 const skippedFolders = new Set(['node_modules', 'dist', 'fixtures']);
+
+/**
+ * The folder the check skips that a project's source file sits in, if it sits in one: what such a
+ * file imports isn't checked, so nothing may import it.
+ */
+function skippedFolder(project: Project, file: string): string | undefined {
+  if (!sourceFile.test(file)) return undefined;
+  const folders = file
+    .slice(project.root.length + 1)
+    .split('/')
+    .slice(0, -1);
+  return folders.find((folder) => folder.startsWith('.') || skippedFolders.has(folder));
+}
 
 /** Tests are `*.test.*` files and anything in a `test/` or `e2e/` folder. */
 export function isTest(pathInProject: string): boolean {
@@ -370,6 +391,44 @@ export function checkBoundaries(
     return bareVerdict(path, folder, from);
   };
 
+  /**
+   * What's wrong with an `import.meta.glob` in a file in `folder`. Vite imports every file a glob
+   * matches, so each one is checked as a relative import. Which files it matches has to be known
+   * without running anything: its patterns and its base start with ./ or ../, and it has no option
+   * that changes what it matches.
+   */
+  const globProblems = ({ patterns, options }: Glob, folder: string, from: From): string[] => {
+    const written = patterns.join(', ');
+    const cwd = options && globBase(options, folder);
+    if (
+      cwd === undefined ||
+      [...(options ?? [])].some(([name, value]) => unfollowed(name, value))
+    ) {
+      return [
+        `globs ${written} with options that aren't written out, or that change what it matches, so where it reaches can't be checked. Its base, if it has one, starts with ./ or ../`,
+      ];
+    }
+    const problems: string[] = [];
+    // A pattern that leaves files out can only narrow what the others match.
+    for (const pattern of patterns.filter((each) => !each.startsWith('!'))) {
+      if (!/^\.\.?\//.test(pattern)) {
+        problems.push(
+          `globs ${pattern}: a glob's patterns start with ./ or ../, so where they reach can be checked`,
+        );
+        continue;
+      }
+      for (const match of expandGlob(pattern, cwd)) {
+        const reason = pathVerdict(match, from.project, from);
+        if (!reason) continue;
+        problems.push(
+          `globs ${pattern}, which matches ${toSlashes(relative(cwd, match))}: ${reason}`,
+        );
+        break;
+      }
+    }
+    return problems;
+  };
+
   for (const project of projects) {
     const folder = join(root, project.root);
     for (const file of sourceFiles(folder, project.root, roots)) {
@@ -415,6 +474,11 @@ export function checkBoundaries(
           message: `${verb} ${found.specifier}: ${reason}.`,
         });
       }
+      for (const glob of references.globs) {
+        for (const message of globProblems(glob, dirname(file), from)) {
+          violations.push({ where: `${path}:${glob.line}`, message: `${message}.` });
+        }
+      }
       // A `declare module` adds to the types of the module it names.
       for (const { specifier, line } of from.code ? [] : references.modules) {
         if (!isCodeMirror(splitPackage(specifier).name)) continue;
@@ -432,7 +496,14 @@ export function checkBoundaries(
     const listing = (test: boolean): From => ({ project, test, code: project === codeProject });
     for (const field of dependencyFields) {
       for (const [name, spec] of Object.entries(objectAt(manifest.json, field))) {
-        const reason = problem(listing(field === 'devDependencies'), declared(name, [], project));
+        const target = declared(name, [], project);
+        const wrapped =
+          project === codeProject || target.kind !== 'package'
+            ? undefined
+            : codeMirrorDependency(join(folder, 'node_modules', name));
+        const reason =
+          problem(listing(field === 'devDependencies'), target) ??
+          (wrapped && `it depends on ${wrapped}, and ${codeMirror}`);
         if (!reason) continue;
         violations.push({
           where: at(name),
@@ -493,6 +564,10 @@ function problem({ project: from, test, code }: From, target: Target): string | 
   const core = from.tags.includes(CORE);
   if (target.kind === 'project') {
     const to = target.project;
+    const skipped = target.file === undefined ? undefined : skippedFolder(to, target.file);
+    if (skipped !== undefined) {
+      return `that's in ${skipped}/, which the check skips, so what that file imports isn't checked. Move it out of ${skipped}/`;
+    }
     const inner = code || target.file === undefined ? undefined : codeInternal(target.file);
     if (inner !== undefined) {
       return `that's ${inner} in ${codeFolder}/, and everything outside that folder reaches the code views through its index.ts, @lo/ui/code`;
@@ -809,6 +884,22 @@ function targetsOf(target: unknown, match?: string): string[] {
 function exportsMap(exports: unknown): unknown {
   const bySubpath = isRecord(exports) && Object.keys(exports).some((key) => key.startsWith('.'));
   return bySubpath ? exports : { '.': exports };
+}
+
+/**
+ * The CodeMirror package that the package installed in `folder` depends on, if it depends on one, as
+ * a wrapper around CodeMirror does. Nothing when it isn't installed.
+ */
+function codeMirrorDependency(folder: string): string | undefined {
+  const manifest = readManifest(join(folder, 'package.json'));
+  for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies'] as const) {
+    for (const [name, spec] of Object.entries(objectAt(manifest?.json, field))) {
+      const alias = typeof spec === 'string' ? aliasOf(spec, folder) : undefined;
+      const named = alias && 'name' in alias ? alias.name : name;
+      if (isCodeMirror(named)) return named;
+    }
+  }
+  return undefined;
 }
 
 function readManifest(path: string): Manifest | undefined {
