@@ -32,6 +32,7 @@ test('the database opens on a fresh data folder, with its migrations table', asy
   const features = new Set(column(file, 'SELECT feature FROM migrations', 'feature'));
   expect(tables).toContain('migrations');
   expect(features).toContain('tab');
+  expect(features).toContain('accounts');
   expect(
     tables.filter((name) => name !== 'migrations' && !features.has(name.split('_')[0] ?? '')),
   ).toEqual([]);

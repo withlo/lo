@@ -7,7 +7,7 @@ import { app, type BrowserWindow, dialog, session, type Session } from 'electron
 
 import { startBackground, type Background } from './background.ts';
 import { openDatabase, type Database } from './database.ts';
-import { backgroundSettings, dataFolder, devServer } from './environment.ts';
+import { appName, backgroundSettings, dataFolder, devServer } from './environment.ts';
 import { loadFeatures, type Feature } from './features.ts';
 import { cacheFolder, createGit, curlProxy, GitStopped, gitSettings, onceUp } from './git.ts';
 import { serveFeatures } from './ipc.ts';
@@ -38,6 +38,9 @@ const migrations = import.meta.glob<string>('../features/*/migrations/*.sql', {
 // Everything up to the lock runs before `ready`, as Electron requires.
 app.enableSandbox();
 registerScheme();
+// Before `ready`, which is when `safeStorage` takes the name for its key in the keychain.
+const name = appName({ packaged: app.isPackaged });
+if (name) app.setName(name);
 
 const env = process.env;
 const folder = dataFolder({ packaged: app.isPackaged, appData: app.getPath('appData'), env });
@@ -71,7 +74,7 @@ function start(): void {
     root: cacheRoot,
     env,
     platform: process.platform,
-    // The route Lo's own requests take: `net.fetch`'s, in the default session.
+    // The route Lo's own requests take: `net.request`'s, in the default session.
     proxy: async (address) => curlProxy(await session.defaultSession.resolveProxy(address)),
     log: (line) => console.error(`git: ${line}`),
   });

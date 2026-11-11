@@ -18,6 +18,7 @@
   "dependencies": {
     "@lo/design": "workspace:*",
     "@lo/git": "workspace:*",
+    "@lo/github": "workspace:*",
     "@lo/review": "workspace:*",
     "@lo/ui": "workspace:*",
     "react": "19.3.1",

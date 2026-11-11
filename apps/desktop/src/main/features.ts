@@ -88,7 +88,10 @@ export function defineFeature<C extends Contract>(
 export interface StopLimits {
   /** Each feature's own: past it, Lo goes on to the next without waiting. */
   each: number;
-  /** All of them: past it, the features not yet stopped aren't, but one stopping goes on to its own limit. */
+  /**
+   * All of them: past it, the features not yet stopped aren't, but one stopping goes on to its own
+   * limit, and a feature that provides services still stops, with its own limit.
+   */
   all: number;
 }
 
@@ -169,10 +172,11 @@ export interface Router {
   start(): void;
   /**
    * Runs each feature's `stop` once, in {@link stopOrder}, each once the one before it has
-   * finished or used up its own limit. Past the limit for them all, the rest aren't stopped. One
-   * that fails, or runs late, is reported to `log`, and the others still stop. Resolves once
-   * nothing still stopping is within its own limit, so the database can close. Asked again, it
-   * answers the same.
+   * finished or used up its own limit. Past the limit for them all, the rest aren't stopped,
+   * except those that provide services: each still gets its own limit, since what it keeps for
+   * the others, such as a renewed token, may need saving. One that fails, or runs late, is
+   * reported to `log`, and the others still stop. Resolves once nothing still stopping is within
+   * its own limit, so the database can close. Asked again, it answers the same.
    */
   stop(): Promise<void>;
 }
@@ -221,6 +225,8 @@ export function createRouter(
     { input: z.ZodType; handle: AnyHandler; context: FeatureContext<Contract> }
   >();
   const contexts = new Map(features.map((feature) => [feature, context(feature)]));
+  /** The features that provided a service, which stop even past the limit for all. */
+  const providers = new Set<Feature>();
   for (const [{ contract, handlers }, shared] of contexts) {
     for (const [name, spec] of Object.entries(contract.requests)) {
       const handle = Object.hasOwn(handlers, name) ? handlers[name] : undefined;
@@ -258,8 +264,10 @@ export function createRouter(
     },
 
     start() {
-      for (const [{ contract, provide }, shared] of contexts) {
-        services.add(contract.feature, provide?.(shared) ?? []);
+      for (const [feature, shared] of contexts) {
+        const provided = feature.provide?.(shared) ?? [];
+        services.add(feature.contract.feature, provided);
+        if (provided.length > 0) providers.add(feature);
       }
       services.ready(options.services);
       for (const { contract, uses } of features) {
@@ -285,7 +293,9 @@ export function createRouter(
       const { contract, stop } = feature;
       const shared = contexts.get(feature);
       if (!stop || !shared) continue;
-      if (Date.now() >= deadline) {
+      // A provider stops whatever the others took. Every feature using its services has had its
+      // turn by now, and it may hold what must be saved, such as a renewed token.
+      if (Date.now() >= deadline && !providers.has(feature)) {
         options.log(`${contract.feature} wasn't stopped: features had taken ${limits.all} ms.`);
         continue;
       }
