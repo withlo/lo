@@ -194,3 +194,42 @@ export function githubSettings(options: { packaged: boolean; env: Environment })
     tokenFile,
   };
 }
+
+/**
+ * The `gh` to run rather than one Lo finds, from `LO_GH`: an absolute path, or `none` for no gh at
+ * all. Tests bring a gh of their own this way, so they never run the one on `PATH`, which holds the
+ * tokens of whoever runs them. A test run, one talking to a GitHub on this machine, runs no gh
+ * unless `LO_GH` names one, so a real github.com token never goes to the test's server. A packaged
+ * build ignores it.
+ */
+export function ghProgram(options: {
+  packaged: boolean;
+  env: Environment;
+  /** Whether this is a test run ({@link GithubSettings.testRun}). */
+  testRun: boolean;
+}): string | undefined {
+  if (options.packaged) return undefined;
+  const program = options.env.LO_GH;
+  if (!program) return options.testRun ? 'none' : undefined;
+  if (program !== 'none' && !isAbsolute(program)) {
+    throw new Error(`LO_GH must be an absolute path or "none", not "${program}".`);
+  }
+  return program;
+}
+
+/**
+ * The program that opens web pages in place of the system's browser, from `LO_BROWSER`, so a test
+ * opens no browser and can see what Lo opened. It gets the page's address as its one argument. A
+ * packaged build ignores it.
+ */
+export function browserProgram(options: {
+  packaged: boolean;
+  env: Environment;
+}): string | undefined {
+  const program = options.env.LO_BROWSER;
+  if (options.packaged || !program) return undefined;
+  if (!isAbsolute(program)) {
+    throw new Error(`LO_BROWSER must be an absolute path, not "${program}".`);
+  }
+  return program;
+}

@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   appName,
   backgroundEnvironment,
+  browserProgram,
   backgroundSettings,
   configFolder,
   dataFolder,
   devServer,
   devTools,
+  ghProgram,
   githubSettings,
   keymapEditor,
 } from './environment.ts';
@@ -263,6 +265,59 @@ describe('githubSettings', () => {
 
   it('refuses a relative token file', () => {
     expect(() => githubSettings({ packaged: false, env: { LO_TEST_TOKEN_FILE: 'token' } })).toThrow(
+      'absolute path',
+    );
+  });
+});
+
+/** The gh a build run from source runs with `env`. */
+const run = (env: Record<string, string>, testRun = false) =>
+  ghProgram({ packaged: false, env, testRun });
+
+describe('ghProgram', () => {
+  it('names the gh a build run from source runs, or none', () => {
+    expect(run({ LO_GH: '/tmp/gh' })).toBe('/tmp/gh');
+    expect(run({ LO_GH: 'none' })).toBe('none');
+    expect(run({})).toBeUndefined();
+    expect(run({ LO_GH: '' })).toBeUndefined();
+  });
+
+  it('runs no gh in a test run unless one is named, so no real token reaches its GitHub', () => {
+    expect(ghProgram({ packaged: false, env: {}, testRun: true })).toBe('none');
+    expect(ghProgram({ packaged: false, env: { LO_GH: '' }, testRun: true })).toBe('none');
+    expect(ghProgram({ packaged: false, env: { LO_GH: '/tmp/gh' }, testRun: true })).toBe(
+      '/tmp/gh',
+    );
+  });
+
+  it('is ignored in a packaged build, which always finds gh itself', () => {
+    expect(
+      ghProgram({ packaged: true, env: { LO_GH: '/tmp/gh' }, testRun: false }),
+    ).toBeUndefined();
+    expect(
+      ghProgram({ packaged: true, env: { LO_GH: 'relative' }, testRun: false }),
+    ).toBeUndefined();
+  });
+
+  it('refuses a relative path', () => {
+    expect(() => ghProgram({ packaged: false, env: { LO_GH: 'gh' }, testRun: false })).toThrow(
+      'absolute path',
+    );
+  });
+});
+
+describe('browserProgram', () => {
+  it('names the program a build run from source opens web pages with', () => {
+    expect(browserProgram({ packaged: false, env: { LO_BROWSER: '/tmp/open' } })).toBe('/tmp/open');
+    expect(browserProgram({ packaged: false, env: {} })).toBeUndefined();
+  });
+
+  it('is ignored in a packaged build, so nothing the environment says picks what Lo runs', () => {
+    expect(browserProgram({ packaged: true, env: { LO_BROWSER: '/tmp/open' } })).toBeUndefined();
+  });
+
+  it('refuses a relative path', () => {
+    expect(() => browserProgram({ packaged: false, env: { LO_BROWSER: 'open' } })).toThrow(
       'absolute path',
     );
   });

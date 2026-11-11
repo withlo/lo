@@ -49,6 +49,11 @@ export interface GithubOptions {
   poll?: Partial<PollConfig> | undefined;
   /** Where the accounts' rows are, for tests: the database's tables unless said otherwise. */
   rows?: AccountRows | undefined;
+  /**
+   * Reads an account imported from `gh` from gh again, once GitHub refuses its token. Without it,
+   * such an account is signed out.
+   */
+  reread?: ((login: string) => Promise<Token | undefined>) | undefined;
 }
 
 /** The {@link GithubAccess} the accounts feature provides, with what only the feature itself does. */
@@ -89,6 +94,7 @@ export class Github implements GithubAccess {
       rows: options.rows ?? new AccountTable(database),
       secrets: this.#watching(options.secrets),
       renew: (refresh) => refreshGrant(web, refresh),
+      reread: options.reread,
       fetch,
       urls: this.urls,
     }).then((accounts) => {
@@ -201,6 +207,17 @@ export class Github implements GithubAccess {
         this.#emit({ kind: 'removed', login: account.login });
       }
     }
+  }
+
+  /**
+   * Marks every account as waiting for a keyring when `problem` says Lo can't keep or read a token
+   * just now, as on Linux when no keyring answers, so the window shows it before anything tries an
+   * account's token. Reading or keeping one again clears it.
+   */
+  async checkKeyring(problem: () => Promise<string | undefined>): Promise<void> {
+    const [accounts, said] = await Promise.all([this.#loaded, problem()]);
+    if (said === undefined) return;
+    for (const { login } of accounts.accounts) this.#noteKeyring(login, true);
   }
 
   /** Says whether Lo is in the foreground: each poller polls faster while it is. */

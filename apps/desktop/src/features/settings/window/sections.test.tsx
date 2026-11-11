@@ -16,7 +16,7 @@ import Cache from './Cache.tsx';
 import Keys from './Keys.tsx';
 import { sections } from './shared.ts';
 import { showSettings } from './store.ts';
-import { installBridge } from './test/bridge.ts';
+import { installBridge } from '../../../window/test/bridge.ts';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);

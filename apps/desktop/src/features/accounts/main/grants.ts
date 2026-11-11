@@ -48,10 +48,15 @@ const BUILT_IN_KEY = new TextEncoder().encode('v10');
 
 /** Why Lo won't keep a token: the system has no keychain it can encrypt with. */
 export class NoKeychain extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'NoKeychain';
   }
+}
+
+/** Whether `sealed` is marked as what Chromium encrypted with its built-in key, on Linux. */
+function isBuiltInKey(sealed: Uint8Array): boolean {
+  return BUILT_IN_KEY.every((byte, index) => sealed[index] === byte);
 }
 
 /**
@@ -132,6 +137,9 @@ export class Grants implements Secrets {
     try {
       opened = await this.#storage.decryptStringAsync(Buffer.from(sealed));
     } catch (error) {
+      // A keyring's key that stopped answering leaves Chromium encrypting with its built-in one,
+      // so the grant can't be read for want of a keyring, not for anything wrong with it.
+      if (await this.#builtInKeyOnly()) throw new NoKeychain(NO_KEYRING, { cause: error });
       throw new Error(`the keychain couldn't decrypt the token: ${describe(error)}`, {
         cause: error,
       });
@@ -154,6 +162,17 @@ export class Grants implements Secrets {
       .run(login, sealed);
   }
 
+  /**
+   * Why Lo can't keep a token just now, in words for the person, or nothing when it can: what
+   * {@link keychainProblem} says, and on Linux, whether what `safeStorage` encrypts now is marked
+   * as Chromium's built-in key's, which says no keyring answered. Nothing is written.
+   */
+  async problem(): Promise<string | undefined> {
+    const problem = await keychainProblem(this.#storage, this.#keychain);
+    if (problem !== undefined) return problem;
+    return (await this.#builtInKeyOnly()) ? NO_KEYRING : undefined;
+  }
+
   /** Forgets the account's grant. It needs no keychain. */
   async delete(login: string): Promise<void> {
     this.#database.prepare('DELETE FROM accounts_grants WHERE login = ?').run(login);
@@ -170,8 +189,20 @@ export class Grants implements Secrets {
    */
   #checkSealed(sealed: Uint8Array): void {
     if (this.#keychain.testRun || this.#keychain.platform !== 'linux') return;
-    if (BUILT_IN_KEY.every((byte, index) => sealed[index] === byte))
-      throw new NoKeychain(NO_KEYRING);
+    if (isBuiltInKey(sealed)) throw new NoKeychain(NO_KEYRING);
+  }
+
+  /**
+   * Whether, on Linux outside a test run, `safeStorage` now encrypts only with Chromium's built-in
+   * key: what it encrypts is marked `v10`. A probe it can't encrypt says nothing either way.
+   */
+  async #builtInKeyOnly(): Promise<boolean> {
+    if (this.#keychain.testRun || this.#keychain.platform !== 'linux') return false;
+    try {
+      return isBuiltInKey(new Uint8Array(await this.#storage.encryptStringAsync('probe')));
+    } catch {
+      return false;
+    }
   }
 
   async #seal(grant: Grant): Promise<Uint8Array> {

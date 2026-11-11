@@ -1,14 +1,16 @@
 import { NO_TARGET } from '@lo/ui/commands';
 
 import { TabPage, TabStrip } from '../features/tab/window/Frame.tsx';
+import { dialogs } from '../features/tab/window/shared.ts';
 import { Menus, useMenuTarget } from './commands/menus.tsx';
 import { Notices } from './commands/notices.tsx';
 import { Overlays } from './commands/overlays.tsx';
+import { Slot } from './slots.tsx';
 
 /**
  * Lo's window: the tab strip over the tab on screen, in the middle, with key help, the command
- * palette and right-click menus over both when they're open. The window is the `window` scope for
- * keys, and `Esc` gives focus back to the middle.
+ * palette, features' dialogs and right-click menus over both when they're open. The window is the
+ * `window` scope for keys, and `Esc` gives focus back to the middle.
  */
 export function Window() {
   // A right-click on nothing in particular lists the window's own actions.
@@ -24,6 +26,7 @@ export function Window() {
         <TabPage />
       </main>
       <Overlays />
+      <Slot slot={dialogs} props={{}} />
       <Menus />
       <Notices />
     </div>

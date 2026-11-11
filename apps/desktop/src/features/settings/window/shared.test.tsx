@@ -18,7 +18,7 @@ import {
 } from './shared.ts';
 import { sectionInfo } from './sections.ts';
 import { showSettings } from './store.ts';
-import { installBridge } from './test/bridge.ts';
+import { installBridge } from '../../../window/test/bridge.ts';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
