@@ -1,5 +1,6 @@
 // The background process: it diffs and highlights each file on worker threads, sends each result
-// to the window as it's ready, then finds the code the pull request moves.
+// to the window as it's ready, then finds the code the pull request moves. A large file the window
+// loads later comes as its own job, diffed and highlighted on a worker of its own.
 
 import { availableParallelism } from 'node:os';
 import { Worker } from 'node:worker_threads';
@@ -7,22 +8,61 @@ import { Worker } from 'node:worker_threads';
 import { findMoves, type FileChanges } from '@lo/diff';
 import type { MessagePortMain } from 'electron';
 
-import type { Done, Job, Result, Work } from '../shared/protocol.ts';
+import type { Done, Job, LaterJob, Result, Work } from '../shared/protocol.ts';
 
 /** Two to four workers, leaving the machine room for the window. */
 const workerCount = Math.max(2, Math.min(4, Math.floor(availableParallelism() / 2)));
 
-process.parentPort.once('message', (event) => {
-  // Main builds the work from the same protocol; it isn't validated here.
+/** The work and the port to the window, once main has sent them. */
+let given: { work: Work; port: MessagePortMain } | undefined;
+/** Jobs that came later, one at a time. */
+let later = Promise.resolve();
+
+process.parentPort.on('message', (event) => {
+  // Main builds both messages from the same protocol; they aren't validated here.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  const work = event.data as Work;
+  const message = event.data as Work | LaterJob;
+  if ('type' in message) {
+    if (!given) throw new Error('A job came before the work.');
+    const { work, port } = given;
+    later = later.then(() => runLater(work, port, message.job)).catch(fail);
+    return;
+  }
   const [port] = event.ports;
   if (!port) throw new Error('The background process got no port to the window.');
-  run(work, port).catch((error: unknown) => {
-    console.error('The background process failed:', error);
-    process.exit(1);
-  });
+  given = { work: message, port };
+  run(message, port).catch(fail);
 });
+
+function fail(error: unknown): never {
+  console.error('The background process failed:', error);
+  process.exit(1);
+}
+
+function startWorker(work: Work): Worker {
+  return new Worker(work.workerEntry, { workerData: { syntaxFolder: work.syntaxFolder } });
+}
+
+function fileResult(done: Done): Result {
+  return {
+    type: 'file',
+    index: done.index,
+    diff: done.diff,
+    tokens: done.tokens,
+    diffMs: done.diffMs,
+    highlightMs: done.highlightMs,
+  };
+}
+
+/** Diffs and highlights a file loaded after the rest, on a worker of its own. */
+async function runLater(work: Work, port: MessagePortMain, job: Job): Promise<void> {
+  const worker = startWorker(work);
+  try {
+    port.postMessage(fileResult(await ask(worker, job)));
+  } finally {
+    await worker.terminate();
+  }
+}
 
 async function run(work: Work, port: MessagePortMain): Promise<void> {
   const started = performance.now();
@@ -34,8 +74,7 @@ async function run(work: Work, port: MessagePortMain): Promise<void> {
   }));
   // Files in order, so the first one on screen is diffed first.
   const queue = [...work.jobs];
-  const start = (): Worker =>
-    new Worker(work.workerEntry, { workerData: { syntaxFolder: work.syntaxFolder } });
+  const start = (): Worker => startWorker(work);
   const workers = Array.from({ length: Math.min(workerCount, queue.length) }, start);
   await Promise.all(
     workers.map(async (first) => {
@@ -47,14 +86,7 @@ async function run(work: Work, port: MessagePortMain): Promise<void> {
           worker = start();
         }
         changes[done.index] = done.changes;
-        send({
-          type: 'file',
-          index: done.index,
-          diff: done.diff,
-          tokens: done.tokens,
-          diffMs: done.diffMs,
-          highlightMs: done.highlightMs,
-        });
+        send(fileResult(done));
       }
       await worker.terminate();
     }),

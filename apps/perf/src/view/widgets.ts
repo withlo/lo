@@ -1,7 +1,8 @@
 // The blocks the diff view draws between lines: file headers, with notes on files not shown,
-// collapsed code, threads, the labels on moved code, and the spacers that keep the two sides lined
-// up. A block that starts a row with lines on both sides carries the row's key as `data-row`, as
-// the first line of a row does, so the alignment drawn on screen can be checked row by row.
+// collapsed code and notes in place of lines, threads and the comment boxes in them, the labels on
+// moved code, and the spacers that keep the two sides lined up. A block that starts a row with
+// lines on both sides carries the row's key as `data-row`, as the first line of a row does, so the
+// alignment drawn on screen can be checked row by row.
 
 import { WidgetType } from '@codemirror/view';
 
@@ -150,60 +151,211 @@ export function fillerText(length: number, seed: number): string {
   return text.slice(0, length);
 }
 
-/** A review thread, by its id, with its comments' lengths. */
-export interface ThreadInfo {
-  id: string;
-  comments: readonly number[];
+/** A comment in a thread: its length, for a recorded one, or its text. */
+export type ThreadComment = number | string;
+
+/** What a thread widget needs from the comment box it holds. */
+export interface BoxHost {
+  /** The box's element, which moves into each widget that draws it. */
+  readonly dom: HTMLElement;
+  /** Puts the box in `parent`, keeping its focus. */
+  attach(parent: HTMLElement): void;
+}
+
+/** The average width of a character of the comments' face, in pixels. */
+const charWidth = 6.05;
+
+/**
+ * What one editor's threads' heights are worked out from before they're drawn: the heights its
+ * threads were drawn at, at the width they were drawn at, and how much narrower than the editor's
+ * content a comment's text is, for the characters it wraps at. Estimates that are off move what's
+ * drawn when CodeMirror measures, which a far jump to a thread can't settle in one measure.
+ */
+export class ThreadSizes {
+  /** The width of the editor's content, in whole pixels; 0 before it's been seen. */
+  #width = 0;
+  /** How much narrower than the content a comment's text is, once one has been drawn. */
+  #inset: number | undefined;
+  /** The heights threads were drawn at, by the width and the thread. */
+  readonly #drawn = new Map<string, number>();
+  readonly #observer: ResizeObserver;
+
+  constructor(content: HTMLElement) {
+    this.#observer = new ResizeObserver((entries) => {
+      // The content's width first, which the others' sizes are kept by.
+      for (const entry of entries) {
+        const size = entry.borderBoxSize[0];
+        if (size && entry.target === content) this.#width = Math.round(size.inlineSize);
+      }
+      for (const entry of entries) {
+        const { target } = entry;
+        const size = entry.borderBoxSize[0];
+        if (!size || target === content || !(target instanceof HTMLElement)) continue;
+        if (target.classList.contains('lo-diffthread__body')) {
+          if (this.#width > 0) this.#inset = this.#width - size.inlineSize;
+        } else if (target.dataset.thread) {
+          this.#drawn.set(`${this.#width}:${target.dataset.thread}`, size.blockSize);
+        }
+      }
+    });
+    this.#observer.observe(content);
+  }
+
+  observe(target: Element): void {
+    this.#observer.observe(target);
+  }
+
+  unobserve(target: Element): void {
+    this.#observer.unobserve(target);
+  }
+
+  /** The height the thread `key` was drawn at, at the content's width now, if it was. */
+  drawn(key: string): number | undefined {
+    return this.#drawn.get(`${this.#width}:${key}`);
+  }
+
+  /** The characters a comment's text wraps at: 100 until a thread has been drawn. */
+  get charsPerLine(): number {
+    if (this.#inset === undefined || this.#width === 0) return 100;
+    return Math.max(20, Math.floor((this.#width - this.#inset) / charWidth));
+  }
+
+  destroy(): void {
+    this.#observer.disconnect();
+    this.#drawn.clear();
+  }
 }
 
 /**
- * The review threads under a line, with their comments' lengths: one block for all of a line's
- * threads, for the same reason as a header's note.
+ * A review thread under a line, and the comment box being written there, if there is one: one
+ * block a line, for the same reason as a header's note.
  */
 export class ThreadWidget extends WidgetType {
-  readonly threads: readonly ThreadInfo[];
+  readonly id: string;
+  readonly comments: readonly ThreadComment[];
+  readonly box: BoxHost | undefined;
+  readonly drawing: number;
+  readonly sizes: ThreadSizes;
 
-  constructor(threads: readonly ThreadInfo[]) {
+  /**
+   * `drawing` changes when the box must be drawn again, to move it into another editor; `sizes`
+   * are the editor's.
+   */
+  constructor(
+    id: string,
+    comments: readonly ThreadComment[],
+    sizes: ThreadSizes,
+    box?: BoxHost,
+    drawing = 0,
+  ) {
     super();
-    this.threads = threads;
+    this.id = id;
+    this.comments = comments;
+    this.sizes = sizes;
+    this.box = box;
+    this.drawing = drawing;
   }
 
   override eq(other: ThreadWidget): boolean {
     return (
-      other.threads.length === this.threads.length &&
-      other.threads.every((thread, index) => thread.id === this.threads[index]!.id)
+      other.id === this.id &&
+      other.comments.length === this.comments.length &&
+      other.box === this.box &&
+      other.drawing === this.drawing &&
+      other.sizes === this.sizes
     );
   }
 
   toDOM(): HTMLElement {
-    const block = element('div', 'lo-diffthreads');
-    for (const { comments } of this.threads) {
-      // The space around the card is padding, not margin: the editor measures a block by its
-      // box, which leaves margins out.
-      const space = element('div', 'lo-diffthread');
-      const thread = element('div', 'lo-diffthread__card');
-      space.append(thread);
-      comments.forEach((length, index) => {
-        const comment = element('div', 'lo-diffthread__comment');
-        comment.append(
-          element('div', 'lo-diffthread__author', index === 0 ? 'reviewer' : 'author'),
-          element('p', 'lo-diffthread__body', fillerText(length, index)),
-        );
-        thread.append(comment);
-      });
-      block.append(space);
+    // The space around the card is padding, not margin: the editor measures a block by its box,
+    // which leaves margins out.
+    const block = element('div', 'lo-diffthread');
+    const thread = element('div', 'lo-diffthread__card');
+    block.append(thread);
+    if (!this.box) {
+      block.dataset.thread = this.#key;
+      this.sizes.observe(block);
     }
+    this.comments.forEach((comment, index) => {
+      const item = element('div', 'lo-diffthread__comment');
+      const text = typeof comment === 'string' ? comment : fillerText(comment, index);
+      item.append(
+        element(
+          'div',
+          'lo-diffthread__author',
+          typeof comment === 'string' ? 'you' : index === 0 ? 'reviewer' : 'author',
+        ),
+        element('p', 'lo-diffthread__body', text),
+      );
+      thread.append(item);
+    });
+    const body = thread.querySelector('.lo-diffthread__body');
+    if (body) this.sizes.observe(body);
+    if (this.box) this.box.attach(thread);
     return block;
   }
 
-  /** About 90 characters a line of 20 pixels, plus each comment's author line and padding. */
+  override destroy(dom: HTMLElement): void {
+    this.sizes.unobserve(dom);
+    const body = dom.querySelector('.lo-diffthread__body');
+    if (body) this.sizes.unobserve(body);
+  }
+
+  /** The thread's size as drawn, for drawing it again. */
+  get #key(): string {
+    return `${this.id}:${this.comments.length}`;
+  }
+
+  /**
+   * As tall as it was last drawn in its editor at this width, if it was. Else its comments' lines
+   * of 18 pixels, at the characters the editor's threads wrap at, under each comment's author line
+   * and padding.
+   */
   override get estimatedHeight(): number {
-    let height = 0;
-    for (const { comments } of this.threads) {
-      height +=
-        16 + comments.reduce((total, length) => total + 38 + Math.ceil(length / 90) * 20, 0);
-    }
-    return height;
+    const drawn = this.box ? undefined : this.sizes.drawn(this.#key);
+    if (drawn !== undefined) return drawn;
+    const comments = this.comments.reduce<number>((total, comment) => {
+      const length = typeof comment === 'string' ? comment.length : comment;
+      return total + 36 + Math.max(1, Math.ceil(length / this.sizes.charsPerLine)) * 18;
+    }, 0);
+    return 16 + comments + (this.box ? this.box.dom.offsetHeight || 60 : 0);
+  }
+
+  /** The box handles its own events. */
+  override ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+/**
+ * A note in place of a file's lines: too many to show, while they load or its diff is worked out,
+ * or while it's closed. Where a file has no lines, its header holds the note.
+ */
+export class FileNoteWidget extends WidgetType {
+  readonly file: number;
+  readonly text: string;
+  readonly paired: boolean;
+
+  /** `paired` when both sides draw it, so it's a row to check the alignment of. */
+  constructor(file: number, text: string, paired: boolean) {
+    super();
+    this.file = file;
+    this.text = text;
+    this.paired = paired;
+  }
+
+  override eq(other: FileNoteWidget): boolean {
+    return other.file === this.file && other.text === this.text && other.paired === this.paired;
+  }
+
+  toDOM(): HTMLElement {
+    const note = element('div', 'lo-collapsed lo-filenote', this.text);
+    if (this.paired) note.dataset.row = `n:${this.file}`;
+    return note;
+  }
+
+  override get estimatedHeight(): number {
+    return 28;
   }
 }
 

@@ -53,6 +53,18 @@ export interface Job {
   new?: string | undefined;
 }
 
+/** A large file's text, as main gives it to the window when it's loaded. */
+export interface Loaded {
+  old?: string | undefined;
+  new?: string | undefined;
+}
+
+/** A file main sends the background process after the work, when the window loads it. */
+export interface LaterJob {
+  type: 'job';
+  job: Job;
+}
+
 /** What main sends the background process, with the port to the window. */
 export interface Work {
   jobs: Job[];

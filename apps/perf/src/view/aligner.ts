@@ -25,7 +25,9 @@
 // they hear of the scroll, so it listens first), and again after each pass. CodeMirror anchors the
 // scroll too, as it measures, to the top of an editor that has focus or was just wheeled, and its
 // tops take in the pass's spacers; the pass puts that right, but for the scroll that brings a
-// moved cursor into view.
+// moved cursor into view. For a second after a key moves a cursor, until the wheel, a pointer or
+// the scrollbar takes the scroll, the pass keeps the cursor's line on screen, which CodeMirror's
+// measuring after a far jump can leave it off.
 
 import { type Extension, StateEffect, StateField } from '@codemirror/state';
 import {
@@ -184,7 +186,16 @@ interface Anchor {
 }
 
 /** Rounds of measuring, lining up and restoring the scroll a pass may take to settle. */
-const rounds = 6;
+const rounds = 3;
+
+/** How long after a key moves a cursor the pass sees that it ends up on screen, in ms. */
+const cursorFollow = 1000;
+
+/** How long after a key is pressed a cursor that moves was moved by it, in ms. */
+const keyMove = 100;
+
+/** How far inside the screen's edges a cursor brought into view sits, as CodeMirror's own does. */
+const cursorMargin = 5;
 
 /** How long after a wheel event over an editor CodeMirror anchors the scroll to it, and more. */
 const wheelAnchoring = 250;
@@ -222,6 +233,16 @@ export class Aligner {
   #travelledFrom = 0;
   /** Whether a cursor moved since the last pass, so a scroll CodeMirror makes is the cursor's. */
   #selected = false;
+  /**
+   * When a key last moved a cursor, while the pass keeps it on screen, and how often it has had
+   * CodeMirror scroll to it since: after a far jump, CodeMirror keeps the top of the screen still
+   * as it measures what it drew, and the cursor can end up off screen. The wheel, a pointer or the
+   * scrollbar takes the scroll back.
+   */
+  #following = 0;
+  #cursorTries = 0;
+  /** When a key was last pressed in the view, until the wheel or a pointer comes after it. */
+  #keyed = -Infinity;
   /** The lines the last pass lined up on each side, which keep their spacers when others go. */
   #lined: { old?: { from: number; to: number }; new?: { from: number; to: number } } = {};
   /** Told of each scroll CodeMirror makes to bring a moved cursor into view, for the measurements. */
@@ -258,6 +279,17 @@ export class Aligner {
         passive: true,
       });
     }
+    // A key that moves a cursor has the pass keep it on screen for a while; the wheel, a pointer
+    // or the scrollbar, which a pointer drags, stops it.
+    scroller.addEventListener('keydown', () => (this.#keyed = performance.now()), {
+      capture: true,
+    });
+    const stop = (): void => {
+      this.#keyed = -Infinity;
+      this.#following = 0;
+    };
+    scroller.addEventListener('wheel', stop, { capture: true, passive: true });
+    scroller.addEventListener('pointerdown', stop, { capture: true });
     // A block that grows where CodeMirror doesn't look, or a width that changes, resizes the
     // content. The observer runs after layout and before the paint, so the pass does too.
     this.#resized = new ResizeObserver(() => {
@@ -283,7 +315,13 @@ export class Aligner {
         if (update.docChanged && anchor && update.view === this.#views[anchor.side]) {
           this.#anchor = { ...anchor, pos: update.changes.mapPos(anchor.pos) };
         }
-        if (update.selectionSet) this.#selected = true;
+        if (update.selectionSet) {
+          this.#selected = true;
+          if (performance.now() - this.#keyed < keyMove) {
+            this.#following = Date.now();
+            this.#cursorTries = 0;
+          }
+        }
         if (this.#running) return;
         if (update.heightChanged || update.viewportChanged || update.geometryChanged) {
           this.schedule();
@@ -381,6 +419,50 @@ export class Aligner {
       this.stats.totalMs += ms;
       this.stats.maxMs = Math.max(this.stats.maxMs, ms);
     }
+    if (Date.now() - this.#following < cursorFollow) this.#cursorInView();
+  }
+
+  /**
+   * Brings a focused editor's cursor back on screen, the least scroll that shows it, when the
+   * measuring after a key's far jump left it off: in a line it draws by scrolling, in one it doesn't
+   * by having CodeMirror scroll there again, a few times at most.
+   */
+  #cursorInView(): void {
+    const side = this.#anchorSide();
+    const view = this.#views[side];
+    if (!view.hasFocus) return;
+    const head = view.state.selection.main.head;
+    const line = drawnRect(view, head);
+    const screen = this.#scroller.getBoundingClientRect();
+    if (!line) {
+      if (this.#cursorTries++ < 3) {
+        const following = this.#following;
+        requestAnimationFrame(() => {
+          if (this.#following === following && view.state.selection.main.head === head) {
+            view.dispatch({ effects: EditorView.scrollIntoView(head, { yMargin: cursorMargin }) });
+          }
+        });
+      }
+      return;
+    }
+    // The cursor's own row of text, as CodeMirror scrolls to it, not the whole of a line that
+    // wraps: a cursor on screen is left where it is, as a key that scrolls, such as `zt`, put it.
+    const cursor = cursorRow(view, head, line);
+    if (cursor.top >= screen.top - 1 && cursor.bottom <= screen.bottom + 1) return;
+    let shift = 0;
+    if (cursor.bottom > screen.bottom) shift = cursor.bottom - screen.bottom + cursorMargin;
+    if (cursor.top - shift < screen.top) shift = cursor.top - screen.top - cursorMargin;
+    this.#scroller.scrollTop += shift;
+    const offset = drawnRect(view, head)!.top - screen.top;
+    this.#anchor = {
+      for: side,
+      side,
+      pos: view.lineBlockAt(head).from,
+      offset,
+      scrollTop: this.#scroller.scrollTop,
+    };
+    this.#scrolled = true;
+    this.schedule();
   }
 
   /**
@@ -939,16 +1021,53 @@ export class Aligner {
 
 /**
  * Where on the page the line at `pos` is drawn, its own top below any blocks drawn above it, if
- * the editor draws it as a line.
+ * the editor draws it: its text, or the block that replaces it, as a file's header does.
  */
 function drawnTop(view: EditorView, pos: number): number | undefined {
+  return drawnRect(view, pos)?.top;
+}
+
+/** The box the line at `pos` is drawn in, without the blocks drawn around it, if it's drawn. */
+function drawnRect(view: EditorView, pos: number): DOMRect | undefined {
   if (pos < view.viewport.from || pos > view.viewport.to) return undefined;
-  const { node, offset } = view.domAtPos(pos, 1);
+  const block = view.lineBlockAt(pos);
+  const parts = Array.isArray(block.type) ? block.type : [block];
+  const own = parts.findIndex(
+    (part) => part.type === BlockType.Text || part.type === BlockType.WidgetRange,
+  );
+  if (own === -1) return undefined;
+  // The element drawn for one of the block's parts, then for its first, then for its own.
+  const { node, offset } = view.domAtPos(block.from);
   let element: Node | null | undefined = node === view.contentDOM ? node.childNodes[offset] : node;
-  if (element && element.nodeType !== Node.ELEMENT_NODE) element = element.parentElement;
-  const line = element instanceof HTMLElement ? element.closest('.cm-line') : null;
-  if (!line || !view.contentDOM.contains(line) || view.posAtDOM(line) !== pos) return undefined;
-  return line.getBoundingClientRect().top;
+  while (element && element.parentNode !== view.contentDOM) element = element.parentNode;
+  const starts = (candidate: Node | null): candidate is Element =>
+    candidate instanceof Element &&
+    !candidate.classList.contains('cm-gap') &&
+    view.posAtDOM(candidate) === block.from;
+  const found = element ?? null;
+  if (!starts(found)) return undefined;
+  let first: Element = found;
+  while (starts(first.previousSibling)) first = first.previousSibling;
+  let mine: Element | null = first;
+  for (let index = 0; index < own && mine; index++) mine = mine.nextElementSibling;
+  if (!mine || view.posAtDOM(mine) !== block.from) return undefined;
+  return mine.getBoundingClientRect();
+}
+
+/**
+ * The row of text the cursor at `pos` is on, in its line drawn at `line`, where CodeMirror finds
+ * it to scroll to: the character after it, or the one before at the end of its text. The whole
+ * line where it has no text.
+ */
+function cursorRow(view: EditorView, pos: number, line: DOMRect): { top: number; bottom: number } {
+  const { node, offset } = view.domAtPos(pos);
+  if (!(node instanceof Text) || node.length === 0) return line;
+  const from = Math.min(offset, node.length - 1);
+  const range = document.createRange();
+  range.setStart(node, from);
+  range.setEnd(node, from + 1);
+  const row = range.getClientRects()[0];
+  return row && row.top >= line.top - 1 && row.bottom <= line.bottom + 1 ? row : line;
 }
 
 function otherSide(side: Side): Side {

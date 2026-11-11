@@ -69,3 +69,37 @@
   margin: 0;
   font: var(--lo-text-ui);
 }
+
+/* CodeMirror shows its editor as a flex box, importantly, over the hidden attribute's own rule. */
+.lo-diffview > .cm-editor[hidden] {
+  display: none !important;
+}
+
+/* The inline layout's two columns of line numbers, old then new. */
+.lo-inlinenumbers .cm-gutterElement {
+  min-width: 4ch;
+}
+
+/* A comment box: a Markdown editor inside the thread's card. */
+.lo-diffcomposer {
+  padding: 8px 12px;
+}
+.lo-diffthread__comment + .lo-diffcomposer {
+  box-shadow: inset 0 1px 0 var(--lo-border-subtle);
+}
+.lo-diffcomposer .cm-editor {
+  border-radius: var(--lo-r-sm);
+  background: var(--lo-bg);
+  box-shadow: inset 0 0 0 1px var(--lo-border);
+}
+.lo-diffcomposer .cm-editor.cm-focused {
+  box-shadow: var(--lo-ring);
+}
+.lo-diffcomposer .cm-content {
+  min-height: 60px;
+}
+.lo-diffcomposer__hint {
+  margin-top: 6px;
+  font: var(--lo-text-small);
+  color: var(--lo-fg-muted);
+}

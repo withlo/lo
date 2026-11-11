@@ -13,8 +13,14 @@ import {
   type PullThread,
 } from '../shared/protocol.ts';
 
-/** Reads pull request `name`, by its manifest's name, with its files' text from the cache. */
-export async function loadPull(name: string): Promise<{ pull: Pull; jobs: Job[] }> {
+/**
+ * Reads pull request `name`, by its manifest's name, with its files' text from the cache: the
+ * pull request as the window shows it, the files to diff, and the large files kept out until
+ * they're loaded, by their index.
+ */
+export async function loadPull(
+  name: string,
+): Promise<{ pull: Pull; jobs: Job[]; large: Map<number, Job> }> {
   const manifest = readManifest(name);
   // Everything is in the cache already, so this only checks it.
   const { files: blobs } = await fetchPullRequest(manifest);
@@ -28,6 +34,7 @@ export async function loadPull(name: string): Promise<{ pull: Pull; jobs: Job[] 
 
   const files: PullFile[] = [];
   const jobs: Job[] = [];
+  const large = new Map<number, Job>();
   manifest.files.forEach((file, index) => {
     const meta = {
       path: file.path,
@@ -38,10 +45,12 @@ export async function loadPull(name: string): Promise<{ pull: Pull; jobs: Job[] 
     };
     const old = read(blobs[index]?.base);
     const added = read(blobs[index]?.head);
-    if (file.additions + file.deletions > largeFile) {
-      files.push({ ...meta, skipped: 'too-large' });
-    } else if (isBinary(old) || isBinary(added)) {
+    if (isBinary(old) || isBinary(added)) {
       files.push({ ...meta, skipped: 'binary' });
+    } else if (file.additions + file.deletions > largeFile) {
+      files.push({ ...meta, skipped: 'too-large' });
+      const text = { old: old && decoder.decode(old), new: added && decoder.decode(added) };
+      large.set(index, { index, path: file.path, previousPath: file.previousPath, ...text });
     } else {
       const text = { old: old && decoder.decode(old), new: added && decoder.decode(added) };
       files.push({ ...meta, ...text });
@@ -56,7 +65,7 @@ export async function loadPull(name: string): Promise<{ pull: Pull; jobs: Job[] 
     files,
     threads: threadsOf(manifest.threads, files),
   };
-  return { pull, jobs };
+  return { pull, jobs, large };
 }
 
 /** Whether a blob looks binary to git: a NUL in its first 8,000 bytes. */
