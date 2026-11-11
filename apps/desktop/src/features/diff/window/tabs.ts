@@ -17,8 +17,8 @@ export function loaderOf(id: string): Loader {
   if (loader) return loader;
   const made = new Loader({
     texts: (input) => main().texts({ id, ...input }),
-    files: (input) => diffJobs().files(input),
-    moves: (input) => diffJobs().moves(input),
+    files: (input, signal) => diffJobs().files(input, { signal }),
+    moves: (input, signal) => diffJobs().moves(input, { signal }),
     order: () => fileOrder(id),
     log: (message, error) => console.error(message, error),
   });

@@ -152,7 +152,7 @@ describe('a tab’s diff in the window', () => {
         // A batch with the huge file runs out of memory, as the job would.
         return input.files.some((file) => file.path === 'huge.ts')
           ? Promise.reject(new Error('huge.ts ran out of memory'))
-          : done.files(input);
+          : done.files(input, new AbortController().signal);
       },
     });
     loader.setWhitespace(true);
@@ -176,7 +176,7 @@ describe('a tab’s diff in the window', () => {
       ...done,
       moves: (input) => {
         asked = input;
-        return done.moves(input);
+        return done.moves(input, new AbortController().signal);
       },
     });
     loader.setWhitespace(true);
@@ -189,6 +189,30 @@ describe('a tab’s diff in the window', () => {
         { deleted: [], added: [] },
       ],
     });
+  });
+
+  it('cancels the jobs under way when the tab closes, and when a new head starts again', async () => {
+    const files = [versions('a.ts')];
+    const { done, list } = work();
+    list(files);
+    const signals: AbortSignal[] = [];
+    const loader = new Loader({
+      ...done,
+      files: (_input, signal) => {
+        signals.push(signal);
+        // Never answers: it's still running.
+        return new Promise(() => undefined);
+      },
+    });
+    loader.setWhitespace(true);
+    loader.take(state(files));
+    await settle(loader);
+    loader.take(state(files, 'local', NEXT));
+    await settle(loader);
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+
+    loader.stop();
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, true]);
   });
 
   it('gives the same id to a path in every list of the tab, and none to one it hasn’t seen', () => {

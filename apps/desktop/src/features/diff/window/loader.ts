@@ -16,13 +16,12 @@ import { FileIds } from './ids.ts';
 /** What the loader asks main and the background process for. */
 export interface LoaderWork {
   texts(input: { at: string; from: Source; files: number[] }): Promise<FileText[]>;
-  files(input: {
-    files: FileJob[];
-    whitespace: boolean;
-    highlight: boolean;
-    budget: number;
-  }): Promise<FileResult[]>;
-  moves(input: { files: ChangedRuns[] }): Promise<MovedBlock[]>;
+  /** The background process's jobs, each stopped once `signal` aborts. */
+  files(
+    input: { files: FileJob[]; whitespace: boolean; highlight: boolean; budget: number },
+    signal: AbortSignal,
+  ): Promise<FileResult[]>;
+  moves(input: { files: ChangedRuns[] }, signal: AbortSignal): Promise<MovedBlock[]>;
   /** The order the left panel lists the changed files in, by key, to load them in. */
   order(): readonly string[];
   log(message: string, error: unknown): void;
@@ -114,7 +113,23 @@ interface Run {
   readonly at: string;
   readonly from: Source;
   readonly entries: readonly Entry[];
-  stopped: boolean;
+  /** Stops its jobs in the background process, as a new run takes its place or the tab closes. */
+  readonly controller: AbortController;
+  readonly stopped: boolean;
+}
+
+/** A run of `entries`, at a head, from a source. */
+function runOf(at: string, from: Source, entries: readonly Entry[]): Run {
+  const controller = new AbortController();
+  return {
+    at,
+    from,
+    entries,
+    controller,
+    get stopped() {
+      return controller.signal.aborted;
+    },
+  };
 }
 
 export class Loader {
@@ -252,14 +267,14 @@ export class Loader {
 
   /** Stops what's under way, as the tab closes. */
   stop(): void {
-    if (this.#run) this.#run.stopped = true;
+    this.#run?.controller.abort();
     this.#run = undefined;
     this.#sink = undefined;
     this.#listeners.clear();
   }
 
   #reset(): void {
-    if (this.#run) this.#run.stopped = true;
+    this.#run?.controller.abort();
     this.#run = undefined;
     this.#ready = undefined;
     this.#shown.clear();
@@ -268,7 +283,7 @@ export class Loader {
   }
 
   #start(at: string, from: Source, files: readonly FileVersions[]): void {
-    if (this.#run) this.#run.stopped = true;
+    this.#run?.controller.abort();
     const entries = files.map((versions, place) => {
       const key = keyOf(versions);
       return { place, versions, key, id: this.ids.of(key) };
@@ -284,7 +299,7 @@ export class Loader {
         const other = entries[index];
         return other?.id === each.id && other.versions.start === each.versions.start;
       });
-    const run: Run = { at, from, entries, stopped: false };
+    const run = runOf(at, from, entries);
     this.#run = run;
     this.#failed.clear();
     if (inPlace) this.#ready = { at, from, entries };
@@ -366,12 +381,10 @@ export class Loader {
     });
     if (jobs.length === 0) return;
     const whitespace = this.#whitespace;
-    const results = await this.#work.files({
-      files: jobs.map(({ job }) => job),
-      whitespace,
-      highlight: true,
-      budget,
-    });
+    const results = await this.#work.files(
+      { files: jobs.map(({ job }) => job), whitespace, highlight: true, budget },
+      run.controller.signal,
+    );
     if (run.stopped) return;
     jobs.forEach(({ entry, lines }, index) => {
       const result = results[index];
@@ -423,12 +436,15 @@ export class Loader {
   /** Finds the code the run's files move, and gives it to the view. */
   async #findMoves(run: Run): Promise<void> {
     const none = { deleted: [], added: [] };
-    const moves = await this.#work.moves({
-      // Generated files and lockfiles churn: code moved there isn't the author's.
-      files: run.entries.map((entry) =>
-        entry.versions.generated === null ? (this.#shown.get(entry.id)?.changes ?? none) : none,
-      ),
-    });
+    const moves = await this.#work.moves(
+      {
+        // Generated files and lockfiles churn: code moved there isn't the author's.
+        files: run.entries.map((entry) =>
+          entry.versions.generated === null ? (this.#shown.get(entry.id)?.changes ?? none) : none,
+        ),
+      },
+      run.controller.signal,
+    );
     if (run.stopped) return;
     this.#moves = moves.flatMap((move) => {
       const from = run.entries[move.from.file];
@@ -467,12 +483,10 @@ export class Loader {
         return [{ entry, job }];
       });
       if (jobs.length === 0) continue;
-      const results = await this.#work.files({
-        files: jobs.map(({ job }) => job),
-        whitespace,
-        highlight: false,
-        budget: BUDGET,
-      });
+      const results = await this.#work.files(
+        { files: jobs.map(({ job }) => job), whitespace, highlight: false, budget: BUDGET },
+        run.controller.signal,
+      );
       if (run.stopped || this.#whitespace !== whitespace) return;
       jobs.forEach(({ entry }, index) => {
         const result = results[index];

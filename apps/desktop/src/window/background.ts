@@ -15,14 +15,21 @@ export interface Port {
 export interface Connection {
   /**
    * Runs a job by its full name. Rejects with an `IpcError`: the process's own, `invalid` for input
-   * that isn't plain data, `restarted` if the process stopped meanwhile, or `unanswered` past
-   * `timeout` milliseconds (a minute unless given).
+   * that isn't plain data, `restarted` if the process stopped meanwhile, `unanswered` past
+   * `timeout` milliseconds (a minute unless given), or `cancelled` once `signal` aborts, which
+   * stops the job in the process too.
    */
-  run(job: string, input: unknown, options?: { timeout?: number }): Promise<unknown>;
+  run(job: string, input: unknown, options?: RunOptions): Promise<unknown>;
   /** Takes a new port to the process. Jobs sent before any port go out on this one. */
   connect(port: Port): void;
   /** The process stopped: the jobs sent to it fail as `restarted`, and new ones wait for a port. */
   lose(): void;
+}
+
+/** How long to wait for a job, and what stops it. */
+export interface RunOptions {
+  timeout?: number;
+  signal?: AbortSignal | undefined;
 }
 
 interface Waiting {
@@ -65,19 +72,43 @@ export function createConnection(): Connection {
   };
 
   return {
-    run(job, input, { timeout = 60_000 } = {}) {
+    run(job, input, { timeout = 60_000, signal } = {}) {
       // A port drops what it can't send, such as a Blob, and the job would never be answered.
       const problem = plainDataProblem(input);
       if (problem) {
         return Promise.reject(new IpcError('invalid', `${job} takes plain data, but ${problem}.`));
       }
+      const cancelled = () => new IpcError('cancelled', `${job} was cancelled.`);
+      if (signal?.aborted) return Promise.reject(cancelled());
       const id = next++;
       return new Promise((resolve, reject) => {
+        const stop = () => {
+          const waited = settle(id);
+          if (!waited) return;
+          // The process stops it too, if it has it.
+          if (waited.sent) port?.postMessage({ cancel: id });
+          reject(cancelled());
+        };
         const timer = setTimeout(() => {
+          signal?.removeEventListener('abort', stop);
           settle(id);
           reject(new IpcError('unanswered', `${job} got no answer in ${timeout} ms.`));
         }, timeout);
-        waiting.set(id, { job, input, sent: port !== undefined, timer, resolve, reject });
+        signal?.addEventListener('abort', stop, { once: true });
+        const done =
+          <T>(then: (value: T) => void) =>
+          (value: T) => {
+            signal?.removeEventListener('abort', stop);
+            then(value);
+          };
+        waiting.set(id, {
+          job,
+          input,
+          sent: port !== undefined,
+          timer,
+          resolve: done(resolve),
+          reject: done(reject),
+        });
         port?.postMessage({ id, job, input });
       });
     },
@@ -116,11 +147,14 @@ export function listenForBackground(): void {
   });
 }
 
-/** A job as a function. One whose input can be undefined may be called without it. */
+/**
+ * A job as a function, with what stops it. One whose input can be undefined may be called without
+ * it.
+ */
 type Call<Spec> =
   undefined extends InputOf<Spec>
-    ? (input?: InputOf<Spec>) => Promise<ReplyOf<Spec>>
-    : (input: InputOf<Spec>) => Promise<ReplyOf<Spec>>;
+    ? (input?: InputOf<Spec>, options?: RunOptions) => Promise<ReplyOf<Spec>>
+    : (input: InputOf<Spec>, options?: RunOptions) => Promise<ReplyOf<Spec>>;
 
 export type Jobs<C extends JobContract> = {
   readonly [Name in keyof C['jobs']]: Call<C['jobs'][Name]>;
@@ -133,7 +167,8 @@ export function jobs<C extends JobContract>(
 ): Jobs<C> {
   const calls = Object.keys(contract.jobs).map((name) => [
     name,
-    (input?: unknown) => connection.run(`${contract.group}.${name}`, input),
+    (input?: unknown, options?: RunOptions) =>
+      connection.run(`${contract.group}.${name}`, input, options),
   ]);
   // The process answers each job as its contract says; replies aren't validated here.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion

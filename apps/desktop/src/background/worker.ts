@@ -10,7 +10,7 @@ import { findJob, type Runner } from './runners.ts';
 
 /** Runs jobs on workers started from `entry`, a script that calls `work` in a worker. */
 export function workers(entry: URL): Execute {
-  return (job, input, limits) =>
+  return (job, input, limits, signal) =>
     new Promise((resolve) => {
       const worker = new Worker(entry, {
         workerData: { job, input },
@@ -21,15 +21,20 @@ export function workers(entry: URL): Execute {
         if (settled) return;
         settled = true;
         clearTimeout(deadline);
+        signal?.removeEventListener('abort', cancelled);
         resolve(result);
         void worker.terminate();
       };
       const fail = (code: string, message: string) =>
         settle({ ok: false, error: { code, message } });
+      // Cancelled while it runs: its worker stops.
+      const cancelled = () => fail('cancelled', `${job} was cancelled.`);
+      signal?.addEventListener('abort', cancelled, { once: true });
       const deadline = setTimeout(
         () => fail('timeout', `${job} ran past its ${limits.deadline} ms.`),
         limits.deadline,
       );
+      if (signal?.aborted) cancelled();
       worker.once('message', (result: unknown) => {
         if (isResult(result)) settle(result);
         else fail('failed', `${job} answered with something that isn't a result.`);
