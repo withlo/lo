@@ -201,7 +201,9 @@ export function describeMergeRefusal(refusal: MergeRefusal): string {
         case 'adminOverride':
           return `GitHub merges past the rules only a stack's bottom layer, and ${below} is below it, so Lo didn't merge`;
         default:
-          return refusal.via satisfies never;
+          throw new Error(
+            `a way to merge Lo doesn't know: ${JSON.stringify(refusal.via satisfies never)}`,
+          );
       }
     }
     case 'stacked':
@@ -247,7 +249,9 @@ export function describeMergeRefusal(refusal: MergeRefusal): string {
     case 'other':
       return `GitHub refused it: ${refusal.message}`;
     default:
-      return refusal satisfies never;
+      throw new Error(
+        `a refusal of a merge Lo doesn't know: ${JSON.stringify(refusal satisfies never)}`,
+      );
   }
 }
 
@@ -1521,6 +1525,8 @@ export async function runConversionStep(
       return isRefusal(added) ? added : { kind: 'stacked', stack: added };
     }
     default:
-      return step satisfies never;
+      throw new Error(
+        `a step of a stack conversion Lo doesn't know: ${JSON.stringify(step satisfies never)}`,
+      );
   }
 }

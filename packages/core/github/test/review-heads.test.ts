@@ -112,7 +112,9 @@ function deleted(line: number, answered: 'deleted' | 'null' | 'lost' | 'limited'
         },
       });
     default:
-      return answered satisfies never;
+      throw new Error(
+        `an answer to a delete Lo doesn't know: ${JSON.stringify(answered satisfies never)}`,
+      );
   }
 }
 
@@ -141,7 +143,9 @@ function read(line: number, found: 'there' | 'gone' | 'failed'): Interaction {
         },
       });
     default:
-      return found satisfies never;
+      throw new Error(
+        `an answer to a read Lo doesn't know: ${JSON.stringify(found satisfies never)}`,
+      );
   }
 }
 

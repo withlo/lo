@@ -190,7 +190,9 @@ export function describeReviewRefusal(refusal: ReviewWriteRefusal): string {
     case 'other':
       return `GitHub refused it: ${refusal.message}`;
     default:
-      return refusal satisfies never;
+      throw new Error(
+        `a refusal of a review write Lo doesn't know: ${JSON.stringify(refusal satisfies never)}`,
+      );
   }
 }
 
@@ -355,7 +357,7 @@ export async function sendReviewWrite(
     case 'submitReview':
       return submitReview(client, write.variables);
     default:
-      return write satisfies never;
+      throw new Error(`a review write Lo doesn't know: ${JSON.stringify(write satisfies never)}`);
   }
 }
 

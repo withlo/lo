@@ -868,7 +868,7 @@ export class Accounts {
         return undefined;
       }
       default:
-        return renewed satisfies never;
+        throw new Error(`a renewal Lo doesn't know: ${JSON.stringify(renewed satisfies never)}`);
     }
   }
 

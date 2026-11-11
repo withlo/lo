@@ -208,7 +208,9 @@ export function renderPlan(planned: Plan): string[] {
         case 'addToStack':
           return `add ${numbers(step.prs)} to stack ${step.stack}`;
         default:
-          return step satisfies never;
+          throw new Error(
+            `a step of a stack conversion Lo doesn't know: ${JSON.stringify(step satisfies never)}`,
+          );
       }
     }),
   ];

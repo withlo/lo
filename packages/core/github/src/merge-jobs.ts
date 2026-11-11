@@ -391,7 +391,9 @@ export class MergeJobs {
           };
           break;
         default:
-          return answer satisfies never;
+          throw new Error(
+            `an answer to a merge Lo doesn't know: ${JSON.stringify(answer satisfies never)}`,
+          );
       }
     }
     if (next.kind === 'ask') {
@@ -605,6 +607,6 @@ function outcomeOf(answer: AsyncMerge): Outcome | undefined {
         landed: undefined,
       };
     default:
-      return status satisfies never;
+      throw new Error(`a merge status Lo doesn't know: ${JSON.stringify(status satisfies never)}`);
   }
 }
