@@ -23,7 +23,7 @@ test.use({
   pull: {
     repo: 'withlo/example',
     number: 1,
-    copyAfterMs: 4000,
+    copyWhenAsked: true,
     files: [
       {
         path: 'src/copy.ts',
@@ -52,7 +52,8 @@ test('the local copy fills the gaps in place: the cursor and the scroll stay', a
   };
   expect(lineOf(was.cursor?.at)).toBe(250);
   expect(await missing.count()).toBeGreaterThan(0);
-  // The copy comes.
+  // The copy comes, once its diff is worked out.
+  await expect.poll(() => page.evaluate(() => window.perfCopy()), { timeout: 10_000 }).toBe(1);
   await expect(missing).toHaveCount(0, { timeout: 10_000 });
   await page.waitForTimeout(300);
   const now = await cursor(page);

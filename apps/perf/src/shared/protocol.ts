@@ -40,8 +40,11 @@ export interface Pull {
   number: number;
   files: PullFile[];
   threads: PullThread[];
-  /** How long after its diff a file with gaps gets its whole lines, in ms. */
-  copyAfterMs?: number | undefined;
+  /**
+   * Whether a file with gaps gets its whole lines only when the test says, with `perfCopy`, as
+   * the local copy comes after GitHub's diff; otherwise as soon as its diff is worked out.
+   */
+  copyWhenAsked?: boolean | undefined;
 }
 
 /** What main sends the window when it asks for the pull request. */

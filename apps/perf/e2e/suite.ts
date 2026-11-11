@@ -92,6 +92,8 @@ declare global {
       readonly layout: 'split' | 'inline';
     };
     diffLoaded?: boolean;
+    /** Brings the local copy's files that are waiting, and says how many there were. */
+    perfCopy(): number;
   }
 }
 
