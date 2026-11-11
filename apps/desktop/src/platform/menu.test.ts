@@ -86,6 +86,30 @@ describe('the macOS app menu', () => {
     ]);
   });
 
+  it("puts commands for the app's own menu after About", () => {
+    const install: BarItem = {
+      id: 'open.installCommand',
+      label: 'Install command-line tool',
+      menu: 'App',
+      order: 10,
+      enabled: true,
+    };
+    const withApp = macMenu([install], { name: 'Lo', devTools: false, run: () => undefined });
+    expect(menuOf(withApp, 'Lo')?.map((each) => each.id ?? each.role ?? each.type)).toEqual([
+      'about',
+      'separator',
+      'open.installCommand',
+      'separator',
+      'services',
+      'separator',
+      'hide',
+      'hideOthers',
+      'unhide',
+      'separator',
+      'quit',
+    ]);
+  });
+
   it("puts Lo's commands in their menus, in order, with their keys and states", () => {
     expect(
       menuOf(template, 'Go')?.map((each) => [each.id, each.label, each.accelerator, each.enabled]),

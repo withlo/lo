@@ -9,20 +9,31 @@ const named = [
   'host-resolver-rules',
   'proxy-server',
   'js-flags',
+  'ssl-key-log-file',
+  'log-net-log',
 ] as const;
 
 /**
- * The command-line switches a packaged Lo refuses to start with, as `--name`, or none. Chromium
- * takes switches that Lo has no use for and that can turn it against its person: one opens a port
- * that drives every request the window may make, and others send main's requests, with their
- * `Authorization` header, to a server of the sender's choosing and accept its certificate. So a
- * packaged Lo takes none: any argument that starts with `-` is refused, in either form and
- * whatever it says, since new switches come with every Chromium.
+ * An argument a packaged Lo starts with: a link, `lo://`, `https://` or `http://`, from its very
+ * first character. Chromium trims whitespace from each argument before it looks for a switch, so
+ * ` --ssl-key-log-file=…` is a switch to it; an argument that starts with a link's scheme never is.
+ */
+const LINK = /^(?:lo|https?):\/\//i;
+
+/**
+ * The command-line arguments a packaged Lo refuses to start with, or none: every argument but a
+ * link, each named by what comes before any `=`, so a value is never repeated. Chromium takes
+ * switches that Lo has no use for and that can turn it against its person: one opens a port that
+ * drives every request the window may make, others send main's requests, with their
+ * `Authorization` header, to a server of the sender's choosing and accept its certificate, or
+ * write out the secrets of every connection. Chromium reads an argument as a switch once it has
+ * trimmed the whitespace around it, and new switches come with every Chromium, so rather than look
+ * for switches, a packaged Lo takes links alone.
  *
- * Nothing is let through. A launch from Finder, the Dock or `open`, with or without a `lo://` link,
- * a web link or a file, passes Lo no arguments: links and files arrive as events. What follows
- * `--` counts too. An unpackaged build, which `electron-vite dev` and the tests start with
- * switches, takes them all.
+ * Nothing else is let through. A launch from Finder, the Dock or `open`, with or without a `lo://`
+ * link, a web link or a file, passes Lo no arguments: links and files arrive as events. The `lo`
+ * command passes its link as an argument, and refuses anything else. What follows `--` counts too.
+ * An unpackaged build, which `electron-vite dev` and the tests start with switches, takes them all.
  */
 export function refusedArguments(options: {
   packaged: boolean;
@@ -33,12 +44,11 @@ export function refusedArguments(options: {
 }): string[] {
   if (!options.packaged) return [];
   const refused = options.argv
-    .filter((argument) => argument.startsWith('-'))
-    .map((argument) => argument.split('=')[0] ?? argument);
+    .filter((argument) => !LINK.test(argument))
+    .map((argument) => argument.split('=', 1)[0] ?? argument);
   for (const name of named) {
-    if (options.hasSwitch(name) && !refused.some((found) => found.replace(/^-+/, '') === name)) {
-      refused.push(`--${name}`);
-    }
+    const shown = refused.some((found) => found.trim().replace(/^-+/, '') === name);
+    if (options.hasSwitch(name) && !shown) refused.push(`--${name}`);
   }
   return refused;
 }

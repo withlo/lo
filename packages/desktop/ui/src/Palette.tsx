@@ -36,6 +36,16 @@ export interface PaletteProps<T> {
   onHighlight?: ((item: T | undefined) => void) | undefined;
   /** What the list says when nothing matches. */
   empty: ReactNode;
+  /** Whether what's typed is code, such as a link, set in the code font. */
+  mono?: boolean | undefined;
+  /** The icon before the input, in place of the prompt's. */
+  icon?: ReactNode;
+  /** A note at the end of the input, on where what's in it came from: "from clipboard". */
+  mode?: ReactNode;
+  /** A message under the input, above the list: what's typed can't be used, and why. */
+  message?: ReactNode;
+  /** `⏎` with no row to act on, such as under a message: what the foot says `⏎` does. */
+  onSubmit?: (() => void) | undefined;
   /** The row of hints at the bottom. */
   foot?: ReactNode;
   /** Where the dialog is put in the page: an element inside `.lo-app`. */
@@ -64,11 +74,17 @@ export function Palette<T>({
   onRun,
   onHighlight,
   empty,
+  mono,
+  icon,
+  mode,
+  message,
+  onSubmit,
   foot,
   container,
   onClosed,
 }: PaletteProps<T>) {
   const input = useRef<HTMLInputElement>(null);
+  const rows = groups.some((group) => group.items.length > 0);
   return (
     <Dialog.Root
       open={open}
@@ -96,18 +112,38 @@ export function Palette<T>({
               onValueChange={(value) => onQueryChange(value)}
               onItemHighlighted={(item: T | undefined) => onHighlight?.(item)}
             >
-              <div className="flex h-48 flex-none items-center gap-12 border-b border-border-subtle ps-16 pe-12">
-                <svg className="lo-i text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M4 5.5 7 8l-3 2.5M8.5 11h3.5" />
-                </svg>
+              <div className="flex h-palette-input-h flex-none items-center gap-12 border-b border-border-subtle ps-16 pe-12">
+                {icon ?? (
+                  <svg className="lo-i text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M4 5.5 7 8l-3 2.5M8.5 11h3.5" />
+                  </svg>
+                )}
                 <Autocomplete.Input
                   ref={input}
                   placeholder={placeholder}
                   aria-label={label}
-                  className="h-full min-w-0 flex-1 border-0 bg-transparent text-fg outline-none read-body placeholder:text-fg-subtle focus-visible:shadow-none"
+                  spellCheck={mono ? false : undefined}
+                  onKeyDown={(event) => {
+                    // With no row to act on, `⏎` does what the palette offers instead, if anything.
+                    if (event.key !== 'Enter' || rows || event.nativeEvent.isComposing) return;
+                    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+                    event.preventDefault();
+                    onSubmit?.();
+                  }}
+                  className={`h-full min-w-0 flex-1 border-0 bg-transparent text-fg outline-none placeholder:text-fg-subtle focus-visible:shadow-none ${mono ? 'code-text' : 'read-body'}`}
                 />
+                {mode !== undefined && (
+                  <span className="flex-none rounded-xs bg-hover px-6 text-fg-muted code-small">
+                    {mode}
+                  </span>
+                )}
                 {keys && <Key keys={keys} quiet />}
               </div>
+              {message !== undefined && (
+                <div role="status" className="flex gap-12 px-16 py-12 text-ui">
+                  {message}
+                </div>
+              )}
               <Autocomplete.List
                 aria-label={`${label} results`}
                 className="max-h-palette-list-h min-h-0 overflow-auto p-6"
@@ -130,7 +166,7 @@ export function Palette<T>({
                           value={item}
                           {...itemKeys?.(item)}
                           onClick={() => onRun(item)}
-                          className="flex min-h-32 cursor-default items-center gap-12 rounded-sm px-12 py-6 text-fg text-ui data-highlighted:bg-current-strong"
+                          className="flex min-h-palette-item-h cursor-default items-center gap-12 rounded-sm px-12 py-6 text-fg text-ui data-highlighted:bg-current-strong"
                         >
                           {renderItem(item)}
                         </Autocomplete.Item>

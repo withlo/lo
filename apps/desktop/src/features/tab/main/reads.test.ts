@@ -1,4 +1,12 @@
-import { GithubClient, GithubError, PullRef, type PollStatus, type PullSummary } from '@lo/github';
+import {
+  approvalUrl,
+  GithubClient,
+  GithubError,
+  PullRef,
+  type PollStatus,
+  type PullSummary,
+  type RepoAccount,
+} from '@lo/github';
 import { replayFetch } from '@lo/testing';
 import { describe, expect, it } from 'vitest';
 
@@ -10,6 +18,8 @@ import {
   problemOf,
   rateLimitedUntil,
   readPull,
+  restrictedMessage,
+  restrictingOrg,
   summaryState,
   withSummary,
 } from './reads.ts';
@@ -198,6 +208,33 @@ describe('what reading it ran into', () => {
       url: 'https://evil.example/sso',
     });
     expect(problemOf(elsewhere, E2E, account, undefined).kind).toBe('failed');
+  });
+
+  it("says an organization that restricts Lo hasn't approved it, with GitHub's link to ask", () => {
+    const restricted = new GithubError({
+      kind: 'oauthAppRestricted',
+      message:
+        'Although you appear to have the correct authorization credentials, the `rozed-dev` organization has enabled OAuth App access restrictions',
+      org: 'rozed-dev',
+    });
+    expect(problemOf(restricted, E2E, account, undefined)).toEqual({
+      kind: 'blocked',
+      message:
+        "rozed-dev hasn't approved Lo, so GitHub hides its repositories from Lo. Ask for approval on GitHub, and GitHub emails rozed-dev's owners.",
+      links: [{ label: 'Request approval on GitHub', url: approvalUrl() }],
+    });
+    const found = (choice: RepoAccount['choice'], login = 'rozed-bot'): RepoAccount => ({
+      repo: E2E.repo,
+      choice,
+      visible: [],
+      remembered: {},
+      problems: [{ login, error: restricted }],
+    });
+    expect(restrictingOrg(found({ kind: 'none' }))).toBe('rozed-dev');
+    expect(restrictingOrg(found({ kind: 'unavailable', login: 'rozed-bot' }))).toBe('rozed-dev');
+    // The chosen account's own problem is what counts.
+    expect(restrictingOrg(found({ kind: 'unavailable', login: 'work-bot' }))).toBeUndefined();
+    expect(restrictedMessage('acme')).toContain("acme hasn't approved Lo");
   });
 
   it('says anything else failed, and when Lo tries again', () => {

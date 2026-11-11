@@ -13,6 +13,7 @@ import {
   groups,
   keyLabels,
   KEYMAP_LINE_LIMIT,
+  keyless,
   keyNames,
   linuxEditingKeys,
   listed,
@@ -105,6 +106,14 @@ function commandsIn(features: readonly Declarations[]): Command[] {
   return features.flatMap(commandsOf);
 }
 
+/** What a command with no key says in place of one: where it's found instead. */
+function noKey(command: Command): string {
+  if (!keyless(command)) return 'None';
+  return command.bar
+    ? 'None: in the app menu and the palette'
+    : 'None: in its menu and the palette';
+}
+
 /** Key help's groups as macOS shows them: each command on macOS, with its keys there. */
 function groupSections(commands: readonly Command[]): string[] {
   return groups.flatMap((group) => {
@@ -115,7 +124,7 @@ function groupSections(commands: readonly Command[]): string[] {
           .map(specOf)
           .filter(({ on }) => on !== 'linux')
           .map(({ keys: each, on }) => `${code(form(each, 'mac'))}${on ? ' (macOS only)' : ''}`);
-        return [command.label, keys.join(', ') || 'None', where(command), code(command.id)];
+        return [command.label, keys.join(', ') || noKey(command), where(command), code(command.id)];
       });
     if (rows.length === 0) return [];
     return [`## ${group}`, '', ...table(['Action', 'Keys', 'Where', 'Command'], rows), ''];
@@ -319,7 +328,7 @@ export function keysDoc(features: readonly Declarations[], vim: VimKeys = vimDef
     '',
     '# Keys',
     '',
-    "Lo is keyboard first: every action has a key. These are its keys as it ships, from the commands each of its features declares. Keys are written as macOS shows them; on Linux, Ctrl takes the place of `⌘` (see [Keys for one system](#keys-for-one-system)). A sequence's keys are pressed one after another: `] f` is `]`, then `f`.",
+    "Lo is keyboard first: every action has a key, but for a few done once in a while, which a menu and the command palette reach. These are its keys as it ships, from the commands each of its features declares. Keys are written as macOS shows them; on Linux, Ctrl takes the place of `⌘` (see [Keys for one system](#keys-for-one-system)). A sequence's keys are pressed one after another: `] f` is `]`, then `f`.",
     '',
     "Each command's id is what [the keymap file](#the-keymap-file) binds keys to.",
     '',

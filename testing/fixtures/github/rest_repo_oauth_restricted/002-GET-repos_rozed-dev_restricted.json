@@ -1,0 +1,24 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/restricted"
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-oauth-scopes": "delete_repo, read:org, repo, workflow",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4980",
+      "x-ratelimit-reset": "1794408483",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "20"
+    },
+    "body": {
+      "message": "Although you appear to have the correct authorization credentials, the `rozed-dev` organization has enabled OAuth App access restrictions, meaning that data access to third-parties is limited. For more information on these restrictions, including how to enable this app, visit https://docs.github.com/articles/restricting-access-to-your-organization-s-data/",
+      "documentation_url": "https://docs.github.com/articles/restricting-access-to-your-organization-s-data/",
+      "status": "403"
+    }
+  }
+}

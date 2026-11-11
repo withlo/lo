@@ -34,6 +34,12 @@
   --spacing-toast-w: var(--lo-toast-w);
   --spacing-palette-w: var(--lo-palette-w);
   --spacing-palette-list-h: var(--lo-palette-list-h);
+  --spacing-palette-input-h: var(--lo-palette-input-h);
+  --spacing-palette-item-h: var(--lo-palette-item-h);
+  --spacing-list-row-h: var(--lo-list-row-h);
+  --spacing-list-repo-w: var(--lo-list-repo-w);
+  --spacing-list-who-w: var(--lo-list-who-w);
+  --spacing-list-when-w: var(--lo-list-when-w);
   --spacing-keyhelp-w: var(--lo-keyhelp-w);
   --spacing-settings-nav-w: var(--lo-settings-nav-w);
   --spacing-settings-w: var(--lo-settings-w);

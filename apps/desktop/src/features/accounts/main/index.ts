@@ -3,19 +3,14 @@
 // importing accounts from `gh`, and remembering which account opens a repository. Tokens are kept
 // encrypted by the system's keychain, and never leave main.
 
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { RepoRef, sameLogin } from '@lo/github';
-import { app, clipboard, net, safeStorage, shell } from 'electron';
+import { app, clipboard, net, safeStorage } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import {
-  browserProgram,
-  ghProgram,
-  githubSettings,
-  type GithubSettings,
-} from '../../../main/environment.ts';
+import { openPage } from '../../../main/browser.ts';
+import { ghProgram, githubSettings, type GithubSettings } from '../../../main/environment.ts';
 import { defineFeature, STOP_LIMITS } from '../../../main/features.ts';
 import { netFetch } from '../../../main/fetch.ts';
 import { provides } from '../../../main/services.ts';
@@ -107,30 +102,6 @@ function waitingFor(id: number): { userCode: string; page: string } {
     throw new IpcError('refused', `Lo won't open ${waiting.page}.`);
   }
   return waiting;
-}
-
-/**
- * Opens `page` in the system's browser, or with the program `LO_BROWSER` names in a build run from
- * source, which gets an environment of its own and the address as its one argument.
- */
-async function openPage(page: string): Promise<void> {
-  const program = browserProgram({ packaged: app.isPackaged, env: process.env });
-  if (program === undefined) {
-    await shell.openExternal(page, { activate: true });
-    return;
-  }
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(program, [page], {
-      shell: false,
-      stdio: 'ignore',
-      env: { PATH: '/usr/bin:/bin' },
-    });
-    child.once('error', reject);
-    child.once('exit', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${program} exited with ${String(code)}`));
-    });
-  });
 }
 
 export default defineFeature(contract, {

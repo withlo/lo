@@ -43,8 +43,6 @@ test('the window opens on Recent pull requests alone, in both of its fonts', asy
   await expect(strip.getByRole('tab')).toHaveText(['Recent pull requests']);
   const open = strip.getByRole('button', { name: 'Open a pull request' });
   await expect(open).toBeVisible();
-  // Inert until pull requests can be opened.
-  await expect(open).toHaveAttribute('aria-disabled', 'true');
   expect(
     await open.evaluate((button) => getComputedStyle(button).getPropertyValue('app-region')),
   ).toBe('no-drag');
@@ -67,6 +65,9 @@ test('the window opens on Recent pull requests alone, in both of its fonts', asy
   expect(fonts.mono).toContain('loaded');
   expect(fonts.files).toBe(true);
   expect(fonts.family).toMatch(/^"Host Grotesk"/);
+  // It opens the box to open a pull request with.
+  await open.click();
+  await expect(page.getByRole('dialog', { name: 'Open a pull request' })).toBeVisible();
   // Their licenses ship with the window's files.
   for (const font of ['host-grotesk', 'fragment-mono']) {
     expect(

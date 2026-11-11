@@ -194,10 +194,22 @@ describe('keys', () => {
       'diff.linux has no key on Linux.',
     ]);
   });
+
+  test('pass a command declared with no key that a menu reaches, and no other', () => {
+    expect(
+      checkKeys([
+        feature({
+          install: { label: 'Install', group: 'Act', keys: [], bar: { menu: 'App', order: 1 } },
+          viewed: { label: 'Viewed', group: 'Act', keys: [], menu: { on: 'file', order: 1 } },
+          hidden: { label: 'Hidden', group: 'Act', keys: [] },
+        }),
+      ]),
+    ).toEqual(['diff.hidden has no key on macOS.', 'diff.hidden has no key on Linux.']);
+  });
 });
 
 describe('menu items', () => {
-  test('fail an item without a key', () => {
+  test('fail an item without a key, unless its command has none on purpose', () => {
     expect(
       checkMenus([
         feature({
@@ -216,13 +228,17 @@ describe('menu items', () => {
             when: { system: 'linux' },
             bar: { menu: 'Review', order: 2 },
           },
+          ship: {
+            label: 'Ship',
+            group: 'Review',
+            keys: [{ keys: 'g s', on: 'linux' }],
+            bar: { menu: 'Review', order: 3 },
+          },
         }),
       ]),
     ).toEqual([
-      'diff.viewed is in the right-click menu of a file, with no key on macOS.',
-      'diff.viewed is in the right-click menu of a file, with no key on Linux.',
       'diff.copy is in the right-click menu of a line, with no key on macOS.',
-      "diff.merge is in the app menu's Review menu, with no key on macOS.",
+      "diff.ship is in the app menu's Review menu, with no key on macOS.",
     ]);
   });
 

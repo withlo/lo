@@ -2,8 +2,11 @@ import { z } from 'zod';
 
 import { defineContract, reply } from '../../ipc/contract.ts';
 
-/** The macOS app menu's menus a command can sit in, as commands declare them in `bar`. */
-export const barMenus = ['File', 'View', 'Go', 'Review', 'Window'] as const;
+/**
+ * The macOS app menu's menus a command can sit in, as commands declare them in `bar`. `App` is the
+ * menu named after Lo.
+ */
+export const barMenus = ['App', 'File', 'View', 'Go', 'Review', 'Window'] as const;
 
 /** A keystroke a menu item shows, with the modifier keys by their DOM names. */
 export const barKey = z.strictObject({
