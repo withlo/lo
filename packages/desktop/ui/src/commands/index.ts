@@ -1,0 +1,97 @@
+// `@lo/ui/commands`: Lo's command engine. Every key passes through it. It holds no CodeMirror,
+// Electron or IPC code, and loads in Node without a DOM, so the checks and the docs can read
+// features' declarations.
+
+export {
+  commandsOf,
+  defineCommands,
+  groups,
+  handlers,
+  isCommandId,
+  type BarMenu,
+  type Command,
+  type Declaration,
+  type Declarations,
+  type Group,
+  type Handler,
+  type HandlersFor,
+  type KeySpec,
+  type TargetFor,
+  type When,
+} from './declare.ts';
+export { HISTORY_LIMIT, History, type Entry, type Reveal, type View } from './history.ts';
+export { parseKeymap, type Keymap, type KeymapError, type KeymapLine } from './keymap.ts';
+export { listen } from './listener.ts';
+export {
+  Bindings,
+  declaredBindings,
+  match,
+  SEQUENCE_TIMEOUT,
+  type Binding,
+  type Focus,
+  type Outcome,
+  type Pending,
+  type Press,
+  type Step,
+} from './match.ts';
+export {
+  eventStroke,
+  isChord,
+  keyLabels,
+  keyNames,
+  parseKeys,
+  readKeys,
+  strokeOf,
+  strokeLabel,
+  systemStrokes,
+  vimKey,
+  vimKeys,
+  writeKeys,
+  type Chord,
+  type KeyEventLike,
+  type Sequence,
+  type Stroke,
+  type System,
+} from './notation.ts';
+export {
+  Registry,
+  type Handled,
+  type KeyPlace,
+  type KeyPress,
+  type RegistryOptions,
+} from './registry.ts';
+export {
+  codeScopes,
+  engineScopes,
+  findScope,
+  isKeySource,
+  isTextField,
+  SCOPE_ATTRIBUTE,
+  scopeTarget,
+  setScopeSource,
+  type FoundScope,
+  type KeySource,
+  type Mode,
+  type ScopeSource,
+  type TargetSource,
+  type VimKey,
+} from './scopes.ts';
+export {
+  fit,
+  NO_TARGET,
+  plainTarget,
+  targetKinds,
+  type BlockTarget,
+  type FileTarget,
+  type LayerTarget,
+  type LineTarget,
+  type NoTarget,
+  type Place,
+  type Side,
+  type Span,
+  type TabTarget,
+  type Target,
+  type TargetKind,
+  type TargetOf,
+  type ThreadTarget,
+} from './targets.ts';
