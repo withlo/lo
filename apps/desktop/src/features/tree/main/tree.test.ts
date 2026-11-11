@@ -1,3 +1,4 @@
+import { parseOid } from '@lo/git';
 import { GithubClient, Token } from '@lo/github';
 import { replayFetch } from '@lo/testing';
 import { APP_PULL, RepoServer } from '@lo/testing/git';
@@ -407,11 +408,11 @@ describe('TreeTab', () => {
     remote.write('README.md', 'base\n').commit('base');
     remote.publish('refs/heads/trunk');
     const base = remote.head();
-    // Folders a disk takes, in a path longer than the tree shows.
+    // Folders a disk takes, in a path longer than the tree shows, which goes straight into the
+    // index, beside a short one.
     const long = Buffer.from(`${'abcdefgh/'.repeat(120)}deep.txt`);
-    const head = remote.commitWithNames([[long, 'deep\n']], 'deep');
     remote.write('short.txt', 'short\n');
-    const withShort = remote.commit('short');
+    const withShort = remote.commitWithNames([[long, 'deep\n']], 'deep and short');
     remote.publish('refs/pull/1/head');
     const repo = await cloneOf(server.baseUrl, {
       owner: 'o',
@@ -421,7 +422,6 @@ describe('TreeTab', () => {
       baseBranch: 'trunk',
       base,
     });
-    expect(head).not.toBe(withShort);
     const { tree, settled } = treeTab({ clone: () => Promise.resolve(repo) });
     tree.update({
       ...e2eInfo({ kind: 'ready', head: withShort, base, mergeBase: base, offline: false }),
@@ -431,5 +431,8 @@ describe('TreeTab', () => {
     expect(listed(state)).toEqual(['README.md', 'short.txt']);
     expect(changes(state)).toEqual(['added short.txt']);
     expect(state.omitted).toBe(1);
+    expect((await repo.tree(parseOid(withShort))).map((entry) => entry.path.length)).toContain(
+      long.length,
+    );
   });
 });
