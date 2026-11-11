@@ -80,6 +80,10 @@ export interface DiffFile {
    * until `setLines` brings the whole file.
    */
   gaps?: readonly { side: Side; from: number; to: number }[];
+  /** Its diff, when it's known as the view is made: as `setDiff` gives it, but drawn at once. */
+  diff?: FileDiff;
+  /** Its highlighting, when it's known as the view is made, as `setTokens` gives it. */
+  tokens?: { old?: Uint32Array | undefined; new?: Uint32Array | undefined };
 }
 
 /** One end of moved code: a file's lines, first to last, on the side it's on. */
@@ -222,6 +226,13 @@ export interface Probe {
   readonly layout: DiffLayout;
   /** The focused code editor's cursor, or the one focus last left. */
   cursor(): CursorReading | undefined;
+  /**
+   * The line of text or header drawn at height `y` on the page, on the side that follows the
+   * screen, if one is there.
+   */
+  spotAt(y: number): Spot | undefined;
+  /** How far down the page a line or header is drawn, if it's drawn. */
+  spotTop(spot: Spot): number | undefined;
 }
 
 /** A pull request's diff, both sides in one scroll. */

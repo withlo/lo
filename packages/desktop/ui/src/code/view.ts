@@ -119,6 +119,9 @@ interface At {
 }
 
 /** Replaces one file's decorations. */
+/** How long a line put back at the top stays there once it's settled, in milliseconds. */
+const HOLD_AFTER = 2_000;
+
 const setFile = StateEffect.define<{
   file: number;
   from: number;
@@ -254,9 +257,21 @@ class View implements DiffView {
     this.#layout = new Layout(
       init.files.map((file, index) => ({ path: file.path, ...this.#lines[index]! })),
     );
-    this.#diffs = init.files.map(() => undefined);
-    this.#triples = init.files.map(() => ({}));
-    this.#tokens = init.files.map(() => ({}));
+    // Diffs and highlighting known already are drawn with the rest, not a file at a time after.
+    this.#diffs = init.files.map((file, index) =>
+      this.#loaded.has(index) ? file.diff : undefined,
+    );
+    this.#triples = init.files.map((file, index) =>
+      this.#loaded.has(index) ? { ...file.tokens } : {},
+    );
+    this.#tokens = init.files.map((_, index) => {
+      const lines = this.#lines[index]!;
+      const triples = this.#triples[index]!;
+      return {
+        old: triples.old && { tokens: triples.old, starts: lineStarts(lines.old) },
+        new: triples.new && { tokens: triples.new, starts: lineStarts(lines.new) },
+      };
+    });
     this.#open = init.files.map(() => new Set());
     this.#gaps = init.files.map((file) => file.gaps ?? []);
     this.#threads = init.files.map(() => new Map());
@@ -339,6 +354,8 @@ class View implements DiffView {
       spacers: () => this.#aligner.spacers,
       layout: () => this.#pane,
       cursor: () => this.#cursorReading(),
+      spotAt: (y) => this.#spotAt(y),
+      spotTop: (spot) => this.#spotTop(spot),
     });
   }
 
@@ -351,6 +368,12 @@ class View implements DiffView {
   #holdingAt = 0;
   /** Counts calls to `scrollTo`, so only the latest puts its line back. */
   #holds = 0;
+  /**
+   * Until when a line put back stays the one at the top, though it's settled: the next change
+   * then holds it where it was put, not where rounding the scroll left it, so many changes in a
+   * row don't walk it away a fraction of a pixel at a time.
+   */
+  #holdEnds = 0;
 
   /** The reader moves: what's at the top is theirs to choose again. */
   readonly #letGo = (): void => {
@@ -493,6 +516,8 @@ class View implements DiffView {
   reveal(at: Target): boolean {
     const found = this.#atOf(at);
     if (!found) return false;
+    // What's at the top is wherever this puts it now.
+    this.#holding = undefined;
     const { place, column } = found;
     const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
     const view = this.#viewOf(pane);
@@ -570,13 +595,14 @@ class View implements DiffView {
   }
 
   viewport(): Viewport {
-    // While the view is still putting a line back at the top, that's where it belongs.
-    if (this.#holding) {
+    // While the view is putting a line back at the top, or has just, that's where it belongs.
+    if (this.#holding && performance.now() < this.#holdEnds) {
       return {
         at: this.#holding.at,
         offset: this.dom.getBoundingClientRect().top - this.#holdingAt,
       };
     }
+    this.#holding = undefined;
     const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
     const view = this.#viewOf(pane);
     const top = this.dom.getBoundingClientRect().top - view.documentTop;
@@ -594,6 +620,24 @@ class View implements DiffView {
     const offset =
       drawn === undefined ? top - block.top : this.dom.getBoundingClientRect().top - drawn;
     return { at: this.#spot(this.#placeAt(pane, line)), offset };
+  }
+
+  /** The line or header drawn at height `y` on the page, on the side that follows the screen. */
+  #spotAt(y: number): Spot | undefined {
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
+    const view = this.#viewOf(pane);
+    const block = view.elementAtHeight(y - view.documentTop);
+    if (!this.#steadyBlock(pane, view, block)) return undefined;
+    return this.#spot(this.#placeAt(pane, view.state.doc.lineAt(block.from).number));
+  }
+
+  /** How far down the page `spot` is drawn, if it is. */
+  #spotTop(spot: Spot): number | undefined {
+    const found = this.#atOf(spot);
+    if (!found) return undefined;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : found.place.side;
+    const view = this.#viewOf(pane);
+    return drawnTop(view, view.state.doc.line(this.#docLine(pane, found.place)).from);
   }
 
   /** Whether a block keeps its place and size as its file's lines change: a line, or a header. */
@@ -615,6 +659,7 @@ class View implements DiffView {
     // holds still. Until then, what's at the top is this, whatever else changes.
     this.#holding = viewport;
     this.#holdingAt = this.dom.getBoundingClientRect().top - viewport.offset;
+    this.#holdEnds = Infinity;
     const run = ++this.#holds;
     let still = 0;
     let frames = 0;
@@ -631,7 +676,9 @@ class View implements DiffView {
         still += 1;
       }
       frames += 1;
-      if (still >= 2 || frames > 30) this.#holding = undefined;
+      // Put back, it stays for a while; one that can't be, as past the end, is let go.
+      if (still >= 2) this.#holdEnds = performance.now() + HOLD_AFTER;
+      else if (frames > 30) this.#holding = undefined;
       else requestAnimationFrame(check);
     };
     requestAnimationFrame(check);
@@ -1233,6 +1280,7 @@ class View implements DiffView {
    * a jump from line `from` of `start`.
    */
   #moveTo(pane: Pane, line: number, from: number, start: Pane = pane): void {
+    this.#holding = undefined;
     const view = this.#viewOf(pane);
     const before = this.#placeAt(start, from);
     this.#aligner.follow();
@@ -1806,6 +1854,14 @@ class ViewProbe implements Probe {
 
   cursor(): CursorReading | undefined {
     return this.#read.cursor();
+  }
+
+  spotAt(y: number): Spot | undefined {
+    return this.#read.spotAt(y);
+  }
+
+  spotTop(spot: Spot): number | undefined {
+    return this.#read.spotTop(spot);
   }
 }
 
