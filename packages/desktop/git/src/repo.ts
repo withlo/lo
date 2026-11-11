@@ -1,12 +1,51 @@
 /** One repository's clone: fetching into it, and reading its commits. */
 
-import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 
+import {
+  answerable,
+  type Attribute,
+  attributeFiles,
+  attributeFolder,
+  checkAttributeQuestion,
+  MAX_ATTRIBUTE_FILES,
+  parseCheckAttr,
+} from './attributes.ts';
+import {
+  type Comparison,
+  conflictedPaths,
+  lackedObject,
+  readReplay,
+  REPLAYS,
+  type Replayed,
+  replayPinned,
+  type Revision,
+  withConflicts,
+} from './compare.ts';
+import {
+  type ChangedFile,
+  changedPath,
+  type FileVersion,
+  parseChanges,
+  parseRawRecords,
+  rawDiffBlobs,
+} from './diff.ts';
 import { GitError } from './errors.ts';
-import { type Fetching, failureMessage, type Runner } from './git.ts';
+import { type Fetching, failureMessage, type GitCommand, type Runner } from './git.ts';
+import type { FetchLimits } from './limits.ts';
 import type { CloneLock, Release } from './lock.ts';
+import type { ObjectReader } from './objects.ts';
 import { type Oid, oidFromOutput, parseOid } from './oid.ts';
+import {
+  type FilePatch,
+  lineCount,
+  MAX_PATCH_LINES,
+  patchFromDiff,
+  submoduleLine,
+  UNCHANGED,
+  wholeFilePatch,
+} from './patch.ts';
 import type { Activity } from './progress.ts';
 import { splitRecords } from './records.ts';
 import {
@@ -19,9 +58,23 @@ import {
   revisionBaseRef,
   revisionRef,
 } from './refs.ts';
+import type { Finished } from './spawn.ts';
 import { stampUsed } from './stamp.ts';
 import { Token, type TokenSource } from './token.ts';
+import {
+  checkPaths,
+  displayPath,
+  type FileMode,
+  type Found,
+  MAX_ENTRIES,
+  tooManyEntries,
+  parseListed,
+  type TreeEntry,
+  treeEntry,
+  TreeWalk,
+} from './tree.ts';
 import { distrust } from './trust.ts';
+import { stoppedError, watch } from './watch.ts';
 
 /** What a repository needs of the cache it's in. */
 export interface RepoHost {
@@ -30,6 +83,10 @@ export interface RepoHost {
   create(folder: string, url: string): Promise<void>;
   /** Moves `path` aside and deletes it. */
   trash(path: string): Promise<void>;
+  /** How long fetches may take. */
+  readonly limits: FetchLimits;
+  /** A new path for a temporary file, ending in `extension`. */
+  temporaryPath(extension: string): string;
   /** Notes a line for the log. */
   note(line: string): void;
 }
@@ -43,12 +100,16 @@ export interface RepoParts {
   /** The address the clone fetches from. */
   readonly url: string;
   readonly lock: CloneLock;
-  /** Lets go of the clone when the repository closes. */
+  /** Lets go of the clone, and its reader, when the repository closes. */
   readonly done: Release;
+  /** The clone's one long-lived reader of objects, which every repository open on it shares. */
+  readonly reader: ObjectReader;
   readonly token?: TokenSource | undefined;
   readonly proxy?: (() => Promise<string | undefined>) | undefined;
   readonly progress?: ((activity: Activity) => void) | undefined;
-  /** Opened to read offline: it never writes. */
+  /** The replayed trees this process has pinned in the clone, shared by every repository open on it. */
+  readonly replays: Set<Oid>;
+  /** Opened to read offline: it never fetches. */
   readonly offline: boolean;
 }
 
@@ -110,6 +171,21 @@ export interface Overview {
   readonly files: readonly OverviewFile[];
 }
 
+/**
+ * The most bytes either side of a patch may hold unless the caller says otherwise: far more than a
+ * file whose patch is worth reading, as GitHub leaves out a large file's.
+ */
+export const PATCH_LIMIT = 10 * 1024 * 1024;
+
+/** The most an overview may hold, in bytes. */
+export const OVERVIEW_LIMIT = 50 * 1024 * 1024;
+
+/**
+ * The most objects that count as a few: GitHub prepares a pack of them in seconds, so a fetch of
+ * no more has the usual time to start sending, and not a first fetch's.
+ */
+const FEW_OBJECTS = 500;
+
 /** How many objects a download asks for in one fetch. */
 const OBJECTS_PER_FETCH = 5000;
 
@@ -146,6 +222,9 @@ export class Repo {
   readonly #token: TokenSource | undefined;
   readonly #proxy: (() => Promise<string | undefined>) | undefined;
   readonly #progress: ((activity: Activity) => void) | undefined;
+  /** The clone's reader of objects, started on the first read that needs it. */
+  readonly #reader: ObjectReader;
+  readonly #replays: Set<Oid>;
 
   constructor(parts: RepoParts) {
     this.name = parts.name;
@@ -158,9 +237,14 @@ export class Repo {
     this.#token = parts.token;
     this.#proxy = parts.proxy;
     this.#progress = parts.progress;
+    this.#reader = parts.reader;
+    this.#replays = parts.replays;
   }
 
-  /** Lets cleanup take the clone again once no other repository has it open. */
+  /**
+   * Lets go of the clone's reader, which stops once no repository open on the clone uses it, and
+   * lets cleanup take the clone again once none has it open.
+   */
   close(): void {
     this.#done();
   }
@@ -376,32 +460,865 @@ export class Repo {
    * Downloads the objects in `oids` the clone lacks, such as the files a diff shows, by ID:
    * {@link OBJECTS_PER_FETCH} at a time, one fetch each. Returns the ones still missing.
    */
-  async download(oids: readonly Oid[], what = 'the files to show'): Promise<Oid[]> {
+  async download(
+    oids: readonly Oid[],
+    what = 'the files to show',
+    options: { maxBytes?: number } = {},
+  ): Promise<Oid[]> {
     return this.#locked(`downloading ${what}`, async () => {
       const missing = await this.missingObjects([...new Set(oids)]);
       for (let at = 0; at < missing.length; at += OBJECTS_PER_FETCH) {
         const batch = missing.slice(at, at + OBJECTS_PER_FETCH);
-        await this.#fetch(what, [], { objects: batch });
+        await this.#fetch(what, [], { objects: batch, maxBytes: options.maxBytes });
       }
       return this.missingObjects(missing);
     });
   }
 
   /**
+   * The ID of the tree `rev` names: `rev` itself for a tree, or a commit's root tree, which any
+   * other commit with the same files shares. Reads only the commit, so it downloads nothing; a
+   * `rev` the clone lacks is `notFetched`.
+   */
+  async treeId(rev: Oid): Promise<Oid> {
+    return new TreeWalk(this.#reader).root(rev);
+  }
+
+  /**
+   * The files in `rev`, a commit or a tree, with its symlinks and submodules, in git's order, by
+   * path; folders aren't listed. It reads only trees, which a partial clone has, so it downloads
+   * nothing. A file's size is known only once the clone has its contents: list the tree again
+   * after {@link Repo.downloadFiles} for the sizes of what it brought. More than `maxEntries`
+   * entries, {@link MAX_ENTRIES} unless it says otherwise, is `tooLarge`.
+   */
+  async tree(rev: Oid, options: { maxEntries?: number | undefined } = {}): Promise<TreeEntry[]> {
+    const maxEntries = options.maxEntries ?? MAX_ENTRIES;
+    await this.treeId(rev);
+    const entries: TreeEntry[] = [];
+    // Told not to download, `-l` prints `BAD` for the size of a file the clone lacks.
+    const listing = this.#git().arg('ls-tree', '-r', '-z', '-l', '--full-tree', rev, '--');
+    for await (const record of listing.records()) {
+      // Stopping the listing stops git.
+      if (entries.length === maxEntries) throw tooManyEntries(listing.display, maxEntries);
+      entries.push(treeEntry(parseListed(record)));
+    }
+    return entries;
+  }
+
+  /**
+   * Which of `paths`, files in `rev`, the clone lacks the contents of, in the order asked, each
+   * once. It downloads nothing and takes no lock, so it works offline. Submodules are skipped, and
+   * a path with no file at it in `rev` is `invalid`.
+   */
+  async lackingFiles(rev: Oid, paths: readonly Uint8Array[]): Promise<Buffer[]> {
+    const files = await this.#filesAt(rev, paths);
+    const lacking = new Set(await this.missingObjects(unique(files.map((file) => file.oid))));
+    return files.filter((file) => lacking.has(file.oid)).map((file) => file.path);
+  }
+
+  /**
+   * Downloads the contents of the files at `paths` in `rev` that the clone lacks, so reading them
+   * needs no network, and returns the paths whose contents it still lacks, in the order asked.
+   *
+   * - Files the clone has are never waited for: what's missing is checked without the clone's
+   *   lock, which is taken only to download, and then only for what another download didn't
+   *   bring meanwhile.
+   * - The rest come by ID, {@link OBJECTS_PER_FETCH} at a time, one fetch each, with the limits
+   *   and progress of any fetch. More than 500 at once may be a whole tree, and has a first
+   *   fetch's time to start.
+   * - Opened to read offline, it downloads nothing and returns every path it lacks.
+   * - Submodules are another repository's, so they're skipped. A path with no file at it in `rev`
+   *   is `invalid`.
+   */
+  async downloadFiles(rev: Oid, paths: readonly Uint8Array[]): Promise<Buffer[]> {
+    const files = await this.#filesAt(rev, paths);
+    const lacking = await this.#downloadMissing(files.map((file) => file.oid));
+    return files.filter((file) => lacking.has(file.oid)).map((file) => file.path);
+  }
+
+  /**
+   * Each of `paths`, files in `rev`, once and in order, with its blob; submodules left out. Refuses
+   * an empty path, one holding a NUL, or one with no file at it in `rev`.
+   */
+  async #filesAt(rev: Oid, paths: readonly Uint8Array[]): Promise<{ path: Buffer; oid: Oid }[]> {
+    checkPaths(paths);
+    const walk = new TreeWalk(this.#reader);
+    const root = await walk.root(rev);
+    const seen = new Set<string>();
+    const files: { path: Buffer; oid: Oid }[] = [];
+    for (const path of paths) {
+      const bytes = Buffer.from(path);
+      const key = bytes.toString('latin1');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const found = await walk.find(root, bytes);
+      if (found?.mode === 'submodule') continue;
+      if (found === undefined || found.mode === 'folder') {
+        throw new GitError({
+          kind: 'invalid',
+          what: 'file in the commit',
+          value: bytes.toString('utf8'),
+        });
+      }
+      files.push({ path: bytes, oid: found.oid });
+    }
+    return files;
+  }
+
+  /**
+   * Downloads the objects of `oids` the clone lacks, as {@link Repo.downloadFiles} does, and
+   * returns those it still lacks.
+   */
+  async #downloadMissing(oids: readonly Oid[]): Promise<Set<Oid>> {
+    const wanted = unique(oids);
+    const missing = await this.missingObjects(wanted);
+    if (missing.length === 0 || this.offline) return new Set(missing);
+    return this.#locked(`downloading ${countFiles(missing.length)}`, async () => {
+      // Whatever held the lock may have brought some of them, or all.
+      const still = await this.missingObjects(missing);
+      for (let at = 0; at < still.length; at += OBJECTS_PER_FETCH) {
+        const batch = still.slice(at, at + OBJECTS_PER_FETCH);
+        const what =
+          batch.length < still.length
+            ? `${batch.length} of ${countFiles(still.length)}`
+            : countFiles(batch.length);
+        await this.#fetch(what, [], { objects: batch });
+      }
+      return new Set(still.length === 0 ? [] : await this.missingObjects(still));
+    });
+  }
+
+  /**
+   * The blobs on both sides of every file that changed from `from` to `to`, commits or trees, but
+   * submodules: what reading their diff needs, to download first. It compares trees alone, so it
+   * downloads nothing.
+   */
+  async changedObjects(from: Oid, to: Oid): Promise<Oid[]> {
+    const command = this.#git().arg(
+      'diff',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--no-color',
+      '--no-renames',
+      '-z',
+      '--raw',
+      '--no-abbrev',
+      from,
+      to,
+      '--',
+    );
+    const finished = await command.finish();
+    if (finished.code !== 0) throw await this.#readFailure(command, finished, [from, to]);
+    return rawDiffBlobs(finished.stdout);
+  }
+
+  /**
+   * What changed from `from` to `to`, commits or trees, in git's order, by path: renames found,
+   * binary files marked, and each side's mode, blob and size. Both sides of every changed file must
+   * be in the clone ({@link Repo.changedObjects} says which they are), or it's `notDownloaded`.
+   * With `paths`, only files at those paths, on either side, are listed, out of every change:
+   * renames are found among them all.
+   */
+  async changedFiles(
+    from: Oid,
+    to: Oid,
+    options: {
+      paths?: readonly Uint8Array[] | undefined;
+      /** The most files to read, past which it's `tooLarge`: {@link MAX_ENTRIES} unless it says. */
+      maxEntries?: number | undefined;
+    } = {},
+  ): Promise<ChangedFile[]> {
+    const command = this.#git().arg(
+      'diff',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--no-color',
+      '-z',
+      '-M',
+      '--raw',
+      '--numstat',
+      '--no-abbrev',
+      from,
+      to,
+      '--',
+    );
+    const finished = await command.finish();
+    if (finished.code !== 0) {
+      throw await this.#readFailure(command, finished, [from, to], () =>
+        this.changedObjects(from, to),
+      );
+    }
+    let files = parseChanges(finished.stdout, options.maxEntries);
+    if (options.paths !== undefined) {
+      checkPaths(options.paths);
+      const wanted = new Set(options.paths.map((path) => Buffer.from(path).toString('latin1')));
+      const listed = (version: FileVersion | undefined) =>
+        version !== undefined && wanted.has(version.path.toString('latin1'));
+      files = files.filter((file) => listed(file.old) || listed(file.new));
+    }
+    return this.#withSizes(files);
+  }
+
+  /** `files`, with each side's size but a submodule's, from what the clone has. */
+  async #withSizes(files: readonly ChangedFile[]): Promise<ChangedFile[]> {
+    const versions = files.flatMap((file) =>
+      [file.old, file.new].filter(
+        (version) => version !== undefined && version.mode !== 'submodule',
+      ),
+    );
+    if (versions.length === 0) return [...files];
+    const output = await this.#git()
+      .arg('cat-file', '--batch-check=%(objectname) %(objectsize)')
+      .run(versions.map((version) => `${version?.oid}\n`).join(''));
+    const sizes = new Map<string, number>();
+    for (const line of lines(output)) {
+      const [oid = '', size = ''] = line.split(' ');
+      if (/^\d+$/.test(size)) sizes.set(oid, Number(size));
+    }
+    const sized = (version: FileVersion | undefined) =>
+      version === undefined || version.mode === 'submodule'
+        ? version
+        : { ...version, size: sizes.get(version.oid) };
+    return files.map((file) => ({ ...file, old: sized(file.old), new: sized(file.new) }));
+  }
+
+  /**
+   * The error for a read that failed: `notFetched` for a commit of `revs` the clone lacks, then
+   * `notDownloaded` for the files of `needs()` it lacks, else git's own.
+   */
+  async #readFailure(
+    command: GitCommand,
+    finished: Finished,
+    revs: readonly Oid[],
+    needs?: () => Promise<Oid[]>,
+  ): Promise<GitError> {
+    for (const rev of revs) {
+      if ((await this.#reader.info(rev)) === undefined)
+        return new GitError({ kind: 'notFetched', oid: rev });
+    }
+    const lacking = needs === undefined ? [] : await this.missingObjects(await needs());
+    if (lacking.length > 0) return new GitError({ kind: 'notDownloaded', oids: lacking });
+    return GitError.fromGit(command.display, failureMessage(finished));
+  }
+
+  /**
+   * The contents of blob `oid`, such as a {@link FileVersion}'s, or `undefined` when the clone
+   * lacks it. It never downloads: {@link Repo.download} it first. One larger than `maxBytes` is
+   * never read, and fails as `tooLarge`. A submodule's commit isn't in this repository: never read
+   * one.
+   */
+  async readBlob(
+    oid: Oid,
+    options: { maxBytes?: number | undefined } = {},
+  ): Promise<Buffer | undefined> {
+    const object = await this.#reader.read(oid, options.maxBytes);
+    if (object === undefined) return undefined;
+    if (object.type !== 'blob') {
+      throw new GitError({
+        kind: 'git',
+        command: 'git cat-file --batch-command',
+        message: `${oid} is a ${object.type}, not a file`,
+      });
+    }
+    return object.data;
+  }
+
+  /**
+   * The contents of the file at `path` in `rev`, a commit or a tree, or `undefined` when there's
+   * no file there. One whose contents the clone lacks is `notDownloaded`; a folder or a submodule
+   * there is an error.
+   */
+  async readFile(
+    rev: Oid,
+    path: Uint8Array,
+    options: { maxBytes?: number | undefined } = {},
+  ): Promise<Buffer | undefined> {
+    const found = await this.#fileAt(rev, path);
+    if (found === undefined) return undefined;
+    if (found.mode === 'submodule') throw notAFile(path, 'submodule');
+    const contents = await this.readBlob(found.oid, options);
+    if (contents === undefined) throw new GitError({ kind: 'notDownloaded', oids: [found.oid] });
+    return contents;
+  }
+
+  /**
+   * The file at `path` in `rev`, a commit or a tree, as a changed file's side has it: its blob,
+   * mode, and size once the clone has its contents, or for a submodule the commit it points at.
+   * `undefined` when there's no file there; a folder there is an error. Reads only trees and what
+   * the clone has, so it downloads nothing.
+   */
+  async fileVersion(rev: Oid, path: Uint8Array): Promise<FileVersion | undefined> {
+    const found = await this.#fileAt(rev, path);
+    if (found === undefined) return undefined;
+    const version = { path: Buffer.from(path), oid: found.oid, mode: found.mode };
+    if (found.mode === 'submodule') return version;
+    return { ...version, size: (await this.#reader.info(found.oid))?.size };
+  }
+
+  /** What's at `path` in `rev`: a file, symlink or submodule, nothing, or an error for a folder. */
+  async #fileAt(rev: Oid, path: Uint8Array): Promise<(Found & { mode: FileMode }) | undefined> {
+    checkPaths([path]);
+    const walk = new TreeWalk(this.#reader);
+    const found = await walk.find(await walk.root(rev), path);
+    if (found?.mode === 'folder') throw notAFile(path, 'tree');
+    return found === undefined ? undefined : { ...found, mode: found.mode };
+  }
+
+  /**
+   * The patch of the file at `path` from `base` to `head`, as GitHub gives a pull request's changed
+   * file, so its hunks are the lines GitHub takes comments on: for a file whose patch GitHub leaves
+   * out, or a revision other than the latest, whose patch it doesn't give.
+   *
+   * - `base` is where the diff starts: for a revision's whole diff, its merge base with the base
+   *   branch, as GitHub diffs a pull request.
+   * - `oldPath` is the file's path in `base` when it was renamed, as {@link Repo.changedFiles} and
+   *   GitHub's `previous_filename` give it. Its two versions are compared whatever their
+   *   similarity. Without one, or with one `base` has no file at, the file at `path` in `base` is.
+   * - It's git's Myers diff of the two blobs, with three lines of context and the indent
+   *   heuristic, and no setting of the clone's: no external diff, no text conversion and no
+   *   attributes. GitHub's patch ignores attributes too, so a file `.gitattributes` calls binary
+   *   still has hunks.
+   * - A file added or deleted is compared with nothing, and a submodule's commits show as
+   *   `Subproject commit` lines, as git shows them, never fetching either.
+   * - Both versions' contents must be in the clone, or it's `notDownloaded`.
+   * - Neither version may be larger than `maxBytes`, {@link PATCH_LIMIT} unless it says otherwise,
+   *   and the patch may hold no more than {@link MAX_PATCH_LINES} lines, or it's `tooLarge`: a
+   *   pull request's author decides how large its files are.
+   */
+  async patch(
+    base: Oid,
+    head: Oid,
+    path: Uint8Array,
+    oldPath?: Uint8Array,
+    options: { maxBytes?: number | undefined } = {},
+  ): Promise<FilePatch> {
+    const maxBytes = options.maxBytes ?? PATCH_LIMIT;
+    checkPaths(oldPath === undefined ? [path] : [path, oldPath]);
+    const walk = new TreeWalk(this.#reader);
+    const [baseTree, headTree] = [await walk.root(base), await walk.root(head)];
+    const at = async (tree: Oid, where: Uint8Array) => {
+      const found = await walk.find(tree, where);
+      return found?.mode === 'folder' ? undefined : found;
+    };
+    const now = await at(headTree, path);
+    let old = await at(baseTree, path);
+    if (oldPath !== undefined && !Buffer.from(oldPath).equals(Buffer.from(path))) {
+      const renamed = await at(baseTree, oldPath);
+      const files = renamed?.mode !== 'submodule' && now !== undefined && now.mode !== 'submodule';
+      if (renamed !== undefined && files) old = renamed;
+    }
+    if (old === undefined && now === undefined) return UNCHANGED;
+    if (old !== undefined && now !== undefined && old.oid === now.oid) return UNCHANGED;
+    // Each side's size first, so that a file too large is never read.
+    const lacking = [];
+    for (const side of [old, now]) {
+      if (side === undefined || side.mode === 'submodule') continue;
+      const info = await this.#reader.info(side.oid);
+      if (info === undefined) lacking.push(side.oid);
+      else if (info.size > maxBytes) throw patchTooLarge(maxBytes);
+    }
+    if (lacking.length > 0) throw new GitError({ kind: 'notDownloaded', oids: lacking });
+    if (
+      old?.mode === 'submodule' ||
+      now?.mode === 'submodule' ||
+      old === undefined ||
+      now === undefined
+    ) {
+      // Compared with nothing, or a submodule's line: every line changed.
+      const contents = async (side: Found | undefined) => {
+        if (side === undefined) return undefined;
+        if (side.mode === 'submodule') return submoduleLine(side.oid);
+        const blob = await this.readBlob(side.oid, { maxBytes });
+        if (blob === undefined) throw new GitError({ kind: 'notDownloaded', oids: [side.oid] });
+        return blob;
+      };
+      const whole = wholeFilePatch(await contents(old), await contents(now));
+      if (whole === null) throw patchTooLarge(MAX_PATCH_LINES, 'lines');
+      return whole;
+    }
+    const output = await this.#git()
+      .arg(
+        // The one diff setting no option overrides: a blank unchanged line keeps its space.
+        '-c',
+        'diff.suppressBlankEmpty=false',
+        'diff',
+        '--no-ext-diff',
+        '--no-textconv',
+        '--no-color',
+        '--unified=3',
+        '--inter-hunk-context=0',
+        '--diff-algorithm=myers',
+        '--indent-heuristic',
+        old.oid,
+        now.oid,
+        '--',
+      )
+      // Each line of both sides, with its sign, and git's header.
+      .run(undefined, { maxBytes: 4 * maxBytes + 64 * 1024 });
+    if (lineCount(output) > MAX_PATCH_LINES + 8) throw patchTooLarge(MAX_PATCH_LINES, 'lines');
+    return patchFromDiff(output);
+  }
+
+  /**
+   * The parents of commit `oid`, its first parent first: two or more for a merge, none for a root
+   * commit. It must be in the clone already, or it's `notFetched`; it's never downloaded.
+   */
+  async parents(oid: Oid): Promise<Oid[]> {
+    if (!(await this.hasCommit(oid))) throw new GitError({ kind: 'notFetched', oid });
+    const output = await this.#git().arg('rev-list', '--parents', '--no-walk', oid, '--').run();
+    // The commit, then its parents.
+    return output.toString('utf8').trim().split(/\s+/).slice(1).map(parseOid);
+  }
+
+  /**
+   * The parents of the commit that merged `head` into `tip`'s first-parent history, first parent
+   * first: the oldest commit on it that has `head` in its own. For a pull request merged with a
+   * merge commit, that's the merge, whose first parent is where the base branch was just before.
+   * `undefined` when `tip` doesn't hold `head`, or is `head`. Both must be in the clone already, or
+   * it's `notFetched`.
+   */
+  async mergedBy(head: Oid, tip: Oid): Promise<Oid[] | undefined> {
+    for (const oid of [head, tip]) {
+      if (!(await this.hasCommit(oid))) throw new GitError({ kind: 'notFetched', oid });
+    }
+    if (head === tip || !(await this.isAncestor(head, tip))) return undefined;
+    const output = await this.#git()
+      .arg(
+        'rev-list',
+        '--first-parent',
+        '--ancestry-path',
+        '--reverse',
+        '--parents',
+        `${head}..${tip}`,
+        '--',
+      )
+      .run();
+    const [first] = lines(output);
+    return first === undefined ? undefined : first.split(' ').slice(1).map(parseOid);
+  }
+
+  /**
+   * What the `.gitattributes` files in commit `rev` say about `attribute` for each of `paths`, in
+   * the same order, from the files the clone has: a path that a `.gitattributes` the clone lacks
+   * may apply to, in its folder or one above, gets `undefined` ({@link Repo.downloadAttributes}
+   * brings them). Paths are bytes and needn't exist in `rev`: a file the commit deletes still
+   * matches its patterns.
+   *
+   * git reads the files from the commit itself (`check-attr --source`), so the answer is the
+   * commit's, never a checkout's or the user's, and patterns match case-sensitively, as on GitHub,
+   * whatever the disk. One `git check-attr --stdin` answers every path. When more than
+   * {@link MAX_ATTRIBUTE_FILES} files apply, it reads none: `tooManyAttributeFiles`.
+   */
+  async attribute(
+    rev: Oid,
+    attribute: string,
+    paths: readonly Uint8Array[],
+  ): Promise<(Attribute | undefined)[]> {
+    checkAttributeQuestion(attribute, paths);
+    if (paths.length === 0) return [];
+    const files = await this.#attributeFilesAt(rev, paths);
+    const lacking = new Set(await this.missingObjects(unique(files.map((file) => file.oid))));
+    const folders = new Set(
+      files.filter((file) => lacking.has(file.oid)).map((file) => attributeFolder(file.path)),
+    );
+    const known = paths.filter((path) => answerable(path, folders));
+    const answers = known.length === 0 ? [] : await this.#checkAttr(rev, attribute, known);
+    let next = 0;
+    return paths.map((path) => (answerable(path, folders) ? answers[next++] : undefined));
+  }
+
+  /**
+   * Downloads the `.gitattributes` files in `rev` that apply to `paths` and the clone lacks, in
+   * one fetch, as {@link Repo.downloadFiles} does, and returns the ones it still lacks. When more
+   * than {@link MAX_ATTRIBUTE_FILES} apply, it downloads none: `tooManyAttributeFiles`.
+   */
+  async downloadAttributes(rev: Oid, paths: readonly Uint8Array[]): Promise<Buffer[]> {
+    checkPaths(paths);
+    if (paths.length === 0) return [];
+    const files = await this.#attributeFilesAt(rev, paths);
+    const lacking = await this.#downloadMissing(files.map((file) => file.oid));
+    return files.filter((file) => lacking.has(file.oid)).map((file) => file.path);
+  }
+
+  /**
+   * The `.gitattributes` files in `rev` that apply to `paths`, in their folders and the folders
+   * above, refusing more than {@link MAX_ATTRIBUTE_FILES}. Reads only trees.
+   */
+  async #attributeFilesAt(
+    rev: Oid,
+    paths: readonly Uint8Array[],
+  ): Promise<{ path: Buffer; oid: Oid }[]> {
+    const walk = new TreeWalk(this.#reader);
+    const root = await walk.root(rev);
+    const found: { path: Buffer; oid: Oid }[] = [];
+    for (const path of attributeFiles(paths)) {
+      const entry = await walk.find(root, path);
+      if (entry !== undefined && entry.mode !== 'folder' && entry.mode !== 'submodule') {
+        found.push({ path, oid: entry.oid });
+      }
+    }
+    if (found.length > MAX_ATTRIBUTE_FILES) {
+      throw new GitError({
+        kind: 'tooManyAttributeFiles',
+        found: found.length,
+        limit: MAX_ATTRIBUTE_FILES,
+      });
+    }
+    return found;
+  }
+
+  /** What `git check-attr` says of `attribute` for each of `paths` in `rev`. */
+  async #checkAttr(
+    rev: Oid,
+    attribute: string,
+    paths: readonly Uint8Array[],
+  ): Promise<Attribute[]> {
+    const input = Buffer.concat(paths.flatMap((path) => [path, Buffer.from([0])]));
+    const command = this.#git().arg(
+      // A Mac's clone says its disk ignores case, which would make `Dist/**` match `dist/app.js`.
+      // GitHub's patterns, and the commit's paths, are case-sensitive.
+      '-c',
+      'core.ignorecase=false',
+      'check-attr',
+      `--source=${rev}`,
+      '-z',
+      '--stdin',
+      attribute,
+    );
+    const finished = await command.finish(input);
+    // When it can't read the commit or a `.gitattributes` file, git says so, and may answer
+    // "unspecified" anyway and exit 0.
+    if (finished.code !== 0 || finished.stderr.includes('fatal:')) {
+      throw GitError.fromGit(command.display, failureMessage(finished));
+    }
+    const answers = parseCheckAttr(finished.stdout, attribute, paths);
+    if (answers === undefined) {
+      throw new GitError({
+        kind: 'git',
+        command: command.display,
+        message: `printed something other than one answer for each of ${paths.length} paths`,
+      });
+    }
+    return answers;
+  }
+
+  /**
+   * Compares revision `old` of a pull request with `now`, showing only what the author changed
+   * between them, even when the base moved.
+   *
+   * When the bases differ, as after a rebase, the old revision's changes are replayed onto the new
+   * base in the clone (`git merge-tree --write-tree --merge-base=<old base> <new base> <old head>`,
+   * following folders the base renamed), and the tree that makes is compared with the new head, so
+   * changes that came with the new base cancel out. When the bases match, it compares the heads.
+   * When the replay conflicts, it compares the heads too, and lists every file it conflicted on
+   * with how the author resolved it; any other failure is an error. An unchanged head whose base
+   * moved still gets the replay, which shows how its patch changed; that, and a base that moved
+   * anywhere but forward, is flagged as `retargeted`.
+   *
+   * - Every commit must be in the clone already, or it's `notFetched`, and a base that isn't its
+   *   head or one of its ancestors is `baseNotAncestor`.
+   * - It downloads what it needs, as {@link Repo.downloadFiles} does: first the files both sides
+   *   changed, which the replay merges, and what finding the files either side moved needs; then
+   *   both sides of each file the comparison lists. A replay of changes each made on one side
+   *   alone needs no file. Opened offline, it downloads nothing, and lacking anything is
+   *   `notDownloaded`.
+   * - The replay's tree, and the files merged into it, exist only in the clone. The tree is
+   *   pinned, at `refs/lo/replays/<tree>`, while a repository has the clone open, so keep one open
+   *   while showing a comparison; the next open of the clone with none open removes the pins.
+   *   Comparing the same revisions again makes the same tree.
+   * - With `paths`, only files at those paths, on either side, are listed, as
+   *   {@link Repo.changedFiles} lists them.
+   */
+  async compareRevisions(
+    old: Revision,
+    now: Revision,
+    options: { paths?: readonly Uint8Array[] | undefined } = {},
+  ): Promise<Comparison> {
+    // Never downloaded: git would bring a missing commit with all its history.
+    for (const oid of [old.base, old.head, now.base, now.head]) {
+      if (!(await this.hasCommit(oid))) throw new GitError({ kind: 'notFetched', oid });
+    }
+    // A base the head doesn't contain would show the changes between them as the author's.
+    for (const revision of [old, now]) {
+      if (!(await this.isAncestor(revision.base, revision.head))) {
+        throw new GitError({ kind: 'baseNotAncestor', base: revision.base, head: revision.head });
+      }
+    }
+    const { paths } = options;
+    if (old.base === now.base) {
+      const files = await this.#compared([[old.head, now.head]], paths);
+      return {
+        files: (files[0] ?? []).map((change) => ({ path: changedPath(change), change })),
+        old: old.head,
+        new: now.head,
+        replay: { kind: 'sameBase' },
+      };
+    }
+    // A rebase moves the base forward and the head with it. Otherwise what shows can have come
+    // with the base.
+    const retargeted = old.head === now.head || !(await this.isAncestor(old.base, now.base));
+    const replayed = await replayPinned(
+      () => this.#replay(old, now.base),
+      (tree) => this.#pinReplay(tree),
+      this.#replays,
+      (line) => this.#cache.note(`${this.name}: ${line}`),
+    );
+    if (replayed.kind === 'clean') {
+      const [files = []] = await this.#compared([[replayed.tree, now.head]], paths);
+      return {
+        files: files.map((change) => ({ path: changedPath(change), change })),
+        old: replayed.tree,
+        new: now.head,
+        replay: { kind: retargeted ? 'retargeted' : 'clean' },
+      };
+    }
+    const labels = [now.base, old.head];
+    let conflicted = conflictedPaths(replayed.paths, labels);
+    if (paths !== undefined) {
+      const wanted = new Set(paths.map((path) => Buffer.from(path).toString('latin1')));
+      conflicted = conflicted.filter((path) => wanted.has(path.toString('latin1')));
+    }
+    this.#cache.note(
+      `${this.name}: replaying ${old.head.slice(0, 7)} onto ${now.base.slice(0, 7)} conflicted ` +
+        `(${conflicted.length === 0 ? 'no file left conflicted' : countFiles(conflicted.length)}), ` +
+        'so comparing the heads',
+    );
+    const [plain = [], resolutions = []] = await this.#compared(
+      [
+        [old.head, now.head],
+        [replayed.tree, now.head],
+      ],
+      paths,
+    );
+    return {
+      files: withConflicts(plain, conflicted, resolutions, labels),
+      old: old.head,
+      new: now.head,
+      replay: { kind: 'conflicted', tree: replayed.tree, retargeted },
+    };
+  }
+
+  /**
+   * The files that changed between each pair of `pairs`, both sides of every one downloaded first
+   * in one go, unless the clone was opened offline.
+   */
+  async #compared(
+    pairs: readonly (readonly [Oid, Oid])[],
+    paths: readonly Uint8Array[] | undefined,
+  ): Promise<ChangedFile[][]> {
+    const needs: Oid[] = [];
+    for (const [from, to] of pairs) needs.push(...(await this.changedObjects(from, to)));
+    await this.#downloadMissing(needs);
+    const lists: ChangedFile[][] = [];
+    for (const [from, to] of pairs) lists.push(await this.changedFiles(from, to, { paths }));
+    return lists;
+  }
+
+  /**
+   * Replays `old`'s changes onto `onto`, writing the tree but no ref, with what the merge needs
+   * downloaded first. A git that gives up on a file the clone lacks names it: what finding moved
+   * files needs is hard to tell beforehand, so the replay is tried once more with every file
+   * either side changed.
+   */
+  async #replay(old: Revision, onto: Oid): Promise<Replayed> {
+    await this.#downloadMissing(await this.#replayNeeds(old, onto));
+    for (let attempt = 0; ; attempt++) {
+      const command = this.#git().arg(
+        // A file the old revision added to a folder the base renamed goes where a rebase puts it,
+        // into the renamed folder, rather than conflicting. If the author put it somewhere else,
+        // the comparison shows that as a rename.
+        '-c',
+        'merge.directoryRenames=true',
+        'merge-tree',
+        '--write-tree',
+        '-z',
+        '--name-only',
+        '--no-messages',
+        `--merge-base=${old.base}`,
+        onto,
+        old.head,
+      );
+      const finished = await command.finish();
+      const lacked = finished.code === 0 ? undefined : lackedObject(finished.stderr);
+      if (lacked === undefined) return readReplay(command.display, finished);
+      if (attempt > 0 || this.offline)
+        throw new GitError({ kind: 'notDownloaded', oids: [lacked] });
+      this.#cache.note(
+        `${this.name}: replaying ${old.head.slice(0, 7)} needed ${lacked}, so downloading what either side changed`,
+      );
+      const everything = [
+        ...(await this.changedObjects(old.base, onto)),
+        ...(await this.changedObjects(old.base, old.head)),
+      ];
+      const still = await this.#downloadMissing(everything);
+      if (still.size > 0) throw new GitError({ kind: 'notDownloaded', oids: [...still] });
+    }
+  }
+
+  /**
+   * The files replaying `old` onto `onto` reads, as git's merge finds them: the three versions of
+   * each file both sides changed, which it merges; and, where one side deleted a file the other
+   * changed, or emptied a folder the other added to, the files that side deleted and added, among
+   * which it looks for where the file or folder went. A file moved without a change is found by
+   * its ID, with no contents.
+   */
+  async #replayNeeds(old: Revision, onto: Oid): Promise<Oid[]> {
+    const raw = async (to: Oid) => {
+      const output = await this.#git()
+        .arg(
+          'diff',
+          '--no-ext-diff',
+          '--no-textconv',
+          '--no-color',
+          '--no-renames',
+          '-z',
+          '--raw',
+          '--no-abbrev',
+          old.base,
+          to,
+          '--',
+        )
+        .run();
+      return new Map(
+        parseRawRecords(output).map((record) => [record.path.toString('latin1'), record]),
+      );
+    };
+    const sides = [
+      { changes: await raw(onto), tree: onto },
+      { changes: await raw(old.head), tree: old.head },
+    ];
+    const needs = new Set<Oid>();
+    const need = (mode: string | undefined, oid: Oid) => {
+      if (mode !== undefined && mode !== 'submodule' && !/^0+$/.test(oid)) needs.add(oid);
+    };
+    const [baseSide, headSide] = sides;
+    if (baseSide === undefined || headSide === undefined) return [];
+    for (const [path, change] of baseSide.changes) {
+      const other = headSide.changes.get(path);
+      if (other === undefined) continue;
+      need(change.oldMode, change.oldOid);
+      need(change.newMode, change.newOid);
+      need(other.newMode, other.newOid);
+    }
+    const walk = new TreeWalk(this.#reader);
+    for (const [side, other] of [
+      [baseSide, headSide],
+      [headSide, baseSide],
+    ] as const) {
+      const records = [...side.changes.values()];
+      const added = records.filter((record) => record.status === 'A');
+      const addedOids = new Set(added.map((record) => record.newOid));
+      const otherAdded = [...other.changes.values()]
+        .filter((record) => record.status === 'A')
+        .map((record) => record.path.toString('latin1'));
+      const root = await walk.root(side.tree);
+      const relevant = [];
+      for (const record of records) {
+        // Moved without a change, it's found by its ID.
+        if (record.status !== 'D' || addedOids.has(record.oldOid)) continue;
+        const path = record.path.toString('latin1');
+        const changedThere = other.changes.get(path);
+        if (changedThere !== undefined && changedThere.status !== 'D') {
+          relevant.push(record);
+          continue;
+        }
+        // A folder this side emptied, which the other side added to.
+        for (let end = path.indexOf('/'); end !== -1; end = path.indexOf('/', end + 1)) {
+          const folder = path.slice(0, end);
+          const emptied = (await walk.find(root, Buffer.from(folder, 'latin1'))) === undefined;
+          if (emptied && otherAdded.some((each) => each.startsWith(`${folder}/`))) {
+            relevant.push(record);
+            break;
+          }
+        }
+      }
+      if (relevant.length === 0) continue;
+      for (const record of relevant) {
+        need(record.oldMode, record.oldOid);
+        const there = other.changes.get(record.path.toString('latin1'));
+        if (there !== undefined) need(there.newMode, there.newOid);
+      }
+      for (const record of added) need(record.newMode, record.newOid);
+    }
+    return [...needs];
+  }
+
+  /**
+   * Pins replayed tree `tree` at `refs/lo/replays/<tree>`, and says whether the tree is there once
+   * pinned. No lock: only replays write these refs, each always to its own tree.
+   */
+  async #pinReplay(tree: Oid): Promise<boolean> {
+    await this.#git().arg('update-ref', `${REPLAYS}${tree}`, tree).run();
+    return this.hasTree(tree);
+  }
+
+  /** Whether tree `oid` is in the clone. Never downloads anything. */
+  async hasTree(oid: Oid): Promise<boolean> {
+    return (await this.#reader.info(oid))?.type === 'tree';
+  }
+
+  /**
    * Downloads the files of pull request `number`'s `overview` the repository of overviews lacks,
-   * in one fetch. Returns the ones still missing.
+   * in one fetch, refusing one over {@link OVERVIEW_LIMIT} in all: a blobless clone can't tell
+   * their sizes before they come, so the download stops once more than that has come in, and the
+   * sizes are checked once it's done. Returns the files still missing.
    */
   async downloadOverview(number: number, overview: Overview): Promise<Oid[]> {
     checkNumber(number);
     const what = `pull request #${number}'s overview`;
     // A submodule's entry is a commit in another repository.
-    const oids = overview.files.filter((file) => file.mode !== '160000').map((file) => file.oid);
+    const oids = [
+      ...new Set(overview.files.filter((file) => file.mode !== '160000').map((file) => file.oid)),
+    ];
     return this.#locked(`downloading ${what}`, async () => {
       const overviews = await this.#overviews();
-      const missing = await this.#missingIn(overviews, [...new Set(oids)]);
-      if (missing.length > 0) await this.#fetch(what, [], { objects: missing, gitDir: overviews });
-      return this.#missingIn(overviews, missing);
+      const missing = await this.#missingIn(overviews, oids);
+      const packs = await packNames(overviews);
+      try {
+        if (missing.length > 0) {
+          await this.#fetch(what, [], {
+            objects: missing,
+            gitDir: overviews,
+            maxBytes: OVERVIEW_LIMIT,
+          });
+        }
+        const lacking = await this.#missingIn(overviews, missing);
+        const present = oids.filter((oid) => !lacking.includes(oid));
+        const sizes = await this.#runner
+          .command({ gitDir: overviews })
+          .arg('cat-file', '--batch-check=%(objectsize)')
+          .run(present.map((oid) => `${oid}\n`).join(''));
+        const total = lines(sizes).reduce((sum, size) => sum + Number(size), 0);
+        if (total > OVERVIEW_LIMIT) {
+          throw stoppedError({ reason: 'size', limit: OVERVIEW_LIMIT, doing: '', pid: 0 }, what);
+        }
+        return lacking;
+      } catch (error) {
+        const tooLarge =
+          error instanceof GitError &&
+          error.detail.kind === 'fetch' &&
+          error.detail.failure === 'tooLarge';
+        // What came of an overview refused for its size goes: its files stay on GitHub.
+        if (tooLarge) await this.#removePacksSince(overviews, packs);
+        throw error;
+      }
     });
+  }
+
+  /**
+   * Removes the packs in the repository at `gitDir` that aren't among `before`, the names of its
+   * packs before a download, with all their files. The clone's lock is held.
+   */
+  async #removePacksSince(gitDir: string, before: ReadonlySet<string>): Promise<void> {
+    const folder = join(gitDir, 'objects', 'pack');
+    const added = [...(await packNames(gitDir))].filter((name) => !before.has(name));
+    if (added.length === 0) return;
+    for (const name of await readdir(folder).catch(() => [])) {
+      if (added.some((pack) => name.startsWith(`${pack}.`))) {
+        await rm(join(folder, name), { force: true });
+      }
+    }
+    this.#cache.note(`${this.name}: removed what came of an overview refused for its size`);
   }
 
   /**
@@ -697,11 +1614,13 @@ export class Repo {
     const gitDir = options.gitDir ?? this.folder;
     // A lock left on a ref the fetch writes would fail it every time: one a git killed from
     // outside, or in a crash, left. Only fetches and pins write these refs, under the clone's
-    // lock, which is held, so such a lock is no one's.
-    for (const refspec of refspecs) {
-      const colon = refspec.indexOf(':');
-      if (colon !== -1) await rm(join(gitDir, `${refspec.slice(colon + 1)}.lock`), { force: true });
+    // lock, which is held, so such a lock is no one's. The same goes for the half-written packs
+    // a fetch leaves, which only fetches write.
+    for (const ref of destinations(refspecs)) {
+      await rm(join(gitDir, `${ref}.lock`), { force: true });
     }
+    if (options.shallow) await rm(join(gitDir, 'shallow.lock'), { force: true });
+    await this.#removeHalfWritten(gitDir);
     const fetching: Fetching = { token, proxy: await this.#proxy?.() };
     const command = this.#runner.command({ gitDir }, { fetching });
     // Where the fetch goes, and that it's a promisor, on the command line alone: never the clone's
@@ -720,19 +1639,108 @@ export class Repo {
     }
     command.arg(
       'fetch',
-      '--quiet',
       '--no-tags',
       '--no-write-fetch-head',
       '--recurse-submodules=no',
       '--filter=blob:none',
+      // Always: what git says is how Lo knows what a fetch is doing.
+      '--progress',
     );
     if (options.shallow) command.arg('--depth=1');
     command.arg(REMOTE, ...refspecs);
-    if (options.objects === undefined) {
-      await command.run(undefined, { what });
-      return;
+    if (options.objects !== undefined) command.arg('--stdin');
+    // The first fetch into a clone brings the history it needs, and many files at once may be a
+    // whole tree: GitHub may take as long to start sending either.
+    const whole = (await this.#isEmpty(gitDir)) || (options.objects?.length ?? 0) > FEW_OBJECTS;
+    const started = Date.now();
+    const watched = await watch(command, {
+      limits: this.#cache.limits,
+      whole,
+      trace: this.#cache.temporaryPath('.trace'),
+      progress: this.#progress,
+      input: options.objects?.map((oid) => `${oid}\n`).join(''),
+      maxBytes: options.maxBytes,
+      packs: join(gitDir, 'objects', 'pack'),
+      afterStop: (pid) =>
+        this.#removeLeft(gitDir, { pid, refspecs, shallow: options.shallow ?? false, started }),
+      log: (line) => this.#cache.note(`${this.name}: ${line}`),
+    });
+    if (watched.kind === 'stopped') throw stoppedError(watched.stopped, what);
+    const { exit, messages } = watched;
+    if (exit.code !== 0) {
+      // A fetch that failed part way, as when the connection dropped, leaves its pack too.
+      await this.#removeHalfWritten(gitDir);
+      throw GitError.fromGit(command.display, failureMessage({ ...exit, stderr: messages }), what);
     }
-    await command.arg('--stdin').run(options.objects.map((oid) => `${oid}\n`).join(''), { what });
+  }
+
+  /** Whether nothing was ever fetched into the repository at `gitDir`: it has no refs. */
+  async #isEmpty(gitDir: string): Promise<boolean> {
+    const output = await this.#runner
+      .command({ gitDir })
+      .arg('for-each-ref', '--count=1', '--format=%(refname)')
+      .run();
+    return output.length === 0;
+  }
+
+  /**
+   * Removes what git, as process `left.pid`, may have left when Lo stopped it fetching
+   * `left.refspecs` into `gitDir`, with the clone's lock held:
+   *
+   * - the pack it was writing, which git never removes itself, and the keep file a finished pack
+   *   has until the fetch is done, which would keep the pack for good;
+   * - the locks it could have taken: the refs it was writing, `shallow.lock` for a fetch without
+   *   history, and the reftable stack's lock. Only those made since the fetch started, and only
+   *   while no other git of Lo's runs on the repository: a comparison may be writing its own pins
+   *   meanwhile, under a lock of the same name.
+   */
+  async #removeLeft(
+    gitDir: string,
+    left: { pid: number; refspecs: readonly string[]; shallow: boolean; started: number },
+  ): Promise<void> {
+    const removed = await this.#removeHalfWritten(gitDir, left.pid);
+    if (this.#runner.running(gitDir) === 0) {
+      const locks = [
+        ...destinations(left.refspecs).map((ref) => `${ref}.lock`),
+        ...(left.shallow ? ['shallow.lock'] : []),
+        join('reftable', 'tables.list.lock'),
+      ];
+      // File systems that keep whole seconds round a time down.
+      const since = Math.floor(left.started / 1000) * 1000;
+      for (const lock of locks.map((name) => join(gitDir, name))) {
+        const made = await lstat(lock).catch(() => undefined);
+        if (made === undefined || made.mtimeMs < since) continue;
+        if (await removeFile(lock)) removed.push(lock);
+      }
+    }
+    if (removed.length > 0) {
+      const shown = removed.map((path) => relative(this.folder, path)).join(', ');
+      this.#cache.note(`${this.name}: removed what a git that was stopped left: ${shown}`);
+    }
+  }
+
+  /**
+   * Removes the packs a fetch into `gitDir` was writing when it stopped, `objects/pack/tmp_*`, and,
+   * given the stopped git's process ID, the keep file git gives a finished pack until the fetch is
+   * done. Only fetches write packs, with the clone's lock held, which it is, so they're no one
+   * else's. Returns what it removed.
+   */
+  async #removeHalfWritten(gitDir: string, pid?: number): Promise<string[]> {
+    const pack = join(gitDir, 'objects', 'pack');
+    const left: string[] = [];
+    for (const name of await readdir(pack).catch(() => [])) {
+      if (name.startsWith('tmp_') || name.startsWith('.tmp-')) left.push(join(pack, name));
+      // "fetch-pack <pid> on <host>", as `git fetch` names its packs' keep files.
+      if (pid !== undefined && name.endsWith('.keep')) {
+        const text = await readFile(join(pack, name), 'utf8').catch(() => '');
+        if (text.startsWith(`fetch-pack ${pid} on `)) left.push(join(pack, name));
+      }
+    }
+    const removed: string[] = [];
+    for (const path of left) {
+      if (await removeFile(path)) removed.push(path);
+    }
+    return removed;
   }
 
   async #currentToken(): Promise<Token | undefined> {
@@ -742,6 +1750,8 @@ export class Repo {
 }
 
 interface FetchOptions {
+  /** The most bytes the fetch may bring, past which it's stopped. */
+  readonly maxBytes?: number | undefined;
   /** Objects to fetch by ID, which git reads on its input. */
   readonly objects?: readonly Oid[] | undefined;
   /** The commits alone, without their history. */
@@ -750,6 +1760,28 @@ interface FetchOptions {
   readonly gitDir?: string | undefined;
   /** The address to fetch from, when not the clone's: a fork's. */
   readonly url?: string | undefined;
+}
+
+/** The names of the packs in the repository at `gitDir`, such as `pack-<hash>`, without extensions. */
+async function packNames(gitDir: string): Promise<Set<string>> {
+  const names = await readdir(join(gitDir, 'objects', 'pack')).catch(() => []);
+  return new Set(names.filter((name) => name.endsWith('.pack')).map((name) => name.slice(0, -5)));
+}
+
+/** Removes the file at `path`, and says whether it did: one that's gone already isn't an error. */
+function removeFile(path: string): Promise<boolean> {
+  return rm(path).then(
+    () => true,
+    () => false,
+  );
+}
+
+/** The refs `refspecs` write: what follows each one's colon. */
+function destinations(refspecs: readonly string[]): string[] {
+  return refspecs.flatMap((refspec) => {
+    const colon = refspec.indexOf(':');
+    return colon === -1 ? [] : [refspec.slice(colon + 1)];
+  });
 }
 
 /** Where pull request `number`'s commit `oid` is pinned, as `pins`. */
@@ -780,6 +1812,31 @@ function isLostCommit(error: unknown, oid: Oid | undefined): boolean {
     (message.includes('not our ref') || message.includes('unadvertised object')) &&
     message.includes(oid)
   );
+}
+
+/** `oids`, each once, in order. */
+function unique(oids: readonly Oid[]): Oid[] {
+  return [...new Set(oids)];
+}
+
+/** The error for a patch past `limit` bytes, or lines. */
+function patchTooLarge(limit: number, unit?: 'lines'): GitError {
+  return new GitError({ kind: 'tooLarge', command: 'git diff', limit, unit });
+}
+
+/** "1 file", or "2 files". */
+function countFiles(count: number): string {
+  return `${count} ${count === 1 ? 'file' : 'files'}`;
+}
+
+/** The error for reading `path`, which is a `what`, as a file. */
+function notAFile(path: Uint8Array, what: string): GitError {
+  const shown = displayPath(path);
+  return new GitError({
+    kind: 'git',
+    command: 'git cat-file --batch-command',
+    message: `${shown} is a ${what}, not a file`,
+  });
 }
 
 /** The lines of git's text output, without the empty one after the last. */

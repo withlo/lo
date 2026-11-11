@@ -1,5 +1,7 @@
 /** What can go wrong, in terms the app can show and act on. */
 
+import { formatDuration } from './limits.ts';
+
 /**
  * Why a fetch failed:
  *
@@ -16,6 +18,8 @@
  *   doesn't.
  * - `timedOut`: the fetch ran out a limit, so Lo stopped it. The message, Lo's own, says which, and
  *   what git was doing then.
+ * - `tooLarge`: the fetch brought more than it may, such as an overview over 50 MB, so Lo stopped
+ *   it.
  * - `other`: something else, in git's words.
  */
 export type FetchFailure =
@@ -27,6 +31,7 @@ export type FetchFailure =
   | 'repoNotFound'
   | 'refNotFound'
   | 'timedOut'
+  | 'tooLarge'
   | 'other';
 
 /** What went wrong. Object IDs are full, lowercase hex. */
@@ -44,14 +49,26 @@ export type GitErrorDetail =
    * would bring its whole history with no progress shown and no ref keeping it: fetch it first.
    */
   | { kind: 'notFetched'; oid: string }
+  /**
+   * Files whose contents the local copy lacks, by blob ID. Reading never downloads them, which
+   * would wait on GitHub with no limit or progress: download them first.
+   */
+  | { kind: 'notDownloaded'; oids: readonly string[] }
+  /** More `.gitattributes` files apply to the paths asked about than Lo reads, so it reads none. */
+  | { kind: 'tooManyAttributeFiles'; found: number; limit: number }
   /** A revision whose base isn't its head or an ancestor, so its changes can't be told apart. */
   | { kind: 'baseNotAncestor'; base: string; head: string }
   /** The disk is full. The app offers to clear the cache. */
   | { kind: 'diskFull' }
   /** A name or ID that can't be used, such as a branch name git refuses. */
   | { kind: 'invalid'; what: string; value: string }
-  /** A git command wrote more than `limit` bytes, so Lo stopped it. */
-  | { kind: 'tooLarge'; command: string; limit: number }
+  /**
+   * A git command wrote, or would have, more than `limit` bytes, or `limit` of `unit`, such as a
+   * file's lines or a tree's entries, so Lo stopped it or never read it.
+   */
+  | { kind: 'tooLarge'; command: string; limit: number; unit?: 'lines' | 'entries' | undefined }
+  /** A git command took longer than `limit` milliseconds, so Lo stopped it. */
+  | { kind: 'tooSlow'; command: string; limit: number }
   /** The cache is open in another process, or already in this one. */
   | { kind: 'busy'; message: string }
   /** Writing to a clone opened to read offline, which never writes. */
@@ -128,6 +145,14 @@ function describe(detail: GitErrorDetail): string {
       return `commit ${detail.oid.slice(0, 7)} is no longer available`;
     case 'notFetched':
       return `commit ${detail.oid.slice(0, 7)} isn't in the local copy`;
+    case 'notDownloaded': {
+      const [first = ''] = detail.oids;
+      return detail.oids.length === 1
+        ? `file ${first.slice(0, 7)} isn't in the local copy yet`
+        : `${detail.oids.length} files aren't in the local copy yet, such as ${first.slice(0, 7)}`;
+    }
+    case 'tooManyAttributeFiles':
+      return `${detail.found} .gitattributes files apply, more than the ${detail.limit} Lo reads`;
     case 'baseNotAncestor':
       return (
         `commit ${detail.base.slice(0, 7)} isn't an ancestor of ${detail.head.slice(0, 7)}, so ` +
@@ -138,7 +163,9 @@ function describe(detail: GitErrorDetail): string {
     case 'invalid':
       return `\`${detail.value}\` isn't a valid ${detail.what}`;
     case 'tooLarge':
-      return `\`${detail.command}\` wrote more than ${detail.limit} bytes, so Lo stopped it`;
+      return `\`${detail.command}\` wrote more than ${detail.limit} ${detail.unit ?? 'bytes'}, so Lo stopped it`;
+    case 'tooSlow':
+      return `\`${detail.command}\` took longer than ${formatDuration(detail.limit)}, so Lo stopped it`;
     case 'busy':
       return detail.message;
     case 'readOnly':
@@ -180,6 +207,7 @@ function explain(failure: FetchFailure, message: string): string {
       reason = "GitHub doesn't have it";
       break;
     case 'timedOut':
+    case 'tooLarge':
     case 'other':
       return message;
     default:

@@ -1,15 +1,24 @@
 /** What the package's tests share: folders that clean up after themselves, and gits to run. */
 
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { gitProgram, RepoServer } from '@lo/testing/git';
 import { onTestFinished } from 'vitest';
 
 import { Cache, type CacheOptions } from '../src/cache.ts';
 import { type Environment, GITHUB } from '../src/environment.ts';
-import { findGit } from '../src/find.ts';
+import { findGit, gitAt } from '../src/find.ts';
 import { type Git, Runner, type RunnerSettings } from '../src/git.ts';
 
 /** A new folder, deleted when the test ends. Its path has no symlinks in it. */
@@ -17,6 +26,14 @@ export function tempFolder(): string {
   const folder = realpathSync(mkdtempSync(join(tmpdir(), 'lo-git-test-')));
   onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
   return folder;
+}
+
+/**
+ * A `PATH` of the system's folders alone, after the folder of the git the tests run, which may be
+ * elsewhere, as a git built for them is.
+ */
+export function systemPath(): string {
+  return `${dirname(gitProgram())}:/usr/bin:/bin`;
 }
 
 /** The git Lo would find in `env`: the test's own environment unless it says otherwise. */
@@ -81,6 +98,48 @@ export function wrappedGit(
   return script(path, lines.join('\n'));
 }
 
+/** A git that runs the real one and notes the name of each command it runs. */
+export interface TracedGit {
+  readonly git: Git;
+  /** The name of every command that ran, such as `diff` or `fetch`, in order. */
+  commands(): string[];
+  /** How many times the command `name` ran. */
+  count(name: string): number;
+}
+
+/**
+ * A {@link TracedGit}: a script that notes the first argument that's neither an option nor a
+ * setting after `-c`, which is the command, and runs the real git.
+ */
+export async function tracedGit(): Promise<TracedGit> {
+  const dir = tempFolder();
+  const log = join(dir, 'commands');
+  const program = script(
+    join(dir, 'git'),
+    [
+      'skip=',
+      'for arg; do',
+      '  if [ -n "$skip" ]; then skip=; continue; fi',
+      `  case $arg in -c) skip=1 ;; -*) ;; *) printf '%s\\n' "$arg" >> '${log}'; break ;; esac`,
+      'done',
+      `exec '${gitProgram()}' "$@"`,
+    ].join('\n'),
+  );
+  const status = await gitAt(program, { env: process.env, platform: process.platform });
+  if (status.status !== 'found') throw new Error(`the traced git: ${status.status}`);
+  const commands = () =>
+    existsSync(log)
+      ? readFileSync(log, 'utf8')
+          .split('\n')
+          .filter((line) => line !== '')
+      : [];
+  return {
+    git: status.git,
+    commands,
+    count: (name) => commands().filter((command) => command === name).length,
+  };
+}
+
 /** The message `promise` fails with, or `undefined` if it doesn't fail. */
 export async function failureOf(promise: Promise<unknown>): Promise<string | undefined> {
   try {
@@ -124,6 +183,7 @@ export async function cacheFor(
     root: options.root ?? join(tempFolder(), 'cache'),
     git: options.git ?? (await foundGit()),
     log: options.log,
+    limits: options.limits,
     test: ownSettings ? undefined : { remote: address, config: options.config },
   });
   onTestFinished(() => cache.close());

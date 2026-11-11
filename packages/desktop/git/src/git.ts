@@ -65,6 +65,11 @@ export interface RunnerSettings extends Folders {
   readonly log?: ((line: string) => void) | undefined;
   /** What only tests may change. Without it, git fetches from GitHub with Lo's settings alone. */
   readonly test?: TestSettings | undefined;
+  /**
+   * The most milliseconds a git that doesn't fetch may take, past which it's stopped, with what it
+   * started, and fails as `tooSlow`. Without it, there's no limit.
+   */
+  readonly readLimit?: number | undefined;
 }
 
 /**
@@ -78,6 +83,8 @@ export class Runner {
   readonly git: Git;
   readonly remote: Remote;
   readonly #settings: RunnerSettings;
+  /** How many gits are running on each repository, by its folder as commands name it. */
+  readonly #running = new Map<string, number>();
 
   constructor(git: Git, settings: RunnerSettings) {
     this.git = git;
@@ -91,8 +98,45 @@ export class Runner {
    * for one. With `fetching`, git may download from the remote and signs in to it with the token,
    * and only then.
    */
-  command(location: Location, options: { fetching?: Fetching } = {}): GitCommand {
-    return new GitCommand(this.git, this.#settings, this.remote, location, options.fetching);
+  command(
+    location: Location,
+    options: {
+      fetching?: Fetching;
+      /**
+       * Whether the git only reads, and takes no lock, as a clone's long-lived `cat-file`, which
+       * isn't counted among the gits {@link Runner.running} on its repository.
+       */
+      readsOnly?: boolean;
+    } = {},
+  ): GitCommand {
+    return new GitCommand(
+      this.git,
+      this.#settings,
+      this.remote,
+      location,
+      options.fetching,
+      options.readsOnly ? undefined : (child) => this.#track(location, child),
+    );
+  }
+
+  /**
+   * How many gits this runner started on the repository at `gitDir` are still running. Lo is the
+   * only process that runs git on a cache, so with none, nothing holds a lock in it.
+   */
+  running(gitDir: string): number {
+    return this.#running.get(gitDir) ?? 0;
+  }
+
+  #track(location: Location, child: Child): void {
+    if (location === 'none') return;
+    const { gitDir } = location;
+    this.#running.set(gitDir, this.running(gitDir) + 1);
+    const done = () => {
+      const left = this.running(gitDir) - 1;
+      if (left > 0) this.#running.set(gitDir, left);
+      else this.#running.delete(gitDir);
+    };
+    child.gone.then(done, done);
   }
 }
 
@@ -106,6 +150,11 @@ export interface RunOptions {
    * {@link OUTPUT_LIMIT} unless it says otherwise.
    */
   readonly maxBytes?: number | undefined;
+  /**
+   * The most milliseconds it may take, past which Lo stops it and fails as `tooSlow`: the
+   * runner's limit for a git that doesn't fetch, unless it says otherwise.
+   */
+  readonly timeout?: number | undefined;
 }
 
 /**
@@ -121,6 +170,7 @@ export class GitCommand {
   readonly #args: string[] = [];
   readonly #shown: string[] = [];
   readonly #env: Record<string, string> = {};
+  readonly #started: ((child: Child) => void) | undefined;
 
   constructor(
     git: Git,
@@ -128,12 +178,14 @@ export class GitCommand {
     remote: Remote,
     location: Location,
     fetching: Fetching | undefined,
+    started?: (child: Child) => void,
   ) {
     this.#git = git;
     this.#settings = settings;
     this.#remote = remote;
     this.#location = location;
     this.#fetching = fetching;
+    this.#started = started;
   }
 
   /** Adds arguments, which logs and errors show. */
@@ -165,6 +217,11 @@ export class GitCommand {
     return this;
   }
 
+  /** How long the command may take: what `options` say, or the runner's limit unless it fetches. */
+  #timeout(options: RunOptions): number | undefined {
+    return options.timeout ?? (this.#fetching === undefined ? this.#settings.readLimit : undefined);
+  }
+
   /** The command as logs and errors show it: `git` and the arguments added to it. */
   get display(): string {
     return ['git', ...this.#shown].join(' ');
@@ -191,7 +248,7 @@ export class GitCommand {
       fetching === undefined ? undefined : { token: token?.expose(), proxy: fetching.proxy },
     );
     const workTree = location === 'none' ? undefined : location.workTree;
-    return new Child(this.#git.program, {
+    const child = new Child(this.#git.program, {
       args: [
         ...repo,
         ...configArguments(this.#remote, token !== undefined),
@@ -203,13 +260,15 @@ export class GitCommand {
       input: options.input ?? false,
       display: this.display,
     });
+    this.#started?.(child);
+    return child;
   }
 
   /** Runs the command with `input` on its stdin, and returns how it went, whatever its exit status. */
   async finish(input?: Uint8Array | string, options: RunOptions = {}): Promise<Finished> {
     const started = Date.now();
     const child = this.start({ input: input !== undefined });
-    const finished = await child.finish(input, options);
+    const finished = await child.finish(input, { ...options, timeout: this.#timeout(options) });
     if (finished.code !== 0) {
       const status = finished.code ?? String(finished.signal);
       this.#settings.log?.(
@@ -237,18 +296,31 @@ export class GitCommand {
     const child = this.start({ input: input !== undefined });
     const stop = () => child.stop();
     options.signal?.addEventListener('abort', stop, { once: true });
+    const timeout = this.#timeout(options);
+    let tooSlow = false;
+    const timer =
+      timeout === undefined
+        ? undefined
+        : setTimeout(() => {
+            tooSlow = true;
+            child.stop();
+          }, timeout);
     let done = false;
     try {
       child.stdin?.end(input);
       yield* streamRecords(limited(child.stdout, options.maxBytes ?? OUTPUT_LIMIT, this.display));
       const exit = await child.exited;
       done = true;
+      if (tooSlow && timeout !== undefined) {
+        throw new GitError({ kind: 'tooSlow', command: this.display, limit: timeout });
+      }
       if (options.signal?.aborted) throw options.signal.reason;
       if (exit.code !== 0) {
         const message = failureMessage({ ...exit, stderr: child.stderr });
         throw GitError.fromGit(this.display, message, options.what);
       }
     } finally {
+      clearTimeout(timer);
       options.signal?.removeEventListener('abort', stop);
       if (!done) {
         child.stop();

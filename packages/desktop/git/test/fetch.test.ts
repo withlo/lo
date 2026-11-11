@@ -1,6 +1,6 @@
 // Opening clones, and fetching pull requests and commits into them.
 
-import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { git, missingObjects, packs } from '@lo/testing/git';
@@ -8,6 +8,7 @@ import { expect, test } from 'vitest';
 
 import { GitError } from '../src/errors.ts';
 import { type Oid, parseOid } from '../src/oid.ts';
+import { type Activity, percent } from '../src/progress.ts';
 import { blobs, changedBlobs, fetch, pullRequest, readFile, refs, revParse } from './fixtures.ts';
 import { cacheFor, failureOf, repoServer, tempFolder } from './support.ts';
 
@@ -442,4 +443,32 @@ test('a lock left on a ref the fetch writes is removed first', async () => {
 
   expect((await fetch(repo, 1)).head).toBe(r2);
   expect(existsSync(lock)).toBe(false);
+});
+
+test('reports fetch progress', async () => {
+  const server = repoServer();
+  pullRequest(server);
+  const cache = await cacheFor(server);
+  const updates: Activity[] = [];
+  const repo = await cache.open('owner', 'repo', { progress: (update) => updates.push(update) });
+
+  await fetch(repo, 1);
+
+  // git starts out connecting, then the server counts what to send, and the objects come in.
+  expect(updates[0]?.kind).toBe('connecting');
+  const counted = updates.filter(
+    (update) =>
+      update.kind === 'preparing' &&
+      update.progress?.stage === 'Counting objects' &&
+      percent(update.progress) === 100,
+  );
+  expect(counted.length).toBeGreaterThan(0);
+  const receiving = updates.filter(
+    (update) => update.kind === 'transferring' && update.progress.stage === 'Receiving objects',
+  );
+  expect(receiving.length).toBeGreaterThan(0);
+  // The trace that told when the server answered is gone with the fetch.
+  expect(readdirSync(join(cache.root, 'tmp')).filter((name) => name.endsWith('.trace'))).toEqual(
+    [],
+  );
 });
