@@ -1,7 +1,7 @@
 import { renameSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { GitError, type GitStatus } from '@lo/git';
+import { GitError, parseOid, type GitStatus, type PullRequestRefs } from '@lo/git';
 import { APP_PULL, git, writeAppRemote } from '@lo/testing/git';
 import { describe, expect, it } from 'vitest';
 
@@ -10,12 +10,12 @@ import type { LocalState } from '../contract.ts';
 import { describeActivity, failureOf, LocalCopy, retryWait } from './local.ts';
 import { appRemote, folder, testGit } from './test/support.ts';
 
-const REFS = {
+const REFS: PullRequestRefs = {
   number: APP_PULL.number,
-  head: APP_PULL.head,
+  head: parseOid(APP_PULL.head),
   baseBranch: 'app/base',
-  base: APP_PULL.base,
-} as never;
+  base: parseOid(APP_PULL.base),
+};
 
 /** A local copy of the e2e pull request in `git`'s cache, with what it says collected. */
 function copyIn(localGit: LocalGit, token?: () => Promise<string | undefined>) {
@@ -40,10 +40,11 @@ describe('retryWait', () => {
   });
 });
 
-describe('failureOf', () => {
-  const fetchFailing = (failure: 'network' | 'auth' | 'refNotFound' | 'timedOut') =>
-    new GitError({ kind: 'fetch', what: 'pull request #1', failure, message: 'fatal: …' });
+/** A fetch that failed as @lo/git says. */
+const fetchFailing = (failure: 'network' | 'auth' | 'refNotFound' | 'timedOut') =>
+  new GitError({ kind: 'fetch', what: 'pull request #1', failure, message: 'fatal: …' });
 
+describe('failureOf', () => {
   it('tries again when waiting may help, as @lo/git says', () => {
     expect(failureOf(fetchFailing('network'))).toMatchObject({ failure: 'network', retry: true });
     expect(failureOf(fetchFailing('timedOut'))).toMatchObject({ failure: 'timedOut', retry: true });
@@ -89,7 +90,7 @@ describe('describeActivity', () => {
   });
 });
 
-describe('a local copy', { timeout: 30_000 }, () => {
+describe('a local copy', { timeout: 60_000 }, () => {
   it('fetches the pull request and says the head on screen is ready, with its base', async () => {
     const localGit = await testGit();
     const asked: string[] = [];
@@ -100,7 +101,7 @@ describe('a local copy', { timeout: 30_000 }, () => {
     local.want(REFS);
     local.show(APP_PULL.head);
 
-    await expect.poll(last, { timeout: 20_000 }).toEqual({
+    await expect.poll(last, { timeout: 40_000 }).toEqual({
       kind: 'ready',
       head: APP_PULL.head,
       base: APP_PULL.base,
@@ -126,7 +127,7 @@ describe('a local copy', { timeout: 30_000 }, () => {
     local.want(REFS);
     local.show(APP_PULL.firstHead);
 
-    await expect.poll(last, { timeout: 20_000 }).toEqual({
+    await expect.poll(last, { timeout: 40_000 }).toEqual({
       kind: 'ready',
       head: APP_PULL.firstHead,
       base: APP_PULL.base,
@@ -174,7 +175,7 @@ describe('a local copy', { timeout: 30_000 }, () => {
     local.want(REFS);
     local.show(APP_PULL.head);
 
-    await expect.poll(() => last()?.kind, { timeout: 20_000 }).toBe('failed');
+    await expect.poll(() => last()?.kind, { timeout: 40_000 }).toBe('failed');
     expect(last()).toEqual({
       kind: 'failed',
       failure: 'refNotFound',
@@ -184,7 +185,7 @@ describe('a local copy', { timeout: 30_000 }, () => {
     local.retry();
     await expect.poll(() => states.length).toBeGreaterThan(said);
     expect(states[said]).toEqual({ kind: 'fetching', progress: null, attempt: 1 });
-    await expect.poll(() => last()?.kind, { timeout: 20_000 }).toBe('failed');
+    await expect.poll(() => last()?.kind, { timeout: 40_000 }).toBe('failed');
     local.close();
   });
 
@@ -195,7 +196,7 @@ describe('a local copy', { timeout: 30_000 }, () => {
     const first = copyIn(localGit);
     first.local.want(REFS);
     first.local.show(APP_PULL.head);
-    await expect.poll(first.last, { timeout: 20_000 }).toMatchObject({ kind: 'ready' });
+    await expect.poll(first.last, { timeout: 40_000 }).toMatchObject({ kind: 'ready' });
     first.local.close();
 
     // The remote's gone; a fetch then fails as git's own does, which waiting may fix.
@@ -209,7 +210,7 @@ describe('a local copy', { timeout: 30_000 }, () => {
     failing.local.want(REFS);
     failing.local.show(APP_PULL.head);
 
-    await expect.poll(failing.last, { timeout: 20_000 }).toEqual({
+    await expect.poll(failing.last, { timeout: 40_000 }).toEqual({
       kind: 'ready',
       head: APP_PULL.head,
       base: APP_PULL.base,

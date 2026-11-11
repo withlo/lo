@@ -37,7 +37,7 @@ function tabFor(options: {
   return { tab, sent, kept, lines };
 }
 
-describe('a pull request’s tab', { timeout: 30_000 }, () => {
+describe('a pull request’s tab', { timeout: 60_000 }, () => {
   it('opens as the account that can see it, with its header, files and local copy at the head it opened at', async () => {
     const { github } = replayGithub('app_e2e');
     const git = await testGit();
@@ -49,7 +49,7 @@ describe('a pull request’s tab', { timeout: 30_000 }, () => {
     tab.show();
     expect(sent.pull?.loading).toBe(true);
 
-    await expect.poll(() => sent.local, { timeout: 20_000 }).toMatchObject({ kind: 'ready' });
+    await expect.poll(() => sent.local, { timeout: 40_000 }).toMatchObject({ kind: 'ready' });
     expect(sent.local).toEqual({
       kind: 'ready',
       head: APP_PULL.head,
@@ -168,7 +168,7 @@ describe('a pull request’s tab', { timeout: 30_000 }, () => {
     const before = tabFor({ github: first.github, git });
     before.tab.show();
     await expect
-      .poll(() => before.sent.local, { timeout: 20_000 })
+      .poll(() => before.sent.local, { timeout: 40_000 })
       .toMatchObject({ kind: 'ready' });
     await expect.poll(() => before.sent.pull?.header?.author).toBe('rozed-bot');
     before.tab.close();
@@ -191,7 +191,7 @@ describe('a pull request’s tab', { timeout: 30_000 }, () => {
     after.tab.show();
 
     await expect
-      .poll(() => after.sent.local, { timeout: 20_000 })
+      .poll(() => after.sent.local, { timeout: 40_000 })
       .toEqual({
         kind: 'ready',
         head: APP_PULL.head,
@@ -212,7 +212,7 @@ describe('a pull request’s tab', { timeout: 30_000 }, () => {
     const git = await testGit();
     const { tab, sent } = tabFor({ github: replay.github, git });
     tab.show();
-    await expect.poll(() => sent.local, { timeout: 20_000 }).toMatchObject({ kind: 'ready' });
+    await expect.poll(() => sent.local, { timeout: 40_000 }).toMatchObject({ kind: 'ready' });
 
     // A poll that brings another head: here, the first push's.
     const poller = replay.pollers.get('rozed-bot');

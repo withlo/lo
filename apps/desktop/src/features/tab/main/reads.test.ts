@@ -110,14 +110,14 @@ describe('a pull request’s state', () => {
   });
 });
 
-describe('how a tab stands with GitHub', () => {
-  const status = (change: Partial<PollStatus> = {}): PollStatus => ({
-    rateLimit: { kind: 'normal' },
-    offline: undefined,
-    signedOut: false,
-    ...change,
-  });
+const status = (change: Partial<PollStatus> = {}): PollStatus => ({
+  rateLimit: { kind: 'normal' },
+  offline: undefined,
+  signedOut: false,
+  ...change,
+});
 
+describe('how a tab stands with GitHub', () => {
   it('is live when nothing is wrong', () => {
     expect(connectionOf('rozed-bot', status(), 1)).toEqual({ kind: 'live' });
   });
@@ -158,6 +158,10 @@ describe('how a tab stands with GitHub', () => {
     });
   });
 });
+
+/** GitHub's refusal for a rate limit, with when to try again. */
+const limited = (detail: { reset?: number; retryAfter?: number }) =>
+  new GithubError({ kind: 'rateLimited', message: 'used up', secondary: false, ...detail });
 
 describe('what reading it ran into', () => {
   const account = { kind: 'account' as const, login: 'rozed-bot' };
@@ -212,8 +216,6 @@ describe('what reading it ran into', () => {
     expect(isUnreached(network)).toBe(true);
     expect(isUnreached(new Error('wrapped', { cause: network }))).toBe(true);
     expect(isUnreached(new GithubError({ kind: 'notFound', message: 'Not Found' }))).toBe(false);
-    const limited = (detail: { reset?: number; retryAfter?: number }) =>
-      new GithubError({ kind: 'rateLimited', message: 'used up', secondary: false, ...detail });
     expect(rateLimitedUntil(limited({ reset: 100 }), 5)).toBe(100_000);
     expect(rateLimitedUntil(limited({ retryAfter: 30 }), 5)).toBe(30_005);
     expect(rateLimitedUntil(limited({}), 5)).toBe(60_005);

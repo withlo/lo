@@ -412,6 +412,14 @@ test('⌘⇧A opens the tabs that don’t fit, to choose one by key', async ({ a
   await expect(shown(page)).toHaveText(last ?? '');
 });
 
+/** How wide an element is, and whether its text is cut short. */
+function fits(locator: Locator) {
+  return locator.evaluate((element) => ({
+    width: element.clientWidth,
+    cut: element.scrollWidth > element.clientWidth,
+  }));
+}
+
 test('the narrowest tabs keep their repository, cut short, and their number whole', async ({
   app,
   page,
@@ -423,11 +431,6 @@ test('the narrowest tabs keep their repository, cut short, and their number whol
     ...Array.from({ length: 40 }, (_, index) => pull('withlo', long, 123_456 + index)),
   );
   await expect.poll(() => openCount(page)).toBe(40);
-  const fits = (locator: Locator) =>
-    locator.evaluate((element) => ({
-      width: element.clientWidth,
-      cut: element.scrollWidth > element.clientWidth,
-    }));
   for (const tab of await tabs(page).all()) {
     const repository = tab.locator('span', { hasText: long });
     const number = tab.locator('span', { hasText: /^#\d+$/ });

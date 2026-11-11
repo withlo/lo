@@ -117,17 +117,17 @@ export function replayGithub(cassette: string, options: ReplayGithubOptions = {}
         login,
         cache,
       });
-      const listeners = new Set<(event: PollEvent) => void>();
-      heard.set(login, listeners);
+      const pollListeners = new Set<(event: PollEvent) => void>();
+      heard.set(login, pollListeners);
       // The poller itself, but for its listeners, which the test hears of too.
       const watched = new Proxy(poller, {
         get(target, property) {
           if (property === 'onEvent') {
             return (listener: (event: PollEvent) => void) => {
-              listeners.add(listener);
+              pollListeners.add(listener);
               const stop = target.onEvent(listener);
               return () => {
-                listeners.delete(listener);
+                pollListeners.delete(listener);
                 stop();
               };
             };

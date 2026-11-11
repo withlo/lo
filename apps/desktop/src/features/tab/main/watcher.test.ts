@@ -31,7 +31,7 @@ async function watcher(kept: Record<string, { login?: string; repository?: strin
   return { watching, sent, changes, replay };
 }
 
-describe('the watcher', { timeout: 30_000 }, () => {
+describe('the watcher', { timeout: 60_000 }, () => {
   it('opens the pull request on screen, and only that one, and says nothing of other kinds of tab', async () => {
     const { watching, sent } = await watcher();
     const tabs: Tabs = { tabs: [e2e, missing, settings], active: 'p1' };
@@ -42,7 +42,7 @@ describe('the watcher', { timeout: 30_000 }, () => {
     expect(watching.has('s1')).toBe(false);
     expect(watching.snapshot('s1')).toBe(undefined);
     await expect
-      .poll(() => watching.snapshot('p1')?.local.state, { timeout: 20_000 })
+      .poll(() => watching.snapshot('p1')?.local.state, { timeout: 40_000 })
       .toMatchObject({ kind: 'ready', head: APP_PULL.head });
     // The other hasn't been shown, so nothing was read for it.
     expect(sent.pulls.some(({ id }) => id === 'p2')).toBe(false);

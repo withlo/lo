@@ -123,7 +123,6 @@ interface Ready {
   readonly head: Oid;
   readonly base: Oid;
   readonly mergeBase: Oid | undefined;
-  readonly offline: boolean;
 }
 
 /** What fetching is doing, while the head on screen isn't ready. */
@@ -151,6 +150,7 @@ export class LocalCopy {
   readonly #bases = new Map<Oid, Oid>();
   #ready: Ready | undefined;
   #fetching: Fetching = { kind: 'idle' };
+  /** How many fetches in a row have failed: while any have, what's ready is an earlier fetch's. */
   #failures = 0;
   #repo: Promise<Repo> | undefined;
   /** The fetch under way, if any. */
@@ -175,7 +175,8 @@ export class LocalCopy {
         head: ready.head,
         base: ready.base,
         mergeBase: ready.mergeBase ?? null,
-        offline: ready.offline,
+        // What an earlier fetch brought, since the last fetch failed.
+        offline: this.#failures > 0,
       };
     }
     const { status } = this.#options.git;
@@ -232,7 +233,7 @@ export class LocalCopy {
     this.#shown = oid;
     this.#ready = undefined;
     this.#changed();
-    void this.#settle(false);
+    void this.#settle();
   }
 
   /** Tries again now, after a failure or while waiting to. */
@@ -309,7 +310,7 @@ export class LocalCopy {
       this.#fetched = wanted;
       this.#failures = 0;
       this.#fetching = { kind: 'idle' };
-      await this.#settle(false);
+      await this.#settle();
     } catch (error) {
       if (this.#closed) return;
       const failure = failureOf(error);
@@ -325,7 +326,7 @@ export class LocalCopy {
         this.#fetching = { kind: 'failed', failure };
       }
       // What an earlier fetch brought is still there to read.
-      if (this.#ready === undefined) await this.#settle(true);
+      if (this.#ready === undefined) await this.#settle();
       else this.#changed();
     }
   }
@@ -352,10 +353,10 @@ export class LocalCopy {
   }
 
   /**
-   * Works out whether the head on screen is ready: in the clone, with a base branch tip. After a
-   * failed fetch, `offline`, it's ready only from what earlier fetches brought.
+   * Works out whether the head on screen is ready: in the clone, with a base branch tip, whether
+   * this fetch brought it or an earlier one did.
    */
-  async #settle(offline: boolean): Promise<void> {
+  async #settle(): Promise<void> {
     const head = this.#shown;
     const wanted = this.#wanted;
     const repo = this.#repo;
@@ -377,7 +378,7 @@ export class LocalCopy {
       }
       const mergeBase = await opened.mergeBase(head, base);
       if (this.#closed || this.#shown !== head) return;
-      this.#ready = { head, base, mergeBase, offline };
+      this.#ready = { head, base, mergeBase };
     } catch (error) {
       this.#options.log(`reading ${this.#name()}: ${failureOf(error).message}`);
     }

@@ -49,10 +49,8 @@ describe("the tab feature's contract", () => {
       'https://github.com/orgs/rozed-dev/sso?authorization_request=x',
       'https://github.com',
     ];
-    for (const url of allowed) {
-      expect(isGithubPage(url), url).toBe(true);
-      expect(input.safeParse({ url }).success, url).toBe(true);
-    }
+    expect(allowed.filter((url) => !isGithubPage(url))).toEqual([]);
+    expect(allowed.filter((url) => !input.safeParse({ url }).success)).toEqual([]);
     const refused = [
       'http://github.com/rozed-dev/e2e',
       'https://github.com.evil.example/',
@@ -70,7 +68,7 @@ describe("the tab feature's contract", () => {
     ];
     expect(refused.filter(isGithubPage)).toEqual([]);
     expect(refused.filter((url) => input.safeParse({ url }).success)).toEqual([]);
-    expect(input.safeParse({ url: allowed[0], then: 'more' }).success).toBe(false);
+    expect(input.safeParse({ url: allowed[0], also: 'more' }).success).toBe(false);
   });
 
   it('copies 1 MiB of text at most, as UTF-8', () => {

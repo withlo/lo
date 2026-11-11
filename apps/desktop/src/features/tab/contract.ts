@@ -254,8 +254,8 @@ function fitsCopy(text: string): boolean {
 }
 
 /**
- * Whether `address` is a page on github.com over HTTPS, the only kind Lo opens in the browser:
- * no other host or port, no name or password in it.
+ * Whether `address` is a page on github.com over HTTPS, the only kind Lo opens in the browser: no
+ * other host or port, no name or password in it.
  */
 export function isGithubPage(address: string): boolean {
   let url: URL;
@@ -264,14 +264,9 @@ export function isGithubPage(address: string): boolean {
   } catch {
     return false;
   }
-  return (
-    url.protocol === 'https:' &&
-    url.hostname === 'github.com' &&
-    url.port === '' &&
-    url.username === '' &&
-    url.password === '' &&
-    url.href.startsWith('https://github.com/')
-  );
+  // The address as the URL parser writes it back, with its host in lowercase: nothing with another
+  // scheme, host, port, name or password starts this way.
+  return url.href.startsWith('https://github.com/');
 }
 
 /** A tab, by its id. */

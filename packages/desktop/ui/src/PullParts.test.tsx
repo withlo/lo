@@ -95,7 +95,7 @@ describe('StatePill', () => {
 
 describe('Banner', () => {
   it('leads with what happened, then what to do, with its buttons', () => {
-    const retry = vi.fn();
+    const retry = vi.fn<() => void>();
     const markup = renderToStaticMarkup(
       <Banner
         tone="warn"
