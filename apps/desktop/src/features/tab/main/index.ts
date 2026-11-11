@@ -101,6 +101,7 @@ export default defineFeature(contract, {
     async openExternal({ url }) {
       // The contract refuses anything else; this holds even if it's loosened.
       if (!isGithubPage(url)) throw new IpcError('refused', 'Lo opens only pages on github.com.');
+      // In the system's browser, or the program `LO_BROWSER` names in a build run from source.
       await openPage(url);
     },
   },

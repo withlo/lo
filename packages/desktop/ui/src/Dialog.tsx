@@ -1,6 +1,7 @@
 import { Dialog as Base } from '@base-ui/react/dialog';
 import type { KeyboardEvent, ReactNode, RefObject } from 'react';
 
+import { useTakeFocus } from './focus.ts';
 import { useReturnFocus } from './returnFocus.ts';
 
 export interface DialogProps {
@@ -47,6 +48,9 @@ export function Dialog({
   testId,
 }: DialogProps) {
   const returnFocus = useReturnFocus(open);
+  // What `initialFocus` names has focus as the dialog mounts, not a frame on. Without it, Base UI
+  // chooses where focus goes.
+  const takeFocus = useTakeFocus(initialFocus);
   return (
     <Base.Root
       open={open}
@@ -62,6 +66,7 @@ export function Dialog({
         <Base.Backdrop className="fixed inset-0 z-dialog bg-scrim" />
         <Base.Viewport className="fixed inset-0 z-dialog flex items-center justify-center p-16">
           <Base.Popup
+            ref={initialFocus ? takeFocus : undefined}
             initialFocus={initialFocus}
             finalFocus={false}
             data-lo-scope="dialog"

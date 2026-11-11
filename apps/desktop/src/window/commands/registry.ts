@@ -15,14 +15,20 @@ export interface Middle {
 }
 
 let current: Registry | undefined;
-let middle: Middle | undefined;
+/** The views that are the middle of the window, the newest on top: a cover over a tab's own. */
+const middles: Middle[] = [];
+
+/** The middle view now: the newest one still there. */
+function middle(): Middle | undefined {
+  return middles.at(-1);
+}
 
 /** Builds the window's registry from every feature's commands. */
 export function createRegistry(commands: readonly Command[], system: System): Registry {
   const created: Registry = new Registry({
     system,
     commands,
-    here: () => middle?.here(),
+    here: () => middle()?.here(),
     // A command asked for that can't run says why, whoever asked: a key, a menu or the palette.
     onRefused: (reason, id) => notify(created.command(id)?.label ?? 'Not now', reason),
   });
@@ -50,18 +56,23 @@ export function useKeys(): number {
   );
 }
 
-/** Makes `view` the middle view. Returns a function that takes it back, for when the view goes. */
+/**
+ * Makes `view` the middle view. Returns a function that takes it back, for when the view goes: the
+ * one it covered, if it's still there, is the middle again.
+ */
 export function setMiddle(view: Middle): () => void {
-  middle = view;
+  middles.push(view);
   return () => {
-    if (middle === view) middle = undefined;
+    const at = middles.lastIndexOf(view);
+    if (at >= 0) middles.splice(at, 1);
   };
 }
 
 /** Gives focus back to the middle view, or the middle of the window while there's none. */
 export function focusMiddle(): void {
-  if (middle) {
-    middle.focus();
+  const view = middle();
+  if (view) {
+    view.focus();
     return;
   }
   const element = document.querySelector('[data-lo-middle]');
@@ -70,7 +81,7 @@ export function focusMiddle(): void {
 
 /** Where the tab is in the middle view, if it has a place. */
 export function here(): Entry | undefined {
-  return middle?.here();
+  return middle()?.here();
 }
 
 /** The system the window runs on, from `navigator.platform`. */

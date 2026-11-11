@@ -97,6 +97,26 @@ const pull = (owner: string, repo: string, number: number): Opening => ({
   number,
 });
 
+/**
+ * Holds `tab` hovered until the test ends, as DevTools' "Force element state" does. Playwright's
+ * pointer isn't the system's: when a window opens or closes under the system's pointer, such as
+ * another test's copy of Lo, the system tells Lo's window where its pointer is, and the hover moves
+ * there, off the tab Playwright's pointer is on.
+ */
+async function holdHover(page: Page, tab: Locator): Promise<void> {
+  const id = await tab.getAttribute('data-tab');
+  if (id === null) throw new Error('The tab has no id.');
+  const devtools = await page.context().newCDPSession(page);
+  await devtools.send('DOM.enable');
+  await devtools.send('CSS.enable');
+  const { root } = await devtools.send('DOM.getDocument');
+  const { nodeId } = await devtools.send('DOM.querySelector', {
+    nodeId: root.nodeId,
+    selector: `[data-tab="${id}"]`,
+  });
+  await devtools.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['hover'] });
+}
+
 /** Opens a tab through main, as the open box and links from other apps do, and returns its id. */
 async function open(page: Page, ...openings: Opening[]): Promise<string[]> {
   return page.evaluate(async (inputs) => {
@@ -220,7 +240,7 @@ test('a click shows a tab, its button closes it, and its right-click menu closes
 
   // A tab not on screen shows its close button under the pointer, and keeps the one on screen.
   const second = tabs(page).nth(1);
-  await second.hover();
+  await holdHover(page, second);
   await second.getByRole('button', { name: 'Close tab' }).click();
   await expect(tabs(page)).toHaveText(['a #1', 'c #3']);
   await expect(shown(page)).toHaveText('a #1');
