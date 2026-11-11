@@ -2,6 +2,7 @@ import { Dialog } from '@base-ui/react/dialog';
 import { useEffect, useId, useRef, useState } from 'react';
 
 import { filterHelp, type HelpGroup, type KeymapError } from './commands/index.ts';
+import { useTakeFocus } from './focus.ts';
 import { Key } from './Key.tsx';
 import { useReturnFocus } from './returnFocus.ts';
 
@@ -46,6 +47,8 @@ export function KeyHelp({
   const [query, setQuery] = useState('');
   const ids = useId();
   const search = useRef<HTMLInputElement>(null);
+  // The search has focus as key help mounts, not a frame on.
+  const takeFocus = useTakeFocus(search);
   const shown = useRef<HTMLDivElement>(null);
   const found = filterHelp(groups, query);
   const returnFocus = useReturnFocus(open);
@@ -73,6 +76,7 @@ export function KeyHelp({
         <Dialog.Backdrop className="fixed inset-0 z-dialog bg-scrim" />
         <Dialog.Viewport className="fixed inset-0 z-dialog flex items-center justify-center p-16">
           <Dialog.Popup
+            ref={takeFocus}
             initialFocus={search}
             finalFocus={false}
             data-lo-scope="dialog"

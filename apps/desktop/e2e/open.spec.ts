@@ -262,6 +262,8 @@ test('fills the box from the clipboard, and never takes anything else on it', as
   await expect(box(page)).toBeVisible();
   await expect(input(page)).toHaveValue('');
   await page.keyboard.press('Escape');
+  // Once the box has closed: keys under it are its own until then.
+  await expect(box(page)).toBeHidden();
 
   await app.evaluate(
     ({ clipboard }, link) => clipboard.writeText(`${link}/files?token=abc#x`),
