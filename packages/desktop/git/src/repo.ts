@@ -46,6 +46,7 @@ import {
   rawDiffBlobs,
 } from './diff.ts';
 import { checkoutGitDir } from './cleanup.ts';
+import { removeLocksLeft, removeTemporaryPacks, removeUnfinishedPacks } from './leftovers.ts';
 import { type FetchFailure, GitError } from './errors.ts';
 import { type Fetching, failureMessage, type GitCommand, type Runner } from './git.ts';
 import type { FetchLimits } from './limits.ts';
@@ -1343,7 +1344,10 @@ export class Repo {
    * become plain files holding their target, so nothing in a checkout points outside it, and no
    * path a Mac's or Windows' disk would take for `.git` is written. The commit must be in the
    * clone already, or it's `notFetched`. A link anywhere on the way to the checkout's folder, in
-   * the cache, is an error: nothing is written through it.
+   * the cache, is an error: nothing is written through it. git writes by path, so a link put there
+   * after the look, by a program running as the user, as a language server in a checkout does,
+   * would be followed. Such a program can write anywhere the user can already: the look keeps out
+   * links left in the cache, not a program racing it.
    */
   async checkout(number: number, head: Oid): Promise<string> {
     checkNumber(number);
@@ -1430,13 +1434,13 @@ export class Repo {
     if ((await checkoutGitDir(this.folder, checkout)) === undefined) {
       throw new GitError({ kind: 'invalid', what: 'checkout', value: checkout });
     }
-    // Every folder on the way a folder itself, never a link.
-    let at = Buffer.from(checkout);
-    for (const name of names.slice(0, -1)) {
-      at = Buffer.concat([at, Buffer.from('/'), Buffer.from(name, 'latin1')]);
-      if (!(await lstat(at).catch(() => undefined))?.isDirectory()) return undefined;
-    }
-    at = Buffer.concat([at, Buffer.from('/'), Buffer.from(names.at(-1) ?? '', 'latin1')]);
+    // Every folder on the way a folder itself, never a link, looked at before the file is opened
+    // and again after, below.
+    const at = Buffer.concat([
+      Buffer.from(checkout),
+      ...names.flatMap((name) => [Buffer.from('/'), Buffer.from(name, 'latin1')]),
+    ]);
+    if (!(await foldersOnTheWay(checkout, names))) return undefined;
     // And the file opened without following a link, so one put there since is never read through,
     // and without waiting, so a pipe put there is never waited on.
     const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
@@ -1452,6 +1456,13 @@ export class Repo {
     try {
       const found = await file.stat();
       if (!found.isFile()) return undefined;
+      // Node opens by path, never relative to a folder already opened, so a folder on the way could
+      // have been swapped for a link between the look and the open: the same folders, and the same
+      // file at the path, afterwards say it wasn't. What's left is a hard link in the checkout to a
+      // file elsewhere, which is the checkout's file as much as any.
+      const there = await lstat(at).catch(() => undefined);
+      const same = there?.isFile() && there.dev === found.dev && there.ino === found.ino;
+      if (!same || !(await foldersOnTheWay(checkout, names))) return undefined;
       // As git hashes a blob, read a piece at a time, however large the file.
       const hash = createHash('sha1');
       hash.update(`blob ${found.size}\0`);
@@ -1904,28 +1915,23 @@ export class Repo {
    *   has until the fetch is done, which would keep the pack for good;
    * - the locks it could have taken: the refs it was writing, `shallow.lock` for a fetch without
    *   history, and the reftable stack's lock. Only those made since the fetch started, and only
-   *   while no other git of Lo's runs on the repository: a comparison may be writing its own pins
-   *   meanwhile, under a lock of the same name.
+   *   while no other git of Lo's runs on the repository, as {@link removeLocksLeft} checks: a
+   *   comparison may be writing its own pins meanwhile, under a lock of the same name.
    */
   async #removeLeft(
     gitDir: string,
     left: { pid: number; refspecs: readonly string[]; shallow: boolean; started: number },
   ): Promise<void> {
     const removed = await this.#removeHalfWritten(gitDir, left.pid);
-    if (this.#runner.running(gitDir) === 0) {
-      const locks = [
-        ...destinations(left.refspecs).map((ref) => `${ref}.lock`),
-        ...(left.shallow ? ['shallow.lock'] : []),
-        join('reftable', 'tables.list.lock'),
-      ];
-      // File systems that keep whole seconds round a time down.
-      const since = Math.floor(left.started / 1000) * 1000;
-      for (const lock of locks.map((name) => join(gitDir, name))) {
-        const made = await lstat(lock).catch(() => undefined);
-        if (made === undefined || made.mtimeMs < since) continue;
-        if (await removeFile(lock)) removed.push(lock);
-      }
-    }
+    removed.push(
+      ...removeLocksLeft(this.#runner, gitDir, left.started, {
+        locks: [
+          ...destinations(left.refspecs).map((ref) => `${ref}.lock`),
+          ...(left.shallow ? ['shallow.lock'] : []),
+          join('reftable', 'tables.list.lock'),
+        ],
+      }),
+    );
     if (removed.length > 0) {
       const shown = removed.map((path) => relative(this.folder, path)).join(', ');
       this.#cache.note(`${this.name}: removed what a git that was stopped left: ${shown}`);
@@ -1933,25 +1939,22 @@ export class Repo {
   }
 
   /**
-   * Removes the packs a fetch into `gitDir` was writing when it stopped, `objects/pack/tmp_*`, and,
-   * given the stopped git's process ID, the keep file git gives a finished pack until the fetch is
-   * done. Only fetches and repacks write packs, with the clone's lock held, which it is, so
-   * they're no one else's. Returns what it removed.
+   * Removes the packs a fetch into `gitDir` was writing when it stopped, `objects/pack/tmp_*`, or
+   * didn't finish, and, given the stopped git's process ID, the keep file git gives a finished
+   * pack until the fetch is done. Only fetches and repacks write packs, with the clone's lock
+   * held, which it is, so they're no one else's. Returns what it removed.
    */
   async #removeHalfWritten(gitDir: string, pid?: number): Promise<string[]> {
+    const removed = [...removeTemporaryPacks(gitDir), ...removeUnfinishedPacks(gitDir)];
+    if (pid === undefined) return removed;
     const pack = join(gitDir, 'objects', 'pack');
-    const left: string[] = [];
     for (const name of await readdir(pack).catch(() => [])) {
-      if (name.startsWith('tmp_') || name.startsWith('.tmp-')) left.push(join(pack, name));
       // "fetch-pack <pid> on <host>", as `git fetch` names its packs' keep files.
-      if (pid !== undefined && name.endsWith('.keep')) {
-        const text = await readFile(join(pack, name), 'utf8').catch(() => '');
-        if (text.startsWith(`fetch-pack ${pid} on `)) left.push(join(pack, name));
+      if (!name.endsWith('.keep')) continue;
+      const text = await readFile(join(pack, name), 'utf8').catch(() => '');
+      if (text.startsWith(`fetch-pack ${pid} on `) && (await removeFile(join(pack, name)))) {
+        removed.push(join(pack, name));
       }
-    }
-    const removed: string[] = [];
-    for (const path of left) {
-      if (await removeFile(path)) removed.push(path);
     }
     return removed;
   }
@@ -2029,6 +2032,16 @@ function describePins(pins: Pins, number: number, missing: readonly Oid[]): stri
   return missing.length === 1 && only !== undefined
     ? `a base of pull request #${number}'s revisions, ${only.slice(0, 7)}`
     : `${missing.length} bases of pull request #${number}'s revisions`;
+}
+
+/** Whether every folder on the way to `names` in `checkout` is a folder itself, not a link. */
+async function foldersOnTheWay(checkout: string, names: readonly string[]): Promise<boolean> {
+  let at = Buffer.from(checkout);
+  for (const name of names.slice(0, -1)) {
+    at = Buffer.concat([at, Buffer.from('/'), Buffer.from(name, 'latin1')]);
+    if (!(await lstat(at).catch(() => undefined))?.isDirectory()) return false;
+  }
+  return true;
 }
 
 /**

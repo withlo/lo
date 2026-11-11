@@ -40,6 +40,12 @@ export class CloneLock {
   /** Those waiting only for a holder that removes to let go. */
   readonly #waitingForRemoval: (() => void)[] = [];
   #users = 0;
+  readonly #onFree: (() => void) | undefined;
+
+  /** A lock that tells `onFree` whenever its holder lets go with nobody waiting. */
+  constructor(onFree?: () => void) {
+    this.#onFree = onFree;
+  }
 
   /** What the holder is doing, or `undefined` when nobody holds the lock. */
   get holder(): string | undefined {
@@ -101,7 +107,9 @@ export class CloneLock {
       this.#giveWay = undefined;
       this.#removing = false;
       for (const wake of this.#waitingForRemoval.splice(0)) wake();
-      this.#waiting.shift()?.();
+      const next = this.#waiting.shift();
+      if (next === undefined) this.#onFree?.();
+      else next();
     };
   }
 

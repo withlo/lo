@@ -198,6 +198,7 @@ export async function cacheFor(
     log: options.log,
     limits: options.limits,
     cap: options.cap,
+    maintenance: options.maintenance,
     test: ownSettings ? undefined : { remote: address, config: options.config },
   });
   onTestFinished(() => cache.close());

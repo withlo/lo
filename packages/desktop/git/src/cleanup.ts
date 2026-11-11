@@ -2,16 +2,21 @@
  * Keeping the cache in bounds: removing what nobody used for a while, past a cap on its size the
  * least recently used checkouts and clones, and repacking busy clones. Nothing follows a symlink,
  * so nothing outside the cache is ever measured or removed, and a clone that's open or being
- * written to is never taken. Maintenance that can take minutes, repacking and collecting what
- * comparisons replayed, gives way: anyone who waits for the clone stops it, and it's done again at
- * the next cleanup.
+ * written to is never taken.
+ *
+ * Maintenance that can take minutes, repacking and collecting what comparisons replayed, holds
+ * the clone's lock giving way: anyone who then waits for the clone gives it a few seconds to
+ * finish, then stops it, and it's done again later. Repacks are geometric, rolling the small packs
+ * that fetches and downloads add into one and leaving the big ones be, so they usually finish in
+ * seconds; a clone whose packs piled up anyway is repacked whole only while nobody has it open.
  */
 
-import { lstat, readdir, readFile, realpath, rm, rmdir } from 'node:fs/promises';
+import { lstat, open, readdir, readFile, realpath, rm, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { REPLAYS } from './compare.ts';
 import type { Runner } from './git.ts';
+import { removeLocksLeft, removeTemporaryPacks, removeUnfinishedPacks } from './leftovers.ts';
 import type { CloneLock, Release } from './lock.ts';
 import { checkName } from './refs.ts';
 import { LAST_USED_FILE } from './stamp.ts';
@@ -34,15 +39,43 @@ export const TEMPORARIES_KEPT_FOR = DAY;
 /** The size the cache is kept under unless Settings says otherwise, in bytes. */
 export const DEFAULT_CAP = 10 * 1024 * 1024 * 1024;
 
-/** How many packs a clone may have before it's repacked, as git's own `gc.autoPackLimit`. */
+/**
+ * How many packs a clone may have before a geometric repack rolls its small ones together: each
+ * fetch and download adds one, and every lookup searches them all.
+ */
+export const GEOMETRIC_LIMIT = 8;
+
+/**
+ * How many packs a clone may have before it's repacked whole, as git's own `gc.autoPackLimit`,
+ * while nobody has it open.
+ */
 export const PACK_LIMIT = 50;
 
 /** How long a repack may take: far longer than a read, since a big clone's takes minutes. */
 export const REPACK_LIMIT = 30 * 60 * 1000;
 
+/** When maintenance runs besides at launch, and how it gives way. */
+export interface MaintenanceTimes {
+  /** How long a clone's lock goes unheld before the clone is looked at again, in milliseconds. */
+  readonly idleFor: number;
+  /** How long maintenance has to finish once someone waits for the clone, in milliseconds. */
+  readonly grace: number;
+  /** How many times maintenance starts on a clone once its lock is idle, each launch. */
+  readonly attempts: number;
+}
+
+/** The times the app uses. */
+export const DEFAULT_MAINTENANCE: MaintenanceTimes = {
+  // Past a burst of fetches and downloads.
+  idleFor: 60 * 1000,
+  // A geometric repack of what a few fetches added takes a second or two.
+  grace: 3 * 1000,
+  attempts: 3,
+};
+
 /**
- * The first git whose geometric repack keeps a partial clone's promisor packs as promisor packs.
- * Older ones repack everything into one pack, which always has.
+ * The first git that repacks a partial clone's promisor packs geometrically. Older ones refuse
+ * ("cannot use internal rev list with --stdin-packs").
  */
 const GEOMETRIC_WITH_PROMISORS: GitVersion = { major: 2, minor: 52, patch: 0 };
 
@@ -61,6 +94,7 @@ export interface CleanupHost {
   cloneLock(owner: string, name: string): CloneLock;
   trash(path: string): Promise<boolean>;
   note(line: string): void;
+  readonly maintenance: MaintenanceTimes;
 }
 
 /** Why maintenance stopped: someone waits for the clone, to do `waiter`. */
@@ -75,20 +109,32 @@ class GaveWay extends Error {
 
 /**
  * Holds `clone`'s lock to do `what`, maintenance that can stop part way and be done again later,
- * if nobody holds it, and with `remove`, if nobody has it open. Anyone who then waits for the clone
- * aborts `signal`, with a {@link GaveWay} as its reason, which stops the maintenance's gits.
+ * if nobody holds it, and with `remove`, if nobody has it open. Once anyone waits for the clone,
+ * the maintenance has {@link MaintenanceTimes.grace} to finish; then `signal` aborts, with a
+ * {@link GaveWay} as its reason, which stops its gits. `users` is how many have the clone open.
  */
 function maintain(
   host: CleanupHost,
   clone: CloneName,
   what: string,
   remove = false,
-): { release: Release; signal: AbortSignal } | undefined {
+): { release: Release; signal: AbortSignal; users: number } | undefined {
   const controller = new AbortController();
   const lock = host.cloneLock(clone.owner, clone.name);
-  const giveWay = (waiter: string) => controller.abort(new GaveWay(waiter));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const giveWay = (waiter: string) => {
+    timer = setTimeout(() => controller.abort(new GaveWay(waiter)), host.maintenance.grace);
+  };
   const release = remove ? lock.tryRemove(what, giveWay) : lock.tryAcquire(what, giveWay);
-  return release === undefined ? undefined : { release, signal: controller.signal };
+  if (release === undefined) return undefined;
+  return {
+    release: () => {
+      clearTimeout(timer);
+      release();
+    },
+    signal: controller.signal,
+    users: lock.users,
+  };
 }
 
 /**
@@ -98,27 +144,25 @@ function maintain(
 function gaveWay(host: CleanupHost, signal: AbortSignal, stopped: string): boolean {
   const reason: unknown = signal.reason;
   if (!(reason instanceof GaveWay)) return false;
-  host.note(`stopped ${stopped} for ${reason.waiter}, to do again at the next cleanup`);
+  host.note(`stopped ${stopped} for ${reason.waiter}, to do again later`);
   return true;
 }
 
 /**
- * Removes the ref locks a maintenance git stopped part way may have left in `gitDir` since
- * `since`: one asked to stop removes its own, but one killed can't. Only while no other git of
- * Lo's runs there, so they're the stopped git's.
+ * Removes what a maintenance git stopped part way left in `gitDir`, having started at `since`:
+ * the ref locks it held, those of packing refs included, and the packs it was writing or hadn't
+ * finished. The clone's lock is held.
  */
-async function removeLocksLeft(host: CleanupHost, gitDir: string, since: number): Promise<void> {
-  if (host.runner.running(gitDir) > 0) return;
-  // File systems that keep whole seconds round a time down.
-  const after = Math.floor(since / 1000) * 1000;
-  for (const name of ['packed-refs.lock', join('reftable', 'tables.list.lock')]) {
-    const path = join(gitDir, name);
-    const made = await lstat(path).catch(() => undefined);
-    if (made === undefined || made.mtimeMs < after) continue;
-    await rm(path, { force: true }).catch((error: unknown) => {
-      host.note(`can't remove ${path}: ${String(error)}`);
-    });
-  }
+function removeLeftByMaintenance(host: CleanupHost, gitDir: string, since: number): void {
+  const removed = [
+    ...removeLocksLeft(host.runner, gitDir, since, {
+      locks: ['packed-refs.lock', join('reftable', 'tables.list.lock')],
+      refLocks: true,
+    }),
+    ...removeTemporaryPacks(gitDir),
+    ...removeUnfinishedPacks(gitDir),
+  ];
+  if (removed.length > 0) host.note(`removed what a stopped git left: ${removed.join(', ')}`);
 }
 
 /** Whether `path` is a folder itself, not a link to one. */
@@ -291,8 +335,9 @@ async function removeCheckouts(
 }
 
 /**
- * Removes the partial packs a stopped or crashed fetch left in `clone` a day or more ago. Only
- * fetches and repacks write them, with the clone's lock, which this takes.
+ * Removes the partial packs a stopped or crashed fetch left in `clone` a day or more ago, and the
+ * packs git never finished, which it renamed into place but for their index. Only fetches and
+ * repacks write them, with the clone's lock, which this takes.
  */
 async function removeOldPacks(host: CleanupHost, clone: CloneName, now: number) {
   const packs = join(host.repoFolder(clone.owner, clone.name), 'objects', 'pack');
@@ -310,6 +355,8 @@ async function removeOldPacks(host: CleanupHost, clone: CloneName, now: number) 
         });
       }
     }
+    const unfinished = removeUnfinishedPacks(host.repoFolder(clone.owner, clone.name));
+    if (unfinished.length > 0) host.note(`removed unfinished packs: ${unfinished.join(', ')}`);
   } finally {
     release();
   }
@@ -342,7 +389,7 @@ async function collectReplays(host: CleanupHost, clone: CloneName): Promise<void
       .run(undefined, { timeout: REPACK_LIMIT, signal });
   } catch (error) {
     const what = `removing ${clone.owner}/${clone.name}'s replayed trees`;
-    if (gaveWay(host, signal, what)) await removeLocksLeft(host, gitDir, started);
+    if (gaveWay(host, signal, what)) removeLeftByMaintenance(host, gitDir, started);
     else host.note(`can't remove ${clone.owner}/${clone.name}'s replayed trees: ${String(error)}`);
   } finally {
     held.release();
@@ -493,62 +540,155 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
   return removed;
 }
 
-/** How `git repack` runs with git `version`: geometrically where that keeps promisor packs. */
-export function repackArguments(version: GitVersion): string[] {
+/**
+ * How a clone is repacked: its small packs rolled into one, keeping the big ones, `keep`, as git's
+ * geometric repack does; or everything into one.
+ */
+export type RepackPlan =
+  { readonly kind: 'geometric'; readonly keep: readonly string[] } | { readonly kind: 'full' };
+
+/** How `git repack` runs with git `version` to follow `plan`. */
+export function repackArguments(version: GitVersion, plan: RepackPlan): string[] {
   // Bitmaps need every object, which a partial clone doesn't have.
-  return compareVersions(version, GEOMETRIC_WITH_PROMISORS) >= 0
-    ? ['repack', '-d', '-q', '--geometric=2', '--no-write-bitmap-index']
-    : ['repack', '-a', '-d', '-q', '--no-write-bitmap-index'];
+  const base = ['repack', '-d', '-q', '--no-write-bitmap-index'];
+  if (plan.kind === 'full') return [...base, '-a'];
+  if (compareVersions(version, GEOMETRIC_WITH_PROMISORS) >= 0) return [...base, '--geometric=2'];
+  // Older gits refuse a geometric repack of a partial clone's promisor packs, but repack the rest
+  // of them, as promisor packs, when told which to keep. In a clone whose packs are all promisor
+  // packs, that reads only the packs rolled.
+  return [...base, '-a', ...plan.keep.map((name) => `--keep-pack=${name}`)];
+}
+
+/**
+ * Where a geometric repack with a factor of 2 splits packs holding `objects` objects each, fewest
+ * first, as git works it out: those before the split roll into one, and the rest, each at least
+ * twice the size of everything smaller, stay.
+ */
+export function geometricSplit(objects: readonly number[]): number {
+  if (objects.length === 0) return 0;
+  let split = objects.length - 1;
+  for (; split > 0; split--) {
+    if ((objects[split] ?? 0) < 2 * (objects[split - 1] ?? 0)) break;
+  }
+  if (split > 0) split += 1;
+  let rolled = objects.slice(0, split).reduce((sum, count) => sum + count, 0);
+  while (split < objects.length && (objects[split] ?? 0) < 2 * rolled) {
+    rolled += objects[split] ?? 0;
+    split += 1;
+  }
+  return split;
+}
+
+/** The packs of the clone at `folder`, `pack-<hash>.pack`, with how many objects each holds, fewest first. */
+async function packsOf(folder: string): Promise<{ name: string; objects: number }[]> {
+  const pack = join(folder, 'objects', 'pack');
+  const found: { name: string; objects: number }[] = [];
+  for (const name of await readdir(pack).catch(() => [])) {
+    if (!name.startsWith('pack-') || !name.endsWith('.pack')) continue;
+    const objects = await indexedObjects(join(pack, `${name.slice(0, -'.pack'.length)}.idx`));
+    if (objects !== undefined) found.push({ name, objects });
+  }
+  return found.toSorted((a, b) => a.objects - b.objects);
+}
+
+/**
+ * How many objects the pack index at `path` lists: the last entry of its fan-out table, after a
+ * version 2 index's header. `undefined` when there's no index, so no finished pack.
+ */
+async function indexedObjects(path: string): Promise<number | undefined> {
+  const file = await open(path, 'r').catch(() => undefined);
+  if (file === undefined) return undefined;
+  try {
+    const head = Buffer.alloc(8 + 256 * 4);
+    const { bytesRead } = await file.read(head, 0, head.length, 0);
+    const v2 = head.readUInt32BE(0) === 0xff_74_4f_63;
+    const at = (v2 ? 8 : 0) + 255 * 4;
+    return bytesRead >= at + 4 ? head.readUInt32BE(at) : undefined;
+  } finally {
+    await file.close();
+  }
+}
+
+/**
+ * What repacking a clone with `packs` would do, when it has more than `limit`: whole, when they're
+ * more than {@link PACK_LIMIT} and nobody has the clone open (`users`); otherwise geometrically,
+ * when that rolls two packs or more. `undefined` when it needs neither.
+ */
+function planRepack(
+  packs: readonly { name: string; objects: number }[],
+  limit: number,
+  users: number,
+): RepackPlan | undefined {
+  if (packs.length <= limit) return undefined;
+  if (packs.length > PACK_LIMIT && users === 0) return { kind: 'full' };
+  const split = geometricSplit(packs.map((pack) => pack.objects));
+  if (split < 2) return undefined;
+  return { kind: 'geometric', keep: packs.slice(split).map((pack) => pack.name) };
+}
+
+/**
+ * Repacks every clone with more than `limit` packs that needs it, as {@link repackClone} does.
+ * Returns the `owner/name` of each clone repacked.
+ */
+export async function repack(host: CleanupHost, limit: number): Promise<string[]> {
+  const repacked: string[] = [];
+  for (const clone of await clones(host)) {
+    if (await repackClone(host, clone, limit)) repacked.push(`${clone.owner}/${clone.name}`);
+  }
+  return repacked;
+}
+
+/**
+ * Repacks `clone` if it has more than `limit` packs, geometrically, or whole once they piled past
+ * {@link PACK_LIMIT} while nobody has it open, then packs its refs, holding its lock giving way. A
+ * clone being written to is skipped, one that fails is noted and skipped, and one whose repack
+ * gave way is left for later. Needs no network: what was downloaded stays, and what wasn't stays
+ * downloadable. Returns whether it repacked.
+ */
+export async function repackClone(
+  host: CleanupHost,
+  clone: CloneName,
+  limit: number,
+): Promise<boolean> {
+  const folder = host.repoFolder(clone.owner, clone.name);
+  if ((await packCount(folder)) <= limit) return false;
+  const held = maintain(host, clone, 'repacking it');
+  if (held === undefined) return false;
+  const { signal } = held;
+  const started = Date.now();
+  try {
+    const packs = await packsOf(folder);
+    const plan = planRepack(packs, limit, held.users);
+    if (plan === undefined) return false;
+    await host.runner
+      .command({ gitDir: folder })
+      .arg(...repackArguments(host.runner.git.version, plan))
+      .run(undefined, { timeout: REPACK_LIMIT, signal });
+    await host.runner
+      .command({ gitDir: folder })
+      .arg('pack-refs', '--all')
+      .run(undefined, { timeout: REPACK_LIMIT, signal });
+    host.note(
+      `repacked ${clone.owner}/${clone.name} ${plan.kind === 'full' ? 'whole' : 'geometrically'} ` +
+        `from ${packs.length} packs to ${await packCount(folder)} in ${Date.now() - started} ms`,
+    );
+    return true;
+  } catch (error) {
+    // Both are safe to stop: a pack is in place only once whole, the packs it replaces go only
+    // after, and what it was writing is removed.
+    if (gaveWay(host, signal, `repacking ${clone.owner}/${clone.name}`)) {
+      removeLeftByMaintenance(host, folder, started);
+    } else {
+      host.note(`can't repack ${clone.owner}/${clone.name}: ${String(error)}`);
+    }
+    return false;
+  } finally {
+    held.release();
+  }
 }
 
 /** How many packs the clone at `folder` has. */
 async function packCount(folder: string): Promise<number> {
   const names = await readdir(join(folder, 'objects', 'pack')).catch(() => []);
   return names.filter((name) => name.endsWith('.pack')).length;
-}
-
-/**
- * Repacks every clone with more than `limit` packs, and packs its refs, holding its lock: every
- * fetch and download adds a pack, and every lookup searches them all. A clone being written to is
- * skipped, one that fails is noted and skipped, and anyone who waits for a clone being repacked
- * stops the repack, which is done again next time. Needs no network: what was downloaded stays,
- * and what wasn't stays downloadable. Returns the `owner/name` of each clone repacked.
- */
-export async function repack(host: CleanupHost, limit: number): Promise<string[]> {
-  const repacked: string[] = [];
-  for (const clone of await clones(host)) {
-    const folder = host.repoFolder(clone.owner, clone.name);
-    const before = await packCount(folder);
-    if (before <= limit) continue;
-    const held = maintain(host, clone, 'repacking it');
-    if (held === undefined) continue;
-    const { signal } = held;
-    const started = Date.now();
-    try {
-      await host.runner
-        .command({ gitDir: folder })
-        .arg(...repackArguments(host.runner.git.version))
-        .run(undefined, { timeout: REPACK_LIMIT, signal });
-      await host.runner
-        .command({ gitDir: folder })
-        .arg('pack-refs', '--all')
-        .run(undefined, { timeout: REPACK_LIMIT, signal });
-      host.note(
-        `repacked ${clone.owner}/${clone.name} from ${before} packs to ` +
-          `${await packCount(folder)} in ${Date.now() - started} ms`,
-      );
-      repacked.push(`${clone.owner}/${clone.name}`);
-    } catch (error) {
-      // Both are safe to stop: a pack is in place only once whole, the packs it replaces go only
-      // after, and the half-written ones go before the next fetch.
-      if (gaveWay(host, signal, `repacking ${clone.owner}/${clone.name}`)) {
-        await removeLocksLeft(host, folder, started);
-      } else {
-        host.note(`can't repack ${clone.owner}/${clone.name}: ${String(error)}`);
-      }
-    } finally {
-      held.release();
-    }
-  }
-  return repacked;
 }

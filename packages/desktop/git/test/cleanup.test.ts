@@ -9,6 +9,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
@@ -19,7 +20,15 @@ import { git, gitBytes, type RepoServer } from '@lo/testing/git';
 import { expect, test } from 'vitest';
 
 import type { Cache } from '../src/cache.ts';
-import { CHECKOUTS_UNUSED_FOR, repackArguments, UNUSED_FOR } from '../src/cleanup.ts';
+import {
+  CHECKOUTS_UNUSED_FOR,
+  GEOMETRIC_LIMIT,
+  geometricSplit,
+  type MaintenanceTimes,
+  PACK_LIMIT,
+  repackArguments,
+  UNUSED_FOR,
+} from '../src/cleanup.ts';
 import { Git } from '../src/git.ts';
 import { type Oid, parseOid } from '../src/oid.ts';
 import { gitAt } from '../src/find.ts';
@@ -586,16 +595,39 @@ test('cleanup collects the trees comparisons replayed', async () => {
   expect(hasObject(repo.folder, r2)).toBe(true);
 });
 
-/** How `git repack` runs with git 2.`minor`. */
+/** How `git repack` runs with git 2.`minor` for a geometric repack that keeps `pack-big.pack`. */
 function repackWith(minor: number): string[] {
-  return repackArguments({ major: 2, minor, patch: 0 });
+  return repackArguments(
+    { major: 2, minor, patch: 0 },
+    { kind: 'geometric', keep: ['pack-big.pack'] },
+  );
 }
 
-test('repacks geometrically only where promisor packs survive it', () => {
+test('repacks with gits own geometric repack only where it takes promisor packs', () => {
   expect(repackWith(54)).toContain('--geometric=2');
   expect(repackWith(52)).toContain('--geometric=2');
-  expect(repackWith(51)).toContain('-a');
-  expect(repackWith(41)).toContain('-a');
+  // Older gits are told which packs to keep instead.
+  for (const minor of [51, 45]) {
+    expect(repackWith(minor)).toEqual(expect.arrayContaining(['-a', '--keep-pack=pack-big.pack']));
+    expect(repackWith(minor)).not.toContain('--geometric=2');
+  }
+  // A whole repack keeps nothing.
+  const whole = repackArguments({ major: 2, minor: 54, patch: 0 }, { kind: 'full' });
+  expect(whole).toContain('-a');
+  expect(whole.some((arg) => arg.startsWith('--geometric') || arg.startsWith('--keep-pack'))).toBe(
+    false,
+  );
+});
+
+test('splits packs as gits geometric repack does', () => {
+  // Already a progression: each at least twice everything smaller.
+  expect(geometricSplit([1, 2, 4, 8])).toBe(0);
+  expect(geometricSplit([])).toBe(0);
+  // The small ones roll, and so does a pack less than twice what they come to.
+  expect(geometricSplit([1, 1, 10, 100])).toBe(2);
+  expect(geometricSplit([1, 1, 1, 100])).toBe(3);
+  expect(geometricSplit([1, 1, 1, 1, 1, 1, 1, 1, 4])).toBe(9);
+  expect(geometricSplit([1, 1, 1, 1, 1, 1, 1, 1, 60])).toBe(8);
 });
 
 /** Files pull request #1 adds. All but the last are downloaded, one download each. */
@@ -623,21 +655,38 @@ function looseRefs(gitDir: string): string[] {
 
 /**
  * A cache using `options.git`, noting to `options.log`, with `owner/repo`: a pack for its fetch and
- * one for each file downloaded on its own.
+ * one for each file downloaded on its own. With `history`, trunk has that many commits more, which
+ * make the fetch's pack far bigger than the others.
  */
-async function manyPacks(options: { git?: Git; log?: (line: string) => void } = {}) {
+async function manyPacks(
+  options: {
+    git?: Git;
+    log?: (line: string) => void;
+    maintenance?: Partial<MaintenanceTimes>;
+    history?: number;
+    files?: readonly string[];
+  } = {},
+) {
+  const files = options.files ?? FILES;
   const made = repoServer();
   const remote = made.repo('owner', 'repo');
   remote.write('README.md', '# repo\n').commit('base');
+  for (let commit = 0; commit < (options.history ?? 0); commit++) {
+    remote.write('README.md', `# repo, ${commit}\n`).commit(`commit ${commit}`);
+  }
   remote.publish('refs/heads/trunk');
   remote.switch('feature');
-  for (const file of FILES) remote.write(file, `${file}\n`);
+  for (const file of files) remote.write(file, `${file}\n`);
   remote.commit('files');
   remote.publish('refs/pull/1/head');
-  const cache = await cacheFor(made, { git: options.git ?? (await foundGit()), log: options.log });
+  const cache = await cacheFor(made, {
+    git: options.git ?? (await foundGit()),
+    log: options.log,
+    maintenance: options.maintenance,
+  });
   const repo = await cache.open('owner', 'repo');
   const head = await fetch(repo);
-  for (const file of FILES.slice(0, -1)) await repo.downloadFiles(head, [Buffer.from(file)]);
+  for (const file of files.slice(0, -1)) await repo.downloadFiles(head, [Buffer.from(file)]);
   repo.close();
   return { cache, remote, head, gitDir: repo.folder };
 }
@@ -679,6 +728,64 @@ test('repacks a clone with too many packs', async () => {
   }
 });
 
+test('a geometric repack rolls the small packs into one and leaves the big one be', async () => {
+  const found = await foundGit();
+  for (const program of [
+    found,
+    new Git(found.program, { major: 2, minor: 41, patch: 0 }, found.inherited),
+  ]) {
+    // The fetch's pack holds trunk's sixty commits and trees; each download's, one file.
+    const { cache, remote, head, gitDir } = await manyPacks({ git: program, history: 30 });
+    const [big, ...small] = packFiles(gitDir).toSorted(
+      (a, b) =>
+        statSync(join(gitDir, 'objects', 'pack', b.name)).size -
+        statSync(join(gitDir, 'objects', 'pack', a.name)).size,
+    );
+    expect(small).toHaveLength(FILES.length - 1);
+
+    expect(await cache.repack(1)).toEqual(['owner/repo']);
+
+    const after = packFiles(gitDir);
+    expect(after).toHaveLength(2);
+    expect(after.map((pack) => pack.name)).toContain(big?.name);
+    expect(after.every((pack) => pack.promisor)).toBe(true);
+    const repo = await cache.open('owner', 'repo');
+    renameSync(remote.gitDir, `${remote.gitDir}.moved`);
+    for (const file of FILES.slice(0, -1)) {
+      expect((await repo.readFile(head, Buffer.from(file)))?.toString()).toBe(`${file}\n`);
+    }
+    renameSync(`${remote.gitDir}.moved`, remote.gitDir);
+    await repo.downloadFiles(head, [Buffer.from('unread.txt')]);
+    expect((await repo.readFile(head, Buffer.from('unread.txt')))?.toString()).toBe('unread.txt\n');
+    repo.close();
+  }
+});
+
+test('a clone whose packs piled up is repacked whole only while nobody has it open', async () => {
+  const files = Array.from({ length: PACK_LIMIT + 2 }, (_, index) => `${index}.txt`);
+  for (const open of [true, false]) {
+    const logged: string[] = [];
+    // The fetch's pack holds more than twice what the downloads' do in all.
+    const { cache, gitDir } = await manyPacks({
+      files,
+      history: 70,
+      log: (line) => logged.push(line),
+    });
+    expect(packFiles(gitDir)).toHaveLength(PACK_LIMIT + 2);
+    const repo = open ? await cache.open('owner', 'repo') : undefined;
+
+    expect(await cache.repack(1)).toEqual(['owner/repo']);
+
+    repo?.close();
+    // Open, it's repacked geometrically, leaving the fetch's big pack be; closed, whole.
+    const how = open ? 'geometrically' : 'whole';
+    expect(logged.filter((line) => line.startsWith('repacked'))).toEqual([
+      expect.stringContaining(`repacked owner/repo ${how} from ${PACK_LIMIT + 2} packs to `),
+    ]);
+    expect(packFiles(gitDir)).toHaveLength(open ? 2 : 1);
+  }
+});
+
 test('leaves clones under the limit or being written to alone', async () => {
   const { cache, gitDir } = await manyPacks();
   const before = packFiles(gitDir).length;
@@ -693,6 +800,9 @@ test('leaves clones under the limit or being written to alone', async () => {
   release();
 });
 
+/** How long the tests' maintenance has to finish once someone waits for its clone. */
+const GRACE = 300;
+
 /** The command lines of the processes on this machine that mention `text`. */
 function processesMentioning(text: string): string[] {
   return execFileSync('ps', ['axww', '-o', 'command='], { encoding: 'utf8' })
@@ -702,7 +812,8 @@ function processesMentioning(text: string): string[] {
 
 /**
  * A git that runs `command`, such as `repack`, only once `go` exists, until then waiting in a shell
- * named `marker`, having made `started`. With `stubborn`, it makes a lock in the clone first and
+ * named `marker`, having made `started`. With `stubborn`, it makes locks in the clone first, on
+ * packed refs and on a loose ref, as packing refs takes them, and
  * ignores SIGTERM, as a git that only SIGKILL stops, which can't remove its own lock.
  */
 async function slowGit(command: string, options: { stubborn?: boolean } = {}) {
@@ -717,7 +828,12 @@ async function slowGit(command: string, options: { stubborn?: boolean } = {}) {
       `if [ ! -e '${go}' ]; then`,
       '  case " $* " in',
       `    *" ${command} "*)`,
-      ...(options.stubborn ? ["      trap '' TERM", '      touch "$gitdir/packed-refs.lock"'] : []),
+      ...(options.stubborn
+        ? [
+            "      trap '' TERM",
+            '      touch "$gitdir/packed-refs.lock" "$gitdir/refs/lo/pull/1/head.lock"',
+          ]
+        : []),
       `      touch '${started}'`,
       `      sh -c "${wait}" ${marker};;`,
       '  esac',
@@ -732,7 +848,11 @@ async function slowGit(command: string, options: { stubborn?: boolean } = {}) {
 test('an open behind a long repack gets the clone at once, and the repack runs again later', async () => {
   const slow = await slowGit('repack');
   const logged: string[] = [];
-  const { cache, gitDir } = await manyPacks({ git: slow.git, log: (line) => logged.push(line) });
+  const { cache, gitDir } = await manyPacks({
+    git: slow.git,
+    log: (line) => logged.push(line),
+    maintenance: { grace: GRACE },
+  });
   const before = packFiles(gitDir).length;
   const repacking = cache.repack(1);
   await eventually(() => existsSync(slow.started));
@@ -740,12 +860,14 @@ test('an open behind a long repack gets the clone at once, and the repack runs a
   const began = Date.now();
   const repo = await cache.open('owner', 'repo');
 
-  // In the second a git has to stop, not the half hour a repack may take.
-  expect(Date.now() - began).toBeLessThan(STOP_GRACE + 1000);
+  // Once the repack's grace and the second a git has to stop are up, not the half hour a repack
+  // may take.
+  expect(Date.now() - began).toBeGreaterThanOrEqual(GRACE);
+  expect(Date.now() - began).toBeLessThan(GRACE + STOP_GRACE + 1000);
   expect(await repacking).toEqual([]);
   expect(packFiles(gitDir)).toHaveLength(before);
   expect(logged).toContain(
-    'stopped repacking owner/repo for opening its local copy, to do again at the next cleanup',
+    'stopped repacking owner/repo for opening its local copy, to do again later',
   );
   await eventually(() => processesMentioning(slow.marker).length === 0, 2000);
   repo.close();
@@ -755,29 +877,51 @@ test('an open behind a long repack gets the clone at once, and the repack runs a
   expect(packFiles(gitDir).length).toBeLessThan(before);
 });
 
-test('a pack-refs killed part way leaves no lock behind, so the next repack works', async () => {
+test('a pack-refs killed part way leaves no lock behind, so refs pack again', async () => {
   const slow = await slowGit('pack-refs', { stubborn: true });
-  const { cache, gitDir } = await manyPacks({ git: slow.git });
+  const { cache, gitDir } = await manyPacks({ git: slow.git, maintenance: { grace: GRACE } });
+  const locks = ['packed-refs.lock', 'refs/lo/pull/1/head.lock'].map((lock) => join(gitDir, lock));
   const repacking = cache.repack(1);
   await eventually(() => existsSync(slow.started));
-  expect(existsSync(join(gitDir, 'packed-refs.lock'))).toBe(true);
+  expect(locks.map((lock) => existsSync(lock))).toEqual([true, true]);
 
   const began = Date.now();
   const repo = await cache.open('owner', 'repo');
 
-  // Killed once the second it had to stop by itself was up.
-  expect(Date.now() - began).toBeLessThan(STOP_GRACE + 1000);
+  // Killed once its grace and the second it had to stop by itself were up.
+  expect(Date.now() - began).toBeLessThan(GRACE + STOP_GRACE + 1000);
   expect(await repacking).toEqual([]);
-  expect(existsSync(join(gitDir, 'packed-refs.lock'))).toBe(false);
+  expect(locks.map((lock) => existsSync(lock))).toEqual([false, false]);
   repo.close();
-  writeFileSync(slow.go, '');
-  expect(await cache.repack(0)).toEqual(['owner/repo']);
+  git(gitDir, 'pack-refs', '--all');
   expect(looseRefs(gitDir)).toEqual([]);
+});
+
+test('cleanup removes a pack git never finished, once nobody holds the clone', async () => {
+  const cache = await cacheFor(server());
+  const folder = await useRepo(cache, 'old');
+  const packs = join(folder, 'objects', 'pack');
+  const finished = readdirSync(packs).toSorted();
+  // As a git killed between renaming a pack and its index into place leaves them.
+  const unfinished = ['.pack', '.promisor', '.rev'].map((extension) =>
+    join(packs, `pack-${'0'.repeat(40)}${extension}`),
+  );
+  for (const path of unfinished) writeFileSync(path, '');
+
+  // A fetch holds the clone.
+  const release = await cache.cloneLock('owner', 'old').acquire('fetching pull request #1');
+  await cache.removeUnused();
+  expect(unfinished.every((path) => existsSync(path))).toBe(true);
+  release();
+  await cache.removeUnused();
+
+  expect(unfinished.some((path) => existsSync(path))).toBe(false);
+  expect(readdirSync(packs).toSorted()).toEqual(finished);
 });
 
 test('a fetch behind a repack stops it, and only then removes the packs it was writing', async () => {
   const slow = await slowGit('repack');
-  const { cache, head, gitDir } = await manyPacks({ git: slow.git });
+  const { cache, head, gitDir } = await manyPacks({ git: slow.git, maintenance: { grace: GRACE } });
   const repo = await cache.open('owner', 'repo');
   const repacking = cache.repack(1);
   await eventually(() => existsSync(slow.started));
@@ -820,7 +964,11 @@ test('an open waiting for a fetch stops once its signal aborts', async () => {
 test('reading offline stops cleanup collecting replays, and waits for it', async () => {
   const slow = await slowGit('prune --expire=now');
   const logged: string[] = [];
-  const cache = await cacheFor(server(), { git: slow.git, log: (line) => logged.push(line) });
+  const cache = await cacheFor(server(), {
+    git: slow.git,
+    log: (line) => logged.push(line),
+    maintenance: { grace: GRACE },
+  });
   const folder = await useRepo(cache, 'old');
   // A loose object, as a replay writes.
   const loose = gitBytes(folder, ['hash-object', '-w', '--stdin'], 'replayed\n').toString().trim();
@@ -831,11 +979,10 @@ test('reading offline stops cleanup collecting replays, and waits for it', async
   const repo = await cache.openOffline('owner', 'old');
 
   expect(repo).toBeDefined();
-  expect(Date.now() - began).toBeLessThan(STOP_GRACE + 1000);
+  expect(Date.now() - began).toBeLessThan(GRACE + STOP_GRACE + 1000);
   await cleaning;
   expect(logged).toContain(
-    "stopped removing owner/old's replayed trees for reading its local copy, to do again at the " +
-      'next cleanup',
+    "stopped removing owner/old's replayed trees for reading its local copy, to do again later",
   );
   expect(hasObject(folder, loose)).toBe(true);
   // While it's open, cleanup leaves the clone alone.
@@ -845,4 +992,65 @@ test('reading offline stops cleanup collecting replays, and waits for it', async
   repo?.close();
   await cache.removeUnused();
   expect(hasObject(folder, loose)).toBe(false);
+});
+
+test('a clone opened over and over still gets repacked, and its opens wait seconds at most', async () => {
+  // Each repack takes a second, more than the clone's lock goes unheld between opens.
+  const dir = tempFolder();
+  const program = wrappedGit(join(dir, 'git'), {
+    before: 'case " $* " in *" repack "*) sleep 1;; esac',
+  });
+  const found = await gitAt(program, { env: process.env, platform: process.platform });
+  if (found.status !== 'found') throw new Error(found.message);
+  const maintenance = { idleFor: 200, grace: 3000, attempts: 3 };
+  const logged: string[] = [];
+  const { cache, gitDir } = await manyPacks({
+    git: found.git,
+    log: (line) => logged.push(line),
+    maintenance,
+  });
+  const before = packFiles(gitDir).length;
+  expect(before).toBeGreaterThan(GEOMETRIC_LIMIT);
+
+  const waits: number[] = [];
+  const began = Date.now();
+  while (packFiles(gitDir).length === before && Date.now() - began < 20_000) {
+    const asked = Date.now();
+    const repo = await cache.open('owner', 'repo');
+    waits.push(Date.now() - asked);
+    repo.close();
+    // Just past the idle time, so the next open comes while the repack runs.
+    await new Promise((resolve) => setTimeout(resolve, maintenance.idleFor + 100));
+  }
+
+  expect(packFiles(gitDir).length).toBeLessThan(before);
+  expect(Math.max(...waits)).toBeLessThan(maintenance.grace + STOP_GRACE);
+  // Some open waited for the repack to finish, rather than stop it.
+  expect(logged.some((line) => line.startsWith('repacked owner/repo geometrically'))).toBe(true);
+  expect(logged.some((line) => line.startsWith('stopped repacking'))).toBe(false);
+});
+
+test('a clone is looked at again once its lock is idle, a few times each launch at most', async () => {
+  // Every repack fails, so it's tried each time the lock is idle, until the launch's attempts
+  // are used up.
+  const dir = tempFolder();
+  const program = wrappedGit(join(dir, 'git'), {
+    before: 'case " $* " in *" repack "*) exit 1;; esac',
+  });
+  const found = await gitAt(program, { env: process.env, platform: process.platform });
+  if (found.status !== 'found') throw new Error(found.message);
+  const logged: string[] = [];
+  const { cache } = await manyPacks({
+    git: found.git,
+    log: (line) => logged.push(line),
+    maintenance: { idleFor: 100, attempts: 2 },
+  });
+  const tried = () => logged.filter((line) => line.startsWith("can't repack owner/repo")).length;
+
+  for (let open = 0; open < 4; open++) {
+    (await cache.open('owner', 'repo')).close();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+
+  expect(tried()).toBe(2);
 });
