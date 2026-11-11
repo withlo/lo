@@ -1,0 +1,47 @@
+# electron-builder's settings for Lo, run from apps/desktop by `nx run desktop:package`.
+#
+# This makes a macOS zip for arm64, signed ad hoc: it holds no certificate, notarizes nothing and
+# reads no secret. Gatekeeper doesn't trust such a signature, so a copy that was downloaded opens
+# with a right-click and "Open".
+
+appId: com.scornz.lo
+productName: Lo
+artifactName: ${productName}-${version}-${arch}.${ext}
+
+directories:
+  output: release
+
+# Only what electron-vite built. It bundles everything main and the window import, so the app needs
+# no node_modules, and the dependencies in package.json are left out.
+files:
+  - dist/**
+  - package.json
+  - '!**/node_modules/**'
+
+# Nothing here compiles native code.
+npmRebuild: false
+
+# Nothing is published from this build.
+publish: null
+
+mac:
+  target:
+    - target: zip
+      arch: arm64
+  category: public.app-category.developer-tools
+  icon: ../../brand/Lo.icns
+  # '-' signs ad hoc, even when the keychain holds a certificate. The hardened runtime is off:
+  # with an ad hoc signature it would refuse to load Electron's frameworks.
+  identity: '-'
+  hardenedRuntime: false
+  notarize: false
+
+# Registers Lo for `lo://` links and for web links. The Viewer role makes Lo a choice among the apps
+# that open `http` and `https`, and leaves the default browser as it is.
+protocols:
+  - name: Lo link
+    schemes: [lo]
+    role: Viewer
+  - name: Web link
+    schemes: [http, https]
+    role: Viewer
