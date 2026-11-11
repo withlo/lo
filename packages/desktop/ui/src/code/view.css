@@ -24,8 +24,24 @@
   box-shadow: inset 1px 0 0 var(--lo-border);
 }
 /* The view scrolls, not each editor. */
-.lo-diffview .cm-scroller {
+.lo-diffview .cm-scroller,
+.lo-fileview .cm-scroller {
   overflow: visible;
+}
+
+/*
+ * The whole-file view: one editor, as tall as its file, in a box that scrolls, so Lo's screen keys
+ * go by the box as they do in the diff.
+ */
+.lo-fileview {
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+/* Lines a mark picks out, such as those a definition or an overview's block points at. */
+.lo-line-marked {
+  background-color: var(--lo-current);
+  box-shadow: inset 2px 0 0 var(--lo-accent-line);
 }
 
 /* A file header inside a document scrolls with its file. */
@@ -46,12 +62,13 @@
   contain: inline-size;
 }
 /*
- * Vim's block cursor glows, as the design has it, without blinking: Vim's package starts the blink
- * again each time the editor's viewport changes, which in a scroll is every frame, and with it
- * running, frames of a long fling went from 17 ms to 30 to 60. The package sets the animation on
- * the element itself, which only an important rule outranks.
+ * Vim's block cursor glows, as the design has it, without blinking, in every code view: Vim's
+ * package starts the blink again each time the editor's viewport changes, which in a scroll is
+ * every frame, and with it running, frames of a long fling went from 17 ms to 30 to 60. The package
+ * sets the animation on the element itself, which only an important rule outranks.
  */
-.lo-diffview .cm-vimCursorLayer {
+.lo-diffview .cm-vimCursorLayer,
+.lo-fileview .cm-vimCursorLayer {
   animation-name: none !important;
 }
 /* A file's note looks like collapsed code, but there's nothing under it to open. */

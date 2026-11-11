@@ -20,14 +20,12 @@ import {
 import {
   Decoration,
   type DecorationSet,
-  drawSelection,
   EditorView,
   gutter,
   GutterMarker,
   lineNumbers,
 } from '@codemirror/view';
 import type { FileDiff, MovedBlock } from '@lo/diff';
-import { vim } from '@replit/codemirror-vim';
 
 import {
   type HeaderTarget,
@@ -71,6 +69,7 @@ import {
   type ViewFile,
   type ViewThread,
 } from './decorations.ts';
+import { codeEditor } from './editor.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
 import { InlineLayout, inlineLines, inlineText } from './inline.ts';
 import {
@@ -81,7 +80,6 @@ import {
   onVimMode,
   ownChange,
   passToVim,
-  readOnly,
   setVimKeys,
   vimMode,
   vimPending,
@@ -98,7 +96,6 @@ import {
   runAt,
   shownRuns,
 } from './rows.ts';
-import { leaveOnScreen } from './screen.ts';
 import { ThreadSizes } from './widgets.ts';
 
 /** Opens a diff view of `init`'s files in `parent`, which tells `on` what happens in it. */
@@ -881,23 +878,9 @@ class View implements DiffView {
     );
   }
 
-  /** What every diff editor has: Vim, read-only lines split at `\n`, wrapping, the decorations. */
+  /** What every diff editor has: what any code view's has (`editor.ts`), and the decorations. */
   #common(pane: Pane): Extension[] {
-    return [
-      vim(),
-      drawSelection(),
-      // Lines split at `\n` alone, as the diff splits them.
-      EditorState.lineSeparator.of('\n'),
-      readOnly(),
-      EditorView.lineWrapping,
-      EditorView.cspNonce.of(this.#nonce),
-      fileField,
-      leaveOnScreen,
-      EditorView.updateListener.of((update) => {
-        if (!update.view.hasFocus || handlingKey(update.view)) return;
-        if (update.selectionSet || update.focusChanged || update.docChanged) this.#tell(pane);
-      }),
-    ];
+    return [codeEditor(this.#nonce, () => this.#tell(pane)), fileField];
   }
 
   #extensions(side: Side): Extension[] {
