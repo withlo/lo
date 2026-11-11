@@ -95,7 +95,14 @@ export function githubFileEntry(file: PullFile): FileEntry {
  */
 export type FileOrder = 'review' | 'path';
 
-/** The list's files, both orders and the selected file. */
+/**
+ * The list's files, both orders and the selected file.
+ *
+ * It keeps them in private fields, which `structuredClone` and messages between processes don't
+ * carry: a copy made either way is an empty object. Send its entries, {@link FileList.rows},
+ * instead, and rebuild it on the other side with `new FileList(rows)`, which starts in review order
+ * with nothing selected.
+ */
 export class FileList {
   #entries: FileEntry[];
   readonly #reviewOrder: readonly number[];

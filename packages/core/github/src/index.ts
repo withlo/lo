@@ -20,6 +20,7 @@ export * from './generated/graphql.ts';
 export * from './grant.ts';
 export * from './graphql.ts';
 export * from './json.ts';
+export * from './merge.ts';
 export {
   describeMetadata,
   stripMetadata,
@@ -36,6 +37,7 @@ export * from './queries.ts';
 export * from './rate-limit.ts';
 export { refreshGrant, type WebOptions } from './refresh.ts';
 export * from './refs.ts';
+export * from './rules.ts';
 export * from './threads.ts';
 export * from './timeline.ts';
 export * from './token.ts';

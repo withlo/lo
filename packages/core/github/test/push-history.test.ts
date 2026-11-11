@@ -422,6 +422,43 @@ function onPull(edit: (pull: JsonObject) => void): (interaction: Interaction) =>
   };
 }
 
+/** Runs `edit` on the newest push the head branch's activity lists, a normal push. */
+function onNewestHeadPush(edit: (push: JsonObject) => void): (interaction: Interaction) => void {
+  return (interaction) => {
+    if (!interaction.request.url.includes('heads%2Fe1%2F')) return;
+    const push = object(list(interaction.response.body)[0]);
+    expect(push['activity_type']).toBe('push');
+    edit(push);
+  };
+}
+
+test('a push without its head before fails the branch rather than reading as its creation', async () => {
+  const { history } = await e2e14With(
+    onNewestHeadPush((push) => {
+      delete push['before'];
+    }),
+    [],
+  );
+
+  expect(history.headActivity.failed).toContain('without its head before');
+  expect(history.headActivity.pages).toEqual([]);
+  expect(pushHistoryIsComplete(history)).toBe(false);
+});
+
+test('a push without a time github writes fails the branch', async () => {
+  for (const timestamp of ['yesterday', '2026-13-40T00:00:00Z', null]) {
+    const { history } = await e2e14With(
+      onNewestHeadPush((push) => {
+        push['timestamp'] = timestamp;
+      }),
+      [],
+    );
+
+    expect(history.headActivity.failed).toContain('without a time');
+    expect(history.headActivity.pages).toEqual([]);
+  }
+});
+
 /** e2e#14 with its fork gone and r5's head lost from its force-push event. */
 function lost(pull: JsonObject): void {
   pull['headRepository'] = null;

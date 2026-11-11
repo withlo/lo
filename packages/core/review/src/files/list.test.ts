@@ -280,3 +280,15 @@ test('githubs statuses show as git shows changes', () => {
     'M',
   ]);
 });
+
+test('a file list sent between processes is rebuilt from its rows', () => {
+  const sent = list(PULL_REQUEST);
+  sent.setViewed(new Map([['src/lib.rs', 'VIEWED']]));
+  sent.toggleOrder();
+
+  expect(structuredClone(sent)).toEqual({});
+  const rebuilt = new FileList(structuredClone(sent.rows()));
+  rebuilt.toggleOrder();
+  expect(rebuilt.rows()).toEqual(sent.rows());
+  expect(rebuilt.entry('src/lib.rs')?.viewed).toBe('VIEWED');
+});

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { buildRevisions } from './revisions/build.ts';
-import { wasPushed, type PushRecord, type Revisions } from './revisions.ts';
+import { Revisions, wasPushed, type PushRecord } from './revisions.ts';
 
 function polled(head: string, minute: number): PushRecord {
   return { kind: 'polled', head, at: (1_790_000_000 + minute * 60) * 1000 };
@@ -81,4 +81,18 @@ test('a marker on a commit no revision has finds nothing', () => {
   expect(found(revisions(), 'c1')).toBeUndefined();
   expect(found(revisions(), 'c3')).toBeUndefined();
   expect(found(revisions(), 'ffff')).toBeUndefined();
+});
+
+test('revisions sent between processes are rebuilt from their list', () => {
+  const sent = revisions();
+  sent.markUnavailable('x1');
+
+  // A copy of the class itself keeps nothing.
+  expect(structuredClone(sent)).toEqual({});
+  const rebuilt = new Revisions(structuredClone(sent.list()));
+  expect(rebuilt.list()).toEqual(sent.list());
+  expect(['x1', 'a1', 'a2'].map((head) => rebuilt.label(head))).toEqual(
+    ['x1', 'a1', 'a2'].map((head) => sent.label(head)),
+  );
+  expect(rebuilt.find('c3')?.head).toBe(sent.find('c3')?.head);
 });

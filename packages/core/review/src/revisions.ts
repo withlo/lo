@@ -154,7 +154,13 @@ export function wasPushed(revision: Revision): boolean {
   return revision.sources.some((source) => source !== 'reviewedCommit');
 }
 
-/** A pull request's revisions, oldest first. */
+/**
+ * A pull request's revisions, oldest first.
+ *
+ * It keeps them in private fields, which `structuredClone` and messages between processes don't
+ * carry: a copy made either way is an empty object. Send {@link Revisions.list} instead, and
+ * rebuild them on the other side with `new Revisions(list)`.
+ */
 export class Revisions implements Iterable<Revision> {
   readonly #list: Revision[];
   /** Each revision's position in the list, by head. */

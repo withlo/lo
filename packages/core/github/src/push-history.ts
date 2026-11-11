@@ -522,20 +522,6 @@ function baseBranches(history: PushHistory): string[] {
 }
 
 /**
- * Whether an error fails a whole push history: the network, the rate limit and the token stop
- * every request after it too, and are waited out.
- */
-function stopsTheRead(error: GithubError): boolean {
-  const { kind } = error.detail;
-  return (
-    kind === 'network' ||
-    kind === 'rateLimited' ||
-    kind === 'unauthorized' ||
-    kind === 'tokenUnavailable'
-  );
-}
-
-/**
  * `branch`'s pushes, newest first. An error that isn't the network's, the rate limit's or the
  * token's fails only this branch's read: it keeps what `known` read before, flagged `failed`.
  */
@@ -555,7 +541,7 @@ async function readBranch(
       enough,
     });
   } catch (error) {
-    if (!(error instanceof GithubError) || stopsTheRead(error)) throw error;
+    if (!(error instanceof GithubError) || error.stopsTheRead()) throw error;
     return failedActivity(known, branch, 'desc', error.message);
   }
 }
@@ -602,7 +588,7 @@ async function timelineForcePushes(
           ? (knownPage ?? `GitHub said ${current} hadn't changed, but Lo never read it`)
           : timelinePage(response, current);
     } catch (error) {
-      if (!(error instanceof GithubError) || stopsTheRead(error)) throw error;
+      if (!(error instanceof GithubError) || error.stopsTheRead()) throw error;
       page = error.message;
     }
     if (typeof page === 'string') {
