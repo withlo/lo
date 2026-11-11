@@ -5,16 +5,19 @@
 
 import { expect, test } from 'vitest';
 
-import { markdownTree, plainText } from '../src/index.ts';
+import { readFileSync } from 'node:fs';
+
+import { DEFAULT_LIMITS, githubTree, markdownTree, plainText } from '../src/index.ts';
 import { problems } from './walker.ts';
 
 /**
  * How long each may take, in milliseconds: three times the slowest run on a Linux CI runner,
- * which runs test files side by side (about 200 ms for the comment and 350 ms for the overview,
- * against 30 and 60 ms on a laptop). Faster machines pass easily.
+ * which runs test files side by side (about 250 ms for the comment, 400 ms for the overview and
+ * 650 ms for the rendering, against 30, 60 and 100 ms on a laptop). Faster machines pass easily.
  */
-const COMMENT_LIMIT = 600;
-const OVERVIEW_LIMIT = 1_050;
+const COMMENT_LIMIT = 750;
+const OVERVIEW_LIMIT = 1_200;
+const RENDERING_LIMIT = 2_000;
 
 /** One section of a typical long description or overview, about 1.6 KB. */
 function section(n: number): string {
@@ -81,6 +84,26 @@ test('a 200 KB overview shows within budget', () => {
   const limits = { length: 262_144, nodes: 262_144, images: 1_000, addresses: 1_048_576 };
   const { made, elapsed } = timed(() => markdownTree(text, { breaks: false, limits }));
   expect(made.notes).toEqual([]);
-  expect(problems(made, { ...limits, depth: 16 })).toEqual([]);
+  expect(problems(made, { ...DEFAULT_LIMITS, ...limits })).toEqual([]);
   expect(elapsed, `took ${elapsed} ms for a 200 KB overview`).toBeLessThan(OVERVIEW_LIMIT);
+});
+
+test('a 1 MiB rendering shows within budget', () => {
+  // GitHub's rendering of every construct, over and over, to just under the limit on HTML.
+  const one = readFileSync(
+    new URL('../../../../testing/fixtures/markdown/github/constructs.html', import.meta.url),
+    'utf8',
+  );
+  const bytes = new TextEncoder().encode(one).length;
+  const html = one.repeat(Math.floor(DEFAULT_LIMITS.html / bytes));
+  expect(html.length).toBeGreaterThan(DEFAULT_LIMITS.html * 0.9);
+  const { made, elapsed } = timed(() =>
+    githubTree({ html, markdown: '' }, { page: 'https://github.com/rozed-dev/e2e/pull/23' }),
+  );
+  // Read from the HTML, not the Markdown, and all of it.
+  expect(made.blocks.filter((block) => block.kind === 'heading')).toHaveLength(
+    18 * Math.floor(DEFAULT_LIMITS.html / bytes),
+  );
+  expect(problems(made)).toEqual([]);
+  expect(elapsed, `took ${elapsed} ms for a 1 MiB rendering`).toBeLessThan(RENDERING_LIMIT);
 });

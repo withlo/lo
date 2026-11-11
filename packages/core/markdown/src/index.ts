@@ -16,6 +16,7 @@ export {
   type MarkdownOptions,
   type Syntax,
 } from './markdown.ts';
+export { githubTree, type GithubOptions, type Post } from './github.ts';
 export type { Plugin } from './parser.ts';
 export type { Repo } from './references.ts';
 export { plainText } from './text.ts';
