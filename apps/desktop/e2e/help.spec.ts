@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 
-import { expect, test, middleOf } from './app.ts';
+import { expect, signedIn as test, middleOf } from './app.ts';
 
 const mac = process.platform === 'darwin';
 

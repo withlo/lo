@@ -38,6 +38,8 @@ export { Avatar, avatarHue, initials } from './Avatar.tsx';
 export { Callout, type CalloutProps, type CalloutTone } from './Callout.tsx';
 export { Choices, type ChoiceItem, type ChoicesProps } from './Choices.tsx';
 export { Dialog, DialogSpacer, type DialogProps } from './Dialog.tsx';
+export { Mark, type MarkProps } from './Mark.tsx';
+export { SetupItem, SetupList, type SetupItemProps, type SetupListProps } from './Setup.tsx';
 export { Switch, type SwitchProps } from './Switch.tsx';
 export { Tag, type TagTone } from './Tag.tsx';
 export {

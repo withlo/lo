@@ -4,8 +4,10 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import {
   _electron as electron,
+  expect,
   test as base,
   type ElectronApplication,
   type Page,
@@ -181,4 +183,40 @@ export const test = base.extend<Fixtures>({
   },
 });
 
-export { expect } from '@playwright/test';
+export { expect };
+
+/** A stand-in token, never a real one: the `user` cassette answers for it as rozed-bot. */
+const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
+
+/**
+ * `test`, with Lo signed in as rozed-bot on a replay server that knows only who that is. While no
+ * account is signed in, the welcome screen covers the Recent list, so a test that needs Recent as
+ * the window's middle, for keys and menus that work wherever focus is, starts like this.
+ */
+export const signedIn = test.extend<{ github: ReplayServer }>({
+  // Playwright reads a fixture's dependencies from its first parameter, which must be a pattern.
+  // oxlint-disable-next-line no-empty-pattern
+  github: async ({}, use) => {
+    const server = await serveReplay('user');
+    await use(server);
+    await server.close();
+  },
+  launch: async ({ github }, use) => {
+    const tokenFile = base.info().outputPath('token');
+    writeFileSync(tokenFile, `${TOKEN}\n`);
+    await use({
+      args: [appFolder, ...KEYCHAIN],
+      env: { LO_GITHUB: new URL(github.urls.api).origin, LO_TEST_TOKEN_FILE: tokenFile },
+    });
+  },
+  // Lo adds the account as it starts: the window is ready once it has, and Recent is its middle.
+  page: async ({ page }, use) => {
+    await expect
+      .poll(async () =>
+        JSON.stringify(await page.evaluate(() => window.lo.invoke('accounts.list'))),
+      )
+      .toContain('rozed-bot');
+    await expect(middleOf(page)).toBeVisible();
+    await use(page);
+  },
+});

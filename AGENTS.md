@@ -495,6 +495,23 @@ Recent pull requests, and links from other apps. Each is untrusted text, read th
   can't read. A build run from source writes it in `LO_COMMAND_FOLDER` when that's set, without
   asking, and a packaged build ignores it.
 
+### The welcome screen
+
+The `welcome` feature draws over the Recent tab, through the tab feature's `tab.cover` slot, while
+no account is signed in: none is, or GitHub refused every one. Other tabs, a pull request opened
+without signing in and Settings among them, are drawn as they are.
+
+- It offers signing in (`⏎`, through the accounts feature's dialog), importing from `gh` when Lo
+  finds one, a box that opens a public pull request through the open feature, the optional steps in
+  its `welcome.setup` slot (installing the `lo` command, which the open feature does, and sending
+  pull request links to Lo, with the rules for Finicky, Velja and Choosy in `docs/link-routers.md`),
+  and a notice with "Check again" when Lo can't find a git it can run. `welcome.checkGit` asks main
+  to look for git again (`git.check()`); what Lo finds reaches the window on `app.git`.
+- Under the screen the Recent list is `inert`, so no key or reader reaches it. The screen is a form
+  like Settings: its scope has `data-lo-tab="browser"`, so `Tab` walks its controls. `⏎` presses the
+  control with focus, opens the link in the box, and signs in anywhere else on the screen.
+- Another feature's step goes in the slot as a `SetupItem` from `@lo/ui`, in `order`.
+
 ## The interface
 
 Lo's React components live in `packages/desktop/ui` (`@lo/ui`), ported from the design system's

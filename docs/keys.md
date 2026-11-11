@@ -19,6 +19,12 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Next section of Settings     | `j`      | In `settings` | `settings.nextSection`     |
 | Previous section of Settings | `k`      | In `settings` | `settings.previousSection` |
 
+## Act
+
+| Action              | Keys | Where        | Command          |
+| ------------------- | ---- | ------------ | ---------------- |
+| Sign in with GitHub | `⏎`  | In `welcome` | `welcome.signIn` |
+
 ## Code
 
 | Action  | Keys | Where              | Command        |
@@ -125,6 +131,7 @@ comment box and another elsewhere.
 | `recent`   | Named by `open`.                                                                      |
 | `settings` | Named by `settings`.                                                                  |
 | `tree`     | Named by `tree`.                                                                      |
+| `welcome`  | Named by `welcome`.                                                                   |
 
 In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a
 command (after a count or an operator), only chords are Lo's, and other keys go to Vim. In a text
