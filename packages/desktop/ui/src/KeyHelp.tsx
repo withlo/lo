@@ -4,13 +4,18 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { filterHelp, type HelpGroup, type KeymapError } from './commands/index.ts';
 import { Key } from './Key.tsx';
 
+/** How many of the keymap file's errors key help lists. A file can have thousands of lines. */
+export const ERRORS_SHOWN = 20;
+
 export interface KeyHelpProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Every command's keys as they are now, in the key table's groups. */
   groups: readonly HelpGroup[];
-  /** The keymap file's lines Lo couldn't use. */
+  /** The keymap file's lines Lo couldn't use. Only the first few are listed. */
   errors?: readonly KeymapError[] | undefined;
+  /** What went wrong with the keymap file as a whole, such as being too big to read. */
+  problem?: string | undefined;
   /** A command to show: its row is marked and scrolled to. */
   show?: string | undefined;
   /** Opens the keymap file. Without it, key help offers no button for it. */
@@ -31,6 +36,7 @@ export function KeyHelp({
   onOpenChange,
   groups,
   errors = [],
+  problem,
   show,
   onOpenKeymap,
   container,
@@ -92,6 +98,14 @@ export function KeyHelp({
               </Dialog.Close>
             </div>
             <div className="flex min-h-0 flex-col gap-12 overflow-auto ps-20 pe-20 pt-8 pb-16">
+              {problem !== undefined && (
+                <div
+                  role="alert"
+                  className="rounded-md border border-danger-border bg-danger-bg px-12 py-8"
+                >
+                  {problem}
+                </div>
+              )}
               {errors.length > 0 && (
                 <div
                   role="alert"
@@ -103,11 +117,16 @@ export function KeyHelp({
                       : `The keymap file has ${errors.length} lines Lo can't use:`}
                   </span>
                   <ul className="m-0 flex flex-col gap-2 ps-16">
-                    {errors.map((error) => (
+                    {errors.slice(0, ERRORS_SHOWN).map((error) => (
                       <li key={`${error.line} ${error.message}`}>
                         Line <span className="lo-num">{error.line}</span>: {error.message}
                       </li>
                     ))}
+                    {errors.length > ERRORS_SHOWN && (
+                      <li>
+                        And <span className="lo-num">{errors.length - ERRORS_SHOWN}</span> more.
+                      </li>
+                    )}
                   </ul>
                 </div>
               )}

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { testCommands } from '../../test/commands.ts';
-import { applyKeymap, parseKeymap } from './keymap.ts';
+import { applyKeymap, KEYMAP_LINE_LIMIT, parseKeymap } from './keymap.ts';
 import { declaredBindings } from './match.ts';
 import { writeKeys, writeStrokes } from './notation.ts';
 
@@ -87,6 +87,38 @@ describe('the keymap file', () => {
       { line: 14, message: 'vim takes a mode, keys and what they do: vim normal Y y$.' },
     ]);
     expect(keymap.lines.map((line) => line.line)).toEqual([1, 15]);
+  });
+
+  test('reports a line over the limit and reads the others, however long the one is', () => {
+    const exact = `vim normal Y ${'y'.repeat(KEYMAP_LINE_LIMIT - 'vim normal Y '.length)}`;
+    expect(exact).toHaveLength(KEYMAP_LINE_LIMIT);
+    const keymap = read(
+      [
+        'bind x diff.markViewed',
+        `bind ${'x '.repeat(KEYMAP_LINE_LIMIT)}diff.markViewed`,
+        exact,
+        `${exact}y`,
+        `# ${'comment '.repeat(KEYMAP_LINE_LIMIT)}`,
+        'unbind e',
+      ].join('\n'),
+    );
+    const message = "This line is over 1,000 characters long, so Lo didn't read it.";
+    expect(keymap.errors).toEqual([
+      { line: 2, message },
+      { line: 4, message },
+      // A comment is no different: the limit is on the line.
+      { line: 5, message },
+    ]);
+    expect(keymap.lines.map((line) => line.line)).toEqual([1, 3, 6]);
+  });
+
+  test('reads a megabyte of text in a moment, whatever it holds', () => {
+    const start = performance.now();
+    const keymap = read('x'.repeat(1024 * 1024));
+    const many = read('x\n'.repeat(512 * 1024));
+    expect(keymap.errors).toHaveLength(1);
+    expect(many.errors).toHaveLength(512 * 1024);
+    expect(performance.now() - start).toBeLessThan(2000);
   });
 
   test('without a list of commands, takes any id written as one', () => {

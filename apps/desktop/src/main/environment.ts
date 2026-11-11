@@ -26,6 +26,29 @@ export function dataFolder(options: {
 }
 
 /**
+ * Where Lo keeps the files people edit: the keymap, and Settings' file. That's `~/.config/lo` on a
+ * Mac, and `$XDG_CONFIG_HOME/lo` or `~/.config/lo` on Linux. A build run from source keeps them in
+ * `config` in its data folder (`LO_USER_DATA_DIR` or its own `Lo Dev`), so it never touches an
+ * installed Lo's and each test starts with none.
+ */
+export function configFolder(options: {
+  packaged: boolean;
+  platform: NodeJS.Platform;
+  home: string;
+  appData: string;
+  env: Environment;
+}): string {
+  const data = dataFolder(options);
+  if (data !== undefined) return join(data, 'config');
+  const xdg = options.env.XDG_CONFIG_HOME;
+  const config =
+    options.platform !== 'darwin' && xdg !== undefined && isAbsolute(xdg)
+      ? xdg
+      : join(options.home, '.config');
+  return join(config, 'lo');
+}
+
+/**
  * The address of Vite's dev server, which `electron-vite dev` passes in `ELECTRON_RENDERER_URL`.
  * Only an unpackaged build reads it, and only a server on this machine counts, so a packaged Lo
  * always loads its own files.
@@ -58,6 +81,20 @@ export interface BackgroundSettings {
   testJobs: boolean;
   /** The memory, in bytes, past which main restarts it. */
   memoryCap: number;
+}
+
+/**
+ * The program that opens the keymap file in place of the system's text editor, from
+ * `LO_KEYMAP_EDITOR`, so a test can see what Lo opens without starting an editor. It gets the
+ * file's path as its one argument. A packaged build ignores it.
+ */
+export function keymapEditor(options: { packaged: boolean; env: Environment }): string | undefined {
+  const program = options.env.LO_KEYMAP_EDITOR;
+  if (options.packaged || !program) return undefined;
+  if (!isAbsolute(program)) {
+    throw new Error(`LO_KEYMAP_EDITOR must be an absolute path, not "${program}".`);
+  }
+  return program;
 }
 
 /**

@@ -610,4 +610,98 @@ describe('a text field', () => {
     expect(opened).toBe(false);
     expect(popup()).toBeNull();
   });
+
+  it('is only a form field, or editable content outside a code view, such as a comment box', () => {
+    const page = mount(
+      <>
+        <Clickable id="window" target={NO_TARGET}>
+          <div data-lo-scope="box">
+            <div className="cm-content" id="box-text" contentEditable />
+          </div>
+          <div data-lo-scope="diff">
+            <input id="prompt" />
+          </div>
+        </Clickable>
+        <Menus />
+      </>,
+    );
+    for (const id of ['box-text', 'prompt']) {
+      expect({ id, prevented: rightClick(page.querySelector(`#${id}`)!).defaultPrevented }).toEqual(
+        { id, prevented: false },
+      );
+      expect(popup()).toBeNull();
+    }
+  });
+});
+
+/** CodeMirror's text is editable content to the page, whatever the view lets a person do. */
+function code(scope?: string) {
+  const text = (
+    <div className="cm-content" id="text" contentEditable suppressContentEditableWarning />
+  );
+  return scope === undefined ? text : <div data-lo-scope={scope}>{text}</div>;
+}
+
+describe('a code view’s text', () => {
+  it.each(['diff', 'file', 'peek', undefined])(
+    'gets Lo’s menu on a right-click, not the system’s Edit menu (scope: %s)',
+    (scope) => {
+      const page = mount(
+        <>
+          <Clickable id="window" target={NO_TARGET}>
+            {code(scope)}
+          </Clickable>
+          <Menus />
+        </>,
+      );
+      const event = rightClick(page.querySelector('#text')!);
+      expect(event.defaultPrevented).toBe(true);
+      expect(popup()).not.toBeNull();
+      expect(labels()).toEqual(['Back', 'Forward']);
+    },
+  );
+
+  it('gets Lo’s menu from the keyboard', () => {
+    const page = mount(
+      <>
+        <Clickable id="window" target={NO_TARGET}>
+          {code('diff')}
+        </Clickable>
+        <Menus />
+      </>,
+    );
+    page.querySelector<HTMLElement>('#text')?.focus();
+    let opened = false;
+    act(() => {
+      opened = openMenuAtFocus();
+    });
+    expect(opened).toBe(true);
+    expect(popup()).not.toBeNull();
+  });
+
+  it('gets no menu when none has an item there, rather than the system’s Edit menu', () => {
+    const page = mount(
+      <>
+        <div id="outside">{code('diff')}</div>
+        <Menus />
+      </>,
+    );
+    // Nothing around it takes a right-click, so it falls through to the page; the window cancels
+    // the system's menu for code.
+    const event = rightClick(page.querySelector('#text')!);
+    expect(event.defaultPrevented).toBe(true);
+    expect(popup()).toBeNull();
+  });
+
+  it('leaves a right-click on anything else that is not editable alone', () => {
+    const page = mount(
+      <>
+        <div id="outside">
+          <div id="plain" />
+        </div>
+        <Menus />
+      </>,
+    );
+    expect(rightClick(page.querySelector('#plain')!).defaultPrevented).toBe(false);
+  });
 });

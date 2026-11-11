@@ -55,6 +55,7 @@ export { menuSections, type MenuItem } from './menu.ts';
 export { HISTORY_LIMIT, History, type Entry, type Reveal, type View } from './history.ts';
 export {
   applyKeymap,
+  KEYMAP_LINE_LIMIT,
   parseKeymap,
   type Applied,
   type Keymap,
@@ -113,6 +114,7 @@ export {
   codeScopes,
   engineScopes,
   findScope,
+  hasEditMenu,
   isKeySource,
   isTextField,
   endsTab,

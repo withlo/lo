@@ -12,6 +12,7 @@ import {
   engineScopes,
   groups,
   keyLabels,
+  KEYMAP_LINE_LIMIT,
   keyNames,
   linuxEditingKeys,
   listed,
@@ -35,6 +36,7 @@ import {
   type VimKeys,
 } from '@lo/ui/commands';
 
+import { KEYMAP_SIZE_LIMIT } from '../src/features/keys/contract.ts';
 import { checkDeclarations } from '../src/window/commands/declarations.ts';
 
 /** `text` as inline code, which a table cell can hold: its `|` escaped, its backticks fenced. */
@@ -253,6 +255,13 @@ function vimSection(commands: readonly Command[], vim: VimKeys): string[] {
   ];
 }
 
+/** The keys that open the keymap file, as the first of the command's default keys. */
+function openKeymapKeys(commands: readonly Command[]): string {
+  const key = commands.find((command) => command.id === 'keys.openKeymap')?.keys.map(specOf)[0];
+  if (!key) throw new Error('keys.openKeymap has no key to write in the keymap file’s section.');
+  return key.keys;
+}
+
 /** An example keymap file, which every command it names must have, and every line apply. */
 const example = `# Open the command palette with ⌘K as well, as many apps do.
 bind cmd+k keys.palette
@@ -287,6 +296,8 @@ function keymapSection(commands: readonly Command[]): string[] {
     '```',
     '',
     "A line that can't be read or applied is reported with its number, and the others still apply. A `bind` doesn't apply when it names one of Vim's own keys, repeats a key the command already has, or would keep another command's key from running: one of the two being the start of the other where both apply.",
+    '',
+    `Lo watches the file, so a saved change applies within a second, with no restart, and key help (\`?\`) shows the new keys and the lines Lo can't use. To open the file, use the button in key help, the command palette or ${code(form(openKeymapKeys(commands), 'mac'))}: Lo opens it as text in your system's text editor, writing it first, with a header of comments, if there isn't one. Opening never runs anything, so Lo doesn't open a file that is executable, isn't a plain file (a folder, or an app a link leads to) or is over the limit below: key help says why, and has no button. A link to a file in a dotfiles folder is followed. Lo reads a file of up to ${KEYMAP_SIZE_LIMIT / 1024 ** 2} MiB and lines of up to ${KEYMAP_LINE_LIMIT.toLocaleString('en')} characters; a longer line is reported and skipped, and a longer file isn't read. Nothing in the file is ever run.`,
     '',
     '### Writing keys',
     '',

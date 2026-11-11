@@ -15,7 +15,10 @@
 // A line that can't be read or applied is reported with its number, and the others still apply.
 // A `bind` doesn't apply when it names one of Vim's own keys, repeats a binding already in effect,
 // or would keep another binding from running: one of the two being the start of the other where
-// both apply.
+// both apply. A line over `KEYMAP_LINE_LIMIT` characters isn't read at all.
+//
+// The file is the user's own, but it is text from outside: nothing in it is ever run, and a line is
+// only matched against the words above.
 
 import { isCommandId, listOf, type Command, type When } from './declare.ts';
 import type { Binding } from './match.ts';
@@ -64,6 +67,9 @@ export interface Keymap {
 
 const modes: readonly Mode[] = ['normal', 'visual', 'insert'];
 
+/** The longest line of a keymap file, in characters. A longer one is reported and skipped. */
+export const KEYMAP_LINE_LIMIT = 1000;
+
 /**
  * Reads a keymap file. `isCommand` says whether a command exists; without it, any id written as
  * one (`<feature>.<name>`) is taken.
@@ -77,6 +83,13 @@ export function parseKeymap(text: string, isCommand?: (id: string) => boolean): 
     .split(/\r?\n|\r/)
     .forEach((source, index) => {
       const line = index + 1;
+      if (source.length > KEYMAP_LINE_LIMIT) {
+        errors.push({
+          line,
+          message: `This line is over ${KEYMAP_LINE_LIMIT.toLocaleString('en')} characters long, so Lo didn't read it.`,
+        });
+        return;
+      }
       const read = readLine(source, line, known);
       if (read === undefined) return;
       if ('message' in read) errors.push(read);

@@ -1,4 +1,6 @@
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -24,6 +26,37 @@ export function dataFolder(): string {
   return base.info().outputPath('data');
 }
 
+/** Where an unpackaged Lo with this data folder reads its keymap file. */
+export function keymapPath(data: string): string {
+  return join(data, 'config', 'keymap');
+}
+
+/**
+ * The program a test's Lo opens the keymap file with, in place of the system's text editor, so no
+ * test starts an editor on a desktop other work shares. It adds the path it's given to `opened`,
+ * beside it in the data folder.
+ */
+function editorPath(data: string): string {
+  return join(data, 'editor');
+}
+
+/** Writes the program that stands in for the system's editor. */
+function writeEditor(data: string): void {
+  const log = join(data, 'opened').replaceAll("'", `'\\''`);
+  mkdirSync(data, { recursive: true });
+  writeFileSync(editorPath(data), `#!/bin/sh\nprintf '%s\\n' "$1" >> '${log}'\n`);
+  chmodSync(editorPath(data), 0o755);
+}
+
+/** The paths Lo has opened the keymap file by in this test, in order, as the editor got them. */
+export function opened(): string[] {
+  try {
+    return readFileSync(join(dataFolder(), 'opened'), 'utf8').split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * The environment Lo starts with: this one, without anything that would point it at a dev server
  * or run Electron as plain Node, and with the test's data folder.
@@ -36,12 +69,15 @@ export function appEnvironment(data: string): Record<string, string> {
   delete env.ELECTRON_RENDERER_URL;
   delete env.ELECTRON_RUN_AS_NODE;
   env.LO_USER_DATA_DIR = data;
+  env.LO_KEYMAP_EDITOR = editorPath(data);
   return env;
 }
 
 type LaunchOptions = NonNullable<Parameters<typeof electron.launch>[0]>;
 
 interface Fixtures {
+  /** What the keymap file says when Lo starts, or `undefined` for no file. */
+  keymap: string | undefined;
   /** Extra options for starting Lo, for tests that need it started differently. Its `env` adds to Lo's. */
   launch: LaunchOptions;
   /** Lo, started on an empty data folder with Chromium's sandbox on. */
@@ -52,11 +88,18 @@ interface Fixtures {
 
 export const test = base.extend<Fixtures>({
   launch: [{}, { option: true }],
-  app: async ({ launch }, use) => {
+  keymap: [undefined, { option: true }],
+  app: async ({ launch, keymap }, use) => {
     const { env, ...options } = launch;
+    const data = dataFolder();
+    writeEditor(data);
+    if (keymap !== undefined) {
+      mkdirSync(join(data, 'config'), { recursive: true });
+      writeFileSync(keymapPath(data), keymap);
+    }
     const app = await electron.launch({
       args: [appFolder],
-      env: { ...appEnvironment(dataFolder()), ...env },
+      env: { ...appEnvironment(data), ...env },
       // Playwright turns the sandbox off on Linux unless asked; Lo must run with it.
       chromiumSandbox: true,
       ...options,

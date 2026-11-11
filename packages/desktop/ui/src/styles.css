@@ -49,8 +49,25 @@
   z-index: var(--lo-z-popover);
 }
 
-/* Notices sit over everything but the window's own controls. */
+/* Toasts sit over everything but the window's own controls. */
 @utility z-toast {
+  z-index: var(--lo-z-toast);
+}
+
+/* A toast's grid: the icon, then the title, body and buttons in a column of their own, with room
+   after for something at its end. It has a little less padding at the end than at the start. */
+@utility toast {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--lo-sp-2) var(--lo-sp-12);
+  padding: var(--lo-sp-12) calc(var(--lo-sp-12) - var(--lo-sp-2)) var(--lo-sp-12)
+    calc(var(--lo-sp-12) + var(--lo-sp-2));
+}
+
+/* A toast floats at the bottom right of the window, above the status bar. */
+@utility toast-floating {
+  position: absolute;
+  right: var(--lo-sp-16);
+  bottom: calc(var(--lo-statusbar-h) + var(--lo-sp-12));
   z-index: var(--lo-z-toast);
 }
 

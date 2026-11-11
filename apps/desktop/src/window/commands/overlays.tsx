@@ -9,6 +9,7 @@ import {
   paletteItems,
   parseKeys,
   systemStrokes,
+  NO_TARGET,
   type PaletteMatch,
   type Target,
 } from '@lo/ui/commands';
@@ -16,6 +17,7 @@ import { Key, KeyHelp, keyAria, Palette, PaletteHint, type PaletteGroup } from '
 import { useState, useSyncExternalStore } from 'react';
 
 import { focusedTarget } from './bar.ts';
+import { keymapState, subscribeKeymap } from './keymap.ts';
 import { registry, useKeys } from './registry.ts';
 
 /** What's open over the window. */
@@ -130,6 +132,7 @@ function keyOf(id: string): string[] | undefined {
 /** Key help and the command palette, over the window. */
 export function Overlays() {
   const open = useSyncExternalStore(subscribe, overlay);
+  const keymap = useSyncExternalStore(subscribeKeymap, keymapState);
   useKeys();
   const container = document.getElementById('root');
   return (
@@ -141,6 +144,15 @@ export function Overlays() {
         }}
         groups={helpGroups(registry())}
         errors={registry().keymapErrors()}
+        problem={keymap.problem}
+        onOpenKeymap={
+          // Without a file Lo will open, there's no button, and nothing to offer.
+          keymap.canOpen
+            ? () => {
+                registry().run('keys.openKeymap', NO_TARGET);
+              }
+            : undefined
+        }
         show={open?.kind === 'help' ? open.show : undefined}
         container={container}
         onClosed={closed}
