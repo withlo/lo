@@ -46,13 +46,13 @@ export const routers: readonly Router[] = [
   {
     name: 'Velja',
     steps:
-      'In Velja’s settings, open Rules. Add a rule with a Source Apps matcher set to Lo that opens in your browser, so links Lo opens go to the browser, and keep it above the next one. Add a rule that opens in Lo, with a URL Matchers matcher with this pattern.',
+      'This setup hasn’t been tried in Velja. In Velja’s settings, open Rules. Add a rule with a Source Apps matcher set to Lo that opens in your browser, so links Lo opens go to the browser. Add a rule that opens in Lo, with a URL Matchers matcher with this pattern. If Lo’s own GitHub links come back to Lo, the source-app rule must sit above the Lo rule.',
     rule: String.raw`^(?:https://)?github\.com/${NAME}/${NAME}/pull/${NUMBER}(?:[/?#]|$)`,
   },
   {
     name: 'Choosy',
     steps:
       'In Choosy’s settings, open Rules and add a rule that opens in Lo when all of these hold: the URL matches this regular expression, and the Source application is not Lo.',
-    rule: String.raw`https://github\.com/${NAME}/${NAME}/pull/${NUMBER}(?:[/?#].*)?`,
+    rule: String.raw`^https://github\.com/${NAME}/${NAME}/pull/${NUMBER}(?:[/?#].*)?$`,
   },
 ];

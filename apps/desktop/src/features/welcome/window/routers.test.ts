@@ -69,7 +69,8 @@ describe('the routers', () => {
     expect(ruleOf('Finicky')).toContain(`opener?.bundleId !== "${BUNDLE_ID}"`);
     const [, velja, choosy] = routers;
     expect(velja?.steps).toMatch(/Source Apps matcher set to Lo that opens in your browser/);
-    expect(velja?.steps).toMatch(/above/);
+    expect(velja?.steps).toMatch(/hasn’t been tried in Velja/);
+    expect(velja?.steps).toMatch(/must sit above the Lo rule/);
     expect(choosy?.steps).toMatch(/the Source application is not Lo/);
     expect(choosy?.steps).toMatch(/all of these hold/);
   });
@@ -108,8 +109,14 @@ describe('Velja’s pattern', () => {
 });
 
 describe('Choosy’s expression', () => {
-  // Choosy's expression has to match the whole link.
-  const whole = new RegExp(`^(?:${ruleOf('Choosy')})$`);
+  // Choosy's expression has to match the whole link, so it holds both ends itself.
+  const rule = ruleOf('Choosy');
+  const whole = new RegExp(rule);
+
+  it('is anchored at both ends', () => {
+    expect(rule.startsWith('^')).toBe(true);
+    expect(rule.endsWith('$')).toBe(true);
+  });
 
   it('matches pull request pages, and nothing else', () => {
     expect(pulls.filter((link) => !whole.test(link))).toEqual([]);

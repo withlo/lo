@@ -48,26 +48,31 @@ link isn't Lo (`opener.bundleId`), and opens Lo by its bundle ID:
 
 ## Velja
 
+This setup hasn't been tried in Velja: it follows Velja's documentation, which doesn't say how its
+rules are ordered or what syntax its URL patterns take.
+
 In Velja's settings, open Rules. Velja's matchers include "Source Apps", the app a link was clicked
 in, and "URL Matchers". Add two rules:
 
 1. A rule with a Source Apps matcher set to Lo, that opens in your browser, so the links Lo opens go
-   to the browser. Keep it above the second rule.
+   to the browser.
 2. A rule that opens in Lo, with a URL Matchers matcher with this pattern:
 
 ```text
 ^(?:https://)?github\.com/[^/?#]+/[^/?#]+/pull/\d+(?:[/?#]|$)
 ```
 
+If Lo's own GitHub links come back to Lo, the source-app rule must sit above the Lo rule.
+
 ## Choosy
 
 In Choosy's settings, open Rules and add a rule that opens in Lo when all of these hold:
 
-- The URL matches this regular expression. Choosy matches the whole link, so it ends by allowing
-  anything after the pull request's number:
+- The URL matches this regular expression. Choosy matches the whole link, so the expression is
+  anchored at both ends, and allows anything after the pull request's number:
 
   ```text
-  https://github\.com/[^/?#]+/[^/?#]+/pull/\d+(?:[/?#].*)?
+  ^https://github\.com/[^/?#]+/[^/?#]+/pull/\d+(?:[/?#].*)?$
   ```
 
 - The Source application is not Lo.
