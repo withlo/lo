@@ -388,6 +388,9 @@
   --lo-settings-w: 760px; /* Widest a section of Settings grows. */
   --lo-swatch-w: 132px; /* Width of a theme's swatch in Settings. */
   --lo-swatch-h: 72px; /* Height of a theme's swatch in Settings. */
+  --lo-dialog-w: 540px; /* Width of a dialog: signing in, importing accounts, choosing an account. */
+  --lo-avatar-lg: 28px; /* A large avatar, beside an account's name in lists of accounts. */
+  --lo-switch-w: 26px; /* Width of a switch's track. */
   --lo-file-header-h: 38px; /* Sticky file headers in the diff. */
   --lo-window-inset-start: 78px; /* Space before the first tab: 78px for the macOS traffic lights, 0 on Linux. */
   --lo-window-inset-end: 0px; /* Space after the last tab: 0, or the system controls' width in a frameless Linux window. */

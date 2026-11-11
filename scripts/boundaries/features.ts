@@ -1,14 +1,14 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, join, matchesGlob, relative, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { isTest, mapped, realPath, splitPackage, toSlashes, type Violation } from './check.ts';
+import { expandGlob, globBase, globMatches, isFile, isFolder, unfollowed } from './globs.ts';
 import {
   importsOf,
   ParseError,
   referencesOf,
   type Glob,
   type Import,
-  type OptionValue,
   type References,
 } from './imports.ts';
 
@@ -23,9 +23,6 @@ const shared = `contract.ts, keys.ts, service.ts and window/shared.ts`;
 
 /** Files Vite can bundle that refer to other files: scripts, and stylesheets. */
 const bundled = /\.(?:[cm]?[jt]s|[jt]sx|css)$/;
-
-/** The options of `import.meta.glob` that don't change which files it matches. */
-const plainOptions = new Set(['eager', 'import', 'query', 'as']);
 
 /**
  * Checks that the desktop app's features share only through their shared files: from inside one
@@ -224,34 +221,6 @@ function resolutions(path: string): string[] {
   ];
 }
 
-/** Whether one of a glob's options would change what it matches beyond what the rule follows. */
-function unfollowed(name: string, value: OptionValue): boolean {
-  if (plainOptions.has(name) || name === 'base') return false;
-  if (name === 'caseSensitive') return value !== true;
-  if (name === 'exhaustive') return value !== false;
-  return true;
-}
-
-/** The folder a glob's patterns start from, at `from`: its `base`, when that starts with `.`. */
-function globBase(options: ReadonlyMap<string, OptionValue>, from: string): string | undefined {
-  const base = options.has('base') ? options.get('base') : '.';
-  const usable =
-    typeof base === 'string' && (base === '.' || base === '..' || /^\.\.?\//.test(base));
-  return usable ? resolve(from, base) : undefined;
-}
-
-/** The files a glob at `from` matches, through symlinks, when what it matches can be followed. */
-function globMatches({ patterns, options }: Glob, from: string): string[] {
-  if (options === undefined) return [];
-  const cwd = globBase(options, from);
-  if (cwd === undefined || [...options].some(([name, value]) => unfollowed(name, value))) {
-    return [];
-  }
-  return patterns
-    .filter((pattern) => /^\.\.?\//.test(pattern))
-    .flatMap((pattern) => expandGlob(pattern, cwd));
-}
-
 /**
  * What's wrong with a glob in a feature's folder, at `from`: an option the rule can't follow, or
  * a file it matches that `reason` refuses.
@@ -305,37 +274,6 @@ function globViolations(
 }
 
 /**
- * The files `pattern` matches from `cwd`, as Vite matches them: through symlinked folders too,
- * leaving out `node_modules` and, unless the pattern names them, hidden files and folders.
- */
-function expandGlob(pattern: string, cwd: string): string[] {
-  const parts = pattern.split('/');
-  const first = parts.findIndex((part) => /[*?[\]{}()!+@]/.test(part));
-  const base = resolve(cwd, ...(first === -1 ? parts : parts.slice(0, first)));
-  if (first === -1) return isFile(base) ? [base] : [];
-  const rest = parts.slice(first).join('/');
-  const found: string[] = [];
-  // Each folder once, by its real path, so a symlink back up the tree ends.
-  const seen = new Set<string>();
-  const walk = (folder: string): void => {
-    const real = realpathSync(folder);
-    if (seen.has(real)) return;
-    seen.add(real);
-    const entries = readdirSync(folder, { withFileTypes: true });
-    for (const entry of entries.toSorted((a, b) => a.name.localeCompare(b.name, 'en'))) {
-      const path = join(folder, entry.name);
-      if (isFolder(path)) {
-        if (entry.name !== 'node_modules') walk(path);
-      } else if (isFile(path) && matchesGlob(toSlashes(relative(base, path)), rest)) {
-        found.push(path);
-      }
-    }
-  };
-  if (isFolder(base)) walk(base);
-  return found;
-}
-
-/**
  * Every file in each feature's folder that Vite could bundle, in any folder: hidden ones,
  * `node_modules`, `dist` and fixtures too. Symlinks are left out, since an import through one is
  * followed to where it points, and what it points to is checked where it is.
@@ -375,14 +313,6 @@ function stylesheetReferences(source: string): { specifier: string; line: number
     found.push({ specifier, line: text.slice(0, match.index).split('\n').length });
   }
   return found;
-}
-
-function isFile(path: string): boolean {
-  return existsSync(path) && statSync(path).isFile();
-}
-
-function isFolder(path: string): boolean {
-  return existsSync(path) && statSync(path).isDirectory();
 }
 
 /** The `imports` of the `package.json` at `path`, if there is one. */

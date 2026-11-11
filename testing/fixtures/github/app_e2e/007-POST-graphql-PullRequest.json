@@ -1,0 +1,92 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequest",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 78,
+      "filesFirst": 100,
+      "filesAfter": null
+    },
+    "query_sha256": "faebcf58d69c5e012ebe96425bca46ad442d8bf907b11b029049c26d755fc48b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4998",
+      "x-ratelimit-reset": "1794409949",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "2"
+    },
+    "body": {
+      "data": {
+        "repository": {
+          "pullRequest": {
+            "id": "PR_kwDOVleUfc8AAAABOZALvg",
+            "number": 78,
+            "title": "App: the pull request Lo's end-to-end tests open",
+            "url": "https://github.com/rozed-dev/e2e/pull/78",
+            "state": "OPEN",
+            "isDraft": false,
+            "updatedAt": "2026-11-11T13:58:00Z",
+            "author": {
+              "__typename": "User",
+              "login": "rozed-bot",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/353226052?v=4"
+            },
+            "baseRefName": "app/base",
+            "baseRefOid": "dccd782aff9cd7a5088122cd3fb4a515964acee7",
+            "headRefName": "app/head",
+            "headRefOid": "5530830f535b2947f1b50a184dc58a9c7b2845ad",
+            "isCrossRepository": false,
+            "headRepository": {
+              "nameWithOwner": "rozed-dev/e2e",
+              "isFork": false
+            },
+            "files": {
+              "totalCount": 7,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "Nw"
+              },
+              "nodes": [
+                {
+                  "path": "assets/mark.png",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "data/numbers.txt",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "pnpm-lock.yaml",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "src/format.ts",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "src/legacy.ts",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "src/parser.ts",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "src/text/wrap.ts",
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

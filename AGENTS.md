@@ -110,6 +110,11 @@ A package's folder says where it runs, and its Nx tags (`"nx": { "tags": [...] }
 - nothing imports an app;
 - only tests import `testing/`. Tests are `*.test.*` files and anything in `test/` or `e2e/`, and
   `testing` belongs in `devDependencies`;
+- only `packages/desktop/ui/src/code/` uses CodeMirror (`@codemirror/*`, `@lezer/*`,
+  `@replit/codemirror-vim`), and only `ui`'s `package.json` lists it, or a package that depends on
+  it. Everything else, tests included, reaches the code views through that folder's `index.ts`,
+  `@lo/ui/code`, and no type `ui` hands out names CodeMirror (`ui`'s `lint` checks), so that
+  changing editors rewrites one folder;
 - in the desktop app, a feature imports from another feature only the files it shares through (see
   "Features" under "The desktop app").
 
@@ -127,11 +132,16 @@ in its `imports` and `exports`, and to every edge in Nx's project graph. Also:
 - a module's name or path has no percent escapes or backslashes, since Node decodes the one and
   reads the other as `/`, and isn't a URL other than `node:`;
 - a `#name` import is one the `package.json`'s `imports` map;
+- an `import.meta.glob` counts as an import of each file it matches, so its patterns and its base
+  start with `./` or `../`, and it has no option that changes what it matches;
+- nothing imports a source file in a folder the check skips (`node_modules`, `dist`, `fixtures` or a
+  hidden folder), since what that file imports isn't checked;
 - `require` appears only in a call that names its module, such as `require('./x.js')`;
 - only the files that `scripts/boundaries/check.ts` lists use `createRequire` or `getBuiltinModule`,
   since what they load can't be followed;
 - pnpm's overrides and package extensions point no dependency at a folder with `link:` or `file:`;
-- no tsconfig sets `paths`, nor any tsconfig it extends or references;
+- no tsconfig sets `paths`, nor any tsconfig it extends or references, and every `extends` is one
+  the check can find;
 - the root `package.json` holds the repo's tooling only: no workspace package, and no alias besides
   TypeScript's two.
 
@@ -171,14 +181,19 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   flag and opens as it is. The `package` workflow, which only a person starts, builds the same zip
   on a Mac runner and uploads it as an artifact. `scripts/check-package.sh` checks a zip: the
   signature and its flags, the entitlements, every fuse, the asar's contents and hash, the
-  registered links, and that the app quits when given switches. electron-vite bundles everything the
-  app imports, so the package holds only `dist/` and `package.json`, and no `node_modules`.
+  registered links, and that the app quits when given switches or the variables below. electron-vite
+  bundles everything the app imports, so the package holds only `dist/` and `package.json`, and no
+  `node_modules`.
 - A packaged Lo takes no command-line switches: first of all in main, before `ready`, it quits with
   status 1 on any argument that starts with `-` (`src/main/arguments.ts`). Chromium's switches can
   send main's requests, with their `Authorization` header, to another server, or open a port that
   drives the window, and none is Lo's. Links and files reach a packaged Lo as events, not as
-  arguments. A build run from source takes every switch, as `electron-vite dev` and the tests pass
-  some.
+  arguments. Nor does it start with the variables that do what some switches do, which Chromium and
+  Node read whatever Lo does: `SSLKEYLOGFILE` (Chromium writes every connection's TLS secrets to
+  it), `ELECTRON_ENABLE_LOGGING` and `ELECTRON_LOG_FILE` (Chromium's own logs), and
+  `NODE_TLS_REJECT_UNAUTHORIZED=0`. The certificate authorities' variables, which networks that
+  inspect TLS need, and proxies are left alone. A build run from source takes every switch and
+  variable, as `electron-vite dev` and the tests pass some.
 - A build run from source goes by `Lo Dev`, so it never touches an installed Lo's data or its key in
   the system's keychain: it keeps its data in its own folder (`Lo Dev`), or in `LO_USER_DATA_DIR`
   when that's set, and its key under "Lo Dev Safe Storage". A packaged build is `Lo`, and ignores
@@ -359,12 +374,53 @@ repositories, which account opens a repository, and the pull requests opened lat
   wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
   out, and whether its token waits for a keyring), never a token.
+- Signing in is GitHub's device flow, one sign-in at a time. Before asking GitHub for a code, Lo
+  checks it can keep a token (on Linux, by what a fresh encryption is marked), so a desktop with no
+  keyring is refused before anyone goes to GitHub. The window shows the code; main copies it and
+  opens GitHub's own page for codes, never one GitHub's answer names. Polls follow GitHub's
+  `interval` and `slow_down`, and stop once the dialog closes, another sign-in starts, the window
+  goes or Lo quits.
+- Accounts can be imported from `gh`, found as git is: on `PATH`, then the system's usual folders,
+  passing over one that someone besides this user or root could change. gh runs with an argument
+  list, never a shell, under a time limit, with an environment of Lo's making that holds no token
+  (`GH_TOKEN` and the like never reach it). Its tokens are read through a pipe, checked with
+  `GET /user` to be the account's, and kept as any other. Once GitHub refuses one, Lo reads gh's
+  newer token, which gh renews itself.
 - As Lo quits, the feature saves any renewed token the keychain refused, waiting for renewals GitHub
   is answering only as long as its own limit for stopping allows.
 - A build run from source talks to a GitHub on this machine when `LO_GITHUB` names its address
   (`http://127.0.0.1:<port>`, serving GitHub's API, website and uploads under `/api`, `/web` and
   `/uploads`, as the replay server does), which makes it a test run. It adds the account whose token
-  is in the file `LO_TEST_TOKEN_FILE` names as it starts. A packaged build ignores both.
+  is in the file `LO_TEST_TOKEN_FILE` names as it starts. It runs the gh `LO_GH` names (an absolute
+  path, or `none`) rather than one it finds, and a test run runs none unless `LO_GH` names one, so
+  the gh on `PATH`, which holds the tokens of whoever runs the tests, never sends one to the test's
+  GitHub. It opens web pages with the program `LO_BROWSER` names, rather than the system's browser,
+  so a test opens no browser. A packaged build ignores all four.
+
+### A pull request's tab
+
+The `tab` feature keeps the window's tabs and draws a pull request's: its header, two banners at
+most, the left panel, the middle and the right panel other features fill through its slots, and its
+status bar.
+
+- Main watches each pull request's tab with its account's poller, so the strip has its title, and
+  the one on screen most often. A tab keeps the account it acts as, and its repository's name as
+  GitHub gives it, so it comes back as it was, offline too. A tab with no account yet works it out
+  as a link does the first time it's shown: the one that can see the repository, the one remembered
+  for it, nobody for a public repository, or a question.
+- The first time a tab is shown, main reads the pull request and fetches it into the local copy
+  through `@lo/git`, with the account's token, read as each fetch starts. A fetch that fails is
+  tried again after 5 s, doubling to 5 minutes, unless waiting won't help, and a tab reads what an
+  earlier fetch brought while GitHub can't be reached.
+- The head on screen is GitHub's when the tab opened. A newer push says so in a banner, and moves
+  nothing until it's loaded.
+- The window gets what it shows on `tab.pull`, `tab.files` and `tab.local`, each sent only when it
+  changes, and asks for all three with `tab.state`. None of it holds a token. `tab.copy` puts up to
+  1 MiB of text on the clipboard, and `tab.openExternal` opens pages on `https://github.com/` only,
+  for every feature.
+- Its smoke test opens rozed-dev/e2e#78, whose repository `testing/fixtures/app.sh` builds with
+  GitHub's commit IDs, as `LO_GIT_REMOTE`, while the replay server answers from the `app_e2e`
+  cassette, recorded from the app itself (`testing/README.md`).
 
 ## The interface
 

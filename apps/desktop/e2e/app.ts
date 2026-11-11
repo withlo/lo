@@ -1,4 +1,5 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +20,23 @@ export const electronBinary = binary(createRequire(import.meta.url)('electron'))
 function binary(path: unknown): string {
   if (typeof path !== 'string') throw new Error('The electron package gave no path to its binary.');
   return path;
+}
+
+/**
+ * Chromium's stand-ins for the system's keychain, so tests never touch a real one: the Mac's
+ * stand-in keychain, and Linux's fallback store. Lo takes either only in a test run.
+ */
+export const KEYCHAIN =
+  process.platform === 'darwin' ? ['--use-mock-keychain'] : ['--password-store=basic'];
+
+/** A port on this machine nothing listens on: a GitHub that can't be reached. */
+export async function closedPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  if (address === null || typeof address === 'string') throw new Error('the server had no port');
+  return address.port;
 }
 
 /** The data folder a test's copy of Lo starts on: empty, and the test's own. */
@@ -53,6 +71,31 @@ function writeEditor(data: string): void {
   chmodSync(editorPath(data), 0o755);
 }
 
+/**
+ * The program a test's Lo opens web pages with, in place of the system's browser, so no test opens
+ * a browser. It adds the address it's given to `browsed`, beside it in the data folder.
+ */
+function browserPath(data: string): string {
+  return join(data, 'browser');
+}
+
+/** Writes the program that stands in for the system's browser. */
+function writeBrowser(data: string): void {
+  const log = join(data, 'browsed').replaceAll("'", `'\\''`);
+  mkdirSync(data, { recursive: true });
+  writeFileSync(browserPath(data), `#!/bin/sh\nprintf '%s\\n' "$1" >> '${log}'\n`);
+  chmodSync(browserPath(data), 0o755);
+}
+
+/** The pages Lo has opened in this test, in order, as the stand-in browser got them. */
+export function browsed(): string[] {
+  try {
+    return readFileSync(join(dataFolder(), 'browsed'), 'utf8').split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 /** The paths Lo has opened the keymap file by in this test, in order, as the editor got them. */
 export function opened(): string[] {
   try {
@@ -75,6 +118,9 @@ export function appEnvironment(data: string): Record<string, string> {
   delete env.ELECTRON_RUN_AS_NODE;
   env.LO_USER_DATA_DIR = data;
   env.LO_KEYMAP_EDITOR = editorPath(data);
+  env.LO_BROWSER = browserPath(data);
+  // Never the gh on PATH, which holds the tokens of whoever runs the tests; a test brings its own.
+  env.LO_GH = 'none';
   return env;
 }
 
@@ -101,6 +147,7 @@ export const test = base.extend<Fixtures>({
     const { env, ...options } = launch;
     const data = dataFolder();
     writeEditor(data);
+    writeBrowser(data);
     if (keymap !== undefined) {
       mkdirSync(join(data, 'config'), { recursive: true });
       writeFileSync(keymapPath(data), keymap);

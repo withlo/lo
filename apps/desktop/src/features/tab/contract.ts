@@ -6,6 +6,7 @@ import { parsePullLink } from '@lo/review';
 import { z } from 'zod';
 
 import { defineContract, reply } from '../../ipc/contract.ts';
+import { login } from '../accounts/contract.ts';
 
 /** A pull request's state, as its tab shows it. */
 export const pullState = z.enum(['open', 'draft', 'merged', 'closed']);
@@ -85,6 +86,192 @@ export const choice = z.union([
 ]);
 export type Choice = z.output<typeof choice>;
 
+/** A commit's ID, as git and GitHub write it: 40 hex digits, or 64 in a SHA-256 repository. */
+export const oid = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
+
+/** A moment, in milliseconds since the Unix epoch. */
+const time = z.number().int().nonnegative();
+
+/** Who a tab acts as on GitHub: a signed-in account, or nobody, for a public repository. */
+export const acting = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('account'), login }),
+  z.strictObject({ kind: z.literal('anonymous') }),
+]);
+export type Acting = z.output<typeof acting>;
+
+/**
+ * What a pull request's header shows: its title and state, who opened it, and which branch it
+ * wants to merge into which. The head's repository is named when it's a fork.
+ */
+export const header = z.strictObject({
+  title: z.string(),
+  state: pullState,
+  /** The author's login, or null for an account GitHub deleted. */
+  author: z.string().nullable(),
+  head: z.strictObject({ branch: z.string(), fork: z.string().nullable() }),
+  base: z.strictObject({ branch: z.string() }),
+});
+export type Header = z.output<typeof header>;
+
+/**
+ * How what a tab shows stands with GitHub, worst first: the account is signed out, the rate limit
+ * is used up or GitHub asked Lo to slow down, GitHub can't be reached (what's shown is from
+ * `savedAt`), or the rate limit is low, so Lo asks less often. `live` when none of these is so.
+ */
+export const connection = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('live') }),
+  z.strictObject({ kind: z.literal('signedOut'), login }),
+  z.strictObject({
+    kind: z.literal('rateLimited'),
+    login: login.nullable(),
+    until: time,
+    /** Whether GitHub asked Lo to slow down, rather than the limit being used up. */
+    secondary: z.boolean(),
+  }),
+  z.strictObject({
+    kind: z.literal('offline'),
+    savedAt: time.nullable(),
+    retryAt: time.nullable(),
+    error: z.string(),
+  }),
+  z.strictObject({ kind: z.literal('limitLow'), remaining: z.number().int(), reset: time }),
+]);
+export type Connection = z.output<typeof connection>;
+
+/** GitHub's page for fixing a problem, such as authorizing single sign-on. */
+export const helpLink = z.strictObject({ label: z.string(), url: z.string() });
+
+/**
+ * Why a tab can't show its pull request: GitHub has no such pull request, or the account can't
+ * see it; an organization blocks the account until it's authorized, with GitHub's links to fix
+ * that; several accounts can see it, and none was chosen for it; or reading it failed, and Lo
+ * tries again at `retryAt`, if it will.
+ */
+export const problem = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('notFound'), message: z.string() }),
+  z.strictObject({ kind: z.literal('blocked'), message: z.string(), links: z.array(helpLink) }),
+  z.strictObject({ kind: z.literal('ask'), logins: z.array(login) }),
+  z.strictObject({ kind: z.literal('failed'), message: z.string(), retryAt: time.nullable() }),
+]);
+export type Problem = z.output<typeof problem>;
+
+/**
+ * A pull request's tab as main has it, sent each time it changes: who it acts as, its header, how
+ * it stands with GitHub, why it can't be shown, the head on screen, and a newer push on GitHub,
+ * once there is one. The head on screen is the one GitHub had when the tab opened, and stays until
+ * the newer push is loaded, so nothing moves under the reader. `loading` while Lo is still finding
+ * out what to show, with nothing to show yet.
+ */
+export const pull = z.strictObject({
+  id: tabId,
+  loading: z.boolean(),
+  acting: acting.nullable(),
+  header: header.nullable(),
+  connection,
+  problem: problem.nullable(),
+  shown: oid.nullable(),
+  newer: oid.nullable(),
+});
+export type PullView = z.output<typeof pull>;
+
+/** Whether the account marked a changed file viewed, as GitHub says. */
+export const viewed = z.enum(['viewed', 'unviewed', 'dismissed']);
+
+/**
+ * The files a pull request changes, as GitHub lists them, each with whether the account marked it
+ * viewed, sent each time the list changes. GitHub lists no more than 3,000, so `total` can be more.
+ */
+export const files = z.strictObject({
+  id: tabId,
+  files: z.array(z.strictObject({ path: z.string(), viewed })),
+  total: z.number().int().nonnegative(),
+});
+export type Files = z.output<typeof files>;
+
+/** Why fetching the local copy failed, in `@lo/git`'s words, or that the disk is full. */
+export const fetchFailure = z.enum([
+  'network',
+  'auth',
+  'tokenRefused',
+  'rateLimited',
+  'certificate',
+  'repoNotFound',
+  'refNotFound',
+  'timedOut',
+  'tooLarge',
+  'unavailable',
+  'diskFull',
+  'other',
+]);
+export type FetchFailure = z.output<typeof fetchFailure>;
+
+/**
+ * A tab's local copy of its pull request, sent each time it changes:
+ *
+ * - `waiting` until Lo knows what to fetch and has git;
+ * - `noGit` when Lo has no git new enough, with what it found and how to install one;
+ * - `fetching`, with what git is doing, on the `attempt`th try;
+ * - `ready`, with the head on screen, the base branch's tip it was fetched with, and where the
+ *   two branched; `offline` when GitHub couldn't be reached, so it's what was fetched before;
+ * - `retrying` after a failure Lo tries again after by itself, at `retryAt`;
+ * - `failed` after one it doesn't, until asked to try again.
+ */
+export const localState = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('waiting') }),
+  z.strictObject({ kind: z.literal('noGit'), message: z.string(), install: z.string() }),
+  z.strictObject({
+    kind: z.literal('fetching'),
+    progress: z.string().nullable(),
+    attempt: z.number().int().positive(),
+  }),
+  z.strictObject({
+    kind: z.literal('ready'),
+    head: oid,
+    base: oid,
+    mergeBase: oid.nullable(),
+    offline: z.boolean(),
+  }),
+  z.strictObject({
+    kind: z.literal('retrying'),
+    failure: fetchFailure,
+    message: z.string(),
+    attempt: z.number().int().positive(),
+    retryAt: time,
+  }),
+  z.strictObject({ kind: z.literal('failed'), failure: fetchFailure, message: z.string() }),
+]);
+export type LocalState = z.output<typeof localState>;
+
+export const local = z.strictObject({ id: tabId, state: localState });
+export type Local = z.output<typeof local>;
+
+/** The most a copy may hold: 1 MiB of text, as UTF-8. */
+export const COPY_LIMIT = 1024 * 1024;
+
+/** Whether `text` fits in a copy. */
+function fitsCopy(text: string): boolean {
+  return text.length <= COPY_LIMIT && new TextEncoder().encode(text).length <= COPY_LIMIT;
+}
+
+/**
+ * Whether `address` is a page on github.com over HTTPS, the only kind Lo opens in the browser: no
+ * other host or port, no name or password in it.
+ */
+export function isGithubPage(address: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    return false;
+  }
+  // The address as the URL parser writes it back, with its host in lowercase: nothing with another
+  // scheme, host, port, name or password starts this way.
+  return url.href.startsWith('https://github.com/');
+}
+
+/** A tab, by its id. */
+const byId = z.strictObject({ id: tabId });
+
 export const contract = defineContract('tab', {
   requests: {
     list: { input: z.undefined(), reply: reply<Tabs>() },
@@ -101,9 +288,44 @@ export const contract = defineContract('tab', {
       input: z.strictObject({ id: tabId, to: z.number().int().min(0).max(1_000_000) }),
       reply: reply<void>(),
     },
+    /**
+     * What main has for a pull request's tab now, which `pull`, `files` and `local` then keep up
+     * to date: nothing for a tab that isn't a pull request's.
+     */
+    state: {
+      input: byId,
+      reply: reply<{ pull: PullView; files: Files | undefined; local: Local } | undefined>(),
+    },
+    /** Shows the newer push on a pull request's tab, and the local copy at it. */
+    reload: { input: byId, reply: reply<void>() },
+    /** Tries again now what failed on a pull request's tab: reading it, and its local copy. */
+    retry: { input: byId, reply: reply<void>() },
+    /**
+     * Opens a pull request's tab with one of the accounts that can see it, when several can, and
+     * remembers it for the repository's owner.
+     */
+    choose: { input: z.strictObject({ id: tabId, login }), reply: reply<void>() },
+    /** Puts text on the clipboard: 1 MiB at most. */
+    copy: {
+      input: z.strictObject({ text: z.string().refine(fitsCopy, 'Too much to copy.') }),
+      reply: reply<void>(),
+    },
+    /** Opens a page on github.com in the browser. Nothing else opens. */
+    openExternal: {
+      input: z.strictObject({
+        url: z.string().max(8192).refine(isGithubPage, 'Not a page on github.com.'),
+      }),
+      reply: reply<void>(),
+    },
   },
   topics: {
     /** The tabs, each time they change. */
     tabs,
+    /** A pull request's tab, each time what it shows changes. */
+    pull,
+    /** The files a pull request's tab's pull request changes, each time the list changes. */
+    files,
+    /** A pull request's tab's local copy, each time it changes. */
+    local,
   },
 });

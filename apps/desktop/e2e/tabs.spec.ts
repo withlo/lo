@@ -6,7 +6,22 @@ import {
   type Page,
 } from '@playwright/test';
 
-import { appEnvironment, appFolder, dataFolder, expect, test } from './app.ts';
+import { appEnvironment, appFolder, closedPort, dataFolder, expect, test as base } from './app.ts';
+
+/**
+ * Lo with a GitHub that can't be reached, so the pull requests these tests open in tabs never
+ * reach the real one: each says it's offline.
+ */
+async function unreachable(): Promise<Record<string, string>> {
+  return { LO_GITHUB: `http://127.0.0.1:${await closedPort()}` };
+}
+
+const test = base.extend({
+  // oxlint-disable-next-line no-empty-pattern
+  launch: async ({}, use) => {
+    await use({ env: await unreachable() });
+  },
+});
 
 declare global {
   interface Window {
@@ -281,7 +296,7 @@ test('⌃o and ⌃i walk the history of the tab on screen, and each tab keeps it
   ).toBe(0);
 });
 
-test('macOS’s File and Window menus list closing a tab and stepping through them', async ({
+test('macOS’s File, View and Window menus list closing a tab, the left panel and stepping through tabs', async ({
   app,
   page,
 }) => {
@@ -303,6 +318,7 @@ test('macOS’s File and Window menus list closing a tab and stepping through th
     .poll(items)
     .toEqual([
       'File: Close tab Command+W',
+      'View: Left panel Command+\\',
       'Window: Next tab Command+Shift+]',
       'Window: Previous tab Command+Shift+[',
     ]);
@@ -370,11 +386,78 @@ test('the tabs that don’t fit are in the "N more" menu, and choosing one shows
   await page.keyboard.press('Escape');
 });
 
+test('⌘⇧A opens the tabs that don’t fit, to choose one by key', async ({ app, page }) => {
+  await resize(app, page, 1440);
+  await open(page, pull('withlo', 'a', 1));
+  // While every tab fits, the key says so.
+  await page.keyboard.press(`${cmd}+Shift+KeyA`);
+  await expect(said(page, 'Every tab fits in the strip.')).toBeVisible();
+
+  await open(page, ...many(16));
+  await page.keyboard.press(`${cmd}+Digit1`);
+  await expect(shown(page)).toHaveText('a #1');
+  const menu = page.getByRole('menu', { name: 'More tabs' });
+  await page.keyboard.press(`${cmd}+Shift+KeyA`);
+  // Focus goes into the menu, which Esc closes.
+  await expect(menu).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+
+  await page.keyboard.press(`${cmd}+Shift+KeyA`);
+  await expect(menu).toBeFocused();
+  const last = await menu.getByRole('menuitem').last().textContent();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeHidden();
+  await expect(shown(page)).toHaveText(last ?? '');
+});
+
+/** How wide an element is, and whether its text is cut short. */
+function fits(locator: Locator) {
+  return locator.evaluate((element) => ({
+    width: element.clientWidth,
+    cut: element.scrollWidth > element.clientWidth,
+  }));
+}
+
+test('the narrowest tabs keep their repository, cut short, and their number whole', async ({
+  app,
+  page,
+}) => {
+  await resize(app, page, 1440);
+  const long = 'a-repository-with-a-long-name';
+  await open(
+    page,
+    ...Array.from({ length: 40 }, (_, index) => pull('withlo', long, 123_456 + index)),
+  );
+  await expect.poll(() => openCount(page)).toBe(40);
+  for (const tab of await tabs(page).all()) {
+    const repository = tab.locator('span', { hasText: long });
+    const number = tab.locator('span', { hasText: /^#\d+$/ });
+    // Its first letter and an ellipsis, at least.
+    expect(await fits(repository)).toEqual({ width: expect.any(Number), cut: true });
+    expect((await fits(repository)).width).toBeGreaterThanOrEqual(12);
+    expect(await fits(number)).toMatchObject({ cut: false });
+  }
+  await expectFits(page);
+});
+
+test('a repository with a long name takes half its tab at most, leaving room for the title', async ({
+  page,
+}) => {
+  const long = 'r'.repeat(100);
+  await open(page, pull('withlo', long, 1));
+  const repository = shown(page).locator('span', { hasText: long });
+  const box = await repository.boundingBox();
+  const tab = await shown(page).boundingBox();
+  expect((box?.width ?? Infinity) * 2).toBeLessThanOrEqual((tab?.width ?? 0) + 1);
+});
+
 /** Starts Lo on the test's data folder, and waits for its window. */
 async function launch(): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
     args: [appFolder],
-    env: appEnvironment(dataFolder()),
+    env: { ...appEnvironment(dataFolder()), ...(await unreachable()) },
     chromiumSandbox: true,
   });
   const page = await app.firstWindow();

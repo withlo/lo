@@ -7,7 +7,8 @@
 # - an asar of only the build's output (dist/ and package.json), whose header hash is the one in
 #   Info.plist, which Electron checks as it loads the asar;
 # - registered, with the Viewer role, for `lo:` links and web links;
-# - quitting at once, saying why, when started with a command-line switch.
+# - quitting at once, saying why, when started with a command-line switch, or with a variable set
+#   that would write out or expose its traffic, such as SSLKEYLOGFILE.
 # Usage: sh scripts/check-package.sh <zip>
 set -euf
 zip=${1:?usage: check-package.sh <zip>}
@@ -88,25 +89,39 @@ for scheme in lo http https; do
   [ -n "$found" ] || fail "Info.plist doesn't register $scheme with the Viewer role"
 done
 
-# A packaged Lo takes no command-line switches, so each of these must end it with status 1 and its
-# reason, long before the limit. One that kept it running would have opened a port or a window.
-refuses() {
+# Runs "$@", Lo as some launch would start it, and succeeds when Lo ends with status 1, saying $1,
+# long before the limit. One that kept it running would have opened a port, a window or a connection.
+ends_saying() {
+  said=$1
+  shift
   log=$work/refused.log
-  CFFIXED_USER_HOME=$work/home "$app/Contents/MacOS/Lo" "$1" > "$log" 2>&1 &
+  "$@" > "$log" 2>&1 &
   pid=$!
   (sleep 10 && kill -9 "$pid" 2> /dev/null) &
   watchdog=$!
   code=0
   wait "$pid" || code=$?
   { kill "$watchdog" && wait "$watchdog"; } 2> /dev/null || true
-  if [ "$code" -ne 1 ] || ! grep -q 'Lo takes no command-line switches' "$log"; then
-    fail "started with $1, Lo ended with status $code instead of refusing it"
-  fi
+  [ "$code" -eq 1 ] && grep -q "$said" "$log"
 }
+
+# A packaged Lo takes no command-line switches, so each of these must end it with its reason.
 for switch in --remote-debugging-port=0 -remote-debugging-pipe --ignore-certificate-errors \
   '--host-resolver-rules=MAP api.github.com 127.0.0.1:9'; do
-  refuses "$switch"
+  ends_saying 'Lo takes no command-line switches' \
+    env CFFIXED_USER_HOME="$work/home" "$app/Contents/MacOS/Lo" "$switch" ||
+    fail "started with $switch, Lo ended with status $code instead of refusing it"
 done
 
-[ "$status" -eq 0 ] && echo "$zip passed: arm64, ad hoc with the hardened runtime, fuses, asar and links, and it refuses switches."
+# Nor the variables that do what some switches do, such as SSLKEYLOGFILE, which has Chromium write
+# out the secrets of every connection to GitHub.
+for variable in "SSLKEYLOGFILE=$work/keys.log" ELECTRON_ENABLE_LOGGING=1 \
+  "ELECTRON_LOG_FILE=$work/chromium.log" NODE_TLS_REJECT_UNAUTHORIZED=0; do
+  ends_saying "Lo won't start with" \
+    env "$variable" CFFIXED_USER_HOME="$work/home" "$app/Contents/MacOS/Lo" ||
+    fail "started with $variable, Lo ended with status $code instead of refusing it"
+done
+[ ! -e "$work/keys.log" ] || fail "started with SSLKEYLOGFILE set, Lo wrote to it"
+
+[ "$status" -eq 0 ] && echo "$zip passed: arm64, ad hoc with the hardened runtime, fuses, asar and links, and it refuses switches and variables."
 exit "$status"
