@@ -419,8 +419,13 @@ describe('the outcome', () => {
     expect((await check(text, {}, [], {})).outcome.kind).toBe('shown');
   });
 
-  test('a shown overview has its header and each target’s code', async () => {
-    const checked = await check(overview(':::code src/a.ts#L1-L3\n:::\n\n[b](code:src/b.ts)\n'));
+  test('a shown overview has its header, each target’s code and each figure', async () => {
+    const checked = await check(
+      overview(
+        ':::code src/a.ts#L1-L3\n:::\n\n[b](code:src/b.ts)\n\n:::figure figures/a.svg\nA.\n:::\n',
+      ),
+      { 'figures/a.svg': '<svg viewBox="0 0 10 10"><rect id="r"/></svg>' },
+    );
     expect(checked.outcome).toEqual({
       kind: 'shown',
       header: { format: 1, pr: 4797, commit: COMMIT },
@@ -436,6 +441,22 @@ describe('the outcome', () => {
         {
           reference: { target: { kind: 'code', path: 'src/b.ts' }, line: LINE + 3, from: 'link' },
           code: { state: 'broken', why: 'missing' },
+        },
+      ],
+      figures: [
+        {
+          reference: { path: 'figures/a.svg', line: LINE + 5, parts: [] },
+          figure: {
+            state: 'kept',
+            type: 'svg',
+            svg: {
+              kind: 'element',
+              name: 'svg',
+              attributes: { viewBox: '0 0 10 10' },
+              children: [{ kind: 'element', name: 'rect', attributes: { id: 'r' }, children: [] }],
+            },
+            parts: [],
+          },
         },
       ],
     });

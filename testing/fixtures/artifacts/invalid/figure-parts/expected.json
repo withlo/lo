@@ -1,0 +1,19 @@
+{
+  "outcome": "shown",
+  "findings": [
+    { "code": "figure-part-missing", "line": 25 },
+    { "code": "figure-part-missing", "line": 26 },
+    { "code": "figure-part-missing", "line": 27 },
+    { "code": "figure-part-missing", "line": 28 },
+    { "code": "figure-part-missing", "line": 29 },
+    { "code": "figure-part-missing", "line": 30 },
+    { "code": "figure-content", "line": 33 },
+    { "code": "figure-part-missing", "line": 36 }
+  ],
+  "code": [],
+  "figures": [
+    { "line": 13, "state": "kept", "type": "svg", "parts": ["elsewhere"] },
+    { "line": 19, "state": "kept", "type": "svg", "parts": ["box", "group", "label"] },
+    { "line": 33, "state": "leftOut", "why": "content" }
+  ]
+}

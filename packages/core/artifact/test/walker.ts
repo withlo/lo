@@ -470,6 +470,11 @@ export function walk(tree: unknown, options: WalkOptions = {}): Walked {
       if (counts && isList(value['caption']) && value['caption'].length === 0) {
         problem(where, 'has no caption');
       }
+      // Only an SVG has parts to link.
+      const { path, parts } = value;
+      if (isString(path) && !path.endsWith('.svg') && isList(parts) && parts.length > 0) {
+        problem(where, `links parts of ${path}, which isn't an SVG`);
+      }
     }
     if (kind === 'glossary') glossaries += 1;
     if (counts) {

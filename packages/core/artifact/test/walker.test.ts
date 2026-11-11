@@ -92,6 +92,7 @@ test('anything else fails', () => {
     ['a figure of another type', document(figure('figures/flow.pdf'))],
     ['a figure with only an ending', document(figure('figures/.svg'))],
     ['a part with a bad id', document(figure('figures/a.svg', [{ id: '1a', target: code('a') }]))],
+    ['a part of an image', document(figure('figures/a.png', [{ id: 'a', target: code('a') }]))],
     [
       'a part twice',
       document(

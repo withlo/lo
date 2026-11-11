@@ -1,0 +1,4 @@
+<svg viewBox="0 0 860 120" xmlns="http://www.w3.org/2000/svg" onload="alert(1)">
+  <script>alert(document.cookie)</script>
+  <rect width="10" height="10" fill="var(--fig-panel)" onclick="alert(2)"/>
+</svg>

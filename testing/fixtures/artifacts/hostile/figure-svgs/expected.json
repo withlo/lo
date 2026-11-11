@@ -1,0 +1,24 @@
+{
+  "outcome": "shown",
+  "findings": [
+    { "code": "figure-content", "line": 13 },
+    { "code": "figure-content", "line": 17 },
+    { "code": "figure-content", "line": 21 },
+    { "code": "figure-content", "line": 25 },
+    { "code": "figure-content", "line": 29 },
+    { "code": "figure-too-large", "line": 33 },
+    { "code": "figure-too-large", "line": 37 },
+    { "code": "figure-too-large", "line": 41 }
+  ],
+  "code": [],
+  "figures": [
+    { "line": 13, "state": "leftOut", "why": "content" },
+    { "line": 17, "state": "leftOut", "why": "content" },
+    { "line": 21, "state": "leftOut", "why": "content" },
+    { "line": 25, "state": "leftOut", "why": "content" },
+    { "line": 29, "state": "leftOut", "why": "content" },
+    { "line": 33, "state": "leftOut", "why": "tooLarge" },
+    { "line": 37, "state": "leftOut", "why": "tooLarge" },
+    { "line": 41, "state": "leftOut", "why": "tooLarge" }
+  ]
+}

@@ -75,6 +75,14 @@ const SEVERITIES = {
   'tree-size': 'error',
   'figure-missing': 'error',
   'figure-not-file': 'error',
+  // The figures it shows.
+  'figure-type': 'error',
+  'figure-header': 'error',
+  'figure-too-large': 'error',
+  'figure-encoding': 'error',
+  'figure-content': 'error',
+  'figure-part-missing': 'error',
+  'figure-color': 'warning',
   // The code its targets name, at the header's commit.
   'code-commit': 'error',
   'code-missing': 'error',
@@ -92,7 +100,8 @@ export interface Finding {
   severity: Severity;
   /**
    * The file it's in, from the overview's root: `artifact.md`, or for what the commit holds, the
-   * path it's about, quoted as a message quotes the overview's text.
+   * path it's about, quoted as a message quotes the overview's text. A finding about a figure is
+   * in `artifact.md`, on the line of the block that shows it.
    */
   file: string;
   /** The line it's on, counting from 1, when it's on one. */

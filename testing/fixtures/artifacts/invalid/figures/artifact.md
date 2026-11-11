@@ -26,6 +26,12 @@ Parts that aren't parts.
 - [twice](#tldr)
 :::
 
+:::figure figures/shot.png
+A screenshot has no parts to link.
+
+- [save](#tldr)
+:::
+
 ## Glossary
 
 - **Bucket**: tokens.
