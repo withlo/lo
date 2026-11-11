@@ -1,0 +1,60 @@
+# Builds Lo for a Mac to try: an arm64 zip, signed ad hoc. It holds no certificate, so the workflow
+# reads no secret and notarizes nothing, and Gatekeeper doesn't trust the zip: a copy that was
+# downloaded opens with a right-click and "Open". Only a person starting it runs it, from the
+# Actions tab or with `gh workflow run package.yml --ref <branch>`; no push or pull request does.
+name: package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # nx.json turns both off too.
+  NX_DAEMON: 'false'
+  NX_NO_CLOUD: 'true'
+
+jobs:
+  package:
+    name: package
+    # An Apple silicon Mac, which has the codesign and ditto the build and its check use.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installs the Node and pnpm that package.json's devEngines pins, then the dependencies. The
+      # store cache that cache.yml saves is for Linux, so a Mac installs without it.
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          require-lockfile: true
+
+      # Builds the app, then packages it. electron-builder downloads the Electron it packages.
+      - name: Build and package the app
+        run: pnpm nx run desktop:package --output-style=static
+
+      - name: Check the zip
+        run: sh scripts/check-package.sh apps/desktop/release/Lo-*-arm64.zip
+
+      # The version is the same on every build, so the commit names the zip.
+      - name: Name the zip for its commit
+        id: zip
+        run: |
+          zip="apps/desktop/release/Lo-${GITHUB_SHA::7}-arm64.zip"
+          mv apps/desktop/release/Lo-*-arm64.zip "$zip"
+          echo "path=$zip" >> "$GITHUB_OUTPUT"
+
+      # Uploaded as it is, so the download is the zip itself, not a zip holding it.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ steps.zip.outputs.path }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
