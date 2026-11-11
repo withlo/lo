@@ -1,11 +1,18 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { expect, onTestFinished, test } from 'vitest';
 
-import { cacheLockRecord, CloneLock, lockCache, parseCacheLock, unlockCache } from './lock.ts';
+import {
+  cacheLockRecord,
+  CloneLock,
+  lockCache,
+  parseCacheLock,
+  startTime,
+  unlockCache,
+} from './lock.ts';
 import type { Activity } from './progress.ts';
 
 function folder(): string {
@@ -50,7 +57,10 @@ test('what a holder records goes when it lets go', async () => {
   const path = join(folder(), 'lo-cache.lock');
 
   const release = await lockCache(path);
-  expect(parseCacheLock(readFileSync(path, 'utf8'))).toBe(process.pid);
+  expect(parseCacheLock(readFileSync(path, 'utf8'))).toEqual({
+    pid: process.pid,
+    started: await startTime(process.pid),
+  });
   await unlockCache(path, release);
 
   expect(existsSync(path)).toBe(false);
@@ -75,45 +85,93 @@ test('a long wait says every so often that its still waiting', async () => {
 });
 
 test('reads only what a holder records', () => {
-  expect(parseCacheLock('lo-cache 1\n4242\n')).toBe(4242);
-  expect(parseCacheLock(cacheLockRecord(7))).toBe(7);
+  const started = 'Tue Nov 10 15:42:53 2026';
+  expect(parseCacheLock(`lo-cache 2\n4242\n${started}\n`)).toEqual({ pid: 4242, started });
+  expect(parseCacheLock(cacheLockRecord(7, started))).toEqual({ pid: 7, started });
   const notRecords = [
     '',
     '4242\n',
-    'lo-cache 1\n4242',
-    'lo-cache 2\n4242\n',
-    'lo-cache 1\nx\n',
-    'lo-cache 1\n0\n',
-    'lo-cache 1\n-1\n',
-    'lo-cache 1\n4242\nmore\n',
+    'lo-cache 1\n4242\n',
+    `lo-cache 2\n4242\n${started}`,
+    'lo-cache 2\n4242\n\n',
+    `lo-cache 3\n4242\n${started}\n`,
+    `lo-cache 2\nx\n${started}\n`,
+    `lo-cache 2\n0\n${started}\n`,
+    `lo-cache 2\n-1\n${started}\n`,
+    `lo-cache 2\n4242\n${started}\nmore\n`,
   ];
   expect(notRecords.filter((text) => parseCacheLock(text) !== undefined)).toEqual([]);
 });
 
+/** The record of this process's parent, which is running, and isn't this process. */
+async function parentsRecord(started?: string): Promise<string> {
+  return cacheLockRecord(process.ppid, started ?? (await startTime(process.ppid)) ?? 'unknown');
+}
+
 test('a cache another running process holds is refused, naming it', async () => {
   const path = join(folder(), 'lo-cache.lock');
-  // This process's parent is running, and isn't this process.
-  writeFileSync(path, cacheLockRecord(process.ppid));
+  const record = await parentsRecord();
+  writeFileSync(path, record);
 
   await expect(lockCache(path)).rejects.toThrow(
     `another program, process ${process.ppid}, is using ${path}`,
   );
-  expect(readFileSync(path, 'utf8')).toBe(cacheLockRecord(process.ppid));
+  expect(readFileSync(path, 'utf8')).toBe(record);
 });
 
 test('a lock a process that’s gone left is taken over', async () => {
   const dir = folder();
-  const gone = spawnSync('sh', ['-c', 'echo $$']).stdout.toString('utf8').trim();
-  for (const left of [cacheLockRecord(Number(gone)), 'half written', '']) {
+  const gone = Number(spawnSync('sh', ['-c', 'echo $$']).stdout.toString('utf8').trim());
+  const reused = await parentsRecord('Thu Jan  1 00:00:00 1970');
+  for (const left of [
+    cacheLockRecord(gone, 'Thu Jan  1 00:00:00 1970'),
+    reused,
+    'half written',
+    '',
+  ]) {
     const path = join(dir, `${left.length}.lock`);
     writeFileSync(path, left);
 
     const release = await lockCache(path);
 
-    expect(parseCacheLock(readFileSync(path, 'utf8'))).toBe(process.pid);
+    expect(parseCacheLock(readFileSync(path, 'utf8'))?.pid).toBe(process.pid);
+    expect(readdirSync(dir).filter((name) => name.includes('.lock.'))).toEqual([]);
     await unlockCache(path, release);
   }
 });
+
+test('of two processes taking over one stale lock at once, one gets it', async () => {
+  const dir = folder();
+  const path = join(dir, 'lo-cache.lock');
+  const gone = Number(spawnSync('sh', ['-c', 'echo $$']).stdout.toString('utf8').trim());
+  writeFileSync(path, cacheLockRecord(gone, 'Thu Jan  1 00:00:00 1970'));
+  // Each child takes the lock with the code under test, says whether it got it, and holds on
+  // until its input ends, so none lets go before all have tried.
+  const script = join(dir, 'take.ts');
+  writeFileSync(
+    script,
+    `import { lockCache } from ${JSON.stringify(new URL('./lock.ts', import.meta.url).pathname)};\n` +
+      `lockCache(${JSON.stringify(path)}).then(() => console.log('got'), (e) => console.log(String(e.message)));\n` +
+      'process.stdin.resume();\n',
+  );
+  const take = () => {
+    const child = spawn(process.execPath, [script], { stdio: ['pipe', 'pipe', 'inherit'] });
+    const said = new Promise<string>((resolve) => {
+      child.stdout.once('data', (data: Buffer) => resolve(data.toString('utf8').trim()));
+    });
+    const done = new Promise((resolve) => child.once('close', resolve));
+    return { said, end: () => child.stdin.end(), done };
+  };
+
+  for (let round = 0; round < 10; round++) {
+    writeFileSync(path, cacheLockRecord(gone, 'Thu Jan  1 00:00:00 1970'));
+    const takers = [take(), take(), take()];
+    const results = await Promise.all(takers.map((taker) => taker.said));
+    for (const taker of takers) taker.end();
+    await Promise.all(takers.map((taker) => taker.done));
+    expect(results.filter((result) => result === 'got')).toHaveLength(1);
+  }
+}, 60_000);
 
 test('a cache open in this process can’t be opened again until it’s closed', async () => {
   const path = join(folder(), 'lo-cache.lock');

@@ -142,19 +142,30 @@ export class Cache {
     let done: Release;
     try {
       if (await isFile(join(folder, 'HEAD'))) {
-        const reason = await distrust(this.runner, folder, this.checkoutsFolder(owner, name));
+        const reason = await distrust(this.runner, folder, {
+          checkouts: this.checkoutsFolder(owner, name),
+        });
         if (reason === undefined) {
           await this.#pointAt(folder, url);
         } else {
+          // Never pulled out from under a repository that's still reading it.
+          if (lock.users > 0) {
+            throw new GitError({
+              kind: 'busy',
+              message:
+                `${owner}/${name}'s local copy can't be trusted, since ${reason}, and is still ` +
+                'open, so it can be made again only once it closes',
+            });
+          }
           this.#log?.(`${owner}/${name}: making its local copy again, since ${reason}`);
           await this.trash(folder);
-          await this.#create(folder, url);
+          await this.create(folder, url);
         }
       } else {
         // Without HEAD, it's what an interrupted deletion left: it goes, and a new clone takes
         // its place.
         if (await exists(folder)) await this.trash(folder);
-        await this.#create(folder, url);
+        await this.create(folder, url);
       }
       await stampUsed(folder);
       done = lock.use();
@@ -165,6 +176,7 @@ export class Cache {
       cache: this,
       name: `${owner}/${name}`,
       folder,
+      url,
       lock,
       done,
       token: options.token,
@@ -184,7 +196,9 @@ export class Cache {
     checkName('repository name', name);
     const folder = this.repoFolder(owner, name);
     if (!(await isFile(join(folder, 'HEAD')))) return undefined;
-    const reason = await distrust(this.runner, folder, this.checkoutsFolder(owner, name));
+    const reason = await distrust(this.runner, folder, {
+      checkouts: this.checkoutsFolder(owner, name),
+    });
     if (reason !== undefined) {
       this.#log?.(`${owner}/${name}: not reading its local copy, since ${reason}`);
       return undefined;
@@ -194,6 +208,7 @@ export class Cache {
       cache: this,
       name: `${owner}/${name}`,
       folder,
+      url: `${this.runner.remote.base}/${owner}/${name}.git`,
       lock,
       done: lock.use(),
       offline: true,
@@ -223,9 +238,10 @@ export class Cache {
 
   /**
    * Makes a bare clone at `folder`, set up to fetch from `url`, in a temporary folder moved into
-   * place, so a clone in the cache is always whole.
+   * place, so a clone in the cache is always whole. Fetches name the remote on git's command line
+   * themselves; the clone's own settings make it a partial clone, which may lack objects.
    */
-  async #create(folder: string, url: string): Promise<void> {
+  async create(folder: string, url: string): Promise<void> {
     const temporary = this.temporaryPath('.git');
     try {
       // No template: nothing but what git needs, so no sample hooks.

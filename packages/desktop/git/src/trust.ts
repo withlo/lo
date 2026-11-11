@@ -26,18 +26,6 @@ const FOREIGN_FILES = [
   join('objects', 'info', 'http-alternates'),
 ];
 
-/** What git reads in a clone, which must be the clone's own, not a link to somewhere else. */
-const OWN_ENTRIES = [
-  'HEAD',
-  'config',
-  'objects',
-  'refs',
-  'packed-refs',
-  'shallow',
-  'info',
-  'worktrees',
-];
-
 /**
  * The settings a clone of Lo's holds: what `git init` writes, the remote's address, and what makes
  * the remote a promisor. A clone with any other, or an `include`, is refused, since a setting can
@@ -60,19 +48,31 @@ const OWN_SETTINGS = new Set([
 ]);
 
 /**
- * Why the clone at `clone` can't be trusted, or `undefined` when it can. `checkouts` is the folder
- * its checkouts are in: a checkout's `gitdir` must point inside it.
+ * Why the clone at `clone` can't be trusted, or `undefined` when it can. `options.checkouts` is
+ * the folder its checkouts are in: a checkout's `gitdir` must point inside it, and without it, it
+ * may have none. A clone of code must hold its whole history; only one that holds overviews,
+ * `options.shallow` says so, may hold commits without their parents.
  */
 export async function distrust(
   runner: Runner,
   clone: string,
-  checkouts: string,
+  options: { checkouts?: string | undefined; shallow?: boolean | undefined } = {},
 ): Promise<string | undefined> {
   const folder = await lstat(clone).catch(() => undefined);
   if (!folder?.isDirectory()) return 'it isn’t a folder';
-  for (const entry of OWN_ENTRIES) {
-    const found = await lstat(join(clone, entry)).catch(() => undefined);
-    if (found?.isSymbolicLink()) return `${entry} is a link to somewhere else`;
+  // Nothing in it may lead elsewhere: a linked `objects/pack` or `refs/lo` would make git write
+  // outside the cache.
+  const entries = await readdir(clone, { recursive: true, withFileTypes: true }).catch(
+    () => undefined,
+  );
+  if (entries === undefined) return 'it can’t be read';
+  const link = entries.find((entry) => entry.isSymbolicLink());
+  if (link !== undefined) {
+    return `${relative(clone, join(link.parentPath, link.name))} is a link to somewhere else`;
+  }
+  // Commits without their parents would cut every pull request's history short.
+  if (!options.shallow && (await lstat(join(clone, 'shallow')).catch(() => undefined))) {
+    return 'it holds commits without their history (shallow)';
   }
   for (const file of FOREIGN_FILES) {
     if (await lstat(join(clone, file)).catch(() => undefined)) {
@@ -86,12 +86,17 @@ export async function distrust(
     .path(join(clone, 'config'))
     .finish();
   if (listing.code !== 0) return 'its settings can’t be read';
-  const settings = listing.stdout
+  const names = listing.stdout
     .toString('utf8')
     .split('\n')
-    .filter((name) => name !== '' && !OWN_SETTINGS.has(name.toLowerCase()));
+    .filter((name) => name !== '')
+    .map((name) => name.toLowerCase());
+  const settings = names.filter((name) => !OWN_SETTINGS.has(name));
   if (settings.length > 0) return `it has settings Lo didn't write (${settings.join(', ')})`;
-  const worktrees = await distrustWorktrees(clone, checkouts);
+  // git reads some settings' first value and others' last, so one that holds two is refused.
+  const twice = names.filter((name, index) => names.indexOf(name) !== index);
+  if (twice.length > 0) return `it has settings with more than one value (${twice.join(', ')})`;
+  const worktrees = await distrustWorktrees(clone, options.checkouts);
   if (worktrees !== undefined) return worktrees;
   // Last, since it runs git on the clone.
   return leadsElsewhere(runner, clone);
@@ -119,7 +124,10 @@ export async function leadsElsewhere(runner: Runner, clone: string): Promise<str
  * Why a checkout's folder under the clone's `worktrees/` can't be trusted: one that points
  * anywhere but back at the clone and into `checkouts`, or holds settings of its own.
  */
-async function distrustWorktrees(clone: string, checkouts: string): Promise<string | undefined> {
+async function distrustWorktrees(
+  clone: string,
+  checkouts: string | undefined,
+): Promise<string | undefined> {
   const folder = join(clone, 'worktrees');
   const names = await readdir(folder).catch(() => []);
   for (const name of names) {
@@ -138,7 +146,11 @@ async function distrustWorktrees(clone: string, checkouts: string): Promise<stri
     }
     const gitdir = await readFile(join(worktree, 'gitdir'), 'utf8').catch(() => undefined);
     const target = gitdir?.trim();
-    const inside = target !== undefined && isAbsolute(target) && within(checkouts, target);
+    const inside =
+      checkouts !== undefined &&
+      target !== undefined &&
+      isAbsolute(target) &&
+      within(checkouts, target);
     if (!inside) return `worktrees/${name} names a checkout outside Lo's`;
   }
   return undefined;

@@ -195,3 +195,45 @@ test('a hook planted in a clone never runs, and a replace ref changes nothing', 
   expect(await opened.pullCommits(pr.trunkTip, pushed)).toEqual([pr.head, pushed]);
   expect(readdirSync(markers)).toEqual([]);
 });
+
+test('a clone of code with commits whose history it lacks is made again', async () => {
+  const { cache, repo, pr } = await fetched();
+  writeFileSync(join(repo.folder, 'shallow'), `${pr.trunkTip}\n`);
+
+  expect(await madeAgain(cache, repo)).toBe(true);
+});
+
+test('a link anywhere in a clone, not just at its top, makes it again', async () => {
+  for (const entry of ['objects/pack', 'refs/lo', 'refs/lo/pull/1/head']) {
+    const { cache, repo } = await fetched();
+    const elsewhere = join(tempFolder(), 'elsewhere');
+    mkdirSync(elsewhere);
+    rmSync(join(repo.folder, entry), { recursive: true, force: true });
+    symlinkSync(elsewhere, join(repo.folder, entry));
+
+    expect([entry, await madeAgain(cache, repo)]).toEqual([entry, true]);
+  }
+});
+
+test('a clone with a setting that holds two values is made again', async () => {
+  const { cache, repo } = await fetched();
+  // git fetches from a remote's first address, and `config --get` reads its last.
+  const settings = readFileSync(join(repo.folder, 'config'), 'utf8');
+  writeFileSync(
+    join(repo.folder, 'config'),
+    `[remote "origin"]\n\turl = https://elsewhere.example/repo.git\n${settings}`,
+  );
+
+  expect(await madeAgain(cache, repo)).toBe(true);
+});
+
+test('a clone that fails the check is never pulled out from under a repository reading it', async () => {
+  const { cache, repo } = await fetched();
+  const reading = await cache.open('owner', 'repo');
+  writeFileSync(join(repo.folder, 'commondir'), '/elsewhere\n');
+
+  await expect(cache.open('owner', 'repo')).rejects.toThrow('is still open');
+  expect(existsSync(join(reading.folder, 'commondir'))).toBe(true);
+  reading.close();
+  expect(await madeAgain(cache, repo)).toBe(true);
+});

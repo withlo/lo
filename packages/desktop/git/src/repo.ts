@@ -1,6 +1,6 @@
 /** One repository's clone: fetching into it, and reading its commits. */
 
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { GitError } from './errors.ts';
@@ -21,10 +21,15 @@ import {
 } from './refs.ts';
 import { stampUsed } from './stamp.ts';
 import { Token, type TokenSource } from './token.ts';
+import { distrust } from './trust.ts';
 
 /** What a repository needs of the cache it's in. */
 export interface RepoHost {
   readonly runner: Runner;
+  /** Makes a bare clone at `folder`, set up to fetch from `url`. */
+  create(folder: string, url: string): Promise<void>;
+  /** Moves `path` aside and deletes it. */
+  trash(path: string): Promise<void>;
   /** Notes a line for the log. */
   note(line: string): void;
 }
@@ -35,6 +40,8 @@ export interface RepoParts {
   readonly name: string;
   /** The clone's folder. */
   readonly folder: string;
+  /** The address the clone fetches from. */
+  readonly url: string;
   readonly lock: CloneLock;
   /** Lets go of the clone when the repository closes. */
   readonly done: Release;
@@ -109,8 +116,18 @@ const OBJECTS_PER_FETCH = 5000;
 /** The folder in a clone where each pull request's commits GitHub no longer has are noted. */
 const UNAVAILABLE_FOLDER = 'lo-unavailable';
 
-/** The remote name a fork's overview is fetched through. It's never written to the clone's config. */
-const FORK_REMOTE = 'lo-fork';
+/**
+ * The name every fetch gives the remote it fetches from, with its address and its being a
+ * promisor on git's command line. The clone's own settings never decide where a fetch goes.
+ */
+const REMOTE = 'lo';
+
+/**
+ * The bare repository, inside each clone, that holds its pull requests' overviews. They're
+ * fetched without their history, which in the clone of code would cut short every commit's that
+ * an overview's ref names.
+ */
+const OVERVIEWS = 'lo-overviews.git';
 
 /** Which of a pull request's commits a fetch by ID pins. */
 type Pins = 'revisions' | 'revisionBases';
@@ -123,6 +140,7 @@ export class Repo {
   readonly folder: string;
   readonly offline: boolean;
   readonly #cache: RepoHost;
+  readonly #url: string;
   readonly #lock: CloneLock;
   readonly #done: Release;
   readonly #token: TokenSource | undefined;
@@ -134,6 +152,7 @@ export class Repo {
     this.folder = parts.folder;
     this.offline = parts.offline;
     this.#cache = parts.cache;
+    this.#url = parts.url;
     this.#lock = parts.lock;
     this.#done = parts.done;
     this.#token = parts.token;
@@ -338,8 +357,14 @@ export class Repo {
 
   /** Which of `oids` the clone lacks. Never downloads anything. */
   async missingObjects(oids: readonly Oid[]): Promise<Oid[]> {
+    return this.#missingIn(this.folder, oids);
+  }
+
+  /** Which of `oids` the repository at `gitDir` lacks. Never downloads anything. */
+  async #missingIn(gitDir: string, oids: readonly Oid[]): Promise<Oid[]> {
     if (oids.length === 0) return [];
-    const output = await this.#git()
+    const output = await this.#runner
+      .command({ gitDir })
       .arg('cat-file', '--batch-check=%(objectname)')
       .run(oids.map((oid) => `${oid}\n`).join(''));
     return lines(output)
@@ -363,6 +388,23 @@ export class Repo {
   }
 
   /**
+   * Downloads the files of pull request `number`'s `overview` the repository of overviews lacks,
+   * in one fetch. Returns the ones still missing.
+   */
+  async downloadOverview(number: number, overview: Overview): Promise<Oid[]> {
+    checkNumber(number);
+    const what = `pull request #${number}'s overview`;
+    // A submodule's entry is a commit in another repository.
+    const oids = overview.files.filter((file) => file.mode !== '160000').map((file) => file.oid);
+    return this.#locked(`downloading ${what}`, async () => {
+      const overviews = await this.#overviews();
+      const missing = await this.#missingIn(overviews, [...new Set(oids)]);
+      if (missing.length > 0) await this.#fetch(what, [], { objects: missing, gitDir: overviews });
+      return this.#missingIn(overviews, missing);
+    });
+  }
+
+  /**
    * Fetches pull request `number`'s overview: `refs/lo/pr/<n>` from the base repository, else
    * from `fork`, the repository its head is in. Only the commit and its trees come, with none of
    * their history and no file's contents. A pull request without one has `undefined`.
@@ -379,33 +421,44 @@ export class Repo {
     const what = `pull request #${number}'s overview`;
     const source = `refs/lo/pr/${number}`;
     return this.#locked(`fetching ${what}`, async () => {
+      const overviews = await this.#overviews();
       const fromBase = pullRef(number, 'overview');
-      if (await this.#fetchIfThere(what, [`+${source}:${fromBase}`], {})) {
-        return this.#overview(fromBase, 'base');
+      if (await this.#fetchIfThere(what, [`+${source}:${fromBase}`], { gitDir: overviews })) {
+        return this.#overview(overviews, fromBase, 'base');
       }
       if (fork === undefined) return undefined;
       const fromFork = pullRef(number, 'overview-fork');
       const url = `${this.#runner.remote.base}/${fork.owner}/${fork.name}.git`;
-      // The fork's address and its being a promisor go on the command line alone: written to the
-      // clone's config, they'd be settings Lo doesn't otherwise write.
-      const remote = [
-        `remote.${FORK_REMOTE}.url=${url}`,
-        `remote.${FORK_REMOTE}.promisor=true`,
-        `remote.${FORK_REMOTE}.partialclonefilter=blob:none`,
-      ];
       const fetched = await this.#fetchIfThere(what, [`+${source}:${fromFork}`], {
-        remote: FORK_REMOTE,
-        config: remote,
+        gitDir: overviews,
+        url,
       });
-      return fetched ? this.#overview(fromFork, 'fork') : undefined;
+      return fetched ? this.#overview(overviews, fromFork, 'fork') : undefined;
     });
+  }
+
+  /**
+   * The repository of overviews inside the clone, made on first use, and made again when it
+   * fails the trust check. The lock is held.
+   */
+  async #overviews(): Promise<string> {
+    const folder = join(this.folder, OVERVIEWS);
+    const present = await lstat(join(folder, 'HEAD')).catch(() => undefined);
+    if (present !== undefined) {
+      const reason = await distrust(this.#runner, folder, { shallow: true });
+      if (reason === undefined) return folder;
+      this.#cache.note(`${this.name}: making its overviews again, since ${reason}`);
+    }
+    await this.#cache.trash(folder);
+    await this.#cache.create(folder, this.#url);
+    return folder;
   }
 
   /** {@link Repo.#fetch} of a shallow overview, or `false` when the remote has no such ref. */
   async #fetchIfThere(
     what: string,
     refspecs: string[],
-    options: { remote?: string; config?: string[] },
+    options: { gitDir: string; url?: string },
   ): Promise<boolean> {
     try {
       await this.#fetch(what, refspecs, { ...options, shallow: true });
@@ -420,13 +473,18 @@ export class Repo {
     }
   }
 
-  /** The overview pinned at `ref`, with its files. */
-  async #overview(ref: string, source: Overview['source']): Promise<Overview> {
-    const commit = await this.#resolve(ref);
+  /** The overview pinned at `ref` in the repository of overviews, with its files. */
+  async #overview(overviews: string, ref: string, source: Overview['source']): Promise<Overview> {
+    const resolved = await this.#runner
+      .command({ gitDir: overviews })
+      .arg('rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`)
+      .run();
+    const commit = oidFromOutput(resolved);
     const files: OverviewFile[] = [];
     // With lazy fetching off, `-l` gives the size of each file the clone has, and no number for
     // the rest.
-    const listing = await this.#git()
+    const listing = await this.#runner
+      .command({ gitDir: overviews })
       .arg('ls-tree', '-r', '-z', '-l', '--full-tree', commit, '--')
       .run();
     for (const record of splitRecords(listing)) {
@@ -636,17 +694,25 @@ export class Repo {
     options: FetchOptions,
     token: Token | undefined,
   ): Promise<void> {
+    const gitDir = options.gitDir ?? this.folder;
     // A lock left on a ref the fetch writes would fail it every time: one a git killed from
     // outside, or in a crash, left. Only fetches and pins write these refs, under the clone's
     // lock, which is held, so such a lock is no one's.
     for (const refspec of refspecs) {
       const colon = refspec.indexOf(':');
-      if (colon !== -1)
-        await rm(join(this.folder, `${refspec.slice(colon + 1)}.lock`), { force: true });
+      if (colon !== -1) await rm(join(gitDir, `${refspec.slice(colon + 1)}.lock`), { force: true });
     }
     const fetching: Fetching = { token, proxy: await this.#proxy?.() };
-    const command = this.#runner.command({ gitDir: this.folder }, { fetching });
-    for (const setting of options.config ?? []) command.arg('-c', setting);
+    const command = this.#runner.command({ gitDir }, { fetching });
+    // Where the fetch goes, and that it's a promisor, on the command line alone: never the clone's
+    // own settings, which only Lo writes, but a fetch shouldn't have to trust.
+    for (const setting of [
+      `remote.${REMOTE}.url=${options.url ?? this.#url}`,
+      `remote.${REMOTE}.promisor=true`,
+      `remote.${REMOTE}.partialclonefilter=blob:none`,
+    ]) {
+      command.arg('-c', setting);
+    }
     if (options.objects !== undefined) {
       // As git's own downloads of what a partial clone lacks: the objects are named, so there's
       // nothing to work out with GitHub first.
@@ -661,7 +727,7 @@ export class Repo {
       '--filter=blob:none',
     );
     if (options.shallow) command.arg('--depth=1');
-    command.arg(options.remote ?? 'origin', ...refspecs);
+    command.arg(REMOTE, ...refspecs);
     if (options.objects === undefined) {
       await command.run(undefined, { what });
       return;
@@ -680,10 +746,10 @@ interface FetchOptions {
   readonly objects?: readonly Oid[] | undefined;
   /** The commits alone, without their history. */
   readonly shallow?: boolean | undefined;
-  /** The remote to fetch from, when not the clone's own. */
-  readonly remote?: string | undefined;
-  /** Settings for this fetch alone, such as another remote's. */
-  readonly config?: readonly string[] | undefined;
+  /** The repository to fetch into, when not the clone: the overviews'. */
+  readonly gitDir?: string | undefined;
+  /** The address to fetch from, when not the clone's: a fork's. */
+  readonly url?: string | undefined;
 }
 
 /** Where pull request `number`'s commit `oid` is pinned, as `pins`. */

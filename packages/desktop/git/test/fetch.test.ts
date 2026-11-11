@@ -6,11 +6,10 @@ import { join } from 'node:path';
 import { git, missingObjects, packs } from '@lo/testing/git';
 import { expect, test } from 'vitest';
 
-import { Cache } from '../src/cache.ts';
 import { GitError } from '../src/errors.ts';
 import { type Oid, parseOid } from '../src/oid.ts';
 import { blobs, changedBlobs, fetch, pullRequest, readFile, refs, revParse } from './fixtures.ts';
-import { cacheFor, failureOf, foundGit, repoServer, tempFolder } from './support.ts';
+import { cacheFor, failureOf, repoServer, tempFolder } from './support.ts';
 
 /** The error `promise` fails with. */
 async function failure(promise: Promise<unknown>): Promise<GitError> {
@@ -374,15 +373,18 @@ test('an unreachable server is a retryable network error', async () => {
 test('without opting in only https is allowed', async () => {
   const server = repoServer();
   pullRequest(server);
-  // A cache that fetches from GitHub, pointed at a file:// remote behind its back.
-  const cache = await Cache.open({ root: join(tempFolder(), 'cache'), git: await foundGit() });
+  // A cache that fetches from a server on this machine, over HTTPS, which isn't there, pointed at
+  // a file:// remote behind its back.
+  const cache = await cacheFor('https://127.0.0.1:1');
   const repo = await cache.open('owner', 'repo');
   git(repo.folder, 'config', 'remote.origin.url', `${server.baseUrl}/owner/repo.git`);
 
   const error = await failure(repo.fetchPull(refs(1, 'trunk')));
-  await cache.close();
 
-  expect(error.message).toContain("transport 'file' not allowed");
+  // The fetch goes where the cache says, over HTTPS, never where the clone's settings say.
+  expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'network' });
+  expect(error.message).toContain('127.0.0.1');
+  expect(git(repo.folder, 'for-each-ref')).toBe('');
 });
 
 test('many fetches at once all succeed', async () => {
