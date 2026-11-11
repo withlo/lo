@@ -12,7 +12,7 @@ import { CREDENTIAL_HELPER, TOKEN_VARIABLE } from '../src/environment.ts';
 import { GitError } from '../src/errors.ts';
 import type { Runner } from '../src/git.ts';
 import { Token } from '../src/token.ts';
-import { failureOf, foundGit, runnerIn, script, tempFolder } from './support.ts';
+import { failureOf, foundGit, runnerIn, script, systemPath, tempFolder } from './support.ts';
 
 const GITHUB = 'https://github.com';
 
@@ -121,7 +121,7 @@ test('without a fetch git gets no token', async () => {
 test('proxy passwords stay out of debug output', async () => {
   const git = await foundGit({
     ...process.env,
-    PATH: '/usr/bin:/bin',
+    PATH: systemPath(),
     https_proxy: 'http://alice:hunter2@proxy:3128',
     ALL_PROXY: 'socks5://bob:swordfish@proxy:1080',
   });

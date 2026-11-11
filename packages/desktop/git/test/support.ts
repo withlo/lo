@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { gitProgram, RepoServer } from '@lo/testing/git';
 import { onTestFinished } from 'vitest';
@@ -26,6 +26,14 @@ export function tempFolder(): string {
   const folder = realpathSync(mkdtempSync(join(tmpdir(), 'lo-git-test-')));
   onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
   return folder;
+}
+
+/**
+ * A `PATH` of the system's folders alone, after the folder of the git the tests run, which may be
+ * elsewhere, as a git built for them is.
+ */
+export function systemPath(): string {
+  return `${dirname(gitProgram())}:/usr/bin:/bin`;
 }
 
 /** The git Lo would find in `env`: the test's own environment unless it says otherwise. */
