@@ -1,37 +1,24 @@
 // The diff, the middle of a pull request's tab: every changed file in one scroll, in the left
 // panel's order, drawn by `@lo/ui/code`'s view once each file that shows its lines has them. A new
-// order is a new view, which comes back to where the cursor was. What arrives after it's drawn
-// goes into the view in place: a large file asked for, the local copy's diff swapped for GitHub's,
-// the moves. The tree follows the file on screen, and asks the diff to show the files it picks.
+// order, or other files, is a new view, which comes back to what was at the top of the screen.
+// What arrives after it's drawn goes into the view in place (`drawing.ts`). The tree follows the
+// file on screen, and asks the diff to show the files it picks.
 
-import { createDiffView, type DiffView, type Probe, type Target } from '@lo/ui/code';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import { openMenu } from '../../../window/commands/menus.tsx';
-import { registry, setMiddle } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
 import { contract as app } from '../../app/contract.ts';
 import { useSetting } from '../../settings/window/shared.ts';
 import { tabState, usePull, type PullTab } from '../../tab/window/shared.ts';
-import { followFile, onShowFile, useFileOrder } from '../../tree/window/shared.ts';
+import { useFileOrder } from '../../tree/window/shared.ts';
 import { layout as layoutSetting, whitespace as whitespaceSetting } from '../settings.ts';
-import { diffFileOf, headerOf, inOrder, viewKey } from './files.ts';
-import type { Entry, Loader, Snapshot } from './loader.ts';
-import { main } from './main.ts';
-import { loaderOf, setDrawn } from './tabs.ts';
+import { draw, type Drawing, type Place } from './drawing.ts';
+import { inOrder, viewKey } from './files.ts';
+import type { Loader, Snapshot } from './loader.ts';
+import { loaderOf } from './tabs.ts';
 
-declare global {
-  interface Window {
-    /**
-     * The diff on screen, for the smoke test, in a build run from source: its readings, and its
-     * files' ids and paths, in the order it shows them.
-     */
-    loDiff?: { probe: Probe; files: { id: string; path: string }[] } | undefined;
-  }
-}
-
-/** Where each tab's cursor was when its view last went, to come back to. */
-const cursors = tabState<Target | undefined>(() => undefined);
+/** Where each tab's view was when it last went, to come back to. */
+const places = tabState<Place | undefined>(() => undefined);
 
 let page: Promise<{ nonce: string; packaged: boolean }> | undefined;
 
@@ -111,11 +98,13 @@ export function Diff({ tab }: { tab: PullTab }) {
       at,
       layout: drawn.layout,
       nonce: nonceValue,
+      packaged,
+      before: places.get(tab.id),
     });
     view.current = made;
     return () => {
       view.current = undefined;
-      cursors.set(tab.id, made.view.keyState().target);
+      places.set(tab.id, made.place());
       made.stop();
       made.view.destroy();
     };
@@ -126,9 +115,10 @@ export function Diff({ tab }: { tab: PullTab }) {
     view.current?.view.setLayout(layout);
   }, [layout]);
 
-  // The local copy's files, taken in place of GitHub's, say more of each: their sizes, say.
+  // The local copy's files, taken in place of GitHub's, say more of each, and may start out
+  // otherwise.
   useEffect(() => {
-    if (ready) view.current?.headers(ready.entries);
+    if (ready) view.current?.update(ready.entries);
   }, [ready]);
 
   if (!ready || nonceValue === undefined) return <Waiting tab={tab} snapshot={snapshot} />;
@@ -150,120 +140,4 @@ function Waiting({ tab, snapshot }: { tab: PullTab; snapshot: Snapshot }) {
       <p className="max-w-read-measure">{text}</p>
     </div>
   );
-}
-
-/** A view drawn, and what's done with it while it's drawn. */
-interface Drawing {
-  readonly view: DiffView;
-  /** Gives the view the headers of `entries`, where they've changed. */
-  headers(entries: readonly Entry[]): void;
-  /** Unhooks it, before it's destroyed. */
-  stop(): void;
-}
-
-/** Draws the view of `entries`, fills in what's been worked out, and hooks it up. */
-function draw(options: {
-  parent: HTMLElement;
-  tab: PullTab;
-  loader: Loader;
-  entries: readonly Entry[];
-  at: string;
-  layout: 'split' | 'inline';
-  nonce: string;
-}): Drawing {
-  const { parent, tab, loader, entries, at } = options;
-  const keys = registry();
-  const files = entries.map((entry) => diffFileOf(entry, loader.shown(entry.id)));
-  const view = createDiffView(
-    parent,
-    { files, layout: options.layout, vimKeys: keys.vimKeys(), nonce: options.nonce },
-    {
-      cursor() {},
-      mode() {},
-      file: (id) => followFile(tab.id, loader.ids.keyOf(id)),
-      jumped: (from) => keys.history.record({ view: 'diff', at: from }),
-      load: (id) => loader.load(id),
-      menu: (target, x, y) => {
-        openMenu(target, { x, y });
-      },
-    },
-  );
-  // Highlighting first, so each file is drawn once, with its diff.
-  files.forEach((file) => {
-    const shown = file.lines ? loader.shown(file.id) : undefined;
-    if (!shown) return;
-    for (const side of ['old', 'new'] as const) {
-      const triples = shown.tokens[side];
-      if (triples) view.setTokens(file.id, side, triples);
-    }
-    view.setDiff(file.id, shown.diff);
-  });
-  view.setMoves(loader.moves());
-  loader.attach({
-    lines(id, shown) {
-      view.setLines(id, shown.lines, shown.diff);
-      for (const side of ['old', 'new'] as const) {
-        const triples = shown.tokens[side];
-        if (triples) view.setTokens(id, side, triples);
-      }
-    },
-    diff: (id, diff) => view.setDiff(id, diff),
-    failed: (id) => view.loadFailed(id),
-    moves: (moves) => view.setMoves(moves),
-  });
-  const stops = [
-    setDrawn(tab.id, {
-      view,
-      loader,
-      pull: { owner: tab.owner, repo: tab.repo, number: tab.number },
-    }),
-    setMiddle({
-      focus: () => view.focus(),
-      here: () => ({ view: 'diff', at: view.keyState().target }),
-    }),
-    keys.history.register(tab.id, 'diff', (target) => {
-      if (!view.reveal(target)) return false;
-      view.focus();
-      return true;
-    }),
-    // A changed file the tree asks for: its header comes on screen, focus staying in the tree.
-    onShowFile('diff', (id, key) => {
-      const file = id === tab.id ? loader.ids.find(key) : undefined;
-      if (file !== undefined) view.reveal({ kind: 'file', file });
-    }),
-    keys.subscribe(() => view.setVimKeys(keys.vimKeys())),
-  ];
-  const testing = packaged
-    ? undefined
-    : { probe: view.probe, files: files.map(({ id, path }) => ({ id, path })) };
-  if (testing) window.loDiff = testing;
-  const before = cursors.get(tab.id);
-  if (before) view.reveal(before);
-  // Focus that's nowhere in particular comes to the diff, as it does to any middle view.
-  const focused = document.activeElement;
-  if (!focused || focused === document.body || focused.hasAttribute('data-lo-middle')) {
-    view.focus();
-  }
-  // The diff at this head is on screen: it stays, until the reader loads a newer push.
-  main()
-    .drawn({ id: tab.id, at })
-    .catch((error: unknown) => console.error("Lo couldn't say the diff was drawn:", error));
-  const headers = new Map(files.map((file) => [file.id, JSON.stringify(file.header)]));
-  return {
-    view,
-    headers(next) {
-      for (const entry of next) {
-        const header = headerOf(entry.versions);
-        const said = JSON.stringify(header);
-        if (!headers.has(entry.id) || headers.get(entry.id) === said) continue;
-        headers.set(entry.id, said);
-        view.setHeader(entry.id, header);
-      }
-    },
-    stop() {
-      if (testing && window.loDiff === testing) window.loDiff = undefined;
-      loader.attach(undefined);
-      for (const stop of stops) stop();
-    },
-  };
 }

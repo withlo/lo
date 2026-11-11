@@ -33,6 +33,15 @@ export type {
 /** Where a code view's cursor can be: on a file's line, or on its header. */
 export type Spot = { kind: 'line'; at: Place } | HeaderTarget;
 
+/**
+ * What's at the top of the screen: the line or header there, and how far above the screen's top
+ * its own top is, in pixels.
+ */
+export interface Viewport {
+  at: Spot;
+  offset: number;
+}
+
 /** How a diff is laid out: the two sides next to each other, or one column of both. */
 export type DiffLayout = 'split' | 'inline';
 
@@ -253,6 +262,21 @@ export interface DiffView extends KeySource {
    * can't. Not a jump, and focus stays where it is: `focus()` takes it there.
    */
   reveal(at: Target): boolean;
+  /**
+   * Closes a shown file into one block, as `za` does, or opens it again; a file kept out or not
+   * shown as a diff has nothing to close. Not a jump, and the cursor stays.
+   */
+  setCollapsed(file: string, collapsed: boolean): void;
+  /** The files with any of their rows on screen, first to last. */
+  filesOnScreen(): readonly string[];
+  /** What's at the top of the screen now. */
+  viewport(): Viewport;
+  /**
+   * Scrolls so `viewport`'s line or header is at the top of the screen as it was, its own top
+   * `offset` pixels above the screen's. Says whether the view has it. Moves neither the cursor nor
+   * focus.
+   */
+  scrollTo(viewport: Viewport): boolean;
   /** `]c` and kin: `count` changes, files or threads on, or back where it's negative. */
   jump(to: JumpTo, count: number): void;
   /** `Tab`: the cursor goes to its row on the other side. A jump. */

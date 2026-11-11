@@ -254,6 +254,39 @@ describe('a tab’s diff in the window', () => {
     expect(heard).toEqual(['lines d0 local', 'lines d1 local', 'moves 1']);
   });
 
+  it('takes the local copy’s files in place even where they start out otherwise, loading the lines the view shows', async () => {
+    const github = [versions('a.ts'), versions('gen.ts'), versions('big.txt', 'large')];
+    const local = [
+      versions('a.ts'),
+      { ...versions('gen.ts', 'collapsed'), generated: 'attribute' as const },
+      // Large by its size, which GitHub's list doesn't say.
+      versions('big.txt', 'large'),
+    ];
+    const { done, list } = work();
+    const loader = new Loader(done);
+    loader.setWhitespace(true);
+    list(github);
+    loader.take(state(github, 'github'));
+    await settle(loader);
+    const drawn = loader.snapshot().ready;
+    const { made, heard } = sink();
+    loader.attach(made);
+
+    list(local);
+    loader.take(state(local, 'local'));
+    await settle(loader);
+
+    // The same view, which hears of each file it shows the lines of.
+    expect(loader.snapshot().ready?.from).toBe('local');
+    expect(loader.snapshot().ready?.entries.map((entry) => entry.id)).toEqual(
+      drawn?.entries.map((entry) => entry.id),
+    );
+    expect(heard.filter((line) => line.startsWith('lines'))).toEqual([
+      'lines d0 local',
+      'lines d1 local',
+    ]);
+  });
+
   it('keeps GitHub’s files drawn until the local copy’s other files are all in', async () => {
     const githubFiles = [versions('a.ts'), versions('b.ts')];
     const localFiles = [versions('a.ts'), versions('b.ts'), versions('c.ts')];

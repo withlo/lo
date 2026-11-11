@@ -61,6 +61,14 @@ function lineOf(target: LineTarget | HeaderTarget) {
   return { file: at.file, line: { side: at.side, line } };
 }
 
+/** Opens or closes what a target is on, the reader's own say over how its file shows. */
+function fold(how: 'open' | 'close' | 'file' | 'toggle') {
+  return (drawn: Drawn, target: LineTarget | HeaderTarget): void => {
+    drawn.acted(target.kind === 'header' ? target.file : target.at.file);
+    drawn.view.fold(target, how);
+  };
+}
+
 async function copy(text: string): Promise<void> {
   await tabs().copy({ text });
 }
@@ -87,16 +95,10 @@ export default {
       }),
       enabled: drawnNow,
     },
-    openRun: { run: withDiff(({ view }, target) => view.fold(target, 'open')), enabled: drawnNow },
-    closeRun: {
-      run: withDiff(({ view }, target) => view.fold(target, 'close')),
-      enabled: drawnNow,
-    },
-    openFile: { run: withDiff(({ view }, target) => view.fold(target, 'file')), enabled: drawnNow },
-    toggleFile: {
-      run: withDiff(({ view }, target) => view.fold(target, 'toggle')),
-      enabled: drawnNow,
-    },
+    openRun: { run: withDiff(fold('open')), enabled: drawnNow },
+    closeRun: { run: withDiff(fold('close')), enabled: drawnNow },
+    openFile: { run: withDiff(fold('file')), enabled: drawnNow },
+    toggleFile: { run: withDiff(fold('toggle')), enabled: drawnNow },
     copyLines: {
       run: withDiff(async ({ view }, target) => {
         await copy(view.lines(spanOf(target.at)).join('\n'));

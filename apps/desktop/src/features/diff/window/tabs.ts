@@ -54,6 +54,8 @@ export interface Drawn {
   readonly loader: Loader;
   /** The pull request it shows. */
   readonly pull: { owner: string; repo: string; number: number };
+  /** The reader opened or closed a file: how it starts out is theirs to say now. */
+  acted(file: string): void;
 }
 
 const drawn = new Map<string, Drawn>();

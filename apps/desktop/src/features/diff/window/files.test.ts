@@ -62,12 +62,13 @@ describe('the files as the view gets them', () => {
     ]);
   });
 
-  it('make a new view only for other files, another order or another start', () => {
+  it('make a new view only for other files or another order, not another start', () => {
     const a = entry('d0', 'a');
     const b = entry('d1', 'b');
     expect(viewKey('h', [a, b])).toBe(viewKey('h', [a, b]));
     expect(viewKey('h', [a, b])).not.toBe(viewKey('h', [b, a]));
-    expect(viewKey('h', [a, b])).not.toBe(viewKey('h', [a, entry('d1', 'b', 'large')]));
+    expect(viewKey('h', [a, b])).not.toBe(viewKey('h', [a]));
+    expect(viewKey('h', [a, b])).toBe(viewKey('h', [a, entry('d1', 'b', 'large')]));
   });
 
   it('show a binary file’s two sizes, and why a file starts as it does', () => {

@@ -27,12 +27,11 @@ export function inOrder(
 }
 
 /**
- * What makes a view of these files a new one: their ids in order and how each starts out. Two
- * lists with the same key draw the same files the same way, so one view takes the other's files
- * in place.
+ * What makes a view of these files a new one: their ids, in order. Two lists with the same key
+ * draw the same files, so one view takes the other's in place, however each starts out.
  */
 export function viewKey(at: string, entries: readonly Entry[]): string {
-  return `${at}|${entries.map((entry) => `${entry.id}:${entry.versions.start}`).join(',')}`;
+  return `${at}|${entries.map((entry) => entry.id).join(',')}`;
 }
 
 /** The longest path a header shows whole. */

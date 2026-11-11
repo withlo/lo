@@ -18,6 +18,8 @@ import {
   type Text,
 } from '@codemirror/state';
 import {
+  type BlockInfo,
+  BlockType,
   Decoration,
   type DecorationSet,
   EditorView,
@@ -57,9 +59,10 @@ import type {
   Span,
   Spot,
   ThreadView,
+  Viewport,
   VimKey,
 } from './api.ts';
-import { Aligner, alignerFields } from './aligner.ts';
+import { Aligner, alignerFields, drawnTop, ownTop } from './aligner.ts';
 import { CommentBox, placeKey } from './comments.ts';
 import {
   type FileNote,
@@ -299,6 +302,17 @@ class View implements DiffView {
       { passive: true },
     );
     this.dom.addEventListener('scroll', this.#watchFile, { passive: true });
+    // When the box moves on the page, as a banner over it comes or goes, what's on screen stays
+    // put: the scroll takes the move, and at the very top, room above the first file does.
+    this.#slack.className = 'lo-diffslack';
+    this.dom.prepend(this.#slack);
+    this.#placed = this.#contentTop();
+    this.dom.addEventListener('scroll', this.#placeChosen, { passive: true });
+    for (const type of ['wheel', 'keydown', 'pointerdown'] as const) {
+      this.dom.addEventListener(type, this.#letGo, { passive: true, capture: true });
+    }
+    this.#boxWatch = new ResizeObserver(this.#keepPlace);
+    this.#boxWatch.observe(this.dom);
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
     for (const side of ['old', 'new'] as const) {
       const view = this.views[side];
@@ -323,6 +337,61 @@ class View implements DiffView {
       layout: () => this.#pane,
       cursor: () => this.#cursorReading(),
     });
+  }
+
+  /** The line `scrollTo` is putting back at the top, until it's there or the reader moves. */
+  #holding: Viewport | undefined;
+  /** Counts calls to `scrollTo`, so only the latest puts its line back. */
+  #holds = 0;
+
+  /** The reader moves: what's at the top is theirs to choose again. */
+  readonly #letGo = (): void => {
+    this.#holding = undefined;
+  };
+
+  /** Room above the first file that keeps what's on screen in place as the box moves up. */
+  readonly #slack = document.createElement('div');
+  #slackHeight = 0;
+  /** Where the content's top was on the page when the reader last put it there. */
+  #placed = 0;
+  readonly #boxWatch: ResizeObserver;
+
+  /** Where the content's top is on the page now, room above it included. */
+  #contentTop(): number {
+    return this.dom.getBoundingClientRect().top - this.dom.scrollTop + this.#slackHeight;
+  }
+
+  /** The scroll moved, by the reader or the view: that's where the content is meant to be. */
+  readonly #placeChosen = (): void => {
+    this.#placed = this.#contentTop();
+  };
+
+  /**
+   * The box moved or changed size, as when a banner over it comes or goes: the content goes back
+   * where it was on the page, by scrolling, or at the very top by room added above the first
+   * file, which a box moving back down takes away again.
+   */
+  readonly #keepPlace = (): void => {
+    const moved = this.#contentTop() - this.#placed;
+    if (Math.abs(moved) < 0.5) return;
+    if (moved > 0) {
+      const taken = Math.min(this.#slackHeight, moved);
+      this.#setSlack(this.#slackHeight - taken);
+      this.dom.scrollTop += moved - taken;
+    } else {
+      const up = -moved;
+      const room = this.dom.scrollTop;
+      this.dom.scrollTop -= Math.min(up, room);
+      if (up > room) this.#setSlack(this.#slackHeight + up - room);
+    }
+    this.#placed = this.#contentTop();
+    // Room added above moves no scroll the pass would see: it keeps what's on screen as it is now.
+    this.#aligner.anchorHere();
+  };
+
+  #setSlack(height: number): void {
+    this.#slackHeight = Math.max(0, height);
+    this.#slack.style.height = `${this.#slackHeight}px`;
   }
 
   readonly #measure = (): void => {
@@ -455,6 +524,94 @@ class View implements DiffView {
     }
   }
 
+  setCollapsed(id: string, collapsed: boolean): void {
+    const file = this.#fileOf(id);
+    const { skipped } = this.#files[file]!;
+    if (skipped || !this.#loaded.has(file) || this.#closed.has(file) === collapsed) return;
+    if (collapsed) this.#closed.add(file);
+    else this.#closed.delete(file);
+    if (this.#inline && !collapsed) this.#addInline(file);
+    this.#refresh(file);
+  }
+
+  filesOnScreen(): readonly string[] {
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
+    const view = this.#viewOf(pane);
+    const top = this.dom.getBoundingClientRect().top - view.documentTop;
+    const fileAt = (height: number): number =>
+      this.#fileAt(
+        pane,
+        view.state.doc.lineAt(view.lineBlockAtHeight(Math.max(0, height)).from).number,
+      );
+    const first = fileAt(top);
+    const last = fileAt(top + Math.max(0, this.dom.clientHeight - 1));
+    return this.#ids.slice(first, last + 1);
+  }
+
+  viewport(): Viewport {
+    // While the view is still putting a line back at the top, that's where it belongs.
+    if (this.#holding) return this.#holding;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
+    const view = this.#viewOf(pane);
+    const top = this.dom.getBoundingClientRect().top - view.documentTop;
+    // A line of text or a file's header, which every version of the file has: not collapsed
+    // lines, a note or a spacer, whose size can change when the file's lines do. Past them, the
+    // next line down, below the screen's top.
+    let block = view.elementAtHeight(Math.max(0, top));
+    for (let step = 0; step < 50 && !this.#steadyBlock(pane, view, block); step++) {
+      if (block.bottom >= view.contentHeight) break;
+      block = view.elementAtHeight(block.bottom + 0.5);
+    }
+    const line = view.state.doc.lineAt(block.from).number;
+    // Where it's drawn, which the height map can be off from by a line it has only estimated.
+    const drawn = drawnTop(view, block.from);
+    const offset =
+      drawn === undefined ? top - block.top : this.dom.getBoundingClientRect().top - drawn;
+    return { at: this.#spot(this.#placeAt(pane, line)), offset };
+  }
+
+  /** Whether a block keeps its place and size as its file's lines change: a line, or a header. */
+  #steadyBlock(pane: Pane, view: EditorView, block: BlockInfo): boolean {
+    if (block.type === BlockType.Text) return true;
+    if (block.type !== BlockType.WidgetRange) return false;
+    // A header replaces its own line, and nothing else.
+    const line = view.state.doc.lineAt(block.from);
+    return block.to === line.to && this.#placeAt(pane, line.number).line === 0;
+  }
+
+  scrollTo(viewport: Viewport): boolean {
+    const found = this.#atOf(viewport.at);
+    if (!found) return false;
+    const { place } = found;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
+    const view = this.#viewOf(pane);
+    // Checked each frame, after the editors have measured and the sides are levelled, until it
+    // holds still. Until then, what's at the top is this, whatever else changes.
+    this.#holding = viewport;
+    const run = ++this.#holds;
+    let still = 0;
+    let frames = 0;
+    const check = (): void => {
+      // A later call, or the reader, takes over.
+      if (this.#holds !== run || this.#holding !== viewport) return;
+      const pos = view.state.doc.line(this.#docLine(pane, place)).from;
+      const box = this.dom.getBoundingClientRect().top;
+      const top = drawnTop(view, pos) ?? view.documentTop + ownTop(view.lineBlockAt(pos));
+      const moved = top - (box - viewport.offset);
+      if (Math.abs(moved) >= 0.5) {
+        this.dom.scrollTop += moved;
+        still = 0;
+      } else {
+        still += 1;
+      }
+      frames += 1;
+      if (still >= 2 || frames > 30) this.#holding = undefined;
+      else requestAnimationFrame(check);
+    };
+    requestAnimationFrame(check);
+    return true;
+  }
+
   jump(to: JumpTo, count: number): void {
     if (count === 0) return;
     const pane = this.#activePane();
@@ -514,6 +671,11 @@ class View implements DiffView {
   }
 
   destroy(): void {
+    this.#boxWatch.disconnect();
+    this.dom.removeEventListener('scroll', this.#placeChosen);
+    for (const type of ['wheel', 'keydown', 'pointerdown'] as const) {
+      this.dom.removeEventListener(type, this.#letGo, { capture: true });
+    }
     document.fonts.removeEventListener('loadingdone', this.#measure);
     for (const stop of this.#stops) stop();
     this.#aligner.destroy();

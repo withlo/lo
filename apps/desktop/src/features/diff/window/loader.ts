@@ -113,18 +113,26 @@ interface Run {
   readonly at: string;
   readonly from: Source;
   readonly entries: readonly Entry[];
+  /** Files the view shows the lines of, which it loads whether or not they start out shown. */
+  readonly shown: ReadonlySet<string>;
   /** Stops its jobs in the background process, as a new run takes its place or the tab closes. */
   readonly controller: AbortController;
   readonly stopped: boolean;
 }
 
-/** A run of `entries`, at a head, from a source. */
-function runOf(at: string, from: Source, entries: readonly Entry[]): Run {
+/** A run of `entries`, at a head, from a source, loading `shown`'s lines too. */
+function runOf(
+  at: string,
+  from: Source,
+  entries: readonly Entry[],
+  shown: ReadonlySet<string>,
+): Run {
   const controller = new AbortController();
   return {
     at,
     from,
     entries,
+    shown,
     controller,
     get stopped() {
       return controller.signal.aborted;
@@ -290,16 +298,19 @@ export class Loader {
     });
     const ready = this.#ready;
     // The view drawn from GitHub's files takes the local copy's in place when they're the same
-    // files, starting out the same way; otherwise it's drawn anew once they're all in.
+    // files, however each starts out now: the view changes that where the reader isn't looking.
+    // Other files are drawn anew once they're all in.
+    const drawn = new Set(ready?.entries.map((entry) => entry.id));
     const inPlace =
       ready !== undefined &&
       ready.at === at &&
       ready.entries.length === entries.length &&
-      ready.entries.every((each, index) => {
-        const other = entries[index];
-        return other?.id === each.id && other.versions.start === each.versions.start;
-      });
-    const run = runOf(at, from, entries);
+      entries.every((entry) => drawn.has(entry.id));
+    // A file the view shows lines of gets the local copy's, however it starts out now.
+    const shown = inPlace
+      ? new Set(ready.entries.flatMap((entry) => (this.#shown.has(entry.id) ? [entry.id] : [])))
+      : new Set<string>();
+    const run = runOf(at, from, entries, shown);
     this.#run = run;
     this.#failed.clear();
     if (inPlace) this.#ready = { at, from, entries };
@@ -310,7 +321,7 @@ export class Loader {
 
   /** Loads every file that shows its lines, in the left panel's order, a batch at a time. */
   async #load(run: Run): Promise<void> {
-    const wanted = this.#ordered(run.entries.filter((entry) => showsLines(entry.versions)));
+    const wanted = this.#ordered(run.entries.filter((entry) => wants(run, entry)));
     const batches = batchesOf(wanted);
     this.#readyIfDone(run);
     const going = new Set<Promise<void>>();
@@ -426,7 +437,7 @@ export class Loader {
     if (run.stopped || (this.#ready?.at === run.at && this.#ready.from === run.from)) return;
     const done = run.entries.every(
       (entry) =>
-        !showsLines(entry.versions) ||
+        !wants(run, entry) ||
         this.#failed.has(entry.id) ||
         this.#shown.get(entry.id)?.from === run.from,
     );
@@ -506,7 +517,7 @@ export class Loader {
 
   #changed(): void {
     const run = this.#run;
-    const counted = run?.entries.filter((entry) => showsLines(entry.versions)) ?? [];
+    const counted = run ? run.entries.filter((entry) => wants(run, entry)) : [];
     const done = counted.filter(
       (entry) => this.#shown.get(entry.id)?.from === run?.from || this.#failed.has(entry.id),
     ).length;
@@ -529,6 +540,11 @@ export class Loader {
     this.#snapshot = snapshot;
     for (const listener of this.#listeners) listener();
   }
+}
+
+/** Whether a run loads a file's lines: it shows them from the start, or the view shows them. */
+function wants(run: Run, entry: Entry): boolean {
+  return showsLines(entry.versions) || run.shown.has(entry.id);
 }
 
 function describe(error: unknown): string {

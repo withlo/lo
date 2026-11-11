@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import type { Probe } from '@lo/ui/code';
+import type { Probe, Viewport } from '@lo/ui/code';
 import type { Page } from '@playwright/test';
 
 import {
@@ -22,7 +22,16 @@ import {
 declare global {
   interface Window {
     /** The diff on screen, which a build run from source gives the smoke test. */
-    loDiff?: { probe: Probe; files: { id: string; path: string }[] } | undefined;
+    loDiff?:
+      | {
+          probe: Probe;
+          files: { id: string; path: string }[];
+          viewport(): Viewport;
+          filesOnScreen(): readonly string[];
+        }
+      | undefined;
+    /** How long each frame took while a test timed them, in milliseconds. */
+    loFrames?: number[];
   }
 }
 
@@ -35,18 +44,22 @@ const test = base.extend<{
   tokenFile: string;
   /** Whether Lo starts without git, so it has only GitHub's diff. */
   noGit: boolean;
+  /** The cassette GitHub answers from. */
+  cassette: string;
+  /** Whether the remote is written only once the test says, so the local copy comes late. */
+  lateRemote: boolean;
 }>({
   noGit: [false, { option: true }],
-  // Playwright reads a fixture's dependencies from its first parameter, which must be a pattern.
-  // oxlint-disable-next-line no-empty-pattern
-  github: async ({}, use) => {
-    const server = await serveReplay('app_e2e');
+  cassette: ['app_e2e', { option: true }],
+  lateRemote: [false, { option: true }],
+  github: async ({ cassette }, use) => {
+    const server = await serveReplay(cassette);
     await use(server);
     await server.close();
   },
-  // oxlint-disable-next-line no-empty-pattern
-  remote: async ({}, use) => {
-    await use(writeAppRemote(test.info().outputPath('remote')));
+  remote: async ({ lateRemote }, use) => {
+    const folder = test.info().outputPath('remote');
+    await use(lateRemote ? `file://${folder}` : writeAppRemote(folder));
   },
   // oxlint-disable-next-line no-empty-pattern
   tokenFile: async ({}, use) => {
@@ -82,7 +95,11 @@ async function openE2e(page: Page): Promise<string> {
 }
 
 /** Opens #78 and waits for its diff, drawn from `from`. */
-async function drawn(page: Page, from: 'local' | 'github' = 'local'): Promise<string> {
+async function drawn(
+  page: Page,
+  from: 'local' | 'github' = 'local',
+  { moves = true }: { moves?: boolean } = {},
+): Promise<string> {
   const id = await openE2e(page);
   await expect
     .poll(
@@ -105,7 +122,7 @@ async function drawn(page: Page, from: 'local' | 'github' = 'local'): Promise<st
   // The local copy's diff takes GitHub's place a file at a time, which the status bar counts.
   await expect(page.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
   // Every file's diff is in once the moves are: they're found last.
-  await expect(page.locator('.lo-movedlabel').first()).toBeVisible({ timeout: 20_000 });
+  if (moves) await expect(page.locator('.lo-movedlabel').first()).toBeVisible({ timeout: 20_000 });
   return id;
 }
 
@@ -317,5 +334,175 @@ test.describe('without git', () => {
       page.locator('.lo-diffview .lo-collapsed', { hasText: 'not loaded yet' }).first(),
     ).toBeVisible();
     expect(await paths(page)).toContain('src/parser.ts');
+  });
+});
+
+test.describe('when the local copy comes after GitHub’s diff', () => {
+  test.use({ cassette: 'app_e2e_late', lateRemote: true });
+
+  test('takes its place in place: what’s at the top of the screen holds, and no frame runs long', async ({
+    app,
+    page,
+  }) => {
+    // A short window, so the pull request's few files scroll.
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
+    // Without src/format.ts's patch, there's no move to find.
+    const id = await drawn(page, 'github', { moves: false });
+    // GitHub's list has no patch of src/format.ts, so GitHub's diff keeps it out.
+    const formatNote = page.locator('.lo-diffview').getByText('20 changed lines: za loads them');
+    await expect(formatNote.first()).toBeAttached();
+    await page.evaluate(() => Object.assign(window.loDiff ?? {}, { first: true }));
+    // Wheeled down until src/format.ts is above the screen.
+    const box = await page.locator('.lo-diffview').boundingBox();
+    await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
+    await expect
+      .poll(
+        async () => {
+          await page.mouse.wheel(0, 120);
+          return page.evaluate(() => {
+            const files = window.loDiff?.files ?? [];
+            const at = window.loDiff?.viewport().at;
+            const file = at?.kind === 'header' ? at.file : at?.at.file;
+            return files.findIndex((each) => each.id === file);
+          });
+        },
+        { timeout: 10_000 },
+      )
+      .toBeGreaterThan(3);
+    await page.waitForTimeout(300);
+    // A row of src/parser.ts at the top of the screen, and where it is on the page.
+    const row = await page.evaluate(() => {
+      const view = document.querySelector('.lo-diffview');
+      const top = view?.getBoundingClientRect().top ?? 0;
+      const rows = [
+        ...(view?.querySelectorAll<HTMLElement>('.cm-editor:last-of-type [data-row^="p:5:"]') ??
+          []),
+      ];
+      return rows.find((each) => each.getBoundingClientRect().top >= top)?.dataset.row;
+    });
+    expect(row).toBeDefined();
+    const where = () =>
+      page.evaluate(
+        (key) =>
+          document
+            .querySelector(`.lo-diffview .cm-editor:last-of-type [data-row="${key}"]`)
+            ?.getBoundingClientRect().top,
+        row,
+      );
+    const before = await where();
+
+    // The local copy comes, and swaps GitHub's diff out a file at a time, frames timed meanwhile.
+    await page.evaluate(() => {
+      const frames: number[] = [];
+      window.loFrames = frames;
+      let last = performance.now();
+      const tick = (now: number) => {
+        frames.push(now - last);
+        last = now;
+        if (window.loFrames === frames) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    writeAppRemote(test.info().outputPath('remote'));
+    await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+    await expect(page.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await expect(page.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
+    // src/format.ts, off screen, came in; the lines GitHub left out of src/parser.ts are there.
+    await expect(
+      page.locator('.lo-diffview .lo-collapsed', { hasText: 'not loaded yet' }),
+    ).toHaveCount(0);
+    await expect(formatNote).toHaveCount(0);
+    await page.waitForTimeout(500);
+    const frames = await page.evaluate(() => {
+      const timed = window.loFrames ?? [];
+      window.loFrames = undefined;
+      return timed;
+    });
+
+    // The same view, and the row that was at the top of the screen where it was on the page,
+    // through the banners going and the files changing above it.
+    expect(await page.evaluate(() => 'first' in (window.loDiff ?? {}))).toBe(true);
+    const after = (await where()) ?? Number.NaN;
+    expect(Math.abs(after - (before ?? Number.NaN))).toBeLessThanOrEqual(1);
+    expect(Math.max(...frames.slice(1))).toBeLessThan(50);
+  });
+});
+
+test.describe('when the local copy comes after GitHub’s diff, on a file the reader is looking at', () => {
+  test.use({ cassette: 'app_e2e_late', lateRemote: true });
+
+  test('leaves the file as it was until it’s scrolled away', async ({ app, page }) => {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
+    const id = await drawn(page, 'github', { moves: false });
+    // src/format.ts's note, on the side that follows the screen.
+    const keptOut = page
+      .locator('.lo-diffview .cm-editor:last-of-type')
+      .getByText('20 changed lines: za loads them');
+    await expect(keptOut).toHaveCount(1);
+    // Wheeled down until src/format.ts, which GitHub's diff keeps out, is on screen.
+    const box = await page.locator('.lo-diffview').boundingBox();
+    await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 100);
+    const format = await page.evaluate(
+      () => window.loDiff?.files.find((file) => file.path === 'src/format.ts')?.id,
+    );
+    const onScreen = () =>
+      page.evaluate((file) => window.loDiff?.filesOnScreen().includes(file ?? '') ?? false, format);
+    await expect
+      .poll(
+        async () => {
+          if (await onScreen()) return true;
+          await page.mouse.wheel(0, 60);
+          return false;
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+
+    writeAppRemote(test.info().outputPath('remote'));
+    await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+    await expect(page.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await expect(page.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
+    await page.waitForTimeout(500);
+    // Still kept out, under the reader.
+    expect(await onScreen()).toBe(true);
+    await expect(keptOut).toHaveCount(1);
+
+    // Scrolled away, it comes in.
+    await expect
+      .poll(
+        async () => {
+          if (!(await onScreen())) return true;
+          await page.mouse.wheel(0, -200);
+          return false;
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+    await expect(keptOut).toHaveCount(0);
+  });
+});
+
+test.describe('when a banner over the diff goes', () => {
+  test.use({ cassette: 'app_e2e_late', lateRemote: true });
+
+  test('leaves the diff where it is on the page, even at its top', async ({ page }) => {
+    const id = await drawn(page, 'github', { moves: false });
+    const first = page.locator('.lo-diffview .cm-editor:last-of-type [data-row="h:0"]');
+    const at = () => first.evaluate((header) => header.getBoundingClientRect().top);
+    // The banner says the local copy's fetch failed, over the diff, which is at its top: there's
+    // less to scroll up than the banner is tall.
+    expect(await page.locator('.lo-diffview').evaluate((view) => view.scrollTop)).toBeLessThan(30);
+    const before = await at();
+
+    writeAppRemote(test.info().outputPath('remote'));
+    await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+    await expect(page.locator('[data-lo-banners]')).toHaveCount(0, { timeout: 30_000 });
+    await page.waitForTimeout(300);
+
+    expect(Math.abs((await at()) - before)).toBeLessThanOrEqual(1);
   });
 });

@@ -1,0 +1,82 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequestCheck",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 78
+    },
+    "query_sha256": "ca008209e496ac84a5c7317d266f8c0073cbcf8760c30f5896796e361b06bad0"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4996",
+      "x-ratelimit-reset": "1794414795",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "4"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4996,
+          "used": 4,
+          "resetAt": "2026-11-11T16:33:15Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "updatedAt": "2026-11-11T13:58:00Z",
+            "state": "OPEN",
+            "isDraft": false,
+            "baseRefName": "app/base",
+            "baseRefOid": "dccd782aff9cd7a5088122cd3fb4a515964acee7",
+            "headRefOid": "5530830f535b2947f1b50a184dc58a9c7b2845ad",
+            "reviewDecision": null,
+            "mergeStateStatus": "CLEAN",
+            "statusCheckRollup": null,
+            "checkCounts": null,
+            "mergeQueueEntry": null,
+            "timelineItems": {
+              "updatedAt": "2026-11-11T14:52:24Z",
+              "totalCount": 5
+            },
+            "revisionEvents": {
+              "filteredCount": 0
+            },
+            "commits": {
+              "totalCount": 4
+            },
+            "reviews": {
+              "totalCount": 0
+            },
+            "submittedReviews": {
+              "totalCount": 0
+            },
+            "reviewThreads": {
+              "totalCount": 0,
+              "nodes": []
+            },
+            "viewerPendingReview": {
+              "nodes": []
+            },
+            "comments": {
+              "totalCount": 0
+            },
+            "changedFiles": 7,
+            "lastEditedAt": null,
+            "timelineEvents": {
+              "filteredCount": 5,
+              "updatedAt": "2026-11-11T14:52:24Z"
+            }
+          }
+        }
+      }
+    }
+  }
+}
