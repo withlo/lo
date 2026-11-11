@@ -137,6 +137,11 @@ export function draw(options: DrawOptions): Drawing {
   );
   /** Files to change once the reader isn't looking at them, and how. */
   const pending = new Map<string, { change: Change; start: Start }>();
+  /**
+   * The local copy's lines of files that start out otherwise now and are on screen: they stay as
+   * they were until they're scrolled away, lines and all.
+   */
+  const held = new Map<string, Shown>();
   /** Files the reader asked to load, which come in as soon as they arrive. */
   const asked = new Set<string>();
   const pacer = new Pacer();
@@ -145,6 +150,8 @@ export function draw(options: DrawOptions): Drawing {
   const steady = (change: () => void) => {
     const top = view.viewport();
     change();
+    // A line that was on screen stays drawn, though the new diff collapses the lines around it.
+    if (top.at.kind === 'line') view.fold({ kind: 'line', at: top.at.at }, 'open');
     view.scrollTo(top);
   };
 
@@ -184,10 +191,15 @@ export function draw(options: DrawOptions): Drawing {
 
   /** Makes the changes waiting on files the reader isn't looking at now. */
   const settle = () => {
-    if (pending.size === 0) return;
+    if (pending.size === 0 && held.size === 0) return;
     const looked = new Set(view.filesOnScreen());
-    for (const [id, { change, start }] of pending) {
+    for (const [id, shown] of held) {
       if (looked.has(id)) continue;
+      held.delete(id);
+      setLines(id, shown);
+    }
+    for (const [id, { change, start }] of pending) {
+      if (looked.has(id) || held.has(id)) continue;
       if (apply(id, change, start)) pending.delete(id);
     }
   };
@@ -230,6 +242,11 @@ export function draw(options: DrawOptions): Drawing {
   loader.attach({
     lines(id, shown) {
       pacer.run(() => {
+        // A file the reader is looking at that starts out otherwise now stays as it is.
+        if (pending.has(id) && drawn.get(id) !== 'out' && view.filesOnScreen().includes(id)) {
+          held.set(id, shown);
+          return;
+        }
         if (drawn.get(id) !== 'out' || asked.delete(id)) {
           // In place of the lines it had, or a file the reader asked for.
           setLines(id, shown);
@@ -257,7 +274,12 @@ export function draw(options: DrawOptions): Drawing {
       view,
       loader,
       pull: { owner: tab.owner, repo: tab.repo, number: tab.number },
-      acted: (id) => pending.delete(id),
+      acted(id) {
+        pending.delete(id);
+        const shown = held.get(id);
+        held.delete(id);
+        if (shown) setLines(id, shown);
+      },
     }),
     setMiddle({
       focus: () => view.focus(),
