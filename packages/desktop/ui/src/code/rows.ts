@@ -91,6 +91,18 @@ export function collapsedRuns(
   return runs;
 }
 
+/** Lines, first to last, on one side, that a file holds only as placeholders. */
+export interface Gap {
+  side: 'old' | 'new';
+  from: number;
+  to: number;
+}
+
+/** Whether `run` takes in any of `gaps`' lines, on either side. */
+export function inGap(run: { old: LineRange; new: LineRange }, gaps: readonly Gap[]): boolean {
+  return gaps.some((gap) => run[gap.side].first <= gap.to && run[gap.side].last >= gap.from);
+}
+
 /** The runs `collapsedRuns` gives, less those in `open`. */
 export function shownRuns(
   diff: FileDiff,

@@ -90,6 +90,12 @@ export class InlineLayout {
     this.#place(file);
   }
 
+  /** Takes file `file`'s inline lines out, as before its diff came, moving the files after it. */
+  clearLines(file: number): void {
+    this.lines[file] = undefined;
+    this.#place(file);
+  }
+
   /** The index of the file that document line `line` belongs to. */
   fileAt(line: number): number {
     return lastAtOrBefore(this.#headers, line);

@@ -14,11 +14,14 @@ export type {
   FileDiff,
   FileHeader,
   Fold,
+  HeaderTarget,
   JumpTo,
   KeySource,
+  LineTarget,
   Misalignment,
   Mode,
-  MovedBlock,
+  MovedCode,
+  MovedEnd,
   Movement,
   PassStats,
   Place,
@@ -26,10 +29,12 @@ export type {
   Send,
   Side,
   Span,
+  Spot,
   Target,
   ThreadComment,
   ThreadView,
   VimKey,
+  WordRange,
 } from './api.ts';
 export { diffMotions } from './api.ts';
 export { createDiffView } from './view.ts';

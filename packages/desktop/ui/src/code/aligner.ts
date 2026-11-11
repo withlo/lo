@@ -238,7 +238,10 @@ const cursorMargin = 5;
 /** How long after a wheel event over an editor CodeMirror anchors the scroll to it, and more. */
 const wheelAnchoring = 250;
 
-/** What the pass has cost, for the measurements. */
+/**
+ * The spacer pass: keeps the rows the two sides draw level, the scroll where it was, and a cursor a
+ * key moved on screen.
+ */
 export class Aligner {
   readonly stats: PassStats = { passes: 0, changed: 0, totalMs: 0, maxMs: 0, forgetMaxMs: 0 };
   readonly #views: { old: EditorView; new: EditorView };
@@ -277,6 +280,8 @@ export class Aligner {
    */
   #following = 0;
   #cursorTries = 0;
+  /** The side a move the view made itself, without focus, keeps on screen. */
+  #followSide: Side | undefined;
   /** When a key was last pressed in the view, until the wheel or a pointer comes after it. */
   #keyed = -Infinity;
   /** The lines the last pass lined up on each side, which keep their spacers when others go. */
@@ -321,6 +326,7 @@ export class Aligner {
     const stop = (): void => {
       this.#keyed = -Infinity;
       this.#following = 0;
+      this.#followSide = undefined;
     };
     scroller.addEventListener('wheel', stop, { capture: true, passive: true });
     scroller.addEventListener('pointerdown', stop, { capture: true });
@@ -337,8 +343,9 @@ export class Aligner {
    * Has the pass keep the cursor on screen after the move that comes next, as after a key: for a
    * move the view makes itself, from a key the registry took before it reached the view.
    */
-  follow(): void {
+  follow(side?: Side): void {
     this.#keyed = performance.now();
+    this.#followSide = side;
   }
 
   /** Stops the pass, or starts it again. */
@@ -480,9 +487,10 @@ export class Aligner {
    * by having CodeMirror scroll there again, a few times at most.
    */
   #cursorInView(): void {
-    const side = this.#anchorSide();
+    const focused = (['old', 'new'] as const).find((each) => this.#views[each].hasFocus);
+    const side = focused ?? this.#followSide;
+    if (side === undefined) return;
     const view = this.#views[side];
-    if (!view.hasFocus) return;
     const head = view.state.selection.main.head;
     const line = drawnRect(view, head);
     const screen = this.#scroller.getBoundingClientRect();

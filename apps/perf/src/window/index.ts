@@ -77,7 +77,7 @@ view = createDiffView(
     cursor() {},
     mode() {},
     file() {},
-    jumped: (from) => registry.history.record({ view: 'diff', at: { kind: 'line', at: from } }),
+    jumped: (from) => registry.history.record({ view: 'diff', at: from }),
     load: (id) => {
       const index = indexOf.get(id);
       if (index === undefined) return;
@@ -90,10 +90,10 @@ view = createDiffView(
   },
 );
 view.setThreads(threads);
+// Going back or forward reveals the place, and takes focus there.
 registry.history.register(tab, 'diff', (at) => {
-  if (at.kind !== 'line') return false;
-  const place = at.at;
-  opened().reveal('line' in place ? place : { ...place, line: Math.max(place.from, place.to) });
+  if (!opened().reveal(at)) return false;
+  opened().focus();
   return true;
 });
 
@@ -202,7 +202,14 @@ window.addEventListener('message', (event) => {
       opened().setDiff(id, data.diff);
     } else if (data.type === 'moves') {
       // The moves come last: everything has arrived.
-      opened().setMoves(data.moves);
+      // The background process names files by their places in the pull request.
+      opened().setMoves(
+        data.moves.map((move) => ({
+          from: { file: ids[move.from.file]!, first: move.from.first, last: move.from.last },
+          to: { file: ids[move.to.file]!, first: move.to.first, last: move.to.last },
+          words: move.words,
+        })),
+      );
       Object.assign(window, { diffLoaded: true });
     }
   });
