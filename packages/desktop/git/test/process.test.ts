@@ -3,7 +3,7 @@
 // ones may hold an end of a short one's pipe: whoever reads the short one's output, or a git that
 // reads its input to the end, would wait until the long-lived one exits.
 
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
@@ -45,36 +45,66 @@ function once() {
 })().then(() => parentPort.postMessage('done'), (error) => parentPort.postMessage(String(error)));
 `;
 
+/** Whether process `pid` is still running. */
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The pipe and socket ends each of `pids` holds besides its stdin, stdout and stderr, each named
- * by what it's an end of, so ends of the same pipe compare equal.
+ * by what it's an end of, so ends of the same pipe compare equal. Every process must be running
+ * throughout, so what's read is what each holds while all of them are alive: a pipe end a child
+ * inherits stays open as long as it runs. A file git opens and closes meanwhile, which can go
+ * between listing a process's files and reading one, isn't a pipe it inherited, and is skipped.
  */
 function pipeEnds(pids: number[]): Map<number, string[]> {
+  const alive = () => {
+    const gone = pids.filter((pid) => !running(pid));
+    if (gone.length > 0) throw new Error(`processes ${gone.join(', ')} exited while being read`);
+  };
   const ends = new Map<number, string[]>(pids.map((pid) => [pid, []]));
+  alive();
   if (existsSync('/proc/self/fd')) {
     for (const pid of pids) {
       for (const fd of readdirSync(`/proc/${pid}/fd`)) {
         if (Number(fd) <= 2) continue;
-        const target = readlinkSync(`/proc/${pid}/fd/${fd}`);
+        let target: string;
+        try {
+          target = readlinkSync(`/proc/${pid}/fd/${fd}`);
+        } catch (error) {
+          // Closed since it was listed.
+          if (error instanceof Error && 'code' in error && error.code === 'ENOENT') continue;
+          throw error;
+        }
         if (/^(?:pipe|socket):/.test(target)) ends.get(pid)?.push(target);
       }
     }
-    return ends;
+  } else {
+    // `lsof` lists each file as lines of fields: `p<pid>`, then `f<fd>`, `t<type>` and
+    // `d<device>` for each, where a pipe's or socket's device names it. It exits with 1 when it
+    // finds nothing for a process, which it says on stdout all the same.
+    const listing = spawnSync('lsof', ['-a', '-p', pids.join(','), '-d', '3-65535', '-F', 'ftd'], {
+      encoding: 'utf8',
+    });
+    if (listing.status !== 0 && listing.status !== 1) {
+      throw new Error(`lsof failed: ${listing.stderr}`);
+    }
+    let pid = 0;
+    let type = '';
+    for (const line of listing.stdout.split('\n')) {
+      const field = line[0];
+      const value = line.slice(1);
+      if (field === 'p') pid = Number(value);
+      else if (field === 't') type = value;
+      else if (field === 'd' && (type === 'PIPE' || type === 'unix')) ends.get(pid)?.push(value);
+    }
   }
-  // `lsof` lists each file as lines of fields: `p<pid>`, then `f<fd>`, `t<type>` and `d<device>`
-  // for each, where a pipe's or socket's device names it.
-  const listing = execFileSync('lsof', ['-a', '-p', pids.join(','), '-d', '3-65535', '-F', 'ftd'], {
-    encoding: 'utf8',
-  });
-  let pid = 0;
-  let type = '';
-  for (const line of listing.split('\n')) {
-    const field = line[0];
-    const value = line.slice(1);
-    if (field === 'p') pid = Number(value);
-    else if (field === 't') type = value;
-    else if (field === 'd' && (type === 'PIPE' || type === 'unix')) ends.get(pid)?.push(value);
-  }
+  alive();
   return ends;
 }
 
