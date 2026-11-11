@@ -12,7 +12,7 @@ import { appMenu } from '../../../platform/index.ts';
 import { IpcError } from '../../../ipc/contract.ts';
 import { contract, keymapFile, type BarItem } from '../contract.ts';
 import { watchKeymap, type KeymapWatch } from './keymap.ts';
-import { launch, openKeymapFile } from './open.ts';
+import { launch, openKeymapFile, query } from './open.ts';
 
 const tools = devTools({ packaged: app.isPackaged, env: process.env });
 
@@ -53,6 +53,7 @@ export default defineFeature(contract, {
       const result = await openKeymapFile(keymapPath(), {
         platform: process.platform,
         launch,
+        linux: { query, env: process.env, home: app.getPath('home') },
         editor: keymapEditor({ packaged: app.isPackaged, env: process.env }),
       });
       if (!result.ok) throw new IpcError('unopened', result.reason);

@@ -208,7 +208,7 @@ test('pruning removes new threads drafts on revisions that are gone', () => {
   expect(drafts.prune(pullRequest(7), (commit) => commit !== 'a1')).toBe(0);
 });
 
-test('a saved draft in a comment box lo doesnt know is kept as it was', () => {
+test('a saved draft in a comment box Lo doesn’t know is kept as it was', () => {
   // Drafts a later version of Lo saved, two in a kind of comment box this one doesn't know, read
   // back as the app reads what it saved.
   const pinned = (note: string) => ({

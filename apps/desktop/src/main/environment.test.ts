@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { memoryCap } from '../background/pool.ts';
 import {
   appName,
   backgroundEnvironment,
@@ -182,10 +183,36 @@ describe('backgroundSettings', () => {
     });
   });
 
-  it.each(['0', '-5', '1.5', 'lots'])('refuses a cap of %s', (cap) => {
-    expect(() =>
-      backgroundSettings({ packaged: false, env: { LO_BACKGROUND_MEMORY_CAP_MB: cap } }),
-    ).toThrow('whole number of megabytes');
+  it.each(['0', '-5', '1.5', 'lots', '', '010', '1e3', '12345678901234567890', '9007199254740992'])(
+    'refuses a cap of %j, warning, and keeps 2 GB',
+    (cap) => {
+      const warn = vi.fn<(message: string) => void>();
+      expect(
+        backgroundSettings({ packaged: false, env: { LO_BACKGROUND_MEMORY_CAP_MB: cap }, warn }),
+      ).toEqual({ testJobs: false, memoryCap: 2 * 1024 ** 3 });
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        expect.stringContaining(
+          `whole number of megabytes, up to 9007199254740991, not ${JSON.stringify(cap)}`,
+        ),
+      );
+    },
+  );
+
+  it('hands the process only a cap it takes back as it was', () => {
+    // The process reads its cap from the environment main builds, and stops at start on one it
+    // can't read, to be started again forever.
+    const warn = vi.fn<(message: string) => void>();
+    for (const cap of ['1', '200', '2048', '9007199254740991', '12345678901234567890']) {
+      const settings = backgroundSettings({
+        packaged: false,
+        env: { LO_BACKGROUND_MEMORY_CAP_MB: cap },
+        warn,
+      });
+      const handed = backgroundEnvironment(settings).LO_BACKGROUND_MEMORY_CAP_MB;
+      expect(memoryCap(handed)).toBe(settings.memoryCap);
+    }
+    // Only the last was refused.
+    expect(warn).toHaveBeenCalledOnce();
   });
 });
 

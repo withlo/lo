@@ -28,6 +28,9 @@ not a `diff` object holding `layout`.
   what you typed.
 - **Keys Lo doesn't know are kept** when Settings changes a setting, so a file shared with another
   version of Lo stays whole. Settings writes the file whole, as JSON with two-space indents.
+- **A save of yours is never written over.** Settings reads the file as it is when you change a
+  setting, and if you save it again before the change is written, it reads it again and makes the
+  change on top of your save.
 - **A link to a file is followed.** A settings file kept with other dotfiles stays a link, and the
   file it leads to is the one Lo reads, watches and replaces.
 - The file is read up to 1 MiB.

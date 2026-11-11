@@ -411,12 +411,22 @@ test('a write answers what it did when its follow-up throws', async () => {
   // The comment was sent: neither making the follow-up nor sending it turns that into a failure.
   expect(idOf(await commenting(thrown))).toBe(1);
   expect(idOf(await commenting(() => thrown))).toBe(1);
+  expect(idOf(await commenting(() => () => Promise.reject(new Error('GitHub refused it'))))).toBe(
+    1,
+  );
   // And the account's queue goes on.
   expect(idOf(await t.finish(postComment(t.poller)))).toBe(1);
   expect(t.requests().map(([, what]) => what)).toEqual([
     'POST /issues/1/comments',
     'POST /issues/1/comments',
     'POST /issues/1/comments',
+    'POST /issues/1/comments',
+  ]);
+  // Each failure is logged, though nobody waits on the follow-up.
+  expect(t.logs).toEqual([
+    "a write's follow-up failed: Error: the follow-up failed",
+    "a write's follow-up failed: Error: the follow-up failed",
+    "a write's follow-up failed: Error: GitHub refused it",
   ]);
 });
 

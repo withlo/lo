@@ -145,8 +145,20 @@ export class DeviceFlowError extends Error {
   readonly detail: DeviceFlowFailure;
 
   constructor(detail: DeviceFlowFailure, options?: ErrorOptions) {
-    super(describeFailure(detail), options);
+    super(describeFailureOr(detail), options);
     this.detail = detail;
+  }
+}
+
+/**
+ * `detail` in words, or a plain message when it can't be put in words, as for a kind Lo doesn't
+ * know: making the error never throws, so it never hides why the sign-in ended.
+ */
+function describeFailureOr(detail: DeviceFlowFailure): string {
+  try {
+    return describeFailure(detail);
+  } catch {
+    return "The sign-in ended in a way Lo couldn't describe.";
   }
 }
 

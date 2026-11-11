@@ -16,7 +16,22 @@ import { z } from 'zod';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineSetting, type Setting, type SettingsState } from '../contract.ts';
+import type * as file from './file.ts';
 import { createSettings, type Settings } from './store.ts';
+
+/** What a test does as each write of the file starts, as when a person saves it meanwhile. */
+const writing = vi.hoisted(() => ({ starts: undefined as (() => void) | undefined }));
+
+vi.mock('./file.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof file>();
+  return {
+    ...actual,
+    writeSettings: (...args: Parameters<typeof actual.writeSettings>) => {
+      writing.starts?.();
+      return actual.writeSettings(...args);
+    },
+  };
+});
 
 const theme = defineSetting(
   'theme',
@@ -47,6 +62,7 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const stop of stops.splice(0)) void stop();
+  writing.starts = undefined;
   rmSync(folder, { recursive: true, force: true });
 });
 
@@ -440,6 +456,44 @@ describe('changing a setting', () => {
     await settings.set('diff.layout', 'inline');
     expect(JSON.parse(contents())).toEqual({ theme: 'light', mine: true, 'diff.layout': 'inline' });
     expect((await settings.state()).values).toEqual({ theme: 'light', 'diff.layout': 'inline' });
+  });
+
+  it('keeps a save made while a change is being written, and makes the change on top of it', async () => {
+    write('{ "theme": "dark" }');
+    const { settings } = open();
+    settings.declare(theme);
+    settings.declare(layout);
+    await settings.state();
+    // Saved by hand after Lo read the file for the change, before it replaced the file.
+    writing.starts = () => {
+      writing.starts = undefined;
+      write('{ "theme": "light", "mine": true }');
+    };
+    await settings.set('diff.layout', 'inline');
+    expect(JSON.parse(contents())).toEqual({ theme: 'light', mine: true, 'diff.layout': 'inline' });
+    expect((await settings.state()).values).toEqual({ theme: 'light', 'diff.layout': 'inline' });
+    expect(readdirSync(join(folder, 'config'))).toEqual(['settings.json']);
+  });
+
+  it('says it could not save, and keeps every save, when the file keeps changing', async () => {
+    write('{ "theme": "dark" }');
+    const { settings } = open();
+    settings.declare(theme);
+    settings.declare(layout);
+    let saves = 0;
+    writing.starts = () => {
+      // Each a different length, as a clock may not tick between two saves.
+      saves += 1;
+      write(`{ "theme": "dark", "saves": "${'x'.repeat(saves)}" }`);
+    };
+    const refused = await refusal(settings.set('diff.layout', 'inline'));
+    expect(refused?.code).toBe('unwritable');
+    expect(refused?.message).toBe(
+      "Lo didn't change diff.layout: the settings file kept changing while Lo saved it.",
+    );
+    expect(saves).toBe(3);
+    expect(JSON.parse(contents())).toEqual({ theme: 'dark', saves: 'xxx' });
+    expect(readdirSync(join(folder, 'config'))).toEqual(['settings.json']);
   });
 
   it('keeps a bad value the person typed, still reported, when it changes another setting', async () => {

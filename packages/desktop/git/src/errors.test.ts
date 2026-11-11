@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { type FetchFailure, GitError } from './errors.ts';
+import { type FetchFailure, GitError, type GitErrorDetail } from './errors.ts';
 
 function fetchFailure(message: string): FetchFailure | undefined {
   const { detail } = GitError.fromGit('git fetch', message, 'pull request #1');
@@ -196,4 +196,18 @@ test('messages say what failed and why', () => {
   expect(new GitError({ kind: 'baseNotAncestor', base: oid, head }).message).toBe(
     "commit 22c70ac isn't an ancestor of 6178079, so it can't be its base",
   );
+});
+
+test('an error Lo can’t put in words keeps its detail and cause, with a plain message', () => {
+  // A kind this build of Lo doesn't know, and a known one without what describing it reads.
+  const details: GitErrorDetail[] = JSON.parse(
+    '[{ "kind": "mystery" }, { "kind": "unavailable" }]',
+  );
+  for (const given of details) {
+    const cause = new Error('the failure it reports');
+    const error = new GitError(given, { cause });
+    expect(error.message).toBe("git failed in a way Lo couldn't describe");
+    expect(error.detail).toBe(given);
+    expect(error.cause).toBe(cause);
+  }
 });
