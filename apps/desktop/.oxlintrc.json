@@ -46,6 +46,38 @@
           }
         ]
       }
+    },
+    {
+      "files": ["src/features/*/keys.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "electron",
+                "message": "A feature's keys.ts is plain data that Node reads: it imports only @lo/ui/commands."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["electron/*", "node:*"],
+                "message": "A feature's keys.ts is plain data that Node reads: it imports only @lo/ui/commands."
+              },
+              {
+                "group": [
+                  "**/main/**",
+                  "**/window/**",
+                  "**/preload/**",
+                  "**/platform/**",
+                  "**/background/**"
+                ],
+                "message": "A feature's keys.ts is plain data that Node reads: it imports only @lo/ui/commands."
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }
