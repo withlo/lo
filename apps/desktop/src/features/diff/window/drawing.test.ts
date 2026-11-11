@@ -21,6 +21,8 @@ vi.mock('@lo/ui/code', () => ({
     scrollTo: () => true,
     fold: () => undefined,
     filesOnScreen: () => onScreen,
+    // As a swap that adds a row would.
+    keepsShape: () => false,
     keyState: () => ({ mode: 'normal', pending: false, target: { kind: 'none' } }),
     setLines: (id, lines, diff) =>
       void told.push(`lines ${id} ${lines.new.join(' ')} ${diff ? (names.get(diff) ?? '') : ''}`),

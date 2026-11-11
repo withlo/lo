@@ -259,6 +259,15 @@ export interface DiffView extends KeySource {
     lines: { old: readonly string[]; new: readonly string[] },
     diff?: FileDiff,
   ): void;
+  /**
+   * Whether `setLines` with these lines and diff would draw a shown file in the rows it has now,
+   * each a line or a collapsed run, on the same sides: so swapping it in moves nothing on screen.
+   */
+  keepsShape(
+    file: string,
+    lines: { old: readonly string[]; new: readonly string[] },
+    diff: FileDiff,
+  ): boolean;
   /** Says a file asked for with `load` couldn't be loaded: its note says so, and `za` asks again. */
   loadFailed(file: string): void;
   setHeader(file: string, header: FileHeader): void;

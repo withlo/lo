@@ -1076,6 +1076,17 @@ describe('gaps', () => {
     }
   });
 
+  test('says whether the whole file would draw in the rows GitHub’s diff of it has', () => {
+    const shown = gappedView();
+    // The gap filled, collapsed as it was: the same rows.
+    expect(shown.keepsShape('e', { old: eOld, new: eNew }, diffOf({ old: eOld, new: eNew }))).toBe(
+      true,
+    );
+    // More lines after the last hunk: a collapsed run below it that wasn't there.
+    const longer = { old: [...eOld, ...numbered(10, 'x')], new: [...eNew, ...numbered(10, 'x')] };
+    expect(shown.keepsShape('e', longer, diffOf(longer))).toBe(false);
+  });
+
   test('a shown file keeps its diff only while its lines outside the gaps stay', () => {
     const shown = gappedView();
     // The gaps filled, and nothing else changed: the diff still fits.

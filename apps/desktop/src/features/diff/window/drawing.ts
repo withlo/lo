@@ -322,8 +322,14 @@ export function draw(options: DrawOptions): Drawing {
   loader.attach({
     lines(id, shown) {
       pacer.run(() => {
-        // A file the reader is looking at stays as it is.
-        if (drawn.get(id) !== 'out' && !asked.has(id) && view.filesOnScreen().includes(id)) {
+        // A file the reader is looking at stays as it is, unless its new lines draw in the rows
+        // it has, so nothing on screen moves.
+        if (
+          drawn.get(id) !== 'out' &&
+          !asked.has(id) &&
+          view.filesOnScreen().includes(id) &&
+          !view.keepsShape(id, shown.lines, shown.diff)
+        ) {
           held.add(id);
           return;
         }

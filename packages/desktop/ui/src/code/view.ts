@@ -424,8 +424,11 @@ class View implements DiffView {
       this.dom.scrollTop -= Math.min(up, room);
       if (up > room) this.#setSlack(this.#slackHeight + up - room);
     }
-    this.#placed = this.#contentTop();
     this.#scrolled = this.dom.scrollTop;
+    // The scroll goes by whole pixels, or halves, which can leave the content a fraction from where
+    // it's meant to be: that place stays, so the next move makes up for it rather than adding to
+    // it. A scroll that couldn't go as far, at either end, leaves the content where it is now.
+    if (Math.abs(this.#contentTop() - this.#placed) >= 1) this.#placed = this.#contentTop();
     // Room added above moves no scroll the pass would see: it keeps what's on screen as it is now.
     this.#aligner.anchorHere();
   };
@@ -465,6 +468,24 @@ class View implements DiffView {
     // A file not drawn yet takes its highlighting when it's drawn.
     if (this.#noteOf(file)) return;
     for (const view of this.#editors()) view.dispatch({ effects: tokensChanged.of(null) });
+  }
+
+  keepsShape(
+    id: string,
+    lines: { old: readonly string[]; new: readonly string[] },
+    diff: FileDiff,
+  ): boolean {
+    const file = this.#fileOf(id);
+    const note = this.#noteOf(file);
+    // Closed, it stays one block, whatever its lines.
+    if (note === 'closed') return true;
+    if (note || !this.#loaded.has(file)) return false;
+    const next = fileRows(
+      { header: 0, count: lines.old.length },
+      { header: 0, count: lines.new.length },
+      { kind: 'diff', diff, keep: this.#keep[file], open: this.#open[file], gaps: [] },
+    );
+    return sameShape(this.#rows[file]!, next);
   }
 
   setLines(
@@ -1885,6 +1906,17 @@ function sameCounts(
   after: { old: readonly string[]; new: readonly string[] },
 ): boolean {
   return before.old.length === after.old.length && before.new.length === after.new.length;
+}
+
+/** Whether two files' rows draw alike: as many, each collapsed or not, with the same sides. */
+function sameShape(a: FileRows, b: FileRows): boolean {
+  if (a.collapsed.length !== b.collapsed.length) return false;
+  for (let row = 0; row < a.collapsed.length; row++) {
+    if (a.collapsed[row] !== b.collapsed[row]) return false;
+    if (a.oldFirst[row]! < 0 !== b.oldFirst[row]! < 0) return false;
+    if (a.newFirst[row]! < 0 !== b.newFirst[row]! < 0) return false;
+  }
+  return true;
 }
 
 /** The moves at each file's ends, by file, written out to compare. */
