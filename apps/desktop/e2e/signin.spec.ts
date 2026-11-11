@@ -194,8 +194,10 @@ test.describe('a system with no keychain Lo keeps tokens with', () => {
     await page.getByRole('button', { name: 'Add an account' }).click();
     const dialog = page.getByTestId('sign-in');
     await expect(dialog).toContainText("Lo can't keep your token safely");
+    // Playwright starts Electron with Chromium's stand-in keychain on every system, which Lo
+    // names first; without it, Linux's fallback key would be refused for want of a keyring.
     await expect(dialog.getByRole('alert')).toContainText(
-      mac ? 'stand-in keychain' : 'GNOME Keyring or KWallet',
+      /stand-in keychain|GNOME Keyring or KWallet/,
     );
     await expect(dialog.getByRole('button', { name: /Quit Lo/ })).toBeFocused();
     await page.keyboard.press('Escape');
