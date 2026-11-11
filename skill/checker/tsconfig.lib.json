@@ -4,7 +4,7 @@
     "outDir": ".tsbuild/lib",
     "types": ["node", "vite/client"]
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "package.json"],
   "exclude": ["src/**/*.test.ts"],
   "references": [
     {

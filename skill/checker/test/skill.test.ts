@@ -5,16 +5,20 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-import { overview, repositoryOf, runChecker, scratch, SKILL, skillFiles } from './support.ts';
+import {
+  MANIFEST as manifest,
+  overview,
+  repositoryOf,
+  runChecker,
+  scratch,
+  SKILL,
+  skillFiles,
+} from './support.ts';
 
 const text = readFileSync(join(SKILL, 'SKILL.md'), 'utf8');
-const manifest: { name: string } = JSON.parse(
-  readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
-);
 
 let root: ReturnType<typeof scratch>;
 
@@ -83,8 +87,8 @@ describe('SKILL.md', () => {
       return { spec, args: args.map((arg) => values[arg] ?? arg) };
     });
     expect(commands.map(({ spec, args }) => `${spec} ${args[0]}`)).toEqual([
-      `${manifest.name}@latest check`,
-      `${manifest.name}@latest commit`,
+      `${manifest.name}@{version} check`,
+      `${manifest.name}@{version} commit`,
     ]);
     const [check, commitIt] = commands.map(({ args }) => runChecker(args, tools));
     expect(check).toEqual({ status: 0, stdout: 'No errors or warnings.\n', stderr: '' });
@@ -92,5 +96,18 @@ describe('SKILL.md', () => {
     const id = /Committed the overview as ([0-9a-f]{40})/.exec(commitIt?.stdout ?? '')?.[1];
     expect(commitIt?.stdout).toContain(`git push <remote> ${id}:refs/lo/pr/4797\n`);
     expect(text).toContain("git push '<remote>' '<id>:refs/lo/pr/<n>'\n");
+  });
+
+  test('runs the checker it was installed with, by its exact version', () => {
+    // In the source, only the checker's two commands name a version, and by the placeholder.
+    expect(text.match(/\{version\}/g)).toHaveLength(2);
+    expect(text.split(`${manifest.name}@{version} `)).toHaveLength(3);
+
+    const skills = join(root.dir, 'pinned');
+    expect(runChecker(['install', '--dir', skills], root.dir).status).toBe(0);
+    const shipped = readFileSync(join(skills, 'lo-overview', 'SKILL.md'), 'utf8');
+    expect(shipped).not.toContain('{version}');
+    expect(shipped).not.toContain('@latest');
+    expect(shipped.split(`${manifest.name}@${manifest.version} `)).toHaveLength(3);
   });
 });

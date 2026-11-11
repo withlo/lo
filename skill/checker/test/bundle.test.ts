@@ -182,4 +182,9 @@ test('the packed package runs with Node alone, from an empty folder', () => {
   );
   expect(listing(join(skills, 'lo-overview'))).toEqual([...skillFiles(), 'references/'].toSorted());
   expectSkill(join(skills, 'lo-overview'));
+  // Its SKILL.md runs this package, at the version it was packed as.
+  const shipped = readFileSync(join(skills, 'lo-overview', 'SKILL.md'), 'utf8');
+  expect(shipped).toContain(
+    `npx --prefix '<tools>' --yes ${manifest.name}@${manifest.version} check`,
+  );
 });

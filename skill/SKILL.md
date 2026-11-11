@@ -283,11 +283,11 @@ mktemp -d
 It prints its path, `<tools>`. Run the checker there, naming the clone with `--repo`:
 
 ```sh
-(cd '<tools>' && npx --prefix '<tools>' --yes @withlo/overview@latest check '<dir>' --pr '<n>' --repo '<clone>')
+(cd '<tools>' && npx --prefix '<tools>' --yes @withlo/overview@{version} check '<dir>' --pr '<n>' --repo '<clone>')
 ```
 
-`@latest` is deliberate: each version of the checker reads every format before its own, as Lo does,
-so the newest checks any overview you write, with every fix to the checks.
+The checker's version is pinned to the one that came with this skill, which takes the options these
+steps give it. Installing the skill again updates it.
 
 It prints each problem as `artifact.md:<line>: error: …` or `warning: …`. It exits 0 when there are
 no errors, 1 when there are, and 2 when it can't check, saying why. Fix every error, and run it
@@ -297,7 +297,7 @@ the repository doesn't have `<commit>`, fetch it as in step 1.
 Then commit the overview:
 
 ```sh
-(cd '<tools>' && npx --prefix '<tools>' --yes @withlo/overview@latest commit '<dir>' --pr '<n>' --repo '<clone>')
+(cd '<tools>' && npx --prefix '<tools>' --yes @withlo/overview@{version} commit '<dir>' --pr '<n>' --repo '<clone>')
 ```
 
 It checks the overview again, then writes exactly what it checked as a commit in the clone, with

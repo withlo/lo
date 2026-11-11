@@ -127,6 +127,11 @@ export function listing(dir: string, inner = ''): string[] {
     .toSorted();
 }
 
+/** The checker's package: its name and version. */
+export const MANIFEST: { name: string; version: string } = JSON.parse(
+  readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
+);
+
 /** The skill's own files in the folder `dir`, each by its path there, with its text. */
 function skillIn(dir: string): Record<string, string> {
   return Object.fromEntries(
@@ -134,7 +139,15 @@ function skillIn(dir: string): Record<string, string> {
   );
 }
 
-/** Checks the skill's folder `folder` holds the skill's own files exactly as the repository has them. */
+/**
+ * Checks the skill's folder `folder` holds the skill's own files as the repository has them, but
+ * for `SKILL.md`'s checker, pinned to this package's version.
+ */
 export function expectSkill(folder: string): void {
-  expect(skillIn(folder)).toEqual(skillIn(SKILL));
+  const source = skillIn(SKILL);
+  const pinned = source['SKILL.md']!.replaceAll(
+    `${MANIFEST.name}@{version}`,
+    `${MANIFEST.name}@${MANIFEST.version}`,
+  );
+  expect(skillIn(folder)).toEqual({ ...source, 'SKILL.md': pinned });
 }
