@@ -57,65 +57,75 @@ function marksNoNewline(diff: FileDiff, side: 'old' | 'new'): boolean {
   );
 }
 
+/** Every character of the private use area: a file holding them all is diffed as git diffs it. */
+let everyMarker = '';
+for (let code = 0xe000; code <= 0xf8ff; code++) everyMarker += String.fromCharCode(code);
+
 describe('against git diff', () => {
-  test('removes and adds the lines git does, and marks a missing final line break as it does', () => {
-    const next = random(7);
-    // Letters only, so every line is as long as every other, and every shortest diff is as good.
-    const cases = Array.from({ length: 400 }, () => [
-      file(next, ['a', 'b', 'c']),
-      file(next, ['a', 'b', 'c']),
-    ]);
-    const folder = mkdtempSync(join(tmpdir(), 'lo-diff-'));
-    onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
-    mkdirSync(join(folder, 'old'));
-    mkdirSync(join(folder, 'new'));
-    cases.forEach(([old, added], index) => {
-      writeFileSync(join(folder, 'old', `${index}`), old!);
-      writeFileSync(join(folder, 'new', `${index}`), added!);
-    });
-
-    let output = '';
-    try {
-      output = execFileSync('git', ['diff', '--no-index', '--no-renames', '-U0', 'old', 'new'], {
-        cwd: folder,
-        encoding: 'utf8',
-        env: { ...process.env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: '1' },
+  test.each([
+    ['on small files', (text: string) => text],
+    ['after a line of every private-use character', (text: string) => `${everyMarker}\n${text}`],
+  ])(
+    'removes and adds the lines git does, and marks a missing line break as it does, %s',
+    (_, shape) => {
+      const next = random(7);
+      // Letters only, so every line is as long as every other, and every shortest diff is as good.
+      const cases = Array.from({ length: 400 }, () => [
+        shape(file(next, ['a', 'b', 'c'])),
+        shape(file(next, ['a', 'b', 'c'])),
+      ]);
+      const folder = mkdtempSync(join(tmpdir(), 'lo-diff-'));
+      onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
+      mkdirSync(join(folder, 'old'));
+      mkdirSync(join(folder, 'new'));
+      cases.forEach(([old, added], index) => {
+        writeFileSync(join(folder, 'old', `${index}`), old!);
+        writeFileSync(join(folder, 'new', `${index}`), added!);
       });
-    } catch (error) {
-      // `git diff` exits 1 when the files differ.
-      if (!(error instanceof Error && 'stdout' in error && typeof error.stdout === 'string')) {
-        throw error;
-      }
-      output = error.stdout;
-    }
-    const git = new Map<number, { deleted: number; added: number; old: boolean; new: boolean }>();
-    for (const section of output.split(/^diff --git /m).slice(1)) {
-      const index = Number(/^a\/old\/(\d+)/.exec(section)?.[1]);
-      const found = { deleted: 0, added: 0, old: false, new: false };
-      let side: 'old' | 'new' | undefined;
-      for (const line of section.split('\n')) {
-        if (line.startsWith('---') || line.startsWith('+++')) continue;
-        if (line.startsWith('-')) [found.deleted, side] = [found.deleted + 1, 'old'];
-        else if (line.startsWith('+')) [found.added, side] = [found.added + 1, 'new'];
-        else if (line.startsWith('\\ No newline') && side) found[side] = true;
-      }
-      git.set(index, found);
-    }
 
-    const differences = cases.flatMap(([old, added], index) => {
-      const diff = diffText(old, added);
-      const ours = {
-        ...counts(diff),
-        old: marksNoNewline(diff, 'old'),
-        new: marksNoNewline(diff, 'new'),
-      };
-      const theirs = git.get(index) ?? { deleted: 0, added: 0, old: false, new: false };
-      return JSON.stringify(ours) === JSON.stringify(theirs)
-        ? []
-        : [{ old, new: added, ours, git: theirs }];
-    });
-    expect(differences).toEqual([]);
-  });
+      let output = '';
+      try {
+        output = execFileSync('git', ['diff', '--no-index', '--no-renames', '-U0', 'old', 'new'], {
+          cwd: folder,
+          encoding: 'utf8',
+          env: { ...process.env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: '1' },
+        });
+      } catch (error) {
+        // `git diff` exits 1 when the files differ.
+        if (!(error instanceof Error && 'stdout' in error && typeof error.stdout === 'string')) {
+          throw error;
+        }
+        output = error.stdout;
+      }
+      const git = new Map<number, { deleted: number; added: number; old: boolean; new: boolean }>();
+      for (const section of output.split(/^diff --git /m).slice(1)) {
+        const index = Number(/^a\/old\/(\d+)/.exec(section)?.[1]);
+        const found = { deleted: 0, added: 0, old: false, new: false };
+        let side: 'old' | 'new' | undefined;
+        for (const line of section.split('\n')) {
+          if (line.startsWith('---') || line.startsWith('+++')) continue;
+          if (line.startsWith('-')) [found.deleted, side] = [found.deleted + 1, 'old'];
+          else if (line.startsWith('+')) [found.added, side] = [found.added + 1, 'new'];
+          else if (line.startsWith('\\ No newline') && side) found[side] = true;
+        }
+        git.set(index, found);
+      }
+
+      const differences = cases.flatMap(([old, added], index) => {
+        const diff = diffText(old, added);
+        const ours = {
+          ...counts(diff),
+          old: marksNoNewline(diff, 'old'),
+          new: marksNoNewline(diff, 'new'),
+        };
+        const theirs = git.get(index) ?? { deleted: 0, added: 0, old: false, new: false };
+        return JSON.stringify(ours) === JSON.stringify(theirs)
+          ? []
+          : [{ old, new: added, ours, git: theirs }];
+      });
+      expect(differences).toEqual([]);
+    },
+  );
 });
 
 describe('a fuzz', () => {

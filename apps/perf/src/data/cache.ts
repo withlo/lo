@@ -27,11 +27,15 @@ export function repoFolder(cache: string, repo: string): string {
   return folder;
 }
 
+/** The warning git's May 2024 maintenance releases print when they skip a lazy fetch. */
+const lazyFetchWarning = /^warning: lazy fetching disabled\b/;
+
 /**
  * Whether git honors `GIT_NO_LAZY_FETCH`, which git 2.45 added and 2024-05 maintenance releases
  * brought back to older lines. It asks a throwaway clone, whose promisor remote doesn't exist, for
- * an object it lacks: a git that honors the variable just says the object is missing, and one
- * that doesn't tries to fetch it and fails loudly. `env` overrides the variables git runs with.
+ * an object it lacks: a git that honors the variable just says the object is missing, or warns
+ * that lazy fetching is off, and one that doesn't tries to fetch it and fails loudly. `env`
+ * overrides the variables git runs with.
  */
 export async function lazyFetchIsOff(env: Record<string, string> = {}): Promise<boolean> {
   const folder = mkdtempSync(join(tmpdir(), 'lo-perf-git-'));
@@ -50,7 +54,9 @@ export async function lazyFetchIsOff(env: Record<string, string> = {}): Promise<
       protocol: 'file',
       env,
     });
-    return result.code === 1 && result.stderr.trim() === '';
+    // Some releases warn once that lazy fetching is off; anything else is a fetch that was tried.
+    const said = result.stderr.split('\n').filter((line) => line.trim() !== '');
+    return result.code === 1 && said.every((line) => lazyFetchWarning.test(line));
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
@@ -248,6 +254,33 @@ export async function fetchPullRequest(
     bytes: sizes.reduce<number>((total, size) => total + (size ?? 0), 0),
     downloaded: missing.length,
   };
+}
+
+/**
+ * The contents of blobs a fetch put in the cache, by ID, read in one `git cat-file --batch`. The
+ * clone is checked first, as a fetch checks it.
+ */
+export async function readBlobs(
+  repo: string,
+  ids: readonly string[],
+  options: { cache?: string } = {},
+): Promise<Map<string, Uint8Array>> {
+  const folder = repoFolder(options.cache ?? cacheFolder(), repo);
+  await checkClone(folder);
+  const blobs = new Map<string, Uint8Array>();
+  if (ids.length === 0) return blobs;
+  const output = await gitIn(folder, 'https')(['cat-file', '--batch'], `${ids.join('\n')}\n`);
+  // Each object is `<id> <type> <size>\n<contents>\n`.
+  let at = 0;
+  while (at < output.length) {
+    const end = output.indexOf(10, at);
+    const [id = '', type, size] = output.subarray(at, end).toString('latin1').split(' ');
+    if (type !== 'blob') throw new Error(`${repo} has no blob ${id}.`);
+    const length = Number(size);
+    blobs.set(id, output.subarray(end + 1, end + 1 + length));
+    at = end + 1 + length + 1;
+  }
+  return blobs;
 }
 
 /**
