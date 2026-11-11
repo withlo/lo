@@ -1,7 +1,11 @@
+import type { Command } from '@lo/ui/commands';
+
 /** What a feature's `window/index.ts` exports by default. */
 export interface WindowFeature {
-  /** Runs once, before the window first renders. */
+  /** Runs once, before the window first renders, once the registry is listening. */
   start?(): void;
+  /** The feature's commands with their handlers, from `handlers(keys, {...})`. */
+  commands?: readonly Command[];
 }
 
 // Every feature folder with a window side. No file lists them.
@@ -12,4 +16,25 @@ const features = import.meta.glob<WindowFeature>('../features/*/window/index.ts'
 
 export function startFeatures(): void {
   for (const feature of Object.values(features)) feature.start?.();
+}
+
+/** Every feature's commands, for the registry. */
+export function featureCommands(): Command[] {
+  return checkCommands(features);
+}
+
+/**
+ * The commands of the features `import.meta.glob` found, keyed by path, checking that each
+ * feature declares its commands under its own folder's name, as main checks its contracts.
+ */
+export function checkCommands(modules: Readonly<Record<string, WindowFeature>>): Command[] {
+  return Object.entries(modules).flatMap(([path, feature]) => {
+    const folder = /\/features\/([^/]+)\//.exec(path)?.[1];
+    for (const command of feature.commands ?? []) {
+      if (command.feature !== folder) {
+        throw new Error(`${path} has the command ${command.id}, but its folder is "${folder}".`);
+      }
+    }
+    return feature.commands ?? [];
+  });
 }

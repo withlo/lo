@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { backgroundEnvironment, backgroundSettings, dataFolder, devServer } from './environment.ts';
+import {
+  backgroundEnvironment,
+  backgroundSettings,
+  dataFolder,
+  devServer,
+  devTools,
+} from './environment.ts';
 
 describe('dataFolder', () => {
   const appData = '/home/me/.config';
@@ -102,5 +108,15 @@ describe('backgroundEnvironment', () => {
   it('keeps a packaged build’s test jobs off, whatever main’s environment says', () => {
     const settings = backgroundSettings({ packaged: true, env: { LO_TEST_JOBS: '1' } });
     expect(backgroundEnvironment(settings)).not.toHaveProperty('LO_TEST_JOBS');
+  });
+});
+
+describe('devTools', () => {
+  const server = { ELECTRON_RENDERER_URL: 'http://localhost:5173/' };
+
+  it('offers them only on the dev server, in a build run from source', () => {
+    expect(devTools({ packaged: false, env: server })).toBe(true);
+    expect(devTools({ packaged: false, env: {} })).toBe(false);
+    expect(devTools({ packaged: true, env: server })).toBe(false);
   });
 });
