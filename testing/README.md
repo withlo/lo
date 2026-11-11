@@ -85,6 +85,28 @@ script:
 Record a cassette again only when its request has to change, such as when its query does, and check
 the diff before committing: the recorded data is published with the repository.
 
+## Recording from the app
+
+What the app's own tests replay is recorded from the app, so the app holds no recording code:
+
+```sh
+LO_FIXTURE_TOKEN_FILE=<file holding rozed-bot's token> \
+  node testing/scripts/record-proxy.ts <cassette> <repository> <description>
+```
+
+starts a proxy on `127.0.0.1` that stands in for GitHub as the replay server does, and prints the
+address to start Lo with as `LO_GITHUB`. Start Lo with a stand-in token in `LO_TEST_TOKEN_FILE`: the
+proxy signs each request it forwards with the bot's token, and an anonymous one stays anonymous, so
+Lo never holds the bot's token. Drive Lo through what the cassette should hold, long enough for its
+polls to repeat, then stop the proxy with Ctrl+C. It checks the token's account and every file as
+`record.ts` does, and sends nothing that writes to GitHub.
+
+The pull request the app's tests open, rozed-dev/e2e#78, comes from `fixtures/app.sh`, which builds
+its repository with fixed names, dates and contents, so every commit has the ID GitHub has for it: a
+rename, a move, a lockfile, a 5,001-line file, a binary and a deletion, in two pushes with the base
+moving on between them. `writeAppRemote` from `@lo/testing/git` builds it as a remote for
+`LO_GIT_REMOTE`, and `APP_PULL` names its commits. Its cassette is `app_e2e`.
+
 ## The credential scan
 
 `test/fixtures.test.ts` checks every file under `fixtures/` the way the recorder checks a new one,

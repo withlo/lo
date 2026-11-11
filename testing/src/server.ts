@@ -24,7 +24,7 @@ export const GITHUB_URLS: GitHubUrls = {
 };
 
 /** The path each of GitHub's addresses is served under. */
-const PREFIXES: Record<keyof GitHubUrls, string> = {
+export const PREFIXES: Readonly<Record<keyof GitHubUrls, string>> = {
   api: '/api',
   web: '/web',
   uploads: '/uploads',
@@ -117,7 +117,7 @@ export async function serveReplay(cassette: string | Replay): Promise<ReplayServ
 }
 
 /** The GitHub URL a request to the server stands for, from the prefix its path starts with. */
-function toGitHub(path: string): string {
+export function toGitHub(path: string): string {
   for (const name of NAMES) {
     const prefix = PREFIXES[name];
     if (path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`)) {
@@ -130,7 +130,7 @@ function toGitHub(path: string): string {
 }
 
 /** `text` with GitHub's addresses moved to the server's. */
-function fromGitHub(text: string, urls: GitHubUrls): string {
+export function fromGitHub(text: string, urls: GitHubUrls): string {
   return text.replace(
     /https:\/\/(api\.|uploads\.)?github\.com(?=[/?#>;,\s]|$)/g,
     (_, host: string | undefined) =>

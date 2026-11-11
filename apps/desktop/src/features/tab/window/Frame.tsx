@@ -1,29 +1,38 @@
 // The window's frame: the strip of tabs, and under it the tab on screen, drawn by the view its
-// kind's feature puts in the `tab.kinds` slot.
+// kind's feature puts in the `tab.kinds` slot, with whatever covers it over it.
 
 import { TabBar, type Tab as StripTab } from '@lo/ui';
 import { useEffect, useRef } from 'react';
+import { useStore } from 'zustand';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { focusMiddle, registry } from '../../../window/commands/registry.ts';
 import { Slot } from '../../../window/slots.tsx';
-import type { Tab } from '../contract.ts';
+import type { PullView, Tab } from '../contract.ts';
 import { main } from './main.ts';
-import { kinds, useActiveTab, useTabs } from './shared.ts';
+import { moreStore, setFolded, setMoreOpen } from './more.ts';
+import { cover, kinds, useActiveTab, useTabs } from './shared.ts';
+import { pullsStore } from './store.ts';
 import { withoutBidi } from './title.ts';
 
-/** How the strip draws `tab`. */
-function stripTab(tab: Tab): StripTab {
+/**
+ * How the strip draws `tab`: a pull request's still opening, until its title arrives, unless main
+ * has said it can't be shown or isn't opening it yet.
+ */
+function stripTab(tab: Tab, view: PullView | undefined): StripTab {
   switch (tab.kind) {
     case 'pull': {
       const { id, repo, number, title, state } = tab;
+      const header = view?.header;
+      const shownTitle = header?.title ?? title;
       return {
         kind: 'pull',
         id,
         repo,
         number,
-        title: title === undefined ? undefined : withoutBidi(title),
-        state,
+        title: shownTitle === undefined ? undefined : withoutBidi(shownTitle),
+        state: header?.state ?? state,
+        loading: view === undefined || (view.loading && view.problem === null),
       };
     }
     case 'recent':
@@ -47,6 +56,8 @@ function tabAt(target: EventTarget): string | undefined {
  */
 export function TabStrip() {
   const { tabs, active } = useTabs();
+  const views = useStore(pullsStore, (state) => state.views);
+  const moreOpen = useStore(moreStore, (state) => state.open);
   const menu = useMenuTarget((event) => {
     const id = tabAt(event.target);
     return id === undefined ? undefined : { kind: 'tab', tab: id };
@@ -54,8 +65,11 @@ export function TabStrip() {
   return (
     <div className="contents" {...menu}>
       <TabBar
-        tabs={tabs.map(stripTab)}
+        tabs={tabs.map((tab) => stripTab(tab, views.get(tab.id)))}
         selected={active}
+        moreOpen={moreOpen}
+        onMoreOpenChange={setMoreOpen}
+        onFold={setFolded}
         onSelect={(id) => {
           main()
             .select({ id })
@@ -84,5 +98,10 @@ export function TabPage() {
     const focused = document.activeElement;
     if (focused === null || focused === document.body) focusMiddle();
   }, [id]);
-  return tab ? <Slot key={tab.id} slot={kinds} props={{ tab }} /> : null;
+  return tab ? (
+    <>
+      <Slot key={tab.id} slot={kinds} props={{ tab }} />
+      <Slot key={`${tab.id}-cover`} slot={cover} props={{ tab }} />
+    </>
+  ) : null;
 }
