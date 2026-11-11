@@ -842,6 +842,49 @@ test.describe('when a banner over the diff goes', () => {
     expect(Math.abs((await at()) - before)).toBeLessThanOrEqual(1);
   });
 
+  test('leaves the diff where it is on the page at its end, as less is left to scroll', async ({
+    app,
+    page,
+  }) => {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
+    await drawn(page, 'github', { moves: false });
+    const view = page.locator('.lo-diffview');
+    // Two pixels short of the end, then at it: the box growing pulls the scroll back to the end.
+    for (const short of [2, 0]) {
+      await view.evaluate((each, by) => {
+        each.scrollTop = each.scrollHeight - each.clientHeight - by;
+      }, short);
+      await page.waitForTimeout(300);
+      const row = await view.evaluate((each) => {
+        const top = each.getBoundingClientRect().top;
+        return [...each.querySelectorAll<HTMLElement>('.cm-editor:last-of-type [data-row]')].find(
+          (one) => one.getBoundingClientRect().top >= top,
+        )?.dataset.row;
+      });
+      const at = async () =>
+        (await view.evaluate(
+          (each, key) =>
+            each
+              .querySelector(`.cm-editor:last-of-type [data-row="${key}"]`)
+              ?.getBoundingClientRect().top,
+          row,
+        )) ?? Number.NaN;
+      const before = await at();
+      await page.evaluate(() =>
+        document
+          .querySelector<HTMLElement>('[data-lo-banners]')
+          ?.style.setProperty('display', 'none'),
+      );
+      await page.waitForTimeout(300);
+
+      expect(Math.abs((await at()) - before)).toBeLessThanOrEqual(0.5);
+      await page.evaluate(() =>
+        document.querySelector<HTMLElement>('[data-lo-banners]')?.style.removeProperty('display'),
+      );
+      await page.waitForTimeout(300);
+    }
+  });
+
   test('takes a scroll in the frame the banner goes as the reader’s, and the move as the box’s', async ({
     app,
     page,

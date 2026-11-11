@@ -400,8 +400,13 @@ class View implements DiffView {
    * it could be made up for, would otherwise be taken as where the content belongs.
    */
   readonly #placeChosen = (): void => {
-    this.#placed -= this.dom.scrollTop - this.#scrolled;
-    this.#scrolled = this.dom.scrollTop;
+    const now = this.dom.scrollTop;
+    const end = this.dom.scrollHeight - this.dom.clientHeight;
+    // Pulled back to the end, as the box grew or the content shrank and left less to scroll: the
+    // browser's doing, which the content's place doesn't follow, so it goes back if there's room.
+    const pulled = now < this.#scrolled && now >= end - 0.5;
+    if (!pulled) this.#placed -= now - this.#scrolled;
+    this.#scrolled = now;
   };
 
   /**
