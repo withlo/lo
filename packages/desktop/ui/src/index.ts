@@ -40,3 +40,16 @@ export { Choices, type ChoiceItem, type ChoicesProps } from './Choices.tsx';
 export { Dialog, DialogSpacer, type DialogProps } from './Dialog.tsx';
 export { Switch, type SwitchProps } from './Switch.tsx';
 export { Tag, type TagTone } from './Tag.tsx';
+export {
+  FileTree,
+  FileTreePanel,
+  ROW_HEIGHT,
+  type FileTreeChange,
+  type FileTreeFile,
+  type FileTreeFolder,
+  type FileTreeGroup,
+  type FileTreePanelProps,
+  type FileTreeProps,
+  type FileTreeRow,
+  type FileTreeViewed,
+} from './FileTree.tsx';
