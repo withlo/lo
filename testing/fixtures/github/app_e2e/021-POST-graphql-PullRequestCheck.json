@@ -15,19 +15,19 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4992",
-      "x-ratelimit-reset": "1794409947",
+      "x-ratelimit-remaining": "4995",
+      "x-ratelimit-reset": "1794414795",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "8"
+      "x-ratelimit-used": "5"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4992,
-          "used": 8,
-          "resetAt": "2026-11-11T15:12:27Z"
+          "remaining": 4995,
+          "used": 5,
+          "resetAt": "2026-11-11T16:33:15Z"
         },
         "repository": {
           "pullRequest": {
@@ -43,8 +43,8 @@
             "checkCounts": null,
             "mergeQueueEntry": null,
             "timelineItems": {
-              "updatedAt": "2026-11-11T10:20:00Z",
-              "totalCount": 4
+              "updatedAt": "2026-11-11T14:52:24Z",
+              "totalCount": 5
             },
             "revisionEvents": {
               "filteredCount": 0
@@ -71,8 +71,8 @@
             "changedFiles": 7,
             "lastEditedAt": null,
             "timelineEvents": {
-              "filteredCount": 4,
-              "updatedAt": "2026-11-11T10:20:00Z"
+              "filteredCount": 5,
+              "updatedAt": "2026-11-11T14:52:24Z"
             }
           }
         }

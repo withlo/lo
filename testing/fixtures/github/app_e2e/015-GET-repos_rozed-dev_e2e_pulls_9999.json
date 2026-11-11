@@ -9,10 +9,10 @@
       "content-type": "application/json; charset=utf-8",
       "x-github-api-version-selected": "2022-11-28",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4973",
-      "x-ratelimit-reset": "1794408483",
+      "x-ratelimit-remaining": "4974",
+      "x-ratelimit-reset": "1794413460",
       "x-ratelimit-resource": "core",
-      "x-ratelimit-used": "27"
+      "x-ratelimit-used": "26"
     },
     "body": {
       "message": "Not Found",

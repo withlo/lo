@@ -1,6 +1,9 @@
 // The window's title: the pull request on screen's, or Lo's name while another kind of tab is.
 
 import type { Tab } from '../contract.ts';
+import { withoutBidi } from './shared.ts';
+
+export { withoutBidi };
 
 /** The title while no pull request is on screen. */
 export const NO_PULL_REQUEST = 'Lo';
@@ -30,16 +33,6 @@ export function inStack(title: string, { root, layer, layers }: StackPosition): 
 /** "1 layer", "5 layers". */
 function layerCount(count: number): string {
   return count === 1 ? '1 layer' : `${count} layers`;
-}
-
-/**
- * `text` without the characters that turn the direction of the text after them around until
- * they're closed (embeddings, overrides and isolates), which a pull request's author could use to
- * make its title read as something else. The marks right-to-left text places numbers and
- * punctuation with (LRM, RLM, ALM) stay: they change no more than their neighbours.
- */
-export function withoutBidi(text: string): string {
-  return text.replaceAll(/[\u202A-\u202E\u2066-\u2069]/g, '');
 }
 
 /** The window's title while `tab` is on screen. */

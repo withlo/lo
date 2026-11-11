@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import type { ChangedFile } from './changed.ts';
-import { pathOrder, reviewOrder } from './order.ts';
+import { pathOrder, reviewOrder, reviewRows } from './order.ts';
 
 function file(path: string, more: Partial<ChangedFile> = {}): ChangedFile {
   return { path, additions: 0, deletions: 0, binary: false, ...more };
@@ -240,4 +240,22 @@ test('a renamed file is placed by its new path', () => {
   ];
 
   expect(reviewPaths(list)).toEqual(['src/router.ts', 'src/session.ts', 'src/session.test.ts']);
+});
+
+test('review rows say each file’s group, and which source file a test follows', () => {
+  const list = files([
+    'src/parse.test.ts',
+    'src/parse.ts',
+    'tests/test_other.py',
+    'package.json',
+    'pnpm-lock.yaml',
+  ]);
+  expect(reviewRows(list).map((row) => ({ ...row, path: list[row.index]?.path }))).toEqual([
+    { index: 1, kind: 'source', path: 'src/parse.ts' },
+    { index: 0, kind: 'test', follows: 1, path: 'src/parse.test.ts' },
+    { index: 2, kind: 'test', path: 'tests/test_other.py' },
+    { index: 3, kind: 'config', path: 'package.json' },
+    { index: 4, kind: 'generated', path: 'pnpm-lock.yaml' },
+  ]);
+  expect(reviewRows(list).map((row) => row.index)).toEqual(reviewOrder(list));
 });

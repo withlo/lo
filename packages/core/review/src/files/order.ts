@@ -25,6 +25,25 @@ interface Indexed {
  * first in path order.
  */
 export function reviewOrder(files: readonly ChangedFile[]): number[] {
+  return reviewRows(files).map((row) => row.index);
+}
+
+/** A file's place in review order, as the file list shows it. */
+export interface ReviewRow {
+  /** The file's index in the caller's list. */
+  readonly index: number;
+  /** Its group of review order. */
+  readonly kind: FileKind;
+  /** For a test that follows the source file it tests, that file's index; else nothing. */
+  readonly follows?: number | undefined;
+}
+
+/**
+ * The files in review order, as {@link reviewOrder} puts them, each with its group and, for a test
+ * listed after the source file it tests, that file: what the list needs to label the groups and
+ * set each test under its file.
+ */
+export function reviewRows(files: readonly ChangedFile[]): ReviewRow[] {
   const groups: Record<FileKind, Indexed[]> = { source: [], test: [], config: [], generated: [] };
   for (const indexed of byPath(files)) groups[fileKind(indexed.file)].push(indexed);
 
@@ -48,10 +67,17 @@ export function reviewOrder(files: readonly ChangedFile[]): number[] {
   }
 
   return [
-    ...groups.source.flatMap(({ index }) => [index, ...(testsOf.get(index) ?? [])]),
-    ...unmatchedTests,
-    ...groups.config.map(({ index }) => index),
-    ...groups.generated.map(({ index }) => index),
+    ...groups.source.flatMap(({ index }): ReviewRow[] => [
+      { index, kind: 'source' },
+      ...(testsOf.get(index) ?? []).map((test): ReviewRow => ({
+        index: test,
+        kind: 'test',
+        follows: index,
+      })),
+    ]),
+    ...unmatchedTests.map((index): ReviewRow => ({ index, kind: 'test' })),
+    ...groups.config.map(({ index }): ReviewRow => ({ index, kind: 'config' })),
+    ...groups.generated.map(({ index }): ReviewRow => ({ index, kind: 'generated' })),
   ];
 }
 

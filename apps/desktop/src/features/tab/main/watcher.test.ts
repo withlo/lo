@@ -1,3 +1,4 @@
+import { parseOid } from '@lo/git';
 import { PullRef } from '@lo/github';
 import { APP_PULL } from '@lo/testing/git';
 import { describe, expect, it } from 'vitest';
@@ -85,6 +86,37 @@ describe('the watcher', { timeout: 60_000 }, () => {
     await expect.poll(() => watching.snapshot('p1')?.pull.acting?.kind).toBe('account');
     replay.removeAccount('rozed-bot');
     await expect.poll(() => watching.snapshot('p1')?.pull.acting?.kind).toBe('anonymous');
+    watching.stop();
+  });
+
+  it('tells features in main what each pull request’s tab shows, as it changes and as it closes', async () => {
+    const { watching } = await watcher();
+    const heard: string[] = [];
+    const stop = watching.onChange((id) => heard.push(id));
+    watching.follow({ tabs: [e2e, settings], active: 'p1' });
+    expect(watching.info('s1')).toBe(undefined);
+    await expect
+      .poll(() => watching.info('p1'), { timeout: 40_000 })
+      .toMatchObject({
+        id: 'p1',
+        repository: { owner: 'rozed-dev', name: 'e2e' },
+        number: 78,
+        acting: { kind: 'account', login: 'rozed-bot' },
+        shown: APP_PULL.head,
+        local: { kind: 'ready', head: APP_PULL.head, mergeBase: APP_PULL.base },
+      });
+    expect(heard.length).toBeGreaterThan(0);
+    expect(new Set(heard)).toEqual(new Set(['p1']));
+    // The clone it fetched into, open to read.
+    const clone = await watching.clone('p1');
+    expect(await clone?.hasCommit(parseOid(APP_PULL.head))).toBe(true);
+
+    heard.length = 0;
+    watching.follow({ tabs: [settings], active: 's1' });
+    expect(heard).toEqual(['p1']);
+    expect(watching.info('p1')).toBe(undefined);
+    expect(watching.clone('p1')).toBe(undefined);
+    stop();
     watching.stop();
   });
 });

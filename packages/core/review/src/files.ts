@@ -36,7 +36,7 @@ export {
   type FileEntry,
   type FileOrder,
 } from './files/list.ts';
-export { pathOrder, reviewOrder } from './files/order.ts';
+export { pathOrder, reviewOrder, reviewRows, type ReviewRow } from './files/order.ts';
 export {
   initialState,
   LARGE_FILE_BYTES,

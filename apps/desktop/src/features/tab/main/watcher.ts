@@ -2,9 +2,12 @@
 // request, made as the tab opens or comes back after a restart, shown as the tab is, and closed with
 // it. Nothing here calls Electron.
 
+import type { Repo } from '@lo/git';
+
 import type { LocalGit } from '../../../main/git.ts';
 import type { GithubEvent } from '../../accounts/service.ts';
 import type { Tabs } from '../contract.ts';
+import type { PullTabInfo } from '../service.ts';
 import { PullTab, type Kept, type Snapshot, type TabGithub, type TabPublish } from './pull.ts';
 
 /** What the watcher keeps with each tab, and reads back as it restores one. */
@@ -29,6 +32,7 @@ export class Watcher {
   readonly #tabs = new Map<string, PullTab>();
   #active: string | undefined;
   readonly #stop: (() => void)[] = [];
+  readonly #listeners = new Set<(id: string) => void>();
   #stopped = false;
 
   constructor(options: WatcherOptions) {
@@ -66,6 +70,7 @@ export class Watcher {
         git: this.#options.git,
         publish: this.#options.publish,
         keep: (change) => this.#options.store.keep(tab.id, change),
+        changed: () => this.#changed(tab.id),
         log: (line) => this.#options.log(`${tab.owner}/${tab.repo}#${tab.number}: ${line}`),
       });
       this.#tabs.set(tab.id, pull);
@@ -75,6 +80,7 @@ export class Watcher {
       if (open.has(id)) continue;
       pull.close();
       this.#tabs.delete(id);
+      this.#changed(id);
     }
     if (active !== this.#active) {
       const before = this.#active === undefined ? undefined : this.#tabs.get(this.#active);
@@ -82,6 +88,27 @@ export class Watcher {
       this.#active = active;
       this.#tabs.get(active)?.show();
     }
+  }
+
+  /** What other features follow of a pull request's tab, or nothing for a tab that isn't one. */
+  info(id: string): PullTabInfo | undefined {
+    return this.#tabs.get(id)?.info();
+  }
+
+  /** A pull request's tab's local copy's clone, once it's opened. */
+  clone(id: string): Promise<Repo> | undefined {
+    return this.#tabs.get(id)?.clone();
+  }
+
+  /**
+   * Calls `listener` with a pull request's tab's id each time what {@link Watcher.info} says of it
+   * may have changed, and as it closes. Returns a function that stops it.
+   */
+  onChange(listener: (id: string) => void): () => void {
+    this.#listeners.add(listener);
+    return () => {
+      this.#listeners.delete(listener);
+    };
   }
 
   /** What a pull request's tab has now, or nothing for a tab that isn't one. */
@@ -109,9 +136,22 @@ export class Watcher {
   /** Stops every tab, as Lo quits. */
   stop(): void {
     this.#stopped = true;
+    this.#listeners.clear();
     for (const stop of this.#stop.splice(0)) stop();
     for (const pull of this.#tabs.values()) pull.close();
     this.#tabs.clear();
+  }
+
+  #changed(id: string): void {
+    for (const listener of this.#listeners) {
+      try {
+        listener(id);
+      } catch (error) {
+        this.#options.log(
+          `a listener failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
   }
 
   #gitChanged(): void {
