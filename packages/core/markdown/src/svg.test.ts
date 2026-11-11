@@ -695,6 +695,29 @@ describe('dashes', () => {
     expect(sanitizeSvg(paths(31)).removed).toEqual([{ reason: 'drawn', element: 'svg' }]);
   });
 
+  test('allow each segment of a shape a few float32 steps where it is drawn', () => {
+    // Near 600,000, a float32 step is a sixteenth: a tiny shape there, dashed every 1e-6, is some
+    // hundred thousand dashes as its numbers read, and far more with each segment's quarter.
+    const shapes = [
+      '<rect x="600000.375" width="0.03125" height="0.03125"',
+      '<circle cx="600000.375" r="0.001"',
+      '<ellipse cy="600000.375" rx="0.001" ry="0.002"',
+      '<line x1="600000.375" x2="600000.40625"',
+      '<path d="M600000.375 0A0.01 0.01 0 0 1 600000.40625 0"',
+    ];
+    const kept = shapes.filter(
+      (shape) => sanitizeSvg(`<svg>${shape} stroke-dasharray="5e-7"/></svg>`).svg,
+    );
+    expect(kept).toEqual([]);
+    // The same, near the origin, where a step is far smaller, are kept.
+    const near = shapes.map((shape) => shape.replaceAll('600000.', '0.'));
+    expect(
+      near.filter(
+        (shape) => sanitizeSvg(`<svg>${shape} stroke-dasharray="5e-7"/></svg>`).removed.length > 0,
+      ),
+    ).toEqual([]);
+  });
+
   test("along a polygon's closing side too", () => {
     // Dashed every 0.01 along 1,000, some 100,000 dashes; closed back, some 200,000.
     expect(sanitized(dashed('polyline')).removed).toEqual([]);

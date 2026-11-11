@@ -24,7 +24,7 @@ import { html as namespaces, type DefaultTreeAdapterTypes } from 'parse5';
 
 import { readValue, svgRule, type SvgName } from './allowlist.ts';
 import { parseHtml, type Fragment } from './html.ts';
-import { dashCount } from './length.ts';
+import { dashCount, slack } from './length.ts';
 import { MAX_DIAGNOSTICS } from './limits.ts';
 
 type Element = DefaultTreeAdapterTypes.Element;
@@ -510,8 +510,9 @@ function own(value: string | undefined): number | undefined {
 
 /**
  * At most how long `element` is, in its own units: a rectangle's perimeter, a circle's or an
- * ellipse's circumference, a line's length, or its path's or points'. Undefined when a measure is
- * in `%` or `em`, which depend on what's around it.
+ * ellipse's circumference, a line's length, or its path's or points', with the slack each segment
+ * a browser draws it with is allowed. Undefined when a measure is in `%` or `em`, which depend on
+ * what's around it.
  */
 function shapeLength(element: SvgElement, pathLength: number): number | undefined {
   const at = (name: string): number | undefined => own(element.attributes[name]);
@@ -525,20 +526,27 @@ function shapeLength(element: SvgElement, pathLength: number): number | undefine
     return values;
   };
   if (element.name === 'rect') {
-    const sides = all('width', 'height');
-    return sides && 2 * (sides[0]! + sides[1]!);
+    // Four sides and four rounded corners, of up to two curves' edges each.
+    const box = all('x', 'y', 'width', 'height');
+    if (!box) return undefined;
+    const [x = 0, y = 0, width = 0, height = 0] = box;
+    const most = Math.max(Math.abs(x) + width, Math.abs(y) + height);
+    return 2 * (width + height) + slack(12, most);
   }
-  if (element.name === 'circle') {
-    const r = all('r');
-    return r && 2 * Math.PI * r[0]!;
-  }
-  if (element.name === 'ellipse') {
-    const radii = all('rx', 'ry');
-    return radii && 2 * Math.PI * Math.max(radii[0]!, radii[1]!);
+  if (element.name === 'circle' || element.name === 'ellipse') {
+    // Four curves, of up to four edges each.
+    const shape =
+      element.name === 'circle' ? all('cx', 'cy', 'r', 'r') : all('cx', 'cy', 'rx', 'ry');
+    if (!shape) return undefined;
+    const [cx = 0, cy = 0, rx = 0, ry = 0] = shape;
+    const radius = Math.max(rx, ry);
+    return 2 * Math.PI * radius + slack(16, Math.max(Math.abs(cx), Math.abs(cy)) + radius);
   }
   if (element.name === 'line') {
     const ends = all('x1', 'y1', 'x2', 'y2');
-    return ends && Math.hypot(ends[2]! - ends[0]!, ends[3]! - ends[1]!);
+    if (!ends) return undefined;
+    const most = Math.max(...ends.map(Math.abs));
+    return Math.hypot(ends[2]! - ends[0]!, ends[3]! - ends[1]!) + slack(1, most);
   }
   // A path, or points.
   return pathLength;

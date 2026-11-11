@@ -307,6 +307,18 @@ export function walkSvg(result: unknown): SvgWalked {
   return { problems: found, ...walked };
 }
 
+/** The step from the float32 nearest `magnitude` to the next one up, from its bits. */
+function step(magnitude: number): number {
+  const float = new Float32Array([Math.abs(magnitude)]);
+  const next = new Float32Array(new Uint32Array([new Uint32Array(float.buffer)[0]! + 1]).buffer);
+  return next[0]! - float[0]!;
+}
+
+/** What `segments` segments may each be longer in a browser: 4 float32 steps at `most`. */
+function slack(segments: number, most: number): number {
+  return segments * 4 * step(most);
+}
+
 /** A length in the element's own units, 0 when left out, or NaN in units that depend on context. */
 function own(value: unknown): number {
   if (value === undefined) return 0;
@@ -329,10 +341,14 @@ function pathBound(d: string): number {
   let startY = 0;
   let lastCubic: number[] | undefined;
   let lastQuad: number[] | undefined;
+  let segments = 0;
+  let most = 0;
   const line = (nx: number, ny: number) => {
     length += Math.hypot(f(nx) - x, f(ny) - y);
     x = f(nx);
     y = f(ny);
+    segments += 1;
+    most = Math.max(most, Math.abs(x), Math.abs(y));
   };
   for (const command of d.match(/[MmLlHhVvCcSsQqTtAaZz][^MmLlHhVvCcSsQqTtAaZz]*/g) ?? []) {
     const letter = command[0]!;
@@ -350,6 +366,7 @@ function pathBound(d: string): number {
       if (lower === 'm' && g === 0) {
         x = f(dx + v[0]!);
         y = f(dy + v[1]!);
+        most = Math.max(most, Math.abs(x), Math.abs(y));
         startX = x;
         startY = y;
       } else if (lower === 'm' || lower === 'l') line(dx + v[0]!, dy + v[1]!);
@@ -359,7 +376,8 @@ function pathBound(d: string): number {
       else if (lower === 'a') {
         const [rx, ry, angle] = [Math.abs(v[0]!), Math.abs(v[1]!), (v[2]! * Math.PI) / 180];
         const [ex, ey] = [dx + v[5]!, dy + v[6]!];
-        if (rx === 0 || ry === 0) length += Math.hypot(f(ex) - x, f(ey) - y);
+        let arc: number;
+        if (rx === 0 || ry === 0) arc = Math.hypot(f(ex) - x, f(ey) - y);
         else {
           const hx = (x - ex) / 2;
           const hy = (y - ey) / 2;
@@ -367,8 +385,14 @@ function pathBound(d: string): number {
           const py = -Math.sin(angle) * hx + Math.cos(angle) * hy;
           const reach = (px * px) / (rx * rx) + (py * py) / (ry * ry);
           const bound = 2 * Math.PI * Math.max(rx, ry) * Math.max(1, Math.sqrt(reach));
-          length += Number.isFinite(bound) ? bound : Infinity;
+          arc = Number.isFinite(bound) ? bound : Infinity;
         }
+        length += arc;
+        // Up to four cubic curves of three edges, all within its diameter of either end.
+        segments += 12;
+        most =
+          Math.max(most, Math.abs(x), Math.abs(y), Math.abs(f(ex)), Math.abs(f(ey))) +
+          arc / Math.PI;
         x = f(ex);
         y = f(ey);
       } else {
@@ -391,7 +415,7 @@ function pathBound(d: string): number {
       lastQuad = quad;
     }
   }
-  return length;
+  return length + slack(segments, most);
 }
 
 /**
@@ -417,18 +441,26 @@ function dashesOf(name: string, attributes: Record<string, unknown>): number | u
         points[j + 1]! - points[(i - 1) * 2 + 1]!,
       );
     }
-    return total;
+    const most = points.reduce((largest, value) => Math.max(largest, Math.abs(value)), 0);
+    return total + slack(count - 1, most);
   };
   const at = (key: string) => own(attributes[key]);
   const length =
     name === 'rect'
-      ? 2 * (at('width') + at('height'))
+      ? 2 * (at('width') + at('height')) +
+        slack(12, Math.max(Math.abs(at('x')) + at('width'), Math.abs(at('y')) + at('height')))
       : name === 'circle'
-        ? 2 * Math.PI * at('r')
+        ? 2 * Math.PI * at('r') +
+          slack(16, Math.max(Math.abs(at('cx')), Math.abs(at('cy'))) + at('r'))
         : name === 'ellipse'
-          ? 2 * Math.PI * Math.max(at('rx'), at('ry'))
+          ? 2 * Math.PI * Math.max(at('rx'), at('ry')) +
+            slack(
+              16,
+              Math.max(Math.abs(at('cx')), Math.abs(at('cy'))) + Math.max(at('rx'), at('ry')),
+            )
           : name === 'line'
-            ? Math.hypot(at('x2') - at('x1'), at('y2') - at('y1'))
+            ? Math.hypot(at('x2') - at('x1'), at('y2') - at('y1')) +
+              slack(1, Math.max(...['x1', 'y1', 'x2', 'y2'].map((key) => Math.abs(at(key)))))
             : name === 'polyline' || name === 'polygon'
               ? around(name === 'polygon')
               : typeof attributes['d'] === 'string'

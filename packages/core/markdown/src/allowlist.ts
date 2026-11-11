@@ -629,7 +629,7 @@ function path(text: string): Read | undefined {
       }
     }
   }
-  return { value: out, numbers: count, vertices, length: pen.length };
+  return { value: out, numbers: count, vertices, length: pen.bound };
 }
 
 /** How many numbers each transform takes. */

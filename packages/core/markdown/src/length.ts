@@ -7,10 +7,38 @@
  *
  * A browser keeps a path's points as 32-bit floats, so they're rounded here the same way: near a
  * million, a float32 is a sixteenth apart, and a step of 0.01 there is a sixteenth long, six times
- * as long. Anything that doesn't come out finite is as long as can be.
+ * as long. A browser's own parsing can round a number the other way, near halfway between two
+ * floats, so each segment is allowed a few float32 steps more, at the largest coordinate of what
+ * it's part of: a hundredth of a millionth near a thousand, a quarter near a million. Anything that
+ * doesn't come out finite is as long as can be.
  */
 
 const f = Math.fround;
+
+/** How many float32 steps longer a browser may find each segment than its points read here. */
+const SLACK_STEPS = 4;
+
+/** The segments a browser draws an arc with, at most: four cubic curves of three edges each. */
+const ARC_SEGMENTS = 12;
+
+const bits = new DataView(new ArrayBuffer(4));
+
+/** The step from the float32 nearest `magnitude` to the next one up. */
+export function float32Step(magnitude: number): number {
+  const at = f(Math.abs(magnitude));
+  if (!Number.isFinite(at)) return Infinity;
+  bits.setFloat32(0, at);
+  bits.setUint32(0, bits.getUint32(0) + 1);
+  return bits.getFloat32(0) - at;
+}
+
+/**
+ * How much longer `segments` segments may be in a browser, their points at most `most` from the
+ * origin: a few float32 steps each, however a browser rounds what it reads.
+ */
+export function slack(segments: number, most: number): number {
+  return segments * SLACK_STEPS * float32Step(most);
+}
 
 /** The distance between two points. */
 function distance(x0: number, y0: number, x1: number, y1: number): number {
@@ -53,8 +81,12 @@ export function arcLength(
  * arc's whole ellipse, and each close back to where its subpath began.
  */
 export class Pen {
-  /** At most how long the path is so far. */
-  length = 0;
+  /** How long the path is so far, as its points read here. */
+  private length = 0;
+  /** How many segments it's drawn with, for the slack each is allowed. */
+  private segments = 0;
+  /** The largest coordinate it reaches, either way. */
+  private most = 0;
   private x = 0;
   private y = 0;
   private startX = 0;
@@ -80,6 +112,7 @@ export class Pen {
         if (first) {
           this.x = at(0);
           this.y = at(1);
+          this.reach(this.x, this.y);
           this.startX = this.x;
           this.startY = this.y;
         } else {
@@ -115,7 +148,12 @@ export class Pen {
         // Radii and angle are no points: not offset. The end is.
         const x = f(ox + raw(5));
         const y = f(oy + raw(6));
-        this.length += arcLength(this.x, this.y, raw(0), raw(1), raw(2), x, y);
+        const arc = arcLength(this.x, this.y, raw(0), raw(1), raw(2), x, y);
+        this.length += arc;
+        this.segments += ARC_SEGMENTS;
+        // Every point of its ellipse is within its diameter, at most the bound over pi, of an end.
+        this.reach(this.x, this.y, arc / Math.PI);
+        this.reach(x, y, arc / Math.PI);
         this.x = x;
         this.y = y;
         break;
@@ -128,11 +166,23 @@ export class Pen {
     this.quadratic = quadratic;
   }
 
+  /** At most how long the path is: as its points read here, and the slack each segment has. */
+  get bound(): number {
+    return this.length + slack(this.segments, this.most);
+  }
+
   /** A line to (x, y). */
   private to(x: number, y: number): void {
     this.length += distance(this.x, this.y, x, y);
+    this.segments += 1;
+    this.reach(x, y);
     this.x = x;
     this.y = y;
+  }
+
+  /** Notes that the path reaches as far as (x, y), and `beyond` further. */
+  private reach(x: number, y: number, beyond = 0): void {
+    this.most = Math.max(this.most, Math.abs(x) + beyond, Math.abs(y) + beyond);
   }
 
   /** A curve's control polygon: lines through `points`, pairs of numbers, the last its end. */
@@ -146,17 +196,24 @@ export class Pen {
   }
 }
 
-/** The length of the lines through `values`, pairs of numbers, closed when `closed`. */
+/**
+ * At most how long the lines through `values` are, pairs of numbers, closed when `closed`, with
+ * each segment's slack.
+ */
 export function polylineLength(numbers: readonly number[], closed: boolean): number {
   const values = numbers.map(f);
   let length = 0;
+  let segments = 0;
   for (let i = 2; i + 1 < values.length; i += 2) {
     length += distance(values[i - 2]!, values[i - 1]!, values[i]!, values[i + 1]!);
+    segments += 1;
   }
   if (closed && values.length >= 4) {
     length += distance(values.at(-2)!, values.at(-1)!, values[0]!, values[1]!);
+    segments += 1;
   }
-  return length;
+  const most = values.reduce((largest, value) => Math.max(largest, Math.abs(value)), 0);
+  return length + slack(segments, most);
 }
 
 /**

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'vitest';
 
-import { arcLength, dashCount } from './length.ts';
+import { arcLength, dashCount, float32Step } from './length.ts';
 import {
   FIGURE_COLORS,
   isSvgAttribute,
@@ -277,19 +277,42 @@ describe('paths', () => {
       // A move draws nothing; a close goes back to where its subpath began.
       ['M0 0L3 4M10 10l0 1z', 7],
     ] as const;
-    expect(lengths.map(([d]) => readValue('path', d)?.length)).toEqual(
-      lengths.map(([, length]) => expect.closeTo(length, 9)),
-    );
-    expect(readValue('points', '0 0 3 4 3 0')).toMatchObject({ length: 9, closing: 3 });
+    // No shorter, and longer only by each segment's slack: a few float32 steps, here millionths.
+    const off = lengths.map(([d, length]) => (readValue('path', d)?.length ?? Infinity) - length);
+    expect(off.filter((extra) => !(extra >= 0 && extra < 1e-3))).toEqual([]);
+    const points = readValue('points', '0 0 3 4 3 0');
+    expect(points?.length).toBeCloseTo(9, 4);
+    expect(points?.closing).toBeCloseTo(3, 4);
   });
 
   test('are measured in 32-bit floats, as a browser keeps their points', () => {
     // Near a million, a float32 is a sixteenth apart: steps of a hundredth there are a sixteenth.
+    // And each of its 100 steps is allowed 4 more, however a browser rounds what it reads.
     const zigzag = `M999999.03 0${'L999999.04 0L999999.03 0'.repeat(50)}`;
-    expect(readValue('path', zigzag)?.length).toBe(100 / 16);
+    expect(readValue('path', zigzag)?.length).toBe(100 / 16 + (100 * 4) / 16);
     expect(readValue('points', `0 0 ${'999999.03 0 999999.04 0 '.repeat(50)}`)?.length).toBe(
-      999_999 + 99 / 16,
+      999_999 + 99 / 16 + (100 * 4) / 16,
     );
+  });
+
+  test('allow each segment a few float32 steps, however a browser rounds a number halfway', () => {
+    // A browser can read 600000.40625, halfway between two floats, as either: each step a
+    // sixteenth, or none. Either way, each is allowed a quarter.
+    const short = [
+      `M0 600000.375${'V600000.40625V600000.375'.repeat(10)}`,
+      `M600000.375 0${'H600000.40625H600000.375'.repeat(10)}`,
+      `M0 600000.375${'v0.03125v-0.03125'.repeat(10)}`,
+      `M300000.1875 0${'L300000.203125 0L300000.1875 0'.repeat(10)}`,
+      `M600000.375 0${'C600000.40625 0 600000.375 0 600000.40625 0'.repeat(10)}`,
+    ].filter((d) => {
+      const segments = d.includes('C') ? 30 : 20;
+      const step = d.includes('300000.') ? 1 / 32 : 1 / 16;
+      return !((readValue('path', d)?.length ?? 0) >= segments * 4 * step);
+    });
+    expect(short).toEqual([]);
+    expect(float32Step(600_000)).toBe(1 / 16);
+    expect(float32Step(1_000)).toBe(2 ** -14);
+    expect(float32Step(0)).toBeGreaterThan(0);
   });
 
   test('an arc with radii too small for a float32 is the straight line a browser draws', () => {
@@ -300,7 +323,10 @@ describe('paths', () => {
       'M0 0A1e-40 1e-40 0 0 1 0 999000',
       'M0 0A1e-200 1000000 45 1 0 0 999000',
     ]) {
-      expect(readValue('path', d)?.length).toBe(999_000);
+      // Its straight line, and the slack of the curves a browser would draw an arc with.
+      const length = readValue('path', d)?.length ?? 0;
+      expect(length).toBeGreaterThanOrEqual(999_000);
+      expect(length).toBeLessThan(999_010);
     }
     // Given radii whose squares underflow, it's no bound at all, rather than a tiny one.
     expect(arcLength(0, 0, 1e-200, 1e-200, 0, 0, 999_000)).toBe(Infinity);

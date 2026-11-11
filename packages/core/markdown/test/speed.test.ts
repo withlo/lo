@@ -30,11 +30,11 @@ const COMMENT_LIMIT = 750;
 const OVERVIEW_LIMIT = 1_200;
 const RENDERING_LIMIT = 2_000;
 /**
- * A figure at the caps takes about 30 ms to sanitize on a laptop and 150 ms on a Linux CI runner,
- * which runs test files side by side; this is three times that. The figures built to be slow take
- * less. Each one's time is printed.
+ * A figure at the caps takes about 30 ms to sanitize on a laptop and 120 to 150 ms on a Linux CI
+ * runner, which runs test files side by side. CI's times vary about twice over, and this is set to
+ * catch a regression ten times as slow, not that. Each figure's time is printed.
  */
-const FIGURE_LIMIT = 450;
+const FIGURE_LIMIT = 750;
 
 /** One section of a typical long description or overview, about 1.6 KB. */
 function section(n: number): string {
@@ -167,6 +167,13 @@ test('a figure at the caps sanitizes within budget', () => {
 const TINY_ARC = (radii: string, angle = 0) =>
   `<path d="M0 0A${radii} ${angle} 0 1 0 999000" stroke-dasharray="0.5 0.5"/>`;
 
+/**
+ * A path from `start`, `step` four times over, dashed every 4e-7: each step between two numbers
+ * a browser may read as one float32 or as the next, a sixteenth apart near 600,000.
+ */
+const HALFWAY = (start: string, step: string) =>
+  `<path d="${start}${step.repeat(4)}" stroke-dasharray="4e-7"/>`;
+
 /** A marker of 63 circles, which draws 127 each time it's drawn. */
 const CIRCLES = `<marker id="m">${'<circle r="1"/>'.repeat(63)}</marker>`;
 const SPACES = ' '.repeat(524_000);
@@ -293,6 +300,46 @@ const WORST: [string, string, (made: SanitizedSvg) => void][] = [
   [
     'a dashed zigzag near a million, where float32 steps are a sixteenth',
     `<svg><path d="M999999.03 0${'L999999.04 0L999999.03 0'.repeat(1_000)}" stroke-dasharray="0.0005"/></svg>`,
+    refused('drawn'),
+  ],
+  [
+    'paths alternating at a float32 halfway, 2,532 of them',
+    `<svg>${HALFWAY('M0 0', 'V600000.40625V600000.375').repeat(2_532)}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'one path alternating at a float32 halfway',
+    `<svg>${HALFWAY('M0 0', 'V600000.40625V600000.375')}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'a path alternating at a halfway, across',
+    `<svg>${HALFWAY('M0 0', 'H600000.40625H600000.375')}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'a path alternating at a halfway, by relative steps',
+    `<svg>${HALFWAY('M0 600000.375', 'v0.03125v-0.03125')}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'a path alternating at another halfway',
+    `<svg>${HALFWAY('M0 0', 'V300000.203125V300000.1875')}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'curves through a halfway',
+    `<svg>${HALFWAY('M600000.375 0', 'C600000.40625 0 600000.375 0 600000.40625 0')}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'lines across a float32 halfway',
+    `<svg>${'<line x1="600000.375" x2="600000.40625" stroke-dasharray="4e-7"/>'.repeat(1_000)}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'points alternating at a float32 halfway',
+    `<svg><polyline points="${'600000.375 0 600000.40625 0 '.repeat(100)}" stroke-dasharray="4e-7"/></svg>`,
     refused('drawn'),
   ],
   [
