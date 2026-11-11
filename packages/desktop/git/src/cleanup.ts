@@ -392,7 +392,7 @@ async function removeOldPacks(host: CleanupHost, clone: CloneName, now: number) 
  * from it, so neither their pins nor anything else needs them. What the clone fetched is all in
  * packs, which this leaves alone.
  */
-async function collectReplays(host: CleanupHost, clone: CloneName): Promise<void> {
+export async function collectReplays(host: CleanupHost, clone: CloneName): Promise<void> {
   if (!(await hasLooseObjects(host.repoFolder(clone.owner, clone.name)))) return;
   const held = maintain(host, clone, 'removing replayed trees', true);
   if (held === undefined) return;
@@ -421,7 +421,7 @@ async function collectReplays(host: CleanupHost, clone: CloneName): Promise<void
 }
 
 /** Whether the clone at `gitDir` holds any loose object, in a folder such as `objects/ab`. */
-async function hasLooseObjects(gitDir: string): Promise<boolean> {
+export async function hasLooseObjects(gitDir: string): Promise<boolean> {
   const objects = join(gitDir, 'objects');
   for (const name of await folders(objects)) {
     if (
@@ -618,6 +618,8 @@ interface Pack {
   readonly name: string;
   readonly objects: number;
   readonly promisor: boolean;
+  /** Whether it has a `.keep`, which tells git to leave it be: no repack rewrites it. */
+  readonly kept: boolean;
 }
 
 /** The finished packs of the clone at `folder`, fewest objects first. */
@@ -629,8 +631,14 @@ async function packsOf(folder: string): Promise<Pack[]> {
     if (!name.startsWith('pack-') || !name.endsWith('.pack')) continue;
     const base = name.slice(0, -'.pack'.length);
     const objects = await indexedObjects(join(pack, `${base}.idx`));
-    if (objects !== undefined)
-      found.push({ name, objects, promisor: names.includes(`${base}.promisor`) });
+    if (objects !== undefined) {
+      found.push({
+        name,
+        objects,
+        promisor: names.includes(`${base}.promisor`),
+        kept: names.includes(`${base}.keep`),
+      });
+    }
   }
   return found.toSorted((a, b) => a.objects - b.objects);
 }
@@ -663,11 +671,13 @@ async function indexedObjects(path: string): Promise<number | undefined> {
 function planRepack(packs: readonly Pack[], limit: number, users: number): RepackPlan | undefined {
   if (packs.length <= limit) return undefined;
   if (packs.length > PACK_LIMIT && users === 0) return { kind: 'full' };
-  const promisor = packs.filter((pack) => pack.promisor);
+  // A pack with a `.keep` is never rolled, as git's own repack leaves it be, and keeps its `.keep`.
+  const promisor = packs.filter((pack) => pack.promisor && !pack.kept);
   const split = geometricSplit(promisor.map((pack) => pack.objects));
   if (split < 2) return undefined;
   const names = promisor.map((pack) => pack.name);
-  return { kind: 'geometric', roll: names.slice(0, split), keep: names.slice(split) };
+  const kept = packs.filter((pack) => pack.kept).map((pack) => pack.name);
+  return { kind: 'geometric', roll: names.slice(0, split), keep: [...names.slice(split), ...kept] };
 }
 
 /**

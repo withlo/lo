@@ -26,6 +26,9 @@ test('app.info answers', async ({ page }) => {
       version: '0.0.0',
       platform: process.platform,
       theme: expect.stringMatching(/^(dark|light)$/),
+      git: expect.objectContaining({
+        status: expect.stringMatching(/^(checking|found|missing|tooOld)$/),
+      }),
     },
   });
 });
