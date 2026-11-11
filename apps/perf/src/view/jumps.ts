@@ -3,6 +3,12 @@
 // landed on the other side's line numbers in this side's document, and it held on to editors long
 // gone. Here the diff's editors share one list, so going back can cross to the other side; a
 // comment box has its own; and an editor's jumps go when it does.
+//
+// Its limits: a count, as in `2 Ctrl-o`, goes through Vim's own walk, which moves the place in the
+// list but not the cursor when the jump is on the other side; jumps made in the inline layout stay
+// in the list once it's hidden, and each swallows a `Ctrl-o` in the sides; the list is one for the
+// window, so two open views would share it; and `Ctrl-o` doesn't skip a jump at the cursor's own
+// spot, so the first press after using a box does nothing.
 
 import type { ChangeDesc } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
