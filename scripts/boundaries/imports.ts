@@ -9,6 +9,12 @@ export interface Import {
   reference?: 'types' | 'path';
   /** `import()` or `require()` of an expression, so the module is only known at run time. */
   computed?: true;
+  /**
+   * A way to load modules that the check can't follow, which `specifier` shows: a use of `require`
+   * other than a call that names its module, or any mention of `createRequire` or
+   * `getBuiltinModule`.
+   */
+  loader?: 'require' | 'createRequire' | 'getBuiltinModule';
 }
 
 /** A file that doesn't parse, so its imports can't be listed. */
@@ -29,8 +35,8 @@ type Node = { type: string; start: number; end: number; [key: string]: unknown }
  * ones too), `import()` and `require()`, `import x = require()`, `import('x')` types,
  * `/// <reference types="x" />` and `path="x"`, and calls to a `require` that `createRequire()`
  * makes. A string, or a template literal without substitutions, names its module; any other
- * argument to `import()` or `require()` is listed as computed. Throws a `ParseError` for a file
- * that doesn't parse.
+ * argument to `import()` is listed as computed. Also lists the file's loaders (see `Import`).
+ * Throws a `ParseError` for a file that doesn't parse.
  */
 export function importsOf(filename: string, source: string): Import[] {
   const result = parseSync(filename, source);
@@ -74,19 +80,36 @@ export function importsOf(filename: string, source: string): Import[] {
     ImportExpression: (node) => load(node.source),
     TSImportType: (node) => add(node.source),
     TSExternalModuleReference: (node) => add(node.expression),
-    CallExpression: (node) => {
-      const [argument] = node.arguments;
-      if (node.callee.type === 'Identifier' && node.callee.name === 'require' && argument) {
-        load(argument);
-      }
-    },
   }).visit(result.program);
+
+  const program: unknown = result.program;
+  const nodes = isNode(program) ? walk(program) : [];
+  for (const [node, parent] of nodes) {
+    const name = mentionOf(node, parent);
+    if (name === 'createRequire' || name === 'getBuiltinModule') {
+      found.push({ specifier: name, line: lineOf(node.start), loader: name });
+    } else if (
+      name === 'require' &&
+      node.type === 'Identifier' &&
+      parent?.type === 'CallExpression' &&
+      parent.callee === node &&
+      namedCall(parent)
+    ) {
+      load(firstArgument(parent));
+    } else if (name === 'require' && !harmless(node, parent)) {
+      // Shown with what's around it: `module.require`, `require.call`, `require(name)`.
+      const around =
+        parent?.type === 'MemberExpression' ||
+        (parent?.type === 'CallExpression' && parent.callee === node);
+      const { start, end } = around ? parent : node;
+      found.push({ specifier: source.slice(start, end), line: lineOf(start), loader: 'require' });
+    }
+  }
 
   // A require made from this file loads what it's called with, as `require()` does. A require made
   // from another file resolves from there, and one handed on can be called anywhere, so what
   // they load is only known at run time.
-  const program: unknown = result.program;
-  for (const { use, parent, local } of isNode(program) ? madeRequires(program) : []) {
+  for (const { use, parent, local } of madeRequires(nodes)) {
     const called = parent?.type === 'CallExpression' && parent.callee === use;
     const [argument] = called && Array.isArray(parent.arguments) ? parent.arguments : [];
     if (local && isNode(argument)) {
@@ -124,6 +147,44 @@ function nameOf(argument: Node): string | undefined {
   return typeof cooked === 'string' ? cooked : typeof raw === 'string' ? raw : undefined;
 }
 
+/**
+ * The name an identifier, or a string in a property's place, mentions: `name`, `a['name']`,
+ * `{ 'name': … }` or `import { 'name' as … }`. Strings anywhere else are only text.
+ */
+function mentionOf(node: Node, parent: Node | undefined): string | undefined {
+  if (node.type === 'Identifier') return identifier(node);
+  if (node.type !== 'Literal' || typeof node.value !== 'string') return undefined;
+  const named =
+    (parent?.type === 'MemberExpression' && parent.property === node) ||
+    (parent?.type === 'Property' && parent.key === node) ||
+    (parent?.type === 'ImportSpecifier' && parent.imported === node) ||
+    (parent?.type === 'ExportSpecifier' && parent.local === node);
+  return named ? node.value : undefined;
+}
+
+/** Whether a call's first argument names a module. */
+function namedCall(call: Node): boolean {
+  const argument = firstArgument(call);
+  return isNode(argument) && nameOf(argument) !== undefined;
+}
+
+function firstArgument(call: Node): unknown {
+  return Array.isArray(call.arguments) ? call.arguments[0] : undefined;
+}
+
+/**
+ * Whether a mention of `require` can't load anything: a key of an object or class that happens to
+ * be named `require`, or `typeof require`.
+ */
+function harmless(node: Node, parent: Node | undefined): boolean {
+  if (parent?.type === 'UnaryExpression') return parent.operator === 'typeof';
+  const key =
+    parent?.type === 'Property' ||
+    parent?.type === 'MethodDefinition' ||
+    parent?.type === 'PropertyDefinition';
+  return key && parent.key === node && parent.value !== node && !parent.computed;
+}
+
 interface MadeRequire {
   /** A `createRequire()` call, or a name one's assigned to. */
   use: Node;
@@ -136,8 +197,7 @@ interface MadeRequire {
  * Each use of a `require` that `createRequire()` makes, other than its `resolve()`, which only finds
  * a path. A require assigned to a name is followed through that name's uses.
  */
-function madeRequires(program: Node): MadeRequire[] {
-  const nodes = walk(program);
+function madeRequires(nodes: readonly [Node, Node | undefined][]): MadeRequire[] {
   // `createRequire` by its own name, or by any name it's imported or destructured as.
   const makers = new Set(['createRequire']);
   for (const [node, parent] of nodes) {

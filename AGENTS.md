@@ -105,7 +105,7 @@ A package's folder says where it runs, and its Nx tags (`"nx": { "tags": [...] }
   `license:mit`, and every `license:mit` project carries the MIT license in its own `LICENSE`;
 - core projects import only core projects, and use no Node built-in, Electron or child process
   (their tests may use Node);
-- core projects load modules by name: an `import()` or `require()` of anything but a literal fails;
+- core projects load modules by name: an `import()` of anything but a literal fails;
 - `license:mit` projects import only `license:mit` projects;
 - nothing imports an app;
 - only tests import `testing/`. Tests are `*.test.*` files and anything in `test/` or `e2e/`, and
@@ -122,9 +122,13 @@ in its `imports` and `exports`, and to every edge in Nx's project graph. Also:
   other by package name. What a project's `imports` and `exports` map to stays in its folder too;
 - nothing imports files outside every project, other than packages in the workspace's
   `node_modules`;
-- a module's name or path has no percent escapes, since Node decodes them, and isn't a URL other
-  than `node:`;
+- a module's name or path has no percent escapes or backslashes, since Node decodes the one and
+  reads the other as `/`, and isn't a URL other than `node:`;
 - a `#name` import is one the `package.json`'s `imports` map;
+- `require` appears only in a call that names its module, such as `require('./x.js')`;
+- only the files that `scripts/boundaries/check.ts` lists use `createRequire` or `getBuiltinModule`,
+  since what they load can't be followed;
+- pnpm's overrides and package extensions point no dependency at a folder with `link:` or `file:`;
 - no tsconfig sets `paths`, nor any tsconfig it extends or references;
 - the root `package.json` holds the repo's tooling only: no workspace package, and no alias besides
   TypeScript's two.

@@ -241,7 +241,7 @@ describe('core projects', () => {
       ),
       violation(
         'packages/core/github/src/index.ts:3',
-        "loads ['o', 's'].join(''): the module is chosen",
+        "uses require(['o', 's'].join('')), but the check follows require only in a call that names its module",
       ),
       violation(
         'packages/core/github/src/index.ts:4',
@@ -829,35 +829,134 @@ describe('resolution', () => {
     ]);
   });
 
-  test('a require that createRequire makes is checked like require', () => {
+  test("a backslash in a module's path is refused, since Node and TypeScript read it as a slash", () => {
     expect(
       check({
-        'packages/core/github/src/poll.test.ts': [
+        'packages/desktop/ui/package.json': json({
+          name: '@lo/ui',
+          imports: { '#clone': '.\\src\\clone.ts' },
+        }),
+        'packages/desktop/ui/src/index.ts': String.raw`import { clone } from './a\\..\\..\\..\\git\\src\\clone.ts';`,
+      }),
+    ).toEqual([
+      violation(
+        'packages/desktop/ui/package.json:4',
+        `maps "#clone" to ".\\src\\clone.ts" in imports: Node and TypeScript read a backslash`,
+      ),
+      violation(
+        'packages/desktop/ui/src/index.ts:1',
+        String.raw`imports ./a\..\..\..\git\src\clone.ts: Node and TypeScript read a backslash`,
+      ),
+    ]);
+  });
+
+  test('only the files check.ts lists use createRequire or getBuiltinModule, however they reach them', () => {
+    expect(
+      check({
+        'packages/desktop/ui/src/index.ts': [
+          `import * as m from 'node:module';`,
+          `const cr = m.createRequire;`,
+          `const { app } = cr(import.meta.url)('electron');`,
+          `const builtin = process.getBuiltinModule('module');`,
+          `const made = builtin.createRequire;`,
+          `const other = m['createRequire'](base)('./strings.js');`,
+        ].join('\n'),
+        'apps/desktop/src/main/database.ts': `const sqlite = process.getBuiltinModule('node:sqlite');`,
+        'apps/desktop/src/main/database.test.ts': `vi.spyOn(process, 'getBuiltinModule');`,
+      }),
+    ).toEqual([
+      violation(
+        'packages/desktop/ui/src/index.ts:2',
+        "uses createRequire, which loads modules the check can't follow, so only the files listed in scripts/boundaries/check.ts may use it",
+      ),
+      violation('packages/desktop/ui/src/index.ts:4', 'uses getBuiltinModule, which loads modules'),
+      violation('packages/desktop/ui/src/index.ts:5', 'uses createRequire, which loads modules'),
+      violation('packages/desktop/ui/src/index.ts:6', 'uses createRequire, which loads modules'),
+    ]);
+  });
+
+  test('a require that createRequire makes, in a file allowed it, is checked like require', () => {
+    expect(
+      check({
+        'packages/desktop/ui/scripts/stylesheet.ts': [
           `import { createRequire, createRequire as make } from 'node:module';`,
           `const load = createRequire(import.meta.url);`,
-          `const { app } = load('electron');`,
-          `const { clone } = make(import.meta.url)('@lo/git');`,
-          `const elsewhere = createRequire('/tmp/elsewhere.js')('./strings.js');`,
+          `const { start } = load('@lo/desktop');`,
+          `const { main } = make(import.meta.url)('@lo/desktop/main');`,
+          `const elsewhere = createRequire(base)('./strings.js');`,
           `register(load);`,
           `const path = load.resolve('@lo/git');`,
         ].join('\n'),
-        'packages/desktop/ui/src/main.ts': `const { start } = createRequire(import.meta.url)('@lo/desktop');`,
       }),
     ).toEqual([
-      violation('packages/core/github/src/poll.test.ts:3', 'imports electron: core projects'),
       violation(
-        'packages/core/github/src/poll.test.ts:4',
-        "imports @lo/git: git isn't a core project",
+        'packages/desktop/ui/scripts/stylesheet.ts:3',
+        "imports @lo/desktop: that's the app desktop",
       ),
       violation(
-        'packages/core/github/src/poll.test.ts:5',
-        `loads createRequire('/tmp/elsewhere.js')('./strings.js'): the module is chosen at run time`,
+        'packages/desktop/ui/scripts/stylesheet.ts:4',
+        "imports @lo/desktop/main: that's the app desktop",
       ),
+    ]);
+  });
+
+  test('require is used only in a call that names its module', () => {
+    expect(
+      check({
+        'packages/desktop/git/src/legacy.cjs': [
+          `const load = require;`,
+          `const fs = module.require('fs');`,
+          `const os = require.call(null, 'os');`,
+          `const cp = (0, require)('child_process');`,
+          `const named = require(process.env.NAME);`,
+          `const ok = require('./ok.cjs');`,
+          `const checks = { require: typeof require };`,
+        ].join('\n'),
+      }),
+    ).toEqual([
       violation(
-        'packages/core/github/src/poll.test.ts:6',
-        'loads load: the module is chosen at run time',
+        'packages/desktop/git/src/legacy.cjs:1',
+        'uses require, but the check follows require only in a call that names its module',
       ),
-      violation('packages/desktop/ui/src/main.ts:1', "imports @lo/desktop: that's the app desktop"),
+      violation('packages/desktop/git/src/legacy.cjs:2', 'uses module.require, but the check'),
+      violation('packages/desktop/git/src/legacy.cjs:3', 'uses require.call, but the check'),
+      violation('packages/desktop/git/src/legacy.cjs:4', 'uses require, but the check'),
+      violation(
+        'packages/desktop/git/src/legacy.cjs:5',
+        'uses require(process.env.NAME), but the check',
+      ),
+    ]);
+  });
+
+  test('overrides and package extensions point no dependency at a folder', () => {
+    expect(
+      check({
+        'pnpm-workspace.yaml': [
+          `packages:`,
+          `  - packages/*`,
+          `overrides:`,
+          `  zod: link:./shared/zod`,
+          `  '@lo/git': "file:./packages/desktop/ui"`,
+          `  vite: 8.3.7`,
+          `# A link: in a comment is only text.`,
+        ].join('\n'),
+        'package.json': json({
+          name: 'lo',
+          pnpm: { overrides: { electron: 'link:./shared/electron' } },
+          resolutions: { vitest: 'file:./shared/vitest' },
+        }),
+      }),
+    ).toEqual([
+      violation(
+        'package.json:5',
+        'points "electron" at a folder (link:./shared/electron), but overrides and package extensions apply across the workspace',
+      ),
+      violation('package.json:9', 'points "vitest" at a folder (file:./shared/vitest)'),
+      violation(
+        'pnpm-workspace.yaml:4',
+        'points a dependency at a folder (zod: link:./shared/zod)',
+      ),
+      violation('pnpm-workspace.yaml:5', 'points a dependency at a folder'),
     ]);
   });
 });

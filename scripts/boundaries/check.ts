@@ -80,7 +80,30 @@ const outside: Target = { kind: 'outside' };
 
 /** Node decodes a specifier's percent escapes, and `%2e%2e` even counts as `..`. */
 const percent = `Node decodes the percent escapes in a module's path and this check doesn't, so write each character as itself`;
+/** Node and TypeScript read a `\` in a module's path as `/`. */
+const backslash = `Node and TypeScript read a backslash in a module's path as a slash and this check doesn't, so write a slash`;
 const url = `that's a URL, which this check can't follow, so import by path or package name`;
+
+/**
+ * The files that may use `createRequire` or `getBuiltinModule`, which load modules the check can't
+ * follow. Listing them keeps each one in sight in review.
+ */
+const loaderFiles = new Set([
+  // Finds Electron's binary for the smoke test.
+  'apps/desktop/e2e/app.ts',
+  // Counts the cores in the app's main process.
+  'apps/desktop/e2e/background.spec.ts',
+  // Finds the fonts' license files, to ship beside the window's files.
+  'apps/desktop/electron.vite.config.ts',
+  // Loads node:sqlite, which an older Node doesn't have.
+  'apps/desktop/src/main/database.ts',
+  // Finds the syntax package's folder, for its built grammars.
+  'apps/perf/src/main/index.ts',
+  // Find the design tokens, and the stylesheets the window's stylesheet imports.
+  'packages/desktop/ui/scripts/spacing.test.ts',
+  'packages/desktop/ui/scripts/stylesheet.ts',
+  'packages/desktop/ui/scripts/theme.ts',
+]);
 
 /** Where a dependency alias points: another package's name, or a folder. */
 type Alias = { name: string } | { path: string };
@@ -271,6 +294,7 @@ export function checkBoundaries(
     test: boolean,
   ): string | undefined => {
     if (target.includes('%')) return percent;
+    if (target.includes('\\')) return backslash;
     if (target.startsWith('.') || target.startsWith('/')) {
       return pathVerdict(resolve(folder, target), home, owner, test);
     }
@@ -313,13 +337,14 @@ export function checkBoundaries(
     test: boolean,
     reference?: Import['reference'],
   ): string | undefined => {
+    // Without a query or fragment, keeping a `#name`'s own `#`.
+    const path = specifier.slice(0, 1) + specifier.slice(1).replace(/[?#].*$/, '');
+    if (path.includes('%')) return percent;
+    if (path.includes('\\')) return backslash;
     if (reference === 'types') {
       if (specifier === 'node' || specifier === '@types/node') return problem(owner, test, node);
       return packageVerdict(specifier, folder, owner, test);
     }
-    // Without a query or fragment, keeping a `#name`'s own `#`.
-    const path = specifier.slice(0, 1) + specifier.slice(1).replace(/[?#].*$/, '');
-    if (path.includes('%')) return percent;
     if (reference === 'path' || path.startsWith('.') || path.startsWith('/')) {
       return pathVerdict(resolve(folder, path), owner, owner, test);
     }
@@ -344,6 +369,17 @@ export function checkBoundaries(
         continue;
       }
       for (const found of imports) {
+        if (found.loader) {
+          if (found.loader !== 'require' && loaderFiles.has(path)) continue;
+          violations.push({
+            where: `${path}:${found.line}`,
+            message:
+              found.loader === 'require'
+                ? `uses ${found.specifier}, but the check follows require only in a call that names its module, such as require('./x.js').`
+                : `uses ${found.specifier}, which loads modules the check can't follow, so only the files listed in scripts/boundaries/check.ts may use it.`,
+          });
+          continue;
+        }
         const reason = found.computed
           ? problem(project, test, computed)
           : verdict(found.specifier, dirname(file), project, test, found.reference);
@@ -385,6 +421,7 @@ export function checkBoundaries(
 
   violations.push(
     ...checkRootManifest(root, byPackage),
+    ...checkOverrides(root),
     ...checkTsconfigs(root, ['', ...projects.map((project) => project.root)]),
   );
 
@@ -525,6 +562,39 @@ function checkRootManifest(
       violations.push({
         where: `package.json:${lineOf(manifest.text, name)}`,
         message: `lists "${name}": ${JSON.stringify(spec)} in ${field}, but the root package.json holds the repo's tooling only: no workspace package, and no alias besides TypeScript's.`,
+      });
+    }
+  }
+  return violations;
+}
+
+/**
+ * pnpm's overrides and package extensions apply across the workspace, past the checks on each
+ * project's own dependencies, so none of them points a dependency at a folder with `link:` or
+ * `file:`. They live in `pnpm-workspace.yaml`, or in the root `package.json`'s `pnpm` and
+ * `resolutions`.
+ */
+function checkOverrides(root: string): Violation[] {
+  const violations: Violation[] = [];
+  const folder = /(?:^|[\s"'{[,:])(?:link|file):/;
+  const workspace = join(root, 'pnpm-workspace.yaml');
+  // Read line by line rather than parsed: a `link:` or `file:` value anywhere in it is refused.
+  const lines = existsSync(workspace) ? readFileSync(workspace, 'utf8').split('\n') : [];
+  for (const [index, line] of lines.entries()) {
+    const code = line.replace(/(?:^|\s)#.*$/, '');
+    if (!folder.test(code)) continue;
+    violations.push({
+      where: `pnpm-workspace.yaml:${index + 1}`,
+      message: `points a dependency at a folder (${code.trim()}), but overrides and package extensions apply across the workspace, past the checks on each project's dependencies.`,
+    });
+  }
+  const manifest = readManifest(join(root, 'package.json'));
+  for (const field of ['pnpm', 'resolutions'] as const) {
+    for (const [key, spec] of stringsIn(manifest?.json[field], field)) {
+      if (!spec.startsWith('link:') && !spec.startsWith('file:')) continue;
+      violations.push({
+        where: `package.json:${lineOf(manifest?.text ?? '', key)}`,
+        message: `points "${key}" at a folder (${spec}), but overrides and package extensions apply across the workspace, past the checks on each project's dependencies.`,
       });
     }
   }
@@ -723,6 +793,17 @@ function splitPackage(specifier: string): { name: string; rest: string[] } {
   const name = parts.slice(0, length).join('/');
   const version = name.indexOf('@', 1);
   return { name: version === -1 ? name : name.slice(0, version), rest: parts.slice(length) };
+}
+
+/** Every string in a JSON value, with the key it's directly under. */
+function* stringsIn(value: unknown, key: string): Generator<[string, string]> {
+  if (typeof value === 'string') {
+    yield [key, value];
+  } else if (Array.isArray(value)) {
+    for (const item of value) yield* stringsIn(item, key);
+  } else if (isRecord(value)) {
+    for (const [name, inner] of Object.entries(value)) yield* stringsIn(inner, name);
+  }
 }
 
 /** Every target in an `imports` or `exports` field, with the key it's under. */
