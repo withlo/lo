@@ -81,8 +81,6 @@ export function collapsedRuns(
   gaps: readonly Gap[] = [],
 ): { old: LineRange; new: LineRange }[] {
   const runs: { old: LineRange; new: LineRange }[] = [];
-  const inGapLine = (side: 'old' | 'new', line: number): boolean =>
-    gaps.some((gap) => gap.side === side && gap.from <= line && line <= gap.to);
   let hunk = 0;
   /** Whether old line `line` is outside every hunk. Asked in order. */
   const outside = (line: number): boolean => {
@@ -106,7 +104,7 @@ export function collapsedRuns(
       gapped = false;
     };
     for (let line = block.old; line < block.old + block.oldCount; line++) {
-      const gap = inGapLine('old', line) || inGapLine('new', line + offset);
+      const gap = isGapLine(gaps, 'old', line) || isGapLine(gaps, 'new', line + offset);
       const kept = keep?.old.has(line) || keep?.new.has(line + offset);
       if (gap || (outside(line) && !kept)) {
         if (start !== undefined && gap !== gapped) end(line);
@@ -119,6 +117,11 @@ export function collapsedRuns(
     end(block.old + block.oldCount);
   }
   return runs;
+}
+
+/** Whether line `line` on `side` is one of `gaps`' placeholders. */
+export function isGapLine(gaps: readonly Gap[], side: 'old' | 'new', line: number): boolean {
+  return gaps.some((gap) => gap.side === side && gap.from <= line && line <= gap.to);
 }
 
 /** Whether `run` takes in any of `gaps`' lines, on either side. */

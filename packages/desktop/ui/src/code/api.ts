@@ -225,11 +225,14 @@ export interface DiffView extends KeySource {
   setTokens(file: string, side: Side, triples: Uint32Array): void;
   /**
    * Brings in a file's lines: those of a file kept out, as after `load`, or the whole of one in
-   * place of what it showed, its gaps filled, as when the local copy replaces GitHub's diff. In
-   * place, only the lines that differ change, so the cursor keeps its line and the scroll its
-   * place. `diff`, given, shows with the new lines at once: pass it when swapping a shown file.
-   * Without it, a kept-out file's diff follows with `setDiff`, and a shown file keeps its own
-   * while its line counts stay. Highlighting follows with `setTokens`.
+   * place of what it showed, its gaps filled, as when the local copy replaces GitHub's diff. When
+   * the new lines hold every old one at the same place, gaps aside, only the lines that differ
+   * change, so the cursor keeps its line and the scroll its place; otherwise every line is
+   * replaced, and the cursor goes to the nearest line with the text it was on. `diff`, given,
+   * shows with the new lines at once: pass it when swapping a shown file. Without it, a kept-out
+   * file's diff follows with `setDiff`, and a shown file keeps its own only while its lines
+   * outside its gaps stay as they were, and otherwise waits for `setDiff`. Highlighting follows
+   * with `setTokens`.
    */
   setLines(
     file: string,

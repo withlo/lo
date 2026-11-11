@@ -8,6 +8,8 @@ import { findScope, isKeySource } from '../commands/index.ts';
 import type { FileEvents, FileInit, FileView, Place, Spot, VimKey } from './api.ts';
 import { createFileView } from './file.ts';
 
+const noRects = (): DOMRectList => Object.assign([], { item: () => null });
+
 /** jsdom has no fonts, no resize observer and no layout: the view needs only that they exist. */
 beforeAll(() => {
   if (!('fonts' in document)) {
@@ -16,7 +18,6 @@ beforeAll(() => {
     });
   }
   if (!('getClientRects' in Range.prototype)) {
-    const noRects = (): DOMRectList => Object.assign([], { item: () => null });
     Object.defineProperty(Range.prototype, 'getClientRects', { value: noRects });
     Object.defineProperty(Range.prototype, 'getBoundingClientRect', { value: () => new DOMRect() });
   }
@@ -392,14 +393,14 @@ describe('keys', () => {
   });
 });
 
-describe('what it draws', () => {
-  /** The numbers of the lines drawn with the class `name`. */
-  function drawn(name: string): number[] {
-    return [...parent!.querySelectorAll(`.cm-line`)]
-      .map((line, index) => (line.classList.contains(name) ? index + 1 : 0))
-      .filter(Boolean);
-  }
+/** The numbers of the lines drawn with the class `name`. */
+function drawn(name: string): number[] {
+  return [...parent!.querySelectorAll(`.cm-line`)]
+    .map((line, index) => (line.classList.contains(name) ? index + 1 : 0))
+    .filter(Boolean);
+}
 
+describe('what it draws', () => {
   test('marks pick out their lines, on its file and side only', () => {
     const shown = open(events(), {
       marks: [{ kind: 'lines', at: { file: 'a', side: 'new', from: 4, to: 2 } }],

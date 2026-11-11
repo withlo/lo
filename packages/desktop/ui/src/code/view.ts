@@ -92,6 +92,7 @@ import {
   fileRows,
   type Gap,
   inGap,
+  isGapLine,
   type LineRange,
   runAt,
   shownRuns,
@@ -1311,9 +1312,11 @@ class View implements DiffView {
 
   /**
    * Puts a file's lines in the documents: a file kept out, or the whole of one in place of what it
-   * showed, at the same place. Only the lines that differ change, so the cursor keeps its line and
-   * the scroll its anchor. `diff`, when given, is shown with the new lines at once; without it, a
-   * shown file keeps its diff while its lines keep their counts. Highlighting comes again.
+   * showed, at the same place. When the new lines have every old one at the same place, gaps aside,
+   * only the lines that differ change, so the cursor keeps its line and the scroll its anchor;
+   * otherwise they're all replaced, and the cursor goes to the line with the text it was on.
+   * `diff`, when given, is shown with the new lines at once; without it, a shown file keeps its diff
+   * only while its lines outside its gaps stay as they were. Highlighting comes again.
    */
   #bringIn(
     file: number,
@@ -1322,15 +1325,19 @@ class View implements DiffView {
   ): void {
     const shown = this.#loaded.has(file);
     const before = this.#lines[file]!;
-    const sameCounts =
-      before.old.length === given.old.length && before.new.length === given.new.length;
+    const gaps = this.#gaps[file]!;
+    const fits = {
+      old: fitsInPlace(before.old, given.old, (index) => isGapLine(gaps, 'old', index + 1)),
+      new: fitsInPlace(before.new, given.new, (index) => isGapLine(gaps, 'new', index + 1)),
+    };
     this.#loaded.add(file);
     this.#loading.delete(file);
     this.#failed.delete(file);
     this.#gaps[file] = [];
     this.#lines[file] = { old: given.old, new: given.new };
     if (diff) this.#diffs[file] = diff;
-    else if (shown && !sameCounts) this.#diffs[file] = undefined;
+    // Its diff is of other lines: the file waits for its new one.
+    else if (shown && !(fits.old && fits.new)) this.#diffs[file] = undefined;
     if (shown) {
       // Offsets into the old text: the highlighting of the new comes with `setTokens`.
       this.#triples[file] = {};
@@ -1344,14 +1351,14 @@ class View implements DiffView {
         const triples = this.#triples[file]![side];
         if (triples) this.#tokens[file]![side] = { tokens: triples, starts: lineStarts(lines) };
         const { header } = this.#layout.files[file]![side];
-        replaceLines(this.views[side], header, before[side], lines);
+        swapLines(this.views[side], header, before[side], lines, fits[side]);
         this.#layout.setCount(side, file, lines.length);
       }
       // Every file after it has moved.
       for (let index = file; index < this.#rows.length; index++) {
         this.#rows[index] = this.#rowsOf(index);
       }
-      if (this.#inline) this.#replaceInline(file);
+      if (this.#inline) this.#replaceInline(file, gaps);
       this.#refresh(file, [tokensChanged.of(null)]);
     } finally {
       this.#quiet--;
@@ -1360,8 +1367,11 @@ class View implements DiffView {
     if (this.#viewOf(pane).hasFocus) this.#tell(pane);
   }
 
-  /** Gives the inline document file `file`'s lines from its diff now, in place of those it had. */
-  #replaceInline(file: number): void {
+  /**
+   * Gives the inline document file `file`'s lines from its diff now, in place of those it had,
+   * whose placeholders were `gaps`' lines.
+   */
+  #replaceInline(file: number, gaps: readonly Gap[] = this.#gaps[file]!): void {
     const inline = this.#inline!;
     const had = inline.layout.lines[file];
     if (!had) {
@@ -1380,21 +1390,20 @@ class View implements DiffView {
     if (diff && this.#loaded.has(file)) {
       const now = inlineLines(diff);
       const text = inlineText(now, lines.old, lines.new);
-      if (text.length === before.length) {
-        // The same rows: line for line, so the cursor stays where it is.
-        replaceLines(view, header, before, text);
-        inline.layout.setLines(file, now);
-        return;
-      }
+      // A row showed a placeholder if either of its lines was one.
+      const placeholder = (row: number): boolean =>
+        isGapLine(gaps, 'old', had.old[row]!) || isGapLine(gaps, 'new', had.new[row]!);
+      swapLines(view, header, before, text, fitsInPlace(before, text, placeholder));
+      inline.layout.setLines(file, now);
+      return;
     }
-    // Other rows: the file's inline lines go, and come again from its diff, the cursor kept on
-    // the same file line if it was in the file.
+    // No diff to order them by: the file's inline lines go until it comes, the cursor kept on the
+    // same file line if it was in the file.
     const head = view.state.selection.main.head;
     const line = view.state.doc.lineAt(head).number;
     const at = this.#fileAt('inline', line) === file ? this.#placeAt('inline', line) : undefined;
-    replaceLines(view, header, before, []);
+    swapLines(view, header, before, [], true);
     inline.layout.clearLines(file);
-    this.#addInline(file);
     if (at)
       view.dispatch({
         selection: { anchor: view.state.doc.line(this.#docLine('inline', at)).from },
@@ -1603,18 +1612,51 @@ class ViewProbe implements Probe {
 }
 
 /**
- * Replaces lines `before` after document line `header` of `view` with `after`, changing only the
- * lines that differ, and adding or removing lines at the end: a cursor or a scroll anchor on a line
- * that stays keeps its place.
+ * Whether `after` can take the place of `before` line for line: as many lines, with each of
+ * `before`'s the same at the same place, except the placeholders `placeholder` names by index.
  */
-function replaceLines(
+function fitsInPlace(
+  before: readonly string[],
+  after: readonly string[],
+  placeholder: (index: number) => boolean,
+): boolean {
+  if (before.length !== after.length) return false;
+  return before.every((line, index) => line === after[index] || placeholder(index));
+}
+
+/**
+ * Puts lines `after` in place of `before`, after document line `header` of `view`. `inPlace`, as
+ * `fitsInPlace` says, changes only the lines that differ, and adds or removes lines at the end, so
+ * a cursor or a scroll anchor on a line that stays keeps its place. Otherwise every line is
+ * replaced, and a cursor on one goes to the nearest new line with the same text, at its column, or
+ * to the same line if none has it.
+ */
+function swapLines(
   view: EditorView,
   header: number,
   before: readonly string[],
   after: readonly string[],
+  inPlace: boolean,
 ): void {
-  const { doc } = view.state;
+  const { doc, selection } = view.state;
+  const from = doc.line(header).to;
   const changes: { from: number; to?: number; insert?: string }[] = [];
+  if (!inPlace) {
+    const to = doc.line(header + before.length).to;
+    const head = selection.main.head;
+    const on = head > from && head <= to ? doc.lineAt(head) : undefined;
+    if (from === to && after.length === 0) return;
+    view.dispatch({
+      changes: { from, to, insert: after.length === 0 ? '' : `\n${after.join('\n')}` },
+      annotations: ownChange.of(true),
+    });
+    if (!on) return;
+    const index = on.number - header - 1;
+    const now = view.state.doc;
+    const line = now.line(header + 1 + nearestLine(after, before[index]!, index));
+    view.dispatch({ selection: { anchor: line.from + Math.min(head - on.from, line.length) } });
+    return;
+  }
   const common = Math.min(before.length, after.length);
   for (let index = 0; index < common; index++) {
     if (before[index] === after[index]) continue;
@@ -1626,6 +1668,18 @@ function replaceLines(
     changes.push({ from: end, insert: `\n${after.slice(common).join('\n')}` });
   if (before.length > common) changes.push({ from: end, to: doc.line(header + before.length).to });
   if (changes.length > 0) view.dispatch({ changes, annotations: ownChange.of(true) });
+}
+
+/**
+ * The index of the line of `lines` that reads `text` nearest to `index`, or of the line at `index`,
+ * or the last, when none does. -1 for no lines: the header's.
+ */
+function nearestLine(lines: readonly string[], text: string, index: number): number {
+  for (let distance = 0; index - distance >= 0 || index + distance < lines.length; distance++) {
+    if (lines[index - distance] === text) return index - distance;
+    if (lines[index + distance] === text) return index + distance;
+  }
+  return Math.min(index, lines.length - 1);
 }
 
 /** Whether a file's threads are the same threads, in the same places. */
