@@ -2,6 +2,7 @@
 // bundle run unpackaged, with V8's `gc()` exposed, in a window 1440 px wide or as large as the
 // screen allows; and what the bench reads from it from outside the page.
 
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -108,6 +109,7 @@ export async function launch(
 /** The screen the window opens on, and whether the screen is locked. */
 export function screenOf(app: ElectronApplication): Promise<{
   label: string;
+  internal: boolean;
   width: number;
   height: number;
   workArea: { width: number; height: number };
@@ -119,6 +121,7 @@ export function screenOf(app: ElectronApplication): Promise<{
     const display = screen.getPrimaryDisplay();
     return {
       label: display.label,
+      internal: display.internal,
       width: display.size.width,
       height: display.size.height,
       workArea: { width: display.workArea.width, height: display.workArea.height },
@@ -127,6 +130,20 @@ export function screenOf(app: ElectronApplication): Promise<{
       locked: powerMonitor.getSystemIdleState(1) === 'locked',
     };
   });
+}
+
+/** Whether macOS says the main display is a virtual one, such as an AirPlay display's. */
+export function virtualDisplay(): boolean | undefined {
+  try {
+    const listed: unknown = JSON.parse(
+      execFileSync('system_profiler', ['SPDisplaysDataType', '-json'], { encoding: 'utf8' }),
+    );
+    const text = JSON.stringify(listed);
+    if (!text.includes('"spdisplays_main":"spdisplays_yes"')) return undefined;
+    return text.includes('"spdisplays_virtualdevice":"spdisplays_yes"');
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -154,8 +171,14 @@ export async function refreshOf(suite: Suite): Promise<number> {
   return 1000 / (await screenOf(suite.app)).hz;
 }
 
-/** Collects garbage twice, then reads the renderer's resident memory and JS heap, in MB. */
-export async function memoryOf(suite: Suite): Promise<{ resident: number; heap: number }> {
+/**
+ * Collects garbage twice, then reads the renderer's memory, in MB: its footprint, what macOS's
+ * Activity Monitor shows as its memory; its resident memory, which counts shared pages and pages
+ * freed but not yet taken back; and its JS heap.
+ */
+export async function memoryOf(
+  suite: Suite,
+): Promise<{ footprint: number; resident: number; heap: number }> {
   await suite.page.evaluate(() => {
     const collect = Reflect.get(globalThis, 'gc');
     if (typeof collect !== 'function') throw new Error('gc() isn’t exposed.');
@@ -165,7 +188,30 @@ export async function memoryOf(suite: Suite): Promise<{ resident: number; heap: 
   await suite.page.waitForTimeout(300);
   const { usedSize } = await suite.cdp.send('Runtime.getHeapUsage');
   const resident = await residentOf(suite);
-  return { resident: resident.now, heap: usedSize / 1e6 };
+  return { footprint: footprintOf(suite.pid).now, resident: resident.now, heap: usedSize / 1e6 };
+}
+
+/**
+ * A process's footprint now and at its largest so far, in MB, from macOS's `footprint`: its
+ * `phys_footprint`, the memory Activity Monitor shows for it.
+ */
+export function footprintOf(pid: number): { now: number; peak: number } {
+  const output = execFileSync('footprint', ['-p', String(pid), '-f', 'bytes'], {
+    encoding: 'utf8',
+  });
+  const bytes = (name: string): number => {
+    const found = new RegExp(`${name}: (\\d+) B`).exec(output);
+    if (!found) throw new Error(`footprint gave no ${name} for process ${pid}.`);
+    return Number(found[1]) / 1e6;
+  };
+  return { now: bytes('phys_footprint'), peak: bytes('phys_footprint_peak') };
+}
+
+/** The GPU process's ID, which draws for every window. */
+export async function gpuOf(suite: Suite): Promise<number | undefined> {
+  return suite.app.evaluate(
+    ({ app }) => app.getAppMetrics().find((metric) => metric.type === 'GPU')?.pid,
+  );
 }
 
 /** The renderer's resident memory now and at its largest so far, in MB. */

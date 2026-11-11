@@ -68,7 +68,7 @@ describe('frame times', () => {
 
 describe('keyPercentile', () => {
   test('counts the keys the Event Timing API didn’t report as under its threshold', () => {
-    const times = { keys: 20, reported: [24, 40], under: 16, parts: [] };
+    const times = { keys: 20, reported: [24, 40], under: 16, parts: [], longFrames: [] };
     // 18 of 20 keys are under 16 ms: the 90th percentile is under it, the 95th isn't.
     expect(keyPercentile(times, 90)).toBeUndefined();
     expect(keyPercentile(times, 95)).toBe(24);
@@ -76,6 +76,8 @@ describe('keyPercentile', () => {
   });
 
   test('is undefined when no key was pressed', () => {
-    expect(keyPercentile({ keys: 0, reported: [], under: 16, parts: [] }, 95)).toBeUndefined();
+    expect(
+      keyPercentile({ keys: 0, reported: [], under: 16, parts: [], longFrames: [] }, 95),
+    ).toBeUndefined();
   });
 });

@@ -41,15 +41,32 @@ export interface Stretch {
   longFrames: LongFrameEntry[];
 }
 
+/** The renderer's memory at one point, in MB, after a collection. */
+export interface MemoryReading {
+  /** Its footprint, `phys_footprint`, which Activity Monitor shows. */
+  footprint: number;
+  /** Its resident memory, which also counts shared pages and pages freed but not taken back. */
+  resident: number;
+  heap: number;
+}
+
 export interface Memory {
-  /** The renderer's resident memory, in MB, after each full scroll, at its largest, and the JS heap after a collection, in MB. */
-  afterLoad: { resident: number; heap: number };
-  afterFirst: { resident: number; heap: number };
-  afterSecond: { resident: number; heap: number };
-  /** The renderer's resident memory at its largest, in MB. */
-  peak: number;
-  /** How much the heap grew over the second full scroll, the harder flings, in %. */
+  afterLoad: MemoryReading;
+  /** After the first full scroll and the second, the same. */
+  afterFirst: MemoryReading;
+  afterSecond: MemoryReading;
+  /** The renderer's footprint and resident memory at their largest, in MB. */
+  peak: { footprint: number; resident: number };
+  /** The GPU process, which draws for the window: its footprint now and at its largest, in MB. */
+  gpu?: { footprint: number; peak: number } | undefined;
+  /** How much the heap grew over the second full scroll, in %. */
   growth: number;
+}
+
+/** The scroll speeds blank rows are checked at, beside the full scroll's, in px a second. */
+export interface SpeedCheck {
+  speed: number;
+  stretch: Stretch;
 }
 
 export interface RunResult {
@@ -61,18 +78,24 @@ export interface RunResult {
   /** The document's height, in px, once fully scrolled. */
   height: number;
   open: {
-    /** From main starting to open the pull request to the first file drawn, in ms. */
+    /** From the page starting to open the pull request to the first file drawn, in ms. */
     firstDrawn: number | undefined;
-    /** From main starting to open it to the last diff and the moves arriving, in ms. */
+    /** From the background process getting the files to the last diff and the moves arriving. */
     loaded: number | undefined;
-    /** The longest task on the page's main thread until then, in ms. */
+    /** The longest task on the page's main thread while it opened, in ms. */
     longestTask: number;
+    /** Main reading every file, and the window starting, before the page opens it, in ms. */
+    read: number | undefined;
+    window: number | undefined;
     /** Where the time went, each step from the one before, in ms. */
     steps: Record<string, number | undefined>;
     longTasks: { start: number; duration: number }[];
     longFrames: LongFrame[];
   };
-  fling: Stretch;
+  /** Scrolling from the top to the bottom, at `speed` px a second. */
+  scroll: Stretch & { speed: number };
+  /** Blank rows at other speeds, each a stretch from the top. */
+  speeds: SpeedCheck[];
   pageDown: Stretch;
   /** Where PageDown stopped moving short of the bottom, and the bench scrolled past with the wheel. */
   stuck: { at: string; scrollTop: number }[];
@@ -84,10 +107,12 @@ export interface RunResult {
     nextChange: KeyTimes;
     end: KeyTimes;
     otherSide: KeyTimes;
-    /** Held PageDown, from the second full scroll. */
     pageDown: KeyTimes;
-    /** Typing in a comment box, and a held key that changes nothing: what any key costs here. */
+    /** Typing in a comment box. */
     typing: KeyTimes;
+    /** A held key whose only effect is to recolour a 4 px square: the floor every key stands on. */
+    floor: KeyTimes;
+    /** A held key that changes nothing, so paints nothing. */
     nothing: KeyTimes;
     stretch: Stretch;
   };
@@ -106,6 +131,8 @@ export interface ZRResult {
   width: Width;
   run: number;
   keyToPaint: KeyTimes;
+  /** The floor in the same run: a key that only recolours a 4 px square. */
+  floor: KeyTimes;
   /** The file's unchanged lines all open, the frames until then, and how level the rows stayed. */
   stretch: Stretch;
   notes: string[];
@@ -115,12 +142,15 @@ export interface ZRResult {
 export interface Conditions {
   machine: string;
   chip: string;
+  cores: number;
   memoryGB: number;
   macOS: string;
   electron: string;
   chromium: string;
   display: {
     label: string;
+    /** Built in, external, or virtual, as an AirPlay display is. */
+    kind: string;
     width: number;
     height: number;
     workArea: { width: number; height: number };
@@ -128,8 +158,9 @@ export interface Conditions {
     hz: number;
   };
   gpu: Record<string, string>;
-  /** The machine's memory in use, in GB, as each run started and ended. */
+  /** The machine's memory in use, in GB, and its load average over a minute, as each run started and ended. */
   memoryInUse: number[];
+  load: number[];
   /** The frames' median time when the display was checked, in ms. */
   frameCheck: number[];
   commit: string;

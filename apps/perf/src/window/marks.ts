@@ -26,8 +26,9 @@ export interface Marks {
   /** When main started opening the pull request, and when it had read every file. */
   opened?: number;
   read?: number;
-  /** When the page started running. */
+  /** When the page started running, and when, its code loaded, it started opening the pull request. */
   started: number;
+  asked?: number;
   /** When the view was made, with every file's lines and nothing else. */
   view?: number;
   /** The file at the top: the pull request's first with lines to show. */

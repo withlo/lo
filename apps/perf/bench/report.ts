@@ -3,9 +3,20 @@
 // met the bar, then the conditions, what each timer starts and stops on, and where the time went
 // in the bars that failed.
 
-import { type Bar, bars, judge, type Judged, keyReading, type Reading, zRBar } from './bars.ts';
+import {
+  aboveFloor,
+  type Bar,
+  bars,
+  checkSpeeds,
+  judge,
+  type Judged,
+  keyReading,
+  type Reading,
+  scrollSpeed,
+  zRBar,
+} from './bars.ts';
 import type { LongFrameEntry } from './recorder.ts';
-import type { Results, RunResult, Width } from './results.ts';
+import type { Results, RunResult, Stretch, Width } from './results.ts';
 import { type KeyTimes, median, shown } from './stats.ts';
 
 /** The pull requests' names as the report shows them. */
@@ -117,25 +128,40 @@ export function reportMarkdown(results: Results, notes?: string): string {
       results.runs.some((run) => run.pull === pull && run.width === width),
     );
     lines.push(
-      '| Metric | Width | Bar | Median | Worst run | Result |',
-      '| --- | --- | --- | --- | --- | --- |',
+      '| Metric | Width | Bar | Median | Worst run | Result | Above the floor |',
+      '| --- | --- | --- | --- | --- | --- | --- |',
     );
     for (const bar of bars) {
       for (const width of widths) {
+        const runs = results.runs.filter((run) => run.pull === pull && run.width === width);
         const result = judged(results, pull, width).find((row) => row.bar.id === bar.id)!.judged;
         lines.push(
-          `| ${bar.label} | ${widthName(width, results)} | ${bar.shown(pull)} | ${showReading(result.median, bar.unit)} | ${showReading(result.worst, bar.unit)} | ${verdict(result)} |`,
+          `| ${bar.label} | ${widthName(width, results)} | ${bar.shown(pull)} | ${showReading(result.median, bar.unit)} | ${showReading(result.worst, bar.unit)} | ${verdict(result)} | ${floorCell(bar, runs)} |`,
         );
       }
     }
-    lines.push('');
+    lines.push(
+      '',
+      'The keys’ last column takes off the floor: the time to paint a key whose only effect is ' +
+        'to recolour a 4 px square, at the median, in the same run. The result is judged on the ' +
+        'time as measured.',
+      '',
+      ...openingLines(
+        results.runs.filter((run) => run.pull === pull),
+        results,
+      ),
+      '',
+    );
     const extra = results.runs.filter((run) => run.pull === pull);
     lines.push(...keysTable(extra, results), '', ...detailsOf(extra, results), '');
   }
 
   if (results.zR.length > 0) {
     lines.push('## `zR` on `src/compiler/checker.ts`, microsoft/TypeScript#54820', '');
-    lines.push('| Width | Bar | Median | Worst run | Result |', '| --- | --- | --- | --- | --- |');
+    lines.push(
+      '| Width | Bar | Median | Worst run | Result | Above the floor |',
+      '| --- | --- | --- | --- | --- | --- |',
+    );
     for (const width of widthsOf(results)) {
       const runs = results.zR.filter((run) => run.width === width);
       if (runs.length === 0) continue;
@@ -143,8 +169,12 @@ export function reportMarkdown(results: Results, notes?: string): string {
         runs.map((run) => keyReading(run.keyToPaint, 100)),
         zRBar.limit,
       );
+      const above = judge(
+        runs.map((run) => aboveFloor(keyReading(run.keyToPaint, 100), run.floor)),
+        zRBar.limit,
+      );
       lines.push(
-        `| ${widthName(width, results)} | ${zRBar.shown} | ${showReading(result.median, 'ms')} | ${showReading(result.worst, 'ms')} | ${verdict(result)} |`,
+        `| ${widthName(width, results)} | ${zRBar.shown} | ${showReading(result.median, 'ms')} | ${showReading(result.worst, 'ms')} | ${verdict(result)} | ${showReading(above.median, 'ms')} / ${showReading(above.worst, 'ms')} |`,
       );
     }
     for (const run of results.zR) {
@@ -196,6 +226,36 @@ export function reportMarkdown(results: Results, notes?: string): string {
   return `${lines.join('\n')}\n`;
 }
 
+/** A key bar's reading less the floor, at the median and the worst of the runs. */
+function floorCell(bar: Bar, runs: RunResult[]): string {
+  if (!bar.aboveFloor) return '';
+  const read = bar.aboveFloor;
+  const result = judge(
+    runs.map((run) => read(run)),
+    bar.limit(runs[0]?.pull ?? ''),
+  );
+  return `${showReading(result.median, 'ms')} / ${showReading(result.worst, 'ms')}`;
+}
+
+/** What comes before the page opens the pull request, which the opening's timer leaves out. */
+function openingLines(runs: RunResult[], results: Results): string[] {
+  const out: string[] = [];
+  for (const width of widthsOf(results)) {
+    const atWidth = runs.filter((run) => run.width === width);
+    if (atWidth.length === 0) continue;
+    const show = (pick: (run: RunResult) => number | undefined): string =>
+      showReading(median(atWidth.map(pick).filter((value) => value !== undefined)), 'ms');
+    out.push(
+      `- Before the page opens it, at ${widthName(width, results)}, at the median: main reads ` +
+        `every file in ${show((run) => run.open.read)}, and the window starts and loads the ` +
+        `page in ${show((run) => run.open.window)}. The suite does both before the page starts ` +
+        'opening the pull request; the app reads files as it needs them, and starts its window ' +
+        'once.',
+    );
+  }
+  return out;
+}
+
 /** The keys the runs pressed, every press of every run together, with two to compare them with. */
 type KeyName = Exclude<keyof RunResult['keys'], 'stretch'>;
 
@@ -207,13 +267,15 @@ const keyRows: { key: KeyName; label: string }[] = [
   { key: 'heldJ', label: 'Held `j`' },
   { key: 'pageDown', label: 'Held PageDown' },
   { key: 'typing', label: 'Typing in a comment box' },
-  { key: 'nothing', label: 'Held `Esc`, which changes nothing' },
+  { key: 'floor', label: 'Held F7, which only recolours a 4 px square: the floor' },
+  { key: 'nothing', label: 'Held `Esc`, which changes nothing and so paints nothing' },
 ];
 
 function keysTable(runs: RunResult[], results: Results): string[] {
   const out = [
     'Every key, from its keydown to the next paint (Event Timing), all runs together. The last ' +
-      'two have no bar: they show what any key costs in this window.',
+      'two have no bar: the floor is what any key that paints costs in this window on this ' +
+      'display; a key that paints nothing ends at the next frame instead, so it’s no floor.',
     '',
     '| Key | Width | Presses | Median | p95 | Slowest |',
     '| --- | --- | --- | --- | --- | --- |',
@@ -228,6 +290,7 @@ function keysTable(runs: RunResult[], results: Results): string[] {
         reported: times.flatMap((each) => each.reported),
         under: times[0]?.under ?? 16,
         parts: [],
+        longFrames: [],
       };
       out.push(
         `| ${label} | ${widthName(width, results)} | ${joined.keys} | ` +
@@ -240,23 +303,53 @@ function keysTable(runs: RunResult[], results: Results): string[] {
 }
 
 /** What else the runs saw: the document, scroll speeds, readings' cost, notes. */
+/** A stretch's frames with blank rows, and what was blank in them. */
+function blankOf(stretch: Stretch): string {
+  return (
+    `${stretch.blank.frames} with blank rows (${stretch.blank.oneSided} with a row on one side, ` +
+    `${stretch.blank.undrawn} undrawn, ${stretch.blank.past} scrolled past what was drawn; at ` +
+    `worst ${shown(stretch.blank.worstPx, 0)} px)`
+  );
+}
+
+/** The least and the most of `values`. */
+function range(values: number[], digits: number): string {
+  return `${shown(Math.min(...values), digits)} to ${shown(Math.max(...values), digits)}`;
+}
+
 function detailsOf(runs: RunResult[], results: Results): string[] {
   const out: string[] = [];
   for (const run of runs) {
     const width = widthName(run.width, results);
+    const { memory } = run;
     out.push(
       `- Run ${run.run} at ${width}: window ${run.inner.width} × ${run.inner.height} px, ` +
-        `document ${shown(run.height / 1000, 0)}k px tall. Flings: ${shown(run.fling.scrolled / 1000, 0)}k px in ` +
-        `${shown(run.fling.ms / 1000, 1)} s, ${run.fling.frames.frames} frames, ${run.fling.blank.oneSided}/` +
-        `${run.fling.blank.undrawn}/${run.fling.blank.past} frames with a row on one side/undrawn/scrolled past what was drawn. ` +
-        `PageDown: ${run.pageDown.inputs} presses, ${shown(run.pageDown.ms / 1000, 1)} s, ` +
-        `${shown(run.reached * 100, 0)}% of the way down, stopped short ${run.stuck.length} times, ` +
-        `${run.pageDown.blank.oneSided}/${run.pageDown.blank.undrawn}/${run.pageDown.blank.past}. ` +
-        `Readings cost ${shown(run.fling.readMs, 2)} ms a frame (p95). ` +
-        `Heap ${shown(run.memory.afterLoad.heap, 0)} → ${shown(run.memory.afterFirst.heap, 0)} → ` +
-        `${shown(run.memory.afterSecond.heap, 0)} MB; resident ${shown(run.memory.afterLoad.resident, 0)} → ` +
-        `${shown(run.memory.afterSecond.resident, 0)} MB. ` +
-        `Tab: ${showReading(keyReading(run.keys.otherSide, 100), 'ms')} at the slowest.`,
+        `document ${shown(run.height / 1000, 0)}k px tall.`,
+      `  - Scrolling at ${shown(run.scroll.speed, 0)} px/s: ${shown(run.scroll.scrolled / 1000, 0)}k px in ` +
+        `${shown(run.scroll.ms / 1000, 1)} s, ${run.scroll.frames.frames} frames, ${blankOf(run.scroll)}. ` +
+        run.speeds
+          .map(
+            (check) =>
+              `At ${shown(check.speed, 0)} px/s over ${shown(check.stretch.scrolled / 1000, 0)}k px: ` +
+              `${check.stretch.frames.frames} frames, ${blankOf(check.stretch)}.`,
+          )
+          .join(' ') +
+        ` The readings cost ${shown(run.scroll.readMs, 2)} ms a frame (p95).`,
+      `  - PageDown: ${run.pageDown.inputs} presses, ${shown(run.pageDown.ms / 1000, 1)} s, ` +
+        `${shown(run.reached * 100, 0)}% of the way down, stopped short ${run.stuck.length} times; ` +
+        `${run.pageDown.frames.frames} frames, ${blankOf(run.pageDown)}.`,
+      `  - Memory, after a collection, once opened, after the first full scroll and after the ` +
+        `second: footprint ${shown(memory.afterLoad.footprint, 0)}, ${shown(memory.afterFirst.footprint, 0)}, ` +
+        `${shown(memory.afterSecond.footprint, 0)} MB; resident (which counts shared pages and ` +
+        `pages freed but not taken back) ${shown(memory.afterLoad.resident, 0)}, ` +
+        `${shown(memory.afterFirst.resident, 0)}, ${shown(memory.afterSecond.resident, 0)} MB; JS ` +
+        `heap ${shown(memory.afterLoad.heap, 0)}, ${shown(memory.afterFirst.heap, 0)}, ` +
+        `${shown(memory.afterSecond.heap, 0)} MB. At their largest: footprint ` +
+        `${shown(memory.peak.footprint, 0)} MB, resident ${shown(memory.peak.resident, 0)} MB.` +
+        (memory.gpu
+          ? ` The GPU process, which draws the window: footprint ${shown(memory.gpu.footprint, 0)} MB, ` +
+            `${shown(memory.gpu.peak, 0)} MB at its largest.`
+          : ''),
     );
     for (const note of run.notes) out.push(`  - ${note}`);
   }
@@ -270,13 +363,15 @@ function conditionsOf(results: Results): string[] {
     '## Conditions',
     '',
     `- ${c.machine}, ${c.chip}, ${c.memoryGB} GB of memory, macOS ${c.macOS}.`,
-    `- Display: ${c.display.label.trim() || 'the main display'}, ${c.display.width} × ${c.display.height} px ` +
-      `at ${c.display.scale}× (${c.display.workArea.width} × ${c.display.workArea.height} px for windows), ` +
-      `${shown(c.display.hz, 0)} Hz: a frame is ${shown(1000 / c.display.hz, 1)} ms.`,
+    `- Display: ${c.display.label.replaceAll(/[()]/g, '').trim() || 'the main display'}, ${c.display.kind}, refreshing at ` +
+      `${shown(c.display.hz, 0)} Hz, so a frame is ${shown(1000 / c.display.hz, 1)} ms; ` +
+      `${c.display.width} × ${c.display.height} px at ${c.display.scale}× ` +
+      `(${c.display.workArea.width} × ${c.display.workArea.height} px for windows).`,
     `- Electron ${c.electron}, Chromium ${c.chromium}. GPU compositing ${c.gpu.gpu_compositing ?? 'unknown'}, ` +
       `rasterization ${c.gpu.rasterization ?? 'unknown'}.`,
-    `- Memory in use on the machine while it ran: ${shown(Math.min(...inUse), 1)} to ${shown(Math.max(...inUse), 1)} GB.`,
-    `- Frames came every ${shown(Math.min(...c.frameCheck), 1)} to ${shown(Math.max(...c.frameCheck), 1)} ms, at the median, with the page idle before each run.`,
+    `- While it ran: ${range(inUse, 1)} GB of memory in use on the machine, and a load ` +
+      `average over a minute of ${range(c.load, 1)} on ${c.cores} cores.`,
+    `- Frames came every ${range(c.frameCheck, 1)} ms, at the median, with the page idle before each run.`,
     `- The production bundle, run unpackaged with \`--js-flags=--expose-gc\`, from ${c.started} to ${c.finished ?? '–'}.`,
   ];
 }
@@ -285,14 +380,15 @@ function timersOf(): string[] {
   return [
     '## What each timer starts and stops on',
     '',
-    '- **Open to first file painted:** starts when main begins opening the pull request, before it ' +
-      'reads the files from disk; stops when the frame after the one that drew the first file with ' +
-      'its diff and highlighting begins (`requestAnimationFrame`), about when that frame reaches the ' +
-      'screen. It includes starting the window and loading its page, which the app does once, not ' +
-      'per pull request. Each step is listed under `open.steps` in `report.json`.',
-    '- **All diffs and moves computed:** the same start; stops when the window receives the moves, ' +
-      'which the background process sends after the last diff. Main-thread tasks are the Long Tasks ' +
-      'API’s, on the window’s main thread, until then.',
+    '- **Open to first file painted:** starts when the page, its code loaded, starts opening the ' +
+      'pull request, as a tab opens one: it asks main for it. It stops when the frame after the one ' +
+      'that drew the first file with its diff and highlighting starts running, once that frame has ' +
+      'gone to the compositor. Main reading every file and the window starting come before, and ' +
+      'are shown on their own under each table; each step is under `open.steps` in `report.json`.',
+    '- **All diffs and moves computed:** from main handing the files to the background process to ' +
+      'the window receiving the moves, which come after the last diff.',
+    '- **Longest main-thread task while opening:** the Long Tasks API’s, on the window’s main ' +
+      'thread, from the page starting to open the pull request until the moves arrive.',
     '- **Frames:** the time between one frame’s `requestAnimationFrame` and the next, for every ' +
       'frame from the first input to half a second after the last: the main thread’s frames, which ' +
       'draw the editors. They’re counted in whole refreshes of the display, each rounded to the ' +
@@ -300,37 +396,43 @@ function timersOf(): string[] {
       'made its refresh is 16.7 ms, one that missed it 33.3 ms. So the bars’ 33 ms is two ' +
       'refreshes, and their 100 ms six. The times as `requestAnimationFrame` gave them are in ' +
       '`report.json` (`raw`). Long Animation Frames entries say what ran in each frame over 50 ms.',
-    '- **Flings:** wheel events through the DevTools protocol, which Chromium takes as a mouse’s, ' +
-      'one every 16.7 ms with the pointer over the right side, sent on the clock without waiting ' +
-      'for the page: starting at 480 px and slowing by 6% an event until under 10 px, about 7,800 px ' +
-      'a fling over a second, one fling after another until the scroll stops at the bottom.',
+    `- **Scrolling:** Chromium’s own synthesized scroll gesture (\`Input.synthesizeScrollGesture\`, ` +
+      'from a mouse), with the pointer over the right side: one gesture of wheel events paced by the ' +
+      `display, as a trackpad’s are, at a steady ${scrollSpeed.toLocaleString('en-US')} px a second, ` +
+      'in gestures of 20,000 px until the scroll stops at the bottom, with no fling at the end. Blank ' +
+      `rows are also checked over 40,000 px from the top at ${checkSpeeds.map((speed) => speed.toLocaleString('en-US')).join(' and ')} px a second.`,
     '- **PageDown:** held, with focus in the right side: a keydown every 33 ms, macOS’s fastest key ' +
       'repeat, sent on the clock without waiting for the page, until the bottom. Where PageDown ' +
       'stops moving short of the bottom, the bench lets go, notes the place, scrolls a screen past ' +
       'it with the wheel and holds PageDown again; the table counts those places. Where PageDown ' +
       'keeps going back to one, after the wheel has taken it up to eight screens past, the bench ' +
-      'gives up, and says how far down it got.',
+      'gives up, and says how far down it got. PageDown’s frames are read only once it reaches the ' +
+      'bottom by itself; until then they’re “not measured”.',
     '- **Blank rows:** a frame counts when, after its layout and before its paint, a row is drawn on ' +
       'one side only, or any part of the screen inside either editor’s content isn’t drawn ' +
-      '(CodeMirror’s gaps, or lines the view forgot). While the wheel scrolls, it also counts when ' +
-      'the scroll ran further, between one frame and the next, than the first had drawn beyond the ' +
+      '(CodeMirror’s gaps, or lines the view forgot). While scrolling, it also counts when the ' +
+      'scroll ran further, between one frame and the next, than the first had drawn beyond the ' +
       'screen: the compositor scrolls on its own and shows that much blank until the page draws ' +
       'again. Keys scroll from script, in the frame that draws what they scroll to.',
     '- **Keys:** the Event Timing API’s duration for the keydown that finishes the command (the `f` ' +
-      'of `]f`): from the key event’s time to the next paint after its handlers ran, rounded to ' +
-      '8 ms. The API reports keys that took 16 ms or more; one it didn’t report took less, shown ' +
-      'as “< 16 ms”. `]f` and `]c` are pressed ten times from the top, `G` three times from the ' +
-      'top, and `j` held for 150 repeats every 33 ms; the table shows the slowest press, and for ' +
-      '`j` the 95th percentile.',
+      'of `]f`): from the key event’s time to when the next frame after its handlers ran is ' +
+      'presented on the display, rounded to 8 ms. The API reports keys that took 16 ms or more; one ' +
+      'it didn’t report took less, shown as “< 16 ms”. `]f` and `]c` are pressed ten times from the ' +
+      'top, `G` three times from the top, and `j` held for 150 repeats every 33 ms; the table shows ' +
+      'the slowest press, and for `j` the 95th percentile. Every run also holds F7, whose only ' +
+      'effect is to recolour a 4 px square: that floor, at the median, is what any key that paints ' +
+      'costs on this display, and the last column shows each key less it.',
     '- **Alignment:** after every frame’s layout, before its paint, the on-screen top of every ' +
       'row with something on both sides, its first line or the header, collapsed block or note it ' +
       'starts with, on each side, from the view’s probe; the worst difference of any frame, over ' +
-      'the keys (comments typed on each side included), the flings and PageDown.',
-    '- **Renderer memory:** the window’s renderer process’s resident memory from ' +
-      '`app.getAppMetrics()`, at its largest over the run, before any large file is loaded. MB ' +
-      'are 1,000,000 bytes.',
-    '- **Heap growth:** V8’s used heap after two `gc()` calls, after the flings and again after ' +
-      'a second full scroll, flinging from the top three times as hard.',
+      'the keys (comments typed on each side included), the scrolls and PageDown.',
+    '- **Renderer memory:** the window’s renderer process’s footprint, `phys_footprint` from ' +
+      'macOS’s `footprint`, what Activity Monitor shows: at its largest over the run, before any ' +
+      'large file is loaded. Its resident memory from `app.getAppMetrics()` is shown beside it; it ' +
+      'also counts shared pages and pages freed but not yet taken back. The GPU process, which ' +
+      'draws the window, is shown on its own. MB are 1,000,000 bytes.',
+    '- **Heap growth:** V8’s used heap after two `gc()` calls, after the first full scroll and ' +
+      'again after the second, the same scroll from the top.',
     '- **`zR`:** the keydown of `R` in `zR`, with the cursor in the file, timed as the keys are.',
   ];
 }
@@ -367,10 +469,11 @@ function whereTheTimeWent(
             `bottom; the bench scrolled a screen past each with the wheel and held it again. At ${places.join(', ')}${more}.`,
         );
       }
-    } else if (bar.id.endsWith('Blank')) {
-      const stretch = bar.id.startsWith('fling') ? 'fling' : 'pageDown';
+    } else if (bar.id.endsWith('Blank') || /^blank\d+$/.test(bar.id)) {
       for (const run of runs) {
-        const { blank, frames } = run[stretch];
+        const stretch = stretchFor(bar.id, run);
+        if (!stretch) continue;
+        const { blank, frames } = stretch;
         out.push(
           `- Run ${run.run}: ${blank.frames} of ${frames.frames} frames. A row drawn on one side ` +
             `only: ${blank.oneSided}. Part of the screen inside an editor not drawn: ` +
@@ -378,10 +481,11 @@ function whereTheTimeWent(
             `screen: ${blank.past}. At worst ${shown(blank.worstPx, 0)} px blank.`,
         );
       }
-    } else if (bar.id.startsWith('fling') || bar.id.startsWith('pageDown')) {
-      const stretch = bar.id.startsWith('fling') ? 'fling' : 'pageDown';
+    } else if (bar.id.startsWith('scroll') || bar.id.startsWith('pageDown')) {
       for (const run of runs) {
-        const { frames, raw } = run[stretch];
+        const stretch = stretchFor(bar.id, run);
+        if (!stretch) continue;
+        const { frames, raw } = stretch;
         out.push(
           `- Run ${run.run}: ${frames.over16} of ${frames.frames} frames missed a refresh, ` +
             `${frames.over33} missed two or more. As \`requestAnimationFrame\` timed them: p95 ` +
@@ -390,44 +494,64 @@ function whereTheTimeWent(
       }
       out.push(
         ...longFramesOf(
-          runs.flatMap((run) => run[stretch].longFrames),
+          runs.flatMap((run) => stretchFor(bar.id, run)?.longFrames ?? []),
           5,
         ),
       );
     } else if (isKeyBar(bar.id)) {
       const key = bar.id;
       out.push(...keyParts(runs.map((run) => run.keys[key])));
+      // The frames over 50 ms while this key was pressed and painted, not the whole stretch's.
       out.push(
         ...longFramesOf(
-          runs.flatMap((run) => run.keys.stretch.longFrames),
+          runs.flatMap((run) => run.keys[key].longFrames),
           3,
         ),
       );
     } else if (bar.id === 'alignment') {
       for (const run of runs) {
-        const where = (['keys', 'fling', 'pageDown'] as const)
-          .map((stretch) => {
-            const part = stretch === 'keys' ? run.keys.stretch : run[stretch];
-            return `${stretch} ${part.misaligned} frames, worst ${shown(part.worst, 2)} px`;
-          })
+        const parts: [string, Stretch][] = [
+          ['keys', run.keys.stretch],
+          ['scrolling', run.scroll],
+          ...run.speeds.map((check): [string, Stretch] => [
+            `scrolling at ${shown(check.speed, 0)} px/s`,
+            check.stretch,
+          ]),
+          ['PageDown', run.pageDown],
+        ];
+        const where = parts
+          .map(
+            ([name, part]) => `${name} ${part.misaligned} frames, worst ${shown(part.worst, 2)} px`,
+          )
           .join('; ');
         out.push(`- Run ${run.run}: ${where}.`);
       }
     } else if (bar.id === 'memory' || bar.id === 'heapGrowth') {
       for (const run of runs) {
-        const { afterLoad, afterFirst, afterSecond, peak } = run.memory;
+        const { afterLoad, afterFirst, afterSecond, peak, gpu } = run.memory;
         out.push(
-          `- Run ${run.run}: the heap after a collection, ${shown(afterLoad.heap, 0)} MB once ` +
-            `opened, ${shown(afterFirst.heap, 0)} after the flings, ${shown(afterSecond.heap, 0)} ` +
-            `after PageDown; resident ${shown(afterLoad.resident, 0)}, ` +
-            `${shown(afterFirst.resident, 0)}, ${shown(afterSecond.resident, 0)} MB, and ` +
-            `${shown(peak, 0)} MB at its largest.`,
+          `- Run ${run.run}: after a collection, once opened, after the first full scroll and ` +
+            `after the second: JS heap ${shown(afterLoad.heap, 0)}, ${shown(afterFirst.heap, 0)}, ` +
+            `${shown(afterSecond.heap, 0)} MB; footprint ${shown(afterLoad.footprint, 0)}, ` +
+            `${shown(afterFirst.footprint, 0)}, ${shown(afterSecond.footprint, 0)} MB; resident ` +
+            `${shown(afterLoad.resident, 0)}, ${shown(afterFirst.resident, 0)}, ` +
+            `${shown(afterSecond.resident, 0)} MB. At their largest: footprint ` +
+            `${shown(peak.footprint, 0)} MB, resident ${shown(peak.resident, 0)} MB` +
+            (gpu ? `; the GPU process ${shown(gpu.peak, 0)} MB.` : '.'),
         );
       }
     }
     out.push('');
   }
   return out;
+}
+
+/** The stretch a frame or blank-row bar reads, by the bar's ID. */
+function stretchFor(id: string, run: RunResult): Stretch | undefined {
+  if (id.startsWith('pageDown')) return run.pageDown;
+  const speed = /^blank(\d+)$/.exec(id)?.[1];
+  if (speed) return run.speeds.find((check) => check.speed === Number(speed))?.stretch;
+  return run.scroll;
 }
 
 /** Whether a bar's ID names one of the keys a run times. */

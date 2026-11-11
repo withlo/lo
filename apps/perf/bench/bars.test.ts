@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { bars, judge, keyReading } from './bars.ts';
+import { aboveFloor, bars, judge, keyReading } from './bars.ts';
 
 describe('judge', () => {
   test('passes a bar only when every run met it, with the median and the worst run', () => {
@@ -34,18 +34,32 @@ describe('judge', () => {
 
 describe('keyReading', () => {
   test('is the slowest key, or the percentile, or under the threshold', () => {
-    const times = { keys: 10, reported: [56, 24], under: 16, parts: [] };
+    const times = { keys: 10, reported: [56, 24], under: 16, parts: [], longFrames: [] };
     expect(keyReading(times, 100)).toBe(56);
     expect(keyReading(times, 95)).toBe(56);
     expect(keyReading(times, 50)).toEqual({ under: 16 });
-    expect(keyReading({ keys: 3, reported: [], under: 16, parts: [] }, 100)).toEqual({ under: 16 });
-    expect(keyReading({ keys: 0, reported: [], under: 16, parts: [] }, 100)).toBeUndefined();
+    expect(
+      keyReading({ keys: 3, reported: [], under: 16, parts: [], longFrames: [] }, 100),
+    ).toEqual({ under: 16 });
+    expect(
+      keyReading({ keys: 0, reported: [], under: 16, parts: [], longFrames: [] }, 100),
+    ).toBeUndefined();
   });
 });
 
 function limit(id: string, pull = 'kubernetes-125488'): number {
   return bars.find((bar) => bar.id === id)!.limit(pull);
 }
+
+describe('aboveFloor', () => {
+  test('takes the floor’s median off a key’s time, and nothing off a key under the threshold', () => {
+    const floor = { keys: 4, reported: [32, 32, 40, 24], under: 16, parts: [], longFrames: [] };
+    expect(aboveFloor(56, floor)).toBe(24);
+    expect(aboveFloor(24, floor)).toBe(0);
+    expect(aboveFloor({ under: 16 }, floor)).toBe(0);
+    expect(aboveFloor(undefined, floor)).toBeUndefined();
+  });
+});
 
 describe('bars', () => {
   test('hold each bar from the research, with the pull requests’ own limits', () => {
@@ -57,7 +71,9 @@ describe('bars', () => {
     expect(limit('heldJ')).toBe(16);
     expect(limit('nextFile')).toBe(50);
     expect(limit('alignment')).toBe(0.5);
-    expect(limit('flingBlank')).toBe(0);
+    expect(limit('scrollBlank')).toBe(0);
+    expect(limit('blank3000')).toBe(0);
+    expect(limit('blank15000')).toBe(0);
     expect(limit('pageDownMax')).toBeCloseTo(100, 1);
   });
 });

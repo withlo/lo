@@ -1,7 +1,7 @@
 // The bars the diff view must meet, each with what it reads from a run, and how the runs are judged:
 // the median and the worst of them, and a pass only when every run met the bar.
 
-import type { RunResult } from './results.ts';
+import type { RunResult, Stretch } from './results.ts';
 import { keyPercentile, type KeyTimes, max, median, oneRefresh, twoRefreshes } from './stats.ts';
 
 /**
@@ -21,7 +21,13 @@ export interface Bar {
   strict?: boolean;
   unit: 'ms' | 'px' | 'MB' | '%' | 'count';
   read: (run: RunResult) => Reading;
+  /** For a key: its reading less the floor, the run's minimal-paint key at the median. */
+  aboveFloor?: (run: RunResult) => Reading;
 }
+
+/** How fast the full scrolls go, and the other speeds blank rows are checked at, in px a second. */
+export const scrollSpeed = 8000;
+export const checkSpeeds = [3000, 15_000];
 
 const kubernetes = (pull: string): boolean => pull.startsWith('kubernetes');
 
@@ -44,46 +50,41 @@ export const bars: Bar[] = [
   },
   {
     id: 'openTask',
-    label: 'Longest main-thread task while computing',
+    label: 'Longest main-thread task while opening',
     shown: () => 'none over 50 ms',
     limit: () => 50,
     unit: 'ms',
     read: (run) => run.open.longestTask,
   },
-  ...scrollBars('fling', 'Flings, top to bottom'),
-  ...scrollBars('pageDown', 'PageDown, top to bottom'),
+  ...frameBars(
+    'scroll',
+    `Scrolling, top to bottom, ${scrollSpeed.toLocaleString('en-US')} px/s`,
+    (run) => run.scroll,
+  ),
+  ...checkSpeeds.map((speed): Bar => ({
+    id: `blank${speed}`,
+    label: `Scrolling at ${speed.toLocaleString('en-US')} px/s: frames with blank rows`,
+    shown: () => 'none',
+    limit: () => 0,
+    unit: 'count',
+    read: (run) => run.speeds.find((check) => check.speed === speed)?.stretch.blank.frames,
+  })),
+  // PageDown's frames say nothing about the whole document while it stops short of the bottom.
+  ...frameBars('pageDown', 'PageDown, top to bottom', (run) =>
+    run.stuck.length === 0 && run.reached >= 1 ? run.pageDown : undefined,
+  ),
   {
-    id: 'heldJ',
-    label: 'Held `j`, key to paint, p95',
-    shown: () => '≤ 16 ms',
-    limit: () => 16,
-    unit: 'ms',
-    read: (run) => keyReading(run.keys.heldJ, 95),
+    id: 'pageDownStuck',
+    label: 'PageDown, top to bottom: places it stopped short of the bottom',
+    shown: () => 'none',
+    limit: () => 0,
+    unit: 'count',
+    read: (run) => run.stuck.length,
   },
-  {
-    id: 'nextFile',
-    label: '`]f`, key to paint, slowest',
-    shown: () => '≤ 50 ms',
-    limit: () => 50,
-    unit: 'ms',
-    read: (run) => keyReading(run.keys.nextFile, 100),
-  },
-  {
-    id: 'nextChange',
-    label: '`]c`, key to paint, slowest',
-    shown: () => '≤ 50 ms',
-    limit: () => 50,
-    unit: 'ms',
-    read: (run) => keyReading(run.keys.nextChange, 100),
-  },
-  {
-    id: 'end',
-    label: '`G`, key to paint, slowest',
-    shown: () => '≤ 50 ms',
-    limit: () => 50,
-    unit: 'ms',
-    read: (run) => keyReading(run.keys.end, 100),
-  },
+  keyBar('heldJ', 'Held `j`, key to paint, p95', 16, 95),
+  keyBar('nextFile', '`]f`, key to paint, slowest', 50, 100),
+  keyBar('nextChange', '`]c`, key to paint, slowest', 50, 100),
+  keyBar('end', '`G`, key to paint, slowest', 50, 100),
   {
     id: 'alignment',
     label: 'Alignment, worst frame, every step',
@@ -94,11 +95,11 @@ export const bars: Bar[] = [
   },
   {
     id: 'memory',
-    label: 'Renderer memory, at its largest',
+    label: 'Renderer memory (footprint), at its largest',
     shown: (pull) => (kubernetes(pull) ? '≤ 600 MB' : '≤ 1.2 GB'),
     limit: (pull) => (kubernetes(pull) ? 600 : 1200),
     unit: 'MB',
-    read: (run) => run.memory.peak,
+    read: (run) => run.memory.peak.footprint,
   },
   {
     id: 'heapGrowth',
@@ -114,7 +115,12 @@ export const bars: Bar[] = [
 /** `zR` on TypeScript#54820's `checker.ts`. */
 export const zRBar = { label: '`zR` on `checker.ts`, key to paint', shown: '≤ 150 ms', limit: 150 };
 
-function scrollBars(id: 'fling' | 'pageDown', label: string): Bar[] {
+/** The bars on a stretch's frames, which `stretch` reads, or undefined where it can't be read. */
+function frameBars(
+  id: string,
+  label: string,
+  stretch: (run: RunResult) => Stretch | undefined,
+): Bar[] {
   return [
     {
       id: `${id}P95`,
@@ -122,7 +128,7 @@ function scrollBars(id: 'fling' | 'pageDown', label: string): Bar[] {
       shown: () => '≤ 16.7 ms',
       limit: () => oneRefresh,
       unit: 'ms',
-      read: (run) => run[id].frames.p95,
+      read: (run) => stretch(run)?.frames.p95,
     },
     {
       id: `${id}P99`,
@@ -130,7 +136,7 @@ function scrollBars(id: 'fling' | 'pageDown', label: string): Bar[] {
       shown: () => '≤ 33 ms',
       limit: () => twoRefreshes,
       unit: 'ms',
-      read: (run) => run[id].frames.p99,
+      read: (run) => stretch(run)?.frames.p99,
     },
     {
       id: `${id}Max`,
@@ -138,7 +144,7 @@ function scrollBars(id: 'fling' | 'pageDown', label: string): Bar[] {
       shown: () => 'none over 100 ms',
       limit: () => 100.01,
       unit: 'ms',
-      read: (run) => run[id].frames.max,
+      read: (run) => stretch(run)?.frames.max,
     },
     {
       id: `${id}Blank`,
@@ -146,21 +152,38 @@ function scrollBars(id: 'fling' | 'pageDown', label: string): Bar[] {
       shown: () => 'none',
       limit: () => 0,
       unit: 'count',
-      read: (run) => run[id].blank.frames,
+      read: (run) => stretch(run)?.blank.frames,
     },
-    ...(id === 'pageDown'
-      ? [
-          {
-            id: 'pageDownStuck',
-            label: `${label}: places it stopped short of the bottom`,
-            shown: () => 'none',
-            limit: () => 0,
-            unit: 'count' as const,
-            read: (run: RunResult) => run.stuck.length,
-          },
-        ]
-      : []),
   ];
+}
+
+/** A key's bar: its reading at the `p`th percentile, and that less the run's floor. */
+function keyBar(
+  id: 'heldJ' | 'nextFile' | 'nextChange' | 'end',
+  label: string,
+  limit: number,
+  p: number,
+): Bar {
+  return {
+    id,
+    label,
+    shown: () => `≤ ${limit} ms`,
+    limit: () => limit,
+    unit: 'ms',
+    read: (run) => keyReading(run.keys[id], p),
+    aboveFloor: (run) => aboveFloor(keyReading(run.keys[id], p), run.keys.floor),
+  };
+}
+
+/**
+ * A key's reading less the floor: the minimal-paint key's time at the median. A reading under the
+ * Event Timing threshold is under the floor too, so nothing above it.
+ */
+export function aboveFloor(reading: Reading, floor: KeyTimes | undefined): Reading {
+  if (reading === undefined || !floor) return undefined;
+  if (typeof reading !== 'number') return 0;
+  const base = keyReading(floor, 50);
+  return Math.max(0, reading - (typeof base === 'number' ? base : 0));
 }
 
 /** A key's time at the `p`th percentile, or under the threshold when that's where it falls. */

@@ -35,6 +35,8 @@ declare global {
   }
 }
 
+// The page starts opening the pull request, as a tab opens one.
+marks.asked = now();
 const reply = await window.perf.pull();
 const { pull, nonce } = reply;
 Object.assign(marks, { opened: reply.opened, read: reply.read });

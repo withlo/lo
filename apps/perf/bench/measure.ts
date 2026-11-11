@@ -1,20 +1,20 @@
-// One run of the bench on a pull request at a width: open it, press the keys, fling from the top to
-// the bottom, hold PageDown from the top to the bottom, and read the memory along the way. And one
-// run of `zR` on a file.
+// One run of the bench on a pull request at a width: open it, press the keys, scroll from the top to
+// the bottom twice, check blank rows at other speeds, hold PageDown from the top, and read the
+// memory along the way. And one run of `zR` on a file.
 
 import { readManifest } from '../src/data/manifest.ts';
 import type { Marks } from '../src/window/marks.ts';
 import type { Recording } from './recorder.ts';
-import type { RunResult, Stretch, Width, ZRResult } from './results.ts';
-import type { KeyTimes } from './stats.ts';
+import { checkSpeeds, scrollSpeed } from './bars.ts';
+import type { RunResult, SpeedCheck, Stretch, Width, ZRResult } from './results.ts';
 import {
-  flingDown,
-  flingThrough,
+  addTimes,
   goToFile,
   holdKey,
-  keyThreshold,
+  noKeys,
   pageDown,
   record,
+  scrollDown,
   stopRecording,
   stretchOf,
   timeKey,
@@ -23,6 +23,8 @@ import {
 import {
   checkDisplay,
   focusSide,
+  footprintOf,
+  gpuOf,
   launch,
   memoryOf,
   refreshOf,
@@ -97,22 +99,21 @@ async function measureOpened(
   await page.keyboard.press('c');
   await settle(page, 400);
   const heldJ = await holdKey(page, 'j', 150);
-  // What any key costs here: one Vim does nothing with in normal mode.
+  // The floor: a key whose only effect is to recolour a 4 px square. And a key that changes
+  // nothing, so paints nothing.
+  const floor = await holdKey(page, 'F7', 150);
   const nothing = await holdKey(page, 'Escape', 60);
   // A comment on each side, which grows as it's typed, crossing with Tab between.
   const comment =
     'This reads well, but the error path still needs a test, and the name could say what it ' +
     'holds. Could we keep the old one for a release, so callers have time to move over to it?';
-  const typing: KeyTimes = { keys: 0, reported: [], under: keyThreshold, parts: [] };
+  const typing = noKeys();
   for (const side of ['new', 'old'] as const) {
     if (side === 'old') await page.keyboard.press('Tab');
     await settle(page, 300);
     await page.keyboard.press('c');
     await settle(page, 300);
-    const typed = await typeSlowly(page, comment);
-    typing.keys += typed.keys;
-    typing.reported.push(...typed.reported);
-    typing.parts.push(...typed.parts);
+    addTimes(typing, await typeSlowly(page, comment));
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
     await settle(page, 300);
@@ -126,21 +127,28 @@ async function measureOpened(
     refresh,
   );
 
-  // The first full scroll: flings from the top.
+  // The first full scroll, from the top.
   await top();
-  const fling = await flingDown(suite, 'new', refresh, options.limit, (recording) =>
-    options.keep?.('fling', recording),
+  const scroll = await scrollDown(suite, 'new', refresh, scrollSpeed, options.limit, (recording) =>
+    options.keep?.('scroll', recording),
   );
   const height = (await scrollOf(page)).height;
   const afterFirst = await memoryOf(suite);
 
-  // The second, for the heap: flings again from the top, harder. Not with PageDown, which can
-  // stop short of the bottom.
+  // The second, the same, for the heap.
   await focusSide(page, 'new');
   await top();
-  if (options.limit === undefined) await flingThrough(suite, 'new');
-  else await flingDown(suite, 'new', refresh, options.limit);
+  await scrollDown(suite, 'new', refresh, scrollSpeed, options.limit);
   const afterSecond = await memoryOf(suite);
+
+  // Blank rows at other speeds, each from the top.
+  const speeds: SpeedCheck[] = [];
+  for (const speed of checkSpeeds) {
+    await focusSide(page, 'new');
+    await top();
+    const stretch = await scrollDown(suite, 'new', refresh, speed, speedCheckLength);
+    speeds.push({ speed, stretch });
+  }
 
   // PageDown from the top.
   await focusSide(page, 'new');
@@ -152,12 +160,19 @@ async function measureOpened(
     (recording) => options.keep?.('pageDown', recording),
     options.progress,
   );
-  const { peak } = await residentOf(suite);
+  const footprint = footprintOf(suite.pid);
+  const resident = await residentOf(suite);
+  const gpu = await gpuOf(suite);
 
   let large: RunResult['large'];
   if (options.large) large = await loadLarge(suite, pull, options.large, notes);
 
-  const stretches: Stretch[] = [keysStretch, fling, paged.stretch];
+  const stretches: Stretch[] = [
+    keysStretch,
+    scroll,
+    paged.stretch,
+    ...speeds.map((check) => check.stretch),
+  ];
   return {
     pull,
     width,
@@ -165,7 +180,8 @@ async function measureOpened(
     inner: suite.inner,
     height,
     open: openOf(marks),
-    fling,
+    scroll: { ...scroll, speed: scrollSpeed },
+    speeds,
     pageDown: paged.stretch,
     stuck: paged.stuck,
     reached: paged.reached,
@@ -177,6 +193,7 @@ async function measureOpened(
       otherSide,
       pageDown: paged.keys,
       typing,
+      floor,
       nothing,
       stretch: keysStretch,
     },
@@ -189,7 +206,8 @@ async function measureOpened(
       afterLoad,
       afterFirst,
       afterSecond,
-      peak,
+      peak: { footprint: footprint.peak, resident: resident.peak },
+      gpu: gpuMemory(gpu),
       growth: ((afterSecond.heap - afterFirst.heap) / afterFirst.heap) * 100,
     },
     ...(large ? { large } : {}),
@@ -197,24 +215,42 @@ async function measureOpened(
   };
 }
 
-/** The opening's times, from main starting to open the pull request. */
+/** The GPU process's footprint now and at its largest, in MB. */
+function gpuMemory(pid: number | undefined): RunResult['memory']['gpu'] {
+  if (pid === undefined) return undefined;
+  const { now, peak } = footprintOf(pid);
+  return { footprint: now, peak };
+}
+
+/** How far each check of blank rows at another speed scrolls, in px. */
+const speedCheckLength = 40_000;
+
+/**
+ * The opening's times: from the page starting to open the pull request, as a tab opens one, to its
+ * first file drawn; and from the background process getting the files to the moves arriving.
+ * Main reading the files and the window starting come before the page opens it, on their own.
+ */
 function openOf(marks: Marks): RunResult['open'] {
   const until = marks.loaded ?? Infinity;
-  const longTasks = marks.longTasks.filter((task) => task.start < until);
+  const from = marks.asked ?? marks.started;
+  const longTasks = marks.longTasks.filter((task) => task.start >= from && task.start < until);
   return {
-    firstDrawn: since(marks.firstDrawn, marks.opened),
-    loaded: since(marks.loaded, marks.opened),
+    firstDrawn: since(marks.firstDrawn, marks.asked),
+    loaded: since(marks.loaded, marks.read),
     longestTask: Math.max(0, ...longTasks.map((task) => task.duration)),
+    read: since(marks.read, marks.opened),
+    window: since(marks.started, marks.read),
     steps: {
-      'main reads the files': since(marks.read, marks.opened),
-      'the window starts, and loads the page': since(marks.started, marks.read),
-      'the page makes the view': since(marks.view, marks.started),
+      'main reads every file': since(marks.read, marks.opened),
+      'the window starts and loads the page': since(marks.started, marks.read),
+      'the page loads its code': since(marks.asked, marks.started),
+      'the page gets the pull request and makes the view': since(marks.view, marks.asked),
       'the first file’s diff and highlighting arrive': since(marks.firstArrived, marks.view),
       'the first file is drawn': since(marks.firstDrawn, marks.firstArrived),
       'the rest arrive, then the moves': since(marks.loaded, marks.firstArrived),
     },
     longTasks,
-    longFrames: marks.longFrames.filter((frame) => frame.start < until),
+    longFrames: marks.longFrames.filter((frame) => frame.start >= from && frame.start < until),
   };
 }
 
@@ -289,6 +325,8 @@ export async function measureZR(
       path,
     );
     await settle(page, 1000);
+    // The floor, as in every run: a key that only recolours a 4 px square.
+    const floor = await holdKey(page, 'F7', 60);
     const before = await scrollOf(page);
     await record(page);
     const started = performance.now();
@@ -305,6 +343,7 @@ export async function measureZR(
       width,
       run,
       keyToPaint,
+      floor,
       stretch: stretchOf(
         recording,
         { scrolled: after.top - before.top, ms: performance.now() - started, inputs: 2 },

@@ -15,7 +15,8 @@ import electronPackage from 'electron';
 
 import { readManifest } from '../src/data/manifest.ts';
 import type { Width } from './results.ts';
-import { fling, flingShape, goToFile, holdKey, typeSlowly } from './scenarios.ts';
+import { scrollSpeed } from './bars.ts';
+import { goToFile, holdKey, scrollGesture, typeSlowly } from './scenarios.ts';
 import {
   focusSide,
   launch,
@@ -36,7 +37,7 @@ declare global {
 const electronBinary: unknown = electronPackage;
 
 /**
- * Traces `pull` at `width`: its opening, then about eight seconds each of flings and of PageDown,
+ * Traces `pull` at `width`: its opening, then about eight seconds each of scrolling and of PageDown,
  * and the keys. With `zR`, only `zR` on that file. Returns the traces written, gzipped.
  */
 export async function traceRun(
@@ -123,9 +124,8 @@ export async function traceRun(
     await top();
     const at = await pointAt(page, 'new');
     await page.mouse.move(at.x, at.y);
-    await trace('fling', async () => {
-      const started = performance.now();
-      while (performance.now() - started < 8000) await fling(suite, at, 1);
+    await trace('scroll', async () => {
+      await scrollGesture(suite, at, scrollSpeed * 8, scrollSpeed);
       await settle(page, 500);
     });
     await focusSide(page, 'new');
@@ -152,7 +152,7 @@ function pathsOf(pull: string): string[] {
 
 /**
  * Records `pull` at 1440 px going through the diff view's main moves, in under 90 seconds: it opens,
- * flings to the bottom, pages down, holds `j`, jumps with `]f`, `]c` and `G`, types a comment on
+ * scrolls to the bottom, pages down, holds `j`, jumps with `]f`, `]c` and `G`, types a comment on
  * each side, crosses with `Tab`, and shows the inline layout. With `zR`, it opens that file's
  * unchanged lines instead. Returns the MP4 written, and how long it is in seconds.
  */
@@ -181,10 +181,10 @@ export async function videoRun(
       await settle(page, 1500);
       await keys('z', 'R');
       await settle(page, 1000);
-      await flingFor(suite, 6000);
+      await scrollFor(suite, 6000);
     } else {
       await top();
-      await flingToBottom(suite);
+      await scrollToBottom(suite);
       await top();
       for (let step = 0; step < 12; step++) await keys('PageDown');
       await top();
@@ -208,7 +208,7 @@ export async function videoRun(
       }
       for (let step = 0; step < 4; step++) await keys('Tab');
       await keys('g', 'i');
-      await flingFor(suite, 3000);
+      await scrollFor(suite, 3000);
       await settle(page, 1000);
       await keys('g', 'i');
     }
@@ -225,29 +225,23 @@ export async function videoRun(
   return { mp4, seconds };
 }
 
-/** Flings down over the right side for about `ms`. */
-async function flingFor(suite: Suite, ms: number): Promise<void> {
+/** Scrolls down over the right side for `ms`, at the bench's speed. */
+async function scrollFor(suite: Suite, ms: number): Promise<void> {
   const at = await pointAt(suite.page, 'new');
   await suite.page.mouse.move(at.x, at.y);
-  const started = performance.now();
-  while (performance.now() - started < ms) await fling(suite, at, 1);
+  await scrollGesture(suite, at, (scrollSpeed * ms) / 1000, scrollSpeed);
 }
 
 /**
- * Flings to the bottom in about 18 seconds: the bench's own flings for the first six, then flings
- * as much stronger as it takes to reach the bottom in the rest, to fit the video.
+ * Scrolls to the bottom in about 18 seconds: at the bench's speed for the first six, then as fast
+ * as it takes to reach the bottom in the rest, to fit the video.
  */
-async function flingToBottom(suite: Suite): Promise<void> {
-  await flingFor(suite, 6000);
+async function scrollToBottom(suite: Suite): Promise<void> {
+  await scrollFor(suite, 6000);
   const at = await pointAt(suite.page, 'new');
-  const started = performance.now();
-  for (let fast = 0; fast < 40; fast++) {
-    const { top, max } = await scrollOf(suite.page);
-    if (top >= max - 1) break;
-    const left = Math.max(1, 12 - (performance.now() - started) / 1000);
-    const scale = Math.max(1, (max - top) / left / 7800);
-    await fling(suite, at, 1, { ...flingShape, first: flingShape.first * scale });
-  }
+  const { top, max } = await scrollOf(suite.page);
+  const left = max - top;
+  if (left > 0) await scrollGesture(suite, at, left, Math.max(scrollSpeed, left / 12));
 }
 
 /**

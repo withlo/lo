@@ -1,12 +1,12 @@
-// What the bench does to the suite, with real input: wheel events and keys through Chromium's input
-// pipeline, as a trackpad's and a keyboard's arrive. They're sent on a clock, as hardware sends
-// them, without waiting for the page to take each one: a page that falls behind gets them queued
-// or merged, as it would. Nothing sets the scroll position from script, which draws differently
-// from real input.
+// What the bench does to the suite, with real input through Chromium's input pipeline. Scrolling is
+// Chromium's own synthesized scroll gesture, its wheel events paced by the display as a trackpad's
+// are. Keys are sent on a clock, as a keyboard sends them, without waiting for the page to take
+// each one: a page that falls behind gets them queued, as it would. Nothing sets the scroll
+// position from script, which draws differently from real input.
 
 import type { Page } from '@playwright/test';
 
-import type { KeyEntry, Recording } from './recorder.ts';
+import type { KeyEntry, LongFrameEntry, Recording } from './recorder.ts';
 import type { Blank, Stretch } from './results.ts';
 import {
   frameTimes,
@@ -20,15 +20,6 @@ import { pointAt, scrollOf, settle, sleep, type Suite } from './suite.ts';
 
 /** The Event Timing API's smallest threshold: keys under it aren't reported. */
 export const keyThreshold = 16;
-
-/** How often a trackpad sends wheel events while it scrolls: every frame at 60 Hz. */
-const wheelEvery = 1000 / 60;
-
-/**
- * A fling, as a trackpad's momentum sends it: a wheel event every frame, starting at `first` px
- * and slowing by `decay` each event, until it's under `last` px. About 7,800 px over a second.
- */
-export const flingShape = { first: 480, decay: 0.94, last: 10 };
 
 /** How often a held key repeats: macOS's fastest key repeat. */
 const repeatEvery = 33;
@@ -79,13 +70,14 @@ export function stretchOf(
 }
 
 /**
- * Flings from where the scroll is to the bottom with the pointer over `side`, a fling after
- * another, or until `limit` px. Records every frame on the way.
+ * Scrolls from where the scroll is to the bottom with the pointer over `side`, at `speed` px a
+ * second, or `limit` px. Records every frame on the way.
  */
-export async function flingDown(
+export async function scrollDown(
   suite: Suite,
   side: 'old' | 'new',
   refresh: number,
+  speed: number,
   limit = Infinity,
   keep?: (recording: Recording) => void,
 ): Promise<Stretch> {
@@ -95,11 +87,14 @@ export async function flingDown(
   const from = await scrollOf(page);
   await record(page, true);
   const started = performance.now();
-  let inputs = 0;
+  let gestures = 0;
   let still = 0;
   let last = from.top;
   while (true) {
-    inputs += await fling(suite, at, 1);
+    const left = Math.min(gestureLength, limit - (last - from.top));
+    if (left <= 0) break;
+    await scrollGesture(suite, at, left, speed);
+    gestures++;
     const now = await scrollOf(page);
     if (now.top - from.top >= limit) break;
     // At the bottom, or stuck: the document can still grow as lines are measured, so twice.
@@ -112,54 +107,31 @@ export async function flingDown(
   const recording = await stopRecording(page);
   keep?.(recording);
   const to = await scrollOf(page);
-  return stretchOf(recording, { scrolled: to.top - from.top, ms, inputs }, refresh);
+  return stretchOf(recording, { scrolled: to.top - from.top, ms, inputs: gestures }, refresh);
 }
 
-/**
- * Flings from where the scroll is to the bottom, three times as hard as `flingDown`, recording
- * nothing: a second full scroll, for the heap.
- */
-export async function flingThrough(suite: Suite, side: 'old' | 'new'): Promise<void> {
-  const at = await pointAt(suite.page, side);
-  await suite.page.mouse.move(at.x, at.y);
-  const shape = { ...flingShape, first: flingShape.first * 3 };
-  let still = 0;
-  let last = (await scrollOf(suite.page)).top;
-  while (still < 2) {
-    await fling(suite, at, 1, shape);
-    const now = await scrollOf(suite.page);
-    still = now.top >= now.max - 1 || now.top <= last ? still + 1 : 0;
-    last = now.top;
-  }
-  await settle(suite.page, 500);
-}
+/** How far one gesture scrolls, in px: a long scroll is a run of them. */
+const gestureLength = 20_000;
 
 /**
- * One fling down (`sign` 1) or up (-1) with the pointer at `at`, as the DevTools protocol's mouse
- * wheel events: returns how many it sent.
+ * Scrolls `distance` px down with the pointer at `at`, at `speed` px a second, through Chromium's
+ * own gesture synthesizer: one gesture, its wheel events paced by the display, as a trackpad's
+ * are, with no fling at the end. Resolves when the gesture is done.
  */
-export async function fling(
+export async function scrollGesture(
   suite: Suite,
   at: { x: number; y: number },
-  sign: 1 | -1,
-  shape = flingShape,
-): Promise<number> {
-  const started = performance.now();
-  const sent: Promise<unknown>[] = [];
-  for (let delta = shape.first; delta >= shape.last; delta *= shape.decay) {
-    sent.push(
-      suite.cdp.send('Input.dispatchMouseEvent', {
-        type: 'mouseWheel',
-        x: at.x,
-        y: at.y,
-        deltaX: 0,
-        deltaY: sign * Math.round(delta),
-      }),
-    );
-    await sleep(started + sent.length * wheelEvery - performance.now());
-  }
-  await Promise.all(sent);
-  return sent.length;
+  distance: number,
+  speed: number,
+): Promise<void> {
+  await suite.cdp.send('Input.synthesizeScrollGesture', {
+    x: Math.round(at.x),
+    y: Math.round(at.y),
+    yDistance: -Math.round(distance),
+    speed,
+    gestureSourceType: 'mouse',
+    preventFling: true,
+  });
 }
 
 /**
@@ -180,7 +152,7 @@ export async function pageDown(
   const pointer = await pointAt(page, 'new');
   await record(page);
   const started = performance.now();
-  const keys: KeyTimes = { keys: 0, reported: [], under: keyThreshold, parts: [] };
+  const keys = noKeys();
   const stuck: Stuck[] = [];
   let inputs = 0;
   let atBottom = 0;
@@ -207,10 +179,7 @@ export async function pageDown(
     await page.keyboard.up('PageDown');
     inputs += sent.length;
     await settle(page, 300);
-    const times = await keyTimes(page, since, sent.length);
-    keys.keys += times.keys;
-    keys.reported.push(...times.reported);
-    keys.parts.push(...times.parts);
+    addTimes(keys, await keyTimes(page, since, sent.length));
     const now = await scrollOf(page);
     if (now.top - from.top >= limit) break;
     if (now.top >= now.max - 1) {
@@ -266,17 +235,28 @@ export interface Stuck {
   scrollTop: number;
 }
 
-/** The keydowns reported since `since`, as the times of `count` keys. */
+/** The keydowns reported since `since`, as the times of `count` keys, with the long frames then. */
 export async function keyTimes(page: Page, since: number, count: number): Promise<KeyTimes> {
-  const entries = await page.evaluate((from) => window.perfBench!.keys(from), since);
+  const { entries, frames } = await page.evaluate(
+    (from) => ({
+      entries: window.perfBench!.keys(from),
+      frames: window.perfBench!.longFrames(from),
+    }),
+    since,
+  );
   return timesOf(
     entries.filter((entry) => entry.name === 'keydown'),
     count,
+    frames,
   );
 }
 
 /** `count` keys' times from the entries reported for them, at most one each. */
-export function timesOf(entries: readonly KeyEntry[], count: number): KeyTimes {
+export function timesOf(
+  entries: readonly KeyEntry[],
+  count: number,
+  longFrames: readonly LongFrameEntry[] = [],
+): KeyTimes {
   const reported = entries.slice(0, count);
   return {
     keys: count,
@@ -287,14 +267,21 @@ export function timesOf(entries: readonly KeyEntry[], count: number): KeyTimes {
       handling: entry.processingEnd - entry.processingStart,
       toPaint: entry.start + entry.duration - entry.processingEnd,
     })),
+    longFrames: [...longFrames],
   };
 }
 
+/** No keys yet. */
+export function noKeys(): KeyTimes {
+  return { keys: 0, reported: [], under: keyThreshold, parts: [], longFrames: [] };
+}
+
 /** Adds `more` key times to `times`. */
-function addTimes(times: KeyTimes, more: KeyTimes): void {
+export function addTimes(times: KeyTimes, more: KeyTimes): void {
   times.keys += more.keys;
   times.reported.push(...more.reported);
   times.parts.push(...more.parts);
+  times.longFrames.push(...more.longFrames);
 }
 
 /**
@@ -308,7 +295,7 @@ export async function timeKey(
   key: string,
   options: { prefix?: string[]; between?: () => Promise<void>; wait?: number } = {},
 ): Promise<KeyTimes> {
-  const result: KeyTimes = { keys: 0, reported: [], under: keyThreshold, parts: [] };
+  const result = noKeys();
   for (let time = 0; time < times; time++) {
     if (options.between) await options.between();
     for (const stroke of options.prefix ?? []) {

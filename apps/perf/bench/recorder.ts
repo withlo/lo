@@ -83,6 +83,8 @@ export interface Recorder {
   stop(): Recording;
   /** The keys reported since `since`, on the page's clock. */
   keys(since: number): KeyEntry[];
+  /** The frames over 50 ms since `since`, recording or not. */
+  longFrames(since: number): LongFrameEntry[];
   /** The time between frames over the next `ms`, at the median: about 16.7 ms when the display is awake. */
   frameRate(ms: number): Promise<{ median: number; frames: number }>;
   /** Waits for the frame after the next one to begin: whatever was asked for before is painted. */
@@ -214,6 +216,8 @@ export function installRecorder({ coverage: cover, ranPast: past }: Helpers): vo
   });
   let frames = empty();
   let longFrames: LongFrameEntry[] = [];
+  /** Every frame over 50 ms lately, recording or not, for timing a key. */
+  let recentFrames: LongFrameEntry[] = [];
   let keys: KeyEntry[] = [];
   let recording = false;
   let wheel = false;
@@ -277,6 +281,23 @@ export function installRecorder({ coverage: cover, ranPast: past }: Helpers): vo
     frames.readMs.push(performance.now() - started);
   };
 
+  // The least a key can paint: a 4 px square in a corner changes colour on F7, which nothing else
+  // in the page takes. Its key-to-paint time is the floor every key here stands on.
+  const square = document.createElement('div');
+  square.style.cssText =
+    'position:fixed;right:2px;bottom:2px;width:4px;height:4px;background:#000;pointer-events:none';
+  document.body.append(square);
+  let lit = false;
+  window.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key !== 'F7') return;
+      lit = !lit;
+      square.style.background = lit ? '#fff' : '#000';
+    },
+    { capture: true },
+  );
+
   // The hidden element that changes size every frame, so the observer reads every frame.
   const ticker = document.createElement('div');
   ticker.style.cssText =
@@ -295,8 +316,12 @@ export function installRecorder({ coverage: cover, ranPast: past }: Helpers): vo
   requestAnimationFrame(tick);
 
   new PerformanceObserver((list) => {
-    if (!recording) return;
-    for (const entry of list.getEntries()) longFrames.push(longFrameOf(entry));
+    for (const entry of list.getEntries()) {
+      const long = longFrameOf(entry);
+      recentFrames.push(long);
+      if (recording) longFrames.push(long);
+    }
+    if (recentFrames.length > 2000) recentFrames = recentFrames.slice(-1000);
   }).observe({ type: 'long-animation-frame' });
   // The Event Timing API's smallest threshold, which the DOM's types don't know yet.
   const keyOptions = { type: 'event', durationThreshold: 16 };
@@ -363,6 +388,7 @@ export function installRecorder({ coverage: cover, ranPast: past }: Helpers): vo
       return { frames, longFrames };
     },
     keys: (since) => keys.filter((entry) => entry.start >= since),
+    longFrames: (since) => recentFrames.filter((long) => long.start >= since),
     frameRate(ms) {
       // A timer ends it, since frames stop coming while the display sleeps.
       return new Promise((done) => {

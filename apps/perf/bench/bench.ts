@@ -12,7 +12,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { cpus, totalmem } from 'node:os';
+import { cpus, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -23,7 +23,7 @@ import type { Recording } from './recorder.ts';
 import { sizeOf, traceRun, videoRun } from './media.ts';
 import { reportMarkdown, titleOf } from './report.ts';
 import type { Conditions, Results, Width } from './results.ts';
-import { launch, screenOf } from './suite.ts';
+import { launch, screenOf, virtualDisplay } from './suite.ts';
 
 /** The pull requests the bars are for, and the one `zR` is measured on. */
 const pullRequests = ['kubernetes-125488', 'typescript-51387'];
@@ -102,6 +102,7 @@ const frameCheck = (median: number): void => {
 };
 const memoryInUse = (): void => {
   results.conditions.memoryInUse.push(inUseGB());
+  results.conditions.load.push(loadavg()[0]!);
 };
 
 for (let run = 1; run <= runs; run++) {
@@ -127,11 +128,14 @@ for (let run = 1; run <= runs; run++) {
       memoryInUse();
       results.runs.push(result);
       console.log(
-        `  open ${result.open.firstDrawn?.toFixed(0)} ms, loaded ${result.open.loaded?.toFixed(0)} ms; ` +
-          `flings p95 ${result.fling.frames.p95?.toFixed(1)} ms, max ${result.fling.frames.max?.toFixed(0)} ms, ` +
-          `${result.fling.blank.frames} blank; PageDown p95 ${result.pageDown.frames.p95?.toFixed(1)} ms, ` +
-          `${result.pageDown.blank.frames} blank, stopped short ${result.stuck.length} times; worst misalignment ${result.alignment.worst.toFixed(2)} px; ` +
-          `memory ${result.memory.peak.toFixed(0)} MB, heap growth ${result.memory.growth.toFixed(1)}%`,
+        `  open ${result.open.firstDrawn?.toFixed(0)} ms, computed ${result.open.loaded?.toFixed(0)} ms; ` +
+          `scroll p95 ${result.scroll.frames.p95?.toFixed(1)} ms, max ${result.scroll.frames.max?.toFixed(0)} ms, ` +
+          `${result.scroll.blank.frames} blank; ` +
+          result.speeds
+            .map((check) => `${check.stretch.blank.frames} blank at ${check.speed} px/s; `)
+            .join('') +
+          `PageDown stopped short ${result.stuck.length} times; worst misalignment ${result.alignment.worst.toFixed(2)} px; ` +
+          `footprint ${result.memory.peak.footprint.toFixed(0)} MB, heap growth ${result.memory.growth.toFixed(1)}%`,
       );
       save();
     }
@@ -199,13 +203,15 @@ async function conditions(): Promise<Conditions> {
     }));
     return {
       machine: sysctl('hw.model'),
-      chip: sysctl('machdep.cpu.brand_string') || `${cpus().length} cores`,
+      chip: sysctl('machdep.cpu.brand_string') || 'an unknown chip',
+      cores: cpus().length,
       memoryGB: Math.round(totalmem() / 2 ** 30),
       macOS: execFileSync('sw_vers', ['-productVersion'], { encoding: 'utf8' }).trim(),
       electron: versions.electron,
       chromium: versions.chromium,
       display: {
         label: screen.label,
+        kind: displayKind(screen.internal),
         width: screen.width,
         height: screen.height,
         workArea: screen.workArea,
@@ -214,6 +220,7 @@ async function conditions(): Promise<Conditions> {
       },
       gpu: versions.gpu,
       memoryInUse: [inUseGB()],
+      load: [loadavg()[0]!],
       frameCheck: [],
       commit: execFileSync('git', ['rev-parse', 'HEAD'], {
         cwd: suiteFolder,
@@ -224,6 +231,12 @@ async function conditions(): Promise<Conditions> {
   } finally {
     await suite.app.close();
   }
+}
+
+/** What kind of display the main one is: virtual (as an AirPlay one is), built in, or external. */
+function displayKind(internal: boolean): string {
+  if (virtualDisplay()) return 'virtual';
+  return internal ? 'built in' : 'external';
 }
 
 function widthLabel(width: Width): string {

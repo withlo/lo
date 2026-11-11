@@ -1,6 +1,8 @@
 // Summaries of what a run records: percentiles of frame and key times, and the median and worst of
 // the runs.
 
+import type { LongFrameEntry } from './recorder.ts';
+
 /**
  * The `p`th percentile of `values`, the nearest-rank way: the smallest value at least `p` percent
  * of the values are at or under. Undefined for no values.
@@ -90,6 +92,8 @@ export interface KeyTimes {
    * then to the paint.
    */
   parts: { waiting: number; handling: number; toPaint: number }[];
+  /** The frames over 50 ms while the keys were pressed and painted. */
+  longFrames: LongFrameEntry[];
 }
 
 /**
