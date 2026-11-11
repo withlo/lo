@@ -30,6 +30,7 @@ import {
 import type { Database } from '../../../main/database.ts';
 import type { AccountState, GithubAccess, GithubEvent } from '../service.ts';
 import { AnswerCache } from './cache.ts';
+import { NoKeychain } from './grants.ts';
 import { AccountTable } from './rows.ts';
 
 export interface GithubOptions {
@@ -63,6 +64,11 @@ export class Github implements GithubAccess {
   readonly #pollers = new Map<string, Poller>();
   /** Accounts whose renewed token the keychain keeps refusing, by lowercased login. */
   readonly #cantSave = new Set<string>();
+  /**
+   * Accounts whose grant was last refused for want of a keychain to read or keep it with, by
+   * lowercased login, until one is read or kept again.
+   */
+  readonly #needsKeyring = new Set<string>();
   readonly #listeners = new Set<(event: GithubEvent) => void>();
   readonly #observers = new Set<() => void>();
   readonly #unsubscribe: (() => void)[] = [];
@@ -81,7 +87,7 @@ export class Github implements GithubAccess {
     const web = { fetch, urls: this.urls };
     this.#loaded = Accounts.load({
       rows: options.rows ?? new AccountTable(database),
-      secrets: options.secrets,
+      secrets: this.#watching(options.secrets),
       renew: (refresh) => refreshGrant(web, refresh),
       fetch,
       urls: this.urls,
@@ -106,6 +112,7 @@ export class Github implements GithubAccess {
       account,
       signedOut: accounts.signedOut(account.login),
       cantSave: this.#cantSave.has(account.login.toLowerCase()),
+      needsKeyring: this.#needsKeyring.has(account.login.toLowerCase()),
     }));
   }
 
@@ -190,6 +197,7 @@ export class Github implements GithubAccess {
     } finally {
       if (!accounts.account(account.login)) {
         this.#cantSave.delete(account.login.toLowerCase());
+        this.#needsKeyring.delete(account.login.toLowerCase());
         this.#emit({ kind: 'removed', login: account.login });
       }
     }
@@ -231,6 +239,36 @@ export class Github implements GithubAccess {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * `secrets`, noting each account whose grant it refuses for want of a keychain
+   * ({@link NoKeychain}), until it reads or keeps one for it again.
+   */
+  #watching(secrets: Secrets): Secrets {
+    const noting = async <T>(login: string, run: () => Promise<T>): Promise<T> => {
+      try {
+        const value = await run();
+        this.#noteKeyring(login, false);
+        return value;
+      } catch (error) {
+        if (error instanceof NoKeychain) this.#noteKeyring(login, true);
+        throw error;
+      }
+    };
+    return {
+      read: (login) => noting(login, () => secrets.read(login)),
+      write: (login, grant) => noting(login, () => secrets.write(login, grant)),
+      delete: (login) => secrets.delete(login),
+    };
+  }
+
+  #noteKeyring(login: string, needed: boolean): void {
+    const lower = login.toLowerCase();
+    if (this.#needsKeyring.has(lower) === needed) return;
+    if (needed) this.#needsKeyring.add(lower);
+    else this.#needsKeyring.delete(lower);
+    this.#changed();
   }
 
   /** Gives each account a poller, and stops the poller of each account that's gone. */

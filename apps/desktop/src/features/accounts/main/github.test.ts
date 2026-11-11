@@ -190,6 +190,7 @@ describe('accounts', () => {
         account: { login: LOGIN, userId: 353226052, source: 'deviceFlow' },
         signedOut: undefined,
         cantSave: false,
+        needsKeyring: false,
       },
     ]);
     expect(rows(database, 'SELECT login FROM accounts_grants')).toEqual([{ login: LOGIN }]);
@@ -225,6 +226,28 @@ describe('accounts', () => {
     expect(await again.github.accounts()).toMatchObject([
       { account: { login: LOGIN }, signedOut: 'refused' },
     ]);
+  });
+
+  it('says when an account needs a keyring to read its token, and when it no longer does', async () => {
+    const storage = new FakeStorage();
+    const { github, database } = start({ storage });
+    await github.add(user(), { token: new Token(TOKEN) }, 'deviceFlow');
+    // Lo starts again, so the token isn't held: it has to be read.
+    const again = start({ database, storage });
+    const changes = vi.fn<() => void>();
+    again.github.onChange(changes);
+    storage.available = false;
+    await expect(again.github.client(LOGIN)).rejects.toMatchObject({
+      detail: { kind: 'tokenUnavailable' },
+    });
+    expect(await again.github.accounts()).toMatchObject([
+      { signedOut: undefined, needsKeyring: true },
+    ]);
+    expect(changes).toHaveBeenCalledOnce();
+    storage.available = true;
+    await again.github.client(LOGIN);
+    expect(await again.github.accounts()).toMatchObject([{ needsKeyring: false }]);
+    expect(changes).toHaveBeenCalledTimes(2);
   });
 
   it('removes an account and everything kept for it, stops its poller, and says so', async () => {

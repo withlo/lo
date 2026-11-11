@@ -323,10 +323,11 @@ repositories, which account opens a repository, and the pull requests opened lat
 
 - Each account's grant (its token, and the refresh token that renews it) is one row in the database,
   encrypted whole by Electron's `safeStorage`, which keeps its key in the system's keychain. Where
-  the system has no keychain to encrypt with (Linux without GNOME Keyring or KWallet, or Chromium's
-  `--use-mock-keychain`), Lo neither keeps nor reads a token, except in a test run. On Linux the
-  store `safeStorage` reports is only the one chosen for the desktop, so what it encrypted counts
-  too: a ciphertext marked `v10` was made with Chromium's built-in key, as with no keyring.
+  the system has no keychain to encrypt with (a Linux desktop where no keyring answers, or
+  Chromium's `--use-mock-keychain`), Lo neither keeps nor reads a token, except in a test run. On
+  Linux what decides is how the ciphertext is marked, never the store `safeStorage` reports, which
+  is only the one chosen for the desktop: Chromium marks its built-in key's `v10`, the Secret
+  Service's and KWallet's `v11` and the portal's `v12`, and Lo refuses `v10`.
 - Every request to GitHub goes through Chromium's network stack (`src/main/fetch.ts`, on
   `net.request`), so it takes the system's proxy, with nothing kept in Chromium's cache and no
   cookie. Electron's `net.fetch` isn't used: it fails a redirect GitHub's client asks to see, and
@@ -334,7 +335,7 @@ repositories, which account opens a repository, and the pull requests opened lat
 - Each account's poller keeps what it read in the database, read back only by the build of Lo that
   wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
-  out), never a token.
+  out, and whether its token waits for a keyring), never a token.
 - As Lo quits, the feature saves any renewed token the keychain refused, waiting for renewals GitHub
   is answering only as long as its own limit for stopping allows.
 - A build run from source talks to a GitHub on this machine when `LO_GITHUB` names its address

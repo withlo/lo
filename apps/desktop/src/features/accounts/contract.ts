@@ -10,7 +10,8 @@ export const signedOut = z.enum(['refused', 'tokenMissing']);
 
 /**
  * An account as the window sees it: its login and name, how it signed in, whether and why it's
- * signed out, and whether the keychain keeps refusing its renewed token. Never its token.
+ * signed out, whether the keychain keeps refusing its renewed token, and whether its token can't be
+ * read or kept for want of a keychain, as on Linux with no keyring. Never its token.
  */
 export const accountSummary = z.strictObject({
   login,
@@ -18,6 +19,7 @@ export const accountSummary = z.strictObject({
   source: z.enum(['deviceFlow', 'gh']),
   signedOut: signedOut.nullable(),
   cantSave: z.boolean(),
+  needsKeyring: z.boolean(),
 });
 export type AccountSummary = z.output<typeof accountSummary>;
 

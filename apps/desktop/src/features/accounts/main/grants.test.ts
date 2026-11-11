@@ -6,6 +6,7 @@ import { Accounts, GithubError, Token, type Account, type Grant } from '@lo/gith
 import { MemoryAccountRows } from '@lo/testing';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import type { Database } from '../../../main/database.ts';
 import { bytes } from './columns.ts';
 import { Grants, keychainProblem, NoKeychain, type Keychain } from './grants.ts';
 import { accountsDatabase, FakeStorage, TOKEN } from './test/support.ts';
@@ -86,11 +87,10 @@ describe('Grants', () => {
 
   it('deletes a grant without the keychain', async () => {
     const { grants: kept, storage } = grants({ keychain: linux });
-    storage.backend = 'gnome_libsecret';
     await kept.write('bot', expiring);
-    storage.backend = 'basic_text';
+    storage.available = false;
     await kept.delete('BOT');
-    storage.backend = 'gnome_libsecret';
+    storage.available = true;
     expect(await kept.read('bot')).toBeUndefined();
   });
 
@@ -159,39 +159,62 @@ describe('Grants', () => {
   });
 });
 
-describe("Linux's fallback, and other stand-in keychains", () => {
-  it('refuses to keep or read a token with the Linux fallback outside test runs', async () => {
+/** A grant for rozed-bot as `storage` encrypts it now, put straight in the table. */
+async function keep(storage: FakeStorage, database: Database) {
+  const sealed = await storage.encryptStringAsync(JSON.stringify({ github: API, token: TOKEN }));
+  database
+    .prepare('INSERT INTO accounts_grants (login, sealed) VALUES (?, ?)')
+    .run('rozed-bot', sealed);
+}
+
+describe("Linux's built-in key, and other stand-in keychains", () => {
+  // On sway, i3 or Hyprland, safeStorage reports `basic_text` and gets its key from the Secret
+  // Service all the same. The mark says which key it used; the report doesn't.
+  it.each(['basic_text', 'gnome_libsecret', 'kwallet6', 'unknown'])(
+    'takes what a keyring encrypted (v11) on Linux, whatever store it reports: %s',
+    async (backend) => {
+      const { grants: kept, storage } = grants({ keychain: linux });
+      storage.backend = backend;
+      storage.mark = 'v11';
+      await kept.write('bot', expiring);
+      expect(exposed(await kept.read('bot'))).toEqual(exposed(expiring));
+    },
+  );
+
+  it("takes what the desktop portal's key encrypted (v12) on Linux", async () => {
     const { grants: kept, storage } = grants({ keychain: linux });
-    await kept.write('bot', expiring);
     storage.backend = 'basic_text';
-    await expect(kept.write('bot', expiring)).rejects.toBeInstanceOf(NoKeychain);
-    await expect(kept.write('bot', expiring)).rejects.toThrow('GNOME Keyring or KWallet');
-    // A grant kept before isn't taken for none, so nothing signs the account out.
-    await expect(kept.read('bot')).rejects.toBeInstanceOf(NoKeychain);
-  });
-
-  it("refuses what Linux's built-in key encrypted, whatever store safeStorage reports", async () => {
-    // A GNOME session whose keyring never answered: the store chosen is libsecret's, and Chromium
-    // falls back to its built-in key, marked v10.
-    const { grants: kept, storage, database } = grants({ keychain: linux });
-    storage.backend = 'gnome_libsecret';
-    storage.mark = 'v10';
-    const written = kept.write('bot', expiring);
-    await expect(written).rejects.toBeInstanceOf(NoKeychain);
-    await expect(written).rejects.toThrow('GNOME Keyring or KWallet');
-    expect(database.prepare('SELECT count(*) AS n FROM accounts_grants').get()).toEqual({ n: 0 });
-
-    // One kept so before isn't read, nor taken for none.
-    const garbled = await storage.encryptStringAsync(JSON.stringify({ github: API, token: TOKEN }));
-    database
-      .prepare('INSERT INTO accounts_grants (login, sealed) VALUES (?, ?)')
-      .run('bot', garbled);
-    await expect(kept.read('bot')).rejects.toBeInstanceOf(NoKeychain);
-
-    // Once the keyring answers, what it encrypts is kept.
-    storage.mark = 'v11';
+    storage.mark = 'v12';
     await kept.write('bot', expiring);
     expect(exposed(await kept.read('bot'))).toEqual(exposed(expiring));
+  });
+
+  // A GNOME session whose keyring is dead reports libsecret's store and encrypts with the
+  // built-in key, as a desktop with no keyring at all does.
+  it.each(['basic_text', 'gnome_libsecret', 'kwallet6'])(
+    "refuses to keep what Linux's built-in key encrypted (v10), whatever store it reports: %s",
+    async (backend) => {
+      const { grants: kept, storage, database } = grants({ keychain: linux });
+      storage.backend = backend;
+      storage.mark = 'v10';
+      const written = kept.write('bot', expiring);
+      await expect(written).rejects.toBeInstanceOf(NoKeychain);
+      await expect(written).rejects.toThrow('none answered');
+      expect(database.prepare('SELECT count(*) AS n FROM accounts_grants').get()).toEqual({
+        n: 0,
+      });
+    },
+  );
+
+  it("refuses to read a grant Linux's built-in key encrypted, and doesn't take it for none", async () => {
+    const { grants: kept, storage, database } = grants({ keychain: linux });
+    storage.mark = 'v10';
+    await keep(storage, database);
+    await expect(kept.read('rozed-bot')).rejects.toBeInstanceOf(NoKeychain);
+    // Kept with a keyring's key, it reads.
+    storage.mark = 'v11';
+    await kept.write('rozed-bot', expiring);
+    expect(exposed(await kept.read('rozed-bot'))).toEqual(exposed(expiring));
   });
 
   it("never encrypts a grant again with Linux's built-in key", async () => {
@@ -222,48 +245,19 @@ describe("Linux's fallback, and other stand-in keychains", () => {
 
   it("takes Linux's built-in key in a test run", async () => {
     const { grants: kept, storage } = grants({ keychain: { ...linux, testRun: true } });
+    storage.backend = 'basic_text';
     storage.mark = 'v10';
     await kept.write('bot', expiring);
     expect(exposed(await kept.read('bot'))).toEqual(exposed(expiring));
   });
 
-  it('takes the fallback in a test run', async () => {
-    const { grants: kept, storage } = grants({ keychain: { ...linux, testRun: true } });
-    storage.backend = 'basic_text';
-    await kept.write('bot', expiring);
-    expect(exposed(await kept.read('bot'))).toEqual(exposed(expiring));
-  });
-
   it.each([
-    ['the Linux fallback', linux, 'basic_text', 'GNOME Keyring or KWallet'],
-    ['a store not chosen yet', linux, 'unknown', 'GNOME Keyring or KWallet'],
-    [
-      "Chromium's stand-in keychain",
-      { ...mac, mockKeychain: true },
-      'unknown',
-      'stand-in keychain',
-    ],
-    ['a stand-in keychain on Linux', { ...linux, mockKeychain: true }, 'kwallet6', 'stand-in'],
-  ])('refuses %s outside a test run', async (_name, keychain, backend, said) => {
+    ["Chromium's stand-in keychain", { ...mac, mockKeychain: true }],
+    ['a stand-in keychain on Linux', { ...linux, mockKeychain: true }],
+  ])('refuses %s outside a test run', async (_name, keychain) => {
     const storage = new FakeStorage();
-    storage.backend = backend;
-    expect(await keychainProblem(storage, keychain)).toContain(said);
+    expect(await keychainProblem(storage, keychain)).toContain('stand-in keychain');
     expect(await keychainProblem(storage, { ...keychain, testRun: true })).toBeUndefined();
-  });
-
-  it.each(['gnome_libsecret', 'kwallet', 'kwallet5', 'kwallet6'])(
-    "takes Linux's %s",
-    async (backend) => {
-      const storage = new FakeStorage();
-      storage.backend = backend;
-      expect(await keychainProblem(storage, linux)).toBeUndefined();
-    },
-  );
-
-  it("doesn't ask a Mac which Linux store it chose", async () => {
-    const storage = new FakeStorage();
-    storage.backend = 'basic_text';
-    expect(await keychainProblem(storage, mac)).toBeUndefined();
   });
 
   it('refuses when safeStorage can encrypt nothing, even in a test run', async () => {
@@ -274,10 +268,10 @@ describe("Linux's fallback, and other stand-in keychains", () => {
     );
   });
 
-  it("leaves an account signed in, its grant kept, while there's no keychain", async () => {
-    const { grants: kept, storage } = grants({ keychain: linux });
-    await kept.write('rozed-bot', expiring);
-    storage.backend = 'basic_text';
+  it("leaves an account signed in, its grant kept, while there's no keyring", async () => {
+    const { grants: kept, storage, database } = grants({ keychain: linux });
+    storage.mark = 'v10';
+    await keep(storage, database);
     const rows = new MemoryAccountRows<Account>();
     await rows.save({
       login: 'rozed-bot',
@@ -294,9 +288,8 @@ describe("Linux's fallback, and other stand-in keychains", () => {
     });
     const client = accounts.client('rozed-bot');
     await expect(client).rejects.toMatchObject({ detail: { kind: 'tokenUnavailable' } });
-    await expect(client).rejects.toThrow('GNOME Keyring or KWallet');
+    await expect(client).rejects.toThrow('none answered');
     expect(accounts.isSignedOut('rozed-bot')).toBe(false);
-    storage.backend = 'kwallet6';
-    expect(exposed(await kept.read('rozed-bot'))).toEqual(exposed(expiring));
+    expect(database.prepare('SELECT count(*) AS n FROM accounts_grants').get()).toEqual({ n: 1 });
   });
 });

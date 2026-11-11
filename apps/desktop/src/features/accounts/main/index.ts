@@ -51,13 +51,14 @@ function service(): Github {
 /** Every account as the window sees it, checked against the contract. */
 async function summaries(): Promise<AccountSummary[]> {
   const states = await service().accounts();
-  return states.map(({ account, signedOut, cantSave }) =>
+  return states.map(({ account, signedOut, cantSave, needsKeyring }) =>
     accountSummary.parse({
       login: account.login,
       name: account.name ?? null,
       source: account.source,
       signedOut: signedOut ?? null,
       cantSave,
+      needsKeyring,
     }),
   );
 }

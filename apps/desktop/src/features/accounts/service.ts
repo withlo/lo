@@ -23,6 +23,12 @@ export interface AccountState {
    * but loses if it quits first.
    */
   cantSave: boolean;
+  /**
+   * Whether its token was last refused for want of a keychain to read or keep it with, such as a
+   * Linux desktop where no keyring answers. It stays signed in, and its token is kept, but Lo can't
+   * use it until a keyring answers.
+   */
+  needsKeyring: boolean;
 }
 
 /** What happened to an account, or what its poller saw. */

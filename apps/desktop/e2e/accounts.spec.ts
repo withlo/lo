@@ -81,7 +81,14 @@ test('the account in the token file is added as Lo starts, and the window gets o
   expect(reply).toEqual({
     ok: true,
     value: [
-      { login: 'rozed-bot', name: null, source: 'deviceFlow', signedOut: null, cantSave: false },
+      {
+        login: 'rozed-bot',
+        name: null,
+        source: 'deviceFlow',
+        signedOut: null,
+        cantSave: false,
+        needsKeyring: false,
+      },
     ],
   });
   expect(JSON.stringify(reply)).not.toContain(TOKEN);
@@ -168,7 +175,7 @@ test('the account stays across a restart, and removing it removes its token', as
   }
 });
 
-test('Linux reports its fallback store as basic_text, which Lo takes only in a test run', async ({
+test("Linux's fallback encrypts with the built-in key, marked v10, which Lo takes only in a test run", async ({
   app,
   page,
 }) => {
@@ -179,7 +186,7 @@ test('Linux reports its fallback store as basic_text, which Lo takes only in a t
     return safeStorage.getSelectedStorageBackend();
   });
   expect(backend).toBe('basic_text');
-  // And marks what it encrypted with its built-in key `v10`, which Lo refuses outside a test run.
+  // What it encrypted is marked as the built-in key's, which is what Lo goes by.
   expect(sealedGrant().subarray(0, 3).toString()).toBe('v10');
 });
 

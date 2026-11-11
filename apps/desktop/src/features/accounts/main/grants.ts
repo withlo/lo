@@ -3,13 +3,16 @@
 // async API. A token is never written, logged or handed to the window in the clear.
 //
 // Where the system has no keychain to encrypt with, `safeStorage` falls back to a key every copy of
-// Chromium knows: on Linux, without GNOME Keyring or KWallet, and with Chromium's stand-in keychain
-// for tests (`--use-mock-keychain`) on a Mac. A token kept that way is as good as plain text, so Lo
-// refuses to keep or read one, except in a test run. On Linux, the store `safeStorage` reports is
-// the one chosen for the desktop, not one known to work: a GNOME or KDE session whose keyring
-// doesn't answer still says `gnome_libsecret` or `kwallet`, and encrypts with the built-in key.
-// So what it encrypted is checked too: Chromium marks the built-in key's ciphertext `v10`, and a
-// keyring's `v11`. (On a Mac, the keychain's key is marked `v10`, so the mark says nothing there.)
+// Chromium knows: on Linux, when no keyring answers, and with Chromium's stand-in keychain for
+// tests (`--use-mock-keychain`). A token kept that way is as good as plain text, so Lo refuses to
+// keep or read one, except in a test run.
+//
+// On Linux, what the ciphertext is marked decides, never the store `safeStorage` reports: Chromium
+// marks only its built-in key's `v10` (the Secret Service's and KWallet's are `v11`, the portal's
+// `v12`). The report is the store chosen for the desktop, not the one that answered: a GNOME
+// session whose keyring is dead says `gnome_libsecret` and encrypts with the built-in key, while
+// sway, i3 or Hyprland say `basic_text` and get their key from the Secret Service. (On a Mac, the
+// keychain's key is marked `v10` too, so the mark says nothing there.)
 
 import { GithubError, Token, type Grant, type Refresh, type Secrets } from '@lo/github';
 import { z } from 'zod';
@@ -17,13 +20,11 @@ import { z } from 'zod';
 import type { Database } from '../../../main/database.ts';
 import { bytes } from './columns.ts';
 
-/** What Lo uses of Electron's `safeStorage`: its async API, and which store it chose on Linux. */
+/** What Lo uses of Electron's `safeStorage`: its async API. */
 export interface SafeStorage {
   isAsyncEncryptionAvailable(): Promise<boolean>;
   encryptStringAsync(plainText: string): Promise<Uint8Array>;
   decryptStringAsync(encrypted: Buffer): Promise<{ shouldReEncrypt: boolean; result: string }>;
-  /** On Linux, the system's store `safeStorage` chose; `basic_text` is none. */
-  getSelectedStorageBackend(): string;
 }
 
 /** Where Lo runs, for whether the keychain `safeStorage` has is one Lo keeps tokens with. */
@@ -40,7 +41,7 @@ export interface Keychain {
 
 /** What Lo tells someone on Linux whose system has no keyring that works. */
 const NO_KEYRING =
-  'Lo keeps your GitHub token in GNOME Keyring or KWallet, and found neither running. Install or unlock one, then start Lo again.';
+  'Lo keeps your GitHub token in a keyring, such as GNOME Keyring or KWallet, and none answered. Install or unlock one, then start Lo again.';
 
 /** How Chromium marks, on Linux, what it encrypted with its built-in key rather than a keyring's. */
 const BUILT_IN_KEY = new TextEncoder().encode('v10');
@@ -55,7 +56,8 @@ export class NoKeychain extends Error {
 
 /**
  * Why Lo won't keep or read a token with `storage` now, in words for the person using Lo, or
- * nothing when it will.
+ * nothing when it will. On Linux, what a ciphertext is marked decides as well
+ * ({@link Grants}), since only encrypting shows whether a keyring answered.
  */
 export async function keychainProblem(
   storage: SafeStorage,
@@ -67,11 +69,6 @@ export async function keychainProblem(
   if (keychain.testRun) return undefined;
   if (keychain.mockKeychain) {
     return 'Lo was started with a stand-in keychain (--use-mock-keychain), which would leave your GitHub token unprotected.';
-  }
-  if (keychain.platform === 'linux') {
-    const backend = storage.getSelectedStorageBackend();
-    // `unknown` only before Electron is ready, when nothing can be known to be safe.
-    if (backend === 'basic_text' || backend === 'unknown') return NO_KEYRING;
   }
   return undefined;
 }
@@ -169,8 +166,7 @@ export class Grants implements Secrets {
 
   /**
    * Throws {@link NoKeychain} for what `safeStorage` encrypted with Chromium's built-in key on
-   * Linux, where it says no keyring answered, whatever store it reported: never kept or read
-   * outside a test run.
+   * Linux, marked `v10`, which says no keyring answered: never kept or read outside a test run.
    */
   #checkSealed(sealed: Uint8Array): void {
     if (this.#keychain.testRun || this.#keychain.platform !== 'linux') return;
