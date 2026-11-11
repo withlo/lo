@@ -223,6 +223,9 @@ importers:
       '@lo/design':
         specifier: workspace:*
         version: link:../../design
+      '@lo/git':
+        specifier: workspace:*
+        version: link:../../packages/desktop/git
       '@lo/ui':
         specifier: workspace:*
         version: link:../../packages/desktop/ui
@@ -236,6 +239,9 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
     devDependencies:
+      '@lo/testing':
+        specifier: workspace:*
+        version: link:../../testing
       '@playwright/test':
         specifier: 1.65.0
         version: 1.65.0

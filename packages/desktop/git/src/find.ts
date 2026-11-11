@@ -78,10 +78,11 @@ export function defaultPlaces(platform: NodeJS.Platform): Places {
 }
 
 /**
- * Finds git: on a Mac, Apple's first when the Command Line Tools are installed, then each `git` on
- * `PATH`, then the system's usual folders. The first new enough wins. A git that someone besides
- * this user or root could change is passed over. Without one, it says why: the first git that was
- * too old, else the first passed over, else that there's none.
+ * Finds git: on a Mac, Apple's when the Command Line Tools are installed, then each `git` on
+ * `PATH`, then the system's usual folders. The newest new enough wins, and of those as new, the
+ * first found, so Apple's git never wins over a newer one from Homebrew. A git that someone
+ * besides this user or root could change is passed over. Without one, it says why: the newest git
+ * that was too old, else the first passed over, else that there's none.
  */
 export async function findGit(options: FindOptions): Promise<GitStatus> {
   const places = options.places ?? defaultPlaces(options.platform);
@@ -99,7 +100,8 @@ export async function findGit(options: FindOptions): Promise<GitStatus> {
   candidates.push(...[...folders, ...places.folders].map((folder) => join(folder, 'git')));
 
   const tried = new Set<string>();
-  let tooOld: GitStatus | undefined;
+  // The gits that run, in the order they were found, each with its version.
+  const versions: { program: string; version: GitVersion }[] = [];
   // A git that others could change, which is passed over, and said so when it's the only one.
   let passedOver: GitStatus | undefined;
   for (const candidate of candidates) {
@@ -116,7 +118,14 @@ export async function findGit(options: FindOptions): Promise<GitStatus> {
       };
       continue;
     }
-    const status = await check(candidate, inherited, options.platform);
+    const version = await readVersion(candidate, inherited);
+    if (version !== undefined) versions.push({ program: candidate, version });
+  }
+  // The newest first, and of those as new, the first found: the sort keeps their order.
+  const newestFirst = versions.toSorted((a, b) => compareVersions(b.version, a.version));
+  let tooOld: GitStatus | undefined;
+  for (const { program, version } of newestFirst) {
+    const status = await check(program, inherited, options.platform, version);
     if (status.status === 'found') return status;
     if (status.status === 'tooOld') tooOld ??= status;
   }
@@ -132,12 +141,14 @@ export async function gitAt(
   return check(program, inheritedEnvironment(options.env), options.platform);
 }
 
+/** Checks the git at `program`, which says it's `known`, or asks it when that's not given. */
 async function check(
   program: string,
   inherited: Record<string, string>,
   platform: NodeJS.Platform,
+  known?: GitVersion,
 ): Promise<GitStatus> {
-  const version = await readVersion(program, inherited);
+  const version = known ?? (await readVersion(program, inherited));
   if (version === undefined) return missing(platform);
   const install = installAdvice(platform);
   if (compareVersions(version, MINIMUM_VERSION) < 0) {

@@ -42,7 +42,10 @@ export class CloneLock {
   #users = 0;
   readonly #onFree: (() => void) | undefined;
 
-  /** A lock that tells `onFree` whenever its holder lets go with nobody waiting. */
+  /**
+   * A lock that tells `onFree` whenever its holder lets go with nobody waiting, and whenever the
+   * last repository open on the clone lets go while nobody holds the lock.
+   */
   constructor(onFree?: () => void) {
     this.#onFree = onFree;
   }
@@ -163,6 +166,7 @@ export class CloneLock {
       if (released) return;
       released = true;
       this.#users -= 1;
+      if (this.#users === 0 && this.#holder === undefined) this.#onFree?.();
     };
   }
 

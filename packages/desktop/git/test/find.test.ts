@@ -95,6 +95,52 @@ describe('on a Mac', () => {
     expect(status.status === 'found' && status.git.program).toBe(git);
     expect(existsSync(marker)).toBe(true);
   });
+
+  test('takes a newer git from Homebrew over Apple’s', async () => {
+    const { dir, places } = apple(true);
+    const brew = join(dir, 'homebrew');
+    mkdirSync(brew);
+    // Newer than any git Apple ships.
+    const newer = wrappedGit(join(brew, 'git'), { version: '3.0.0' });
+    const status = await findGit({
+      env: { PATH: '' },
+      platform: 'darwin',
+      places: { ...places, folders: [brew] },
+    });
+    expect(status.status === 'found' && status.git.program).toBe(newer);
+  });
+});
+
+test('takes the newest git new enough wherever it’s found, and the first found of those as new', async () => {
+  const dir = tempFolder();
+  const folder = (name: string) => {
+    mkdirSync(join(dir, name));
+    return join(dir, name);
+  };
+  const [onPath, system] = [folder('path'), folder('system')];
+  wrappedGit(join(onPath, 'git'), { version: '2.45.1' });
+  const newest = wrappedGit(join(system, 'git'), { version: '2.47.0' });
+  const places = { folders: [system], groups };
+
+  const found = await findGit({ env: { PATH: onPath }, platform, places });
+  if (found.status !== 'found') throw new Error(found.status);
+  expect(found.git.program).toBe(newest);
+  expect(found.git.version).toEqual({ major: 2, minor: 47, patch: 0 });
+
+  // Two as new as each other: the first found, as PATH comes before the system's folders.
+  const same = folder('same');
+  const first = wrappedGit(join(same, 'git'), { version: '2.47.0' });
+  const tie = await findGit({ env: { PATH: same }, platform, places });
+  expect(tie.status === 'found' && tie.git.program).toBe(first);
+
+  // A newer git that can't be kept from downloading is passed over for the next newest.
+  const eager = folder('eager');
+  wrappedGit(join(eager, 'git'), {
+    version: '2.48.0',
+    before: 'GIT_NO_LAZY_FETCH=0; export GIT_NO_LAZY_FETCH',
+  });
+  const next = await findGit({ env: { PATH: `${eager}:${onPath}` }, platform, places });
+  expect(next.status === 'found' && next.git.program).toBe(newest);
 });
 
 test('looks on PATH, then in the system’s folders, and takes the first git new enough', async () => {

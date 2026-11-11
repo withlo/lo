@@ -174,9 +174,9 @@ the window find them with `import.meta.glob`.
   either side's code out of them.
 - `main/index.ts` exports `defineFeature(contract, { handlers, start })` by default: a handler for
   every request, and optionally a `start` that runs before the window opens, to publish on the
-  feature's topics. Both get the feature's context: `publish` and `database`. A handler throws an
-  `IpcError` for a failure the window should see; any other error is logged and reaches the window
-  only as `internal`.
+  feature's topics. Both get the feature's context: `publish`, `database` and `git`. A handler
+  throws an `IpcError` for a failure the window should see; any other error is logged and reaches
+  the window only as `internal`.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.
@@ -225,6 +225,25 @@ files or the network for the window.
 - Main always puts the cap in the process's environment, and the process sizes its pool of workers
   from it. A missing or invalid cap is a startup error: the process reports it and exits, and main
   starts it again like after any other exit. It never runs on a pool without a bound.
+
+### Git
+
+Only main runs git, through `@lo/git`, and the background process never sees git or a token.
+`src/main/git.ts` holds it, and features reach it as `git` in their context.
+
+- Once the window is up, main looks for git: on a Mac, Apple's git once the Command Line Tools are
+  installed, then each on `PATH`, then the system's usual folders, and the newest new enough wins.
+  `app.info` says what it found, `checking` until it has, and `app.git` pushes each answer. Asking
+  again (`git.check()`) finds a git installed since.
+- With git, main opens the cache, `Lo` in the system's folder for caches (`Lo Dev` for a build run
+  from source, or `cache` in `LO_USER_DATA_DIR`), as `git.cache`, and cleans it up without anyone
+  waiting. `git.setCap()` sets the size it's kept under.
+- Every git gets an environment of Lo's own making, never main's, and only a fetch gets the
+  account's token, from a source read as each fetch starts. Fetches take the proxy Lo's own requests
+  take.
+- Lo quits once every git has stopped: each is asked to stop, then killed with what it started.
+- A build run from source takes the git to run from `LO_GIT`, a path or `none`, and fetches from
+  `LO_GIT_REMOTE`, a server or folder on this machine, for its tests. A packaged build ignores both.
 
 ## The interface
 

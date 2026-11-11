@@ -9,6 +9,7 @@ import { startBackground, type Background } from './background.ts';
 import { openDatabase } from './database.ts';
 import { backgroundSettings, dataFolder, devServer } from './environment.ts';
 import { loadFeatures, type Feature } from './features.ts';
+import { cacheFolder, createGit, curlProxy, gitSettings } from './git.ts';
 import { serveFeatures } from './ipc.ts';
 import { migrate } from './migrations.ts';
 import { windowUrl } from './policy.ts';
@@ -38,6 +39,13 @@ const folder = dataFolder({ packaged: app.isPackaged, appData: app.getPath('appD
 if (folder) app.setPath('userData', folder);
 const dev = devServer({ packaged: app.isPackaged, env });
 const backgroundOptions = backgroundSettings({ packaged: app.isPackaged, env });
+const gitOptions = gitSettings({ packaged: app.isPackaged, env });
+const cacheRoot = cacheFolder({
+  packaged: app.isPackaged,
+  platform: process.platform,
+  home: app.getPath('home'),
+  env,
+});
 
 // One Lo per data folder. A second launch hands over to the first and quits.
 if (app.requestSingleInstanceLock()) {
@@ -50,10 +58,21 @@ function start(): void {
   let windowSession: Session | undefined;
   let background: Background | undefined;
   let window: BrowserWindow | undefined;
+  // Only main runs git. It looks for git once the window is up, and stops every git as Lo quits.
+  const git = createGit({
+    settings: gitOptions,
+    root: cacheRoot,
+    env,
+    platform: process.platform,
+    // The route Lo's own requests take: `net.fetch`'s, in the default session.
+    proxy: async (address) => curlProxy(await session.defaultSession.resolveProxy(address)),
+    log: (line) => console.error(`git: ${line}`),
+  });
+  let gitStopped = false;
 
   /** Shows the window, opening it if it's closed. Nothing opens until its session is secured. */
-  const show = () => {
-    if (!windowSession) return;
+  const show = (): BrowserWindow | undefined => {
+    if (!windowSession) return undefined;
     if (!window) {
       window = openWindow(windowSession, dev?.href ?? windowUrl);
       background?.attach(window.webContents);
@@ -61,6 +80,7 @@ function start(): void {
     }
     if (window.isMinimized()) window.restore();
     window.focus();
+    return window;
   };
 
   app.on('web-contents-created', (_event, contents) => secureContents(contents, dev));
@@ -68,6 +88,16 @@ function start(): void {
   app.on('activate', show);
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
+  });
+  // Lo quits once every git has stopped, so none is left running.
+  app.on('will-quit', (event) => {
+    if (gitStopped) return;
+    event.preventDefault();
+    void git.stop().finally(() => {
+      gitStopped = true;
+      // Not from inside this event: Electron ignores a quit asked for while it handles one.
+      setImmediate(() => app.quit());
+    });
   });
 
   app
@@ -81,11 +111,15 @@ function start(): void {
       const database = openDatabase(join(app.getPath('userData'), 'lo.db'));
       migrate(database, migrations);
       app.once('will-quit', () => database.close());
-      serveFeatures(features, database, dev);
+      serveFeatures(features, database, git, dev);
       background = startBackground(backgroundOptions);
       app.once('will-quit', () => background?.stop());
       windowSession = secured;
-      show();
+      // Once the window is up, Lo looks for git, then opens its cache and cleans it up: none of
+      // it holds the window up.
+      show()?.once('ready-to-show', () => {
+        git.check().catch((error: unknown) => console.error("Lo couldn't look for git:", error));
+      });
     })
     .catch((error: unknown) => {
       if (error instanceof StartupError) {
