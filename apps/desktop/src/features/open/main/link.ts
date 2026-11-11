@@ -226,16 +226,32 @@ export async function link(
   const { owner, repo, number } = read.pull;
   const pull = new PullRef(owner, repo, number);
   let choice: Choice | undefined;
+  let as: { login: string } | undefined;
   try {
     choice = await choose(pull, options.github, login);
+    if (choice.kind === 'open' && choice.acting.kind === 'account') {
+      as = { login: choice.acting.login };
+    }
   } catch (error) {
-    // The tab asks again once it's shown, and says why it can't open, if it can't.
+    // The tab asks again once it's shown, and says why it can't open, if it can't. A Recent row's
+    // own account, still signed in, opens it meanwhile, with what Lo saved of it.
     options.log(`choosing the account for ${pull.toString()}: ${describe(error)}`);
+    as = await signedIn(options.github, login);
   }
-  const acting = choice?.kind === 'open' ? choice.acting : undefined;
-  const as = acting?.kind === 'account' ? { login: acting.login } : undefined;
   const id = options.tabs.open({ kind: 'pull', owner, repo, number }, as);
   return { kind: 'tab', id, choice: choiceOf(choice) };
+}
+
+/** `login` as Lo has it, when it's one of Lo's accounts and signed in. */
+async function signedIn(
+  github: LinkGithub,
+  login: string | undefined,
+): Promise<{ login: string } | undefined> {
+  if (login === undefined) return undefined;
+  const found = (await github.accounts()).find(
+    ({ account, signedOut }) => signedOut === undefined && sameLogin(account.login, login),
+  );
+  return found === undefined ? undefined : { login: found.account.login };
 }
 
 /** How the account was chosen, for what `link` answers. */

@@ -35,8 +35,11 @@ const test = base.extend<{
   // oxlint-disable-next-line no-empty-pattern
   github: async ({}, use) => {
     const server = await serveReplay('app_e2e');
-    await use(server);
-    await server.close();
+    // Closed once, by the test that takes GitHub away or after it.
+    let closing: Promise<void> | undefined;
+    const close = () => (closing ??= server.close());
+    await use({ ...server, close });
+    await close();
   },
   // oxlint-disable-next-line no-empty-pattern
   remote: async ({}, use) => {
@@ -205,6 +208,7 @@ test.describe('started with a link', () => {
 
 test('lists the pull requests opened lately, filters them and opens one by its keys', async ({
   page,
+  github,
 }) => {
   await accountIn(page);
   await expect(page.getByText('No pull requests yet')).toBeVisible();
@@ -212,10 +216,14 @@ test('lists the pull requests opened lately, filters them and opens one by its k
   await expect(box(page).getByRole('option')).toContainText('as rozed-bot');
   await page.keyboard.press('Enter');
   await expect(heading(page)).toHaveText(TITLE);
-  // Its poller has read it, which keeps it among the recent ones.
+  // Its poller has read it, which keeps it among the recent ones, with its title.
   await expect
     .poll(async () => JSON.stringify(await page.evaluate(() => window.lo.invoke('open.recent'))))
-    .toContain('"number":78');
+    .toContain(TITLE);
+  // Opened again, its poller would read the repository's list again, which the cassette doesn't
+  // hold, so GitHub goes away first, which checks everything asked of it so far: the row opens
+  // with its account, from what Lo saved.
+  await github.close();
   // Once the box has closed: keys under it are its own until then.
   await expect(box(page)).toBeHidden();
   await page.keyboard.press(cmd('W'));
@@ -239,6 +247,7 @@ test('lists the pull requests opened lately, filters them and opens one by its k
   await page.keyboard.press('j');
   await page.keyboard.press('Enter');
   await expect(heading(page)).toHaveText(TITLE);
+  await expect(header(page)).toContainText('as rozed-bot');
 });
 
 test('fills the box from the clipboard, and never takes anything else on it', async ({

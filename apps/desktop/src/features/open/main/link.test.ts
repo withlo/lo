@@ -292,6 +292,13 @@ describe('link', () => {
     expect(made.logged.join('\n')).toContain('choosing the account for rozed-dev/e2e#78');
   });
 
+  it('opens a row with its own account while GitHub can’t be asked, if it’s signed in', async () => {
+    const made = options(await signedIn(['rozed-bot'], offline));
+    await link(E2E, made.options, { login: 'Rozed-Bot' });
+    await link(E2E, made.options, { login: 'gone-bot' });
+    expect(made.tabs.opened.map(({ as }) => as)).toEqual([{ login: 'rozed-bot' }, undefined]);
+  });
+
   it('hands any other web link to the browser, and opens nothing for what isn’t a link', async () => {
     const made = options(await signedIn([], nothing));
     expect(await link('https://github.com/rozed-dev/e2e/issues/12', made.options)).toEqual({
