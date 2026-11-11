@@ -12,18 +12,25 @@ export type {
   DiffNote,
   DiffView,
   FileDiff,
+  FileEvents,
   FileHeader,
+  FileInit,
+  FileView,
   Fold,
   HeaderTarget,
   JumpTo,
   KeySource,
   LineTarget,
+  Mark,
   Misalignment,
   Mode,
   MovedCode,
   MovedEnd,
   Movement,
   PassStats,
+  PeekAnswer,
+  PeekSource,
+  PeekView,
   Place,
   Probe,
   Send,
@@ -37,4 +44,5 @@ export type {
   WordRange,
 } from './api.ts';
 export { diffMotions } from './api.ts';
+export { createFileView } from './file.ts';
 export { createDiffView } from './view.ts';

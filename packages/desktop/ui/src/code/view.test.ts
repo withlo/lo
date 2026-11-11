@@ -232,9 +232,19 @@ function labels(label: string): (string | null)[] {
   );
 }
 
-/** Lines 8 to 22 of `lines` as placeholders, as GitHub's diff leaves them out. */
+/** Lines 7 to 24 of `lines` as placeholders, as GitHub's diff leaves them out. */
 function placeholders(lines: string[]): string[] {
-  return lines.map((each, index) => (index >= 7 && index <= 21 ? '' : each));
+  return lines.map((each, index) => (index >= 6 && index <= 23 ? '' : each));
+}
+
+/** Lines 7 to 24 of `lines` left out, not held as placeholders. */
+function leftOut(lines: string[]): string[] {
+  return [...lines.slice(0, 6), ...lines.slice(24)];
+}
+
+/** The last of ten lines as a placeholder. */
+function lastBlank(lines: string[]): string[] {
+  return lines.map((each, index) => (index === 9 ? '' : each));
 }
 
 /** Lines 1 and 9 on of `lines` as placeholders. */
@@ -870,7 +880,10 @@ describe('loading', () => {
 });
 
 describe('gaps', () => {
-  /** `e`: GitHub's diff of a 30-line file, which left out lines 8 to 22 on both sides. */
+  /**
+   * `e`: GitHub's diff of a 30-line file whose lines 3 and 28 changed, which left out lines 7 to
+   * 24 on both sides, outside its three lines of context.
+   */
   const eOld = numbered(30, 'e');
   const eNew = eOld.map((each, index) => (index === 2 || index === 27 ? `${each}!` : each));
   const gapped: DiffFile = {
@@ -879,8 +892,8 @@ describe('gaps', () => {
     change: 'modified',
     lines: { old: placeholders(eOld), new: placeholders(eNew) },
     gaps: [
-      { side: 'old', from: 8, to: 22 },
-      { side: 'new', from: 8, to: 22 },
+      { side: 'old', from: 7, to: 24 },
+      { side: 'new', from: 7, to: 24 },
     ],
     header: { additions: 2, deletions: 2 },
   };
@@ -934,6 +947,33 @@ describe('gaps', () => {
     }
   });
 
+  test('real unchanged lines beside a gap collapse and open as usual', () => {
+    // Line 3 changed: lines 7 to 10 are outside the hunk, and only line 10 is a placeholder.
+    const gOld = numbered(10, 'g');
+    const gNew = gOld.map((each, index) => (index === 2 ? `${each}!` : each));
+    const lines = { old: lastBlank(gOld), new: lastBlank(gNew) };
+    const shown = open(events(), {
+      files: [
+        {
+          id: 'g',
+          path: 'src/g.ts',
+          change: 'modified',
+          lines,
+          gaps: [
+            { side: 'old', from: 10, to: 10 },
+            { side: 'new', from: 10, to: 10 },
+          ],
+          header: { additions: 1, deletions: 1 },
+        },
+      ],
+    });
+    shown.setDiff('g', diffOf(lines));
+    expect(runs()).toEqual(['3 unchanged lines', '1 unchanged line, not loaded yet']);
+    shown.fold(onLine('g', 'new', 8), 'open');
+    expect(runs()).toEqual(['1 unchanged line, not loaded yet']);
+    expect(shown.lines({ file: 'g', side: 'new', from: 7, to: 9 })).toEqual(['g 7', 'g 8', 'g 9']);
+  });
+
   test('the whole file comes at the same place, with its diff, and the cursor stays', () => {
     const on = events();
     const shown = open(on, { files: [gapped] });
@@ -955,6 +995,73 @@ describe('gaps', () => {
     expect(lineOf('e 26')).toBe(drawn);
     shown.setLayout('inline');
     expect(shown.probe.cursor()?.at).toEqual(onLine('e', 'new', 26, 0));
+  });
+
+  test("the whole file after a diff that stopped short of it adds the rest, the cursor's line kept", () => {
+    // GitHub's diff of `e` with only line 3 changed: it stops after its context, at line 6.
+    const tOld = numbered(30, 'e');
+    const tNew = tOld.map((each, index) => (index === 2 ? `${each}!` : each));
+    const short = { old: tOld.slice(0, 6), new: tNew.slice(0, 6) };
+    const on = events();
+    const shown = open(on, {
+      files: [
+        { id: 'e', path: 'src/e.ts', change: 'modified', lines: short, header: gapped.header },
+      ],
+    });
+    shown.setDiff('e', diffOf(short));
+    focusable();
+    shown.reveal(onLine('e', 'new', 5, 2));
+    shown.focus();
+    const content = vimIn('After').content;
+    const lineOf = (text: string) =>
+      [...content.querySelectorAll('.cm-line')].find((each) => each.textContent === text);
+    const drawn = lineOf('e 5');
+    on.cursor.mockClear();
+    shown.setLines('e', { old: tOld, new: tNew }, diffOf({ old: tOld, new: tNew }));
+    expect(shown.probe.cursor()?.at).toEqual(onLine('e', 'new', 5, 2));
+    expect(on.cursor).not.toHaveBeenCalled();
+    expect(runs()).toEqual(['24 unchanged lines']);
+    // The line under the cursor wasn't drawn again: the rest came after it, and nothing moved.
+    expect(lineOf('e 5')).toBe(drawn);
+    // Without its diff, the short one doesn't fit the whole file, which waits for its own.
+    shown.setLines('e', short, diffOf(short));
+    shown.setLines('e', { old: tOld, new: tNew });
+    expect(notes()).toEqual(['Working out the diff…']);
+  });
+
+  test('lines that were left out, not held as placeholders, swap whole, the cursor on its text', () => {
+    // GitHub's diff of `e` with lines 7 to 24 left out altogether: its line 8 is the file's 26.
+    const short = { old: leftOut(eOld), new: leftOut(eNew) };
+    for (const layout of ['split', 'inline'] as const) {
+      view?.destroy();
+      parent?.remove();
+      const shown = open(events(), {
+        files: [
+          { id: 'e', path: 'src/e.ts', change: 'modified', lines: short, header: gapped.header },
+        ],
+        layout,
+      });
+      shown.setDiff('e', diffOf(short));
+      focusable();
+      shown.reveal(onLine('e', 'new', 8, 2));
+      shown.focus();
+      shown.setLines('e', { old: eOld, new: eNew }, diffOf({ old: eOld, new: eNew }));
+      expect(shown.probe.cursor()?.at).toEqual(onLine('e', 'new', 26, 2));
+    }
+  });
+
+  test('a shown file keeps its diff only while its lines outside the gaps stay', () => {
+    const shown = gappedView();
+    // The gaps filled, and nothing else changed: the diff still fits.
+    shown.setLines('e', { old: eOld, new: eNew });
+    expect(notes()).toEqual([]);
+    expect(runs()).toEqual(['18 unchanged lines']);
+    // As many lines, but line 3 back as it was and line 5 changed: the diff waits for its new one.
+    const other = eOld.map((each, index) => (index === 4 || index === 27 ? `${each}!` : each));
+    shown.setLines('e', { old: eOld, new: other });
+    expect(notes()).toEqual(['Working out the diff…']);
+    shown.setDiff('e', diffOf({ old: eOld, new: other }));
+    expect(notes()).toEqual([]);
   });
 
   test('the whole file fills them, and they open', () => {

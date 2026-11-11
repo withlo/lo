@@ -210,7 +210,9 @@ holding:
 
 - It runs in Chromium's sandbox, with context isolation and without Node.
 - It loads only Lo's own files, from the `lo-app:` scheme, never from `file:`. Its content security
-  policy, sent as a header, allows no inline scripts or styles and nothing from elsewhere.
+  policy, sent as a header, allows no inline scripts and nothing from elsewhere, and no inline
+  styles but the style elements that carry the page's nonce, which the code views make. Each load of
+  the page gets a new nonce, which `app.info` hands the page.
 - Its session cancels every request outside `lo-app:`. WebRTC, which sends nothing the session can
   cancel, may use only the session's proxy, which leads nowhere. Every permission and every download
   is refused. It can't navigate away, follow a redirect, open other windows or attach a webview.

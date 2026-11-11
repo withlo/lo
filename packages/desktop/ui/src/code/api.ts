@@ -225,11 +225,14 @@ export interface DiffView extends KeySource {
   setTokens(file: string, side: Side, triples: Uint32Array): void;
   /**
    * Brings in a file's lines: those of a file kept out, as after `load`, or the whole of one in
-   * place of what it showed, its gaps filled, as when the local copy replaces GitHub's diff. In
-   * place, only the lines that differ change, so the cursor keeps its line and the scroll its
-   * place. `diff`, given, shows with the new lines at once: pass it when swapping a shown file.
-   * Without it, a kept-out file's diff follows with `setDiff`, and a shown file keeps its own
-   * while its line counts stay. Highlighting follows with `setTokens`.
+   * place of what it showed, its gaps filled, as when the local copy replaces GitHub's diff. When
+   * the new lines hold every old one at the same place, gaps aside, with any more after them, only
+   * the lines that differ change, so the cursor keeps its line and the scroll its place; otherwise
+   * every line is replaced, and the cursor goes to the nearest line with the text it was on.
+   * `diff`, given, shows with the new lines at once: pass it when swapping a shown file. Without
+   * it, a kept-out file's diff follows with `setDiff`, and a shown file keeps its own only while
+   * its lines outside its gaps stay as they were, and as many, and otherwise waits for `setDiff`.
+   * Highlighting follows with `setTokens`.
    */
   setLines(
     file: string,
@@ -284,6 +287,90 @@ export interface DiffEvents {
   jumped(from: Spot, to: Spot): void;
   /** `za` on a file kept out: load its lines, then `setLines`, or `loadFailed`. */
   load(file: string): void;
+  /** A right-click: the registry's menu for what was clicked. */
+  menu(target: Target, x: number, y: number): void;
+}
+
+/**
+ * Something a code view marks on a file's lines. One kind so far: lines picked out, as those a
+ * definition or an overview's block points at are when the whole file opens on them.
+ */
+export interface Mark {
+  kind: 'lines';
+  at: Span;
+}
+
+/** Where a peek's answer came from: a language server, or Lo's own reading of the syntax. */
+export type PeekSource = 'server' | 'syntax';
+
+/** One of a peek's answers: a line somewhere in the repository. */
+export interface PeekAnswer {
+  path: string;
+  /** From 1. */
+  line: number;
+  source: PeekSource;
+}
+
+/** What a peek under a line shows (`gd`, `gr`): its answers, and the one whose code shows. */
+export interface PeekView {
+  answers: readonly PeekAnswer[];
+  /** The answer shown, by its place in `answers`. */
+  shown: number;
+}
+
+/** A file shown whole and read-only, as a whole-file view is given it. */
+export interface FileInit {
+  /** The caller's name for the file, which every place and event uses. */
+  id: string;
+  path: string;
+  /**
+   * Which version it is, and so the side its places are on: the head's, `new`, unless it's the
+   * base's, `old`, as for a file the pull request deletes.
+   */
+  side?: Side;
+  lines: readonly string[];
+  /** `@lo/syntax`'s triples over its text, when they're ready; `setTokens` brings them later. */
+  tokens?: Uint32Array;
+  marks?: readonly Mark[];
+  /** The keys Vim runs Lo's motions with, and the keymap's `vim` lines, from the registry. */
+  vimKeys: readonly VimKey[];
+  /** The nonce the window's content security policy lets the view's style elements carry. */
+  nonce: string;
+}
+
+/**
+ * A whole file, read-only: an unchanged file, a file `gf` opens, a definition's file. Its places
+ * are on its file and side, and its cursor is on a line, or on its header when it has no lines.
+ */
+export interface FileView extends KeySource {
+  /** Highlights it from `@lo/syntax`'s `[from, to, token]` triples over its text. */
+  setTokens(triples: Uint32Array): void;
+  /** Replaces its marks. Marks on another file, or on its other side, are left out. */
+  setMarks(marks: readonly Mark[]): void;
+  /**
+   * Moves the cursor to what `at` names, and brings it on screen: a line, the last line `v`
+   * selected, its header or its file, which are its first line. Says whether it could: a place on
+   * another file or side, or a target of another kind, it can't. Not a jump, and focus stays where
+   * it is: `focus()` takes it there.
+   */
+  reveal(at: Target): boolean;
+  /** Shows a peek under the line at `at`, or closes the one there when `peek` is undefined. */
+  peek(at: Place, peek: PeekView | undefined): void;
+  focus(): void;
+  destroy(): void;
+}
+
+/** What a whole-file view tells its caller. */
+export interface FileEvents {
+  /** The cursor moved: for the status bar. */
+  cursor(at: Spot): void;
+  /** Vim's mode changed in the view's code: for the status bar. */
+  mode(mode: Mode): void;
+  /**
+   * A jump, from one spot to another: a Vim motion that jumps (`G`, `/`, `%`). The caller records
+   * `from` in the tab's history, which `⌃o` walks back with `reveal`.
+   */
+  jumped(from: Spot, to: Spot): void;
   /** A right-click: the registry's menu for what was clicked. */
   menu(target: Target, x: number, y: number): void;
 }

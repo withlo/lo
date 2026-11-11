@@ -4,6 +4,7 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client, type Client } from '../../../window/ipc.ts';
 import { contract, type Theme } from '../contract.ts';
 import keys from '../keys.ts';
+import { offerCodeViews } from './codeviews.ts';
 
 /** The design system themes everything under `<html>` from its `data-theme`. */
 function showTheme(theme: Theme): void {
@@ -32,7 +33,10 @@ export default {
     app.subscribe('theme', showTheme);
     app
       .info()
-      .then(({ theme }) => showTheme(theme))
+      .then(({ theme, packaged, nonce }) => {
+        showTheme(theme);
+        if (!packaged) offerCodeViews(nonce);
+      })
       .catch((error: unknown) => console.error("Lo couldn't read the theme:", error));
   },
 } satisfies WindowFeature;
