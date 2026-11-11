@@ -441,10 +441,11 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
 }
 
 /**
- * The packs `index-pack` writes in a folder as they come in, `tmp_pack_*`, from when a fetch
- * starts: those already there are another fetch's, left behind.
+ * The packs a fetch writes in a folder, `objects/pack`, from when it starts: each `tmp_pack_*`
+ * `index-pack` writes as it comes in, and each pack it has finished and named, since a fetch may
+ * bring more than one. Those already there when it starts are another fetch's.
  */
-class PackFiles {
+export class PackFiles {
   readonly #folder: string;
   readonly #before: ReadonlySet<string>;
 
@@ -459,7 +460,10 @@ class PackFiles {
 
   static async #names(folder: string): Promise<string[]> {
     const names = await readdir(folder).catch(() => []);
-    return names.filter((name) => name.startsWith('tmp_pack_'));
+    return names.filter(
+      (name) =>
+        name.startsWith('tmp_pack_') || (name.startsWith('pack-') && name.endsWith('.pack')),
+    );
   }
 
   /** How many bytes the fetch's packs hold on disk so far. */
@@ -467,7 +471,7 @@ class PackFiles {
     let total = 0;
     for (const name of await PackFiles.#names(this.#folder)) {
       if (this.#before.has(name)) continue;
-      // Gone once git has finished it and named it for what it holds.
+      // A pack being written is renamed once it's done, so it's counted once, by either name.
       total += (await stat(join(this.#folder, name)).catch(() => undefined))?.size ?? 0;
     }
     return total;

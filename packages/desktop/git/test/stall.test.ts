@@ -340,13 +340,14 @@ test('a fetch that never connects stops at the connect limit', async () => {
 
 /**
  * A git, in `dir`, whose fetch leaves what one stopped halfway would: the lock of a ref it
- * writes, the pack it was writing and that pack's index, and a finished pack's keep file. It
+ * writes, with `reftableLock` the reftable stack's lock too, the pack it was writing and that
+ * pack's index, and a finished pack's keep file. It
  * starts a process of its own, as git starts git-remote-https, writes both their IDs into
  * `dir`'s `pids`, says GitHub is counting objects, and waits. Asked to stop, with SIGTERM, it
  * writes `dir`'s `terminated` and exits, leaving all of it, as a git killed before it could clean
  * up would. Every other command is git's.
  */
-async function stuckGit(dir: string): Promise<Git> {
+async function stuckGit(dir: string, options: { reftableLock?: boolean } = {}): Promise<Git> {
   const real = gitProgram();
   const pids = join(dir, 'pids');
   const program = script(
@@ -356,6 +357,8 @@ async function stuckGit(dir: string): Promise<Git> {
       'for arg; do case "$arg" in --git-dir=*) git_dir="${arg#--git-dir=}";; esac; done',
       'mkdir -p "$git_dir/refs/lo/pull/1" "$git_dir/objects/pack"',
       'touch "$git_dir/refs/lo/pull/1/head.lock"',
+      // In a clone whose refs are in a reftable, any ref git writes takes the table's lock.
+      options.reftableLock ? 'touch "$git_dir/reftable/tables.list.lock"' : '',
       // As `index-pack` makes them, before the pack's first byte comes in.
       'touch "$git_dir/objects/pack/tmp_pack_stuck" "$git_dir/objects/pack/tmp_idx_stuck"',
       'echo "fetch-pack $$ on test" > "$git_dir/objects/pack/pack-1.keep"',
@@ -502,6 +505,29 @@ for (const format of ['files', 'reftable'] as const) {
     },
   );
 }
+
+test.skipIf(!refFormats())(
+  'a stopped fetch clears the lock it took while its clone is open to read',
+  async () => {
+    const dir = tempFolder();
+    const cache = await cacheFor('https://127.0.0.1:1', {
+      git: await stuckGit(dir, { reftableLock: true }),
+      limits: { ...DEFAULT_FETCH_LIMITS, fetch: 1000, firstFetch: 1000 },
+    });
+    const folder = cache.repoFolder('owner', 'repo');
+    cloneWithRefs(folder, 'reftable', 'https://127.0.0.1:1/owner/repo.git');
+    const repo = await cache.open('owner', 'repo');
+    // A read starts the clone's long-lived reader, which runs on while the repository is open.
+    expect(await repo.readBlob(parseOid(FAKE_OID))).toBeUndefined();
+
+    const error = await failure(repo.fetchPull(PULL_ONE));
+
+    expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'timedOut' });
+    // The reader takes no lock, so the stack's lock is the stopped fetch's, and it goes.
+    expect(existsSync(join(folder, 'reftable', 'tables.list.lock'))).toBe(false);
+    expect(existsSync(join(folder, 'refs', 'lo', 'pull', '1', 'head.lock'))).toBe(false);
+  },
+);
 
 /** Whether the test's git can make a repository whose refs are in a reftable. */
 function refFormats(): boolean {

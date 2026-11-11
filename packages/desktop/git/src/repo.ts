@@ -205,7 +205,9 @@ export class Repo {
     this.#proxy = parts.proxy;
     this.#progress = parts.progress;
     this.#reader = new ObjectReader(() =>
-      this.#runner.command({ gitDir: this.folder }).arg('cat-file', '--batch-command'),
+      this.#runner
+        .command({ gitDir: this.folder }, { readsOnly: true })
+        .arg('cat-file', '--batch-command'),
     );
   }
 
