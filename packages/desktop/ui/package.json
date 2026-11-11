@@ -16,7 +16,7 @@
   },
   "scripts": {
     "codegen": "node scripts/theme.ts && prettier --write src/theme.css",
-    "lint": "oxlint && node scripts/check-classes.ts src",
+    "lint": "oxlint && node scripts/check-classes.ts src && node scripts/check-surface.ts",
     "test": "vitest run --root ../../.. --project @lo/ui"
   },
   "dependencies": {
@@ -51,6 +51,21 @@
       "platform:desktop"
     ],
     "targets": {
+      "lint": {
+        "dependsOn": [
+          "^typecheck"
+        ],
+        "inputs": [
+          "default",
+          "^production",
+          "{workspaceRoot}/.oxlintrc.json",
+          "{workspaceRoot}/scripts/oxlint/plugin.ts",
+          {
+            "dependentTasksOutputFiles": "**/*.{d.ts,d.cts,d.mts,tsbuildinfo}",
+            "transitive": true
+          }
+        ]
+      },
       "codegen": {
         "inputs": [
           "{workspaceRoot}/design/tokens.json",

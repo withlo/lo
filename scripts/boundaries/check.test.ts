@@ -804,6 +804,31 @@ describe('resolution', () => {
     ]);
   });
 
+  test("an extends that can't be followed is reported, since it could hide paths", () => {
+    expect(
+      check({
+        'packages/core/review/tsconfig.json': json({ extends: '.\\config\\base.json' }),
+        'packages/core/review/config/base.json': json({ compilerOptions: { paths: {} } }),
+        'packages/desktop/git/tsconfig.json': json({ extends: ['./base.json', './missing.json'] }),
+        'packages/desktop/git/base.json': json({ compilerOptions: { strict: true } }),
+        'packages/desktop/ui/tsconfig.json': json({ extends: '@acme/tsconfig/base.json' }),
+      }),
+    ).toEqual([
+      violation(
+        'packages/core/review/tsconfig.json:2',
+        String.raw`extends .\config\base.json, but TypeScript reads a backslash in a path as a slash and this check doesn't`,
+      ),
+      violation(
+        'packages/desktop/git/tsconfig.json:2',
+        `extends ./missing.json, which can't be found, so whether it sets compilerOptions.paths can't be checked`,
+      ),
+      violation(
+        'packages/desktop/ui/tsconfig.json:2',
+        "extends @acme/tsconfig/base.json, which can't be found",
+      ),
+    ]);
+  });
+
   test("a URL is refused, since the check can't follow it", () => {
     expect(
       check({
@@ -957,6 +982,191 @@ describe('resolution', () => {
         'points a dependency at a folder (zod: link:./shared/zod)',
       ),
       violation('pnpm-workspace.yaml:5', 'points a dependency at a folder'),
+    ]);
+  });
+});
+
+describe('CodeMirror', () => {
+  const code = 'packages/desktop/ui/src/code';
+
+  /** Every way a file can refer to CodeMirror's packages, one per line. */
+  const planted = [
+    `/// <reference types="@codemirror/language" />`,
+    `import { EditorView } from '@codemirror/view';`,
+    `import type { Extension } from '@codemirror/state';`,
+    `type Tree = import('@lezer/common').Tree;`,
+    `export * from '@codemirror/commands';`,
+    `export { vim } from '@replit/codemirror-vim';`,
+    `const { basicSetup } = await import('codemirror');`,
+    `declare module '@codemirror/view' { interface EditorView { lo: true } }`,
+  ].join('\n');
+
+  test('only the code views use it, however a file refers to it', () => {
+    const outside = (file: string) => [
+      violation(`${file}:1`, `references @codemirror/language: that's part of CodeMirror`),
+      violation(
+        `${file}:2`,
+        `imports @codemirror/view: that's part of CodeMirror, which only ${code}/ uses; everything else reaches the code views through @lo/ui/code`,
+      ),
+      violation(`${file}:3`, `imports @codemirror/state: that's part of CodeMirror`),
+      violation(`${file}:4`, `imports @lezer/common: that's part of CodeMirror`),
+      violation(`${file}:5`, `imports @codemirror/commands: that's part of CodeMirror`),
+      violation(`${file}:6`, `imports @replit/codemirror-vim: that's part of CodeMirror`),
+      violation(`${file}:7`, `imports codemirror: that's part of CodeMirror`),
+      violation(`${file}:8`, `declares module @codemirror/view: that's part of CodeMirror`),
+    ];
+    expect(
+      check({
+        [`${code}/view.ts`]: planted,
+        [`${code}/view.test.ts`]: planted,
+        [`${code}/widgets/thread.ts`]: planted,
+        'packages/desktop/ui/src/Thread.tsx': planted,
+        'packages/desktop/ui/test/view.ts': planted,
+        'apps/desktop/src/window/diff.ts': planted,
+      }),
+    ).toEqual([
+      ...outside('apps/desktop/src/window/diff.ts'),
+      ...outside('packages/desktop/ui/src/Thread.tsx'),
+      ...outside('packages/desktop/ui/test/view.ts'),
+    ]);
+  });
+
+  test("only ui's package.json lists it, aliases included, and an alias carries the rule", () => {
+    expect(
+      check({
+        'packages/desktop/ui/package.json': json({
+          name: '@lo/ui',
+          dependencies: { '@codemirror/view': '6.43.15', cmv: 'npm:@codemirror/view@6.43.15' },
+          devDependencies: { '@lezer/highlight': '1.2.5' },
+        }),
+        [`${code}/view.ts`]: `import { EditorView } from 'cmv';`,
+        'packages/desktop/ui/src/Thread.tsx': `import { EditorView } from 'cmv';`,
+        'apps/desktop/package.json': json({
+          name: '@lo/desktop',
+          dependencies: { '@codemirror/view': '6.43.15', editor: 'npm:@codemirror/state@6.7.6' },
+          devDependencies: { vim: 'npm:@replit/codemirror-vim@6.4.0' },
+        }),
+        'apps/desktop/src/window/diff.ts': `import { EditorState } from 'editor';`,
+        'package.json': json({ name: 'lo', devDependencies: { '@codemirror/view': '6.43.15' } }),
+      }),
+    ).toEqual([
+      violation(
+        'apps/desktop/package.json:4',
+        `lists "@codemirror/view": "6.43.15" in dependencies: that's part of CodeMirror, which only ${code}/ uses`,
+      ),
+      violation(
+        'apps/desktop/package.json:5',
+        `lists "editor": "npm:@codemirror/state@6.7.6" in dependencies: that's part of CodeMirror`,
+      ),
+      violation(
+        'apps/desktop/package.json:8',
+        `lists "vim": "npm:@replit/codemirror-vim@6.4.0" in devDependencies: that's part of CodeMirror`,
+      ),
+      violation('apps/desktop/src/window/diff.ts:1', `imports editor: that's part of CodeMirror`),
+      violation(
+        'package.json:4',
+        `lists "@codemirror/view": "6.43.15" in devDependencies: that's part of CodeMirror`,
+      ),
+      violation('packages/desktop/ui/src/Thread.tsx:1', `imports cmv: that's part of CodeMirror`),
+    ]);
+  });
+
+  test("an installed alias resolves to pnpm's copy of the package it names", () => {
+    const store = 'node_modules/.pnpm/@codemirror+view@6.43.15/node_modules/@codemirror/view';
+    expect(
+      checkWorkspace({
+        files: {
+          [`${store}/package.json`]: json({ name: '@codemirror/view', main: 'dist/index.js' }),
+          [`${store}/dist/index.js`]: `export class EditorView {}`,
+          [`${code}/view.ts`]: `import { EditorView } from '@codemirror/view';`,
+          'apps/desktop/src/window/diff.ts': `import { EditorView } from 'cm/dist/index.js';`,
+        },
+        links: {
+          'packages/desktop/ui/node_modules/@codemirror/view': `../../../../../${store}`,
+          'apps/desktop/node_modules/cm': `../../../${store}`,
+        },
+      }),
+    ).toEqual([
+      violation(
+        'apps/desktop/src/window/diff.ts:1',
+        `imports cm/dist/index.js: that's part of CodeMirror`,
+      ),
+    ]);
+  });
+
+  test("Nx's edges to it come only from ui", () => {
+    const edges = [
+      { source: 'ui', target: 'npm:@codemirror/view' },
+      { source: 'ui', target: 'npm:@replit/codemirror-vim' },
+      { source: 'desktop', target: 'npm:@codemirror/view' },
+      { source: 'git', target: 'npm:@lezer/highlight@1.2.5' },
+    ];
+    expect(checkWorkspace({ edges })).toEqual([
+      violation(
+        'apps/desktop',
+        `depends on npm:@codemirror/view in Nx's project graph: that's part of CodeMirror`,
+      ),
+      violation(
+        'packages/desktop/git',
+        `depends on npm:@lezer/highlight@1.2.5 in Nx's project graph: that's part of CodeMirror`,
+      ),
+    ]);
+  });
+
+  test('everything outside the folder reaches the code views through its index.ts', () => {
+    expect(
+      checkWorkspace({
+        files: {
+          'packages/desktop/ui/package.json': json({
+            name: '@lo/ui',
+            exports: {
+              '.': './src/index.ts',
+              './code': './src/code/index.ts',
+              './code/view.css': './src/code/view.css',
+              './code/*': './src/code/*',
+              './src/*': './src/*',
+            },
+          }),
+          [`${code}/index.ts`]: `export { createDiffView } from './view.ts';`,
+          [`${code}/view.ts`]: `import { rows } from './rows.ts';\nexport const createDiffView = 1;`,
+          [`${code}/rows.ts`]: `export const rows = 1;`,
+          [`${code}/view.css`]: `.cm-editor {}`,
+          'packages/desktop/ui/src/index.ts': [
+            `export * from './code/index.ts';`,
+            `export * from './code';`,
+            `import { rows } from './code/rows.ts';`,
+            `import { createDiffView } from './view.ts';`,
+          ].join('\n'),
+          'packages/desktop/ui/test/view.ts': `import { rows } from '../src/code/rows.ts';`,
+          'apps/desktop/src/window/diff.ts': [
+            `import { createDiffView } from '@lo/ui/code';`,
+            `import '@lo/ui/code/view.css';`,
+            `import { rows } from '@lo/ui/src/code/rows.ts';`,
+          ].join('\n'),
+        },
+        links: { 'packages/desktop/ui/src/view.ts': './code/view.ts' },
+      }),
+    ).toEqual([
+      violation(
+        'apps/desktop/src/window/diff.ts:3',
+        `imports @lo/ui/src/code/rows.ts: packages/desktop/ui/package.json maps it to ./src/code/rows.ts; that's rows.ts in ${code}/, and everything outside that folder reaches the code views through its index.ts, @lo/ui/code`,
+      ),
+      violation(
+        'packages/desktop/ui/package.json:7',
+        `maps "./code/*" to "./src/code/*" in exports: that's x in ${code}/`,
+      ),
+      violation(
+        'packages/desktop/ui/src/index.ts:3',
+        `imports ./code/rows.ts: that's rows.ts in ${code}/`,
+      ),
+      violation(
+        'packages/desktop/ui/src/index.ts:4',
+        `imports ./view.ts: that's view.ts in ${code}/`,
+      ),
+      violation(
+        'packages/desktop/ui/test/view.ts:1',
+        `imports ../src/code/rows.ts: that's rows.ts in ${code}/`,
+      ),
     ]);
   });
 });

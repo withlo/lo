@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 
 import { parseJson } from '@nx/devkit';
 
-import { importsOf, ParseError, type Import } from './imports.ts';
+import { importsOf, ParseError, referencesOf, type Import, type References } from './imports.ts';
 
 /** A project as Nx describes it. */
 export interface Project {
@@ -62,8 +62,47 @@ export function isTest(pathInProject: string): boolean {
   return /(?:^|\/)(?:test|e2e)\//.test(pathInProject) || /\.test\.[^/]+$/.test(pathInProject);
 }
 
+/**
+ * The code views' folder, the only one that uses CodeMirror. Everything else reaches the code views
+ * through its `index.ts`, `@lo/ui/code`, so that changing editors rewrites only this folder.
+ */
+const codeFolder = 'packages/desktop/ui/src/code';
+
+/**
+ * Whether a package is part of CodeMirror: one of its own, the `codemirror` bundle of them, Lezer's
+ * parsers, or the Vim mode (`@replit/codemirror-vim` and its core).
+ */
+function isCodeMirror(name: string): boolean {
+  return /^(?:@codemirror\/|@lezer\/|codemirror$|@replit\/codemirror-vim(?:$|-))/.test(name);
+}
+
+const codeMirror = `that's part of CodeMirror, which only ${codeFolder}/ uses; everything else reaches the code views through @lo/ui/code`;
+
+/**
+ * The path of `file`, relative to the workspace's root, inside the code views' folder, when it's
+ * there and isn't one of the files shared outside it: its `index.ts` and its stylesheets.
+ */
+function codeInternal(file: string): string | undefined {
+  if (!file.startsWith(`${codeFolder}/`)) return undefined;
+  const inner = file.slice(codeFolder.length + 1);
+  return /^index(?:\.[jt]s)?$/.test(inner) || inner.endsWith('.css') ? undefined : inner;
+}
+
+/** Where a module is referred to from. */
+interface From {
+  project: Project;
+  /** From its tests, which may also use Node and testing. */
+  test: boolean;
+  /**
+   * From the code views' folder, which may use CodeMirror and any of its own files. `ui`'s
+   * dependencies, and its edges in Nx's project graph, count as the folder's.
+   */
+  code: boolean;
+}
+
 type Target =
-  | { kind: 'project'; project: Project }
+  /** `file`, relative to the workspace's root, is where a path lands in it. */
+  | { kind: 'project'; project: Project; file?: string }
   | { kind: 'node' }
   | { kind: 'electron' }
   /** A module chosen at run time. */
@@ -152,6 +191,9 @@ export function checkBoundaries(
     return found;
   };
 
+  /** The project the code views' folder is in, `ui`, whose `package.json` lists CodeMirror. */
+  const codeProject = projectAt(join(root, codeFolder));
+
   /**
    * The package a real path is in, when that's in the workspace's `node_modules`, where pnpm
    * installs: the root's, or a project's own, which belongs to that project. A `node_modules`
@@ -189,152 +231,128 @@ export function checkBoundaries(
     const installed = installedAt(real);
     if (installed) return declared(installed.name, installed.rest, installed.owner);
     const project = projectAt(real);
-    return project ? { kind: 'project', project } : outside;
+    return project ? { kind: 'project', project, file: toSlashes(relative(root, real)) } : outside;
   };
 
   /**
-   * Why `owner` may not reach `path`, which a relative specifier, or a mapping in a `package.json`,
+   * Why `from` may not reach `path`, which a relative specifier, or a mapping in a `package.json`,
    * writes inside `home`'s folder. Followed through symlinks, it stays there too, unless it lands
    * in the workspace's `node_modules`, where it reaches a package. A project whose own folder is a
    * symlink fails every path here, which errs on the safe side.
    */
-  const pathVerdict = (
-    path: string,
-    home: Project,
-    owner: Project,
-    test: boolean,
-  ): string | undefined => {
+  const pathVerdict = (path: string, home: Project, from: From): string | undefined => {
     const target = resolvePath(path);
     if (projectAt(path) !== home) return leaves(home, target);
     const real = realPath(path);
     if (projectAt(real) !== home && !installedAt(real)) {
       return leaves(home, target, 'through a symlink, ');
     }
-    return problem(owner, test, target);
+    return problem(from, target);
   };
 
   /**
-   * Why `owner` may not import `rest` from `home` by its package name. As in Node, the `exports` in
+   * Why `from` may not import `rest` from `home` by its package name. As in Node, the `exports` in
    * `home`'s `package.json` map the subpath when it has them, and either way the path stays in
    * `home`'s folder. A subpath the exports leave out doesn't load, so only the tags apply.
    */
   const projectVerdict = (
     home: Project,
     rest: readonly string[],
-    owner: Project,
-    test: boolean,
+    from: From,
   ): string | undefined => {
-    const tags = problem(owner, test, { kind: 'project', project: home });
+    const tags = problem(from, { kind: 'project', project: home });
     if (tags) return tags;
     const folder = join(root, home.root);
     const exports = manifests.get(home)?.json.exports;
-    if (exports === undefined) return pathVerdict(join(folder, ...rest), home, owner, test);
+    if (exports === undefined) return pathVerdict(join(folder, ...rest), home, from);
     const subpath = rest.length === 0 ? '.' : `./${rest.join('/')}`;
     for (const target of mapped(exportsMap(exports), subpath) ?? []) {
-      const reason = mappingVerdict(target, folder, home, owner, test);
+      const reason = mappingVerdict(target, folder, home, from);
       if (reason) return `${home.root}/package.json maps it to ${target}; ${reason}`;
     }
     return undefined;
   };
 
-  /** Why `owner` may not import `rest` from the package in `folder`. */
+  /** Why `from` may not import `rest` from the package in `folder`. */
   const folderVerdict = (
     folder: string,
     rest: readonly string[],
-    owner: Project,
-    test: boolean,
+    from: From,
   ): string | undefined => {
     const project = byFolder.get(realPath(folder));
-    if (project) return projectVerdict(project, rest, owner, test);
-    return problem(owner, test, resolvePath(join(folder, ...rest)));
+    if (project) return projectVerdict(project, rest, from);
+    return problem(from, resolvePath(join(folder, ...rest)));
   };
 
-  /** Why `owner` may not import the package `specifier` names, found as Node finds it from `folder`. */
-  const packageVerdict = (
-    specifier: string,
-    folder: string,
-    owner: Project,
-    test: boolean,
-  ): string | undefined => {
+  /** Why `from` may not import the package `specifier` names, found as Node finds it from `folder`. */
+  const packageVerdict = (specifier: string, folder: string, from: From): string | undefined => {
     const { name, rest } = splitPackage(specifier);
     for (let dir = folder; ; dir = dirname(dir)) {
       const installed = join(dir, 'node_modules', name);
-      if (existsSync(installed)) return folderVerdict(installed, rest, owner, test);
+      if (existsSync(installed)) return folderVerdict(installed, rest, from);
       if (dirname(dir) === dir) break;
     }
-    // Not installed yet, so as `owner`'s `package.json` names it.
-    const alias = aliases.get(owner)?.get(name);
-    if (alias && 'path' in alias) return folderVerdict(alias.path, rest, owner, test);
+    // Not installed yet, so as its project's `package.json` names it.
+    const alias = aliases.get(from.project)?.get(name);
+    if (alias && 'path' in alias) return folderVerdict(alias.path, rest, from);
     const target = named(alias?.name ?? name);
-    if (target.kind === 'project') return projectVerdict(target.project, rest, owner, test);
-    return problem(owner, test, target);
+    if (target.kind === 'project') return projectVerdict(target.project, rest, from);
+    return problem(from, target);
   };
 
-  /** Why `owner` may not import `specifier`, a built-in module's name or a package's, from `folder`. */
-  const bareVerdict = (
-    specifier: string,
-    folder: string,
-    owner: Project,
-    test: boolean,
-  ): string | undefined => {
-    if (specifier.startsWith('node:') || isBuiltin(specifier)) return problem(owner, test, node);
+  /** Why `from` may not import `specifier`, a built-in module's name or a package's, from `folder`. */
+  const bareVerdict = (specifier: string, folder: string, from: From): string | undefined => {
+    if (specifier.startsWith('node:') || isBuiltin(specifier)) return problem(from, node);
     if (/^[a-z][a-z\d+.-]*:/i.test(specifier)) return url;
-    return packageVerdict(specifier, folder, owner, test);
+    return packageVerdict(specifier, folder, from);
   };
 
   /**
-   * Why `owner` may not reach `target`, which the `imports` or `exports` of a `package.json` in
+   * Why `from` may not reach `target`, which the `imports` or `exports` of a `package.json` in
    * `folder`, inside `home`'s folder, map to. A path stays in `home`'s folder.
    */
   const mappingVerdict = (
     target: string,
     folder: string,
     home: Project,
-    owner: Project,
-    test: boolean,
+    from: From,
   ): string | undefined => {
     if (target.includes('%')) return percent;
     if (target.includes('\\')) return backslash;
     if (target.startsWith('.') || target.startsWith('/')) {
-      return pathVerdict(resolve(folder, target), home, owner, test);
+      return pathVerdict(resolve(folder, target), home, from);
     }
-    return bareVerdict(target, folder, owner, test);
+    return bareVerdict(target, folder, from);
   };
 
   /**
-   * Why `owner` may not import `specifier`, a `#name`, from `folder`. As in Node, the `imports` of
+   * Why `from` may not import `specifier`, a `#name`, from `folder`. As in Node, the `imports` of
    * the nearest `package.json` map it. One they don't map doesn't load in Node, so something else
    * would have to resolve it, and where it goes can't be checked.
    */
-  const importsVerdict = (
-    specifier: string,
-    folder: string,
-    owner: Project,
-    test: boolean,
-  ): string | undefined => {
-    const top = join(root, owner.root);
+  const importsVerdict = (specifier: string, folder: string, from: From): string | undefined => {
+    const top = join(root, from.project.root);
     const scope = scopeOf(folder, top);
     const file = toSlashes(relative(root, join(scope, 'package.json')));
     const manifest =
-      scope === top ? manifests.get(owner) : readManifest(join(scope, 'package.json'));
+      scope === top ? manifests.get(from.project) : readManifest(join(scope, 'package.json'));
     const targets = mapped(manifest?.json.imports, specifier);
     if (!targets) return `${file} doesn't map it in imports, so where it goes can't be checked`;
     for (const target of targets) {
-      const reason = mappingVerdict(target, scope, owner, owner, test);
+      const reason = mappingVerdict(target, scope, from.project, from);
       if (reason) return `${file} maps it to ${target}; ${reason}`;
     }
     return undefined;
   };
 
   /**
-   * Why `owner` may not refer to `specifier` from `folder`, or nothing when it may. A relative
+   * Why `from` may not refer to `specifier` from `folder`, or nothing when it may. A relative
    * path stays inside the project's folder: projects reach each other by package name.
    */
   const verdict = (
     specifier: string,
     folder: string,
-    owner: Project,
-    test: boolean,
+    from: From,
     reference?: Import['reference'],
   ): string | undefined => {
     // Without a query or fragment, keeping a `#name`'s own `#`.
@@ -342,24 +360,31 @@ export function checkBoundaries(
     if (path.includes('%')) return percent;
     if (path.includes('\\')) return backslash;
     if (reference === 'types') {
-      if (specifier === 'node' || specifier === '@types/node') return problem(owner, test, node);
-      return packageVerdict(specifier, folder, owner, test);
+      if (specifier === 'node' || specifier === '@types/node') return problem(from, node);
+      return packageVerdict(specifier, folder, from);
     }
     if (reference === 'path' || path.startsWith('.') || path.startsWith('/')) {
-      return pathVerdict(resolve(folder, path), owner, owner, test);
+      return pathVerdict(resolve(folder, path), from.project, from);
     }
-    if (path.startsWith('#')) return importsVerdict(path, folder, owner, test);
-    return bareVerdict(path, folder, owner, test);
+    if (path.startsWith('#')) return importsVerdict(path, folder, from);
+    return bareVerdict(path, folder, from);
   };
 
   for (const project of projects) {
     const folder = join(root, project.root);
     for (const file of sourceFiles(folder, project.root, roots)) {
       const path = toSlashes(relative(root, file));
-      const test = isTest(path.slice(project.root.length + 1));
+      const from: From = {
+        project,
+        test: isTest(path.slice(project.root.length + 1)),
+        code: path.startsWith(`${codeFolder}/`),
+      };
+      const source = readFileSync(file, 'utf8');
       let imports: Import[];
+      let references: References;
       try {
-        imports = importsOf(file, readFileSync(file, 'utf8'));
+        imports = importsOf(file, source);
+        references = referencesOf(file, source);
       } catch (error) {
         if (!(error instanceof ParseError)) throw error;
         violations.push({
@@ -381,8 +406,8 @@ export function checkBoundaries(
           continue;
         }
         const reason = found.computed
-          ? problem(project, test, computed)
-          : verdict(found.specifier, dirname(file), project, test, found.reference);
+          ? problem(from, computed)
+          : verdict(found.specifier, dirname(file), from, found.reference);
         if (!reason) continue;
         const verb = found.computed ? 'loads' : found.reference ? 'references' : 'imports';
         violations.push({
@@ -390,14 +415,24 @@ export function checkBoundaries(
           message: `${verb} ${found.specifier}: ${reason}.`,
         });
       }
+      // A `declare module` adds to the types of the module it names.
+      for (const { specifier, line } of from.code ? [] : references.modules) {
+        if (!isCodeMirror(splitPackage(specifier).name)) continue;
+        violations.push({
+          where: `${path}:${line}`,
+          message: `declares module ${specifier}: ${codeMirror}.`,
+        });
+      }
     }
 
     const manifest = manifests.get(project);
     if (!manifest) continue;
     const at = (key: string) => `${project.root}/package.json:${lineOf(manifest.text, key)}`;
+    // ui's dependencies are the code views', the only ones that list CodeMirror.
+    const listing = (test: boolean): From => ({ project, test, code: project === codeProject });
     for (const field of dependencyFields) {
       for (const [name, spec] of Object.entries(objectAt(manifest.json, field))) {
-        const reason = problem(project, field === 'devDependencies', declared(name, [], project));
+        const reason = problem(listing(field === 'devDependencies'), declared(name, [], project));
         if (!reason) continue;
         violations.push({
           where: at(name),
@@ -405,11 +440,13 @@ export function checkBoundaries(
         });
       }
     }
+    // What a mapping reaches is held to the rules for files outside the code views' folder.
+    const mapping: From = { project, test: false, code: false };
     for (const field of ['imports', 'exports'] as const) {
       for (const [key, target] of mappings(manifest.json[field])) {
         // A pattern's `*` stands for one path segment here. An import through a pattern is
         // checked where it's made, with what the `*` matches.
-        const reason = mappingVerdict(target.replaceAll('*', 'x'), folder, project, project, false);
+        const reason = mappingVerdict(target.replaceAll('*', 'x'), folder, project, mapping);
         if (!reason) continue;
         violations.push({
           where: at(key),
@@ -426,7 +463,8 @@ export function checkBoundaries(
   );
 
   // A backstop for anything the file checks miss: every edge Nx found keeps the same rules. Nx
-  // doesn't say which file an edge comes from, so tests' allowances apply.
+  // doesn't say which file an edge comes from, so tests' allowances apply, and ui's edges count as
+  // the code views'.
   for (const { source, target } of edges) {
     const from = byName.get(source);
     const project = byName.get(target);
@@ -436,7 +474,7 @@ export function checkBoundaries(
       : project
         ? { kind: 'project', project }
         : { kind: 'package', name: target };
-    const reason = problem(from, true, to);
+    const reason = problem({ project: from, test: true, code: from === codeProject }, to);
     if (!reason) continue;
     violations.push({
       where: from.root,
@@ -447,11 +485,18 @@ export function checkBoundaries(
   return violations.toSorted((a, b) => a.where.localeCompare(b.where, 'en', { numeric: true }));
 }
 
-/** Why `from` may not use `target`, or nothing when it may. Tests may also use Node and testing. */
-function problem(from: Project, test: boolean, target: Target): string | undefined {
+/**
+ * Why `from` may not use `target`, or nothing when it may. Tests may also use Node and testing, and
+ * only the code views' folder uses CodeMirror or reaches past its `index.ts`.
+ */
+function problem({ project: from, test, code }: From, target: Target): string | undefined {
   const core = from.tags.includes(CORE);
   if (target.kind === 'project') {
     const to = target.project;
+    const inner = code || target.file === undefined ? undefined : codeInternal(target.file);
+    if (inner !== undefined) {
+      return `that's ${inner} in ${codeFolder}/, and everything outside that folder reaches the code views through its index.ts, @lo/ui/code`;
+    }
     if (to === from) return undefined;
     if (to.root.startsWith('apps/')) return `that's the app ${to.name}, and nothing imports an app`;
     if (to.root === 'testing') return test ? undefined : `that's testing, which only tests use`;
@@ -466,6 +511,7 @@ function problem(from: Project, test: boolean, target: Target): string | undefin
   if (target.kind === 'outside') {
     return `that lands outside every project, and projects import only their own files and packages`;
   }
+  if (target.kind === 'package' && isCodeMirror(target.name) && !code) return codeMirror;
   if (!core) return undefined;
   if (target.kind === 'electron') return `core projects run anywhere, so they can't use Electron`;
   if (target.kind === 'node' && !test) {
@@ -554,13 +600,21 @@ function checkRootManifest(
   for (const field of dependencyFields) {
     for (const [name, spec] of Object.entries(objectAt(manifest.json, field))) {
       if (typeof spec !== 'string') continue;
+      const where = `package.json:${lineOf(manifest.text, name)}`;
+      if (isCodeMirror(name)) {
+        violations.push({
+          where,
+          message: `lists "${name}": ${JSON.stringify(spec)} in ${field}: ${codeMirror}.`,
+        });
+        continue;
+      }
       const alias = aliasOf(spec, root);
       const tooling =
         alias !== undefined && 'name' in alias && toolingAliases.get(name) === alias.name;
       const workspace = byPackage.has(name) || spec.startsWith('workspace:');
       if (!workspace && (!alias || tooling)) continue;
       violations.push({
-        where: `package.json:${lineOf(manifest.text, name)}`,
+        where,
         message: `lists "${name}": ${JSON.stringify(spec)} in ${field}, but the root package.json holds the repo's tooling only: no workspace package, and no alias besides TypeScript's.`,
       });
     }
@@ -652,8 +706,20 @@ function checkTsconfigs(root: string, folders: readonly string[]): Violation[] {
       const how = `${key} ${spec}`;
       queue.push({ file: next, via: own ? { where: `${where}:${lineOf(text, key)}`, how } : via });
     };
+    // An `extends` that can't be followed could hide `paths`, so it's reported.
     for (const spec of listOf(config.extends)) {
-      if (typeof spec === 'string') follow('extends', spec, extendedTsconfig(spec, dirname(real)));
+      if (typeof spec !== 'string') continue;
+      const next = spec.includes('\\') ? undefined : extendedTsconfig(spec, dirname(real));
+      if (next) {
+        follow('extends', spec, next);
+      } else {
+        report(
+          lineOf(text, 'extends'),
+          spec.includes('\\')
+            ? `extends ${spec}, but TypeScript reads a backslash in a path as a slash and this check doesn't, so write a slash.`
+            : `extends ${spec}, which can't be found, so whether it sets compilerOptions.paths can't be checked.`,
+        );
+      }
     }
     for (const reference of listOf(config.references)) {
       const spec = isRecord(reference) ? reference.path : undefined;

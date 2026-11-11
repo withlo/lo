@@ -110,6 +110,10 @@ A package's folder says where it runs, and its Nx tags (`"nx": { "tags": [...] }
 - nothing imports an app;
 - only tests import `testing/`. Tests are `*.test.*` files and anything in `test/` or `e2e/`, and
   `testing` belongs in `devDependencies`;
+- only `packages/desktop/ui/src/code/` uses CodeMirror (`@codemirror/*`, `@lezer/*`,
+  `@replit/codemirror-vim`), and only `ui`'s `package.json` lists it. Everything else, tests
+  included, reaches the code views through that folder's `index.ts`, `@lo/ui/code`, whose types name
+  nothing of CodeMirror's (`ui`'s `lint` checks), so that changing editors rewrites one folder;
 - in the desktop app, a feature imports from another feature only the files it shares through (see
   "Features" under "The desktop app").
 
@@ -131,7 +135,8 @@ in its `imports` and `exports`, and to every edge in Nx's project graph. Also:
 - only the files that `scripts/boundaries/check.ts` lists use `createRequire` or `getBuiltinModule`,
   since what they load can't be followed;
 - pnpm's overrides and package extensions point no dependency at a folder with `link:` or `file:`;
-- no tsconfig sets `paths`, nor any tsconfig it extends or references;
+- no tsconfig sets `paths`, nor any tsconfig it extends or references, and every `extends` is one
+  the check can find;
 - the root `package.json` holds the repo's tooling only: no workspace package, and no alias besides
   TypeScript's two.
 
