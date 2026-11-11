@@ -71,7 +71,7 @@ function start(): void {
     root: cacheRoot,
     env,
     platform: process.platform,
-    // The route Lo's own requests take: `net.fetch`'s, in the default session.
+    // The route Lo's own requests take: `net.request`'s, in the default session.
     proxy: async (address) => curlProxy(await session.defaultSession.resolveProxy(address)),
     log: (line) => console.error(`git: ${line}`),
   });

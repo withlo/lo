@@ -11,6 +11,7 @@ import { app, net, safeStorage } from 'electron';
 import { IpcError } from '../../../ipc/contract.ts';
 import { githubSettings, type GithubSettings } from '../../../main/environment.ts';
 import { defineFeature, STOP_LIMITS } from '../../../main/features.ts';
+import { netFetch } from '../../../main/fetch.ts';
 import { provides } from '../../../main/services.ts';
 import { accountSummary, contract, type AccountSummary } from '../contract.ts';
 import { github } from '../service.ts';
@@ -23,9 +24,11 @@ import { Grants } from './grants.ts';
  */
 const SAVE_WITHIN = STOP_LIMITS.each - 1_000;
 
-/** Every request to GitHub goes through Chromium's network stack, with the system's proxy. */
-const fetch: typeof globalThis.fetch = (input, init) =>
-  net.fetch(input instanceof URL ? input.href : input, init);
+/**
+ * Every request to GitHub goes through Chromium's network stack, with the system's proxy, keeping
+ * nothing in Chromium's cache.
+ */
+const fetch = netFetch((options) => net.request(options));
 
 /**
  * This build of Lo: a hash of the code main runs, which holds the pollers' reads and their

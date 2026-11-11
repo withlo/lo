@@ -4,6 +4,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -23,11 +24,14 @@ const KEYCHAIN =
   process.platform === 'darwin' ? ['--use-mock-keychain'] : ['--password-store=basic'];
 
 const test = base.extend<{ github: ReplayServer; tokenFile: string }>({
+  // Playwright reads a fixture's dependencies from its first parameter, which must be a pattern.
+  // oxlint-disable-next-line no-empty-pattern
   github: async ({}, use) => {
     const server = await serveReplay('user');
     await use(server);
     await server.close();
   },
+  // oxlint-disable-next-line no-empty-pattern
   tokenFile: async ({}, use) => {
     const file = test.info().outputPath('token');
     writeFileSync(file, `${TOKEN}\n`);
@@ -175,4 +179,57 @@ test('Linux reports its fallback store as basic_text, which Lo takes only in a t
     return safeStorage.getSelectedStorageBackend();
   });
   expect(backend).toBe('basic_text');
+});
+
+test("Lo follows GitHub's redirect itself, sending the token only to GitHub's API", async () => {
+  // A GitHub on this machine whose `/user` has moved, as a renamed repository's address does.
+  const asked: { path: string; token: boolean; cookie: boolean }[] = [];
+  const server = createServer((request, response) => {
+    const path = request.url ?? '';
+    asked.push({
+      path,
+      token: request.headers.authorization === `token ${TOKEN}`,
+      cookie: request.headers.cookie !== undefined,
+    });
+    if (path === '/api/user') {
+      response.writeHead(301, { location: '/api/user/moved', 'set-cookie': 'kept=no' });
+      response.end();
+    } else if (path === '/api/user/moved') {
+      response.writeHead(200, {
+        'content-type': 'application/json',
+        'x-oauth-scopes': 'read:org, repo, workflow',
+      });
+      response.end(JSON.stringify({ login: 'rozed-bot', id: 353226052, name: null }));
+    } else {
+      response.writeHead(404);
+      response.end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('the server has no port');
+  const file = test.info().outputPath('token');
+  writeFileSync(file, TOKEN);
+
+  const app = await electron.launch({
+    args: [appFolder, ...KEYCHAIN],
+    env: {
+      ...appEnvironment(dataFolder()),
+      LO_GITHUB: `http://127.0.0.1:${address.port}`,
+      LO_TEST_TOKEN_FILE: file,
+    },
+    chromiumSandbox: true,
+  });
+  try {
+    const page = await app.firstWindow();
+    await page.waitForLoadState('load');
+    await listed(page);
+    expect(asked).toEqual([
+      { path: '/api/user', token: true, cookie: false },
+      { path: '/api/user/moved', token: true, cookie: false },
+    ]);
+  } finally {
+    await app.close();
+    server.close();
+  }
 });

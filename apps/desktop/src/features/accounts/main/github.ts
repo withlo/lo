@@ -34,7 +34,7 @@ export interface GithubOptions {
   database: Database;
   /** Where each account's grant is kept. */
   secrets: Secrets;
-  /** The `fetch` every request to GitHub goes through: in the app, `net.fetch`. */
+  /** The `fetch` every request to GitHub goes through: in the app, Chromium's (`main/fetch.ts`). */
   fetch: typeof globalThis.fetch;
   /** GitHub's addresses, if not github.com's. */
   urls?: GitHubUrls | undefined;
@@ -245,7 +245,9 @@ export class Github implements GithubAccess {
         cache: this.#cache,
         config: this.#poll,
         seen: (seenBy, pull, heads, at) => {
-          this.#emit({ kind: 'seen', login: seenBy, pull, heads, at });
+          // A poll that ends after its account was removed sees nothing anyone keeps.
+          if (accounts.account(seenBy))
+            this.#emit({ kind: 'seen', login: seenBy, pull, heads, at });
           return Promise.resolve();
         },
         log: (message) => this.#log(`polling as ${login}: ${message}`),

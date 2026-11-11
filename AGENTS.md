@@ -314,7 +314,10 @@ repositories, which account opens a repository, and the pull requests opened lat
   the system has no keychain to encrypt with (Linux without GNOME Keyring or KWallet, which
   `safeStorage` reports as `basic_text`, or Chromium's `--use-mock-keychain`), Lo neither keeps nor
   reads a token, except in a test run.
-- Every request to GitHub goes through `net.fetch`, so it takes the system's proxy.
+- Every request to GitHub goes through Chromium's network stack (`src/main/fetch.ts`, on
+  `net.request`), so it takes the system's proxy, with nothing kept in Chromium's cache and no
+  cookie. Electron's `net.fetch` isn't used: it fails a redirect GitHub's client asks to see, and
+  the client follows redirects itself, only to where the token may go.
 - Each account's poller keeps what it read in the database, read back only by the build of Lo that
   wrote it.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
