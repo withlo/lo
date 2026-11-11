@@ -32,6 +32,7 @@ declare global {
           viewport(): Viewport;
           scrollTo(viewport: Viewport): boolean;
           filesOnScreen(): readonly string[];
+          close(file: string): void;
         }
       | undefined;
     /** How long each frame took while a test timed them, in milliseconds. */
@@ -878,6 +879,54 @@ test.describe('when a banner over the diff goes', () => {
       );
       await page.waitForTimeout(300);
     }
+  });
+
+  test('leaves the diff where it is when a banner comes, after files above closed at its end', async ({
+    app,
+    page,
+  }) => {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
+    await drawn(page, 'github', { moves: false });
+    const view = page.locator('.lo-diffview');
+    // At the end, the files above close, as the local copy's say would: the view keeps what's on
+    // screen in place, which takes the scroll back to the new end.
+    await page.evaluate(() => document.querySelector<HTMLElement>('[data-lo-banners]')?.remove());
+    await page.waitForTimeout(300);
+    await view.evaluate((each) => {
+      each.scrollTop = each.scrollHeight;
+    });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+      const diff = window.loDiff;
+      const shown = new Set(diff?.filesOnScreen());
+      for (const { id } of diff?.files ?? []) if (!shown.has(id)) diff?.close(id);
+    });
+    await page.waitForTimeout(500);
+    // Wheeled up, away from the end.
+    const box = await view.boundingBox();
+    await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
+    await page.mouse.wheel(0, -120);
+    await page.waitForTimeout(500);
+    const row = await view.evaluate((each) => {
+      const top = each.getBoundingClientRect().top;
+      return [...each.querySelectorAll<HTMLElement>('.cm-editor:last-of-type [data-row]')].find(
+        (one) => one.getBoundingClientRect().top >= top,
+      )?.dataset.row;
+    });
+    const at = async () =>
+      (await view.evaluate(
+        (each, key) =>
+          each.querySelector(`.cm-editor:last-of-type [data-row="${key}"]`)?.getBoundingClientRect()
+            .top,
+        row,
+      )) ?? Number.NaN;
+    const before = await at();
+
+    // A banner comes: the box moves down and shrinks.
+    await view.evaluate((each) => each.parentElement?.style.setProperty('padding-top', '30px'));
+    await page.waitForTimeout(500);
+
+    expect(Math.abs((await at()) - before)).toBeLessThanOrEqual(0.5);
   });
 
   test('takes a scroll in the frame the banner goes as the reader’s, and the move as the box’s', async ({

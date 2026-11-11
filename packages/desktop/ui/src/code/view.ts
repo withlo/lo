@@ -325,6 +325,7 @@ class View implements DiffView {
     this.dom.prepend(this.#slack);
     this.#placed = this.#contentTop();
     this.#scrolled = this.dom.scrollTop;
+    this.#boxHeight = this.dom.clientHeight;
     this.dom.addEventListener('scroll', this.#placeChosen, { passive: true });
     for (const type of ['wheel', 'keydown', 'pointerdown'] as const) {
       this.dom.addEventListener(type, this.#letGo, { passive: true, capture: true });
@@ -387,6 +388,8 @@ class View implements DiffView {
   #placed = 0;
   /** The scroll `#placed` counts, to take only what the scroll moved since. */
   #scrolled = 0;
+  /** The box's height when its place was last kept, to tell a box that grew. */
+  #boxHeight = 0;
   readonly #boxWatch: ResizeObserver;
 
   /** Where the content's top is on the page now, room above it included. */
@@ -402,9 +405,11 @@ class View implements DiffView {
   readonly #placeChosen = (): void => {
     const now = this.dom.scrollTop;
     const end = this.dom.scrollHeight - this.dom.clientHeight;
-    // Pulled back to the end, as the box grew or the content shrank and left less to scroll: the
-    // browser's doing, which the content's place doesn't follow, so it goes back if there's room.
-    const pulled = now < this.#scrolled && now >= end - 0.5;
+    // Pulled back to the end as the box grew and left less to scroll: the browser's doing, which
+    // the content's place doesn't follow, so the box's move puts it back if there's room. A pull
+    // as the content shrank, as files above close, is where the content is now, as any scroll.
+    const pulled =
+      this.dom.clientHeight > this.#boxHeight + 0.5 && now < this.#scrolled && now >= end - 0.5;
     if (!pulled) this.#placed -= now - this.#scrolled;
     this.#scrolled = now;
   };
@@ -417,6 +422,7 @@ class View implements DiffView {
   readonly #keepPlace = (): void => {
     // A scroll whose event hasn't come yet is the reader's, or the view's, not the box's.
     this.#placeChosen();
+    this.#boxHeight = this.dom.clientHeight;
     const moved = this.#contentTop() - this.#placed;
     if (Math.abs(moved) < 0.5) return;
     if (moved > 0) {

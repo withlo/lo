@@ -38,6 +38,8 @@ declare global {
           viewport(): Viewport;
           scrollTo(viewport: Viewport): boolean;
           filesOnScreen(): readonly string[];
+          /** Closes a file as the local copy's say would, keeping what's on screen in place. */
+          close(file: string): void;
         }
       | undefined;
   }
@@ -411,6 +413,7 @@ export function draw(options: DrawOptions): Drawing {
         files: files.map(({ id, path }) => ({ id, path })),
         viewport: () => view.viewport(),
         scrollTo: (viewport: Viewport) => view.scrollTo(viewport),
+        close: (id: string) => steady(() => view.setCollapsed(id, true)),
         filesOnScreen: () => view.filesOnScreen(),
       };
   if (testing) window.loDiff = testing;
