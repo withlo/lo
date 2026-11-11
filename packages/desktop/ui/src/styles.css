@@ -44,6 +44,11 @@
   background-color: var(--lo-current);
 }
 
+/* Menus sit over the window's content, and under its dialogs. */
+@utility z-popover {
+  z-index: var(--lo-z-popover);
+}
+
 /* Dialogs and palettes sit over the window. */
 @utility z-dialog {
   z-index: var(--lo-z-dialog);

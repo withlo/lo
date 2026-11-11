@@ -21,6 +21,10 @@ also work. Every key can be remapped in `~/.config/lo/keymap`.
   on the window or the review.
 - **Single letters act on what has focus.** In the file tree, `t`, `f`, `l` and `h` mean tree
   things; in the diff, the table's meanings hold.
+- **A right-click menu lists what its target can do, with the keys,** and greys what can't run
+  there, with the reason. `Menu` or `⇧F10` opens the menu of what has focus; `j`/`k` or the arrows
+  move, `⏎` runs, and `Esc` closes it and gives focus back where it was. A menu runs the same
+  command a key does, on what was clicked.
 
 ## Focus
 

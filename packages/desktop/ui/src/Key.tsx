@@ -20,15 +20,17 @@ export interface KeyProps {
   keys: readonly string[];
   /** Without the outline, for dense rows of hints. */
   quiet?: boolean | undefined;
+  /** More classes for each key, such as how it looks on a fill of its own. */
+  className?: string | undefined;
 }
 
 /**
  * A key, or a sequence of keys, shown wherever an action has one. A chord is one key (`⌘⇧P`); a
  * sequence's keys sit side by side, never joined with a plus sign.
  */
-export function Key({ keys, quiet = false }: KeyProps) {
+export function Key({ keys, quiet = false, className }: KeyProps) {
   const caps = keys.map((key, index) => (
-    <kbd key={index} className={cap({ quiet })}>
+    <kbd key={index} className={cap({ quiet, className })}>
       {key}
     </kbd>
   ));

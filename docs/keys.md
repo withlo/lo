@@ -30,13 +30,14 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Tabs and window
 
-| Action                  | Keys        | Where                                                                                  | Command          |
-| ----------------------- | ----------- | -------------------------------------------------------------------------------------- | ---------------- |
-| Zoom in                 | `⌘=`, `⌘⇧=` | Anywhere                                                                               | `app.zoomIn`     |
-| Zoom out                | `⌘-`        | Anywhere                                                                               | `app.zoomOut`    |
-| Actual size             | `⌘0`        | Anywhere                                                                               | `app.actualSize` |
-| Every key               | `?`         | Anywhere                                                                               | `keys.help`      |
-| Back to the middle view | `Esc`       | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`    |
+| Action                    | Keys           | Where                                                                                  | Command          |
+| ------------------------- | -------------- | -------------------------------------------------------------------------------------- | ---------------- |
+| Zoom in                   | `⌘=`, `⌘⇧=`    | Anywhere                                                                               | `app.zoomIn`     |
+| Zoom out                  | `⌘-`           | Anywhere                                                                               | `app.zoomOut`    |
+| Actual size               | `⌘0`           | Anywhere                                                                               | `app.actualSize` |
+| Every key                 | `?`            | Anywhere                                                                               | `keys.help`      |
+| Show the right-click menu | `Menu`, `⇧F10` | Anywhere but `menu`, `dialog` and `palette`                                            | `keys.menu`      |
+| Back to the middle view   | `Esc`          | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`    |
 
 ## Where keys apply
 
@@ -129,6 +130,6 @@ Keys are written the same way in the keymap file and in Lo's code:
   Linux, `ctrl` is `⌃` on macOS and Ctrl on Linux, `alt` is `⌥` (Alt) and `shift` is `⇧`.
 - A sequence separates its keys with spaces: `] f`, `g S`.
 - A key is one character, or one of `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, `up`,
-  `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, `insert`, and `f1` to `f20`. `plus`
-  is `+`.
+  `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, `insert`, `menu`, and `f1` to `f20`.
+  `plus` is `+`.
 - A lone letter's case is its key: `G` is Shift and G, as is `shift+g`.

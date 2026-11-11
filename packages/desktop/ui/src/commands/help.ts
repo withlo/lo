@@ -60,12 +60,12 @@ export function whereText(command: Command): string | undefined {
 }
 
 /** Whether `command` is on the registry's system. */
-function onSystem(registry: Registry, command: Command): boolean {
+export function onSystem(registry: Registry, command: Command): boolean {
   return command.when?.system === undefined || command.when.system === registry.system;
 }
 
 /** `command`'s keys now, in this system's form. */
-function liveKeys(registry: Registry, command: Command): (readonly string[])[] {
+export function liveKeys(registry: Registry, command: Command): (readonly string[])[] {
   return registry.keysOf(command.id).map((strokes) => keyLabels(strokes, registry.system));
 }
 

@@ -1,6 +1,7 @@
 import { handlers } from '@lo/ui/commands';
 
 import { barItems, focusedTarget, runFromBar } from '../../../window/commands/bar.ts';
+import { openMenuAtFocus } from '../../../window/commands/menus.tsx';
 import { showHighlighted, toggleHelp, togglePalette } from '../../../window/commands/overlays.tsx';
 import { focusMiddle, here, registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
@@ -43,6 +44,11 @@ export default {
     showKey: {
       run() {
         showHighlighted();
+      },
+    },
+    menu: {
+      run() {
+        openMenuAtFocus();
       },
     },
     escape: { run: focusMiddle },

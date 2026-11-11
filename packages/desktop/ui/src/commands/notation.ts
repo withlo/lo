@@ -62,6 +62,7 @@ export const keyNames: readonly string[] = [
   'pageup',
   'pagedown',
   'insert',
+  'menu',
   ...Array.from({ length: 20 }, (_, index) => `f${index + 1}`),
 ];
 const names = new Set(keyNames);
@@ -83,6 +84,7 @@ const eventNames: Readonly<Record<string, string>> = {
   PageUp: 'pageup',
   PageDown: 'pagedown',
   Insert: 'insert',
+  ContextMenu: 'menu',
   ...Object.fromEntries(
     Array.from({ length: 20 }, (_, index) => [`F${index + 1}`, `f${index + 1}`]),
   ),
@@ -457,6 +459,7 @@ const macNames: Readonly<Record<string, string>> = {
   pageup: 'PgUp',
   pagedown: 'PgDn',
   insert: 'Ins',
+  menu: 'Menu',
 };
 
 /** How Linux shows them. */
@@ -476,6 +479,7 @@ const linuxNames: Readonly<Record<string, string>> = {
   pageup: 'PgUp',
   pagedown: 'PgDn',
   insert: 'Insert',
+  menu: 'Menu',
 };
 
 /**
@@ -529,6 +533,7 @@ const vimNames: Readonly<Record<string, string>> = {
   pageup: 'PageUp',
   pagedown: 'PageDown',
   insert: 'Insert',
+  menu: 'Menu',
   ...Object.fromEntries(
     Array.from({ length: 20 }, (_, index) => [`f${index + 1}`, `F${index + 1}`]),
   ),

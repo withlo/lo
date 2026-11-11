@@ -2,6 +2,7 @@
 // through here, since the registry is built from their commands.
 
 import { Registry, type Command, type Entry, type System } from '@lo/ui/commands';
+import { useSyncExternalStore } from 'react';
 
 /** The view in the middle of the window, as keys see it. */
 export interface Middle {
@@ -24,6 +25,20 @@ export function createRegistry(commands: readonly Command[], system: System): Re
 export function registry(): Registry {
   if (!current) throw new Error("The window's registry isn't built yet.");
   return current;
+}
+
+let version = 0;
+
+/** Re-renders when the registry's keys change, as the keymap file does. */
+export function useKeys(): number {
+  return useSyncExternalStore(
+    (listener) =>
+      registry().subscribe(() => {
+        version++;
+        listener();
+      }),
+    () => version,
+  );
 }
 
 /** Makes `view` the middle view. Returns a function that takes it back, for when the view goes. */

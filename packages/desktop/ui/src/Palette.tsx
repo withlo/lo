@@ -102,7 +102,10 @@ export function Palette<T>({
                 />
                 {keys && <Key keys={keys} quiet />}
               </div>
-              <Autocomplete.List className="max-h-palette-list-h min-h-0 overflow-auto p-6">
+              <Autocomplete.List
+                aria-label={`${label} results`}
+                className="max-h-palette-list-h min-h-0 overflow-auto p-6"
+              >
                 {(group: PaletteGroup<T>) => (
                   <Autocomplete.Group
                     key={group.label ?? ''}

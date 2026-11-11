@@ -122,6 +122,13 @@ describe('key events', () => {
     expect(eventStroke(event('F5'), mac)?.id).toBe('f5');
   });
 
+  test('the context-menu key and Shift and F10 are keys of their own', () => {
+    expect(eventStroke(event('ContextMenu'), mac)?.id).toBe('menu');
+    expect(eventStroke(event('F10', { shiftKey: true }), mac)?.id).toBe('shift+f10');
+    expect(ids('menu', 'linux')).toEqual(['menu']);
+    expect(ids('shift+f10', 'mac')).toEqual(['shift+f10']);
+  });
+
   test('with ⌘ or Ctrl, a letter is lowercase and Shift a modifier, whatever event.key says', () => {
     expect(eventStroke(event('p', { metaKey: true, shiftKey: true }), mac)?.id).toBe(
       'meta+shift+p',
@@ -288,6 +295,8 @@ describe('display forms', () => {
     expect(forms('esc esc', 'mac')).toEqual(['Esc', 'Esc']);
     expect(forms('enter', 'mac')).toEqual(['⏎']);
     expect(forms('left right', 'mac')).toEqual(['←', '→']);
+    expect(forms('menu', 'mac')).toEqual(['Menu']);
+    expect(forms('shift+f10', 'mac')).toEqual(['⇧F10']);
   });
 
   test('Linux spells modifiers out, with Ctrl for cmd', () => {
@@ -301,6 +310,8 @@ describe('display forms', () => {
     expect(forms('] f', 'linux')).toEqual([']', 'f']);
     expect(forms('enter', 'linux')).toEqual(['Enter']);
     expect(forms('esc esc', 'linux')).toEqual(['Esc', 'Esc']);
+    expect(forms('menu', 'linux')).toEqual(['Menu']);
+    expect(forms('shift+f10', 'linux')).toEqual(['Shift+F10']);
   });
 });
 

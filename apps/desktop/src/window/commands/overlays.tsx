@@ -16,7 +16,7 @@ import { KeyHelp, Key, Palette, PaletteHint, type PaletteGroup } from '@lo/ui';
 import { useState, useSyncExternalStore } from 'react';
 
 import { focusedTarget } from './bar.ts';
-import { registry } from './registry.ts';
+import { registry, useKeys } from './registry.ts';
 
 /** What's open over the window. */
 export type Overlay =
@@ -26,6 +26,8 @@ export type Overlay =
       /** The scope and target that had focus before it opened, which its commands run on. */
       readonly scope: string;
       readonly target: Target;
+      /** Why the last `⌥⏎` did nothing, until what's typed changes. */
+      readonly notice?: string | undefined;
     }
   | undefined;
 
@@ -90,10 +92,18 @@ export function togglePalette(): void {
   else closeOverlay(openPalette);
 }
 
-/** Shows the palette's highlighted command in key help, as `⌥⏎` asks. */
+/**
+ * Shows the palette's highlighted command in key help, as `⌥⏎` asks. With none highlighted, the
+ * palette says why instead. Returns `true`, or why it didn't.
+ */
 export function showHighlighted(): true | string {
+  if (current?.kind !== 'palette') return 'No action is highlighted.';
   const id = highlighted;
-  if (current?.kind !== 'palette' || id === undefined) return 'No action is highlighted.';
+  if (id === undefined) {
+    const why = "No action matches, so there's no key to show.";
+    set({ ...current, notice: why });
+    return why;
+  }
   closeOverlay(() => openHelp(id));
   return true;
 }
@@ -103,20 +113,6 @@ function closed(): void {
   const then = afterClose;
   afterClose = undefined;
   then?.();
-}
-
-let version = 0;
-
-/** Re-renders when the registry's keys change, as the keymap file does. */
-function useKeys(): number {
-  return useSyncExternalStore(
-    (listener) =>
-      registry().subscribe(() => {
-        version++;
-        listener();
-      }),
-    () => version,
-  );
 }
 
 /** A key written in Lo's notation, as this system shows it. */
@@ -211,7 +207,10 @@ function CommandPalette({
       placeholder="Type an action"
       keys={keyOf('keys.palette')}
       query={query}
-      onQueryChange={setQuery}
+      onQueryChange={(next) => {
+        setQuery(next);
+        if (open?.notice !== undefined) set({ ...open, notice: undefined });
+      }}
       groups={groups}
       itemId={(match) => match.item.id}
       onHighlight={(match) => {
@@ -239,6 +238,9 @@ function CommandPalette({
         <>
           <span className="lo-num">
             {typed ? `${matches.length} of ${items.length} actions` : `${items.length} actions`}
+          </span>
+          <span role="status" className="text-fg">
+            {open?.notice}
           </span>
           <span className="flex-1" />
           <PaletteHint keys={labels('enter')}>Run</PaletteHint>
