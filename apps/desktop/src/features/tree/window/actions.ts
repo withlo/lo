@@ -142,21 +142,24 @@ export function focusedFile(tab: string): string | undefined {
   return row?.kind === 'file' ? row.key : undefined;
 }
 
+/** Puts the tree's keyboard row on the file `key`, opening the folders it's in and scrolling to it. */
+export function revealFile(tab: string, key: string): void {
+  choices.update(tab, (current) => {
+    const opened = new Set(current.opened);
+    const closed = new Set(current.closed);
+    for (const folder of foldersOf(pathOf(tab, key))) {
+      opened.add(folder);
+      closed.delete(folder);
+    }
+    return { ...current, opened, closed };
+  });
+  focusRow(tab, key);
+}
+
 /** Puts the keyboard on the file on screen, in the tree, opening the folders it's in. */
 export function goToTree(tab: string): void {
   const key = onScreen.get(tab) ?? focus.get(tab);
-  if (key !== undefined) {
-    choices.update(tab, (current) => {
-      const opened = new Set(current.opened);
-      const closed = new Set(current.closed);
-      for (const folder of foldersOf(pathOf(tab, key))) {
-        opened.add(folder);
-        closed.delete(folder);
-      }
-      return { ...current, opened, closed };
-    });
-    focusRow(tab, key);
-  }
+  if (key !== undefined) revealFile(tab, key);
   const tree = document.querySelector('[data-lo-scope="tree"]');
   if (tree instanceof HTMLElement) tree.focus();
 }

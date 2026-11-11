@@ -1,6 +1,8 @@
 import { Dialog as Base } from '@base-ui/react/dialog';
 import type { KeyboardEvent, ReactNode, RefObject } from 'react';
 
+import { useReturnFocus } from './returnFocus.ts';
+
 export interface DialogProps {
   open: boolean;
   /** `Esc`, or a click outside it, asks for it to close. */
@@ -44,12 +46,16 @@ export function Dialog({
   onClosed,
   testId,
 }: DialogProps) {
+  const returnFocus = useReturnFocus(open);
   return (
     <Base.Root
       open={open}
       onOpenChange={(next) => onOpenChange(next)}
       onOpenChangeComplete={(next) => {
-        if (!next) onClosed?.();
+        if (!next) {
+          returnFocus();
+          onClosed?.();
+        }
       }}
     >
       <Base.Portal container={container}>
@@ -57,6 +63,7 @@ export function Dialog({
         <Base.Viewport className="fixed inset-0 z-dialog flex items-center justify-center p-16">
           <Base.Popup
             initialFocus={initialFocus}
+            finalFocus={false}
             data-lo-scope="dialog"
             data-testid={testId}
             onKeyDown={onKeyDown}

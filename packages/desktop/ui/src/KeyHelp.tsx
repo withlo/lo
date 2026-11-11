@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 
 import { filterHelp, type HelpGroup, type KeymapError } from './commands/index.ts';
 import { Key } from './Key.tsx';
+import { useReturnFocus } from './returnFocus.ts';
 
 /** How many of the keymap file's errors key help lists. A file can have thousands of lines. */
 export const ERRORS_SHOWN = 20;
@@ -47,6 +48,7 @@ export function KeyHelp({
   const search = useRef<HTMLInputElement>(null);
   const shown = useRef<HTMLDivElement>(null);
   const found = filterHelp(groups, query);
+  const returnFocus = useReturnFocus(open);
 
   // Each opening starts from every key, at the command it was asked to show.
   useEffect(() => {
@@ -61,7 +63,10 @@ export function KeyHelp({
       open={open}
       onOpenChange={(next) => onOpenChange(next)}
       onOpenChangeComplete={(next) => {
-        if (!next) onClosed?.();
+        if (!next) {
+          returnFocus();
+          onClosed?.();
+        }
       }}
     >
       <Dialog.Portal container={container}>
@@ -69,6 +74,7 @@ export function KeyHelp({
         <Dialog.Viewport className="fixed inset-0 z-dialog flex items-center justify-center p-16">
           <Dialog.Popup
             initialFocus={search}
+            finalFocus={false}
             data-lo-scope="dialog"
             className="flex max-h-full w-full max-w-keyhelp-w flex-col overflow-hidden rounded-lg bg-bg-overlay text-fg shadow-dialog text-ui"
           >

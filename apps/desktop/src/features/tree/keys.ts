@@ -1,6 +1,8 @@
 // The file tree's keys: `-` goes to the tree at the file on screen, and in the tree single keys act
 // on it: the tree or review order, changed files only, moving, opening and closing folders, and
 // showing a file. A file's right-click menu opens it whole, copies its path or opens it on GitHub.
+// `⌘P` finds any file in the repository by name, and in the finder `Tab` lists the changed files
+// only and `⌘⏎` opens the highlighted file whole.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -9,6 +11,38 @@ const tree: When = { scope: 'tree' };
 export default defineCommands(
   'tree',
   {
+    /**
+     * The file finder: any file in the repository, found by name, the changed ones first. Not in
+     * a dialog or a palette, which hold the keys while they're open. On Linux Ctrl+P is Vim's line
+     * up in a code view, which `k` and `↑` do as well.
+     */
+    find: {
+      label: 'Go to a file',
+      group: 'Find',
+      keys: ['cmd+p'],
+      overVim: true,
+      when: { except: ['dialog', 'palette'] },
+    },
+    /**
+     * In the file finder, lists only the changed files, or all the matches again. In a palette `Tab`
+     * moves nothing, so the finder has it for its own.
+     */
+    findChanged: {
+      label: 'Changed files only in the file finder',
+      group: 'Palettes',
+      keys: ['tab'],
+      when: { scope: 'palette' },
+    },
+    /**
+     * In the file finder, opens the highlighted file whole, changed or not: `⏎` shows a changed
+     * file in the diff instead.
+     */
+    findWhole: {
+      label: 'Whole file from the file finder',
+      group: 'Palettes',
+      keys: ['cmd+enter'],
+      when: { scope: 'palette' },
+    },
     /**
      * Focuses the tree at the file on screen. In a code view `-` is Vim's line up, which `k` and
      * `↑` do as well.

@@ -41,6 +41,8 @@ export { Dialog, DialogSpacer, type DialogProps } from './Dialog.tsx';
 export { Switch, type SwitchProps } from './Switch.tsx';
 export { Tag, type TagTone } from './Tag.tsx';
 export {
+  FileIcon,
+  FileMarks,
   FileTree,
   FileTreePanel,
   ROW_HEIGHT,

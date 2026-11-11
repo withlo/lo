@@ -44,6 +44,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Open the link on the clipboard | `⌘V`                    | In `recent`                         | `open.paste`      |
 | Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`     |
 | Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent` |
+| Go to a file                   | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`       |
 
 ## View
 
@@ -75,9 +76,11 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Palettes
 
-| Action               | Keys | Where        | Command        |
-| -------------------- | ---- | ------------ | -------------- |
-| Show an action's key | `⌥⏎` | In `palette` | `keys.showKey` |
+| Action                                | Keys  | Where        | Command            |
+| ------------------------------------- | ----- | ------------ | ------------------ |
+| Show an action's key                  | `⌥⏎`  | In `palette` | `keys.showKey`     |
+| Changed files only in the file finder | `Tab` | In `palette` | `tree.findChanged` |
+| Whole file from the file finder       | `⌘⏎`  | In `palette` | `tree.findWhole`   |
 
 ## Tabs and window
 
@@ -170,6 +173,7 @@ these, which run Lo's command in place of Vim's key:
 | `-`              | Go to the file tree  | `-`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tree.focus`       |
 | `Ctrl+Q` (Linux) | Quit Lo              | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `app.quit`         |
 | `Ctrl+W` (Linux) | Close tab            | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`        |
+| `Ctrl+P` (Linux) | Go to a file         | `Ctrl+P`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `tree.find`        |
 
 ## The keymap file
 
