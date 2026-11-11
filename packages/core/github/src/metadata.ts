@@ -93,7 +93,9 @@ export function describeMetadata(metadata: Metadata): string {
       return `removed ${listed(what)}; ${VIDEO_KEEPS}`;
     }
     default:
-      return metadata satisfies never;
+      throw new Error(
+        `an attachment's metadata Lo doesn't know: ${JSON.stringify(metadata satisfies never)}`,
+      );
   }
 }
 
@@ -137,7 +139,9 @@ export function stripMetadata(
     case 'webm':
       return { bytes, metadata: { kind: 'asIs' } };
     default:
-      return kind satisfies never;
+      throw new Error(
+        `an attachment kind Lo doesn't know: ${JSON.stringify(kind satisfies never)}`,
+      );
   }
 }
 

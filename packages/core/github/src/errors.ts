@@ -333,7 +333,7 @@ function describe(detail: GithubErrorDetail): string {
     case 'notFound':
       return detail.message;
     default:
-      return detail satisfies never;
+      throw new Error(`a GitHub error Lo doesn't know: ${JSON.stringify(detail satisfies never)}`);
   }
 }
 

@@ -186,7 +186,9 @@ export function interval(
     case 'paused':
       return undefined;
     default:
-      return state satisfies never;
+      throw new Error(
+        `a rate limit state Lo doesn't know: ${JSON.stringify(state satisfies never)}`,
+      );
   }
 }
 

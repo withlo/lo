@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "unicorn", "oxc", "import", "vitest"],
+  "jsPlugins": ["./scripts/oxlint/plugin.ts"],
   "options": {
     "typeAware": true,
     "denyWarnings": true,
@@ -30,6 +31,7 @@
       { "considerDefaultExhaustiveForUnions": false, "allowDefaultCaseForExhaustiveSwitch": true }
     ],
     "default-case": "error",
+    "lo/no-returned-never": "error",
     "typescript/consistent-type-imports": "error",
     "typescript/no-explicit-any": "error",
     "import/no-cycle": "error"

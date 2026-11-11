@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import {
   Drafts,
+  type Draft,
   type DraftKey,
   type DraftPullRequest,
   type DraftPlace,
@@ -205,4 +206,32 @@ test('pruning removes new threads drafts on revisions that are gone', () => {
   expect(removed).toBe(2);
   expect(drafts.entries().map(({ text }) => text)).toEqual(['Kept', 'Summary', 'On #8']);
   expect(drafts.prune(pullRequest(7), (commit) => commit !== 'a1')).toBe(0);
+});
+
+test('a saved draft in a comment box lo doesnt know is kept as it was', () => {
+  // Drafts a later version of Lo saved, two in a kind of comment box this one doesn't know, read
+  // back as the app reads what it saved.
+  const pinned = (note: string) => ({
+    account: 'alice',
+    pullRequest: pullRequest(7),
+    place: { kind: 'pinned', note },
+  });
+  const saved: Draft[] = JSON.parse(
+    JSON.stringify([
+      { key: key('alice', 7, SUMMARY), text: 'Summary' },
+      { key: pinned('N_1'), text: 'First' },
+      { key: pinned('N_2'), text: 'Second' },
+    ]),
+  );
+  const drafts = Drafts.from(saved);
+
+  // Each is kept apart by all of its place, and saved again as it came.
+  expect(drafts.size).toBe(3);
+  expect(drafts.get(key('alice', 7, SUMMARY))).toBe('Summary');
+  expect(drafts.entries()).toEqual(expect.arrayContaining(saved));
+  for (const draft of saved) expect(drafts.get(draft.key)).toBe(draft.text);
+  // It isn't a new thread, so it's never moved to another revision or pruned with one.
+  expect(drafts.onOlderRevisions('alice', pullRequest(7), 'a9', () => undefined)).toEqual([]);
+  expect(drafts.prune(pullRequest(7), () => false)).toBe(0);
+  expect(drafts.size).toBe(3);
 });
