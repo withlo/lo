@@ -9,8 +9,10 @@
 @import 'tailwindcss/utilities.css' layer(utilities);
 @import './theme.css';
 
-/* Classes in ui's components; the window's own are found from its stylesheet. */
+/* Classes in ui's components; the window's own are found from its stylesheet. The code view styles
+   itself in code/view.css, so its files hold none. */
 @source './';
+@source not './code';
 
 /* Where Tailwind can't reach. */
 

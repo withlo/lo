@@ -284,27 +284,6 @@ importers:
 
   apps/perf:
     dependencies:
-      '@codemirror/commands':
-        specifier: 6.11.1
-        version: 6.11.1
-      '@codemirror/lang-markdown':
-        specifier: 6.5.2
-        version: 6.5.2
-      '@codemirror/language':
-        specifier: 6.13.1
-        version: 6.13.1
-      '@codemirror/search':
-        specifier: 6.7.2
-        version: 6.7.2
-      '@codemirror/state':
-        specifier: 6.7.6
-        version: 6.7.6
-      '@codemirror/view':
-        specifier: 6.43.15
-        version: 6.43.15
-      '@lezer/highlight':
-        specifier: 1.2.5
-        version: 1.2.5
       '@lo/design':
         specifier: workspace:*
         version: link:../../design
@@ -317,9 +296,6 @@ importers:
       '@lo/ui':
         specifier: workspace:*
         version: link:../../packages/desktop/ui
-      '@replit/codemirror-vim':
-        specifier: 6.4.0
-        version: 6.4.0(@codemirror/commands@6.11.1)(@codemirror/language@6.13.1)(@codemirror/search@6.7.2)(@codemirror/state@6.7.6)(@codemirror/view@6.43.15)
       web-tree-sitter:
         specifier: 0.27.2
         version: 0.27.2
@@ -454,15 +430,45 @@ importers:
       '@base-ui/react':
         specifier: 1.9.0
         version: 1.9.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@codemirror/commands':
+        specifier: 6.11.1
+        version: 6.11.1
+      '@codemirror/lang-markdown':
+        specifier: 6.5.2
+        version: 6.5.2
+      '@codemirror/language':
+        specifier: 6.13.1
+        version: 6.13.1
+      '@codemirror/search':
+        specifier: 6.7.2
+        version: 6.7.2
+      '@codemirror/state':
+        specifier: 6.7.6
+        version: 6.7.6
+      '@codemirror/view':
+        specifier: 6.43.15
+        version: 6.43.15
       '@fontsource-variable/host-grotesk':
         specifier: 5.3.0
         version: 5.3.0
       '@fontsource/fragment-mono':
         specifier: 5.3.0
         version: 5.3.0
+      '@lezer/highlight':
+        specifier: 1.2.5
+        version: 1.2.5
       '@lo/design':
         specifier: workspace:*
         version: link:../../../design
+      '@lo/diff':
+        specifier: workspace:*
+        version: link:../../core/diff
+      '@lo/syntax':
+        specifier: workspace:*
+        version: link:../syntax
+      '@replit/codemirror-vim':
+        specifier: 6.4.0
+        version: 6.4.0(@codemirror/commands@6.11.1)(@codemirror/language@6.13.1)(@codemirror/search@6.7.2)(@codemirror/state@6.7.6)(@codemirror/view@6.43.15)
       class-variance-authority:
         specifier: 0.7.1
         version: 0.7.1
