@@ -9,7 +9,9 @@
  * The plan is data: the steps say what to send GitHub, and running them is up to the caller.
  */
 
-import { layerOf, type Retarget, type Stacks } from './stacks.ts';
+import type { ConversionStep } from '@lo/github';
+
+import { layerOf, type Gap, type Retarget, type Stacks } from './stacks.ts';
 
 /**
  * What "Make this a GitHub stack" will do. Show the steps in its confirmation, then run them in
@@ -27,23 +29,13 @@ export interface Plan {
   readonly steps: readonly Step[];
 }
 
-/** One request in a {@link Plan}. */
-export type Step =
-  /**
-   * Change a pull request's base branch to the head branch of the layer below it, or to the root
-   * branch for the bottom layer, as each layer of a GitHub stack must have.
-   */
-  | { readonly kind: 'retarget'; readonly retarget: Retarget }
-  /**
-   * Create a GitHub stack from these pull requests, bottom to top:
-   * `POST /repos/{owner}/{repo}/stacks` with `{"pull_requests": prs}`.
-   */
-  | { readonly kind: 'createStack'; readonly prs: readonly number[] }
-  /**
-   * Add these pull requests, bottom to top, to the top of GitHub stack `stack`:
-   * `POST /repos/{owner}/{repo}/stacks/{stack}/add` with `{"pull_requests": prs}`.
-   */
-  | { readonly kind: 'addToStack'; readonly stack: number; readonly prs: readonly number[] };
+/**
+ * One request in a {@link Plan}, as `@lo/github`'s `runConversionStep` runs it: a base-branch
+ * change, to the head branch of the layer below or to the root branch for the bottom layer, as each
+ * layer of a GitHub stack must have; creating a GitHub stack from pull requests, bottom to top; or
+ * adding them, bottom to top, to the top of an existing one.
+ */
+export type Step = ConversionStep;
 
 /** What only the caller knows, beyond the stacks. */
 export interface Facts {
@@ -59,6 +51,11 @@ export interface Facts {
 
 /** Why "Make this a GitHub stack" isn't offered, in the order they're listed. */
 export type Reason =
+  /**
+   * The reads the stacks were found from left something out (`gaps`), so a layer may sit on the
+   * wrong pull request or branch. The only reason given when it applies.
+   */
+  | { readonly kind: 'incomplete'; readonly gaps: readonly Gap[] }
   /**
    * The pull request asked about isn't a layer: it isn't open, or wasn't passed to `findStacks`.
    * The only reason given when it applies.
@@ -92,6 +89,11 @@ export type Reason =
   /** A pull request in the path is in a merge queue, which is already merging it. */
   | { readonly kind: 'queued'; readonly pr: number }
   /**
+   * A pull request in the path is based on `base`, a trunk other than the root, such as a protected
+   * release branch, and Lo never moves a pull request off a trunk.
+   */
+  | { readonly kind: 'onTrunk'; readonly pr: number; readonly base: string }
+  /**
    * A pull request in the path is already in GitHub stack `stack`, which doesn't hold the layers
    * below it. A pull request can be in only one stack.
    */
@@ -119,6 +121,7 @@ function notOffered(reasons: readonly Reason[]): Conversion {
  * those about one pull request are grouped, bottom to top.
  */
 export function planConversion(stacks: Stacks, layer: number, facts: Facts): Conversion {
+  if (stacks.gaps.length > 0) return notOffered([{ kind: 'incomplete', gaps: stacks.gaps }]);
   const through = pathThrough(stacks, layer);
   if (through === undefined) return notOffered([{ kind: 'notOpen' }]);
   const { root, path } = through;
@@ -139,6 +142,9 @@ export function planConversion(stacks: Stacks, layer: number, facts: Facts): Con
     const known = layerOf(stacks, pr);
     if (known && !known.headInBaseRepo) reasons.push({ kind: 'fromFork', pr });
     if (facts.queued.includes(pr)) reasons.push({ kind: 'queued', pr });
+    if (known?.onTrunk && known.baseRef !== root) {
+      reasons.push({ kind: 'onTrunk', pr, base: known.baseRef });
+    }
     const entry = known?.nativeStack;
     if (entry && index >= stacked) {
       reasons.push({ kind: 'inAnotherStack', pr, stack: entry.stack });
