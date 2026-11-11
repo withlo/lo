@@ -1,6 +1,6 @@
 @import '@lo/design/css/index.css';
 @import '@lo/ui/fonts.css';
-@import '../view/view.css';
+@import '@lo/ui/code/view.css';
 
 html,
 body,
