@@ -1,12 +1,12 @@
 import type { Page } from '@playwright/test';
 
-import { expect, test } from './app.ts';
+import { expect, test, middleOf } from './app.ts';
 
 const mac = process.platform === 'darwin';
 
 /** Opens the command palette by its key, from the middle of the window. */
 async function openPalette(page: Page) {
-  await page.locator('main[data-lo-middle]').focus();
+  await middleOf(page).focus();
   await page.keyboard.press(mac ? 'Meta+Shift+P' : 'Control+Shift+P');
   const palette = page.getByRole('dialog', { name: 'Command palette' });
   await expect(palette).toBeVisible();
@@ -15,7 +15,7 @@ async function openPalette(page: Page) {
 }
 
 test('? shows every key in this system’s form, and Esc closes it', async ({ page }) => {
-  const middle = page.locator('main[data-lo-middle]');
+  const middle = middleOf(page);
   await middle.focus();
   await page.keyboard.press('?');
   const help = page.getByRole('dialog', { name: 'Every key' });
@@ -85,7 +85,7 @@ test('the palette’s list is named', async ({ page }) => {
 });
 
 test('key help says aloud when nothing matches', async ({ page }) => {
-  await page.locator('main[data-lo-middle]').focus();
+  await middleOf(page).focus();
   await page.keyboard.press('?');
   const help = page.getByRole('dialog', { name: 'Every key' });
   await expect(help.getByRole('searchbox', { name: 'Find a key or an action' })).toBeFocused();

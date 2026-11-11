@@ -187,13 +187,13 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
 - A packaged Lo takes no command-line switches: first of all in main, before `ready`, it quits with
   status 1 on any argument that starts with `-` (`src/main/arguments.ts`). Chromium's switches can
   send main's requests, with their `Authorization` header, to another server, or open a port that
-  drives the window, and none is Lo's. Links and files reach a packaged Lo as events, not as
-  arguments. Nor does it start with the variables that do what some switches do, which Chromium and
-  Node read whatever Lo does: `SSLKEYLOGFILE` (Chromium writes every connection's TLS secrets to
-  it), `ELECTRON_ENABLE_LOGGING` and `ELECTRON_LOG_FILE` (Chromium's own logs), and
-  `NODE_TLS_REJECT_UNAUTHORIZED=0`. The certificate authorities' variables, which networks that
-  inspect TLS need, and proxies are left alone. A build run from source takes every switch and
-  variable, as `electron-vite dev` and the tests pass some.
+  drives the window, and none is Lo's. Links reach a packaged Lo as events, or, from the `lo`
+  command, as an argument that never starts with `-`. Nor does it start with the variables that do
+  what some switches do, which Chromium and Node read whatever Lo does: `SSLKEYLOGFILE` (Chromium
+  writes every connection's TLS secrets to it), `ELECTRON_ENABLE_LOGGING` and `ELECTRON_LOG_FILE`
+  (Chromium's own logs), and `NODE_TLS_REJECT_UNAUTHORIZED=0`. The certificate authorities'
+  variables, which networks that inspect TLS need, and proxies are left alone. A build run from
+  source takes every switch and variable, as `electron-vite dev` and the tests pass some.
 - A build run from source goes by `Lo Dev`, so it never touches an installed Lo's data or its key in
   the system's keychain: it keeps its data in its own folder (`Lo Dev`), or in `LO_USER_DATA_DIR`
   when that's set, and its key under "Lo Dev Safe Storage". A packaged build is `Lo`, and ignores
@@ -421,6 +421,36 @@ status bar.
 - Its smoke test opens rozed-dev/e2e#78, whose repository `testing/fixtures/app.sh` builds with
   GitHub's commit IDs, as `LO_GIT_REMOTE`, while the replay server answers from the `app_e2e`
   cassette, recorded from the app itself (`testing/README.md`).
+
+### Opening pull requests
+
+The `open` feature opens links: typed or pasted in the open box (`⌘L`, and `⌘O` on macOS), a row of
+Recent pull requests, and links from other apps. Each is untrusted text, read the same way in main
+(`features/open/main/link.ts`).
+
+- A link to a pull request, its files, commits or checks, over `https`, `http` or `lo://`, opens in
+  its tab, through the tab feature's `tabs` service. Main works out the account first: the one that
+  can see the repository, the one remembered for it, or the one a Recent row was opened with while
+  it still can. When several can, the tab asks; when none can, a public pull request opens read
+  only, without signing in: no poller watches it, so it's never among the recent ones, and its
+  header says revisions need an account. When the account Lo would use can't check the repository,
+  as when an organization restricts Lo, the tab says why, with GitHub's link to fix it.
+- Any other `https` or `http` link goes to the system's browser, unless Lo is that browser or the
+  link comes straight back from it, which would send it round in a circle. A `lo://` link that isn't
+  a pull request's opens nothing.
+- The open box shows what a link opens and as whom, or why it can't, before anything opens. As it
+  opens it asks main for the pull request link on the clipboard, which comes back written as Lo
+  writes one; nothing else on the clipboard reaches the window.
+- Other apps hand Lo links as `open-url` events (`lo://`, and web links from a link router), and as
+  the arguments of a second launch, which hands them to the Lo running and quits. A packaged Lo
+  registers itself for `lo://` as it starts.
+- "Install command-line tool", in the macOS app menu and in Settings, writes `lo`, a shell script
+  that takes one argument, refuses one that starts with `-`, and passes it on quoted: on macOS to
+  `open -n -b com.scornz.lo --args`, since `open` drops the arguments of an app that's running, in
+  `/usr/local/bin` once the system's prompt for an administrator allows it, or `~/.local/bin`; on
+  Linux to Lo's program, in `~/.local/bin`. It never replaces a `lo` it didn't write. A build run
+  from source writes it in `LO_COMMAND_FOLDER` when that's set, without asking, and a packaged build
+  ignores it.
 
 ## The interface
 

@@ -119,9 +119,11 @@ test('the sections list moves between sections with j and k', async ({ page }) =
   await page.keyboard.press('j');
   await expect(current).toHaveText('Keys');
   await page.keyboard.press('j');
-  await expect(current).toHaveText('Keys');
+  await expect(current).toHaveText('Command line');
+  await page.keyboard.press('j');
+  await expect(current).toHaveText('Command line');
   await page.keyboard.press('k');
-  await expect(current).toHaveText('Cache');
+  await expect(current).toHaveText('Keys');
   await nav.getByRole('button', { name: 'Appearance' }).click();
   await expect(current).toHaveText('Appearance');
 });

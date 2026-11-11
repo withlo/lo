@@ -234,6 +234,20 @@ describe('what a pull request’s tab keeps for main', () => {
     expect(settings.kept('t1')).toEqual({});
   });
 
+  it('is the account a pull request’s tab opened as, when it was given, and only for a new tab', () => {
+    const on = database();
+    const { tabs, heard } = tabsOn(on);
+    expect(tabs.open(fd, { login: 'rozed-bot' })).toBe('t1');
+    expect(tabs.kept('t1')).toEqual({ login: 'rozed-bot', repository: undefined });
+    expect(JSON.stringify(heard)).not.toContain('rozed-bot');
+    expect(tabsOn(on).tabs.kept('t1')).toEqual({ login: 'rozed-bot', repository: undefined });
+    // A tab already open keeps the account it has.
+    expect(tabs.open(fd, { login: 'someone-else' })).toBe('t1');
+    expect(tabs.kept('t1')).toEqual({ login: 'rozed-bot', repository: undefined });
+    tabs.open(bat);
+    expect(tabs.kept('t2')).toEqual({ login: undefined, repository: undefined });
+  });
+
   it('finds the tab by its repository’s name now, after a rename, as well as by its link', () => {
     const { tabs } = tabsOn(database());
     const id = tabs.open({ kind: 'pull', owner: 'sharkdp', repo: 'fd-old', number: 2212 });

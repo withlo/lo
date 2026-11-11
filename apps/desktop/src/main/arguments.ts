@@ -20,8 +20,9 @@ const named = [
  * whatever it says, since new switches come with every Chromium.
  *
  * Nothing is let through. A launch from Finder, the Dock or `open`, with or without a `lo://` link,
- * a web link or a file, passes Lo no arguments: links and files arrive as events. What follows
- * `--` counts too. An unpackaged build, which `electron-vite dev` and the tests start with
+ * a web link or a file, passes Lo no arguments: links and files arrive as events. The `lo` command
+ * passes its link as an argument, and refuses one that starts with `-`. What follows `--` counts
+ * too. An unpackaged build, which `electron-vite dev` and the tests start with
  * switches, takes them all.
  */
 export function refusedArguments(options: {
