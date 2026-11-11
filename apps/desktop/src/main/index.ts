@@ -37,16 +37,18 @@ const migrations = import.meta.glob<string>('../features/*/migrations/*.sql', {
   import: 'default',
 });
 
-// A packaged Lo takes no command-line switches, nor the variables that do what some of them do. It
-// quits first of all, before `ready`, so no port has opened, no connection has been made and
-// nothing has started.
+// A packaged Lo takes no command-line arguments but links, nor the variables that do what some
+// switches do. It quits first of all, before `ready`, so no port has opened, no connection has
+// been made and nothing has started.
 const refused = refusedArguments({
   packaged: app.isPackaged,
   argv: process.argv.slice(1),
   hasSwitch: (name) => app.commandLine.hasSwitch(name),
 });
 if (refused.length > 0) {
-  console.error(`Lo takes no command-line switches, so it quit. Refused: ${refused.join(' ')}`);
+  console.error(
+    `Lo takes no command-line arguments but links, so it quit. Refused: ${refused.map((each) => JSON.stringify(each)).join(' ')}`,
+  );
   app.exit(1);
 }
 const refusedVariables = refusedEnvironment({ packaged: app.isPackaged, env: process.env });

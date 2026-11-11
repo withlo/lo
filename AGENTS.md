@@ -185,15 +185,18 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   bundles everything the app imports, so the package holds only `dist/` and `package.json`, and no
   `node_modules`.
 - A packaged Lo takes no command-line switches: first of all in main, before `ready`, it quits with
-  status 1 on any argument that starts with `-` (`src/main/arguments.ts`). Chromium's switches can
-  send main's requests, with their `Authorization` header, to another server, or open a port that
-  drives the window, and none is Lo's. Links reach a packaged Lo as events, or, from the `lo`
-  command, as an argument that never starts with `-`. Nor does it start with the variables that do
-  what some switches do, which Chromium and Node read whatever Lo does: `SSLKEYLOGFILE` (Chromium
-  writes every connection's TLS secrets to it), `ELECTRON_ENABLE_LOGGING` and `ELECTRON_LOG_FILE`
-  (Chromium's own logs), and `NODE_TLS_REJECT_UNAUTHORIZED=0`. The certificate authorities'
-  variables, which networks that inspect TLS need, and proxies are left alone. A build run from
-  source takes every switch and variable, as `electron-vite dev` and the tests pass some.
+  status 1 on any argument that isn't a `lo://`, `https://` or `http://` link from its first
+  character (`src/main/arguments.ts`). Chromium's switches can send main's requests, with their
+  `Authorization` header, to another server, write out the secrets of every connection, or open a
+  port that drives the window, and none is Lo's. Chromium trims the whitespace around an argument
+  before it looks for a switch, so Lo takes links alone rather than looking for switches itself.
+  Links reach a packaged Lo as events, or, from the `lo` command, as its one argument. Nor does it
+  start with the variables that do what some switches do, which Chromium and Node read whatever Lo
+  does: `SSLKEYLOGFILE` (Chromium writes every connection's TLS secrets to it),
+  `ELECTRON_ENABLE_LOGGING` and `ELECTRON_LOG_FILE` (Chromium's own logs), and
+  `NODE_TLS_REJECT_UNAUTHORIZED=0`. The certificate authorities' variables, which networks that
+  inspect TLS need, and proxies are left alone. A build run from source takes every switch and
+  variable, as `electron-vite dev` and the tests pass some.
 - A build run from source goes by `Lo Dev`, so it never touches an installed Lo's data or its key in
   the system's keychain: it keeps its data in its own folder (`Lo Dev`), or in `LO_USER_DATA_DIR`
   when that's set, and its key under "Lo Dev Safe Storage". A packaged build is `Lo`, and ignores
@@ -435,22 +438,25 @@ Recent pull requests, and links from other apps. Each is untrusted text, read th
   only, without signing in: no poller watches it, so it's never among the recent ones, and its
   header says revisions need an account. When the account Lo would use can't check the repository,
   as when an organization restricts Lo, the tab says why, with GitHub's link to fix it.
-- Any other `https` or `http` link goes to the system's browser, unless Lo is that browser or the
-  link comes straight back from it, which would send it round in a circle. A `lo://` link that isn't
-  a pull request's opens nothing.
+- Any other `https` link goes to the system's browser, unless Lo is that browser or the link comes
+  straight back from it, which would send it round in a circle. From the window, which main can't
+  tell from a page that made a link up, a plain `http` link goes nowhere, and the open box offers to
+  copy it; from another app, it goes to the browser as it came. A `lo://` link that isn't a pull
+  request's opens nothing.
 - The open box shows what a link opens and as whom, or why it can't, before anything opens. As it
   opens it asks main for the pull request link on the clipboard, which comes back written as Lo
   writes one; nothing else on the clipboard reaches the window.
 - Other apps hand Lo links as `open-url` events (`lo://`, and web links from a link router), and as
   the arguments of a second launch, which hands them to the Lo running and quits. A packaged Lo
   registers itself for `lo://` as it starts.
-- "Install command-line tool", in the macOS app menu and in Settings, writes `lo`, a shell script
-  that takes one argument, refuses one that starts with `-`, and passes it on quoted: on macOS to
+- "Install command-line tool", in the macOS app menu, Settings and the command palette, with no key
+  since it's done once, writes `lo`, a shell script that takes one argument, refuses anything but a
+  `lo://`, `https://` or `http://` link, and passes it on quoted: on macOS to
   `open -n -b com.scornz.lo --args`, since `open` drops the arguments of an app that's running, in
   `/usr/local/bin` once the system's prompt for an administrator allows it, or `~/.local/bin`; on
-  Linux to Lo's program, in `~/.local/bin`. It never replaces a `lo` it didn't write. A build run
-  from source writes it in `LO_COMMAND_FOLDER` when that's set, without asking, and a packaged build
-  ignores it.
+  Linux to Lo's program, in `~/.local/bin`. It never replaces a `lo` it didn't write, or one it
+  can't read. A build run from source writes it in `LO_COMMAND_FOLDER` when that's set, without
+  asking, and a packaged build ignores it.
 
 ## The interface
 

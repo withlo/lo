@@ -1,8 +1,9 @@
 // The `lo` command: a small shell script that hands its one argument, a link, to Lo. On macOS it
 // asks the system to start Lo by its bundle ID with the link as its argument; a Lo already running
 // takes it from the new one, which quits. Elsewhere it runs Lo's program with the link. Either way
-// the link is passed as one argument and nothing else, and an argument that starts with `-`, which
-// Lo would read as a switch, is refused before anything runs. Nothing here calls Electron.
+// the link is passed as one argument and nothing else, and an argument that isn't a `lo://`,
+// `https://` or `http://` link, which Lo would refuse or read as a switch, is refused before
+// anything runs. Nothing here calls Electron.
 
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -44,7 +45,7 @@ export function shellQuote(text: string): string {
 }
 
 /**
- * The script `lo` is: it takes exactly one argument, refuses one that starts with `-`, and passes
+ * The script `lo` is: it takes exactly one argument, refuses one that isn't a link, and passes
  * it on quoted, as one argument, to what starts Lo.
  */
 export function commandScript(launch: Launch): string {
@@ -62,9 +63,12 @@ export function commandScript(launch: Launch): string {
     "  echo 'usage: lo <link to a pull request>' >&2",
     '  exit 2',
     'fi',
+    // A link and nothing else, from its first character: Lo itself would read an option, even
+    // after whitespace, as one of Chromium's switches.
     'case "$1" in',
-    '  -*)',
-    "    echo 'lo: give it a link to a pull request, not an option.' >&2",
+    '  [Ll][Oo]://* | [Hh][Tt][Tt][Pp]://* | [Hh][Tt][Tt][Pp][Ss]://*) ;;',
+    '  *)',
+    "    echo 'lo: give it a link to a pull request, such as https://github.com/owner/repo/pull/123.' >&2",
     '    exit 2',
     '    ;;',
     'esac',

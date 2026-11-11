@@ -76,14 +76,33 @@ function install(at: string, script: string): string {
 
 const E2E_LINK = 'https://github.com/rozed-dev/e2e/pull/78';
 
+/** Links, each with what a shell or Lo might read as more than one. */
 const HOSTILE = [
   'https://github.com/withlo/lo/pull/1',
+  'lo://github.com/withlo/lo/pull/1',
+  'HTTP://github.com/withlo/lo/pull/1',
   'https://github.com/withlo/lo/pull/1 --remote-debugging-port=9222',
-  "it's a 'quoted' \"link\"",
+  "https://github.com/it's/a/'quoted'/\"link\"",
+  'https://$(touch pwned)',
+  'https://`touch pwned`; touch pwned',
+  'https://a\nb\n--inspect',
+  'https://"$@" $1 \\ * ?',
+];
+
+/** Arguments that aren't links: options, even after whitespace, which Chromium trims, and the rest. */
+const REFUSED = [
+  '-n',
+  '--args',
+  '--remote-debugging-port=9222',
+  '-',
+  ' --ssl-key-log-file=/tmp/keys.log',
+  '\t--log-net-log=/tmp/net.json',
+  '\n--remote-debugging-port=9222',
+  '\r--ignore-certificate-errors',
+  ' https://github.com/withlo/lo/pull/1',
+  'rozed-dev/e2e#78',
+  'file:///etc/passwd',
   '$(touch pwned)',
-  '`touch pwned`; touch pwned',
-  'a\nb\n--inspect',
-  '"$@" $1 \\ * ?',
   '',
 ];
 
@@ -103,21 +122,19 @@ describe('the lo command on macOS', () => {
     },
   );
 
-  it.each(['-n', '--args', '--remote-debugging-port=9222', '-'])(
-    'refuses %j, which starts with -, and runs nothing',
-    async (argument) => {
-      const at = folder();
-      const open = stub(at);
-      const path = install(
-        at,
-        commandScript({ kind: 'bundle', bundleId: BUNDLE_ID, open: open.program }),
-      );
-      const { code, stderr } = await run(path, [argument], at);
-      expect(code).toBe(2);
-      expect(stderr).toContain('not an option');
-      expect(open.got()).toBeUndefined();
-    },
-  );
+  it.each(REFUSED)('refuses %j, which isn’t a link, and runs nothing', async (argument) => {
+    const at = folder();
+    const open = stub(at);
+    const path = install(
+      at,
+      commandScript({ kind: 'bundle', bundleId: BUNDLE_ID, open: open.program }),
+    );
+    const { code, stderr } = await run(path, [argument], at);
+    expect(code).toBe(2);
+    expect(stderr).toContain('give it a link to a pull request');
+    expect(existsSync(join(at, 'pwned'))).toBe(false);
+    expect(open.got()).toBeUndefined();
+  });
 
   it('takes exactly one argument', async () => {
     const at = folder();
@@ -182,14 +199,16 @@ describe('the lo command that runs Lo’s program', () => {
     ).toThrow("Not a variable's name");
   });
 
-  it('refuses an argument that starts with -', async () => {
+  it('refuses an argument that isn’t a link', async () => {
     const at = folder();
     const program = stub(at);
     const path = install(
       at,
       commandScript({ kind: 'program', program: program.program, args: [] }),
     );
-    expect((await run(path, ['--no-sandbox'], at)).code).toBe(2);
+    for (const argument of ['--no-sandbox', ' --no-sandbox', 'x.txt']) {
+      expect((await run(path, [argument], at)).code).toBe(2);
+    }
     expect(program.got()).toBeUndefined();
   });
 });
