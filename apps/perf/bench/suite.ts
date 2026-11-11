@@ -70,6 +70,7 @@ export async function launch(
     ? [
         `--trace-startup=${traceCategories.join(',')}`,
         `--trace-startup-file=${options.trace}`,
+        '--trace-startup-format=json',
         '--trace-startup-duration=30',
       ]
     : [];

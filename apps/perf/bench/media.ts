@@ -50,17 +50,33 @@ export async function traceRun(
   const suite = await launch(pull, width, zR ? {} : { trace: startup });
   const { app, page } = suite;
   const written: string[] = [];
+  // Each stretch is traced through the DevTools protocol, as JSON, which DevTools' Performance
+  // panel and Perfetto both open. Electron's own tracing writes Perfetto's binary format.
   const trace = async (segment: string, run: () => Promise<void>): Promise<void> => {
-    const file = join(folder, `${name}-${segment}.json`);
-    await app.evaluate(async ({ contentTracing }, categories) => {
-      await contentTracing.startRecording({
-        included_categories: categories,
-        excluded_categories: ['*'],
+    const { cdp } = suite;
+    const complete = new Promise<string>((done) => {
+      cdp.once('Tracing.tracingComplete', ({ stream }) => {
+        if (stream) done(stream);
       });
-    }, traceCategories);
+    });
+    await cdp.send('Tracing.start', {
+      transferMode: 'ReturnAsStream',
+      streamFormat: 'json',
+      traceConfig: { includedCategories: traceCategories, excludedCategories: ['*'] },
+    });
     await run();
-    await app.evaluate(({ contentTracing }, path) => contentTracing.stopRecording(path), file);
-    written.push(gzip(file));
+    await cdp.send('Tracing.end');
+    const stream = await complete;
+    const chunks: Buffer[] = [];
+    for (let eof = false; !eof;) {
+      const read = await cdp.send('IO.read', { handle: stream, size: 1 << 20 });
+      chunks.push(Buffer.from(read.data, read.base64Encoded ? 'base64' : 'utf8'));
+      eof = read.eof;
+    }
+    await cdp.send('IO.close', { handle: stream });
+    const file = join(folder, `${name}-${segment}.json.gz`);
+    writeFileSync(file, gzipSync(Buffer.concat(chunks)));
+    written.push(file);
   };
   try {
     if (!zR) {
