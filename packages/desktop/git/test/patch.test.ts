@@ -17,8 +17,8 @@ import { expect, test } from 'vitest';
 
 import { GitError } from '../src/errors.ts';
 import { type Oid, parseOid } from '../src/oid.ts';
-import type { FilePatch } from '../src/patch.ts';
-import type { Repo } from '../src/repo.ts';
+import { type FilePatch, MAX_PATCH_LINES } from '../src/patch.ts';
+import { PATCH_LIMIT, type Repo } from '../src/repo.ts';
 import { cacheFor, repoServer } from './support.ts';
 
 /** The commits a submodule points at. Neither is on the server, so fetching either fails. */
@@ -332,4 +332,49 @@ test('patches match githubs for e9s moves and large file', async () => {
 
 test('patches match githubs for e12s languages', async () => {
   expect(await differences('e12_tree', 3)).toEqual([]);
+});
+
+test('a huge file is refused and one of many lines is written in one piece', async () => {
+  const server = repoServer();
+  const remote = server.repo('owner', 'repo');
+  const base = parseOid(remote.write('README', 'readme\n').commit('base'));
+  remote.publish('refs/heads/trunk');
+  // Any author can push a file like these, and GitHub leaves their patches out.
+  const huge = Buffer.alloc(20 * 1024 * 1024, '\n');
+  const many = Buffer.from('x\n'.repeat(400_000));
+  remote.switch('feature').write('huge.txt', huge).write('many.txt', many);
+  const head = parseOid(remote.commit('head'));
+  remote.publish('refs/pull/1/head');
+  const repo = await (await cacheFor(server)).open('owner', 'repo');
+  await repo.fetchPull({ number: 1, head, baseBranch: 'trunk' });
+  expect(await repo.download(await repo.changedObjects(base, head))).toEqual([]);
+  const patchOf = (path: string, maxBytes?: number) =>
+    repo.patch(base, head, Buffer.from(path), undefined, { maxBytes });
+  const refusal = async (path: string, maxBytes?: number) => {
+    const error: unknown = await patchOf(path, maxBytes).catch((caught: unknown) => caught);
+    return error instanceof GitError ? error.detail : error;
+  };
+
+  // Past the cap on bytes, it's never read; past the cap on lines, it's never written.
+  expect(await refusal('huge.txt')).toEqual({
+    kind: 'tooLarge',
+    command: 'git diff',
+    limit: PATCH_LIMIT,
+    unit: undefined,
+  });
+  expect(await refusal('huge.txt', 32 * 1024 * 1024)).toEqual({
+    kind: 'tooLarge',
+    command: 'git diff',
+    limit: MAX_PATCH_LINES,
+    unit: 'lines',
+  });
+
+  // 400,000 lines, in one buffer a third larger than the file, and no object for each line.
+  const heap = process.memoryUsage().heapUsed;
+  const written = await patchOf('many.txt');
+  expect(process.memoryUsage().heapUsed - heap).toBeLessThan(16 * 1024 * 1024);
+  if (written.binary) throw new Error('not binary');
+  const header = '@@ -0,0 +1,400000 @@\n';
+  expect(written.hunks.length).toBe(header.length + many.length * 1.5);
+  expect(written.hunks.subarray(0, header.length + 6).toString('utf8')).toBe(`${header}+x\n+x\n`);
 });

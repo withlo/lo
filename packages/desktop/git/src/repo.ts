@@ -17,10 +17,12 @@ import { GitError } from './errors.ts';
 import { type Fetching, failureMessage, type GitCommand, type Runner } from './git.ts';
 import type { FetchLimits } from './limits.ts';
 import type { CloneLock, Release } from './lock.ts';
-import { ObjectReader } from './objects.ts';
+import type { ObjectReader } from './objects.ts';
 import { type Oid, oidFromOutput, parseOid } from './oid.ts';
 import {
   type FilePatch,
+  lineCount,
+  MAX_PATCH_LINES,
   patchFromDiff,
   submoduleLine,
   UNCHANGED,
@@ -46,6 +48,8 @@ import {
   displayPath,
   type FileMode,
   type Found,
+  MAX_ENTRIES,
+  tooManyEntries,
   parseListed,
   type TreeEntry,
   treeEntry,
@@ -78,8 +82,10 @@ export interface RepoParts {
   /** The address the clone fetches from. */
   readonly url: string;
   readonly lock: CloneLock;
-  /** Lets go of the clone when the repository closes. */
+  /** Lets go of the clone, and its reader, when the repository closes. */
   readonly done: Release;
+  /** The clone's one long-lived reader of objects, which every repository open on it shares. */
+  readonly reader: ObjectReader;
   readonly token?: TokenSource | undefined;
   readonly proxy?: (() => Promise<string | undefined>) | undefined;
   readonly progress?: ((activity: Activity) => void) | undefined;
@@ -145,6 +151,12 @@ export interface Overview {
   readonly files: readonly OverviewFile[];
 }
 
+/**
+ * The most bytes either side of a patch may hold unless the caller says otherwise: far more than a
+ * file whose patch is worth reading, as GitHub leaves out a large file's.
+ */
+export const PATCH_LIMIT = 10 * 1024 * 1024;
+
 /** The most an overview may hold, in bytes. */
 export const OVERVIEW_LIMIT = 50 * 1024 * 1024;
 
@@ -190,7 +202,7 @@ export class Repo {
   readonly #token: TokenSource | undefined;
   readonly #proxy: (() => Promise<string | undefined>) | undefined;
   readonly #progress: ((activity: Activity) => void) | undefined;
-  /** The clone's one long-lived reader of objects, started on the first read that needs it. */
+  /** The clone's reader of objects, started on the first read that needs it. */
   readonly #reader: ObjectReader;
 
   constructor(parts: RepoParts) {
@@ -204,19 +216,14 @@ export class Repo {
     this.#token = parts.token;
     this.#proxy = parts.proxy;
     this.#progress = parts.progress;
-    this.#reader = new ObjectReader(() =>
-      this.#runner
-        .command({ gitDir: this.folder }, { readsOnly: true })
-        .arg('cat-file', '--batch-command'),
-    );
+    this.#reader = parts.reader;
   }
 
   /**
-   * Stops the clone's reader, and lets cleanup take the clone again once no other repository has
-   * it open.
+   * Lets go of the clone's reader, which stops once no repository open on the clone uses it, and
+   * lets cleanup take the clone again once none has it open.
    */
   close(): void {
-    this.#reader.close();
     this.#done();
   }
 
@@ -459,14 +466,20 @@ export class Repo {
    * The files in `rev`, a commit or a tree, with its symlinks and submodules, in git's order, by
    * path; folders aren't listed. It reads only trees, which a partial clone has, so it downloads
    * nothing. A file's size is known only once the clone has its contents: list the tree again
-   * after {@link Repo.downloadFiles} for the sizes of what it brought.
+   * after {@link Repo.downloadFiles} for the sizes of what it brought. More than `maxEntries`
+   * entries, {@link MAX_ENTRIES} unless it says otherwise, is `tooLarge`.
    */
-  async tree(rev: Oid): Promise<TreeEntry[]> {
+  async tree(rev: Oid, options: { maxEntries?: number | undefined } = {}): Promise<TreeEntry[]> {
+    const maxEntries = options.maxEntries ?? MAX_ENTRIES;
     await this.treeId(rev);
     const entries: TreeEntry[] = [];
     // Told not to download, `-l` prints `BAD` for the size of a file the clone lacks.
     const listing = this.#git().arg('ls-tree', '-r', '-z', '-l', '--full-tree', rev, '--');
-    for await (const record of listing.records()) entries.push(treeEntry(parseListed(record)));
+    for await (const record of listing.records()) {
+      // Stopping the listing stops git.
+      if (entries.length === maxEntries) throw tooManyEntries(listing.display, maxEntries);
+      entries.push(treeEntry(parseListed(record)));
+    }
     return entries;
   }
 
@@ -587,7 +600,11 @@ export class Repo {
   async changedFiles(
     from: Oid,
     to: Oid,
-    options: { paths?: readonly Uint8Array[] | undefined } = {},
+    options: {
+      paths?: readonly Uint8Array[] | undefined;
+      /** The most files to read, past which it's `tooLarge`: {@link MAX_ENTRIES} unless it says. */
+      maxEntries?: number | undefined;
+    } = {},
   ): Promise<ChangedFile[]> {
     const command = this.#git().arg(
       'diff',
@@ -609,7 +626,7 @@ export class Repo {
         this.changedObjects(from, to),
       );
     }
-    let files = parseChanges(finished.stdout);
+    let files = parseChanges(finished.stdout, options.maxEntries);
     if (options.paths !== undefined) {
       checkPaths(options.paths);
       const wanted = new Set(options.paths.map((path) => Buffer.from(path).toString('latin1')));
@@ -742,8 +759,18 @@ export class Repo {
    * - A file added or deleted is compared with nothing, and a submodule's commits show as
    *   `Subproject commit` lines, as git shows them, never fetching either.
    * - Both versions' contents must be in the clone, or it's `notDownloaded`.
+   * - Neither version may be larger than `maxBytes`, {@link PATCH_LIMIT} unless it says otherwise,
+   *   and the patch may hold no more than {@link MAX_PATCH_LINES} lines, or it's `tooLarge`: a
+   *   pull request's author decides how large its files are.
    */
-  async patch(base: Oid, head: Oid, path: Uint8Array, oldPath?: Uint8Array): Promise<FilePatch> {
+  async patch(
+    base: Oid,
+    head: Oid,
+    path: Uint8Array,
+    oldPath?: Uint8Array,
+    options: { maxBytes?: number | undefined } = {},
+  ): Promise<FilePatch> {
+    const maxBytes = options.maxBytes ?? PATCH_LIMIT;
     checkPaths(oldPath === undefined ? [path] : [path, oldPath]);
     const walk = new TreeWalk(this.#reader);
     const [baseTree, headTree] = [await walk.root(base), await walk.root(head)];
@@ -760,6 +787,15 @@ export class Repo {
     }
     if (old === undefined && now === undefined) return UNCHANGED;
     if (old !== undefined && now !== undefined && old.oid === now.oid) return UNCHANGED;
+    // Each side's size first, so that a file too large is never read.
+    const lacking = [];
+    for (const side of [old, now]) {
+      if (side === undefined || side.mode === 'submodule') continue;
+      const info = await this.#reader.info(side.oid);
+      if (info === undefined) lacking.push(side.oid);
+      else if (info.size > maxBytes) throw patchTooLarge(maxBytes);
+    }
+    if (lacking.length > 0) throw new GitError({ kind: 'notDownloaded', oids: lacking });
     if (
       old?.mode === 'submodule' ||
       now?.mode === 'submodule' ||
@@ -770,17 +806,14 @@ export class Repo {
       const contents = async (side: Found | undefined) => {
         if (side === undefined) return undefined;
         if (side.mode === 'submodule') return submoduleLine(side.oid);
-        const blob = await this.readBlob(side.oid);
+        const blob = await this.readBlob(side.oid, { maxBytes });
         if (blob === undefined) throw new GitError({ kind: 'notDownloaded', oids: [side.oid] });
         return blob;
       };
-      return wholeFilePatch(await contents(old), await contents(now));
+      const whole = wholeFilePatch(await contents(old), await contents(now));
+      if (whole === null) throw patchTooLarge(MAX_PATCH_LINES, 'lines');
+      return whole;
     }
-    const lacking = [];
-    for (const side of [old, now]) {
-      if ((await this.#reader.info(side.oid)) === undefined) lacking.push(side.oid);
-    }
-    if (lacking.length > 0) throw new GitError({ kind: 'notDownloaded', oids: lacking });
     const output = await this.#git()
       .arg(
         // The one diff setting no option overrides: a blank unchanged line keeps its space.
@@ -798,7 +831,9 @@ export class Repo {
         now.oid,
         '--',
       )
-      .run();
+      // Each line of both sides, with its sign, and git's header.
+      .run(undefined, { maxBytes: 4 * maxBytes + 64 * 1024 });
+    if (lineCount(output) > MAX_PATCH_LINES + 8) throw patchTooLarge(MAX_PATCH_LINES, 'lines');
     return patchFromDiff(output);
   }
 
@@ -1505,6 +1540,11 @@ function isLostCommit(error: unknown, oid: Oid | undefined): boolean {
 /** `oids`, each once, in order. */
 function unique(oids: readonly Oid[]): Oid[] {
   return [...new Set(oids)];
+}
+
+/** The error for a patch past `limit` bytes, or lines. */
+function patchTooLarge(limit: number, unit?: 'lines'): GitError {
+  return new GitError({ kind: 'tooLarge', command: 'git diff', limit, unit });
 }
 
 /** "1 file", or "2 files". */

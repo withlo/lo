@@ -60,8 +60,11 @@ export type GitErrorDetail =
   | { kind: 'diskFull' }
   /** A name or ID that can't be used, such as a branch name git refuses. */
   | { kind: 'invalid'; what: string; value: string }
-  /** A git command wrote more than `limit` bytes, so Lo stopped it. */
-  | { kind: 'tooLarge'; command: string; limit: number }
+  /**
+   * A git command wrote, or would have, more than `limit` bytes, or `limit` of `unit`, such as a
+   * file's lines or a tree's entries, so Lo stopped it or never read it.
+   */
+  | { kind: 'tooLarge'; command: string; limit: number; unit?: 'lines' | 'entries' | undefined }
   /** The cache is open in another process, or already in this one. */
   | { kind: 'busy'; message: string }
   /** Writing to a clone opened to read offline, which never writes. */
@@ -156,7 +159,7 @@ function describe(detail: GitErrorDetail): string {
     case 'invalid':
       return `\`${detail.value}\` isn't a valid ${detail.what}`;
     case 'tooLarge':
-      return `\`${detail.command}\` wrote more than ${detail.limit} bytes, so Lo stopped it`;
+      return `\`${detail.command}\` wrote more than ${detail.limit} ${detail.unit ?? 'bytes'}, so Lo stopped it`;
     case 'busy':
       return detail.message;
     case 'readOnly':

@@ -3,7 +3,7 @@
 import { GitError } from './errors.ts';
 import { type Oid, parseOid } from './oid.ts';
 import { splitRecords } from './records.ts';
-import { displayPath, type FileMode, parseMode } from './tree.ts';
+import { displayPath, type FileMode, MAX_ENTRIES, parseMode, tooManyEntries } from './tree.ts';
 
 /**
  * How a file changed, as git reports it. Renames are found as GitHub finds them, at 50%
@@ -150,9 +150,9 @@ function parseRawHeader(header: string): RawHeader {
 /**
  * Reads `git diff -z --raw --numstat --no-abbrev`: a raw record for each file, its header then
  * its path or two, then a numstat record for each, in the same order. Paths are bytes; the rest
- * is ASCII.
+ * is ASCII. More than `maxEntries` files is `tooLarge`.
  */
-export function parseChanges(output: Uint8Array): ChangedFile[] {
+export function parseChanges(output: Uint8Array, maxEntries = MAX_ENTRIES): ChangedFile[] {
   const fields = splitRecords(output);
   let at = 0;
   const files: {
@@ -165,6 +165,7 @@ export function parseChanges(output: Uint8Array): ChangedFile[] {
   for (;;) {
     const field = fields[at];
     if (field === undefined || field[0] !== 0x3a) break;
+    if (files.length === maxEntries) throw tooManyEntries('git diff --raw --numstat', maxEntries);
     at++;
     const header = ascii(field);
     const raw = parseRawHeader(header);
@@ -266,6 +267,7 @@ function side(path: Buffer, mode: FileMode | undefined, oid: Oid): FileVersion |
  */
 export function rawDiffBlobs(output: Uint8Array): Oid[] {
   const fields = splitRecords(output).filter((field) => field.length > 0);
+  if (fields.length > 2 * MAX_ENTRIES) throw tooManyEntries('git diff --raw', MAX_ENTRIES);
   const blobs: Oid[] = [];
   for (let at = 0; at < fields.length; at += 2) {
     const field = fields[at];

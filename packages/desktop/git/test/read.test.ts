@@ -492,3 +492,13 @@ test('a file larger than its reader takes is refused without reading it', async 
   // The reader goes on, and a cap the file fits takes it.
   expect((await f.repo.readBlob(oid, { maxBytes: 14 }))?.toString('utf8')).toBe('keep, changed\n');
 });
+
+test('a diff of more files than its reader takes is refused', async () => {
+  const f = await fixture();
+  await downloadChanges(f.repo, f.base, f.head);
+
+  const error = await failure(f.repo.changedFiles(f.base, f.head, { maxEntries: 8 }));
+
+  expect(error.detail).toMatchObject({ kind: 'tooLarge', limit: 8, unit: 'entries' });
+  expect(await f.repo.changedFiles(f.base, f.head, { maxEntries: 9 })).toHaveLength(9);
+});

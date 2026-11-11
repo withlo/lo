@@ -1,5 +1,7 @@
 // Listing a commit's files, and downloading them in batches.
 
+import { execFileSync } from 'node:child_process';
+
 import {
   blobId,
   git,
@@ -465,4 +467,42 @@ test('a trees attributes are answered by one check attr', async () => {
     return name.endsWith('.gen.txt') ? 'set' : 'unspecified';
   });
   expect(attributes).toEqual(expected);
+});
+
+test('a listing longer than its reader takes is refused', async () => {
+  const f = await manyFiles(5);
+  const error: unknown = await f.repo
+    .tree(f.head, { maxEntries: 5 })
+    .catch((caught: unknown) => caught);
+  expect(error instanceof GitError && error.detail).toMatchObject({
+    kind: 'tooLarge',
+    limit: 5,
+    unit: 'entries',
+  });
+  expect(await f.repo.tree(f.head, { maxEntries: 6 })).toHaveLength(6);
+});
+
+/** The `cat-file --batch-command` processes reading the clone at `folder`. */
+function readers(folder: string): string[] {
+  return execFileSync('ps', ['axww', '-o', 'command='], { encoding: 'utf8' })
+    .split('\n')
+    .filter((line) => line.includes('cat-file --batch-command') && line.includes(folder));
+}
+
+test('a clone open twice shares one reader', async () => {
+  const f = await manyFiles(2);
+  const second = await f.cache.open('owner', 'repo');
+  const third = await f.cache.openOffline('owner', 'repo');
+  if (third === undefined) throw new Error('no clone to read offline');
+
+  for (const repo of [f.repo, second, third]) expect(await repo.treeId(f.head)).toBeDefined();
+
+  expect(readers(f.repo.folder)).toHaveLength(1);
+  // It runs while any of them is open.
+  f.repo.close();
+  third.close();
+  expect(await second.treeId(f.head)).toBeDefined();
+  expect(readers(f.repo.folder)).toHaveLength(1);
+  second.close();
+  await eventually(() => readers(f.repo.folder).length === 0);
 });

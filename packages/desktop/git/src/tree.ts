@@ -28,6 +28,18 @@ export interface TreeEntry {
   readonly size?: number | undefined;
 }
 
+/**
+ * The most entries Lo reads of a listing, such as a tree's files or a diff's, unless the caller
+ * says otherwise: past it, the listing is `tooLarge`. Each entry is an object in main's memory, and
+ * a repository's author decides how many there are.
+ */
+export const MAX_ENTRIES = 500_000;
+
+/** The error for a listing, by `command`, of more than `limit` entries. */
+export function tooManyEntries(command: string, limit: number): GitError {
+  return new GitError({ kind: 'tooLarge', command, limit, unit: 'entries' });
+}
+
 /** `path` as text, with U+FFFD for bytes that aren't UTF-8. */
 export function displayPath(path: Uint8Array): string {
   return Buffer.from(path.buffer, path.byteOffset, path.byteLength).toString('utf8');

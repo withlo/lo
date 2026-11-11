@@ -23,16 +23,17 @@ export {
 export { Git, type TestSettings } from './git.ts';
 export * from './limits.ts';
 export * from './oid.ts';
-export { type FilePatch } from './patch.ts';
+export { type FilePatch, MAX_PATCH_LINES } from './patch.ts';
 export * from './progress.ts';
 export {
   type FetchedPull,
   type HeadSource,
   type Overview,
   type OverviewFile,
+  PATCH_LIMIT,
   type PullRequestRefs,
   Repo,
 } from './repo.ts';
 export * from './token.ts';
-export { displayPath, type FileMode, type TreeEntry } from './tree.ts';
+export { displayPath, type FileMode, MAX_ENTRIES, type TreeEntry } from './tree.ts';
 export * from './version.ts';
