@@ -198,10 +198,11 @@ the window find them with `import.meta.glob`.
   the window opens, to publish on the feature's topics; and optionally a `stop` that runs once as Lo
   quits. A feature stops before the features whose services it uses, and otherwise the last to start
   stops first, each once the one before it has. Each gets 5 s of its own, and once they've taken 30
-  s in all no more start stopping; the database closes once nothing stopping is still within its own
-  5 s. Each part gets the feature's context: `publish`, `database`, `git` and `use`. A handler
-  throws an `IpcError` for a failure the window should see; any other error is logged and reaches
-  the window only as `internal`.
+  s in all no more start stopping, except features that provide services, which always get their own
+  5 s; the database closes once nothing stopping is still within its own 5 s. Each part gets the
+  feature's context: `publish`, `database`, `git` and `use`. A handler throws an `IpcError` for a
+  failure the window should see; any other error is logged and reaches the window only as
+  `internal`.
 - `service.ts` names what the feature's main side offers other features, each with
   `defineService<T>('<feature>.<name>')`: the GitHub clients, say. Its `provide` pairs each with its
   value (`provides(service, value)`). Every feature's `provide` runs before any feature's `start`,
@@ -301,6 +302,29 @@ Only main runs git, through `@lo/git`, and the background process never sees git
   with what it started.
 - A build run from source takes the git to run from `LO_GIT`, a path or `none`, and fetches from
   `LO_GIT_REMOTE`, a server or folder on this machine, for its tests. A packaged build ignores both.
+
+### Accounts
+
+Only main talks to GitHub, through `@lo/github`, and only main holds a token. The `accounts` feature
+provides `accounts.github` to the others: each account's client and poller, a client for public
+repositories, which account opens a repository, and the pull requests opened lately.
+
+- Each account's grant (its token, and the refresh token that renews it) is one row in the database,
+  encrypted whole by Electron's `safeStorage`, which keeps its key in the system's keychain. Where
+  the system has no keychain to encrypt with (Linux without GNOME Keyring or KWallet, which
+  `safeStorage` reports as `basic_text`, or Chromium's `--use-mock-keychain`), Lo neither keeps nor
+  reads a token, except in a test run.
+- Every request to GitHub goes through `net.fetch`, so it takes the system's proxy.
+- Each account's poller keeps what it read in the database, read back only by the build of Lo that
+  wrote it.
+- The window gets each account's summary (its login and name, how it signed in, whether it's signed
+  out), never a token.
+- As Lo quits, the feature saves any renewed token the keychain refused, waiting for renewals GitHub
+  is answering only as long as its own limit for stopping allows.
+- A build run from source talks to a GitHub on this machine when `LO_GITHUB` names its address
+  (`http://127.0.0.1:<port>`, serving GitHub's API, website and uploads under `/api`, `/web` and
+  `/uploads`, as the replay server does), which makes it a test run. It adds the account whose token
+  is in the file `LO_TEST_TOKEN_FILE` names as it starts. A packaged build ignores both.
 
 ## The interface
 

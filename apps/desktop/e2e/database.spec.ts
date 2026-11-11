@@ -19,11 +19,16 @@ test('the database opens on a fresh data folder, with its migrations table', asy
   await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
   const file = join(dataFolder(), 'lo.db');
   expect(rows(file, 'PRAGMA journal_mode')).toEqual([{ journal_mode: 'wal' }]);
-  expect(rows(file, "SELECT name FROM sqlite_schema WHERE type = 'table'")).toEqual([
-    { name: 'migrations' },
-  ]);
-  // Lo itself has no tables yet; each feature brings its own.
-  expect(rows(file, 'SELECT * FROM migrations')).toEqual([]);
+  // Lo itself has only the migrations table; each feature brings its own, named for it.
+  const tables = rows(file, "SELECT name FROM sqlite_schema WHERE type = 'table'");
+  expect(tables).toContainEqual({ name: 'migrations' });
+  for (const table of tables) {
+    expect(table).toEqual({ name: expect.stringMatching(/^(?:migrations|[a-z][a-z0-9]*_\w+)$/) });
+  }
+  expect(rows(file, 'SELECT feature, number FROM migrations')).toContainEqual({
+    feature: 'accounts',
+    number: 1,
+  });
 });
 
 test("a database a newer Lo wrote isn't opened, and Lo says why", async () => {

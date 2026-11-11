@@ -226,6 +226,9 @@ importers:
       '@lo/git':
         specifier: workspace:*
         version: link:../../packages/desktop/git
+      '@lo/github':
+        specifier: workspace:*
+        version: link:../../packages/core/github
       '@lo/ui':
         specifier: workspace:*
         version: link:../../packages/desktop/ui

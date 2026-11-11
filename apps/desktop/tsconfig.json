@@ -6,6 +6,9 @@
       "path": "../../packages/desktop/ui"
     },
     {
+      "path": "../../packages/core/github"
+    },
+    {
       "path": "../../packages/desktop/git"
     },
     {

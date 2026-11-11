@@ -131,7 +131,8 @@ Everything a PR contains is untrusted: code, Markdown, images and artifacts.
 - **Database.** A SQLite file holds cached PR data, "last seen" revisions, the account to use per
   owner, trusted repos, recent PRs and unsent comment text.
 - **Tokens** are encrypted with a key kept in the system keychain, and stored in the database, one
-  per account.
+  per account. On Linux that keychain is GNOME Keyring or KWallet: without one, Lo asks for it
+  rather than keep a token as good as unencrypted.
 - **Repo copies.** Each repo gets a bare partial clone in Lo's cache folder.
 
 ### Per-system code

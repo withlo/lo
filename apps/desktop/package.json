@@ -17,6 +17,7 @@
   "dependencies": {
     "@lo/design": "workspace:*",
     "@lo/git": "workspace:*",
+    "@lo/github": "workspace:*",
     "@lo/ui": "workspace:*",
     "react": "19.3.1",
     "react-dom": "19.3.1",
