@@ -15,4 +15,4 @@ export {
   languageOfPath,
   languages,
 } from './languages.ts';
-export { type Token, tokenClass, tokenOf, tokens, unstyled } from './tokens.ts';
+export { tokenClass, tokenOf, tokens, unstyled } from './tokens.ts';

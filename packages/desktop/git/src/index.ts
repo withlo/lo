@@ -36,13 +36,16 @@ export {
   gitAt,
   type GitStatus,
   installAdvice,
+  isExecutableFile,
   type Places,
+  whyDistrusted,
 } from './find.ts';
 export { Git, type TestSettings } from './git.ts';
 export * from './limits.ts';
 export * from './oid.ts';
 export { type FilePatch, MAX_PATCH_LINES } from './patch.ts';
 export * from './progress.ts';
+export { Child, type Finished, type StartOptions } from './spawn.ts';
 export {
   type FetchedPull,
   type HeadSource,

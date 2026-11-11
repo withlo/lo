@@ -203,6 +203,27 @@
   gap: var(--lo-sp-4) var(--lo-sp-24);
 }
 
+/* A chosen radio ball: Powder, with a ring of the surface inside its edge. */
+@utility ball-on {
+  background: var(--lo-accent);
+  box-shadow:
+    inset 0 0 0 1.5px var(--lo-accent),
+    inset 0 0 0 4.5px var(--lo-bg-overlay);
+}
+
+/* The code to type on GitHub when signing in, its characters spaced so each reads apart. */
+@utility device-code {
+  font: var(--lo-code-display);
+  letter-spacing: 0.14em;
+}
+
+/* Facts in a dialog: a label, then what it says, in two columns. */
+@utility facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--lo-sp-6) var(--lo-sp-12);
+}
+
 /* Dialogs and palettes sit over the window. */
 @utility z-dialog {
   z-index: var(--lo-z-dialog);

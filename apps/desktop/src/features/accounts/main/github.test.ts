@@ -119,6 +119,7 @@ function start(
     build?: string;
     urls?: GitHubUrls;
     rows?: AccountRows;
+    reread?: (login: string) => Promise<Token | undefined>;
   } = {},
 ): Started {
   const database = options.database ?? accountsDatabase();
@@ -137,6 +138,7 @@ function start(
     build: options.build ?? 'build-1',
     urls: options.urls,
     rows: options.rows,
+    reread: options.reread,
     log: (message) => logged.push(message),
     poll: { jitter: 0 },
   });
@@ -248,6 +250,43 @@ describe('accounts', () => {
     await again.github.client(LOGIN);
     expect(await again.github.accounts()).toMatchObject([{ needsKeyring: false }]);
     expect(changes).toHaveBeenCalledTimes(2);
+  });
+
+  it('says every account needs a keyring from the start when none answers', async () => {
+    const storage = new FakeStorage();
+    const { github, database } = start({ storage });
+    await github.add(user(), { token: new Token(TOKEN) }, 'deviceFlow');
+    const again = start({ database, storage });
+    const changes = vi.fn<() => void>();
+    again.github.onChange(changes);
+    await again.github.checkKeyring(() => Promise.resolve(undefined));
+    expect(await again.github.accounts()).toMatchObject([{ needsKeyring: false }]);
+    expect(changes).not.toHaveBeenCalled();
+    await again.github.checkKeyring(() => Promise.resolve('No keyring answered.'));
+    expect(await again.github.accounts()).toMatchObject([{ needsKeyring: true }]);
+    expect(changes).toHaveBeenCalledOnce();
+    // Reading its token again clears it.
+    await again.github.client(LOGIN);
+    expect(await again.github.accounts()).toMatchObject([{ needsKeyring: false }]);
+  });
+
+  it('reads an account imported from gh from gh again once GitHub refuses its token', async () => {
+    const asked: string[] = [];
+    const storage = new FakeStorage();
+    const { github, database } = start({
+      storage,
+      fetch: renewing(TOKEN, () => new Response('', { status: 500 })),
+      reread: (login) => {
+        asked.push(login);
+        return Promise.resolve(new Token('gho_FAKE_FROM_GH_AGAIN'));
+      },
+    });
+    await github.add(user(), { token: new Token(TOKEN) }, 'gh');
+    const client = await github.client(LOGIN);
+    expect((await client.user()).user.login).toBe(LOGIN);
+    expect(asked).toEqual([LOGIN]);
+    expect(await github.accounts()).toMatchObject([{ signedOut: undefined }]);
+    expect(await kept(database, storage)).toBe('gho_FAKE_FROM_GH_AGAIN');
   });
 
   it('removes an account and everything kept for it, stops its poller, and says so', async () => {

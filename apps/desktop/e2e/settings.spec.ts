@@ -84,7 +84,7 @@ test('⌘, opens Settings in one tab, and shows it again from anywhere', async (
   await openSettings(page);
   await expect(tabs(page)).toHaveText(['Settings']);
   await expect(page.getByRole('navigation', { name: 'Settings' })).toBeVisible();
-  for (const section of ['Appearance', 'Cache', 'Keys']) {
+  for (const section of ['Accounts', 'Appearance', 'Cache', 'Keys']) {
     await expect(page.getByRole('heading', { name: section, level: 2 })).toBeVisible();
   }
 
@@ -111,6 +111,8 @@ test('the sections list moves between sections with j and k', async ({ page }) =
   await openSettings(page);
   const nav = page.getByRole('navigation', { name: 'Settings' });
   const current = nav.locator('[aria-current="true"]');
+  await expect(current).toHaveText('Accounts');
+  await page.keyboard.press('j');
   await expect(current).toHaveText('Appearance');
   await page.keyboard.press('j');
   await expect(current).toHaveText('Cache');

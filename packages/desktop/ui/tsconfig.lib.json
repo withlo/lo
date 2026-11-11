@@ -7,9 +7,6 @@
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "references": [
     {
-      "path": "../syntax/tsconfig.lib.json"
-    },
-    {
       "path": "../../core/diff/tsconfig.lib.json"
     }
   ]

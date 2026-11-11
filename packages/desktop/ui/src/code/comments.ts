@@ -1,6 +1,8 @@
 // Comment boxes: a small Markdown editor with Vim's keys, under the line it comments on, in the
-// thread there if there is one. It grows as you type. `⌘⏎` adds the comment to the thread; `Esc`
-// leaves insert mode, and `Esc` again closes the box and keeps the draft for the next `c` there.
+// thread there if there is one. It grows as you type. `⌘⏎` adds the comment to the review and `⌥⏎`
+// posts it now; `Esc` leaves insert mode, and `Esc` again closes the box. The box is a scope of its
+// own, `box`, so Lo's keys for the diff don't reach it, and its Vim keeps its own jumps: `⌃o` and
+// `⌃i` there are Vim's.
 
 import { history, indentLess, indentMore } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
@@ -10,45 +12,70 @@ import { drawSelection, EditorView, keymap } from '@codemirror/view';
 import { classHighlighter } from '@lezer/highlight';
 import { getCM, Vim, vim } from '@replit/codemirror-vim';
 
-import { forgetJumps } from './jumps.ts';
+import {
+  type KeySource,
+  type LineTarget,
+  SCOPE_ATTRIBUTE,
+  setScopeSource,
+  type VimKey,
+} from '../commands/index.ts';
+import type { Send } from './api.ts';
+import { mapJumps } from './jumps.ts';
+import { clearVim, idle, passToVim, setVimKeys, vimMode, vimPending } from './keys.ts';
 import type { Side } from './layout.ts';
 import type { BoxHost } from './widgets.ts';
 
-/** A file's line on one side: where a thread or a comment box is. */
-export interface Place {
+/** Where a box is: under a file's line on one side, by the file's index. */
+export interface BoxPlace {
   file: number;
   side: Side;
   line: number;
 }
 
-export function placeKey(place: Place): string {
+export function placeKey(place: BoxPlace): string {
   return `${place.file}:${place.side}:${place.line}`;
 }
 
 export interface BoxEvents {
   /** The box grew or shrank. */
   resized(box: CommentBox): void;
-  /** `⌘⏎`: the comment is written. */
-  submit(box: CommentBox, text: string): void;
-  /** `Esc` in normal mode: the box closes and keeps its draft. */
+  change(box: CommentBox, text: string): void;
+  submit(box: CommentBox, how: Send): void;
+  /** `Esc` in normal mode. */
   close(box: CommentBox): void;
 }
 
-export class CommentBox implements BoxHost {
-  readonly place: Place;
+export class CommentBox implements BoxHost, KeySource {
+  readonly place: BoxPlace;
   readonly dom: HTMLElement;
   readonly view: EditorView;
+  /** What a key in the box acts on: the line it's under, and its thread. */
+  readonly target: LineTarget;
+  readonly #forget: () => void;
   #height = 0;
 
-  constructor(place: Place, events: BoxEvents, nonce: string | undefined) {
+  constructor(
+    place: BoxPlace,
+    target: LineTarget,
+    draft: string,
+    events: BoxEvents,
+    nonce: string | undefined,
+  ) {
     this.place = place;
+    this.target = target;
     this.dom = document.createElement('div');
     this.dom.className = 'lo-diffcomposer';
+    this.dom.setAttribute(SCOPE_ATTRIBUTE, 'box');
     const hint = document.createElement('div');
     hint.className = 'lo-diffcomposer__hint';
-    hint.textContent = '⌘⏎ add the comment · Esc Esc close and keep the draft';
+    hint.textContent = '⌘⏎ add to the review · ⌥⏎ comment now · Esc Esc close and keep the draft';
+    const send = (how: Send) => () => {
+      if (this.text.trim()) events.submit(this, how);
+      return true;
+    };
     this.view = new EditorView({
       parent: this.dom,
+      doc: draft,
       extensions: [
         vim(),
         drawSelection(),
@@ -64,18 +91,12 @@ export class CommentBox implements BoxHost {
             // otherwise, where the browser would move focus out of the box and into the diff.
             {
               key: 'Tab',
-              run: (view) => (inserting(view) ? indentMore(view) : true),
-              shift: (view) => (inserting(view) ? indentLess(view) : true),
+              run: (view) => (vimMode(view) === 'insert' ? indentMore(view) : true),
+              shift: (view) => (vimMode(view) === 'insert' ? indentLess(view) : true),
               preventDefault: true,
             },
-            {
-              key: 'Mod-Enter',
-              run: (view) => {
-                const text = view.state.doc.toString().trim();
-                if (text) events.submit(this, text);
-                return true;
-              },
-            },
+            { key: 'Mod-Enter', run: send('review') },
+            { key: 'Alt-Enter', run: send('now') },
           ]),
         ),
         Prec.highest(
@@ -89,6 +110,10 @@ export class CommentBox implements BoxHost {
           }),
         ),
         EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            mapJumps(update.view, update.changes);
+            events.change(this, this.text);
+          }
           if (!update.docChanged && !update.geometryChanged) return;
           const height = this.dom.getBoundingClientRect().height;
           if (Math.abs(height - this.#height) < 0.5) return;
@@ -98,6 +123,7 @@ export class CommentBox implements BoxHost {
       ],
     });
     this.dom.append(hint);
+    this.#forget = setScopeSource(this.dom, this);
     // The box sits inside a diff editor's content: no key typed in it goes on to that editor.
     for (const type of ['keydown', 'keypress', 'keyup', 'beforeinput', 'input'] as const) {
       this.dom.addEventListener(type, (event) => event.stopPropagation());
@@ -125,33 +151,29 @@ export class CommentBox implements BoxHost {
     if (cm && !cm.state.vim?.insertMode) Vim.handleKey(cm, 'A', 'user');
   }
 
-  clear(): void {
-    this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length } });
+  insert(text: string): void {
+    this.view.dispatch(this.view.state.replaceSelection(text));
+  }
+
+  keyState(): ReturnType<KeySource['keyState']> {
+    return { mode: vimMode(this.view), pending: vimPending(this.view), target: this.target };
+  }
+
+  passKeys(keys: readonly string[]): void {
+    passToVim(this.view, keys);
+  }
+
+  clearPending(): void {
+    clearVim(this.view);
+  }
+
+  setVimKeys(keys: readonly VimKey[]): void {
+    setVimKeys(keys);
   }
 
   destroy(): void {
-    forgetJumps(this.view);
+    this.#forget();
     this.view.destroy();
     this.dom.remove();
   }
-}
-
-/** Whether Vim in `view` is in insert mode. */
-function inserting(view: EditorView): boolean {
-  return getCM(view)?.state.vim?.insertMode === true;
-}
-
-/** Whether Vim in `view` is in normal mode with nothing typed towards a command. */
-export function idle(view: EditorView): boolean {
-  const vimState = getCM(view)?.state.vim;
-  if (!vimState) return true;
-  if (vimState.insertMode || vimState.visualMode) return false;
-  const input = vimState.inputState;
-  return (
-    input.keyBuffer.length === 0 &&
-    input.prefixRepeat.length === 0 &&
-    input.motionRepeat.length === 0 &&
-    !input.operator &&
-    !input.motion
-  );
 }

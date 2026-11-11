@@ -71,6 +71,31 @@ function writeEditor(data: string): void {
   chmodSync(editorPath(data), 0o755);
 }
 
+/**
+ * The program a test's Lo opens web pages with, in place of the system's browser, so no test opens
+ * a browser. It adds the address it's given to `browsed`, beside it in the data folder.
+ */
+function browserPath(data: string): string {
+  return join(data, 'browser');
+}
+
+/** Writes the program that stands in for the system's browser. */
+function writeBrowser(data: string): void {
+  const log = join(data, 'browsed').replaceAll("'", `'\\''`);
+  mkdirSync(data, { recursive: true });
+  writeFileSync(browserPath(data), `#!/bin/sh\nprintf '%s\\n' "$1" >> '${log}'\n`);
+  chmodSync(browserPath(data), 0o755);
+}
+
+/** The pages Lo has opened in this test, in order, as the stand-in browser got them. */
+export function browsed(): string[] {
+  try {
+    return readFileSync(join(dataFolder(), 'browsed'), 'utf8').split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 /** The paths Lo has opened the keymap file by in this test, in order, as the editor got them. */
 export function opened(): string[] {
   try {
@@ -93,6 +118,9 @@ export function appEnvironment(data: string): Record<string, string> {
   delete env.ELECTRON_RUN_AS_NODE;
   env.LO_USER_DATA_DIR = data;
   env.LO_KEYMAP_EDITOR = editorPath(data);
+  env.LO_BROWSER = browserPath(data);
+  // Never the gh on PATH, which holds the tokens of whoever runs the tests; a test brings its own.
+  env.LO_GH = 'none';
   return env;
 }
 
@@ -119,6 +147,7 @@ export const test = base.extend<Fixtures>({
     const { env, ...options } = launch;
     const data = dataFolder();
     writeEditor(data);
+    writeBrowser(data);
     if (keymap !== undefined) {
       mkdirSync(join(data, 'config'), { recursive: true });
       writeFileSync(keymapPath(data), keymap);

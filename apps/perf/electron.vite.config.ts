@@ -6,9 +6,10 @@ export default defineConfig({
   main: {
     build: {
       outDir: 'dist/main',
-      // The workspace's packages are TypeScript, so they're bundled. The rest load from
-      // node_modules, as web-tree-sitter must to find its own WebAssembly.
-      externalizeDeps: { exclude: ['@lo/diff', '@lo/syntax'] },
+      // The workspace's packages are TypeScript, and the syntax tokens' names JSON, so they're
+      // bundled. The rest load from node_modules, as web-tree-sitter must to find its own
+      // WebAssembly.
+      externalizeDeps: { exclude: ['@lo/design', '@lo/diff', '@lo/syntax'] },
     },
   },
   preload: {

@@ -11,7 +11,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from '@codemirror/view';
-import { tokens as tokenNames } from '@lo/syntax/tokens';
+import tokenNames from '@lo/design/syntax.json' with { type: 'json' };
 
 import type { Side } from './layout.ts';
 

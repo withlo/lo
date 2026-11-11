@@ -97,8 +97,11 @@ export interface AccountsOptions {
   now?: (() => number) | undefined;
   /**
    * Reads an account imported from `gh` from `gh` again, after GitHub refused its token: `gh`'s
-   * token for the login, or nothing. `gh` renews its own tokens, which last hours, so Lo asks it
-   * rather than renewing them. Without it, a `gh` account GitHub refuses is signed out.
+   * token for the login, or nothing when `gh` has none, which signs the account out. It throws when
+   * `gh` couldn't be asked, as when it timed out or Lo is quitting: the account stays signed in, and
+   * `gh` is asked again after a wait, as for a renewal GitHub couldn't answer. `gh` renews its own
+   * tokens, which last hours, so Lo asks it rather than renewing them. Without it, a `gh` account
+   * GitHub refuses is signed out.
    */
   reread?: ((login: string) => Promise<Token | undefined>) | undefined;
 }
@@ -736,11 +739,17 @@ export class Accounts {
   /**
    * Reads `stale`, a `gh` account's token, from `gh` again, after GitHub refused it, and stores a
    * newer one before anything uses it, unless the account was removed or signed in again
-   * meanwhile. The account is signed out when `gh` has nothing newer.
+   * meanwhile. The account is signed out when `gh` has nothing newer, and left signed in, to ask
+   * again later, when `gh` couldn't be asked.
    */
   async #rereadFromGh(login: string, stale: Token): Promise<Token | undefined> {
     const id = this.#held.get(key(login))?.id;
-    const token = await this.#reread?.(login).catch(() => undefined);
+    let token: Token | undefined;
+    try {
+      token = await this.#reread?.(login);
+    } catch {
+      return this.#renewed(login, stale, 'refused', id, { kind: 'failed', expiresAt: undefined });
+    }
     if (token === undefined || token.isEmpty || token.equals(stale)) {
       return this.#renewed(login, stale, 'refused', id, { kind: 'refused' });
     }
