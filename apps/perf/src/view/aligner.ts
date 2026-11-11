@@ -205,7 +205,11 @@ export class Aligner {
         anchor = this.#anchorNow();
       }
       for (let turn = 0; turn <= rounds; turn++) {
+        const scrolled = this.#scroller.scrollTop;
         this.#measure();
+        // CodeMirror scrolled as it measured, to bring the cursor into view or to anchor an editor
+        // it anchors: that scroll stands, so the anchor is taken again from where it left things.
+        if (Math.abs(this.#scroller.scrollTop - scrolled) > 0.5) anchor = this.#anchorNow();
         // The last round only measures, so what's drawn covers where the scroll ended up.
         if (turn === rounds) break;
         const spaced = this.#align();
@@ -520,8 +524,15 @@ export class Aligner {
   #anchorNow(): Anchor {
     const side = this.#anchorSide();
     const view = this.#views[side];
-    const y = this.#scroller.getBoundingClientRect().top - view.documentTop;
-    const block = blockAtHeight(view, Math.max(0, y));
+    const screen = this.#scroller.getBoundingClientRect();
+    const y = screen.top - view.documentTop;
+    let block = blockAtHeight(view, Math.max(0, y));
+    // In a focused editor, the cursor's line, where the cursor is on screen: a motion's jump keeps
+    // the cursor where CodeMirror scrolled it.
+    if (view.hasFocus) {
+      const cursor = view.lineBlockAt(view.state.selection.main.head);
+      if (cursor.top >= y && cursor.top < y + screen.height) block = cursor;
+    }
     return { side, pos: block.from, offset: block.top - y, scrollTop: this.#scroller.scrollTop };
   }
 
