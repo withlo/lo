@@ -309,6 +309,7 @@ class View implements DiffView {
     this.#slack.className = 'lo-diffslack';
     this.dom.prepend(this.#slack);
     this.#placed = this.#contentTop();
+    this.#scrolled = this.dom.scrollTop;
     this.dom.addEventListener('scroll', this.#placeChosen, { passive: true });
     for (const type of ['wheel', 'keydown', 'pointerdown'] as const) {
       this.dom.addEventListener(type, this.#letGo, { passive: true, capture: true });
@@ -343,6 +344,11 @@ class View implements DiffView {
 
   /** The line `scrollTo` is putting back at the top, until it's there or the reader moves. */
   #holding: Viewport | undefined;
+  /**
+   * Where on the page the line `#holding` names goes, which stays put as the box moves, as when a
+   * banner over it comes or goes.
+   */
+  #holdingAt = 0;
   /** Counts calls to `scrollTo`, so only the latest puts its line back. */
   #holds = 0;
 
@@ -356,6 +362,8 @@ class View implements DiffView {
   #slackHeight = 0;
   /** Where the content's top was on the page when the reader last put it there. */
   #placed = 0;
+  /** The scroll `#placed` counts, to take only what the scroll moved since. */
+  #scrolled = 0;
   readonly #boxWatch: ResizeObserver;
 
   /** Where the content's top is on the page now, room above it included. */
@@ -363,9 +371,14 @@ class View implements DiffView {
     return this.dom.getBoundingClientRect().top - this.dom.scrollTop + this.#slackHeight;
   }
 
-  /** The scroll moved, by the reader or the view: that's where the content is meant to be. */
+  /**
+   * The scroll moved, by the reader or the view: the content is meant to be as far from where it
+   * was. Only the scroll counts, not where the box is: a box that moved in the same frame, before
+   * it could be made up for, would otherwise be taken as where the content belongs.
+   */
   readonly #placeChosen = (): void => {
-    this.#placed = this.#contentTop();
+    this.#placed -= this.dom.scrollTop - this.#scrolled;
+    this.#scrolled = this.dom.scrollTop;
   };
 
   /**
@@ -374,6 +387,8 @@ class View implements DiffView {
    * file, which a box moving back down takes away again.
    */
   readonly #keepPlace = (): void => {
+    // A scroll whose event hasn't come yet is the reader's, or the view's, not the box's.
+    this.#placeChosen();
     const moved = this.#contentTop() - this.#placed;
     if (Math.abs(moved) < 0.5) return;
     if (moved > 0) {
@@ -387,6 +402,7 @@ class View implements DiffView {
       if (up > room) this.#setSlack(this.#slackHeight + up - room);
     }
     this.#placed = this.#contentTop();
+    this.#scrolled = this.dom.scrollTop;
     // Room added above moves no scroll the pass would see: it keeps what's on screen as it is now.
     this.#aligner.anchorHere();
   };
@@ -555,7 +571,12 @@ class View implements DiffView {
 
   viewport(): Viewport {
     // While the view is still putting a line back at the top, that's where it belongs.
-    if (this.#holding) return this.#holding;
+    if (this.#holding) {
+      return {
+        at: this.#holding.at,
+        offset: this.dom.getBoundingClientRect().top - this.#holdingAt,
+      };
+    }
     const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
     const view = this.#viewOf(pane);
     const top = this.dom.getBoundingClientRect().top - view.documentTop;
@@ -593,6 +614,7 @@ class View implements DiffView {
     // Checked each frame, after the editors have measured and the sides are levelled, until it
     // holds still. Until then, what's at the top is this, whatever else changes.
     this.#holding = viewport;
+    this.#holdingAt = this.dom.getBoundingClientRect().top - viewport.offset;
     const run = ++this.#holds;
     let still = 0;
     let frames = 0;
@@ -600,9 +622,8 @@ class View implements DiffView {
       // A later call, or the reader, takes over.
       if (this.#holds !== run || this.#holding !== viewport) return;
       const pos = view.state.doc.line(this.#docLine(pane, place)).from;
-      const box = this.dom.getBoundingClientRect().top;
       const top = drawnTop(view, pos) ?? view.documentTop + ownTop(view.lineBlockAt(pos));
-      const moved = top - (box - viewport.offset);
+      const moved = top - this.#holdingAt;
       if (Math.abs(moved) >= 0.5) {
         this.dom.scrollTop += moved;
         still = 0;
