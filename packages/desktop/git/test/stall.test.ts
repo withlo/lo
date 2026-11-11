@@ -25,9 +25,9 @@ import { GitError } from '../src/errors.ts';
 import { gitAt } from '../src/find.ts';
 import type { Git } from '../src/git.ts';
 import { DEFAULT_FETCH_LIMITS, type FetchLimits } from '../src/limits.ts';
-import { parseOid } from '../src/oid.ts';
+import { type Oid, parseOid } from '../src/oid.ts';
 import type { Activity } from '../src/progress.ts';
-import { OVERVIEW_LIMIT, type Overview, type PullRequestRefs } from '../src/repo.ts';
+import { OVERVIEW_LIMIT, type Overview, type PullRequestRefs, type Repo } from '../src/repo.ts';
 import { Token } from '../src/token.ts';
 import {
   cacheFor,
@@ -224,13 +224,16 @@ test('a fetch that stops getting further stops at its stall limit', async () => 
 
 /**
  * The files of a pull request of `files` files, downloaded from a GitHub that keeps the download
- * alive without ever sending them, within `limits`: the error, how long it took, and what the
- * download said it was doing. The pull request's commits and trees were fetched first, from a
- * folder of repositories, without its files, as Lo fetches it.
+ * alive without ever sending them, within `limits`, by `download` (all of them, unless it says
+ * otherwise): the error, how long it took, and what the download said it was doing. The pull
+ * request's commits and trees were fetched first, from a folder of repositories, without its
+ * files, as Lo fetches it.
  */
 async function stalledDownload(
   files: number,
   limits: FetchLimits,
+  download: (repo: Repo, head: Oid, paths: Buffer[]) => Promise<unknown> = (repo, head, paths) =>
+    repo.downloadFiles(head, paths),
 ): Promise<{ error: GitError; took: number; activities: Activity[] }> {
   const dir = tempFolder();
   const remotes = join(dir, 'remotes');
@@ -267,7 +270,7 @@ async function stalledDownload(
   expect(paths).toHaveLength(files);
 
   const began = Date.now();
-  const error = await failure(repo.downloadFiles(parseOid(head), paths));
+  const error = await failure(download(repo, parseOid(head), paths));
 
   const took = Date.now() - began;
   // It asked GitHub for the files.
@@ -311,6 +314,25 @@ test('a big download whose files github keeps alive stops at a first fetchs limi
   expect(error.message).toBe(
     "can't fetch 501 files: GitHub took longer than 2 s to start sending, so Lo stopped it while " +
       'GitHub was still preparing what to send (counting objects, 50% of 2)',
+  );
+});
+
+test('a checkout whose files github keeps alive stops at a first fetchs limit', async () => {
+  // A checkout's files may be the whole tree, so they have a first fetch's time, though the clone
+  // isn't new.
+  const limit = 2000;
+  const { error, took } = await stalledDownload(
+    3,
+    { ...DEFAULT_FETCH_LIMITS, fetch: 1000, firstFetch: limit },
+    (repo, head) => repo.checkout(1, head),
+  );
+
+  expect(took).toBeGreaterThanOrEqual(limit);
+  expect(took).toBeLessThan(limit * 5);
+  expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'timedOut' });
+  expect(error.message).toBe(
+    "can't fetch pull request #1's files: GitHub took longer than 2 s to start sending, so Lo " +
+      'stopped it while GitHub was still preparing what to send (counting objects, 50% of 2)',
   );
 });
 

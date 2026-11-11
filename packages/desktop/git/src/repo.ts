@@ -1,7 +1,9 @@
 /** One repository's clone: fetching into it, and reading its commits. */
 
+import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
 import {
   answerable,
@@ -31,6 +33,7 @@ import {
   parseRawRecords,
   rawDiffBlobs,
 } from './diff.ts';
+import { checkoutGitDir } from './cleanup.ts';
 import { GitError } from './errors.ts';
 import { type Fetching, failureMessage, type GitCommand, type Runner } from './git.ts';
 import type { FetchLimits } from './limits.ts';
@@ -89,6 +92,8 @@ export interface RepoHost {
   temporaryPath(extension: string): string;
   /** Notes a line for the log. */
   note(line: string): void;
+  /** Keeps the cache in bounds once a fetch has made a clone. */
+  madeClone(): Promise<void>;
 }
 
 export interface RepoParts {
@@ -109,6 +114,8 @@ export interface RepoParts {
   readonly progress?: ((activity: Activity) => void) | undefined;
   /** The replayed trees this process has pinned in the clone, shared by every repository open on it. */
   readonly replays: Set<Oid>;
+  /** The folder the clone's checkouts go in: `pull-<n>/<head>` each. */
+  readonly checkouts: string;
   /** Opened to read offline: it never fetches. */
   readonly offline: boolean;
 }
@@ -225,6 +232,9 @@ export class Repo {
   /** The clone's reader of objects, started on the first read that needs it. */
   readonly #reader: ObjectReader;
   readonly #replays: Set<Oid>;
+  readonly #checkouts: string;
+  /** Whether a fetch made the clone, the first to bring anything into it. */
+  #madeClone = false;
 
   constructor(parts: RepoParts) {
     this.name = parts.name;
@@ -239,6 +249,7 @@ export class Repo {
     this.#progress = parts.progress;
     this.#reader = parts.reader;
     this.#replays = parts.replays;
+    this.#checkouts = parts.checkouts;
   }
 
   /**
@@ -1258,6 +1269,125 @@ export class Repo {
   }
 
   /**
+   * Checks `head` out, detached, for pull request `number`, and returns its folder,
+   * `<cache>/checkouts/github.com/<owner>/<repo>/pull-<n>/<head>`: a worktree of the clone. Each
+   * head has a checkout of its own, so a window showing one never sees its files change to
+   * another's. Checked out again, it holds only what git put there.
+   *
+   * Only for repositories the user trusts: a checkout is what language servers run in, and the
+   * caller decides. Its files download first, in a fetch with the limits and progress of any,
+   * since they may be the whole tree. No hook, filter or attribute runs or applies, symlinks
+   * become plain files holding their target, so nothing in a checkout points outside it, and no
+   * path a Mac's or Windows' disk would take for `.git` is written. The commit must be in the
+   * clone already, or it's `notFetched`.
+   */
+  async checkout(number: number, head: Oid): Promise<string> {
+    checkNumber(number);
+    const folder = join(this.#checkouts, `pull-${number}`, head);
+    return this.#locked(`checking out pull request #${number}`, async () => {
+      if (!(await this.hasCommit(head))) throw new GitError({ kind: 'notFetched', oid: head });
+      await this.#downloadTree(`pull request #${number}'s files`, head);
+      const gitDir = await checkoutGitDir(this.folder, folder);
+      if (gitDir !== undefined) {
+        try {
+          const there = () => this.#runner.command({ gitDir, workTree: folder });
+          await there().arg('checkout', '--quiet', '--force', '--detach', head, '--').run();
+          await there().arg('clean', '-ffdxq').run();
+          await stampUsed(gitDir);
+          return folder;
+        } catch (error) {
+          // One in a bad state is made again.
+          this.#cache.note(
+            `${this.name}: checking out ${head.slice(0, 7)} again, since ${String(error)}`,
+          );
+        }
+      }
+      await this.#cache.trash(folder);
+      try {
+        await mkdir(dirname(folder), { recursive: true });
+      } catch (error) {
+        throw GitError.io(`making ${dirname(folder)}`, error);
+      }
+      // Forget the checkouts whose folders are gone, such as this one.
+      await this.#git().arg('worktree', 'prune').run();
+      await this.#git()
+        .arg('worktree', 'add', '--quiet', '--force', '--detach')
+        .path(folder)
+        .arg(head)
+        .run();
+      const made = await checkoutGitDir(this.folder, folder);
+      if (made !== undefined) await stampUsed(made);
+      return folder;
+    });
+  }
+
+  /**
+   * Downloads the files of `rev`'s tree the clone lacks, in fetches with the limits of any, with a
+   * first fetch's time to start: a checkout's git would download them itself, with no limit but
+   * curl's stall guard, which GitHub's keep-alives defeat. The lock is held.
+   */
+  async #downloadTree(what: string, rev: Oid): Promise<void> {
+    // `--missing=print` lists what the clone lacks as `?<oid>`, and never downloads it.
+    const listed = await this.#git()
+      .arg('rev-list', '--objects', '--no-walk', '--no-object-names', '--missing=print', rev, '--')
+      .run();
+    const missing = lines(listed)
+      .filter((line) => line.startsWith('?'))
+      .map((line) => parseOid(line.slice(1)));
+    for (let at = 0; at < missing.length; at += OBJECTS_PER_FETCH) {
+      const batch = missing.slice(at, at + OBJECTS_PER_FETCH);
+      await this.#fetch(what, [], { objects: batch, whole: true });
+    }
+  }
+
+  /**
+   * The blob ID git would give the file at `path` in `checkout`, one of this clone's checkouts,
+   * hashing its bytes as they are on disk, without the conversions `.gitattributes` asks for:
+   * `undefined` when there's no regular file there, as for a folder, a submodule's empty folder or
+   * a link. A path that would leave the checkout, or a folder that isn't one of the clone's
+   * checkouts, is `invalid`.
+   *
+   * A checkout's file can differ from the head's blob: changed on disk, or two names that differ
+   * only in case sharing one file on a disk that folds them together. Compare before letting a
+   * checkout's file stand in for git's.
+   */
+  async hashCheckoutFile(checkout: string, path: Uint8Array): Promise<Oid | undefined> {
+    const bytes = Buffer.from(path);
+    const names = bytes.toString('latin1').split('/');
+    if (names.some((name) => name === '' || name === '.' || name === '..' || name.includes('\0'))) {
+      throw new GitError({
+        kind: 'invalid',
+        what: 'path in a checkout',
+        value: displayPath(bytes),
+      });
+    }
+    if ((await checkoutGitDir(this.folder, checkout)) === undefined) {
+      throw new GitError({ kind: 'invalid', what: 'checkout', value: checkout });
+    }
+    // Every folder on the way a folder itself, and the file a plain file: never through a link.
+    let at = Buffer.from(checkout);
+    let size = 0;
+    for (const [index, name] of names.entries()) {
+      at = Buffer.concat([at, Buffer.from('/'), Buffer.from(name, 'latin1')]);
+      const found = await lstat(at).catch(() => undefined);
+      const last = index === names.length - 1;
+      if (found === undefined || (last ? !found.isFile() : !found.isDirectory())) return undefined;
+      size = found.size;
+    }
+    // As git hashes a blob, read a piece at a time, however large the file.
+    const hash = createHash('sha1');
+    hash.update(`blob ${size}\0`);
+    try {
+      for await (const chunk of createReadStream(at)) {
+        if (Buffer.isBuffer(chunk)) hash.update(chunk);
+      }
+    } catch (error) {
+      throw GitError.io(`reading ${displayPath(bytes)} in ${checkout}`, error);
+    }
+    return parseOid(hash.digest('hex'));
+  }
+
+  /**
    * Downloads the files of pull request `number`'s `overview` the repository of overviews lacks,
    * in one fetch, refusing one over {@link OVERVIEW_LIMIT} in all: a blobless clone can't tell
    * their sizes before they come, so the download stops once more than that has come in, and the
@@ -1431,6 +1561,11 @@ export class Repo {
       return await work();
     } finally {
       release();
+      // Once the lock is free: keeping the cache in bounds takes other clones' locks.
+      if (this.#madeClone) {
+        this.#madeClone = false;
+        await this.#cache.madeClone();
+      }
     }
   }
 
@@ -1615,7 +1750,7 @@ export class Repo {
     // A lock left on a ref the fetch writes would fail it every time: one a git killed from
     // outside, or in a crash, left. Only fetches and pins write these refs, under the clone's
     // lock, which is held, so such a lock is no one's. The same goes for the half-written packs
-    // a fetch leaves, which only fetches write.
+    // a fetch leaves: only fetches and repacks write packs, under the same lock.
     for (const ref of destinations(refspecs)) {
       await rm(join(gitDir, `${ref}.lock`), { force: true });
     }
@@ -1651,7 +1786,8 @@ export class Repo {
     if (options.objects !== undefined) command.arg('--stdin');
     // The first fetch into a clone brings the history it needs, and many files at once may be a
     // whole tree: GitHub may take as long to start sending either.
-    const whole = (await this.#isEmpty(gitDir)) || (options.objects?.length ?? 0) > FEW_OBJECTS;
+    const empty = await this.#isEmpty(gitDir);
+    const whole = (options.whole ?? false) || empty || (options.objects?.length ?? 0) > FEW_OBJECTS;
     const started = Date.now();
     const watched = await watch(command, {
       limits: this.#cache.limits,
@@ -1672,6 +1808,7 @@ export class Repo {
       await this.#removeHalfWritten(gitDir);
       throw GitError.fromGit(command.display, failureMessage({ ...exit, stderr: messages }), what);
     }
+    if (empty && gitDir === this.folder) this.#madeClone = true;
   }
 
   /** Whether nothing was ever fetched into the repository at `gitDir`: it has no refs. */
@@ -1722,8 +1859,8 @@ export class Repo {
   /**
    * Removes the packs a fetch into `gitDir` was writing when it stopped, `objects/pack/tmp_*`, and,
    * given the stopped git's process ID, the keep file git gives a finished pack until the fetch is
-   * done. Only fetches write packs, with the clone's lock held, which it is, so they're no one
-   * else's. Returns what it removed.
+   * done. Only fetches and repacks write packs, with the clone's lock held, which it is, so
+   * they're no one else's. Returns what it removed.
    */
   async #removeHalfWritten(gitDir: string, pid?: number): Promise<string[]> {
     const pack = join(gitDir, 'objects', 'pack');
@@ -1760,6 +1897,11 @@ interface FetchOptions {
   readonly gitDir?: string | undefined;
   /** The address to fetch from, when not the clone's: a fork's. */
   readonly url?: string | undefined;
+  /**
+   * Whether it may bring a repository's whole contents, as a checkout's files may, and so has a
+   * first fetch's time to start, however few objects it names.
+   */
+  readonly whole?: boolean | undefined;
 }
 
 /** The names of the packs in the repository at `gitDir`, such as `pack-<hash>`, without extensions. */

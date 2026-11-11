@@ -13,11 +13,20 @@
 
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, rename, rm, stat } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 import { GitError } from './errors.ts';
 import { type Git, Runner, type TestSettings } from './git.ts';
 import { DEFAULT_FETCH_LIMITS, type FetchLimits } from './limits.ts';
+import {
+  clear,
+  DEFAULT_CAP,
+  diskUsage,
+  keepUnder,
+  PACK_LIMIT,
+  removeUnused,
+  repack,
+} from './cleanup.ts';
 import { REPLAYS } from './compare.ts';
 import { CloneLock, lockCache, type Release, unlockCache } from './lock.ts';
 import { ObjectReader } from './objects.ts';
@@ -48,6 +57,8 @@ export interface CacheOptions {
    * build run from source, for its tests, sets it.
    */
   readonly test?: TestSettings | undefined;
+  /** The size to keep the cache under, in bytes: {@link DEFAULT_CAP} unless Settings says. */
+  readonly cap?: number | undefined;
 }
 
 export interface OpenOptions {
@@ -66,6 +77,7 @@ export class Cache {
   readonly limits: FetchLimits;
   readonly #log: ((line: string) => void) | undefined;
   readonly #release: Release;
+  #cap: number;
   readonly #locks = new Map<string, CloneLock>();
   /** Each open clone's reader of objects, and how many repositories open on it use it. */
   readonly #readers = new Map<string, { reader: ObjectReader; users: number }>();
@@ -78,12 +90,14 @@ export class Cache {
     runner: Runner,
     release: Release,
     limits: FetchLimits,
+    cap: number,
     log?: (line: string) => void,
   ) {
     this.root = root;
     this.runner = runner;
     this.limits = limits;
     this.#release = release;
+    this.#cap = cap;
     this.#log = log;
   }
 
@@ -105,7 +119,14 @@ export class Cache {
       test: options.test,
       readLimit: limits.read,
     });
-    return new Cache(options.root, runner, release, limits, options.log);
+    return new Cache(
+      options.root,
+      runner,
+      release,
+      limits,
+      options.cap ?? DEFAULT_CAP,
+      options.log,
+    );
   }
 
   /** Lets another process open the cache. Repositories still open keep working until closed. */
@@ -118,6 +139,66 @@ export class Cache {
   /** Notes a line for the log. */
   note(line: string): void {
     this.#log?.(line);
+  }
+
+  /** How much disk space the cache takes, in bytes, counting what each file takes on disk. */
+  size(): Promise<number> {
+    return diskUsage(this.root);
+  }
+
+  /**
+   * Removes every clone and checkout that isn't open or being written to, for Settings' "Clear
+   * cache". Returns the `owner/name` of each clone it had to leave.
+   */
+  clear(): Promise<string[]> {
+    return clear(this);
+  }
+
+  /**
+   * Removes what nobody used for a while: clones for 30 days, checkouts for 14, and what crashes
+   * and stopped fetches left a day or more ago.
+   * Never a clone that's open or being written to. Returns the `owner/name` of each clone removed.
+   */
+  removeUnused(now = Date.now()): Promise<string[]> {
+    return removeUnused(this, now);
+  }
+
+  /** The size the cache is kept under, in bytes. */
+  get cap(): number {
+    return this.#cap;
+  }
+
+  /**
+   * Sets the size to keep the cache under, from Settings, and keeps it there: past it, the least
+   * recently used clones go, with their checkouts, never one open or being written to. Returns the
+   * `owner/name` of each clone removed.
+   */
+  setCap(bytes: number): Promise<string[]> {
+    this.#cap = bytes;
+    return keepUnder(this, bytes);
+  }
+
+  /** Repacks every clone with more than `limit` packs that isn't being written to. */
+  repack(limit = PACK_LIMIT): Promise<string[]> {
+    return repack(this, limit);
+  }
+
+  /**
+   * What the app runs at launch: removes what nobody used for a while, keeps the cache under its
+   * cap, and repacks busy clones.
+   */
+  async cleanUp(): Promise<{ removed: string[]; overCap: string[]; repacked: string[] }> {
+    const removed = await this.removeUnused();
+    const overCap = await keepUnder(this, this.#cap);
+    const repacked = await this.repack();
+    return { removed, overCap, repacked };
+  }
+
+  /** Keeps the cache under its cap once a fetch has made a clone, which may have grown it most. */
+  async madeClone(): Promise<void> {
+    await keepUnder(this, this.#cap).catch((error: unknown) => {
+      this.note(`can't keep the cache under its cap: ${String(error)}`);
+    });
   }
 
   /** Where the clone of `owner/name` lives. */
@@ -247,6 +328,7 @@ export class Cache {
       proxy: options.proxy,
       progress: options.progress,
       replays: this.#replaysOf(owner, name),
+      checkouts: this.checkoutsFolder(owner, name),
       offline: false,
     });
   }
@@ -284,6 +366,7 @@ export class Cache {
       },
       reader: reader.reader,
       replays: this.#replaysOf(owner, name),
+      checkouts: this.checkoutsFolder(owner, name),
       offline: true,
     });
   }
@@ -297,6 +380,24 @@ export class Cache {
    * Moves `path` out of the way in one rename, so nobody finds it half deleted, then deletes it.
    */
   async trash(path: string): Promise<void> {
+    // Never through a link, which would move what it points at, out of the cache, aside: only a
+    // path in the cache with a real folder at each step above it. A link at the path itself goes,
+    // and what it points at stays.
+    const inside = relative(this.root, path);
+    if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
+      this.#log?.(`not removing ${path}, which isn't in the cache`);
+      return;
+    }
+    let above = this.root;
+    for (const name of inside.split(sep).slice(0, -1)) {
+      above = join(above, name);
+      const found = await lstat(above).catch(() => undefined);
+      if (found === undefined) return;
+      if (!found.isDirectory()) {
+        this.#log?.(`not removing ${path}, which is past a link`);
+        return;
+      }
+    }
     const trash = this.temporaryPath('.trash');
     try {
       await rename(path, trash);

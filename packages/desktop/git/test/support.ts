@@ -184,6 +184,7 @@ export async function cacheFor(
     git: options.git ?? (await foundGit()),
     log: options.log,
     limits: options.limits,
+    cap: options.cap,
     test: ownSettings ? undefined : { remote: address, config: options.config },
   });
   onTestFinished(() => cache.close());
