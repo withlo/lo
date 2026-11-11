@@ -8,6 +8,8 @@ import type { LocalState, PullView } from '../contract.ts';
 export type BannerDo =
   | { kind: 'retry' }
   | { kind: 'reload' }
+  /** Clears Lo's cache of local copies, then tries again. */
+  | { kind: 'clearCache' }
   | { kind: 'choose'; login: string }
   /** Opens a page on github.com: GitHub's own link to fix a problem. */
   | { kind: 'link'; url: string };
@@ -198,7 +200,7 @@ export function bannersFor(
         tone: 'warn',
         title: "Lo can't fetch a local copy without git.",
         detail: `${local.message} ${local.install}`,
-        actions: [],
+        actions: [{ label: 'Check again', do: { kind: 'retry' } }],
       });
       break;
     case 'fetching':
@@ -228,8 +230,8 @@ export function bannersFor(
               id: 'local',
               tone: 'danger',
               title: "The disk is full, so Lo can't save the local copy.",
-              detail: 'Free some space, or clear Lo’s cache in Settings, then try again.',
-              actions: [retry],
+              detail: 'Free some space, or clear the cache of local copies, then try again.',
+              actions: [{ label: 'Clear the cache', do: { kind: 'clearCache' } }, retry],
             }
           : {
               id: 'local',

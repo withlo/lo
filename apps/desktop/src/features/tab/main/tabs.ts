@@ -15,7 +15,7 @@ import {
   type Tab,
   type Tabs,
 } from '../contract.ts';
-import { findTab, shows, tabKey } from './pulls.ts';
+import { findTab, shows, tabKey, type TabKey } from './pulls.ts';
 
 /** Recent pull requests: the tab that stands in for an empty strip. */
 export const RECENT: Tab = { id: 'recent', kind: 'recent' };
@@ -129,10 +129,7 @@ export function createTabs(options: TabListOptions): TabList {
         case 'pull': {
           const link = { owner: opening.owner, repo: opening.repo, number: opening.number };
           const pulls = state.kept.filter((tab): tab is PullTab => tab.kind === 'pull');
-          const at = findTab(
-            pulls.map(({ owner, repo, number }) => tabKey({ owner, repo, number })),
-            link,
-          );
+          const at = findTab(pulls.map(keyOf), link);
           const found = at === undefined ? undefined : pulls[at];
           if (found) {
             show(found.id);
@@ -246,6 +243,17 @@ function load(database: Database, log: (message: string) => void): State {
     if (row.active === 1) active = (same ?? tab).id;
   }
   return { kept, active: active ?? kept[0]?.id };
+}
+
+/**
+ * A pull request's tab's key: the link it was opened by, and its repository's name as GitHub last
+ * gave it, so a link by either name finds it after a rename or a transfer.
+ */
+function keyOf({ owner, repo, number, repository }: PullTab): TabKey {
+  const key = tabKey({ owner, repo, number });
+  const [canonicalOwner, canonicalRepo] = repository?.split('/') ?? [];
+  if (canonicalOwner === undefined || canonicalRepo === undefined) return key;
+  return { ...key, canonical: { owner: canonicalOwner, repo: canonicalRepo } };
 }
 
 /** Whether `a` and `b` hold the same thing: both Settings, or the same pull request. */

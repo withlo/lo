@@ -5,9 +5,18 @@
 import { Banner, PRHeader, Spinner, StatusBar, StatusItem, type HeaderConnection } from '@lo/ui';
 import { useEffect, useState, type ReactNode } from 'react';
 
+import { client } from '../../../window/ipc.ts';
 import { Slot, useViews } from '../../../window/slots.tsx';
+import { contract as settings } from '../../settings/contract.ts';
 import type { Connection, LocalState, PullView } from '../contract.ts';
-import { bannersFor, MOST_BANNERS, short, systemClock, type BannerDo } from './banners.ts';
+import {
+  bannersFor,
+  MOST_BANNERS,
+  short,
+  systemClock,
+  type BannerDo,
+  type BannerSpec,
+} from './banners.ts';
 import { main } from './main.ts';
 import {
   banners as bannerSlot,
@@ -73,6 +82,10 @@ function run(id: string, action: BannerDo): void {
         return main().choose({ id, login: action.login });
       case 'link':
         return main().openExternal({ url: action.url });
+      case 'clearCache':
+        return client(settings)
+          .clearCache()
+          .then(() => main().retry({ id }));
       default:
         action satisfies never;
         return Promise.resolve();
@@ -81,26 +94,24 @@ function run(id: string, action: BannerDo): void {
   done.catch((error: unknown) => console.error("Lo couldn't do what the banner offered:", error));
 }
 
-/** The banners: Lo's own, then other features', two at most, the most urgent first. */
-function Banners({
-  tab,
-  view,
-  local,
-}: {
-  tab: PullTab;
-  view: PullView | undefined;
-  local: LocalState | undefined;
-}) {
+/** Lo's own banners for a tab, most urgent first, counting down while something does. */
+function useBanners(
+  tab: PullTab,
+  view: PullView | undefined,
+  local: LocalState | undefined,
+): BannerSpec[] {
   const counting =
     view?.problem?.kind === 'failed' ||
     view?.connection.kind === 'offline' ||
     view?.connection.kind === 'rateLimited' ||
     local?.kind === 'retrying';
   const now = useNow(counting);
-  const own = bannersFor(view, local, `${tab.owner}/${tab.repo}`, systemClock(now)).slice(
-    0,
-    MOST_BANNERS,
-  );
+  return bannersFor(view, local, `${tab.owner}/${tab.repo}`, systemClock(now));
+}
+
+/** The banners: Lo's own, then other features', two at most, the most urgent first. */
+function Banners({ tab, own: all }: { tab: PullTab; own: readonly BannerSpec[] }) {
+  const own = all.slice(0, MOST_BANNERS);
   const others = useViews(bannerSlot).slice(0, MOST_BANNERS - own.length);
   if (own.length === 0 && others.length === 0) return null;
   return (
@@ -122,6 +133,27 @@ function Banners({
       ))}
     </div>
   );
+}
+
+/**
+ * The banners past the two shown, folded into the status bar: each a dot and its first words, a
+ * button for what it offers first, if anything.
+ */
+function FoldedBanners({ tab, folded }: { tab: PullTab; folded: readonly BannerSpec[] }) {
+  return folded.map((banner) => {
+    const [first] = banner.actions;
+    const dot = banner.tone === 'danger' ? 'fail' : banner.tone === 'warn' ? 'warn' : 'busy';
+    return (
+      <StatusItem
+        key={banner.id}
+        dot={dot}
+        title={[banner.title, banner.detail].filter(Boolean).join(' ')}
+        onClick={first === undefined ? undefined : () => run(tab.id, first.do)}
+      >
+        {first === undefined ? banner.title : first.label}
+      </StatusItem>
+    );
+  });
 }
 
 /** The status bar's item for the local copy: a dot, and what it's doing while it does something. */
@@ -174,6 +206,7 @@ function Placeholder({ view }: { view: PullView | undefined }) {
 export function PullRequestTab({ tab }: { tab: PullTab }) {
   const view = usePull(tab.id);
   const local = useLocalCopy(tab.id);
+  const banners = useBanners(tab, view, local);
   const { leftOpen } = useTabPanels(tab.id);
   const lefts = useViews(left);
   const middles = useViews(middle);
@@ -205,7 +238,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
       >
         <Slot slot={header} props={{ tab }} />
       </PRHeader>
-      <Banners tab={tab} view={view} local={local} />
+      <Banners tab={tab} own={banners} />
       <div className="flex min-h-0 flex-1">
         {showLeft && (
           <aside
@@ -233,6 +266,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
       <StatusBar
         start={
           <>
+            <FoldedBanners tab={tab} folded={banners.slice(MOST_BANNERS)} />
             <LocalItem local={local} />
             {view?.connection.kind === 'limitLow' && (
               <StatusItem dot="warn" title={`${view.connection.remaining} requests left`}>

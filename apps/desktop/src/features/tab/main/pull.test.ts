@@ -1,12 +1,19 @@
 import { renameSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { GithubError, type PullSummary } from '@lo/github';
+import {
+  GithubClient,
+  GithubError,
+  type GitHubUrls,
+  type PullSummary,
+  type RepoAccount,
+} from '@lo/github';
 import { MemoryPollCache } from '@lo/testing';
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { PullTab, type Kept } from './pull.ts';
+import type { LocalGit } from '../../../main/git.ts';
+import { PullTab, type Kept, type TabGithub } from './pull.ts';
 import { folder, published, replayGithub, testGit, TOKEN } from './test/support.ts';
 
 const E2E = { owner: 'rozed-dev', repo: 'e2e', number: APP_PULL.number };
@@ -19,6 +26,7 @@ function tabFor(options: {
   git: Awaited<ReturnType<typeof testGit>>;
   login?: string;
   repository?: string;
+  offlineAfter?: number;
 }) {
   const sent = published();
   const kept: Kept[] = [];
@@ -33,8 +41,30 @@ function tabFor(options: {
     publish: sent.publish,
     keep: (change) => kept.push(change),
     log: (line) => lines.push(line),
+    offlineAfter: options.offlineAfter,
   });
   return { tab, sent, kept, lines };
+}
+
+/** Points every head and base a poller kept in `cache` at the first push's, as before the second. */
+function keptFromTheFirstPush(cache: MemoryPollCache): number {
+  let changed = 0;
+  for (const entry of cache.entries.values()) {
+    const value: unknown = entry.value;
+    if (typeof value !== 'object' || value === null) continue;
+    if ('headRefOid' in value && 'baseRefOid' in value) {
+      Object.assign(value, { headRefOid: APP_PULL.firstHead, baseRefOid: APP_PULL.firstBase });
+      changed += 1;
+    }
+    if ('head' in value && 'base' in value) {
+      Object.assign(value, {
+        head: { ref: 'app/head', sha: APP_PULL.firstHead },
+        base: { ref: 'app/base', sha: APP_PULL.firstBase },
+      });
+      changed += 1;
+    }
+  }
+  return changed;
 }
 
 describe('a pull request’s tab', { timeout: 60_000 }, () => {
@@ -140,6 +170,8 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     const { github, remembered } = replayGithub('app_e2e', { logins: ['rozed-bot', 'other-bot'] });
     const git = await testGit();
     const { tab, sent, kept } = tabFor({ github, git });
+    // Before it asks, nothing is chosen.
+    await expect(tab.choose('rozed-bot')).rejects.toThrow("isn't asking");
     tab.show();
     await expect
       .poll(() => sent.pull?.problem)
@@ -147,6 +179,9 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
         kind: 'ask',
         logins: ['rozed-bot', 'other-bot'],
       });
+    // Only an account it asked about.
+    await expect(tab.choose('someone-else')).rejects.toThrow("isn't asking");
+    expect(remembered.size).toBe(0);
 
     await tab.choose('rozed-bot');
 
@@ -187,8 +222,12 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
       git: gone,
       login: 'rozed-bot',
       repository: 'rozed-dev/e2e',
+      offlineAfter: 2_000,
     });
     after.tab.show();
+    // Not at once: one failed poll in a blip says nothing.
+    await expect.poll(() => offline.pollers.get('rozed-bot')?.status().offline).toBeDefined();
+    expect(after.sent.pull?.connection.kind).toBe('live');
 
     await expect
       .poll(() => after.sent.local, { timeout: 40_000 })
@@ -201,9 +240,52 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
       });
     expect(after.sent.pull?.header?.title).toBe(TITLE);
     expect(after.sent.pull?.shown).toBe(APP_PULL.head);
-    await expect.poll(() => after.sent.pull?.connection.kind).toBe('offline');
+    await expect.poll(() => after.sent.pull?.connection.kind, { timeout: 10_000 }).toBe('offline');
     expect(after.sent.pull?.connection).toMatchObject({ savedAt: expect.any(Number) });
     expect(after.sent.pull?.problem).toBe(null);
+    after.tab.close();
+  });
+
+  it("opens at GitHub's head, not the older one a cache from before the last push has", async () => {
+    const cache = new MemoryPollCache();
+    const first = replayGithub('app_e2e', { cache });
+    const git = await testGit();
+    const before = tabFor({ github: first.github, git });
+    before.tab.show();
+    await expect.poll(() => before.sent.pull?.header?.author).toBe('rozed-bot');
+    before.tab.close();
+    for (const poller of first.pollers.values()) poller.stop();
+    expect(keptFromTheFirstPush(cache)).toBeGreaterThan(0);
+    // The repository's list too would be asked about with its ETag, which the cassette never was.
+    for (const key of cache.entries.keys()) {
+      if (!key.split(' ')[1]?.includes('#')) cache.entries.delete(key);
+    }
+
+    const again = replayGithub('app_e2e', { cache });
+    const after = tabFor({
+      github: again.github,
+      git,
+      login: 'rozed-bot',
+      repository: 'rozed-dev/e2e',
+    });
+    after.tab.show();
+
+    await expect
+      .poll(() => after.sent.local, { timeout: 40_000 })
+      .toMatchObject({
+        kind: 'ready',
+        head: APP_PULL.head,
+      });
+    expect(after.sent.pull?.shown).toBe(APP_PULL.head);
+    expect(after.sent.pull?.newer).toBe(null);
+    // The cached head was never on screen, nor fetched to be.
+    expect(after.sent.pulls.filter(({ shown }) => shown === APP_PULL.firstHead)).toEqual([]);
+    expect(
+      after.sent.locals.filter(
+        ({ state }) => state.kind === 'ready' && state.head !== APP_PULL.head,
+      ),
+    ).toEqual([]);
+    expect(after.sent.pull?.header?.title).toBe(TITLE);
     after.tab.close();
   });
 
@@ -297,5 +379,129 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
         ],
       });
     tab.close();
+  });
+});
+
+/** What a request GitHub never answered fails with. */
+function unanswered(): GithubError {
+  return new GithubError({
+    kind: 'network',
+    failure: 'offline',
+    message: 'GitHub can’t be reached',
+  });
+}
+
+/** Does nothing: what a promise not yet settled is settled with. */
+function nothing(): void {
+  // Replaced once the promise exists.
+}
+
+describe('working out the account while GitHub doesn’t answer', () => {
+  const URLS: GitHubUrls = {
+    api: 'https://api.github.com',
+    web: 'https://github.com',
+    uploads: 'https://uploads.github.com',
+  };
+  const status = { status: 'missing', message: "Lo can't find git.", install: 'Get it.' } as const;
+  const noGit: LocalGit = {
+    status,
+    cache: undefined,
+    onStatus: () => undefined,
+    onCache: () => () => undefined,
+    check: () => Promise.resolve(status),
+    setCap: () => Promise.resolve(),
+  };
+
+  /** GitHub with one account, whose check of the repository `check` answers, counting calls. */
+  function lookingUp(check: () => Promise<RepoAccount>) {
+    const asked = { count: 0 };
+    const github: TabGithub = {
+      anonymous: new GithubClient({ fetch: () => Promise.reject(unanswered()), urls: URLS }),
+      accounts: () =>
+        Promise.resolve([
+          {
+            account: {
+              login: 'rozed-bot',
+              userId: 1,
+              source: 'deviceFlow',
+              scopes: [],
+              addedAt: 0,
+            },
+            signedOut: undefined,
+            cantSave: false,
+            needsKeyring: false,
+          },
+        ]),
+      client: () => Promise.reject(unanswered()),
+      poller: () => Promise.reject(new Error('no poller in this test')),
+      accountForRepo: () => {
+        asked.count += 1;
+        return check();
+      },
+      rememberAccountForOwner: () => Promise.resolve(),
+    };
+    return { github, asked };
+  }
+
+  /** A tab of the e2e pull request on `github`, with no git. */
+  function tabOn(github: TabGithub) {
+    const sent = published();
+    const tab = new PullTab({
+      id: 't1',
+      link: E2E,
+      github,
+      git: noGit,
+      publish: sent.publish,
+      keep: () => undefined,
+      log: () => undefined,
+    });
+    return { tab, sent };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('asks again after 5 s, doubling each time it gets no answer', async () => {
+    vi.useFakeTimers();
+    const { github, asked } = lookingUp(() => Promise.reject(unanswered()));
+    const { tab, sent } = tabOn(github);
+    tab.show();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked.count).toBe(1);
+    expect(sent.pull?.problem).toMatchObject({ kind: 'failed', retryAt: Date.now() + 5_000 });
+
+    const counts: number[] = [];
+    for (const wait of [5_000, 10_000, 20_000, 40_000]) {
+      await vi.advanceTimersByTimeAsync(wait - 1);
+      counts.push(asked.count);
+      await vi.advanceTimersByTimeAsync(1);
+      counts.push(asked.count);
+    }
+    expect(counts).toEqual([1, 2, 2, 3, 3, 4, 4, 5]);
+    tab.close();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(asked.count).toBe(5);
+  });
+
+  it('asks nothing more once the tab closes while it waits for an answer', async () => {
+    vi.useFakeTimers();
+    let fail: (error: unknown) => void = nothing;
+    const { github, asked } = lookingUp(
+      () =>
+        new Promise<RepoAccount>((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    const { tab } = tabOn(github);
+    tab.show();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked.count).toBe(1);
+
+    tab.close();
+    fail(unanswered());
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+    expect(asked.count).toBe(1);
   });
 });

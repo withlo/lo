@@ -136,6 +136,15 @@ describe('StatusBar', () => {
     expect(markup.indexOf('Local copy')).toBeLessThan(markup.indexOf('NORMAL'));
     expect(markup).toContain('bg-success');
   });
+
+  it('makes an item that does something a button', () => {
+    const markup = renderToStaticMarkup(
+      <StatusItem dot="busy" onClick={() => {}}>
+        Load the newer push
+      </StatusItem>,
+    );
+    expect(markup).toMatch(/^<button type="button"[^>]*>.*Load the newer push<\/button>$/);
+  });
 });
 
 describe('the parts’ styles', () => {
@@ -156,7 +165,9 @@ describe('the parts’ styles', () => {
         />
         <Banner tone="danger" title="a" />
         <StatusBar start={<StatusItem dot="busy">a</StatusItem>} />
-        <StatusItem dot="warn">a</StatusItem>
+        <StatusItem dot="warn" onClick={() => {}}>
+          a
+        </StatusItem>
         <StatusItem dot="fail">a</StatusItem>
         <StatusItem dot="idle">a</StatusItem>
         <StatePill state="draft" />

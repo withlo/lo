@@ -138,6 +138,8 @@ test('comes back offline with what it saved and what it fetched', async ({
   github,
   remote,
 }) => {
+  // Offline shows once it has lasted past the first try again.
+  test.setTimeout(90_000);
   const id = await open(page, E2E);
   await expect
     .poll(() => state(page, id), { timeout: 20_000 })
@@ -164,9 +166,9 @@ test('comes back offline with what it saved and what it fetched', async ({
     await expect(shown.getByRole('heading', { level: 1 })).toHaveText(TITLE);
     await expect(shown.getByRole('status').filter({ hasText: "You're offline." })).toContainText(
       'Showing what Lo saved',
-      { timeout: 20_000 },
+      { timeout: 45_000 },
     );
-    await expect(shown.locator('header').first()).toContainText('Offline');
+    await expect(shown.locator('header').first()).toContainText('Offline', { timeout: 45_000 });
     await expect
       .poll(() => state(shown, id), { timeout: 20_000 })
       .toMatchObject({

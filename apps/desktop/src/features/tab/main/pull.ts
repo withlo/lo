@@ -8,6 +8,7 @@ import { type PullRequestRefs, parseOid } from '@lo/git';
 import {
   decideAccount,
   GithubError,
+  sameLogin,
   PullRef,
   RepoRef,
   type Poller,
@@ -16,6 +17,7 @@ import {
   type PullSummary,
 } from '@lo/github';
 
+import { IpcError } from '../../../ipc/contract.ts';
 import type { LocalGit } from '../../../main/git.ts';
 import type { GithubAccess } from '../../accounts/service.ts';
 import type {
@@ -80,7 +82,15 @@ export interface PullTabOptions {
   /** Keeps what changed of the pull request with the tab. */
   readonly keep: (kept: Kept) => void;
   readonly log: (line: string) => void;
+  /** How long GitHub must be out of reach before the tab says so: {@link OFFLINE_AFTER}. */
+  readonly offlineAfter?: number | undefined;
 }
+
+/**
+ * How long GitHub must be out of reach before a tab says it's offline, in milliseconds: past the
+ * poller's first try again, 20 s at most, so one failed poll in a blip says nothing.
+ */
+export const OFFLINE_AFTER = 25_000;
 
 /** What a pull request's tab sends the window when it asks. */
 export interface Snapshot {
@@ -102,6 +112,15 @@ export class PullTab {
   #problem: Problem | undefined;
   /** How the tab stands with GitHub while it acts as nobody, which no poller says. */
   #anonymousConnection: Connection = { kind: 'live' };
+  /** Since when reading as nobody has found GitHub out of reach. */
+  #anonymousOfflineSince: number | undefined;
+  /** Says the connection again once being offline has lasted. */
+  #offlineTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * The head and base the poller's cache had, from before Lo started: what the tab shows only
+   * while GitHub can't be reached, since a push since would make it an old head.
+   */
+  #saved: { head: string; base: { branch: string; sha: string } } | undefined;
   /** The head on screen: GitHub's when the tab opened, until the newer push is loaded. */
   #shown: string | undefined;
   /** GitHub's newest head. */
@@ -178,6 +197,13 @@ export class PullTab {
     this.#started = true;
     void this.#open();
     this.#local?.retry();
+    // Without git, trying again is looking for it again, as "Check again" does.
+    const { git } = this.#options;
+    if (git.cache === undefined && git.status !== undefined && git.status.status !== 'found') {
+      git
+        .check()
+        .catch((error: unknown) => this.#options.log(`looking for git: ${describe(error)}`));
+    }
     // Asking the poller about it again polls it at once.
     const poller = this.#poller;
     if (poller && this.#active) {
@@ -203,6 +229,11 @@ export class PullTab {
    */
   async choose(login: string): Promise<void> {
     if (this.#closed) return;
+    const problem = this.#problem;
+    const asked = problem?.kind === 'ask' && problem.logins.some((each) => sameLogin(each, login));
+    if (!asked) {
+      throw new IpcError('refused', `This tab isn't asking which account to open it with.`);
+    }
     await this.#options.github.rememberAccountForOwner(this.pull.repo.owner, login);
     this.#acting = { kind: 'account', login };
     this.#options.keep({ login });
@@ -235,6 +266,7 @@ export class PullTab {
     if (this.#closed) return;
     this.#closed = true;
     clearTimeout(this.#readTimer);
+    clearTimeout(this.#offlineTimer);
     this.#detach();
     this.#local?.close();
   }
@@ -301,6 +333,7 @@ export class PullTab {
           return false;
         case 'refuse': {
           const { refusal } = decision;
+          if (refusal.waitable) this.#readFailures += 1;
           const retryAt = refusal.waitable ? this.#scheduleRead() : undefined;
           this.#problem =
             refusal.links.length > 0
@@ -313,7 +346,9 @@ export class PullTab {
           throw new Error(`A decision Lo doesn't know: ${JSON.stringify(decision)}.`);
       }
     } catch (error) {
+      if (this.#closed) return false;
       // GitHub didn't answer, so which account can see the repository isn't known yet.
+      this.#readFailures += 1;
       const retryAt = this.#scheduleRead();
       this.#problem = {
         kind: 'failed',
@@ -339,8 +374,18 @@ export class PullTab {
       poller.onChange(() => this.#publish()),
     );
     await poller.watch(this.pull);
+    // What the cache had, from before: its header, but never the head on screen.
     const summary = poller.summary(this.pull);
-    if (summary && this.#header === undefined) this.#takeSummary(summary);
+    if (summary && this.#header === undefined) {
+      this.#header = withSummary(undefined, summary);
+      this.#keepHeader();
+    }
+    if (summary) {
+      this.#saved ??= {
+        head: summary.head.sha,
+        base: { branch: summary.base.ref, sha: summary.base.sha },
+      };
+    }
     return poller;
   }
 
@@ -360,7 +405,9 @@ export class PullTab {
   async #setOpen(poller: Poller): Promise<void> {
     const cached = await poller.setOpen(this.pull);
     if (this.#closed || poller !== this.#poller) return;
-    if (cached && this.#savedAt === undefined) this.#takeDetails(cached.details, cached.fetchedAt);
+    if (cached && this.#savedAt === undefined) {
+      this.#takeDetails(cached.details, cached.fetchedAt, { live: false });
+    }
     this.#publish();
   }
 
@@ -384,6 +431,7 @@ export class PullTab {
       this.#readFailures = 0;
       this.#problem = undefined;
       this.#anonymousConnection = { kind: 'live' };
+      this.#anonymousOfflineSince = undefined;
       this.#learnRepository(RepoRef.parse(opened.toOpen.base.repo.full_name));
       this.#header = headerFromOpened(opened);
       this.#savedAt = Date.now();
@@ -402,12 +450,14 @@ export class PullTab {
         // Offline: what the poller kept shows, and the local copy reads what it fetched before.
         const retryAt = this.#scheduleRead();
         this.#problem = undefined;
+        this.#anonymousOfflineSince ??= now;
         this.#anonymousConnection = {
           kind: 'offline',
           savedAt: null,
           retryAt,
           error: describe(error),
         };
+        this.#useSaved();
         this.#startLocal();
       } else if (until !== undefined) {
         this.#scheduleRead(Math.max(0, until - now));
@@ -418,6 +468,7 @@ export class PullTab {
           until: Math.round(until),
           secondary: false,
         };
+        this.#useSaved();
         this.#startLocal();
       } else if (error instanceof GithubError && error.isUnauthorized()) {
         // The account is signed out, which its poller says.
@@ -467,7 +518,7 @@ export class PullTab {
       case 'details':
         if (!event.pull.equals(this.pull)) return;
         this.#problem = undefined;
-        this.#takeDetails(event.details, Date.now());
+        this.#takeDetails(event.details, Date.now(), { live: true });
         break;
       case 'failed': {
         if (!(event.target instanceof PullRef) || !event.target.equals(this.pull)) return;
@@ -515,13 +566,23 @@ export class PullTab {
     }
   }
 
-  #takeDetails(details: PullRequest, fetchedAt: number): void {
+  /**
+   * Takes GitHub's details: the header and files, and the heads only from a poll just now. The
+   * cache's, `live: false`, may be from before a push, so they're kept for while GitHub can't be
+   * reached, and never put a head on screen otherwise.
+   */
+  #takeDetails(details: PullRequest, fetchedAt: number, { live }: { live: boolean }): void {
     this.#header = headerFromDetails(details);
     this.#savedAt = fetchedAt;
     this.#keepHeader();
-    this.#latest = details.headRefOid;
-    this.#shown ??= details.headRefOid;
-    this.#base = { branch: details.baseRefName, sha: details.baseRefOid };
+    const base = { branch: details.baseRefName, sha: details.baseRefOid };
+    if (live) {
+      this.#latest = details.headRefOid;
+      if (this.#started) this.#shown ??= details.headRefOid;
+      this.#base = base;
+    } else {
+      this.#saved = { head: details.headRefOid, base };
+    }
     const files = filesFromDetails(this.id, details);
     if (files) {
       this.#files = files;
@@ -532,6 +593,18 @@ export class PullTab {
       }
     }
     this.#startLocal();
+  }
+
+  /**
+   * GitHub can't be reached: the head and base the cache had stand in for GitHub's, if nothing
+   * newer has come, so the tab shows what it fetched before.
+   */
+  #useSaved(): void {
+    const saved = this.#saved;
+    if (!saved || this.#latest !== undefined) return;
+    this.#latest = saved.head;
+    this.#shown ??= saved.head;
+    this.#base = saved.base;
   }
 
   #keepHeader(): void {
@@ -596,9 +669,35 @@ export class PullTab {
     const acting = this.#acting;
     const poller = this.#poller;
     if (acting?.kind === 'account' && poller) {
-      return connectionOf(acting.login, poller.status(), this.#savedAt);
+      const status = poller.status();
+      const since = status.offline?.since;
+      if (since !== undefined && !this.#lasted(since)) {
+        return connectionOf(acting.login, { ...status, offline: undefined }, this.#savedAt);
+      }
+      return connectionOf(acting.login, status, this.#savedAt);
+    }
+    const since = this.#anonymousOfflineSince;
+    if (this.#anonymousConnection.kind === 'offline' && since !== undefined) {
+      if (!this.#lasted(since)) return { kind: 'live' };
     }
     return this.#anonymousConnection;
+  }
+
+  /**
+   * Whether GitHub has been out of reach long enough, since `since`, to say so. Until it has, the
+   * tab says it again once it has.
+   */
+  #lasted(since: number): boolean {
+    const after = this.#options.offlineAfter ?? OFFLINE_AFTER;
+    const left = since + after - Date.now();
+    if (left <= 0) return true;
+    if (this.#offlineTimer === undefined && !this.#closed) {
+      this.#offlineTimer = setTimeout(() => {
+        this.#offlineTimer = undefined;
+        this.#publish();
+      }, left + 1);
+    }
+    return false;
   }
 
   #view(): PullView {

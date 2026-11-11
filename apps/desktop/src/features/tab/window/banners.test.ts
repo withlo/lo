@@ -179,6 +179,25 @@ describe('a pull request’s banners', () => {
       )[0]?.title,
     ).toBe("The disk is full, so Lo can't save the local copy.");
     expect(
+      bannersFor(
+        view(),
+        { kind: 'failed', failure: 'diskFull', message: 'x' },
+        'rozed-dev/e2e',
+        clock,
+      )[0]?.actions,
+    ).toEqual([
+      { label: 'Clear the cache', do: { kind: 'clearCache' } },
+      { label: 'Try again', do: { kind: 'retry' } },
+    ]);
+    expect(
+      bannersFor(
+        view(),
+        { kind: 'noGit', message: "Lo can't find git.", install: 'Get it.' },
+        'rozed-dev/e2e',
+        clock,
+      )[0]?.actions,
+    ).toEqual([{ label: 'Check again', do: { kind: 'retry' } }]);
+    expect(
       ids(view(), { kind: 'noGit', message: "Lo can't find git.", install: 'Get it.' }),
     ).toEqual(['noGit']);
   });

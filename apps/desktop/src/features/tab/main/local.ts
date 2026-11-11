@@ -159,6 +159,8 @@ export class LocalCopy {
   #again = false;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #closed = false;
+  /** Aborted as the tab closes, which stops waiting for the clone. */
+  readonly #closing = new AbortController();
   /** The state last said, so the same one isn't said twice. */
   #said: string | undefined;
 
@@ -255,6 +257,7 @@ export class LocalCopy {
     if (this.#closed) return;
     this.#closed = true;
     clearTimeout(this.#timer);
+    this.#closing.abort(new Error('the tab closed'));
     const repo = this.#repo;
     if (!repo) return;
     void (this.#running ?? Promise.resolve())
@@ -338,6 +341,7 @@ export class LocalCopy {
       .open(repository.owner, repository.name, {
         token,
         progress: (activity) => this.#progress(activity),
+        signal: this.#closing.signal,
       })
       .catch((error: unknown) => {
         this.#repo = undefined;

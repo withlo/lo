@@ -25,20 +25,44 @@ const DOTS = {
   idle: 'bg-fg-dim',
 } as const;
 
-/** One process in the status bar: a dot for how it is, its name, and its progress while it has some. */
+/**
+ * One process in the status bar: a dot for how it is, its name, and its progress while it has some.
+ * With `onClick`, it's a button, for something it does, such as a banner's action folded into the
+ * status bar.
+ */
 export function StatusItem({
   dot,
   children,
   title,
+  onClick,
 }: {
   dot?: keyof typeof DOTS | undefined;
   children: ReactNode;
   title?: string | undefined;
+  onClick?: (() => void) | undefined;
 }) {
-  return (
-    <span className="inline-flex h-20 min-w-0 items-center gap-6 rounded-xs px-6" title={title}>
+  const content = (
+    <>
       {dot !== undefined && <span className={`size-8 flex-none rounded-full ${DOTS[dot]}`} />}
       {children}
-    </span>
+    </>
+  );
+  const item = 'inline-flex h-20 min-w-0 items-center gap-6 rounded-xs px-6';
+  if (onClick === undefined) {
+    return (
+      <span className={item} title={title}>
+        {content}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className={`${item} hover:bg-hover hover:text-fg focus-visible:shadow-ring`}
+      title={title}
+      onClick={onClick}
+    >
+      {content}
+    </button>
   );
 }

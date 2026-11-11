@@ -234,6 +234,16 @@ describe('what a pull request’s tab keeps for main', () => {
     expect(settings.kept('t1')).toEqual({});
   });
 
+  it('finds the tab by its repository’s name now, after a rename, as well as by its link', () => {
+    const { tabs } = tabsOn(database());
+    const id = tabs.open({ kind: 'pull', owner: 'sharkdp', repo: 'fd-old', number: 2212 });
+    tabs.remember(id, { repository: 'sharkdp/fd' });
+    expect(tabs.open(fd)).toBe(id);
+    expect(tabs.open({ ...fd, owner: 'SharkDP', repo: 'FD' })).toBe(id);
+    expect(tabs.open({ ...fd, repo: 'fd-old' })).toBe(id);
+    expect(tabs.list().tabs).toHaveLength(1);
+  });
+
   it('is read back as carefully as any outside value', () => {
     const on = database();
     on.prepare(
