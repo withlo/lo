@@ -17,7 +17,7 @@
  * escape, a comment or a function besides those.
  */
 
-import { Pen, polylineLength } from './length.ts';
+import { dashPeriod, MIN_DASH_PERIOD, Pen, polylineLength } from './length.ts';
 
 /** The elements a figure may hold. */
 export type SvgName =
@@ -398,11 +398,19 @@ export function readValue(kind: SvgValue, text: string): Read | undefined {
       return { value: written(value), numbers: 1 };
     }
     case 'dashes': {
-      // In the element's own units, as its length is, so its dashes can be counted.
+      // In the element's own units, as its length is, so its dashes can be counted, and no
+      // shorter a period than `MIN_DASH_PERIOD`.
       if (trimmed(text).toLowerCase() === 'none') return { value: 'none', numbers: 0 };
-      const values = items(text)?.map((item) => number(item.replace(/px$/i, '')));
-      if (!values || values.some((value) => value === undefined || value < 0)) return undefined;
-      return { value: values.map((value) => written(value!)).join(' '), numbers: values.length };
+      const parts = items(text);
+      if (!parts) return undefined;
+      const values: number[] = [];
+      for (const part of parts) {
+        const value = number(part.replace(/px$/i, ''));
+        if (value === undefined || value < 0) return undefined;
+        values.push(value);
+      }
+      if (dashPeriod(values) < MIN_DASH_PERIOD) return undefined;
+      return { value: values.map(written).join(' '), numbers: values.length };
     }
     case 'paint':
     case 'color': {

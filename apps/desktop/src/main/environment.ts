@@ -43,6 +43,15 @@ export function devServer(options: { packaged: boolean; env: Environment }): URL
   return url;
 }
 
+/**
+ * Whether Lo offers the developer tools: only when it runs from source on Vite's dev server
+ * (`desktop:dev`). A packaged build never does, and neither does a build run as it would ship, so
+ * its smoke test can check that their keys do nothing.
+ */
+export function devTools(options: { packaged: boolean; env: Environment }): boolean {
+  return devServer(options) !== undefined;
+}
+
 /** The background process's settings. */
 export interface BackgroundSettings {
   /** Whether it offers the smoke test's jobs. */

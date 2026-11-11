@@ -84,6 +84,10 @@ test('anything else fails', () => {
     ['a number too large', figure(element('rect', { x: '10000000' }))],
     ['a negative size', figure(element('rect', { width: '-1' }))],
     ['a bad path', figure(element('path', { d: 'L0 0' }))],
+    [
+      'dashes with a period under 1',
+      figure(element('path', { d: 'M0 0h10', 'stroke-dasharray': '0.499 0.5' })),
+    ],
     ['a marker attribute on a group', figure(MARKER, element('g', { 'marker-end': 'arrow' }))],
     [
       'a marker attribute in a marker',
@@ -116,6 +120,21 @@ test('anything else fails', () => {
   expect(cases.filter(([, tree]) => svgProblems(tree).length === 0).map(([what]) => what)).toEqual(
     [],
   );
+});
+
+/** The problems a path dashed with `pattern` has. */
+function dashed(pattern: string): string[] {
+  return svgProblems(figure(element('path', { d: 'M0 0h10', 'stroke-dasharray': pattern })));
+}
+
+test('dashes need a period of at least 1, doubled when there is an odd count', () => {
+  const patterns = ['4 3', '1 0', '0.5 0.5', '0.5', '0.2 0.2 0.2'];
+  expect(patterns.flatMap(dashed)).toEqual([]);
+  // The walker counts the period itself, besides asking the allowlist.
+  const short = ['0.499 0.5', '0.4995', '0.1 0.1 0.2'];
+  expect(
+    short.filter((pattern) => !dashed(pattern).some((p) => p.includes('period under 1'))),
+  ).toEqual([]);
 });
 
 test('the caps fail too', () => {
