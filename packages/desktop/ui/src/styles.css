@@ -203,6 +203,16 @@
   gap: var(--lo-sp-4) var(--lo-sp-24);
 }
 
+/* A row of a list of pull requests, and its head: its icon, repository, title, account and when. */
+@utility list-columns {
+  display: grid;
+  grid-template-columns:
+    var(--lo-sp-20) minmax(0, var(--lo-list-repo-w)) minmax(0, 1fr) var(--lo-list-who-w)
+    var(--lo-list-when-w);
+  align-items: center;
+  gap: var(--lo-sp-12);
+}
+
 /* A chosen radio ball: Powder, with a ring of the surface inside its edge. */
 @utility ball-on {
   background: var(--lo-accent);

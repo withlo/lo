@@ -1,0 +1,4 @@
+{
+  "description": "rozed-bot reads a private repository of rozed-dev's after the organization restricted OAuth apps without approving Lo: GitHub's 403, as its REST API answers for a restricted organization's private repositories",
+  "synthetic": true
+}

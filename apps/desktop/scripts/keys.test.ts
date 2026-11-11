@@ -17,6 +17,7 @@ const diff = defineCommands('diff', {
   open: { label: 'Open a PR', group: 'Find', keys: ['cmd+l', { keys: 'cmd+o', on: 'mac' }] },
   files: { label: 'Files', group: 'Find', keys: ['cmd+p'], overVim: true },
   quit: { label: 'Quit', group: 'Tabs and window', keys: ['cmd+q'], when: { system: 'linux' } },
+  install: { label: 'Install', group: 'Tabs and window', keys: [], bar: { menu: 'App', order: 1 } },
 });
 const tree = defineCommands(
   'tree',
@@ -57,6 +58,12 @@ describe('docs/keys.md', () => {
     expect(section('## Code')).toContain('| Back | `⌃o` | Anywhere but `box` | `keys.back` |');
     // A command on Linux only is listed with the keys for one system.
     expect(section('## Tabs and window').join('\n')).not.toContain('diff.quit');
+  });
+
+  it('says where a command with no key is found instead', () => {
+    expect(section('## Tabs and window')).toContain(
+      '| Install | None: in the app menu and the palette | Anywhere | `diff.install` |',
+    );
   });
 
   it('says where each key applies', () => {

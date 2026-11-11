@@ -1,5 +1,5 @@
 // The file finder over the window (`⌘P`): any file in the repository, found by name, the changed
-// ones first and marked, on the same palette the command palette uses.
+// ones first and marked, on the same palette the command palette and the open box use.
 
 import { FileIcon, FileMarks, Palette, PaletteHint, Spinner, Tag } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
@@ -31,6 +31,13 @@ import {
   type FinderState,
 } from './finding.ts';
 import { states } from './store.ts';
+
+const FILE_ICON = (
+  <svg className="lo-i text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
+    <path d="M4.5 2h5l2.5 2.5V14h-7.5Z" />
+    <path d="M9.5 2v2.5H12" />
+  </svg>
+);
 
 /** A key written in Lo's notation, as this system shows it. */
 function labels(keys: string): string[] {
@@ -189,6 +196,7 @@ export function Finder() {
       label="Go to a file"
       placeholder="Find a file by name"
       keys={keyOf('tree.find')}
+      icon={FILE_ICON}
       query={state.query}
       onQueryChange={typeQuery}
       groups={groups}

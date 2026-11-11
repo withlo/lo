@@ -12,6 +12,7 @@ import { appName, backgroundSettings, dataFolder, devServer } from './environmen
 import { loadFeatures, type Feature } from './features.ts';
 import { cacheFolder, createGit, curlProxy, GitStopped, gitSettings, onceUp } from './git.ts';
 import { serveFeatures } from './ipc.ts';
+import { incomingLinks, linksIn } from './links.ts';
 import { migrate } from './migrations.ts';
 import { windowUrl } from './policy.ts';
 import { registerScheme, secureContents, secureSession } from './security.ts';
@@ -36,16 +37,18 @@ const migrations = import.meta.glob<string>('../features/*/migrations/*.sql', {
   import: 'default',
 });
 
-// A packaged Lo takes no command-line switches, nor the variables that do what some of them do. It
-// quits first of all, before `ready`, so no port has opened, no connection has been made and
-// nothing has started.
+// A packaged Lo takes no command-line arguments but links, nor the variables that do what some
+// switches do. It quits first of all, before `ready`, so no port has opened, no connection has
+// been made and nothing has started.
 const refused = refusedArguments({
   packaged: app.isPackaged,
   argv: process.argv.slice(1),
   hasSwitch: (name) => app.commandLine.hasSwitch(name),
 });
 if (refused.length > 0) {
-  console.error(`Lo takes no command-line switches, so it quit. Refused: ${refused.join(' ')}`);
+  console.error(
+    `Lo takes no command-line arguments but links, so it quit. Refused: ${refused.map((each) => JSON.stringify(each)).join(' ')}`,
+  );
   app.exit(1);
 }
 const refusedVariables = refusedEnvironment({ packaged: app.isPackaged, env: process.env });
@@ -76,11 +79,17 @@ const cacheRoot = cacheFolder({
   env,
 });
 
-// One Lo per data folder. A second launch hands over to the first and quits.
-if (app.requestSingleInstanceLock()) {
-  start();
-} else {
-  app.quit();
+// One Lo per data folder. A second launch hands its command line over to the first and quits; one
+// that refused its command line, and is quitting, hands over nothing.
+const refusing = refused.length > 0 || refusedVariables.length > 0;
+if (!refusing) {
+  if (app.requestSingleInstanceLock()) {
+    // Links it was started with, as the `lo` command starts it, open once the features are up.
+    for (const link of linksIn(process.argv.slice(1))) incomingLinks.receive(link);
+    start();
+  } else {
+    app.quit();
+  }
 }
 
 function start(): void {
@@ -116,7 +125,17 @@ function start(): void {
   };
 
   app.on('web-contents-created', (_event, contents) => secureContents(contents, dev));
-  app.on('second-instance', show);
+  // A link from another app, by the system (`lo://`, or a web link a link router sends Lo), or as
+  // the argument a second launch hands over. Each is untrusted, and read as a typed link is.
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    incomingLinks.receive(url);
+    if (app.isReady()) show();
+  });
+  app.on('second-instance', (_event, argv) => {
+    for (const link of linksIn(argv.slice(1))) incomingLinks.receive(link);
+    show();
+  });
   app.on('activate', show);
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();

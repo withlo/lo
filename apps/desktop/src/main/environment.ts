@@ -233,3 +233,20 @@ export function browserProgram(options: {
   }
   return program;
 }
+
+/**
+ * The folder to install the `lo` command in, in place of the system's and the person's, from
+ * `LO_COMMAND_FOLDER`, so a test installs it where it can see it and nowhere else. Lo writes it
+ * there without asking for an administrator. A packaged build ignores it.
+ */
+export function commandFolder(options: {
+  packaged: boolean;
+  env: Environment;
+}): string | undefined {
+  const folder = options.env.LO_COMMAND_FOLDER;
+  if (options.packaged || !folder) return undefined;
+  if (!isAbsolute(folder)) {
+    throw new Error(`LO_COMMAND_FOLDER must be an absolute path, not "${folder}".`);
+  }
+  return folder;
+}

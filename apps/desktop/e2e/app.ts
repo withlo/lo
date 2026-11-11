@@ -39,6 +39,14 @@ export async function closedPort(): Promise<number> {
   return address.port;
 }
 
+/**
+ * The middle of the window while no pull request or Settings is open: the Recent list, where keys
+ * go back to with `Esc`.
+ */
+export function middleOf(page: Page) {
+  return page.getByRole('listbox', { name: 'Recent pull requests' });
+}
+
 /** The data folder a test's copy of Lo starts on: empty, and the test's own. */
 export function dataFolder(): string {
   return base.info().outputPath('data');

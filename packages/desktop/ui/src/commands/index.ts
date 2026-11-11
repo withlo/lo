@@ -10,6 +10,7 @@ export {
   checkMenus,
   checkVim,
   codeModes,
+  keyless,
   focusAt,
   listed,
   modesOf,

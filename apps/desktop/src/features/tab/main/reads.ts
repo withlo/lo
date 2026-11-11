@@ -13,6 +13,7 @@ import {
   type PullRequest,
   type PullSummary,
   type PullToOpen,
+  type RepoAccount,
 } from '@lo/github';
 
 import type { Connection, Files, Header, Problem, PullState } from '../contract.ts';
@@ -190,7 +191,13 @@ export function problemOf(
   if (github) {
     const { detail } = github;
     const link = github.helpLink();
-    if (link) return { kind: 'blocked', message: github.message, links: [link] };
+    if (link) {
+      const message =
+        detail.kind === 'oauthAppRestricted'
+          ? restrictedMessage(detail.org ?? pull.repo.owner)
+          : github.message;
+      return { kind: 'blocked', message, links: [link] };
+    }
     if (detail.kind === 'notFound' || (detail.kind === 'api' && detail.status === 410)) {
       return {
         kind: 'notFound',
@@ -208,6 +215,29 @@ export function problemOf(
     message: `Lo couldn't read ${name}: ${describe(error)}`,
     retryAt: retryAt === undefined ? null : Math.round(retryAt),
   };
+}
+
+/**
+ * What a tab says when an organization restricts third-party apps and hasn't approved Lo: GitHub
+ * hides the organization's private repositories from Lo until an owner approves it, which the
+ * person asks for on GitHub.
+ */
+export function restrictedMessage(org: string): string {
+  return `${org} hasn't approved Lo, so GitHub hides its repositories from Lo. Ask for approval on GitHub, and GitHub emails ${org}'s owners.`;
+}
+
+/**
+ * The organization that restricts Lo, when that's why no account Lo would use could check a
+ * repository: among every account's problems, or the chosen account's alone.
+ */
+export function restrictingOrg(found: RepoAccount): string | undefined {
+  const chosen = found.choice.kind === 'unavailable' ? found.choice.login : undefined;
+  for (const { login, error } of found.problems) {
+    if (chosen !== undefined && login.toLowerCase() !== chosen.toLowerCase()) continue;
+    const { detail } = error;
+    if (detail.kind === 'oauthAppRestricted') return detail.org ?? found.repo.owner;
+  }
+  return undefined;
 }
 
 /** The GitHub error `error` is, or was caused by. */

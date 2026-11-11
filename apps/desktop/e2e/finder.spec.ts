@@ -256,14 +256,21 @@ test('Tab and ⌘⏎ do nothing in the other palettes, and Tab still keeps the k
 }) => {
   await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
   await middle(page).focus();
-  await page.keyboard.press(`${held}+Shift+p`);
-  const palette = page.getByRole('dialog', { name: 'Command palette' });
-  const input = palette.getByRole('combobox', { name: 'Command palette' });
-  await expect(input).toBeFocused();
-  await page.keyboard.press('Tab');
-  await page.keyboard.press('Shift+Tab');
-  await page.keyboard.press(`${held}+Enter`);
-  await expect(input).toBeFocused();
-  await expect(palette).toBeVisible();
-  await expect(page.getByRole('status').filter({ hasText: /finder|highlighted/ })).toHaveCount(0);
+  for (const [open, name] of [
+    [`${held}+Shift+p`, 'Command palette'],
+    [`${held}+l`, 'Open a pull request'],
+  ] as const) {
+    await page.keyboard.press(open);
+    const palette = page.getByRole('dialog', { name });
+    const input = palette.getByRole('combobox', { name });
+    await expect(input).toBeFocused();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press(`${held}+Enter`);
+    await expect(input).toBeFocused();
+    await expect(palette).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /finder|highlighted/ })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(palette).toBeHidden();
+  }
 });

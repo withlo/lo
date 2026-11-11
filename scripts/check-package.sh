@@ -7,8 +7,9 @@
 # - an asar of only the build's output (dist/ and package.json), whose header hash is the one in
 #   Info.plist, which Electron checks as it loads the asar;
 # - registered, with the Viewer role, for `lo:` links and web links;
-# - quitting at once, saying why, when started with a command-line switch, or with a variable set
-#   that would write out or expose its traffic, such as SSLKEYLOGFILE.
+# - quitting at once, saying why, when started with anything but a link, a switch after whitespace
+#   included, or with a variable set that would write out or expose its traffic, such as
+#   SSLKEYLOGFILE.
 # Usage: sh scripts/check-package.sh <zip>
 set -euf
 zip=${1:?usage: check-package.sh <zip>}
@@ -105,12 +106,15 @@ ends_saying() {
   [ "$code" -eq 1 ] && grep -q "$said" "$log"
 }
 
-# A packaged Lo takes no command-line switches, so each of these must end it with its reason.
+# A packaged Lo takes no command-line arguments but links, so each of these must end it with its
+# reason: switches, those Chromium still reads after the whitespace it trims among them, and a file.
+tab=$(printf '\t')
 for switch in --remote-debugging-port=0 -remote-debugging-pipe --ignore-certificate-errors \
-  '--host-resolver-rules=MAP api.github.com 127.0.0.1:9'; do
-  ends_saying 'Lo takes no command-line switches' \
+  '--host-resolver-rules=MAP api.github.com 127.0.0.1:9' " --ssl-key-log-file=$work/keys.log" \
+  "$tab--log-net-log=$work/net.json" "$work/x.txt"; do
+  ends_saying 'Lo takes no command-line arguments but links' \
     env CFFIXED_USER_HOME="$work/home" "$app/Contents/MacOS/Lo" "$switch" ||
-    fail "started with $switch, Lo ended with status $code instead of refusing it"
+    fail "started with \"$switch\", Lo ended with status $code instead of refusing it"
 done
 
 # Nor the variables that do what some switches do, such as SSLKEYLOGFILE, which has Chromium write
@@ -121,7 +125,8 @@ for variable in "SSLKEYLOGFILE=$work/keys.log" ELECTRON_ENABLE_LOGGING=1 \
     env "$variable" CFFIXED_USER_HOME="$work/home" "$app/Contents/MacOS/Lo" ||
     fail "started with $variable, Lo ended with status $code instead of refusing it"
 done
-[ ! -e "$work/keys.log" ] || fail "started with SSLKEYLOGFILE set, Lo wrote to it"
+[ ! -e "$work/keys.log" ] || fail "started with SSLKEYLOGFILE or --ssl-key-log-file, Lo wrote to it"
+[ ! -e "$work/net.json" ] || fail "started with --log-net-log, Lo wrote to it"
 
-[ "$status" -eq 0 ] && echo "$zip passed: arm64, ad hoc with the hardened runtime, fuses, asar and links, and it refuses switches and variables."
+[ "$status" -eq 0 ] && echo "$zip passed: arm64, ad hoc with the hardened runtime, fuses, asar and links, and it refuses switches, files and variables."
 exit "$status"

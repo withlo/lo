@@ -24,15 +24,46 @@ describe('refusedArguments', () => {
     expect(refusedArguments({ packaged: true, argv: [], hasSwitch: none })).toEqual([]);
   });
 
-  it('starts a packaged build with arguments that are not switches', () => {
+  it('starts a packaged build with links, of any scheme’s case', () => {
     expect(
       refusedArguments({
         packaged: true,
-        argv: ['lo://github.com/withlo/lo/pull/1', 'https://github.com/withlo/lo/pull/1', 'x.txt'],
+        argv: [
+          'lo://github.com/withlo/lo/pull/1',
+          'https://github.com/withlo/lo/pull/1',
+          'HTTP://github.com/withlo/lo/pull/1 --not-a-switch-to-chromium',
+        ],
         hasSwitch: none,
       }),
     ).toEqual([]);
   });
+
+  it('refuses whatever else a packaged build is given: a file, a path, a word', () => {
+    expect(
+      refusedArguments({
+        packaged: true,
+        argv: ['x.txt', '/tmp/x', 'file:///etc/passwd', 'github.com/withlo/lo/pull/1', ''],
+        hasSwitch: none,
+      }),
+    ).toEqual(['x.txt', '/tmp/x', 'file:///etc/passwd', 'github.com/withlo/lo/pull/1', '']);
+  });
+
+  // Chromium trims these from an argument before it looks for a switch.
+  it.each([' ', '\t', '\n', '\r', '\v', '\f', ' \t\r\n', '\u00a0'])(
+    'refuses a switch after %j, which Chromium would still take',
+    (space) => {
+      for (const argument of [
+        `${space}--ssl-key-log-file=/tmp/keys.log`,
+        `${space}--log-net-log=/tmp/net.json`,
+        `${space}-remote-debugging-port=0`,
+        `${space}https://github.com/withlo/lo/pull/1`,
+      ]) {
+        expect(refusedArguments({ packaged: true, argv: [argument], hasSwitch: none })).toEqual([
+          argument.split('=', 1)[0],
+        ]);
+      }
+    },
+  );
 
   it.each([
     '--remote-debugging-port=9222',
@@ -68,7 +99,7 @@ describe('refusedArguments', () => {
         argv: ['lo://x', '--', '--ignore-certificate-errors', 'y'],
         hasSwitch: none,
       }),
-    ).toEqual(['--', '--ignore-certificate-errors']);
+    ).toEqual(['--', '--ignore-certificate-errors', 'y']);
   });
 
   it("never repeats what an argument's value says", () => {
@@ -94,10 +125,20 @@ describe('refusedArguments', () => {
     expect(
       refusedArguments({
         packaged: true,
-        argv: ['-remote-debugging-port=0'],
-        hasSwitch: holding('remote-debugging-port'),
+        argv: ['-remote-debugging-port=0', ' --ssl-key-log-file=/tmp/keys.log'],
+        hasSwitch: holding('remote-debugging-port', 'ssl-key-log-file'),
       }),
-    ).toEqual(['-remote-debugging-port']);
+    ).toEqual(['-remote-debugging-port', ' --ssl-key-log-file']);
+  });
+
+  it('refuses the switches that write out what Lo sends, when Chromium holds them', () => {
+    expect(
+      refusedArguments({
+        packaged: true,
+        argv: ['https://github.com/withlo/lo/pull/1'],
+        hasSwitch: holding('ssl-key-log-file', 'log-net-log'),
+      }),
+    ).toEqual(['--ssl-key-log-file', '--log-net-log']);
   });
 });
 

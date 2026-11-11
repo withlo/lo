@@ -49,9 +49,10 @@ export interface TabList {
   list(): Tabs;
   /**
    * Opens a tab at the end of the strip and shows it, and returns its id. A pull request already
-   * open, by any name it's known by, or Settings when it's open, shows the tab it's in.
+   * open, by any name it's known by, or Settings when it's open, shows the tab it's in. A new pull
+   * request's tab keeps `as.login` as its account, when given.
    */
-  open(opening: Opening): string;
+  open(opening: Opening, as?: { login: string }): string;
   /**
    * Closes `id`, or the tab on screen. Closing the tab on screen shows the one after it, or the
    * one before it at the end of the strip, or Recent once nothing is open. Recent stays.
@@ -124,7 +125,7 @@ export function createTabs(options: TabListOptions): TabList {
   return {
     list,
 
-    open(opening) {
+    open(opening, as) {
       switch (opening.kind) {
         case 'pull': {
           const link = { owner: opening.owner, repo: opening.repo, number: opening.number };
@@ -135,7 +136,7 @@ export function createTabs(options: TabListOptions): TabList {
             show(found.id);
             return found.id;
           }
-          return add({ id: newId(), kind: 'pull', ...link });
+          return add({ id: newId(), kind: 'pull', ...link, login: as?.login });
         }
         case 'settings': {
           const found = state.kept.find((tab) => tab.kind === 'settings');

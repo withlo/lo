@@ -9,6 +9,7 @@ import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
+import { login as accountLogin } from '../../accounts/contract.ts';
 import { contract, isGithubPage, opening as openingSchema } from '../contract.ts';
 import { tabs } from '../service.ts';
 import { createTabs, type TabList } from './tabs.ts';
@@ -54,7 +55,11 @@ export default defineFeature(contract, {
     provides(tabs, {
       list: () => tabsOf(context).list(),
       // Checked as a request's input is: what another feature hands over may come from a link.
-      open: (opening) => tabsOf(context).open(openingSchema.parse(opening)),
+      open: (opening, as) =>
+        tabsOf(context).open(
+          openingSchema.parse(opening),
+          as === undefined ? undefined : { login: accountLogin.parse(as.login) },
+        ),
       pull: (id) => watcher?.info(id),
       onPull(listener) {
         following.add(listener);

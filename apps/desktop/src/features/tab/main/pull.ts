@@ -42,6 +42,8 @@ import {
   problemOf,
   rateLimitedUntil,
   readPull,
+  restrictedMessage,
+  restrictingOrg,
   withSummary,
   type Opened,
 } from './reads.ts';
@@ -375,10 +377,12 @@ export class PullTab {
           const { refusal } = decision;
           if (refusal.waitable) this.#readFailures += 1;
           const retryAt = refusal.waitable ? this.#scheduleRead() : undefined;
+          const org = found === undefined ? undefined : restrictingOrg(found);
+          const message = org === undefined ? refusal.message : restrictedMessage(org);
           this.#problem =
             refusal.links.length > 0
-              ? { kind: 'blocked', message: refusal.message, links: refusal.links }
-              : { kind: 'failed', message: refusal.message, retryAt: retryAt ?? null };
+              ? { kind: 'blocked', message, links: refusal.links }
+              : { kind: 'failed', message, retryAt: retryAt ?? null };
           return false;
         }
         default:

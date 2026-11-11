@@ -2,19 +2,22 @@
 
 # Keys
 
-Lo is keyboard first: every action has a key. These are its keys as it ships, from the commands each
-of its features declares. Keys are written as macOS shows them; on Linux, Ctrl takes the place of
-`⌘` (see [Keys for one system](#keys-for-one-system)). A sequence's keys are pressed one after
-another: `] f` is `]`, then `f`.
+Lo is keyboard first: every action has a key, but for a few done once in a while, which a menu and
+the command palette reach. These are its keys as it ships, from the commands each of its features
+declares. Keys are written as macOS shows them; on Linux, Ctrl takes the place of `⌘` (see
+[Keys for one system](#keys-for-one-system)). A sequence's keys are pressed one after another: `] f`
+is `]`, then `f`.
 
 Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Move
 
-| Action                       | Keys | Where         | Command                    |
-| ---------------------------- | ---- | ------------- | -------------------------- |
-| Next section of Settings     | `j`  | In `settings` | `settings.nextSection`     |
-| Previous section of Settings | `k`  | In `settings` | `settings.previousSection` |
+| Action                       | Keys     | Where         | Command                    |
+| ---------------------------- | -------- | ------------- | -------------------------- |
+| Next pull request            | `j`, `↓` | In `recent`   | `open.nextRecent`          |
+| Previous pull request        | `k`, `↑` | In `recent`   | `open.previousRecent`      |
+| Next section of Settings     | `j`      | In `settings` | `settings.nextSection`     |
+| Previous section of Settings | `k`      | In `settings` | `settings.previousSection` |
 
 ## Code
 
@@ -34,10 +37,14 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Find
 
-| Action          | Keys  | Where                               | Command        |
-| --------------- | ----- | ----------------------------------- | -------------- |
-| Command palette | `⌘⇧P` | Anywhere                            | `keys.palette` |
-| Go to a file    | `⌘P`  | Anywhere but `dialog` and `palette` | `tree.find`    |
+| Action                         | Keys                    | Where                               | Command           |
+| ------------------------------ | ----------------------- | ----------------------------------- | ----------------- |
+| Command palette                | `⌘⇧P`                   | Anywhere                            | `keys.palette`    |
+| Open a pull request            | `⌘L`, `⌘O` (macOS only) | Anywhere but `dialog` and `palette` | `open.box`        |
+| Open the link on the clipboard | `⌘V`                    | In `recent`                         | `open.paste`      |
+| Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`     |
+| Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent` |
+| Go to a file                   | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`       |
 
 ## View
 
@@ -77,29 +84,30 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Tabs and window
 
-| Action                    | Keys           | Where                                                                                  | Command           |
-| ------------------------- | -------------- | -------------------------------------------------------------------------------------- | ----------------- |
-| Zoom in                   | `⌘=`, `⌘⇧=`    | Anywhere                                                                               | `app.zoomIn`      |
-| Zoom out                  | `⌘-`           | Anywhere                                                                               | `app.zoomOut`     |
-| Actual size               | `⌘0`           | Anywhere                                                                               | `app.actualSize`  |
-| Every key                 | `?`            | Anywhere                                                                               | `keys.help`       |
-| Show the right-click menu | `Menu`, `⇧F10` | Anywhere but `menu`, `dialog` and `palette`                                            | `keys.menu`       |
-| Back to the middle view   | `Esc`          | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`     |
-| Open the keymap file      | `g ,`          | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.openKeymap` |
-| Open Settings             | `⌘,`           | Anywhere but `dialog` and `palette`                                                    | `settings.open`   |
-| Tab 1                     | `⌘1`           | Anywhere but `dialog` and `palette`                                                    | `tab.show1`       |
-| Tab 2                     | `⌘2`           | Anywhere but `dialog` and `palette`                                                    | `tab.show2`       |
-| Tab 3                     | `⌘3`           | Anywhere but `dialog` and `palette`                                                    | `tab.show3`       |
-| Tab 4                     | `⌘4`           | Anywhere but `dialog` and `palette`                                                    | `tab.show4`       |
-| Tab 5                     | `⌘5`           | Anywhere but `dialog` and `palette`                                                    | `tab.show5`       |
-| Tab 6                     | `⌘6`           | Anywhere but `dialog` and `palette`                                                    | `tab.show6`       |
-| Tab 7                     | `⌘7`           | Anywhere but `dialog` and `palette`                                                    | `tab.show7`       |
-| Tab 8                     | `⌘8`           | Anywhere but `dialog` and `palette`                                                    | `tab.show8`       |
-| Last tab                  | `⌘9`           | Anywhere but `dialog` and `palette`                                                    | `tab.showLast`    |
-| Next tab                  | `⌘⇧]`, `⌃⇥`    | Anywhere but `dialog` and `palette`                                                    | `tab.next`        |
-| Previous tab              | `⌘⇧[`, `⌃⇧⇥`   | Anywhere but `dialog` and `palette`                                                    | `tab.previous`    |
-| Tabs that don’t fit       | `⌘⇧A`          | Anywhere but `dialog` and `palette`                                                    | `tab.more`        |
-| Close tab                 | `⌘W`           | Anywhere but `dialog` and `palette`                                                    | `tab.close`       |
+| Action                    | Keys                                  | Where                                                                                  | Command               |
+| ------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------- | --------------------- |
+| Zoom in                   | `⌘=`, `⌘⇧=`                           | Anywhere                                                                               | `app.zoomIn`          |
+| Zoom out                  | `⌘-`                                  | Anywhere                                                                               | `app.zoomOut`         |
+| Actual size               | `⌘0`                                  | Anywhere                                                                               | `app.actualSize`      |
+| Every key                 | `?`                                   | Anywhere                                                                               | `keys.help`           |
+| Show the right-click menu | `Menu`, `⇧F10`                        | Anywhere but `menu`, `dialog` and `palette`                                            | `keys.menu`           |
+| Back to the middle view   | `Esc`                                 | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.escape`         |
+| Open the keymap file      | `g ,`                                 | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.openKeymap`     |
+| Install command-line tool | None: in the app menu and the palette | Anywhere                                                                               | `open.installCommand` |
+| Open Settings             | `⌘,`                                  | Anywhere but `dialog` and `palette`                                                    | `settings.open`       |
+| Tab 1                     | `⌘1`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show1`           |
+| Tab 2                     | `⌘2`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show2`           |
+| Tab 3                     | `⌘3`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show3`           |
+| Tab 4                     | `⌘4`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show4`           |
+| Tab 5                     | `⌘5`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show5`           |
+| Tab 6                     | `⌘6`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show6`           |
+| Tab 7                     | `⌘7`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show7`           |
+| Tab 8                     | `⌘8`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.show8`           |
+| Last tab                  | `⌘9`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.showLast`        |
+| Next tab                  | `⌘⇧]`, `⌃⇥`                           | Anywhere but `dialog` and `palette`                                                    | `tab.next`            |
+| Previous tab              | `⌘⇧[`, `⌃⇧⇥`                          | Anywhere but `dialog` and `palette`                                                    | `tab.previous`        |
+| Tabs that don’t fit       | `⌘⇧A`                                 | Anywhere but `dialog` and `palette`                                                    | `tab.more`            |
+| Close tab                 | `⌘W`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.close`           |
 
 ## Where keys apply
 
@@ -117,6 +125,7 @@ comment box and another elsewhere.
 | `file`     | A whole file, a code view.                                                            |
 | `peek`     | A peek at code elsewhere, such as a definition, a code view.                          |
 | `box`      | A comment box, a code view with an insert mode.                                       |
+| `recent`   | Named by `open`.                                                                      |
 | `settings` | Named by `settings`.                                                                  |
 | `tree`     | Named by `tree`.                                                                      |
 
@@ -139,10 +148,11 @@ form: `⌘⇧P` is `Ctrl+Shift+P` on Linux. `⌃` is Ctrl on both, so Vim's `⌃
 
 These keys are on one system only:
 
-| Action      | Keys     | On    | Where    | Command          |
-| ----------- | -------- | ----- | -------- | ---------------- |
-| Quit Lo     | `Ctrl+Q` | Linux | Anywhere | `app.quit`       |
-| Full screen | `F11`    | Linux | Anywhere | `app.fullScreen` |
+| Action              | Keys     | On    | Where                               | Command          |
+| ------------------- | -------- | ----- | ----------------------------------- | ---------------- |
+| Quit Lo             | `Ctrl+Q` | Linux | Anywhere                            | `app.quit`       |
+| Full screen         | `F11`    | Linux | Anywhere                            | `app.fullScreen` |
+| Open a pull request | `⌘O`     | macOS | Anywhere but `dialog` and `palette` | `open.box`       |
 
 On Linux, in a comment box in insert mode, and in a field inside a code view such as Vim's search,
 Lo never takes `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A`, `Ctrl+Z` or `Ctrl+W`: they keep their editing

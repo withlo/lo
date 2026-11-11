@@ -34,9 +34,11 @@ export interface TabService {
   list(): Tabs;
   /**
    * Opens a tab and shows it, and returns its id. A pull request already open, by any name it's
-   * known by, or Settings when it's open, shows the tab it's in.
+   * known by, or Settings when it's open, shows the tab it's in. A new pull request's tab acts as
+   * `as.login` when given, an account that can see its repository, and otherwise works out its
+   * account itself.
    */
-  open(opening: Opening): string;
+  open(opening: Opening, as?: { login: string }): string;
   /** What main has of a pull request's tab now, or nothing for a tab that isn't one, or is closed. */
   pull(id: string): PullTabInfo | undefined;
   /**
