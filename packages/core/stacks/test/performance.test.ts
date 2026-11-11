@@ -6,10 +6,10 @@ import { findStacks, layerOf, stackOf, type PullRequest } from '../src/stacks.ts
 import { pr } from './support.ts';
 
 /**
- * How long finding the stacks may take, in milliseconds. Faster machines pass easily; a blow-up in
- * how the finder scales doesn't.
+ * How long finding the stacks may take, in milliseconds: three times the slower of the two on a
+ * Linux CI runner, 40 ms for the long merged chain. Faster machines pass easily.
  */
-const LIMIT = 500;
+const LIMIT = 125;
 
 const STACKS = 250;
 const LAYERS = 4;
@@ -57,12 +57,10 @@ function busyRepo(): PullRequest[] {
 }
 
 /** How long `find` took, in milliseconds, and what it gave. */
-function timed<T>(what: string, find: () => T): { found: T; elapsed: number } {
+function timed<T>(find: () => T): { found: T; elapsed: number } {
   const start = performance.now();
   const found = find();
-  const elapsed = performance.now() - start;
-  process.stderr.write(`stacks performance: ${what} took ${elapsed.toFixed(1)} ms\n`);
-  return { found, elapsed };
+  return { found, elapsed: performance.now() - start };
 }
 
 test('finds stacks among 1000 prs within budget', () => {
@@ -71,7 +69,7 @@ test('finds stacks among 1000 prs within budget', () => {
   const merged = prs.filter((built) => built.state.kind !== 'open').length;
   expect(merged).toBe(10);
 
-  const { found: stacks, elapsed } = timed('1,000 pull requests', () => findStacks(prs, []));
+  const { found: stacks, elapsed } = timed(() => findStacks(prs, []));
 
   // Every open pull request is placed, and the stacks are the ones built.
   const layers = stacks.roots
@@ -110,7 +108,7 @@ test('walks a long merged chain within budget', () => {
     prs.push(pr(number, 'main', head).withCommits([top, head]));
   }
 
-  const { found: stacks, elapsed } = timed('a long merged chain', () => findStacks(prs, ['main']));
+  const { found: stacks, elapsed } = timed(() => findStacks(prs, ['main']));
 
   const root = stacks.roots[0];
   expect(root?.branch).toBe('main');
