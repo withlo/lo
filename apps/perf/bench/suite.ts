@@ -181,14 +181,17 @@ export async function residentOf(suite: Suite): Promise<{ now: number; peak: num
   };
 }
 
-/** Where the view's box that scrolls is, and how far it can scroll. */
-export function scrollOf(page: Page): Promise<{ top: number; max: number; height: number }> {
+/** Where the view's box that scrolls is, how far it can scroll, and how tall its screen is. */
+export function scrollOf(
+  page: Page,
+): Promise<{ top: number; max: number; height: number; screen: number }> {
   return page.evaluate(() => {
     const box = document.querySelector<HTMLElement>('.lo-diffview')!;
     return {
       top: box.scrollTop,
       max: box.scrollHeight - box.clientHeight,
       height: box.scrollHeight,
+      screen: box.clientHeight,
     };
   });
 }

@@ -133,9 +133,12 @@ them. Each run:
   its diff and highlighting, and to every diff and the moves arriving, with the window's long tasks;
 - presses `]f`, `]c` and `G` from the top, holds `j`, holds `Esc`, types a comment on each side and
   crosses with `Tab`, timing each key from its keydown to the next paint with the Event Timing API;
-- flings from the top to the bottom, then holds PageDown from the top to the bottom, noting each
-  frame's time, how level the rows on screen are, and anything blank on screen;
-- reads the renderer's memory from `app.getAppMetrics()` and the heap after each full scroll;
+- flings from the top to the bottom, flings again harder, then holds PageDown from the top to the
+  bottom, noting each frame's time, how level the rows on screen are, and anything blank on screen;
+  where PageDown stops moving short of the bottom, it notes the place and scrolls past it with the
+  wheel, and where PageDown keeps going back there, it says how far down it got;
+- reads the renderer's memory from `app.getAppMetrics()`, and the heap after each of the two full
+  scrolls;
 - in TypeScript#51387, loads `checker.ts`, which stays out of the documents until `za`.
 
 Then a run with Chromium tracing writes traces of the opening, the keys, the flings and PageDown,

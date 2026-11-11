@@ -48,7 +48,7 @@ export interface Memory {
   afterSecond: { resident: number; heap: number };
   /** The renderer's resident memory at its largest, in MB. */
   peak: number;
-  /** How much the heap grew over the second full scroll, in %. */
+  /** How much the heap grew over the second full scroll, the harder flings, in %. */
   growth: number;
 }
 
@@ -74,6 +74,10 @@ export interface RunResult {
   };
   fling: Stretch;
   pageDown: Stretch;
+  /** Where PageDown stopped moving short of the bottom, and the bench scrolled past with the wheel. */
+  stuck: { at: string; scrollTop: number }[];
+  /** How far down PageDown got, as a share of the document: 1 unless it kept going back. */
+  reached: number;
   keys: {
     heldJ: KeyTimes;
     nextFile: KeyTimes;

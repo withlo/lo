@@ -117,6 +117,7 @@ for (let run = 1; run <= runs; run++) {
         keep: (stretch, recording) => {
           kept[stretch] = recording;
         },
+        progress: (line) => console.log(`  ${line}`),
       });
       // Every frame, for looking closer at a stretch than the report does.
       writeFileSync(
@@ -129,7 +130,7 @@ for (let run = 1; run <= runs; run++) {
         `  open ${result.open.firstDrawn?.toFixed(0)} ms, loaded ${result.open.loaded?.toFixed(0)} ms; ` +
           `flings p95 ${result.fling.frames.p95?.toFixed(1)} ms, max ${result.fling.frames.max?.toFixed(0)} ms, ` +
           `${result.fling.blank.frames} blank; PageDown p95 ${result.pageDown.frames.p95?.toFixed(1)} ms, ` +
-          `${result.pageDown.blank.frames} blank; worst misalignment ${result.alignment.worst.toFixed(2)} px; ` +
+          `${result.pageDown.blank.frames} blank, stopped short ${result.stuck.length} times; worst misalignment ${result.alignment.worst.toFixed(2)} px; ` +
           `memory ${result.memory.peak.toFixed(0)} MB, heap growth ${result.memory.growth.toFixed(1)}%`,
       );
       save();

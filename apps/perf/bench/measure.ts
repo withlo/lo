@@ -9,6 +9,7 @@ import type { RunResult, Stretch, Width, ZRResult } from './results.ts';
 import type { KeyTimes } from './stats.ts';
 import {
   flingDown,
+  flingThrough,
   goToFile,
   holdKey,
   keyThreshold,
@@ -40,6 +41,8 @@ export interface RunOptions {
   frameCheck?: (median: number) => void;
   /** Called with every frame recorded in each stretch, to keep beside the report. */
   keep?: (stretch: string, recording: Recording) => void;
+  /** Called with what's happening, for the log. */
+  progress?: (line: string) => void;
 }
 
 /** Opens `pull` at `width` and measures everything the bars read. */
@@ -131,13 +134,24 @@ async function measureOpened(
   const height = (await scrollOf(page)).height;
   const afterFirst = await memoryOf(suite);
 
-  // The second: PageDown from the top.
+  // The second, for the heap: flings again from the top, harder. Not with PageDown, which can
+  // stop short of the bottom.
   await focusSide(page, 'new');
   await top();
-  const paged = await pageDown(suite, refresh, options.limit, (recording) =>
-    options.keep?.('pageDown', recording),
-  );
+  if (options.limit === undefined) await flingThrough(suite, 'new');
+  else await flingDown(suite, 'new', refresh, options.limit);
   const afterSecond = await memoryOf(suite);
+
+  // PageDown from the top.
+  await focusSide(page, 'new');
+  await top();
+  const paged = await pageDown(
+    suite,
+    refresh,
+    options.limit,
+    (recording) => options.keep?.('pageDown', recording),
+    options.progress,
+  );
   const { peak } = await residentOf(suite);
 
   let large: RunResult['large'];
@@ -153,6 +167,8 @@ async function measureOpened(
     open: openOf(marks),
     fling,
     pageDown: paged.stretch,
+    stuck: paged.stuck,
+    reached: paged.reached,
     keys: {
       heldJ,
       nextFile,

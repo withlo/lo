@@ -19,7 +19,7 @@ export interface Bar {
   /** The largest reading that passes, or with `strict` the least that doesn't. */
   limit: (pull: string) => number;
   strict?: boolean;
-  unit: 'ms' | 'px' | 'MB' | '%' | 'frames';
+  unit: 'ms' | 'px' | 'MB' | '%' | 'count';
   read: (run: RunResult) => Reading;
 }
 
@@ -145,9 +145,21 @@ function scrollBars(id: 'fling' | 'pageDown', label: string): Bar[] {
       label: `${label}: frames with blank rows`,
       shown: () => 'none',
       limit: () => 0,
-      unit: 'frames',
+      unit: 'count',
       read: (run) => run[id].blank.frames,
     },
+    ...(id === 'pageDown'
+      ? [
+          {
+            id: 'pageDownStuck',
+            label: `${label}: places it stopped short of the bottom`,
+            shown: () => 'none',
+            limit: () => 0,
+            unit: 'count' as const,
+            read: (run: RunResult) => run.stuck.length,
+          },
+        ]
+      : []),
   ];
 }
 

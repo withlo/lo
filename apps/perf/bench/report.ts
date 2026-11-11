@@ -32,7 +32,7 @@ export function showReading(reading: Reading, unit: Bar['unit']): string {
       return `${shown(reading, 0)} MB`;
     case '%':
       return `${shown(reading, 1)}%`;
-    case 'frames':
+    case 'count':
       return shown(reading, 0);
     default:
       throw new Error(`A unit the report doesn't know: ${JSON.stringify(unit satisfies never)}`);
@@ -250,6 +250,7 @@ function detailsOf(runs: RunResult[], results: Results): string[] {
         `${shown(run.fling.ms / 1000, 1)} s, ${run.fling.frames.frames} frames, ${run.fling.blank.oneSided}/` +
         `${run.fling.blank.undrawn}/${run.fling.blank.past} frames with a row on one side/undrawn/scrolled past what was drawn. ` +
         `PageDown: ${run.pageDown.inputs} presses, ${shown(run.pageDown.ms / 1000, 1)} s, ` +
+        `${shown(run.reached * 100, 0)}% of the way down, stopped short ${run.stuck.length} times, ` +
         `${run.pageDown.blank.oneSided}/${run.pageDown.blank.undrawn}/${run.pageDown.blank.past}. ` +
         `Readings cost ${shown(run.fling.readMs, 2)} ms a frame (p95). ` +
         `Heap ${shown(run.memory.afterLoad.heap, 0)} → ${shown(run.memory.afterFirst.heap, 0)} → ` +
@@ -304,7 +305,11 @@ function timersOf(): string[] {
       'for the page: starting at 480 px and slowing by 6% an event until under 10 px, about 7,800 px ' +
       'a fling over a second, one fling after another until the scroll stops at the bottom.',
     '- **PageDown:** held, with focus in the right side: a keydown every 33 ms, macOS’s fastest key ' +
-      'repeat, sent on the clock without waiting for the page, until the bottom.',
+      'repeat, sent on the clock without waiting for the page, until the bottom. Where PageDown ' +
+      'stops moving short of the bottom, the bench lets go, notes the place, scrolls a screen past ' +
+      'it with the wheel and holds PageDown again; the table counts those places. Where PageDown ' +
+      'keeps going back to one, after the wheel has taken it up to eight screens past, the bench ' +
+      'gives up, and says how far down it got.',
     '- **Blank rows:** a frame counts when, after its layout and before its paint, a row is drawn on ' +
       'one side only, or any part of the screen inside either editor’s content isn’t drawn ' +
       '(CodeMirror’s gaps, or lines the view forgot). While the wheel scrolls, it also counts when ' +
@@ -325,7 +330,7 @@ function timersOf(): string[] {
       '`app.getAppMetrics()`, at its largest over the run, before any large file is loaded. MB ' +
       'are 1,000,000 bytes.',
     '- **Heap growth:** V8’s used heap after two `gc()` calls, after the flings and again after ' +
-      'PageDown, the second full scroll.',
+      'a second full scroll, flinging from the top three times as hard.',
     '- **`zR`:** the keydown of `R` in `zR`, with the cursor in the file, timed as the keys are.',
   ];
 }
@@ -349,6 +354,18 @@ function whereTheTimeWent(
         out.push(`- Run ${run.run}: ${steps}.`);
         const tasks = run.open.longTasks.map((task) => shown(task.duration, 0));
         if (tasks.length > 0) out.push(`  - Its tasks over 50 ms, in ms: ${tasks.join(', ')}.`);
+      }
+    } else if (bar.id === 'pageDownStuck') {
+      for (const run of runs) {
+        const places = run.stuck
+          .slice(0, 8)
+          .map((place) => `\`${place.at}\` (${shown(place.scrollTop / 1000, 0)}k px down)`);
+        const more = run.stuck.length > 8 ? `, and ${run.stuck.length - 8} more` : '';
+        out.push(
+          `- Run ${run.run}: PageDown got ${shown(run.reached * 100, 0)}% of the way down. It ` +
+            `stopped moving ${run.stuck.length} times, short of the ` +
+            `bottom; the bench scrolled a screen past each with the wheel and held it again. At ${places.join(', ')}${more}.`,
+        );
       }
     } else if (bar.id.endsWith('Blank')) {
       const stretch = bar.id.startsWith('fling') ? 'fling' : 'pageDown';

@@ -116,6 +116,25 @@ export async function flingDown(
 }
 
 /**
+ * Flings from where the scroll is to the bottom, three times as hard as `flingDown`, recording
+ * nothing: a second full scroll, for the heap.
+ */
+export async function flingThrough(suite: Suite, side: 'old' | 'new'): Promise<void> {
+  const at = await pointAt(suite.page, side);
+  await suite.page.mouse.move(at.x, at.y);
+  const shape = { ...flingShape, first: flingShape.first * 3 };
+  let still = 0;
+  let last = (await scrollOf(suite.page)).top;
+  while (still < 2) {
+    await fling(suite, at, 1, shape);
+    const now = await scrollOf(suite.page);
+    still = now.top >= now.max - 1 || now.top <= last ? still + 1 : 0;
+    last = now.top;
+  }
+  await settle(suite.page, 500);
+}
+
+/**
  * One fling down (`sign` 1) or up (-1) with the pointer at `at`, as the DevTools protocol's mouse
  * wheel events: returns how many it sent.
  */
@@ -145,43 +164,106 @@ export async function fling(
 
 /**
  * Holds PageDown, with focus in an editor, from where the scroll is to the bottom, or until
- * `limit` px. Records every frame, and the keys' times.
+ * `limit` px. Records every frame, and the keys' times. Where PageDown stops moving short of the
+ * bottom, it lets go, notes the place, scrolls past it with the wheel, and holds it again; where
+ * PageDown keeps going back there, it gives up. `reached` is how far down it got, as a share.
  */
 export async function pageDown(
   suite: Suite,
   refresh: number,
   limit = Infinity,
   keep?: (recording: Recording) => void,
-): Promise<{ stretch: Stretch; keys: KeyTimes }> {
+  progress?: (line: string) => void,
+): Promise<{ stretch: Stretch; keys: KeyTimes; stuck: Stuck[]; reached: number }> {
   const { page } = suite;
   const from = await scrollOf(page);
-  const since = await page.evaluate(() => window.perfBench!.now());
+  const pointer = await pointAt(page, 'new');
   await record(page);
   const started = performance.now();
-  const sent: Promise<void>[] = [];
-  let still = 0;
-  let last = from.top;
+  const keys: KeyTimes = { keys: 0, reported: [], under: keyThreshold, parts: [] };
+  const stuck: Stuck[] = [];
+  let inputs = 0;
+  let atBottom = 0;
+  /** The furthest the scroll has gone, and how many screens past it the next nudge goes. */
+  let furthest = from.top;
+  let screens = 1;
+  let gaveUp = false;
   while (true) {
-    for (let step = 0; step < 20; step++) {
-      sent.push(page.keyboard.down('PageDown'));
-      await sleep(started + sent.length * repeatEvery - performance.now());
+    // One hold, until the scroll stops moving or reaches the limit, checked every few repeats.
+    const since = await page.evaluate(() => window.perfBench!.now());
+    const held = performance.now();
+    const sent: Promise<void>[] = [];
+    let last = (await scrollOf(page)).top;
+    while (true) {
+      for (let step = 0; step < 5; step++) {
+        sent.push(page.keyboard.down('PageDown'));
+        await sleep(held + sent.length * repeatEvery - performance.now());
+      }
+      const now = await scrollOf(page);
+      if (now.top <= last || now.top - from.top >= limit) break;
+      last = now.top;
     }
+    await Promise.all(sent);
+    await page.keyboard.up('PageDown');
+    inputs += sent.length;
+    await settle(page, 300);
+    const times = await keyTimes(page, since, sent.length);
+    keys.keys += times.keys;
+    keys.reported.push(...times.reported);
+    keys.parts.push(...times.parts);
     const now = await scrollOf(page);
     if (now.top - from.top >= limit) break;
-    still = now.top >= now.max - 1 || now.top <= last ? still + 1 : 0;
-    if (still >= 2) break;
-    last = now.top;
+    if (now.top >= now.max - 1) {
+      // The document can still grow as lines are measured, so twice.
+      if (++atBottom >= 2) break;
+      continue;
+    }
+    atBottom = 0;
+    // A page that was only slow to scroll has moved on by now.
+    if (now.top > last + 1) continue;
+    // PageDown stopped short of the bottom, or went back to where it stopped before.
+    if (now.top > furthest + 1) {
+      furthest = now.top;
+      screens = 1;
+      const at = await page.evaluate(() => {
+        const spot = window.diffView.cursor()?.at;
+        return spot?.kind === 'line' ? `${spot.at.file}:${spot.at.line}` : (spot?.file ?? '');
+      });
+      stuck.push({ at, scrollTop: now.top });
+      progress?.(`PageDown stopped at ${at}, ${Math.round(now.top)} of ${Math.round(now.max)} px`);
+    } else if (screens >= 8) {
+      progress?.(`PageDown can't get past ${Math.round(furthest)} px`);
+      gaveUp = true;
+      break;
+    } else {
+      screens *= 2;
+    }
+    // Past it with the wheel, as a person would: a screen past the furthest it went, and more
+    // each time PageDown goes back there. PageDown goes on from where the wheel leaves it.
+    await suite.cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: pointer.x,
+      y: pointer.y,
+      deltaX: 0,
+      deltaY: furthest - now.top + screens * now.screen,
+    });
+    await settle(page, 200);
   }
-  await Promise.all(sent);
-  await page.keyboard.up('PageDown');
   const ms = performance.now() - started;
   await settle(page, 500);
   const recording = await stopRecording(page);
   keep?.(recording);
   const to = await scrollOf(page);
-  const keys = await keyTimes(page, since, sent.length);
-  const done = { scrolled: to.top - from.top, ms, inputs: sent.length };
-  return { stretch: stretchOf(recording, done, refresh), keys };
+  furthest = Math.max(furthest, to.top);
+  const done = { scrolled: furthest - from.top, ms, inputs };
+  const reached = gaveUp ? furthest / Math.max(1, to.max) : 1;
+  return { stretch: stretchOf(recording, done, refresh), keys, stuck, reached };
+}
+
+/** A place PageDown stopped moving short of the bottom: the cursor's file and line, and the scroll. */
+export interface Stuck {
+  at: string;
+  scrollTop: number;
 }
 
 /** The keydowns reported since `since`, as the times of `count` keys. */
