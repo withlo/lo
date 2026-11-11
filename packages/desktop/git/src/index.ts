@@ -1,6 +1,13 @@
 export { type Attribute, linguistBoolean, MAX_ATTRIBUTE_FILES } from './attributes.ts';
 export { Cache, type CacheOptions, type OpenOptions, type ProxySource } from './cache.ts';
 export {
+  type ComparedFile,
+  type Comparison,
+  isConflicted,
+  type Replay,
+  type Revision,
+} from './compare.ts';
+export {
   type Change,
   type ChangedFile,
   changedPath,

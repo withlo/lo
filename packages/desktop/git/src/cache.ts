@@ -18,8 +18,10 @@ import { dirname, join } from 'node:path';
 import { GitError } from './errors.ts';
 import { type Git, Runner, type TestSettings } from './git.ts';
 import { DEFAULT_FETCH_LIMITS, type FetchLimits } from './limits.ts';
+import { REPLAYS } from './compare.ts';
 import { CloneLock, lockCache, type Release, unlockCache } from './lock.ts';
 import { ObjectReader } from './objects.ts';
+import type { Oid } from './oid.ts';
 import type { Activity } from './progress.ts';
 import { checkName } from './refs.ts';
 import { Repo } from './repo.ts';
@@ -67,6 +69,8 @@ export class Cache {
   readonly #locks = new Map<string, CloneLock>();
   /** Each open clone's reader of objects, and how many repositories open on it use it. */
   readonly #readers = new Map<string, { reader: ObjectReader; users: number }>();
+  /** The replayed trees this process has pinned in each clone, while one has it open. */
+  readonly #replays = new Map<string, Set<Oid>>();
   #closed = false;
 
   private constructor(
@@ -155,6 +159,17 @@ export class Cache {
     return { reader: using.reader, release };
   }
 
+  /** The replayed trees this process has pinned in `owner/name`'s clone. */
+  #replaysOf(owner: string, name: string): Set<Oid> {
+    const key = `${owner.toLowerCase()}/${name.toLowerCase()}`;
+    let replays = this.#replays.get(key);
+    if (replays === undefined) {
+      replays = new Set();
+      this.#replays.set(key, replays);
+    }
+    return replays;
+  }
+
   /** The lock on `owner/name`'s clone, which every repository open on it shares. */
   cloneLock(owner: string, name: string): CloneLock {
     const key = `${owner.toLowerCase()}/${name.toLowerCase()}`;
@@ -208,6 +223,9 @@ export class Cache {
         await this.create(folder, url);
       }
       await stampUsed(folder);
+      // With no repository open on the clone, no comparison is shown from it: the trees replayed
+      // for the last ones, which this process or an earlier one pinned, can go.
+      if (lock.users === 0) await this.#removeReplayPins(folder, this.#replaysOf(owner, name));
       done = lock.use();
     } finally {
       release();
@@ -227,14 +245,16 @@ export class Cache {
       token: options.token,
       proxy: options.proxy,
       progress: options.progress,
+      replays: this.#replaysOf(owner, name),
       offline: false,
     });
   }
 
   /**
    * The clone of `owner/name` to read offline, or `undefined` when there's none, or none to
-   * trust. It never makes a clone or writes to one, never waits for a fetch, and its reads never
-   * download.
+   * trust. It never makes a clone or fetches into one, never waits for a fetch, and its reads never
+   * download. A comparison writes only the trees it replays, which exist only in the clone, and
+   * their pins.
    */
   async openOffline(owner: string, name: string): Promise<Repo | undefined> {
     checkName('repository owner', owner);
@@ -262,6 +282,7 @@ export class Cache {
         done();
       },
       reader: reader.reader,
+      replays: this.#replaysOf(owner, name),
       offline: true,
     });
   }
@@ -320,6 +341,17 @@ export class Cache {
     } finally {
       await rm(temporary, { recursive: true, force: true });
     }
+  }
+
+  /** Removes every replayed tree's pin from the clone at `folder`. Its lock is held. */
+  async #removeReplayPins(folder: string, replays: Set<Oid>): Promise<void> {
+    replays.clear();
+    const deletes = await this.runner
+      .command({ gitDir: folder })
+      .arg('for-each-ref', '--format=delete %(refname)', REPLAYS)
+      .run();
+    if (deletes.length === 0) return;
+    await this.runner.command({ gitDir: folder }).arg('update-ref', '--stdin').run(deletes);
   }
 
   /** Points the clone at `url` if it points somewhere else. Opening usually writes nothing. */

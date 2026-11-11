@@ -293,3 +293,31 @@ export function rawDiffBlobs(output: Uint8Array): Oid[] {
   }
   return blobs;
 }
+
+/** One file of `git diff --raw -z --no-renames`: its path, and each side's mode and blob. */
+export interface RawRecord {
+  readonly path: Buffer;
+  /** `A`dded, `D`eleted, `M`odified, or `T`, its type changed. */
+  readonly status: string;
+  /** Each side's mode, none for a side that isn't there. */
+  readonly oldMode: FileMode | undefined;
+  readonly newMode: FileMode | undefined;
+  readonly oldOid: Oid;
+  readonly newOid: Oid;
+}
+
+/** Reads `git diff --raw -z --no-renames --no-abbrev`: a header, then a path, for each file. */
+export function parseRawRecords(output: Uint8Array): RawRecord[] {
+  const fields = splitRecords(output);
+  const records: RawRecord[] = [];
+  for (let at = 0; at < fields.length; at += 2) {
+    const field = fields[at];
+    const path = fields[at + 1];
+    if (field === undefined || field[0] !== 0x3a || path === undefined || path.length === 0) {
+      throw unexpected(`entry ${JSON.stringify(displayPath(field ?? Buffer.alloc(0)))}`);
+    }
+    const { status, oldMode, newMode, oldOid, newOid } = parseRawHeader(ascii(field));
+    records.push({ path, status, oldMode, newMode, oldOid, newOid });
+  }
+  return records;
+}
