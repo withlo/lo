@@ -745,7 +745,10 @@ repos and PRs, the theme, the cache, and whether a PR opens on its overview or i
   online. Nothing posts by itself. Reviewing and merging are off until then.
 - **Unsent text.** Text in comment boxes is saved on this computer until it's posted, so a crash or
   restart doesn't lose it.
-- **Rate limit used up.** A banner shows when it resets. Polling pauses until then.
+- **Rate limit used up.** A banner shows when it resets. Polling pauses until then, and so does
+  writing, as it does for a minute when GitHub turns a comment away as sent too fast. A comment,
+  review or merge asked for meanwhile isn't sent, and says when it can be. A change to a stack's
+  base branches waits, and goes once the pause is over.
 - **Signed out.** If an account's token is revoked, that account's tabs ask you to sign in again.
   Other accounts keep working.
 - **Single sign-on.** If an org requires SSO approval for the token, Lo shows GitHub's link to grant

@@ -78,11 +78,17 @@ export class Harness {
   readonly #log: [number, string][];
   readonly #failures: Failure[];
   readonly #lookupFailures: Failure[];
+  readonly #slow: Map<string, number>;
   readonly #events: JobChanged[] = [];
 
   private constructor(
     parts: Pick<Harness, 'jobs' | 'poller' | 'accounts' | 'start'>,
-    net: { log: [number, string][]; failures: Failure[]; lookupFailures: Failure[] },
+    net: {
+      log: [number, string][];
+      failures: Failure[];
+      lookupFailures: Failure[];
+      slow: Map<string, number>;
+    },
   ) {
     this.jobs = parts.jobs;
     this.poller = parts.poller;
@@ -91,6 +97,7 @@ export class Harness {
     this.#log = net.log;
     this.#failures = net.failures;
     this.#lookupFailures = net.lookupFailures;
+    this.#slow = net.slow;
     this.jobs.onChange((changed) => {
       this.#events.push(changed);
     });
@@ -103,6 +110,7 @@ export class Harness {
       log: [] as [number, string][],
       failures: [] as Failure[],
       lookupFailures: [] as Failure[],
+      slow: new Map<string, number>(),
     };
     const fetch: typeof globalThis.fetch = async (input, init) => {
       const request = new Request(input, init);
@@ -111,6 +119,8 @@ export class Harness {
       const what = `${request.method} ${url.pathname.replace(/^\/repos\/rozed-dev\/e2e/, '')}`;
       const failure = what === LOOKUP ? net.lookupFailures.shift() : net.failures.shift();
       net.log.push([sent, what]);
+      const delay = net.slow.get(what);
+      if (delay !== undefined) await new Promise((resolve) => setTimeout(resolve, delay));
       if (failure !== undefined) throw thrown(failure);
       return replayed(request);
     };
@@ -142,7 +152,7 @@ export class Harness {
   async merge(
     pull: PullRef,
     request: MergeRequest,
-  ): Promise<undefined | { refusal: 'alreadyMerging' }> {
+  ): Promise<undefined | { refusal: 'alreadyMerging' | 'stopped' }> {
     const merging = this.jobs.merge(this.poller, pull, request);
     await settle();
     return merging;
@@ -172,6 +182,11 @@ export class Harness {
   /** Fails the next stack lookup. */
   failNextLookup(failure: Failure): void {
     this.#lookupFailures.push(failure);
+  }
+
+  /** Makes every request logged as `what` take `ms` milliseconds to answer. */
+  slow(what: string, ms: number): void {
+    this.#slow.set(what, ms);
   }
 
   job(pull: PullRef): Job {

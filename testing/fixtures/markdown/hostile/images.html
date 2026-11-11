@@ -1,0 +1,22 @@
+<p><img src="https://evil.example/track.png" alt="remote"></p>
+<p><img src="https://evil.example/claimed.png" data-canonical-src="https://camo.githubusercontent.com/a" alt="claims camo"></p>
+<p><img src="https://camo.githubusercontent.com/a" data-canonical-src="https://evil.example/ignored.png" alt="camo"></p>
+<p><img src="http://camo.githubusercontent.com/a" alt="http"></p>
+<p><img src="data:image/png;base64,iVBORw0KGgo=" alt="data"></p>
+<p><img src="data:image/svg+xml,<svg onload=alert(1)>" alt="data svg"></p>
+<p><img srcset="https://evil.example/1x.png 1x, https://evil.example/2x.png 2x" alt="srcset only"></p>
+<p><img src="https://camo.githubusercontent.com.evil.example/a" alt="lookalike"></p>
+<p><img src="https://x.camo.githubusercontent.com/a" alt="subdomain"></p>
+<p><img src="https://camo.githubusercontent.com:8443/a" alt="port"></p>
+<p><img src="https://u:p@camo.githubusercontent.com/a" alt="user"></p>
+<p><img src="https://github.com/user-attachments/assets/%2e%2e/%2e%2e/evil/x" alt="encoded dots"></p>
+<p><img src="https://github.githubassets.com/images/icons/emoji/octocat.png" alt="an emoji host"></p>
+<picture><source srcset="https://evil.example/dark.png" media="(prefers-color-scheme: dark)"><img src="https://camo.githubusercontent.com/b" alt="picture"></picture>
+<p><video src="https://evil.example/v.mp4" poster="https://evil.example/poster.png"></video></p>
+<p><input type="image" src="https://evil.example/input.png"></p>
+<p><object data="https://evil.example/object.png"></object><embed src="https://evil.example/embed.png"></p>
+<svg><image href="https://evil.example/svg.png"></image><use href="https://evil.example/sprite.svg#a"></use></svg>
+<p><a href="https://camo.githubusercontent.com/c"><img src="https://camo.githubusercontent.com/c" alt="linked to itself"></a></p>
+<p><img alt="no source"></p>
+<p style="background-image:url(https://evil.example/bg.png)">A background</p>
+<p><img class="emoji" src="https://evil.example/emoji.png" alt=":evil:"></p>

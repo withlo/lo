@@ -158,6 +158,12 @@ export type MergeRefusal =
   | { refusal: 'stackBusy' }
   /** The base branch isn't the one the plan expected, but `now`: it was changed elsewhere since Lo read it. Lo leaves it as it is. */
   | { refusal: 'baseChanged'; now: string }
+  /**
+   * GitHub asked Lo to hold off writing, by a rate limit or by turning a write away as sent too
+   * fast, so Lo didn't send it. It can be asked for again from `until`, a wall-clock time in
+   * milliseconds since the Unix epoch.
+   */
+  | { refusal: 'paused'; until: number }
   /** Any other refusal, in GitHub's words, such as a dequeue of a pull request that isn't queued, or a `409` Lo can't read. */
   | { refusal: 'other'; message: string };
 
@@ -236,6 +242,8 @@ export function describeMergeRefusal(refusal: MergeRefusal): string {
       return 'GitHub is changing this stack for another request';
     case 'baseChanged':
       return `The pull request's base branch is now ${refusal.now}, changed since Lo read it`;
+    case 'paused':
+      return "GitHub asked Lo to hold off writing for a while, so Lo didn't send it";
     case 'other':
       return `GitHub refused it: ${refusal.message}`;
     default:
@@ -1400,6 +1408,26 @@ async function settled(
     if (made) return made;
     throw error;
   }
+}
+
+/**
+ * {@link unstack}, only while GitHub stack `stack` holds exactly `prs`, bottom to top, as when Lo
+ * made it: it reads the stack first, and refuses (`stackChanged`) when the stack holds other pull
+ * requests, such as layers added since, which unstacking would take out too, or it's gone or
+ * closed. With no pull requests named there's nothing to check it against, and it's refused too.
+ */
+export async function unstackHolding(
+  client: GithubClient,
+  repo: RepoRef,
+  stack: number,
+  prs: readonly number[],
+): Promise<{ left: GithubStack | undefined } | MergeRefusal> {
+  const bottom = prs[0];
+  if (bottom === undefined) return { refusal: 'stackChanged' };
+  const holding = await stacksHolding(client, repo, bottom);
+  const found = holding?.find((held) => held.number === stack && held.open);
+  if (!found || !sameNumbers(stackNumbers(found), prs)) return { refusal: 'stackChanged' };
+  return unstack(client, repo, stack);
 }
 
 /**

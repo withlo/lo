@@ -4,34 +4,37 @@
     "url": "https://api.github.com/graphql",
     "operation": "AddPullRequestReviewThread",
     "variables": {
-      "pullRequestReviewId": "PRR_kwDOVleUfc8AAAABWv73rA",
+      "pullRequestReviewId": "PRR_kwDOVleUfc8AAAABXON7uA",
       "path": "e11/notes.md",
       "body": "Fixture E11: a file-level thread.",
       "subjectType": "FILE"
     },
-    "query_sha256": "115fddc08da5886538ee84a326c80d99fdcd6b7f48686eaa53a11fef67f5824c"
+    "query_sha256": "cad095a47d6d7fc9aedbba66f1a1ae73f20581c24d2ac314ac0fba5bd142ace0"
   },
   "response": {
     "status": 200,
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4993",
-      "x-ratelimit-reset": "1794201713",
+      "x-ratelimit-remaining": "4995",
+      "x-ratelimit-reset": "1794371223",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "7"
+      "x-ratelimit-used": "5"
     },
     "body": {
       "data": {
         "addPullRequestReviewThread": {
           "thread": {
-            "id": "PRRT_kwDOVleUfc61INnU",
+            "id": "PRRT_kwDOVleUfc62A2Hv",
             "comments": {
               "nodes": [
                 {
-                  "id": "PRRC_kwDOVleUfc8AAAABDMhK2Q",
+                  "id": "PRRC_kwDOVleUfc8AAAABDjlyyw",
+                  "commit": {
+                    "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                  },
                   "pullRequestReview": {
-                    "id": "PRR_kwDOVleUfc8AAAABWv73rA"
+                    "id": "PRR_kwDOVleUfc8AAAABXON7uA"
                   }
                 }
               ]

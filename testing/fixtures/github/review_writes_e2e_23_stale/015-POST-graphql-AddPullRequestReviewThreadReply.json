@@ -4,7 +4,7 @@
     "url": "https://api.github.com/graphql",
     "operation": "AddPullRequestReviewThreadReply",
     "variables": {
-      "pullRequestReviewThreadId": "PRRT_kwDOVleUfc61IOiN",
+      "pullRequestReviewThreadId": "PRRT_kwDOVleUfc62A2d4",
       "body": "Fixture E11: a reply to a thread deleted since."
     },
     "query_sha256": "97014655e17706c750cecd7cfe27c306828f75b5c3e3285520aa2aebadac5136"
@@ -14,10 +14,10 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4933",
-      "x-ratelimit-reset": "1794201713",
+      "x-ratelimit-remaining": "4969",
+      "x-ratelimit-reset": "1794371223",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "67"
+      "x-ratelimit-used": "31"
     },
     "body": {
       "data": {
@@ -31,11 +31,11 @@
           ],
           "locations": [
             {
-              "line": 9,
+              "line": 3,
               "column": 3
             }
           ],
-          "message": "Could not resolve to a node with the global id of 'PRRT_kwDOVleUfc61IOiN'."
+          "message": "Could not resolve to a node with the global id of 'PRRT_kwDOVleUfc62A2d4'."
         }
       ]
     }

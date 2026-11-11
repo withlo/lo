@@ -17,19 +17,19 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4989",
-      "x-ratelimit-reset": "1794201713",
+      "x-ratelimit-remaining": "4990",
+      "x-ratelimit-reset": "1794371223",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "11"
+      "x-ratelimit-used": "10"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4989,
-          "used": 11,
-          "resetAt": "2026-11-09T05:21:53Z"
+          "remaining": 4990,
+          "used": 10,
+          "resetAt": "2026-11-11T04:27:03Z"
         },
         "repository": {
           "pullRequest": {
@@ -37,7 +37,7 @@
               "totalCount": 6,
               "pageInfo": {
                 "hasNextPage": false,
-                "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wOVQwNDoyMTo1OVrOtSDZ1A=="
+                "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xMVQwMzoyNzowOFrOtgNh7w=="
               },
               "nodes": [
                 {
@@ -179,7 +179,7 @@
                   }
                 },
                 {
-                  "id": "PRRT_kwDOVleUfc61INkh",
+                  "id": "PRRT_kwDOVleUfc62A2C9",
                   "path": "e11/review.txt",
                   "subjectType": "LINE",
                   "diffSide": "RIGHT",
@@ -197,19 +197,19 @@
                     "totalCount": 1,
                     "pageInfo": {
                       "hasNextPage": false,
-                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wOVQwNDoyMTo1NlrPAAAAAQzISb0="
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xMVQwMzoyNzowNFrPAAAAAQ45cIg="
                     },
                     "nodes": [
                       {
-                        "id": "PRRC_kwDOVleUfc8AAAABDMhJvQ",
+                        "id": "PRRC_kwDOVleUfc8AAAABDjlwiA",
                         "author": {
                           "__typename": "User",
                           "login": "rozed-bot"
                         },
                         "body": "Fixture E11: a line thread, the first comment of a pending review.",
                         "state": "PENDING",
-                        "createdAt": "2026-11-09T04:21:56Z",
-                        "url": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4509419965",
+                        "createdAt": "2026-11-11T03:27:04Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4533612680",
                         "isMinimized": false,
                         "minimizedReason": null,
                         "viewerCanUpdate": true,
@@ -225,7 +225,7 @@
                   }
                 },
                 {
-                  "id": "PRRT_kwDOVleUfc61INmn",
+                  "id": "PRRT_kwDOVleUfc62A2HE",
                   "path": "e11/review.txt",
                   "subjectType": "LINE",
                   "diffSide": "RIGHT",
@@ -243,19 +243,19 @@
                     "totalCount": 1,
                     "pageInfo": {
                       "hasNextPage": false,
-                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wOVQwNDoyMTo1OVrPAAAAAQzISpI="
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xMVQwMzoyNzowN1rPAAAAAQ45cnA="
                     },
                     "nodes": [
                       {
-                        "id": "PRRC_kwDOVleUfc8AAAABDMhKkg",
+                        "id": "PRRC_kwDOVleUfc8AAAABDjlycA",
                         "author": {
                           "__typename": "User",
                           "login": "rozed-bot"
                         },
                         "body": "Fixture E11: a range from the base's line 10 to the head's line 11.",
                         "state": "PENDING",
-                        "createdAt": "2026-11-09T04:21:59Z",
-                        "url": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4509420178",
+                        "createdAt": "2026-11-11T03:27:07Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4533613168",
                         "isMinimized": false,
                         "minimizedReason": null,
                         "viewerCanUpdate": true,
@@ -271,7 +271,7 @@
                   }
                 },
                 {
-                  "id": "PRRT_kwDOVleUfc61INnU",
+                  "id": "PRRT_kwDOVleUfc62A2Hv",
                   "path": "e11/notes.md",
                   "subjectType": "FILE",
                   "diffSide": "RIGHT",
@@ -289,19 +289,19 @@
                     "totalCount": 1,
                     "pageInfo": {
                       "hasNextPage": false,
-                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wOVQwNDoyMjowMFrPAAAAAQzIStk="
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xMVQwMzoyNzowOFrPAAAAAQ45css="
                     },
                     "nodes": [
                       {
-                        "id": "PRRC_kwDOVleUfc8AAAABDMhK2Q",
+                        "id": "PRRC_kwDOVleUfc8AAAABDjlyyw",
                         "author": {
                           "__typename": "User",
                           "login": "rozed-bot"
                         },
                         "body": "Fixture E11: a file-level thread.",
                         "state": "PENDING",
-                        "createdAt": "2026-11-09T04:22:00Z",
-                        "url": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4509420249",
+                        "createdAt": "2026-11-11T03:27:08Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/23#discussion_r4533613259",
                         "isMinimized": false,
                         "minimizedReason": null,
                         "viewerCanUpdate": true,

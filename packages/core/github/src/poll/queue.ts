@@ -101,14 +101,16 @@ export class RequestQueue {
 
   /**
    * Makes and runs a write (a mutation) once it's the write's turn, and at least the spacing after
-   * the previous write finished. One given up on through `signal` while it waits is never made.
+   * the previous write finished. One given up on through `signal` while it waits, for its turn or
+   * through the spacing, is never made.
    */
   async write<T>(request: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     const release = await this.#turn(true, signal);
     try {
       const last = this.#lastWrite;
       const wait = last === undefined ? 0 : last + this.#spacing - this.#clock();
-      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      if (wait > 0) await pause(wait, signal);
+      if (signal?.aborted) throw abandoned(signal);
       try {
         return await request();
       } finally {
@@ -120,8 +122,21 @@ export class RequestQueue {
   }
 }
 
+/** Waits `wait` milliseconds, or until `signal` aborts. */
+function pause(wait: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, wait);
+    signal?.addEventListener('abort', done, { once: true });
+  });
+}
+
 /** The error a request given up on through `signal` fails with: the signal's reason, if it's an error. */
-function abandoned(signal: AbortSignal | undefined): Error {
+export function abandoned(signal: AbortSignal | undefined): Error {
   const reason: unknown = signal?.reason;
   return reason instanceof Error
     ? reason

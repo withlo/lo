@@ -27,6 +27,9 @@ test('a limit is a whole number up to its ceiling, or its default', () => {
     images: 3,
   });
   expect(resolveLimits({ depth: 1e9 }).depth).toBe(64);
+  // Room for the plain text shown for what didn't fit, and for a footnote's.
+  expect(resolveLimits({ nodes: 3 }).nodes).toBe(16);
+  expect(resolveLimits({ depth: 1 }).depth).toBe(3);
   const values = [0, -5, 2.5, Number.NaN, Infinity];
   expect(values.map((nodes) => resolveLimits({ nodes }).nodes)).toEqual(
     values.map(() => DEFAULT_LIMITS.nodes),
