@@ -28,8 +28,8 @@ const COMMENT_LIMIT = 750;
 const OVERVIEW_LIMIT = 1_200;
 const RENDERING_LIMIT = 2_000;
 /**
- * A figure at the caps takes about 30 ms on a laptop; CI's runners take some eight times as long
- * as a laptop at the sizes above, and this is three times that.
+ * A figure at the caps takes about 30 ms on a laptop, a third of the whole test's 90 ms. On a Linux
+ * CI runner the whole test took 540 ms, so some 200 ms to sanitize; this is three times 250 ms.
  */
 const FIGURE_LIMIT = 750;
 
