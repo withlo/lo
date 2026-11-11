@@ -166,7 +166,7 @@ export default defineFeature(contract, {
       urls,
       keyring: () => grants.problem(),
       add: (user, grant) => service.add(user, grant, 'deviceFlow'),
-      publish: (state) => publish('signIn', state),
+      publish: (state) => publish('signingIn', state),
       log,
     });
     running = { settings, github: service, grants, gh, signIns };

@@ -20,6 +20,12 @@ export type { TabsState } from './store.ts';
  */
 export const kinds = defineSlot<{ tab: Tab }>('tab.kinds');
 
+/**
+ * Dialogs over the whole window, whatever tab is on screen: signing in, say. A feature puts one view
+ * here, which draws its dialogs while they're open and nothing otherwise.
+ */
+export const dialogs = defineSlot('tab.dialogs');
+
 /** The tabs and the one on screen, re-rendering when they change. */
 export function useTabs(): TabsState {
   return useStore(tabsStore);

@@ -154,7 +154,7 @@ export const contract = defineContract('accounts', {
     keyring: { input: z.undefined(), reply: reply<string | null>() },
     /**
      * Starts signing in with GitHub's device flow, stopping any other sign-in, and answers with the
-     * code to enter on GitHub, or why there's none. `accounts.signIn` tells how it goes from there.
+     * code to enter on GitHub, or why there's none. `accounts.signingIn` tells how it goes from there.
      */
     signIn: { input: z.undefined(), reply: reply<SignInState>() },
     /** Stops a sign-in: Lo asks GitHub nothing more for it. */
@@ -196,6 +196,6 @@ export const contract = defineContract('accounts', {
     /** What happened to an account. */
     event: accountEvent,
     /** How the sign-in running is going, after `accounts.signIn` answered. */
-    signIn: signInState,
+    signingIn: signInState,
   },
 });
