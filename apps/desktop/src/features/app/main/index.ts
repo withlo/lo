@@ -2,6 +2,7 @@ import { formatVersion, type GitStatus } from '@lo/git';
 import { app, BrowserWindow, nativeTheme } from 'electron';
 
 import { defineFeature } from '../../../main/features.ts';
+import { pageNonce } from '../../../main/security.ts';
 import { appInfo, contract, type GitInfo, type Theme } from '../contract.ts';
 import { zoomed } from './zoom.ts';
 
@@ -36,6 +37,7 @@ export default defineFeature(contract, {
         theme: currentTheme(),
         git: gitInfo(git.status),
         packaged: app.isPackaged,
+        nonce: pageNonce(),
       }),
     quit() {
       app.quit();

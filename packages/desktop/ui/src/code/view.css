@@ -13,8 +13,12 @@
   /* The view anchors the scroll itself, so the browser's anchoring must stay out of it. */
   overflow-anchor: none;
 }
+/*
+ * The sides share the width evenly. Their basis is above 0, or with a note they'd fit beside it on
+ * its line, with no width at all.
+ */
 .lo-diffview > .cm-editor {
-  flex: 1 1 0;
+  flex: 1 1 1px;
   min-width: 0;
 }
 .lo-diffview > .lo-diffnote {

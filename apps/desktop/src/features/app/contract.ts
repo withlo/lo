@@ -38,6 +38,11 @@ export const appInfo = z.strictObject({
   git: gitInfo,
   /** Whether Lo runs as it ships, rather than built from source, as for its tests. */
   packaged: z.boolean(),
+  /**
+   * The nonce in the page's content security policy, new each time the page loads, which lets in
+   * the style elements that carry it: the code views hand it to theirs.
+   */
+  nonce: z.string().min(1),
 });
 export type AppInfo = z.output<typeof appInfo>;
 

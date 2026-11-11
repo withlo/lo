@@ -9,6 +9,7 @@ describe('appInfo', () => {
     theme: 'dark',
     git: { status: 'found', version: '2.54.0' },
     packaged: true,
+    nonce: 'aGVsbG8gdGhlcmUgbm9uY2Vz',
   };
 
   it('takes what app.info answers, whatever Lo found of git', () => {
@@ -31,6 +32,7 @@ describe('appInfo', () => {
   it('refuses anything the contract doesn’t name', () => {
     for (const wrong of [
       { ...info, token: 'hunter2' },
+      { ...info, nonce: '' },
       { ...info, theme: 'sepia' },
       { ...info, git: { status: 'found', version: '2.54.0', program: '/usr/bin/git' } },
       { ...info, git: { status: 'lost' } },

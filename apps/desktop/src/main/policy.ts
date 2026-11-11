@@ -2,6 +2,8 @@
 // Markdown, images from pull requests), so it loads only Lo's own files, from Lo's own scheme, and
 // never leaves its page.
 
+import { randomBytes } from 'node:crypto';
+
 /** The scheme the window's files are served from. Never `file:`. */
 export const appScheme = 'lo-app';
 
@@ -13,9 +15,9 @@ export const windowUrl = `${appScheme}://${appHost}/index.html`;
 
 /**
  * The content security policy, sent as a header with every file the window loads. Scripts, styles,
- * fonts, images and requests come from Lo's own files only, with no inline code. Anything a
- * directive doesn't name falls back to `default-src 'none'`: no frames, workers from elsewhere,
- * media or manifests.
+ * fonts, images and requests come from Lo's own files only, with no inline code but the style
+ * elements that carry the page's nonce, which its code views make. Anything a directive doesn't
+ * name falls back to `default-src 'none'`: no frames, workers from elsewhere, media or manifests.
  */
 const directives = {
   'default-src': ["'none'"],
@@ -31,11 +33,16 @@ const directives = {
 } as const;
 
 /**
- * The policy for the window. With Vite's dev server (`electron-vite dev` only) it also allows inline
- * scripts and styles, which the server injects for hot reloading, and the server's WebSocket.
+ * The policy for the window's page, whose style elements may carry `nonce`. With Vite's dev server
+ * (`electron-vite dev` only) it also allows inline scripts and styles, which the server injects for
+ * hot reloading, and the server's WebSocket; it names no nonce there, since a nonce would turn the
+ * inline styles off.
  */
-export function contentSecurityPolicy(dev?: URL): string {
-  const policy: Record<string, readonly string[]> = { ...directives };
+export function contentSecurityPolicy(nonce: string, dev?: URL): string {
+  const policy: Record<string, readonly string[]> = {
+    ...directives,
+    'style-src': [...directives['style-src'], `'nonce-${nonce}'`],
+  };
   if (dev) {
     policy['script-src'] = [...directives['script-src'], "'unsafe-inline'"];
     policy['style-src'] = [...directives['style-src'], "'unsafe-inline'"];
@@ -44,6 +51,11 @@ export function contentSecurityPolicy(dev?: URL): string {
   return Object.entries(policy)
     .map(([directive, sources]) => `${directive} ${sources.join(' ')}`)
     .join('; ');
+}
+
+/** A nonce for the page's policy: 18 random bytes, past the 16 the standard asks for, in base64. */
+export function newNonce(): string {
+  return randomBytes(18).toString('base64');
 }
 
 /**
