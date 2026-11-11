@@ -167,13 +167,28 @@ export function commandsOf(declarations: Declarations): readonly Command[] {
 
 /**
  * A feature's commands with their handlers, one for each, typed from the declarations: each
- * handler gets a target of a kind its command declares.
+ * handler gets a target of a kind its command declares. A handler for a command the feature
+ * doesn't declare, or for one of Vim's own keys, fails as it loads.
  */
 export function handlers<const D extends Record<string, Declaration>>(
   declarations: Declarations<D>,
   given: HandlersFor<D>,
 ): readonly Command[] {
   const byName: Readonly<Record<string, Handler | undefined>> = given;
+  const { feature, commands } = declarations;
+  for (const name of Object.keys(byName)) {
+    const declaration = Object.hasOwn(commands, name) ? commands[name] : undefined;
+    if (declaration === undefined) {
+      throw new Error(
+        `${feature}.${name} has a handler, but ${feature}'s keys.ts doesn't declare it.`,
+      );
+    }
+    if (declaration.vim === 'own') {
+      throw new Error(
+        `${feature}.${name} is one of Vim's own keys, which nothing runs, so it has no handler.`,
+      );
+    }
+  }
   return commandsOf(declarations).map((command) => {
     const handler = Object.hasOwn(byName, command.name) ? byName[command.name] : undefined;
     return handler === undefined ? command : { ...command, handler };

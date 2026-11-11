@@ -88,16 +88,21 @@ describe('handlers', () => {
     handlers(keys, { markViewed: { run() {} }, reply: { run() {} } });
     handlers(keys, {
       markViewed: { run() {} },
-      reply: { run() {} },
-      help: { run() {} },
-      // @ts-expect-error: Vim's own keys have no handler.
-      down: { run() {} },
-    });
-    handlers(keys, {
-      markViewed: { run() {} },
       // @ts-expect-error: a reply acts on a thread, never a file.
       reply: { run(_target: FileTarget) {} },
       help: { run() {} },
     });
+  });
+
+  test('fail as they load for a command the feature doesn’t declare, or one of Vim’s own', () => {
+    const others = { markViewed: { run() {} }, reply: { run() {} }, help: { run() {} } };
+    expect(() =>
+      // @ts-expect-error: Vim's own keys have no handler.
+      handlers(keys, { ...others, down: { run() {} } }),
+    ).toThrow("diff.down is one of Vim's own keys, which nothing runs, so it has no handler.");
+    expect(() =>
+      // @ts-expect-error: the feature declares no such command.
+      handlers(keys, { ...others, unknown: { run() {} } }),
+    ).toThrow("diff.unknown has a handler, but diff's keys.ts doesn't declare it.");
   });
 });

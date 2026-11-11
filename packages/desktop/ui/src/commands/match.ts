@@ -89,8 +89,14 @@ export interface Step {
 /** Vim's `timeoutlen`: how long a held key waits for the rest of its sequence. */
 export const SEQUENCE_TIMEOUT = 1000;
 
-/** Keys Linux's text boxes keep for editing in insert mode: copy, cut, paste, all, undo, a word back. */
-const linuxEditing = new Set(['c', 'x', 'v', 'a', 'z', 'w'].map((key) => `ctrl+${key}`));
+/**
+ * Keys Linux's text boxes keep for editing in insert mode, in Lo's notation: copy, cut, paste,
+ * all, undo, a word back.
+ */
+export const linuxEditingKeys: readonly string[] = ['c', 'x', 'v', 'a', 'z', 'w'].map(
+  (key) => `ctrl+${key}`,
+);
+const linuxEditing = new Set(linuxEditingKeys);
 
 /** The bindings `commands` declare for `system`, in their order: their default keys. */
 export function declaredBindings(commands: readonly Command[], system: System): Binding[] {
@@ -138,7 +144,9 @@ export class Bindings {
       let longer = false;
       for (const binding of candidates) {
         if ((binding.command.when?.scope !== undefined) !== scoped) continue;
-        if (!startsWith(binding.strokes, strokes) || !this.applies(binding, focus)) continue;
+        if (!startsWith(binding.strokes, strokes) || !applies(binding, focus, this.system)) {
+          continue;
+        }
         if (binding.strokes.length === strokes.length)
           return { command: binding.command, longer: false };
         longer = true;
@@ -147,37 +155,48 @@ export class Bindings {
     }
     return { longer: false };
   }
-
-  /** Whether `binding` can be matched where `focus` is. */
-  private applies(binding: Binding, focus: Focus): boolean {
-    const { command, strokes } = binding;
-    const { when, vim } = command;
-    const { view } = focus;
-    if (vim === 'own' || (vim === 'motion' && view)) return false;
-    if (when?.scope !== undefined && !listOf(when.scope).includes(focus.scope)) return false;
-    if (when?.except?.includes(focus.scope)) return false;
-    if (when?.system !== undefined && when.system !== this.system) return false;
-    const first = strokes[0];
-    if (first === undefined) return false;
-    if (view) {
-      if (when?.mode !== undefined && !listOf(when.mode).includes(view.mode)) return false;
-      if ((view.mode === 'insert' || view.pending) && !isChord(first)) return false;
-      if (
-        this.system === 'linux' &&
-        (focus.scope === 'box' || focus.text) &&
-        view.mode === 'insert' &&
-        strokes.some((each) => linuxEditing.has(each.id))
-      ) {
-        return false;
-      }
-    } else if (focus.text && isTyping(first)) {
-      return false;
-    }
-    return true;
-  }
 }
 
-function startsWith(strokes: readonly Stroke[], prefix: readonly Stroke[]): boolean {
+/** Whether `binding` can be matched where `focus` is, on `system`. */
+function applies(binding: Binding, focus: Focus, system: System): boolean {
+  const { vim } = binding.command;
+  if (vim === 'own' || (vim === 'motion' && focus.view)) return false;
+  return holds(binding, focus, system);
+}
+
+/**
+ * Whether `binding` takes its keys where `focus` is, on `system`: its scope, mode and system
+ * hold, and the rules for code views and text let it. It ignores `vim`: a motion holds in a code
+ * view, where Vim runs it with the keys the registry hands it, so the clash check counts it there.
+ */
+export function holds(binding: Binding, focus: Focus, system: System): boolean {
+  const { command, strokes } = binding;
+  const { when } = command;
+  const { view } = focus;
+  if (when?.scope !== undefined && !listOf(when.scope).includes(focus.scope)) return false;
+  if (when?.except?.includes(focus.scope)) return false;
+  if (when?.system !== undefined && when.system !== system) return false;
+  const first = strokes[0];
+  if (first === undefined) return false;
+  if (view) {
+    if (when?.mode !== undefined && !listOf(when.mode).includes(view.mode)) return false;
+    if ((view.mode === 'insert' || view.pending) && !isChord(first)) return false;
+    if (
+      system === 'linux' &&
+      (focus.scope === 'box' || focus.text) &&
+      view.mode === 'insert' &&
+      strokes.some((each) => linuxEditing.has(each.id))
+    ) {
+      return false;
+    }
+  } else if (focus.text && isTyping(first)) {
+    return false;
+  }
+  return true;
+}
+
+/** Whether `strokes` begin with `prefix`, or are the same keys. */
+export function startsWith(strokes: readonly Stroke[], prefix: readonly Stroke[]): boolean {
   return (
     prefix.length <= strokes.length && prefix.every((each, index) => strokes[index]?.id === each.id)
   );
