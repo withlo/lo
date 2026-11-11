@@ -200,15 +200,25 @@ export function cacheLockRecord(pid: number, started: string): string {
 }
 
 /**
- * When process `pid` started, as `ps` says, or `undefined` when it can't tell, as for a process
- * that's gone. Two processes that ever had one ID have different start times.
+ * When process `pid` started, as `ps` says, in UTC, or `undefined` when it can't tell, as for a
+ * process that's gone. Two processes that ever had one ID have different start times. `ps` writes
+ * the time in a time zone, the system's unless it's told one, so a running process would seem to
+ * have started at another time once the system's zone changed, as a laptop's does on a trip.
  */
-export async function startTime(pid: number): Promise<string | undefined> {
+export function startTime(pid: number): Promise<string | undefined> {
+  return psStartTime(pid, 'UTC');
+}
+
+/** When process `pid` started, as `ps` writes it in `zone`, or in the system's own without one. */
+async function psStartTime(pid: number, zone?: string): Promise<string | undefined> {
   const said = await new Promise<string | undefined>((resolve) => {
     execFile(
       'ps',
       ['-o', 'lstart=', '-p', String(pid)],
-      { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' }, timeout: 10_000 },
+      {
+        env: { PATH: '/usr/bin:/bin', LC_ALL: 'C', ...(zone === undefined ? {} : { TZ: zone }) },
+        timeout: 10_000,
+      },
       (error, stdout) => resolve(error ? undefined : stdout),
     );
   });
@@ -234,7 +244,9 @@ async function isHolding(holder: { pid: number; started: string }): Promise<bool
     if (!(error instanceof Error && 'code' in error && error.code === 'EPERM')) return false;
   }
   const started = await startTime(holder.pid);
-  return started === undefined || started === holder.started;
+  if (started === undefined || started === holder.started) return true;
+  // A record may give the start in the system's own time zone, as Lo once wrote it.
+  return (await psStartTime(holder.pid)) === holder.started;
 }
 
 /**
