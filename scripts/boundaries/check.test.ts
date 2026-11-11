@@ -381,6 +381,127 @@ describe('symlinks', () => {
       ),
     ]);
   });
+
+  test("a node_modules folder pnpm doesn't install into holds plain files", () => {
+    expect(
+      checkWorkspace({
+        files: {
+          'shared/node_modules/strings/index.js': `export const title = 'Lo';`,
+          'packages/desktop/ui/src/index.ts': `import { title } from './strings/index.js';`,
+        },
+        links: { 'packages/desktop/ui/src/strings': '../../../../shared/node_modules/strings' },
+      }),
+    ).toEqual([
+      violation(
+        'packages/desktop/ui/src/index.ts:1',
+        "imports ./strings/index.js: through a symlink, that leaves ui's folder for files outside any project, and projects import only their own files and packages",
+      ),
+    ]);
+  });
+
+  /** ui maps `#lib/*` and `./*` to `./src/*`, where `s` is a symlink out of every project. */
+  const mappedOut = {
+    files: {
+      'shared/strings.ts': `export const title = 'Lo';`,
+      'shared/strings.d.ts': `export declare const title: string;`,
+      'packages/desktop/ui/package.json': json({
+        name: '@lo/ui',
+        exports: { '.': './src/index.ts', './*': './src/*' },
+        imports: { '#lib/*': './src/*' },
+      }),
+    },
+    links: {
+      'packages/desktop/ui/src/s': '../../../../shared',
+      'packages/desktop/git/node_modules/@lo/ui': '../../../ui',
+    },
+  };
+
+  test("a reference path can't follow one out", () => {
+    expect(
+      checkWorkspace({
+        ...mappedOut,
+        files: {
+          ...mappedOut.files,
+          'packages/desktop/ui/src/index.ts': `/// <reference path="./s/strings.d.ts" />`,
+        },
+      }),
+    ).toEqual([
+      violation(
+        'packages/desktop/ui/src/index.ts:1',
+        "references ./s/strings.d.ts: through a symlink, that leaves ui's folder for files outside any project",
+      ),
+    ]);
+  });
+
+  test("an import through package.json's imports can't follow one out", () => {
+    expect(
+      checkWorkspace({
+        ...mappedOut,
+        files: {
+          ...mappedOut.files,
+          'packages/desktop/ui/src/index.ts': `import { title } from '#lib/s/strings.ts';`,
+        },
+      }),
+    ).toEqual([
+      violation(
+        'packages/desktop/ui/src/index.ts:1',
+        "imports #lib/s/strings.ts: packages/desktop/ui/package.json maps it to ./src/s/strings.ts; through a symlink, that leaves ui's folder for files outside any project",
+      ),
+    ]);
+  });
+
+  test("an import through package.json's exports can't follow one out, installed or not", () => {
+    expect(
+      checkWorkspace({
+        ...mappedOut,
+        files: {
+          ...mappedOut.files,
+          'packages/desktop/git/src/index.ts': `import { title } from '@lo/ui/s/strings.ts';`,
+          'packages/desktop/ui/src/index.ts': `import { title } from '@lo/ui/s/strings.ts';`,
+        },
+      }),
+    ).toEqual([
+      violation(
+        'packages/desktop/git/src/index.ts:1',
+        "imports @lo/ui/s/strings.ts: packages/desktop/ui/package.json maps it to ./src/s/strings.ts; through a symlink, that leaves ui's folder for files outside any project",
+      ),
+      violation(
+        'packages/desktop/ui/src/index.ts:1',
+        'imports @lo/ui/s/strings.ts: packages/desktop/ui/package.json maps it to ./src/s/strings.ts; through a symlink',
+      ),
+    ]);
+  });
+
+  test('percent escapes are refused, since Node decodes them and the check would not', () => {
+    expect(
+      checkWorkspace({
+        ...mappedOut,
+        files: {
+          ...mappedOut.files,
+          'packages/desktop/ui/package.json': json({
+            name: '@lo/ui',
+            imports: { '#lib/*': './src/*', '#hidden/*': './src/%73/*' },
+          }),
+          'packages/desktop/ui/src/index.ts': [
+            `import { title } from './%73/strings.ts';`,
+            `import { clone } from './%2e%2e/%2e%2e/git/src/clone.ts';`,
+            `import { name } from '#lib/%73/strings.ts';`,
+          ].join('\n'),
+        },
+      }),
+    ).toEqual([
+      violation(
+        'packages/desktop/ui/package.json:5',
+        `maps "#hidden/*" to "./src/%73/*" in imports: Node decodes the percent escapes in a module's path and this check doesn't`,
+      ),
+      violation('packages/desktop/ui/src/index.ts:1', 'imports ./%73/strings.ts: Node decodes'),
+      violation(
+        'packages/desktop/ui/src/index.ts:2',
+        'imports ./%2e%2e/%2e%2e/git/src/clone.ts: Node decodes',
+      ),
+      violation('packages/desktop/ui/src/index.ts:3', 'imports #lib/%73/strings.ts: Node decodes'),
+    ]);
+  });
 });
 
 describe('package.json', () => {
@@ -473,7 +594,11 @@ describe('package.json', () => {
             '#internal/*': './src/internal/*.ts',
           },
         }),
-        'packages/core/review/src/index.ts': `import { clone } from '#git';`,
+        'packages/core/review/src/index.ts': [
+          `import { clone } from '#git';`,
+          `import { cache } from '#internal/cache';`,
+          `import { missing } from '#missing';`,
+        ].join('\n'),
       }),
     ).toEqual([
       violation(
@@ -487,6 +612,36 @@ describe('package.json', () => {
       violation(
         'packages/core/review/package.json:9',
         `maps "#fs" to "node:fs" in imports: that's a Node built-in`,
+      ),
+      violation(
+        'packages/core/review/src/index.ts:1',
+        "imports #git: packages/core/review/package.json maps it to @lo/git; git isn't a core project",
+      ),
+      violation(
+        'packages/core/review/src/index.ts:3',
+        "imports #missing: packages/core/review/package.json doesn't map it in imports, so where it goes can't be checked",
+      ),
+    ]);
+  });
+
+  test("a dependency can't link to files outside every project", () => {
+    expect(
+      check({
+        'shared/strings.ts': `export const title = 'Lo';`,
+        'packages/desktop/ui/package.json': json({
+          name: '@lo/ui',
+          dependencies: { shared: 'link:../../../shared' },
+        }),
+        'packages/desktop/ui/src/index.ts': `import { title } from 'shared/strings.ts';`,
+      }),
+    ).toEqual([
+      violation(
+        'packages/desktop/ui/package.json:4',
+        `lists "shared": "link:../../../shared" in dependencies: that lands outside every project, and projects import only their own files and packages`,
+      ),
+      violation(
+        'packages/desktop/ui/src/index.ts:1',
+        'imports shared/strings.ts: that lands outside every project',
       ),
     ]);
   });
@@ -619,6 +774,90 @@ describe('resolution', () => {
     ).toEqual([
       violation('packages/core/github/tsconfig.json:3', 'sets compilerOptions.paths'),
       violation('tsconfig.base.json:4', 'sets compilerOptions.paths'),
+    ]);
+  });
+
+  test('nor does a tsconfig one extends or references, however it spells the key', () => {
+    expect(
+      check({
+        'packages/core/review/tsconfig.json': json({ extends: './config/base' }),
+        'packages/core/review/config/base.json': [
+          `{`,
+          `  // Spelled so that searching the text misses it.`,
+          `  "compilerOptions": { "\\u0070aths" /* hidden */: {} },`,
+          `}`,
+        ].join('\n'),
+        'packages/desktop/git/tsconfig.json': json({ extends: '@acme/tsconfig/base.json' }),
+        'node_modules/@acme/tsconfig/base.json': json({ compilerOptions: { paths: {} } }),
+        'packages/desktop/ui/tsconfig.json': `{ "compilerOptions": `,
+        'tsconfig.json': json({ files: [], references: [{ path: './tools' }] }),
+        'tools/tsconfig.json': json({ compilerOptions: { paths: {} } }),
+      }),
+    ).toEqual([
+      violation('packages/core/review/config/base.json:1', 'sets compilerOptions.paths'),
+      violation(
+        'packages/desktop/git/tsconfig.json:2',
+        'extends @acme/tsconfig/base.json, which sets compilerOptions.paths',
+      ),
+      violation('packages/desktop/ui/tsconfig.json:1', "doesn't parse"),
+      violation('tools/tsconfig.json:3', 'sets compilerOptions.paths'),
+    ]);
+  });
+
+  test("a URL is refused, since the check can't follow it", () => {
+    expect(
+      check({
+        'packages/core/github/src/index.ts': [
+          `import 'data:text/javascript,export * from "node:fs"';`,
+          `const strings = await import('file:///tmp/shared/strings.js');`,
+        ].join('\n'),
+        'packages/desktop/ui/src/index.ts': `import { title } from 'file:///tmp/shared/strings.js';`,
+      }),
+    ).toEqual([
+      violation(
+        'packages/core/github/src/index.ts:1',
+        `imports data:text/javascript,export * from "node:fs": that's a URL`,
+      ),
+      violation(
+        'packages/core/github/src/index.ts:2',
+        `imports file:///tmp/shared/strings.js: that's a URL`,
+      ),
+      violation(
+        'packages/desktop/ui/src/index.ts:1',
+        `imports file:///tmp/shared/strings.js: that's a URL`,
+      ),
+    ]);
+  });
+
+  test('a require that createRequire makes is checked like require', () => {
+    expect(
+      check({
+        'packages/core/github/src/poll.test.ts': [
+          `import { createRequire, createRequire as make } from 'node:module';`,
+          `const load = createRequire(import.meta.url);`,
+          `const { app } = load('electron');`,
+          `const { clone } = make(import.meta.url)('@lo/git');`,
+          `const elsewhere = createRequire('/tmp/elsewhere.js')('./strings.js');`,
+          `register(load);`,
+          `const path = load.resolve('@lo/git');`,
+        ].join('\n'),
+        'packages/desktop/ui/src/main.ts': `const { start } = createRequire(import.meta.url)('@lo/desktop');`,
+      }),
+    ).toEqual([
+      violation('packages/core/github/src/poll.test.ts:3', 'imports electron: core projects'),
+      violation(
+        'packages/core/github/src/poll.test.ts:4',
+        "imports @lo/git: git isn't a core project",
+      ),
+      violation(
+        'packages/core/github/src/poll.test.ts:5',
+        `loads createRequire('/tmp/elsewhere.js')('./strings.js'): the module is chosen at run time`,
+      ),
+      violation(
+        'packages/core/github/src/poll.test.ts:6',
+        'loads load: the module is chosen at run time',
+      ),
+      violation('packages/desktop/ui/src/main.ts:1', "imports @lo/desktop: that's the app desktop"),
     ]);
   });
 });

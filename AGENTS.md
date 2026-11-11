@@ -105,14 +105,21 @@ A package's folder says where it runs, and its Nx tags (`"nx": { "tags": [...] }
 - only tests import `testing/`. Tests are `*.test.*` files and anything in `test/` or `e2e/`, and
   `testing` belongs in `devDependencies`.
 
-Imports resolve the way Node finds them, through `node_modules` and symlinks to the project they
-reach, so a name or path can't disguise where an import goes. The same rules apply to type and path
-references, to what a project's `package.json` lists in its dependencies (aliases included) and
-points to in its `imports` and `exports`, and to every edge in Nx's project graph. Also:
+Imports resolve the way Node finds them, through `node_modules`, symlinks, and the `imports` and
+`exports` in a `package.json`, to the project they reach, so a name or path can't disguise where an
+import goes. The same rules apply to type and path references, to a `require` that `createRequire()`
+makes, to what a project's `package.json` lists in its dependencies (aliases included) and points to
+in its `imports` and `exports`, and to every edge in Nx's project graph. Also:
 
 - a relative import stays inside its project's folder, and so does where a symlink takes it, unless
-  that's in `node_modules`; projects reach each other by package name;
-- no tsconfig sets `paths`;
+  that's in the workspace's `node_modules` (the root's, or a project's own); projects reach each
+  other by package name. What a project's `imports` and `exports` map to stays in its folder too;
+- nothing imports files outside every project, other than packages in the workspace's
+  `node_modules`;
+- a module's name or path has no percent escapes, since Node decodes them, and isn't a URL other
+  than `node:`;
+- a `#name` import is one the `package.json`'s `imports` map;
+- no tsconfig sets `paths`, nor any tsconfig it extends or references;
 - the root `package.json` holds the repo's tooling only: no workspace package, and no alias besides
   TypeScript's two.
 
