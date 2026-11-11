@@ -9,6 +9,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { build } from 'vite';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import { ALLOWED, bundledPackages, NOTICES, notices, packageAt } from '../build/notices.ts';
@@ -31,12 +32,37 @@ beforeAll(() => {
 
 afterAll(() => root.remove());
 
+/** The modules `code` imports by name. */
+function importsOf(code: string): string[] {
+  return [...code.matchAll(/^import .* from "([^"]+)";$/gm)].map((match) => match[1]!);
+}
+
 describe('the bundle', () => {
   test('imports nothing but Node’s own modules', () => {
-    const imports = [...bundle.matchAll(/^import .* from "([^"]+)";$/gm)].map((match) => match[1]);
+    const imports = importsOf(bundle);
     expect(imports.length).toBeGreaterThan(0);
-    expect(imports.filter((name) => !name?.startsWith('node:'))).toEqual([]);
+    expect(imports.filter((name) => !name.startsWith('node:'))).toEqual([]);
     expect(bundle).not.toMatch(/\bcreateRequire\b|\bimport\(/);
+  });
+
+  test('inlines a package even where Node could load it from beside the checker', async () => {
+    const built = await build({
+      configFile: join(PACKAGE, 'vite.config.ts'),
+      root: PACKAGE,
+      logLevel: 'silent',
+      build: {
+        ssr: join(PACKAGE, 'test/inlined.ts'),
+        outDir: join(root.dir, 'inlined'),
+        emptyOutDir: false,
+        write: false,
+      },
+    });
+    const outputs = (Array.isArray(built) ? built : [built]).flatMap((each) =>
+      'output' in each ? each.output : [],
+    );
+    const code = outputs.map((each) => (each.type === 'chunk' ? each.code : '')).join('\n');
+    expect(importsOf(code)).toEqual([]);
+    expect(code).toMatch(/^\/\/ \S*\/node_modules\/vite\/dist\/node\/module-runner\.js$/m);
   });
 
   test('gives every package it holds code from in THIRD_PARTY_NOTICES, under a license it may carry', () => {
