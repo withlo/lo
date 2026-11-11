@@ -25,6 +25,25 @@
   position: static;
 }
 
+/*
+ * No block the editors draw between lines may make their content wider than the editor: a long
+ * path would, and CodeMirror would then keep the content that wide while the block is drawn, so
+ * every line would wrap differently, and move, as it comes and goes.
+ */
+.lo-diffview .lo-diffhead,
+.lo-diffview .lo-movedlabel,
+.lo-diffview .lo-collapsed,
+.lo-diffview .lo-diffthreads {
+  contain: inline-size;
+}
+.lo-diffhead .lo-path,
+.lo-movedlabel a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .lo-diffthread {
   padding: 6px 12px 10px 12px;
 }

@@ -18,13 +18,14 @@
 // the editors' content resizes, and the pass runs then, also before the paint.
 //
 // It owns the scroll's anchor: a line kept at the same place on screen while heights change, by
-// its own top, below any spacers and labels. It's the line on screen furthest from where rows come
-// into view, the top one on the way down and the bottom one on the way up, since rows coming in
-// are where spacers change and heights are first measured; or, in a focused editor, the cursor's.
-// It takes the anchor when the scroll moves, before the editors measure, and again after each
-// pass. CodeMirror anchors the scroll too, as it measures, to the top of an editor that has focus
-// or was just wheeled, and its tops take in the pass's spacers; the pass puts that right, but for
-// the scroll that brings a moved cursor into view.
+// its own top as drawn, below any spacers and labels. It's the line on screen furthest from where
+// rows come into view, the top one on the way down and the bottom one on the way up, since rows
+// coming in are where spacers change and heights are first measured; or, in a focused editor, the
+// cursor's. It takes the anchor when the scroll moves, before the editors measure (they measure as
+// they hear of the scroll, so it listens first), and again after each pass. CodeMirror anchors the
+// scroll too, as it measures, to the top of an editor that has focus or was just wheeled, and its
+// tops take in the pass's spacers; the pass puts that right, but for the scroll that brings a
+// moved cursor into view.
 
 import { type Extension, StateEffect, StateField } from '@codemirror/state';
 import {
@@ -210,6 +211,11 @@ export class Aligner {
   #anchor: Anchor | undefined;
   /** Which way the scroll last went: down (1) or up (-1). */
   #direction: 1 | -1 = 1;
+  /**
+   * Whether the anchor was taken as the scroll moved, before the editors measured: it stands,
+   * though CodeMirror's own anchoring may have scrolled since.
+   */
+  #scrolled = false;
   readonly #wheel = { old: 0, new: 0 };
   /** How far the scroll has gone since lines were last forgotten, and where it was then. */
   #travel = 0;
@@ -233,7 +239,8 @@ export class Aligner {
     this.#rows = rows;
     this.#scroller = scroller;
     // A scroll brings rows into view that may not be drawn on both sides yet, without either
-    // editor's viewport changing: take the anchor before the editors measure, and line up.
+    // editor's viewport changing: take the anchor before the editors measure, and line up. The
+    // editors measure as they hear of the scroll, so the pass hears of it first, as it captures.
     scroller.addEventListener(
       'scroll',
       () => {
@@ -241,9 +248,10 @@ export class Aligner {
         if (this.#running || top === this.#anchor?.scrollTop) return;
         if (this.#anchor) this.#direction = top > this.#anchor.scrollTop ? 1 : -1;
         this.#anchor = this.#anchorNow();
+        this.#scrolled = true;
         this.schedule();
       },
-      { passive: true },
+      { capture: true, passive: true },
     );
     for (const side of ['old', 'new'] as const) {
       views[side].dom.addEventListener('wheel', () => (this.#wheel[side] = Date.now()), {
@@ -300,6 +308,7 @@ export class Aligner {
 
   destroy(): void {
     this.#resized.disconnect();
+    this.#paused = true;
   }
 
   /**
@@ -318,10 +327,11 @@ export class Aligner {
       if (
         !anchor ||
         anchor.for !== side ||
-        Math.abs(anchor.scrollTop - this.#scroller.scrollTop) > 0.5
+        (!this.#scrolled && Math.abs(anchor.scrollTop - this.#scroller.scrollTop) > 0.5)
       ) {
         anchor = this.#anchorNow();
       }
+      this.#scrolled = false;
       this.#travel += Math.abs(this.#scroller.scrollTop - this.#travelledFrom);
       this.#travelledFrom = this.#scroller.scrollTop;
       if (this.#travel > forgetEvery) {
@@ -339,10 +349,20 @@ export class Aligner {
         if (turn === 0 && this.#selected && Math.abs(this.#scroller.scrollTop - scrolled) > 0.5) {
           this.onCursorScroll?.(this.#scroller.scrollTop - scrolled);
           anchor = this.#anchorNow();
+        } else if (
+          turn === 0 &&
+          (anchor.offset < 0 || anchor.offset >= this.#scroller.clientHeight)
+        ) {
+          // After a jump, neither editor drew anything on screen yet when the scroll moved, so the
+          // anchor was a line off it: take one on screen, now that they've drawn there.
+          anchor = this.#anchorNow();
         }
         // The last round only measures, so what's drawn covers where the scroll ended up.
         if (turn === rounds) {
           this.#restore(anchor);
+          // What it measured may have drawn rows it hasn't lined up yet, and the editors told
+          // no one while it ran: go round again next frame.
+          requestAnimationFrame(() => this.schedule());
           break;
         }
         const spaced = this.#align();
@@ -817,23 +837,24 @@ export class Aligner {
   /**
    * A line the anchoring editor draws on screen, and how far below the top of the scroller it
    * starts: the line's own top, not its block's, which takes in the spacers and labels drawn above
-   * it, which the pass itself changes. Taken from the height map as it is, without making the
-   * editor measure. In a focused editor, the cursor's line, where the cursor is on screen: a
-   * motion's jump keeps the cursor where CodeMirror scrolled it.
+   * it, which the pass itself changes. Taken from where it's drawn, without making the editor
+   * measure: the height map can be off from that by a line it has only estimated. In a focused
+   * editor, the cursor's line, where the cursor is on screen: a motion's jump keeps the cursor where
+   * CodeMirror scrolled it.
    */
   #anchorNow(): Anchor {
     const side = this.#anchorSide();
     const view = this.#views[side];
     if (view.hasFocus) {
-      const y = this.#scroller.getBoundingClientRect().top - origin(view);
+      const screen = this.#scroller.getBoundingClientRect();
       const cursor = view.lineBlockAt(view.state.selection.main.head);
-      const top = ownTop(cursor);
-      if (top >= y && top < y + this.#scroller.clientHeight) {
+      const top = drawnTop(view, cursor.from);
+      if (top !== undefined && top >= screen.top && top < screen.bottom) {
         return {
           for: side,
           side,
           pos: cursor.from,
-          offset: top - y,
+          offset: top - screen.top,
           scrollTop: this.#scroller.scrollTop,
         };
       }
@@ -870,16 +891,29 @@ export class Aligner {
     const y = screen.top - origin(view);
     const blocks = view.viewportLineBlocks;
     let found: { pos: number; top: number } | undefined;
-    for (let index = blockIndex(blocks, y); index < blocks.length; index++) {
+    // From the top on the way down, from the bottom on the way up, to the first drawn on screen.
+    const first = blockIndex(blocks, y);
+    const last = blockIndex(blocks, y + screen.height);
+    const down = this.#direction > 0;
+    for (
+      let index = down ? first : last;
+      down ? index <= last : index >= first;
+      index += down ? 1 : -1
+    ) {
       const block = blocks[index]!;
-      if (block.top >= y + screen.height) break;
-      const top = ownTop(block);
-      if (top < y || top >= y + screen.height) continue;
+      // Where it's drawn, which the height map can be off from by a line it has only estimated.
+      const top = drawnTop(view, block.from);
+      if (top === undefined || top < screen.top || top >= screen.bottom) continue;
       found = { pos: block.from, top };
-      if (this.#direction > 0) break;
+      break;
     }
     return (
-      found && { side, pos: found.pos, offset: found.top - y, scrollTop: this.#scroller.scrollTop }
+      found && {
+        side,
+        pos: found.pos,
+        offset: found.top - screen.top,
+        scrollTop: this.#scroller.scrollTop,
+      }
     );
   }
 
@@ -890,13 +924,31 @@ export class Aligner {
       this.#anchor = this.#anchorNow();
       return false;
     }
-    const y = this.#scroller.getBoundingClientRect().top - origin(view);
-    const shift = ownTop(view.lineBlockAt(anchor.pos)) - anchor.offset - y;
+    const screen = this.#scroller.getBoundingClientRect().top;
+    const drawn = drawnTop(view, anchor.pos);
+    const shift =
+      drawn === undefined
+        ? ownTop(view.lineBlockAt(anchor.pos)) - anchor.offset - (screen - origin(view))
+        : drawn - screen - anchor.offset;
     const moved = Math.abs(shift) > 0.5;
     if (moved) this.#scroller.scrollTop += shift;
     this.#anchor = { ...anchor, scrollTop: this.#scroller.scrollTop };
     return moved;
   }
+}
+
+/**
+ * Where on the page the line at `pos` is drawn, its own top below any blocks drawn above it, if
+ * the editor draws it as a line.
+ */
+function drawnTop(view: EditorView, pos: number): number | undefined {
+  if (pos < view.viewport.from || pos > view.viewport.to) return undefined;
+  const { node, offset } = view.domAtPos(pos, 1);
+  let element: Node | null | undefined = node === view.contentDOM ? node.childNodes[offset] : node;
+  if (element && element.nodeType !== Node.ELEMENT_NODE) element = element.parentElement;
+  const line = element instanceof HTMLElement ? element.closest('.cm-line') : null;
+  if (!line || !view.contentDOM.contains(line) || view.posAtDOM(line) !== pos) return undefined;
+  return line.getBoundingClientRect().top;
 }
 
 function otherSide(side: Side): Side {
