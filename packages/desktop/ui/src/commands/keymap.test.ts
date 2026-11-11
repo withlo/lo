@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseKeymap } from './keymap.ts';
-import { writeKeys } from './notation.ts';
+import { testCommands } from '../../test/commands.ts';
+import { applyKeymap, parseKeymap } from './keymap.ts';
+import { declaredBindings } from './match.ts';
+import { writeKeys, writeStrokes } from './notation.ts';
 
 const commands = new Set(['diff.markViewed', 'diff.nextFile', 'stacks.make']);
 const read = (text: string) => parseKeymap(text, (id) => commands.has(id));
@@ -91,6 +93,33 @@ describe('the keymap file', () => {
     expect(parseKeymap('bind x some.command').errors).toEqual([]);
     expect(parseKeymap('bind x notACommand').errors).toEqual([
       { line: 1, message: "There's no command called notACommand." },
+    ]);
+  });
+
+  test('a bind keeps another from running only where both apply, at the same level', () => {
+    const all = testCommands();
+    const byId = new Map(all.map((command) => [command.id, command]));
+    const apply = (text: string) =>
+      applyKeymap(
+        declaredBindings(all, 'mac'),
+        parseKeymap(text, (id) => byId.has(id)).lines,
+        byId,
+        'mac',
+      );
+    // The tree has no `g` sequence; a key for anywhere gives way to a scope's `g i` in the diff;
+    // the same keys for another command take its place.
+    const fine = apply(
+      'bind g tree.openAll\nbind g keys.help\nbind z keys.palette\nbind y l diff.comment',
+    );
+    expect(fine.errors).toEqual([]);
+    expect(writeStrokes(fine.bindings[0]!.strokes, 'mac')).toBe('y l');
+    // A scope's lone `z` against the tree's `z R`.
+    expect(apply('bind z tree.closeAll').errors).toEqual([
+      { line: 1, message: 'z would keep z R (tree.openAll) from ever running.' },
+    ]);
+    // Bindings for ⌘ are written back as cmd.
+    expect(apply('bind cmd+shift+p x keys.help').errors).toEqual([
+      { line: 1, message: 'cmd+shift+p x would never run: cmd+shift+p (keys.palette) runs first.' },
     ]);
   });
 });

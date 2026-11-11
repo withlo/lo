@@ -219,34 +219,56 @@ export interface KeyEventLike {
 }
 
 /**
- * The stroke a keydown event is, or undefined for a modifier key on its own, a dead key or a key
- * the system didn't identify. A chord with ⌥ is read by `event.code`, since ⌥ changes
- * `event.key` on macOS (⌥e is a dead key). A chord with ⌘ or Ctrl reads a symbol with Shift by
- * `event.code` too, since systems disagree on whether `event.key` is shifted then.
+ * The strokes a keydown event can be, the likelier first: none for a modifier key on its own or a
+ * key the system didn't identify. Keyboard layouts differ, so:
+ *
+ * - With ⌘ or Ctrl, a letter outside A to Z (Russian з where P is) or a symbol outside ASCII is read
+ *   by its place, `event.code`, so Ctrl+P is Ctrl+P on any layout. A symbol with Shift is read by
+ *   its place too, since systems disagree on whether `event.key` is shifted then.
+ * - With ⌥ alone, `event.key` is what the layout typed: German types `]` with ⌥6, US types å with
+ *   ⌥A. That character comes first, so `] b` works on German; ⌥ with the key's place comes second,
+ *   so a binding such as `alt+a` still matches. With ⌘ or Ctrl as well, or when ⌥ makes a dead key
+ *   (⌥E on macOS), only the place counts.
+ * - A dead key on its own (`` ` `` on US-International) is the character at its place.
  */
-export function eventStroke(event: KeyEventLike): Stroke | undefined {
+export function eventStrokes(event: KeyEventLike): readonly Stroke[] {
   const { key, code } = event;
-  if (modifierKeys.has(key)) return undefined;
+  if (modifierKeys.has(key) || key === 'Unidentified' || key === 'Process') return [];
   // AltGr types characters: what it gives is text, not a chord.
   const altGraph = event.getModifierState?.('AltGraph') ?? false;
   const meta = event.metaKey;
   const ctrl = event.ctrlKey && !altGraph;
   const alt = event.altKey && !altGraph;
   const shift = event.shiftKey;
-  if (alt) {
-    const byCode = codeKey(code);
-    if (byCode !== undefined) return strokeOf(byCode, { meta, ctrl, alt, shift });
-  }
-  if (key === 'Dead' || key === 'Unidentified' || key === 'Process') return undefined;
   const named = eventNames[key];
-  if (named !== undefined) return strokeOf(named, { meta, ctrl, alt, shift });
-  if (!isCharacter(key)) return undefined;
-  if (!meta && !ctrl && !alt) return strokeOf(key);
-  const lower = key.toLowerCase();
-  if (lower !== key || key.toUpperCase() !== key)
-    return strokeOf(lower, { meta, ctrl, alt, shift });
-  const base = shift ? (codeKey(code) ?? unshiftedForm(key).key) : key;
-  return strokeOf(base, { meta, ctrl, alt, shift });
+  if (named !== undefined) return [strokeOf(named, { meta, ctrl, alt, shift })];
+  const place = codeKey(code);
+  const dead = key === 'Dead';
+  if (!meta && !ctrl && !alt) {
+    if (dead) return place === undefined ? [] : [strokeOf(place, { shift })];
+    return isCharacter(key) ? [strokeOf(key)] : [];
+  }
+  if (alt && !meta && !ctrl) {
+    const typed = !dead && isPrintable(key) ? [strokeOf(key)] : [];
+    const chord = place === undefined ? [] : [strokeOf(place, { alt, shift })];
+    return [...typed, ...chord];
+  }
+  let base: string | undefined;
+  if (alt || dead) base = place;
+  else if (/^[a-z]$/i.test(key)) base = key.toLowerCase();
+  else if (/^[!-~]$/.test(key)) base = shift ? (place ?? unshiftedForm(key).key) : key;
+  else base = place ?? (isCharacter(key) ? key.toLowerCase() : undefined);
+  return base === undefined ? [] : [strokeOf(base, { meta, ctrl, alt, shift })];
+}
+
+/** The likeliest stroke a keydown event is, as `eventStrokes` reads it. */
+export function eventStroke(event: KeyEventLike): Stroke | undefined {
+  return eventStrokes(event)[0];
+}
+
+/** Whether `key` is one character that shows: not a space or a control character. */
+function isPrintable(key: string): boolean {
+  return /^[^\s\p{C}]$/u.test(key);
 }
 
 /** The unshifted key at `code` on a US keyboard, if it types one. */
@@ -339,6 +361,19 @@ export function writeKeys(sequence: Sequence): string {
       return [...held, key].join('+');
     })
     .join(' ');
+}
+
+/** Strokes on `system` written in Lo's notation: ⌘ as `cmd` on macOS, Ctrl as `ctrl`. */
+export function writeStrokes(strokes: readonly Stroke[], system: System): string {
+  return writeKeys(
+    strokes.map((each) => ({
+      key: each.key,
+      cmd: each.meta && system === 'mac',
+      ctrl: each.ctrl,
+      alt: each.alt,
+      shift: each.shift,
+    })),
+  );
 }
 
 /** The strokes `sequence` is on `system`: `cmd` is ⌘ (meta) on macOS and Ctrl on Linux. */

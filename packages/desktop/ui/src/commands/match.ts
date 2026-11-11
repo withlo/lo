@@ -5,12 +5,16 @@
 //   a default one, and a later binding an earlier one.
 // - A key that starts one of Lo's sequences is held, and the next completes it. If it doesn't, the
 //   held keys go back to the code view they were typed in, and the key is matched afresh, so
-//   `y w` still yanks a word. One sequence is pending for the window, never one per editor.
+//   `y w` still yanks a word. A chord Lo runs drops the held keys instead, so Vim isn't left in
+//   the middle of a command it never sees finished. One sequence is pending for the window, never
+//   one per editor.
 // - In a code view in insert mode or in the middle of a command (a count, an operator), only
 //   chords are Lo's: the rest go to Vim. Vim's own keys (`vim: 'own'`) are never taken, and Lo's
 //   motions (`vim: 'motion'`) are Vim's to run in a code view.
-// - On Linux, in a box in insert mode, Ctrl+C, X, V, A, Z and W are never taken.
-// - A text field outside a code view keeps typing and moving through its text.
+// - A text field keeps typing and moving through its text. One inside a code view, such as Vim's
+//   `/` and `:` prompt, is typed into as insert mode is: only chords are Lo's.
+// - On Linux, in a box in insert mode or a code view's text field, Ctrl+C, X, V, A, Z and W are
+//   never taken.
 // - Keys during IME composition go to the text.
 
 import { listOf, type Command } from './declare.ts';
@@ -53,9 +57,9 @@ export interface Press {
 /** Where the key was pressed. */
 export interface Focus {
   readonly scope: string;
-  /** A text field outside a code view has focus. */
+  /** A text field has focus: outside a code view, or a field inside one, such as Vim's prompt. */
   readonly text: boolean;
-  /** A code view's state, when the scope is one. */
+  /** A code view's state, when the scope is one. A field inside one is in insert mode. */
   readonly view?: { readonly mode: Mode; readonly pending: boolean };
 }
 
@@ -160,7 +164,7 @@ export class Bindings {
       if ((view.mode === 'insert' || view.pending) && !isChord(first)) return false;
       if (
         this.system === 'linux' &&
-        focus.scope === 'box' &&
+        (focus.scope === 'box' || focus.text) &&
         view.mode === 'insert' &&
         strokes.some((each) => linuxEditing.has(each.id))
       ) {
@@ -207,6 +211,11 @@ export function match(
       return { pending: { strokes, scope: focus.scope, at: press.time }, outcome: HOLD };
     }
     if (stroke.id === 'esc') return { pending: undefined, outcome: STOP };
+    if (isChord(stroke)) {
+      // A chord Lo takes drops the held keys: replayed, they'd leave Vim mid-command.
+      const fresh = match(bindings, undefined, press, focus);
+      if (fresh.outcome.kind !== 'pass') return fresh;
+    }
     return { pending: undefined, outcome: { kind: 'replay', strokes: pending.strokes } };
   }
   if (focus.scope === 'menu' && !focus.text && (stroke.id === 'j' || stroke.id === 'k')) {
@@ -228,4 +237,37 @@ export function match(
 /** Runs `command`, unless the press is a held key repeating and the command doesn't repeat. */
 function run(command: Command, press: Press): Outcome {
   return press.repeat && !command.repeat ? STOP : { kind: 'run', command };
+}
+
+/** A keydown that can be read as more than one stroke, as `eventStrokes` reads layouts. */
+export interface Presses extends Omit<Press, 'stroke'> {
+  /** The readings, the likelier first. */
+  readonly strokes: readonly Stroke[];
+}
+
+/**
+ * Matches a keydown read more than one way: the first reading Lo has a use for wins, and if none
+ * has, the first stands. Where text is typed, only the first counts, so typing a character never
+ * runs a chord that the same keys could also mean.
+ */
+export function matchAny(
+  bindings: Bindings,
+  pending: Pending | undefined,
+  press: Presses,
+  focus: Focus,
+): Step | undefined {
+  const [first, ...others] = press.strokes;
+  if (first === undefined) return undefined;
+  const step = match(bindings, pending, { ...press, stroke: first }, focus);
+  if (focus.text || focus.view?.mode === 'insert' || taken(step)) return step;
+  for (const stroke of others) {
+    const other = match(bindings, pending, { ...press, stroke }, focus);
+    if (taken(other)) return other;
+  }
+  return step;
+}
+
+/** Whether Lo has a use for the key: it isn't passed on, nor does it end the pending keys. */
+function taken(step: Step): boolean {
+  return step.outcome.kind !== 'pass' && step.outcome.kind !== 'replay';
 }

@@ -34,6 +34,8 @@ export class History {
   private readonly reveals = new Map<string, Map<View, Reveal>>();
   /** The tab whose list `record`, `back` and `forward` use. Before any tab, the window's own. */
   private current = '';
+  /** A view is revealing an entry: the jump it makes to get there is the walk's, not a new one. */
+  private revealing = false;
 
   constructor(options: { readonly limit?: number } = {}) {
     this.limit = options.limit ?? HISTORY_LIMIT;
@@ -69,9 +71,11 @@ export class History {
 
   /**
    * Records `from`, the place a jump leaves, in the current tab. Places ahead of where the tab
-   * was in its history are dropped, as a browser's are.
+   * was in its history are dropped, as a browser's are. A jump a view makes while it reveals an
+   * entry isn't recorded, so walking back keeps the places ahead.
    */
   record(from: Entry): void {
+    if (this.revealing) return;
     const list = this.list();
     list.entries.length = Math.min(list.index + 1, list.entries.length);
     this.push(list, from);
@@ -139,7 +143,13 @@ export class History {
 
   private reveal(entry: Entry): boolean {
     const reveal = this.reveals.get(this.current)?.get(entry.view);
-    return reveal !== undefined && reveal(entry.at);
+    if (reveal === undefined) return false;
+    this.revealing = true;
+    try {
+      return reveal(entry.at);
+    } finally {
+      this.revealing = false;
+    }
   }
 }
 

@@ -14,7 +14,16 @@ export const SCOPE_ATTRIBUTE = 'data-lo-scope';
 export const engineScopes = ['window', 'menu', 'dialog', 'palette'] as const;
 
 /** The code views' scopes, whose elements have a `KeySource`. */
-export const codeScopes = ['diff', 'file', 'peek', 'box'] as const;
+export const codeScopes: readonly string[] = ['diff', 'file', 'peek', 'box'];
+
+/**
+ * Whether `Tab` must never move focus out of the scope named `name`: a code view's or a box's,
+ * whose next keys would otherwise run somewhere else. Elsewhere, form fields keep the browser's
+ * `Tab`.
+ */
+export function keepsTab(name: string): boolean {
+  return codeScopes.includes(name);
+}
 
 /** A code view's Vim mode. */
 export type Mode = 'normal' | 'visual' | 'insert';
@@ -28,6 +37,12 @@ export interface KeySource {
   keyState(): { mode: Mode; pending: boolean; target: Target };
   /** Keys the registry held back, replayed into Vim, in Vim's key notation (`y`, `<C-o>`). */
   passKeys(keys: readonly string[]): void;
+  /**
+   * Drops whatever Vim is waiting on: a count, an operator, a key replayed into it. The registry
+   * calls it when focus leaves the view, the window loses focus or the tab changes, so no key
+   * typed before then completes a command after.
+   */
+  clearPending(): void;
   /** The keys Vim runs Lo's motions with and the keymap's `vim` lines: after a remap, and at first. */
   setVimKeys(keys: readonly VimKey[]): void;
 }
@@ -100,12 +115,29 @@ const notText = new Set([
   'submit',
 ]);
 
-/** Whether `element` is a field that takes typed text: an input, a text area or editable content. */
-export function isTextField(element: Element | null | undefined): boolean {
-  if (!element) return false;
+/**
+ * What kind of text `element` takes, if any: a form `field` (an input that takes text, or a text
+ * area) or `editable` content. A code view's own text is editable content; a field inside one,
+ * such as Vim's `/` and `:` prompt, is a field.
+ */
+export type TextKind = 'field' | 'editable';
+
+export function textKind(element: Element | null | undefined): TextKind | undefined {
+  if (!element) return undefined;
   const tag = element.tagName.toLowerCase();
-  if (tag === 'textarea') return true;
-  if (tag === 'input') return !notText.has((element.getAttribute('type') ?? 'text').toLowerCase());
+  if (tag === 'textarea') return 'field';
+  if (tag === 'input') {
+    return notText.has((element.getAttribute('type') ?? 'text').toLowerCase())
+      ? undefined
+      : 'field';
+  }
   const editable = element.closest('[contenteditable]');
-  return editable !== null && editable.getAttribute('contenteditable') !== 'false';
+  return editable !== null && editable.getAttribute('contenteditable') !== 'false'
+    ? 'editable'
+    : undefined;
+}
+
+/** Whether `element` takes typed text: an input, a text area or editable content. */
+export function isTextField(element: Element | null | undefined): boolean {
+  return textKind(element) !== undefined;
 }

@@ -104,16 +104,23 @@ describe('sequences', () => {
       'replay y',
       'pass',
     ]);
-    // A chord after a held key still runs.
-    expect(
-      type(['y', 'cmd+shift+p'], diff, { afterReplay: view('diff', 'normal', true) }).said,
-    ).toEqual(['hold', 'replay y', 'run keys.palette']);
+    // A chord Lo doesn't take goes to Vim after the held key.
+    expect(type(['y', 'ctrl+x'], diff).said).toEqual(['hold', 'replay y', 'pass']);
     // Vim's own `gg`.
     expect(type(['g', 'g'], diff, { afterReplay: view('diff', 'normal', true) }).said).toEqual([
       'hold',
       'replay g',
       'pass',
     ]);
+  });
+
+  test('a chord Lo runs drops the held keys, so Vim isn’t left mid-command', () => {
+    expect(type(['y', 'cmd+shift+p'], diff)).toEqual({
+      said: ['hold', 'run keys.palette'],
+      pending: undefined,
+    });
+    expect(type(['g', 'ctrl+o'], diff).said).toEqual(['hold', 'run keys.back']);
+    expect(type(['z', 'cmd+w'], tree).said).toEqual(['hold', 'run tab.close']);
   });
 
   test('Esc drops the held keys, sending nothing back', () => {

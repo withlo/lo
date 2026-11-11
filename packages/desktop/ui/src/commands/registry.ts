@@ -4,22 +4,24 @@
 
 import type { Command, Handler } from './declare.ts';
 import { History, type Entry } from './history.ts';
-import { parseKeymap, type Keymap, type KeymapError } from './keymap.ts';
+import { applyKeymap, parseKeymap, type Keymap, type KeymapError } from './keymap.ts';
 import {
   Bindings,
   declaredBindings,
-  match,
+  matchAny,
   SEQUENCE_TIMEOUT,
   type Binding,
   type Focus,
   type Pending,
 } from './match.ts';
-import { systemStrokes, vimKey, vimKeys, type Stroke, type System } from './notation.ts';
+import { vimKey, vimKeys, type Stroke, type System } from './notation.ts';
 import {
   isKeySource,
   scopeTarget,
   type FoundScope,
+  type KeySource,
   type ScopeSource,
+  type TextKind,
   type VimKey,
 } from './scopes.ts';
 import { fit, type Target } from './targets.ts';
@@ -40,15 +42,16 @@ export interface RegistryOptions {
 
 /** A keydown, as the listener reads it. */
 export interface KeyPress {
-  readonly stroke: Stroke;
+  /** The strokes it can be, the likelier first, as `eventStrokes` reads it. */
+  readonly strokes: readonly Stroke[];
   readonly repeat: boolean;
   readonly composing: boolean;
 }
 
-/** Where a key was pressed: its scope, and whether a text field has focus. */
+/** Where a key was pressed: its scope, and the kind of text the focused element takes. */
 export interface KeyPlace {
   readonly scope: FoundScope;
-  readonly text: boolean;
+  readonly text: TextKind | undefined;
 }
 
 /** What the listener does with the event. */
@@ -72,12 +75,16 @@ export class Registry {
   private readonly onError: (error: unknown, command: Command) => void;
   private readonly listeners = new Set<() => void>();
   private keymap: Keymap = { lines: [], errors: [] };
+  /** The keymap's errors: its lines that can't be read, then those that don't apply. */
+  private errors: readonly KeymapError[] = [];
   /** Every binding in effect, in order of precedence. */
   private live: readonly Binding[] = [];
   private bindings: Bindings;
   private pending: Pending | undefined;
   /** The scope's source the pending keys were typed in. */
   private holder: ScopeSource | undefined;
+  /** The code view the last key was pressed in, whose Vim a tab switch leaves. */
+  private active: KeySource | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: RegistryOptions) {
@@ -135,12 +142,12 @@ export class Registry {
     this.drop();
     this.bindings = this.rebuild();
     for (const listener of this.listeners) listener();
-    return this.keymap.errors;
+    return this.errors;
   }
 
-  /** The current keymap file's errors. */
+  /** The current keymap file's errors, by line. */
   keymapErrors(): readonly KeymapError[] {
-    return this.keymap.errors;
+    return this.errors;
   }
 
   /** Calls `listener` when keys change. Returns a function that stops it. */
@@ -186,12 +193,15 @@ export class Registry {
   /** What becomes of a keydown pressed at `place`. The listener stops the event unless it passes. */
   handle(press: KeyPress, place: KeyPlace): Handled {
     const time = this.now();
-    let step = match(this.bindings, this.pending, { ...press, time }, this.focus(place));
-    if (step.outcome.kind === 'replay') {
+    const { source } = place.scope;
+    this.active = isKeySource(source) ? source : undefined;
+    let step = matchAny(this.bindings, this.pending, { ...press, time }, this.focus(place));
+    if (step?.outcome.kind === 'replay') {
       this.replay(step.outcome.strokes);
       // Vim has the held keys now, and may be in the middle of a command.
-      step = match(this.bindings, undefined, { ...press, time }, this.focus(place));
+      step = matchAny(this.bindings, undefined, { ...press, time }, this.focus(place));
     }
+    if (!step) return PASS;
     this.pending = step.pending;
     const { outcome } = step;
     switch (outcome.kind) {
@@ -230,16 +240,30 @@ export class Registry {
     }
   }
 
-  /** Drops the pending sequence, as a focus change, a pointer down or the window's blur do. */
+  /** Drops the pending sequence, as a pointer down does. */
   drop(): void {
     this.pending = undefined;
     this.holder = undefined;
     this.disarm();
   }
 
-  /** Switches to tab `id`: the pending sequence is dropped and `⌃o` walks the tab's history. */
-  tab(id: string): void {
+  /**
+   * Drops the pending sequence and whatever `left`, a code view focus is leaving, has Vim waiting
+   * on, as a focus change and the window's blur do.
+   */
+  leave(left: ScopeSource | undefined): void {
     this.drop();
+    if (!isKeySource(left)) return;
+    if (left === this.active) this.active = undefined;
+    left.clearPending();
+  }
+
+  /**
+   * Switches to tab `id`: the pending sequence is dropped, the code view keys last went to stops
+   * waiting, and `⌃o` walks the tab's history.
+   */
+  tab(id: string): void {
+    this.leave(this.active);
     this.history.tab(id);
   }
 
@@ -249,12 +273,15 @@ export class Registry {
   }
 
   private focus(place: KeyPlace): Focus {
-    const { source } = place.scope;
+    const { source, name } = place.scope;
     if (isKeySource(source)) {
+      // A field inside a code view, such as Vim's prompt, is typed into as insert mode is.
+      if (place.text === 'field')
+        return { scope: name, text: true, view: { mode: 'insert', pending: false } };
       const { mode, pending } = source.keyState();
-      return { scope: place.scope.name, text: false, view: { mode, pending } };
+      return { scope: name, text: false, view: { mode, pending } };
     }
-    return { scope: place.scope.name, text: place.text };
+    return { scope: name, text: place.text !== undefined };
   }
 
   /** Hands held keys back to the code view they were typed in, and forgets them. */
@@ -307,26 +334,10 @@ export class Registry {
 
   /** The bindings in effect: the defaults for this system, then each keymap line in order. */
   private rebuild(): Bindings {
-    let live = declaredBindings(this.list, this.system);
-    for (const line of this.keymap.lines) {
-      if (line.kind === 'vim') continue;
-      const strokes = systemStrokes(line.keys, this.system);
-      if (line.kind === 'bind') {
-        const command = this.byId.get(line.command);
-        if (command) live = [{ command, strokes }, ...live];
-      } else {
-        live = live.filter(
-          (binding) =>
-            !sameStrokes(binding.strokes, strokes) ||
-            (line.command !== undefined && binding.command.id !== line.command),
-        );
-      }
-    }
-    this.live = live;
-    return new Bindings(this.system, live, this.timeout);
+    const defaults = declaredBindings(this.list, this.system);
+    const applied = applyKeymap(defaults, this.keymap.lines, this.byId, this.system);
+    this.live = applied.bindings;
+    this.errors = [...this.keymap.errors, ...applied.errors].toSorted((a, b) => a.line - b.line);
+    return new Bindings(this.system, applied.bindings, this.timeout);
   }
-}
-
-function sameStrokes(a: readonly Stroke[], b: readonly Stroke[]): boolean {
-  return a.length === b.length && a.every((each, index) => each.id === b[index]?.id);
 }

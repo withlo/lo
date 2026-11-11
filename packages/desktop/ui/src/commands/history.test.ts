@@ -105,6 +105,25 @@ describe('history', () => {
     expect(history.forward()).toBeUndefined();
   });
 
+  test('a jump a view makes while revealing a place keeps the places ahead', () => {
+    const history = new History();
+    // As a code view does: moving there is a jump, which it reports.
+    history.register('', 'diff', (at) => {
+      history.record({
+        view: 'diff',
+        at: { kind: 'line', at: { file: 'z.ts', side: 'new', line: 99 } },
+      });
+      return at.kind === 'line';
+    });
+    history.record(line('a.ts', 'new', 1));
+    history.record(line('a.ts', 'new', 2));
+    expect(history.back(line('a.ts', 'new', 3))).toEqual(line('a.ts', 'new', 2));
+    expect(history.back()).toEqual(line('a.ts', 'new', 1));
+    expect(history.forward()).toEqual(line('a.ts', 'new', 2));
+    expect(history.forward()).toEqual(line('a.ts', 'new', 3));
+    expect(history.entries()).toHaveLength(3);
+  });
+
   test('records a place once when the jump starts where the list ends', () => {
     const history = new History();
     history.record(line('a.ts', 'new', 1));

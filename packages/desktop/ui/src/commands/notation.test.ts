@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   eventStroke,
+  eventStrokes,
   keyLabels,
   parseKeys,
   readKeys,
@@ -31,6 +32,11 @@ function event(key: string, held: Partial<KeyEventLike> = {}): KeyEventLike {
 }
 
 const altGraph = (key: string) => key === 'AltGraph';
+
+/** The ids of the strokes a keydown can be, the likelier first. */
+function read(key: string, held: Partial<KeyEventLike>): string[] {
+  return eventStrokes(event(key, held)).map((each) => each.id);
+}
 
 /** How `system` shows `text`. */
 function forms(text: string, system: System): string[] {
@@ -129,24 +135,44 @@ describe('key events', () => {
     );
   });
 
-  test('⌥ chords match by event.code, since ⌥ changes event.key on macOS', () => {
-    // ⌥A types å, and ⌥E is a dead key for an accent.
-    expect(eventStroke(event('å', { altKey: true, code: 'KeyA' }))?.id).toBe('alt+a');
-    expect(eventStroke(event('Dead', { altKey: true, code: 'KeyE' }))?.id).toBe('alt+e');
-    expect(eventStroke(event('Å', { altKey: true, shiftKey: true, code: 'KeyA' }))?.id).toBe(
-      'alt+shift+a',
+  test('⌥ reads as the character the layout typed, then as ⌥ and the key’s place', () => {
+    // ⌥A types å on a US Mac; German types ] with ⌥6.
+    expect(read('å', { altKey: true, code: 'KeyA' })).toEqual(['å', 'alt+a']);
+    expect(read('Å', { altKey: true, shiftKey: true, code: 'KeyA' })).toEqual(['Å', 'alt+shift+a']);
+    expect(read(']', { altKey: true, code: 'Digit6' })).toEqual([']', 'alt+6']);
+    // A dead key (⌥E is an accent) is only ⌥ and its place.
+    expect(read('Dead', { altKey: true, code: 'KeyE' })).toEqual(['alt+e']);
+    // ⌥Space types a non-breaking space, which isn't a character to match.
+    expect(read('\u00a0', { altKey: true, code: 'Space' })).toEqual(['alt+space']);
+    expect(read('Enter', { altKey: true, code: 'Enter' })).toEqual(['alt+enter']);
+    // With ⌘ or Ctrl as well, only the place counts.
+    expect(read('ı', { altKey: true, metaKey: true, code: 'KeyI' })).toEqual(ids('cmd+alt+i'));
+  });
+
+  test('⌘ and Ctrl read a letter outside A to Z by its place', () => {
+    // Russian: з is where P is.
+    expect(eventStroke(event('з', { ctrlKey: true, code: 'KeyP' }))?.id).toBe('ctrl+p');
+    expect(eventStroke(event('З', { metaKey: true, shiftKey: true, code: 'KeyP' }))?.id).toBe(
+      'meta+shift+p',
     );
-    expect(eventStroke(event('‘', { altKey: true, code: 'BracketRight' }))?.id).toBe('alt+]');
-    expect(eventStroke(event('Enter', { altKey: true, code: 'Enter' }))?.id).toBe('alt+enter');
-    expect(eventStroke(event('ı', { altKey: true, metaKey: true, code: 'KeyI' }))?.id).toBe(
-      ids('cmd+alt+i')[0],
-    );
+    // German ü is where [ is: Vim's Ctrl+[ there.
+    expect(eventStroke(event('ü', { ctrlKey: true, code: 'BracketLeft' }))?.id).toBe('ctrl+[');
+    // A letter outside A to Z with no known place is kept.
+    expect(eventStroke(event('ß', { ctrlKey: true, code: 'IntlRo' }))?.id).toBe('ctrl+ß');
+  });
+
+  test('a dead key on its own is the character at its place', () => {
+    // US-International: ` and ~ start accents.
+    expect(eventStroke(event('Dead', { code: 'Backquote' }))?.id).toBe('`');
+    expect(eventStroke(event('Dead', { shiftKey: true, code: 'Backquote' }))?.id).toBe('~');
+    expect(eventStroke(event('Dead', { shiftKey: true, code: 'Digit6' }))?.id).toBe('^');
   });
 
   test('modifier keys, dead keys and AltGr’s characters are no chord', () => {
     expect(eventStroke(event('Shift', { shiftKey: true }))).toBeUndefined();
     expect(eventStroke(event('Meta', { metaKey: true }))).toBeUndefined();
     expect(eventStroke(event('Dead'))).toBeUndefined();
+    expect(eventStroke(event('Unidentified'))).toBeUndefined();
     expect(eventStroke(event('Process'))).toBeUndefined();
     expect(
       eventStroke(

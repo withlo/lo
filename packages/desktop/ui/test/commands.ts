@@ -5,7 +5,10 @@ import {
   defineCommands,
   type Command,
   type Declarations,
+  type KeySource,
+  type Mode,
   type Target,
+  type VimKey,
 } from '../src/commands/index.ts';
 
 export const diff = defineCommands('diff', {
@@ -198,4 +201,38 @@ export function testCommands(ran: Ran[] = []): Command[] {
           },
     ),
   );
+}
+
+/**
+ * A code view as the registry sees it: Vim's state, and a log of what the registry asked of it.
+ * Keys replayed into it leave Vim waiting for the rest of the command, as they would.
+ */
+export class FakeView implements KeySource {
+  mode: Mode = 'normal';
+  pending = false;
+  target: Target = { kind: 'line', at: { file: 'a.ts', side: 'new', line: 1 } };
+  vimKeys: readonly VimKey[] = [];
+  readonly log: string[];
+
+  constructor(log: string[] = []) {
+    this.log = log;
+  }
+
+  keyState() {
+    return { mode: this.mode, pending: this.pending, target: this.target };
+  }
+
+  passKeys(held: readonly string[]) {
+    this.log.push(`passKeys ${held.join(' ')}`);
+    this.pending = true;
+  }
+
+  clearPending() {
+    this.log.push('clearPending');
+    this.pending = false;
+  }
+
+  setVimKeys(given: readonly VimKey[]) {
+    this.vimKeys = given;
+  }
 }

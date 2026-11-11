@@ -20,22 +20,32 @@ export {
   type When,
 } from './declare.ts';
 export { HISTORY_LIMIT, History, type Entry, type Reveal, type View } from './history.ts';
-export { parseKeymap, type Keymap, type KeymapError, type KeymapLine } from './keymap.ts';
+export {
+  applyKeymap,
+  parseKeymap,
+  type Applied,
+  type Keymap,
+  type KeymapError,
+  type KeymapLine,
+} from './keymap.ts';
 export { listen } from './listener.ts';
 export {
   Bindings,
   declaredBindings,
   match,
+  matchAny,
   SEQUENCE_TIMEOUT,
   type Binding,
   type Focus,
   type Outcome,
   type Pending,
   type Press,
+  type Presses,
   type Step,
 } from './match.ts';
 export {
   eventStroke,
+  eventStrokes,
   isChord,
   keyLabels,
   keyNames,
@@ -47,6 +57,7 @@ export {
   vimKey,
   vimKeys,
   writeKeys,
+  writeStrokes,
   type Chord,
   type KeyEventLike,
   type Sequence,
@@ -66,14 +77,17 @@ export {
   findScope,
   isKeySource,
   isTextField,
+  keepsTab,
   SCOPE_ATTRIBUTE,
   scopeTarget,
   setScopeSource,
+  textKind,
   type FoundScope,
   type KeySource,
   type Mode,
   type ScopeSource,
   type TargetSource,
+  type TextKind,
   type VimKey,
 } from './scopes.ts';
 export {
