@@ -8,9 +8,9 @@
       "commitOID": "5a48d2255817f0f19dfdfc3168925f0cdb85c630",
       "threads": [
         {
+          "path": "e11/review.txt",
           "body": "Fixture E11: a line thread, the first comment of a pending review.",
           "line": 10,
-          "path": "e11/review.txt",
           "side": "RIGHT"
         }
       ]
@@ -22,21 +22,21 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4996",
-      "x-ratelimit-reset": "1794201713",
+      "x-ratelimit-remaining": "4998",
+      "x-ratelimit-reset": "1794371223",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "4"
+      "x-ratelimit-used": "2"
     },
     "body": {
       "data": {
         "addPullRequestReview": {
           "pullRequestReview": {
-            "id": "PRR_kwDOVleUfc8AAAABWv73rA",
+            "id": "PRR_kwDOVleUfc8AAAABXON7uA",
             "state": "PENDING",
             "comments": {
               "nodes": [
                 {
-                  "id": "PRRC_kwDOVleUfc8AAAABDMhJvQ"
+                  "id": "PRRC_kwDOVleUfc8AAAABDjlwiA"
                 }
               ]
             }
