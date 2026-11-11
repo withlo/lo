@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, statSync, symlinkSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
+import { gitProgram } from '@lo/testing/git';
 import { describe, expect, test } from 'vitest';
 
 import { defaultPlaces, findGit, gitAt } from '../src/find.ts';
@@ -148,7 +149,7 @@ test('refuses a git that would download what a clone lacks without being asked',
   expect(status.message).toContain(eager);
 });
 
-/** What the May 2024 maintenance releases say when they don't download a missing object. */
+/** What a git may say when `GIT_NO_LAZY_FETCH` keeps it from downloading a missing object. */
 const WARNING = 'warning: lazy fetching disabled; some objects may not be available';
 
 /** A line of shell that prints `text` on stderr when git runs `cat-file`. */
@@ -156,21 +157,47 @@ function says(text: string): string {
   return `case " $* " in *" cat-file "*) echo '${text}' >&2;; esac`;
 }
 
-test('takes a maintenance release that says lazy fetching is off', async () => {
+test('refuses a git that gives up on a file a clone lacks rather than saying its missing', async () => {
   const dir = tempFolder();
-  // As 2.43.4 does: it honors the variable, and says so on stderr.
-  const maintenance = wrappedGit(join(dir, 'git'), { version: '2.43.4', before: says(WARNING) });
+  // As the May 2024 updates of 2.41 to 2.44 do: an object nothing names is missing, but one a tree
+  // in a pack names, as each file of a blobless clone is, is a fatal error.
+  const givesUp = wrappedGit(join(dir, 'git'), {
+    version: '2.43.7',
+    before: [
+      'case " $* " in *" cat-file -e "*)',
+      '  for arg; do case "$arg" in --git-dir=*) dir="${arg#--git-dir=}";; esac; last=$arg; done',
+      '  for idx in "$dir"/objects/pack/*.idx; do',
+      '    [ -e "$idx" ] || continue',
+      `    for object in $('${gitProgram()}' show-index < "$idx" | cut -d ' ' -f 2); do`,
+      `      if '${gitProgram()}' --git-dir="$dir" ls-tree "$object" 2>/dev/null | grep -q "$last"; then`,
+      `        echo '${WARNING}' >&2; echo "fatal: could not fetch $last from promisor remote" >&2; exit 128`,
+      '      fi',
+      '    done',
+      '  done;;',
+      'esac',
+    ].join('\n'),
+  });
+
+  const status = await gitAt(givesUp, { env, platform });
+
+  expect(status).toMatchObject({ status: 'tooOld', check: 'lazyFetch' });
+});
+
+test('takes a git that says lazy fetching is off', async () => {
+  const dir = tempFolder();
+  // A git may say so on stderr when the variable keeps it from downloading.
+  const saying = wrappedGit(join(dir, 'git'), { version: '2.45.4', before: says(WARNING) });
   const other = wrappedGit(join(dir, 'git-other'), {
-    version: '2.43.4',
+    version: '2.45.4',
     before: says('warning: something else'),
   });
   const twice = wrappedGit(join(dir, 'git-twice'), {
-    version: '2.43.4',
+    version: '2.45.4',
     before: `${says(WARNING)}\n${says('error: and more')}`,
   });
 
-  const found = await gitAt(maintenance, { env, platform });
-  expect(found.status === 'found' && found.git.version).toEqual({ major: 2, minor: 43, patch: 4 });
+  const found = await gitAt(saying, { env, platform });
+  expect(found.status === 'found' && found.git.version).toEqual({ major: 2, minor: 45, patch: 4 });
   // Only that line, alone.
   expect(await gitAt(other, { env, platform })).toMatchObject({ check: 'lazyFetch' });
   expect(await gitAt(twice, { env, platform })).toMatchObject({ check: 'lazyFetch' });

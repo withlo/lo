@@ -19,6 +19,7 @@ import { GitError } from './errors.ts';
 import { type Git, Runner, type TestSettings } from './git.ts';
 import { DEFAULT_FETCH_LIMITS, type FetchLimits } from './limits.ts';
 import { CloneLock, lockCache, type Release, unlockCache } from './lock.ts';
+import { ObjectReader } from './objects.ts';
 import type { Activity } from './progress.ts';
 import { checkName } from './refs.ts';
 import { Repo } from './repo.ts';
@@ -64,6 +65,8 @@ export class Cache {
   readonly #log: ((line: string) => void) | undefined;
   readonly #release: Release;
   readonly #locks = new Map<string, CloneLock>();
+  /** Each open clone's reader of objects, and how many repositories open on it use it. */
+  readonly #readers = new Map<string, { reader: ObjectReader; users: number }>();
   #closed = false;
 
   private constructor(
@@ -120,6 +123,36 @@ export class Cache {
   /** Where the checkouts of `owner/name`'s pull requests live. */
   checkoutsFolder(owner: string, name: string): string {
     return join(this.root, 'checkouts', HOST, owner.toLowerCase(), name.toLowerCase());
+  }
+
+  /**
+   * The reader of `owner/name`'s clone at `folder`, which every repository open on it shares, and
+   * a release that stops it once the last of them lets go.
+   */
+  #reader(owner: string, name: string, folder: string): { reader: ObjectReader; release: Release } {
+    const key = `${owner.toLowerCase()}/${name.toLowerCase()}`;
+    let shared = this.#readers.get(key);
+    if (shared === undefined) {
+      const reader = new ObjectReader(() =>
+        this.runner
+          .command({ gitDir: folder }, { readsOnly: true })
+          .arg('cat-file', '--batch-command'),
+      );
+      shared = { reader, users: 0 };
+      this.#readers.set(key, shared);
+    }
+    shared.users++;
+    const using = shared;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      using.users--;
+      if (using.users > 0) return;
+      using.reader.close();
+      if (this.#readers.get(key) === using) this.#readers.delete(key);
+    };
+    return { reader: using.reader, release };
   }
 
   /** The lock on `owner/name`'s clone, which every repository open on it shares. */
@@ -179,13 +212,18 @@ export class Cache {
     } finally {
       release();
     }
+    const reader = this.#reader(owner, name, folder);
     return new Repo({
       cache: this,
       name: `${owner}/${name}`,
       folder,
       url,
       lock,
-      done,
+      done: () => {
+        reader.release();
+        done();
+      },
+      reader: reader.reader,
       token: options.token,
       proxy: options.proxy,
       progress: options.progress,
@@ -211,13 +249,19 @@ export class Cache {
       return undefined;
     }
     const lock = this.cloneLock(owner, name);
+    const done = lock.use();
+    const reader = this.#reader(owner, name, folder);
     return new Repo({
       cache: this,
       name: `${owner}/${name}`,
       folder,
       url: `${this.runner.remote.base}/${owner}/${name}.git`,
       lock,
-      done: lock.use(),
+      done: () => {
+        reader.release();
+        done();
+      },
+      reader: reader.reader,
       offline: true,
     });
   }

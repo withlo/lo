@@ -325,6 +325,9 @@ importers:
 
   packages/desktop/git:
     devDependencies:
+      '@lo/github':
+        specifier: workspace:*
+        version: link:../../core/github
       '@lo/testing':
         specifier: workspace:*
         version: link:../../../testing

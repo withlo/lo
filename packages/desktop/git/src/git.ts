@@ -93,14 +93,24 @@ export class Runner {
    * for one. With `fetching`, git may download from the remote and signs in to it with the token,
    * and only then.
    */
-  command(location: Location, options: { fetching?: Fetching } = {}): GitCommand {
+  command(
+    location: Location,
+    options: {
+      fetching?: Fetching;
+      /**
+       * Whether the git only reads, and takes no lock, as a clone's long-lived `cat-file`, which
+       * isn't counted among the gits {@link Runner.running} on its repository.
+       */
+      readsOnly?: boolean;
+    } = {},
+  ): GitCommand {
     return new GitCommand(
       this.git,
       this.#settings,
       this.remote,
       location,
       options.fetching,
-      (child) => this.#track(location, child),
+      options.readsOnly ? undefined : (child) => this.#track(location, child),
     );
   }
 
