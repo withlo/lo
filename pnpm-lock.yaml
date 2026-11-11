@@ -522,11 +522,16 @@ importers:
         specifier: 0.158.0
         version: 0.158.0
 
+  skill: {}
+
   skill/checker:
     devDependencies:
       '@lo/artifact':
         specifier: workspace:*
         version: link:../../packages/core/artifact
+      '@lo/skill':
+        specifier: workspace:*
+        version: link:..
       '@lo/testing':
         specifier: workspace:*
         version: link:../../testing

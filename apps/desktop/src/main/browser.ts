@@ -1,5 +1,4 @@
-// Opening web pages: in the system's browser, or with the program `LO_BROWSER` names in a build
-// run from source, so a test opens no browser and can see what Lo opened.
+// Opening web pages in the system's browser, for every feature that hands one there.
 
 import { spawn } from 'node:child_process';
 
@@ -9,7 +8,8 @@ import { browserProgram } from './environment.ts';
 
 /**
  * Opens `page` in the system's browser, or with the program `LO_BROWSER` names in a build run from
- * source, which gets an environment of its own and the address as its one argument.
+ * source, which gets an environment of its own and the address as its one argument. Callers check
+ * the address first: this opens whatever it's given.
  */
 export async function openPage(page: string): Promise<void> {
   const program = browserProgram({ packaged: app.isPackaged, env: process.env });

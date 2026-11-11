@@ -4,6 +4,7 @@ import {
   appName,
   backgroundEnvironment,
   browserProgram,
+  commandFolder,
   backgroundSettings,
   configFolder,
   dataFolder,
@@ -338,6 +339,27 @@ describe('browserProgram', () => {
 
   it('refuses a relative path', () => {
     expect(() => browserProgram({ packaged: false, env: { LO_BROWSER: 'open' } })).toThrow(
+      'absolute path',
+    );
+  });
+});
+
+describe('commandFolder', () => {
+  it('names the folder a build run from source installs the lo command in', () => {
+    expect(commandFolder({ packaged: false, env: { LO_COMMAND_FOLDER: '/tmp/bin' } })).toBe(
+      '/tmp/bin',
+    );
+    expect(commandFolder({ packaged: false, env: {} })).toBeUndefined();
+  });
+
+  it('is ignored in a packaged build, which installs where the system keeps commands', () => {
+    expect(
+      commandFolder({ packaged: true, env: { LO_COMMAND_FOLDER: '/tmp/bin' } }),
+    ).toBeUndefined();
+  });
+
+  it('refuses a relative path', () => {
+    expect(() => commandFolder({ packaged: false, env: { LO_COMMAND_FOLDER: 'bin' } })).toThrow(
       'absolute path',
     );
   });

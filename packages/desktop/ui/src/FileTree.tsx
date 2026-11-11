@@ -131,7 +131,15 @@ function FolderIcon({ open, dim }: { open: boolean; dim: boolean }) {
   );
 }
 
-function FileIcon({ entry, dim }: { entry: FileTreeFile['entry']; dim: boolean }) {
+/** A file's icon: a page, with a mark for a symlink or a submodule. */
+export function FileIcon({
+  entry = 'file',
+  dim = false,
+}: {
+  entry?: FileTreeFile['entry'];
+  /** Set back, as an unchanged file is beside changed ones. */
+  dim?: boolean;
+}) {
   return (
     <svg
       className={`lo-i lo-i--sm ${dim ? 'text-fg-disabled' : 'text-icon-muted'}`}
@@ -143,6 +151,32 @@ function FileIcon({ entry, dim }: { entry: FileTreeFile['entry']; dim: boolean }
       {entry === 'symlink' && <path d="M6.25 11.25 9.75 7.75M7.25 7.75h2.5v2.5" />}
       {entry === 'submodule' && <path d="M6 9.5h4M6 11.5h4" />}
     </svg>
+  );
+}
+
+/**
+ * A changed file's marks: that it's generated, how the pull request changes it and whether it's
+ * viewed, as the tree and the file finder show them.
+ */
+export function FileMarks({
+  change,
+  viewed,
+  generated = false,
+}: {
+  change: FileTreeChange;
+  viewed?: FileTreeViewed | undefined;
+  generated?: boolean | undefined;
+}) {
+  const letter = LETTERS[change];
+  const ball = viewed && BALLS[viewed];
+  return (
+    <>
+      {generated && <Tag>gen</Tag>}
+      <span className={`change-letter ${letter.tone}`} title={letter.word}>
+        {letter.letter}
+      </span>
+      {ball && <span className={ball.className} title={ball.title} />}
+    </>
   );
 }
 
@@ -334,8 +368,6 @@ function Row({
     );
   }
   const dim = each.change === undefined;
-  const letter = each.change && LETTERS[each.change];
-  const ball = each.change && each.viewed && BALLS[each.viewed];
   return (
     <div
       id={id}
@@ -375,13 +407,9 @@ function Row({
         </span>
       )}
       <span className="ms-auto flex flex-none items-center gap-6 ps-6">
-        {each.generated && <Tag>gen</Tag>}
-        {letter && (
-          <span className={`change-letter ${letter.tone}`} title={letter.word}>
-            {letter.letter}
-          </span>
+        {each.change && (
+          <FileMarks change={each.change} viewed={each.viewed} generated={each.generated} />
         )}
-        {ball && <span className={ball.className} title={ball.title} />}
       </span>
     </div>
   );

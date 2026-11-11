@@ -70,7 +70,7 @@ export async function checkFolder(dir: string, git: Git, pr?: number): Promise<F
     const header = parsed?.header;
     if (header && !(await code.has(header.commit).catch(() => true))) {
       incomplete.push(
-        `The repository this runs in doesn't have commit ${header.commit}. Run it in the pull request's repository, with the commit fetched.`,
+        `The repository doesn't have commit ${header.commit}. Check the overview against the pull request's repository, with the commit fetched.`,
       );
     }
     if (outcome.kind === 'shown') {
@@ -95,7 +95,7 @@ async function inRepository(git: Git): Promise<void> {
   } catch (error) {
     if (!(error instanceof GitError) || error instanceof NoGit) throw error;
     throw new GitError(
-      `Run the checker in the pull request's repository, which it reads the code from. ${error.message}`,
+      `Run the checker in the pull request's repository, or name it with --repo: the code is read from there. ${error.message}`,
     );
   }
 }

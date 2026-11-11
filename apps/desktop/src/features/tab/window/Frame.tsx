@@ -2,6 +2,7 @@
 // kind's feature puts in the `tab.kinds` slot, with whatever covers it over it.
 
 import { TabBar, type Tab as StripTab } from '@lo/ui';
+import { NO_TARGET } from '@lo/ui/commands';
 import { useEffect, useRef } from 'react';
 import { useStore } from 'zustand';
 
@@ -76,6 +77,7 @@ export function TabStrip() {
             .catch((error: unknown) => console.error("Lo couldn't show the tab:", error));
         }}
         onClose={(id) => registry().run('tab.close', { kind: 'tab', tab: id })}
+        onNew={() => registry().run('open.box', NO_TARGET)}
         menuContainer={document.getElementById('root')}
       />
     </div>

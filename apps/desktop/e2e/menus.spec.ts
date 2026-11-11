@@ -1,6 +1,6 @@
 import type { ElectronApplication, Page } from '@playwright/test';
 
-import { expect, test } from './app.ts';
+import { expect, test, middleOf } from './app.ts';
 
 const mac = process.platform === 'darwin';
 
@@ -35,7 +35,7 @@ function nativeMenus(app: ElectronApplication): Promise<string[]> {
 test('a right-click lists Back and Forward with their keys in this system’s form', async ({
   page,
 }) => {
-  const middle = page.locator('main[data-lo-middle]');
+  const middle = middleOf(page);
   await middle.click({ button: 'right' });
   const menu = menuOf(page);
   await expect(menu).toBeVisible();
@@ -51,7 +51,7 @@ test('a right-click lists Back and Forward with their keys in this system’s fo
 });
 
 test('an item is 26px tall, and its key sits 8px from its label', async ({ page }) => {
-  await page.locator('main[data-lo-middle]').click({ button: 'right' });
+  await middleOf(page).click({ button: 'right' });
   const back = menuOf(page).getByRole('menuitem').first();
   await expect(back).toBeVisible();
   const item = await back.boundingBox();
@@ -61,7 +61,7 @@ test('an item is 26px tall, and its key sits 8px from its label', async ({ page 
 });
 
 test('a screen reader hears an item’s name and key, not its key caps', async ({ page }) => {
-  await page.locator('main[data-lo-middle]').click({ button: 'right' });
+  await middleOf(page).click({ button: 'right' });
   const menu = menuOf(page);
   // The name is the label alone, since the key caps are hidden from it.
   const back = menu.getByRole('menuitem', { name: 'Back', exact: true });
@@ -76,7 +76,7 @@ test('a screen reader hears an item’s name and key, not its key caps', async (
 test('j and k move through the menu, ⏎ runs the highlighted action, and the menu closes', async ({
   page,
 }) => {
-  const middle = page.locator('main[data-lo-middle]');
+  const middle = middleOf(page);
   await middle.click({ button: 'right' });
   const menu = menuOf(page);
   await expect(menu).toBeVisible();
@@ -100,7 +100,7 @@ test('j and k move through the menu, ⏎ runs the highlighted action, and the me
 test('the menu runs what the key runs: Back with no history says why, by menu or by key', async ({
   page,
 }) => {
-  const middle = page.locator('main[data-lo-middle]');
+  const middle = middleOf(page);
   await middle.focus();
   await page.keyboard.press('Control+O');
   const note = said(page, "There's nowhere to go back to.");
@@ -114,7 +114,7 @@ test('the menu runs what the key runs: Back with no history says why, by menu or
 });
 
 test('Esc closes the menu and gives focus back to where it was', async ({ page }) => {
-  const middle = page.locator('main[data-lo-middle]');
+  const middle = middleOf(page);
   await middle.click({ button: 'right' });
   await expect(menuOf(page)).toBeVisible();
   await page.keyboard.press('j');
@@ -130,7 +130,7 @@ for (const key of ['Shift+F10', 'ContextMenu']) {
   test(`${key} opens the menu of what has focus, under the keyboard’s control`, async ({
     page,
   }) => {
-    const middle = page.locator('main[data-lo-middle]');
+    const middle = middleOf(page);
     await middle.focus();
     await page.keyboard.press(key);
     const menu = menuOf(page);
@@ -151,7 +151,7 @@ for (const key of ['Shift+F10', 'ContextMenu']) {
 test('no other command runs while a menu is open: not key help, the palette or back', async ({
   page,
 }) => {
-  const middle = page.locator('main[data-lo-middle]');
+  const middle = middleOf(page);
   await middle.click({ button: 'right' });
   const menu = menuOf(page);
   await expect(menu).toBeVisible();
@@ -176,7 +176,7 @@ test('no other command runs while a menu is open: not key help, the palette or b
 });
 
 test('the menu key is in key help, in this system’s form', async ({ page }) => {
-  await page.locator('main[data-lo-middle]').focus();
+  await middleOf(page).focus();
   await page.keyboard.press('?');
   const help = page.getByRole('dialog', { name: 'Every key' });
   await expect(help.locator('[data-command="keys.menu"] kbd')).toHaveText(
@@ -189,7 +189,7 @@ test('a right-click in a text field gets the system’s Edit menu, not Lo’s', 
   page,
 }) => {
   await recordNativeMenus(app);
-  await page.locator('main[data-lo-middle]').focus();
+  await middleOf(page).focus();
   await page.keyboard.press('?');
   const search = page
     .getByRole('dialog', { name: 'Every key' })

@@ -45,7 +45,7 @@ function grouped(...groups: MenuItemConstructorOptions[][]): MenuItemConstructor
 
 /**
  * The macOS app menu: the app's menu, File, Edit, View, Go, Review and Window, with Lo's commands
- * in the menus they declare, in their order. Nothing reloads the page or closes the window by
+ * in the menus they declare, in their order: `App` is the app's own. Nothing reloads the page or closes the window by
  * key, and the developer tools appear only when `devTools` says.
  */
 export function macMenu(
@@ -62,6 +62,7 @@ export function macMenu(
       label: options.name,
       submenu: grouped(
         [{ role: 'about' }],
+        lo('App'),
         [{ role: 'services' }],
         [{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }],
         [{ role: 'quit' }],

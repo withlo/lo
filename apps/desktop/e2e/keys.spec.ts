@@ -1,6 +1,6 @@
 import type { ElectronApplication, Page } from '@playwright/test';
 
-import { expect, test } from './app.ts';
+import { expect, test, middleOf } from './app.ts';
 
 const mac = process.platform === 'darwin';
 
@@ -74,7 +74,7 @@ test('Esc gives focus back to the middle of the window', async ({ page }) => {
   await open.focus();
   await expect(open).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(page.locator('main[data-lo-middle]')).toBeFocused();
+  await expect(middleOf(page)).toBeFocused();
 });
 
 test('the window runs only the app menu’s own commands that main sends back', async ({
@@ -91,7 +91,7 @@ test('the window runs only the app menu’s own commands that main sends back', 
   await expect(open).toBeFocused();
   // The same command by its key.
   await page.keyboard.press('Escape');
-  await expect(page.locator('main[data-lo-middle]')).toBeFocused();
+  await expect(middleOf(page)).toBeFocused();
 });
 
 test('a click in the macOS app menu runs its command once, and its key never through the menu', async ({
