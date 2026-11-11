@@ -234,10 +234,20 @@ function sameDeclaration(command: Command, declaration: Command): boolean {
   );
 }
 
-/** Keys: every command has a default key on each system it's on. */
+/**
+ * Whether `command` has no key on purpose: it's declared with `keys: []`, for something done once
+ * in a while, and a menu reaches it, the app menu (`bar`) or a right-click menu, besides the
+ * palette, which lists every command.
+ */
+export function keyless(command: Command): boolean {
+  return command.keys.length === 0 && (command.bar !== undefined || command.menu !== undefined);
+}
+
+/** Keys: every command has a default key on each system it's on, unless it's {@link keyless}. */
 export function checkKeys(features: readonly Declarations[]): string[] {
   return features.flatMap(commandsOf).flatMap((command) =>
     systemsOf(command)
+      .filter(() => !keyless(command))
       .filter((system) => !hasKey(command, system))
       .map((system) => `${command.id} has no key on ${systemNames[system]}.`),
   );
@@ -275,7 +285,8 @@ function sampleTarget(kind: TargetKind): Target {
 export function checkMenus(features: readonly Declarations[]): string[] {
   const problems: string[] = [];
   for (const command of features.flatMap(commandsOf)) {
-    const on = systemsOf(command);
+    // A command with no key on purpose has none to show in its menu.
+    const on = keyless(command) ? [] : systemsOf(command);
     if (command.menu) {
       for (const system of on.filter((each) => !hasKey(command, each))) {
         problems.push(

@@ -54,14 +54,13 @@ export default defineCommands(
       repeat: true,
     },
     /**
-     * Installs `lo`, which opens a pull request from a terminal. In the app's own menu on macOS.
-     * Not where `g` goes to the widget or to Vim: in menus, dialogs, palettes and comment boxes.
+     * Installs `lo`, which opens a pull request from a terminal: done once, so it has no key. It's
+     * in the app's own menu on macOS, in Settings, and in the command palette.
      */
     installCommand: {
       label: 'Install command-line tool',
       group: 'Tabs and window',
-      keys: ['g L'],
-      when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
+      keys: [],
       bar: { menu: 'App', order: 10 },
     },
   },
