@@ -5,7 +5,8 @@
 //   pnpm nx run perf:open -- kubernetes-125488
 //
 // With `LO_PERF_PULL` naming a JSON file, it opens the small pull request written there instead,
-// as the key spec does (`fixture.ts`).
+// as the key spec does (`fixture.ts`). The window is 1440 by 900 px, or with `LO_PERF_WINDOW=screen`
+// as large as the screen's room for windows, as the bench measures it.
 
 import { randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -18,6 +19,7 @@ import {
   clipboard,
   ipcMain,
   MessageChannelMain,
+  screen,
   session,
   utilityProcess,
 } from 'electron';
@@ -60,6 +62,7 @@ registerScheme();
 app
   .whenReady()
   .then(async () => {
+    const opened = performance.timeOrigin + performance.now();
     const loaded = read();
     const nonce = randomBytes(18).toString('base64');
     const windowSession = session.fromPartition('perf');
@@ -74,10 +77,11 @@ app
       stdio: 'inherit',
     });
     const { pull, jobs, large } = await loaded;
+    const done = performance.timeOrigin + performance.now();
     const work: Work = { jobs, files: pull.files.length, syntaxFolder, workerEntry };
     background.postMessage(work, [port1]);
 
-    ipcMain.handle('perf:pull', (): PullReply => ({ pull, nonce }));
+    ipcMain.handle('perf:pull', (): PullReply => ({ pull, nonce, opened, read: done }));
     ipcMain.on('perf:connect', (event) => event.sender.postMessage('perf:port', null, [port2]));
     // A large file the window loads: its text for the documents, and its job for the background
     // process, whose result reaches the window over the port like the rest.
@@ -97,10 +101,13 @@ app
       );
     });
 
+    const bounds =
+      process.env.LO_PERF_WINDOW === 'screen'
+        ? screen.getPrimaryDisplay().workArea
+        : { width: 1440, height: 900 };
     const window = new BrowserWindow({
       title: `${pull.repo}#${pull.number}`,
-      width: 1440,
-      height: 900,
+      ...bounds,
       show: false,
       webPreferences: {
         session: windowSession,
