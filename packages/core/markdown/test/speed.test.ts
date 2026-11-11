@@ -175,6 +175,16 @@ const TINY_ARC = (radii: string, angle = 0) =>
 const HALFWAY = (start: string, step: string) =>
   `<path d="${start}${step.repeat(4)}" stroke-dasharray="4e-7"/>`;
 
+/**
+ * A path from `start`, `step` `times` over, dashed with 2,001 numbers of 0.0005: a period just over
+ * 1, which the floor keeps, of a thousand dashes a unit. Each step is between two numbers a browser
+ * may read as one float32 or as the next: read here, the path has next to no length at all, and
+ * read the other way, each segment is a float32 step long, so a browser may draw half a million
+ * dashes along it. Only each segment's slack counts them.
+ */
+const HALFWAY_MANY = (start: string, step: string, times = 16_000) =>
+  `<path d="${start}${step.repeat(times)}" stroke-dasharray="${'0.0005 '.repeat(2_001).trim()}"/>`;
+
 /** A marker of 63 circles, which draws 127 each time it's drawn. */
 const CIRCLES = `<marker id="m">${'<circle r="1"/>'.repeat(63)}</marker>`;
 const SPACES = ' '.repeat(524_000);
@@ -350,6 +360,31 @@ const WORST: [string, string, (made: SanitizedSvg) => void][] = [
     'curves through a halfway',
     `<svg>${HALFWAY('M600000.375 0', 'C600000.40625 0 600000.375 0 600000.40625 0')}</svg>`,
     cut('value path'),
+  ],
+  [
+    'a path alternating at a float32 halfway, dashed with 2,001 numbers',
+    `<svg>${HALFWAY_MANY('M0 600000.375', 'V600000.40625V600000.375')}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'a path alternating at a halfway, across, dashed with 2,001 numbers',
+    `<svg>${HALFWAY_MANY('M600000.375 0', 'H600000.40625H600000.375')}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'a path alternating at a halfway by relative steps, dashed with 2,001 numbers',
+    `<svg>${HALFWAY_MANY('M0 600000.375', 'v0.03125v-0.03125')}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'a path alternating at another halfway, dashed with 2,001 numbers',
+    `<svg>${HALFWAY_MANY('M300000.1875 0', 'L300000.203125 0L300000.1875 0', 8_000)}</svg>`,
+    refused('drawn'),
+  ],
+  [
+    'curves through a halfway, dashed with 2,001 numbers',
+    `<svg>${HALFWAY_MANY('M600000.375 0', 'Q600000.40625 0 600000.375 0', 8_000)}</svg>`,
+    refused('drawn'),
   ],
   [
     'lines across a float32 halfway',
