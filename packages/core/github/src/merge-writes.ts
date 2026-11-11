@@ -158,6 +158,12 @@ export type MergeRefusal =
   | { refusal: 'stackBusy' }
   /** The base branch isn't the one the plan expected, but `now`: it was changed elsewhere since Lo read it. Lo leaves it as it is. */
   | { refusal: 'baseChanged'; now: string }
+  /**
+   * GitHub asked Lo to hold off writing, by a rate limit or by turning a write away as sent too
+   * fast, so Lo didn't send it. It can be asked for again from `until`, a wall-clock time in
+   * milliseconds since the Unix epoch.
+   */
+  | { refusal: 'paused'; until: number }
   /** Any other refusal, in GitHub's words, such as a dequeue of a pull request that isn't queued, or a `409` Lo can't read. */
   | { refusal: 'other'; message: string };
 
@@ -236,6 +242,8 @@ export function describeMergeRefusal(refusal: MergeRefusal): string {
       return 'GitHub is changing this stack for another request';
     case 'baseChanged':
       return `The pull request's base branch is now ${refusal.now}, changed since Lo read it`;
+    case 'paused':
+      return "GitHub asked Lo to hold off writing for a while, so Lo didn't send it";
     case 'other':
       return `GitHub refused it: ${refusal.message}`;
     default:
