@@ -103,7 +103,7 @@ function Account({ account }: { account: AccountSummary }) {
   );
 }
 
-function Accounts() {
+export function AccountsSection() {
   const accounts = useStore(accountsStore, (state) => state.accounts);
   return (
     <div className="flex flex-col">
@@ -142,5 +142,5 @@ export default defineSection({
   title: 'Accounts',
   description: 'Each PR opens with an account that can see its repo.',
   order: 10,
-  render: Accounts,
+  render: AccountsSection,
 });

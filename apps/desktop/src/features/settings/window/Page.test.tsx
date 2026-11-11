@@ -204,6 +204,35 @@ describe('the list of sections', () => {
     expect(page.current()).toBe('Keys');
   });
 
+  it('keeps a section gone to by key on screen at the end of the scroll, until scrolled back', () => {
+    const page = render();
+    const body = page.container.querySelector<HTMLElement>('nav + div');
+    if (!body) throw new Error('No body.');
+    place(body, 100);
+    // Going to Cache scrolls the body as far as it goes, short of Cache's top.
+    move(1);
+    expect(page.current()).toBe('Cache');
+    Object.defineProperties(body, {
+      scrollTop: { value: 500, configurable: true },
+      clientHeight: { value: 300, configurable: true },
+      scrollHeight: { value: 800, configurable: true },
+    });
+    place(nth(page.sections(), 0), -400);
+    place(nth(page.sections(), 1), 200);
+    place(nth(page.sections(), 2), 300);
+    scroll(body);
+    expect(page.current()).toBe('Cache');
+    move(1);
+    expect(page.current()).toBe('Keys');
+    move(-1);
+    expect(page.current()).toBe('Cache');
+    // Scrolled back up, the scroll says again.
+    Object.defineProperty(body, 'scrollTop', { value: 0, configurable: true });
+    place(nth(page.sections(), 0), 100);
+    scroll(body);
+    expect(page.current()).toBe('Appearance');
+  });
+
   it('has no keys to move with once the page is gone', () => {
     const container = document.createElement('div');
     const root = createRoot(container);

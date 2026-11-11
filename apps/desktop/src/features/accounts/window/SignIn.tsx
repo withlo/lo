@@ -2,12 +2,13 @@
 // it signed in, or why it didn't and what to do about it.
 
 import { Button, Callout, Dialog, DialogSpacer, Key, Spinner } from '@lo/ui';
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 
 import { client } from '../../../window/ipc.ts';
 import { contract as app } from '../../app/contract.ts';
 import type { SignInFailure, SignInState } from '../contract.ts';
 import { closeDialog, copyCode, openGithub, openSignIn } from './dialogs.ts';
+import { useFocusOnStep } from './focus.ts';
 import { keyOf, labels } from './labels.ts';
 import type { SignInDialog } from './store.ts';
 
@@ -58,9 +59,7 @@ export function SignInView({
   const state = dialog?.state;
   const primary = useRef<HTMLButtonElement>(null);
   // Focus follows the main button as the dialog changes from one step to the next.
-  useEffect(() => {
-    primary.current?.focus();
-  }, [state?.kind, dialog?.error]);
+  useFocusOnStep(primary, `${state?.kind ?? 'starting'} ${dialog?.error ?? ''}`);
   const content = dialog === undefined ? undefined : view(dialog, primary);
   return (
     <Dialog
@@ -303,12 +302,12 @@ function Code({
           <p className="m-0 text-fg-muted text-small">{note.text}</p>
         ))}
       <div className="border-t border-border-subtle" />
-      <dl className="m-0 flex flex-col gap-6 text-fg-muted text-small">
+      <dl className="m-0 facts text-fg-muted text-small">
         {SCOPES.map(([scope, what]) => (
-          <div key={scope} className="flex gap-12">
-            <dt className="w-64 flex-none text-fg code-small">{scope}</dt>
+          <Fragment key={scope}>
+            <dt className="text-fg code-small">{scope}</dt>
             <dd className="m-0">{what}</dd>
-          </div>
+          </Fragment>
         ))}
       </dl>
     </>

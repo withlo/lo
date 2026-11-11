@@ -359,12 +359,27 @@ repositories, which account opens a repository, and the pull requests opened lat
   wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
   out, and whether its token waits for a keyring), never a token.
+- Signing in is GitHub's device flow, one sign-in at a time. Before asking GitHub for a code, Lo
+  checks it can keep a token (on Linux, by what a fresh encryption is marked), so a desktop with no
+  keyring is refused before anyone goes to GitHub. The window shows the code; main copies it and
+  opens GitHub's own page for codes, never one GitHub's answer names. Polls follow GitHub's
+  `interval` and `slow_down`, and stop once the dialog closes, another sign-in starts, the window
+  goes or Lo quits.
+- Accounts can be imported from `gh`, found as git is: on `PATH`, then the system's usual folders,
+  passing over one that someone besides this user or root could change. gh runs with an argument
+  list, never a shell, under a time limit, with an environment of Lo's making that holds no token
+  (`GH_TOKEN` and the like never reach it). Its tokens are read through a pipe, checked with
+  `GET /user` to be the account's, and kept as any other. Once GitHub refuses one, Lo reads gh's
+  newer token, which gh renews itself.
 - As Lo quits, the feature saves any renewed token the keychain refused, waiting for renewals GitHub
   is answering only as long as its own limit for stopping allows.
 - A build run from source talks to a GitHub on this machine when `LO_GITHUB` names its address
   (`http://127.0.0.1:<port>`, serving GitHub's API, website and uploads under `/api`, `/web` and
   `/uploads`, as the replay server does), which makes it a test run. It adds the account whose token
-  is in the file `LO_TEST_TOKEN_FILE` names as it starts. A packaged build ignores both.
+  is in the file `LO_TEST_TOKEN_FILE` names as it starts. It runs the gh `LO_GH` names (an absolute
+  path, or `none`) rather than one it finds, and opens web pages with the program `LO_BROWSER` names
+  rather than the system's browser, so a test never runs the gh on `PATH`, which holds the tokens of
+  whoever runs it, nor opens a browser. A packaged build ignores all four.
 
 ## The interface
 

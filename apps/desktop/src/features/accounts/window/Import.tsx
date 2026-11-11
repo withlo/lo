@@ -16,6 +16,7 @@ import { client } from '../../../window/ipc.ts';
 import { contract as app } from '../../app/contract.ts';
 import type { GhAccount, GhListing, Imported } from '../contract.ts';
 import { closeDialog } from './dialogs.ts';
+import { useFocusOnStep } from './focus.ts';
 import { labels } from './labels.ts';
 import { main } from './main.ts';
 
@@ -101,9 +102,7 @@ export function ImportView({ open, container }: { open: boolean; container: HTML
     else opened.current += 1;
   }, [open]);
 
-  useEffect(() => {
-    primary.current?.focus();
-  }, [step.kind]);
+  useFocusOnStep(primary, step.kind);
 
   const importChosen = () => {
     if (step.kind !== 'choosing' || chosen.size === 0) return;

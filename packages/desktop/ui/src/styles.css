@@ -130,6 +130,13 @@
   letter-spacing: 0.14em;
 }
 
+/* Facts in a dialog: a label, then what it says, in two columns. */
+@utility facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--lo-sp-6) var(--lo-sp-12);
+}
+
 /* Dialogs and palettes sit over the window. */
 @utility z-dialog {
   z-index: var(--lo-z-dialog);
