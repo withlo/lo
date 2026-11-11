@@ -494,10 +494,11 @@ changing, as when the local copy marks one generated, doesn't reorder a drawn vi
   in the panel's order, and a batch's files go over several jobs so no job draws more than 200,000.
   When the local copy's files are the same ones, each is swapped in place as its diff arrives, and
   what was at the top of the screen stays where it is; otherwise the view is drawn anew once they're
-  all in. Nothing on screen moves meanwhile: a file on screen keeps GitHub's lines, diff, colors and
-  moved-code labels until it's off screen once the reader stops scrolling, moves the cursor, or
-  opens or closes it, and then takes the loader's latest; a file off screen changes at once, how it
-  starts out included (generated, large, or no longer either).
+  all in. Nothing on screen moves meanwhile: a file on screen whose new lines would draw in other
+  rows (`keepsShape`) keeps GitHub's lines, diff and colors, and every file on screen its moved-code
+  labels, until it's off screen once the reader stops scrolling, moves the cursor, or opens or
+  closes it, and then takes the loader's latest; a file off screen changes at once, how it starts
+  out included (generated, large, or no longer either).
 - Once the view is drawn, the window says so (`diff.drawn`), and the tab keeps that head on screen,
   even one it took from what it saved: a newer one from GitHub is offered as a newer push.
 - `diff.layout` and `diff.whitespace` are settings; `gi` and `gw` change them.
