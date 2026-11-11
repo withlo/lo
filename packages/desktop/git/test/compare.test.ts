@@ -1,5 +1,6 @@
 // Comparing two revisions of a pull request, across a rebase.
 
+import { randomBytes } from 'node:crypto';
 import { chmodSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -11,9 +12,10 @@ import { type ComparedFile, type Comparison, isConflicted, type Revision } from 
 import { type ChangedFile, changedPath, isModeChangeOnly, isSubmodule } from '../src/diff.ts';
 import { GitError } from '../src/errors.ts';
 import { type Oid, parseOid } from '../src/oid.ts';
+import type { Activity } from '../src/progress.ts';
 import type { Repo } from '../src/repo.ts';
 import { displayPath } from '../src/tree.ts';
-import { cacheFor, repoServer } from './support.ts';
+import { cacheFor, compared, eventually, repoServer } from './support.ts';
 
 /** Twenty lines, `<name> line <n>`, with `changes` in place of some. Changes to lines far enough apart merge cleanly. */
 function text(name: string, edits: Record<number, string> = {}): string {
@@ -203,7 +205,7 @@ test('a rebase onto a moved base shows only the authors new change', async () =>
   expect(await f.repo.mergeBase(r1, m2)).toBe(m1);
   expect(await f.repo.mergeBase(r2, m2)).toBe(m2);
 
-  const comparison = await f.repo.compareRevisions(...sides(r));
+  const comparison = await compared(f.repo, ...sides(r));
 
   expect(comparison.replay).toEqual({ kind: 'clean' });
   expect(paths(comparison.files)).toEqual(['c.txt']);
@@ -257,7 +259,7 @@ test('a conflicting rebase falls back to the plain comparison with each conflict
     .commit('change a.txt and b.txt, after trunk');
   const r2 = await push(f, 1, 'trunk');
 
-  const comparison = await f.repo.compareRevisions({ base: m1, head: r1 }, { base: m2, head: r2 });
+  const comparison = await compared(f.repo, { base: m1, head: r1 }, { base: m2, head: r2 });
 
   const { replay } = comparison;
   if (replay.kind !== 'conflicted') throw new Error(`replayed ${replay.kind}`);
@@ -313,7 +315,7 @@ test('a conflict resolved by dropping the bases change shows', async () => {
   const r2 = await push(f, 1, 'trunk');
   expect(await plainPaths(f, r1, r2)).toEqual(['u.txt']);
 
-  const comparison = await f.repo.compareRevisions({ base: m1, head: r1 }, { base: m2, head: r2 });
+  const comparison = await compared(f.repo, { base: m1, head: r1 }, { base: m2, head: r2 });
 
   expect(comparison.replay.kind).toBe('conflicted');
   expect(paths(comparison.files)).toEqual(['a.txt', 'u.txt']);
@@ -342,7 +344,7 @@ test('a file set aside in a conflict is marked as the file it came from', async 
   remote.switch('feature-2').symlink('l.txt', 'target').commit('r2');
   const r2 = await push(f, 1, 'trunk');
 
-  const comparison = await f.repo.compareRevisions({ base: m1, head: r1 }, { base: m2, head: r2 });
+  const comparison = await compared(f.repo, { base: m1, head: r1 }, { base: m2, head: r2 });
 
   expect(comparison.replay.kind).toBe('conflicted');
   expect(paths(comparison.files)).toEqual(['l.txt']);
@@ -367,7 +369,7 @@ test('a binary file changed on both sides is marked', async () => {
   remote.switch('feature-2').write('b.bin', 'a\0both').commit('r2');
   const r2 = await push(f, 1, 'trunk');
 
-  const comparison = await f.repo.compareRevisions({ base: m1, head: r1 }, { base: m2, head: r2 });
+  const comparison = await compared(f.repo, { base: m1, head: r1 }, { base: m2, head: r2 });
 
   expect(comparison.replay.kind).toBe('conflicted');
   expect(conflicted(comparison.files)).toEqual(['b.bin']);
@@ -400,7 +402,7 @@ test('a submodule moved on both sides is marked', async () => {
   remote.switch('feature-2').gitlink('sub', s2).commit('r2');
   const r2 = await push(f, 1, 'trunk');
 
-  const comparison = await f.repo.compareRevisions({ base: m1, head: r1 }, { base: m2, head: r2 });
+  const comparison = await compared(f.repo, { base: m1, head: r1 }, { base: m2, head: r2 });
 
   expect(comparison.replay.kind).toBe('conflicted');
   expect(paths(comparison.files)).toEqual(['sub']);
@@ -434,7 +436,7 @@ test('a file deleted on one side and changed on the other is marked', async () =
   const r2 = await push(f, 1, 'trunk');
   expect(await plainPaths(f, r1, r2)).toEqual([]);
 
-  const comparison = await f.repo.compareRevisions({ base: m1, head: r1 }, { base: m2, head: r2 });
+  const comparison = await compared(f.repo, { base: m1, head: r1 }, { base: m2, head: r2 });
 
   expect(comparison.replay.kind).toBe('conflicted');
   expect(paths(comparison.files)).toEqual(['f.txt']);
@@ -467,7 +469,7 @@ test('revisions on the same base get the plain comparison', async () => {
   expect(await f.repo.isAncestor(m2, r2.head)).toBe(false);
   expect([r1.base, r2.base]).toEqual([m1, m1]);
 
-  const comparison = await f.repo.compareRevisions(r1, r2);
+  const comparison = await compared(f.repo, r1, r2);
 
   expect(comparison.replay).toEqual({ kind: 'sameBase' });
   expect(paths(comparison.files)).toEqual(['c.txt']);
@@ -494,7 +496,7 @@ test('a change the author drops from the base shows', async () => {
   const r2 = await pushRevision(f, 1, 'trunk');
   expect(await plainPaths(f, r1.head, r2.head)).toEqual([]);
 
-  const comparison = await f.repo.compareRevisions(r1, r2);
+  const comparison = await compared(f.repo, r1, r2);
 
   expect(comparison.replay).toEqual({ kind: 'clean' });
   expect(paths(comparison.files)).toEqual(['a.txt']);
@@ -517,7 +519,7 @@ test('a mode change on one side and an edit on the other replay cleanly', async 
   remote.switch('feature-2').executable('s.sh').commit('r2');
   const r2 = await pushRevision(f, 1, 'trunk');
 
-  const comparison = await f.repo.compareRevisions(r1, r2);
+  const comparison = await compared(f.repo, r1, r2);
 
   expect(comparison.replay).toEqual({ kind: 'clean' });
   expect(comparison.files).toEqual([]);
@@ -525,7 +527,7 @@ test('a mode change on one side and an edit on the other replay cleanly', async 
   chmodSync(join(remote.work, 's.sh'), 0o644);
   remote.commit('r3');
   const r3 = await pushRevision(f, 1, 'trunk');
-  const back = await f.repo.compareRevisions(r1, r3);
+  const back = await compared(f.repo, r1, r3);
   expect(back.replay).toEqual({ kind: 'clean' });
   expect(paths(back.files)).toEqual(['s.sh']);
   const [s] = changes(back.files);
@@ -548,7 +550,7 @@ test('a submodule only the pull request moves replays cleanly', async () => {
   const r2 = await pushRevision(f, 1, 'trunk');
   const before = packs(f.repo.folder);
 
-  const comparison = await f.repo.compareRevisions(r1, r2);
+  const comparison = await compared(f.repo, r1, r2);
 
   expect(comparison.replay).toEqual({ kind: 'clean' });
   expect(comparison.files).toEqual([]);
@@ -580,7 +582,7 @@ test('a stacked layer compares across its lower layers force push', async () => 
   expect(await plainPaths(f, u1, u2)).toEqual(['lower.txt']);
 
   const old = { base: l1, head: u1 };
-  const rebasedOnly = await f.repo.compareRevisions(old, { base: amended, head: u2 });
+  const rebasedOnly = await compared(f.repo, old, { base: amended, head: u2 });
   // The author changed nothing. An amended lower layer isn't a descendant of the old one, so the
   // comparison is flagged as one whose base moved sideways.
   expect(rebasedOnly.replay).toEqual({ kind: 'retargeted' });
@@ -590,10 +592,7 @@ test('a stacked layer compares across its lower layers force push', async () => 
   // the branch. Replaying from there takes the lower layer for the author's change, and conflicts
   // with its amendment.
   expect(await f.repo.mergeBase(u1, amended)).toBe(m1);
-  const fromTrunk = await f.repo.compareRevisions(
-    { base: m1, head: u1 },
-    { base: amended, head: u2 },
-  );
+  const fromTrunk = await compared(f.repo, { base: m1, head: u1 }, { base: amended, head: u2 });
   expect(fromTrunk.replay.kind).toBe('conflicted');
   expect(conflicted(fromTrunk.files)).toEqual(['lower.txt']);
 
@@ -601,7 +600,7 @@ test('a stacked layer compares across its lower layers force push', async () => 
     .write('upper.txt', text('upper', { 7: 'upper line 7, the change u3 adds' }))
     .commit('change upper.txt');
   const u3 = await push(f, 2, 'lower');
-  const changed = await f.repo.compareRevisions(old, { base: amended, head: u3 });
+  const changed = await compared(f.repo, old, { base: amended, head: u3 });
   expect(changed.replay).toEqual({ kind: 'retargeted' });
   expect(paths(changed.files)).toEqual(['upper.txt']);
   expect(await read(f.repo, changed.old, 'upper.txt')).toBe(text('upper'));
@@ -648,18 +647,18 @@ test('a base that isnt an ancestor of its head is an error', async () => {
   const notAncestor = { kind: 'baseNotAncestor', base: amended, head: u1b };
   // The lower layer's head when u1b was pushed, which u1b doesn't contain.
   const asOld = await failure(
-    f.repo.compareRevisions({ base: amended, head: u1b }, { base: amended, head: u2 }),
+    compared(f.repo, { base: amended, head: u1b }, { base: amended, head: u2 }),
   );
   expect(asOld.detail).toEqual(notAncestor);
   const asNew = await failure(
-    f.repo.compareRevisions({ base: l1, head: u1 }, { base: amended, head: u1b }),
+    compared(f.repo, { base: l1, head: u1 }, { base: amended, head: u1b }),
   );
   expect(asNew.detail).toEqual(notAncestor);
 
   // The base branch's tip, as GitHub's `base.sha` gives it, after the base branch moved on.
   const r = await rebased();
   const tip = await failure(
-    r.f.repo.compareRevisions({ base: r.m2, head: r.r1 }, { base: r.m2, head: r.r2 }),
+    compared(r.f.repo, { base: r.m2, head: r.r1 }, { base: r.m2, head: r.r2 }),
   );
   expect(tip.detail).toEqual({ kind: 'baseNotAncestor', base: r.m2, head: r.r1 });
   expect(replayPins(r.f.repo)).toEqual([]);
@@ -674,13 +673,13 @@ test('a stacked layer starts at the newest lower head it contains', async () => 
   const fix = { base: l1, head: u1b };
 
   // The fix, and only the fix.
-  const fixed = await f.repo.compareRevisions({ base: l1, head: u1 }, fix);
+  const fixed = await compared(f.repo, { base: l1, head: u1 }, fix);
   expect(fixed.replay).toEqual({ kind: 'sameBase' });
   expect(paths(fixed.files)).toEqual(['upper.txt']);
 
   // The restack changed nothing of the author's. The amended lower layer isn't a descendant of
   // l1, so this is flagged.
-  const restack = await f.repo.compareRevisions(fix, { base: amended, head: u2 });
+  const restack = await compared(f.repo, fix, { base: amended, head: u2 });
   expect(restack.replay).toEqual({ kind: 'retargeted' });
   expect(restack.files).toEqual([]);
 });
@@ -709,7 +708,7 @@ test('a retargeted base is flagged', async () => {
   const onMain = { base: (await f.repo.mergeBase(h1, m1)) ?? m1, head: h1 };
   expect([onDevelop.base, onMain.base]).toEqual([d1, m1]);
 
-  const retargeted = await f.repo.compareRevisions(onDevelop, onMain);
+  const retargeted = await compared(f.repo, onDevelop, onMain);
 
   expect(retargeted.replay).toEqual({ kind: 'retargeted' });
   expect(paths(retargeted.files)).toEqual(['develop-only.txt']);
@@ -723,7 +722,7 @@ test('a retargeted base is flagged', async () => {
     .write('c.txt', text('c', { 15: 'c line 15, the change h2 adds' }))
     .commit('h2');
   const h2 = await push(f, 1, 'main');
-  const moved = await f.repo.compareRevisions(onDevelop, { base: m1, head: h2 });
+  const moved = await compared(f.repo, onDevelop, { base: m1, head: h2 });
   expect(moved.replay).toEqual({ kind: 'retargeted' });
   expect(paths(moved.files)).toEqual(['c.txt']);
 });
@@ -748,7 +747,7 @@ test('a retargeted base that conflicts is flagged', async () => {
     .commit('h1');
   const h1 = await push(f, 1, 'develop');
 
-  const comparison = await f.repo.compareRevisions({ base: d1, head: h1 }, { base: m1, head: h1 });
+  const comparison = await compared(f.repo, { base: d1, head: h1 }, { base: m1, head: h1 });
 
   expect(comparison.replay).toMatchObject({ kind: 'conflicted', retargeted: true });
   expect(conflicted(comparison.files)).toEqual(['a.txt']);
@@ -773,7 +772,7 @@ test('an unchanged head whose base moved on is flagged', async () => {
   remote.switch('upper');
   expect(await push(f, 2, 'lower')).toBe(u1);
 
-  const comparison = await f.repo.compareRevisions({ base: l1, head: u1 }, { base: l2, head: u1 });
+  const comparison = await compared(f.repo, { base: l1, head: u1 }, { base: l2, head: u1 });
 
   expect(comparison.replay).toEqual({ kind: 'retargeted' });
   expect(comparison.files).toEqual([]);
@@ -815,7 +814,7 @@ test('renames across a rebase show only what the author renamed', async () => {
   const r2 = await push(f, 1, 'trunk');
   expect(await plainPaths(f, r1, r2)).toEqual(['extra.txt', 'src/bee.rs', 'src/c.rs']);
 
-  const comparison = await f.repo.compareRevisions({ base: m1, head: r1 }, { base: m2, head: r2 });
+  const comparison = await compared(f.repo, { base: m1, head: r1 }, { base: m2, head: r2 });
 
   expect(comparison.replay).toEqual({ kind: 'clean' });
   expect(paths(comparison.files)).toEqual(['extra.txt', 'src/c.rs']);
@@ -849,7 +848,7 @@ test('a folder the base renamed takes the authors new file along', async () => {
   const r2 = await push(f, 1, 'trunk');
   expect(await plainPaths(f, r1, r2)).toEqual(['src/new.rs', 'src/x.rs', 'src/y.rs', 'src/z.rs']);
 
-  const comparison = await f.repo.compareRevisions({ base: m1, head: r1 }, { base: m2, head: r2 });
+  const comparison = await compared(f.repo, { base: m1, head: r1 }, { base: m2, head: r2 });
 
   expect(comparison.replay).toEqual({ kind: 'clean' });
   expect(comparison.files).toEqual([]);
@@ -862,15 +861,15 @@ test('a replayed tree is pinned once and stays pinned while the clone is open', 
   const { f } = r;
   const [old, now] = sides(r);
 
-  const comparison = await f.repo.compareRevisions(old, now);
+  const comparison = await compared(f.repo, old, now);
 
   const pin = [comparison.old, `refs/lo/replays/${comparison.old}`];
   expect(replayPins(f.repo)).toEqual([pin]);
   // Comparing the same revisions again, here or through another repository open on the clone,
   // makes the same tree, which is pinned already.
-  const again = await f.repo.compareRevisions(old, now);
+  const again = await compared(f.repo, old, now);
   const other = await f.cache.open('owner', 'repo');
-  const throughOther = await other.compareRevisions(old, now);
+  const throughOther = await compared(other, old, now);
   expect([again.old, throughOther.old]).toEqual([comparison.old, comparison.old]);
   expect(replayPins(f.repo)).toEqual([pin]);
   // Closing the other leaves it: this one is open.
@@ -901,7 +900,7 @@ test('a comparison keeps no repo or progress callback', async () => {
   // So a view that keeps one keeps neither the clone open nor the progress callback, which may
   // hold the view.
   const r = await rebased();
-  const comparison = await r.f.repo.compareRevisions(...sides(r));
+  const comparison = await compared(r.f.repo, ...sides(r));
 
   expect(plainData(comparison)).toBe(true);
   expect(comparison.replay).toEqual({ kind: 'clean' });
@@ -910,7 +909,7 @@ test('a comparison keeps no repo or progress callback', async () => {
 test('a comparison can go to another thread', async () => {
   // Or to the window: a structured clone of it is the same comparison.
   const r = await rebased();
-  const comparison = await r.f.repo.compareRevisions(...sides(r));
+  const comparison = await compared(r.f.repo, ...sides(r));
 
   const copied: Comparison = structuredClone(comparison);
 
@@ -966,7 +965,7 @@ test('a pinned replay survives repacking and pruning and an unpinned one doesnt'
   const merged = { 6: "line 6, the PR's", 19: "line 19, trunk's" };
   for (const pinned of [true, false]) {
     const { f, old, now } = await contentMerges();
-    const comparison = await f.repo.compareRevisions(old, now);
+    const comparison = await compared(f.repo, old, now);
     // The merged c.txt, without r2's change to line 12, was made here and is nowhere else.
     const replayedC = git(f.repo.folder, 'rev-parse', `${comparison.old}:c.txt`);
     expect(f.remote.has(replayedC)).toBe(false);
@@ -1001,7 +1000,7 @@ test('replaying downloads only what it merges and shows in batches', async () =>
   // downloads both sides of c.txt at once.
   const r = await rebased();
   const before = packs(r.f.repo.folder);
-  const comparison = await r.f.repo.compareRevisions(...sides(r));
+  const comparison = await compared(r.f.repo, ...sides(r));
   expect(paths(comparison.files)).toEqual(['c.txt']);
   expect(packs(r.f.repo.folder) - before).toBe(1);
   const missing = missingObjects(r.f.repo.folder, r.r2);
@@ -1013,14 +1012,14 @@ test('replaying downloads only what it merges and shows in batches', async () =>
   // comparison.
   const { f, old, now } = await contentMerges();
   const start = packs(f.repo.folder);
-  const merged = await f.repo.compareRevisions(old, now);
+  const merged = await compared(f.repo, old, now);
   expect(paths(merged.files)).toEqual(['c.txt']);
   expect(packs(f.repo.folder) - start).toBe(2);
   expect(missingObjects(f.repo.folder, now.head)).toContain(
     blobId(f.remote.work, now.head, 'untouched.txt'),
   );
   // Everything is here now, so comparing again downloads nothing.
-  const again = await f.repo.compareRevisions(old, now);
+  const again = await compared(f.repo, old, now);
   expect(again.old).toBe(merged.old);
   expect(packs(f.repo.folder) - start).toBe(2);
   // What the merges needed was worked out beforehand.
@@ -1032,13 +1031,73 @@ test('a replay that cant download is a fetch error', async () => {
   const moved = `${f.remote.gitDir}.moved`;
   renameSync(f.remote.gitDir, moved);
 
-  const error = await failure(f.repo.compareRevisions(old, now));
+  const error = await failure(compared(f.repo, old, now));
 
   expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'repoNotFound' });
   expect(replayPins(f.repo)).toEqual([]);
   renameSync(moved, f.remote.gitDir);
-  const comparison = await f.repo.compareRevisions(old, now);
+  const comparison = await compared(f.repo, old, now);
   expect(paths(comparison.files)).toEqual(['c.txt']);
+});
+
+test('a comparison whose downloads would bring more than it may is refused', async () => {
+  // a.txt is 180 KB of noise, which pull request #1 changes at line 3 and trunk at line 18, so the
+  // replay downloads three versions of it, at most 300 KB; the rebased revision adds 550 KB more,
+  // which the comparison downloads. Each download fits in 600 KB, but not both.
+  const f = await fixture();
+  const noise = Array.from({ length: 20 }, () => randomBytes(4500).toString('hex'));
+  const edited = (edits: Record<number, string>) =>
+    noise.map((line, index) => `${edits[index + 1] ?? line}\n`).join('');
+  f.remote.write('a.txt', edited({})).commit('m1');
+  f.remote.publish('refs/heads/trunk');
+  f.remote
+    .switch('feature')
+    .write('a.txt', edited({ 3: "the PR's" }))
+    .commit('r1');
+  const old = await pushRevision(f, 1, 'trunk');
+  f.remote
+    .switch('trunk')
+    .write('a.txt', edited({ 18: "trunk's" }))
+    .commit('m2');
+  f.remote.publish('refs/heads/trunk');
+  f.remote
+    .switch('feature-2')
+    .write('a.txt', edited({ 3: "the PR's", 18: "trunk's" }))
+    .write('b.bin', randomBytes(550 * 1024))
+    .commit('r2');
+  const now = await pushRevision(f, 1, 'trunk');
+  const limit = 600 * 1024;
+
+  expect(await f.repo.compareRevisions(old, now, { maxBytes: limit })).toEqual({
+    refused: 'tooLarge',
+    limit,
+  });
+  expect(f.logged.some((line) => line.endsWith('of files, so Lo refused it'))).toBe(true);
+
+  // With room for both, it's compared.
+  const comparison = await compared(f.repo, old, now, { maxBytes: 2 * limit });
+  expect(paths(comparison.files)).toEqual(['b.bin']);
+});
+
+test('an aborted comparison stops waiting for the clone', async () => {
+  const { f, old, now } = await contentMerges();
+  const activities: Activity[] = [];
+  const repo = await f.cache.open('owner', 'repo', {
+    progress: (activity) => activities.push(activity),
+  });
+  const release = await f.cache.cloneLock('owner', 'repo').acquire('fetching pull request #2');
+  const controller = new AbortController();
+  const reason = new Error('the comparison was closed');
+  const comparing = repo.compareRevisions(old, now, { signal: controller.signal });
+  await eventually(() => activities.some((activity) => activity.kind === 'waitingForLock'));
+
+  controller.abort(reason);
+
+  await expect(comparing).rejects.toBe(reason);
+  release();
+  // It left the queue, so the next comparison isn't kept waiting for it.
+  expect(paths((await compared(repo, old, now)).files)).toEqual(['c.txt']);
+  repo.close();
 });
 
 test('a commit the clone lacks is an error and never downloaded', async () => {
@@ -1061,7 +1120,7 @@ test('a commit the clone lacks is an error and never downloaded', async () => {
       [old, { ...now, base: missing }],
       [old, { ...now, head: missing }],
     ] as const) {
-      const error = await failure(f.repo.compareRevisions(o, n));
+      const error = await failure(compared(f.repo, o, n));
       expect.soft(error.detail).toEqual({ kind: 'notFetched', oid: missing });
     }
   }
@@ -1075,7 +1134,7 @@ test('pins go once the clone is opened with no lo having it open', async () => {
   // crashes can't. Opening the clone with none of its repositories open removes them all.
   const r = await rebased();
   const { f } = r;
-  const comparison = await f.repo.compareRevisions(...sides(r));
+  const comparison = await compared(f.repo, ...sides(r));
   const tree = comparison.old;
   // What an earlier run of Lo, which showed another comparison, left when it quit.
   const left = git(f.repo.folder, 'rev-parse', `${r.m1}^{tree}`);
@@ -1096,7 +1155,7 @@ test('pins go once the clone is opened with no lo having it open', async () => {
   f.repo.close();
   const reopened = await f.cache.open('owner', 'repo');
   expect(replayPins(reopened)).toEqual([]);
-  expect((await reopened.compareRevisions(...sides(r))).old).toBe(tree);
+  expect((await compared(reopened, ...sides(r))).old).toBe(tree);
   expect(replayPins(reopened)).toEqual([[tree, `refs/lo/replays/${tree}`]]);
 });
 

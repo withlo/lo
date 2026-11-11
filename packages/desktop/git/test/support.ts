@@ -17,9 +17,11 @@ import { gitProgram, RepoServer } from '@lo/testing/git';
 import { onTestFinished } from 'vitest';
 
 import { Cache, type CacheOptions } from '../src/cache.ts';
+import type { Comparison } from '../src/compare.ts';
 import { type Environment, GITHUB } from '../src/environment.ts';
 import { findGit, gitAt } from '../src/find.ts';
 import { type Git, Runner, type RunnerSettings } from '../src/git.ts';
+import type { Repo } from '../src/repo.ts';
 
 /** A new folder, deleted when the test ends. Its path has no symlinks in it. */
 export function tempFolder(): string {
@@ -148,6 +150,17 @@ export async function failureOf(promise: Promise<unknown>): Promise<string | und
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
+}
+
+/** `repo`'s comparison of two revisions, as {@link Repo.compareRevisions} makes it, never refused. */
+export async function compared(
+  repo: Repo,
+  ...args: Parameters<Repo['compareRevisions']>
+): Promise<Comparison> {
+  const result = await repo.compareRevisions(...args);
+  if ('refused' in result)
+    throw new Error(`refused a comparison of more than ${result.limit} bytes`);
+  return result;
 }
 
 /** Polls `check` until it's true, for up to `limit` milliseconds. */

@@ -40,6 +40,27 @@ test('one holder at a time', async () => {
   expect(lock.tryAcquire('testing')).toBeDefined();
 });
 
+test('a waiter whose signal aborts leaves the queue to those behind it', async () => {
+  const lock = new CloneLock();
+  const held = await lock.acquire('fetching pull request #1');
+  const controller = new AbortController();
+  const reason = new Error('the comparison was closed');
+  const aborted = lock.acquire('comparing', undefined, { signal: controller.signal });
+  const behind = lock.acquire('downloading 3 files');
+
+  controller.abort(reason);
+  await expect(aborted).rejects.toBe(reason);
+  held();
+
+  // The one behind gets the lock, and nobody holds it once it lets go.
+  (await behind)();
+  expect(lock.holder).toBeUndefined();
+  // One already aborted never waits.
+  await expect(lock.acquire('comparing', undefined, { signal: controller.signal })).rejects.toBe(
+    reason,
+  );
+});
+
 test('shared holders keep out anyone alone', () => {
   const lock = new CloneLock();
   const first = lock.use();
@@ -71,7 +92,7 @@ test('a long wait says every so often that its still waiting', async () => {
   const held = await lock.acquire('fetching pull request #9');
   const told: Activity[] = [];
 
-  const waiter = lock.acquire('testing', (activity) => told.push(activity), 20);
+  const waiter = lock.acquire('testing', (activity) => told.push(activity), { tellEvery: 20 });
   while (told.length < 3) await new Promise((resolve) => setTimeout(resolve, 10));
   held();
   (await waiter)();

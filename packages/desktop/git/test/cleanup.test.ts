@@ -23,7 +23,15 @@ import { Git } from '../src/git.ts';
 import { type Oid, parseOid } from '../src/oid.ts';
 import type { Repo } from '../src/repo.ts';
 import { gitAt } from '../src/find.ts';
-import { cacheFor, eventually, foundGit, repoServer, tempFolder, wrappedGit } from './support.ts';
+import {
+  cacheFor,
+  compared,
+  eventually,
+  foundGit,
+  repoServer,
+  tempFolder,
+  wrappedGit,
+} from './support.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -433,6 +441,71 @@ test('a fetch that makes a clone keeps the cache under its cap', async () => {
 
   expect(existsSync(old)).toBe(false);
   expect(existsSync(repo.folder)).toBe(true);
+});
+
+/** Twenty numbered lines, with `edits` in place of some. */
+function lines(edits: Record<number, string>): string {
+  return Array.from(
+    { length: 20 },
+    (_, index) => `${edits[index + 1] ?? `line ${index + 1}`}\n`,
+  ).join('');
+}
+
+/** Whether the clone at `gitDir` has `oid`, which must not be downloaded. */
+function hasObject(gitDir: string, oid: string): boolean {
+  try {
+    git(gitDir, '-c', 'remote.origin.url=file:///nowhere', 'cat-file', '-e', oid);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+test('cleanup collects the trees comparisons replayed', async () => {
+  // Pull request #1 changes line 3 of a.txt, trunk then line 18, and r2 is r1 rebased with line 10
+  // changed too: replaying r1 merges a.txt into a file that exists only in the clone.
+  const made = repoServer();
+  const remote = made.repo('owner', 'repo');
+  const m1 = parseOid(remote.write('a.txt', lines({})).commit('m1'));
+  remote.publish('refs/heads/trunk');
+  remote
+    .switch('feature')
+    .write('a.txt', lines({ 3: "the PR's" }))
+    .commit('r1');
+  remote.publish('refs/pull/1/head');
+  const cache = await cacheFor(made);
+  const repo = await cache.open('owner', 'repo');
+  const r1 = await fetch(repo);
+  const m2 = parseOid(
+    remote
+      .switch('trunk')
+      .write('a.txt', lines({ 18: "trunk's" }))
+      .commit('m2'),
+  );
+  remote.publish('refs/heads/trunk');
+  remote
+    .switch('feature-2')
+    .write('a.txt', lines({ 3: "the PR's", 10: 'rebased', 18: "trunk's" }))
+    .commit('r2');
+  remote.publish('refs/pull/1/head');
+  const r2 = await fetch(repo);
+  const comparison = await compared(repo, { base: m1, head: r1 }, { base: m2, head: r2 });
+  const merged = git(repo.folder, 'rev-parse', `${comparison.old}:a.txt`);
+  expect(remote.has(merged)).toBe(false);
+
+  // While the clone is open, a comparison from it may be shown.
+  await cache.removeUnused();
+  expect(hasObject(repo.folder, merged)).toBe(true);
+  expect(hasObject(repo.folder, comparison.old)).toBe(true);
+
+  repo.close();
+  await cache.removeUnused();
+
+  expect(hasObject(repo.folder, merged)).toBe(false);
+  expect(hasObject(repo.folder, comparison.old)).toBe(false);
+  expect(git(repo.folder, 'for-each-ref', 'refs/lo/replays/')).toBe('');
+  // What was fetched stays.
+  expect(hasObject(repo.folder, r2)).toBe(true);
 });
 
 /** How `git repack` runs with git 2.`minor`. */

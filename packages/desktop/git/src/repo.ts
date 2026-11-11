@@ -15,7 +15,9 @@ import {
   parseCheckAttr,
 } from './attributes.ts';
 import {
+  COMPARE_LIMIT,
   type Comparison,
+  type ComparisonRefused,
   conflictedPaths,
   lackedObject,
   readReplay,
@@ -34,7 +36,7 @@ import {
   rawDiffBlobs,
 } from './diff.ts';
 import { checkoutGitDir } from './cleanup.ts';
-import { GitError } from './errors.ts';
+import { type FetchFailure, GitError } from './errors.ts';
 import { type Fetching, failureMessage, type GitCommand, type Runner } from './git.ts';
 import type { FetchLimits } from './limits.ts';
 import type { CloneLock, Release } from './lock.ts';
@@ -77,7 +79,7 @@ import {
   TreeWalk,
 } from './tree.ts';
 import { distrust } from './trust.ts';
-import { stoppedError, watch } from './watch.ts';
+import { formatMegabytes, stoppedError, watch } from './watch.ts';
 
 /** What a repository needs of the cache it's in. */
 export interface RepoHost {
@@ -578,13 +580,15 @@ export class Repo {
 
   /**
    * Downloads the objects of `oids` the clone lacks, as {@link Repo.downloadFiles} does, and
-   * returns those it still lacks.
+   * returns those it still lacks. With `downloads`, they bring no more than it has left, or it
+   * throws {@link PastCap}, and stop once its signal aborts.
    */
-  async #downloadMissing(oids: readonly Oid[]): Promise<Set<Oid>> {
+  async #downloadMissing(oids: readonly Oid[], downloads?: Downloads): Promise<Set<Oid>> {
     const wanted = unique(oids);
     const missing = await this.missingObjects(wanted);
     if (missing.length === 0 || this.offline) return new Set(missing);
-    return this.#locked(`downloading ${countFiles(missing.length)}`, async () => {
+    const signal = downloads?.signal;
+    const work = async () => {
       // Whatever held the lock may have brought some of them, or all.
       const still = await this.missingObjects(missing);
       for (let at = 0; at < still.length; at += OBJECTS_PER_FETCH) {
@@ -593,10 +597,26 @@ export class Repo {
           batch.length < still.length
             ? `${batch.length} of ${countFiles(still.length)}`
             : countFiles(batch.length);
-        await this.#fetch(what, [], { objects: batch });
+        if (downloads === undefined) {
+          await this.#fetch(what, [], { objects: batch });
+          continue;
+        }
+        try {
+          downloads.left -= await this.#fetch(what, [], {
+            objects: batch,
+            maxBytes: downloads.left,
+            signal,
+          });
+        } catch (error) {
+          if (isFetchFailure(error, 'tooLarge')) throw new PastCap();
+          throw error;
+        }
+        // One that finished before its watch saw it pass the cap is past it all the same.
+        if (downloads.left < 0) throw new PastCap();
       }
       return new Set(still.length === 0 ? [] : await this.missingObjects(still));
-    });
+    };
+    return this.#locked(`downloading ${countFiles(missing.length)}`, work, signal);
   }
 
   /**
@@ -1033,6 +1053,9 @@ export class Repo {
    *   both sides of each file the comparison lists. A replay of changes each made on one side
    *   alone needs no file. Opened offline, it downloads nothing, and lacking anything is
    *   `notDownloaded`.
+   * - Its downloads may bring `maxBytes` in all, {@link COMPARE_LIMIT} unless it says otherwise,
+   *   past which they're stopped and the comparison is refused: never part of one. Once `signal`
+   *   aborts, they stop, and the comparison fails with its reason.
    * - The replay's tree, and the files merged into it, exist only in the clone. The tree is
    *   pinned, at `refs/lo/replays/<tree>`, while a repository has the clone open, so keep one open
    *   while showing a comparison; the next open of the clone with none open removes the pins.
@@ -1043,7 +1066,32 @@ export class Repo {
   async compareRevisions(
     old: Revision,
     now: Revision,
-    options: { paths?: readonly Uint8Array[] | undefined } = {},
+    options: {
+      paths?: readonly Uint8Array[] | undefined;
+      maxBytes?: number | undefined;
+      signal?: AbortSignal | undefined;
+    } = {},
+  ): Promise<Comparison | ComparisonRefused> {
+    options.signal?.throwIfAborted();
+    const limit = options.maxBytes ?? COMPARE_LIMIT;
+    const downloads: Downloads = { left: limit, signal: options.signal };
+    try {
+      return await this.#compare(old, now, options.paths, downloads);
+    } catch (error) {
+      if (!(error instanceof PastCap)) throw error;
+      this.#cache.note(
+        `${this.name}: comparing ${old.head.slice(0, 7)} with ${now.head.slice(0, 7)} needs ` +
+          `more than ${formatMegabytes(limit)} of files, so Lo refused it`,
+      );
+      return { refused: 'tooLarge', limit };
+    }
+  }
+
+  async #compare(
+    old: Revision,
+    now: Revision,
+    paths: readonly Uint8Array[] | undefined,
+    downloads: Downloads,
   ): Promise<Comparison> {
     // Never downloaded: git would bring a missing commit with all its history.
     for (const oid of [old.base, old.head, now.base, now.head]) {
@@ -1055,9 +1103,8 @@ export class Repo {
         throw new GitError({ kind: 'baseNotAncestor', base: revision.base, head: revision.head });
       }
     }
-    const { paths } = options;
     if (old.base === now.base) {
-      const files = await this.#compared([[old.head, now.head]], paths);
+      const files = await this.#compared([[old.head, now.head]], paths, downloads);
       return {
         files: (files[0] ?? []).map((change) => ({ path: changedPath(change), change })),
         old: old.head,
@@ -1069,13 +1116,13 @@ export class Repo {
     // with the base.
     const retargeted = old.head === now.head || !(await this.isAncestor(old.base, now.base));
     const replayed = await replayPinned(
-      () => this.#replay(old, now.base),
+      () => this.#replay(old, now.base, downloads),
       (tree) => this.#pinReplay(tree),
       this.#replays,
       (line) => this.#cache.note(`${this.name}: ${line}`),
     );
     if (replayed.kind === 'clean') {
-      const [files = []] = await this.#compared([[replayed.tree, now.head]], paths);
+      const [files = []] = await this.#compared([[replayed.tree, now.head]], paths, downloads);
       return {
         files: files.map((change) => ({ path: changedPath(change), change })),
         old: replayed.tree,
@@ -1100,6 +1147,7 @@ export class Repo {
         [replayed.tree, now.head],
       ],
       paths,
+      downloads,
     );
     return {
       files: withConflicts(plain, conflicted, resolutions, labels),
@@ -1116,10 +1164,11 @@ export class Repo {
   async #compared(
     pairs: readonly (readonly [Oid, Oid])[],
     paths: readonly Uint8Array[] | undefined,
+    downloads: Downloads,
   ): Promise<ChangedFile[][]> {
     const needs: Oid[] = [];
     for (const [from, to] of pairs) needs.push(...(await this.changedObjects(from, to)));
-    await this.#downloadMissing(needs);
+    await this.#downloadMissing(needs, downloads);
     const lists: ChangedFile[][] = [];
     for (const [from, to] of pairs) lists.push(await this.changedFiles(from, to, { paths }));
     return lists;
@@ -1131,8 +1180,8 @@ export class Repo {
    * files needs is hard to tell beforehand, so the replay is tried once more with every file
    * either side changed.
    */
-  async #replay(old: Revision, onto: Oid): Promise<Replayed> {
-    await this.#downloadMissing(await this.#replayNeeds(old, onto));
+  async #replay(old: Revision, onto: Oid, downloads: Downloads): Promise<Replayed> {
+    await this.#downloadMissing(await this.#replayNeeds(old, onto), downloads);
     for (let attempt = 0; ; attempt++) {
       const command = this.#git().arg(
         // A file the old revision added to a folder the base renamed goes where a rebase puts it,
@@ -1161,7 +1210,7 @@ export class Repo {
         ...(await this.changedObjects(old.base, onto)),
         ...(await this.changedObjects(old.base, old.head)),
       ];
-      const still = await this.#downloadMissing(everything);
+      const still = await this.#downloadMissing(everything, downloads);
       if (still.size > 0) throw new GitError({ kind: 'notDownloaded', oids: [...still] });
     }
   }
@@ -1424,12 +1473,8 @@ export class Repo {
         }
         return lacking;
       } catch (error) {
-        const tooLarge =
-          error instanceof GitError &&
-          error.detail.kind === 'fetch' &&
-          error.detail.failure === 'tooLarge';
         // What came of an overview refused for its size goes: its files stay on GitHub.
-        if (tooLarge) await this.#removePacksSince(overviews, packs);
+        if (isFetchFailure(error, 'tooLarge')) await this.#removePacksSince(overviews, packs);
         throw error;
       }
     });
@@ -1551,11 +1596,11 @@ export class Repo {
   }
 
   /** Runs `work` holding the clone's lock, having noted that the clone was used. */
-  async #locked<T>(what: string, work: () => Promise<T>): Promise<T> {
+  async #locked<T>(what: string, work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     if (this.offline) {
       throw new GitError({ kind: 'readOnly', name: this.name, what: 'fetch' });
     }
-    const release = await this.#lock.acquire(what, this.#progress);
+    const release = await this.#lock.acquire(what, this.#progress, { signal });
     try {
       await stampUsed(this.folder);
       return await work();
@@ -1723,20 +1768,16 @@ export class Repo {
     what: string,
     refspecs: readonly string[],
     options: FetchOptions = {},
-  ): Promise<void> {
+  ): Promise<number> {
     const token = await this.#currentToken();
     try {
-      await this.#fetchAs(what, refspecs, options, token);
+      return await this.#fetchAs(what, refspecs, options, token);
     } catch (error) {
-      const refused =
-        error instanceof GitError &&
-        error.detail.kind === 'fetch' &&
-        error.detail.failure === 'tokenRefused';
-      if (!refused) throw error;
+      if (!isFetchFailure(error, 'tokenRefused')) throw error;
       const renewed = await this.#currentToken();
       if (renewed === undefined || (token !== undefined && renewed.equals(token))) throw error;
       this.#cache.note(`${this.name}: the account's token was renewed while fetching ${what}`);
-      await this.#fetchAs(what, refspecs, options, renewed);
+      return this.#fetchAs(what, refspecs, options, renewed);
     }
   }
 
@@ -1745,7 +1786,7 @@ export class Repo {
     refspecs: readonly string[],
     options: FetchOptions,
     token: Token | undefined,
-  ): Promise<void> {
+  ): Promise<number> {
     const gitDir = options.gitDir ?? this.folder;
     // A lock left on a ref the fetch writes would fail it every time: one a git killed from
     // outside, or in a crash, left. Only fetches and pins write these refs, under the clone's
@@ -1800,6 +1841,7 @@ export class Repo {
       afterStop: (pid) =>
         this.#removeLeft(gitDir, { pid, refspecs, shallow: options.shallow ?? false, started }),
       log: (line) => this.#cache.note(`${this.name}: ${line}`),
+      signal: options.signal,
     });
     if (watched.kind === 'stopped') throw stoppedError(watched.stopped, what);
     const { exit, messages } = watched;
@@ -1809,6 +1851,7 @@ export class Repo {
       throw GitError.fromGit(command.display, failureMessage({ ...exit, stderr: messages }), what);
     }
     if (empty && gitDir === this.folder) this.#madeClone = true;
+    return watched.received;
   }
 
   /** Whether nothing was ever fetched into the repository at `gitDir`: it has no refs. */
@@ -1902,7 +1945,18 @@ interface FetchOptions {
    * first fetch's time to start, however few objects it names.
    */
   readonly whole?: boolean | undefined;
+  /** Stops the fetch once it aborts. */
+  readonly signal?: AbortSignal | undefined;
 }
+
+/** What a comparison's downloads may still bring, in bytes, and the signal that stops them. */
+interface Downloads {
+  left: number;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** Downloads that would bring more than they may: the comparison is refused. */
+class PastCap extends Error {}
 
 /** The names of the packs in the repository at `gitDir`, such as `pack-<hash>`, without extensions. */
 async function packNames(gitDir: string): Promise<Set<string>> {
@@ -1942,6 +1996,13 @@ function describePins(pins: Pins, number: number, missing: readonly Oid[]): stri
   return missing.length === 1 && only !== undefined
     ? `a base of pull request #${number}'s revisions, ${only.slice(0, 7)}`
     : `${missing.length} bases of pull request #${number}'s revisions`;
+}
+
+/** Whether `error` is a fetch that failed as `failure`. */
+function isFetchFailure(error: unknown, failure: FetchFailure): boolean {
+  return (
+    error instanceof GitError && error.detail.kind === 'fetch' && error.detail.failure === failure
+  );
 }
 
 /** Whether `error` is a fetch that failed because the server doesn't have commit `oid`. */

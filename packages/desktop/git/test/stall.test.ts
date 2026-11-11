@@ -223,22 +223,16 @@ test('a fetch that stops getting further stops at its stall limit', async () => 
 });
 
 /**
- * The files of a pull request of `files` files, downloaded from a GitHub that keeps the download
- * alive without ever sending them, within `limits`, by `download` (all of them, unless it says
- * otherwise): the error, how long it took, and what the download said it was doing. The pull
- * request's commits and trees were fetched first, from a folder of repositories, without its
- * files, as Lo fetches it.
+ * A clone of a pull request of `files` files, with its commits and trees but none of its files,
+ * fetched from a folder of repositories, as Lo fetches it, then open, within `limits`, on a GitHub
+ * that keeps every download alive without ever sending anything. The pull request's history is
+ * one file a commit: its first commit and its head.
  */
-async function stalledDownload(
-  files: number,
-  limits: FetchLimits,
-  download: (repo: Repo, head: Oid, paths: Buffer[]) => Promise<unknown> = (repo, head, paths) =>
-    repo.downloadFiles(head, paths),
-): Promise<{ error: GitError; took: number; activities: Activity[] }> {
+async function stalledClone(files: number, limits: FetchLimits) {
   const dir = tempFolder();
   const remotes = join(dir, 'remotes');
   const gitDir = join(remotes, 'owner', 'repo.git');
-  const { last: head } = history(gitDir, files);
+  const { first, last: head } = history(gitDir, files);
   for (const args of [
     ['update-ref', 'refs/pull/1/head', head],
     ['config', 'uploadpack.allowFilter', 'true'],
@@ -248,13 +242,12 @@ async function stalledDownload(
   }
   const root = join(dir, 'cache');
   const git = await plainGit();
-  const first = await cacheFor(`file://${remotes}`, { root, git });
-  const fetched = await (await first.open('owner', 'repo')).fetchPull(PULL_ONE);
+  const before = await cacheFor(`file://${remotes}`, { root, git });
+  const fetched = await (await before.open('owner', 'repo')).fetchPull(PULL_ONE);
   expect(fetched.head).toBe(head);
-  await first.close();
-  // Then GitHub keeps the files' download alive without ever sending them.
+  await before.close();
   const github = await started(FakeGitHub.keepingAlive(true));
-  const folder = first.repoFolder('owner', 'repo');
+  const folder = before.repoFolder('owner', 'repo');
   gitBytes(folder, [
     `--git-dir=${folder}`,
     'config',
@@ -266,11 +259,26 @@ async function stalledDownload(
   const repo = await cache.open('owner', 'repo', {
     progress: (activity) => activities.push(activity),
   });
-  const paths = (await repo.tree(parseOid(head))).map((entry) => entry.path);
+  return { github, cache, repo, activities, first: parseOid(first), head: parseOid(head) };
+}
+
+/**
+ * The files of a pull request of `files` files, downloaded from a {@link stalledClone} by
+ * `download` (all of them, unless it says otherwise): the error, how long it took, and what the
+ * download said it was doing.
+ */
+async function stalledDownload(
+  files: number,
+  limits: FetchLimits,
+  download: (repo: Repo, head: Oid, paths: Buffer[]) => Promise<unknown> = (repo, head, paths) =>
+    repo.downloadFiles(head, paths),
+): Promise<{ error: GitError; took: number; activities: Activity[] }> {
+  const { github, repo, activities, head } = await stalledClone(files, limits);
+  const paths = (await repo.tree(head)).map((entry) => entry.path);
   expect(paths).toHaveLength(files);
 
   const began = Date.now();
-  const error = await failure(download(repo, parseOid(head), paths));
+  const error = await failure(download(repo, head, paths));
 
   const took = Date.now() - began;
   // It asked GitHub for the files.
@@ -334,6 +342,29 @@ test('a checkout whose files github keeps alive stops at a first fetchs limit', 
     "can't fetch pull request #1's files: GitHub took longer than 2 s to start sending, so Lo " +
       'stopped it while GitHub was still preparing what to send (counting objects, 50% of 2)',
   );
+});
+
+test('a comparison stops its download once its signal aborts', async () => {
+  const { github, cache, repo, first, head } = await stalledClone(3, DEFAULT_FETCH_LIMITS);
+  const controller = new AbortController();
+  const reason = new Error('the comparison was closed');
+  const comparing = repo.compareRevisions(
+    { base: first, head: first },
+    { base: first, head },
+    { signal: controller.signal },
+  );
+  await eventually(() => github.commands().includes('fetch'));
+
+  const began = Date.now();
+  controller.abort(reason);
+
+  await expect(comparing).rejects.toBe(reason);
+  // At once, not at a limit.
+  expect(Date.now() - began).toBeLessThan(5000);
+  // Nothing of git's is left running, and the clone is free for the next.
+  expect(await noProcessSoon(`127.0.0.1:${github.port}`)).toEqual([]);
+  expect(tracesLeft(cache.root)).toEqual([]);
+  expect(cache.cloneLock('owner', 'repo').holder).toBeUndefined();
 });
 
 test('a fetch that never connects stops at the connect limit', async () => {

@@ -43,13 +43,16 @@ export class CloneLock {
 
   /**
    * Waits for the lock, then holds it to do `what`. While it waits, `progress` hears what the
-   * holder is doing, at once and every `tellEvery` milliseconds.
+   * holder is doing, at once and every `tellEvery` milliseconds, and once `signal` aborts, it
+   * stops waiting and fails with its reason.
    */
   async acquire(
     what: string,
     progress?: (activity: Activity) => void,
-    tellEvery = TELL_EVERY,
+    options: { tellEvery?: number; signal?: AbortSignal | undefined } = {},
   ): Promise<Release> {
+    const { tellEvery = TELL_EVERY, signal } = options;
+    signal?.throwIfAborted();
     if (this.#holder !== undefined) {
       const started = Date.now();
       const tell = () =>
@@ -59,7 +62,7 @@ export class CloneLock {
       try {
         // Woken in turn, each waiter finds the lock free: the one before let go of it.
         while (this.#holder !== undefined) {
-          await new Promise<void>((resolve) => this.#waiting.push(resolve));
+          if (!(await this.#wait(signal))) signal?.throwIfAborted();
         }
       } finally {
         clearInterval(timer);
@@ -73,6 +76,26 @@ export class CloneLock {
       this.#holder = undefined;
       this.#waiting.shift()?.();
     };
+  }
+
+  /**
+   * Waits to be woken in turn, and says so, or until `signal` aborts, when it leaves the queue,
+   * so the next in it is woken in its place.
+   */
+  #wait(signal: AbortSignal | undefined): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const abort = () => {
+        const at = this.#waiting.indexOf(wake);
+        if (at !== -1) this.#waiting.splice(at, 1);
+        resolve(false);
+      };
+      const wake = () => {
+        signal?.removeEventListener('abort', abort);
+        resolve(true);
+      };
+      this.#waiting.push(wake);
+      signal?.addEventListener('abort', abort, { once: true });
+    });
   }
 
   /** Holds the lock if nobody does, without waiting. */

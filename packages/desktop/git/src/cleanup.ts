@@ -8,6 +8,7 @@
 import { lstat, readdir, readFile, realpath, rm, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { REPLAYS } from './compare.ts';
 import type { Runner } from './git.ts';
 import type { CloneLock } from './lock.ts';
 import { checkName } from './refs.ts';
@@ -165,9 +166,10 @@ async function removeClone(host: CleanupHost, clone: CloneName): Promise<void> {
 /**
  * Removes the clones nobody opened, fetched into or checked out from for {@link UNUSED_FOR},
  * with their checkouts, and checkouts left without a clone. Of the clones kept, it removes the
- * checkouts unused for {@link CHECKOUTS_UNUSED_FOR} and the partial packs left a day or more ago,
- * and from the cache's `tmp/`, whatever was left there a day or more ago. A clone open or being
- * written to is left alone. Returns the `owner/name` of each clone removed.
+ * checkouts unused for {@link CHECKOUTS_UNUSED_FOR}, the partial packs left a day or more ago and,
+ * from those nobody has open, the trees comparisons replayed; and from the cache's `tmp/`,
+ * whatever was left there a day or more ago. A clone open or being written to is left alone.
+ * Returns the `owner/name` of each clone removed.
  */
 export async function removeUnused(host: CleanupHost, now: number): Promise<string[]> {
   const removed: string[] = [];
@@ -177,6 +179,7 @@ export async function removeUnused(host: CleanupHost, now: number): Promise<stri
     if (used !== undefined && now - used <= UNUSED_FOR) {
       await removeUnusedCheckouts(host, clone, now);
       await removeOldPacks(host, clone, now);
+      await collectReplays(host, clone);
       continue;
     }
     const release = host.cloneLock(clone.owner, clone.name).tryRemove('removing it, unused');
@@ -241,6 +244,50 @@ async function removeOldPacks(host: CleanupHost, clone: CloneName, now: number) 
   } finally {
     release();
   }
+}
+
+/**
+ * Removes the trees comparisons replayed in `clone`, and the files merged into them, which exist
+ * only in the clone, as loose objects: with no repository open on it, no comparison is shown
+ * from it, so neither their pins nor anything else needs them. What the clone fetched is all in
+ * packs, which this leaves alone.
+ */
+async function collectReplays(host: CleanupHost, clone: CloneName): Promise<void> {
+  if (!(await hasLooseObjects(host.repoFolder(clone.owner, clone.name)))) return;
+  const release = host.cloneLock(clone.owner, clone.name).tryRemove('removing replayed trees');
+  if (release === undefined) return;
+  const gitDir = host.repoFolder(clone.owner, clone.name);
+  try {
+    const deletes = await host.runner
+      .command({ gitDir })
+      .arg('for-each-ref', '--format=delete %(refname)', REPLAYS)
+      .run();
+    if (deletes.length > 0) {
+      await host.runner.command({ gitDir }).arg('update-ref', '--stdin').run(deletes);
+    }
+    await host.runner
+      .command({ gitDir })
+      .arg('prune', '--expire=now')
+      .run(undefined, { timeout: REPACK_LIMIT });
+  } catch (error) {
+    host.note(`can't remove ${clone.owner}/${clone.name}'s replayed trees: ${String(error)}`);
+  } finally {
+    release();
+  }
+}
+
+/** Whether the clone at `gitDir` holds any loose object, in a folder such as `objects/ab`. */
+async function hasLooseObjects(gitDir: string): Promise<boolean> {
+  const objects = join(gitDir, 'objects');
+  for (const name of await folders(objects)) {
+    if (
+      /^[0-9a-f]{2}$/.test(name) &&
+      (await readdir(join(objects, name)).catch(() => [])).length > 0
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Removes the checkouts of clones that are gone. */

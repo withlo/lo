@@ -337,20 +337,32 @@ export interface WatchOptions {
   readonly afterStop?: ((pid: number) => Promise<void>) | undefined;
   /** Gets a line when Lo stops a fetch. */
   readonly log?: ((line: string) => void) | undefined;
+  /** Stops the fetch once it aborts, which then fails with its reason. */
+  readonly signal?: AbortSignal | undefined;
 }
 
-/** How a watched fetch ended: git exited by itself, whatever its status, or Lo stopped it. */
+/**
+ * How a watched fetch ended: git exited by itself, whatever its status, having brought `received`
+ * bytes as far as Lo could tell, or Lo stopped it.
+ */
 export type Watched =
-  | { readonly kind: 'finished'; readonly exit: Exit; readonly messages: string }
+  | {
+      readonly kind: 'finished';
+      readonly exit: Exit;
+      readonly messages: string;
+      readonly received: number;
+    }
   | { readonly kind: 'stopped'; readonly stopped: Stopped; readonly messages: string };
 
 /**
  * Runs `command`, a `git fetch` with `--progress`, under watch: tells `options.progress` what it's
  * doing, and stops it when it runs out a limit. Lines that aren't progress are its messages. The
- * progress function is never told anything after this returns; if it throws, git is stopped and
- * the error goes on. Either way, a git Lo stopped is cleaned up after with `options.afterStop`.
+ * progress function is never told anything after this returns; if it throws, or `options.signal`
+ * aborts, git is stopped and the error goes on. Either way, a git Lo stopped is cleaned up after
+ * with `options.afterStop`.
  */
 export async function watch(command: GitCommand, options: WatchOptions): Promise<Watched> {
+  options.signal?.throwIfAborted();
   const trace = await TraceFile.create(options.trace);
   const pack = options.packs === undefined ? undefined : await PackFiles.start(options.packs);
   let child: Child | undefined;
@@ -400,6 +412,7 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
     for (;;) {
       await Promise.race([running.gone.catch(() => undefined), sleep(POLL)]);
       if (exited) break;
+      options.signal?.throwIfAborted();
       await trace.read((event) => state.onTrace(event));
       if (pack !== undefined) state.onWritten(await pack.size());
       const over = state.over(options.limits, options.whole, options.maxBytes);
@@ -419,7 +432,9 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
     take(line);
     if (stopped === undefined) {
       if (state.untold.length > 0) tell();
-      return { kind: 'finished', exit, messages };
+      // A fetch that finished between two looks wrote packs the watch never saw.
+      const written = pack === undefined ? 0 : await pack.size();
+      return { kind: 'finished', exit, messages, received: Math.max(state.received, written) };
     }
     const said = messages.trim() === '' ? '' : `; git said: ${messages.trim()}`;
     options.log?.(
