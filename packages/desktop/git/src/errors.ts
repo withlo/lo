@@ -16,6 +16,8 @@
  *   doesn't.
  * - `timedOut`: the fetch ran out a limit, so Lo stopped it. The message, Lo's own, says which, and
  *   what git was doing then.
+ * - `tooLarge`: the fetch brought more than it may, such as an overview over 50 MB, so Lo stopped
+ *   it.
  * - `other`: something else, in git's words.
  */
 export type FetchFailure =
@@ -27,6 +29,7 @@ export type FetchFailure =
   | 'repoNotFound'
   | 'refNotFound'
   | 'timedOut'
+  | 'tooLarge'
   | 'other';
 
 /** What went wrong. Object IDs are full, lowercase hex. */
@@ -180,6 +183,7 @@ function explain(failure: FetchFailure, message: string): string {
       reason = "GitHub doesn't have it";
       break;
     case 'timedOut':
+    case 'tooLarge':
     case 'other':
       return message;
     default:

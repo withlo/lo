@@ -59,6 +59,11 @@ export class Child {
   readonly stdout: Readable;
   /** Resolves once the child has exited and its output has ended. Rejects if it couldn't start. */
   readonly exited: Promise<Exit>;
+  /**
+   * Resolves once the child itself has exited, though what it started may still hold its output
+   * open. Rejects if it couldn't start.
+   */
+  readonly gone: Promise<Exit>;
   readonly #child: ChildProcess;
   #stderr = '';
   #inputError: Error | undefined;
@@ -111,9 +116,16 @@ export class Child {
         }
       });
     });
+    this.gone = new Promise<Exit>((resolve, reject) => {
+      child.once('error', (error) => {
+        if (child.pid === undefined) reject(GitError.io(`running ${this.display}`, error));
+      });
+      child.once('exit', (code, signal) => resolve({ code, signal }));
+    });
     // Whoever started the child hears of a failure when it waits for it; until then, it's no
     // unhandled rejection.
     this.exited.catch(() => undefined);
+    this.gone.catch(() => undefined);
   }
 
   /** The child's process ID, which is also its process group's. */
@@ -124,6 +136,11 @@ export class Child {
   /** The program and arguments the child was started with. */
   get spawnargs(): readonly string[] {
     return this.#child.spawnargs;
+  }
+
+  /** Hands `listener` each piece of stderr the child writes from now on, as text. */
+  onStderr(listener: (text: string) => void): void {
+    this.#child.stderr?.on('data', listener);
   }
 
   /** What the child has written to stderr so far, or its end. */

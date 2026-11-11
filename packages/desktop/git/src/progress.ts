@@ -14,6 +14,8 @@ export interface Progress {
   readonly done: number;
   /** How many there are, when git knows. */
   readonly total?: number | undefined;
+  /** How many bytes have come in, when git says: while it receives objects, roughly. */
+  readonly bytes?: number | undefined;
 }
 
 /** How far through the stage git is, from 0 to 100, when it knows the total. */
@@ -84,6 +86,7 @@ export function parseProgressLine(
   const counts = rest.slice(colon + 2).trimStart();
   let done: number | undefined;
   let total: number | undefined;
+  let bytes: number | undefined;
   const open = counts.indexOf('(');
   if (open !== -1) {
     // "45% (555/1234), 1.20 MiB | 2.40 MiB/s"
@@ -94,12 +97,33 @@ export function parseProgressLine(
     done = count(left);
     total = count(right);
     if (total === undefined) return undefined;
+    bytes = received(counts.slice(close + 1));
   } else {
     // "4, done." or "4"
     done = count(counts.split(/[, ]/)[0]);
   }
   if (done === undefined || !/^[A-Za-z ]+$/.test(stage)) return undefined;
-  return { source, progress: { stage, done, total } };
+  return {
+    source,
+    progress: bytes === undefined ? { stage, done, total } : { stage, done, total, bytes },
+  };
+}
+
+/** The units git writes an amount of data in, and how many bytes each is. */
+const UNITS: Record<string, number> = {
+  byte: 1,
+  bytes: 1,
+  KiB: 1024,
+  MiB: 1024 ** 2,
+  GiB: 1024 ** 3,
+};
+
+/** The bytes received that follow a progress line's counts, such as `, 1.20 MiB | 2.40 MiB/s`. */
+function received(text: string): number | undefined {
+  const match = /^, (\d+(?:\.\d+)?) (bytes?|KiB|MiB|GiB)(?: |,|$)/.exec(text);
+  const unit = match?.[2] === undefined ? undefined : UNITS[match[2]];
+  if (match?.[1] === undefined || unit === undefined) return undefined;
+  return Math.round(Number(match[1]) * unit);
 }
 
 /** A count git wrote, if it's a whole number a JavaScript number holds exactly. */

@@ -1,10 +1,11 @@
 /** One repository's clone: fetching into it, and reading its commits. */
 
-import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 
 import { GitError } from './errors.ts';
 import { type Fetching, failureMessage, type Runner } from './git.ts';
+import type { FetchLimits } from './limits.ts';
 import type { CloneLock, Release } from './lock.ts';
 import { type Oid, oidFromOutput, parseOid } from './oid.ts';
 import type { Activity } from './progress.ts';
@@ -22,6 +23,7 @@ import {
 import { stampUsed } from './stamp.ts';
 import { Token, type TokenSource } from './token.ts';
 import { distrust } from './trust.ts';
+import { stoppedError, watch } from './watch.ts';
 
 /** What a repository needs of the cache it's in. */
 export interface RepoHost {
@@ -30,6 +32,10 @@ export interface RepoHost {
   create(folder: string, url: string): Promise<void>;
   /** Moves `path` aside and deletes it. */
   trash(path: string): Promise<void>;
+  /** How long fetches may take. */
+  readonly limits: FetchLimits;
+  /** A new path for a temporary file, ending in `extension`. */
+  temporaryPath(extension: string): string;
   /** Notes a line for the log. */
   note(line: string): void;
 }
@@ -109,6 +115,15 @@ export interface Overview {
   readonly source: 'base' | 'fork';
   readonly files: readonly OverviewFile[];
 }
+
+/** The most an overview may hold, in bytes. */
+export const OVERVIEW_LIMIT = 50 * 1024 * 1024;
+
+/**
+ * The most objects that count as a few: GitHub prepares a pack of them in seconds, so a fetch of
+ * no more has the usual time to start sending, and not a first fetch's.
+ */
+const FEW_OBJECTS = 500;
 
 /** How many objects a download asks for in one fetch. */
 const OBJECTS_PER_FETCH = 5000;
@@ -376,12 +391,16 @@ export class Repo {
    * Downloads the objects in `oids` the clone lacks, such as the files a diff shows, by ID:
    * {@link OBJECTS_PER_FETCH} at a time, one fetch each. Returns the ones still missing.
    */
-  async download(oids: readonly Oid[], what = 'the files to show'): Promise<Oid[]> {
+  async download(
+    oids: readonly Oid[],
+    what = 'the files to show',
+    options: { maxBytes?: number } = {},
+  ): Promise<Oid[]> {
     return this.#locked(`downloading ${what}`, async () => {
       const missing = await this.missingObjects([...new Set(oids)]);
       for (let at = 0; at < missing.length; at += OBJECTS_PER_FETCH) {
         const batch = missing.slice(at, at + OBJECTS_PER_FETCH);
-        await this.#fetch(what, [], { objects: batch });
+        await this.#fetch(what, [], { objects: batch, maxBytes: options.maxBytes });
       }
       return this.missingObjects(missing);
     });
@@ -389,18 +408,38 @@ export class Repo {
 
   /**
    * Downloads the files of pull request `number`'s `overview` the repository of overviews lacks,
-   * in one fetch. Returns the ones still missing.
+   * in one fetch, refusing one over {@link OVERVIEW_LIMIT} in all: a blobless clone can't tell
+   * their sizes before they come, so the download stops once more than that has come in, and the
+   * sizes are checked once it's done. Returns the files still missing.
    */
   async downloadOverview(number: number, overview: Overview): Promise<Oid[]> {
     checkNumber(number);
     const what = `pull request #${number}'s overview`;
     // A submodule's entry is a commit in another repository.
-    const oids = overview.files.filter((file) => file.mode !== '160000').map((file) => file.oid);
+    const oids = [
+      ...new Set(overview.files.filter((file) => file.mode !== '160000').map((file) => file.oid)),
+    ];
     return this.#locked(`downloading ${what}`, async () => {
       const overviews = await this.#overviews();
-      const missing = await this.#missingIn(overviews, [...new Set(oids)]);
-      if (missing.length > 0) await this.#fetch(what, [], { objects: missing, gitDir: overviews });
-      return this.#missingIn(overviews, missing);
+      const missing = await this.#missingIn(overviews, oids);
+      if (missing.length > 0) {
+        await this.#fetch(what, [], {
+          objects: missing,
+          gitDir: overviews,
+          maxBytes: OVERVIEW_LIMIT,
+        });
+      }
+      const lacking = await this.#missingIn(overviews, missing);
+      const present = oids.filter((oid) => !lacking.includes(oid));
+      const sizes = await this.#runner
+        .command({ gitDir: overviews })
+        .arg('cat-file', '--batch-check=%(objectsize)')
+        .run(present.map((oid) => `${oid}\n`).join(''));
+      const total = lines(sizes).reduce((sum, size) => sum + Number(size), 0);
+      if (total > OVERVIEW_LIMIT) {
+        throw stoppedError({ reason: 'size', limit: OVERVIEW_LIMIT, doing: '', pid: 0 }, what);
+      }
+      return lacking;
     });
   }
 
@@ -720,19 +759,86 @@ export class Repo {
     }
     command.arg(
       'fetch',
-      '--quiet',
       '--no-tags',
       '--no-write-fetch-head',
       '--recurse-submodules=no',
       '--filter=blob:none',
+      // Always: what git says is how Lo knows what a fetch is doing.
+      '--progress',
     );
     if (options.shallow) command.arg('--depth=1');
     command.arg(REMOTE, ...refspecs);
-    if (options.objects === undefined) {
-      await command.run(undefined, { what });
-      return;
+    if (options.objects !== undefined) command.arg('--stdin');
+    // The first fetch into a clone brings the history it needs, and many files at once may be a
+    // whole tree: GitHub may take as long to start sending either.
+    const whole = (await this.#isEmpty(gitDir)) || (options.objects?.length ?? 0) > FEW_OBJECTS;
+    const watched = await watch(command, {
+      limits: this.#cache.limits,
+      whole,
+      trace: this.#cache.temporaryPath('.trace'),
+      progress: this.#progress,
+      input: options.objects?.map((oid) => `${oid}\n`).join(''),
+      maxBytes: options.maxBytes,
+      log: (line) => this.#cache.note(`${this.name}: ${line}`),
+    });
+    if (watched.kind === 'stopped') {
+      await this.#removeLeftLocks(gitDir, watched.stopped.pid, refspecs);
+      throw stoppedError(watched.stopped, what);
     }
-    await command.arg('--stdin').run(options.objects.map((oid) => `${oid}\n`).join(''), { what });
+    const { exit, messages } = watched;
+    if (exit.code !== 0) {
+      throw GitError.fromGit(command.display, failureMessage({ ...exit, stderr: messages }), what);
+    }
+  }
+
+  /** Whether nothing was ever fetched into the repository at `gitDir`: it has no refs. */
+  async #isEmpty(gitDir: string): Promise<boolean> {
+    const output = await this.#runner
+      .command({ gitDir })
+      .arg('for-each-ref', '--count=1', '--format=%(refname)')
+      .run();
+    return output.length === 0;
+  }
+
+  /**
+   * Removes what git, as process `pid`, may have left when Lo stopped it fetching `refspecs`: the
+   * `.lock` files it writes refs, settings and pack indexes through, which would fail the next
+   * git, and the `.keep` file its pack has until the fetch is done, which would keep the pack for
+   * good. Only what this fetch could have taken: of refs, only its refspecs' destinations. The
+   * clone's lock is held, so no other fetch writes meanwhile.
+   */
+  async #removeLeftLocks(gitDir: string, pid: number, refspecs: readonly string[]): Promise<void> {
+    const left = refspecs.flatMap((refspec) => {
+      const colon = refspec.indexOf(':');
+      return colon === -1 ? [] : [join(gitDir, `${refspec.slice(colon + 1)}.lock`)];
+    });
+    const folders = ['', join('objects', 'info'), join('objects', 'pack'), 'reftable'];
+    for (const folder of folders.map((name) => join(gitDir, name))) {
+      for (const name of await readdir(folder).catch(() => [])) {
+        if (name.endsWith('.lock')) left.push(join(folder, name));
+      }
+    }
+    // "fetch-pack <pid> on <host>", as `git fetch` names its packs' keep files.
+    const pack = join(gitDir, 'objects', 'pack');
+    for (const name of await readdir(pack).catch(() => [])) {
+      if (!name.endsWith('.keep')) continue;
+      const text = await readFile(join(pack, name), 'utf8').catch(() => '');
+      if (text.startsWith(`fetch-pack ${pid} on `)) left.push(join(pack, name));
+    }
+    const removed: string[] = [];
+    for (const path of left) {
+      try {
+        await rm(path);
+        removed.push(relative(this.folder, path));
+      } catch {
+        // Not there.
+      }
+    }
+    if (removed.length > 0) {
+      this.#cache.note(
+        `${this.name}: removed what a git that was stopped left: ${removed.join(', ')}`,
+      );
+    }
   }
 
   async #currentToken(): Promise<Token | undefined> {
@@ -742,6 +848,8 @@ export class Repo {
 }
 
 interface FetchOptions {
+  /** The most bytes the fetch may bring, past which it's stopped. */
+  readonly maxBytes?: number | undefined;
   /** Objects to fetch by ID, which git reads on its input. */
   readonly objects?: readonly Oid[] | undefined;
   /** The commits alone, without their history. */

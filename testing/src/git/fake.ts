@@ -13,6 +13,7 @@ export class FakeServer {
   readonly #server: Server;
   readonly #requests: string[] = [];
   readonly #sockets = new Set<Socket>();
+  #connections = 0;
 
   private constructor(server: Server, port: number) {
     this.#server = server;
@@ -33,6 +34,7 @@ export class FakeServer {
     if (address === null || typeof address === 'string') throw new Error('the server has no port');
     const fake = new FakeServer(server, address.port);
     server.on('connection', (socket) => {
+      fake.#connections += 1;
       fake.#sockets.add(socket);
       socket.on('close', () => fake.#sockets.delete(socket));
       socket.on('error', () => undefined);
@@ -88,6 +90,11 @@ export class FakeServer {
 
   get url(): string {
     return `http://127.0.0.1:${this.port}`;
+  }
+
+  /** How many connections it has taken, whether or not they sent a request. */
+  connections(): number {
+    return this.#connections;
   }
 
   /** Each request's head, in order. */

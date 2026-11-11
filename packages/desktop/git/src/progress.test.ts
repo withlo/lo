@@ -14,9 +14,10 @@ test('parses gits progress lines', () => {
   expect(parse('remote: Counting objects:  25% (1/4)        ')).toEqual(
     progress('Counting objects', 1, 4),
   );
-  expect(parse('Receiving objects:  45% (555/1234), 1.20 MiB | 2.40 MiB/s')).toEqual(
-    progress('Receiving objects', 555, 1234),
-  );
+  expect(parse('Receiving objects:  45% (555/1234), 1.20 MiB | 2.40 MiB/s')).toEqual({
+    ...progress('Receiving objects', 555, 1234),
+    bytes: Math.round(1.2 * 1024 * 1024),
+  });
   expect(parse('Resolving deltas: 100% (10/10), done.')).toEqual(
     progress('Resolving deltas', 10, 10),
   );
@@ -68,4 +69,19 @@ test('describes how far git is', () => {
     'receiving objects, 44% of 1234',
   );
   expect(describeProgress(progress('Enumerating objects', 12))).toBe('enumerating objects, 12');
+});
+
+const bytes = (line: string) => parse(line)?.bytes;
+
+test('reads how many bytes have come in', () => {
+  expect(bytes('Receiving objects:  45% (5/11), 30.00 MiB | 1.20 MiB/s')).toBe(30 * 1024 ** 2);
+  expect(bytes('Receiving objects: 100% (11/11), 2.50 GiB | 9.00 MiB/s, done.')).toBe(
+    2.5 * 1024 ** 3,
+  );
+  expect(bytes('Unpacking objects: 100% (3/3), 1.23 KiB | 1.23 MiB/s, done.')).toBe(
+    Math.round(1.23 * 1024),
+  );
+  expect(bytes('Receiving objects:  45% (5/11), 912 bytes | 0 bytes/s')).toBe(912);
+  expect(bytes('Resolving deltas: 100% (10/10), done.')).toBeUndefined();
+  expect(bytes('remote: Counting objects:  25% (1/4)')).toBeUndefined();
 });
