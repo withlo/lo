@@ -26,8 +26,9 @@
  * - A review without a summary goes once its last comment is deleted, from the timeline too.
  *
  * GitHub's refusals come back as values ({@link ReviewWriteRefusal}), whose sentences
- * ({@link describeReviewRefusal}) the UI can show as they are. Anything else that goes wrong throws
- * a {@link GithubError}.
+ * ({@link describeReviewRefusal}) the UI can show as they are, and so does Lo's own while GitHub
+ * has asked it to hold off writing (`paused`). Anything else that goes wrong throws a
+ * {@link GithubError}.
  *
  * Lo never sends a write again by itself. A write that failed may still have been done, when its
  * answer was lost or GitHub's server failed ({@link GithubError.mayHavePosted}): before offering to
@@ -114,7 +115,7 @@ export type ReviewWrite =
     readonly head: string;
   };
 
-/** Why GitHub refused a comment, a review, or an edit of one. Nothing was posted. */
+/** Why GitHub, or Lo, refused a comment, a review, or an edit of one. Nothing was posted. */
 export type ReviewWriteRefusal =
   /**
    * The lines aren't in the pull request's diff, or the file isn't one it changes, and the review
@@ -142,6 +143,12 @@ export type ReviewWriteRefusal =
    * Nothing was posted, so it can be sent again after a wait.
    */
   | { refusal: 'tooFast'; message: string }
+  /**
+   * GitHub asked Lo to hold off writing, by a rate limit or by turning a write away as sent too
+   * fast, so Lo didn't send it. It can be sent again from `until`, a wall-clock time in milliseconds
+   * since the Unix epoch.
+   */
+  | { refusal: 'paused'; until: number }
   /** GitHub answered nothing, or refused with an empty message where that means nothing else. */
   | { refusal: 'unexplained' }
   /** Any other refusal, in GitHub's words, such as a blank comment's. */
@@ -162,6 +169,8 @@ export function describeReviewRefusal(refusal: ReviewWriteRefusal): string {
       return 'It was submitted or deleted elsewhere since Lo last looked';
     case 'tooFast':
       return `GitHub turned it away as sent too soon after others (${refusal.message}); wait a minute and send it`;
+    case 'paused':
+      return "GitHub asked Lo to hold off writing for a while, so Lo didn't send it; send it once the wait is over";
     case 'unexplained':
       return 'GitHub refused it without saying why';
     case 'other':

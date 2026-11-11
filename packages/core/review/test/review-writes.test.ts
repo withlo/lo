@@ -439,7 +439,7 @@ test('comments edited and deleted read as lo reads them', async () => {
   const replyEdited = here(seen.replyAfterEdit);
   expect(replyEdited.thread.isResolved).toBe(true);
   expect(replyEdited.comment.editor?.login).toBe(BOT);
-  expect(replyEdited.comment.lastEditedAt).not.toBeNull();
+  expect(replyEdited.comment.lastEditedAt).toBe('2026-11-09T17:56:21Z');
   expect(seen.firstDeleted).toBeUndefined();
   const after = seen.threadsAfter.nodes.find((thread) => thread.id === seen.postedThread);
   expect(after, 'the thread stays').toBeDefined();

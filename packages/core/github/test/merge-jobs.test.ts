@@ -628,3 +628,147 @@ test('a failed stack merge says what landed', async () => {
   expect(partly.landed).toEqual([bottom.number]);
   expect(partly.landed).not.toContain(middle.number);
 });
+
+test('stopping ends every running job and asks nothing more', async () => {
+  const recorded = new Recorded();
+  const answers = [recorded.sent, recorded.pending, recorded.merged];
+  const harness = await Harness.create('merge_jobs_stopped', answers);
+  const pull = recorded.pull();
+  const [put, get] = [recorded.put(), recorded.get()];
+
+  expect(await harness.merge(pull, recorded.request())).toBeUndefined();
+  await harness.runUntil(2);
+  expect(harness.state(pull)).toEqual({ kind: 'pending', trouble: undefined });
+  harness.events();
+
+  harness.jobs.stop();
+  // Ended at once, not left pending: Lo doesn't know how it ended, and won't ask.
+  expect(unknown(harness.state(pull), 'stopped')).toEqual({ kind: 'stopped' });
+  expect(harness.events()).toEqual([[pull.number, true]]);
+  // Its wait for the next time to ask ended with it: once the poller stops too, nothing is left.
+  harness.poller.stop();
+  await settle();
+  expect(vi.getTimerCount()).toBe(0);
+  await harness.runUntil(60);
+  expect(harness.requests()).toEqual([
+    [0, LOOKUP],
+    [0, put],
+    [1, get],
+  ]);
+  // Nothing starts again, and what ended stays readable until it's forgotten.
+  expect(harness.jobs.merge(harness.poller, pull, recorded.request())).toEqual({
+    refusal: 'stopped',
+  });
+  expect(harness.jobs.followAgain(pull)).toBe(false);
+  expect(harness.jobs.list()).toHaveLength(1);
+  expect(harness.jobs.forget(pull)).toBe(true);
+});
+
+test('a merge still waiting for its turn when the jobs stop is never sent', async () => {
+  const recorded = new Recorded();
+  const harness = await Harness.create('merge_jobs_stopped_unsent', [
+    recorded.sent,
+    recorded.merged,
+  ]);
+  const pull = recorded.pull();
+  // A read holds the account's queue for 5 seconds.
+  const holding = harness.poller.queue.read(
+    () => new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+  );
+
+  expect(await harness.merge(pull, recorded.request())).toBeUndefined();
+  expect(harness.state(pull)).toEqual({ kind: 'sending' });
+  expect(harness.poller.hasUnfinishedWrites()).toBe(true);
+  harness.jobs.stop();
+  expect(unknown(harness.state(pull), 'stopped')).toEqual({ kind: 'stopped' });
+  await settle();
+  // It left the queue: neither the stack lookup nor the merge is sent once the queue is free.
+  expect(harness.poller.hasUnfinishedWrites()).toBe(false);
+  await harness.runUntil(10);
+  await holding;
+  expect(harness.requests()).toEqual([]);
+  expect(harness.state(pull)).toEqual({
+    kind: 'done',
+    outcome: { kind: 'unknown', unknown: { kind: 'stopped' } },
+  });
+});
+
+test('a merge waiting through the second after a retarget when the jobs stop is never sent', async () => {
+  const recorded = new Recorded();
+  const pull = recorded.pull();
+  // The chain's next layer moved onto the base, then merged: GitHub's answers to the retarget.
+  const read = pullAnswer(pull.number, false);
+  object(object(read.response.body)['base'])['ref'] = 'stack-a';
+  const moved: Interaction = {
+    request: { method: 'PATCH', url: read.request.url, body: '{"base":"main"}' },
+    response: structuredClone(read.response),
+  };
+  object(object(moved.response.body)['base'])['ref'] = 'main';
+  const harness = await Harness.create('merge_jobs_stopped_after_retarget', [
+    read,
+    moved,
+    recorded.sent,
+    recorded.merged,
+  ]);
+
+  const retarget = harness.poller.retarget(pull.repo, {
+    pr: pull.number,
+    from: 'stack-a',
+    to: 'main',
+  });
+  await settle();
+  const retargeted = await retarget;
+  expect('base' in retargeted ? retargeted.base.ref : retargeted).toBe('main');
+  // The merge has its turn, and waits the second GitHub asks for between writes.
+  expect(await harness.merge(pull, recorded.request())).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(500);
+  harness.jobs.stop();
+  await harness.runUntil(10);
+  expect(harness.requests()).toEqual([
+    [0, `GET /pulls/${pull.number}`],
+    [0, `PATCH /pulls/${pull.number}`],
+  ]);
+  expect(unknown(harness.state(pull), 'stopped')).toEqual({ kind: 'stopped' });
+});
+
+test('a merge stopped between its stack lookup and the merge is never sent', async () => {
+  const recorded = new Recorded();
+  const harness = await Harness.create('merge_jobs_stopped_after_lookup', [
+    recorded.sent,
+    recorded.merged,
+  ]);
+  const pull = recorded.pull();
+  harness.slow(LOOKUP, 2000);
+
+  expect(await harness.merge(pull, recorded.request())).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(1000);
+  harness.jobs.stop();
+  await harness.runUntil(10);
+  // The lookup was sent and answered; the merge after it in the same turn wasn't.
+  expect(harness.requests()).toEqual([[0, LOOKUP]]);
+  expect(unknown(harness.state(pull), 'stopped')).toEqual({ kind: 'stopped' });
+});
+
+test('a question about a merge waiting for its turn when the jobs stop is never asked', async () => {
+  const recorded = new Recorded();
+  const harness = await Harness.create('merge_jobs_stopped_asking', [
+    recorded.sent,
+    recorded.merged,
+  ]);
+  const pull = recorded.pull();
+
+  expect(await harness.merge(pull, recorded.request())).toBeUndefined();
+  // A read holds the account's queue from half a second to 5 s, so the question at 1 s waits.
+  await vi.advanceTimersByTimeAsync(500);
+  const holding = harness.poller.queue.read(
+    () => new Promise<void>((resolve) => setTimeout(resolve, 4500)),
+  );
+  await harness.runUntil(2);
+  harness.jobs.stop();
+  await harness.runUntil(10);
+  await holding;
+  expect(harness.requests()).toEqual([
+    [0, LOOKUP],
+    [0, recorded.put()],
+  ]);
+});

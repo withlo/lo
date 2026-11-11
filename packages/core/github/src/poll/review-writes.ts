@@ -27,6 +27,10 @@
  *
  * For those the write reads the threads, your pending review or the timeline again itself, the
  * timeline in full.
+ *
+ * While GitHub has asked Lo to hold off writing (the poller's `writesHeldUntil`), none is sent: each
+ * is refused (`paused`), as GitHub's own refusal of content sent too fast is, and its draft stays
+ * until the person sends it again. Lo doesn't post by itself minutes after they asked.
  */
 
 import type { GithubClient } from '../client.ts';
@@ -45,6 +49,7 @@ import {
   type Sent,
 } from '../review-writes.ts';
 import type { ReviewThreadList } from '../threads.ts';
+import type { Reread, WriteOptions } from './poller.ts';
 import { PENDING_REVIEW, REVIEW_THREADS, TIMELINE, type ReadKind } from './reads.ts';
 
 /** What these writes need of the poller. */
@@ -52,14 +57,14 @@ export interface ReviewWriter {
   writeChanging<T>(
     targets: readonly PullRef[],
     request: (client: GithubClient) => Promise<T>,
-    again?: (result: { ok: true; value: T } | { ok: false; error: unknown }) => readonly Reread[],
+    options?: WriteOptions<T>,
   ): Promise<T>;
   cachedRead<T>(pull: PullRef, kind: ReadKind<T>): { value: T } | undefined;
 }
 
-interface Reread {
-  name: string;
-  afresh: boolean;
+/** Lo's refusal of a write while GitHub has asked it to hold off, until `until`. */
+function paused(until: number): ReviewWriteRefusal {
+  return { refusal: 'paused', until };
 }
 
 const THREADS: Reread = { name: REVIEW_THREADS.name, afresh: false };
@@ -129,10 +134,10 @@ export function sendReview(
   const threads = write.kind === 'startReview' ? write.variables.threads : undefined;
   const namedReview =
     write.kind === 'addThread' || (Array.isArray(threads) ? threads.length > 0 : threads != null);
-  return writer.writeChanging(
-    [pull],
-    (client) => sendReviewWrite(client, pull, write),
-    (result) => {
+  return writer.writeChanging([pull], (client) => sendReviewWrite(client, pull, write), {
+    whilePaused: paused,
+    content: true,
+    again: (result) => {
       const again = unchecked ? [THREADS] : [];
       let changedElsewhere: boolean;
       if (result.ok) {
@@ -151,7 +156,7 @@ export function sendReview(
       }
       return changedElsewhere ? [...again, PENDING, THREADS] : again;
     },
-  );
+  });
 }
 
 /** Resolves the review thread `thread` on `pull`, or with `resolved: false` unresolves it. Never sent again by itself. */
@@ -162,11 +167,10 @@ export function resolveThreadOn(
   resolved: boolean,
 ): Promise<undefined | ReviewWriteRefusal> {
   const unchecked = !checksThread(writer, pull, thread);
-  return writer.writeChanging(
-    [pull],
-    (client) => resolveThread(client, thread, resolved),
-    (result) => (unchecked || gone(result) ? [THREADS] : []),
-  );
+  return writer.writeChanging([pull], (client) => resolveThread(client, thread, resolved), {
+    again: (result) => (unchecked || gone(result) ? [THREADS] : []),
+    whilePaused: paused,
+  });
 }
 
 /**
@@ -181,12 +185,13 @@ export function editCommentOn(
   body: string,
 ): Promise<undefined | ReviewWriteRefusal> {
   const inThread = comment.kind === 'thread';
-  return writer.writeChanging(
-    [pull],
-    (client) => editComment(client, comment, body),
+  return writer.writeChanging([pull], (client) => editComment(client, comment, body), {
     // A pending comment that's gone may have gone with its review.
-    (result) => (inThread ? (gone(result) ? [THREADS, PENDING] : [THREADS]) : [TIMELINE_IN_FULL]),
-  );
+    again: (result) =>
+      inThread ? (gone(result) ? [THREADS, PENDING] : [THREADS]) : [TIMELINE_IN_FULL],
+    whilePaused: paused,
+    content: true,
+  });
 }
 
 /**
@@ -208,11 +213,11 @@ export function deleteCommentOn(
   } else {
     again.push(TIMELINE_IN_FULL);
   }
-  return writer.writeChanging(
-    [pull],
-    (client) => deleteComment(client, comment),
-    (result) => (comment.kind === 'thread' && gone(result) ? [...again, PENDING, THREADS] : again),
-  );
+  return writer.writeChanging([pull], (client) => deleteComment(client, comment), {
+    again: (result) =>
+      comment.kind === 'thread' && gone(result) ? [...again, PENDING, THREADS] : again,
+    whilePaused: paused,
+  });
 }
 
 /**
@@ -225,7 +230,9 @@ export function addConversationCommentOn(
   pullRequestId: string,
   body: string,
 ): Promise<string | ReviewWriteRefusal> {
-  return writer.writeChanging([pull], (client) =>
-    addConversationComment(client, pullRequestId, body),
+  return writer.writeChanging(
+    [pull],
+    (client) => addConversationComment(client, pullRequestId, body),
+    { whilePaused: paused, content: true },
   );
 }
