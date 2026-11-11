@@ -190,6 +190,7 @@ describe('check', () => {
       ['check', 'a', 'b'],
       ['check', '--pr', '01'],
       ['check', '--pr', '-1'],
+      ['check', '--pr'],
       ['commit', 'dir'],
       ['commit', 'dir', '--pr', '1e3'],
     ]) {

@@ -93,8 +93,10 @@ function parse(args: readonly string[]): Command {
     }
     if (arg === '--json') json = true;
     else if (arg === '--help' || arg === '-h') help = true;
-    else if (arg === '--pr') pr = args[++at];
-    else if (arg.startsWith('--pr=')) pr = arg.slice('--pr='.length);
+    else if (arg === '--pr') {
+      pr = args[++at];
+      if (pr === undefined) throw new Error("--pr takes a pull request's number.");
+    } else if (arg.startsWith('--pr=')) pr = arg.slice('--pr='.length);
     else if (arg.startsWith('-')) throw new Error(`${JSON.stringify(arg)} isn't an option.`);
     else positional.push(arg);
   }
