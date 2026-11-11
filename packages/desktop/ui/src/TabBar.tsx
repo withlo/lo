@@ -58,7 +58,7 @@ export interface TabBarProps {
 }
 
 const tab = cva(
-  'relative mt-8 flex max-w-tab-w min-w-tab-w-min shrink grow-0 basis-tab-w items-center gap-4 rounded-t-md ps-12 pe-4 whitespace-nowrap no-drag text-small focus-visible:shadow-ring-inset',
+  'relative mt-8 flex max-w-tab-w min-w-tab-w-min shrink grow-0 basis-tab-w items-center gap-6 rounded-t-md ps-12 pe-6 whitespace-nowrap no-drag text-small focus-visible:shadow-ring-inset',
   {
     variants: {
       selected: {
