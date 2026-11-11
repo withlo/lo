@@ -77,12 +77,20 @@ test('Esc gives focus back to the middle of the window', async ({ page }) => {
   await expect(page.locator('main[data-lo-middle]')).toBeFocused();
 });
 
-test('a command the app menu sends back runs in the window', async ({ app, page }) => {
+test('the window runs only the app menu’s own commands that main sends back', async ({
+  app,
+  page,
+}) => {
   const open = page.getByRole('button', { name: 'Open a pull request' });
   await open.focus();
+  // Esc's command isn't in the app menu, so a click can't have sent it.
   await app.evaluate(({ BrowserWindow }) => {
     BrowserWindow.getAllWindows()[0]?.webContents.send('keys.run', { id: 'keys.escape' });
   });
+  await page.waitForTimeout(200);
+  await expect(open).toBeFocused();
+  // The same command by its key.
+  await page.keyboard.press('Escape');
   await expect(page.locator('main[data-lo-middle]')).toBeFocused();
 });
 
@@ -167,4 +175,72 @@ test('Tab moves focus only through commands, and forms that ask keep the browser
   await open.focus();
   await page.keyboard.press('Tab');
   await expect(open).toBeFocused();
+});
+
+/** The window's zoom level, as Chromium has it. */
+function zoom(app: ElectronApplication): Promise<number | undefined> {
+  return app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0]?.webContents.getZoomLevel(),
+  );
+}
+
+test('⌘ or Ctrl with =, - and 0 zooms the window', async ({ app, page }) => {
+  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+  const held = mac ? 'Meta' : 'Control';
+  expect(await zoom(app)).toBe(0);
+  await page.keyboard.press(`${held}+Equal`);
+  await expect.poll(() => zoom(app)).toBe(0.5);
+  await page.keyboard.press(`${held}+Minus`);
+  await page.keyboard.press(`${held}+Minus`);
+  await expect.poll(() => zoom(app)).toBe(-0.5);
+  await page.keyboard.press(`${held}+Digit0`);
+  await expect.poll(() => zoom(app)).toBe(0);
+});
+
+test('macOS’s View menu lists zooming, with its keys', async ({ app }) => {
+  test.skip(!mac, 'Linux has no app menu.');
+  await expect
+    .poll(() => menuContents(app))
+    .toEqual(
+      expect.arrayContaining([
+        'id:app.zoomIn',
+        'key:Command+=',
+        'id:app.zoomOut',
+        'key:Command+-',
+        'id:app.actualSize',
+        'key:Command+0',
+      ]),
+    );
+});
+
+test.describe('on Linux, with no app menu', () => {
+  test.skip(mac, 'macOS’s app menu quits and goes full screen.');
+
+  test('F11 asks for full screen', async ({ app, page }) => {
+    await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+    // Counted where main asks, since a display without a window manager may not go full screen.
+    await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      if (!window) return;
+      const asked: boolean[] = [];
+      Reflect.set(globalThis, 'loFullScreen', asked);
+      const setFullScreen = window.setFullScreen.bind(window);
+      window.setFullScreen = (flag: boolean) => {
+        asked.push(flag);
+        setFullScreen(flag);
+      };
+    });
+    await page.keyboard.press('F11');
+    await expect
+      .poll(() => app.evaluate((): unknown => Reflect.get(globalThis, 'loFullScreen')))
+      .toEqual([true]);
+  });
+
+  test('Ctrl+Q quits', async ({ app, page }) => {
+    await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+    const closed = app.waitForEvent('close');
+    // Lo may be gone before the key comes back up.
+    await page.keyboard.press('Control+Q').catch(() => undefined);
+    await closed;
+  });
 });

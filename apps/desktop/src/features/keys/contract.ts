@@ -14,10 +14,13 @@ export const barKey = z.strictObject({
   shift: z.boolean(),
 });
 
+/** A command's id, `<feature>.<name>`, as `isCommandId` reads one. */
+export const commandId = z.string().regex(/^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$/);
+
 /** One of Lo's commands in the app menu, as the window describes it. */
 export const barItem = z.strictObject({
   /** The command's id, which a click sends back. */
-  id: z.string().regex(/^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$/),
+  id: commandId,
   label: z.string().min(1).max(100),
   menu: z.enum(barMenus),
   order: z.number().finite(),
@@ -37,6 +40,6 @@ export const contract = defineContract('keys', {
   },
   topics: {
     /** A click on one of Lo's commands in the app menu, to run through the registry. */
-    run: z.strictObject({ id: z.string() }),
+    run: z.strictObject({ id: commandId }),
   },
 });

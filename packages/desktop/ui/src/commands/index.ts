@@ -3,11 +3,32 @@
 // features' declarations.
 
 export {
+  checkClashes,
+  checkHandlers,
+  checkIds,
+  checkKeys,
+  checkMenus,
+  checkVim,
+  codeModes,
+  focusAt,
+  listed,
+  modesOf,
+  scopesOf,
+  systemNames,
+  systems,
+  systemsOf,
+  vimMeetings,
+  type Site,
+  type VimKeys,
+  type VimMeeting,
+} from './checks.ts';
+export {
   commandsOf,
   defineCommands,
   groups,
   handlers,
   isCommandId,
+  listOf,
   type BarMenu,
   type Command,
   type Declaration,
@@ -43,9 +64,12 @@ export { listen } from './listener.ts';
 export {
   Bindings,
   declaredBindings,
+  holds,
+  linuxEditingKeys,
   match,
   matchAny,
   SEQUENCE_TIMEOUT,
+  startsWith,
   type Binding,
   type Focus,
   type Outcome,
@@ -122,3 +146,4 @@ export {
   type TargetOf,
   type ThreadTarget,
 } from './targets.ts';
+export { vimDefaults } from './vim.ts';

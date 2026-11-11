@@ -1,8 +1,14 @@
 import { formatVersion, type GitStatus } from '@lo/git';
-import { app, nativeTheme } from 'electron';
+import { app, BrowserWindow, nativeTheme } from 'electron';
 
 import { defineFeature } from '../../../main/features.ts';
 import { appInfo, contract, type GitInfo, type Theme } from '../contract.ts';
+import { zoomed } from './zoom.ts';
+
+/** Lo's window: the one a key was just pressed in, or else its only one. */
+function loWindow(): BrowserWindow | undefined {
+  return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+}
 
 // Lo follows the system's appearance.
 const currentTheme = (): Theme => (nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
@@ -30,6 +36,17 @@ export default defineFeature(contract, {
         theme: currentTheme(),
         git: gitInfo(git.status),
       }),
+    quit() {
+      app.quit();
+    },
+    zoom({ step }) {
+      const contents = loWindow()?.webContents;
+      if (contents) contents.zoomLevel = zoomed(contents.zoomLevel, step);
+    },
+    fullScreen() {
+      const window = loWindow();
+      window?.setFullScreen(!window.isFullScreen());
+    },
   },
   start({ publish, git }) {
     nativeTheme.on('updated', () => publish('theme', currentTheme()));

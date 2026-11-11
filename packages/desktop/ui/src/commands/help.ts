@@ -1,6 +1,7 @@
 // What key help (`?`) and the command palette (`⌘⇧P`) show, read from the registry: each
 // command's live keys in this system's form, where they apply, and whether they're Vim's.
 
+import { listed } from './checks.ts';
 import { groups, listOf, type Command, type Group } from './declare.ts';
 import { keyLabels } from './notation.ts';
 import type { Registry } from './registry.ts';
@@ -38,12 +39,6 @@ const scopeWords: Readonly<Record<string, string>> = {
   box: 'comment boxes',
 };
 
-/** Joins words as a sentence lists them: `a`, `a and b`, `a, b or c`. */
-function joined(items: readonly string[], conjunction: 'and' | 'or'): string {
-  if (items.length <= 1) return items.join('');
-  return `${items.slice(0, -1).join(', ')} ${conjunction} ${items.at(-1) ?? ''}`;
-}
-
 /** Scopes as a person reads them. */
 function named(scopes: readonly string[]): string[] {
   return scopes.map((scope) => scopeWords[scope] ?? scope);
@@ -54,12 +49,12 @@ export function whereText(command: Command): string | undefined {
   const { when } = command;
   const parts: string[] = [];
   const scopes = listOf(when?.scope);
-  if (scopes.length > 0) parts.push(`In ${joined(named(scopes), 'and')}`);
+  if (scopes.length > 0) parts.push(`In ${listed(named(scopes), 'and')}`);
   const except = when?.except ?? [];
   if (except.length > 0)
-    parts.push(`${parts.length > 0 ? 'not' : 'Not'} in ${joined(named(except), 'or')}`);
+    parts.push(`${parts.length > 0 ? 'not' : 'Not'} in ${listed(named(except), 'or')}`);
   const modes = listOf(when?.mode);
-  if (modes.length > 0) parts.push(`in Vim's ${joined(modes, 'or')} mode`);
+  if (modes.length > 0) parts.push(`in Vim's ${listed(modes, 'or')} mode`);
   if (parts.length === 0) return undefined;
   return parts.join(', ');
 }

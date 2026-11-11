@@ -7,6 +7,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "build": "electron-vite build",
+    "codegen": "node scripts/keys.ts && prettier --write ../../docs/keys.md",
     "dev": "electron-vite dev",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "lint": "oxlint && lo-check-classes src",
@@ -36,6 +37,18 @@
   "nx": {
     "name": "desktop",
     "targets": {
+      "codegen": {
+        "inputs": [
+          "{projectRoot}/scripts/keys.ts",
+          "{projectRoot}/src/features/*/keys.ts",
+          "{projectRoot}/src/window/commands/declarations.ts",
+          "^production",
+          "{workspaceRoot}/.prettierrc.json"
+        ],
+        "outputs": [
+          "{workspaceRoot}/docs/keys.md"
+        ]
+      },
       "start": {
         "dependsOn": [
           "build"
