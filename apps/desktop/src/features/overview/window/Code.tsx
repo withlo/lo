@@ -240,7 +240,10 @@ function ExcerptCode({
       const since =
         head === undefined || found.kind === 'unread'
           ? undefined
-          : await fileSince(tab, commit, head, path, { soon: near });
+          : await fileSince(tab, commit, head, path, {
+              soon: near,
+              quick: first?.onScreen() ?? true,
+            });
       // Drawn in its own typeface, it's as tall as it stays.
       await codeTypeface();
       if (!live) return;

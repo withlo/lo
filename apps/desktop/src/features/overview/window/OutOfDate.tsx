@@ -13,6 +13,7 @@ import { showDiff } from '../../diff/window/shared.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
 import { useLocalCopy, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { copyPrompt, promptFor } from './copy.ts';
+import { useFirstDraw } from './drawing.ts';
 import type { Standing } from './facts.ts';
 import { keyOf } from './labels.ts';
 import { blocksChanged, sinceCount } from './since.ts';
@@ -117,6 +118,7 @@ function useCounted(
 ): Omit<Counted, 'key' | 'targets'> {
   const key = `${commit} ${head}`;
   const [counted, setCounted] = useState<Counted>({ key, targets });
+  const first = useFirstDraw();
   useEffect(() => {
     if (!ready) return undefined;
     let live = true;
@@ -133,11 +135,13 @@ function useCounted(
     void sinceCount(tab, commit, head).then((reply) => {
       if (reply.kind === 'read') take({ files: reply.files });
     });
-    void blocksChanged(tab, commit, head, targets).then((blocks) => take({ blocks }));
+    void blocksChanged(tab, commit, head, targets, { quick: first?.onScreen() ?? true }).then(
+      (blocks) => take({ blocks }),
+    );
     return () => {
       live = false;
     };
-  }, [tab, commit, head, key, ready, targets]);
+  }, [tab, commit, head, key, ready, targets, first]);
   if (counted.key !== key) return {};
   return counted.targets === targets ? counted : { files: counted.files };
 }

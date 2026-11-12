@@ -46,6 +46,16 @@ interface Waiting {
   readonly start: () => void;
 }
 
+/**
+ * How a file is asked for: `soon` for a block on screen, which goes first; and `quick` to diff a
+ * small file here, at once, as for an overview on screen, rather than in the diff's job, which an
+ * overview kept behind another view leaves it to.
+ */
+export interface Asking {
+  readonly soon?: boolean | undefined;
+  readonly quick?: boolean | undefined;
+}
+
 /** What's worked out for each tab, for its overview's commit and its head on screen. */
 const entries = new Map<string, Entry>();
 
@@ -140,7 +150,7 @@ export function fileSince(
   commit: string,
   head: string,
   path: string,
-  { soon = false }: { readonly soon?: boolean } = {},
+  { soon = false, quick = true }: Asking = {},
 ): Promise<FileSince> {
   const entry = entryOf(tab, commit, head);
   const asked = entry.files.get(path);
@@ -154,7 +164,7 @@ export function fileSince(
   if (soon) entry.queue.unshift(waiting);
   else entry.queue.push(waiting);
   const found = turn
-    .then(() => read(entry, path))
+    .then(() => read(entry, path, quick))
     .finally(() => {
       entry.running -= 1;
       next(entry);
@@ -182,8 +192,8 @@ function next(entry: Entry): void {
   }
 }
 
-/** Reads `path` at both commits from main and diffs it, keeping what's known. */
-async function read(entry: Entry, path: string): Promise<FileSince> {
+/** Reads `path` at both commits from main and diffs it, here when `quick`, keeping what's known. */
+async function read(entry: Entry, path: string, quick: boolean): Promise<FileSince> {
   const { tab, commit, head, stop } = entry;
   let since: FileSince;
   try {
@@ -198,11 +208,12 @@ async function read(entry: Entry, path: string): Promise<FileSince> {
     if (text.kind === 'changed' && 'old' in text.texts) {
       const { old, new: now } = text.texts;
       // A small file is diffed here, at once, as a block's own code is, since its block draws
-      // with its flag; a larger one by the diff's background job, without highlighting.
-      const quick =
-        old.length + now.length <= QUICK_LIMIT ? quickDiff({ old, new: now }) : undefined;
+      // with its flag; a larger one, or one for an overview kept behind another view, by the
+      // diff's background job, without highlighting.
+      const here =
+        quick && old.length + now.length <= QUICK_LIMIT ? quickDiff({ old, new: now }) : undefined;
       const diffed =
-        quick ??
+        here ??
         (await diffTexts([{ path: text.path, old, new: now }], stop.signal, {
           highlight: false,
         }).then(
@@ -236,10 +247,11 @@ export async function blocksChanged(
   commit: string,
   head: string,
   targets: readonly CodeRange[],
+  { quick = true }: Pick<Asking, 'quick'> = {},
 ): Promise<number | undefined> {
   const changes = await Promise.all(
     targets.map(async (target) => {
-      const since = await fileSince(tab, commit, head, target.path);
+      const since = await fileSince(tab, commit, head, target.path, { quick });
       return since.kind === 'unknown'
         ? undefined
         : blockChange(since, target.lines).kind !== 'none';

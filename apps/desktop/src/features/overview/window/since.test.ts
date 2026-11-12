@@ -163,7 +163,7 @@ describe('what changed since', () => {
     expect(fake.diffed).toEqual([]);
   });
 
-  it('diffs a larger file by the diff’s background job, without highlighting', async () => {
+  it('diffs a larger file, or one for an overview kept behind, by the diff’s job, without highlighting', async () => {
     const lines = Array.from({ length: QUICK_LIMIT / 8 }, (_, index) => `line ${index}`);
     const old = `${lines.join('\n')}\n`;
     files.set('src/large.ts', {
@@ -179,6 +179,12 @@ describe('what changed since', () => {
       changes: [{ old: { start: 8, end: 9 }, new: { start: 8, end: 9 } }],
     });
     expect(fake.diffed).toEqual([{ path: 'src/large.ts', highlight: false }]);
+    // And a small one for an overview kept behind another view.
+    await fileSince(tab, R1, R2, 'src/a.ts', { quick: false });
+    expect(fake.diffed).toEqual([
+      { path: 'src/large.ts', highlight: false },
+      { path: 'src/b.ts', highlight: false },
+    ]);
   });
 
   it('works it all out again for a newer head, which replaces the last', async () => {
