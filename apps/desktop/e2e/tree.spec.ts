@@ -261,36 +261,53 @@ test('a click puts the file’s start at the top of the diff, wherever it was, a
   await expect(row(page, 'src/parser.ts')).toHaveClass(/tree-current/);
 });
 
-/** Gives the diff's After side the keyboard, moving neither its cursor nor its scroll. */
-async function focusAfter(page: Page): Promise<void> {
+/** Gives the diff's code the keyboard, moving neither its cursor nor its scroll. */
+async function focusCode(page: Page): Promise<void> {
   await page
-    .locator('.lo-diffview .cm-content[aria-label="After"]')
+    .locator('.lo-diffview .cm-editor:visible')
+    .last()
+    .locator('.cm-content')
     .evaluate((content: HTMLElement) => content.focus({ preventScroll: true }));
 }
 
-test('a file a click brought to the top keeps its header there as it closes and opens again', async ({
-  page,
-}) => {
-  await shown(page);
-  // Near the end, where closing it leaves less to scroll than the screen; and further up.
-  for (const path of ['src/parser.ts', 'src/format.ts']) {
-    await row(page, path).click();
-    await expect.poll(() => headerBelow(page, path)).toBe(0);
-    await focusAfter(page);
-    for (const open of [false, true]) {
-      await page.keyboard.press('z');
-      await page.keyboard.press('a');
-      await expect
-        .poll(() => page.evaluate(() => window.loDiff?.probe.cursor()?.at.kind))
-        .toBe('header');
-      await page.waitForTimeout(300);
-      expect(await headerBelow(page, path), open ? 'opened' : 'closed').toBe(0);
-      await expect(row(page, path)).toHaveClass(/tree-current/);
+for (const layout of ['split', 'inline'] as const) {
+  test(`a file a click brought to the top keeps its header there as it's folded, ${layout === 'split' ? 'side by side' : 'inline'}`, async ({
+    page,
+  }) => {
+    await shown(page);
+    if (layout === 'inline') {
+      await page.keyboard.press('g');
+      await page.keyboard.press('i');
+      await expect.poll(() => page.evaluate(() => window.loDiff?.probe.layout)).toBe('inline');
     }
-  }
-});
+    // Near the end, where closing one leaves less to scroll than the screen, and further up: closed
+    // and opened again, opened whole, and a run of its lines closed and opened.
+    for (const path of ['src/parser.ts', 'src/legacy.ts', 'src/format.ts']) {
+      await row(page, path).click();
+      await expect.poll(() => headerBelow(page, path)).toBe(0);
+      await focusCode(page);
+      for (const keys of ['za', 'za', 'zR', 'zc', 'zo']) {
+        await page.keyboard.press(keys[0]!);
+        await page.keyboard.press(keys[1]!);
+        await page.waitForTimeout(300);
+        expect(await headerBelow(page, path), `${path} after ${keys}`).toBe(0);
+        await expect(row(page, path)).toHaveClass(/tree-current/);
+        // Only the room after the last file that's on screen is left.
+        const below = await page
+          .locator('.lo-diffview')
+          .evaluate((box) =>
+            Math.min(
+              Number.parseFloat(box.style.paddingBottom || '0'),
+              box.scrollHeight - box.clientHeight - box.scrollTop,
+            ),
+          );
+        expect(below, `room below the screen after ${keys}`).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+}
 
-test('a banner coming over the diff after a click leaves the file’s header on screen, at its top', async ({
+test('a banner coming over the diff after a click takes the file’s header down with it, never over it', async ({
   page,
 }) => {
   await shown(page);
@@ -302,8 +319,9 @@ test('a banner coming over the diff after a click leaves the file’s header on 
   await page.waitForTimeout(300);
   expect(await headerBelow(page, 'src/parser.ts'), 'as it comes').toBe(0);
   await view.evaluate((each) => each.parentElement?.style.removeProperty('padding-top'));
+  // As it goes, nothing moves: the header stays where the banner left it.
   await page.waitForTimeout(300);
-  expect(await headerBelow(page, 'src/parser.ts'), 'as it goes').toBe(0);
+  expect(await headerBelow(page, 'src/parser.ts'), 'as it goes').toBe(30);
 });
 
 test('gives a file a right-click menu: marking it viewed, the whole file, its path and the file on GitHub', async ({
