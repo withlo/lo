@@ -118,7 +118,7 @@ async function read(
  * `texts` diffed here, as the diff's job diffs them, without highlighting; none if it can't be in
  * what's left of this frame's share, as a coarser diff than the job's would be.
  */
-function quickDiff(texts: { old: string | null; new: string | null }) {
+export function quickDiff(texts: { old: string | null; new: string | null }) {
   const budget = QUICK_BUDGET - spent;
   // A budget of 0 is none at all to the diff.
   if (budget < 1) return undefined;

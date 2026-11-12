@@ -4,9 +4,11 @@
 
 import { client } from '../../../window/ipc.ts';
 import { contract as revisionsContract, type ComparisonView } from '../../revisions/contract.ts';
+import { markRevision } from '../../revisions/window/shared.ts';
 import { tabState } from '../../tab/window/shared.ts';
 import type { OverviewState } from '../contract.ts';
 import { Checking, type CheckedOverview } from './checking.ts';
+import { standingOf } from './facts.ts';
 import { main, overviewJobs } from './main.ts';
 import { steady } from './steady.ts';
 
@@ -29,6 +31,16 @@ const checkings = new Map<string, Checking>();
 export function publish(id: string, value: CheckedOverview | undefined): void {
   const kept = steady(checked.get(id), value);
   if (kept !== checked.get(id)) checked.set(id, kept);
+  markDescribed(id);
+}
+
+/**
+ * Marks the commit tab `id`'s overview on screen describes in its revision picker, or clears the
+ * mark when none shows.
+ */
+function markDescribed(id: string): void {
+  const standing = standingOf(states.get(id), checked.get(id));
+  markRevision(id, 'overview', standing.kind === 'shown' ? standing.header.commit : undefined);
 }
 
 /** Tab `id`'s checking, made the first time it's needed. */
@@ -51,6 +63,7 @@ function checkingOf(id: string): Checking {
 export function takeState(state: OverviewState): void {
   states.set(state.id, state);
   checkingOf(state.id).take(state);
+  markDescribed(state.id);
 }
 
 /**

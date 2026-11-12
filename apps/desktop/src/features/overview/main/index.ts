@@ -102,6 +102,18 @@ export default defineFeature(contract, {
       if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
       return tabOf(id).blocks.read(info.local, () => service.clone(id), commit, path, base);
     },
+    since({ id, commit, head }, context) {
+      const service = context.use(tabs);
+      const info = service.pull(id);
+      if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+      return tabOf(id).since.count(info.local, () => service.clone(id), commit, head);
+    },
+    sinceFile({ id, commit, head, path }, context) {
+      const service = context.use(tabs);
+      const info = service.pull(id);
+      if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+      return tabOf(id).since.file(info.local, () => service.clone(id), commit, head, path);
+    },
     retry({ id }) {
       tabOf(id).retry();
     },

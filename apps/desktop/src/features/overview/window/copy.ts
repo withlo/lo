@@ -4,13 +4,14 @@
 import { client } from '../../../window/ipc.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { pullOf, type PullTab } from '../../tab/window/shared.ts';
-import { newestHead, promptKindOf, revisionAt, standingOf, type Standing } from './facts.ts';
+import { promptKindOf, revisionAt, standingOf, type Standing } from './facts.ts';
 import { promptOf } from './prompts.ts';
 import { checked, revisions, states } from './store.ts';
 
 /**
  * The prompt `tab`'s overview offers, standing as `standing`, or none: there's none for an
- * overview Lo is still reading or checking, one it couldn't read, or one in a newer format.
+ * overview Lo is still reading or checking, one it couldn't read, or one in a newer format. Where
+ * the pull request is, it says, is the head on screen, as the overview's banner says.
  */
 export function promptFor(tab: PullTab, standing: Standing): string | undefined {
   const kind = promptKindOf(standing);
@@ -20,7 +21,7 @@ export function promptFor(tab: PullTab, standing: Standing): string | undefined 
     kind,
     pull: { owner: tab.owner, repo: tab.repo, number: tab.number },
     written: standing.kind === 'shown' ? revisionAt(known, standing.header.commit) : undefined,
-    newest: revisionAt(known, newestHead(pullOf(tab.id))),
+    newest: revisionAt(known, pullOf(tab.id)?.shown ?? undefined),
   });
 }
 

@@ -21,10 +21,12 @@ export { lineRange } from './placeholders.tsx';
 export {
   CodeBlock,
   CodeBody,
+  CodeFlag,
   CodeNote,
   Illustration,
   PathName,
   type CodeBlockVariant,
 } from './CodeBlock.tsx';
 export { Held, useNear, useNearness, type Nearness } from './Held.tsx';
+export { OutOfDate } from './Stale.tsx';
 export { Walkthrough } from './Walkthrough.tsx';

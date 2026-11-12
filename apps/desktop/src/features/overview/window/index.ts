@@ -49,6 +49,7 @@ import {
   type Scroll,
 } from './follow.ts';
 import { followSkill, installSkill } from './skill.ts';
+import { keepSinceOnly } from './since.ts';
 import { OverviewStatus } from './Status.tsx';
 import { catchUp, keepOnly, states, takeRevisions, takeState } from './store.ts';
 
@@ -316,6 +317,7 @@ export default {
       const ids = new Set(open.map(({ id }) => id));
       keepOnly(ids);
       keepPlaces(ids);
+      keepSinceOnly(ids);
     });
     tabs()
       .list()

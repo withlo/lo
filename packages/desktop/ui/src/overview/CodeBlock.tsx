@@ -32,17 +32,20 @@ export function PathName({ path }: { path: string }) {
 
 /**
  * A code block: the file and lines `target` names, with what the reader can do about them,
- * `actions`, in its head, where they stay whatever happens to the body; and under them, `children`.
+ * `actions`, in its head, where they stay whatever happens to the body; under them, `flag`, when
+ * lines it shows changed since (a {@link CodeFlag}); and under that, `children`.
  */
 export function CodeBlock({
   target,
   variant = 'code',
   actions,
+  flag,
   children,
 }: {
   target: CodeRange;
   variant?: CodeBlockVariant | undefined;
   actions?: ReactNode;
+  flag?: ReactNode;
   children: ReactNode;
 }) {
   const className = variant === 'code' ? 'lo-codeblock' : `lo-codeblock lo-codeblock--${variant}`;
@@ -55,7 +58,25 @@ export function CodeBlock({
         <span className="lo-codeblock__lines">{lineRange(target.lines)}</span>
         {actions !== undefined && <span className="lo-codeblock__actions">{actions}</span>}
       </div>
+      {flag}
       {children}
+    </div>
+  );
+}
+
+/**
+ * Under a code block's head, when lines it shows changed since the commit it shows: which, in
+ * `children`, and the way to the comparison, `action`.
+ */
+export function CodeFlag({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="lo-codeblock__flag" role="note" data-lo-code-flag="">
+      <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
+        <path d="M8 6.25v3M8 11.25v.01" />
+      </svg>
+      <span className="lo-codeblock__flagtext">{children}</span>
+      {action}
     </div>
   );
 }

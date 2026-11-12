@@ -1171,6 +1171,34 @@ describe('gaps', () => {
     expect(notes()).toEqual([]);
   });
 
+  test('zR before the whole file comes opens it as it comes, and a run closed since stays closed', () => {
+    const shown = gappedView();
+    const whole = { old: eOld, new: eNew };
+    shown.fold(onLine('e', 'new', 1), 'file');
+    expect(runs()).toEqual(['18 unchanged lines, not loaded yet']);
+    // Opened whole, the file wouldn't draw in the rows it has.
+    expect(shown.keepsShape('e', whole, diffOf(whole))).toBe(false);
+    shown.setLines('e', whole, diffOf(whole));
+    expect(runs()).toEqual([]);
+    // Closed again, the run stays closed as a new diff comes, as when whitespace is hidden.
+    shown.fold(onLine('e', 'new', 12), 'close');
+    expect(runs()).toEqual(['18 unchanged lines']);
+    shown.setDiff('e', diffOf(whole));
+    expect(runs()).toEqual(['18 unchanged lines']);
+    expect(shown.keepsShape('e', whole, diffOf(whole))).toBe(true);
+  });
+
+  test('zR before the diff comes opens the file once it does', () => {
+    const shown = gappedView();
+    // As many lines, but line 3 back as it was and line 5 changed: the diff waits for its new one.
+    const other = { old: eOld, new: eOld.map((each, index) => (index === 4 ? `${each}!` : each)) };
+    shown.setLines('e', other);
+    expect(notes()).toEqual(['Working out the diff…']);
+    shown.fold(onHeader('e', 'new'), 'file');
+    shown.setDiff('e', diffOf(other));
+    expect(runs()).toEqual([]);
+  });
+
   test('the whole file fills them, and they open', () => {
     const shown = gappedView();
     shown.setLines('e', { old: eOld, new: eNew });

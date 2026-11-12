@@ -75,12 +75,13 @@ const TEXTS_BUDGET = 5000;
 /**
  * Diffs texts another feature has, in the background process, as the diff's own files are: each
  * file's line and word diff from `old` to `new`, `null` for a side it isn't on, both sides
- * highlighted as `path` says, in the order given. Changes to whitespace alone show, as GitHub shows
- * them. Stopped once `signal` aborts.
+ * highlighted as `path` says unless `highlight` is false, in the order given. Changes to whitespace
+ * alone show, as GitHub shows them. Stopped once `signal` aborts.
  */
 export async function diffTexts(
   files: readonly { path: string; old: string | null; new: string | null }[],
   signal?: AbortSignal,
+  { highlight = true }: { readonly highlight?: boolean } = {},
 ): Promise<DiffedText[]> {
   const results: DiffedText[] = [];
   for (let at = 0; at < files.length; at += FILES_PER_JOB) {
@@ -89,7 +90,7 @@ export async function diffTexts(
       .map((file) => ({ kind: 'texts' as const, ...file }));
     results.push(
       ...(await diffJobs().files(
-        { files: batch, whitespace: true, highlight: true, budget: TEXTS_BUDGET },
+        { files: batch, whitespace: true, highlight, budget: TEXTS_BUDGET },
         { signal },
       )),
     );

@@ -140,8 +140,9 @@ export type JumpTo = 'change' | 'file' | 'thread';
 
 /**
  * What `fold` does at a place: `open` or `close` the unchanged lines there (`zo`, `zc`), open
- * every run of them in the `file` (`zR`), or `toggle` the file (`za`): load it if it's kept out,
- * or close it into one block, or open it again.
+ * every run of them in the `file` (`zR`), with those its lines and diff bring later, until the
+ * reader closes one, or `toggle` the file (`za`): load it if it's kept out, or close it into one
+ * block, or open it again.
  */
 export type Fold = 'open' | 'close' | 'file' | 'toggle';
 

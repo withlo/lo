@@ -71,7 +71,7 @@ export async function baseOf(
 }
 
 /** What's left to download for one commit's files, in bytes. */
-interface Budget {
+export interface Budget {
   left: number;
 }
 
@@ -162,7 +162,7 @@ export class BlockTexts {
       return unread('There’s no file at that path at the commit the overview describes.');
     }
     const changes = this.#changesAt(clone, local, commit, withBase);
-    const text = await this.#readWhole(clone, found, changes.budget);
+    const text = await readWhole(clone, found, changes.budget, this.#stopped.signal);
     if (typeof text !== 'string') return unread(text.why);
     if (!withBase) return { kind: 'text', text, base: null };
     return { kind: 'text', text, base: await this.#base(clone, commit, bytes, found, changes) };
@@ -200,7 +200,7 @@ export class BlockTexts {
     if (old === undefined) return { kind: 'added' };
     // Only its mode changed, such as being made executable.
     if (old.oid === version.oid && old.path.equals(path)) return { kind: 'same' };
-    const text = await this.#readWhole(clone, old, changes.budget);
+    const text = await readWhole(clone, old, changes.budget, this.#stopped.signal);
     if (typeof text !== 'string') return unknown(text.why);
     return { kind: 'changed', path: decoder.decode(old.path), text };
   }
@@ -250,45 +250,47 @@ export class BlockTexts {
     this.#changes = { key, budget, started: true, base, files };
     return this.#changes;
   }
+}
 
-  /**
-   * The text of the file `version`, read whole, downloading it first when the copy lacks it; or why
-   * it can't be: it isn't a file, or text, or it's larger than the most Lo reads of a file.
-   */
-  async #readWhole(
-    clone: TextsClone,
-    version: FileVersion,
-    budget: Budget,
-  ): Promise<string | { why: string }> {
-    if (version.mode !== 'regular' && version.mode !== 'executable') {
-      return { why: 'It isn’t a file.' };
-    }
-    let { size } = version;
-    if (size === undefined) {
-      if (clone.offline) return { why: 'The local copy is offline, and lacks it.' };
-      const cap = Math.min(PROBE, budget.left);
-      if (cap <= 0) return { why: SPENT };
-      try {
-        await clone.download([version.oid], DOWNLOADING, {
-          maxBytes: cap,
-          signal: this.#stopped.signal,
-          received: (bytes) => {
-            budget.left -= bytes;
-          },
-        });
-      } catch (error) {
-        if (pastCap(error)) return { why: cap === PROBE ? TOO_LARGE : SPENT };
-        throw error;
-      }
-      [size] = await clone.objectSizes([version.oid]);
-      if (size === undefined) return { why: 'The local copy doesn’t have it.' };
-    }
-    if (size > LIMITS.file) return { why: TOO_LARGE };
-    const bytes = await clone.readBlob(version.oid, { maxBytes: LIMITS.file });
-    if (bytes?.length !== size) return { why: 'Lo couldn’t read it from the local copy.' };
-    if (bytes.subarray(0, BINARY_WINDOW).includes(0)) return { why: 'It isn’t text.' };
-    return decoder.decode(bytes);
+/**
+ * The text of the file `version`, read whole, downloading it first when the copy lacks it, its
+ * download counted against `budget` and stopped once `signal` aborts; or why it can't be: it isn't
+ * a file, or text, it's larger than the most Lo reads of a file, or the budget is spent.
+ */
+export async function readWhole(
+  clone: Pick<Repo, 'offline' | 'download' | 'objectSizes' | 'readBlob'>,
+  version: FileVersion,
+  budget: Budget,
+  signal: AbortSignal,
+): Promise<string | { why: string }> {
+  if (version.mode !== 'regular' && version.mode !== 'executable') {
+    return { why: 'It isn’t a file.' };
   }
+  let { size } = version;
+  if (size === undefined) {
+    if (clone.offline) return { why: 'The local copy is offline, and lacks it.' };
+    const cap = Math.min(PROBE, budget.left);
+    if (cap <= 0) return { why: SPENT };
+    try {
+      await clone.download([version.oid], DOWNLOADING, {
+        maxBytes: cap,
+        signal,
+        received: (bytes) => {
+          budget.left -= bytes;
+        },
+      });
+    } catch (error) {
+      if (pastCap(error)) return { why: cap === PROBE ? TOO_LARGE : SPENT };
+      throw error;
+    }
+    [size] = await clone.objectSizes([version.oid]);
+    if (size === undefined) return { why: 'The local copy doesn’t have it.' };
+  }
+  if (size > LIMITS.file) return { why: TOO_LARGE };
+  const bytes = await clone.readBlob(version.oid, { maxBytes: LIMITS.file });
+  if (bytes?.length !== size) return { why: 'Lo couldn’t read it from the local copy.' };
+  if (bytes.subarray(0, BINARY_WINDOW).includes(0)) return { why: 'It isn’t text.' };
+  return decoder.decode(bytes);
 }
 
 /** Why a file isn't shown once what Lo downloads for a commit's code is spent. */

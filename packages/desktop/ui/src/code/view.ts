@@ -108,6 +108,7 @@ import {
   type Gap,
   inGap,
   isGapLine,
+  type Keep,
   type LineRange,
   runAt,
   shiftRows,
@@ -121,6 +122,16 @@ export function createDiffView(parent: HTMLElement, init: DiffInit, on: DiffEven
 }
 
 type Pane = Side | 'inline';
+
+/**
+ * The runs of lines `diff` collapses around `keep`, by their first old line, which `zR` opens:
+ * every run but those of placeholders, which have nothing to show until their lines come.
+ */
+function wholeRuns(diff: FileDiff, keep: Keep, gaps: readonly Gap[]): number[] {
+  return collapsedRuns(diff, keep, 2, gaps).flatMap((run) =>
+    inGap(run, gaps) ? [] : [run.old.first],
+  );
+}
 
 /** A file's line on one side, by the file's index: line 0 is its header. */
 interface At {
@@ -244,6 +255,11 @@ class View implements DiffView {
   readonly #noteLines: { old: Set<number>; new: Set<number> }[];
   /** Each file's opened runs, by their first old line. */
   readonly #open: Set<number>[];
+  /**
+   * Files the reader opened whole with `zR` and hasn't closed a run of since: every run of lines
+   * each comes to have opens too, as its lines, its diff or the lines it keeps shown change.
+   */
+  readonly #whole = new Set<number>();
   /** Lines each file holds only as placeholders, until the whole file comes. */
   readonly #gaps: (readonly Gap[])[];
   /** Files closed with `za`, and files kept out being loaded or loaded. */
@@ -549,10 +565,14 @@ class View implements DiffView {
     // Closed, it stays one block, whatever its lines.
     if (note === 'closed') return true;
     if (note || !this.#loaded.has(file)) return false;
+    const keep = this.#keep[file]!;
+    const open = this.#whole.has(file)
+      ? new Set([...this.#open[file]!, ...wholeRuns(diff, keep, [])])
+      : this.#open[file];
     const next = fileRows(
       { header: 0, count: lines.old.length },
       { header: 0, count: lines.new.length },
-      { kind: 'diff', diff, keep: this.#keep[file], open: this.#open[file], gaps: [] },
+      { kind: 'diff', diff, keep, open, gaps: [] },
     );
     return sameShape(this.#rows[file]!, next);
   }
@@ -1163,12 +1183,12 @@ class View implements DiffView {
         this.#openRun(place, how === 'open');
         return;
       case 'file': {
-        const diff = this.#diffs[file];
-        if (!diff || this.#noteOf(file)) return;
-        for (const run of collapsedRuns(diff, this.#keep[file], 2, this.#gaps[file])) {
-          if (!this.#inGap(file, run)) this.#open[file]!.add(run.old.first);
-        }
-        this.#refresh(file);
+        // A file whose lines or diff are on their way opens whole once they come, as do its runs
+        // of placeholders once their lines do.
+        const note = this.#noteOf(file);
+        if (note !== undefined && note !== 'pending' && note !== 'loading') return;
+        this.#whole.add(file);
+        if (note === undefined) this.#refresh(file);
         return;
       }
       case 'toggle':
@@ -1800,6 +1820,12 @@ class View implements DiffView {
   #rowsOf(file: number): FileRows {
     const lines = this.#layout.files[file]!;
     const diff = this.#diffs[file];
+    // A file opened whole opens the runs it comes to have.
+    if (diff && this.#whole.has(file)) {
+      for (const first of wholeRuns(diff, this.#keep[file]!, this.#gaps[file]!)) {
+        this.#open[file]!.add(first);
+      }
+    }
     return fileRows(
       lines.old,
       lines.new,
@@ -2263,8 +2289,13 @@ class View implements DiffView {
     const run = runAt(runs, place.side, place.line);
     // Lines the view has only as placeholders stay collapsed.
     if (!run || opened.has(run.old.first) === open || this.#inGap(place.file, run)) return;
-    if (open) opened.add(run.old.first);
-    else opened.delete(run.old.first);
+    if (open) {
+      opened.add(run.old.first);
+    } else {
+      opened.delete(run.old.first);
+      // It stays closed as the file's lines or diff change: the file isn't opened whole anymore.
+      this.#whole.delete(place.file);
+    }
     this.#refresh(place.file);
   }
 
