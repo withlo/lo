@@ -7,6 +7,7 @@ import { createStore } from 'zustand/vanilla';
 
 import type { Moved, Tab } from '../contract.ts';
 import { main } from './main.ts';
+import { moreStore } from './more.ts';
 import { tabsStore, type TabsState } from './store.ts';
 
 /** What the strip last said of a tab it moved, for a screen reader. */
@@ -33,13 +34,24 @@ export function saidOf(tab: Tab, place: number, count: number): string {
 }
 
 /**
+ * How many tabs the strip shows: the first in the order, while the others are folded into its
+ * "N more" menu.
+ */
+export function inStrip(): number {
+  const { tabs } = tabsStore.getState();
+  return Math.max(1, tabs.length - moreStore.getState().folded.length);
+}
+
+/**
  * Why the tab `target` names, or the one on screen, can't move a place by `by` among `state`'s
- * tabs, or `true` when it can. It doesn't go round the ends.
+ * tabs, or `true` when it can. It goes no further than the first `shown`, those the strip shows,
+ * and not round the ends.
  */
 export function movable(
   { tabs, active }: TabsState,
   target: TabTarget | NoTarget,
   by: 1 | -1,
+  shown: number = tabs.length,
 ): true | string {
   const id = target.kind === 'tab' ? target.tab : active;
   const at = tabs.findIndex((tab) => tab.id === id);
@@ -49,7 +61,7 @@ export function movable(
     return "Recent pull requests can't move: it shows while no other tab is open.";
   }
   if (at + by < 0) return 'The tab is first in the strip already.';
-  if (at + by >= tabs.length) return 'The tab is last in the strip already.';
+  if (at + by >= Math.min(shown, tabs.length)) return 'The tab is last in the strip already.';
   return true;
 }
 
@@ -63,10 +75,15 @@ function say(moved: Moved | undefined): void {
 
 /**
  * Moves the tab `target` names a place by `by`, or the one on screen as main has it, so two quick
- * presses move it two places.
+ * presses move it two places, within the tabs the strip shows.
  */
 export async function stepTab(target: TabTarget | NoTarget, by: 1 | -1): Promise<void> {
-  say(await main().move(target.kind === 'tab' ? { id: target.tab, step: by } : { step: by }));
+  const within = inStrip();
+  say(
+    await main().move(
+      target.kind === 'tab' ? { id: target.tab, step: by, within } : { step: by, within },
+    ),
+  );
 }
 
 /** Moves a tab dragged along the strip to place `to`, from 0, counted without it. */

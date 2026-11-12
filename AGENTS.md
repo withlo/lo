@@ -430,6 +430,11 @@ status bar.
   `⌃⇧PgUp` and `⌃⇧PgDn`, moves there through `tab.move`, so the tabs come back in that order after
   Lo restarts. A step with no tab named moves the one on screen as main has it, so two quick presses
   move it two places.
+- The strip shows the first tabs in the order and folds the rest into "N more". A tab past them that
+  comes on screen (chosen from "N more", opened by a link, restored, or reached by `⌘9`) moves into
+  the last place shown, and the tab there folds, so a drag or a key moves exactly what's shown.
+  `⌘⇧]`, `⌘⇧[` and the moving keys stay within the tabs shown (`within` in `tab.select` and
+  `tab.move`).
 - The first time a tab is shown, main reads the pull request and fetches it into the local copy
   through `@lo/git`, with the account's token, read as each fetch starts. A fetch that fails is
   tried again after 5 s, doubling to 5 minutes, unless waiting won't help, and a tab reads what an

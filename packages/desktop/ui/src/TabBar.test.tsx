@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import { buildCss, hasRule } from '../scripts/stylesheet.ts';
 import {
+  bringIn,
   dragOffset,
   dragPlace,
-  dropIndex,
   foldTabs,
   slideOf,
   TabBar,
@@ -164,6 +164,11 @@ function ids(list: readonly { id: string }[]): string[] {
   return list.map(({ id }) => id);
 }
 
+/** What the strip shows of `order`, four fitting, with F on screen. */
+function strip(order: readonly { id: string }[]): string[] {
+  return ids(foldTabs(bringIn(order, 'F', 4).tabs, 4).shown);
+}
+
 /** Ten tabs, `t1` to `t10`. */
 function tenTabs(): { id: string }[] {
   return Array.from({ length: 10 }, (_, index) => ({ id: `t${index + 1}` }));
@@ -173,23 +178,31 @@ describe('tabs that don’t fit', () => {
   const ten = tenTabs();
 
   it('fold after the first that fit, in order', () => {
-    const { shown, folded } = foldTabs(ten, 't2', 4);
+    const { shown, folded } = foldTabs(ten, 4);
     expect(ids(shown)).toEqual(['t1', 't2', 't3', 't4']);
     expect(ids(folded)).toEqual(['t5', 't6', 't7', 't8', 't9', 't10']);
+    // With room for none, one shows.
+    expect(ids(foldTabs(ten, 0).shown)).toEqual(['t1']);
   });
 
-  it('never fold the tab on screen, which takes the last place that fits', () => {
-    const { shown, folded } = foldTabs(ten, 't9', 4);
+  it('never fold the tab on screen, which moves into the last place that fits', () => {
+    const { tabs: order, moved } = bringIn(ten, 't9', 4);
+    expect(moved).toEqual({ id: 't9', to: 3 });
+    const { shown, folded } = foldTabs(order, 4);
     expect(ids(shown)).toEqual(['t1', 't2', 't3', 't9']);
     expect(ids(folded)).toEqual(['t4', 't5', 't6', 't7', 't8', 't10']);
     // With room for one, it's the one.
-    expect(ids(foldTabs(ten, 't7', 1).shown)).toEqual(['t7']);
-    expect(ids(foldTabs(ten, 't7', 0).shown)).toEqual(['t7']);
+    expect(ids(foldTabs(bringIn(ten, 't7', 1).tabs, 1).shown)).toEqual(['t7']);
+    expect(ids(foldTabs(bringIn(ten, 't7', 0).tabs, 0).shown)).toEqual(['t7']);
+    // One that fits stays where it is.
+    expect(bringIn(ten, 't4', 4)).toEqual({ tabs: ten });
   });
 
   it('don’t exist while every tab fits, or while the room isn’t known', () => {
-    expect(foldTabs(ten, 't9', 10).folded).toEqual([]);
-    expect(foldTabs(ten, 't9', undefined).folded).toEqual([]);
+    expect(foldTabs(ten, 10).folded).toEqual([]);
+    expect(foldTabs(ten, undefined).folded).toEqual([]);
+    expect(bringIn(ten, 't9', 10)).toEqual({ tabs: ten });
+    expect(bringIn(ten, 't9', undefined)).toEqual({ tabs: ten });
   });
 
   it('are counted against the strip’s room: all beside +, or as many as fit beside "N more" too', () => {
@@ -237,28 +250,17 @@ describe('dragging a tab', () => {
     expect([0, 1, 3, 4].map((index) => slideOf(index, 2, 2, 102))).toEqual([0, 0, 0, 0]);
   });
 
-  it('moves it among every tab to just after the one it was let go after, or first', () => {
-    const all = tenTabs();
-    expect(dropIndex(all, all, 't2', 0)).toBe(0);
-    expect(dropIndex(all, all, 't2', 3)).toBe(3);
-    expect(dropIndex(all, all, 't9', 9)).toBe(9);
-    // Let go where it was, it stays.
-    expect(dropIndex(all, all, 't3', 2)).toBeUndefined();
-    expect(dropIndex(all, all, 'gone', 2)).toBeUndefined();
-  });
-
-  it('keeps it where the strip showed it, with tabs folded away', () => {
-    const all = tenTabs();
-    // t9 on screen, after t1 to t3, with t4 to t8 and t10 folded away.
-    const { shown } = foldTabs(all, 't9', 4);
-    // t9 let go after t1 goes just after it.
-    expect(dropIndex(all, shown, 't9', 1)).toBe(1);
-    // t2 let go after t3 goes just after t3, before the folded tabs, where the strip showed it.
-    expect(dropIndex(all, shown, 't2', 2)).toBe(2);
-    // t2 let go after t9 goes just after t9.
-    expect(dropIndex(all, shown, 't2', 3)).toBe(8);
-    // t9 let go last of the tabs shown, where it was, stays.
-    expect(dropIndex(all, shown, 't9', 3)).toBeUndefined();
+  it('lands where the strip showed it, with a tab brought in from "N more"', () => {
+    // A to G, four fitting, and F chosen from "N more": the strip shows A B C F.
+    const seven = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((id) => ({ id }));
+    const { tabs: order } = bringIn(seven, 'F', 4);
+    expect(strip(order)).toEqual(['A', 'B', 'C', 'F']);
+    // B let go after the three others shown lands fourth of all: last in the strip, still shown.
+    const dropped = order.filter(({ id }) => id !== 'B').toSpliced(3, 0, { id: 'B' });
+    expect(strip(dropped)).toEqual(['A', 'C', 'F', 'B']);
+    // F a place left, as ⌃⇧PgUp moves it, is a place left in the strip.
+    const stepped = order.filter(({ id }) => id !== 'F').toSpliced(2, 0, { id: 'F' });
+    expect(strip(stepped)).toEqual(['A', 'B', 'F', 'C']);
   });
 });
 

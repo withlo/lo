@@ -24,6 +24,11 @@ describe('moving a tab a place', () => {
     expect(movable(state, { kind: 'tab', tab: 'gone' }, 1)).toBe("That tab isn't open.");
   });
 
+  it('goes no further than the tabs the strip shows', () => {
+    expect(movable(state, NO_TARGET, 1, 2)).toBe('The tab is last in the strip already.');
+    expect(movable(state, NO_TARGET, -1, 2)).toBe(true);
+  });
+
   it('leaves Recent pull requests where it is', () => {
     const alone = { tabs: [recent], active: 'recent' };
     for (const by of [1, -1] as const) {

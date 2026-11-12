@@ -11,7 +11,7 @@ import keys from '../keys.ts';
 import { follow } from './follow.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
-import { movable, stepTab } from './order.ts';
+import { inStrip, movable, stepTab } from './order.ts';
 import { panels, viewCounts } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
 import { activeTab, kinds } from './shared.ts';
@@ -91,15 +91,15 @@ export default {
     show7: { run: () => select({ position: 7 }) },
     show8: { run: () => select({ position: 8 }) },
     showLast: { run: () => select({ last: true }) },
-    next: { run: () => select({ step: 1 }) },
-    previous: { run: () => select({ step: -1 }) },
+    next: { run: () => select({ step: 1, within: inStrip() }) },
+    previous: { run: () => select({ step: -1, within: inStrip() }) },
     moveLeft: {
       run: (target) => stepTab(target, -1),
-      enabled: (target) => movable(tabsStore.getState(), target, -1),
+      enabled: (target) => movable(tabsStore.getState(), target, -1, inStrip()),
     },
     moveRight: {
       run: (target) => stepTab(target, 1),
-      enabled: (target) => movable(tabsStore.getState(), target, 1),
+      enabled: (target) => movable(tabsStore.getState(), target, 1, inStrip()),
     },
     more: {
       run: () => setMoreOpen(true),

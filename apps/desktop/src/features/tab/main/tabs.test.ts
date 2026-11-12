@@ -154,6 +154,22 @@ describe('showing a tab', () => {
     expect(tabs.list().active).toBe('t2');
   });
 
+  it('steps round the ends of the tabs the strip shows, while others are folded', () => {
+    const { tabs } = three();
+    tabs.select({ position: 2 });
+    tabs.select({ step: 1, within: 2 });
+    expect(tabs.list().active).toBe('t1');
+    tabs.select({ step: -1, within: 2 });
+    expect(tabs.list().active).toBe('t2');
+    // From a tab folded away, to the first or the last shown.
+    tabs.select({ last: true });
+    tabs.select({ step: 1, within: 2 });
+    expect(tabs.list().active).toBe('t1');
+    tabs.select({ last: true });
+    tabs.select({ step: -1, within: 2 });
+    expect(tabs.list().active).toBe('t2');
+  });
+
   it('of no tab, or the one on screen, changes nothing', () => {
     const { tabs, heard } = three();
     tabs.select({ position: 4 });
@@ -211,6 +227,17 @@ describe('moving a tab', () => {
     expect(heard).toHaveLength(3);
     // The one on screen stays on screen.
     expect(tabs.list().active).toBe('t3');
+  });
+
+  it('steps no further than the tabs the strip shows', () => {
+    const { tabs, heard } = three();
+    expect(tabs.step('t1', 1, 2)).toEqual({ id: 't1', place: 1 });
+    expect(names(tabs.list())).toEqual(['bat#7', 'fd#2212', '*lo#1']);
+    expect(tabs.step('t1', 1, 2)).toEqual({ id: 't1', place: 1 });
+    expect(heard).toHaveLength(1);
+    // A tab past them steps no further along.
+    expect(tabs.step('t3', 1, 2)).toEqual({ id: 't3', place: 2 });
+    expect(tabs.step('t3', -1, 2)).toEqual({ id: 't3', place: 1 });
   });
 
   it('steps nothing while only Recent is open, or for a tab that isn’t', () => {

@@ -57,9 +57,11 @@ export interface TabBarProps {
   /** Opens a pull request. Without it, the `+` button does nothing. */
   onNew?: (() => void) | undefined;
   /**
-   * Moves a tab dragged along the strip to place `to` among `tabs`, from 0, counted without it.
-   * Without it, tabs don't drag. The strip shows the tab at its new place until `tabs` comes in
-   * another order, or until what this returns settles.
+   * Moves a tab to place `to` among `tabs`, from 0, counted without it: one dragged along the
+   * strip, or the tab on screen, brought into the strip from past the last place that fits.
+   * Without it, tabs don't drag, and a tab brought in is only drawn there. The strip shows a
+   * dragged tab at its new place until `tabs` comes in another order, or until what this returns
+   * settles.
    */
   onMove?: ((id: string, to: number) => void | Promise<unknown>) | undefined;
   /** Where the menu of tabs that don't fit is put in the page: an element inside `.lo-app`. */
@@ -105,7 +107,9 @@ const state = cva('size-8 flex-none rounded-full', {
  * id in `data-tab`, for what a right-click on it acts on.
  *
  * Tabs shrink as more open, down to their repository and number, and those that still don't fit
- * fold into a menu after the last that does, "N more". The tab on screen never folds.
+ * fold into a menu after the last that does, "N more". So the strip shows the first tabs, in order.
+ * The tab on screen never folds: once it's further along, as when it's chosen from "N more", it
+ * moves into the last place that fits, through `onMove`, and the tab there folds.
  *
  * With `onMove`, a tab dragged along the strip follows the pointer, within the tabs shown, and the
  * others slide aside to show where it will land; letting go moves it there, and `Esc` puts it
@@ -128,12 +132,21 @@ export function TabBar({
   const plus = useRef<HTMLButtonElement>(null);
   const more = useRef<HTMLButtonElement>(null);
   const [landed, setLanded] = useState<Landed | undefined>(undefined);
-  const ordered = inOrder(tabs, landed);
-  const room = useRoom(list, plus, more, ordered.length);
-  const { shown, folded } = foldTabs(ordered, selected, room);
-  const drag = useDrag(list, shown, onMove !== undefined, (id, place) => {
-    const to = dropIndex(ordered, shown, id, place);
-    if (to === undefined || !onMove) return;
+  const measured = useRoom(list, plus, more, tabs.length);
+  const room = measured?.fits;
+  const { tabs: ordered, moved } = bringIn(inOrder(tabs, landed), selected, room);
+  const { shown, folded } = foldTabs(ordered, room);
+  // The tab on screen, brought into the strip, moves there in the order, once each time, as it's
+  // drawn there, so whatever's asked of main after goes to that order. Only by a room measured
+  // with these tabs: one measured before a tab opened would fold the tabs before it.
+  const bringing =
+    moved && measured?.count === tabs.length && `${moved.id}\n${moved.to}\n${orderOf(tabs)}`;
+  useLayoutEffect(() => {
+    if (bringing && moved) void onMove?.(moved.id, moved.to);
+  }, [bringing]);
+  const drag = useDrag(list, shown, onMove !== undefined, (id, to) => {
+    if (!onMove) return;
+    // The strip shows the first tabs, so the place among those shown is the place among all.
     const mine: Landed = {
       from: orderOf(tabs),
       order: ordered
@@ -200,20 +213,35 @@ export function TabBar({
 
 /**
  * The tabs the strip shows and those it folds, when `room` tabs fit (all of them while it isn't
- * known): the first that fit, in order, but with the tab on screen always among them, in the last
- * place when it's further along.
+ * known): the first that fit, and the rest, in order.
  */
 export function foldTabs<T extends { readonly id: string }>(
   tabs: readonly T[],
-  selected: string | undefined,
   room: number | undefined,
 ): { shown: T[]; folded: T[] } {
   if (room === undefined || tabs.length <= room) return { shown: [...tabs], folded: [] };
   const fits = Math.max(1, room);
+  return { shown: tabs.slice(0, fits), folded: tabs.slice(fits) };
+}
+
+/**
+ * `tabs` with the tab on screen in the last place that fits, when it's further along, so the strip
+ * shows it; and where it moved to, from 0, counted without it. The tab that was there folds.
+ */
+export function bringIn<T extends { readonly id: string }>(
+  tabs: readonly T[],
+  selected: string | undefined,
+  room: number | undefined,
+): { tabs: readonly T[]; moved?: { id: string; to: number } } {
+  if (room === undefined || tabs.length <= room) return { tabs };
+  const to = Math.max(1, room) - 1;
   const at = tabs.findIndex((item) => item.id === selected);
-  if (at < fits) return { shown: tabs.slice(0, fits), folded: tabs.slice(fits) };
-  const shown = [...tabs.slice(0, fits - 1), ...tabs.slice(at, at + 1)];
-  return { shown, folded: tabs.filter((item) => !shown.includes(item)) };
+  const onScreen = tabs[at];
+  if (!onScreen || at <= to) return { tabs };
+  return {
+    tabs: tabs.toSpliced(at, 1).toSpliced(to, 0, onScreen),
+    moved: { id: onScreen.id, to },
+  };
 }
 
 /** The strip's room, in CSS pixels, as `tabsThatFit` reads it. */
@@ -240,6 +268,12 @@ export function tabsThatFit({ width, tab: narrowest, gap, plus, more }: StripRoo
   return Math.max(1, Math.floor((width - plus - more - 2 * gap) / each));
 }
 
+/** How many tabs fit, and how many there were when that was measured. */
+interface Room {
+  readonly fits: number;
+  readonly count: number;
+}
+
 /**
  * How many tabs fit in the strip, measured after each render and as the window resizes, or
  * undefined until it's known. The "N more" button is held at the widest it has been, so its
@@ -250,8 +284,8 @@ function useRoom(
   plus: RefObject<HTMLButtonElement | null>,
   more: RefObject<HTMLButtonElement | null>,
   count: number,
-): number | undefined {
-  const [room, setRoom] = useState<number | undefined>(undefined);
+): Room | undefined {
+  const [room, setRoom] = useState<Room | undefined>(undefined);
   const widest = useRef(0);
   const [width, setWidth] = useState(0);
 
@@ -287,7 +321,7 @@ function useRoom(
       },
       count,
     );
-    setRoom(fits);
+    setRoom((last) => (last?.fits === fits && last.count === count ? last : { fits, count }));
   });
 
   return room;
@@ -314,26 +348,6 @@ function inOrder<T extends { readonly id: string }>(
   if (!landed || orderOf(tabs) !== landed.from) return tabs;
   const byId = new Map(tabs.map((item) => [item.id, item]));
   return landed.order.flatMap((id) => byId.get(id) ?? []);
-}
-
-/**
- * Where a tab let go after `place` of the other tabs shown goes among all `tabs`, from 0 and
- * counted without it, as `onMove` takes it: just after the shown tab it was let go after, or first.
- * So tabs folded away between two shown ones stay before it, and it lands where the strip showed
- * it. Undefined when it was let go where it was.
- */
-export function dropIndex(
-  tabs: readonly { readonly id: string }[],
-  shown: readonly { readonly id: string }[],
-  id: string,
-  place: number,
-): number | undefined {
-  const from = shown.findIndex((item) => item.id === id);
-  if (from < 0 || place === from) return undefined;
-  const after = shown.filter((item) => item.id !== id)[place - 1];
-  const others = tabs.filter((item) => item.id !== id);
-  const to = after === undefined ? 0 : others.findIndex((item) => item.id === after.id) + 1;
-  return to === tabs.findIndex((item) => item.id === id) ? undefined : to;
 }
 
 /** A tab shown in the strip, as a drag starts: its left edge, from the strip's, and its width. */

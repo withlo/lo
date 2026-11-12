@@ -130,6 +130,24 @@ async function open(page: Page, ...openings: Opening[]): Promise<string[]> {
   }, openings);
 }
 
+/**
+ * The open tabs in main's order, as the strip names them: `r1 #1`. A tab past those the strip
+ * shows moves into its last place as it comes on screen, so the order isn't always the one the
+ * tabs opened in.
+ */
+async function inOrder(page: Page): Promise<string[]> {
+  return page.evaluate(async () => {
+    const result = await window.lo.invoke('tab.list');
+    if (!result.ok) throw new Error(result.error.message);
+    const list: unknown = Reflect.get(Object(result.value), 'tabs');
+    if (!Array.isArray(list)) throw new Error('Main listed no tabs.');
+    return list.map((tab: unknown) => {
+      const [repo, number] = ['repo', 'number'].map((key) => String(Reflect.get(Object(tab), key)));
+      return `${repo} #${number}`;
+    });
+  });
+}
+
 test('with nothing open, Recent pull requests is the only tab, and it can’t be closed', async ({
   page,
 }) => {
@@ -174,13 +192,15 @@ test('⌘1 to ⌘8 show a tab by its place, and ⌘9 the last however many are o
   const repos = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
   await open(page, ...repos.map((repo, index) => pull('withlo', repo, index + 1)));
   await expect.poll(() => openCount(page)).toBe(10);
-  for (const [index, repo] of repos.slice(0, 8).entries()) {
-    await page.keyboard.press(`${cmd}+Digit${index + 1}`);
-    await expect(shown(page)).toHaveText(`${repo} #${index + 1}`);
-    await expect(page).toHaveTitle(`withlo/${repo}#${index + 1}`);
+  for (const place of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    const tab = (await inOrder(page))[place - 1] ?? '';
+    await page.keyboard.press(`${cmd}+Digit${place}`);
+    await expect(shown(page)).toHaveText(tab);
+    await expect(page).toHaveTitle(`withlo/${tab.replace(' ', '')}`);
   }
+  const last = (await inOrder(page)).at(-1) ?? '';
   await page.keyboard.press(`${cmd}+Digit9`);
-  await expect(shown(page)).toHaveText('j #10');
+  await expect(shown(page)).toHaveText(last);
 });
 
 test('a place past the last tab shows nothing new', async ({ page }) => {
@@ -439,18 +459,26 @@ for (const width of [1440, 'screen'] as const) {
       await expectFits(page);
       if (width === 1440) await expect(more(page)).toHaveCount(count > 8 ? 1 : 0);
 
-      // ⌘1, ⌘9 and stepping round both ends, to tabs folded away or not.
-      const steps: [string, number][] = [
-        [`${cmd}+Digit1`, 1],
-        [`${cmd}+Digit9`, count],
-        [`${cmd}+Shift+BracketRight`, 1],
-        [`${cmd}+Shift+BracketLeft`, count],
-        [`${cmd}+Shift+BracketLeft`, Math.max(1, count - 1)],
-        ['Control+Tab', count],
+      // ⌘1, and ⌘9 to the last tab, which comes into the strip if it was folded away.
+      await page.keyboard.press(`${cmd}+Digit1`);
+      await expect(shown(page)).toHaveText('r1 #1');
+      await expectFits(page);
+      const last = (await inOrder(page)).at(-1) ?? '';
+      await page.keyboard.press(`${cmd}+Digit9`);
+      await expect(shown(page)).toHaveText(last);
+      await expectFits(page);
+      await expect(tabs(page).last()).toHaveText(last);
+      // Stepping round both ends of the tabs the strip shows.
+      const before = count === 1 ? last : ((await tabs(page).nth(-2).textContent()) ?? '');
+      const steps: [string, string][] = [
+        [`${cmd}+Shift+BracketRight`, 'r1 #1'],
+        [`${cmd}+Shift+BracketLeft`, last],
+        [`${cmd}+Shift+BracketLeft`, before],
+        ['Control+Tab', last],
       ];
-      for (const [key, number] of steps) {
+      for (const [key, tab] of steps) {
         await page.keyboard.press(key);
-        await expect(shown(page)).toHaveText(`r${number} #${number}`);
+        await expect(shown(page)).toHaveText(tab);
         await expectFits(page);
       }
       await expect.poll(() => openCount(page)).toBe(count);
@@ -473,18 +501,61 @@ test('the tabs that don’t fit are in the "N more" menu, and choosing one shows
   await more(page).click();
   const menu = page.getByRole('menu', { name: 'More tabs' });
   const items = menu.getByRole('menuitem');
-  // In the strip's order, after the last it shows.
-  await expect(items).toHaveCount(folded);
-  await expect(items.first()).toHaveText(`r${17 - folded} #${17 - folded}`);
-  await expect(items.last()).toHaveText('r16 #16');
+  // In the order, after the last tab the strip shows.
+  const order = await inOrder(page);
+  await expect(items).toHaveText(order.slice(16 - folded));
+  const chosen = order.at(-1) ?? '';
+  const replaced = order[15 - folded] ?? '';
   await items.last().click();
   await expect(menu).toBeHidden();
-  await expect(shown(page)).toHaveText('r16 #16');
+  await expect(shown(page)).toHaveText(chosen);
   await expectFits(page);
-  // The tab it took the place of is in the menu now.
+  // It moves into the strip's last place, in the order too, and the tab that was there folds.
+  await expect(tabs(page).last()).toHaveText(chosen);
+  await expect.poll(async () => (await inOrder(page))[15 - folded]).toBe(chosen);
   await more(page).click();
-  await expect(items.first()).toHaveText(`r${16 - folded} #${16 - folded}`);
+  await expect(items.first()).toHaveText(replaced);
   await page.keyboard.press('Escape');
+});
+
+test('with a tab brought in from "N more", a drag and the keys move exactly what the strip shows', async ({
+  app,
+  page,
+}) => {
+  await resize(app, page, 1440);
+  await open(page, ...many(16));
+  await page.keyboard.press(`${cmd}+Digit1`);
+  const folded = await more(page).getAttribute('aria-label');
+  await more(page).click();
+  const items = page.getByRole('menu', { name: 'More tabs' }).getByRole('menuitem');
+  const chosen = (await items.last().textContent()) ?? '';
+  await items.last().click();
+  await expect(tabs(page).last()).toHaveText(chosen);
+  await expect(shown(page)).toHaveText(chosen);
+  const before = await tabs(page).allTextContents();
+  const count = before.length;
+
+  // The second tab, let go past the last, is last in the strip, and nothing folds or comes in.
+  await dragTab(page, tabs(page).nth(1), tabs(page).last(), 10);
+  await page.mouse.up();
+  const dropped = [...before.filter((_, index) => index !== 1), before[1] ?? ''];
+  await expect(tabs(page)).toHaveText(dropped);
+  await expect(more(page)).toHaveAttribute('aria-label', folded ?? '');
+
+  // The tab on screen moves a place left and right in the strip, and no further than its end.
+  await page.keyboard.press('Control+Shift+PageUp');
+  await expect(tabs(page)).toHaveText(
+    dropped.toSpliced(count - 2, 1).toSpliced(count - 3, 0, chosen),
+  );
+  await page.keyboard.press('Control+Shift+PageDown');
+  await page.keyboard.press('Control+Shift+PageDown');
+  const last = dropped.toSpliced(count - 2, 1).toSpliced(count - 1, 0, chosen);
+  await expect(tabs(page)).toHaveText(last);
+  await expect(said(page, `${chosen} is now tab ${count} of 16.`)).toBeAttached();
+  await page.keyboard.press('Control+Shift+PageDown');
+  await expect(said(page, 'The tab is last in the strip already.')).toBeVisible();
+  await expect(tabs(page)).toHaveText(last);
+  await expect(more(page)).toHaveAttribute('aria-label', folded ?? '');
 });
 
 test('⌘⇧A opens the tabs that don’t fit, to choose one by key', async ({ app, page }) => {

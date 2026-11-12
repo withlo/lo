@@ -67,10 +67,11 @@ export interface TabList {
    */
   move(id: string, to: number): Moved | undefined;
   /**
-   * Moves `id`, or the tab on screen, one place along the strip, but not round its ends, and says
-   * where it is now. Nothing while only Recent is open.
+   * Moves `id`, or the tab on screen, one place along the strip, but not past its ends, nor past
+   * the first `within` tabs, those the strip shows, and says where it is now. Nothing while only
+   * Recent is open.
    */
-  step(id: string | undefined, by: 1 | -1): Moved | undefined;
+  step(id: string | undefined, by: 1 | -1, within?: number): Moved | undefined;
   /** Keeps what GitHub said of a pull request's tab, so the strip shows it from then on. */
   describe(id: string, details: { title: string; state: PullState }): void;
   /** What's kept with a pull request's tab: its account and repository, if known. */
@@ -188,8 +189,13 @@ export function createTabs(options: TabListOptions): TabList {
       else if ('position' in choice) chosen = tabs[choice.position - 1];
       else if ('last' in choice) chosen = tabs.at(-1);
       else {
-        const at = tabs.findIndex((tab) => tab.id === active);
-        chosen = tabs[(at + choice.step + tabs.length) % tabs.length];
+        // Round the ends of the tabs the strip shows.
+        const strip = tabs.slice(0, choice.within ?? tabs.length);
+        const at = strip.findIndex((tab) => tab.id === active);
+        chosen =
+          at < 0
+            ? strip.at(choice.step > 0 ? 0 : -1)
+            : strip[(at + choice.step + strip.length) % strip.length];
       }
       // Recent is on screen only while it's the only tab.
       if (chosen && chosen.kind !== 'recent') show(chosen.id);
@@ -197,11 +203,12 @@ export function createTabs(options: TabListOptions): TabList {
 
     move: moveTo,
 
-    step(id, by) {
+    step(id, by, within = state.kept.length) {
       const moving = id ?? list().active;
       const from = state.kept.findIndex((tab) => tab.id === moving);
       if (from < 0) return undefined;
-      return moveTo(moving, Math.max(0, from + by));
+      const last = Math.max(from, within - 1);
+      return moveTo(moving, Math.min(Math.max(0, from + by), last));
     },
 
     describe(id, { title, state: pullState }) {

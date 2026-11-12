@@ -26,7 +26,11 @@ export default defineCommands('tab', {
   show8: place(8),
   /** `⌘9` is the last tab however many are open, as in browsers, so the end is always a key away. */
   showLast: { label: 'Last tab', group: 'Tabs and window', keys: ['cmd+9'], when: outside },
-  /** Round the ends. `⌃⇥` too, on both systems, as browsers have it. */
+  /**
+   * Round the ends of the tabs the strip shows: one folded into "N more" moves into the strip as
+   * it's shown, so stepping on to it would only step back. `⌃⇥` too, on both systems, as browsers
+   * have it.
+   */
   next: {
     label: 'Next tab',
     group: 'Tabs and window',
@@ -44,8 +48,9 @@ export default defineCommands('tab', {
     bar: { menu: 'Window', order: 20 },
   },
   /**
-   * The tab on screen, or the one right-clicked, one place along the strip, but not round its
-   * ends. `⌃⇧PgUp` and `⌃⇧PgDn` move a tab in browsers and terminals, on both systems.
+   * The tab on screen, or the one right-clicked, one place along the strip, but not past its ends
+   * or the last tab it shows. `⌃⇧PgUp` and `⌃⇧PgDn` move a tab in browsers and terminals, on both
+   * systems.
    */
   moveLeft: {
     label: 'Move tab left',
