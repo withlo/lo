@@ -22,6 +22,25 @@ describe('workers', () => {
     expect(Date.now() - started).toBeLessThan(5000);
   });
 
+  it("starts a job's deadline when its code does, not while its worker loads", async () => {
+    // The worker takes a second to load, twice the job's deadline; the job takes 50 ms of it.
+    const slow = workers(new URL('./test/slow.ts', import.meta.url));
+    expect(await slow('sample.pause', 50, limits('sample.pause'))).toEqual({ ok: true, value: 50 });
+  });
+
+  it('gives up on a worker that never starts its job', async () => {
+    const stuck = workers(new URL('./test/stuck.ts', import.meta.url), 200);
+    const started = Date.now();
+    expect(await stuck('sample.double', 21, limits('sample.double'))).toEqual({
+      ok: false,
+      error: {
+        code: 'busy',
+        message: "sample.double couldn't start within 200 ms; try again later.",
+      },
+    });
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
   it('stops a job the window cancels while it runs', async () => {
     const controller = new AbortController();
     const started = Date.now();

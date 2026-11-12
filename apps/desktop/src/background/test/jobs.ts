@@ -8,6 +8,7 @@ import { defineRunner } from '../runners.ts';
 
 export const sample = defineJobs('sample', {
   double: { input: z.number(), reply: reply<number>() },
+  pause: { input: z.number(), reply: reply<number>() },
   spin: { input: z.undefined(), reply: reply<never>() },
   fill: { input: z.undefined(), reply: reply<never>() },
   refuse: { input: z.undefined(), reply: reply<never>() },
@@ -16,6 +17,16 @@ export const sample = defineJobs('sample', {
 
 export default defineRunner(sample, {
   double: { run: (input) => input * 2 },
+  pause: {
+    run(input) {
+      const end = Date.now() + input;
+      while (Date.now() < end) {
+        // Busy, well within its deadline.
+      }
+      return input;
+    },
+    limits: { deadline: 500 },
+  },
   spin: {
     run() {
       for (;;) {

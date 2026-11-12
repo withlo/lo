@@ -58,9 +58,10 @@ export interface JobRequest {
 
 /**
  * What the process answers, under the request's id. A failure's code is `invalid` (the message or
- * its input didn't match), `unavailable` (no such job), `timeout` (it ran past its deadline),
- * `memory` (it ran out of its memory), `cancelled` (the window stopped it), or `failed` (it
- * threw). The window adds `restarted` for jobs lost when the process restarts.
+ * its input didn't match), `unavailable` (no such job), `busy` (too many jobs were waiting, or its
+ * worker couldn't start in time), `timeout` (it ran past its deadline), `memory` (it ran out of its
+ * memory), `cancelled` (the window stopped it), or `failed` (it threw). The window adds `restarted`
+ * for jobs lost when the process restarts.
  */
 export type JobReply = { id: number } & (
   { ok: true; value: unknown } | { ok: false; error: Failure }
