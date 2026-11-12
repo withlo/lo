@@ -25,6 +25,10 @@ export function Revisions({ tab }: { tab: PullTab }) {
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
   useEffect(() => {
     if (views.get(tab.id) === undefined) catchUp(tab.id);
+    // The picker closes as its tab leaves the screen.
+    return () => {
+      if (pickers.get(tab.id).open) pickers.set(tab.id, { open: false });
+    };
   }, [tab.id]);
   if (pull?.acting?.kind !== 'account' || !view || view.status === 'signIn') return null;
   const compared = view.comparison ?? view.pending;

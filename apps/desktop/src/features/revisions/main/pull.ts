@@ -581,6 +581,9 @@ export class RevisionsTab {
       return;
     }
     if (same(this.#ready?.chosen, chosen) || same(this.#preparing, chosen)) return;
+    // A newer push the reader loaded is a revision once its push history is read.
+    const known = (head: string | null) => head === null || revisions.get(head) !== undefined;
+    if (!known(chosen.from) || !known(chosen.to)) return;
     if (local.kind === 'noGit') {
       this.#release();
       return;
