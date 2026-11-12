@@ -224,6 +224,7 @@ function Code({
           beside: true,
           acted() {},
           fileAt: () => id,
+          toTop: (file) => made.revealAtTop({ kind: 'file', file }),
           viewedHere(file, viewed) {
             made.setCollapsed(file, viewed);
           },
