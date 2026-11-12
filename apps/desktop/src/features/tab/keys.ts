@@ -1,7 +1,7 @@
-// The tab strip's keys: a tab by its place, the next and previous tab, the tabs that don't fit and
-// closing one. They work wherever focus is, a text field included, but not under a dialog or a
-// palette, which hold the keys while they're open. And a pull request's tab's: its left panel, and
-// its middle views.
+// The tab strip's keys: a tab by its place, the next and previous tab, moving one, the tabs that
+// don't fit and closing one. They work wherever focus is, a text field included, but not under a
+// dialog or a palette, which hold the keys while they're open. And a pull request's tab's: its left
+// panel, and its middle views.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -26,7 +26,11 @@ export default defineCommands('tab', {
   show8: place(8),
   /** `⌘9` is the last tab however many are open, as in browsers, so the end is always a key away. */
   showLast: { label: 'Last tab', group: 'Tabs and window', keys: ['cmd+9'], when: outside },
-  /** Round the ends. `⌃⇥` too, on both systems, as browsers have it. */
+  /**
+   * Round the ends of the tabs the strip shows: one folded into "N more" moves into the strip as
+   * it's shown, so stepping on to it would only step back. `⌃⇥` too, on both systems, as browsers
+   * have it.
+   */
   next: {
     label: 'Next tab',
     group: 'Tabs and window',
@@ -42,6 +46,29 @@ export default defineCommands('tab', {
     when: outside,
     repeat: true,
     bar: { menu: 'Window', order: 20 },
+  },
+  /**
+   * The tab on screen, or the one right-clicked, one place along the strip, but not past its ends
+   * or the last tab it shows. `⌃⇧PgUp` and `⌃⇧PgDn` move a tab in browsers and terminals, on both
+   * systems.
+   */
+  moveLeft: {
+    label: 'Move tab left',
+    group: 'Tabs and window',
+    keys: ['ctrl+shift+pageup'],
+    targets: ['tab', 'none'],
+    when: outside,
+    repeat: true,
+    menu: { on: 'tab', order: 1 },
+  },
+  moveRight: {
+    label: 'Move tab right',
+    group: 'Tabs and window',
+    keys: ['ctrl+shift+pagedown'],
+    targets: ['tab', 'none'],
+    when: outside,
+    repeat: true,
+    menu: { on: 'tab', order: 2 },
   },
   /**
    * The menu of the tabs that don't fit in the strip, "N more", to show one of them. Browsers

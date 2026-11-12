@@ -1454,7 +1454,8 @@ describe('overview marks', () => {
     link!.dispatchEvent(down);
     expect(down.defaultPrevented).toBe(true);
     link!.click();
-    expect(on.explained).toHaveBeenCalledWith('block-7');
+    // With the line the note is under, where the reader was.
+    expect(on.explained).toHaveBeenCalledWith('block-7', at('a', 'new', 6));
     shown.destroy();
     parent!.remove();
     const quiet = open();
@@ -1533,6 +1534,100 @@ describe('overview marks', () => {
     shown.setMarks([overview('new', 8, 9, 'two')]);
     expect(noted('After')).toEqual([]);
     expect(shown.closeNote()).toBe(false);
+  });
+});
+
+/** A list of one rect, as an element on screen has. */
+function oneRect(rect: DOMRect): DOMRectList {
+  return Object.assign([rect], { item: (index: number) => (index === 0 ? rect : null) });
+}
+
+/** jsdom lays nothing out: from now on, the view's box is a screen, and every note is on it. */
+function notesOnScreen(): void {
+  vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+    return this.classList.contains('lo-ovnote') ? oneRect(new DOMRect(0, 100, 400, 80)) : noRects();
+  });
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    return this.classList.contains('lo-diffview') ? new DOMRect(0, 0, 800, 600) : new DOMRect();
+  });
+}
+
+/** The diff view's box, which scrolls. */
+function scroller(): HTMLElement {
+  return parent!.querySelector<HTMLElement>('.lo-diffview')!;
+}
+
+/** A note open on new lines 4 to 6, on screen, whose mark then says something else. */
+function held(on: DiffEvents = events()): DiffView {
+  const shown = open(on);
+  shown.setMarks([overview('new', 4, 6)]);
+  shown.openNote(at('a', 'new', 4));
+  notesOnScreen();
+  shown.setMarks([overview('new', 4, 6, 'one', 'Said again.')]);
+  expect(noted('After')).toEqual([expect.stringContaining('A query')]);
+  return shown;
+}
+
+describe('notes held on screen', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  test('one in a file closed and opened again says what its mark says now', () => {
+    const shown = held();
+    // As the local copy's say closes it, and as `za` does.
+    shown.setCollapsed('a', true);
+    shown.setCollapsed('a', false);
+    expect(noted('After')).toEqual(['Overview · Where to look: Said again.']);
+    shown.setMarks([]);
+    expect(noted('After')).toHaveLength(1);
+    shown.fold({ kind: 'file', file: 'a' }, 'toggle');
+    shown.fold({ kind: 'file', file: 'a' }, 'toggle');
+    expect(noted('After')).toEqual([]);
+    expect(shown.closeNote()).toBe(false);
+  });
+
+  test('in a diff too short to scroll, one changes after the reader’s next input', async () => {
+    vi.useFakeTimers();
+    held();
+    // Where the scroll would let it go, the input doesn't.
+    Object.defineProperty(scroller(), 'scrollHeight', { configurable: true, value: 2000 });
+    Object.defineProperty(scroller(), 'clientHeight', { configurable: true, value: 600 });
+    press(scroller(), 'j');
+    await vi.runAllTimersAsync();
+    expect(noted('After')).toEqual([expect.stringContaining('A query')]);
+    Object.defineProperty(scroller(), 'scrollHeight', { configurable: true, value: 600 });
+    press(scroller(), 'j');
+    // Not before the input is handled.
+    expect(noted('After')).toEqual([expect.stringContaining('A query')]);
+    await vi.runAllTimersAsync();
+    expect(noted('After')).toEqual(['Overview · Where to look: Said again.']);
+  });
+
+  test('one changes at once while the view is hidden, as behind another view', () => {
+    const shown = open();
+    shown.setMarks([overview('new', 4, 6)]);
+    shown.openNote(at('a', 'new', 4));
+    notesOnScreen();
+    Object.assign(scroller(), { checkVisibility: () => false });
+    shown.setMarks([overview('new', 4, 6, 'one', 'Said again.')]);
+    expect(noted('After')).toEqual(['Overview · Where to look: Said again.']);
+  });
+
+  test('its link shows the block its mark is from now, and a mark gone closes it', () => {
+    const on = { ...events(), explained: vi.fn<NonNullable<DiffEvents['explained']>>() };
+    const shown = held(on);
+    shown.setMarks([overview('new', 5, 7, 'one', 'Moved on.')]);
+    parent!.querySelector<HTMLElement>('.lo-ovnote__read')!.click();
+    expect(on.explained).toHaveBeenCalledWith('one', at('a', 'new', 7));
+    expect(noted('After')).toEqual(['Overview · Where to look: Moved on.']);
+    shown.setMarks([overview('new', 8, 9, 'two')]);
+    expect(noted('After')).toEqual([expect.stringContaining('Moved on.')]);
+    parent!.querySelector<HTMLElement>('.lo-ovnote__read')!.click();
+    expect(on.explained).toHaveBeenCalledTimes(1);
+    expect(noted('After')).toEqual([]);
+    expect(markers('After').some((each) => each.startsWith('open'))).toBe(false);
   });
 });
 

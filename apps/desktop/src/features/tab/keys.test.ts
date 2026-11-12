@@ -85,6 +85,34 @@ describe('the tab keys', () => {
     expect(close?.menu?.on).toBe('tab');
   });
 
+  it('⌃⇧PageUp and ⌃⇧PageDown move a tab, from anywhere but a dialog or a palette, on both systems', () => {
+    for (const system of ['mac', 'linux'] as const) {
+      expect(runs('ctrl+shift+pageup', window, system)).toBe('tab.moveLeft');
+      expect(runs('ctrl+shift+pagedown', window, system)).toBe('tab.moveRight');
+      expect(runs('ctrl+shift+pageup', { scope: 'window', text: true }, system)).toBe(
+        'tab.moveLeft',
+      );
+      expect(runs('ctrl+shift+pagedown', view('diff'), system)).toBe('tab.moveRight');
+      expect(runs('ctrl+shift+pageup', view('box', 'insert'), system)).toBe('tab.moveLeft');
+      // Vim keeps its own PageUp and PageDown.
+      expect(runs('pageup', view('diff'), system)).toBeUndefined();
+    }
+    for (const scope of ['dialog', 'palette']) {
+      expect(runs('ctrl+shift+pageup', { scope, text: false })).toBeUndefined();
+      expect(runs('ctrl+shift+pagedown', { scope, text: false })).toBeUndefined();
+    }
+    // The tab right-clicked, or the one on screen, in its right-click menu before Close tab.
+    const moves = commands.filter(({ name }) => name === 'moveLeft' || name === 'moveRight');
+    expect(moves.map(({ label }) => label)).toEqual(['Move tab left', 'Move tab right']);
+    for (const move of moves) {
+      expect(move.targets).toEqual(['tab', 'none']);
+      expect(move.menu?.on).toBe('tab');
+      expect(move.menu?.order).toBeLessThan(
+        commands.find(({ name }) => name === 'close')?.menu?.order ?? 0,
+      );
+    }
+  });
+
   it('⌘⇧A opens the tabs that don’t fit, and ⌘\\ the left panel, from anywhere but a dialog or a palette', () => {
     for (const system of ['mac', 'linux'] as const) {
       expect(runs('cmd+shift+a', window, system)).toBe('tab.more');

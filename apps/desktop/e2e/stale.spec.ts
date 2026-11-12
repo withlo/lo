@@ -2,8 +2,9 @@
 // rozed-bot, opens rozed-dev/e2e#80, whose overview was written for its first push, r1, while the
 // pull request is at its second, r2. The overview says so from its first frame, with how much
 // changed since once the local copy is there; flags the code block on lines r2 changed, its code
-// still r1's; compares r1 with r2 in the diff when asked; and marks r1 in the revision picker as
-// the revision it describes. Nothing on screen moves without the reader as all that comes in.
+// still r1's; compares r1 with r2 in the diff when asked; marks r1 in the revision picker as the
+// revision it describes; and marks the lines it explains in the diff, mapped to r2, each with a
+// note. Nothing on screen moves without the reader as all that comes in.
 
 import { writeFileSync } from 'node:fs';
 
@@ -170,6 +171,32 @@ const shown = (page: Page) =>
 /** The view switch's tab for the overview. */
 const overviewTab = (page: Page) =>
   page.getByRole('tablist', { name: 'View' }).getByRole('tab').filter({ hasText: 'Overview' });
+
+/** The view switch's tab for the diff. */
+const diffTab = (page: Page) =>
+  page.getByRole('tablist', { name: 'View' }).getByRole('tab').filter({ hasText: 'Diff' });
+
+/**
+ * The lines the diff marks as the overview explains them, each as `path from-to block`, the block
+ * by its place in the overview (and a step's in its walkthrough), sorted.
+ */
+async function explained(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const diff = window.loDiff;
+    if (!diff) return [];
+    const paths = new Map(diff.files.map((file) => [file.id, file.path]));
+    return diff
+      .explained()
+      .flatMap((mark) =>
+        mark.kind === 'overview'
+          ? [
+              `${paths.get(mark.at.file)} ${mark.at.from}-${mark.at.to} ${mark.block.slice(mark.block.indexOf('.') + 1)}`,
+            ]
+          : [],
+      )
+      .toSorted();
+  });
+}
 
 /** The banner over the overview, saying what it was written for and what changed since. */
 const banner = (page: Page) => shown(page).locator('.lo-ov-stale');
@@ -360,4 +387,111 @@ test('compares r1 with r2 in the diff, and marks r1 in the picker as the revisio
   await expect(picker.locator(`[data-key="${APP_PULL.firstHead}"] .lo-ovmark`)).toHaveCount(1);
   await expect(picker.locator('.lo-ovmark')).toHaveCount(1);
   await expect(picker.locator(`[data-key="${APP_PULL.head}"]`)).not.toContainText('Overview');
+});
+
+test('marks the lines it explains in the diff at r2, opens what it says of them, and goes there', async ({
+  app,
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const id = await opened(app, page);
+  await expect.poll(() => current(page, id), { timeout: 30_000 }).toMatchObject({ code: 'ready' });
+  await diffTab(page).click();
+  const diff = page.locator('[data-lo-middle-view="diff.view"] .lo-diffview');
+  await expect(diff).toBeVisible({ timeout: 20_000 });
+
+  // Mapped from r1 to r2: src/parser.ts's line 7 changed and a line was added after line 8, so
+  // its blocks mark the lines on either side and neither of those. Nothing marks README.md, which
+  // the pull request doesn't change, or src/cache.ts, which isn't there.
+  await expect
+    .poll(() => explained(page), { timeout: 30_000 })
+    .toEqual([
+      // The code blocks (6 and 8), the figure's part (9) and the walkthrough's third step (10.2).
+      'src/format.ts 1-3 6',
+      'src/format.ts 5-8 8',
+      'src/format.ts 6-8 10.2',
+      'src/format.ts 6-8 9',
+      // The code block (4), the figure's part and the walkthrough's first two steps.
+      'src/parser.ts 10-11 10.0',
+      'src/parser.ts 10-11 4',
+      'src/parser.ts 10-11 9',
+      'src/parser.ts 14-16 10.1',
+      'src/parser.ts 8-8 10.0',
+      'src/parser.ts 8-8 4',
+      'src/parser.ts 8-8 9',
+      'src/text/wrap.ts 2-15 9',
+    ]);
+
+  // src/format.ts at the top: its first line's ball opens the note of the block on lines 1–3, and
+  // Esc in the diff closes it.
+  await diff.click();
+  const format = await page.evaluate(
+    () => window.loDiff?.files.find((file) => file.path === 'src/format.ts')?.id,
+  );
+  if (format === undefined) throw new Error('The diff has no src/format.ts.');
+  await page.evaluate(
+    (file) => window.loDiff?.scrollTo({ at: { kind: 'header', file, side: 'new' }, offset: 0 }),
+    format,
+  );
+  // The ball beside the line, among those the editor draws around it, once the line is drawn in
+  // the diff.
+  const ballOf = () =>
+    page.evaluate((file) => {
+      const line = { kind: 'line' as const, at: { file, side: 'new' as const, line: 1 } };
+      const top = window.loDiff?.probe.spotTop(line);
+      const bottom = window.loDiff?.probe.spotBottom(line);
+      const frame = document
+        .querySelector('[data-lo-middle-view="diff.view"] .lo-diffview')
+        ?.getBoundingClientRect();
+      if (top === undefined || bottom === undefined || !frame) return undefined;
+      if (top < frame.top || bottom > frame.bottom) return undefined;
+      const after = document
+        .querySelector('.cm-content[aria-label="After"]')
+        ?.closest('.cm-editor');
+      const balls = [...(after?.querySelectorAll('.lo-ovcolumn .lo-ov-marker') ?? [])];
+      const found = balls.find((each) => {
+        const box = each.getBoundingClientRect();
+        const middle = (box.top + box.bottom) / 2;
+        return middle >= top && middle <= bottom;
+      });
+      const box = found?.getBoundingClientRect();
+      return box && { x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 };
+    }, format);
+  await expect.poll(ballOf).toBeDefined();
+  const ball = await ballOf();
+  if (!ball) throw new Error('src/format.ts’s first line has no ball.');
+  await page.mouse.click(ball.x, ball.y);
+  const note = diff.locator('.lo-ovnote');
+  await expect(note).toHaveCount(1);
+  await expect(note.locator('.lo-ovnote__label')).toHaveText('Overview · How it works');
+  await expect(note.locator('.lo-ovnote__text')).toHaveText(
+    'The formatter takes its Line from the new path, and passes wrap on from where it lives now:',
+  );
+  await expect(note.getByRole('button', { name: 'Read it in the overview' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(note).toHaveCount(0);
+
+  // "Read it in the overview" goes to the block, with focus, and `⌃o` comes back to the line the
+  // note is under, the mark's last, with the screen where it was.
+  await page.mouse.click(ball.x, ball.y);
+  await note.getByRole('button', { name: 'Read it in the overview' }).click();
+  await expect(shown(page)).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        document.activeElement?.closest('[data-lo-block]')?.getAttribute('data-lo-block'),
+      ),
+    )
+    .toBe('6');
+  await page.keyboard.press('Control+o');
+  await expect(diff).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const at = window.loDiff?.probe.cursor()?.at;
+        return at?.kind === 'line' && 'line' in at.at ? at.at : undefined;
+      }),
+    )
+    .toMatchObject({ file: format, side: 'new', line: 3 });
+  expect(await ballOf()).toEqual(ball);
 });

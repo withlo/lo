@@ -28,10 +28,23 @@ describe("the tab feature's contract", () => {
   });
 
   it('shows a tab by its id, its place, the last or a step, one at a time', () => {
-    for (const input of [{ id: 't1' }, { position: 1 }, { last: true }, { step: -1 }]) {
+    for (const input of [
+      { id: 't1' },
+      { position: 1 },
+      { last: true },
+      { step: -1 },
+      { step: 1, within: 3 },
+    ]) {
       expect(choice.parse(input)).toEqual(input);
     }
-    const refused = [{ position: 0 }, { step: 2 }, { last: false }, { id: 't1', position: 1 }, {}];
+    const refused = [
+      { position: 0 },
+      { step: 2 },
+      { step: 1, within: 0 },
+      { last: false },
+      { id: 't1', position: 1 },
+      {},
+    ];
     expect(refused.filter((input) => choice.safeParse(input).success)).toEqual([]);
   });
 
@@ -40,6 +53,28 @@ describe("the tab feature's contract", () => {
     expect(input.parse({})).toEqual({});
     expect(input.parse({ id: 't1' })).toEqual({ id: 't1' });
     expect(input.safeParse({ id: '' }).success).toBe(false);
+  });
+
+  it('moves a tab to a place, or one place along: the one on screen without an id', () => {
+    const { input } = contract.requests.move;
+    for (const move of [
+      { id: 't1', to: 0 },
+      { id: 't1', step: 1 },
+      { step: -1 },
+      { step: 1, within: 4 },
+    ]) {
+      expect(input.parse(move)).toEqual(move);
+    }
+    const refused = [
+      { to: 0 },
+      { id: 't1', to: -1 },
+      { step: 2 },
+      { step: 1, within: 0 },
+      { id: 't1', to: 0, within: 2 },
+      { id: 't1', to: 0, step: 1 },
+      {},
+    ];
+    expect(refused.filter((move) => input.safeParse(move).success)).toEqual([]);
   });
 
   it('opens only pages on github.com, over HTTPS, in the browser', () => {

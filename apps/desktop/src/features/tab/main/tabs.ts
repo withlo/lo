@@ -10,6 +10,7 @@ import {
   opening as openingSchema,
   tab as tabSchema,
   type Choice,
+  type Moved,
   type Opening,
   type PullState,
   type Tab,
@@ -60,8 +61,17 @@ export interface TabList {
   close(id?: string): void;
   /** Shows a tab. A choice of no tab, such as a place past the last, changes nothing. */
   select(choice: Choice): void;
-  /** Moves a tab to place `to`, from 0, or to the end when `to` is past it. */
-  move(id: string, to: number): void;
+  /**
+   * Moves a tab to place `to`, from 0, counted without it, or to the end when `to` is past it, and
+   * says where it is now. Nothing for a tab that isn't open.
+   */
+  move(id: string, to: number): Moved | undefined;
+  /**
+   * Moves `id`, or the tab on screen, one place along the strip, but not past its ends, nor past
+   * the first `within` tabs, those the strip shows, and says where it is now. Nothing while only
+   * Recent is open.
+   */
+  step(id: string | undefined, by: 1 | -1, within?: number): Moved | undefined;
   /** Keeps what GitHub said of a pull request's tab, so the strip shows it from then on. */
   describe(id: string, details: { title: string; state: PullState }): void;
   /** What's kept with a pull request's tab: its account and repository, if known. */
@@ -122,6 +132,17 @@ export function createTabs(options: TabListOptions): TabList {
     return tab.id;
   };
 
+  const moveTo = (id: string, to: number): Moved | undefined => {
+    const from = state.kept.findIndex((tab) => tab.id === id);
+    const moved = state.kept[from];
+    if (!moved) return undefined;
+    const place = Math.min(to, state.kept.length - 1);
+    if (place !== from) {
+      commit({ ...state, kept: state.kept.toSpliced(from, 1).toSpliced(place, 0, moved) });
+    }
+    return { id, place };
+  };
+
   return {
     list,
 
@@ -168,20 +189,26 @@ export function createTabs(options: TabListOptions): TabList {
       else if ('position' in choice) chosen = tabs[choice.position - 1];
       else if ('last' in choice) chosen = tabs.at(-1);
       else {
-        const at = tabs.findIndex((tab) => tab.id === active);
-        chosen = tabs[(at + choice.step + tabs.length) % tabs.length];
+        // Round the ends of the tabs the strip shows.
+        const strip = tabs.slice(0, choice.within ?? tabs.length);
+        const at = strip.findIndex((tab) => tab.id === active);
+        chosen =
+          at < 0
+            ? strip.at(choice.step > 0 ? 0 : -1)
+            : strip[(at + choice.step + strip.length) % strip.length];
       }
       // Recent is on screen only while it's the only tab.
       if (chosen && chosen.kind !== 'recent') show(chosen.id);
     },
 
-    move(id, to) {
-      const from = state.kept.findIndex((tab) => tab.id === id);
-      const moved = state.kept[from];
-      if (!moved) return;
-      const place = Math.min(to, state.kept.length - 1);
-      if (place === from) return;
-      commit({ ...state, kept: state.kept.toSpliced(from, 1).toSpliced(place, 0, moved) });
+    move: moveTo,
+
+    step(id, by, within = state.kept.length) {
+      const moving = id ?? list().active;
+      const from = state.kept.findIndex((tab) => tab.id === moving);
+      if (from < 0) return undefined;
+      const last = Math.max(from, within - 1);
+      return moveTo(moving, Math.min(Math.max(0, from + by), last));
     },
 
     describe(id, { title, state: pullState }) {

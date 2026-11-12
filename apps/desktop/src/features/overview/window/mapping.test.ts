@@ -13,6 +13,7 @@ import {
   lineOnHead,
   linesIn,
   onHead,
+  runsOnHead,
   type FileSince,
 } from './mapping.ts';
 
@@ -102,6 +103,49 @@ describe('lineOnHead', () => {
         { ok: false, why: 'The diff took too long.' },
       ),
     ).toEqual({ kind: 'opaque', path: 'a.ts', pushed: true, why: 'The diff took too long.' });
+  });
+});
+
+describe('runsOnHead', () => {
+  it('marks the lines still there, split where lines went or were added among them', () => {
+    const old = numbered(12);
+    // Line 5 changed, line 8 deleted, and a line added after line 10.
+    const now = [
+      ...old.slice(0, 4),
+      'changed 5',
+      ...old.slice(5, 7),
+      ...old.slice(8, 10),
+      'added',
+      ...old.slice(10),
+    ];
+    const since = changed(text(old), text(now), 'src/b.ts');
+    expect(runsOnHead(since, { start: 3, end: 12 })).toEqual({
+      path: 'src/b.ts',
+      // 3–4; 6–7 and 9–10, one run once line 8 is gone; then 11–12 after the line added.
+      runs: [
+        { from: 3, to: 4 },
+        { from: 6, to: 9 },
+        { from: 11, to: 12 },
+      ],
+    });
+    // A block whose every line changed marks nothing.
+    expect(runsOnHead(since, { start: 5, end: 5 })).toEqual({ path: 'src/b.ts', runs: [] });
+  });
+
+  it('marks a file the same, renamed or not, as written', () => {
+    expect(runsOnHead({ kind: 'same', path: 'src/b.ts' }, { start: 2, end: 4 })).toEqual({
+      path: 'src/b.ts',
+      runs: [{ from: 2, to: 4 }],
+    });
+  });
+
+  it('marks nothing of a file gone, one whose lines can’t be compared, or one Lo can’t tell', () => {
+    const lines = { start: 1, end: 3 };
+    expect(runsOnHead({ kind: 'deleted' }, lines)).toBeUndefined();
+    expect(
+      runsOnHead({ kind: 'opaque', path: 'a.png', pushed: true, why: 'Not text.' }, lines),
+    ).toBeUndefined();
+    expect(runsOnHead({ kind: 'unknown', why: 'Offline.' }, lines)).toBeUndefined();
   });
 });
 

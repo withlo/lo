@@ -97,9 +97,10 @@ export default defineFeature(contract, {
     select(choice, context) {
       tabsOf(context).select(choice);
     },
-    move({ id, to }, context) {
-      tabsOf(context).move(id, to);
-    },
+    move: (input, context) =>
+      'to' in input
+        ? tabsOf(context).move(input.id, input.to)
+        : tabsOf(context).step(input.id, input.step, input.within),
     state: ({ id }) => watching().snapshot(id),
     reload({ id }) {
       pullTab(id).reload(id);

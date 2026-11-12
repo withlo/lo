@@ -1,7 +1,7 @@
 // The overview feature in the window: each pull request's tab's overview, checked as main reads
 // it, shown as the first of the tab's middle views, with its mark in the view switch and what it
-// says in the status bar; the prompt `ya` copies; the setting for what a tab opens on; and the
-// overview skill's rows.
+// says in the status bar; its markers in the diff; the prompt `ya` copies; the setting for what a
+// tab opens on; and the overview skill's rows.
 
 import { handlers, type Target } from '@lo/ui/commands';
 import { closeCards } from '@lo/ui/overview';
@@ -21,6 +21,7 @@ import keys from '../keys.ts';
 import { copyPrompt, promptNow } from './copy.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { main, tabs } from './main.ts';
+import { followMarkers, keepMarkersOnly } from './markers.ts';
 import { OverviewMark } from './Mark.tsx';
 import { OpenRow } from './OpenRow.tsx';
 import { OverviewView } from './Overview.tsx';
@@ -311,6 +312,7 @@ export default {
   ],
   start() {
     followSkill();
+    followMarkers();
     main().subscribe('state', takeState);
     client(revisionsContract).subscribe('comparison', takeRevisions);
     tabs().subscribe('tabs', ({ tabs: open }) => {
@@ -318,6 +320,7 @@ export default {
       keepOnly(ids);
       keepPlaces(ids);
       keepSinceOnly(ids);
+      keepMarkersOnly(ids);
     });
     tabs()
       .list()

@@ -36,6 +36,7 @@ declare global {
           close(file: string): void;
           setMarks(marks: readonly Mark[]): void;
           openNote(at: Place): boolean;
+          explained(): readonly Mark[];
         }
       | undefined;
     /** How long each frame took while a test timed them, in milliseconds. */

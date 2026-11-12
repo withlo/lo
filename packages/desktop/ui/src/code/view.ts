@@ -402,6 +402,10 @@ class View implements DiffView {
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
     this.dom.addEventListener('keydown', this.#escape, { capture: true });
     this.dom.addEventListener('scroll', this.#letNotesGo, { passive: true });
+    // After `Esc`'s own, so `Esc` closes the note the reader sees.
+    for (const type of ['wheel', 'keydown', 'click'] as const) {
+      this.dom.addEventListener(type, this.#afterInput, { passive: true, capture: true });
+    }
     this.dom.addEventListener('mousedown', this.#readNote);
     this.dom.addEventListener('click', this.#readNote);
     for (const side of ['old', 'new'] as const) {
@@ -820,8 +824,12 @@ class View implements DiffView {
     });
   }
 
-  /** Whether any of an open note is drawn on screen. */
+  /**
+   * Whether any of an open note is drawn on screen: none is while the view is hidden, as behind
+   * another view.
+   */
   #noteOnScreen(note: OpenNote): boolean {
+    if (!visible(this.dom)) return false;
     const screen = this.dom.getBoundingClientRect();
     for (const element of this.dom.querySelectorAll<HTMLElement>('.lo-ovnote')) {
       if (element.dataset.note !== note.key) continue;
@@ -834,11 +842,38 @@ class View implements DiffView {
 
   /** The scroll moved: notes held as they were on screen, and off it now, change as they wait to. */
   readonly #letNotesGo = (): void => {
+    this.#letHeldGo((note) => !this.#noteOnScreen(note));
+  };
+
+  /** A pass of `#letHeldGo` waiting for the input that asked for it to be handled. */
+  #settling: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * The reader's wheel, key or click. In a diff too short to scroll, where notes held on screen
+   * would never leave it, they take what their marks say now, once the input is handled, so it acts
+   * on what the reader saw.
+   */
+  readonly #afterInput = (): void => {
+    if (this.#settling !== undefined) return;
+    if (!this.#notes.some((note) => note.next !== undefined)) return;
+    this.#settling = setTimeout(() => {
+      this.#settling = undefined;
+      if (this.dom.scrollHeight > this.dom.clientHeight) return;
+      this.#letHeldGo(() => true);
+    });
+  };
+
+  /**
+   * Notes held as they were on screen, whose marks changed since, take what their marks say now:
+   * those `free` lets go, as the reader moves. What's at the top of the screen stays where it is
+   * now, and isn't held after.
+   */
+  #letHeldGo(free: (note: OpenNote) => boolean): void {
     if (!this.#notes.some((note) => note.next !== undefined)) return;
     const changed = new Set<number>();
     const kept: OpenNote[] = [];
     for (const note of this.#notes) {
-      if (note.next === undefined || this.#noteOnScreen(note)) {
+      if (note.next === undefined || !free(note)) {
         kept.push(note);
         continue;
       }
@@ -851,7 +886,6 @@ class View implements DiffView {
     }
     this.#notes = kept;
     if (changed.size === 0) return;
-    // The reader is scrolling: what's on screen stays where it is now, and isn't held after.
     this.#keepTop(() => {
       for (const file of changed) {
         this.#keepAt(file);
@@ -859,7 +893,25 @@ class View implements DiffView {
       }
     }, false);
     for (const view of this.#editors()) view.dispatch({ effects: marksChanged.of(null) });
-  };
+  }
+
+  /**
+   * Held notes in file `file` that aren't drawn now, as in a file closed with `za`, take what their
+   * marks say at once: nothing on screen shows them, and no scroll may come to let them go.
+   */
+  #settleUndrawn(file: number): void {
+    let changed = false;
+    this.#notes = this.#notes.flatMap((note) => {
+      const { next, shown } = note;
+      if (next === undefined || shown.file !== file || this.#drawable(shown)) return [note];
+      changed = true;
+      if (!next) return [];
+      // Another mark of the same block, in the same file.
+      this.#noteLines[next.shown.file]![next.shown.side].add(next.shown.line);
+      return [next];
+    });
+    if (changed) this.#keepAt(file);
+  }
 
   /**
    * Makes a change to what the view draws, as when a note opens or closes, keeping the line at the
@@ -981,7 +1033,11 @@ class View implements DiffView {
     this.closeNote();
   };
 
-  /** "Read it in the overview", in a note: the caller shows the overview at the block. */
+  /**
+   * "Read it in the overview", in a note: the caller shows the overview at the block. A note held
+   * as it was on screen, its mark changed since, takes the change first, as input lets it: one whose
+   * mark went closes, and shows nothing, since the overview no longer says it.
+   */
   readonly #readNote = (event: MouseEvent): void => {
     const { target } = event;
     const link = target instanceof Element ? target.closest(`[${NOTE_BLOCK_ATTRIBUTE}]`) : null;
@@ -991,8 +1047,15 @@ class View implements DiffView {
       event.preventDefault();
       return;
     }
-    const block = link.getAttribute(NOTE_BLOCK_ATTRIBUTE);
-    if (block !== null) this.#on.explained?.(block);
+    const key = link.closest<HTMLElement>('.lo-ovnote')?.dataset.note;
+    const note = this.#notes.find((each) => each.key === key);
+    if (!note) return;
+    const { next } = note;
+    if (next !== undefined) this.#letHeldGo((each) => each === note);
+    const shown = next === undefined ? note.shown : next?.shown;
+    if (!shown) return;
+    const { file, side, line, block } = shown;
+    this.#on.explained?.(block, { file: this.#ids[file]!, side, line });
   };
 
   // Moving -----------------------------------------------------------------------------------
@@ -1362,6 +1425,7 @@ class View implements DiffView {
     for (const type of ['wheel', 'keydown', 'pointerdown'] as const) {
       this.dom.removeEventListener(type, this.#letGo, { capture: true });
     }
+    clearTimeout(this.#settling);
     document.fonts.removeEventListener('loadingdone', this.#measure);
     for (const stop of this.#stops) stop();
     this.#aligner.destroy();
@@ -2166,13 +2230,15 @@ class View implements DiffView {
 
   /**
    * Draws a file again in every document, with `effects` alongside. `swaps`, each editor's change
-   * to the file's lines, if they changed, is drawn in the same update of that editor.
+   * to the file's lines, if they changed, is drawn in the same update of that editor. Its notes held
+   * as they were, which it no longer draws, change first.
    */
   #refresh(
     file: number,
     more: StateEffect<unknown>[] = [],
     swaps: Partial<Record<Pane, readonly Transaction[]>> = {},
   ): void {
+    this.#settleUndrawn(file);
     this.#rows[file] = this.#rowsOf(file);
     const effects = [...more, marksChanged.of(null)];
     const split = (): void => {
@@ -2648,6 +2714,14 @@ function sameShown(a: NoteShown, b: NoteShown): boolean {
     a.label === b.label &&
     a.text === b.text
   );
+}
+
+/**
+ * Whether `element` shows: not hidden, itself or by what it's in, as a middle view behind another
+ * is. A page with no way to tell, as in tests without a browser, shows everything.
+ */
+function visible(element: HTMLElement): boolean {
+  return !('checkVisibility' in element) || element.checkVisibility({ visibilityProperty: true });
 }
 
 /** The block of the diff's rows that has line `line` of `side`, if one has. */

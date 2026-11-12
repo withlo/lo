@@ -1,6 +1,7 @@
 // What the diff shares with other features' window code: the slot over the diff, where what it
 // compares is said; showing the diff, and a place in it or the file whole; one file of it beside
-// another view; and diffing texts another feature has, as the diff's own files are diffed.
+// another view; the lines another feature explains, which the diff marks; and diffing texts another
+// feature has, as the diff's own files are diffed.
 
 import { createElement, type ReactNode } from 'react';
 
@@ -8,9 +9,12 @@ import { defineSlot, Slot } from '../../../window/slots.tsx';
 import { showMiddle, type PullTab } from '../../tab/window/shared.ts';
 import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
 import { Beside } from './Beside.tsx';
+import { changed, explainWith, type Explainer } from './explained.ts';
 import { diffJobs } from './main.ts';
 import { showPlace as showCode } from './places.ts';
 import { DIFF_VIEW } from './whole.ts';
+
+export type { ExplainedLines, Explainer } from './explained.ts';
 
 /**
  * Over a pull request's tab's diff, the same height from its first frame on: a note on what it
@@ -61,6 +65,20 @@ export function DiffBeside(props: {
     ...props,
     note: createElement(Slot, { slot: notes, props: { tab: props.tab } }),
   });
+}
+
+/**
+ * Gives the diffs what explains their lines, such as each pull request's overview: a diff drawn
+ * asks it for the lines explained at the commit its newer side shows, marks them, and opens what
+ * each says in a note under them. Returns a function that takes it back.
+ */
+export function setExplainer(explainer: Explainer): () => void {
+  return explainWith(explainer);
+}
+
+/** Says the lines explained in tab `tab`'s diff changed, so a diff drawn asks for them again. */
+export function explainedChanged(tab: string): void {
+  changed(tab);
 }
 
 /**
