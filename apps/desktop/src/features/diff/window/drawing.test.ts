@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { DiffState, FileVersions, Source, Start } from '../contract.ts';
-import { draw, type Drawing, samePlace } from './drawing.ts';
+import { draw, type Drawing, Pacer, samePlace } from './drawing.ts';
 import { Loader, type LoaderWork } from './loader.ts';
 import { drawnFor } from './tabs.ts';
 
@@ -197,6 +197,35 @@ afterEach(() => {
   drawing?.stop();
   drawing = undefined;
   document.body.replaceChildren();
+});
+
+describe('the pacer', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('runs a task that changes a lot of what’s drawn with a frame’s share to itself', async () => {
+    vi.useFakeTimers();
+    const pacer = new Pacer();
+    /** The tasks each frame's share ran, by when it ran. */
+    const shares = new Map<number, string[]>();
+    const task = (name: string) => () => {
+      const now = performance.now();
+      shares.set(now, [...(shares.get(now) ?? []), name]);
+    };
+    pacer.run(task('colors'));
+    pacer.alone(task('lines'));
+    pacer.run(task('diff'));
+    pacer.run(task('moves'));
+    pacer.alone(task('more lines'));
+    await vi.advanceTimersByTimeAsync(200);
+    expect([...shares.values()]).toEqual([
+      ['colors'],
+      ['lines'],
+      ['diff', 'moves'],
+      ['more lines'],
+    ]);
+  });
 });
 
 describe('a file under the reader that starts out otherwise in the local copy', () => {

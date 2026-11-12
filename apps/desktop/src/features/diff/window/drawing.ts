@@ -123,16 +123,29 @@ function changeFor(drawn: Drawn, start: Start): Change | undefined {
  * runs in a task of its own just after the frame is painted, not in its callbacks, so the view
  * measures what it changed before the next one is.
  */
-class Pacer {
-  readonly #tasks: (() => void)[] = [];
+export class Pacer {
+  readonly #tasks: { readonly task: () => void; readonly alone: boolean }[] = [];
   #frame: number | undefined;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #stopped = false;
 
   /** Runs `task` soon, after those before it. */
   run(task: () => void): void {
+    this.#add(task, false);
+  }
+
+  /**
+   * Runs `task` soon, after those before it, with a frame's share to itself: for work that changes
+   * much of what's drawn, so the page it reads as it starts is laid out already, and its frame lays
+   * out only its own change.
+   */
+  alone(task: () => void): void {
+    this.#add(task, true);
+  }
+
+  #add(task: () => void, alone: boolean): void {
     if (this.#stopped) return;
-    this.#tasks.push(task);
+    this.#tasks.push({ task, alone });
     this.#next();
   }
 
@@ -155,7 +168,13 @@ class Pacer {
   readonly #pump = (): void => {
     this.#timer = undefined;
     const until = performance.now() + 4;
-    while (this.#tasks.length > 0 && performance.now() < until) this.#tasks.shift()?.();
+    for (let ran = 0; this.#tasks.length > 0 && performance.now() < until; ran++) {
+      const { task, alone } = this.#tasks[0]!;
+      if (alone && ran > 0) break;
+      this.#tasks.shift();
+      task();
+      if (alone) break;
+    }
     if (this.#tasks.length > 0) this.#next();
   };
 }
@@ -314,7 +333,7 @@ export function draw(options: DrawOptions): Drawing {
     const waiting = pending.size > 0 || held.size > 0 || !sameMoves(shownMoves, latestMoves);
     if (settling || !waiting) return;
     settling = true;
-    pacer.run(settleOne);
+    pacer.alone(settleOne);
   };
 
   const settleOne = () => {
@@ -369,7 +388,7 @@ export function draw(options: DrawOptions): Drawing {
   view.setMoves(shownMoves);
   loader.attach({
     lines(id, shown) {
-      pacer.run(() => {
+      pacer.alone(() => {
         // A file the reader is looking at stays as it is, unless its new lines draw in the rows
         // it has, so nothing on screen moves.
         if (
