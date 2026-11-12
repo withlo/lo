@@ -294,6 +294,15 @@ describe('places', () => {
     expect(shown.keyState().target).toEqual(onHeader('a', 'new'));
   });
 
+  test("the cursor on a header draws no letter of the path the header's line holds", () => {
+    const shown = open();
+    const after = parent?.querySelectorAll('.cm-editor')[1];
+    shown.reveal({ kind: 'file', file: 'b' });
+    expect(after?.classList.contains('lo-onheader')).toBe(true);
+    shown.reveal(onLine('a', 'new', 5));
+    expect(after?.classList.contains('lo-onheader')).toBe(false);
+  });
+
   test("reveal takes a thread's line, and says whether it could", () => {
     const shown = open();
     shown.setThreads([{ id: 'here', at: at('b', 'new', 6), comments: [] }]);

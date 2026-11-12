@@ -428,12 +428,16 @@ test('the tree follows the file on screen, and shows the file it’s asked for',
       path: 'pnpm-lock.yaml',
       header: true,
     });
-  // The file at the top of the diff is the one the tree marks.
+  // The file at the top of the diff is the one the tree marks, as the reader scrolls: the wheel lets
+  // go of the click's file at the top.
   await page
     .locator('.lo-diffview .cm-editor')
     .nth(1)
     .locator('.lo-diffhead', { hasText: 'src/legacy.ts' })
-    .evaluate((header) => header.scrollIntoView({ block: 'start' }));
+    .evaluate((header) => {
+      header.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -1 }));
+      header.scrollIntoView({ block: 'start' });
+    });
   await expect(tree.locator('[data-key="src/legacy.ts"]')).toHaveClass(/tree-current/);
   await focusDiff(page);
   await expect(tree.locator('[data-key="assets/mark.png"]')).toHaveClass(/tree-current/);

@@ -232,11 +232,11 @@ test('a click puts the file’s start at the top of the diff, wherever it was, a
     await expect(row(page, path)).toHaveClass(/tree-current/);
     expect(await cursorPath(page)).toBe(path);
   }
-  // Vim's block cursor on the header draws no character of its own.
+  // Vim's block cursor on the header draws none of the path under it.
   const after = page.locator('.lo-diffview .cm-editor', {
     has: page.locator('.cm-content[aria-label="After"]'),
   });
-  await expect(after.locator('.cm-fat-cursor')).toHaveText(/^\s*$/);
+  await expect(after.locator('.cm-fat-cursor')).toHaveCSS('color', 'rgba(0, 0, 0, 0)');
 
   // A folder opens or closes, and is the tree's, and the diff stays where it is.
   await row(page, 'src/text').click();
@@ -259,6 +259,51 @@ test('a click puts the file’s start at the top of the diff, wherever it was, a
   await row(page, 'src/parser.ts').click();
   await expect.poll(() => headerBelow(page, 'src/parser.ts')).toBe(0);
   await expect(row(page, 'src/parser.ts')).toHaveClass(/tree-current/);
+});
+
+/** Gives the diff's After side the keyboard, moving neither its cursor nor its scroll. */
+async function focusAfter(page: Page): Promise<void> {
+  await page
+    .locator('.lo-diffview .cm-content[aria-label="After"]')
+    .evaluate((content: HTMLElement) => content.focus({ preventScroll: true }));
+}
+
+test('a file a click brought to the top keeps its header there as it closes and opens again', async ({
+  page,
+}) => {
+  await shown(page);
+  // Near the end, where closing it leaves less to scroll than the screen; and further up.
+  for (const path of ['src/parser.ts', 'src/format.ts']) {
+    await row(page, path).click();
+    await expect.poll(() => headerBelow(page, path)).toBe(0);
+    await focusAfter(page);
+    for (const open of [false, true]) {
+      await page.keyboard.press('z');
+      await page.keyboard.press('a');
+      await expect
+        .poll(() => page.evaluate(() => window.loDiff?.probe.cursor()?.at.kind))
+        .toBe('header');
+      await page.waitForTimeout(300);
+      expect(await headerBelow(page, path), open ? 'opened' : 'closed').toBe(0);
+      await expect(row(page, path)).toHaveClass(/tree-current/);
+    }
+  }
+});
+
+test('a banner coming over the diff after a click leaves the file’s header on screen, at its top', async ({
+  page,
+}) => {
+  await shown(page);
+  await row(page, 'src/parser.ts').click();
+  await expect.poll(() => headerBelow(page, 'src/parser.ts')).toBe(0);
+  // A banner comes, which moves the diff's box down and shrinks it, then goes.
+  const view = page.locator('.lo-diffview');
+  await view.evaluate((each) => each.parentElement?.style.setProperty('padding-top', '30px'));
+  await page.waitForTimeout(300);
+  expect(await headerBelow(page, 'src/parser.ts'), 'as it comes').toBe(0);
+  await view.evaluate((each) => each.parentElement?.style.removeProperty('padding-top'));
+  await page.waitForTimeout(300);
+  expect(await headerBelow(page, 'src/parser.ts'), 'as it goes').toBe(0);
 });
 
 test('gives a file a right-click menu: marking it viewed, the whole file, its path and the file on GitHub', async ({

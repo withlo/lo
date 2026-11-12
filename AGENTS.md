@@ -481,7 +481,9 @@ Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `c
 - A click on a row, or `⏎` on it, makes it the row the keyboard is on, in the tree. On a changed
   file, the diff puts the file's header at the top of the screen, on screen or not, however the file
   shows and wherever the diff is in loading it: a jump, which `⌃o` comes back from. Near the end of
-  the diff it makes room after the last file to get there, which goes once it's off screen.
+  the diff it makes room after the last file to get there, as a fold does to keep what's on screen
+  in place; the room goes once it's off screen. Until the reader moves, a banner coming over the
+  diff takes the header down with the diff's box, never over it.
 
 ### A pull request's diff
 
