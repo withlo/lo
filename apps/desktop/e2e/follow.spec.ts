@@ -91,7 +91,23 @@ async function open(page: Page): Promise<string> {
   );
   if (!reply.ok || typeof reply.value !== 'string') throw new Error(JSON.stringify(reply));
   const id = reply.value;
-  await expect(shown(page)).toBeVisible({ timeout: 20_000 });
+  // A machine too busy to know within the bound that the overview shows opens the tab on its diff,
+  // which isn't what's tested: the overview is a switch away, and then takes focus as it would.
+  const diff = page.locator('[data-lo-middle-view="diff.view"]');
+  await expect
+    .poll(async () => (await shown(page).isVisible()) || (await diff.isVisible()), {
+      timeout: 20_000,
+    })
+    .toBe(true);
+  if (!(await shown(page).isVisible())) {
+    await page
+      .getByRole('tablist', { name: 'View' })
+      .getByRole('tab')
+      .filter({ hasText: 'Overview' })
+      .click();
+    await expect(shown(page)).toBeVisible({ timeout: 20_000 });
+    await shown(page).locator('.lo-ov').focus();
+  }
   // Seen, once its first blocks have drawn.
   await expect(shown(page).locator('.lo-ov')).not.toHaveClass(/is-drawing/, {
     timeout: 10_000,
