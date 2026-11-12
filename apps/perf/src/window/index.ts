@@ -231,7 +231,8 @@ const copies: (() => void)[] = [];
 
 // For the measurements and the key spec, which drive the page from outside; for the copy spec,
 // which says when the local copy comes, and hears how many of its files are waiting; and for the
-// marks spec, which hands the view an overview's markers when it likes.
+// marks spec, which hands the view an overview's markers, and opens and closes their notes, when
+// it likes.
 Object.assign(window, {
   diffView: view.probe,
   perfCopy: () => {
@@ -240,6 +241,8 @@ Object.assign(window, {
     return waiting.length;
   },
   perfOverview: (given: readonly Mark[]) => opened().setMarks(given),
+  perfOpenNote: (at: Place) => opened().openNote(at),
+  perfCloseNote: () => opened().closeNote(),
 });
 
 window.addEventListener('message', (event) => {

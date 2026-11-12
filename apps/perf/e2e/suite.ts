@@ -4,7 +4,7 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import type { CursorReading, Mark, Probe, Spot } from '@lo/ui/code';
+import type { CursorReading, Mark, Place, Probe, Spot } from '@lo/ui/code';
 import { _electron as electron, test as base, type Page } from '@playwright/test';
 // Imported from Node, the electron package is the path to its binary, whatever its types say.
 import electronPackage from 'electron';
@@ -92,6 +92,10 @@ declare global {
     perfCopy(): number;
     /** Gives the view an overview's markers, in place of those it had. */
     perfOverview(marks: readonly Mark[]): void;
+    /** Opens the notes of the markers on a line, and says whether there were any. */
+    perfOpenNote(at: Place): boolean;
+    /** Closes the note opened last, and says whether there was one. */
+    perfCloseNote(): boolean;
   }
 }
 
