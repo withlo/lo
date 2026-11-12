@@ -19,6 +19,7 @@ import {
 import {
   CodeBlock,
   CodeBody,
+  CodeFlag,
   CodeNote,
   Held,
   useNear,
@@ -36,18 +37,24 @@ import { useFirstDraw, type FirstDraw } from './drawing.ts';
 import { revisionAt } from './facts.ts';
 import { holdFile, type FileCode, type FileHold } from './files.ts';
 import { keyOf } from './labels.ts';
+import { blockChange, linesIn, type BlockChange } from './mapping.ts';
+import { CompareButton } from './OutOfDate.tsx';
 import { usePage } from './page.ts';
 import { shortId } from './says.ts';
+import { fileSince } from './since.ts';
+import { flagWords, labelOf } from './stale.ts';
 import { revisions } from './store.ts';
 import { nameOf, showsOf, type Shows, type Target, type Words } from './targets.ts';
 
 /**
  * What the overview's blocks read their code with: the pull request's tab, the commit the overview
- * describes, how far its code was read, and how the check left each place it points at.
+ * describes, the head on screen when that's another commit, how far its code was read, and how the
+ * check left each place it points at.
  */
 export interface CodeContext {
   readonly tab: string;
   readonly commit: string;
+  readonly head?: string | undefined;
   readonly read: CodeRead;
   readonly target: (target: CodeRange) => Target;
 }
@@ -59,6 +66,15 @@ const QUIET = {
   jumped() {},
   menu() {},
 };
+
+/** No lines changed since. */
+const UNCHANGED: readonly number[] = [];
+
+/** How lines a block shows changed by a head, which its flag says once its code is drawn. */
+interface Changed {
+  readonly head: string;
+  readonly change: BlockChange;
+}
 
 /** How many lines `target` names. */
 function rowsOf(target: CodeRange): number {
@@ -75,6 +91,18 @@ export function ExcerptBlock({ node, context }: { node: Excerpt; context: CodeCo
   const unread = failed?.read === read ? failed.why : undefined;
   const failing = useCallback((why: string) => setFailed({ read, why }), [read]);
   const variant: CodeBlockVariant = shows.kind === 'note' ? shows.variant : 'code';
+  // Which of its lines changed by the head on screen, said with its code, as it's drawn. After a
+  // newer push is loaded, what it said of the last head stays until it's said of the new one.
+  const [changed, setChanged] = useState<Changed | undefined>(undefined);
+  const { head } = context;
+  const flagged =
+    shows.kind === 'code' &&
+    unread === undefined &&
+    head !== undefined &&
+    changed !== undefined &&
+    changed.change.kind !== 'none'
+      ? changed
+      : undefined;
   return (
     <Held>
       <CodeBlock
@@ -84,6 +112,16 @@ export function ExcerptBlock({ node, context }: { node: Excerpt; context: CodeCo
           shows.kind === 'note' && shows.action ? (
             <Action shows={shows} tab={context.tab} path={target.path} />
           ) : undefined
+        }
+        flag={
+          flagged && (
+            <Flag
+              tab={context.tab}
+              commit={context.commit}
+              head={flagged.head}
+              change={flagged.change}
+            />
+          )
         }
       >
         <CodeBody rows={rowsOf(target)}>
@@ -97,8 +135,10 @@ export function ExcerptBlock({ node, context }: { node: Excerpt; context: CodeCo
             <ExcerptCode
               tab={context.tab}
               commit={context.commit}
+              head={head}
               target={target}
               unread={failing}
+              changed={setChanged}
             />
           )}
         </CodeBody>
@@ -128,18 +168,24 @@ function turn(first: FirstDraw | undefined): { ready: Promise<void>; done: () =>
 /**
  * A code block's code: drawn once it's in, near the screen; far from it, drawn once in turn for its
  * height, and let go, keeping its room. Near the screen as the overview is first laid out, it
- * draws before the overview is seen.
+ * draws before the overview is seen. When `head`, the head on screen, isn't the overview's commit,
+ * it's drawn once what changed in its file by the head is in too, its changed lines marked, and
+ * says which to `changed` as it's drawn, for its flag.
  */
 function ExcerptCode({
   tab,
   commit,
+  head,
   target,
   unread,
+  changed,
 }: {
   tab: string;
   commit: string;
+  head: string | undefined;
   target: CodeRange;
   unread: (why: string) => void;
+  changed: (changed: Changed | undefined) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const nearness = useNearness(box);
@@ -148,6 +194,8 @@ function ExcerptCode({
   const first = useFirstDraw();
   const id = `overview-code${useId()}`;
   const [code, setCode] = useState<Extract<FileCode, { kind: 'code' }> | undefined>(undefined);
+  // Its lines that changed by the head on screen, marked as it's drawn.
+  const [stale, setStale] = useState<readonly number[]>(UNCHANGED);
   // Whether it's been drawn, so its room is its code's height.
   const [measured, setMeasured] = useState(false);
   const drawnView = useRef<ExcerptView>(undefined);
@@ -159,6 +207,11 @@ function ExcerptCode({
   useLayoutEffect(() => {
     failed.current = unread;
   }, [unread]);
+  // Who's told which of its lines changed.
+  const tell = useRef(changed);
+  useLayoutEffect(() => {
+    tell.current = changed;
+  }, [changed]);
 
   // Near the screen as the overview is first laid out, it draws before it's seen.
   const drawn = useRef<(() => void) | undefined>(undefined);
@@ -183,6 +236,14 @@ function ExcerptCode({
       if (!live) return;
       hold = holdFile(tab, commit, path, first?.onScreen() ?? true);
       const found = await hold.code;
+      // What changed by the head on screen, so the code is drawn once, with its flag.
+      const since =
+        head === undefined || found.kind === 'unread'
+          ? undefined
+          : await fileSince(tab, commit, head, path, {
+              soon: near,
+              quick: first?.onScreen() ?? true,
+            });
       // Drawn in its own typeface, it's as tall as it stays.
       await codeTypeface();
       if (!live) return;
@@ -191,6 +252,9 @@ function ExcerptCode({
         failed.current(found.why);
         return;
       }
+      const change = since && blockChange(since, { start, end });
+      setStale(change?.kind === 'lines' ? linesIn(change.changed) : UNCHANGED);
+      tell.current(head === undefined || !change ? undefined : { head, change });
       setCode(found);
     })();
     return () => {
@@ -198,7 +262,15 @@ function ExcerptCode({
       wait?.done();
       hold?.release();
     };
-  }, [want, near, first, tab, commit, path]);
+  }, [want, near, first, tab, commit, head, path, start, end]);
+
+  // Its lines that changed, marked on the view it has, which isn't drawn again for them, so it
+  // keeps its highlighting; and on the next one it's drawn with.
+  const marked = useRef(stale);
+  useLayoutEffect(() => {
+    marked.current = stale;
+    drawnView.current?.setStale(stale);
+  }, [stale]);
 
   useLayoutEffect(() => {
     const parent = box.current;
@@ -213,6 +285,7 @@ function ExcerptCode({
         lines: code.lines,
         diff: code.diff,
         range: { side: 'new', from: start, to: end },
+        stale: marked.current,
         vimKeys: keys.vimKeys(),
         nonce: page.nonce,
       },
@@ -254,6 +327,31 @@ function ExcerptCode({
   }, [near, code]);
 
   return <div ref={box} data-lo-code={code ? 'drawn' : measured ? 'measured' : 'waiting'} />;
+}
+
+/**
+ * A code block's flag, for lines it shows that changed between the overview's commit and the head
+ * on screen, with the way to the comparison.
+ */
+function Flag({
+  tab,
+  commit,
+  head,
+  change,
+}: {
+  tab: string;
+  commit: string;
+  head: string;
+  change: BlockChange;
+}) {
+  const known = useTabState(revisions, tab);
+  const words = flagWords(change, { written: labelOf(known, commit), now: labelOf(known, head) });
+  if (words === undefined) return null;
+  return (
+    <CodeFlag action={<CompareButton tab={tab} from={commit} to={head} variant="ghost" />}>
+      {words}
+    </CodeFlag>
+  );
 }
 
 /** A `:::walkthrough` block: its steps beside the current one's file, its lines marked. */

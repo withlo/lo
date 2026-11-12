@@ -23,6 +23,7 @@ import { OpenRow } from './OpenRow.tsx';
 import { OverviewView } from './Overview.tsx';
 import { SkillRow, SkillStep } from './Rows.tsx';
 import { followSkill, installSkill } from './skill.ts';
+import { keepSinceOnly } from './since.ts';
 import { OverviewStatus } from './Status.tsx';
 import { catchUp, keepOnly, takeRevisions, takeState } from './store.ts';
 
@@ -87,7 +88,11 @@ export default {
     followSkill();
     main().subscribe('state', takeState);
     client(revisionsContract).subscribe('comparison', takeRevisions);
-    tabs().subscribe('tabs', ({ tabs: open }) => keepOnly(new Set(open.map(({ id }) => id))));
+    tabs().subscribe('tabs', ({ tabs: open }) => {
+      const ids = new Set(open.map(({ id }) => id));
+      keepOnly(ids);
+      keepSinceOnly(ids);
+    });
     tabs()
       .list()
       .then(({ tabs: open }) =>

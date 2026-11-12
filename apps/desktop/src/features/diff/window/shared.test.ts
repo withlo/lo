@@ -37,4 +37,10 @@ describe('diffTexts', () => {
     expect(jobs.files.mock.calls[1]![0].files).toHaveLength(2);
     expect(options.signal).toBe(stop.signal);
   });
+
+  it('leaves highlighting out when asked', async () => {
+    jobs.files.mockClear();
+    await diffTexts([{ path: 'a.ts', old: 'a\n', new: 'b\n' }], undefined, { highlight: false });
+    expect(jobs.files.mock.calls[0]![0]).toMatchObject({ whitespace: true, highlight: false });
+  });
 });

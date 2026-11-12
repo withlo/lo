@@ -209,6 +209,43 @@ export type BaseText =
 export type BlockText =
   { kind: 'text'; text: string; base: BaseText | null } | { kind: 'unread'; why: string };
 
+/**
+ * What changed in a pull request since the commit its overview describes, up to the head on
+ * screen, as `since` replies: how many files the pushes since changed, as comparing the two
+ * revisions lists them, across a rebase, or `null` when Lo couldn't compare them; or none yet,
+ * since the local copy isn't there or lacks either commit (`waiting`), there's no git, or it
+ * couldn't be fetched, and why.
+ */
+export type SinceReply =
+  | { kind: 'read'; files: number | null }
+  | { kind: 'waiting' }
+  | { kind: 'noGit' }
+  | { kind: 'failed'; why: string };
+
+/**
+ * A file at an overview's commit, as it is at the head on screen, as `sinceFile` replies:
+ *
+ * - `same`: the same file, at `path`, which is another when it was renamed since;
+ * - `changed`: changed, at `path`, with its text at each commit for the window to diff, or why its
+ *   lines can't be compared, such as one side not being text. `pushed` says whether the pushes
+ *   since changed it, as comparing the revisions lists it, rather than only the base branch they
+ *   were rebased onto; it's true when Lo couldn't compare them;
+ * - `deleted`: there's no file at its path, or the one it was renamed to, at the head;
+ * - `waiting`: the local copy isn't there yet, or lacks either commit;
+ * - `unread`: Lo couldn't tell, and why.
+ */
+export type FileSinceText =
+  | { kind: 'same'; path: string }
+  | {
+      kind: 'changed';
+      path: string;
+      pushed: boolean;
+      texts: { old: string; new: string } | { why: string };
+    }
+  | { kind: 'deleted' }
+  | { kind: 'waiting' }
+  | { kind: 'unread'; why: string };
+
 /** A coding agent that Lo installs the overview skill for. */
 export const agent = z.enum(['claude', 'codex']);
 export type Agent = z.output<typeof agent>;
@@ -322,6 +359,30 @@ export const contract = defineContract('overview', {
         base: z.boolean(),
       }),
       reply: reply<BlockText>(),
+    },
+    /**
+     * How many files the pushes since `commit`, the commit the overview's header names, changed,
+     * up to `head`, the head on screen, from the pull request's local copy: worked out once for
+     * the two, across a rebase, as the revisions feature compares two revisions.
+     */
+    since: {
+      input: z.strictObject({ id: tabId, commit: oid, head: oid }),
+      reply: reply<SinceReply>(),
+    },
+    /**
+     * Where the file at `path` at `commit`, the commit the overview's header names, is at `head`,
+     * the head on screen, renames found as comparing the two lists them; and when it changed, its
+     * text at each, for the window to diff. Each is read whole, up to the most of a file the
+     * overview's checks read, and must be text.
+     */
+    sinceFile: {
+      input: z.strictObject({
+        id: tabId,
+        commit: oid,
+        head: oid,
+        path: z.string().min(1).max(PATH_LIMIT),
+      }),
+      reply: reply<FileSinceText>(),
     },
     /** Reads the overview again now, after a failure. */
     retry: { input: byId, reply: reply<void>() },

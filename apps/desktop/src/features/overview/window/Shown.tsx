@@ -22,7 +22,7 @@ import { OverviewDocument, lineRange, type OverviewViews } from '@lo/ui/overview
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 
 import { HOLD_LIMIT } from '../../revisions/contract.ts';
-import { MiddlePlaceholder, useTabState, type PullTab } from '../../tab/window/shared.ts';
+import { MiddlePlaceholder, usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewFile } from '../contract.ts';
 import { targetsOf } from './targets.ts';
 import { ExcerptBlock, WalkthroughBlock, type CodeContext } from './Code.tsx';
@@ -31,8 +31,10 @@ import { revisionAt, type Standing } from './facts.ts';
 import { useNow } from './hooks.ts';
 import { main } from './main.ts';
 import { openings } from './opening.ts';
+import { OutOfDateBanner } from './OutOfDate.tsx';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
 import { ago, authorOf, shortId } from './says.ts';
+import { codeBlocksIn, staleAgainst } from './stale.ts';
 import { revisions, states } from './store.ts';
 
 type ShownStanding = Extract<Standing, { kind: 'shown' }>;
@@ -243,15 +245,24 @@ export function Shown({
     ),
     [index, checked, files],
   );
+  // The head on screen, when the overview was written for another commit.
+  const head = staleAgainst(header.commit, usePull(tab.id));
   // How each block's code stands, the same object for as long as the check's result is.
   const context = useMemo<CodeContext>(
     () => ({
       tab: tab.id,
       commit: header.commit,
+      head,
       read: result.code,
       target: targetsOf(code, result.code),
     }),
-    [tab.id, header.commit, result.code, code],
+    [tab.id, header.commit, head, result.code, code],
+  );
+  // The lines the code blocks show that the check found, which the banner counts the changed of.
+  const blocks = useMemo(() => codeBlocksIn(parsed.tree), [parsed.tree]);
+  const targets = useMemo(
+    () => blocks.filter((target) => context.target(target).code.state === 'resolved'),
+    [blocks, context],
   );
   const excerpt = useCallback(
     (node: Excerpt) => <ExcerptBlock node={node} context={context} />,
@@ -298,6 +309,11 @@ export function Shown({
           ref={scroller}
           tree={parsed.tree}
           byline={<Byline tab={tab} commit={commit} described={header.commit} />}
+          banner={
+            head !== undefined && (
+              <OutOfDateBanner tab={tab} standing={standing} head={head} targets={targets} />
+            )
+          }
           views={views}
           drawing={drawing}
         />

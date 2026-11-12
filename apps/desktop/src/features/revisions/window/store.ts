@@ -5,7 +5,7 @@
 import { tabState } from '../../tab/window/shared.ts';
 import type { ComparisonView } from '../contract.ts';
 import { main } from './main.ts';
-import type { Ends } from './model.ts';
+import type { Ends, Marked } from './model.ts';
 
 /** What main last sent of each tab's revisions. */
 export const views = tabState<ComparisonView | undefined>(() => undefined);
@@ -16,6 +16,9 @@ export type Picker =
   | { readonly open: true; readonly focused: string | undefined; readonly ends: Ends };
 
 export const pickers = tabState<Picker>(() => ({ open: false }));
+
+/** What other features mark on each tab's revisions. */
+export const marked = tabState<Marked>(() => ({}));
 
 /** Takes what main sent. */
 export function showView(view: ComparisonView): void {
