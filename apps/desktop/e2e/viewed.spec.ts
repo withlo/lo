@@ -343,7 +343,7 @@ test('`e` marks the file viewed and closes it, and the next file’s header stay
   await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('title', 'Viewed');
 });
 
-test('`e` goes on to the next file not viewed, bringing its header up, and round the end', async ({
+test('`e` goes on to the next file not viewed, its header staying put or coming up, and round the end', async ({
   page,
   fake,
 }) => {
@@ -357,18 +357,21 @@ test('`e` goes on to the next file not viewed, bringing its header up, and round
   for (const [step, file] of rest.entries()) {
     const following = rest[step + 1] ?? order[0];
     await expect.poll(() => cursorPath(page)).toBe(file.path);
+    const before = following ? await headerTop(page, following.id) : undefined;
+    const { top, height } = await box(page);
+    const onScreen = before !== undefined && before >= top && before < top + height;
     await page.keyboard.press('e');
     await expect(ball(page, file.path)).toHaveAttribute('title', 'Viewed');
     if (!following) continue;
     await expect.poll(() => cursorPath(page)).toBe(following.path);
-    // The next header comes to the top of the screen, or as near as the scroll goes.
-    await expect
-      .poll(async () => {
-        const now = await box(page);
-        const header = (await headerTop(page, following.id)) ?? Number.NaN;
-        return Math.abs(header - now.top) < 2 || now.end - now.scroll < 2;
-      })
-      .toBe(true);
+    // Once the file closed above it has been measured and the sides levelled, the next header is
+    // where it was, if it was on screen; else at the top of the screen, or as near as the scroll
+    // goes.
+    await page.waitForTimeout(500);
+    const now = await box(page);
+    const header = (await headerTop(page, following.id)) ?? Number.NaN;
+    if (onScreen) expect(Math.abs(header - before)).toBeLessThan(2);
+    else expect(Math.abs(header - now.top) < 2 || now.end - now.scroll < 2).toBe(true);
   }
   // Round the end, to the first file, which isn't viewed.
   await expect.poll(() => cursorPath(page)).toBe(order[0]?.path);
