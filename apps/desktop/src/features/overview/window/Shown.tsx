@@ -22,7 +22,7 @@ import { OverviewDocument, lineRange, type OverviewViews } from '@lo/ui/overview
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 
 import { HOLD_LIMIT } from '../../revisions/contract.ts';
-import { useTabState, type PullTab } from '../../tab/window/shared.ts';
+import { MiddlePlaceholder, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewFile } from '../contract.ts';
 import { targetsOf } from './targets.ts';
 import { ExcerptBlock, WalkthroughBlock, type CodeContext } from './Code.tsx';
@@ -30,6 +30,7 @@ import { drawing as firstDraw, FirstDrawContext } from './drawing.ts';
 import { revisionAt, type Standing } from './facts.ts';
 import { useNow } from './hooks.ts';
 import { main } from './main.ts';
+import { openings } from './opening.ts';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
 import { ago, authorOf, shortId } from './says.ts';
 import { revisions, states } from './store.ts';
@@ -264,8 +265,8 @@ export function Shown({
     () => ({ figure, excerpt, walkthrough }),
     [figure, excerpt, walkthrough],
   );
-  // Seen once the code blocks near the screen have drawn, or at the bound; while the local copy is
-  // coming, they wait for it too, and once it's in, they have the bound again to draw.
+  // Seen once the code blocks near the screen have drawn, with the local copy if it's coming, or at
+  // the bound, counted from when the tab opened and never again; until then, the tab's placeholder.
   const [drawing, setDrawing] = useState(true);
   const [first] = useState(() => firstDraw(() => setDrawing(false)));
   const copy = useRef<(() => void) | undefined>(undefined);
@@ -286,18 +287,26 @@ export function Shown({
     if (onScreen) first.show();
   }, [first, onScreen]);
   useLayoutEffect(() => {
-    const bound = setTimeout(() => first.open(), HOLD_LIMIT);
+    const opened = openings.get(tab.id).since ?? Date.now();
+    const bound = setTimeout(() => first.open(), Math.max(0, opened + HOLD_LIMIT - Date.now()));
     return () => clearTimeout(bound);
-  }, [first, coming]);
+  }, [first, tab.id]);
   return (
     <FirstDrawContext value={first}>
-      <OverviewDocument
-        ref={scroller}
-        tree={parsed.tree}
-        byline={<Byline tab={tab} commit={commit} described={header.commit} />}
-        views={views}
-        drawing={drawing}
-      />
+      <div className="relative h-full">
+        <OverviewDocument
+          ref={scroller}
+          tree={parsed.tree}
+          byline={<Byline tab={tab} commit={commit} described={header.commit} />}
+          views={views}
+          drawing={drawing}
+        />
+        {drawing && (
+          <div className="absolute inset-0">
+            <MiddlePlaceholder tab={tab} />
+          </div>
+        )}
+      </div>
     </FirstDrawContext>
   );
 }

@@ -95,8 +95,8 @@ export interface OverviewDocumentProps {
   /** The scrolling element. */
   ref?: Ref<HTMLDivElement> | undefined;
   /**
-   * Whether its blocks are still drawing what they show before it's first seen: the article is
-   * laid out, so they can tell where they are, but not shown.
+   * Whether its blocks are still drawing what they show before it's first seen: the outline and
+   * the article are laid out, so the blocks can tell where they are, but not shown.
    */
   drawing?: boolean | undefined;
 }
@@ -223,7 +223,16 @@ export function OverviewDocument({
     <MarkdownProvider rendering={rendering}>
       <GlossaryContext value={terms}>
         <ReachedContext value={reached}>
-          <div ref={scroller} className={outline ? 'lo-ov' : 'lo-ov grid-cols-1'}>
+          <div
+            ref={scroller}
+            className={[
+              'lo-ov',
+              outline ? undefined : 'grid-cols-1',
+              drawing ? 'is-drawing' : undefined,
+            ]
+              .filter(Boolean)
+              .join(' ')}
+          >
             {outline && (
               <nav className="lo-ov__toc" aria-label="Sections">
                 <div className="lo-toc__label">Overview</div>
@@ -244,9 +253,7 @@ export function OverviewDocument({
                 {outlineFoot !== undefined && <div className="lo-toc__foot">{outlineFoot}</div>}
               </nav>
             )}
-            <article
-              className={drawing ? 'lo-ov__article lo-prose is-drawing' : 'lo-ov__article lo-prose'}
-            >
+            <article className="lo-ov__article lo-prose">
               {byline}
               {banner}
               {tree.blocks.map((block, index) => (

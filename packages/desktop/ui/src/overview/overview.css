@@ -393,7 +393,8 @@
   overflow-anchor: none;
 }
 
-/* An article whose blocks are still drawing before it's first seen: laid out, unseen. */
-.lo-ov__article.is-drawing {
+/* An overview whose blocks are still drawing before it's first seen: laid out, unseen, the box
+   itself still there to take focus. */
+.lo-ov.is-drawing > * {
   visibility: hidden;
 }
