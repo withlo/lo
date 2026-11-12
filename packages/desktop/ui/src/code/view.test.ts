@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StateEffect } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { diffText } from '@lo/diff';
 import { getCM, Vim } from '@replit/codemirror-vim';
@@ -17,7 +18,7 @@ import type {
   VimKey,
 } from './api.ts';
 import { editsText } from './keys.ts';
-import { swapLines } from './lines.ts';
+import { swapping } from './lines.ts';
 import { createDiffView } from './view.ts';
 
 const noRects = (): DOMRectList => Object.assign([], { item: () => null });
@@ -937,6 +938,24 @@ describe('loading', () => {
   });
 });
 
+/** How many updates each editor of the page takes from here on, in the editors' order. */
+function countUpdates(): () => (number | undefined)[] {
+  const editors = [...document.querySelectorAll<HTMLElement>('.cm-editor')].flatMap(
+    (dom) => EditorView.findFromDOM(dom) ?? [],
+  );
+  const updates = new Map<EditorView, number>();
+  for (const editor of editors) {
+    const counted = EditorView.updateListener.of((update) => {
+      if (update.transactions.length > 0) {
+        updates.set(update.view, (updates.get(update.view) ?? 0) + 1);
+      }
+    });
+    editor.dispatch({ effects: StateEffect.appendConfig.of(counted) });
+  }
+  updates.clear();
+  return () => editors.map((editor) => updates.get(editor));
+}
+
 describe('gaps', () => {
   /**
    * `e`: GitHub's diff of a 30-line file whose lines 3 and 28 changed, which left out lines 7 to
@@ -1053,6 +1072,25 @@ describe('gaps', () => {
     expect(lineOf('e 26')).toBe(drawn);
     shown.setLayout('inline');
     expect(shown.probe.cursor()?.at).toEqual(onLine('e', 'new', 26, 0));
+  });
+
+  test('the whole file comes in one update of each editor, with its decorations', () => {
+    const shown = gappedView();
+    const updates = countUpdates();
+    shown.setLines('e', { old: eOld, new: eNew }, diffOf({ old: eOld, new: eNew }));
+    // The old side's and the new side's.
+    expect(updates()).toEqual([1, 1]);
+    expect(runs()).toEqual(['18 unchanged lines']);
+  });
+
+  test('inline, the whole file comes in one update of each editor too', () => {
+    const shown = gappedView();
+    shown.setLayout('inline');
+    const updates = countUpdates();
+    shown.setLines('e', { old: eOld, new: eNew }, diffOf({ old: eOld, new: eNew }));
+    // The two sides', hidden, and the inline one's.
+    expect(updates()).toEqual([1, 1, 1]);
+    expect(runs()).toEqual(['18 unchanged lines']);
   });
 
   test("the whole file after a diff that stopped short of it adds the rest, the cursor's line kept", () => {
@@ -1450,7 +1488,7 @@ describe('overview marks', () => {
   });
 });
 
-describe('swapLines', () => {
+describe('swapping', () => {
   test('fills each run of placeholders with one change, and leaves the lines that stay', () => {
     const before = ['a', '', '', '', 'e', '', 'g'];
     const after = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
@@ -1464,7 +1502,7 @@ describe('swapLines', () => {
       ),
     });
 
-    swapLines(editor, 1, before, after, true);
+    editor.dispatch(swapping(editor.state, 1, before, after, true));
 
     expect(editor.state.doc.toString()).toBe(['header', ...after].join('\n'));
     // Lines 2 to 4, line 6, and the line added at the end.

@@ -1,42 +1,42 @@
 // Putting a file's new lines in place of those an editor shows, changing as little as it can so
 // what's on screen keeps its place.
 
-import type { EditorView } from '@codemirror/view';
+import type { EditorState, Transaction } from '@codemirror/state';
 
 import { ownChange } from './keys.ts';
 
 /**
- * Puts lines `after` in place of `before`, after document line `header` of `view`. `inPlace`, as
- * `fitsInPlace` says, changes only the lines that differ, and adds or removes lines at the end, so
- * a cursor or a scroll anchor on a line that stays keeps its place. Otherwise every line is
- * replaced, and a cursor on one goes to the nearest new line with the same text, at its column, or
- * to the same line if none has it.
+ * The transactions that put lines `after` in place of `before`, after document line `header` of
+ * `state`, one after another, or none when nothing changes. `inPlace`, as `fitsInPlace` says,
+ * changes only the lines that differ, and adds or removes lines at the end, so a cursor or a
+ * scroll anchor on a line that stays keeps its place. Otherwise every line is replaced, and a
+ * cursor on one goes to the nearest new line with the same text, at its column, or to the same
+ * line if none has it.
  */
-export function swapLines(
-  view: EditorView,
+export function swapping(
+  state: EditorState,
   header: number,
   before: readonly string[],
   after: readonly string[],
   inPlace: boolean,
-): void {
-  const { doc, selection } = view.state;
+): Transaction[] {
+  const { doc, selection } = state;
   const from = doc.line(header).to;
   const changes: { from: number; to?: number; insert?: string }[] = [];
   if (!inPlace) {
     const to = doc.line(header + before.length).to;
     const head = selection.main.head;
     const on = head > from && head <= to ? doc.lineAt(head) : undefined;
-    if (from === to && after.length === 0) return;
-    view.dispatch({
+    if (from === to && after.length === 0) return [];
+    const swapped = state.update({
       changes: { from, to, insert: after.length === 0 ? '' : `\n${after.join('\n')}` },
       annotations: ownChange.of(true),
     });
-    if (!on) return;
+    if (!on) return [swapped];
     const index = on.number - header - 1;
-    const now = view.state.doc;
-    const line = now.line(header + 1 + nearestLine(after, before[index]!, index));
-    view.dispatch({ selection: { anchor: line.from + Math.min(head - on.from, line.length) } });
-    return;
+    const line = swapped.newDoc.line(header + 1 + nearestLine(after, before[index]!, index));
+    const anchor = line.from + Math.min(head - on.from, line.length);
+    return [swapped, swapped.state.update({ selection: { anchor } })];
   }
   const common = Math.min(before.length, after.length);
   // Each run of lines that differ is one change, not one a line: a gap of placeholders filled is
@@ -59,7 +59,7 @@ export function swapLines(
   if (after.length > common)
     changes.push({ from: end, insert: `\n${after.slice(common).join('\n')}` });
   if (before.length > common) changes.push({ from: end, to: doc.line(header + before.length).to });
-  if (changes.length > 0) view.dispatch({ changes, annotations: ownChange.of(true) });
+  return changes.length > 0 ? [state.update({ changes, annotations: ownChange.of(true) })] : [];
 }
 
 /**
