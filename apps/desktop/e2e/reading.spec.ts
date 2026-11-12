@@ -989,11 +989,27 @@ const cutElsewhere = (page: Page) =>
       });
     });
 
-/** Closes tab `id`, and opens #80's again, with its local copy there; returns the new tab's id. */
-async function openAgain(page: Page, id: string): Promise<string> {
-  await page.evaluate((tab) => window.lo.invoke('tab.close', { id: tab }), id);
-  await expect(views(page)).toHaveCount(0);
-  return open(page);
+/**
+ * Closes tab `id`, and opens #80's again, with its local copy there, starting `watch` as it opens;
+ * returns the new tab's id. It opens on the overview, kept from the first read, once Lo knows in
+ * time that it shows: a machine too busy to know within the bound opens it on the diff, which isn't
+ * what's tested, so it's closed and opened again, three times at most.
+ */
+async function openAgain(page: Page, id: string, watch: () => Promise<void>): Promise<string> {
+  let tab = id;
+  for (let tries = 1; ; tries++) {
+    await page.evaluate((each) => window.lo.invoke('tab.close', { id: each }), tab);
+    await expect(views(page)).toHaveCount(0);
+    await watch();
+    tab = await open(page);
+    await expect(overview(page, 'shown').or(middleView(page, 'diff.view'))).toBeVisible({
+      timeout: 20_000,
+    });
+    if ((await overviewTab(page).getAttribute('aria-selected')) === 'true' || tries === 3) {
+      await expect(overviewTab(page)).toHaveAttribute('aria-selected', 'true');
+      return tab;
+    }
+  }
 }
 
 for (const [width, height] of [
@@ -1013,12 +1029,12 @@ for (const [width, height] of [
       .poll(() => current(page, first), { timeout: 30_000 })
       .toMatchObject({ code: 'ready' });
 
-    await watchStill(page);
-    await watchCode(page);
-    await openAgain(page, first);
+    await openAgain(page, first, async () => {
+      await watchStill(page);
+      await watchCode(page);
+    });
     const shown = overview(page, 'shown');
-    await expect(shown).toBeVisible({ timeout: 20_000 });
-    await expect(overviewTab(page)).toHaveAttribute('aria-selected', 'true');
+    await expect(shown).toBeVisible();
     await expect.poll(async () => (await codeSeen(page)).seen).toBeDefined();
     // Every code block on the first screen was drawn before the overview was seen.
     const { seen } = await codeSeen(page);
@@ -1071,10 +1087,9 @@ test('lays out each code block as tall as it draws before a jump reaches it, so 
     .poll(() => current(page, first), { timeout: 30_000 })
     .toMatchObject({ code: 'ready' });
 
-  await watchCode(page);
-  await openAgain(page, first);
+  await openAgain(page, first, () => watchCode(page));
   const shown = overview(page, 'shown');
-  await expect(shown).toBeVisible({ timeout: 20_000 });
+  await expect(shown).toBeVisible();
   // Far from the screen, each block draws once for its height, and lets its code go.
   await expect(shown.locator('[data-lo-code="measured"]')).toHaveCount(3, { timeout: 20_000 });
   const { rooms } = await codeSeen(page);
