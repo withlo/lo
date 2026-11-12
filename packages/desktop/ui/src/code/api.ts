@@ -314,9 +314,12 @@ export interface DiffView extends KeySource {
    * shown as a diff has nothing to close. Not a jump, and the cursor stays.
    */
   setCollapsed(file: string, collapsed: boolean): void;
-  /** The files with any of their rows on screen, first to last. */
+  /**
+   * The files with any of their rows on screen, first to last, as the next frame shows them: with
+   * a cursor a key or `reveal` just moved on screen, though the editor hasn't scrolled to it yet.
+   */
   filesOnScreen(): readonly string[];
-  /** What's at the top of the screen now. */
+  /** What's at the top of the screen as the next frame shows it, as `filesOnScreen` reads it. */
   viewport(): Viewport;
   /**
    * Scrolls so `viewport`'s line or header is at the top of the screen as it was, its own top
@@ -327,10 +330,10 @@ export interface DiffView extends KeySource {
   scrollTo(viewport: Viewport): boolean;
   /**
    * Holds `viewport`, as `viewport()` read it before a change to what the view draws, at the top of
-   * the screen while the change is measured, as `scrollTo` does. Unlike `scrollTo`, side by side it
-   * leaves a cursor that a key just moved to be kept on screen, as after any key: it keeps the page
-   * through the change, and doesn't choose where the reader is. Inline, nothing keeps that cursor
-   * on screen, so a hold that comes just after a key's move can undo it.
+   * the screen while the change is measured, as `scrollTo` does. Unlike `scrollTo`, it keeps the
+   * page through the change and doesn't choose where the reader is: a cursor a key just moved stays
+   * where the key took the screen, which is what `viewport()` reads, and side by side the spacer
+   * pass keeps it on screen, as after any key.
    */
   holdTop(viewport: Viewport): boolean;
   /** `]c` and kin: `count` changes, files or threads on, or back where it's negative. */
