@@ -2,7 +2,10 @@
 // sent to the window each time they change, and offered to the features that show it. It notes
 // the heads each account's poller sees, and "last seen here" as the reader leaves a pull request.
 
+import { app } from 'electron';
+
 import { IpcError } from '../../../ipc/contract.ts';
+import { compareWait } from '../../../main/environment.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
@@ -13,6 +16,8 @@ import { Marks } from './marks.ts';
 import { RevisionsTab } from './pull.ts';
 
 const followed = new Map<string, RevisionsTab>();
+/** How long a tab waits for the comparison "last seen here" asks for, if not the tab's own. */
+let holdLimit: number | undefined;
 const listeners = new Set<(id: string) => void>();
 const stops: (() => void)[] = [];
 let marks: Marks | undefined;
@@ -68,6 +73,7 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
       marks: marksOf(context),
       publish: (view) => context.publish('comparison', view),
       changed: () => changed(id),
+      holdLimit,
       log: (line) =>
         log(`${info.repository.owner}/${info.repository.name}#${info.number}: ${line}`),
     });
@@ -97,6 +103,7 @@ export default defineFeature(contract, {
     },
   },
   start(context) {
+    holdLimit = compareWait({ packaged: app.isPackaged, env: process.env });
     const store = marksOf(context);
     try {
       store.prune(Date.now());

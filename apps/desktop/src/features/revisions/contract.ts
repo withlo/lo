@@ -65,7 +65,9 @@ export type Replay = z.output<typeof replay>;
  * - `markers`: the commit of the account's last review, and the newest revision on screen when the
  *   account last left the pull request here, each when there is one.
  * - `shown`: the head on screen. `comparison`: what's compared, once it's known. `pending`: a
- *   comparison asked for, or due when the tab opened, that waits for the local copy.
+ *   comparison asked for, or due when the tab opened, that waits for the local copy. `offered`: the
+ *   comparison a marker asks for, which came too late to be drawn first, and shows only once the
+ *   reader asks for it.
  * - `waitingFor`: why revisions can't be compared yet: `local`, the local copy isn't ready, or
  *   `git`, Lo has no git.
  * - `nothingNewSince`: the revision a marker is on, when it's the newest and the whole pull request
@@ -83,6 +85,7 @@ export const comparisonView = z.strictObject({
   shown: oid.nullable(),
   comparison: comparison.nullable(),
   pending: comparison.nullable(),
+  offered: comparison.nullable(),
   waitingFor: z.enum(['local', 'git']).nullable(),
   nothingNewSince: oid.nullable(),
   replay: replay.nullable(),

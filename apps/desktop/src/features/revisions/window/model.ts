@@ -227,8 +227,12 @@ export interface Note {
   readonly tone: 'plain' | 'info' | 'warn';
 }
 
-/** The note over the diff: what it compares, and anything to know about how. */
-export function noteOf(view: ComparisonView | undefined): Note {
+/**
+ * The note over the diff: what it compares, and anything to know about how. A comparison offered,
+ * which came too late to be drawn first, is named with the key that opens the picker at it,
+ * `pickerKey`.
+ */
+export function noteOf(view: ComparisonView | undefined, pickerKey = 'gv'): Note {
   if (!view || view.comparison === null) {
     const pending = view?.pending;
     if (view && pending) {
@@ -269,6 +273,10 @@ export function noteOf(view: ComparisonView | undefined): Note {
   }
   if (tone === 'plain' && view.pending) {
     parts.push(`comparing ${comparisonLabel(view, view.pending)} once the local copy has both…`);
+  } else if (tone === 'plain' && view.offered) {
+    const why = reasonOf(view, view.offered);
+    parts.push(`${comparisonLabel(view, view.offered)}${why ? `, ${why}` : ''}: ${pickerKey}`);
+    return { tone: 'info', text: parts.join(' · ') };
   }
   if (tone === 'plain' && view.nothingNewSince !== null && comparison.from === null) {
     parts.push(`Nothing new since ${labelOf(view, view.nothingNewSince)}`);

@@ -216,6 +216,21 @@ export function offlineAfter(options: { packaged: boolean; env: Environment }): 
 }
 
 /**
+ * How long a pull request's tab, as it opens, waits for the comparison of revisions "last seen
+ * here" asks for before it draws the whole pull request, in milliseconds, from
+ * `LO_COMPARE_WAIT_MS` in a build run from source, so a test can make a comparison late or in
+ * time; nothing to take the tab's own. A packaged build ignores it.
+ */
+export function compareWait(options: { packaged: boolean; env: Environment }): number | undefined {
+  const wait = options.env.LO_COMPARE_WAIT_MS;
+  if (options.packaged || wait === undefined) return undefined;
+  if (!/^\d+$/.test(wait) || !Number.isSafeInteger(Number(wait))) {
+    throw new Error(`LO_COMPARE_WAIT_MS must be a whole number of milliseconds, not "${wait}".`);
+  }
+  return Number(wait);
+}
+
+/**
  * The `gh` to run rather than one Lo finds, from `LO_GH`: an absolute path, or `none` for no gh at
  * all. Tests bring a gh of their own this way, so they never run the one on `PATH`, which holds the
  * tokens of whoever runs them. A test run, one talking to a GitHub on this machine, runs no gh

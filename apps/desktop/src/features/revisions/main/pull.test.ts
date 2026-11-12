@@ -271,7 +271,12 @@ describe('RevisionsTab', { timeout: 60_000 }, () => {
   });
 
   it('opens on what changed since the reader last looked here, and draws nothing before', async () => {
-    const made = revisionsTab({ repo: await e2eClone(), history: await e2eHistory() });
+    // A wait long enough for the comparison, however slow the machine.
+    const made = revisionsTab({
+      repo: await e2eClone(),
+      history: await e2eHistory(),
+      holdLimit: 30_000,
+    });
     made.marks.setLastSeen(LOGIN, PULL, APP_PULL.firstHead, Date.now() - 60_000);
     made.tab.update(e2eInfo({ kind: 'fetching', progress: null, attempt: 1 }));
     // The diff waits rather than draw the whole pull request and then move.
@@ -283,7 +288,7 @@ describe('RevisionsTab', { timeout: 60_000 }, () => {
     expect(view.markers).toEqual({ review: null, lastSeen: APP_PULL.firstHead });
   });
 
-  it('opens on what changed since the account last reviewed', async () => {
+  it('offers what changed since the account last reviewed, which only the push history says', async () => {
     const history = await e2eHistory();
     const reviewed: PushHistory = {
       ...history,
@@ -291,8 +296,19 @@ describe('RevisionsTab', { timeout: 60_000 }, () => {
     };
     const made = revisionsTab({ repo: await e2eClone(), history: reviewed });
     made.tab.update(e2eInfo());
-    const view = await made.settled((sent) => sent.comparison?.from === APP_PULL.firstHead);
-    expect(view.markers).toEqual({ review: APP_PULL.firstHead, lastSeen: null });
+    // Nothing held the diff for it, so it may be drawn already: the comparison is offered.
+    const view = await made.settled((sent) => sent.offered !== null);
+    expect(view).toMatchObject({
+      markers: { review: APP_PULL.firstHead, lastSeen: null },
+      comparison: { from: null, to: APP_PULL.head },
+      offered: { from: APP_PULL.firstHead, to: APP_PULL.head },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(made.tab.onScreen()).toEqual({ kind: 'head' });
+    // The reader takes it.
+    made.tab.compare(APP_PULL.firstHead, APP_PULL.head);
+    await made.onScreen((screen) => screen.kind === 'revisions');
+    expect(made.sent.at(-1)?.offered).toBe(null);
   });
 
   it('shows the whole pull request when a marker is on the head on screen, with nothing new since it', async () => {
@@ -381,12 +397,32 @@ describe('RevisionsTab', { timeout: 60_000 }, () => {
     expect(made.marks.lastSeen(LOGIN, PULL)).toBe(APP_PULL.head);
   });
 
-  it('shows the whole pull request once the comparison the markers ask for takes too long', async () => {
-    const made = revisionsTab({ repo: undefined, history: undefined, holdLimit: 50 });
+  it('draws the whole pull request when the comparison last seen asks for comes late, and only offers it', async () => {
+    const made = revisionsTab({
+      repo: await e2eClone(),
+      history: await e2eHistory(),
+      holdLimit: 50,
+    });
     made.marks.setLastSeen(LOGIN, PULL, APP_PULL.firstHead, Date.now() - 60_000);
     made.tab.update(e2eInfo({ kind: 'fetching', progress: null, attempt: 1 }));
     expect(made.tab.onScreen().kind).toBe('waiting');
+    // The local copy is late: the whole pull request is drawn.
     await made.onScreen((screen) => screen.kind === 'head');
+    const view = await made.settled((sent) => sent.offered !== null);
+    expect(view.offered).toEqual({ from: APP_PULL.firstHead, to: APP_PULL.head });
+    // It comes: the comparison is ready to take, but nothing on screen changes by itself.
+    made.tab.update(e2eInfo());
+    await made.settled((sent) => sent.revisions.some((revision) => revision.rebased));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(made.tab.onScreen()).toEqual({ kind: 'head' });
+    expect(made.sent.at(-1)).toMatchObject({
+      comparison: { from: null, to: APP_PULL.head },
+      offered: { from: APP_PULL.firstHead, to: APP_PULL.head },
+      pending: null,
+    });
+    // Until the reader asks.
+    made.tab.compare(APP_PULL.firstHead, APP_PULL.head);
+    await made.onScreen((screen) => screen.kind === 'revisions');
   });
 
   it('reads no revisions for a tab that acts as nobody', async () => {

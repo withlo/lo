@@ -52,6 +52,7 @@ function view(change: Partial<ComparisonView> = {}): ComparisonView {
     shown: head('5'),
     comparison: { from: head('4'), to: head('5') },
     pending: null,
+    offered: null,
     waitingFor: null,
     nothingNewSince: null,
     replay: null,
@@ -173,6 +174,30 @@ describe('the note over the diff', () => {
       tone: 'warn',
       text: 'r4 → r5, since you last looked · Lo couldn’t compare r2 with r5.',
     });
+  });
+
+  it('offers a comparison that came too late to be drawn first, with the key that takes it', () => {
+    expect(
+      noteOf(
+        view({
+          comparison: { from: null, to: head('5') },
+          offered: { from: head('4'), to: head('5') },
+        }),
+        'gv',
+      ),
+    ).toEqual({
+      tone: 'info',
+      text: 'Every change, base → r5 · r4 → r5, since you last looked: gv',
+    });
+    expect(
+      noteOf(
+        view({
+          comparison: { from: null, to: head('5') },
+          offered: { from: head('2'), to: head('5') },
+        }),
+        'Ctrl+K',
+      ).text,
+    ).toBe('Every change, base → r5 · r2 → r5, since your review: Ctrl+K');
   });
 
   it('says what it waits for', () => {

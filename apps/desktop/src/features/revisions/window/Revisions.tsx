@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { closePicker, compareEnds, compareShortcut, setEnd } from './actions.ts';
+import { closePicker, compareEnds, compareShortcut, openPicker, setEnd } from './actions.ts';
 import { comparisonLabel, reasonOf, rowsOf, shortcutRows, comparedOf } from './model.ts';
 import { catchUp, pickers, views } from './store.ts';
 
@@ -47,13 +47,7 @@ export function Revisions({ tab }: { tab: PullTab }) {
         className="inline-flex h-row-h flex-none items-center gap-6 rounded-sm border border-border ps-8 pe-6 whitespace-nowrap text-fg code-small hover:bg-hover"
         onClick={() => {
           if (picker.open) closePicker();
-          else if (compared) {
-            pickers.set(tab.id, {
-              open: true,
-              focused: compared.to,
-              ends: { from: compared.from ?? 'base', to: compared.to },
-            });
-          }
+          else openPicker();
         }}
       >
         {view.status === 'loading' || !compared ? 'Revisions…' : comparisonLabel(view, compared)}

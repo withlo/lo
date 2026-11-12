@@ -24,9 +24,9 @@ export function Note({ tab }: { tab: PullTab }) {
   useEffect(() => {
     if (views.get(tab.id) === undefined) catchUp(tab.id);
   }, [tab.id]);
-  const note = noteOf(pull?.acting?.kind === 'anonymous' ? undefined : view);
   const [first] = registry().keysOf('revisions.picker');
   const keys = first && keyLabels(first, registry().system);
+  const note = noteOf(pull?.acting?.kind === 'anonymous' ? undefined : view, keys?.join(''));
   return (
     <div
       role="note"

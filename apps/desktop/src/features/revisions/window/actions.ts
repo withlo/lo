@@ -39,8 +39,12 @@ export function openPicker(): void {
   const found = onScreen();
   if (typeof found === 'string') return;
   const { id, view } = found;
+  // At a comparison offered, so `⏎` takes it; else at the one asked for, or the one on screen.
   const compared =
-    view.pending ?? view.comparison ?? (view.shown ? { from: null, to: view.shown } : undefined);
+    view.offered ??
+    view.pending ??
+    view.comparison ??
+    (view.shown ? { from: null, to: view.shown } : undefined);
   if (!compared) return;
   const ends = endsOf(compared);
   pickers.set(id, { open: true, focused: ends.to, ends });

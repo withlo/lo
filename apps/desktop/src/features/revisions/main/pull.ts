@@ -4,8 +4,9 @@
 // tab compares. When it opens, that's the more recent of two markers (the account's last review,
 // and the newest revision on screen when it last left the pull request here) against the head on
 // screen, or the whole pull request; then whatever the reader picks. A comparison of revisions is
-// made in the local copy, across a rebase, once it has both, and nothing shows it before. Nothing
-// here calls Electron.
+// made in the local copy, across a rebase, once it has both. Once anything is drawn, what's
+// compared changes only when the reader asks: a comparison the markers ask for that comes too late
+// to be drawn first is offered instead. Nothing here calls Electron.
 
 import { GitError, type Oid, parseOid, type Repo } from '@lo/git';
 import {
@@ -39,11 +40,11 @@ import type { Comparing, OnScreen, Side } from '../service.ts';
 import type { Marks } from './marks.ts';
 
 /**
- * How long the diff waits, as a tab opens, for the comparison its markers ask for, in
- * milliseconds. Past it, the whole pull request shows, and the comparison takes its place once
- * it's ready.
+ * How long the diff waits, as a tab opens, for the comparison "last seen here" asks for, in
+ * milliseconds: about as long as a large pull request's diff takes to load and draw anyway. Past
+ * it, the whole pull request is drawn, and the comparison is offered, never put in its place.
  */
-export const HOLD_LIMIT = 15_000;
+export const HOLD_LIMIT = 1_000;
 
 /** What the revisions read of an account's poller: the push history it keeps, and its events. */
 export interface HistoryPoller extends Pick<Poller, 'pushHistory' | 'onEvent'> {
@@ -63,7 +64,7 @@ export interface RevisionsTabOptions {
   readonly changed: () => void;
   readonly log: (line: string) => void;
   readonly now?: (() => number) | undefined;
-  /** How long the diff waits for the comparison the markers ask for: {@link HOLD_LIMIT}. */
+  /** How long the diff waits for the comparison "last seen here" asks for: {@link HOLD_LIMIT}. */
   readonly holdLimit?: number | undefined;
 }
 
@@ -129,8 +130,13 @@ export class RevisionsTab {
   #picked = false;
   /** Whether the default comparison has been decided. */
   #defaulted = false;
-  /** Whether nothing should be drawn until the default comparison is ready. */
+  /**
+   * Whether nothing should be drawn until the default comparison is ready. Only while it holds is
+   * the default put on screen by itself: once anything may be drawn, it's offered instead.
+   */
   #holding = false;
+  /** A comparison the markers ask for, offered once it came too late to be drawn first. */
+  #offered: Compared | undefined;
   #holdTimer: ReturnType<typeof setTimeout> | undefined;
   #ready: Ready | undefined;
   /** The comparison being made ready. */
@@ -184,6 +190,7 @@ export class RevisionsTab {
       shown: shown ?? null,
       comparison: onScreen ?? null,
       pending: wanted !== undefined && !same(wanted, onScreen) ? wanted : null,
+      offered: this.#offered && !same(this.#offered, onScreen) ? this.#offered : null,
       waitingFor: local?.kind === 'noGit' ? 'git' : local?.kind === 'ready' ? null : 'local',
       nothingNewSince: this.#nothingNewSince ?? null,
       replay: this.#ready ? (this.#replay ?? null) : null,
@@ -258,6 +265,7 @@ export class RevisionsTab {
     }
     this.#picked = true;
     this.#release();
+    this.#offered = undefined;
     this.#chosen = from === null && to === this.#info?.shown ? undefined : { from, to };
     this.#nothingNewSince = undefined;
     this.#problem = undefined;
@@ -330,6 +338,7 @@ export class RevisionsTab {
     this.#picked = false;
     this.#defaulted = false;
     this.#holding = false;
+    this.#offered = undefined;
     clearTimeout(this.#holdTimer);
     this.#ready = undefined;
     this.#preparing = undefined;
@@ -356,15 +365,29 @@ export class RevisionsTab {
       this.#info?.local.kind !== 'noGit'
     ) {
       this.#holding = true;
-      this.#holdTimer = setTimeout(() => {
-        if (!this.#holding) return;
-        this.#options.log('the comparison took too long, so the whole pull request shows');
-        this.#release();
-        this.#publish();
-      }, this.#options.holdLimit ?? HOLD_LIMIT);
+      this.#holdTimer = setTimeout(
+        () => this.#holdExpired(),
+        this.#options.holdLimit ?? HOLD_LIMIT,
+      );
       this.#options.changed();
     }
     void this.#watch(pull, login);
+  }
+
+  /**
+   * The comparison "last seen here" asks for isn't ready in time: the whole pull request is drawn,
+   * and the comparison, once the markers say which, is offered rather than put in its place.
+   */
+  #holdExpired(): void {
+    if (!this.#holding) return;
+    const chosen = this.#chosen;
+    if (chosen && !this.#picked && !this.#ready) {
+      this.#offered = chosen;
+      this.#chosen = undefined;
+      this.#preparing = undefined;
+    }
+    this.#release();
+    this.#publish();
   }
 
   /** Stops holding the diff back: what's on screen shows. */
@@ -546,15 +569,24 @@ export class RevisionsTab {
       this.#release();
       return;
     }
-    this.#chosen = { from: chosen.from, to: chosen.to };
-    // A comparison due from the reader's last review, which the tab didn't know of as it opened,
-    // takes the whole pull request's place once it's ready.
-    if (this.#info?.local.kind === 'noGit') this.#release();
+    const between = { from: chosen.from, to: chosen.to };
+    // Put on screen only while nothing has been drawn: a comparison the tab didn't hold the diff
+    // for, as one due from the reader's last review, which only the push history says, is offered.
+    if (this.#holding && this.#info?.local.kind !== 'noGit') {
+      this.#chosen = between;
+    } else {
+      this.#offered = between;
+      this.#release();
+    }
   }
 
   /** The head on screen moved, to a newer push the reader loaded: a comparison up to it follows. */
   #shownMoved(before: string, after: string): void {
     this.#nothingNewSince = undefined;
+    const offered = this.#offered;
+    if (offered?.to === before) {
+      this.#offered = offered.from === after ? undefined : { from: offered.from, to: after };
+    }
     const chosen = this.#chosen;
     if (!chosen || chosen.to !== before) return;
     this.#chosen =
