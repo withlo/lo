@@ -93,6 +93,27 @@ describe('an overview’s place on the page', () => {
     expect(page.scroller.scrollTop).toBe(260);
   });
 
+  it('keeps the block being read where it is as what’s above it gets shorter near the end, the scroll never pulled back to it', () => {
+    const page = articleOf([300, 100, 400]);
+    holdPlace(page.scroller);
+    page.scroll(380);
+    expect(page.top(2)).toBe(20);
+    // The browser pulls the scroll back to the closer end: that isn't the reader's.
+    page.change(1, 40);
+    expect(page.pulls()).toBe(1);
+    expect(page.top(2)).toBe(20);
+    expect(page.scroller.scrollTop).toBe(320);
+  });
+
+  it('takes a scroll the browser makes as what changes size as the reader’s once it follows their input', () => {
+    const page = articleOf([300, 100, 400]);
+    holdPlace(page.scroller);
+    page.scroll(380);
+    window.dispatchEvent(new WheelEvent('wheel'));
+    page.change(1, 40);
+    expect(page.scroller.scrollTop).toBe(340);
+  });
+
   it('stays at the very top, by room above the article, which a banner coming takes away', () => {
     const view = scrollerOf(3000);
     holdPlace(view.element);
@@ -212,9 +233,23 @@ function articleOf(heights: number[]) {
   let scrollTop = 0;
   const heightOf = (index: number) =>
     index === 0 ? Number.parseFloat(held.style.height || `${contents}`) : (heights[index] ?? 0);
-  const total = () => heights.reduce((sum, _, index) => sum + heightOf(index), 0);
+  /** How tall the content is, with the room at its end. */
+  const total = () =>
+    heights.reduce((sum, _, index) => sum + heightOf(index), 0) +
+    Number.parseFloat(scroller.style.paddingBottom || '0');
+  /** How many times the scroll was pulled back to the end. */
+  let pulls = 0;
+  /** The scroll, pulled back to the end when the content got shorter, as a browser pulls it. */
+  const scrolled = () => {
+    const end = Math.max(0, total() - 400);
+    if (scrollTop > end) {
+      pulls += 1;
+      scrollTop = end;
+    }
+    return scrollTop;
+  };
   const top = (index: number) => {
-    let at = -scrollTop;
+    let at = -scrolled();
     for (let before = 0; before < index; before++) at += heightOf(before);
     return at;
   };
@@ -222,7 +257,7 @@ function articleOf(heights: number[]) {
     clientHeight: { get: () => 400 },
     scrollHeight: { get: () => total() },
     scrollTop: {
-      get: () => scrollTop,
+      get: scrolled,
       set: (to: number) => {
         scrollTop = Math.min(Math.max(0, total() - 400), Math.max(0, to));
       },
@@ -242,6 +277,7 @@ function articleOf(heights: number[]) {
     held,
     inner,
     top,
+    pulls: () => pulls,
     /** The reader scrolls to `to`. */
     scroll(to: number) {
       scroller.scrollTop = to;
@@ -332,6 +368,20 @@ describe('a block’s height', () => {
     expect(page.top(1)).toBe(50);
     expect(page.scroller.scrollTop).toBe(330);
     expect(cuts).toEqual([]);
+  });
+
+  it('gets shorter above the screen at the end with room there first, which goes once it’s off screen', () => {
+    const page = articleOf([300, 100, 400]);
+    holdPlace(page.scroller);
+    page.scroll(400);
+    expect(page.top(2)).toBe(0);
+    const held = holdHeight(page.held, page.inner, page.scroller, () => {});
+    onTestFinished(() => held.stop());
+    page.grow(100);
+    expect(page.top(2)).toBe(0);
+    expect(page.scroller.scrollTop).toBe(200);
+    expect(page.scroller.style.paddingBottom).toBe('');
+    expect(page.pulls()).toBe(0);
   });
 
   it('grows when nothing is under it on screen', () => {

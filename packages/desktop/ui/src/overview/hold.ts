@@ -3,23 +3,44 @@
 // article does, which a box moving back down takes away again. As what's above the place the
 // reader reads from changes size, as a code block's does when its code comes, or text's as its
 // face loads, the scroll takes the change: that place is the first of the article's blocks that
-// starts on screen. The window's own scroll anchoring is off, so the change is taken once. Only
-// the scroll the reader, or the document, asks for moves what's on screen.
+// starts on screen. The window's own scroll anchoring is off, so the change is taken once.
+//
+// Only the scroll the reader, or the document, asks for moves what's on screen. A scroll seen as
+// something changes size is the reader's only when it follows their input, as a wheel, a key or a
+// drag of the scroll bar; otherwise it's the browser's, as when it pulls the scroll back to an end
+// that came closer, and what's on screen goes back where it was. A block that's about to get
+// shorter first gets room at the article's end, so the end never comes closer than the place being
+// read needs; the room goes once it's off screen, or as what grows later makes it unneeded.
 
-/** What keeps each overview's place, by its scroller: called as a block in it changes height. */
-const places = new WeakMap<HTMLElement, () => void>();
+/** What keeps an overview's place: told as a block in it changes height. */
+interface Place {
+  /** A block is about to change height by `by`. */
+  resizing(by: number): void;
+  /** A block changed height. */
+  settle(): void;
+}
+
+/** What keeps each overview's place, by its scroller. */
+const places = new WeakMap<HTMLElement, Place>();
+
+/** How long after the reader's input a scroll is still theirs, as a wheel's or a key's runs on. */
+const INPUT_RUNS = 1000;
 
 /**
  * Holds what's on screen in `scroller` where it is on the page as the box moves, and as what's
  * above the place being read changes size, until the returned function stops it. Room added above
- * the content is the scroller's top padding.
+ * the content is the scroller's top padding, and room at its end its bottom padding.
  */
 export function holdPlace(scroller: HTMLElement): () => void {
   let slack = 0;
+  let room = 0;
   /** The scroll `placed` counts, to take only what the scroll moved since. */
   let scrolled = scroller.scrollTop;
   /** The box's height when its place was last kept, to tell a box that grew. */
   let height = scroller.clientHeight;
+  /** When the reader last gave input, and whether they're dragging. */
+  let input = Number.NEGATIVE_INFINITY;
+  let dragging = false;
 
   /** Where the content's top is on the page now, room above it included. */
   const contentTop = () => scroller.getBoundingClientRect().top - scroller.scrollTop + slack;
@@ -47,6 +68,21 @@ export function holdPlace(scroller: HTMLElement): () => void {
     slack = Math.max(0, to);
     scroller.style.paddingTop = slack === 0 ? '' : `${slack}px`;
   };
+
+  const setRoom = (to: number) => {
+    room = Math.max(0, to);
+    scroller.style.paddingBottom = room === 0 ? '' : `${room}px`;
+  };
+
+  /** Lets go of the room at the end that's off screen. */
+  const trim = () => {
+    if (room === 0) return;
+    const end = scroller.scrollHeight - room;
+    setRoom(Math.min(room, scroller.scrollTop + scroller.clientHeight - end));
+  };
+
+  /** Whether a scroll now is the reader's: one that follows their input. */
+  const theirs = () => dragging || performance.now() - input < INPUT_RUNS;
 
   /**
    * The scroll moved, by the reader or the document: the content is meant to be as far from where
@@ -77,9 +113,9 @@ export function holdPlace(scroller: HTMLElement): () => void {
       scroller.scrollTop += moved - taken;
     } else {
       const up = -moved;
-      const room = scroller.scrollTop;
-      scroller.scrollTop -= Math.min(up, room);
-      if (up > room) setSlack(slack + up - room);
+      const above = scroller.scrollTop;
+      scroller.scrollTop -= Math.min(up, above);
+      if (up > above) setSlack(slack + up - above);
     }
     scrolled = scroller.scrollTop;
     // The scroll goes by whole pixels, or halves, which can leave the content a fraction from where
@@ -94,37 +130,78 @@ export function holdPlace(scroller: HTMLElement): () => void {
     if (!reading || !block?.isConnected) return;
     const moved = block.getBoundingClientRect().top - reading.top;
     if (Math.abs(moved) < 0.5) return;
-    scroller.scrollTop += moved;
+    const to = scroller.scrollTop + moved;
+    // Never past the end: room there first.
+    const end = scroller.scrollHeight - scroller.clientHeight;
+    if (to > end) setRoom(room + to - end);
+    scroller.scrollTop = to;
     // The content's top moved up the page by what grew above: it's meant to be there.
     chosen();
   };
 
   /** Something moved or changed size: what's on screen goes back where it was. */
   const settle = () => {
-    // A scroll whose event hasn't come yet is the reader's, or the document's, not the box's: the
-    // block being read is taken again after it.
+    // A scroll whose event hasn't come yet is the reader's when it follows their input, and the
+    // block being read is taken again after it; else it's the browser's, and doesn't count.
     const unheard = chosen();
     keep();
-    if (!unheard) follow();
+    if (!unheard || !theirs()) follow();
+    trim();
     read();
+  };
+
+  /** A block is about to get shorter: room at the end, so the scroll isn't pulled back. */
+  const resizing = (by: number) => {
+    if (by >= 0) return;
+    const end = scroller.scrollHeight - scroller.clientHeight;
+    const short = scroller.scrollTop - (end + by);
+    if (short > 0) setRoom(room + short);
   };
 
   const onScroll = () => {
     chosen();
+    trim();
     read();
   };
+  const onInput = () => {
+    input = performance.now();
+  };
+  const onPress = () => {
+    input = performance.now();
+    dragging = true;
+  };
+  const onRelease = () => {
+    input = performance.now();
+    dragging = false;
+  };
+  const view = scroller.ownerDocument.defaultView ?? window;
+  const inputs: [string, () => void][] = [
+    ['wheel', onInput],
+    ['keydown', onInput],
+    ['touchmove', onInput],
+    ['pointerdown', onPress],
+    ['pointerup', onRelease],
+    ['pointercancel', onRelease],
+  ];
+  for (const [type, listener] of inputs) {
+    view.addEventListener(type, listener, { capture: true, passive: true });
+  }
   read();
   scroller.addEventListener('scroll', onScroll, { passive: true });
   const watch = new ResizeObserver(settle);
   watch.observe(scroller);
   const article = scroller.querySelector(':scope > article');
   if (article) watch.observe(article);
-  places.set(scroller, settle);
+  places.set(scroller, { resizing, settle });
   return () => {
     places.delete(scroller);
     watch.disconnect();
     scroller.removeEventListener('scroll', onScroll);
+    for (const [type, listener] of inputs) {
+      view.removeEventListener(type, listener, { capture: true });
+    }
     setSlack(0);
+    setRoom(0);
   };
 }
 
@@ -221,9 +298,11 @@ export function holdHeight(
       setCut(now > held);
       return;
     }
-    hold(now);
     // What's on screen stays where it is, before it's drawn.
-    if (scroller) places.get(scroller)?.();
+    const place = scroller ? places.get(scroller) : undefined;
+    place?.resizing(now - held);
+    hold(now);
+    place?.settle();
   };
 
   const contents = new ResizeObserver(() => settle(false));
