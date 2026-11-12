@@ -3,9 +3,11 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as TabShared from '../../tab/window/shared.ts';
 import type { DiffState, FileVersions } from '../contract.ts';
 import { keyOf, Loader } from './loader.ts';
 import { keepPlaces, showPlace } from './places.ts';
+import type * as Tabs from './tabs.ts';
 
 const seen = vi.hoisted(() => ({
   loader: undefined as unknown,
@@ -19,7 +21,7 @@ vi.mock('../../../window/commands/registry.ts', () => ({
 }));
 
 vi.mock('../../tab/window/shared.ts', async (original) => ({
-  ...(await original<typeof import('../../tab/window/shared.ts')>()),
+  ...(await original<typeof TabShared>()),
   showMiddle: (_tab: string, view: string) => {
     seen.middles.push(view);
     return true;
@@ -27,7 +29,7 @@ vi.mock('../../tab/window/shared.ts', async (original) => ({
 }));
 
 vi.mock('./tabs.ts', async (original) => ({
-  ...(await original<typeof import('./tabs.ts')>()),
+  ...(await original<typeof Tabs>()),
   loaderOf: () => seen.loader,
   drawnFor: () => undefined,
   revealWhenDrawn: (_tab: string, reveal: unknown) => {
@@ -70,9 +72,11 @@ function state(files: FileVersions[] | null): DiffState {
   };
 }
 
+/** Work that's never done. */
+const never = () => new Promise<never>(() => undefined);
+
 /** A loader that loads nothing: only what main says of the diff reaches it. */
 function loader(): Loader {
-  const never = () => new Promise<never>(() => undefined);
   const made = new Loader({
     texts: never,
     files: never,

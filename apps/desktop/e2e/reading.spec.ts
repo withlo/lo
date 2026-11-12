@@ -679,7 +679,11 @@ test('offers a newer overview pushed while one is read, and loads it only when a
   await expect(fold).toHaveAttribute('open', '');
   expect(await stillMoved(page)).toEqual([]);
 
-  await byline.getByRole('button', { name: 'Load it' }).click();
+  // ⇧Tab from the first block reaches the offer, before it as it's written, and ⏎ takes it.
+  await fold.locator('summary').focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(byline.getByRole('button', { name: 'Load it' })).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(shown).toContainText('The second one.');
   await expect(byline).not.toContainText('A newer overview was pushed');
 });
@@ -890,7 +894,9 @@ test('says why an overview can’t be shown, offering each newer one', async ({ 
     newer.getByRole('heading', { name: 'This overview needs a newer Lo' }),
   ).toBeVisible();
   await expect(newer).toContainText('format 2');
-  await newer.getByRole('button', { name: 'Get a newer Lo' }).click();
+  // ⏎ presses the button that has focus, with no overview drawn for it to follow.
+  await newer.getByRole('button', { name: 'Get a newer Lo' }).focus();
+  await page.keyboard.press('Enter');
   await expect.poll(browsed).toEqual(['https://github.com/withlo/lo/releases']);
 });
 
@@ -910,10 +916,8 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
   await expect(failed).toContainText(`Lo couldn't read refs/lo/pr/${APP_PULL.number}`);
   await expect(failed).toContainText(/Trying again in \d+ s\./);
 
-  // ⏎ presses the button that has focus, with no overview drawn for it to follow.
   ref.holds = { kind: 'cassette' };
-  await failed.getByRole('button', { name: 'Retry now' }).focus();
-  await page.keyboard.press('Enter');
+  await failed.getByRole('button', { name: 'Retry now' }).click();
   await expect(overview(page, 'shown')).toBeVisible({ timeout: 20_000 });
 });
 
