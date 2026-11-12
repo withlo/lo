@@ -66,6 +66,7 @@ const SEVERITIES = {
   'raw-html': 'warning',
   'outside-image': 'warning',
   'dead-link': 'warning',
+  'link-address': 'warning',
   // What the overview's commit holds.
   'artifact-missing': 'error',
   'artifact-not-file': 'error',

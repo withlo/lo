@@ -9,6 +9,7 @@
 import { MAX_NAME } from '@lo/markdown';
 import type { Token } from 'markdown-it';
 
+import { OTHER, unreadLink } from './addresses.ts';
 import { quote, type FindingCode, type Findings } from './findings.ts';
 import { LIMITS, MIN_STEPS, MIN_TABS } from './limits.ts';
 import { utf8Length } from './source.ts';
@@ -126,6 +127,8 @@ export class Reading {
   private readonly linked = new Map<string, Read<Overview['target']>>();
   /** The characters of the code and term targets claimed for the tree so far. */
   private claimed = 0;
+  /** How many links whose address Markdown can't read have been reported. */
+  private unread = 0;
 
   private section: Section = 'start';
   private seen = { tldr: false, glossary: false, first: false };
@@ -668,6 +671,85 @@ export class Reading {
   }
 
   // Links.
+
+  /**
+   * Reports each link to code, a term or a section whose address Markdown can't read, such as
+   * `[a](term:b c)`, which shows as its text. It looks at `tokens` before their text is joined, as
+   * the core rule that joins it comes next, so that an escaped bracket is still an escape.
+   */
+  unreadLinks(tokens: Token[]): void {
+    let line = 1;
+    for (const token of tokens) {
+      if (token.map) line = token.map[0] + 1;
+      // Only an inline's own text holds the `](` that starts such a link.
+      if (token.type === 'inline' && token.children && token.content.includes('](')) {
+        this.unreadIn(token.children, line);
+      }
+      if (this.unread >= LIMITS.findings) return;
+    }
+  }
+
+  /** The unread links in `children`, an inline token's, which starts on line `first`. */
+  private unreadIn(children: readonly Token[], first: number): void {
+    // The tokens' text as one, with a marker for each that isn't text, so a link whose label or
+    // address has emphasis or code inside is still one.
+    let text = '';
+    const lines = new Map<number, number>();
+    for (const child of children) {
+      switch (child.type) {
+        case 'text':
+          text += child.content;
+          break;
+        case 'text_special':
+          // A backslash before no punctuation is only a backslash; any other is an escape or an
+          // entity, which no bracket or parenthesis written so counts.
+          text += child.markup === child.content ? child.content : OTHER;
+          break;
+        case 'link_open':
+        case 'link_close':
+          // An address in the text that linkify made a link of, which `lo_text` makes text again.
+          if (child.markup !== 'linkify') text += OTHER;
+          break;
+        case 'softbreak':
+        case 'hardbreak':
+          text += '\n';
+          break;
+        case 'html_inline':
+          lines.set(text.length, count(child.content));
+          text += OTHER;
+          break;
+        case 'image':
+          lines.set(text.length, breaks(child.children));
+          text += OTHER;
+          break;
+        default:
+          text += OTHER;
+          break;
+      }
+    }
+    const open: { at: number; line: number; image: boolean }[] = [];
+    let line = first;
+    for (let at = 0; at < text.length; at++) {
+      const char = text[at];
+      if (char === '\n') {
+        line += 1;
+      } else if (char === OTHER) {
+        line += lines.get(at) ?? 0;
+      } else if (char === '[') {
+        open.push({ at, line, image: text[at - 1] === '!' });
+      } else if (char === ']') {
+        const from = open.pop();
+        // An image isn't a link, whatever it points at.
+        if (!from || from.image || text[at + 1] !== '(') continue;
+        const message = unreadLink(text, from.at, at);
+        if (message === undefined) continue;
+        this.add('link-address', from.line, message);
+        this.unread += 1;
+        // The findings keep no more, so there's no use looking for more.
+        if (this.unread >= LIMITS.findings) return;
+      }
+    }
+  }
 
   /** Reads each link's target, and takes out links to the format's targets that are invalid. */
   private links(tokens: Token[]): void {
