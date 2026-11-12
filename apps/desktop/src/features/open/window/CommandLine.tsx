@@ -1,11 +1,14 @@
-// Settings' Command line section: the `lo` command, where it is, and installing it.
+// Settings' Command line section: the `lo` command, where it is, and installing it, then the rows
+// other features put in the section after it.
 
 import { Button, Setting } from '@lo/ui';
 import { useEffect } from 'react';
 import { useStore } from 'zustand';
 
+import { Slot } from '../../../window/slots.tsx';
 import { defineSection } from '../../settings/window/shared.ts';
 import { checkCommand, commandStore, installCommand } from './command.ts';
+import { commandLine } from './shared.ts';
 
 /** The `lo` command's row: where it's installed, if it is, and a button to install it. */
 function CommandRow() {
@@ -41,6 +44,10 @@ export default defineSection({
   id: 'open.command',
   order: 70,
   title: 'Command line',
-  description: 'Opening pull requests from a terminal.',
-  render: () => <CommandRow />,
+  render: () => (
+    <>
+      <CommandRow />
+      <Slot slot={commandLine} props={{}} />
+    </>
+  ),
 });

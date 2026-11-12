@@ -16,6 +16,9 @@
   ],
   "references": [
     {
+      "path": "../../skill/checker"
+    },
+    {
       "path": "../../packages/core/artifact"
     },
     {

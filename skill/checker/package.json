@@ -8,6 +8,14 @@
   "bin": {
     "lo-overview": "./dist/checker.js"
   },
+  "exports": {
+    "./install": "./src/install.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      "./install": "./dist/install.js"
+    }
+  },
   "files": [
     "dist",
     "LICENSE"
@@ -16,7 +24,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && vite build --config vite.install.config.ts",
     "lint": "oxlint",
     "test": "vitest run --root ../.. --project @withlo/overview"
   },

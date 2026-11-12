@@ -15,6 +15,7 @@ import { contract } from '../contract.ts';
 import { Blobs } from './blobs.ts';
 import { codeReply, CodeReads, readKey } from './code.ts';
 import { SavedRefs } from './saved.ts';
+import { installSkill, skillState } from './skill.ts';
 import { OverviewTab } from './watch.ts';
 
 const followed = new Map<string, OverviewTab>();
@@ -102,6 +103,12 @@ export default defineFeature(contract, {
     },
     load({ id }) {
       tabOf(id).load();
+    },
+    currentSkill: () => skillState(process.env),
+    installSkill({ agents }, { publish }) {
+      const results = installSkill(agents, process.env);
+      publish('skill', skillState(process.env));
+      return results;
     },
   },
   start(context) {
