@@ -1,11 +1,15 @@
 // What the diff shares with other features' window code: the slot over the diff, where what it
-// compares is said; showing the diff; and diffing texts another feature has, as the diff's own
-// files are diffed.
+// compares is said; showing the diff, and a place in it or the file whole; one file of it beside
+// another view; and diffing texts another feature has, as the diff's own files are diffed.
 
-import { defineSlot } from '../../../window/slots.tsx';
+import { createElement, type ReactNode } from 'react';
+
+import { defineSlot, Slot } from '../../../window/slots.tsx';
 import { showMiddle, type PullTab } from '../../tab/window/shared.ts';
 import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
+import { Beside } from './Beside.tsx';
 import { diffJobs } from './main.ts';
+import { showPlace as showCode } from './places.ts';
 import { DIFF_VIEW } from './whole.ts';
 
 /**
@@ -21,6 +25,42 @@ export const notes = defineSlot<{ tab: PullTab }>('diff.notes');
  */
 export function showDiff(tab: string): boolean {
   return showMiddle(tab, DIFF_VIEW);
+}
+
+/**
+ * Shows line `line` of the file at `path` in pull request's tab `tab`, as following a reference to
+ * code does: in the diff on screen, its cursor on the line, when the comparison has the file;
+ * otherwise the file whole, at the head the diff shows, with lines `marked` picked out. Without a
+ * line, the file's top. The line is the head's: a caller with a place at another commit maps it
+ * there first. Where the tab was is recorded in its history, so `⌃o` comes back, and focus goes to
+ * the code.
+ */
+export function showPlace(
+  tab: string,
+  path: string,
+  line: number | undefined,
+  marked?: { from: number; to: number },
+): void {
+  showCode(tab, path, line, marked);
+}
+
+/**
+ * One file of pull request's tab `tab`'s diff, as the comparison on screen shows it, inline, with
+ * line `line` of it at the head near the top: for the code beside another view. Under its bar,
+ * which names the file and ends with `end`, the diff's own note says what's compared. While it has
+ * focus the diff's keys act on it, and it records nothing in the tab's history: the view it's
+ * beside does.
+ */
+export function DiffBeside(props: {
+  tab: PullTab;
+  path: string;
+  line: number | undefined;
+  end?: ReactNode;
+}): ReactNode {
+  return createElement(Beside, {
+    ...props,
+    note: createElement(Slot, { slot: notes, props: { tab: props.tab } }),
+  });
 }
 
 /**

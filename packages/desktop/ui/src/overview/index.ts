@@ -5,8 +5,18 @@ export {
   type OverviewViews,
 } from './OverviewDocument.tsx';
 export { blockHints, isStop, type BlockHint } from './blocks.ts';
+export {
+  BLOCK_ATTRIBUTE,
+  blockNumber,
+  blockOf,
+  blockStops,
+  focusTargetOf,
+  hasSteps,
+  linksIn,
+  stepIn,
+} from './moving.ts';
 export { alphabetical } from './terms.ts';
-export { HOVER_CLOSE_MS, HOVER_OPEN_MS } from './Term.tsx';
+export { closeCards, HOVER_CLOSE_MS, HOVER_OPEN_MS } from './Term.tsx';
 export { lineRange } from './placeholders.tsx';
 export {
   CodeBlock,

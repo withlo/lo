@@ -137,7 +137,7 @@ describe('an SVG figure', () => {
   });
 
   test('links only the parts the check kept for its block, with what they link to', () => {
-    const follow = vi.fn<(part: PartLink) => void>();
+    const follow = vi.fn<(part: PartLink, from: Element) => void>();
     const [kept, ...others] = PARTS;
     render({
       path: 'figures/flow.svg',
@@ -155,7 +155,10 @@ describe('an SVG figure', () => {
     act(() => {
       links[0]!.lastElementChild!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    expect(follow).toHaveBeenCalledExactlyOnceWith({ id: kept, label: 'The term bucket' });
+    expect(follow).toHaveBeenCalledExactlyOnceWith(
+      { id: kept, label: 'The term bucket' },
+      links[0],
+    );
   });
 
   test('shows a part’s preview while it’s hovered or has focus', () => {

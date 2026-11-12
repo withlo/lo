@@ -414,7 +414,8 @@ class View implements DiffView {
     // A face that loads later, such as a script's subset when its first character shows, changes
     // the width of text, and so where lines wrap: measure again.
     document.fonts.addEventListener('loadingdone', this.#measure);
-    if (init.layout === 'inline') this.setLayout('inline');
+    // Drawn inline from the start, it takes no focus: only a reader's change of layout does.
+    if (init.layout === 'inline') this.#toggleLayout(false);
     this.#watchFile();
 
     this.probe = new ViewProbe({
@@ -1720,8 +1721,11 @@ class View implements DiffView {
     ];
   }
 
-  /** Shows the inline layout, or side by side again, keeping the line at the cursor in view. */
-  #toggleLayout(): void {
+  /**
+   * Shows the inline layout, or side by side again, keeping the line at the cursor in view, and
+   * gives it focus unless `focus` is false.
+   */
+  #toggleLayout(focus = true): void {
     const pane = this.#activePane();
     const view = this.#viewOf(pane);
     const from = this.#placeAt(pane, view.state.doc.lineAt(view.state.selection.main.head).number);
@@ -1733,7 +1737,7 @@ class View implements DiffView {
       this.views.new.dom.hidden = true;
       inline.view.dom.hidden = false;
       this.#moveBoxes();
-      this.#show('inline', from);
+      this.#show('inline', from, focus);
     } else {
       this.#pane = 'split';
       if (this.#inline) this.#inline.view.dom.hidden = true;
@@ -1743,12 +1747,12 @@ class View implements DiffView {
       this.#moveBoxes();
       // The cursor stays on screen as the sides settle, as after any key that moves it.
       this.#aligner.follow();
-      this.#show(from.side, from);
+      this.#show(from.side, from, focus);
     }
   }
 
-  /** Shows `pane`, scrolled to `place` with the cursor there and focus in it. */
-  #show(pane: Pane, place: At): void {
+  /** Shows `pane`, scrolled to `place` with the cursor there, and focus in it unless `focus` is false. */
+  #show(pane: Pane, place: At, focus: boolean): void {
     const view = this.#viewOf(pane);
     view.requestMeasure();
     const line = this.#docLine(pane, place);
@@ -1757,7 +1761,7 @@ class View implements DiffView {
       selection: { anchor: pos },
       effects: EditorView.scrollIntoView(pos, { y: 'center' }),
     });
-    view.focus();
+    if (focus) view.focus();
   }
 
   /**

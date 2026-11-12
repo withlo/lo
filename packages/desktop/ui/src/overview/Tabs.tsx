@@ -1,12 +1,15 @@
-import { useId, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 
 import type { Overview, Tabs as TabsBlock } from '@lo/artifact';
 
 import { MarkdownBlocks, useRendering } from '../markdown/index.ts';
+import { setStepper } from './moving.ts';
 
 /**
  * Parallel views of one thing, one shown at a time. The tab shown takes focus by `Tab`; `←` and
- * `→` switch to the one before and after, `Home` and `End` to the first and last.
+ * `→` switch to the one before and after, `Home` and `End` to the first and last. The block keys
+ * switch them with `stepIn`, round the end as `→` goes, focus staying where it is unless it's on a
+ * tab.
  */
 export function Tabs({ node }: { node: TabsBlock }) {
   const { anchors } = useRendering<Overview>();
@@ -22,8 +25,24 @@ export function Tabs({ node }: { node: TabsBlock }) {
     setShown(index);
     buttons.current[index]?.focus();
   };
+  const root = useRef<HTMLDivElement>(null);
+  const latest = useRef({ shown, count });
+  latest.current = { shown, count };
+  useLayoutEffect(() => {
+    const element = root.current;
+    if (!element) return undefined;
+    return setStepper(element, (by) => {
+      const now = latest.current;
+      if (now.count < 2) return false;
+      const next = (now.shown + by + now.count) % now.count;
+      const list = element.querySelector('[role="tablist"]');
+      if (list?.contains(element.ownerDocument.activeElement)) show(next);
+      else setShown(next);
+      return true;
+    });
+  }, []);
   return (
-    <div className="lo-tabs">
+    <div ref={root} className="lo-tabs">
       <div
         className="lo-tabs__list"
         role="tablist"

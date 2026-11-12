@@ -19,7 +19,7 @@ export interface MarkdownProps<X extends Extension = Plain> {
    * A link was followed, from `from`. A web target is always an `https://` page, for main to
    * open. The document has already moved to an anchor; it says so here too.
    */
-  onFollow?: ((target: Followed<X>, from: HTMLElement) => void) | undefined;
+  onFollow?: ((target: Followed<X>, from: Element) => void) | undefined;
   extension?: MarkdownExtension<X> | undefined;
   className?: string | undefined;
 }
@@ -37,7 +37,7 @@ export function Markdown<X extends Extension = Plain>({
   const anchors = useMemo(() => new Anchors(prefix, tree.blocks), [prefix, tree.blocks]);
   const root = useRef<HTMLDivElement | null>(null);
   const follow = useCallback(
-    (target: Followed<X>, from: HTMLElement) => {
+    (target: Followed<X>, from: Element) => {
       if (target.kind === 'anchor' && 'name' in target && typeof target.name === 'string') {
         reveal(root.current, anchors.id(target.name));
       }
