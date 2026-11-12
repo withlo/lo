@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { DiffState, FileVersions, Source, Start } from '../contract.ts';
-import { draw, type Drawing, samePlace } from './drawing.ts';
+import { draw, type Drawing, Pacer, samePlace } from './drawing.ts';
 import { Loader, type LoaderWork } from './loader.ts';
 import { drawnFor } from './tabs.ts';
 
@@ -21,6 +21,8 @@ const tops = new Map<string, number>();
 const HEADER = 38;
 /** What a file taking its lines does to the page, as one that grows moves the headers below it. */
 let tookLines: ((id: string) => void) | undefined;
+/** Whether a file's new lines draw in the rows it has, which swaps a file on screen in place. */
+let keeps = false;
 /** Each diff's name, to say which one the view was given. */
 const names = new WeakMap<FileDiff, string>();
 
@@ -45,8 +47,8 @@ vi.mock('@lo/ui/code', () => ({
     },
     fold: () => undefined,
     filesOnScreen: () => onScreen,
-    // As a swap that adds a row would.
-    keepsShape: () => false,
+    // As a swap that adds a row would, unless the test says otherwise.
+    keepsShape: () => keeps,
     keyState: () => ({ mode: 'normal', pending: false, target: { kind: 'none' } }),
     setLines: (id, lines, diff) => {
       told.push(`lines ${id} ${lines.new.join(' ')} ${diff ? (names.get(diff) ?? '') : ''}`);
@@ -106,7 +108,7 @@ function versions(start: Start, path = 'src/a.ts'): FileVersions {
   };
 }
 
-function state(start: Start, from: Source): DiffState {
+function state(start: Start, from: Source, paths = ['src/a.ts']): DiffState {
   return {
     id: TAB.id,
     at: HEAD,
@@ -114,11 +116,14 @@ function state(start: Start, from: Source): DiffState {
     since: null,
     waiting: null,
     from,
-    files: [versions(start)],
+    files: paths.map((path) => versions(start, path)),
     partial: false,
     problem: null,
   };
 }
+
+/** Five files, the first on screen as the tests that use them start. */
+const FIVE = ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts', 'src/e.ts'];
 
 /**
  * The work behind a loader: GitHub's lines say `github`, the local copy's `local`, and each diff
@@ -142,9 +147,28 @@ const work: LoaderWork = {
   log: () => undefined,
 };
 
+/** `work`, whose files come with their highlighting once the view is drawn, as Lo's do. */
+const colored: LoaderWork = {
+  ...work,
+  files: (input) =>
+    Promise.resolve(
+      input.files.map((file) => {
+        const diff = diffText('x\n', file.kind === 'texts' ? (file.new ?? '') : '');
+        names.set(diff, input.whitespace ? 'shown' : 'hidden');
+        const tokens = input.highlight ? { new: Uint32Array.from([0, 1, 1]) } : {};
+        return { ok: true, diff, tokens, changes: { deleted: [], added: [] } };
+      }),
+    ),
+};
+
 /** Lets the loader's and the drawing's work run, a frame at a time. */
 async function frames(count = 8): Promise<void> {
   for (let at = 0; at < count; at++) await new Promise((resolve) => setTimeout(resolve, 20));
+}
+
+/** Lets the loader's and the drawing's work run until `done`, a frame at a time, 2 s at most. */
+async function waitFor(done: () => boolean): Promise<void> {
+  for (let at = 0; at < 100 && !done(); at++) await frames(1);
 }
 
 let drawing: Drawing | undefined;
@@ -156,9 +180,18 @@ let highlighting = true;
  * starts out closed, as generated: its lines come while the reader is on it.
  */
 async function swapUnderReader(): Promise<Loader> {
-  const loader = new Loader(work);
+  const loader = await drawnGithub(work, ['src/a.ts']);
+  told.length = 0;
+  loader.take(state('collapsed', 'local'));
+  await frames();
+  return loader;
+}
+
+/** Draws GitHub's diff of files at `paths`, with `work`, as the diff's component does. */
+async function drawnGithub(given: LoaderWork, paths: readonly string[]): Promise<Loader> {
+  const loader = new Loader(given);
   loader.setWhitespace(true);
-  loader.take(state('shown', 'github'));
+  loader.take(state('shown', 'github', [...paths]));
   await frames();
   const ready = loader.snapshot().ready;
   if (!ready) throw new Error('GitHub’s diff isn’t ready');
@@ -177,10 +210,32 @@ async function swapUnderReader(): Promise<Loader> {
   });
   // As the diff's component does: each new list goes to the drawing.
   loader.subscribe(() => drawing?.update(loader.snapshot().ready?.entries ?? []));
-  told.length = 0;
-  loader.take(state('collapsed', 'local'));
-  await frames();
   return loader;
+}
+
+/**
+ * What the stand-in view was told in each frame from here on, its headers too, until `stop`: a
+ * frame's share of the drawing's work each, as each share runs just after a frame.
+ */
+function byFrame(): { stop: () => Promise<string[][]> } {
+  const seen: string[][] = [];
+  let toldAt = told.length;
+  let headersAt = headers.length;
+  const each = () => {
+    seen.push([...told.slice(toldAt), ...headers.slice(headersAt).map((one) => `header ${one}`)]);
+    toldAt = told.length;
+    headersAt = headers.length;
+    frame = requestAnimationFrame(each);
+  };
+  let frame = requestAnimationFrame(each);
+  return {
+    // Once the frame after the last share, which says what it did.
+    stop: async () => {
+      await frames(2);
+      cancelAnimationFrame(frame);
+      return seen;
+    },
+  };
 }
 
 beforeEach(() => {
@@ -189,6 +244,7 @@ beforeEach(() => {
   headers.length = 0;
   tops.clear();
   tookLines = undefined;
+  keeps = false;
   onScreen = ['d0'];
   highlighting = true;
 });
@@ -197,6 +253,112 @@ afterEach(() => {
   drawing?.stop();
   drawing = undefined;
   document.body.replaceChildren();
+});
+
+describe('the pacer', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('runs a task that changes a lot of what’s drawn with a frame’s share to itself', async () => {
+    vi.useFakeTimers();
+    const pacer = new Pacer();
+    /** The tasks each frame's share ran, by when it ran. */
+    const shares = new Map<number, string[]>();
+    const task = (name: string) => () => {
+      const now = performance.now();
+      shares.set(now, [...(shares.get(now) ?? []), name]);
+    };
+    pacer.run(task('colors'));
+    pacer.alone(task('lines'));
+    pacer.run(task('diff'));
+    pacer.run(task('moves'));
+    pacer.alone(task('more lines'));
+    await vi.advanceTimersByTimeAsync(200);
+    expect([...shares.values()]).toEqual([
+      ['colors'],
+      ['lines'],
+      ['diff', 'moves'],
+      ['more lines'],
+    ]);
+  });
+
+  it('runs a task asked for first in the next share, before the tasks waiting', async () => {
+    vi.useFakeTimers();
+    const pacer = new Pacer();
+    const shares = new Map<number, string[]>();
+    const task = (name: string) => () => {
+      const now = performance.now();
+      shares.set(now, [...(shares.get(now) ?? []), name]);
+    };
+    pacer.alone(() => {
+      task('lines')();
+      pacer.first(task('its colors'));
+    });
+    pacer.alone(task('more lines'));
+    pacer.run(task('other colors'));
+    await vi.advanceTimersByTimeAsync(200);
+    expect([...shares.values()]).toEqual([
+      ['lines'],
+      ['its colors'],
+      ['more lines'],
+      ['other colors'],
+    ]);
+  });
+});
+
+describe('the local copy’s files swapped in place', () => {
+  it('each take a frame’s share to themselves, and one on screen its colors in the next', async () => {
+    // The file on screen draws its new lines in the rows it has, so it isn't held.
+    keeps = true;
+    const loader = await drawnGithub(colored, FIVE);
+    await frames();
+    told.length = 0;
+    const watched = byFrame();
+    loader.take(state('shown', 'local', FIVE));
+    await waitFor(() => told.filter((each) => each.startsWith('tokens ')).length >= FIVE.length);
+    const seen = await watched.stop();
+    const swapping = seen.filter((share) => share.some((each) => each.startsWith('lines ')));
+    // A file's lines, first in a share, and the only lines in it.
+    expect(swapping.map((share) => share[0]?.split(' ').slice(0, 2).join(' '))).toEqual([
+      'lines d0',
+      'lines d1',
+      'lines d2',
+      'lines d3',
+      'lines d4',
+    ]);
+    expect(swapping.map((share) => share.filter((each) => each.startsWith('lines ')))).toEqual(
+      swapping.map((share) => [share[0]]),
+    );
+    // The file on screen goes without its colors for one frame, not until the others are in.
+    const frameOf = (prefix: string) =>
+      seen.findIndex((share) => share.some((each) => each.startsWith(prefix)));
+    expect(frameOf('tokens d0') - frameOf('lines d0')).toBe(1);
+  });
+
+  it('come in a frame’s share each once they’re off screen, after the work queued before', async () => {
+    const loader = await drawnGithub(work, FIVE);
+    await frames();
+    const ready = loader.snapshot().ready;
+    if (!ready) throw new Error('GitHub’s diff isn’t ready');
+    onScreen = [];
+    told.length = 0;
+    const watched = byFrame();
+    // Every file now starts out closed, as generated, which changes its header too: the headers
+    // are queued first, then the files closed a file a share.
+    drawing?.update(
+      ready.entries.map((entry) => ({
+        ...entry,
+        versions: versions('collapsed', entry.versions.path.text),
+      })),
+    );
+    await waitFor(() => told.filter((each) => each.startsWith('collapsed ')).length >= 5);
+    const seen = await watched.stop();
+    const closing = seen.filter((share) => share.some((each) => each.startsWith('collapsed ')));
+    expect(closing.map((share) => share.join(', '))).toEqual(
+      ['d0', 'd1', 'd2', 'd3', 'd4'].map((id) => `collapsed ${id} true`),
+    );
+  });
 });
 
 describe('a file under the reader that starts out otherwise in the local copy', () => {

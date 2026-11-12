@@ -17,6 +17,7 @@ import {
   StateEffect,
   StateField,
   type Text,
+  type Transaction,
 } from '@codemirror/state';
 import {
   type BlockInfo,
@@ -91,7 +92,7 @@ import {
   vimPending,
 } from './keys.ts';
 import { Layout } from './layout.ts';
-import { swapLines } from './lines.ts';
+import { swapping } from './lines.ts';
 import {
   type MarkedLines,
   type MarkedSpan,
@@ -514,8 +515,8 @@ class View implements DiffView {
   setDiff(id: string, diff: FileDiff): void {
     const file = this.#fileOf(id);
     this.#diffs[file] = diff;
-    if (this.#inline) this.#replaceInline(file);
-    this.#refresh(file, [tokensChanged.of(null)]);
+    const inline = this.#inline ? this.#replaceInline(file) : [];
+    this.#refresh(file, [tokensChanged.of(null)], { inline });
   }
 
   setMoves(moves: readonly MovedCode[]): void {
@@ -985,8 +986,7 @@ class View implements DiffView {
     if (skipped || !this.#loaded.has(file) || this.#closed.has(file) === collapsed) return;
     if (collapsed) this.#closed.add(file);
     else this.#closed.delete(file);
-    if (this.#inline && !collapsed) this.#addInline(file);
-    this.#refresh(file);
+    this.#refresh(file, [], { inline: this.#inline && !collapsed ? this.#addInline(file) : [] });
   }
 
   filesOnScreen(): readonly string[] {
@@ -1678,21 +1678,26 @@ class View implements DiffView {
     return this.#inline;
   }
 
-  /** Gives the inline document a file's lines, once its diff is in. */
-  #addInline(file: number): void {
+  /**
+   * The change that gives the inline document a file's lines, once its diff is in, for
+   * {@link View.#refresh} to draw: the inline layout has them at once.
+   */
+  #addInline(file: number): Transaction[] {
     const inline = this.#inline!;
     const diff = this.#diffs[file];
-    if (!diff || inline.layout.lines[file] || !this.#loaded.has(file)) return;
+    if (!diff || inline.layout.lines[file] || !this.#loaded.has(file)) return [];
     const lines = inlineLines(diff);
     const text = inlineText(lines, this.#lines[file]!.old, this.#lines[file]!.new);
-    const header = inline.view.state.doc.line(inline.layout.files[file]!.header);
+    const { state } = inline.view;
+    const header = state.doc.line(inline.layout.files[file]!.header);
     inline.layout.setLines(file, lines);
-    if (text.length > 0) {
-      inline.view.dispatch({
+    if (text.length === 0) return [];
+    return [
+      state.update({
         changes: { from: header.to, insert: `\n${text.join('\n')}` },
         annotations: ownChange.of(true),
-      });
-    }
+      }),
+    ];
   }
 
   /** Shows the inline layout, or side by side again, keeping the line at the cursor in view. */
@@ -1870,25 +1875,25 @@ class View implements DiffView {
     };
   }
 
-  #blocks(side: Side, file: number): Range<Decoration>[] {
+  #blocks(side: Side, file: number, doc = this.views[side].state.doc): Range<Decoration>[] {
     const lines = this.#layout.files[file]!;
     return fileBlocks({
       ...this.#base(file),
       side,
       lines: lines[side],
       otherLines: lines[side === 'old' ? 'new' : 'old'].count > 0,
-      doc: this.views[side].state.doc,
+      doc,
       sizes: this.#sizes[side],
     });
   }
 
-  #inlineBlocks(file: number): Range<Decoration>[] {
+  #inlineBlocks(file: number, doc = this.#inline!.view.state.doc): Range<Decoration>[] {
     const inline = this.#inline!;
     return inlineBlocks({
       ...this.#base(file),
       lines: inline.layout.files[file]!,
       inline: inline.layout.lines[file],
-      doc: inline.view.state.doc,
+      doc,
       sizes: inline.sizes,
     });
   }
@@ -1969,43 +1974,56 @@ class View implements DiffView {
     return out;
   }
 
-  /** Draws a file again in every document, with `effects` alongside. */
-  #refresh(file: number, more: StateEffect<unknown>[] = []): void {
+  /**
+   * Draws a file again in every document, with `effects` alongside. `swaps`, each editor's change
+   * to the file's lines, if they changed, is drawn in the same update of that editor.
+   */
+  #refresh(
+    file: number,
+    more: StateEffect<unknown>[] = [],
+    swaps: Partial<Record<Pane, readonly Transaction[]>> = {},
+  ): void {
     this.#rows[file] = this.#rowsOf(file);
     const effects = [...more, marksChanged.of(null)];
     const split = (): void => {
       for (const side of ['old', 'new'] as const) {
-        const doc = this.views[side].state.doc;
+        const swap = swaps[side] ?? [];
+        const state = swap.at(-1)?.state ?? this.views[side].state;
+        const doc = state.doc;
         const lines = this.#layout.files[file]![side];
-        this.views[side].dispatch({
+        const drawn = state.update({
           effects: [
             setFile.of({
               file,
               from: doc.line(lines.header).from,
               to: doc.line(lines.header + lines.count).to,
-              decorations: this.#blocks(side, file),
+              decorations: this.#blocks(side, file, doc),
             }),
             ...effects,
           ],
         });
+        this.views[side].dispatch([...swap, drawn]);
       }
     };
     const inline = (): void => {
       if (!this.#inline) return;
       const { view, layout } = this.#inline;
-      const doc = view.state.doc;
+      const swap = swaps.inline ?? [];
+      const state = swap.at(-1)?.state ?? view.state;
+      const doc = state.doc;
       const lines = layout.files[file]!;
-      view.dispatch({
+      const drawn = state.update({
         effects: [
           setFile.of({
             file,
             from: doc.line(lines.header).from,
             to: doc.line(lines.header + lines.count).to,
-            decorations: this.#inlineBlocks(file),
+            decorations: this.#inlineBlocks(file, doc),
           }),
           ...effects,
         ],
       });
+      view.dispatch([...swap, drawn]);
     };
     // A comment box is one element, which the last editor to draw it takes: the one showing.
     if (this.#pane === 'split') {
@@ -2064,12 +2082,14 @@ class View implements DiffView {
     // The lines change under the editors: what the cursor is on is said once they settle.
     this.#quiet++;
     try {
+      // Each editor takes its new lines with their decorations in one update, which draws once.
+      const swaps: Record<Pane, Transaction[]> = { old: [], new: [], inline: [] };
       for (const side of ['old', 'new'] as const) {
         const lines = given[side];
         const triples = this.#triples[file]![side];
         if (triples) this.#tokens[file]![side] = { tokens: triples, starts: lineStarts(lines) };
         const { header } = this.#layout.files[file]![side];
-        swapLines(this.views[side], header, before[side], lines, fits[side]);
+        swaps[side] = swapping(this.views[side].state, header, before[side], lines, fits[side]);
         this.#layout.setCount(side, file, lines.length);
       }
       // Every file after it has moved by as many lines as it grew.
@@ -2083,8 +2103,8 @@ class View implements DiffView {
           this.#rows[index] = shiftRows(this.#rows[index]!, grew.old, grew.new);
         }
       }
-      if (this.#inline) this.#replaceInline(file, gaps);
-      this.#refresh(file, [tokensChanged.of(null)]);
+      if (this.#inline) swaps.inline = this.#replaceInline(file, gaps);
+      this.#refresh(file, [tokensChanged.of(null)], swaps);
     } finally {
       this.#quiet--;
     }
@@ -2093,16 +2113,14 @@ class View implements DiffView {
   }
 
   /**
-   * Gives the inline document file `file`'s lines from its diff now, in place of those it had,
-   * whose placeholders were `gaps`' lines.
+   * The change that gives the inline document file `file`'s lines from its diff now, in place of
+   * those it had, whose placeholders were `gaps`' lines, for {@link View.#refresh} to draw: the
+   * inline layout has them at once.
    */
-  #replaceInline(file: number, gaps: readonly Gap[] = this.#gaps[file]!): void {
+  #replaceInline(file: number, gaps: readonly Gap[] = this.#gaps[file]!): Transaction[] {
     const inline = this.#inline!;
     const had = inline.layout.lines[file];
-    if (!had) {
-      this.#addInline(file);
-      return;
-    }
+    if (!had) return this.#addInline(file);
     const diff = this.#diffs[file];
     const lines = this.#lines[file]!;
     const { header, count } = inline.layout.files[file]!;
@@ -2118,21 +2136,27 @@ class View implements DiffView {
       // A row showed a placeholder if either of its lines was one.
       const placeholder = (row: number): boolean =>
         isGapLine(gaps, 'old', had.old[row]!) || isGapLine(gaps, 'new', had.new[row]!);
-      swapLines(view, header, before, text, fitsInPlace(before, text, placeholder));
+      const swap = swapping(
+        view.state,
+        header,
+        before,
+        text,
+        fitsInPlace(before, text, placeholder),
+      );
       inline.layout.setLines(file, now);
-      return;
+      return swap;
     }
     // No diff to order them by: the file's inline lines go until it comes, the cursor kept on the
     // same file line if it was in the file.
     const head = view.state.selection.main.head;
     const line = view.state.doc.lineAt(head).number;
     const at = this.#fileAt('inline', line) === file ? this.#placeAt('inline', line) : undefined;
-    swapLines(view, header, before, [], true);
+    const swap = swapping(view.state, header, before, [], true);
     inline.layout.clearLines(file);
-    if (at)
-      view.dispatch({
-        selection: { anchor: view.state.doc.line(this.#docLine('inline', at)).from },
-      });
+    if (!at) return swap;
+    const state = swap.at(-1)?.state ?? view.state;
+    const anchor = state.doc.line(this.#docLine('inline', at)).from;
+    return [...swap, state.update({ selection: { anchor } })];
   }
 
   // Jumps and folds --------------------------------------------------------------------------
@@ -2272,8 +2296,8 @@ class View implements DiffView {
     if (note && note !== 'closed') return;
     if (this.#closed.has(file)) this.#closed.delete(file);
     else this.#closed.add(file);
-    if (this.#inline && !this.#closed.has(file)) this.#addInline(file);
-    this.#refresh(file);
+    const opened = this.#inline && !this.#closed.has(file);
+    this.#refresh(file, [], { inline: opened ? this.#addInline(file) : [] });
   }
 
   /** The line on the other side in the row of line `line` of `side`, or the nearest before it. */

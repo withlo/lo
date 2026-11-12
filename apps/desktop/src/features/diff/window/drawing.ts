@@ -118,21 +118,50 @@ function changeFor(drawn: Drawn, start: Start): Change | undefined {
   }
 }
 
+/** How the pacer runs a task: after those before it, with a frame's share to itself, or first. */
+type Pace = 'run' | 'alone' | 'first';
+
 /**
  * Runs work a few milliseconds a frame, so a lot of it never holds a frame up. Each frame's share
  * runs in a task of its own just after the frame is painted, not in its callbacks, so the view
  * measures what it changed before the next one is.
  */
-class Pacer {
-  readonly #tasks: (() => void)[] = [];
+export class Pacer {
+  readonly #tasks: { readonly task: () => void; readonly pace: Pace }[] = [];
   #frame: number | undefined;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #stopped = false;
 
   /** Runs `task` soon, after those before it. */
   run(task: () => void): void {
+    this.#add(task, 'run');
+  }
+
+  /**
+   * Runs `task` soon, after those before it, with a frame's share to itself: for work that changes
+   * much of what's drawn, so the page it reads as it starts is laid out already, and its frame lays
+   * out only its own change.
+   */
+  alone(task: () => void): void {
+    this.#add(task, 'alone');
+  }
+
+  /**
+   * Runs `task` in the next frame's share, before the tasks waiting but after others asked for this
+   * way: for what follows a task, such as a file's colors after its lines.
+   */
+  first(task: () => void): void {
+    this.#add(task, 'first');
+  }
+
+  #add(task: () => void, pace: Pace): void {
     if (this.#stopped) return;
-    this.#tasks.push(task);
+    let at = this.#tasks.length;
+    if (pace === 'first') {
+      at = this.#tasks.findIndex((waiting) => waiting.pace !== 'first');
+      if (at === -1) at = this.#tasks.length;
+    }
+    this.#tasks.splice(at, 0, { task, pace });
     this.#next();
   }
 
@@ -155,7 +184,13 @@ class Pacer {
   readonly #pump = (): void => {
     this.#timer = undefined;
     const until = performance.now() + 4;
-    while (this.#tasks.length > 0 && performance.now() < until) this.#tasks.shift()?.();
+    for (let ran = 0; this.#tasks.length > 0 && performance.now() < until; ran++) {
+      const { task, pace } = this.#tasks[0]!;
+      if (pace === 'alone' && ran > 0) break;
+      this.#tasks.shift();
+      task();
+      if (pace === 'alone') break;
+    }
     if (this.#tasks.length > 0) this.#next();
   };
 }
@@ -233,12 +268,15 @@ export function draw(options: DrawOptions): Drawing {
   let shownMoves: readonly Moved[] = loader.moves();
   let latestMoves = shownMoves;
 
-  /** Gives a held file the loader's latest lines, diff and colors, asking for colors it lacks. */
-  const release = (id: string) => {
+  /**
+   * Gives a held file the loader's latest lines, diff and colors, asking for colors it lacks: one
+   * the reader acted on, `onScreen`, or one that left the screen.
+   */
+  const release = (id: string, onScreen: boolean) => {
     if (!held.delete(id)) return;
     const shown = loader.shown(id);
     if (!shown) return;
-    setLines(id, shown);
+    setLines(id, shown, onScreen);
     if (!shown.tokens.old && !shown.tokens.new) loader.recolor(id);
   };
   /** Files the reader asked to load, which come in as soon as they arrive. */
@@ -264,14 +302,18 @@ export function draw(options: DrawOptions): Drawing {
     }
   };
 
-  const setLines = (id: string, shown: Shown) => {
+  /** Gives a file its lines, and then its colors: in the next frame for a file `onScreen`. */
+  const setLines = (id: string, shown: Shown, onScreen: boolean) => {
     steady(() => view.setLines(id, shown.lines, shown.diff));
-    // Its colors in a task of their own, so a frame takes a file's lines or its colors.
-    pacer.run(() => setTokens(id, shown.tokens));
+    // Its colors in a task of their own, so a frame takes a file's lines or its colors. Off
+    // screen, they wait for the work before them, such as other files' lines.
+    const color = () => setTokens(id, shown.tokens);
+    if (onScreen) pacer.first(color);
+    else pacer.run(color);
   };
 
-  /** Makes a change to a file now. Returns whether it could. */
-  const apply = (id: string, change: Change, start: Start): boolean => {
+  /** Makes a change to a file now, `onScreen` or not. Returns whether it could. */
+  const apply = (id: string, change: Change, start: Start, onScreen = false): boolean => {
     switch (change) {
       case 'close':
         steady(() => view.setCollapsed(id, true));
@@ -284,7 +326,7 @@ export function draw(options: DrawOptions): Drawing {
       case 'bring': {
         const shown = loader.shown(id);
         if (!shown) return false;
-        setLines(id, shown);
+        setLines(id, shown, onScreen);
         if (start === 'collapsed') steady(() => view.setCollapsed(id, true));
         drawn.set(id, start === 'collapsed' ? 'collapsed' : 'shown');
         return true;
@@ -314,7 +356,7 @@ export function draw(options: DrawOptions): Drawing {
     const waiting = pending.size > 0 || held.size > 0 || !sameMoves(shownMoves, latestMoves);
     if (settling || !waiting) return;
     settling = true;
-    pacer.run(settleOne);
+    pacer.alone(settleOne);
   };
 
   const settleOne = () => {
@@ -323,7 +365,7 @@ export function draw(options: DrawOptions): Drawing {
     const made = (): boolean => {
       for (const id of held) {
         if (looked.has(id)) continue;
-        release(id);
+        release(id, false);
         return true;
       }
       for (const [id, { change, start }] of pending) {
@@ -356,7 +398,7 @@ export function draw(options: DrawOptions): Drawing {
         // `za` on a file kept out: the reader's to have now.
         const waiting = pending.get(id);
         pending.delete(id);
-        if (waiting?.change === 'bring' && apply(id, 'bring', waiting.start)) return;
+        if (waiting?.change === 'bring' && apply(id, 'bring', waiting.start, true)) return;
         asked.add(id);
         loader.load(id);
       },
@@ -369,13 +411,14 @@ export function draw(options: DrawOptions): Drawing {
   view.setMoves(shownMoves);
   loader.attach({
     lines(id, shown) {
-      pacer.run(() => {
+      pacer.alone(() => {
+        const onScreen = view.filesOnScreen().includes(id);
         // A file the reader is looking at stays as it is, unless its new lines draw in the rows
         // it has, so nothing on screen moves.
         if (
           drawn.get(id) !== 'out' &&
           !asked.has(id) &&
-          view.filesOnScreen().includes(id) &&
+          onScreen &&
           !view.keepsShape(id, shown.lines, shown.diff)
         ) {
           held.add(id);
@@ -383,7 +426,7 @@ export function draw(options: DrawOptions): Drawing {
         }
         if (drawn.get(id) !== 'out' || asked.delete(id)) {
           // In place of the lines it had, or a file the reader asked for.
-          setLines(id, shown);
+          setLines(id, shown, onScreen);
           if (drawn.get(id) === 'out') drawn.set(id, 'shown');
           return;
         }
@@ -442,7 +485,7 @@ export function draw(options: DrawOptions): Drawing {
         order: files.map((file) => file.id),
         acted(id) {
           pending.delete(id);
-          release(id);
+          release(id, true);
         },
         fileAt(target) {
           const spot = spotOf(target);
@@ -472,7 +515,7 @@ export function draw(options: DrawOptions): Drawing {
           const bottom = viewed ? view.probe.spotBottom(header) : undefined;
           own.add(id);
           pending.delete(id);
-          release(id);
+          release(id, true);
           // However the reader left it with `za`, as a file with lines to show is.
           const lines = drawn.get(id) === 'shown' || drawn.get(id) === 'collapsed';
           if (!viewed) {
