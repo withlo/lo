@@ -19,6 +19,7 @@ function entry(id: string, path: string, start: Start = 'shown', place = 0): Ent
     submodule: null,
     reach: 0,
     conflicted: false,
+    since: null,
   };
   return { id, key: path, place, versions };
 }
@@ -103,6 +104,21 @@ describe('the files as the view gets them', () => {
     expect(loaded.lines).toBe(shown.lines);
     const lock = diffFileOf(entry('d0', 'pnpm-lock.yaml', 'collapsed'), shown);
     expect(lock).toMatchObject({ collapsed: true, gaps: shown.gaps, header: { additions: 3 } });
+  });
+
+  it('start a viewed file closed, its ball in its header, and say where one shows from', () => {
+    const viewed = diffFileOf(entry('d0', 'a.ts'), shown, 'viewed');
+    expect(viewed).toMatchObject({ collapsed: true, header: { viewed: 'viewed' } });
+    expect(diffFileOf(entry('d0', 'a.ts'), shown, 'unviewed')).not.toHaveProperty('collapsed');
+    expect(diffFileOf(entry('d0', 'a.ts'), shown).header).not.toHaveProperty('viewed');
+
+    const since = entry('d0', 'a.ts');
+    const narrowed = { ...since.versions, since: { label: 'r1', why: 'viewed' as const } };
+    expect(headerOf(narrowed, 'dismissed')).toMatchObject({ viewed: 'stale', tags: ['since r1'] });
+    expect(headerOf({ ...narrowed, since: { label: 'r1', why: 'review' } }).tags).toEqual([
+      'since your review in r1',
+    ]);
+    expect(headerOf({ ...narrowed, start: 'unchanged' }).tags).toEqual(['no change since r1']);
   });
 });
 

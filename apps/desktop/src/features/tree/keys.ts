@@ -1,6 +1,7 @@
 // The file tree's keys: `-` goes to the tree at the file on screen, and in the tree single keys act
-// on it: the tree or review order, changed files only, moving, opening and closing folders, and
-// showing a file. A file's right-click menu opens it whole, copies its path or opens it on GitHub.
+// on it: the tree or review order, changed files only, moving, opening and closing folders,
+// showing a file, and marking it viewed. A file's right-click menu opens it whole, copies its path,
+// opens it on GitHub or marks it viewed.
 // `⌘P` finds any file in the repository by name, and in the finder `Tab` lists the changed files
 // only and `⌘⏎` opens the highlighted file whole.
 
@@ -98,6 +99,18 @@ export default defineCommands(
       targets: ['file', 'none'],
       jump: true,
       when: tree,
+    },
+    /**
+     * Marks the changed file viewed, or clears its mark. Marking goes on to the next changed file
+     * that isn't viewed, in the panel's order, round the end.
+     */
+    markViewed: {
+      label: 'Mark viewed',
+      group: 'Act',
+      keys: ['e'],
+      targets: ['file'],
+      when: tree,
+      menu: { on: 'file', order: 5 },
     },
     /** Opens the file whole and read-only, changed or not. */
     wholeFile: {

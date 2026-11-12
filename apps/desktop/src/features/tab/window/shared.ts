@@ -103,6 +103,29 @@ export function useChangedFiles(tab: string): Files | undefined {
   return useStore(pullsStore, (state) => state.files.get(tab));
 }
 
+/** What main last said of a pull request's tab, read once. */
+export function pullOf(tab: string): PullView | undefined {
+  return pullsStore.getState().views.get(tab);
+}
+
+/** The files a pull request's tab's pull request changes, as main last said, read once. */
+export function changedFiles(tab: string): Files | undefined {
+  return pullsStore.getState().files.get(tab);
+}
+
+/**
+ * Calls `listener` with a pull request's tab and its changed files each time main says them anew.
+ * Returns a function that stops it.
+ */
+export function onChangedFiles(listener: (tab: string, files: Files) => void): () => void {
+  return pullsStore.subscribe((next, previous) => {
+    if (next.files === previous.files) return;
+    for (const [tab, files] of next.files) {
+      if (previous.files.get(tab) !== files) listener(tab, files);
+    }
+  });
+}
+
 /**
  * Dialogs over the whole window, whatever tab is on screen: signing in, say. A feature puts one view
  * here, which draws its dialogs while they're open and nothing otherwise.

@@ -1,6 +1,8 @@
 // The revisions feature in main: for each pull request's tab, its revisions and what it compares,
-// sent to the window each time they change, and offered to the features that show it. It notes
-// the heads each account's poller sees, and "last seen here" as the reader leaves a pull request.
+// sent to the window each time they change, and offered to the features that show it, with the
+// files a push changed since they were marked viewed shown from there. It notes the heads each
+// account's poller sees, "last seen here" as the reader leaves a pull request, and where each file
+// was marked viewed, and marks files viewed on GitHub.
 
 import { app } from 'electron';
 
@@ -101,6 +103,7 @@ export default defineFeature(contract, {
     compare({ id, from, to }) {
       tabOf(id).compare(from, to);
     },
+    markViewed: ({ id, path, viewed, at }) => tabOf(id).markViewed(path, viewed, at),
   },
   start(context) {
     holdLimit = compareWait({ packaged: app.isPackaged, env: process.env });

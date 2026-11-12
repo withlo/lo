@@ -63,6 +63,7 @@ function versions(path: string): FileVersions {
     submodule: null,
     reach: 0,
     conflicted: false,
+    since: null,
   };
 }
 
@@ -94,6 +95,7 @@ describe('files with long paths', () => {
       id: 't1',
       at: HEAD,
       comparison: null,
+      since: null,
       waiting: null,
       from: 'local',
       files,

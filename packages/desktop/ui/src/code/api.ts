@@ -49,8 +49,11 @@ export type DiffLayout = 'split' | 'inline';
 export interface FileHeader {
   additions: number;
   deletions: number;
-  /** Marked viewed: its name dims. */
-  viewed?: boolean;
+  /**
+   * Its viewed mark, drawn as a ball: `viewed` (its name dims too), `unviewed`, or `stale`, changed
+   * since it was viewed. None for a file with no mark, as when nobody's signed in.
+   */
+  viewed?: 'viewed' | 'unviewed' | 'stale';
   /** How many comments its threads hold, when it has any. */
   comments?: number;
   /** Short labels after its counts, such as "generated". */

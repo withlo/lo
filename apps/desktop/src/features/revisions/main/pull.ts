@@ -6,7 +6,9 @@
 // screen, or the whole pull request; then whatever the reader picks. A comparison of revisions is
 // made in the local copy, across a rebase, once it has both. Once anything is drawn, what's
 // compared changes only when the reader asks: a comparison the markers ask for that comes too late
-// to be drawn first is offered instead. Nothing here calls Electron.
+// to be drawn first is offered instead. It marks files viewed on GitHub through the account's
+// poller, notes the head each was marked at, and follows marks set elsewhere, so a file a later push
+// changed shows only what changed since the reader viewed it. Nothing here calls Electron.
 
 import { GitError, type Oid, parseOid, type Repo } from '@lo/git';
 import {
@@ -14,12 +16,15 @@ import {
   type Cached,
   GithubError,
   lastReview,
+  markFileAsViewed,
   PullRef,
   PUSH_HISTORY,
   type Poller,
   type PollEvent,
+  type PullRequest,
   type PushHistory,
   unavailableHeads,
+  unmarkFileAsViewed,
 } from '@lo/github';
 import {
   baseHistory,
@@ -31,13 +36,16 @@ import {
   pushRecords,
   type Revision,
   Revisions,
+  viewedFileComparison,
+  writeFailed,
 } from '@lo/review';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { Compared, ComparisonView, Replay, RevisionRow } from '../contract.ts';
-import type { Comparing, OnScreen, Side } from '../service.ts';
-import type { Marks } from './marks.ts';
+import { PATH_LIMIT, pathBytes } from '../../tree/contract.ts';
+import type { Compared, ComparisonView, Marked, Replay, RevisionRow } from '../contract.ts';
+import type { Comparing, OnScreen, Side, Since, SinceGroup } from '../service.ts';
+import type { Marks, ViewedRecord } from './marks.ts';
 
 /**
  * How long the diff waits, as a tab opens, for the comparison "last seen here" asks for, in
@@ -46,8 +54,14 @@ import type { Marks } from './marks.ts';
  */
 export const HOLD_LIMIT = 1_000;
 
-/** What the revisions read of an account's poller: the push history it keeps, and its events. */
-export interface HistoryPoller extends Pick<Poller, 'pushHistory' | 'onEvent'> {
+/**
+ * What the revisions use of an account's poller: the push history it keeps, and its events; the
+ * pull request's details, with GitHub's viewed marks; and its writes, which mark files viewed.
+ */
+export interface HistoryPoller extends Pick<
+  Poller,
+  'pushHistory' | 'onEvent' | 'pullRequest' | 'writeChanging'
+> {
   cachedRead(pull: PullRef, kind: typeof PUSH_HISTORY): Cached<PushHistory> | undefined;
 }
 
@@ -148,6 +162,24 @@ export class RevisionsTab {
   #problem: string | undefined;
   #closed = false;
   #said: string | undefined;
+  /** The local copy's clone, once a fetch of the revisions has opened it. */
+  #repo: Repo | undefined;
+  /** Where the account marked each file viewed, by path, as read from the database: once, then kept. */
+  #records: Map<string, string> | undefined;
+  /** What's on screen that files are shown from where they left off in: `from..to`. */
+  #sinceFor: string | undefined;
+  /**
+   * The files shown from where they left off, for what's on screen, by path, and where from. A file
+   * only ever joins, so one the reader marks viewed again doesn't show its whole change again.
+   */
+  readonly #sinceFiles = new Map<string, { from: string; why: SinceGroup['why'] }>();
+  /** Each revision the files are shown from, compared once with the newer side on screen. */
+  readonly #sinceComparing = new Map<string, Comparing>();
+  #since: Since | undefined;
+  /** What {@link RevisionsTab.#since} holds, to tell when it changes. */
+  #sinceSaid: string | undefined;
+  /** Counts the changes to {@link RevisionsTab.#since}, which name it. */
+  #sinceVersion = 0;
 
   constructor(options: RevisionsTabOptions) {
     this.#options = options;
@@ -156,11 +188,14 @@ export class RevisionsTab {
 
   /** What the tab compares now, for the diff and the tree. */
   onScreen(): OnScreen {
-    if (this.#ready) return { kind: 'revisions', comparing: this.#ready.comparing };
+    const target = this.#sinceTarget();
+    const since =
+      target !== undefined && this.#sinceFor === targetKey(target) ? this.#since : undefined;
+    if (this.#ready) return { kind: 'revisions', comparing: this.#ready.comparing, since };
     if (this.#holding) {
       return { kind: 'waiting', why: this.#waitingWhy() };
     }
-    return { kind: 'head' };
+    return { kind: 'head', since };
   }
 
   /** The revisions and what's compared, as the window gets them. */
@@ -226,6 +261,7 @@ export class RevisionsTab {
       void this.#rebuild();
     }
     this.#advance();
+    this.#refreshSince();
     this.#publish();
   }
 
@@ -300,6 +336,79 @@ export class RevisionsTab {
     }
   }
 
+  /**
+   * Marks the file GitHub lists at `path` viewed, or clears its mark, as the tab's account, through
+   * its poller: `at` is the head of what the diff shows. GitHub marks a file as of its newest head
+   * (`markFileAsViewed` takes no commit), so marking refuses as `moved` unless that's `at`, as GitHub
+   * has said since Lo started rather than from what Lo saved; clearing goes whatever the head. Both refuse as `paused` while GitHub has asked Lo to hold off, rather
+   * than land minutes after the key. A file marked is noted at `at`, and its note forgotten once its
+   * mark is cleared, even if the tab has moved on by then: the mark is the pull request's.
+   */
+  async markViewed(path: string, viewed: boolean, at: string): Promise<Marked> {
+    const login = this.#login;
+    const pull = this.#pull;
+    const info = this.#info;
+    if (this.#closed || pull === undefined || info === undefined) {
+      throw new IpcError('missing', 'The pull request’s tab closed.');
+    }
+    if (login === undefined) {
+      throw new IpcError(
+        'refused',
+        'Sign in to mark files viewed: this pull request opened without an account.',
+      );
+    }
+    // A head taken from what Lo saved, until GitHub says which is its newest, may be one a push has
+    // since passed.
+    if (viewed && (info.provisional || info.latest !== at)) {
+      return { kind: 'moved', latest: info.latest ?? null };
+    }
+    const poller = this.#poller ?? (await this.#options.github.poller(login));
+    const details = poller.pullRequest(pull)?.details;
+    if (!details) {
+      throw new IpcError(
+        'unavailable',
+        'GitHub hasn’t sent this pull request’s details yet. Try again in a moment.',
+      );
+    }
+    const id = details.id;
+    let marked: Marked;
+    try {
+      marked = await poller.writeChanging(
+        [pull],
+        async (client): Promise<Marked> => {
+          if (viewed) await markFileAsViewed(client, id, path);
+          else await unmarkFileAsViewed(client, id, path);
+          return { kind: 'done' };
+        },
+        {
+          whilePaused: (until): Marked => ({
+            kind: 'paused',
+            until: Math.max(0, Math.round(until)),
+          }),
+        },
+      );
+    } catch (error) {
+      const message =
+        error instanceof GithubError
+          ? writeFailed({ path, mark: viewed, id: 0 }, login, error)
+          : `Couldn’t ${viewed ? `mark ${path} viewed` : `clear the viewed mark on ${path}`}: ${describe(error)}.`;
+      this.#options.log(message);
+      throw new IpcError('failed', message);
+    }
+    if (marked.kind !== 'done') return marked;
+    try {
+      if (viewed) this.#options.marks.noteViewed(login, pull, path, at, this.#now());
+      else this.#options.marks.forgetViewed(login, pull, path);
+    } catch (error) {
+      this.#options.log(`noting where a file was marked viewed: ${describe(error)}`);
+    }
+    if (!this.#closed && this.#login === login && this.#pull?.key === pull.key) {
+      this.#records = undefined;
+      this.#refreshSince();
+    }
+    return marked;
+  }
+
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
@@ -344,7 +453,15 @@ export class RevisionsTab {
     this.#preparing = undefined;
     this.#nothingNewSince = undefined;
     this.#problem = undefined;
-    if (hadComparison) this.#options.changed();
+    this.#repo = undefined;
+    this.#records = undefined;
+    this.#sinceFor = undefined;
+    this.#sinceFiles.clear();
+    this.#sinceComparing.clear();
+    const hadSince = this.#since !== undefined;
+    this.#since = undefined;
+    this.#sinceSaid = undefined;
+    if (hadComparison || hadSince) this.#options.changed();
   }
 
   /**
@@ -395,6 +512,7 @@ export class RevisionsTab {
     clearTimeout(this.#holdTimer);
     if (!this.#holding) return;
     this.#holding = false;
+    this.#refreshSince();
     this.#options.changed();
   }
 
@@ -436,9 +554,13 @@ export class RevisionsTab {
         if (!this.#history)
           this.#fail(`Lo couldn’t read the revisions: ${new GithubError(event.error).message}`);
         return;
+      case 'details':
+        if (!event.pull.equals(pull)) return;
+        this.#followMarks(event.details);
+        this.#refreshSince();
+        return;
       case 'summary':
       case 'check':
-      case 'details':
       case 'openPullRequests':
       case 'trunkRules':
       case 'failed':
@@ -455,6 +577,172 @@ export class RevisionsTab {
     this.#options.log(problem);
     this.#release();
     this.#publish();
+  }
+
+  /** Where the account marked each file viewed, by path, read from the database the first time. */
+  #viewedAt(): Map<string, string> {
+    if (this.#records) return this.#records;
+    const login = this.#login;
+    const pull = this.#pull;
+    let rows: ViewedRecord[] = [];
+    if (login !== undefined && pull !== undefined) {
+      try {
+        rows = this.#options.marks.viewed(login, pull);
+      } catch (error) {
+        this.#options.log(`reading where files were marked viewed: ${describe(error)}`);
+      }
+    }
+    this.#records = new Map(rows.map(({ path, head }) => [path, head]));
+    return this.#records;
+  }
+
+  /**
+   * Follows GitHub's marks, as a poll just read them at their head: a file marked viewed elsewhere
+   * is noted at that head, as is one that stayed viewed through a push, and a file GitHub says
+   * isn't viewed is forgotten. One changed since it was viewed keeps its note: that's where it
+   * shows from.
+   */
+  #followMarks(details: PullRequest): void {
+    const login = this.#login;
+    const pull = this.#pull;
+    if (login === undefined || pull === undefined) return;
+    const records = this.#viewedAt();
+    const head = details.headRefOid;
+    const marked: ViewedRecord[] = [];
+    const cleared: string[] = [];
+    for (const node of details.files?.nodes ?? []) {
+      if (!node || pathBytes({ text: node.path }) > PATH_LIMIT) continue;
+      const recorded = records.get(node.path);
+      switch (node.viewerViewedState) {
+        case 'VIEWED':
+          if (recorded !== head) marked.push({ path: node.path, head });
+          break;
+        case 'UNVIEWED':
+          if (recorded !== undefined) cleared.push(node.path);
+          break;
+        case 'DISMISSED':
+          break;
+        default:
+          // A mark GitHub adds later says nothing of where the file was viewed.
+          node.viewerViewedState satisfies never;
+      }
+    }
+    try {
+      this.#options.marks.followViewed(login, pull, marked, cleared, this.#now());
+    } catch (error) {
+      this.#options.log(`following GitHub's viewed marks: ${describe(error)}`);
+      return;
+    }
+    for (const { path, head: at } of marked) records.set(path, at);
+    for (const path of cleared) records.delete(path);
+  }
+
+  /**
+   * What files are shown from where they left off in: the comparison of revisions on screen, or
+   * the whole pull request at the head on screen. Nothing while the diff waits.
+   */
+  #sinceTarget(): Compared | undefined {
+    if (this.#ready) return this.#ready.chosen;
+    if (this.#holding) return undefined;
+    const shown = this.#info?.shown;
+    return shown === undefined ? undefined : { from: null, to: shown };
+  }
+
+  /**
+   * Works out again which files show from where they left off. A file GitHub says changed since
+   * it was viewed shows from the revision it was viewed in here, or for one viewed elsewhere, the
+   * reader's last review (`viewedFileComparison`), when that's on a revision after where what's on
+   * screen starts: it only ever narrows. Only while GitHub's newest head is the newer side on
+   * screen, which GitHub's marks are of, and once the local copy has both sides' bases. A file
+   * shown from somewhere keeps showing from there for as long as the same comparison is on screen.
+   */
+  #refreshSince(): void {
+    if (this.#closed) return;
+    const target = this.#sinceTarget();
+    const key = target === undefined ? undefined : targetKey(target);
+    if (key !== this.#sinceFor) {
+      this.#sinceFor = key;
+      this.#sinceFiles.clear();
+      this.#sinceComparing.clear();
+    }
+    const revisions = this.#revisions;
+    const history = this.#history;
+    const pull = this.#pull;
+    const details = pull === undefined ? undefined : this.#poller?.pullRequest(pull)?.details;
+    if (
+      target !== undefined &&
+      revisions !== undefined &&
+      history !== undefined &&
+      details?.headRefOid === target.to &&
+      this.#info?.latest === target.to &&
+      this.#bases.has(target.to)
+    ) {
+      // Only revisions up to the newer side on screen: GitHub's marks are of that head.
+      const upTo = new Revisions(
+        revisions.list().slice(0, (revisions.position(target.to) ?? -1) + 1),
+      );
+      const start = target.from === null ? -1 : (revisions.position(target.from) ?? -1);
+      const review = lastReview(history);
+      const records = this.#viewedAt();
+      for (const node of details.files?.nodes ?? []) {
+        if (
+          !node ||
+          node.viewerViewedState !== 'DISMISSED' ||
+          this.#sinceFiles.has(node.path) ||
+          pathBytes({ text: node.path }) > PATH_LIMIT
+        ) {
+          continue;
+        }
+        const shows = viewedFileComparison(upTo, 'DISMISSED', records.get(node.path), review);
+        if (shows?.kind !== 'sinceViewed' && shows?.kind !== 'sinceLastReview') continue;
+        const from = upTo.position(shows.from);
+        if (from === undefined || from <= start || !this.#bases.has(shows.from)) continue;
+        this.#sinceFiles.set(node.path, {
+          from: shows.from,
+          why: shows.kind === 'sinceViewed' ? 'viewed' : 'review',
+        });
+      }
+    }
+    const since = this.#sinceOf(target);
+    if (sameSince(since, this.#since)) return;
+    this.#since = since;
+    this.#options.changed();
+  }
+
+  /** The files shown from where they left off, grouped by where from, for `target`. */
+  #sinceOf(target: Compared | undefined): Since | undefined {
+    const repo = this.#repo;
+    const newer = target === undefined ? undefined : this.#bases.get(target.to);
+    if (target === undefined || repo === undefined || newer === undefined) return undefined;
+    const groups = new Map<string, { from: string; why: SinceGroup['why']; paths: string[] }>();
+    for (const [path, { from, why }] of this.#sinceFiles) {
+      const group = groups.get(`${why}:${from}`);
+      if (group) group.paths.push(path);
+      else groups.set(`${why}:${from}`, { from, why, paths: [path] });
+    }
+    const made: SinceGroup[] = [];
+    for (const { from, why, paths } of groups.values()) {
+      const older = this.#bases.get(from);
+      if (older === undefined) continue;
+      let comparing = this.#sinceComparing.get(from);
+      if (!comparing) {
+        comparing = comparingOf(
+          repo,
+          { head: parseOid(from), base: older.base },
+          { head: parseOid(target.to), base: newer.base },
+        );
+        this.#sinceComparing.set(from, comparing);
+      }
+      made.push({ comparing, label: this.#label(from), why, paths: paths.toSorted() });
+    }
+    if (made.length === 0) return undefined;
+    const said = JSON.stringify(
+      made.map(({ comparing, why, paths }) => [comparing.key, why, paths]),
+    );
+    if (this.#since && this.#sinceSaid === said) return this.#since;
+    this.#sinceSaid = said;
+    this.#sinceVersion += 1;
+    return { key: `${targetKey(target)}#${this.#sinceVersion}`, groups: made };
   }
 
   /**
@@ -531,6 +819,7 @@ export class RevisionsTab {
     if (this.#fetched !== this.#headsKey(revisions)) this.#fetched = undefined;
     if (!this.#defaulted) this.#decideDefault(revisions, history);
     this.#advance();
+    this.#refreshSince();
     this.#publish();
   }
 
@@ -607,6 +896,7 @@ export class RevisionsTab {
       if (this.#ready) {
         this.#ready = undefined;
         this.#replay = undefined;
+        this.#refreshSince();
         this.#options.changed();
       }
       this.#release();
@@ -666,6 +956,8 @@ export class RevisionsTab {
    */
   async #fetchNow(opening: Promise<Repo>, heads: readonly Oid[], number: number): Promise<void> {
     const repo = await opening;
+    if (this.#closed) return;
+    this.#repo = repo;
     let lost: Oid[] = [];
     if (repo.offline) {
       lost = await repo.unavailableRevisions(number);
@@ -719,6 +1011,8 @@ export class RevisionsTab {
     this.#publish();
     // A comparison that waited for the revisions' heads may go now.
     this.#advance();
+    // And files can show from where they left off, now their revisions' bases are known.
+    this.#refreshSince();
   }
 
   /** Where `head`'s revision branched off its base branch, worked out once. */
@@ -777,6 +1071,8 @@ export class RevisionsTab {
       this.#uncertain = newer.uncertain || (older?.uncertain ?? false);
       this.#problem = undefined;
       this.#release();
+      // What files show from where they left off in this comparison, with it.
+      this.#refreshSince();
       this.#options.changed();
       this.#publish();
       await this.#describe(chosen, comparing);
@@ -822,6 +1118,7 @@ export class RevisionsTab {
     this.#ready = undefined;
     this.#replay = undefined;
     this.#release();
+    this.#refreshSince();
     if (hadReady) this.#options.changed();
     this.#advance();
     this.#publish();
@@ -888,4 +1185,14 @@ function comparingOf(repo: Repo, old: Side, now: Side): Comparing {
     new: now,
     compared: () => (made ??= repo.compareRevisions(old, now)),
   };
+}
+
+/** What a comparison is named by, for the files shown from where they left off in it. */
+function targetKey(target: Compared): string {
+  return `${target.from ?? 'base'}..${target.to}`;
+}
+
+/** Whether two sets of files shown from where they left off are the same. */
+function sameSince(a: Since | undefined, b: Since | undefined): boolean {
+  return a?.key === b?.key;
 }

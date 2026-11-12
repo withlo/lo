@@ -11,6 +11,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { Slot } from '../../../window/slots.tsx';
+import { useViewedMarks } from '../../revisions/window/shared.ts';
 import { useSetting } from '../../settings/window/shared.ts';
 import { tabState, usePull, type PullTab } from '../../tab/window/shared.ts';
 import { orderIn, useOrderMode } from '../../tree/window/shared.ts';
@@ -75,6 +76,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   }, [ready, mode, tab.id]);
   const layout = useSetting(layoutSetting);
   const whitespace = useSetting(whitespaceSetting);
+  const marks = useViewedMarks(tab.id);
   const page = usePage();
   const nonceValue = page?.nonce;
   const packaged = page?.packaged ?? true;
@@ -93,8 +95,8 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     ready && entries ? viewKey(`${ready.at}|${ready.comparison ?? ''}`, entries) : undefined;
   // What a new view is drawn with, read as it's drawn: a change of layout alone needs no new view.
   const comparison = ready && comparisonOf(ready);
-  const latest = useRef({ entries, layout, packaged, shown, comparison });
-  latest.current = { entries, layout, packaged, shown, comparison };
+  const latest = useRef({ entries, layout, packaged, shown, marks, comparison });
+  latest.current = { entries, layout, packaged, shown, marks, comparison };
 
   useEffect(() => {
     const parent = box.current;
@@ -120,6 +122,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
       shown: drawn.shown,
       before: another ? undefined : before,
       onTop: another ? cursorFile(before) : undefined,
+      marks: drawn.marks,
     });
     view.current = made;
     return () => {
@@ -147,6 +150,12 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   useEffect(() => {
     view.current?.setShown(shown);
   }, [shown]);
+
+  // Viewed marks change the headers' balls, and close the files marked viewed elsewhere, or that
+  // GitHub said were viewed after the view was drawn, where the reader isn't looking.
+  useEffect(() => {
+    view.current?.setMarks(marks);
+  }, [marks]);
 
   // The local copy's files, taken in place of GitHub's, say more of each, and may start out
   // otherwise.

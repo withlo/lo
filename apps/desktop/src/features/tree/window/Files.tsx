@@ -8,9 +8,10 @@ import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 
 import { currentMenu, openMenu } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
-import { useChangedFiles, useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { fileKey, PATH_LIMIT, pathBytes, type TreeState } from '../contract.ts';
-import { model as modelOf, type Row, type Viewed } from './model.ts';
+import { useViewedMarks } from '../../revisions/window/shared.ts';
+import { useTabState, type PullTab } from '../../tab/window/shared.ts';
+import { fileKey, PATH_LIMIT, type TreeState } from '../contract.ts';
+import { model as modelOf, type Row } from './model.ts';
 import {
   askFolders,
   catchUp,
@@ -128,22 +129,15 @@ export function Files({
   const focused = useTabState(focus, tab.id);
   const current = useTabState(onScreen, tab.id);
   const revealed = useTabState(reveal, tab.id);
-  const changed = useChangedFiles(tab.id);
 
   useEffect(() => {
     if (states.get(tab.id) === undefined) catchUp(tab.id);
   }, [tab.id]);
 
-  const viewed = useMemo(
-    () =>
-      new Map<string, Viewed>(
-        // GitHub's paths, kept only while they're short enough to key a map by.
-        changed?.files.flatMap((file) =>
-          pathBytes({ text: file.path }) <= PATH_LIMIT ? [[file.path, file.viewed] as const] : [],
-        ) ?? [],
-      ),
-    [changed],
-  );
+  // GitHub's marks with Lo's writes on top, by GitHub's paths, kept only while they're short
+  // enough to key a map by.
+  const marks = useViewedMarks(tab.id);
+  const viewed = marks.byPath;
   const model = useMemo(
     () => (state ? modelOf(state, sent.entries, viewed, chosen) : undefined),
     [state, sent, viewed, chosen],
@@ -175,10 +169,7 @@ export function Files({
     [state],
   );
   const rows = useMemo(() => model?.rows.map((row) => drawn(row, hits)) ?? [], [model, hits]);
-  const viewedCount = changed && {
-    viewed: changed.files.filter((file) => file.viewed === 'viewed').length,
-    total: changed.total,
-  };
+  const viewedCount = marks.count;
   const loading = !state || (state.listing.kind === 'loading' && state.changes === null);
 
   return (

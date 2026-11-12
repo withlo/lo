@@ -9,7 +9,7 @@ import { APP_PULL, gitProgram, RepoServer, writeAppRemote } from '@lo/testing/gi
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { createGit } from '../../../main/git.ts';
-import type { Comparing, Side } from '../../revisions/service.ts';
+import type { Comparing, Side, Since } from '../../revisions/service.ts';
 import type { LocalState } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type { DiffState, FileVersions } from '../contract.ts';
@@ -172,7 +172,7 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     const parser = find(state, 'src/parser.ts');
     const legacy = find(state, 'src/legacy.ts');
 
-    const [renamed, deleted] = await diff.texts(APP_PULL.head, null, 'local', [
+    const [renamed, deleted] = await diff.texts(APP_PULL.head, null, null, 'local', [
       parser.place,
       legacy.place,
     ]);
@@ -183,14 +183,16 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     expect(deleted).toMatchObject({ kind: 'texts', new: null });
 
     await expect(
-      diff.texts(APP_PULL.firstHead, null, 'local', [parser.place]),
+      diff.texts(APP_PULL.firstHead, null, null, 'local', [parser.place]),
     ).rejects.toMatchObject({
       code: 'moved',
     });
-    await expect(diff.texts(APP_PULL.head, null, 'github', [parser.place])).rejects.toMatchObject({
+    await expect(
+      diff.texts(APP_PULL.head, null, null, 'github', [parser.place]),
+    ).rejects.toMatchObject({
       code: 'moved',
     });
-    await expect(diff.texts(APP_PULL.head, null, 'local', [999])).rejects.toMatchObject({
+    await expect(diff.texts(APP_PULL.head, null, null, 'local', [999])).rejects.toMatchObject({
       code: 'invalid',
     });
   });
@@ -209,7 +211,7 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     diff.update(e2eInfo(READY));
     const state = await settled((each) => each.from === 'local');
 
-    const [text] = await diff.texts(APP_PULL.head, null, 'local', [
+    const [text] = await diff.texts(APP_PULL.head, null, null, 'local', [
       find(state, 'src/parser.ts').place,
     ]);
     expect(text).toEqual({ kind: 'missing', why: expect.stringContaining('a line over 1 MiB') });
@@ -237,20 +239,22 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     });
     const parser = find(github, 'src/parser.ts');
     expect(parser.file.old).toBe(null);
-    const [patch] = await diff.texts(APP_PULL.head, null, 'github', [parser.place]);
+    const [patch] = await diff.texts(APP_PULL.head, null, null, 'github', [parser.place]);
     expect(patch).toMatchObject({
       kind: 'patch',
       patch: expect.stringContaining('@@ -4,9 +4,10 @@'),
     });
     const numbers = find(github, 'data/numbers.txt');
-    expect(await diff.texts(APP_PULL.head, null, 'github', [numbers.place])).toEqual([
+    expect(await diff.texts(APP_PULL.head, null, null, 'github', [numbers.place])).toEqual([
       { kind: 'missing', why: expect.any(String) },
     ]);
 
     diff.update(e2eInfo(READY));
     const local = await settled((each) => each.from === 'local');
     expect(local.files).toHaveLength(github.files?.length ?? 0);
-    await expect(diff.texts(APP_PULL.head, null, 'github', [parser.place])).rejects.toMatchObject({
+    await expect(
+      diff.texts(APP_PULL.head, null, null, 'github', [parser.place]),
+    ).rejects.toMatchObject({
       code: 'moved',
     });
   });
@@ -320,12 +324,12 @@ describe('a comparison of revisions', { timeout: 60_000 }, () => {
       ['src/parser.ts', 'modified', false],
     ]);
     // Its texts are the comparison's, asked for by its key.
-    const [text] = await diff.texts(APP_PULL.head, between.key, 'local', [0]);
+    const [text] = await diff.texts(APP_PULL.head, between.key, null, 'local', [0]);
     expect(text).toMatchObject({
       kind: 'texts',
       new: expect.stringContaining("if (input === '')"),
     });
-    await expect(diff.texts(APP_PULL.head, null, 'local', [0])).rejects.toMatchObject({
+    await expect(diff.texts(APP_PULL.head, null, null, 'local', [0])).rejects.toMatchObject({
       code: 'moved',
     });
   });
@@ -596,5 +600,108 @@ describe('a whole file', { timeout: 60_000 }, () => {
       kind: 'refused',
       why: expect.stringContaining('more than the 50 MiB Lo shows'),
     });
+  });
+});
+
+/** The files the revisions feature would show since r1, the first push: `paths`. */
+async function sinceFirstPush(paths: string[]): Promise<{ repo: Repo; since: Since }> {
+  const repo = await e2eClone();
+  await repo.fetchCommits(APP_PULL.number, [parseOid(APP_PULL.firstHead)]);
+  const sinceR1 = comparing(
+    repo,
+    side(APP_PULL.firstHead, APP_PULL.firstBase),
+    side(APP_PULL.head, APP_PULL.base),
+  );
+  return {
+    repo,
+    since: {
+      key: 'since:1',
+      groups: [{ comparing: sinceR1, label: 'r1', why: 'viewed', paths }],
+    },
+  };
+}
+
+describe('files a push changed since they were viewed', { timeout: 60_000 }, () => {
+  it('a viewed file a later push changed shows only what changed since, across the rebase', async () => {
+    const { repo, since } = await sinceFirstPush(['src/parser.ts', 'src/format.ts']);
+    const { diff, settled } = diffTab({ clone: () => Promise.resolve(repo) });
+    diff.update(e2eInfo(READY), { kind: 'head', since });
+    const state = await settled((each) => each.from === 'local');
+    expect(state).toMatchObject({ at: APP_PULL.head, comparison: null, since: 'since:1' });
+
+    // The second push's change alone, which r1 → r2 has, not the rename the first push made.
+    const parser = find(state, 'src/parser.ts');
+    expect(parser.file).toMatchObject({
+      change: 'modified',
+      previous: null,
+      additions: 2,
+      deletions: 1,
+      start: 'shown',
+      since: { label: 'r1', why: 'viewed' },
+    });
+    const [text] = await diff.texts(APP_PULL.head, null, 'since:1', 'local', [parser.place]);
+    if (text?.kind !== 'texts') throw new Error('no texts');
+    expect(text.old).toContain('Splits `input` into lines');
+    expect(text.old).not.toContain('Empty input has no lines');
+    expect(text.old).not.toContain("if (input === '')");
+    expect(text.new).toContain("if (input === '')");
+    // Asked for without the files since, the texts have moved on.
+    await expect(
+      diff.texts(APP_PULL.head, null, null, 'local', [parser.place]),
+    ).rejects.toMatchObject({ code: 'moved' });
+
+    // Nothing changed in src/format.ts since r1 once the rebase is set aside: it says so.
+    expect(find(state, 'src/format.ts').file).toMatchObject({
+      start: 'unchanged',
+      additions: 0,
+      deletions: 0,
+      since: { label: 'r1', why: 'viewed' },
+    });
+    // The other files show the whole pull request's change, in the same list.
+    expect(find(state, 'src/legacy.ts').file).toMatchObject({ change: 'deleted', since: null });
+    expect(state.files).toHaveLength(7);
+  });
+
+  it('files that come to show since later change in place, the list and its order kept', async () => {
+    const { repo, since } = await sinceFirstPush(['src/parser.ts']);
+    const { diff, settled } = diffTab({ clone: () => Promise.resolve(repo) });
+    diff.update(e2eInfo(READY));
+    const whole = await settled((each) => each.from === 'local');
+    expect(whole.since).toBeNull();
+
+    diff.update(e2eInfo(READY), { kind: 'head', since });
+    const narrowed = await settled((each) => each.since === 'since:1');
+    expect(narrowed.files?.map((file) => file.path.text)).toEqual(
+      whole.files?.map((file) => file.path.text),
+    );
+    expect(find(narrowed, 'src/parser.ts').file.since).toEqual({ label: 'r1', why: 'viewed' });
+  });
+
+  it('after a replay that conflicted, a file shows its whole change', async () => {
+    const { repo, since } = await sinceFirstPush(['src/parser.ts']);
+    const [group] = since.groups;
+    if (!group) throw new Error('no group');
+    const made = await group.comparing.compared();
+    if ('refused' in made) throw new Error('refused');
+    const conflicted: Since = {
+      key: 'since:2',
+      groups: [
+        {
+          ...group,
+          comparing: {
+            ...group.comparing,
+            compared: () =>
+              Promise.resolve({
+                ...made,
+                replay: { kind: 'conflicted', tree: parseOid(APP_PULL.base), retargeted: false },
+              }),
+          },
+        },
+      ],
+    };
+    const { diff, settled } = diffTab({ clone: () => Promise.resolve(repo) });
+    diff.update(e2eInfo(READY), { kind: 'head', since: conflicted });
+    const state = await settled((each) => each.from === 'local');
+    expect(find(state, 'src/parser.ts').file).toMatchObject({ change: 'renamed', since: null });
   });
 });

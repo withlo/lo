@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { diffText, type FileDiff } from '@lo/diff';
-import type { DiffView } from '@lo/ui/code';
+import type { DiffView, Probe } from '@lo/ui/code';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PullTab } from '../../tab/window/shared.ts';
@@ -12,13 +12,25 @@ import { drawnFor } from './tabs.ts';
 /** What the stand-in view was told, in order, and the files it says are on screen. */
 const told: string[] = [];
 let onScreen: string[] = [];
+/** Where the stand-in view's cursor went and what it scrolled to, and its headers, in order. */
+const moved: string[] = [];
+const headers: string[] = [];
+/** How far down the page each file's header is drawn, by its id. */
+const tops = new Map<string, number>();
 /** Each diff's name, to say which one the view was given. */
 const names = new WeakMap<FileDiff, string>();
 
 vi.mock('@lo/ui/code', () => ({
-  createDiffView: (): Partial<DiffView> => ({
+  createDiffView: (): Partial<Omit<DiffView, 'probe'>> & { probe: Pick<Probe, 'spotTop'> } => ({
     viewport: () => ({ at: { kind: 'header', file: 'd0', side: 'new' }, offset: 0 }),
-    scrollTo: () => true,
+    scrollTo: (viewport) => {
+      const { at } = viewport;
+      moved.push(`scroll ${at.kind === 'header' ? at.file : at.at.file} ${viewport.offset}`);
+      return true;
+    },
+    probe: {
+      spotTop: (spot) => (spot.kind === 'header' ? tops.get(spot.file) : undefined),
+    },
     fold: () => undefined,
     filesOnScreen: () => onScreen,
     // As a swap that adds a row would.
@@ -29,11 +41,14 @@ vi.mock('@lo/ui/code', () => ({
     setDiff: (id, diff) => void told.push(`diff ${id} ${names.get(diff) ?? ''}`),
     setTokens: (id, side) => void told.push(`tokens ${id} ${side}`),
     setCollapsed: (id, collapsed) => void told.push(`collapsed ${id} ${String(collapsed)}`),
-    setHeader: () => undefined,
+    setHeader: (id, header) => void headers.push(`${id} ${header.viewed ?? 'none'}`),
     setMoves: () => undefined,
     loadFailed: (id) => void told.push(`failed ${id}`),
     focus: () => undefined,
-    reveal: () => true,
+    reveal: (target) => {
+      moved.push(`reveal ${target.kind === 'file' ? target.file : target.kind}`);
+      return true;
+    },
     setVimKeys: () => undefined,
     destroy: () => undefined,
   }),
@@ -58,9 +73,9 @@ vi.mock('./main.ts', () => ({
 const HEAD = 'a'.repeat(40);
 const TAB: PullTab = { kind: 'pull', id: 't1', owner: 'o', repo: 'r', number: 1 };
 
-function versions(start: Start): FileVersions {
+function versions(start: Start, path = 'src/a.ts'): FileVersions {
   return {
-    path: { text: 'src/a.ts' },
+    path: { text: path },
     previous: null,
     change: 'modified',
     additions: 1,
@@ -73,6 +88,7 @@ function versions(start: Start): FileVersions {
     submodule: null,
     reach: 0,
     conflicted: false,
+    since: null,
   };
 }
 
@@ -81,6 +97,7 @@ function state(start: Start, from: Source): DiffState {
     id: TAB.id,
     at: HEAD,
     comparison: null,
+    since: null,
     waiting: null,
     from,
     files: [versions(start)],
@@ -142,6 +159,7 @@ async function swapUnderReader(): Promise<Loader> {
     packaged: true,
     shown: true,
     before: undefined,
+    marks: { byPath: new Map(), count: undefined },
   });
   // As the diff's component does: each new list goes to the drawing.
   loader.subscribe(() => drawing?.update(loader.snapshot().ready?.entries ?? []));
@@ -153,6 +171,9 @@ async function swapUnderReader(): Promise<Loader> {
 
 beforeEach(() => {
   told.length = 0;
+  moved.length = 0;
+  headers.length = 0;
+  tops.clear();
   onScreen = ['d0'];
   highlighting = true;
 });
@@ -221,5 +242,126 @@ describe('a place asked for as the diff comes back', () => {
     const header = { kind: 'header', file: 'd5', side: 'new' } as const;
     expect(samePlace(header, { kind: 'header', side: 'new', file: 'd5' })).toBe(true);
     expect(samePlace(header, { kind: 'file', file: 'd5' })).toBe(false);
+  });
+});
+
+/** Marks as the revisions feature shows them, by path. */
+function marksOf(entries: [string, 'viewed' | 'unviewed' | 'dismissed'][]) {
+  return { byPath: new Map(entries), count: undefined };
+}
+
+/**
+ * Draws two files from the local copy, `src/a.ts` and `src/b.ts`, both showing their lines, in a
+ * box 800 pixels tall, with the stand-in's own record cleared.
+ */
+async function drawTwo(): Promise<Drawing> {
+  const loader = new Loader(work);
+  loader.setWhitespace(true);
+  loader.take({
+    ...state('shown', 'local'),
+    files: [versions('shown', 'src/a.ts'), versions('shown', 'src/b.ts')],
+  });
+  await frames();
+  const ready = loader.snapshot().ready;
+  if (!ready) throw new Error('the diff isn’t ready');
+  const parent = document.body.appendChild(document.createElement('div'));
+  parent.getBoundingClientRect = () => DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 800 });
+  const made = draw({
+    parent,
+    tab: TAB,
+    loader,
+    entries: ready.entries,
+    at: HEAD,
+    layout: 'split',
+    nonce: '',
+    packaged: true,
+    before: undefined,
+    shown: true,
+    marks: marksOf([
+      ['src/a.ts', 'unviewed'],
+      ['src/b.ts', 'unviewed'],
+    ]),
+  });
+  drawing = made;
+  await frames(2);
+  told.length = 0;
+  moved.length = 0;
+  headers.length = 0;
+  return made;
+}
+
+describe('viewed files', () => {
+  it('a file marked viewed elsewhere closes once it’s off screen, its header’s ball at once', async () => {
+    const made = await drawTwo();
+    onScreen = ['d0', 'd1'];
+    made.setMarks(
+      marksOf([
+        ['src/a.ts', 'unviewed'],
+        ['src/b.ts', 'viewed'],
+      ]),
+    );
+    await frames();
+    expect(headers).toEqual(['d1 viewed']);
+    expect(told).toEqual([]);
+
+    onScreen = ['d0'];
+    document.body.firstElementChild?.dispatchEvent(new Event('scroll'));
+    await frames(15);
+    expect(told).toContain('collapsed d1 true');
+    expect(told).not.toContain('collapsed d0 true');
+  });
+
+  it('e closes the file at once, and the next file’s header stays where it is on screen', async () => {
+    await drawTwo();
+    tops.set('d1', 300);
+    drawnFor(TAB.id)?.viewedHere('d0', true, 'd1');
+    expect(told).toEqual(['collapsed d0 true']);
+    expect(moved).toEqual(['reveal d1', 'scroll d1 -300']);
+  });
+
+  it('e brings the next file’s header to the top when it isn’t on screen', async () => {
+    await drawTwo();
+    tops.set('d1', 2400);
+    drawnFor(TAB.id)?.viewedHere('d0', true, 'd1');
+    expect(moved).toEqual(['reveal d1', 'scroll d1 0']);
+
+    // With every other file viewed, the cursor goes to the file's own header.
+    moved.length = 0;
+    tops.set('d0', 100);
+    drawnFor(TAB.id)?.viewedHere('d0', true, undefined);
+    expect(moved).toEqual(['reveal d0', 'scroll d0 -100']);
+  });
+
+  it('a failed write takes the mark back, but not the closing, the cursor or the scroll', async () => {
+    const made = await drawTwo();
+    drawnFor(TAB.id)?.viewedHere('d0', true, 'd1');
+    made.setMarks(
+      marksOf([
+        ['src/a.ts', 'viewed'],
+        ['src/b.ts', 'unviewed'],
+      ]),
+    );
+    told.length = 0;
+    moved.length = 0;
+    // GitHub didn't take it: the mark goes back.
+    made.setMarks(
+      marksOf([
+        ['src/a.ts', 'unviewed'],
+        ['src/b.ts', 'unviewed'],
+      ]),
+    );
+    onScreen = ['d1'];
+    document.body.firstElementChild?.dispatchEvent(new Event('scroll'));
+    await frames(15);
+    expect(headers.at(-1)).toBe('d0 unviewed');
+    expect(told).not.toContain('collapsed d0 false');
+    expect(moved.filter((each) => each.startsWith('reveal'))).toEqual([]);
+  });
+
+  it('clearing a mark opens the file again in place', async () => {
+    await drawTwo();
+    drawnFor(TAB.id)?.viewedHere('d0', false, undefined);
+    expect(told).toEqual(['collapsed d0 false']);
+    expect(moved.filter((each) => each.startsWith('reveal'))).toEqual([]);
   });
 });

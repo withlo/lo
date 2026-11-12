@@ -131,6 +131,7 @@ export function localVersions(
     submodule,
     reach: 0,
     conflicted,
+    since: null,
   };
 }
 
@@ -154,6 +155,27 @@ export function conflictedVersions(bytes: Uint8Array): FileVersions {
     submodule: null,
     reach: 0,
     conflicted: true,
+    since: null,
+  };
+}
+
+/**
+ * `versions`, a file a push changed since the reader marked it viewed, which nothing changed in
+ * since then (`since`), as when only the base moved under it: no change to show.
+ */
+export function unchangedSince(
+  versions: FileVersions,
+  since: NonNullable<FileVersions['since']>,
+): FileVersions {
+  return {
+    ...versions,
+    additions: 0,
+    deletions: 0,
+    old: versions.new ?? versions.old,
+    new: versions.new ?? versions.old,
+    start: 'unchanged',
+    large: null,
+    since,
   };
 }
 
@@ -201,6 +223,7 @@ export function githubVersions(file: PullFile): FileVersions {
     submodule: null,
     reach,
     conflicted: false,
+    since: null,
     ...(shape.start === 'large'
       ? shape
       : noPatch && counted
