@@ -1,0 +1,83 @@
+/*
+ * The overview's rules that the design system's stylesheets leave to the components: the card a
+ * term opens, and two kinds of `.lo-block` for blocks with no frame of their own.
+ */
+
+/* Things that float. */
+.lo-popover {
+  background: var(--lo-bg-overlay);
+  border-radius: var(--lo-r-md);
+  box-shadow: var(--lo-shadow-pop);
+  color: var(--lo-fg);
+  z-index: var(--lo-z-popover);
+}
+
+/* A term's card: its name, its definition, and the way to the glossary. */
+.lo-hovercard {
+  width: 320px;
+  max-width: calc(100vw - var(--lo-sp-32));
+  padding: 12px 14px 10px;
+  font: 400 13px/20px var(--lo-font-ui);
+}
+.lo-hovercard__term {
+  font: 700 13.5px/18px var(--lo-font-ui);
+  letter-spacing: var(--lo-track-tight);
+}
+.lo-hovercard__body {
+  margin-top: 4px;
+  color: var(--lo-fg);
+}
+.lo-hovercard__body code {
+  font-family: var(--lo-font-mono);
+  font-size: var(--lo-code-inline-size);
+}
+.lo-hovercard__more {
+  color: var(--lo-fg-muted);
+}
+.lo-hovercard__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--lo-border-subtle);
+  font: var(--lo-text-small);
+  color: var(--lo-fg-muted);
+}
+.lo-hovercard__key {
+  margin-left: auto;
+}
+
+/*
+ * Prose the block keys stop at, in a block that keeps the spacing prose has: the space its own
+ * element would have had, and the usual space before what follows it.
+ */
+.lo-prose > .lo-block--prose {
+  margin-top: 0;
+}
+.lo-prose > * + .lo-block--prose {
+  margin-top: 14px;
+}
+.lo-prose > h2 + .lo-block--prose {
+  margin-top: 12px;
+}
+.lo-prose > h3 + .lo-block--prose {
+  margin-top: 8px;
+}
+.lo-prose > .lo-block--prose + :is(p, ul, ol) {
+  margin-top: 14px;
+}
+
+/*
+ * A fold the block keys stop at is its own block: its rules run edge to edge until it's focused,
+ * and its keys sit in its title's row, which shows when it's closed.
+ */
+.lo-block--fold {
+  border-radius: 0;
+}
+.lo-block--fold.is-focused {
+  border-radius: var(--lo-r-md);
+}
+.lo-block--fold.is-focused > summary > .lo-block__hints {
+  display: flex;
+}

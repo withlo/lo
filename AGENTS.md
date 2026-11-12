@@ -157,6 +157,10 @@ Unit tests are `*.test.ts` files beside the code, run by Vitest. The root `vites
 project per package. Nx runs one project's tests at a time, and Vitest uses two workers, or all of a
 CI runner's cores.
 
+What `ui`'s components do that only a real browser shows, such as where `Tab` moves focus, is tested
+by Playwright specs in `packages/desktop/ui/e2e/`. Each builds its own page with Vite and opens it
+in Electron's Chromium (`pnpm nx run ui:e2e`), and CI runs them with the app's smoke test.
+
 ## The desktop app
 
 `apps/desktop` is Lo's Electron app. `src/main/` is the main process, `src/preload/` the window's

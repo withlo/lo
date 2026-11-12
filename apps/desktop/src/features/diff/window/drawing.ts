@@ -448,6 +448,16 @@ export function draw(options: DrawOptions): Drawing {
           return there.kind === 'header' ? there.file : there.at.file;
         },
         viewedHere(id, viewed, next) {
+          // The next file's header stays where it is on screen, if it's there, and otherwise
+          // comes to the top, as the next thing to read; with no file left to read, this one's.
+          // Where it is is where the reader sees it now, before anything of this file changes:
+          // the lines it takes in below, held back while the reader looked at it, move it.
+          const to = next ?? id;
+          const cursor = spotOf(view.keyState().target);
+          const side = cursor?.kind === 'header' ? cursor.side : (cursor?.at.side ?? 'new');
+          const header: Spot = { kind: 'header', file: to, side };
+          const box = parent.getBoundingClientRect();
+          const top = viewed ? view.probe.spotTop(header) : undefined;
           own.add(id);
           pending.delete(id);
           release(id);
@@ -461,14 +471,6 @@ export function draw(options: DrawOptions): Drawing {
             }
             return;
           }
-          // The next file's header stays where it is on screen, if it's there, and otherwise
-          // comes to the top, as the next thing to read; with no file left to read, this one's.
-          const to = next ?? id;
-          const cursor = spotOf(view.keyState().target);
-          const side = cursor?.kind === 'header' ? cursor.side : (cursor?.at.side ?? 'new');
-          const header: Spot = { kind: 'header', file: to, side };
-          const box = parent.getBoundingClientRect();
-          const top = view.probe.spotTop(header);
           const onScreen = top !== undefined && top >= box.top && top < box.bottom;
           if (lines) {
             view.setCollapsed(id, true);

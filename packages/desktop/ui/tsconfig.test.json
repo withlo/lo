@@ -5,7 +5,15 @@
     "lib": ["ES2024", "DOM"],
     "jsx": "react-jsx"
   },
-  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "scripts/**/*.ts", "test/**/*.ts"],
+  "include": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "scripts/**/*.ts",
+    "test/**/*.ts",
+    "e2e/**/*.ts",
+    "e2e/**/*.tsx",
+    "vitest.config.ts"
+  ],
   "references": [
     {
       "path": "./tsconfig.lib.json"
