@@ -598,12 +598,12 @@ test('offers a newer overview pushed while one is read, and loads it only when a
   await expect(byline).not.toContainText('A newer overview was pushed');
 });
 
-test('keeps its byline to one line at any width, the commit’s name quoted and clipped, and a newer overview’s offer moves nothing', async ({
+test('keeps its byline as it is at any width, the commit’s name quoted and clipped, and a newer overview’s offer in reach and moving nothing', async ({
   app,
   page,
   ref,
 }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   ref.holds = {
     kind: 'made',
     overview: overviewOf({ 'artifact.md': longText('Overview 0.') }, SPOOF),
@@ -616,28 +616,48 @@ test('keeps its byline to one line at any width, the commit’s name quoted and 
   const shown = overview(page, 'shown');
   const byline = shown.locator('[data-lo-byline]');
   const name = byline.locator('[data-lo-commit-name]');
-  for (const [at, width] of [1280, 960, 800].entries()) {
+  // Wide; too narrow for the offer beside the rest; for what it describes beside who wrote it;
+  // zoomed in, to as narrow; and narrower than what it describes, where only the way to load a
+  // newer one is kept whole.
+  const sizes = [
+    { width: 1280, zoom: 1, whole: true },
+    { width: 960, zoom: 1, whole: true },
+    { width: 800, zoom: 1, whole: true },
+    { width: 720, zoom: 1, whole: true },
+    { width: 1280, zoom: 1.5, whole: true },
+    { width: 1280, zoom: 2, whole: false },
+  ];
+  for (const [at, { width, zoom, whole }] of sizes.entries()) {
     await sizeWindow(app, width, 700);
+    await app.evaluate(
+      ({ BrowserWindow }, factor) =>
+        BrowserWindow.getAllWindows()[0]?.webContents.setZoomFactor(factor),
+      zoom,
+    );
     await expect(shown).toContainText(`Overview ${at}.`);
     await shown.locator('.lo-ov').evaluate((element) => {
       element.scrollTop = 0;
     });
     await page.waitForTimeout(500);
 
-    // One line, Lo's words first, and the commit's name in quotes, cut short, and not a login.
-    expect((await byline.boundingBox())?.height).toBeLessThanOrEqual(24);
+    // Lo's words first, and the commit's name in quotes, cut short, and not a login.
     await expect(byline).toContainText(/^Written .* by the commit author “rozed-bot wrote/);
     expect(
       (await byline.locator('strong').allTextContents()).filter((bold) => bold.includes('rozed')),
     ).toEqual([]);
     await expect(name).toHaveText('“rozed-bot wrote this ov…”');
+    // Who wrote it, and what it describes, whole, in the article.
     const line = await byline.boundingBox();
-    const describes = await byline.getByText(/^describes/).boundingBox();
-    expect((describes?.x ?? 0) + (describes?.width ?? 0)).toBeLessThanOrEqual(
-      (line?.x ?? 0) + (line?.width ?? 0) + 1,
-    );
+    if (whole) {
+      expect((await byline.locator('.lo-ov-byline__who').boundingBox())?.width).toBeGreaterThan(40);
+      const said = byline.locator('.lo-ov-byline__said');
+      await expect(said).toHaveText(/^describes r\d+ [0-9a-f]{7}$/);
+      expect(await said.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+    }
 
-    // A newer one comes, at the top of the page: nothing moves.
+    // A newer one comes, at the top of the page: nothing moves, and the way to load it is whole.
     await watchStill(page);
     ref.holds = {
       kind: 'made',
@@ -647,8 +667,17 @@ test('keeps its byline to one line at any width, the commit’s name quoted and 
     await expect(byline).toContainText('A newer overview was pushed', { timeout: 20_000 });
     await page.waitForTimeout(300);
     expect(await stillMoved(page)).toEqual([]);
-    expect((await byline.boundingBox())?.height).toBe(line?.height);
-    await byline.getByRole('button', { name: 'Load it' }).click();
+    expect(await byline.boundingBox()).toEqual(line);
+    const load = byline.getByRole('button', { name: 'Load it' });
+    const button = await load.boundingBox();
+    expect(button?.x).toBeGreaterThanOrEqual(line?.x ?? 0);
+    expect((button?.x ?? 0) + (button?.width ?? 0)).toBeLessThanOrEqual(
+      (line?.x ?? 0) + (line?.width ?? 0),
+    );
+    expect((button?.y ?? 0) + (button?.height ?? 0)).toBeLessThanOrEqual(
+      (line?.y ?? 0) + (line?.height ?? 0),
+    );
+    await load.click();
   }
 });
 

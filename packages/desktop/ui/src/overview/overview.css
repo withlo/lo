@@ -215,10 +215,16 @@
 }
 
 /*
- * The byline is one line, as tall as the offer of a newer overview, at any width, so nothing under
- * it moves as the offer comes: who wrote it gives up its room first, clipped, then the offer's
- * words, and the line is clipped past the article's edge, with room for a focus ring.
+ * The byline is as tall with the offer of a newer overview as without it, at any width, so nothing
+ * under it moves as the offer comes. Its line is clipped past the article's edge, with room for a
+ * focus ring. Who wrote it gives up its room, clipped, for the rest. Where the article is too
+ * narrow for the offer beside the rest, the offer has a line of its own under it, kept free for it;
+ * narrower still, so has what it describes, and only then do the offer's words and what it
+ * describes give up theirs, never the way to load it.
  */
+.lo-ov-bylines {
+  container: lo-ov-byline / inline-size;
+}
 .lo-ov .lo-ov-byline {
   flex-wrap: nowrap;
   min-height: var(--lo-control-h-sm);
@@ -235,9 +241,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.lo-ov .lo-ov-byline > .lo-ov-offer {
-  flex: 0 1 auto;
+.lo-ov .lo-ov-byline > .lo-ov-byline__said {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lo-ov-byline__said > .lo-ov-byline__dot {
+  margin-inline: 8px;
+}
+/* The offer's dot goes with its words, so the way to load it needs no more room than its own. */
+.lo-ov .lo-ov-offer {
+  gap: 0;
+}
+.lo-ov-offer__dot {
+  margin-inline: 6px;
 }
 .lo-ov-offer > * {
   flex: none;
@@ -248,6 +265,41 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+@container lo-ov-byline (width < 560px) {
+  .lo-ov .lo-ov-byline {
+    position: relative;
+    min-height: calc(2 * var(--lo-control-h-sm) + 6px);
+    padding-bottom: calc(var(--lo-control-h-sm) + 6px);
+  }
+  .lo-ov .lo-ov-byline > .lo-ov-offer {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: var(--lo-control-h-sm);
+    margin-left: 0;
+  }
+}
+@container lo-ov-byline (width < 320px) {
+  .lo-ov .lo-ov-byline {
+    display: grid;
+    grid-template-rows: repeat(3, var(--lo-control-h-sm));
+    grid-template-columns: auto minmax(0, 1fr);
+    min-height: 0;
+    padding-bottom: 0;
+  }
+  .lo-ov .lo-ov-byline > .lo-ov-byline__dot {
+    display: none;
+  }
+  .lo-ov .lo-ov-byline > :is(.lo-ov-byline__said, .lo-ov-offer) {
+    grid-column: 1 / -1;
+  }
+  .lo-ov .lo-ov-byline > .lo-ov-offer {
+    position: static;
+    grid-row: 3;
+    min-width: 0;
+  }
 }
 .lo-ov-byline .lo-ov-byline__figure {
   width: 20px;

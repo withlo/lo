@@ -131,9 +131,11 @@ function ShownFigure({
 }
 
 /**
- * Who wrote the overview and when, which revision it describes, and a newer one, when pushed: one
- * line, whatever its width, so nothing under it moves as the offer comes. Who wrote it gives up
- * its room first, clipped, then the offer's words; the way to load it never does.
+ * Who wrote the overview and when, which revision it describes, and a newer one, when pushed: as
+ * tall with the offer as without it, at any width, so nothing under it moves as the offer comes.
+ * Where the article is too narrow for the offer beside the rest, the offer has a line of its own,
+ * kept free for it, and narrower still, so has what it describes. Who wrote it gives up its room
+ * first, clipped, then the offer's words and what it describes; the way to load it never does.
  */
 function Byline({
   tab,
@@ -151,25 +153,31 @@ function Byline({
   const author = authorOf(commit.byline);
   const revision = revisionAt(known, described)?.number;
   return (
-    <div className="lo-ov-byline" data-lo-byline>
-      <AuthorPicture author={author} />
-      <span className="lo-ov-byline__who">
-        <WhoWrote author={author} when={ago(commit.byline.at, now)} />
-      </span>
-      <span aria-hidden="true">·</span>
-      <span>
-        describes {revision !== undefined && <strong>r{revision}</strong>}{' '}
-        <span className="lo-commit" title={described}>
-          {shortId(described)}
+    <div className="lo-ov-bylines" data-lo-byline>
+      <div className="lo-ov-byline">
+        <AuthorPicture author={author} />
+        <span className="lo-ov-byline__who">
+          <WhoWrote author={author} when={ago(commit.byline.at, now)} />
         </span>
-      </span>
-      {commit.source === 'fork' && (
-        <>
-          <span aria-hidden="true">·</span>
-          <span>From the fork</span>
-        </>
-      )}
-      {state?.newer && <NewerOffer tab={tab.id} />}
+        <span className="lo-ov-byline__dot" aria-hidden="true">
+          ·
+        </span>
+        <span className="lo-ov-byline__said">
+          describes {revision !== undefined && <strong>r{revision}</strong>}{' '}
+          <span className="lo-commit" title={described}>
+            {shortId(described)}
+          </span>
+          {commit.source === 'fork' && (
+            <>
+              <span className="lo-ov-byline__dot" aria-hidden="true">
+                ·
+              </span>
+              From the fork
+            </>
+          )}
+        </span>
+        {state?.newer && <NewerOffer tab={tab.id} />}
+      </div>
     </div>
   );
 }
@@ -178,8 +186,12 @@ function Byline({
 export function NewerOffer({ tab }: { tab: string }) {
   return (
     <span className="lo-ov-byline__end lo-ov-offer items-center" role="status">
-      <span className="lo-ov-offer__text">A newer overview was pushed</span>
-      <span aria-hidden="true">·</span>
+      <span className="lo-ov-offer__text">
+        A newer overview was pushed
+        <span className="lo-ov-offer__dot" aria-hidden="true">
+          ·
+        </span>
+      </span>
       <Button
         size="sm"
         variant="ghost"
