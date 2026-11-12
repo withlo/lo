@@ -687,7 +687,8 @@ closing the tab. Every action that has a key is also in a right-click menu where
 ### Window
 
 One window, with a tab per PR. A whole stack lives in one tab. Opening a link to a PR that's already
-open switches to its tab, at that layer.
+open switches to its tab, at that layer. Drag a tab along the strip to move it, or move the tab on
+screen a place with `⌃⇧PgUp` and `⌃⇧PgDn`; the tabs come back in that order after a restart.
 
 - **Header.** The PR's title, number and author, the account you're acting as, the merge status and
   the revision picker.

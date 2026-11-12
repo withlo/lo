@@ -186,6 +186,8 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Last tab                  | `⌘9`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.showLast`          |
 | Next tab                  | `⌘⇧]`, `⌃⇥`                           | Anywhere but `dialog` and `palette`                                                    | `tab.next`              |
 | Previous tab              | `⌘⇧[`, `⌃⇧⇥`                          | Anywhere but `dialog` and `palette`                                                    | `tab.previous`          |
+| Move tab left             | `⌃⇧PgUp`                              | Anywhere but `dialog` and `palette`                                                    | `tab.moveLeft`          |
+| Move tab right            | `⌃⇧PgDn`                              | Anywhere but `dialog` and `palette`                                                    | `tab.moveRight`         |
 | Tabs that don’t fit       | `⌘⇧A`                                 | Anywhere but `dialog` and `palette`                                                    | `tab.more`              |
 | Close tab                 | `⌘W`                                  | Anywhere but `dialog` and `palette`                                                    | `tab.close`             |
 
