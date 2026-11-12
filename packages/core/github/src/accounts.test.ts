@@ -412,6 +412,15 @@ test('removing forgets the account even when its token cant be deleted', async (
   expect(await rows.accounts()).toEqual([]);
 });
 
+test('an account that was removed says so, as one whose token was refused does not', async () => {
+  const { accounts } = await setup();
+  await add(accounts, 'a', 'gho_FAKE');
+  await accounts.remove('a');
+  await expect(accounts.client('a')).rejects.toMatchObject({
+    detail: { kind: 'unauthorized', missing: 'a' },
+  });
+});
+
 test('a 401 from any request signs only that account out', async () => {
   const github = new GitHub();
   github.sees = ['gho_B', 'gho_NEW'];

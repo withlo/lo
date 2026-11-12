@@ -12,6 +12,7 @@ import {
   type Repo,
 } from '@lo/git';
 import {
+  GithubError,
   type GithubClient,
   MAX_FILES,
   MAX_PAGES,
@@ -111,6 +112,30 @@ type Read = 'local' | 'github';
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** How what the tree says begins, when the reader signed out of the account it read as. */
+const SIGNED_OUT = 'You signed out of ';
+
+/** The login of the account `error` says Lo has no more, if it does: the reader signed out of it. */
+function signedOutOf(error: unknown): string | undefined {
+  for (let at = error, depth = 0; at !== undefined && depth < 5; depth++) {
+    if (at instanceof GithubError) {
+      return at.detail.kind === 'unauthorized' ? at.detail.missing : undefined;
+    }
+    at = at instanceof Error ? at.cause : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * What the tree says of a failed read: `problem(reason)` with the reason in words, or, when the
+ * account the tab read as has been signed out of, that and what to do, which no token error says.
+ */
+function said(error: unknown, problem: (reason: string) => string): string {
+  const login = signedOutOf(error);
+  if (login === undefined) return problem(describe(error));
+  return `${SIGNED_OUT}${login}. Sign in to load this pull request’s files.`;
 }
 
 export class TreeTab {
@@ -304,7 +329,7 @@ export class TreeTab {
         return false;
       }
       this.#options.log(`listing the files at ${at.head}: ${describe(error)}`);
-      at.problem = `Lo couldn't list the files in the local copy: ${describe(error)}`;
+      at.problem = said(error, (why) => `Lo couldn't list the files in the local copy: ${why}`);
       return true;
     }
   }
@@ -377,7 +402,10 @@ export class TreeTab {
     } catch (error) {
       if (!this.#current(at)) return;
       this.#options.log(`finding what changed at ${at.head}: ${describe(error)}`);
-      at.problem = `Lo couldn't read what changed from the local copy: ${describe(error)}`;
+      at.problem = said(
+        error,
+        (why) => `Lo couldn't read what changed from the local copy: ${why}`,
+      );
       this.#fallBackToGithub(at);
       failed = true;
     }
@@ -474,7 +502,11 @@ export class TreeTab {
         this.#options.log(`reading the files from GitHub: ${describe(tree.reason)}`);
         at.listing = {
           kind: 'changed',
-          why: `Lo couldn’t read the repository’s files from GitHub (${describe(tree.reason)}), so the tree shows the changed ones until the local copy is ready.`,
+          why: said(
+            tree.reason,
+            (why) =>
+              `Lo couldn’t read the repository’s files from GitHub (${why}), so the tree shows the changed ones until the local copy is ready.`,
+          ),
         };
         failed = true;
       }
@@ -486,13 +518,19 @@ export class TreeTab {
           at.changes = listed.files.map(githubChanged);
           at.changesFrom = 'github';
           at.partial = listed.cutShort !== undefined || listed.files.length >= MAX_FILES;
-          if (at.problem?.startsWith('Lo couldn’t read the changed files from GitHub')) {
+          if (
+            at.problem?.startsWith('Lo couldn’t read the changed files from GitHub') ||
+            at.problem?.startsWith(SIGNED_OUT)
+          ) {
             at.problem = undefined;
           }
         }
       } else if (files.status === 'rejected') {
         this.#options.log(`reading the changed files from GitHub: ${describe(files.reason)}`);
-        at.problem ??= `Lo couldn’t read the changed files from GitHub: ${describe(files.reason)}`;
+        at.problem ??= said(
+          files.reason,
+          (why) => `Lo couldn’t read the changed files from GitHub: ${why}`,
+        );
         failed = true;
       }
     }

@@ -1,5 +1,5 @@
 import { parseOid } from '@lo/git';
-import { GithubClient, Token } from '@lo/github';
+import { GithubClient, GithubError, Token } from '@lo/github';
 import { replayFetch } from '@lo/testing';
 import { APP_PULL, RepoServer } from '@lo/testing/git';
 import { describe, expect, it, onTestFinished } from 'vitest';
@@ -179,6 +179,20 @@ describe('TreeTab', () => {
     tree.update(e2eInfo(READY));
     const ready = await settled((state) => state.changesFrom === 'local');
     expect(ready).toMatchObject({ listing: { kind: 'whole' }, problem: null });
+  });
+
+  it('says the reader signed out, not that a token was refused, when the account is gone', async () => {
+    const gone = new GithubError({
+      kind: 'unauthorized',
+      message: "Lo isn't signed in to rozed-bot",
+      missing: 'rozed-bot',
+    });
+    const { tree, settled } = treeTab({ github: () => Promise.reject(gone) });
+    tree.update(e2eInfo());
+    const failed = await settled((state) => state.listing.kind === 'changed');
+    const said = 'You signed out of rozed-bot. Sign in to load this pull request’s files.';
+    expect(failed).toMatchObject({ listing: { kind: 'changed', why: said }, problem: said });
+    expect(JSON.stringify(failed)).not.toContain('token');
   });
 
   it('starts again at a new head on screen, and drops what the last one read', async () => {

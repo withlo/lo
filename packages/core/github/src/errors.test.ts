@@ -138,6 +138,16 @@ test('a 401 signs the account out', () => {
   expect(error.message).toBe("GitHub didn't accept the token: Bad credentials");
 });
 
+test('an account Lo has no more is not a refused token', () => {
+  const error = new GithubError({
+    kind: 'unauthorized',
+    message: "Lo isn't signed in to rozed-bot",
+    missing: 'rozed-bot',
+  });
+  expect(error.isUnauthorized()).toBe(true);
+  expect(error.message).toBe("Lo isn't signed in to rozed-bot");
+});
+
 test('sso keeps githubs link', () => {
   const error = GithubError.fromResponse(
     403,
