@@ -20,6 +20,13 @@ import { settingsStore } from './store.ts';
  */
 export const sections = defineSlot('settings.sections');
 
+/**
+ * The rows of Settings' Opening PRs section, one `Setting` per view, in `order`, lower first: how
+ * a pull request's tab opens, such as on its overview or its diff (10), and how its diff is laid
+ * out (20).
+ */
+export const opening = defineSlot('settings.opening');
+
 /** Defines a section of Settings, for a feature's `views`. `id` is `<feature>.<name>`. */
 export function defineSection(
   section: SectionInfo & { id: string; order: number; render: () => ReactNode },
