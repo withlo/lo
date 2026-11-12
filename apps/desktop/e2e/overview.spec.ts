@@ -73,6 +73,19 @@ async function current(page: Page, id: string): Promise<unknown> {
 }
 
 /**
+ * The kind of problem main says a tab's overview ran into, when it's `kind`; else all main says of
+ * it, with what it ran into.
+ */
+async function problemUnless(page: Page, id: string, kind: string): Promise<string> {
+  const state = await current(page, id);
+  const problem =
+    typeof state === 'object' && state !== null && 'problem' in state ? state.problem : null;
+  const is =
+    typeof problem === 'object' && problem !== null && 'kind' in problem && problem.kind === kind;
+  return is ? kind : JSON.stringify(problem);
+}
+
+/**
  * Files of the overview on screen, as the window gets them, each as its text, or what main said
  * of it.
  */
@@ -320,8 +333,8 @@ test('shows the overview it kept at once the next time, with GitHub out of reach
       .poll(() => current(shown, id), { timeout: 20_000 })
       .toMatchObject({ ...READ, found: 'unknown', saved: true });
     await expect
-      .poll(() => current(shown, id), { timeout: 20_000 })
-      .toMatchObject({ problem: { kind: 'offline' } });
+      .poll(() => problemUnless(shown, id, 'offline'), { timeout: 20_000 })
+      .toBe('offline');
     // Its text comes from what Lo kept.
     expect(await files(shown, id, ['artifact.md'])).toEqual([written(remote, 'artifact.md')]);
   } finally {

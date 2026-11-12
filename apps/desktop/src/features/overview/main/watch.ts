@@ -244,7 +244,7 @@ export class OverviewTab {
       }
       let answer = read.get(entry.id);
       if (!answer) {
-        answer = await this.#file(github, repository, entry.id, entry.size);
+        answer = await this.#file(github, acting, repository, entry.id, entry.size);
         read.set(entry.id, answer);
       }
       answers.push(answer);
@@ -252,9 +252,10 @@ export class OverviewTab {
     return answers;
   }
 
-  /** The file `id` names, of `size` bytes, in `repository`, as {@link OverviewTab.files} answers. */
+  /** The file `id` names, of `size` bytes, in `repository`, read as `acting`, as `files` answers. */
   async #file(
     github: Github,
+    acting: Acting,
     repository: RepoRef,
     id: string,
     size: number | null,
@@ -262,7 +263,7 @@ export class OverviewTab {
     if (size === null) return { kind: 'unread', why: "GitHub didn't say how large it is." };
     if (sizeOnly(size)) return { kind: 'file', size, bytes: null };
     try {
-      const bytes = await fetchBlob(github, this.#options.reads.blobs, repository, id);
+      const bytes = await fetchBlob(github, acting, this.#options.reads.blobs, repository, id);
       return { kind: 'file', size: bytes.length, bytes };
     } catch (error) {
       this.#options.log(`reading file ${id} of the overview: ${describe(error)}`);
@@ -338,7 +339,7 @@ export class OverviewTab {
     try {
       const found = await this.#find(github, pull);
       if (this.#closed) return;
-      await this.#take(found, github, pull);
+      await this.#take(found, github, acting, pull);
       if (this.#closed) return;
       this.#failures = 0;
       this.#problem = undefined;
@@ -408,6 +409,7 @@ export class OverviewTab {
   async #take(
     found: Found,
     github: Github,
+    acting: Acting,
     pull: { repository: RepoRef; number: number },
   ): Promise<void> {
     const { saved } = this.#options.reads;
@@ -427,6 +429,7 @@ export class OverviewTab {
     if (this.#newer?.id === found.sha && this.#newer.source === found.source) return;
     const commit = await readOverview(
       github,
+      acting,
       this.#options.reads.blobs,
       found.repository,
       found.sha,
