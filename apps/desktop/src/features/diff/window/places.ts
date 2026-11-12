@@ -60,11 +60,16 @@ export function openWhole(
   showMiddle(tab, WHOLE_VIEW);
 }
 
+/** A place asked for in each tab before its diff's files were known, and what stops it waiting. */
+const waiting = new Map<string, () => void>();
+
 /**
  * Shows line `line` of the file at `path`, at the head on screen, in tab `tab`: in the diff, with
  * the cursor on it, when the comparison on screen has the file; otherwise the file whole, at that
  * head, with lines `marked` picked out. Without a line, the file's top. Where the tab was is
- * recorded in its history first, as a jump's place, and focus goes to the code.
+ * recorded in its history first, as a jump's place, and focus goes to the code. Until the diff's
+ * files are known, which has the file isn't, so it's shown once they are; a later place asked for
+ * in the tab takes its place.
  */
 export function showPlace(
   tab: string,
@@ -73,6 +78,31 @@ export function showPlace(
   marked?: { from: number; to: number },
 ): void {
   leave();
+  waiting.get(tab)?.();
+  const loader = loaderOf(tab);
+  if (loader.snapshot().state?.files) {
+    place(tab, path, line, marked);
+    return;
+  }
+  const stop = () => {
+    listening();
+    if (waiting.get(tab) === stop) waiting.delete(tab);
+  };
+  const listening = loader.subscribe(() => {
+    if (!loader.snapshot().state?.files) return;
+    stop();
+    place(tab, path, line, marked);
+  });
+  waiting.set(tab, stop);
+}
+
+/** Shows the place {@link showPlace} asks for, once the diff's files are known. */
+function place(
+  tab: string,
+  path: string,
+  line: number | undefined,
+  marked: { from: number; to: number } | undefined,
+): void {
   const loader = loaderOf(tab);
   const change = changeAt(loader.snapshot().state?.files, path);
   if (change) {
@@ -176,6 +206,7 @@ export function placesFor(tab: string): void {
 /** Forgets the tabs that closed, those not in `open`: their history goes with them. */
 export function keepPlaces(open: ReadonlySet<string>): void {
   for (const tab of registered) if (!open.has(tab)) registered.delete(tab);
+  for (const [tab, stop] of waiting) if (!open.has(tab)) stop();
 }
 
 /**
