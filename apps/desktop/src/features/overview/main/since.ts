@@ -6,11 +6,11 @@
 //   revisions: each from where it branched off the base branch, the older one's changes replayed
 //   onto the newer base when the base moved, so what a rebase brought with the base doesn't count
 //   as the pushes'. That gives how many files the pushes changed, and whether they changed a file.
-// - Where each file went is found from everything that changed from the commit to the head, the
-//   base branch's changes too, renames found, compared once as a file first needs it. A file with
-//   the same blob at the same path needs neither comparison. Past what Lo downloads for them, a
-//   file is looked for at the same path, and one that isn't there can't be told apart from one
-//   that moved, so Lo says it can't tell.
+// - A file still at its path is that file, as git compares them. Where one that's gone from its
+//   path went is found from everything that changed from the commit to the head, the base
+//   branch's changes too, renames found, compared once as a file first needs it. Past what Lo
+//   downloads for them, Lo can't tell a file that moved from one that was deleted, and says so.
+//   A file with the same blob at its path needs neither comparison.
 // - The overview's commit is fetched by its ID when the copy lacks it, as the overview's checks
 //   fetch it, once for every read that needs it.
 // - When a file's blob differs, both its texts are read whole, as a block's are (`readWhole`).
@@ -229,18 +229,17 @@ export class SinceReads {
     // The same blob at the same path: nothing to compare.
     if (there?.oid === was.oid) return { kind: 'same', path };
     const comparing = this.#comparingAt(clone, local, commit, head);
-    const whole = await this.#wholeOf(clone, commit, head, comparing);
-    let now: FileVersion | undefined;
-    if (whole) {
-      // Where everything that changed says it went, base branch and all; else it's where it was.
-      const change = whole.find((each) => each.old?.path.equals(bytes));
-      now = change ? change.new : there;
-      if (now === undefined) return { kind: 'deleted' };
-    } else {
-      now = there;
-      if (now === undefined) {
+    // Still at its path, it's that file, as git compares them: only one that's gone from its path
+    // was renamed, or deleted, by the pushes or the base branch, which only everything that
+    // changed tells apart.
+    let now: FileVersion | undefined = there;
+    if (now === undefined) {
+      const whole = await this.#wholeOf(clone, commit, head, comparing);
+      if (whole === undefined) {
         return { kind: 'unread', why: 'Lo couldn’t tell where the file went since.' };
       }
+      now = whole.find((each) => each.old?.path.equals(bytes))?.new;
+      if (now === undefined) return { kind: 'deleted' };
     }
     const at = decoder.decode(now.path);
     if (now.oid === was.oid) return { kind: 'same', path: at };

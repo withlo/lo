@@ -219,6 +219,10 @@ describe('SinceReads', () => {
     await since.count(local, clone, first, second);
     await since.file(local, clone, first, second, 'src/parser.ts');
     await since.file(local, clone, first, second, 'README.md');
+    // Files still at their paths need only the pushes' comparison.
+    expect(compared).toEqual([DOWNLOAD_LIMIT]);
+    await since.file(local, clone, first, second, 'src/format.ts');
+    await since.file(local, clone, first, second, 'src/old.ts');
     // The pushes', then everything that changed, each once, the second within what the first left.
     expect(compared).toHaveLength(2);
     expect(compared[0]).toBe(DOWNLOAD_LIMIT);
