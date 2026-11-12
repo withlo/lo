@@ -54,7 +54,7 @@ const sections: ContextMenuItem[][] = [
 interface HarnessProps {
   onClosed?: (chosen: string | undefined) => void;
   onOpenChange?: (open: boolean) => void;
-  finalFocus?: HTMLElement;
+  finalFocus?: HTMLElement | SVGElement;
 }
 
 /** A menu that opens at a point and closes as it's asked to. */
@@ -199,6 +199,25 @@ describe('ContextMenu', () => {
     });
     expect(document.activeElement).toBe(block);
     block.remove();
+  });
+
+  it('gives focus back to a part of a drawing, such as a figure’s', async () => {
+    const drawing = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const part = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    part.setAttribute('tabindex', '0');
+    part.setAttribute('role', 'link');
+    drawing.append(part);
+    document.body.append(drawing);
+    part.focus();
+    expect(document.activeElement).toBe(part);
+    const onClosed = vi.fn<(chosen: string | undefined) => void>();
+    const page = render(<Harness finalFocus={part} onClosed={onClosed} />);
+    const menu = page.querySelector('[role="menu"]')!;
+    await vi.waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+    press(document.activeElement!, 'Escape');
+    await vi.waitFor(() => expect(onClosed).toHaveBeenCalledWith(undefined));
+    expect(document.activeElement).toBe(part);
+    drawing.remove();
   });
 
   it('opens nowhere without an anchor', () => {

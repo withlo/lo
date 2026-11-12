@@ -434,6 +434,32 @@ describe('from the keyboard', () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(tree));
   });
 
+  it('returns focus to a part of a drawing it was opened from, such as a figure’s', async () => {
+    const page = mount(
+      <>
+        <div id="tree" data-lo-scope="tree" tabIndex={-1}>
+          <svg>
+            <g id="part" tabIndex={0} role="link" />
+          </svg>
+        </div>
+        <Menus />
+      </>,
+    );
+    const tree = page.querySelector<HTMLElement>('#tree')!;
+    setScopeSource(tree, { target: () => file });
+    const part = page.querySelector<SVGElement>('#part')!;
+    part.focus();
+    expect(document.activeElement).toBe(part);
+    act(() => {
+      openMenuAtFocus();
+    });
+    expect(currentMenu()?.from).toBe(part);
+    await vi.waitFor(() => expect(popup()?.contains(document.activeElement)).toBe(true));
+    press('Escape');
+    await vi.waitFor(() => expect(popup()).toBeNull());
+    await vi.waitFor(() => expect(document.activeElement).toBe(part));
+  });
+
   it('opens nothing where the focused scope has no menu', () => {
     const page = mount(
       <>

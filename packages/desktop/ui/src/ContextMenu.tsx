@@ -42,9 +42,9 @@ export interface ContextMenuProps {
   sections: readonly (readonly ContextMenuItem[])[];
   /**
    * Where focus goes when the menu closes: the element that had it when the menu was asked to
-   * open. Without one, wherever Base UI found focus to give back.
+   * open, of the page or of a drawing in it. Without one, wherever Base UI found focus to give back.
    */
-  finalFocus?: HTMLElement | undefined;
+  finalFocus?: HTMLElement | SVGElement | undefined;
   /**
    * Highlights the first action as the menu opens, as a menu opened from the keyboard does, so
    * `⏎` acts at once. A pointer opens it with nothing highlighted.
