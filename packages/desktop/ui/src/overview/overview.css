@@ -81,3 +81,239 @@
 .lo-block--fold.is-focused > summary > .lo-block__hints {
   display: flex;
 }
+
+/*
+ * The view switch's mark for the overview: a filled ball when there's one for the newest push,
+ * amber when it's out of date, red when it can't be shown, a hollow ring when there's none.
+ */
+.lo-ovmark {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lo-accent);
+}
+.lo-ovmark--stale {
+  background: var(--lo-warning);
+}
+.lo-ovmark--error {
+  background: var(--lo-danger);
+}
+.lo-ovmark--none {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.25px var(--lo-fg-dim);
+}
+/* While Lo finds out: the mark's room, empty. */
+.lo-ovmark--pending {
+  visibility: hidden;
+}
+
+/* The middle when there's no overview, or it can't be shown: a column in the middle of the sheet. */
+.lo-ovstate {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  overflow: auto;
+  padding: 32px;
+  background: var(--lo-bg);
+}
+.lo-ovstate__col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(620px, 100%);
+}
+.lo-ovstate__icon {
+  width: 28px;
+  height: 28px;
+  stroke-width: 1.25;
+  color: var(--lo-fg-subtle);
+}
+.lo-ovstate__icon.is-danger {
+  color: var(--lo-danger);
+}
+.lo-ovstate__icon.is-warn {
+  color: var(--lo-warning);
+}
+.lo-ovstate__icon.is-info {
+  color: var(--lo-info);
+}
+.lo-ovstate h2 {
+  margin: 0;
+  font: var(--lo-text-heading);
+  letter-spacing: var(--lo-track-tight);
+  text-wrap: balance;
+}
+.lo-ovstate p {
+  margin: 0;
+  font: var(--lo-read-body);
+  color: var(--lo-fg-muted);
+}
+.lo-ovstate__report {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px 12px;
+  list-style: none;
+  border-radius: var(--lo-r-md);
+  background: var(--lo-bg-well);
+  box-shadow: inset 0 0 0 1px var(--lo-border);
+  font: 400 12px/19px var(--lo-font-mono);
+  color: var(--lo-fg);
+}
+.lo-ovstate__report li {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.lo-ovstate__report li > span:first-child {
+  color: var(--lo-fg-muted);
+}
+.lo-ovstate__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A prompt to copy into a coding agent: Lo's own words, read-only and selectable, with one Copy. */
+.lo-prompt {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--lo-r-md);
+  background: var(--lo-bg-well);
+  box-shadow: inset 0 0 0 1px var(--lo-border);
+  overflow: hidden;
+}
+.lo-prompt__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--lo-border-subtle);
+  font: var(--lo-text-label);
+  letter-spacing: var(--lo-track-label);
+  text-transform: uppercase;
+  color: var(--lo-fg-muted);
+}
+.lo-prompt__head > button {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.lo-prompt__body {
+  margin: 0;
+  padding: 12px 14px;
+  font: 400 12.5px/20px var(--lo-font-mono);
+  color: var(--lo-fg);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+/*
+ * The byline is as tall with the offer of a newer overview as without it, at any width, so nothing
+ * under it moves as the offer comes. Its line is clipped past the article's edge, with room for a
+ * focus ring. Who wrote it gives up its room, clipped, for the rest. Where the article is too
+ * narrow for the offer beside the rest, the offer has a line of its own under it, kept free for it;
+ * narrower still, so has what it describes, and only then do the offer's words and what it
+ * describes give up theirs, never the way to load it.
+ */
+.lo-ov-bylines {
+  container: lo-ov-byline / inline-size;
+}
+.lo-ov .lo-ov-byline {
+  flex-wrap: nowrap;
+  min-height: var(--lo-control-h-sm);
+  white-space: nowrap;
+  overflow: clip;
+  overflow-clip-margin: 4px;
+}
+.lo-ov .lo-ov-byline > * {
+  flex: none;
+}
+.lo-ov .lo-ov-byline > .lo-ov-byline__who {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lo-ov .lo-ov-byline > .lo-ov-byline__said {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lo-ov-byline__said > .lo-ov-byline__dot {
+  margin-inline: 8px;
+}
+/* The offer's dot goes with its words, so the way to load it needs no more room than its own. */
+.lo-ov .lo-ov-offer {
+  gap: 0;
+}
+.lo-ov-offer__dot {
+  margin-inline: 6px;
+}
+.lo-ov-offer > * {
+  flex: none;
+}
+.lo-ov-offer > .lo-ov-offer__text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@container lo-ov-byline (width < 560px) {
+  .lo-ov .lo-ov-byline {
+    position: relative;
+    min-height: calc(2 * var(--lo-control-h-sm) + 6px);
+    padding-bottom: calc(var(--lo-control-h-sm) + 6px);
+  }
+  .lo-ov .lo-ov-byline > .lo-ov-offer {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: var(--lo-control-h-sm);
+    margin-left: 0;
+  }
+}
+@container lo-ov-byline (width < 320px) {
+  .lo-ov .lo-ov-byline {
+    display: grid;
+    grid-template-rows: repeat(3, var(--lo-control-h-sm));
+    grid-template-columns: auto minmax(0, 1fr);
+    min-height: 0;
+    padding-bottom: 0;
+  }
+  .lo-ov .lo-ov-byline > .lo-ov-byline__dot {
+    display: none;
+  }
+  .lo-ov .lo-ov-byline > :is(.lo-ov-byline__said, .lo-ov-offer) {
+    grid-column: 1 / -1;
+  }
+  .lo-ov .lo-ov-byline > .lo-ov-offer {
+    position: static;
+    grid-row: 3;
+    min-width: 0;
+  }
+}
+.lo-ov-byline .lo-ov-byline__figure {
+  width: 20px;
+  height: 20px;
+  color: var(--lo-fg-muted);
+}
+
+/*
+ * The name a commit gives its author, which anyone can write: plain, quoted, on one line and cut
+ * short, so it can't pass for a login or for Lo's words around it.
+ */
+.lo-ov-name {
+  white-space: nowrap;
+}
+.lo-ov-name__text {
+  font-weight: 400;
+}

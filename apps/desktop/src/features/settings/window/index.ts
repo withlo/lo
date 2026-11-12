@@ -9,6 +9,7 @@ import keys from '../keys.ts';
 import Appearance from './Appearance.tsx';
 import Cache from './Cache.tsx';
 import Keys from './Keys.tsx';
+import Opening from './Opening.tsx';
 import { canMoveSection, moveSection } from './nav.ts';
 import { SettingsTab } from './Page.tsx';
 import { showSettings } from './store.ts';
@@ -39,6 +40,7 @@ export default {
       order: 0,
       render: ({ tab }) => (tab.kind === 'settings' ? createElement(SettingsTab) : null),
     }),
+    Opening,
     Appearance,
     Cache,
     Keys,

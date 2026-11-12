@@ -15,6 +15,14 @@ import { PATH_LIMIT, pathBytes } from '../tree/contract.ts';
 const time = z.number().int().nonnegative();
 
 /**
+ * How long a pull request's tab holds back what it shows first, as it opens, for something that
+ * may change it, in milliseconds: about as long as a large pull request's diff takes to load and
+ * draw anyway. The diff waits this long for the comparison "last seen here" asks for; past it, the
+ * whole pull request is drawn, and the comparison is offered, never put in its place.
+ */
+export const HOLD_LIMIT = 1_000;
+
+/**
  * When a revision was pushed: exactly, by a time (a review, a check or Lo's poller saw it then), or
  * not known.
  */

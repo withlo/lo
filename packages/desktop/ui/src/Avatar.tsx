@@ -1,9 +1,14 @@
 import { cva } from 'class-variance-authority';
 
 const avatar = cva(
-  'inline-grid size-avatar-lg flex-none place-items-center overflow-hidden rounded-pill text-micro',
+  'inline-grid flex-none place-items-center overflow-hidden rounded-pill text-micro',
   {
     variants: {
+      size: {
+        lg: 'size-avatar-lg',
+        // Beside a line of small text, such as an overview's byline.
+        sm: 'size-20',
+      },
       hue: {
         1: 'bg-avatar-1-bg text-avatar-1',
         2: 'bg-avatar-2-bg text-avatar-2',
@@ -38,9 +43,9 @@ export function initials(login: string): string {
  * A person's picture, as their initials in a hue of their own: pair it with their login wherever
  * they matter. It's decorative, since the login beside it says who it is.
  */
-export function Avatar({ login }: { login: string }) {
+export function Avatar({ login, size = 'lg' }: { login: string; size?: 'lg' | 'sm' | undefined }) {
   return (
-    <span className={avatar({ hue: avatarHue(login) })} aria-hidden="true">
+    <span className={avatar({ size, hue: avatarHue(login) })} aria-hidden="true">
       {initials(login)}
     </span>
   );

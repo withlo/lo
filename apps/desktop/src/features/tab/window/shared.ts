@@ -1,12 +1,14 @@
 // What the tab feature shares with other features' window code: the tabs and the one on screen,
 // state a feature keeps for each tab, and the slot each kind of tab draws what it holds in.
 
+import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { defineSlot } from '../../../window/slots.tsx';
 import type { Files, LocalState, PullView, Tab } from '../contract.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
-import { middleIds, panels } from './panels.ts';
+import { middleIds, panels, type Panels } from './panels.ts';
+import { Placeholder } from './Placeholder.tsx';
 import { activeOf, pullsStore, tabsStore, type TabsState } from './store.ts';
 
 export type {
@@ -52,13 +54,37 @@ export const banners = defineSlot<{ tab: PullTab }>('tab.banners');
 export const left = defineSlot<{ tab: PullTab }>('tab.left');
 
 /**
- * The middle of a pull request's tab: its overview, its diff or its timeline. Each view here is
- * one of the middle views, in order; `` ` `` and `~` go from one to the next. One is on screen at a
- * time, and `shown` says which: a view the tab has shown stays drawn, hidden, while another is on
- * screen, so coming back to it is instant and finds it as it was. A hidden view keeps its keys,
- * its focus and its place in the window's history to itself until it's shown again.
+ * What the header's view switch shows of a middle view. A view with no `label` isn't in the switch,
+ * though `` ` `` and `~` still step to it.
  */
-export const middle = defineSlot<{ tab: PullTab; shown: boolean }>('tab.middle');
+export interface MiddleSwitch {
+  /** Its name in the switch, a word or two: "Diff". */
+  readonly label?: string | undefined;
+  /**
+   * What goes before its name for a tab, such as whether the tab's pull request has an overview.
+   * It says what it means itself, to a screen reader too.
+   */
+  readonly mark?: ((props: { tab: PullTab }) => ReactNode) | undefined;
+}
+
+/**
+ * The middle of a pull request's tab: its overview, its diff or its timeline. Each view here is
+ * one of the middle views, in order; `` ` `` and `~` go from one to the next, and the header's view
+ * switch lists those with a label. One is on screen at a time, and `shown` says which: a view the
+ * tab has shown stays drawn, hidden, while another is on screen, so coming back to it is instant
+ * and finds it as it was. A hidden view keeps its keys, its focus and its place in the window's
+ * history to itself until it's shown again. The tab shows the first of them as it opens.
+ */
+export const middle = defineSlot<{ tab: PullTab; shown: boolean }, MiddleSwitch>('tab.middle');
+
+/**
+ * What the middle says while there's nothing to show yet: that the pull request is opening, or
+ * what will show. A middle view that waits before it knows what to draw draws this meanwhile, so
+ * the tab looks as it does with no view at all.
+ */
+export function MiddlePlaceholder({ tab }: { tab: PullTab }): ReactNode {
+  return createElement(Placeholder, { tab: tab.id });
+}
 
 /**
  * Shows the middle view `id`, one of those in {@link middle}, in pull request's tab `tab`, as
@@ -70,6 +96,16 @@ export function showMiddle(tab: string, id: string): boolean {
   if (at < 0) return false;
   if (panels.get(tab).middle !== at) panels.update(tab, (current) => ({ ...current, middle: at }));
   return true;
+}
+
+/**
+ * The id of the middle view on screen in pull request's tab `tab`, and of each of the tab's middle
+ * views in their order, re-rendering when another is shown.
+ */
+export function useMiddle(tab: string): { shown: string | undefined; ids: readonly string[] } {
+  const at = useTabState(panels, tab, (value: Panels) => value.middle);
+  const { ids } = middleIds;
+  return { shown: ids[at % Math.max(1, ids.length)], ids };
 }
 
 /** The right panel of a pull request's tab: its threads. */

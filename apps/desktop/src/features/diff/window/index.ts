@@ -10,7 +10,7 @@ import { createElement } from 'react';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
-import { changeSetting } from '../../settings/window/shared.ts';
+import { changeSetting, opening } from '../../settings/window/shared.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { activeTab, middle, status, type PullTab } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
@@ -21,6 +21,7 @@ import { Diff } from './Diff.tsx';
 import { changesLink, fileLink } from './links.ts';
 import { main } from './main.ts';
 import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
+import { LayoutRow } from './LayoutRow.tsx';
 import { DiffStatus } from './Status.tsx';
 import { drawnFor, keepOnly, loaderOf, takeState, type Drawn } from './tabs.ts';
 import { markViewed } from './viewed.ts';
@@ -291,6 +292,7 @@ export default {
     defineView(middle, {
       id: DIFF_VIEW,
       order: 20,
+      label: 'Diff',
       render: ({ tab, shown }) => createElement(Diff, { tab, shown }),
     }),
     // After the diff, among the middle views `` ` `` steps through.
@@ -303,6 +305,12 @@ export default {
       id: 'diff.status',
       order: 20,
       render: ({ tab }) => createElement(DiffStatus, { tab }),
+    }),
+    // After how a pull request opens, in Settings' Opening PRs.
+    defineView(opening, {
+      id: 'diff.layout',
+      order: 20,
+      render: () => createElement(LayoutRow),
     }),
   ],
   start() {

@@ -37,9 +37,10 @@ not a `diff` object holding `layout`.
 
 ## The settings
 
-| Setting           | Takes                                  | Default    | What it does                                                                                                                                     |
-| ----------------- | -------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `theme`           | dark, light or system                  | `"system"` | The theme: Lo Glow in dark or light, or whichever the system is in.                                                                              |
-| `cache.cap`       | a whole number of GB, from 1 to 10,000 | `10`       | The size Lo keeps its local copies of repos under. Past it, the least recently used go.                                                          |
-| `diff.layout`     | split or inline                        | `"split"`  | The diff's layout: the two sides next to each other, or one column of both. `gi` switches it.                                                    |
-| `diff.whitespace` | show or hide                           | `"show"`   | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way. |
+| Setting           | Takes                                  | Default      | What it does                                                                                                                                     |
+| ----------------- | -------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `theme`           | dark, light or system                  | `"system"`   | The theme: Lo Glow in dark or light, or whichever the system is in.                                                                              |
+| `cache.cap`       | a whole number of GB, from 1 to 10,000 | `10`         | The size Lo keeps its local copies of repos under. Past it, the least recently used go.                                                          |
+| `diff.layout`     | split or inline                        | `"split"`    | The diff's layout: the two sides next to each other, or one column of both. `gi` switches it.                                                    |
+| `diff.whitespace` | show or hide                           | `"show"`     | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way. |
+| `overview.open`   | overview or diff                       | `"overview"` | What a pull request opens on when it has an overview Lo can show: the overview, or the diff. Without one, it always opens on the diff.           |

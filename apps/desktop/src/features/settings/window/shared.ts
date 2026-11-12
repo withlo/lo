@@ -20,6 +20,13 @@ import { settingsStore } from './store.ts';
  */
 export const sections = defineSlot('settings.sections');
 
+/**
+ * The rows of Settings' Opening PRs section, one `Setting` per view, in `order`, lower first: how
+ * a pull request's tab opens, such as on its overview or its diff (10), and how its diff is laid
+ * out (20).
+ */
+export const opening = defineSlot('settings.opening');
+
 /** Defines a section of Settings, for a feature's `views`. `id` is `<feature>.<name>`. */
 export function defineSection(
   section: SectionInfo & { id: string; order: number; render: () => ReactNode },
@@ -35,6 +42,17 @@ export function useSetting<T>(setting: Setting<T>): T {
   const settings = useStore(settingsStore, (state) => state.settings);
   const found = settings?.values[setting.key];
   const parsed = setting.schema.safeParse(found);
+  return parsed.success ? parsed.data : setting.fallback;
+}
+
+/**
+ * The value of a setting once main has said what the settings file holds, and `undefined` until
+ * then, for what mustn't act on the default by mistake; it follows changes.
+ */
+export function useKnownSetting<T>(setting: Setting<T>): T | undefined {
+  const settings = useStore(settingsStore, (state) => state.settings);
+  if (settings === undefined) return undefined;
+  const parsed = setting.schema.safeParse(settings.values[setting.key]);
   return parsed.success ? parsed.data : setting.fallback;
 }
 

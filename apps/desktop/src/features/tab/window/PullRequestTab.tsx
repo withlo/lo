@@ -30,6 +30,8 @@ import {
   type PullTab,
 } from './shared.ts';
 import { middleIds, panels, useTabPanels, viewCounts } from './panels.ts';
+import { Placeholder } from './Placeholder.tsx';
+import { ViewSwitch } from './ViewSwitch.tsx';
 
 /** The time now, ticking each second while `ticking`, for what counts down. */
 function useNow(ticking: boolean): number {
@@ -187,21 +189,6 @@ function LocalItem({ local }: { local: LocalState | undefined }): ReactNode {
   }
 }
 
-/** What the middle says until a middle view is there to show. */
-function Placeholder({ view }: { view: PullView | undefined }) {
-  return (
-    <div className="grid h-full place-items-center p-32 text-center text-fg-muted text-ui">
-      <p className="max-w-read-measure">
-        {view?.header
-          ? 'The diff and the threads will show here.'
-          : view?.problem
-            ? 'Nothing to show yet.'
-            : 'Opening the pull request…'}
-      </p>
-    </div>
-  );
-}
-
 /** A pull request's tab, as its kind draws it. */
 export function PullRequestTab({ tab }: { tab: PullTab }) {
   const view = usePull(tab.id);
@@ -241,6 +228,8 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
         connection={headerConnection(view?.connection)}
       >
         <Slot slot={header} props={{ tab }} />
+        <span className="min-w-8 flex-1" />
+        <ViewSwitch tab={tab} views={middles} shown={shownMiddle?.id} />
       </PRHeader>
       <Banners tab={tab} own={banners} />
       <div className="flex min-h-0 flex-1">
@@ -273,7 +262,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
                 );
               })
           ) : (
-            <Placeholder view={view} />
+            <Placeholder tab={tab.id} />
           )}
         </section>
         {showRight && (

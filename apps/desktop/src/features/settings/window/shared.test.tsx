@@ -13,11 +13,12 @@ import {
   defineSection,
   sections,
   useProblems,
+  useKnownSetting,
   useSetting,
   useSettingsFile,
 } from './shared.ts';
 import { sectionInfo } from './sections.ts';
-import { showSettings } from './store.ts';
+import { settingsStore, showSettings } from './store.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 
 beforeAll(() => {
@@ -67,6 +68,22 @@ describe('useSetting', () => {
     act(() => showSettings(state({ 'diff.layout': 'wrapped' })));
     expect(shown.text()).toBe('split');
     act(() => showSettings(state({ 'diff.layout': 4 })));
+    expect(shown.text()).toBe('split');
+  });
+});
+
+function KnownLayout() {
+  return useKnownSetting(layout) ?? 'not known';
+}
+
+describe('useKnownSetting', () => {
+  it('is nothing until main has said, then the value, or the default for one the schema refuses', () => {
+    settingsStore.setState({ settings: undefined });
+    const shown = render(<KnownLayout />);
+    expect(shown.text()).toBe('not known');
+    act(() => showSettings(state({ 'diff.layout': 'inline' })));
+    expect(shown.text()).toBe('inline');
+    act(() => showSettings(state({ 'diff.layout': 'wrapped' })));
     expect(shown.text()).toBe('split');
   });
 });
