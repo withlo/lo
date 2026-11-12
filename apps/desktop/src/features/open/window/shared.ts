@@ -1,11 +1,13 @@
 // What the open feature shares with other features' window code: the open box, opening a link as
-// the box does, and the `lo` command, for the welcome screen's box and its row for the command; and
-// the slot for other command-line tools' rows in Settings.
+// the box does, and the `lo` command, for the welcome screen's box and its row for the command;
+// opening a web link another view follows; and the slot for other command-line tools' rows in
+// Settings.
 
 import { useStore } from 'zustand';
 
 import { defineSlot } from '../../../window/slots.tsx';
 import type { CommandState, Installed, Opened } from '../contract.ts';
+import { followLink as follow } from './actions.ts';
 import { openBox as openTheBox, openText } from './box.ts';
 import { checkCommand, commandStore, installCommand as install } from './command.ts';
 
@@ -30,6 +32,15 @@ export function openBox(text?: string): void {
  */
 export function openLink(text: string): Promise<Opened | undefined> {
   return openText(text);
+}
+
+/**
+ * Opens `url`, an `https` link followed in another view, such as a link in an overview: a pull
+ * request in its tab, any other page in the browser. Says why in a notice when it opens nothing.
+ * The open box is left as it is.
+ */
+export function followLink(url: string): Promise<void> {
+  return follow(url);
 }
 
 /** Where the `lo` command is, once Lo has looked, re-rendering when that changes. */

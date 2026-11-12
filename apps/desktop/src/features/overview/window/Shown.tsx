@@ -28,6 +28,7 @@ import {
 } from '@lo/ui/overview';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 
+import { followLink } from '../../open/window/shared.ts';
 import { HOLD_LIMIT } from '../../revisions/contract.ts';
 import { MiddlePlaceholder, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewFile } from '../contract.ts';
@@ -305,11 +306,17 @@ export function Shown({
     () => ({ figure, excerpt, walkthrough }),
     [figure, excerpt, walkthrough],
   );
-  // A link followed: code goes to the diff, and a section or a term, which the overview has
-  // brought on screen, leaves its block in the tab's history for `⌃o`.
+  // A link followed: code goes to the diff; a section or a term, which the overview has brought
+  // on screen, leaves its block in the tab's history for `⌃o`; and a web page opens through main,
+  // in a tab when it's a pull request, only when it's `https://`.
   const tabId = tab.id;
   const follow = useCallback(
     (target: OverviewTarget, from: Element) => {
+      if (target.kind === 'web') {
+        const url = secureLink(target.url);
+        if (url !== undefined) void followLink(url);
+        return;
+      }
       const overview = drawnIn(tabId);
       if (!overview) return;
       if (target.kind === 'code') followCode(overview, from, codeAt(target));
