@@ -98,10 +98,18 @@ let afterClose: (() => void) | undefined;
 
 /** Opens the finder over the pull request's tab on screen, if there is one. */
 export function openFinder(): void {
+  findFile('');
+}
+
+/**
+ * Opens the finder over the pull request's tab on screen, if there is one, with `query` typed, as
+ * a reference to a file that isn't there offers to find one of its name.
+ */
+export function findFile(query: string): void {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return;
   afterClose = undefined;
-  finderStore.setState({ ...closed, open: true, tab: tab.id, repo: tab.repo });
+  finderStore.setState({ ...closed, open: true, tab: tab.id, repo: tab.repo, query });
   watch(tab.id);
   search();
 }

@@ -414,7 +414,7 @@ async function isOther(clone: CodeClone, oid: Oid): Promise<boolean> {
 }
 
 /** Whether `error` is a download Lo stopped for bringing more than it may. */
-function pastCap(error: unknown): boolean {
+export function pastCap(error: unknown): boolean {
   return (
     error instanceof GitError &&
     error.detail.kind === 'fetch' &&

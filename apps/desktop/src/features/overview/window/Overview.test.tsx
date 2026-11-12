@@ -444,6 +444,8 @@ describe('an overview on screen', () => {
     const view = render(tab);
     checking.take(stateOf(tab));
     await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
+    // Seen once its blocks have drawn, or at the bound: the tab's placeholder goes.
+    await until(() => view.querySelector('.lo-ov.is-drawing') === null);
     const first = checked.get(tab.id);
 
     // The reader opens the fold, and puts focus on a term in the lead.

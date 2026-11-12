@@ -9,7 +9,7 @@
 // registry, which runs Lo's commands and hands the rest to Vim; the view is the `file` scope's
 // `KeySource`.
 
-import { EditorState, type Range, type Text } from '@codemirror/state';
+import { EditorState, Prec, type Range, type SelectionRange, type Text } from '@codemirror/state';
 import { Decoration, EditorView, lineNumbers } from '@codemirror/view';
 
 import {
@@ -69,6 +69,8 @@ class WholeFile implements FileView {
   /** What the events last said, so each says only what changed. */
   readonly #said: { cursor?: string; mode: Mode } = { mode: 'normal' };
   readonly #stops: (() => void)[] = [];
+  /** Whether the scroll the editor asks for next is `showLine`'s, which only the box takes. */
+  #ownScroll = false;
 
   constructor(parent: HTMLElement, init: FileInit, on: FileEvents) {
     installVim();
@@ -91,6 +93,9 @@ class WholeFile implements FileView {
       state: EditorState.create({
         doc: init.lines.join('\n'),
         extensions: [
+          Prec.highest(
+            EditorView.scrollHandler.of((editor, range) => this.#scrollOwn(editor, range)),
+          ),
           codeEditor(init.nonce, () => this.#tell()),
           EditorView.contentAttributes.of({ 'aria-label': init.path }),
           lineNumbers({ formatNumber: (line) => (count === 0 ? '' : String(line)) }),
@@ -168,6 +173,8 @@ class WholeFile implements FileView {
     const line = this.#view.state.doc.line(found.line);
     // What Vim was in the middle of, such as a count typed before `⌃o`, ends here.
     this.clearPending();
+    // Its scroll is the editor's own, whatever `showLine` asked for before it.
+    this.#ownScroll = false;
     this.#view.dispatch({
       selection: { anchor: line.from + Math.min(found.column, line.length) },
       scrollIntoView: true,
@@ -202,6 +209,27 @@ class WholeFile implements FileView {
   /** The document line of file line `line`, which is the file's last if it runs past it. */
   #docLine(line: number): number {
     return Math.min(Math.max(1, line), Math.max(1, this.#count));
+  }
+
+  showLine(line: number): void {
+    const { doc } = this.#view.state;
+    this.#ownScroll = true;
+    this.#view.dispatch({
+      effects: EditorView.scrollIntoView(doc.line(this.#docLine(line)).from, { y: 'start' }),
+    });
+  }
+
+  /**
+   * Takes the scroll `showLine` asked for, once the editor has laid the line out: the box alone
+   * scrolls, so the line's top is two lines under the box's, and nothing around the box moves.
+   */
+  #scrollOwn(view: EditorView, range: SelectionRange): boolean {
+    if (!this.#ownScroll) return false;
+    this.#ownScroll = false;
+    const box = this.dom.getBoundingClientRect();
+    const top = view.documentTop + view.lineBlockAt(range.head).top;
+    this.dom.scrollTop += top - box.top - 2 * view.defaultLineHeight;
+    return true;
   }
 
   peek(_at: Place, peek: PeekView | undefined): void {

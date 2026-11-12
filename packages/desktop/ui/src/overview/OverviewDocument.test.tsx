@@ -129,6 +129,16 @@ describe('OverviewDocument', () => {
     ]);
   });
 
+  it('lays out the outline and the article unseen while its blocks draw, in a box that takes focus', () => {
+    const tree = fixture('valid/example');
+    const page = render(<OverviewDocument tree={tree} drawing />);
+    const box = page.querySelector('.lo-ov')!;
+    expect(box.classList.contains('is-drawing')).toBe(true);
+    expect(box.querySelector('article.lo-ov__article')).not.toBeNull();
+    rerender(page, <OverviewDocument tree={tree} />);
+    expect(box.classList.contains('is-drawing')).toBe(false);
+  });
+
   it('draws the blocks given views for, in place of what they point at', () => {
     const page = render(
       <OverviewDocument

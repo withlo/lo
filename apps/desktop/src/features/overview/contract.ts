@@ -187,6 +187,28 @@ export type CodeReply =
   | { kind: 'noGit' }
   | { kind: 'failed'; why: string };
 
+/**
+ * How a file a block shows was where the overview's commit branched off the base branch, which is
+ * where the pull request's diff of it starts, as GitHub diffs a pull request:
+ *
+ * - `same`: as it is at the commit, since the pull request doesn't change it;
+ * - `added`: not there, since the pull request adds it;
+ * - `changed`: its text there, at `path`, which is another when the pull request renames it;
+ * - `unknown`: Lo couldn't read it, and why.
+ */
+export type BaseText =
+  | { kind: 'same' }
+  | { kind: 'added' }
+  | { kind: 'changed'; path: string; text: string }
+  | { kind: 'unknown'; why: string };
+
+/**
+ * A file a block of an overview shows, as `texts` replies: its text at the overview's commit, with
+ * where its diff starts when that was asked for; or why Lo couldn't read it now.
+ */
+export type BlockText =
+  { kind: 'text'; text: string; base: BaseText | null } | { kind: 'unread'; why: string };
+
 /** A coding agent that Lo installs the overview skill for. */
 export const agent = z.enum(['claude', 'codex']);
 export type Agent = z.output<typeof agent>;
@@ -285,6 +307,21 @@ export const contract = defineContract('overview', {
           .max(CODE_LIMIT),
       }),
       reply: reply<CodeReply>(),
+    },
+    /**
+     * The text of the file at `path` at `commit`, the commit the overview's header names, from the
+     * pull request's local copy, for a block to show it; and with `base`, the file where the
+     * commit branched off the base branch, for its diff. Each is read whole, up to the most of a
+     * file the overview's checks read.
+     */
+    texts: {
+      input: z.strictObject({
+        id: tabId,
+        commit: oid,
+        path: z.string().min(1).max(PATH_LIMIT),
+        base: z.boolean(),
+      }),
+      reply: reply<BlockText>(),
     },
     /** Reads the overview again now, after a failure. */
     retry: { input: byId, reply: reply<void>() },

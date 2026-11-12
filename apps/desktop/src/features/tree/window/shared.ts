@@ -1,6 +1,7 @@
 // What the file tree shares with other features' window code: the order it lists the changed files
 // in, which the diff shows them in; the file on screen, which the diff says as it scrolls and the
-// tree follows; the views that show a file the tree asks for; and the path a file's key names.
+// tree follows; the views that show a file the tree asks for; the path a file's key names; and the
+// file finder, opened on a name.
 
 import { useTabState } from '../../tab/window/shared.ts';
 import type { Changed, TreePath, TreeState } from '../contract.ts';
@@ -127,4 +128,26 @@ export function showFile(view: FileView, tab: string, file: string): boolean {
   if (!show) return false;
   show(tab, file, pathOf(tab, file));
   return true;
+}
+
+/** How the file finder opens with a name typed, once the tree's window feature has said. */
+let finding: ((name: string) => void) | undefined;
+
+/**
+ * Makes `open` how {@link findFile} opens the file finder, as the tree's window feature does when
+ * it starts. Returns a function that takes it back.
+ */
+export function onFindFile(open: (name: string) => void): () => void {
+  finding = open;
+  return () => {
+    if (finding === open) finding = undefined;
+  };
+}
+
+/**
+ * Opens the file finder (`⌘P`) over the pull request's tab on screen with `name` typed, as a
+ * reference to a file that isn't there offers to find a file of its name.
+ */
+export function findFile(name: string): void {
+  finding?.(name);
 }

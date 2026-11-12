@@ -25,11 +25,11 @@ import {
 } from './actions.ts';
 import { Files } from './Files.tsx';
 import { Finder } from './Finder.tsx';
-import { openFinder, openWhole, toggleChangedOnly, wholeReady } from './finding.ts';
+import { findFile, openFinder, openWhole, toggleChangedOnly, wholeReady } from './finding.ts';
 import { main } from './main.ts';
 import { pathOfKey } from './paths.ts';
 import { choices, showState } from './store.ts';
-import { pathOf, showFile } from './shared.ts';
+import { onFindFile, pathOf, showFile } from './shared.ts';
 
 /** Runs `act` on the pull request's tab on screen. */
 function onTab(act: (tab: string) => void): () => void {
@@ -153,5 +153,7 @@ export default {
   ],
   start() {
     main().subscribe('state', showState);
+    // A reference to a file that isn't there offers to find one of its name.
+    onFindFile(findFile);
   },
 } satisfies WindowFeature;
