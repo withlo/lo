@@ -17,6 +17,8 @@ const moved: string[] = [];
 const headers: string[] = [];
 /** How far down the page each file's header is drawn, by its id. */
 const tops = new Map<string, number>();
+/** What a file taking its lines does to the page, as one that grows moves the headers below it. */
+let tookLines: ((id: string) => void) | undefined;
 /** Each diff's name, to say which one the view was given. */
 const names = new WeakMap<FileDiff, string>();
 
@@ -36,8 +38,10 @@ vi.mock('@lo/ui/code', () => ({
     // As a swap that adds a row would.
     keepsShape: () => false,
     keyState: () => ({ mode: 'normal', pending: false, target: { kind: 'none' } }),
-    setLines: (id, lines, diff) =>
-      void told.push(`lines ${id} ${lines.new.join(' ')} ${diff ? (names.get(diff) ?? '') : ''}`),
+    setLines: (id, lines, diff) => {
+      told.push(`lines ${id} ${lines.new.join(' ')} ${diff ? (names.get(diff) ?? '') : ''}`);
+      tookLines?.(id);
+    },
     setDiff: (id, diff) => void told.push(`diff ${id} ${names.get(diff) ?? ''}`),
     setTokens: (id, side) => void told.push(`tokens ${id} ${side}`),
     setCollapsed: (id, collapsed) => void told.push(`collapsed ${id} ${String(collapsed)}`),
@@ -174,6 +178,7 @@ beforeEach(() => {
   moved.length = 0;
   headers.length = 0;
   tops.clear();
+  tookLines = undefined;
   onScreen = ['d0'];
   highlighting = true;
 });
@@ -252,15 +257,14 @@ function marksOf(entries: [string, 'viewed' | 'unviewed' | 'dismissed'][]) {
 
 /**
  * Draws two files from the local copy, `src/a.ts` and `src/b.ts`, both showing their lines, in a
- * box 800 pixels tall, with the stand-in's own record cleared.
+ * box 800 pixels tall, with the stand-in's own record cleared. From GitHub's first, `swapped`, the
+ * local copy's lines come while both are on screen, so the view holds them back.
  */
-async function drawTwo(): Promise<Drawing> {
+async function drawTwo(swapped = false): Promise<Drawing> {
   const loader = new Loader(work);
   loader.setWhitespace(true);
-  loader.take({
-    ...state('shown', 'local'),
-    files: [versions('shown', 'src/a.ts'), versions('shown', 'src/b.ts')],
-  });
+  const files = [versions('shown', 'src/a.ts'), versions('shown', 'src/b.ts')];
+  loader.take({ ...state('shown', swapped ? 'github' : 'local'), files });
   await frames();
   const ready = loader.snapshot().ready;
   if (!ready) throw new Error('the diff isn’t ready');
@@ -284,6 +288,12 @@ async function drawTwo(): Promise<Drawing> {
   });
   drawing = made;
   await frames(2);
+  if (swapped) {
+    onScreen = ['d0', 'd1'];
+    loader.subscribe(() => drawing?.update(loader.snapshot().ready?.entries ?? []));
+    loader.take({ ...state('shown', 'local'), files });
+    await frames();
+  }
   told.length = 0;
   moved.length = 0;
   headers.length = 0;
@@ -317,6 +327,20 @@ describe('viewed files', () => {
     drawnFor(TAB.id)?.viewedHere('d0', true, 'd1');
     expect(told).toEqual(['collapsed d0 true']);
     expect(moved).toEqual(['reveal d1', 'scroll d1 -300']);
+  });
+
+  it('e keeps the next file’s header where the reader saw it, though the file closed takes its held lines', async () => {
+    await drawTwo(true);
+    expect(told).toEqual([]);
+    tops.set('d1', 300);
+    // The local copy's lines of src/a.ts, held back while the reader looked at it, are taller.
+    tookLines = (id) => {
+      if (id === 'd0') tops.set('d1', 328);
+    };
+    drawnFor(TAB.id)?.viewedHere('d0', true, 'd1');
+    expect(told[0]).toBe('lines d0 local shown');
+    expect(told).toContain('collapsed d0 true');
+    expect(moved.slice(-2)).toEqual(['reveal d1', 'scroll d1 -300']);
   });
 
   it('e brings the next file’s header to the top when it isn’t on screen', async () => {
