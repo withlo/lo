@@ -17,12 +17,15 @@ import {
   stepIn,
 } from '@lo/ui/overview';
 
+import { notify } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { showPlace } from '../../diff/window/shared.ts';
+import { HOLD_LIMIT } from '../../revisions/contract.ts';
 import { showMiddle, tabState } from '../../tab/window/shared.ts';
-import { blockId, blockIn, codeOf, onHead, type CodeAt } from './blocks.ts';
+import { blockId, blockIn, codeOf, type CodeAt } from './blocks.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { main } from './main.ts';
+import { placeOnHead, placing } from './since.ts';
 
 /** An overview drawn in a tab while it's on screen, as the keys act on it. */
 export interface DrawnOverview {
@@ -384,12 +387,65 @@ export function follow(overview: DrawnOverview, block: HTMLElement): void {
   goToCode(overview.tab, found.code);
 }
 
+/** What the notes say when code can't be gone to. */
+const GO_TO_CODE = 'Go to code';
+
+/** What the reader does that stops code waiting to be placed: they've moved on. */
+const MOVED = ['keydown', 'pointerdown', 'wheel'] as const;
+
+/** What stops the code each tab waits to go to while Lo works out where it is now. */
+const placings = new Map<string, () => void>();
+
 /**
- * Shows `code`, at the overview's commit, in the tab's diff, or whole where the diff doesn't have
- * it, the place the tab is at recorded first.
+ * Shows `code`, at the overview's commit, where it is at the head on screen: in the tab's diff, at
+ * the line its first line maps to, or whole where the diff doesn't have it, its lines marked; the
+ * place the tab is at recorded first. Until Lo knows how the file changed since the commit, it
+ * waits, for up to `HOLD_LIMIT`, then goes where the lines were; the reader moving on first stops
+ * it. For a file gone from the head on screen, or lines Lo can't place there, a note says why it
+ * can't.
  */
 export function goToCode(tab: string, code: CodeAt): void {
-  const head = onHead(code);
+  placings.get(tab)?.();
+  const working = placing(tab, code.path);
+  if (!working) {
+    goOnHead(tab, code);
+    return;
+  }
+  const stop = () => {
+    clearTimeout(bound);
+    for (const type of MOVED) window.removeEventListener(type, stop, true);
+    if (placings.get(tab) === stop) placings.delete(tab);
+  };
+  const go = () => {
+    if (placings.get(tab) !== stop) return;
+    stop();
+    goOnHead(tab, code);
+  };
+  const bound = setTimeout(go, HOLD_LIMIT);
+  void working.then(go, go);
+  // Not the key or click that asked for the code: the window has heard it already.
+  for (const type of MOVED) window.addEventListener(type, stop, true);
+  placings.set(tab, stop);
+}
+
+/** Shows `code` where it is at the head on screen, as far as Lo knows, or says why it can't. */
+function goOnHead(tab: string, code: CodeAt): void {
+  const { path, lines } = code;
+  const head = placeOnHead(tab, path, lines);
+  if (!head) {
+    notify(
+      GO_TO_CODE,
+      `${path} was deleted after this overview was written. Lo can show code only from the push on screen.`,
+    );
+    return;
+  }
+  if (lines && head.line === undefined) {
+    notify(
+      GO_TO_CODE,
+      `${path} changed after this overview was written. Lo can’t tell where these lines are now.`,
+    );
+    return;
+  }
   showPlace(tab, head.path, head.line, head.lines);
 }
 
@@ -589,6 +645,7 @@ export function keepPlaces(open: ReadonlySet<string>): void {
   for (const tab of registered) if (!open.has(tab)) registered.delete(tab);
   for (const tab of left.keys()) if (!open.has(tab)) left.delete(tab);
   for (const tab of loading.keys()) if (!open.has(tab)) loading.delete(tab);
+  for (const [tab, stop] of placings) if (!open.has(tab)) stop();
 }
 
 /**

@@ -13,6 +13,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useReducer,
   useRef,
   useState,
   useSyncExternalStore,
@@ -25,7 +26,7 @@ import { HOLD_LIMIT } from '../../revisions/contract.ts';
 import { useKnownSetting } from '../../settings/window/shared.ts';
 import { MiddlePlaceholder, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { open } from '../settings.ts';
-import { blockIn, codeOf, onHead, onStep, stepsChanged } from './blocks.ts';
+import { blockIn, codeOf, onStep, stepsChanged } from './blocks.ts';
 import { knownOf, type Known, type Standing } from './facts.ts';
 import {
   besides,
@@ -48,6 +49,7 @@ import {
 import { useStanding } from './hooks.ts';
 import { keyOf } from './labels.ts';
 import { openingOf, openings, type Opening } from './opening.ts';
+import { placeOnHead, placing } from './since.ts';
 import { Shown } from './Shown.tsx';
 import { CantShow, NoOverview, Quiet, ReadFailed } from './States.tsx';
 
@@ -188,7 +190,23 @@ export function OverviewView({ tab, shown }: { tab: PullTab; shown: boolean }) {
     besideId === undefined || generation === undefined ? undefined : blockIn(besideId, generation);
   const besideNode = besideAt === undefined ? undefined : tree?.blocks[besideAt];
   const besideCode = besideNode && codeOf(besideNode);
-  const beside = besideCode && onHead(besideCode);
+  // Its file and line at the head on screen, drawn again once Lo has worked out where they are; a
+  // file gone from it shows as the diff has it, from its top.
+  const besidePath = besideCode?.path;
+  const [, redraw] = useReducer((count: number) => count + 1, 0);
+  useEffect(() => {
+    if (besidePath === undefined) return undefined;
+    let live = true;
+    const done = () => {
+      if (live) redraw();
+    };
+    void placing(tab.id, besidePath)?.then(done, done);
+    return () => {
+      live = false;
+    };
+  }, [tab.id, besidePath]);
+  const besideOnHead = besideCode && placeOnHead(tab.id, besideCode.path, besideCode.lines);
+  const beside = besideCode && (besideOnHead ?? { path: besideCode.path, line: undefined });
 
   // The tab's places in the overview, for `⌃o` and `⌃i`.
   useEffect(() => placesFor(tab.id), [tab.id]);

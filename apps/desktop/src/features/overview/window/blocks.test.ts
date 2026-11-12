@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { parseArtifact, type OverviewBlock, type Walkthrough } from '@lo/artifact';
 
-import { blockId, blockIn, codeOf, onHead, onStep, setStep, stepOf } from './blocks.ts';
+import { blockId, blockIn, codeOf, onStep, setStep, stepOf } from './blocks.ts';
 
 const COMMIT = 'c'.repeat(40);
 
@@ -96,20 +96,5 @@ describe('the code a block points at', () => {
     stop();
     setStep(walk, 0);
     expect(heard).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe('code at the head the diff shows', () => {
-  it('is the overview’s own lines, its first line followed and every line picked out', () => {
-    expect(onHead({ path: 'src/a.ts', lines: { start: 2, end: 4 } })).toEqual({
-      path: 'src/a.ts',
-      line: 2,
-      lines: { from: 2, to: 4 },
-    });
-    expect(onHead({ path: 'src/rest.ts' })).toEqual({
-      path: 'src/rest.ts',
-      line: undefined,
-      lines: undefined,
-    });
   });
 });

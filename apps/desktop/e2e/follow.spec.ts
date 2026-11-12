@@ -3,7 +3,8 @@
 // its blocks, `Tab` and `⇧Tab` round a block's links and parts, and from the overview itself
 // through its outline to the first block, `←` and `→` step a walkthrough or tabs, `⏎` follows a
 // block, a link or a part to its code in the diff, or to the file whole where the diff doesn't have
-// it, and `⌃o` comes back to the block. `o` puts the block's code beside the overview, following
+// it, where its lines are in r2, though the overview was written for r1, and `⌃o` comes back to the
+// block. `o` puts the block's code beside the overview, following
 // the blocks, and `o` or `Esc` takes it away. A block's right-click menu does the same, and gives
 // focus back to what had it. What the reader is at stays where it is through each, or comes on
 // screen where that's off it now.
@@ -335,6 +336,8 @@ test('from the overview itself, Tab goes through the outline to the first block,
     (text) => text.trim().slice(0, 40),
   );
   expect(sections.length).toBeGreaterThan(1);
+  // The banner's actions, by their labels, which their keys' caps follow.
+  const banner = [/^Compare r1 → r2/, /^Copy prompt for an agent/];
   const itself = shown(page).locator('.lo-ov');
 
   // As Esc leaves it, from a block.
@@ -346,7 +349,15 @@ test('from the overview itself, Tab goes through the outline to the first block,
     await press(page, 'Tab');
     expect(await focused(page)).toMatchObject({ block: undefined, text: section });
   }
-  // #80's byline offers nothing, so the first block, which then keeps Tab to itself.
+  // #80's byline offers nothing, so the banner saying it was written for r1, then the first block,
+  // which then keeps Tab to itself.
+  for (const action of banner) {
+    await press(page, 'Tab');
+    expect(await focused(page)).toMatchObject({
+      block: undefined,
+      text: expect.stringMatching(action),
+    });
+  }
   await press(page, 'Tab');
   expect(await focused(page)).toMatchObject({ block: BLOCK.tldr, own: true });
   await press(page, 'Tab');
@@ -354,9 +365,17 @@ test('from the overview itself, Tab goes through the outline to the first block,
   await press(page, 'Tab');
   expect(await focused(page)).toMatchObject({ block: BLOCK.tldr, own: true });
 
-  // ⇧Tab goes back from the overview itself through the outline to its first section.
+  // ⇧Tab goes back from the overview itself through the banner and the outline to its first
+  // section.
   await press(page, 'Escape');
   await expect(itself).toBeFocused();
+  for (const action of banner.toReversed()) {
+    await press(page, 'Shift+Tab');
+    expect(await focused(page)).toMatchObject({
+      block: undefined,
+      text: expect.stringMatching(action),
+    });
+  }
   for (const section of sections.toReversed()) {
     await press(page, 'Shift+Tab');
     expect(await focused(page)).toMatchObject({ block: undefined, text: section });
@@ -522,13 +541,43 @@ test('⏎ follows a block, a part or a link to its code, and ⌃o comes back to 
   // A walkthrough: the step it shows.
   await toBlock(page, BLOCK.walk);
   top = await topOf(page, BLOCK.walk);
-  await press(page, 'ArrowRight', 'Enter');
+  await press(page, 'Enter');
   await expect
     .poll(() => diffCursor(page))
-    .toEqual({ path: 'src/parser.ts', header: false, line: 13, side: 'new' });
+    .toEqual({ path: 'src/parser.ts', header: false, line: 8, side: 'new' });
   await back(page, BLOCK.walk, top);
 
-  // A file the diff doesn't have: whole, the block's lines marked.
+  // A link in prose to a whole file: the file's header. A click follows it as ⏎ does.
+  await toBlock(page, BLOCK.parserLink);
+  top = await topOf(page, BLOCK.parserLink);
+  await block(page, BLOCK.parserLink).getByRole('link', { name: 'The parser' }).click();
+  await expect.poll(() => diffCursor(page)).toMatchObject({ path: 'src/parser.ts', header: true });
+  await back(page, BLOCK.parserLink, top);
+});
+
+test('⏎ goes where the block’s lines are in r2, on an overview written for r1', async ({
+  app,
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await sizeWindow(app, 1200, 900);
+  await open(page);
+  await expect(shown(page).locator('.lo-ov-stale__title')).toHaveText(
+    'Written for r1. The PR is at r2.',
+  );
+
+  // The walkthrough's second step, r1's lines 13 to 15, a line further down in r2: the diff, at
+  // line 14.
+  await toBlock(page, BLOCK.walk);
+  let top = await topOf(page, BLOCK.walk);
+  await press(page, 'ArrowRight', 'Enter');
+  await expect
+    .poll(() => diffCursor(page), { timeout: 20_000 })
+    .toEqual({ path: 'src/parser.ts', header: false, line: 14, side: 'new' });
+  await back(page, BLOCK.walk, top);
+
+  // README.md, which the diff doesn't have, its line 4 replaced by two in r2: whole, r1's lines 1
+  // to 4 marked where they are in r2.
   await toBlock(page, BLOCK.readme);
   top = await topOf(page, BLOCK.readme);
   await press(page, 'Enter');
@@ -540,15 +589,9 @@ test('⏎ follows a block, a part or a link to its code, and ⌃o comes back to 
     '',
     "What Lo's end-to-end tests open: a pull request with a rename, a move, a lockfile, a large file, a",
     'binary and a deletion, pushed twice across a rebase. `testing/fixtures/app.sh` in withlo/lo makes',
+    'every commit of it.',
   ]);
   await back(page, BLOCK.readme, top);
-
-  // A link in prose to a whole file: the file's header. A click follows it as ⏎ does.
-  await toBlock(page, BLOCK.parserLink);
-  top = await topOf(page, BLOCK.parserLink);
-  await block(page, BLOCK.parserLink).getByRole('link', { name: 'The parser' }).click();
-  await expect.poll(() => diffCursor(page)).toMatchObject({ path: 'src/parser.ts', header: true });
-  await back(page, BLOCK.parserLink, top);
 });
 
 test('⌃o puts the block back where it was, cut by the top of the screen', async ({ app, page }) => {

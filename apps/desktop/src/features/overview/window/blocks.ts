@@ -1,7 +1,7 @@
 // An overview's blocks as the keys, menus and history know them: by an id of Lo's own, the
 // overview's tree and the block's place in it, never a path, a part's id or a heading from the
-// overview; what code each block points at, which following goes to and the code beside shows; and
-// where that code is in the head the diff shows. Plain functions, each tested alone.
+// overview; and what code each block points at, which following goes to and the code beside shows.
+// Plain functions, each tested alone.
 
 import type { CodeTarget, Lines, OverviewBlock, Walkthrough } from '@lo/artifact';
 
@@ -135,27 +135,4 @@ function isCode(value: unknown): value is CodeTarget {
     Reflect.get(value, 'kind') === 'code' &&
     typeof Reflect.get(value, 'path') === 'string'
   );
-}
-
-/** Code at the head the diff shows: a file there, and the lines the block's lines are there. */
-export interface CodeOnHead {
-  readonly path: string;
-  /** The first line, which following goes to. */
-  readonly line: number | undefined;
-  /** Every line, which the whole file picks out. */
-  readonly lines: { readonly from: number; readonly to: number } | undefined;
-}
-
-/**
- * Where `code`, at the overview's commit, is at the head the diff shows. The lines are taken as
- * they are, which holds when the overview's commit is that head; mapping lines from an older
- * commit across what changed since, and a file renamed since, goes here.
- */
-export function onHead(code: CodeAt): CodeOnHead {
-  const { path, lines } = code;
-  return {
-    path,
-    line: lines?.start,
-    lines: lines && { from: lines.start, to: lines.end },
-  };
 }

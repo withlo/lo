@@ -6,7 +6,8 @@
 // A newer head on screen replaces what was worked out for the last, and a closed tab's goes.
 //
 // `placeOnHead` says where a place the overview points at is on the head on screen, as far as it's
-// worked out, for whatever goes to it or marks it there.
+// worked out, for whatever goes to it or marks it there; `placing` works it out first, for
+// following.
 
 import type { CodeRange } from '@lo/artifact';
 
@@ -262,6 +263,25 @@ export async function blocksChanged(
 }
 
 /**
+ * The commit tab `tab`'s overview on screen describes, and the head on screen, when it's another:
+ * what there's anything to work out between.
+ */
+function comparedIn(tab: string): { readonly commit: string; readonly head: string } | undefined {
+  const standing = standingOf(states.get(tab), checked.get(tab));
+  const commit = standing.kind === 'shown' ? standing.header.commit : undefined;
+  const head = commit === undefined ? undefined : staleAgainst(commit, pullOf(tab));
+  return commit === undefined || head === undefined ? undefined : { commit, head };
+}
+
+/** How the file at `path` is at the head on screen in tab `tab`, once that's worked out. */
+function knownIn(tab: string, path: string): FileSince | undefined {
+  const compared = comparedIn(tab);
+  const entry = entries.get(tab);
+  const known = entry?.commit === compared?.commit && entry?.head === compared?.head;
+  return compared && known ? entry?.known.get(path) : undefined;
+}
+
+/**
  * Where lines `lines` of the file at `path`, at the commit tab `tab`'s overview on screen
  * describes, are at the head on screen, as far as Lo has worked out: as written while it hasn't,
  * or when the overview describes the head on screen. None for a file that's gone.
@@ -271,12 +291,18 @@ export function placeOnHead(
   path: string,
   lines: { readonly start: number; readonly end: number } | undefined,
 ): OnHead | undefined {
-  const standing = standingOf(states.get(tab), checked.get(tab));
-  const commit = standing.kind === 'shown' ? standing.header.commit : undefined;
-  const head = commit === undefined ? undefined : staleAgainst(commit, pullOf(tab));
-  const entry = entries.get(tab);
-  const known = entry?.commit === commit && entry?.head === head ? entry : undefined;
-  return onHead(head === undefined ? undefined : known?.known.get(path), path, lines);
+  return onHead(knownIn(tab, path), path, lines);
+}
+
+/**
+ * Lo working out how the file at `path`, at the commit tab `tab`'s overview on screen describes,
+ * is at the head on screen, for something about to go there: its read and diff, ahead of the
+ * rest. None once that's known, or when there's nothing to work out.
+ */
+export function placing(tab: string, path: string): Promise<unknown> | undefined {
+  const compared = comparedIn(tab);
+  if (!compared || knownIn(tab, path)) return undefined;
+  return fileSince(tab, compared.commit, compared.head, path, { soon: true });
 }
 
 /** Lets go of what was worked out for the tabs that closed: those not in `open`. */
