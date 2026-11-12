@@ -1,15 +1,18 @@
-// An overview Lo shows: the document, with who wrote it and for which revision above it, and each
-// figure as the check left it. Code blocks and walkthroughs show what they point at until their
-// code is read. Every block is keyed by the parsed tree's own objects, which stay the same for as
+// An overview Lo shows: the document, with who wrote it and for which revision above it, each
+// figure as the check left it, and each code block and walkthrough filled in from the local copy
+// (`Code.tsx`). Every block is keyed by the parsed tree's own objects, which stay the same for as
 // long as the overview's commit is on screen, so nothing is drawn again from scratch under the
 // reader.
 
 import type {
+  CheckedCode,
   CheckedFigure,
+  Excerpt,
   Figure as FigureNode,
   FigureState,
   FigurePart,
   Overview,
+  Walkthrough as WalkthroughNode,
 } from '@lo/artifact';
 import { Button } from '@lo/ui';
 import { Figure, type PartLink } from '@lo/ui/figures';
@@ -19,6 +22,8 @@ import { useCallback, useMemo, type Ref } from 'react';
 
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewFile } from '../contract.ts';
+import { targetsOf } from './targets.ts';
+import { ExcerptBlock, WalkthroughBlock, type CodeContext } from './Code.tsx';
 import { revisionAt, type Standing } from './facts.ts';
 import { useNow } from './hooks.ts';
 import { main } from './main.ts';
@@ -29,6 +34,7 @@ import { revisions, states } from './store.ts';
 type ShownStanding = Extract<Standing, { kind: 'shown' }>;
 
 const NO_FIGURES: readonly CheckedFigure[] = [];
+const NO_CODE: readonly CheckedCode[] = [];
 
 /** What a figure the check didn't read for its block shows as. */
 const UNREAD: FigureState = { state: 'unread', why: 'failed' };
@@ -221,6 +227,7 @@ export function Shown({
   const { parsed, result, commit, header } = standing;
   const { outcome } = result.checked;
   const checked = outcome.kind === 'shown' ? outcome.figures : NO_FIGURES;
+  const code = outcome.kind === 'shown' ? outcome.code : NO_CODE;
   const files = result.figures;
   const index = useMemo(() => figuresIn(parsed.tree), [parsed.tree]);
   const figure = useCallback(
@@ -229,7 +236,28 @@ export function Shown({
     ),
     [index, checked, files],
   );
-  const views = useMemo<OverviewViews>(() => ({ figure }), [figure]);
+  // How each block's code stands, the same object for as long as the check's result is.
+  const context = useMemo<CodeContext>(
+    () => ({
+      tab: tab.id,
+      commit: header.commit,
+      read: result.code,
+      target: targetsOf(code, result.code),
+    }),
+    [tab.id, header.commit, result.code, code],
+  );
+  const excerpt = useCallback(
+    (node: Excerpt) => <ExcerptBlock node={node} context={context} />,
+    [context],
+  );
+  const walkthrough = useCallback(
+    (node: WalkthroughNode) => <WalkthroughBlock node={node} context={context} />,
+    [context],
+  );
+  const views = useMemo<OverviewViews>(
+    () => ({ figure, excerpt, walkthrough }),
+    [figure, excerpt, walkthrough],
+  );
   return (
     <OverviewDocument
       ref={scroller}

@@ -96,6 +96,12 @@ export default defineFeature(contract, {
         codeReply(info.local, () => service.clone(id), commit, files, { signal, log }),
       );
     },
+    texts({ id, commit, path, base }, context) {
+      const service = context.use(tabs);
+      const info = service.pull(id);
+      if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+      return tabOf(id).blocks.read(info.local, () => service.clone(id), commit, path, base);
+    },
     retry({ id }) {
       tabOf(id).retry();
     },

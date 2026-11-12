@@ -47,6 +47,7 @@ import {
   type GlossaryState,
   type Reached,
 } from './terms.ts';
+import { Illustration } from './CodeBlock.tsx';
 import { ExcerptHead, FigureCaption, WalkthroughSteps } from './placeholders.tsx';
 import { Tabs } from './Tabs.tsx';
 import { Term } from './Term.tsx';
@@ -65,7 +66,7 @@ export interface OverviewViews {
   figure?: ((node: Figure) => ReactNode) | undefined;
   /** A `:::walkthrough` block, its steps beside their code. */
   walkthrough?: ((node: Walkthrough) => ReactNode) | undefined;
-  /** A plain fenced block, which is never code from the pull request. */
+  /** A plain fenced block, which is never code from the pull request: an illustration unless given. */
   fence?: ((node: Code) => ReactNode) | undefined;
 }
 
@@ -374,7 +375,8 @@ function overviewExtension(views: OverviewViews | undefined): MarkdownExtension<
       }
     },
     details: (node) => <Fold node={node} kind="More detail" />,
-    code: views?.fence,
+    // A plain fence is never code from the pull request: an illustration, unless given otherwise.
+    code: views?.fence ?? ((node) => <Illustration node={node} />),
   };
 }
 

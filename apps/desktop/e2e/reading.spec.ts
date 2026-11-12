@@ -1,9 +1,10 @@
 // Reading a pull request's overview in the app: Lo, started on the replay server as rozed-bot,
 // opens rozed-dev/e2e#80 on its overview when it shows within the bound, and on the diff when it
 // doesn't, there's none, or Settings says so, offering one that comes later; says why one can't be
-// shown; offers a newer one pushed while it's read; and never moves what's on screen without the
-// reader: not as banners come and go, as it's checked again, as a newer one is offered at any
-// width, or as what's above the line being read changes size. A server in front of the replay
+// shown; offers a newer one pushed while it's read; fills in its code blocks and walkthrough from
+// the local copy; and never moves what's on screen without the reader: not as banners come and go,
+// as it's checked again, as its code fills in, as a newer one is offered at any width, or as what's
+// above the line being read changes size. A server in front of the replay
 // server answers for the overview's ref as each test says: with the overview
 // `testing/fixtures/app.sh` wrote, none, one made here, or a failure.
 
@@ -868,11 +869,179 @@ test('nothing on the first screen moves from the first frame, as its figures fil
   expect(await stillMoved(page)).toEqual([]);
 });
 
+/** The overview's code block on `path`'s `lines`, as its head writes them. */
+const codeBlock = (page: Page, path: string, lines: string) =>
+  overview(page, 'shown')
+    .locator('.lo-codeblock')
+    .filter({ has: page.locator('.lo-codeblock__path', { hasText: path }) })
+    .filter({ has: page.locator('.lo-codeblock__lines', { hasText: lines }) });
+
+/** The text of each of `block`'s lines of code that `kind` picks out. */
+const linesOf = (block: ReturnType<typeof codeBlock>, kind: string) =>
+  block.locator(`.cm-line${kind}`).allTextContents();
+
+test('fills in its code from the local copy, at the commit it describes, as the pull request changed it', async ({
+  app,
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const refused: string[] = [];
+  page.on('console', (message) => {
+    if (/Content Security Policy|Refused to/i.test(message.text())) refused.push(message.text());
+  });
+  await sizeWindow(app, 1100, 800);
+  await watchStill(page);
+  const id = await open(page);
+  await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
+  await overviewTab(page).click();
+  const shown = overview(page, 'shown');
+  await expect(shown).toBeVisible();
+  await expect.poll(() => current(page, id), { timeout: 30_000 }).toMatchObject({ code: 'ready' });
+
+  // Lines the pull request changed, in the file it renamed: a diff from its old name, at the first
+  // push, which the second changed again.
+  const parser = codeBlock(page, 'src/parser.ts', 'L7–10');
+  await expect(parser.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
+  expect(await linesOf(parser, '.lo-line-del')).toEqual([
+    '/** Splits `input` into lines, on `\\n`. */',
+    "  return input.split('\\n').map((text, index) => ({ number: index + 1, text }));",
+  ]);
+  expect(await linesOf(parser, '.lo-line-add')).toEqual([
+    '/** Splits `input` into lines, on `\\n` or `\\r\\n`. */',
+    '  return input.split(/\\r?\\n/).map((text, index) => ({ number: index + 1, text }));',
+  ]);
+  // Drawn on the first screen, it moved nothing: its deleted lines wait under its edge.
+  await page.waitForTimeout(1000);
+  expect(await stillMoved(page)).toEqual([]);
+  await expect(parser.locator('xpath=ancestor::*[contains(@class, "lo-held")][1]')).toHaveClass(
+    /is-cut/,
+  );
+  await shown.getByRole('button', { name: 'Show the whole block' }).first().click();
+  await expect(parser.locator('xpath=ancestor::*[contains(@class, "lo-held")][1]')).not.toHaveClass(
+    /is-cut/,
+  );
+
+  // Lines it changed, and lines it didn't, in a file it changed.
+  const changed = codeBlock(page, 'src/format.ts', 'L1–3');
+  await changed.scrollIntoViewIfNeeded();
+  await expect(changed.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
+  expect(await linesOf(changed, '.lo-line-add')).toContain(
+    "export { wrap } from './text/wrap.ts';",
+  );
+  const same = codeBlock(page, 'src/format.ts', 'L5–8');
+  await expect(same.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
+  expect(await linesOf(same, '')).toEqual([
+    '/** `lines` as text, each after its number. */',
+    'export function format(lines: readonly Line[]): string {',
+    "  return lines.map((line) => `${line.number}: ${line.text}`).join('\\n');",
+    '}',
+  ]);
+  expect(await linesOf(same, '.lo-line-add')).toEqual([]);
+
+  // A file it doesn't touch is plain lines, as the first push had it: the base branch changed it
+  // after, which isn't the pull request's.
+  const readme = codeBlock(page, 'README.md', 'L1–4');
+  await readme.scrollIntoViewIfNeeded();
+  await expect(readme.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
+  expect(await linesOf(readme, '')).toEqual([
+    '# App fixture',
+    '',
+    "What Lo's end-to-end tests open: a pull request with a rename, a move, a lockfile, a large file, a",
+    'binary and a deletion, pushed twice across a rebase.',
+  ]);
+  expect(await linesOf(readme, '.lo-line-del')).toEqual([]);
+
+  // A file that isn't there offers to find one of its name.
+  const cache = codeBlock(page, 'src/cache.ts', 'L1–4');
+  await cache.scrollIntoViewIfNeeded();
+  await expect(cache).toHaveClass(/lo-codeblock--unresolved/);
+  await expect(cache).toContainText('This reference doesn’t resolve.');
+  await cache.getByRole('button', { name: /Find a file named cache\.ts/ }).click();
+  const finder = page.getByRole('dialog', { name: 'Go to a file' });
+  await expect(finder).toBeVisible();
+  await expect(finder.getByRole('combobox', { name: 'Go to a file' })).toHaveValue('cache.ts');
+  await page.keyboard.press('Escape');
+  await expect(finder).toHaveCount(0);
+
+  // A plain fence is an illustration, never code from the pull request.
+  const illustration = shown.locator('.lo-codeblock--illustration');
+  await illustration.scrollIntoViewIfNeeded();
+  await expect(illustration).toContainText('Illustration · not code from this PR');
+  await expect(illustration.locator('pre')).toContainText("format(parse('first\\r\\nsecond'));");
+  await expect(illustration.locator('.cm-gutters')).toHaveCount(0);
+
+  // The walkthrough shows each step's file whole, its lines marked near the top of its box, which
+  // scrolls alone.
+  const walk = shown.locator('.lo-walk');
+  await walk.scrollIntoViewIfNeeded();
+  const view = walk.locator('.lo-walk__view');
+  await expect(view.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
+  const marked = view.locator('.cm-line.lo-line-marked');
+  const scroller = shown.locator('.lo-ov');
+  const scrolled = () => scroller.evaluate((element) => element.scrollTop);
+  /** Whether every marked line is inside the box, and how far the box has scrolled itself. */
+  const showing = () =>
+    view.evaluate((box) => {
+      const { top, bottom } = box.getBoundingClientRect();
+      const lines = [...box.querySelectorAll('.cm-line.lo-line-marked')].map((line) =>
+        line.getBoundingClientRect(),
+      );
+      const inside =
+        lines.length > 0 && lines.every((line) => line.top >= top && line.bottom <= bottom);
+      return { inside, scrolled: box.querySelector('.lo-fileview')?.scrollTop ?? 0 };
+    });
+  await expect(marked).toHaveText([
+    'export function parse(input: string): Line[] {',
+    '  return input.split(/\\r?\\n/).map((text, index) => ({ number: index + 1, text }));',
+    '}',
+  ]);
+  const at = await scrolled();
+  await walk.getByRole('button', { name: 'Next' }).click();
+  await expect(walk.locator('.lo-walk__codehead')).toContainText('L13–15');
+  await expect(marked).toHaveText([
+    'export function filled(input: string): Line[] {',
+    "  return parse(input).filter((line) => line.text.trim() !== '');",
+    '}',
+  ]);
+  await expect.poll(showing).toEqual({ inside: true, scrolled: expect.any(Number) });
+  expect((await showing()).scrolled).toBeGreaterThan(0);
+  await walk.getByRole('button', { name: 'Next' }).click();
+  await expect(walk.locator('.lo-walk__codehead')).toContainText('src/format.ts');
+  await expect(marked).toHaveText([
+    'export function format(lines: readonly Line[]): string {',
+    "  return lines.map((line) => `${line.number}: ${line.text}`).join('\\n');",
+    '}',
+  ]);
+  expect(await scrolled()).toBe(at);
+  expect(refused).toEqual([]);
+});
+
 test.describe('while the local copy comes late', () => {
   test.use({ cassette: 'app_e2e_late', lateRemote: true });
 
-  for (const depth of [0, 0.5]) {
-    test(`nothing on screen moves from the first frame, as figures fill in, the banner goes and the overview is checked again, ${depth * 100}% of the way down`, async ({
+  /**
+   * Where the reader reads: a part of the way down, or just under the first code block, so it fills
+   * in above them.
+   */
+  const places: { name: string; at: (page: Page) => Promise<number> }[] = [
+    { name: 'at the top', at: () => Promise.resolve(0) },
+    { name: 'halfway down', at: () => Promise.resolve(0.5) },
+    {
+      name: 'just under a code block',
+      at: (page) =>
+        overview(page, 'shown')
+          .locator('.lo-ov')
+          .evaluate((scroller) => {
+            const block = scroller.querySelector('.lo-codeblock');
+            const bottom = block?.getBoundingClientRect().bottom ?? 0;
+            const under = bottom - scroller.getBoundingClientRect().top + scroller.scrollTop + 80;
+            return under / (scroller.scrollHeight - scroller.clientHeight);
+          }),
+    },
+  ];
+
+  for (const place of places) {
+    test(`nothing on screen moves from the first frame, as figures and code fill in, the banner goes and the overview is checked again, ${place.name}`, async ({
       app,
       page,
     }) => {
@@ -894,7 +1063,7 @@ test.describe('while the local copy comes late', () => {
       const fold = shown.locator('details').first();
       await fold.locator('summary').click();
       await expect(fold).toHaveAttribute('open', '');
-      await wheelTo(page, depth);
+      await wheelTo(page, await place.at(page));
       await page.evaluate(() => {
         const summary = document.querySelector<HTMLElement>('[data-lo-overview="shown"] summary');
         summary?.setAttribute('data-focused', String(document.activeElement === summary));
@@ -908,6 +1077,20 @@ test.describe('while the local copy comes late', () => {
       await expect
         .poll(() => current(page, id), { timeout: 30_000 })
         .toMatchObject({ code: 'ready' });
+      // The code blocks near the screen fill in: the first, on the first screen, or above it.
+      const drawn = shown.locator('[data-lo-code="drawn"]');
+      await expect(drawn.first()).toBeAttached({ timeout: 20_000 });
+      const first = codeBlock(page, 'src/parser.ts', 'L7–10');
+      if (place.name !== 'halfway down') {
+        await expect(first.locator('[data-lo-code="drawn"]')).toBeAttached();
+      }
+      if (place.name === 'just under a code block') {
+        const [block, screen] = await Promise.all([
+          first.boundingBox(),
+          shown.locator('.lo-ov').boundingBox(),
+        ]);
+        expect((block?.y ?? 0) + (block?.height ?? 0)).toBeLessThan(screen?.y ?? 0);
+      }
       await page.waitForTimeout(2500);
 
       expect(await stillMoved(page)).toEqual([]);

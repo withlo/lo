@@ -317,3 +317,62 @@
 .lo-ov-name__text {
   font-weight: 400;
 }
+
+/*
+ * A code block's code: as tall as its lines from the start, whatever it holds until they come, so
+ * the code coming moves nothing. What it says in their place fills the same room.
+ */
+.lo-codeblock__body {
+  display: flex;
+  flex-direction: column;
+}
+.lo-codeblock__body:has(> .lo-codeblock__msg) {
+  padding: 0;
+}
+.lo-codeblock__body > .lo-codeblock__msg {
+  flex: 1 0 auto;
+}
+.lo-codeblock--illustration .lo-codeblock__head strong {
+  color: var(--lo-fg);
+  font-weight: 600;
+}
+
+/*
+ * A block that keeps its height while it's on screen: contents grown taller are cut off, over a
+ * button that shows them whole. The cut leaves the frame's 1 px ring.
+ */
+.lo-held {
+  position: relative;
+}
+.lo-held.is-cut {
+  overflow: clip;
+  overflow-clip-margin: 1px;
+}
+.lo-held__more {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  justify-content: center;
+  padding: 24px 0 8px;
+  background: linear-gradient(transparent, var(--lo-code-bg) 60%);
+}
+
+/* A walkthrough's code: the same height whatever it holds, the code scrolling in its own box. */
+.lo-walk__code {
+  display: flex;
+  flex-direction: column;
+}
+.lo-walk__view {
+  position: relative;
+  height: 280px;
+  overflow: hidden;
+}
+.lo-walk__view > .lo-codeblock__msg {
+  height: 100%;
+}
+.lo-walk__step {
+  cursor: pointer;
+}
+.lo-walk__step[aria-current='step'] {
+  cursor: default;
+}

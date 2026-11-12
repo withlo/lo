@@ -73,3 +73,97 @@ export function holdPlace(scroller: HTMLElement): () => void {
     setSlack(0);
   };
 }
+
+// What keeps a block of an overview where it is while the reader can see it. A block whose contents
+// change size by themselves, as a code block's do when its code comes, keeps the height it has
+// while any of it is on screen: contents grown taller are cut off there, and shrunk ones leave room
+// under them. It takes its contents' height once it's off screen, where the scroll's anchoring
+// keeps what's on screen where it is, or when the reader asks, or when its width changes, which
+// only the reader's window or page does.
+
+/** A block's height, held: `release` gives it its contents' height now, as the reader asked. */
+export interface HeldHeight {
+  release(): void;
+  stop(): void;
+}
+
+/**
+ * Holds `box`'s height while it's on screen in `scroller`, as its contents, `inner`, change size,
+ * and says through `cut` whether contents taller than it are cut off. With no `scroller`, the
+ * screen is the window's.
+ */
+export function holdHeight(
+  box: HTMLElement,
+  inner: HTMLElement,
+  scroller: HTMLElement | null,
+  cut: (cut: boolean) => void,
+): HeldHeight {
+  const natural = () => inner.getBoundingClientRect().height;
+  let held = natural();
+  let width = box.getBoundingClientRect().width;
+  let isCut = false;
+
+  const setCut = (now: boolean) => {
+    if (now === isCut) return;
+    isCut = now;
+    cut(now);
+  };
+  const hold = (height: number) => {
+    held = height;
+    box.style.height = `${height}px`;
+    setCut(false);
+  };
+  hold(held);
+
+  /** Whether any of the box is on screen. */
+  const onScreen = () => {
+    const { top, bottom } = box.getBoundingClientRect();
+    const screen = scroller?.getBoundingClientRect();
+    const from = screen?.top ?? 0;
+    const to = screen ? screen.top + (scroller?.clientHeight ?? 0) : window.innerHeight;
+    return bottom > from && top < to;
+  };
+
+  /** Takes the contents' height, unless the box is on screen and nobody asked. */
+  const settle = (asked: boolean) => {
+    const now = natural();
+    if (Math.abs(now - held) < 0.5) {
+      setCut(false);
+      return;
+    }
+    if (asked || !onScreen()) hold(now);
+    else setCut(now > held);
+  };
+
+  const contents = new ResizeObserver(() => settle(false));
+  contents.observe(inner);
+  // The box's width changes only with the window, or the page around it, which the reader changed.
+  const sized = new ResizeObserver(() => {
+    const now = box.getBoundingClientRect().width;
+    if (Math.abs(now - width) < 0.5) return;
+    width = now;
+    settle(true);
+  });
+  sized.observe(box);
+  // Off screen, it takes the height it's held from.
+  const seen =
+    typeof IntersectionObserver === 'undefined'
+      ? undefined
+      : new IntersectionObserver(
+          (entries) => {
+            if (entries.some((entry) => !entry.isIntersecting)) settle(false);
+          },
+          { root: scroller },
+        );
+  seen?.observe(box);
+
+  return {
+    release: () => settle(true),
+    stop() {
+      contents.disconnect();
+      sized.disconnect();
+      seen?.disconnect();
+      box.style.height = '';
+    },
+  };
+}
