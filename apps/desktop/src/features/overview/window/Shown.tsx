@@ -133,7 +133,7 @@ function ShownFigure({
 /**
  * Who wrote the overview and when, which revision it describes, and a newer one, when pushed: one
  * line, whatever its width, so nothing under it moves as the offer comes. Who wrote it gives up
- * its room first, clipped.
+ * its room first, clipped, then the offer's words; the way to load it never does.
  */
 function Byline({
   tab,
@@ -177,8 +177,8 @@ function Byline({
 /** "A newer overview was pushed · Load it": the newer one goes on screen only when asked. */
 export function NewerOffer({ tab }: { tab: string }) {
   return (
-    <span className="lo-ov-byline__end items-center" role="status">
-      A newer overview was pushed
+    <span className="lo-ov-byline__end lo-ov-offer items-center" role="status">
+      <span className="lo-ov-offer__text">A newer overview was pushed</span>
       <span aria-hidden="true">·</span>
       <Button
         size="sm"

@@ -216,8 +216,8 @@
 
 /*
  * The byline is one line, as tall as the offer of a newer overview, at any width, so nothing under
- * it moves as the offer comes: who wrote it gives up its room first, clipped, and the line is
- * clipped past the article's edge, with room for a focus ring.
+ * it moves as the offer comes: who wrote it gives up its room first, clipped, then the offer's
+ * words, and the line is clipped past the article's edge, with room for a focus ring.
  */
 .lo-ov .lo-ov-byline {
   flex-wrap: nowrap;
@@ -230,10 +230,24 @@
   flex: none;
 }
 .lo-ov .lo-ov-byline > .lo-ov-byline__who {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lo-ov .lo-ov-byline > .lo-ov-offer {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.lo-ov-offer > * {
+  flex: none;
+}
+.lo-ov-offer > .lo-ov-offer__text {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lo-ov-byline .lo-ov-byline__figure {
   width: 20px;
