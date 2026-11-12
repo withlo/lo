@@ -174,6 +174,36 @@ test('a foreground read given up on while waiting leaves the queue', async () =>
   expect(log.map(([name]) => name)).toEqual(['poll a', 'poll c']);
 });
 
+test('a foreground read no longer waited on as one waits behind the background reads', async () => {
+  const queue = new RequestQueue(0);
+  const log: Log = [];
+  const start = performance.now();
+  void queue.read(request('poll a', 100, log, start));
+  await settle();
+  // Two tabs opening, the first hidden while it waits.
+  let shown = true;
+  const giveUp = new AbortController();
+  const hidden = queue
+    .read(request('hidden b', 100, log, start), giveUp.signal, () =>
+      shown ? 'foreground' : 'background',
+    )
+    .then(
+      () => 'made',
+      () => 'refused',
+    );
+  void queue.read(request('open c', 100, log, start), undefined, () => 'foreground');
+  void queue.read(request('poll d', 300, log, start));
+  shown = false;
+  // The tab still on screen goes first, then the poll that was waiting.
+  await advanceTo(start, 250);
+  expect(log.map(([name]) => name)).toEqual(['poll a', 'open c']);
+  // Given up on where it waits now, it's never made.
+  giveUp.abort();
+  await advanceTo(start, 900);
+  expect(await hidden).toBe('refused');
+  expect(log.map(([name]) => name)).toEqual(['poll a', 'open c', 'poll d']);
+});
+
 test('a request given up on while waiting doesnt hold up the rest', async () => {
   const queue = new RequestQueue(0);
   const log: Log = [];

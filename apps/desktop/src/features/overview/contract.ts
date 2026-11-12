@@ -12,6 +12,14 @@ import { helpLink, oid, tabId } from '../tab/contract.ts';
 /** A moment, in milliseconds since the Unix epoch. */
 const time = z.number().int().nonnegative();
 
+/**
+ * How many of the figures an overview's text names first come with the text as its tab opens:
+ * main reads them in the turn that reads the text, and the window draws each as it comes, before
+ * it asks for the rest, so a first screen's figures are in its first frame. A figure is drawn up to
+ * 960 px tall, so a first screen rarely shows more.
+ */
+export const FIRST_FIGURES = 2;
+
 /** What a path in the overview's commit is. A link is a symbolic link. */
 export const entryKind = z.enum(['file', 'link', 'folder', 'submodule']);
 export type EntryKind = z.output<typeof entryKind>;

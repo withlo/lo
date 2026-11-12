@@ -2,7 +2,7 @@
 // API as the tab's account and sent to the window each time it changes, with its files on request.
 // What's read is kept in the database, which clearing the cache empties.
 
-import type { GithubClient, ReadPriority } from '@lo/github';
+import type { GithubClient, ReadPriorityNow } from '@lo/github';
 import { app } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -70,7 +70,7 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
         async github<T>(
           acting: Acting,
           request: (client: GithubClient) => Promise<T>,
-          priority?: ReadPriority,
+          priority?: ReadPriorityNow,
         ) {
           if (acting.kind === 'anonymous') return request(access.anonymous);
           const client = await access.client(acting.login);

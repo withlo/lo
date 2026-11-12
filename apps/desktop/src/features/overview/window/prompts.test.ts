@@ -90,6 +90,7 @@ async function checked(text: string): Promise<{ state: OverviewState; result: Ch
       parsed,
       checked: result,
       figures: new Map(),
+      coming: [],
       code: { kind: 'none' },
     },
   };

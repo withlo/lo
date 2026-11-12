@@ -5,9 +5,13 @@
 
 import type { RequestGate } from '../client.ts';
 
-/** A request waiting for its turn: starting it, or leaving the queue when it's given up on. */
+/**
+ * A request waiting for its turn: starting it, or leaving the queue when it's given up on; and, for
+ * a foreground read, its priority as it stands now.
+ */
 interface Waiter {
   start: (release: () => void) => void;
+  priority?: (() => ReadPriority) | undefined;
 }
 
 /**
@@ -17,11 +21,18 @@ interface Waiter {
 export type ReadPriority = 'foreground' | 'background';
 
 /**
+ * A read's priority: fixed, or as it stands whenever its turn could come, for a read that stops
+ * being waited on as the screen changes.
+ */
+export type ReadPriorityNow = ReadPriority | (() => ReadPriority);
+
+/**
  * Runs an account's requests one at a time, spacing its writes. Waiting requests take their turns
  * first in, first out, except that a waiting write goes before every waiting read, and a waiting
  * foreground read before every waiting background read: a comment or a merge the user is waiting
- * on doesn't queue behind polls, and nor does what a tab needs to open on. A request already under
- * way always finishes first.
+ * on doesn't queue behind polls, and nor does what a tab needs to open on. A foreground read no
+ * longer waited on as one, as its tab was hidden, waits behind the background reads waiting then.
+ * A request already under way always finishes first.
  */
 export class RequestQueue {
   readonly #spacing: number;
@@ -50,23 +61,28 @@ export class RequestQueue {
    * request given up on through `signal` while it waits leaves the queue, and the wait rejects with
    * the signal's reason.
    */
-  #turn(kind: 'write' | ReadPriority, signal?: AbortSignal): Promise<() => void> {
+  #turn(kind: 'write' | ReadPriorityNow, signal?: AbortSignal): Promise<() => void> {
     if (signal?.aborted) return Promise.reject(abandoned(signal));
     if (!this.#busy) {
       this.#busy = true;
       return Promise.resolve(this.#release());
     }
     return new Promise((resolve, reject) => {
-      const waiting = this.#waiting(kind);
+      const priority = typeof kind === 'function' ? kind : undefined;
+      const waiting = this.#waiting(typeof kind === 'function' ? kind() : kind);
       const waiter: Waiter = {
         start: (release) => {
           signal?.removeEventListener('abort', abandon);
           resolve(release);
         },
+        priority,
       };
       const abandon = () => {
-        const at = waiting.indexOf(waiter);
-        if (at >= 0) waiting.splice(at, 1);
+        // Where it waits: where it started, or with the background reads.
+        for (const list of [waiting, this.#reads]) {
+          const at = list.indexOf(waiter);
+          if (at >= 0) list.splice(at, 1);
+        }
         reject(abandoned(signal));
       };
       signal?.addEventListener('abort', abandon, { once: true });
@@ -95,21 +111,34 @@ export class RequestQueue {
     return () => {
       if (released) return;
       released = true;
-      const next = this.#writes.shift() ?? this.#foreground.shift() ?? this.#reads.shift();
+      const next = this.#writes.shift() ?? this.#nextForeground() ?? this.#reads.shift();
       if (next) next.start(this.#release());
       else this.#busy = false;
     };
   }
 
   /**
+   * The first foreground read waiting that's still one; those that aren't go to wait behind the
+   * background reads waiting.
+   */
+  #nextForeground(): Waiter | undefined {
+    let next = this.#foreground.shift();
+    while (next?.priority?.() === 'background') {
+      this.#reads.push(next);
+      next = this.#foreground.shift();
+    }
+    return next;
+  }
+
+  /**
    * Makes and runs a read once it's the read's turn, which comes before waiting background reads
-   * when it's a `foreground` one. `request` is called only then, so a request that starts work when
+   * while it's a `foreground` one. `request` is called only then, so a request that starts work when
    * it's made still waits its turn. One given up on through `signal` while it waits is never made.
    */
   async read<T>(
     request: () => Promise<T>,
     signal?: AbortSignal,
-    priority: ReadPriority = 'background',
+    priority: ReadPriorityNow = 'background',
   ): Promise<T> {
     const release = await this.#turn(priority, signal);
     try {

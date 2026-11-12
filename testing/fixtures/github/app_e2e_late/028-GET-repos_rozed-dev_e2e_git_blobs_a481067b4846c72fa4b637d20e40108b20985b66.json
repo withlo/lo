@@ -10,10 +10,10 @@
       "etag": "W/\"c90a1ab64b70b5008e3b0217661073a5ae0ea541f027d74e0f3766e5de43942e\"",
       "x-github-api-version-selected": "2022-11-28",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4868",
-      "x-ratelimit-reset": "1794521664",
+      "x-ratelimit-remaining": "4942",
+      "x-ratelimit-reset": "1794525986",
       "x-ratelimit-resource": "core",
-      "x-ratelimit-used": "132"
+      "x-ratelimit-used": "58"
     },
     "body_text": "---\nformat: 1\npr: 80\ncommit: 45e4f22d09ea29631f43d3f8c1e05b7fb4001099\n---\n\n## tl;dr\n\nThe parser moves to src/parser.ts and splits on `\\r\\n` as well as `\\n`, so a file saved on Windows\nreads as the same [lines](term:line). `wrap` moves into a module of its own, and src/legacy.ts goes.\n\n## How it works\n\n[The parser](code:src/parser.ts) now splits on either line ending:\n\n:::code src/parser.ts#L7-L10\n:::\n\nThe formatter takes its `Line` from the new path, and passes `wrap` on from where it lives now:\n\n:::code src/format.ts#L1-L3\n:::\n\nHow a [line](term:line) is written out hasn't changed:\n\n:::code src/format.ts#L5-L8\n:::\n\n:::figure figures/flow.svg\nInput goes through parse, then format. Wrap sits in its own module, which format passes on.\n\n- [parse](code:src/parser.ts#L8-L10)\n- [format](code:src/format.ts#L6-L8)\n- [wrap](code:src/text/wrap.ts#L2-L15)\n- [lines](term:line)\n:::\n\n:::walkthrough From input to text\n:::step src/parser.ts#L8-L10\n`parse` splits the input on `\\n` or `\\r\\n` and numbers each [line](term:line) from 1.\n:::\n:::step src/parser.ts#L13-L15\n`filled` keeps the lines that aren't blank.\n:::\n:::step src/format.ts#L6-L8\n`format` writes each line after its number.\n:::\n:::\n\nFor example:\n\n```ts\nformat(parse('first\\r\\nsecond'));\n// '1: first\\n2: second'\n```\n\n## Where to look\n\n:::tabs\n:::tab Before\n`wrap` sat in src/format.ts, beside `format`.\n:::\n:::tab After\n`wrap` has src/text/wrap.ts to itself, and src/format.ts passes it on.\n:::\n:::\n\nThe README, which this pull request doesn't touch, says what the fixture is for:\n\n:::code README.md#L1-L4\n:::\n\nThe cache this pull request was meant to add never landed:\n\n:::code src/cache.ts#L1-L4\n:::\n\n:::fold Why src/legacy.ts goes\nNothing imports `render` any more. Everything that did now calls `format`, as [above](#how-it-works)\nshows.\n:::\n\n## How it was checked\n\nSplitting `first\\r\\nsecond` gives two lines, with no `\\r` left on the first.\n\n## Glossary\n\n- **Line**: one line of input, with its number from 1 and its text, without its line ending.\n"
   }

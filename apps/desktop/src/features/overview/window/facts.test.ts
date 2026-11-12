@@ -61,6 +61,7 @@ function resultOf(commit: OverviewCommit, checked: CheckedArtifact): CheckedOver
     parsed,
     checked,
     figures: new Map(),
+    coming: [],
     code: { kind: 'none' },
   };
 }

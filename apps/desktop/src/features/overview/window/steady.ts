@@ -36,6 +36,7 @@ export function steady(
     parsed: same(previous.parsed, next.parsed),
     checked: steadyCheck(previous.checked, next.checked),
     figures: same(previous.figures, next.figures),
+    coming: same(previous.coming, next.coming),
     code: same(previous.code, next.code),
   };
   const unchanged =
@@ -44,6 +45,7 @@ export function steady(
     previous.parsed === kept.parsed &&
     previous.checked === kept.checked &&
     previous.figures === kept.figures &&
+    previous.coming === kept.coming &&
     previous.code === kept.code;
   return unchanged ? previous : kept;
 }

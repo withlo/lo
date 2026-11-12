@@ -92,6 +92,14 @@ function commitOf(entries: OverviewCommit['entries'], read: boolean): OverviewCo
  * from `file`, as main gives them, and its code from the local copy. With what it published first,
  * from the text alone while the rest was to come, if it did.
  */
+/**
+ * Whether `value` is the whole check, the last a check publishes: none of its figures coming, and
+ * its code read, as the local copy is there; or one that failed.
+ */
+function isWhole(value: CheckedOverview | undefined): boolean {
+  return value?.kind !== 'checked' || (value.coming.length === 0 && value.code.kind !== 'waiting');
+}
+
 async function checkInApp(
   commit: OverviewCommit,
   pr: number,
@@ -112,8 +120,7 @@ async function checkInApp(
       check: (input) => localJobs.check(input),
       publish: (value) => {
         published.push(value);
-        // The whole check has the figures main answered.
-        if (value?.kind !== 'checked' || value.figures !== undefined) resolve(value);
+        if (isWhole(value)) resolve(value);
       },
       log: () => {},
     });
@@ -403,7 +410,7 @@ describe('an overview whose figures’ headers go on past their starts', () => {
           return localJobs.check(input);
         },
         publish: (value) => {
-          if (value?.kind !== 'checked' || value.figures !== undefined) resolve(value);
+          if (isWhole(value)) resolve(value);
         },
         log: () => {},
       });
@@ -421,16 +428,18 @@ describe('an overview whose figures’ headers go on past their starts', () => {
     });
     if (shown?.kind !== 'checked') throw new Error('The overview wasn’t checked');
     expect(shown.checked).toEqual(reference);
-    // The text alone, then each figure's start, then all of the one whose header goes on past it.
+    // The text alone; the first figures as they come, each its start, then all of the one whose
+    // header goes on past it; then with the rest, sent all of the one it has all of already.
+    const far = figures.get('figures/far.jpg')?.length;
     expect(sent.map(sizes)).toEqual([
       [],
-      [FIGURE_HEAD, FIGURE_HEAD, FIGURE_HEAD],
-      [FIGURE_HEAD, figures.get('figures/far.jpg')?.length, FIGURE_HEAD],
+      [FIGURE_HEAD],
+      [FIGURE_HEAD, FIGURE_HEAD],
+      [FIGURE_HEAD, far],
+      [FIGURE_HEAD, far, FIGURE_HEAD],
     ]);
     // What's kept is what's drawn: all of each figure kept, and the start of the rest.
-    expect(
-      [...(shown.figures ?? [])].map(([path, file]) => [path, sizes([{ path, file }])[0]]),
-    ).toEqual([
+    expect([...shown.figures].map(([path, file]) => [path, sizes([{ path, file }])[0]])).toEqual([
       ['figures/near.jpg', figures.get('figures/near.jpg')?.length],
       ['figures/far.jpg', figures.get('figures/far.jpg')?.length],
       ['figures/wrong.png', FIGURE_HEAD],

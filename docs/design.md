@@ -193,7 +193,8 @@ and the whole-file view.
   GitHub's REST API, with or without git: it watches the ref with ETags, then reads the tree of the
   commit it holds, by the commit's ID, the artifact's files by their IDs, and the commit, for who
   wrote it, and keeps them so an overview shows at once, offline too. As a tab opens, these reads go
-  ahead of polls. The code an overview shows comes from the local copy.
+  ahead of polls, in one turn of the account's queue: the ref, the tree, the text, the first figures
+  it names and the commit. The code an overview shows comes from the local copy.
 - **Sign-in.** Git signs in with the account's token, and your git config is never touched.
 - **Checkouts.** Trusted repos get a checkout at the PR head for language servers. The old side is
   read straight from git.

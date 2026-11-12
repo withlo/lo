@@ -384,6 +384,7 @@ describe('placeOnHead', () => {
       parsed,
       checked,
       figures: new Map(),
+      coming: [],
       code: { kind: 'none' },
     };
   }

@@ -90,7 +90,7 @@ describe('a result checked again', () => {
     await settled(results, 2);
     const [text, first] = results;
     if (text?.kind !== 'checked' || first?.kind !== 'checked') throw new Error('not checked');
-    expect(text.figures).toBeUndefined();
+    expect(text.coming).toEqual(['figures/flow.svg']);
     expect(first.parsed).toBe(text.parsed);
     // Git turns out to be missing: the check runs again, and finds the same.
     checks.take(stateOf('noGit'));

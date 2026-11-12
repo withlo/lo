@@ -195,6 +195,7 @@ async function shown(commit: string): Promise<number> {
     parsed,
     checked,
     figures: new Map(),
+    coming: [],
     code: { kind: 'none' },
   };
   for (const listener of fake.listeners) listener();

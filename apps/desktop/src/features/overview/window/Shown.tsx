@@ -130,27 +130,27 @@ function partLabel(target: FigurePart['target']): string {
 }
 
 /**
- * One figure, as its check left it, with an image's bytes as main read them, or none yet while
- * they're coming (`files`). Near the screen as the overview is first laid out, one still coming
- * holds the first frame back, within the bound; then it fills in as it comes, held where it would
- * move what's on screen.
+ * One figure, as its check left it, with an image's bytes as main read them (`file`), or none yet
+ * while it's `coming`. Near the screen as the overview is first laid out, one still coming holds
+ * the first frame back, within the bound; then it fills in as it comes, held where it would move
+ * what's on screen.
  */
 function ShownFigure({
   node,
   at,
   checked,
-  files,
+  file,
+  coming,
 }: {
   node: FigureNode;
   at: number | undefined;
   checked: readonly CheckedFigure[];
-  files: ReadonlyMap<string, OverviewFile> | undefined;
+  file: OverviewFile | undefined;
+  coming: boolean;
 }) {
   const found = at === undefined ? undefined : checked[at];
   // A figure the check didn't read for this block is left out, as one it couldn't read.
   const figure = found?.reference.path === node.path ? found.figure : UNREAD;
-  const coming = files === undefined;
-  const file = files?.get(node.path);
   const box = useRef<HTMLDivElement>(null);
   const nearness = useNearness(box);
   const first = useFirstDraw();
@@ -314,13 +314,19 @@ export function Shown({
   const { outcome } = result.checked;
   const checked = outcome.kind === 'shown' ? outcome.figures : NO_FIGURES;
   const code = outcome.kind === 'shown' ? outcome.code : NO_CODE;
-  const files = result.figures;
+  const { figures: files, coming: figuresComing } = result;
   const index = useMemo(() => figuresIn(parsed.tree), [parsed.tree]);
   const figure = useCallback(
     (node: FigureNode) => (
-      <ShownFigure node={node} at={index.get(node)} checked={checked} files={files} />
+      <ShownFigure
+        node={node}
+        at={index.get(node)}
+        checked={checked}
+        file={files.get(node.path)}
+        coming={figuresComing.includes(node.path)}
+      />
     ),
-    [index, checked, files],
+    [index, checked, files, figuresComing],
   );
   // The head on screen, when the overview was written for another commit.
   const head = staleAgainst(header.commit, usePull(tab.id));

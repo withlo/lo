@@ -445,6 +445,7 @@ describe('an overview that can’t be shown', () => {
         parsed: undefined,
         checked: { outcome: { kind: 'newer', format: 3 }, findings: [] },
         figures: new Map(),
+        coming: [],
         code: { kind: 'none' },
       });
     });

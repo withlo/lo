@@ -498,6 +498,7 @@ describe('the banner', () => {
         parsed,
         checked,
         figures: new Map(),
+        coming: [],
         code: { kind: 'none' },
       },
     );

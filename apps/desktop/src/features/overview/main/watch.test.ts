@@ -74,6 +74,16 @@ async function settle(): Promise<void> {
 const signedIn = (fetch: typeof globalThis.fetch) =>
   new GithubClient({ fetch, token: new Token('gho_FAKE') });
 
+/** An SVG `size` units square. */
+function svg(size: number): string {
+  return `<svg viewBox="0 0 ${size} ${size}"/>`;
+}
+
+/** A figure block that shows `path`. */
+function named(path: string): string {
+  return `:::figure ${path}\nA figure.\n:::\n`;
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
   vi.setSystemTime(new Date('2026-11-12T00:00:00Z'));
@@ -129,31 +139,33 @@ describe('watching', () => {
     });
     const urls = () =>
       fetch.seen.map(({ url }) => url.replace('https://api.github.com/repos/', ''));
-    // The tree by the commit's ID, then the text: no read of the commit comes before it.
+    // The tree by the commit's ID, then the text: no read of the commit comes before it. Then the
+    // figure the text names first, for the window's first frame, and the commit, for the byline.
     expect(urls()).toEqual([
       'rozed-dev/e2e/git/matching-refs/lo/pr/80',
       `rozed-dev/e2e/git/trees/${E2E.commit}?recursive=1`,
       `rozed-dev/e2e/git/blobs/${E2E.artifact}`,
+      `rozed-dev/e2e/git/blobs/${E2E.figure}`,
       `rozed-dev/e2e/commits/${E2E.commit}`,
     ]);
     expect(fetch.seen[2]?.headers.get('accept')).toBe('application/vnd.github.raw+json');
+    expect(fetch.seen[3]?.headers.get('accept')).toBe('application/vnd.github.raw+json');
 
     // GitHub asked for 5 minutes between reads: then the ref is asked about with its ETag, and
     // GitHub says nothing changed.
     await vi.advanceTimersByTimeAsync(5 * 60_000 - 1);
-    expect(urls()).toHaveLength(4);
+    expect(urls()).toHaveLength(5);
     await vi.advanceTimersByTimeAsync(1);
     await settle();
-    expect(urls()).toHaveLength(5);
+    expect(urls()).toHaveLength(6);
     expect(fetch.seen.at(-1)?.headers.get('if-none-match')).toMatch(/^W\/"/);
     expect(last()?.found).toBe('commit');
 
-    // The figure comes once asked for; artifact.md is kept.
+    // The window's ask for the text and the figure costs nothing: both are kept.
     const files = await tab.files(E2E.commit, ['artifact.md', 'figures/flow.svg']);
     expect(files.map((file) => (file.kind === 'file' ? file.size : file.kind))).toEqual([
       2016, 1389,
     ]);
-    expect(urls().at(-1)).toBe(`rozed-dev/e2e/git/blobs/${E2E.figure}`);
     expect(urls()).toHaveLength(6);
     tab.close();
   });
@@ -307,9 +319,10 @@ describe('watching', () => {
   it('reads what a tab opening waits for in one turn, ahead of background reads; its polls behind them', async () => {
     const github = new FakeGithub();
     const made = overview('order', {
-      'artifact.md': artifactText(5),
+      'artifact.md': artifactText(5, '## tl;dr\n\n:::figure figures/a.svg\nA figure.\n:::\n'),
       'figures/a.svg': '<svg viewBox="0 0 1 1"/>',
       'figures/b.svg': '<svg viewBox="0 0 2 2"/>',
+      'figures/c.svg': '<svg viewBox="0 0 3 3"/>',
     });
     github.push('rozed-dev/e2e', 5, made);
     // The account's queue, and each turn in it: its priority and what it asked GitHub.
@@ -328,7 +341,8 @@ describe('watching', () => {
               } finally {
                 const asked = github.paths().slice(before);
                 const kinds = asked.map((path) => path.replace(/^[^/]+\/[^/]+\/(git\/)?/, ''));
-                turns.push(`${priority} ${kinds.map((kind) => kind.split('/')[0]).join(' ')}`);
+                const now = typeof priority === 'function' ? priority() : priority;
+                turns.push(`${now} ${kinds.map((kind) => kind.split('/')[0]).join(' ')}`);
               }
             },
             undefined,
@@ -359,14 +373,19 @@ describe('watching', () => {
     expect(turns).toEqual([]);
     first();
     await settle();
-    // The poll under way finishes first; then the ref, the listing by the commit, the text and
-    // the byline in one turn, before the poll that waited.
-    expect(turns).toEqual(['poll a', 'foreground matching-refs trees blobs commits', 'poll b']);
+    // The poll under way finishes first; then the ref, the listing by the commit, the text, the
+    // figure it names first and the byline in one turn, before the poll that waited.
+    expect(turns).toEqual([
+      'poll a',
+      'foreground matching-refs trees blobs blobs commits',
+      'poll b',
+    ]);
+    expect(github.paths()[3]).toBe(`rozed-dev/e2e/git/blobs/${idOf('<svg viewBox="0 0 1 1"/>')}`);
 
     // The figures the window asks for on screen go ahead of polls waiting too.
     const third = poll('poll c');
     poll('poll d')();
-    const figure = tab.files(made.commit, ['figures/a.svg']);
+    const figure = tab.files(made.commit, ['figures/b.svg']);
     await settle();
     third();
     await figure;
@@ -378,8 +397,115 @@ describe('watching', () => {
     await settle();
     expect(turns.at(-1)).toBe('background matching-refs');
     tab.update(info(), false, true);
-    await tab.files(made.commit, ['figures/b.svg']);
+    await tab.files(made.commit, ['figures/c.svg']);
     expect(turns.at(-1)).toBe('background blobs');
+
+    // Shown while a poll holds the queue, hidden, and shown again: the read it waits for goes
+    // ahead of the polls waiting, and so does the read after it, which the poll first in line
+    // goes before, as it takes the queue between the two.
+    const fifth = poll('poll e');
+    tab.update(info(), true, true);
+    await settle();
+    tab.update(info(), false, true);
+    tab.update(info(), true, true);
+    poll('poll f')();
+    poll('poll g')();
+    fifth();
+    await settle();
+    expect(turns.slice(-5)).toEqual([
+      'poll e',
+      'foreground matching-refs',
+      'poll f',
+      'foreground matching-refs',
+      'poll g',
+    ]);
+    tab.close();
+  });
+
+  it('reads the first figures its text names with it, and a figure failing there fails nothing', async () => {
+    const made = overview('first', {
+      'artifact.md': artifactText(
+        5,
+        ['## tl;dr\n', named('figures/c.svg'), named('figures/a.svg'), named('figures/b.svg')].join(
+          '\n',
+        ),
+      ),
+      'figures/a.svg': svg(1),
+      'figures/b.svg': svg(2),
+      'figures/c.svg': svg(3),
+    });
+    const github = new FakeGithub();
+    github.push('rozed-dev/e2e', 5, made);
+    const failing = `rozed-dev/e2e/git/blobs/${idOf(svg(3))}`;
+    github.answer.set(failing, () => Response.json({ message: 'Server Error' }, { status: 500 }));
+    const { tab, last, lines } = tabWith(github.client);
+    tab.update(info(), true, true);
+    await settle();
+    // The first two it names, in its order, before the byline; the third waits for the window.
+    expect(github.paths().slice(3)).toEqual([
+      failing,
+      `rozed-dev/e2e/git/blobs/${idOf(svg(1))}`,
+      `rozed-dev/e2e/commits/${made.commit}`,
+    ]);
+    expect(last()).toMatchObject({ overview: { id: made.commit }, problem: null });
+    expect(lines.some((line) => line.includes('figures/c.svg'))).toBe(true);
+
+    // The window asks for the one that failed again, and for the one not read yet.
+    github.answer.delete(failing);
+    const files = await tab.files(made.commit, ['figures/c.svg', 'figures/a.svg', 'figures/b.svg']);
+    expect(files.map((file) => file.kind)).toEqual(['file', 'file', 'file']);
+    expect(github.paths().slice(6)).toEqual([failing, `rozed-dev/e2e/git/blobs/${idOf(svg(2))}`]);
+    tab.close();
+  });
+
+  it('never waits, in the turn it holds, on a fetch queued behind that turn', async () => {
+    // What was kept of the overview is on screen, but not its text, which the store let go of; a
+    // newer push changed only its figure, so it has the same text.
+    const text = artifactText(5);
+    const kept = overview('kept', {
+      'artifact.md': text,
+      'figures/a.svg': '<svg viewBox="0 0 1 1"/>',
+    });
+    const newer = overview('newer', {
+      'artifact.md': text,
+      'figures/a.svg': '<svg viewBox="0 0 2 2"/>',
+    });
+    const shown = (await fetched(kept)).last()?.overview;
+    if (!shown) throw new Error('The kept overview was never read.');
+    const github = new FakeGithub();
+    github.push('rozed-dev/e2e', 5, newer);
+    const db = database();
+    new SavedRefs(db).set({ repository: 'rozed-dev/e2e', number: 5 }, shown);
+    const queue = new RequestQueue(0);
+    const tab = new OverviewTab({
+      id: 't1',
+      reads: {
+        github: (_acting, request, priority) =>
+          queue.read(() => request(github.client), undefined, priority),
+        blobs: new Blobs(db),
+        saved: new SavedRefs(db),
+      },
+      publish: () => {},
+      log: () => {},
+    });
+
+    // A poll holds the queue as the tab is shown, which queues the ref's read; then the window
+    // asks for the kept overview's text, which queues its fetch behind that read.
+    let letGo!: () => void;
+    const held = new Promise<void>((resolve) => (letGo = resolve));
+    void queue.read(() => held);
+    tab.update(info(), true, true);
+    const read = tab.files(shown.id, ['artifact.md']);
+    await settle();
+    letGo();
+    await settle();
+    // The ref's turn fetched the newer push's text itself, and the fetch behind it found it kept.
+    expect(tab.state().newer?.id).toBe(newer.commit);
+    await expect(read).resolves.toMatchObject([{ kind: 'file', size: text.length }]);
+    const blob = `rozed-dev/e2e/git/blobs/${idOf(text)}`;
+    expect(github.paths().filter((path) => path === blob)).toHaveLength(1);
+    // The account's queue goes on.
+    await expect(queue.read(async () => 'next')).resolves.toBe('next');
     tab.close();
   });
 
@@ -574,7 +700,7 @@ describe('failing', () => {
     tab.close();
   });
 
-  it('shows and keeps an overview whose byline failed to come, and reads only the byline again', async () => {
+  it('shows and keeps an overview whose byline failed to come, and reads it again with the ref, failing nothing', async () => {
     const db = database();
     const github = new FakeGithub();
     const made = overview('byline', { 'artifact.md': artifactText(5) });
@@ -586,16 +712,20 @@ describe('failing', () => {
     const { tab, last, saved } = tabWith(github.client, db);
     tab.update(info(), true, true);
     await settle();
+    // The ref was read: nothing failed but the byline, which shows nothing wrong.
     expect(last()).toMatchObject({
       overview: { id: made.commit, byline: null },
-      problem: { kind: 'failed' },
+      problem: null,
     });
     // Kept as it is, so it shows at once the next time too.
     expect(saved.get({ repository: 'rozed-dev/e2e', number: 5 })).toMatchObject({ byline: null });
 
+    // Nothing is read sooner than the next read of the ref, which reads the byline again.
     github.answer.delete(commitPath);
     const before = github.asked.length;
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY - 1);
+    expect(github.asked).toHaveLength(before);
+    await vi.advanceTimersByTimeAsync(1);
     await settle();
     expect(last()).toMatchObject({
       overview: { id: made.commit, byline: { login: 'rozed-bot' } },

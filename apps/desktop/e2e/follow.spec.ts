@@ -565,6 +565,11 @@ test('⏎ goes where the block’s lines are in r2, on an overview written for r
   await expect(shown(page).locator('.lo-ov-stale__title')).toHaveText(
     'Written for r1. The PR is at r2.',
   );
+  // Once Lo knows what changed since r1, which it fetches into the local copy first: the overview
+  // shows from its text alone, and a ⏎ before then waits only up to the bound to place its lines.
+  await expect(shown(page).locator('.lo-ov-stale__sub')).toContainText('touching', {
+    timeout: 20_000,
+  });
 
   // The walkthrough's second step, r1's lines 13 to 15, a line further down in r2: the diff, at
   // line 14.

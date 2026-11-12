@@ -2,8 +2,10 @@
 // shows, `artifact.md` is read in the background process, main is asked for the figures and the
 // code it names, and the overview is checked there against what main read. What the text alone
 // says is checked and published first, since whether the overview shows depends on nothing else
-// and the tab's opening waits for it: until main answers for its figures they're coming, and until
-// it reads the code, the code waits. Until the local copy is there, it's checked with no code, so
+// and the tab's opening waits for it: until main answers for a figure it's coming, and until it
+// reads the code, the code waits. Then each of the first figures, which main reads with the text
+// as a tab opens and its first frame may draw, is checked and published as it comes, before the
+// rest are asked for. Until the local copy is there, it's checked with no code, so
 // each target is unread, and again once it is; without git, its code stays unread. Code once read
 // stays read: a later read that reads less, or none, leaves it. What's published changes only when
 // the check's result could: a result with the same key as the one before is the same, and isn't
@@ -16,13 +18,14 @@
 
 import type { CheckedArtifact, ParsedArtifact } from '@lo/artifact';
 
-import type {
-  CodeAccess,
-  CodeAnswer,
-  CodeReply,
-  OverviewCommit,
-  OverviewFile,
-  OverviewState,
+import {
+  FIRST_FIGURES,
+  type CodeAccess,
+  type CodeAnswer,
+  type CodeReply,
+  type OverviewCommit,
+  type OverviewFile,
+  type OverviewState,
 } from '../contract.ts';
 import { FIGURE_HEAD, SVG_BYTES, type CheckInput, type CodeFile, type Parsed } from '../jobs.ts';
 
@@ -59,8 +62,8 @@ export type CodeRead =
  * - `checked`: what checking found. A shown overview's code follows `parsed.references`, and its
  *   figures `parsed.figures`, one for one;
  * - `figures`: what main read of each figure, by its path: all of one the check kept, to draw it,
- *   and of the rest what the check read; or none yet, while they're coming, which leaves each
- *   unread;
+ *   and of the rest what the check read;
+ * - `coming`: the figures main hasn't answered for yet, by their paths, each unread until it comes;
  * - `code`: what main read of the code.
  *
  * Or `failed`: it couldn't be read or checked just now, and why. It's tried again when main next
@@ -73,7 +76,8 @@ export type CheckedOverview =
       commit: OverviewCommit;
       parsed: ParsedArtifact | undefined;
       checked: CheckedArtifact;
-      figures: ReadonlyMap<string, OverviewFile> | undefined;
+      figures: ReadonlyMap<string, OverviewFile>;
+      coming: readonly string[];
       code: CodeRead;
     }
   | { kind: 'failed'; key: string; commit: OverviewCommit; why: string };
@@ -261,7 +265,7 @@ export class Checking {
     let checked = await this.#parts.check(input(), signal);
     if (signal.aborted) return;
     // An image whose header goes on past its start: checked again with all of it.
-    if (!read.settled && this.#sendMore(read, checked)) {
+    if (!read.settled && this.#sendMore(read.figures, checked)) {
       checked = await this.#parts.check(input(), signal);
       if (signal.aborted) return;
     }
@@ -276,6 +280,7 @@ export class Checking {
       parsed: read.parse?.parsed,
       checked,
       figures: new Map(read.figures.map(({ path, file }) => [path, file])),
+      coming: [],
       code: fresh.code,
     });
   }
@@ -284,7 +289,7 @@ export class Checking {
    * Sends the check all of each figure it was sent the start of and left unread, and says whether
    * there's any: the check reads all of an image whose header goes on past its start.
    */
-  #sendMore(read: Read, checked: CheckedArtifact): boolean {
+  #sendMore(figures: Read['figures'], checked: CheckedArtifact): boolean {
     if (checked.outcome.kind !== 'shown') return false;
     const unread = new Set(
       checked.outcome.figures
@@ -292,7 +297,7 @@ export class Checking {
         .map(({ reference }) => reference.path),
     );
     let more = false;
-    for (const figure of read.figures) {
+    for (const figure of figures) {
       if (!unread.has(figure.path) || figure.sent === figure.file) continue;
       figure.sent = figure.file;
       more = true;
@@ -360,7 +365,50 @@ export class Checking {
       commit,
       parsed: text.parse?.parsed,
       checked,
-      figures: undefined,
+      figures: new Map(),
+      coming: text.parse?.figures ?? [],
+      code,
+    });
+  }
+
+  /**
+   * Checks and publishes `text` with `figures`, the first of those it shows, as main answered them
+   * so far: the rest coming, and the code as the text alone left it.
+   */
+  async #checkFirst(
+    commit: OverviewCommit,
+    text: Text,
+    figures: Read['figures'],
+    signal: AbortSignal,
+  ): Promise<void> {
+    const paths = text.parse?.figures ?? [];
+    const code = this.#code ?? this.#codeBefore(text.parse);
+    const key = keyOf(commit, `first:${figures.map(({ file }) => shape(file)).join()}`, code);
+    if (key === this.#published) return;
+    const input = (): CheckInput => ({
+      artifact: text.artifact,
+      entries: commit.entries,
+      pr: this.#pr,
+      figures: figures.map(({ path, sent }) => ({ path, file: sent })),
+      code: null,
+    });
+    let checked = await this.#parts.check(input(), signal);
+    if (signal.aborted) return;
+    if (this.#sendMore(figures, checked)) {
+      checked = await this.#parts.check(input(), signal);
+      if (signal.aborted) return;
+    }
+    this.#published = key;
+    this.#told = true;
+    this.#code = code;
+    this.#parts.publish({
+      kind: 'checked',
+      key,
+      commit,
+      parsed: text.parse?.parsed,
+      checked,
+      figures: new Map(figures.map(({ path, file }) => [path, file])),
+      coming: paths.slice(figures.length),
       code,
     });
   }
@@ -385,24 +433,33 @@ export class Checking {
     }
   }
 
-  /** The figures `text` shows, as main has them, with `text`. */
+  /**
+   * The figures `text` shows, as main has them, with `text`: the first few one at a time, each
+   * checked and published as it comes while more are to come, since main reads them with the text
+   * and a first frame may draw them; then the rest, together.
+   */
   async #readFigures(commit: OverviewCommit, text: Text, signal: AbortSignal): Promise<Read> {
     const { artifact, parse } = text;
     if (signal.aborted || !parse || parse.figures.length === 0) {
       return { artifact, parse, figures: [], key: '', settled: true };
     }
-    const answers = await this.#parts.files({
-      id: this.#id,
-      commit: commit.id,
-      paths: parse.figures,
-    });
-    const figures = parse.figures.map((path, index) => {
-      const file = answers[index] ?? {
-        kind: 'unread' as const,
-        why: 'Main gave no answer for it.',
-      };
-      return { path, file, sent: firstSent(path, file) };
-    });
+    const paths = parse.figures;
+    const figures: Read['figures'] = [];
+    const ask = async (asked: string[]) => {
+      const answers = await this.#parts.files({ id: this.#id, commit: commit.id, paths: asked });
+      for (const [index, path] of asked.entries()) {
+        const file = answers[index] ?? { kind: 'unread', why: 'Main gave no answer for it.' };
+        figures.push({ path, file, sent: firstSent(path, file) });
+      }
+    };
+    for (const path of paths.slice(0, FIRST_FIGURES)) {
+      await ask([path]);
+      // With none to come, the whole check comes next.
+      if (signal.aborted || figures.length === paths.length) break;
+      await this.#checkFirst(commit, text, figures, signal);
+      if (signal.aborted) break;
+    }
+    if (!signal.aborted && figures.length < paths.length) await ask(paths.slice(figures.length));
     const key = figures.map(({ file }) => shape(file)).join();
     return { artifact, parse, figures, key, settled: false };
   }

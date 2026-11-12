@@ -66,10 +66,10 @@ export async function readsText(entries: readonly Entry[], truncated: boolean): 
 }
 
 /**
- * Reads overview commit `sha` from `repository`, which is `source`, with `github`, as `acting`: its
- * listing, by the commit's ID, and `artifact.md` into `blobs`, unless the listing says not to read
- * it. Its byline is `null`, for {@link readByline} to read next. Throws what GitHub answered, or
- * {@link Unexpected}.
+ * Reads overview commit `sha` from `repository`, which is `source`, with `github`, in a turn held
+ * in the account's queue, as `acting`: its listing, by the commit's ID, and `artifact.md` into
+ * `blobs`, unless the listing says not to read it. Its byline is `null`, for {@link readByline} to
+ * read next. Throws what GitHub answered, or {@link Unexpected}.
  */
 export async function readOverview(
   github: Github,
@@ -90,7 +90,7 @@ export async function readOverview(
     const text = entryAt(entries, 'artifact.md');
     if (text?.kind !== 'file' || text.size === null)
       throw new Unexpected('No artifact.md to read.');
-    await fetchBlob(github, acting, blobs, repository, text.id);
+    await fetchBlob(github, acting, blobs, repository, text.id, true);
   }
   return {
     id: sha,
@@ -141,6 +141,10 @@ function askerOf(acting: Acting): string {
  * check's are, cost one request, in that account's turn. One as another account fetches it itself,
  * so what GitHub tells one account, such as that it's signed out or past its rate limit, is never
  * said of another. Throws {@link Unexpected} for bytes that don't hash to `id`.
+ *
+ * `held` says `github` runs in a turn the caller already holds. That never waits on a fetch under
+ * way, which may be waiting in the queue behind that very turn, so it fetches the file itself; the
+ * fetch that waited finds it kept when its turn comes, and asks GitHub nothing.
  */
 export async function fetchBlob(
   github: Github,
@@ -148,6 +152,7 @@ export async function fetchBlob(
   blobs: Blobs,
   repository: RepoRef,
   id: string,
+  held = false,
 ): Promise<Uint8Array> {
   const kept = blobs.get(id);
   if (kept) return kept;
@@ -158,24 +163,34 @@ export async function fetchBlob(
   }
   const key = `${askerOf(acting)} ${repository.key} ${id}`;
   const joined = under.get(key);
-  if (joined) return joined;
-  const started = fetchNew(github, blobs, repository, id).finally(() => under.delete(key));
+  if (joined && !held) return joined;
+  const started: Promise<Uint8Array> = fetchNew(github, blobs, repository, id).finally(() => {
+    if (under.get(key) === started) under.delete(key);
+  });
   under.set(key, started);
   return started;
 }
 
-/** The file `id` names, fetched raw from `repository`, and kept once it hashes to `id`. */
+/**
+ * The file `id` names, fetched raw from `repository`, and kept once it hashes to `id`; or, when it
+ * was kept while this waited for its turn, as it was kept.
+ */
 async function fetchNew(
   github: Github,
   blobs: Blobs,
   repository: RepoRef,
   id: string,
 ): Promise<Uint8Array> {
-  const bytes = await github((client) => blobBytes(client, repository, id));
-  if (!blobs.put(id, bytes)) {
+  const answer = await github(async (client) => {
+    const kept = blobs.get(id);
+    if (kept) return { kept: true, bytes: kept };
+    return { kept: false, bytes: await blobBytes(client, repository, id) };
+  });
+  if (answer.kept) return answer.bytes;
+  if (!blobs.put(id, answer.bytes)) {
     throw new Unexpected(`GitHub sent a file of the overview that isn't the one its ID names.`);
   }
-  return bytes;
+  return answer.bytes;
 }
 
 /** The start of `text`, at most `limit` UTF-16 units of it, never splitting a character. */

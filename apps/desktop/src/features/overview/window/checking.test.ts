@@ -151,7 +151,8 @@ describe('Checking', () => {
       throw new Error('not shown');
     }
     // Its figures are coming, and its code waits.
-    expect(first.figures).toBeUndefined();
+    expect(first.coming).toEqual(['figures/a.svg']);
+    expect(first.figures.size).toBe(0);
     expect(first.code).toEqual({ kind: 'waiting' });
     expect(first.checked.outcome.figures.map(({ figure }) => figure.state)).toEqual(['unread']);
     expect(firstCode(first)).toMatchObject({ state: 'unread' });
@@ -163,9 +164,79 @@ describe('Checking', () => {
       throw new Error('not shown');
     }
     expect(whole.parsed).toBe(first.parsed);
-    expect(whole.figures?.get('figures/a.svg')).toMatchObject({ kind: 'file' });
+    expect(whole.coming).toEqual([]);
+    expect(whole.figures.get('figures/a.svg')).toMatchObject({ kind: 'file' });
     expect(whole.checked.outcome.figures.map(({ figure }) => figure.state)).toEqual(['kept']);
     expect(firstCode(whole)).toEqual({ state: 'resolved' });
+  });
+
+  it('publishes each of the first figures as it comes, before asking for the rest', async () => {
+    const names = ['figures/a.svg', 'figures/b.svg', 'figures/c.svg'];
+    const text = encoder.encode(
+      `---\nformat: 1\npr: 7\ncommit: ${HEAD}\n---\n\n## tl;dr\n\nIt reads.\n\n${names
+        .map((path) => `:::figure ${path}\nA figure.\n:::\n`)
+        .join('\n')}`,
+    );
+    const svg = encoder.encode('<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg"/>');
+    // Each ask for figures waits until let go.
+    const asked: string[][] = [];
+    const waiting: (() => void)[] = [];
+    const published: (CheckedOverview | undefined)[] = [];
+    const checking = new Checking('t1', {
+      files: async ({ paths }) => {
+        if (paths[0] !== 'artifact.md') {
+          asked.push(paths);
+          await new Promise<void>((resolve) => waiting.push(resolve));
+        }
+        return paths.map((path) => {
+          const bytes = path === 'artifact.md' ? text : svg;
+          return { kind: 'file' as const, size: bytes.length, bytes };
+        });
+      },
+      code: async () => READ,
+      parse: (input) => localJobs.parse(input),
+      check: (input) => localJobs.check(input),
+      publish: (value) => published.push(value),
+      log: () => {},
+    });
+    const commit = {
+      ...commitOf(),
+      entries: [
+        { path: 'artifact.md', kind: 'file' as const, size: text.length, id: 'b'.repeat(40) },
+        { path: 'figures', kind: 'folder' as const, size: null, id: 'd'.repeat(40) },
+        ...names.map((path, index) => ({
+          path,
+          kind: 'file' as const,
+          size: svg.length,
+          id: String(index + 1).repeat(40),
+        })),
+      ],
+    };
+    checking.take(stateOf(commit, 'waiting'));
+    const coming = () =>
+      published.map((value) => (value?.kind === 'checked' ? value.coming.length : undefined));
+    const states = (at: number) => {
+      const value = published[at];
+      if (value?.kind !== 'checked' || value.checked.outcome.kind !== 'shown') return undefined;
+      return value.checked.outcome.figures.map(({ figure }) => figure.state);
+    };
+
+    // The text alone, with every figure coming; then the first, by itself.
+    await vi.waitFor(() => expect(asked).toEqual([['figures/a.svg']]));
+    expect(coming()).toEqual([3]);
+    waiting.shift()?.();
+    await vi.waitFor(() => expect(asked).toHaveLength(2));
+    expect(asked[1]).toEqual(['figures/b.svg']);
+    expect(coming()).toEqual([3, 2]);
+    expect(states(1)).toEqual(['kept', 'unread', 'unread']);
+    // The second, then the rest together, and the whole check.
+    waiting.shift()?.();
+    await vi.waitFor(() => expect(asked).toHaveLength(3));
+    expect(asked[2]).toEqual(['figures/c.svg']);
+    expect(coming()).toEqual([3, 2, 1]);
+    waiting.shift()?.();
+    await vi.waitFor(() => expect(coming()).toEqual([3, 2, 1, 0]));
+    expect(states(3)).toEqual(['kept', 'kept', 'kept']);
   });
 
   it('publishes nothing new when nothing changed', async () => {

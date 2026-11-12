@@ -65,6 +65,18 @@ describe('the ref', () => {
     expect(await watchOverviewRef(client, E2E, 9, nine.etag)).toEqual({ notModified: true });
   });
 
+  test("of a pull request that doesn't exist holds none; of a repository that doesn't, isn't found", async () => {
+    // A tab reads its overview's ref as it opens, before it knows whether its pull request exists.
+    const client = signedIn(replayFetch('rest_overview_refs_missing_e2e'));
+    const none = await watchOverviewRef(client, E2E, 9999, undefined);
+    expect(none).toMatchObject({ notModified: false, value: { kind: 'none' } });
+    if (none.notModified || none.etag === undefined) throw new Error('no ETag for an empty list');
+    expect(await watchOverviewRef(client, E2E, 9999, none.etag)).toEqual({ notModified: true });
+    await expect(
+      watchOverviewRef(client, new RepoRef('rozed-dev', 'gone'), 1, undefined),
+    ).rejects.toMatchObject({ detail: { kind: 'notFound' } });
+  });
+
   test('that holds a tag, a tree or a blob holds no overview', () => {
     const sha = 'a'.repeat(40);
     for (const type of ['tag', 'tree', 'blob']) {

@@ -3,7 +3,7 @@ import { expect, test, vi } from 'vitest';
 
 import { overview } from '../test/support.ts';
 import { Findings } from './findings.ts';
-import { LIMITS, parseArtifact } from './index.ts';
+import { LIMITS, namedFigures, parseArtifact } from './index.ts';
 import { Reading } from './reading.ts';
 import type { Read } from './targets.ts';
 import type { CodeRange, CodeTarget } from './tree.ts';
@@ -46,4 +46,28 @@ test('the tree holds no more of code and terms than the limit on targets lets th
   expect(claimed).toBe(Math.floor((LIMITS.targets * LIMITS.argument) / 1_000));
   // An address the reading didn't keep is never claimed.
   expect(reading.claim('code:b.ts')).toBeUndefined();
+});
+
+/** A figure block of `path`, fenced with `colons`. */
+function figure(path: string, colons = ':::'): string {
+  return `${colons}figure ${path}\nA figure.\n${colons}\n`;
+}
+
+test('names the figures first as the parse finds them, without parsing, at most as many as asked', () => {
+  const text = overview(
+    [
+      figure('figures/flow.svg'),
+      figure('<figures/a shot.png>'),
+      figure('figures/flow.svg'),
+      figure('flow.svg'),
+      `  ${figure('figures/last.webp', '::::')}`,
+    ].join('\n'),
+  );
+  // Each once, in the order first named; a path that isn't a figure's is none.
+  const parsed = [...new Set(parseArtifact(text).figures.map(({ path }) => path))];
+  expect(parsed).toEqual(['figures/flow.svg', 'figures/a shot.png', 'figures/last.webp']);
+  expect(namedFigures(text, 10)).toEqual(parsed);
+  expect(namedFigures(text, 2)).toEqual(parsed.slice(0, 2));
+  expect(namedFigures(text.replaceAll('\n', '\r\n'), 10)).toEqual(parsed);
+  expect(namedFigures(text, 0)).toEqual([]);
 });
