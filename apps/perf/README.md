@@ -106,11 +106,11 @@ opens it with `LO_PERF_PULL` naming the file, so nothing is fetched, and presses
 cursor stays on screen, `Tab` and `Ctrl-o` cross and come back, a comment box keeps its keys and
 stays level as it grows, a held key dies on blur, and `y w` still reaches Vim. One more PR has a
 line that wraps taller than the screen, a file only one side has and spacers taller than the screen:
-held `PageDown` goes to the end and `PageUp` to the top, on each side, never moving what's on screen
-back or more than a screen at a press, and every line one side alone has passes through the screen.
-Another shows a file as GitHub's diff leaves it, unchanged lines between hunks left out, then fills
-it in place as the local copy would (`gaps` and `copyAfterMs` in the file): the cursor and the
-scroll stay put. CI runs them on Linux.
+held `PageDown` and `Ctrl-d` go to the end and `PageUp` and `Ctrl-u` to the top, on each side, never
+moving what's on screen back or more than a screen at a press, and every line passes through the
+screen. Another shows a file as GitHub's diff leaves it, unchanged lines between hunks left out,
+then fills it in place as the local copy would (`gaps` and `copyAfterMs` in the file): the cursor
+and the scroll stay put. CI runs them on Linux.
 
 ## The bench
 
