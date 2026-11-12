@@ -112,6 +112,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Previous block            | `[ b`                             | In `overview`                                                                          | `overview.previousBlock` |
 | Go to code                | `⏎`                               | In `overview`                                                                          | `overview.follow`        |
 | Open or close code beside | `o`                               | In `overview`                                                                          | `overview.beside`        |
+| Close code beside         | `Esc`                             | In `overview`                                                                          | `overview.closeBeside`   |
 | Next link or part         | `Tab`                             | In `overview`                                                                          | `overview.nextLink`      |
 | Previous link or part     | `⇧Tab`                            | In `overview`                                                                          | `overview.previousLink`  |
 | Next step or tab          | `→`                               | In `overview`                                                                          | `overview.nextStep`      |
