@@ -11,8 +11,6 @@
  * - `refs/lo/pull/<n>/branch-bases/<hash>`: the tip of each branch pull request `n` was fetched
  *   against, as last fetched, by the SHA-256 of the branch's name, so any branch name fits in one
  *   ref and none is another's folder.
- * - `refs/lo/pull/<n>/overview` and `…/overview-fork`: its overview, from the base repository or
- *   from the fork its head is in.
  * - `refs/lo/commits/<oid>`: commits fetched by ID.
  */
 

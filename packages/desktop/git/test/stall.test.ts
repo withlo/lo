@@ -27,7 +27,7 @@ import type { Git } from '../src/git.ts';
 import { DEFAULT_FETCH_LIMITS, type FetchLimits } from '../src/limits.ts';
 import { type Oid, parseOid } from '../src/oid.ts';
 import type { Activity } from '../src/progress.ts';
-import { OVERVIEW_LIMIT, type Overview, type PullRequestRefs, type Repo } from '../src/repo.ts';
+import type { PullRequestRefs, Repo } from '../src/repo.ts';
 import { Token } from '../src/token.ts';
 import {
   cacheFor,
@@ -741,19 +741,6 @@ function packOf(gitDir: string, contents: readonly Buffer[]): { blobs: string[];
   return { blobs, pack };
 }
 
-/** An overview, at `commit`, of the files `blobs`. */
-function overviewOf(commit: string, blobs: readonly string[]): Overview {
-  return {
-    commit: parseOid(commit),
-    source: 'base',
-    files: blobs.map((blob, index) => ({
-      path: Buffer.from(`figure-${index}.bin`),
-      oid: parseOid(blob),
-      mode: '100644',
-    })),
-  };
-}
-
 const MIB = 1 << 20;
 
 /** Limits under which a fetch that stops getting further fails in seconds, not minutes. */
@@ -855,58 +842,4 @@ test('a large file that stops coming in stops at the stall limit', async () => {
   expect(receiving.length).toBeGreaterThan(0);
   expect(await noProcessSoon(`127.0.0.1:${server.port}`)).toEqual([]);
   expect(readdirSync(join(repo.folder, 'objects', 'pack'))).toEqual([]);
-});
-
-test('an overview that brings more than 50 MB is stopped part way', async () => {
-  // As above: GitHub sends 70 MB of 72, then nothing more.
-  const github = join(tempFolder(), 'github.git');
-  const { first: main, last: head } = history(github, 1);
-  const { blobs, pack } = packOf(
-    github,
-    Array.from({ length: OVERVIEW_LIMIT / MIB + 22 }, () => randomBytes(MIB)),
-  );
-  const server = await started(
-    FakeGitHub.start(main, head, {
-      kind: 'pack',
-      pack,
-      pieces: Math.ceil(pack.length / MIB),
-      every: 50,
-      stopAfter: OVERVIEW_LIMIT / MIB + 20,
-    }),
-  );
-  const cache = await cacheFor(server.url, { git: await plainGit(), limits: SHORT_STALL });
-  const repo = await cache.open('owner', 'repo');
-
-  const error = await failure(repo.downloadOverview(1, overviewOf(head, blobs)));
-
-  expect(error.detail).toMatchObject({
-    kind: 'fetch',
-    what: "pull request #1's overview",
-    failure: 'tooLarge',
-  });
-  expect(error.message).toBe(
-    "can't fetch pull request #1's overview: it's more than 50 MB, so Lo stopped downloading it",
-  );
-  expect(await noProcessSoon(`127.0.0.1:${server.port}`)).toEqual([]);
-  expect(readdirSync(join(repo.folder, 'lo-overviews.git', 'objects', 'pack'))).toEqual([]);
-});
-
-test('an overview of more than 50 MB that comes smaller is refused once it has come', async () => {
-  const github = join(tempFolder(), 'github.git');
-  const { first: main, last: head } = history(github, 1);
-  // Zeros, which compress to almost nothing: what comes in is far under the cap.
-  const { blobs, pack } = packOf(github, [Buffer.alloc(OVERVIEW_LIMIT + 1)]);
-  const server = await started(
-    FakeGitHub.start(main, head, { kind: 'pack', pack, pieces: 1, every: 0 }),
-  );
-  const repo = await (await cacheFor(server.url, { git: await plainGit() })).open('owner', 'repo');
-
-  const error = await failure(repo.downloadOverview(1, overviewOf(head, blobs)));
-
-  expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'tooLarge' });
-  expect(error.message).toBe(
-    "can't fetch pull request #1's overview: it's more than 50 MB, so Lo stopped downloading it",
-  );
-  // The file it refused doesn't stay on disk.
-  expect(readdirSync(join(repo.folder, 'lo-overviews.git', 'objects', 'pack'))).toEqual([]);
 });
