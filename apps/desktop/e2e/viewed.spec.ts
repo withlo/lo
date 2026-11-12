@@ -12,7 +12,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { cassette, Replay, type SeenRequest } from '@lo/testing';
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import { _electron as electron, type Page } from '@playwright/test';
+import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 
 import { appEnvironment, appFolder, dataFolder, expect, KEYCHAIN, test as base } from './app.ts';
 
@@ -54,6 +54,8 @@ class ViewedGithub extends Replay {
   readonly writes: string[] = [];
   /** How the next write is answered: `take` from then on. */
   next: Answer = 'take';
+  /** Until when the pull request's details are held back, in milliseconds since the epoch. */
+  holdDetailsUntil = 0;
 
   constructor() {
     super(
@@ -114,8 +116,10 @@ class ViewedGithub extends Replay {
   /** The recorded details, with the marks as they are now. */
   #withMarks(recorded: Response): Response {
     const marks = this.marks;
+    const until = this.holdDetailsUntil;
     const body = new ReadableStream<Uint8Array>({
       async start(controller) {
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, until - Date.now())));
         const read: unknown = JSON.parse(await recorded.text());
         const nodes = dig(read, 'data', 'repository', 'pullRequest', 'files', 'nodes');
         for (const node of Array.isArray(nodes) ? nodes : []) {
@@ -492,30 +496,9 @@ test('a viewed file a later push changed opens to what changed since it was view
   tokenFile,
 }) => {
   test.setTimeout(90_000);
-  // A first run makes the database; the reader marked src/parser.ts viewed at the first push, and
-  // GitHub says the second changed it since.
-  await app.close();
-  const database = new DatabaseSync(join(dataFolder(), 'lo.db'));
-  try {
-    database
-      .prepare(
-        'INSERT INTO revisions_viewed (login, pull, path, head, marked_at) VALUES (?, ?, ?, ?, ?)',
-      )
-      .run('rozed-bot', 'rozed-dev/e2e#80', 'src/parser.ts', APP_PULL.firstHead, Date.now());
-  } finally {
-    database.close();
-  }
+  // GitHub says the second push changed src/parser.ts since the reader viewed it at the first.
   fake.marks.set('src/parser.ts', 'DISMISSED');
-  const again = await electron.launch({
-    args: [appFolder, ...KEYCHAIN],
-    env: {
-      ...appEnvironment(dataFolder()),
-      LO_GITHUB: new URL(github.urls.api).origin,
-      LO_TEST_TOKEN_FILE: tokenFile,
-      LO_GIT_REMOTE: remote,
-    },
-    chromiumSandbox: true,
-  });
+  const again = await relaunchViewedAtFirstPush(app, github, remote, tokenFile);
   try {
     const page = await again.firstWindow();
     await page.waitForLoadState('load');
@@ -550,6 +533,127 @@ test('a viewed file a later push changed opens to what changed since it was view
     const header = page.locator('.lo-diffview .lo-diffhead', { hasText: 'src/parser.ts' }).first();
     await expect(header).toContainText('since r1');
     await expect(header).toContainText('+2');
+    await expect(header.locator('.lo-diffhead__ball')).toHaveClass(/is-stale/);
+  } finally {
+    await again.close();
+  }
+});
+
+/**
+ * Lo started again on the test's data folder, the first run's database holding that the reader
+ * marked src/parser.ts viewed at the first push.
+ */
+async function relaunchViewedAtFirstPush(
+  app: ElectronApplication,
+  github: ReplayServer,
+  remote: string,
+  tokenFile: string,
+): Promise<ElectronApplication> {
+  await app.close();
+  const database = new DatabaseSync(join(dataFolder(), 'lo.db'));
+  try {
+    database
+      .prepare(
+        'INSERT INTO revisions_viewed (login, pull, path, head, marked_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run('rozed-bot', 'rozed-dev/e2e#80', 'src/parser.ts', APP_PULL.firstHead, Date.now());
+  } finally {
+    database.close();
+  }
+  return electron.launch({
+    args: [appFolder, ...KEYCHAIN],
+    env: {
+      ...appEnvironment(dataFolder()),
+      LO_GITHUB: new URL(github.urls.api).origin,
+      LO_TEST_TOKEN_FILE: tokenFile,
+      LO_GIT_REMOTE: remote,
+    },
+    chromiumSandbox: true,
+  });
+}
+
+/** What main has of a tab's diff: which files show from where, and src/parser.ts's versions. */
+async function narrowing(page: Page, id: string): Promise<{ since: unknown; parser: unknown }> {
+  const reply = await page.evaluate((tab) => window.lo.invoke('diff.versions', { id: tab }), id);
+  const state = reply.ok ? reply.value : undefined;
+  const list = field(state, 'files');
+  return {
+    since: field(state, 'since'),
+    parser: (Array.isArray(list) ? list : []).find(
+      (file) => dig(file, 'path', 'text') === 'src/parser.ts',
+    ),
+  };
+}
+
+test('a file that comes to show what changed since after the diff is drawn moves nothing on screen', async ({
+  app,
+  fake,
+  github,
+  remote,
+  tokenFile,
+}) => {
+  test.setTimeout(90_000);
+  fake.marks.set('src/parser.ts', 'DISMISSED');
+  const again = await relaunchViewedAtFirstPush(app, github, remote, tokenFile);
+  try {
+    // GitHub's details, with the marks that say src/parser.ts changed since it was viewed, come
+    // late: the local copy's diff of the whole pull request is drawn first.
+    fake.holdDetailsUntil = Date.now() + 10_000;
+    const page = await again.firstWindow();
+    await page.waitForLoadState('load');
+    const id = await openE2e(page);
+    await expect
+      .poll(
+        async () => {
+          const reply = await page.evaluate(
+            (tab) => window.lo.invoke('diff.versions', { id: tab }),
+            id,
+          );
+          return reply.ok ? field(reply.value, 'from') : undefined;
+        },
+        { timeout: 30_000 },
+      )
+      .toBe('local');
+    await expect(page.locator('.lo-diffview')).toBeVisible();
+    expect((await narrowing(page, id)).since).toBeNull();
+
+    // src/parser.ts on screen, a little way down, and the file after it.
+    const order = await files(page);
+    const parser = order.find((file) => file.path === 'src/parser.ts');
+    const after = order[order.findIndex((file) => file.path === 'src/parser.ts') + 1];
+    if (!parser || !after)
+      throw new Error(`no src/parser.ts, or nothing after it: ${JSON.stringify(order)}`);
+    // As far down the diff as it goes, which is the end of it here.
+    await page.evaluate(
+      (file) => window.loDiff?.scrollTo({ at: { kind: 'header', file, side: 'new' }, offset: -60 }),
+      parser.id,
+    );
+    // Once the scroll has been put back and let go.
+    await page.waitForTimeout(1000);
+    const draws = await page.evaluate(() => window.loDiff?.draws);
+    const before = {
+      parser: await headerTop(page, parser.id),
+      after: await headerTop(page, after.id),
+      onScreen: await page.evaluate(() => window.loDiff?.filesOnScreen()),
+    };
+    expect(before.onScreen).toContain(parser.id);
+    expect((await narrowing(page, id)).since).toBeNull();
+
+    // The marks come, and with them src/parser.ts shows from the first push.
+    await expect
+      .poll(async () => JSON.stringify((await narrowing(page, id)).parser), { timeout: 30_000 })
+      .toContain('"since":{"label":"r1","why":"viewed"}');
+    await page.waitForTimeout(1000);
+
+    // Nothing on screen moved: src/parser.ts keeps the lines it had while the reader looks at it,
+    // so the file after it stays where it was too, and the view wasn't drawn again.
+    expect(Math.abs((await headerTop(page, parser.id))! - before.parser!)).toBeLessThan(2);
+    expect(Math.abs((await headerTop(page, after.id))! - before.after!)).toBeLessThan(2);
+    expect(await page.evaluate(() => window.loDiff?.filesOnScreen())).toEqual(before.onScreen);
+    expect(await page.evaluate(() => window.loDiff?.draws)).toBe(draws);
+    // Its header says it changed since, in place.
+    const header = page.locator('.lo-diffview .lo-diffhead', { hasText: 'src/parser.ts' }).first();
+    await expect(header).toContainText('since r1');
     await expect(header.locator('.lo-diffhead__ball')).toHaveClass(/is-stale/);
   } finally {
     await again.close();
