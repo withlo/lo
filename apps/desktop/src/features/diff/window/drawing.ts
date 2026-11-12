@@ -430,10 +430,16 @@ export function draw(options: DrawOptions): Drawing {
       },
     },
   );
-  // The lines another feature explains, marked as it says, now and each time that changes.
+  // The lines another feature explains, marked as it says, now and each time that changes. By each
+  // file's whole path: a header shortens a long one.
+  const whole = entries.map(({ id, versions }) => ({
+    id,
+    path: versions.path.text,
+    change: versions.change,
+  }));
   let explained: readonly Mark[] = [];
   const explain = () => {
-    const next = marksOf(explainer()?.linesAt(tab.id, at) ?? [], files);
+    const next = marksOf(explainer()?.linesAt(tab.id, at) ?? [], whole);
     if (sameMarks(next, explained)) return;
     explained = next;
     view.setMarks(next);

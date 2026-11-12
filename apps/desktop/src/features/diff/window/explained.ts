@@ -75,8 +75,8 @@ export function onExplained(tab: string, listener: () => void): () => void {
 }
 
 /**
- * The marks for `lines` on a diff of `files`, on their newer side: none on a file the diff doesn't
- * have there, as one the pull request deletes.
+ * The marks for `lines` on a diff of `files`, on their newer side, by each file's whole path: none
+ * on a file the diff doesn't have there, as one the pull request deletes.
  */
 export function marksOf(
   lines: readonly ExplainedLines[],

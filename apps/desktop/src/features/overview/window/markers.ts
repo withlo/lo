@@ -10,10 +10,11 @@
 import { generationOf } from '@lo/ui/markdown';
 
 import { explainedChanged, setExplainer, type ExplainedLines } from '../../diff/window/shared.ts';
-import { pullOf, showMiddle } from '../../tab/window/shared.ts';
+import { pullOf } from '../../tab/window/shared.ts';
+import { setStep } from './blocks.ts';
 import { explainedId, explanationsOf, readExplainedId, type Explanation } from './explained.ts';
 import { standingOf } from './facts.ts';
-import { OVERVIEW_VIEW } from './labels.ts';
+import { revealBlock } from './follow.ts';
 import { runsOnHead, type Run } from './mapping.ts';
 import { fileSince, knownSince } from './since.ts';
 import { staleAgainst } from './stale.ts';
@@ -102,8 +103,9 @@ function linesAt(tab: string, at: string): readonly ExplainedLines[] {
 }
 
 /**
- * "Read it in the overview" in a note in tab `tab`'s diff: the overview, which the tab shows, if
- * the note is of the overview it has now.
+ * "Read it in the overview" in a note in tab `tab`'s diff: the overview comes on screen at the
+ * block the note is of, a walkthrough at its step, with the block given focus, if the note is of
+ * the overview the tab has now. Says whether it is.
  */
 function read(tab: string, id: string): boolean {
   const named = readExplainedId(id);
@@ -111,7 +113,11 @@ function read(tab: string, id: string): boolean {
   if (!named || standing.kind !== 'shown' || named.tree !== generationOf(standing.parsed.tree)) {
     return false;
   }
-  return showMiddle(tab, OVERVIEW_VIEW);
+  const node = standing.parsed.tree.blocks[named.block];
+  if (!node) return false;
+  if (named.step !== undefined && node.kind === 'walkthrough') setStep(node, named.step);
+  revealBlock(tab, named.block);
+  return true;
 }
 
 /** Tells each tab's diff that asked for markers when its overview, or what its check found, changed. */

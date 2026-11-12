@@ -3,7 +3,7 @@
 // describes; mapped to the head on screen once each file is worked out there, with none on lines
 // that changed or went, nor on a file that's gone; none at any other commit, nor for a reference
 // that doesn't resolve; the diff told as they change; and "Read it in the overview" showing the
-// overview only for the overview the tab has now.
+// overview at the note's block, only for the overview the tab has now.
 
 import { checkArtifact, parseArtifact } from '@lo/artifact';
 import { diffText } from '@lo/diff';
@@ -85,6 +85,7 @@ vi.mock(import('./store.ts'), async (original) => ({
 }));
 
 const { followMarkers } = await import('./markers.ts');
+const { reveals } = await import('./follow.ts');
 
 /** What main answers for each file since the overview's commit, by its path there. */
 const files = new Map<string, FileSinceText>();
@@ -261,11 +262,12 @@ describe('the overview’s markers', () => {
     expect(linesAt(R1)).toEqual([]);
   });
 
-  it('show the overview when a note asks, only for the overview the tab has now', async () => {
+  it('show the overview at the note’s block when it asks, only for the overview the tab has now', async () => {
     const tree = await shown(R1);
     at(R1);
     expect(fake.explainer?.read(tab, `${tree}.4`)).toBe(true);
     expect(fake.shown).toEqual([[tab, OVERVIEW_VIEW]]);
+    expect(reveals.get(tab)?.block).toBe(4);
     // A note from an overview the tab had before.
     expect(fake.explainer?.read(tab, `${tree + 1000}.4`)).toBe(false);
     expect(fake.explainer?.read(tab, 'block')).toBe(false);

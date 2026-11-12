@@ -389,7 +389,7 @@ test('compares r1 with r2 in the diff, and marks r1 in the picker as the revisio
   await expect(picker.locator(`[data-key="${APP_PULL.head}"]`)).not.toContainText('Overview');
 });
 
-test('marks the lines it explains in the diff at r2, and opens what it says of them under them', async ({
+test('marks the lines it explains in the diff at r2, opens what it says of them, and goes there', async ({
   app,
   page,
 }) => {
@@ -470,4 +470,28 @@ test('marks the lines it explains in the diff at r2, and opens what it says of t
   await expect(note.getByRole('button', { name: 'Read it in the overview' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(note).toHaveCount(0);
+
+  // "Read it in the overview" goes to the block, with focus, and `⌃o` comes back to the line the
+  // note is under, the mark's last, with the screen where it was.
+  await page.mouse.click(ball.x, ball.y);
+  await note.getByRole('button', { name: 'Read it in the overview' }).click();
+  await expect(shown(page)).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        document.activeElement?.closest('[data-lo-block]')?.getAttribute('data-lo-block'),
+      ),
+    )
+    .toBe('6');
+  await page.keyboard.press('Control+o');
+  await expect(diff).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const at = window.loDiff?.probe.cursor()?.at;
+        return at?.kind === 'line' && 'line' in at.at ? at.at : undefined;
+      }),
+    )
+    .toMatchObject({ file: format, side: 'new', line: 3 });
+  expect(await ballOf()).toEqual(ball);
 });
