@@ -2,25 +2,8 @@
 // what's on screen keeps its place.
 
 import type { EditorState, Transaction } from '@codemirror/state';
-import type { EditorView } from '@codemirror/view';
 
 import { ownChange } from './keys.ts';
-
-/**
- * Puts lines `after` in place of `before`, after document line `header` of `view`, as
- * {@link swapping} says.
- */
-export function swapLines(
-  view: EditorView,
-  header: number,
-  before: readonly string[],
-  after: readonly string[],
-  inPlace: boolean,
-): void {
-  for (const transaction of swapping(view.state, header, before, after, inPlace)) {
-    view.dispatch(transaction);
-  }
-}
 
 /**
  * The transactions that put lines `after` in place of `before`, after document line `header` of
