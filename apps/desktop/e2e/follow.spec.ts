@@ -1,11 +1,12 @@
 // Moving through an overview in the app by its keys, and following it to the code: Lo, started on
 // the replay server as rozed-bot, opens rozed-dev/e2e#80 on its overview. `]b` and `[b` go between
-// its blocks, `Tab` and `⇧Tab` through its outline, its blocks and their links and parts as they're
-// written, `←` and `→` step a walkthrough or tabs, `⏎` follows a block, a link or a part to its
-// code in the diff, or to the file whole where the diff doesn't have it, and `⌃o` comes back to the
-// block. `o` puts the block's code beside the overview, following the blocks, and `o` or `Esc`
-// takes it away. A block's right-click menu does the same, and gives focus back to the block. What
-// the reader is at stays where it is through each, or comes on screen where that's off it now.
+// its blocks, `Tab` and `⇧Tab` round a block's links and parts, and from the overview itself
+// through its outline to the first block, `←` and `→` step a walkthrough or tabs, `⏎` follows a
+// block, a link or a part to its code in the diff, or to the file whole where the diff doesn't have
+// it, and `⌃o` comes back to the block. `o` puts the block's code beside the overview, following
+// the blocks, and `o` or `Esc` takes it away. A block's right-click menu does the same, and gives
+// focus back to what had it. What the reader is at stays where it is through each, or comes on
+// screen where that's off it now.
 
 import { writeFileSync } from 'node:fs';
 
@@ -223,11 +224,11 @@ test(']b and [b go between the blocks, Tab between a block’s links, and ← an
   await press(page, '[', 'b');
   expect(await focused(page)).toMatchObject({ block: BLOCK.parserLink, own: true });
 
-  // Tab goes through the block's links, then on to the next block, as they're written.
+  // Tab goes round the block's links, and back to the block.
   await press(page, 'Tab');
   expect(await focused(page)).toMatchObject({ block: BLOCK.parserLink, text: 'The parser' });
   await press(page, 'Tab');
-  expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
+  expect(await focused(page)).toMatchObject({ block: BLOCK.parserLink, own: true });
   await press(page, 'Shift+Tab');
   expect(await focused(page)).toMatchObject({ block: BLOCK.parserLink, text: 'The parser' });
 
@@ -258,7 +259,7 @@ test(']b and [b go between the blocks, Tab between a block’s links, and ← an
     'src/text/wrap.ts, L2–15',
   ]);
   await press(page, 'Tab');
-  expect(await focused(page)).toMatchObject({ block: BLOCK.walk, own: true });
+  expect(await focused(page)).toMatchObject({ block: BLOCK.figure, own: true });
 
   // A walkthrough steps with → and ←, stopping at its first and last steps.
   await toBlock(page, BLOCK.walk);
@@ -308,7 +309,7 @@ test(']b and [b go between the blocks, Tab between a block’s links, and ← an
   expect((await focused(page)).block).toBe(BLOCK.fold);
 });
 
-test('Tab and ⇧Tab go through the outline and the blocks as they’re written', async ({
+test('from the overview itself, Tab goes through the outline to the first block, and ⇧Tab back', async ({
   app,
   page,
 }) => {
@@ -318,10 +319,28 @@ test('Tab and ⇧Tab go through the outline and the blocks as they’re written'
     (text) => text.trim().slice(0, 40),
   );
   expect(sections.length).toBeGreaterThan(1);
+  const itself = shown(page).locator('.lo-ov');
 
-  // Before the first block, the outline, which ⇧Tab goes back through to its first section.
+  // As Esc leaves it, from a block.
   await press(page, ']', 'b');
   expect(await focused(page)).toMatchObject({ block: BLOCK.tldr, own: true });
+  await press(page, 'Escape');
+  await expect(itself).toBeFocused();
+  for (const section of sections) {
+    await press(page, 'Tab');
+    expect(await focused(page)).toMatchObject({ block: undefined, text: section });
+  }
+  // #80's byline offers nothing, so the first block, which then keeps Tab to itself.
+  await press(page, 'Tab');
+  expect(await focused(page)).toMatchObject({ block: BLOCK.tldr, own: true });
+  await press(page, 'Tab');
+  expect(await focused(page)).toMatchObject({ block: BLOCK.tldr, text: 'lines' });
+  await press(page, 'Tab');
+  expect(await focused(page)).toMatchObject({ block: BLOCK.tldr, own: true });
+
+  // ⇧Tab goes back from the overview itself through the outline to its first section.
+  await press(page, 'Escape');
+  await expect(itself).toBeFocused();
   for (const section of sections.toReversed()) {
     await press(page, 'Shift+Tab');
     expect(await focused(page)).toMatchObject({ block: undefined, text: section });
@@ -329,17 +348,12 @@ test('Tab and ⇧Tab go through the outline and the blocks as they’re written'
   await press(page, 'Shift+Tab');
   await expect(said(page, 'There’s nothing before this in the overview.')).toBeVisible();
   expect(await focused(page)).toMatchObject({ text: sections[0] });
-
-  // And Tab goes on through it to the first block.
-  for (const section of sections.slice(1)) {
-    await press(page, 'Tab');
-    expect(await focused(page)).toMatchObject({ block: undefined, text: section });
-  }
-  await press(page, 'Tab');
-  expect(await focused(page)).toMatchObject({ block: BLOCK.tldr, own: true });
 });
 
-test('a block’s menu gives focus back to the block, not to what’s in it', async ({ app, page }) => {
+test('a block’s menu gives focus back to what had it: the block, not what’s in it, or a part', async ({
+  app,
+  page,
+}) => {
   await sizeWindow(app, 1400, 900);
   await open(page);
   const menu = menuOf(page);
@@ -368,6 +382,24 @@ test('a block’s menu gives focus back to the block, not to what’s in it', as
   // The block keys go on from it.
   await press(page, ']', 'b');
   expect(await focused(page)).toMatchObject({ block: BLOCK.formatHead, own: true });
+
+  // A figure's part, a drawing's element, gets focus back, by ⇧F10 and by a right-click.
+  await toBlock(page, BLOCK.figure);
+  await press(page, 'Tab');
+  const part = { block: BLOCK.figure, text: 'src/parser.ts, L8–10' };
+  expect(await focused(page)).toMatchObject(part);
+  await press(page, 'Shift+F10');
+  await expect(menu).toBeVisible();
+  await press(page, 'Escape');
+  await expect(menu).toHaveCount(0);
+  expect(await focused(page)).toMatchObject(part);
+  await block(page, BLOCK.figure).locator('.lo-fig-link').first().click({ button: 'right' });
+  await expect(menu).toBeVisible();
+  await press(page, 'Escape');
+  await expect(menu).toHaveCount(0);
+  expect(await focused(page)).toMatchObject(part);
+  await press(page, ']', 'b');
+  expect(await focused(page)).toMatchObject({ block: BLOCK.walk, own: true });
 });
 
 test('j, k, gg, G and the page keys scroll the overview', async ({ app, page }) => {
@@ -648,6 +680,17 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
   await expect(beside(page)).toHaveCount(0);
   expect(await focused(page)).toMatchObject({ block: BLOCK.format, own: true });
 
+  // Tab through a figure's parts keeps the figure's code beside: it follows the block, not the part.
+  await toBlock(page, BLOCK.figure);
+  await press(page, 'o');
+  const path = beside(page).locator('.lo-split__bar .lo-path');
+  await expect(path).toHaveText('src/parser.ts');
+  await press(page, 'Tab', 'Tab', 'Tab');
+  expect(await focused(page)).toMatchObject({ block: BLOCK.figure, text: 'src/format.ts, L6–8' });
+  await expect(path).toHaveText('src/parser.ts');
+  await press(page, 'o');
+  await expect(beside(page)).toHaveCount(0);
+
   // A block with no code has none to show.
   await toBlock(page, BLOCK.tabs);
   await press(page, 'o');
@@ -658,6 +701,34 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
   await toBlock(page, BLOCK.readme);
   await press(page, 'o');
   await expect(beside(page)).toContainText('This pull request doesn’t change README.md.');
+});
+
+test('the palette offers Close code beside only while code is beside', async ({ app, page }) => {
+  await sizeWindow(app, 1400, 900);
+  await open(page);
+  const palette = page.getByRole('dialog', { name: 'Command palette' });
+  const input = palette.getByRole('combobox', { name: 'Command palette' });
+  const offered = palette.getByRole('option', { name: /^Close code beside/ });
+  const openPalette = async () => {
+    await press(page, process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+    await expect(input).toBeFocused();
+    await input.fill('Close code beside');
+  };
+
+  await toBlock(page, BLOCK.parser);
+  await openPalette();
+  await expect(palette.getByRole('option').first()).toBeVisible();
+  await expect(offered).toHaveCount(0);
+  await press(page, 'Escape');
+  await expect(palette).toBeHidden();
+
+  await press(page, 'o');
+  await expect(beside(page)).toBeVisible();
+  await openPalette();
+  await expect(offered).toHaveCount(1);
+  await press(page, 'Enter');
+  await expect(beside(page)).toHaveCount(0);
+  expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
 });
 
 test('a block’s menu goes to its code, puts it beside, and copies the prompt', async ({

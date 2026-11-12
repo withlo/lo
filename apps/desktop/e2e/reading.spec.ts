@@ -679,8 +679,10 @@ test('offers a newer overview pushed while one is read, and loads it only when a
   await expect(fold).toHaveAttribute('open', '');
   expect(await stillMoved(page)).toEqual([]);
 
-  // ⇧Tab from the first block reaches the offer, before it as it's written, and ⏎ takes it.
+  // From the overview itself, as Esc leaves it, ⇧Tab reaches the offer, and ⏎ takes it.
   await fold.locator('summary').focus();
+  await page.keyboard.press('Escape');
+  await expect(shown.locator('.lo-ov')).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(byline.getByRole('button', { name: 'Load it' })).toBeFocused();
   await page.keyboard.press('Enter');
@@ -941,7 +943,11 @@ test('opens a link to a web page in the browser, on a click or ⏎', async ({ pa
   // The overview stays on screen.
   await expect(overview(page, 'shown')).toBeVisible();
 
-  await link.focus();
+  // Prose whose only link is to a web page is a block the keys stop at, and Tab reaches its link.
+  await page.keyboard.press('Escape');
+  await expect(overview(page, 'shown').locator('.lo-ov')).toBeFocused();
+  for (const key of [']', 'b', 'Tab']) await page.keyboard.press(key);
+  await expect(link).toBeFocused();
   await page.keyboard.press('Enter');
   await expect.poll(browsed).toEqual(['https://example.com/design', 'https://example.com/design']);
 });
