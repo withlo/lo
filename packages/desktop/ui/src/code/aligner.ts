@@ -444,8 +444,15 @@ export class Aligner {
         // CodeMirror scrolled as it measured. To bring a moved cursor into view, that scroll stands,
         // so the anchor is taken again from where it left things. Otherwise it's CodeMirror's own
         // anchoring, from the top of a block that can hold the pass's spacers, and the pass's
-        // anchor, taken before CodeMirror measured, puts it right.
-        if (turn === 0 && this.#selected && Math.abs(this.#scroller.scrollTop - scrolled) > 0.5) {
+        // anchor, taken before CodeMirror measured, puts it right: as after a screen key, which
+        // holds back the scroll to the cursor.
+        if (
+          turn === 0 &&
+          this.#selected &&
+          !heldByScreenKey(this.#views.old) &&
+          !heldByScreenKey(this.#views.new) &&
+          Math.abs(this.#scroller.scrollTop - scrolled) > 0.5
+        ) {
           anchor = this.#anchorNow();
         } else if (
           turn === 0 &&

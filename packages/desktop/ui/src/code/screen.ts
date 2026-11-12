@@ -162,13 +162,23 @@ function posAt(view: EditorView, stop: Stop, place: (row: BlockInfo) => Pos): Po
 }
 
 /**
+ * How tall a line of text is, as the editor's style sets it; else as CodeMirror estimates it, from
+ * whichever short line it measured last.
+ */
+function lineHeightOf(view: EditorView): number {
+  const { lineHeight } = getComputedStyle(view.contentDOM);
+  const set = lineHeight.endsWith('px') ? Number.parseFloat(lineHeight) : Number.NaN;
+  return set > 0 ? set : view.defaultLineHeight;
+}
+
+/**
  * Whether `body` is a line wrapped onto more rows of text than one, which the screen can cut
  * through, and drawn, so its rows can be measured.
  */
 function wraps(view: EditorView, body: BlockInfo): boolean {
   return (
     body.type === BlockType.Text &&
-    body.bottom - body.top > view.defaultLineHeight * 1.5 &&
+    body.bottom - body.top > lineHeightOf(view) * 1.5 &&
     body.from >= view.viewport.from &&
     body.to <= view.viewport.to
   );
@@ -335,6 +345,41 @@ function scrollBy(scroller: HTMLElement, delta: number): number {
   return scroller.scrollTop - before;
 }
 
+/** Has the editor do now the measuring it has waiting, as it would before the next paint. */
+function measureNow(view: EditorView): void {
+  view.requestMeasure();
+  // Reading the layout makes the editor do the measuring it has waiting.
+  view.lineBlockAtHeight(0);
+}
+
+/**
+ * Scrolls by `delta`, by what's on screen: the point of the document that comes to the edge of the
+ * screen nearest where it was, its top going down and its bottom going up, stays there while the
+ * editor draws and measures what comes into view, though heights around it change as they're
+ * measured. The editor then holds its scroll at its own top as it measures, and the spacer pass
+ * at the cursor's line, which would otherwise take the scroll further than the key asked.
+ * Returns what the scroller shows now, and whether the scroll moved.
+ */
+function scrollPinned(
+  view: EditorView,
+  scroller: HTMLElement,
+  screen: Span,
+  delta: number,
+): { now: Span; moved: boolean } {
+  const height = screen.bottom - screen.top;
+  measureNow(view);
+  const before = screenOf(view, scroller);
+  const edge = before.top + delta + (delta < 0 ? height : 0);
+  const block = view.lineBlockAtHeight(Math.max(0, Math.min(view.contentHeight, edge)));
+  const pin = { pos: block.from, offset: edge - block.top };
+  const from = scroller.scrollTop;
+  scrollBy(scroller, delta);
+  measureNow(view);
+  const pinned = view.lineBlockAt(pin.pos).top + pin.offset - (delta < 0 ? height : 0);
+  scrollBy(scroller, pinned - screenOf(view, scroller).top);
+  return { now: screenOf(view, scroller), moved: Math.abs(scroller.scrollTop - from) >= slack };
+}
+
 /** The editor, its scroller and what it shows: undefined where an editor isn't scrolled by one. */
 function geometry(cm: {
   cm6: unknown;
@@ -384,11 +429,10 @@ function page(cm: { cm6: unknown }, head: Pos, forward: boolean, count: number):
   const found = geometry(cm);
   if (!found) return head;
   const { view, scroller, screen } = found;
-  const line = view.defaultLineHeight;
+  const line = lineHeightOf(view);
   const step = Math.max(line, screen.bottom - screen.top - pageOverlap * line);
-  const moved = scrollBy(scroller, (forward ? step : -step) * count);
-  const now = { top: screen.top + moved, bottom: screen.bottom + moved };
-  const end = Math.abs(moved) < slack;
+  const { now, moved } = scrollPinned(view, scroller, screen, (forward ? step : -step) * count);
+  const end = !moved;
   if (!end && within(caretOf(view, offsetOf(view, head)), now)) return hold(view, head);
   const stop = land(view, scroller, now, end ? !forward : forward);
   return hold(view, stop ? posAt(view, stop, (row) => startOf(view, row)) : head);
@@ -412,16 +456,16 @@ function halfPage(
   if (!found) return head;
   const { view, scroller, screen } = found;
   if (count !== undefined) halfPageLines.set(view, count);
-  const line = view.defaultLineHeight;
+  const line = lineHeightOf(view);
   const height = screen.bottom - screen.top;
   const lines = halfPageLines.get(view) ?? Math.max(1, Math.floor(height / line / 2));
   const delta = (forward ? 1 : -1) * Math.min(lines * line, height);
-  const caret = caretOf(view, offsetOf(view, head));
-  const moved = scrollBy(scroller, delta);
-  const now = { top: screen.top + moved, bottom: screen.bottom + moved };
+  const shown = within(caretOf(view, offsetOf(view, head)), screen);
+  const { now } = scrollPinned(view, scroller, screen, delta);
   // Where the cursor's row of text goes: as far as the key asked, though the end of the scroll
   // cut the scroll short.
-  const target = within(caret, screen) ? caret.top + delta : forward ? now.top : now.bottom;
+  const caret = caretOf(view, offsetOf(view, head));
+  const target = shown ? caret.top + delta : forward ? now.top : now.bottom;
   const stops = wholeFirst(stopsOn(view, now));
   const stop = forward
     ? (stops.find((each) => each.row.top >= target - slack) ?? stops.at(-1))
@@ -439,8 +483,8 @@ function scrollRows(cm: { cm6: unknown }, head: Pos, forward: boolean, count: nu
   const found = geometry(cm);
   if (!found) return head;
   const { view, scroller, screen } = found;
-  const moved = scrollBy(scroller, (forward ? 1 : -1) * count * view.defaultLineHeight);
-  const now = { top: screen.top + moved, bottom: screen.bottom + moved };
+  const delta = (forward ? 1 : -1) * count * lineHeightOf(view);
+  const { now } = scrollPinned(view, scroller, screen, delta);
   const caret = caretOf(view, offsetOf(view, head));
   if (within(caret, now)) return hold(view, head);
   // Onto the edge of the screen it went past, as Vim's cursor stays on screen.
