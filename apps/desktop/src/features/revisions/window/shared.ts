@@ -4,7 +4,15 @@
 
 import { useTabState } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
-import { markIn, shownMarks, toggle, type Mark, type ShownMarks, type Toggled } from './viewed.ts';
+import {
+  markable,
+  markIn,
+  shownMarks,
+  toggle,
+  type Mark,
+  type ShownMarks,
+  type Toggled,
+} from './viewed.ts';
 
 export type { Mark, ShownMarks, Toggled } from './viewed.ts';
 
@@ -29,6 +37,15 @@ export function viewedMarkOf(
   previous?: TreePath | null,
 ): Mark | undefined {
   return markIn(marks, path, previous);
+}
+
+/**
+ * Whether moving on after `e` passes over the changed file at `path`, or `previous` for a rename
+ * GitHub lists by its old path: it's viewed, or `e` can't mark it, as when its path isn't UTF-8 or
+ * is longer than 1,024 bytes, so `e` never stops on one it would refuse.
+ */
+export function passedOver(marks: ShownMarks, path: TreePath, previous?: TreePath | null): boolean {
+  return !markable(path) || markIn(marks, path, previous) === 'viewed';
 }
 
 /**

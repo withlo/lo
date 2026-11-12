@@ -8,7 +8,7 @@ import type * as TabShared from '../../tab/window/shared.ts';
 import type { Files, PullView } from '../../tab/window/shared.ts';
 import { PATH_LIMIT } from '../../tree/contract.ts';
 import type { ComparisonView } from '../contract.ts';
-import { toggleViewed, viewedMarkOf, viewedMarksOf } from './shared.ts';
+import { passedOver, toggleViewed, viewedMarkOf, viewedMarksOf } from './shared.ts';
 import { showView } from './store.ts';
 import { takeFiles } from './viewed.ts';
 
@@ -217,6 +217,17 @@ describe('what e refuses before anything is sent', () => {
     said.pull = pull();
     expect(await refused('src/c.ts')).toContain('GitHub doesn’t list src/c.ts');
     expect(await refused('x'.repeat(PATH_LIMIT + 1))).toContain('paths of up to 1,024 bytes');
+  });
+
+  it('moving on passes over files viewed, and files e can’t mark', () => {
+    const marks = viewedMarksOf(TAB);
+    expect(passedOver(marks, { text: 'src/a.ts' })).toBe(false);
+    expect(passedOver(marks, { text: 'src/b.ts' })).toBe(true);
+    // A rename GitHub lists by its old path has that path's mark.
+    expect(passedOver(marks, { text: 'src/new.ts' }, { text: 'src/b.ts' })).toBe(true);
+    const long = 'x'.repeat(PATH_LIMIT + 1);
+    expect(passedOver(marks, { text: long, digest: 'ab'.repeat(32) })).toBe(true);
+    expect(passedOver(marks, { text: 'caf\uFFFD.txt', hex: '636166e9' })).toBe(true);
   });
 
   it('keeps GitHub’s marks only for paths short enough to key a map by', () => {

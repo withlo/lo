@@ -6,23 +6,24 @@
 import type { HeaderTarget, LineTarget } from '@lo/ui/code';
 
 import { notify } from '../../../window/commands/notices.tsx';
-import { toggleViewed, viewedMarkOf, viewedMarksOf } from '../../revisions/window/shared.ts';
+import { passedOver, toggleViewed, viewedMarksOf } from '../../revisions/window/shared.ts';
 import type { Drawn } from './tabs.ts';
 
 /**
- * The file after `id` in `order` that `viewed` says isn't viewed, going round to the start: where
- * `e` goes after marking `id`. Nothing when every other file is viewed.
+ * The file after `id` in `order` that `done` doesn't pass over, going round to the start: where
+ * `e` goes after marking `id`, past files that are viewed, or that it can't mark. Nothing when
+ * every other file is one of those.
  */
 export function nextUnviewed(
   order: readonly string[],
   id: string,
-  viewed: (id: string) => boolean,
+  done: (id: string) => boolean,
 ): string | undefined {
   const from = order.indexOf(id);
   if (from < 0) return undefined;
   for (let step = 1; step < order.length; step++) {
     const next = order[(from + step) % order.length];
-    if (next !== undefined && !viewed(next)) return next;
+    if (next !== undefined && !done(next)) return next;
   }
   return undefined;
 }
@@ -52,10 +53,7 @@ export function markViewed(drawn: Drawn, target: LineTarget | HeaderTarget): voi
       const marks = viewedMarksOf(drawn.tab);
       const next = nextUnviewed(drawn.order, id, (other) => {
         const versions = entries.get(other)?.versions;
-        return (
-          versions !== undefined &&
-          viewedMarkOf(marks, versions.path, versions.previous) === 'viewed'
-        );
+        return versions === undefined || passedOver(marks, versions.path, versions.previous);
       });
       drawn.viewedHere(id, true, next);
       return;

@@ -2,7 +2,7 @@
 // folders, show a file, mark it viewed, and the file's menu. They act on what the tree last showed.
 
 import { notify } from '../../../window/commands/notices.tsx';
-import { toggleViewed, viewedMarkOf, viewedMarksOf } from '../../revisions/window/shared.ts';
+import { passedOver, toggleViewed, viewedMarksOf } from '../../revisions/window/shared.ts';
 import { activeTab, type PullTab } from '../../tab/window/shared.ts';
 import { canShow, pathOf, showFile } from './shared.ts';
 import { foldersOf, parentRow, rowAt, type Row } from './model.ts';
@@ -105,7 +105,7 @@ export function markable(tab: string, key: string): true | string {
 
 /**
  * `e` on the file `key`: marks it viewed, or clears its mark. Marking moves the keyboard to the next
- * changed file that isn't viewed, in the panel's order, round the end.
+ * changed file that isn't viewed, in the panel's order, round the end, past any `e` can't mark.
  */
 export function markViewed(tab: string, key: string): void {
   const changes = states.get(tab)?.changes ?? [];
@@ -129,11 +129,7 @@ export function markViewed(tab: string, key: string): void {
   for (let step = 1; step < order.length; step++) {
     const next = order[(from + step) % order.length];
     const other = next === undefined ? undefined : byKey.get(next);
-    if (
-      next !== undefined &&
-      other &&
-      viewedMarkOf(marks, other.path, other.previous) !== 'viewed'
-    ) {
+    if (next !== undefined && other && !passedOver(marks, other.path, other.previous)) {
       revealFile(tab, next);
       return;
     }

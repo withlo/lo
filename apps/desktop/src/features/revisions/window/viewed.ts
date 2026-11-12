@@ -112,6 +112,14 @@ export function markIn(
   );
 }
 
+/**
+ * Whether `e` can mark the file at `path` viewed: GitHub can name it, as UTF-8, and its path is short
+ * enough to key a map by. Lo keeps no mark of any other.
+ */
+export function markable(path: TreePath): boolean {
+  return textOf(path) !== undefined;
+}
+
 /** A path as GitHub lists it: its text, when it's UTF-8 and short enough to key a map by. */
 function textOf(path: TreePath): string | undefined {
   return path.hex === undefined && path.digest === undefined && keyable(path.text)
