@@ -327,9 +327,10 @@ export interface DiffView extends KeySource {
   scrollTo(viewport: Viewport): boolean;
   /**
    * Holds `viewport`, as `viewport()` read it before a change to what the view draws, at the top of
-   * the screen while the change is measured, as `scrollTo` does. Unlike `scrollTo`, it leaves a
-   * cursor that a key just moved to be kept on screen, as after any key: it keeps the page through
-   * the change, and doesn't choose where the reader is.
+   * the screen while the change is measured, as `scrollTo` does. Unlike `scrollTo`, side by side it
+   * leaves a cursor that a key just moved to be kept on screen, as after any key: it keeps the page
+   * through the change, and doesn't choose where the reader is. Inline, nothing keeps that cursor
+   * on screen, so a hold that comes just after a key's move can undo it.
    */
   holdTop(viewport: Viewport): boolean;
   /** `]c` and kin: `count` changes, files or threads on, or back where it's negative. */
