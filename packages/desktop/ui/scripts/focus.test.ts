@@ -41,6 +41,20 @@ describe("Lo's focus style", () => {
     expect(none?.body).toBe('box-shadow: none;');
   });
 
+  it('shows a row’s ring only while its list has keyboard focus, not after a click on it', async () => {
+    const css = await buildCss([
+      'group-focus-visible/tree:shadow-ring-inset',
+      'group-focus-visible/list:shadow-ring-inset',
+    ]);
+    const rules = rulesOf(css);
+    for (const list of ['tree', 'list']) {
+      const rule = rules.find((each) => each.selector.includes(`group-focus-visible\\/${list}`));
+      // The row's rule applies inside a list that is `:focus-visible`, and nowhere else.
+      expect(rule?.selector).toContain(`.group\\/${list}):focus-visible`);
+      expect(rule?.body).toContain('--tw-shadow: var(--lo-ring-inset);');
+    }
+  });
+
   it('draws no ring for focus a click gives', async () => {
     const rules = rulesOf(await buildCss([]));
     // `:focus` alone is every focus, a click's included; only `:focus-visible` is the keyboard's.

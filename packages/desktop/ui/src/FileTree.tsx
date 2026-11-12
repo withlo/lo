@@ -96,7 +96,8 @@ const row = cva(
         viewed: 'text-fg-muted',
       },
       current: { true: 'tree-current', false: '' },
-      focused: { true: 'shadow-ring-inset', false: '' },
+      // Only while the tree itself has keyboard focus: a click gives it focus too, with no ring.
+      focused: { true: 'group-focus-visible/tree:shadow-ring-inset', false: '' },
     },
   },
 );
@@ -280,7 +281,7 @@ export function FileTree({
       role="tree"
       tabIndex={0}
       aria-activedescendant={focusedIndex < 0 ? undefined : treeItemId(prefix, focusedIndex)}
-      className={`relative min-h-0 flex-1 overflow-auto px-6 pb-12 outline-none ${className}`}
+      className={`group/tree relative min-h-0 flex-1 overflow-auto px-6 pb-12 outline-none ${className}`}
       onScroll={(event) =>
         setView({ top: event.currentTarget.scrollTop, height: event.currentTarget.clientHeight })
       }
