@@ -287,11 +287,16 @@ describe('with only a spacer on the focused side’s screen', () => {
     });
   }
 
-  test('a page scrolls a screen less two lines, and the cursor doesn’t drag it', () => {
+  test('a page takes the last line starting on screen to the top, and the cursor doesn’t drag it', () => {
     const diff = inSpacer();
+    const last = linesOn(diff.old).at(-1)!;
+    const top = (): number =>
+      diff.old.lineBlockAt(diff.old.state.doc.line(last).from).top - screenOf(diff.old).top;
     const scroll = diff.box.scrollTop;
+    const start = top();
     press(diff.new, diff.box, '<PageDown>');
-    expect(diff.box.scrollTop - scroll).toBe(screenHeight - 2 * lineHeight);
+    expect(top()).toBe(0);
+    expect(diff.box.scrollTop - scroll).toBe(start);
     expect(lineOf(diff.new)).toBe(41);
   });
 });

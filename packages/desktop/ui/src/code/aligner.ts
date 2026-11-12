@@ -45,7 +45,7 @@ import { alignRows, type RowHeights, type SideHeights } from './align.ts';
 import type { PassStats } from './api.ts';
 import type { Layout, Side } from './layout.ts';
 import type { FileRows } from './rows.ts';
-import { heldByScreenKey } from './screen.ts';
+import { heldByScreenKey, screenKeyPin } from './screen.ts';
 import { SpacerWidget } from './widgets.ts';
 
 /** A spacer as a decoration: a block widget at `pos`, before (-1) or after (2) what's there. */
@@ -1148,6 +1148,23 @@ export class Aligner {
   #anchorNow(): Anchor {
     const side = this.#anchorSide();
     const view = this.#views[side];
+    // After a screen key, the line it scrolled to the edge of the screen it moved away from: rows
+    // past it may not have been on screen yet, and as they're measured they move only away from it.
+    const pin = screenKeyPin(this.#views.old) ?? screenKeyPin(this.#views.new);
+    const pinSide = (['old', 'new'] as const).find((each) => this.#views[each] === pin?.view);
+    if (pin && pinSide) {
+      const screen = this.#scroller.getBoundingClientRect();
+      const top = drawnTop(pin.view, pin.pos);
+      if (top !== undefined && top >= screen.top - 1 && top < screen.bottom) {
+        return {
+          for: side,
+          side: pinSide,
+          pos: pin.pos,
+          offset: top - screen.top,
+          scrollTop: this.#scroller.scrollTop,
+        };
+      }
+    }
     if (view.hasFocus) {
       const screen = this.#scroller.getBoundingClientRect();
       const cursor = view.lineBlockAt(view.state.selection.main.head);

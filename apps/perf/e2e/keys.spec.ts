@@ -203,13 +203,19 @@ test.describe('paging past what is taller than the screen', () => {
   const gone = code('gone', 300);
   const removed = code('removed', 120);
   const added = code('added', 120);
-  const head = code('head', 30);
-  const middle = code('middle', 30);
-  // Short enough to end on lines, not a block of collapsed ones.
+  // Short enough that no unchanged lines are collapsed, so every line is drawn.
+  const head = code('head', 3);
+  const middle = code('middle', 3);
   const tail = code('tail', 3);
   const paths = ['notes/long.txt', 'src/gone.ts', 'src/spaced.ts'];
-  /** The lines only one side has, each of which must pass through the screen. */
-  const oneSided = { old: [...gone, ...removed], new: [...intro, ...outro, ...added] };
+  /**
+   * Each side's lines, all but the long one, which the editor draws only in part. Every one must
+   * pass through the screen.
+   */
+  const lines = {
+    old: [...gone, ...head, ...removed, ...middle, ...tail],
+    new: [...intro, ...outro, ...head, ...middle, ...added, ...tail],
+  };
   test.use({
     pull: {
       repo: 'withlo/example',
@@ -233,7 +239,7 @@ test.describe('paging past what is taller than the screen', () => {
     paths.indexOf(fileOf(spot) ?? '') * 1_000_000 + (lineOf(spot) ?? 0);
 
   for (const side of ['new', 'old'] as const) {
-    test(`PageDown held on the ${side} side goes a screen at most at a time to the end, and PageUp to the top`, async ({
+    test(`PageDown and Ctrl-d held on the ${side} side go to the end, and PageUp and Ctrl-u to the top, passing every line`, async ({
       page,
     }) => {
       await focusSide(page, side);
@@ -248,11 +254,13 @@ test.describe('paging past what is taller than the screen', () => {
       for (const { key, way, last } of [
         { key: 'PageDown', way: 1, last: end },
         { key: 'PageUp', way: -1, last: start },
+        { key: 'Control+d', way: 1, last: undefined },
+        { key: 'Control+u', way: -1, last: undefined },
       ] as const) {
         const seen = { old: new Set<string>(), new: new Set<string>() };
         await see(page, seen);
         let at = order((await cursor(page))?.at);
-        for (let turn = 0; turn < 60 && !(await atEdge(page, way)); turn++) {
+        for (let turn = 0; turn < 100 && !(await atEdge(page, way)); turn++) {
           // What's on screen moves the key's way, by no more than the screen, so every row passes
           // through it: the cursor doesn't drag it on past a spacer.
           const followed = await follow(page, way);
@@ -267,13 +275,14 @@ test.describe('paging past what is taller than the screen', () => {
           await see(page, seen);
         }
         expect(await atEdge(page, way)).toBe(true);
-        // Where there's no more to scroll, the cursor goes to the last line, or the first.
+        for (const each of ['old', 'new'] as const) {
+          expect(lines[each].filter((line) => !seen[each].has(line))).toEqual([]);
+        }
+        // Where there's no more to scroll, a page puts the cursor on the last line, or the first.
         await press(page, key);
         await settledScroll(page);
-        expect(order((await cursor(page))?.at)).toBe(order(last));
-        for (const each of ['old', 'new'] as const) {
-          expect(oneSided[each].filter((line) => !seen[each].has(line))).toEqual([]);
-        }
+        const landed = order((await cursor(page))?.at);
+        expect(last === undefined || landed === order(last)).toBe(true);
       }
     });
   }
