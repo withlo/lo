@@ -4,17 +4,17 @@
 
 import {
   type Activity,
-  type Cache,
   describeProgress,
   GitError,
+  type GitStatus,
   type Oid,
+  type OpenOptions,
   parseOid,
   type PullRequestRefs,
   type Repo,
   type TokenSource,
 } from '@lo/git';
 
-import type { LocalGit } from '../../../main/git.ts';
 import type { FetchFailure, LocalState } from '../contract.ts';
 
 /** The first wait before trying a failed fetch again, in milliseconds. */
@@ -35,29 +35,24 @@ export function retryWait(failures: number): number {
 export const PROGRESS_EVERY = 100;
 
 /**
- * Calls `say` for a run of calls at most once every `every` milliseconds: at once when it last said
- * longer ago than that, else once the wait is up, for the calls made meanwhile. `cancel` drops a
- * call that's waiting, once what it would say has been said some other way.
+ * Calls `say` once for a run of calls, at most once every `every` milliseconds: once the code
+ * making them is done, so calls made together are said once, or, within `every` of when it last
+ * said, once that's up. It keeps time by a clock that never steps back, as the wall clock can.
  */
-export function paced(every: number, say: () => void): { call(): void; cancel(): void } {
+export function paced(every: number, say: () => void): () => void {
   let saidAt = -Infinity;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let waiting = false;
   const sayNow = (): void => {
-    timer = undefined;
-    saidAt = Date.now();
+    waiting = false;
+    saidAt = performance.now();
     say();
   };
-  return {
-    call() {
-      if (timer !== undefined) return;
-      const wait = saidAt + every - Date.now();
-      if (wait <= 0) sayNow();
-      else timer = setTimeout(sayNow, wait);
-    },
-    cancel() {
-      clearTimeout(timer);
-      timer = undefined;
-    },
+  return () => {
+    if (waiting) return;
+    waiting = true;
+    const wait = saidAt + every - performance.now();
+    if (wait <= 0) queueMicrotask(sayNow);
+    else setTimeout(sayNow, wait);
   };
 }
 
@@ -140,8 +135,32 @@ export function describeActivity(activity: Activity): string {
   }
 }
 
-export interface LocalCopyOptions {
-  readonly git: LocalGit;
+/** What a local copy uses of a clone. */
+export type Clone = Pick<
+  Repo,
+  | 'fetchPull'
+  | 'fetchCommit'
+  | 'fetchCommits'
+  | 'branchBase'
+  | 'hasCommit'
+  | 'mergeBase'
+  | 'offline'
+  | 'close'
+>;
+
+/** What a local copy opens its clone with: Lo's cache, which opens clones as `R`. */
+export interface CloneCache<R extends Clone> {
+  open(owner: string, name: string, options: OpenOptions): Promise<R>;
+}
+
+/** What a local copy uses of git: what Lo found, and its cache. */
+export interface CopyGit<R extends Clone> {
+  readonly status: GitStatus | undefined;
+  readonly cache: CloneCache<R> | undefined;
+}
+
+export interface LocalCopyOptions<R extends Clone = Repo> {
+  readonly git: CopyGit<R>;
   /** The repository by the name GitHub gives it now, which names its clone. */
   readonly repository: { readonly owner: string; readonly name: string };
   readonly number: number;
@@ -175,8 +194,8 @@ type Fetching =
  * that fails is tried again after 5 s, doubling to 5 minutes, unless waiting won't help; while
  * GitHub can't be reached, the head on screen is still ready if an earlier fetch brought it.
  */
-export class LocalCopy {
-  readonly #options: LocalCopyOptions;
+export class LocalCopy<R extends Clone = Repo> {
+  readonly #options: LocalCopyOptions<R>;
   /** What to fetch: the pull request as GitHub has it now. */
   #wanted: PullRequestRefs | undefined;
   /** What the last fetch that worked fetched. */
@@ -189,7 +208,7 @@ export class LocalCopy {
   #fetching: Fetching = { kind: 'idle' };
   /** How many fetches in a row have failed: while any have, what's ready is an earlier fetch's. */
   #failures = 0;
-  #repo: Promise<Repo> | undefined;
+  #repo: Promise<R> | undefined;
   /** The fetch under way, if any. */
   #running: Promise<void> | undefined;
   /** Whether to fetch again once the fetch under way ends. */
@@ -198,7 +217,9 @@ export class LocalCopy {
   #closed = false;
   /** Aborted as the tab closes, which stops waiting for the clone. */
   readonly #closing = new AbortController();
-  /** The state last said, so the same one isn't said twice. */
+  /** The state last said, or the one it started in until it has said one. */
+  #state: LocalState;
+  /** The state last said, as JSON, so the same one isn't said twice. */
   #said: string | undefined;
   /**
    * Says what git is doing, paced to {@link PROGRESS_EVERY}: only while it's still fetching, since
@@ -208,12 +229,21 @@ export class LocalCopy {
     if (this.#fetching.kind === 'fetching') this.#changed();
   });
 
-  constructor(options: LocalCopyOptions) {
+  constructor(options: LocalCopyOptions<R>) {
     this.#options = options;
+    this.#state = this.#current();
   }
 
-  /** The local copy as the tab shows it. */
+  /**
+   * The local copy as the tab shows it: the state it last said, so the tab, sending it for reasons
+   * of its own, never sends what git is doing before it's said.
+   */
   get state(): LocalState {
+    return this.#state;
+  }
+
+  /** The local copy as it is now. */
+  #current(): LocalState {
     const ready = this.#ready;
     if (ready) {
       return {
@@ -300,7 +330,7 @@ export class LocalCopy {
    * The clone, opened, once a fetch has opened it: for reading what's fetched, while the copy is
    * open. It closes with the copy, so a reader never closes it.
    */
-  get clone(): Promise<Repo> | undefined {
+  get clone(): Promise<R> | undefined {
     return this.#closed ? undefined : this.#repo;
   }
 
@@ -309,7 +339,6 @@ export class LocalCopy {
     if (this.#closed) return;
     this.#closed = true;
     clearTimeout(this.#timer);
-    this.#sayProgress.cancel();
     this.#closing.abort(new Error('the tab closed'));
     const repo = this.#repo;
     if (!repo) return;
@@ -341,7 +370,7 @@ export class LocalCopy {
     });
   }
 
-  async #run(cache: Cache): Promise<void> {
+  async #run(cache: CloneCache<R>): Promise<void> {
     const wanted = this.#wanted;
     if (wanted === undefined) return;
     this.#again = false;
@@ -388,7 +417,7 @@ export class LocalCopy {
   }
 
   /** The clone, opened once. One that couldn't be opened is opened again next time. */
-  #open(cache: Cache): Promise<Repo> {
+  #open(cache: CloneCache<R>): Promise<R> {
     const { repository, token } = this.#options;
     this.#repo ??= cache
       .open(repository.owner, repository.name, {
@@ -406,7 +435,7 @@ export class LocalCopy {
   #progress(activity: Activity): void {
     if (this.#closed || this.#fetching.kind !== 'fetching') return;
     this.#fetching = { kind: 'fetching', progress: describeActivity(activity) };
-    this.#sayProgress.call();
+    this.#sayProgress();
   }
 
   /**
@@ -463,12 +492,11 @@ export class LocalCopy {
 
   /** Says the state, if it changed. */
   #changed(): void {
-    // What git is doing now is in what's said, so progress waiting to be said goes.
-    this.#sayProgress.cancel();
     if (this.#closed) return;
-    const state = this.state;
+    const state = this.#current();
     const said = JSON.stringify(state);
     if (said === this.#said) return;
+    this.#state = state;
     this.#said = said;
     this.#options.changed(state);
   }

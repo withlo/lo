@@ -1,13 +1,24 @@
 import { renameSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { GitError, parseOid, type GitStatus, type PullRequestRefs } from '@lo/git';
+import {
+  type Activity,
+  type FetchedPull,
+  GitError,
+  type GitStatus,
+  type Oid,
+  type OpenOptions,
+  parseOid,
+  type PullRequestRefs,
+} from '@lo/git';
 import { APP_PULL, git, writeAppRemote } from '@lo/testing/git';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { LocalGit } from '../../../main/git.ts';
 import type { LocalState } from '../contract.ts';
 import {
+  type Clone,
+  type CopyGit,
   describeActivity,
   failureOf,
   LocalCopy,
@@ -25,24 +36,65 @@ const REFS: PullRequestRefs = {
 };
 
 /** A local copy of the e2e pull request in `git`'s cache, with what it says collected. */
-function copyIn(localGit: LocalGit, token?: () => Promise<string | undefined>) {
+function copyIn<R extends Clone>(localGit: CopyGit<R>, token?: () => Promise<string | undefined>) {
   const states: LocalState[] = [];
-  /** When each state was said, in milliseconds since the Unix epoch. */
-  const times: number[] = [];
   const lines: string[] = [];
   const local = new LocalCopy({
     git: localGit,
     repository: { owner: 'rozed-dev', name: 'e2e' },
     number: APP_PULL.number,
     token,
-    changed: (state) => {
-      states.push(state);
-      times.push(Date.now());
-    },
+    changed: (state) => states.push(state),
     log: (line) => lines.push(line),
   });
-  return { local, states, times, lines, last: () => states.at(-1) };
+  return { local, states, lines, last: () => states.at(-1) };
 }
+
+/**
+ * Git with a clone that stands in for one: it hands the copy what git is doing as `tell` says,
+ * ends its fetch once `fetched` is resolved, and finds where the head branched once `branched` is.
+ */
+function fakeGit() {
+  const fetched = Promise.withResolvers<FetchedPull>();
+  const branched = Promise.withResolvers<Oid | undefined>();
+  let progress: OpenOptions['progress'];
+  const clone: Clone = {
+    offline: false,
+    fetchPull: () => fetched.promise,
+    fetchCommit: () => Promise.resolve(),
+    fetchCommits: () => Promise.resolve([]),
+    branchBase: () => Promise.resolve(undefined),
+    hasCommit: () => Promise.resolve(true),
+    mergeBase: () => branched.promise,
+    close: () => undefined,
+  };
+  const localGit: CopyGit<Clone> = {
+    status: undefined,
+    cache: {
+      open: (_owner, _name, options) => {
+        progress = options.progress;
+        return Promise.resolve(clone);
+      },
+    },
+  };
+  const tell = (...activities: Activity[]): void => {
+    for (const activity of activities) progress?.(activity);
+  };
+  return { localGit, fetched, branched, tell };
+}
+
+const connecting: Activity = { kind: 'connecting', elapsed: 10 };
+
+/** Git receiving objects, `percent` of the way. */
+const receiving = (percent: number): Activity => ({
+  kind: 'transferring',
+  elapsed: 10,
+  progress: { stage: 'Receiving objects', done: percent, total: 100 },
+});
+
+/** What git was doing, as each state said while fetching said it. */
+const progressIn = (states: readonly LocalState[]): (string | null)[] =>
+  states.flatMap((state) => (state.kind === 'fetching' ? [state.progress] : []));
 
 describe('retryWait', () => {
   it('waits 5 s after the first failure, doubling to 5 minutes', () => {
@@ -107,34 +159,123 @@ describe('paced', () => {
     vi.useRealTimers();
   });
 
-  it('says the first call at once, and the calls within the wait after it once the wait is up', () => {
+  it('says calls made together once, with the last, and calls within the wait once it’s up', async () => {
     vi.useFakeTimers();
-    let said = 0;
-    const pace = paced(100, () => (said += 1));
-    pace.call();
-    expect(said).toBe(1);
-    pace.call();
-    vi.advanceTimersByTime(40);
-    pace.call();
-    vi.advanceTimersByTime(59);
-    expect(said).toBe(1);
-    vi.advanceTimersByTime(1);
-    expect(said).toBe(2);
-    // A call longer than the wait after the last said is said at once.
-    vi.advanceTimersByTime(100);
-    pace.call();
-    expect(said).toBe(3);
+    let line = '';
+    const said: string[] = [];
+    const say = paced(100, () => said.push(line));
+    for (line of ['a', 'b', 'c']) say();
+    expect(said).toEqual([]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(said).toEqual(['c']);
+
+    line = 'd';
+    say();
+    await vi.advanceTimersByTimeAsync(40);
+    line = 'e';
+    say();
+    await vi.advanceTimersByTimeAsync(59);
+    expect(said).toEqual(['c']);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(said).toEqual(['c', 'e']);
+
+    // Longer than the wait after the last said, a call is said once the code making it is done.
+    await vi.advanceTimersByTimeAsync(100);
+    line = 'f';
+    say();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(said).toEqual(['c', 'e', 'f']);
   });
 
-  it('drops the call waiting when cancelled', () => {
+  it('keeps time as the wall clock steps back', async () => {
     vi.useFakeTimers();
     let said = 0;
-    const pace = paced(100, () => (said += 1));
-    pace.call();
-    pace.call();
-    pace.cancel();
-    vi.advanceTimersByTime(1_000);
-    expect(said).toBe(1);
+    const say = paced(100, () => (said += 1));
+    say();
+    await vi.advanceTimersByTimeAsync(0);
+    vi.setSystemTime(Date.now() - 60 * 60_000);
+    await vi.advanceTimersByTimeAsync(100);
+    say();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(said).toBe(2);
+  });
+});
+
+/** A local copy fetching from a stand-in clone, on fake timers, with what it has said settled. */
+async function fetching() {
+  vi.useFakeTimers();
+  const fake = fakeGit();
+  const copy = copyIn(fake.localGit);
+  copy.local.want(REFS);
+  copy.local.show(APP_PULL.head);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(copy.states).toEqual([{ kind: 'fetching', progress: null, attempt: 1 }]);
+  return { ...fake, ...copy };
+}
+
+describe('a local copy saying what git is doing', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it(`says it at most every ${PROGRESS_EVERY} ms, with the latest`, async () => {
+    const { tell, states } = await fetching();
+    // What git did since the copy last heard comes together: the latest is said.
+    tell(connecting, receiving(10), receiving(20));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(progressIn(states)).toEqual([null, 'receiving objects, 20% of 100']);
+
+    tell(receiving(30));
+    await vi.advanceTimersByTimeAsync(40);
+    tell(receiving(40));
+    await vi.advanceTimersByTimeAsync(PROGRESS_EVERY - 41);
+    expect(progressIn(states)).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(progressIn(states)).toEqual([
+      null,
+      'receiving objects, 20% of 100',
+      'receiving objects, 40% of 100',
+    ]);
+  });
+
+  it('gives the tab what it last said, not what’s waiting to be said', async () => {
+    const { tell, local, last } = await fetching();
+    tell(connecting);
+    await vi.advanceTimersByTimeAsync(0);
+    tell(receiving(10));
+    // The tab, sending the copy's state for reasons of its own, sends what the window has.
+    expect(local.state).toEqual(last());
+    tell(connecting);
+    await vi.advanceTimersByTimeAsync(PROGRESS_EVERY);
+    expect(local.state).toEqual(last());
+    expect(last()).toMatchObject({ kind: 'fetching', progress: 'connecting to GitHub' });
+  });
+
+  it('says nothing between the fetch ending and the head on screen being ready', async () => {
+    const { tell, fetched, branched, states, last } = await fetching();
+    tell(connecting);
+    await vi.advanceTimersByTimeAsync(0);
+    // A line still waiting to be said as the fetch ends, and working out where the head branched
+    // taking longer than the wait.
+    tell(receiving(50));
+    fetched.resolve({
+      head: parseOid(APP_PULL.head),
+      headSource: { kind: 'pullRef' },
+      baseTip: parseOid(APP_PULL.base),
+      baseSource: 'branch',
+    });
+    await vi.advanceTimersByTimeAsync(PROGRESS_EVERY * 3);
+    expect(states.map((state) => state.kind)).toEqual(['fetching', 'fetching']);
+
+    branched.resolve(parseOid(APP_PULL.base));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(last()).toEqual({
+      kind: 'ready',
+      head: APP_PULL.head,
+      base: APP_PULL.base,
+      mergeBase: APP_PULL.base,
+      offline: false,
+    });
   });
 });
 
@@ -142,7 +283,7 @@ describe('a local copy', { timeout: 60_000 }, () => {
   it('fetches the pull request and says the head on screen is ready, with its base', async () => {
     const localGit = await testGit();
     const asked: string[] = [];
-    const { local, states, times, last } = copyIn(localGit, () => {
+    const { local, states, last } = copyIn(localGit, () => {
       asked.push('token');
       return Promise.resolve('gho_FAKE_TOKEN');
     });
@@ -157,12 +298,6 @@ describe('a local copy', { timeout: 60_000 }, () => {
       offline: false,
     });
     expect(states[0]).toEqual({ kind: 'fetching', progress: null, attempt: 1 });
-    // What git was doing was said at most every PROGRESS_EVERY ms, give or take the clock's tick.
-    const progress = states.flatMap((state, index) =>
-      state.kind === 'fetching' && state.progress !== null ? [times[index] ?? 0] : [],
-    );
-    const gaps = progress.slice(1).map((at, index) => at - (progress[index] ?? 0));
-    expect(gaps.filter((gap) => gap < PROGRESS_EVERY - 2)).toEqual([]);
     // The token is read as the fetch starts, and only for it.
     expect(asked).toEqual(['token']);
     const clone = localGit.cache?.repoFolder('rozed-dev', 'e2e') ?? '';
