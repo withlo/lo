@@ -173,13 +173,15 @@ export default defineCommands('diff', {
   },
   /**
    * The note of an overview's marker on the line: what the overview says about it, under its
-   * lines. On the menu of a line with a marker only; a click on the marker's ball opens it too.
+   * lines. In the diff alone, which draws the markers, and on the menu of a line with a marker
+   * only; a click on the marker's ball opens it too.
    */
   overviewNote: {
     label: 'Overview note',
     group: 'Copy and open',
     keys: [],
     targets: ['line'],
+    when: normal,
     menu: { on: 'line', order: 40 },
   },
   down: { label: 'Line down', group: 'Move', keys: ['j'], vim: 'own', when: code },

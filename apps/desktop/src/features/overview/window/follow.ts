@@ -631,13 +631,21 @@ export function placesFor(tab: string): void {
     const tree = trees.get(tab);
     const index = at.kind === 'block' && tree !== undefined ? blockIn(at.block, tree) : undefined;
     if (index === undefined) return false;
-    revealCount += 1;
-    reveals.set(tab, { block: index, count: revealCount });
-    showMiddle(tab, OVERVIEW_VIEW);
-    const overview = drawn.get(tab);
-    if (overview) takeReveal(overview);
+    revealBlock(tab, index);
     return true;
   });
+}
+
+/**
+ * Shows block `index` of the overview tab `tab` shows, as history brings a block back: the overview
+ * comes on screen, with the block given focus once it's drawn.
+ */
+export function revealBlock(tab: string, index: number): void {
+  revealCount += 1;
+  reveals.set(tab, { block: index, count: revealCount });
+  showMiddle(tab, OVERVIEW_VIEW);
+  const overview = drawn.get(tab);
+  if (overview) takeReveal(overview);
 }
 
 /** Forgets the tabs that closed, those not in `open`. */
