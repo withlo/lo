@@ -94,9 +94,14 @@ export async function readOverview(
   };
 }
 
+/** The files being fetched, by the store each goes into, then by their repository and ID. */
+const fetching = new WeakMap<Blobs, Map<string, Promise<Uint8Array>>>();
+
 /**
  * The file `id` names, from `blobs`, else fetched raw from `repository` and kept, once it hashes
- * to `id`. Throws {@link Unexpected} for bytes that don't.
+ * to `id`. An ask while the same file is being fetched gets that fetch's answer, so asks at once,
+ * as the view's and its check's are, cost one request. Throws {@link Unexpected} for bytes that
+ * don't hash to `id`.
  */
 export async function fetchBlob(
   github: Github,
@@ -106,6 +111,26 @@ export async function fetchBlob(
 ): Promise<Uint8Array> {
   const kept = blobs.get(id);
   if (kept) return kept;
+  let under = fetching.get(blobs);
+  if (!under) {
+    under = new Map();
+    fetching.set(blobs, under);
+  }
+  const key = `${repository.key} ${id}`;
+  const joined = under.get(key);
+  if (joined) return joined;
+  const started = fetchNew(github, blobs, repository, id).finally(() => under.delete(key));
+  under.set(key, started);
+  return started;
+}
+
+/** The file `id` names, fetched raw from `repository`, and kept once it hashes to `id`. */
+async function fetchNew(
+  github: Github,
+  blobs: Blobs,
+  repository: RepoRef,
+  id: string,
+): Promise<Uint8Array> {
   const bytes = await github((client) => blobBytes(client, repository, id));
   if (!blobs.put(id, bytes)) {
     throw new Unexpected(`GitHub sent a file of the overview that isn't the one its ID names.`);
