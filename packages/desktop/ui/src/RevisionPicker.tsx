@@ -82,7 +82,7 @@ const row = cva(
   'relative flex min-h-list-row-h cursor-default items-center gap-8 rounded-sm px-8 py-6 hover:bg-hover',
   {
     variants: {
-      between: { true: 'bg-current', false: '' },
+      between: { true: 'bg-on-screen', false: '' },
       focused: { true: 'shadow-ring-inset', false: '' },
       disabled: { true: 'text-fg-dim', false: 'text-fg' },
     },
