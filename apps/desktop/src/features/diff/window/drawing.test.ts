@@ -401,6 +401,46 @@ describe('a file under the reader that starts out otherwise in the local copy', 
   });
 });
 
+describe('a file the reader acts on', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('takes its new lines waiting their turn at once, so the key acts on them', async () => {
+    const loader = await drawnGithub(work, FIVE);
+    await frames();
+    // Frames come only as the test runs them: until then, each file's turn waits.
+    const waiting: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
+      waiting.push(callback),
+    );
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    // The reader is on the last file, whose new lines don't draw in the rows it has.
+    onScreen = ['d4'];
+    told.length = 0;
+    loader.take(state('shown', 'local', FIVE));
+    await waitFor(() => loader.shown('d4')?.from === 'local');
+    expect(told).toEqual([]);
+
+    // A key on it, as `zR`: its lines come in first.
+    drawnFor(TAB.id)?.acted('d4');
+    expect(told).toEqual(['lines d4 local shown']);
+
+    // The other files take their turns, and its own has nothing left to do.
+    while (waiting.length > 0) {
+      waiting.shift()?.(performance.now());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(told.filter((each) => each.startsWith('lines '))).toEqual([
+      'lines d4 local shown',
+      'lines d0 local shown',
+      'lines d1 local shown',
+      'lines d2 local shown',
+      'lines d3 local shown',
+    ]);
+  });
+});
+
 /** A line of file `d5`, and a column on it if given. */
 const at = (line: number, column?: number, side: 'old' | 'new' = 'new') => ({
   kind: 'line' as const,

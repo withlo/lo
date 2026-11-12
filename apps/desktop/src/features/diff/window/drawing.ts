@@ -281,6 +281,8 @@ export function draw(options: DrawOptions): Drawing {
   };
   /** Files the reader asked to load, which come in as soon as they arrive. */
   const asked = new Set<string>();
+  /** Files whose new lines came and wait their turn, with the latest that came. */
+  const coming = new Map<string, Shown>();
   const pacer = new Pacer();
 
   /**
@@ -310,6 +312,18 @@ export function draw(options: DrawOptions): Drawing {
     const color = () => setTokens(id, shown.tokens);
     if (onScreen) pacer.first(color);
     else pacer.run(color);
+  };
+
+  /**
+   * Brings a file the reader acts on up to the lines that came for it, held or still waiting their
+   * turn, so the key acts on them, not on lines about to go. A file kept out comes in as asked.
+   */
+  const catchUp = (id: string) => {
+    if (drawn.get(id) === 'out') return;
+    const shown = coming.get(id);
+    coming.delete(id);
+    if (held.has(id)) release(id, true);
+    else if (shown) setLines(id, shown, true);
   };
 
   /** Makes a change to a file now, `onScreen` or not. Returns whether it could. */
@@ -410,8 +424,13 @@ export function draw(options: DrawOptions): Drawing {
   // Each file's diff and highlighting came with it.
   view.setMoves(shownMoves);
   loader.attach({
-    lines(id, shown) {
+    lines(id, given) {
+      coming.set(id, given);
       pacer.alone(() => {
+        const shown = coming.get(id);
+        // The reader took them already, or an earlier turn took the latest.
+        if (!shown) return;
+        coming.delete(id);
         const onScreen = view.filesOnScreen().includes(id);
         // A file the reader is looking at stays as it is, unless its new lines draw in the rows
         // it has, so nothing on screen moves.
@@ -485,7 +504,7 @@ export function draw(options: DrawOptions): Drawing {
         order: files.map((file) => file.id),
         acted(id) {
           pending.delete(id);
-          release(id, true);
+          catchUp(id);
         },
         fileAt(target) {
           const spot = spotOf(target);
@@ -515,7 +534,7 @@ export function draw(options: DrawOptions): Drawing {
           const bottom = viewed ? view.probe.spotBottom(header) : undefined;
           own.add(id);
           pending.delete(id);
-          release(id, true);
+          catchUp(id);
           // However the reader left it with `za`, as a file with lines to show is.
           const lines = drawn.get(id) === 'shown' || drawn.get(id) === 'collapsed';
           if (!viewed) {
