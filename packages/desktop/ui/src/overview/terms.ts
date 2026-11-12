@@ -3,7 +3,7 @@
  * document's own for its entry, and the term the reader last went to from the text.
  */
 
-import { createContext, useContext } from 'react';
+import { createContext, useContext, type RefObject } from 'react';
 
 import type { Definition, OverviewBlock } from '@lo/artifact';
 
@@ -50,18 +50,29 @@ export function alphabetical(terms: readonly Definition[]): Definition[] {
 
 const COLLATOR = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
 
-/** What the overview's glossary is, and which entry the reader went to. */
+/** What the overview's glossary is, and where its terms' cards go. */
 export interface GlossaryState {
   glossary: Glossary;
-  /** The key of the term the reader went to from the text, drawn as the entry they reached. */
+  /**
+   * Where floating cards are put: an element inside `.lo-app`, or the page's body. A ref, read as
+   * a card opens, so finding it after the document is drawn draws nothing again.
+   */
+  container: RefObject<HTMLElement | null>;
+}
+
+/**
+ * The entry the reader went to from a term in the text, kept apart from the glossary itself so
+ * that only the glossary draws again when it changes, not every term.
+ */
+export interface Reached {
+  /** The key of the term the reader went to, drawn as the entry they reached. */
   target: string | undefined;
   /** The reader moved on from that entry. */
   leave: () => void;
-  /** Where floating cards are put: an element inside `.lo-app`, or the page's body. */
-  container: HTMLElement | null;
 }
 
 export const GlossaryContext = createContext<GlossaryState | undefined>(undefined);
+export const ReachedContext = createContext<Reached>({ target: undefined, leave: () => undefined });
 
 export function useGlossary(): GlossaryState {
   const state = useContext(GlossaryContext);

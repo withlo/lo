@@ -17,7 +17,8 @@ export interface BlockHint {
 
 /**
  * Whether the block keys stop at `block`: it holds something to act on. Code, figures,
- * walkthroughs, tabs and folds always do; prose does when it links to code or a term.
+ * walkthroughs, tabs and folds always do; prose, the glossary among it, does when it links to code
+ * or a term.
  */
 export function isStop(block: OverviewBlock): boolean {
   switch (block.kind) {
@@ -33,12 +34,12 @@ export function isStop(block: OverviewBlock): boolean {
     case 'quote':
     case 'alert':
     case 'footnotes':
+    case 'glossary':
       return linksToCodeOrTerm(block);
     case 'heading':
     case 'code':
     case 'rule':
     case 'suggestion':
-    case 'glossary':
       return false;
     default:
       block satisfies never;
@@ -65,12 +66,12 @@ export function blockHints(block: OverviewBlock): readonly BlockHint[] {
     case 'quote':
     case 'alert':
     case 'footnotes':
+    case 'glossary':
       return [{ keys: [['Tab']], label: 'Next link' }, FOLLOW];
     case 'heading':
     case 'code':
     case 'rule':
     case 'suggestion':
-    case 'glossary':
       return [];
     default:
       block satisfies never;

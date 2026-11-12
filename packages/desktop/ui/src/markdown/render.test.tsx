@@ -228,6 +228,13 @@ function followed() {
   return { page, onFollow };
 }
 
+/** A link to `url`, its text the address. */
+const web = (url: string): Inline => ({
+  kind: 'link',
+  target: { kind: 'web', url },
+  children: [text(url)],
+});
+
 describe('links', () => {
   it('hands an https:// page to whoever shows the text, by a click or ⏎, and has no address', () => {
     const { page, onFollow } = followed();
@@ -260,6 +267,40 @@ describe('links', () => {
     expect([...words.querySelectorAll('a')].map((link) => link.textContent)).toEqual(['secure']);
     click(words);
     expect(onFollow).not.toHaveBeenCalled();
+  });
+
+  it('never makes a link of an address that isn’t an https:// page, even one put in a tree', () => {
+    const onFollow = vi.fn<(target: Followed, from: HTMLElement) => void>();
+    const addresses = [
+      'javascript:alert(1)',
+      'JavaScript:alert(1)',
+      ' javascript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'file:///etc/passwd',
+      'blob:https://example.com/x',
+      'https://user:secret@example.com/',
+      '//example.com/',
+    ];
+    const page = render(
+      <Markdown
+        tree={tree([
+          paragraph(...addresses.map(web)),
+          paragraph(
+            ...addresses.map((url): Inline => ({ kind: 'image', url, alt: 'pic' })),
+            ...addresses.map((url): Inline => ({ kind: 'mention', name: 'who', url })),
+          ),
+        ])}
+        onFollow={onFollow}
+      />,
+    );
+    expect(page.querySelector('a')).toBeNull();
+    for (const element of page.querySelectorAll('*')) {
+      for (const { value } of element.attributes) expect(value).not.toMatch(/:|\/\//);
+    }
+    for (const element of page.querySelectorAll('p')) click(element);
+    expect(onFollow).not.toHaveBeenCalled();
+    // Each shows as its words, which are only text.
+    expect(page.querySelector('p')?.textContent).toBe(addresses.join(''));
   });
 
   it('leaves out ⏎ with a modifier, which is a key of Lo’s own', () => {

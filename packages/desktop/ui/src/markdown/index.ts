@@ -17,6 +17,6 @@ export {
   type MarkdownExtension,
   type Rendering,
 } from './render.tsx';
-export { Anchors, anchorNames, scopePrefix } from './scope.ts';
+export { Anchors, anchorNames, generationOf, scopePrefix } from './scope.ts';
 export { secureLink } from './links.ts';
 export { isMarkdownAttribute, MARKDOWN_ELEMENTS } from './allowlist.ts';

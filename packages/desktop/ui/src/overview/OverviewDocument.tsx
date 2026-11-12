@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useId,
@@ -29,6 +30,7 @@ import {
   MarkdownInlines,
   MarkdownNotes,
   MarkdownProvider,
+  generationOf,
   reveal,
   scopePrefix,
   type Followed,
@@ -37,7 +39,13 @@ import {
 } from '../markdown/index.ts';
 import { blockHints, isStop, type BlockHint } from './blocks.ts';
 import { Glossary } from './Glossary.tsx';
-import { GlossaryContext, readGlossary, type GlossaryState } from './terms.ts';
+import {
+  GlossaryContext,
+  ReachedContext,
+  readGlossary,
+  type GlossaryState,
+  type Reached,
+} from './terms.ts';
 import { ExcerptHead, FigureCaption, WalkthroughSteps } from './placeholders.tsx';
 import { Tabs } from './Tabs.tsx';
 import { Term } from './Term.tsx';
@@ -122,11 +130,11 @@ export function OverviewDocument({
   const [current, setCurrent] = useState<number | undefined>(undefined);
   const [target, setTarget] = useState<string | undefined>(undefined);
   const root = useRef<HTMLDivElement | null>(null);
-  const [app, setApp] = useState<HTMLElement | null>(null);
+  const cards = useRef<HTMLElement | null>(null);
 
   useLayoutEffect(() => {
-    setApp(root.current?.closest<HTMLElement>('.lo-app') ?? null);
-  }, []);
+    cards.current = container ?? root.current?.closest<HTMLElement>('.lo-app') ?? null;
+  }, [container]);
 
   const scroller = useCallback(
     (element: HTMLDivElement | null) => {
@@ -136,6 +144,12 @@ export function OverviewDocument({
     },
     [ref],
   );
+
+  // The latest handler, read when a link is followed, so a new one doesn't draw the article again.
+  const handler = useRef(onFollow);
+  useLayoutEffect(() => {
+    handler.current = onFollow;
+  }, [onFollow]);
 
   const follow = useCallback(
     (to: OverviewTarget, from: HTMLElement) => {
@@ -147,9 +161,9 @@ export function OverviewDocument({
         setTarget(to.key);
         reveal(root.current, glossary.termId(to.key));
       }
-      onFollow?.(to, from);
+      handler.current?.(to, from);
     },
-    [anchors, glossary, sections, onFollow],
+    [anchors, glossary, sections],
   );
 
   const extension = useMemo(() => overviewExtension(views), [views]);
@@ -157,10 +171,9 @@ export function OverviewDocument({
     () => ({ anchors, follow, extension, interactive: true }),
     [anchors, follow, extension],
   );
-  const terms = useMemo<GlossaryState>(
-    () => ({ glossary, target, leave: () => setTarget(undefined), container: container ?? app }),
-    [glossary, target, container, app],
-  );
+  const terms = useMemo<GlossaryState>(() => ({ glossary, container: cards }), [glossary]);
+  const reached = useMemo<Reached>(() => ({ target, leave: () => setTarget(undefined) }), [target]);
+  const generation = generationOf(tree);
 
   // The current section is the last whose heading has reached the top of the article.
   useEffect(() => {
@@ -193,43 +206,46 @@ export function OverviewDocument({
   return (
     <MarkdownProvider rendering={rendering}>
       <GlossaryContext value={terms}>
-        <div ref={scroller} className={outline ? 'lo-ov' : 'lo-ov grid-cols-1'}>
-          {outline && (
-            <nav className="lo-ov__toc" aria-label="Sections">
-              <div className="lo-toc__label">Overview</div>
-              {sections.map((section) => (
-                <button
-                  key={section.block}
-                  type="button"
-                  className="lo-toc__item text-start"
-                  aria-current={section.block === shown}
-                  onClick={() => {
-                    reveal(root.current, anchors.id(section.anchor));
-                    setCurrent(section.block);
-                  }}
-                >
-                  {section.title}
-                </button>
+        <ReachedContext value={reached}>
+          <div ref={scroller} className={outline ? 'lo-ov' : 'lo-ov grid-cols-1'}>
+            {outline && (
+              <nav className="lo-ov__toc" aria-label="Sections">
+                <div className="lo-toc__label">Overview</div>
+                {sections.map((section) => (
+                  <button
+                    key={section.block}
+                    type="button"
+                    className="lo-toc__item text-start"
+                    aria-current={section.block === shown}
+                    onClick={() => {
+                      reveal(root.current, anchors.id(section.anchor));
+                      setCurrent(section.block);
+                    }}
+                  >
+                    {section.title}
+                  </button>
+                ))}
+                {outlineFoot !== undefined && <div className="lo-toc__foot">{outlineFoot}</div>}
+              </nav>
+            )}
+            <article className="lo-ov__article lo-prose">
+              {byline}
+              {banner}
+              {tree.blocks.map((block, index) => (
+                <ArticleBlock
+                  // A new tree's blocks start fresh: no fold or tab keeps the state of the one before.
+                  key={`${generation}:${index}`}
+                  block={block}
+                  number={index}
+                  lead={index === lead}
+                  focused={focused === index}
+                  hints={hints}
+                />
               ))}
-              {outlineFoot !== undefined && <div className="lo-toc__foot">{outlineFoot}</div>}
-            </nav>
-          )}
-          <article className="lo-ov__article lo-prose">
-            {byline}
-            {banner}
-            {tree.blocks.map((block, index) => (
-              <ArticleBlock
-                key={index}
-                block={block}
-                number={index}
-                lead={index === lead}
-                focused={focused === index}
-                hints={hints}
-              />
-            ))}
-            <MarkdownNotes notes={tree.notes} />
-          </article>
-        </div>
+              <MarkdownNotes notes={tree.notes} />
+            </article>
+          </div>
+        </ReachedContext>
       </GlossaryContext>
     </MarkdownProvider>
   );
@@ -245,11 +261,19 @@ interface ArticleBlockProps {
 }
 
 /**
- * One of the article's blocks. Those the block keys stop at carry their number and, focused, a
- * ring and their keys: in a frame of their own for code, figures, walkthroughs and tabs, and
- * around the text for prose and folds, which keep the spacing prose has.
+ * One of the article's blocks. Those the block keys stop at sit in `.lo-block`, with their number
+ * and, focused, a ring and their keys: a frame of their own for code, figures, walkthroughs and
+ * tabs; for a fold, the fold itself; and around prose, `.lo-block--prose`, which keeps the spacing
+ * prose has. Each is drawn again only when what it's given changes, so moving between sections,
+ * focus or a term's entry leaves the rest of the article as it is.
  */
-function ArticleBlock({ block, number, lead, focused, hints }: ArticleBlockProps) {
+const ArticleBlock = memo(function ArticleBlock({
+  block,
+  number,
+  lead,
+  focused,
+  hints,
+}: ArticleBlockProps) {
   const drawn =
     lead && block.kind === 'paragraph' ? (
       <p className="lo-lead">
@@ -265,13 +289,13 @@ function ArticleBlock({ block, number, lead, focused, hints }: ArticleBlockProps
       <Fold
         node={block}
         kind="More detail"
-        className={focused ? 'lo-ov-stop is-focused' : 'lo-ov-stop'}
+        className={focused ? 'lo-block lo-block--fold is-focused' : 'lo-block lo-block--fold'}
         number={number}
         summaryEnd={chip}
       />
     );
   }
-  const frame = FRAMED.has(block.kind) ? 'lo-block' : 'lo-ov-stop';
+  const frame = FRAMED.has(block.kind) ? 'lo-block' : 'lo-block lo-block--prose';
   return (
     <div
       className={focused ? [frame, 'is-focused'].join(' ') : frame}
@@ -282,7 +306,7 @@ function ArticleBlock({ block, number, lead, focused, hints }: ArticleBlockProps
       {chip}
     </div>
   );
-}
+});
 
 /** The blocks drawn in a frame of their own, which the block's ring goes around. */
 const FRAMED: ReadonlySet<OverviewBlock['kind']> = new Set([

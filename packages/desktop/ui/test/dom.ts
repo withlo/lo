@@ -17,6 +17,13 @@ export function render(node: ReactNode): HTMLElement {
   return host;
 }
 
+/** Draws `node` in place of what `render` drew into `host`, as a parent drawing again would. */
+export function rerender(host: HTMLElement, node: ReactNode): void {
+  const found = mounted.find((each) => each.host === host);
+  if (!found) throw new Error('Nothing was rendered into that element.');
+  act(() => found.root.render(node));
+}
+
 /** Unmounts and removes everything `render` made. */
 export function cleanUp(): void {
   for (const { root, host } of mounted) {

@@ -1,19 +1,21 @@
 // @vitest-environment jsdom
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 
-import { act } from 'react';
+import { act, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   parseArtifact,
   type Definition,
+  type Excerpt,
+  type Glossary as GlossaryBlock,
   type OverviewBlock,
   type OverviewTree,
 } from '@lo/artifact';
 
 import { buildCss, hasRule } from '../../scripts/stylesheet.ts';
-import { cleanUp, click, disallowed, focus, ids, press, render } from '../../test/dom.ts';
+import { cleanUp, click, disallowed, focus, ids, press, render, rerender } from '../../test/dom.ts';
 import { isMarkdownAttribute, MARKDOWN_ELEMENTS } from '../markdown/index.ts';
 import {
   alphabetical,
@@ -146,12 +148,22 @@ describe('OverviewDocument', () => {
 
   it('hands code links, and pages, to whoever shows it', () => {
     const onFollow = vi.fn<(target: OverviewTarget, from: HTMLElement) => void>();
-    const page = render(<OverviewDocument tree={fixture('valid/example')} onFollow={onFollow} />);
-    const link = [...page.querySelectorAll('a')].find(
-      (each) => each.textContent === 'limiter.test.ts',
-    )!;
-    press(link, 'Enter');
-    expect(onFollow).toHaveBeenCalledWith({ kind: 'code', path: 'src/limiter.test.ts' }, link);
+    const page = render(
+      <OverviewDocument
+        tree={overview(
+          'See [the store](code:src/store.ts#L4-L9), [the docs](https://example.com/docs) and [plain](http://example.com/).\n',
+        )}
+        onFollow={onFollow}
+      />,
+    );
+    const links = [...page.querySelectorAll('a')];
+    expect(links.map((link) => link.textContent)).toEqual(['the store', 'the docs']);
+    press(links[0]!, 'Enter');
+    click(links[1]!);
+    expect(onFollow.mock.calls).toEqual([
+      [{ kind: 'code', path: 'src/store.ts', lines: { start: 4, end: 9 } }, links[0]],
+      [{ kind: 'web', url: 'https://example.com/docs' }, links[1]],
+    ]);
   });
 
   it('moves to a section a link names, in its own document only', () => {
@@ -171,6 +183,130 @@ describe('OverviewDocument', () => {
     expect(onFollow).toHaveBeenCalledWith({ kind: 'anchor', name: 'how-it-works' }, link);
     const current = second.querySelector('.lo-toc__item[aria-current="true"]');
     expect(current?.textContent).toBe('How it works');
+  });
+});
+
+/** An overview with headings in a closed fold and a tab not shown, and links to them. */
+const hidden = () =>
+  overview(
+    [
+      ':::fold Why',
+      '### Deep down',
+      '',
+      'Inside the fold.',
+      ':::',
+      '',
+      ':::tabs',
+      ':::tab One',
+      'First.',
+      ':::',
+      ':::tab Two',
+      '### Second tab',
+      '',
+      'In the second tab.',
+      ':::',
+      ':::',
+      '',
+      'See [deep](#deep-down) and [second](#second-tab).',
+      '',
+    ].join('\n'),
+  );
+
+describe('moving to what a link names', () => {
+  it('opens a closed fold to reach a heading in it', () => {
+    const page = render(<OverviewDocument tree={hidden()} />);
+    const fold = page.querySelector('details')!;
+    expect(fold.open).toBe(false);
+    click(linkSaying(page, 'deep'));
+    expect(fold.open).toBe(true);
+    expect(document.activeElement?.textContent).toBe('Deep down');
+    // The fold knows it's open: its title closes it again.
+    click(fold.querySelector('summary')!);
+    expect(fold.open).toBe(false);
+  });
+
+  it('shows the tab a heading is in to reach it', () => {
+    const page = render(<OverviewDocument tree={hidden()} />);
+    press(linkSaying(page, 'second'), 'Enter');
+    const tabs = [...page.querySelectorAll('[role="tab"]')];
+    expect(tabs.map((tab) => tab.getAttribute('aria-selected'))).toEqual(['false', 'true']);
+    expect(document.activeElement?.textContent).toBe('Second tab');
+    expect(document.activeElement?.closest('[role="tabpanel"]')?.hasAttribute('hidden')).toBe(
+      false,
+    );
+  });
+});
+
+/** An overview with `count` tabs, then a fold. */
+const withTabs = (count: number) =>
+  overview(
+    [
+      ':::tabs',
+      ...Array.from({ length: count }, (_, index) => [
+        `:::tab T${index + 1}`,
+        `Tab ${index + 1}.`,
+        ':::',
+      ]).flat(),
+      ':::',
+      '',
+      ':::fold Why',
+      'Because.',
+      ':::',
+      '',
+    ].join('\n'),
+  );
+/** Each tab's `aria-selected`. */
+const selected = (page: HTMLElement) =>
+  [...page.querySelectorAll('[role="tab"]')].map((tab) => tab.getAttribute('aria-selected'));
+
+describe('drawing again', () => {
+  it('keeps what the reader opened while the tree is the same, and starts a new tree fresh', () => {
+    const tree = withTabs(3);
+    const page = render(<OverviewDocument tree={tree} />);
+    click(page.querySelectorAll('[role="tab"]')[2]!);
+    click(page.querySelector('summary')!);
+    expect(selected(page)).toEqual(['false', 'false', 'true']);
+    expect(page.querySelector('details')?.open).toBe(true);
+
+    rerender(page, <OverviewDocument tree={tree} focused={0} />);
+    expect(selected(page)).toEqual(['false', 'false', 'true']);
+    expect(page.querySelector('details')?.open).toBe(true);
+
+    // A new overview, with fewer tabs in the same place: its own first tab, its fold closed.
+    rerender(page, <OverviewDocument tree={withTabs(2)} />);
+    expect(selected(page)).toEqual(['true', 'false']);
+    expect(page.querySelector('[role="tabpanel"]:not([hidden])')?.textContent).toBe('Tab 1.');
+    expect(page.querySelector('details')?.open).toBe(false);
+  });
+
+  it('draws a block again only when what it shows changes, not for the outline, focus or terms', () => {
+    const tree = example();
+    const excerpt = vi.fn<(node: Excerpt) => ReactNode>((node: Excerpt) => (
+      <div className="excerpt">{node.target.path}</div>
+    ));
+    const views = { excerpt };
+    const page = render(<OverviewDocument tree={tree} views={views} onFollow={() => undefined} />);
+    expect(excerpt).toHaveBeenCalledTimes(1);
+
+    click(page.querySelectorAll('.lo-toc__item')[2]!);
+    focus(term(page));
+    press(term(page), 'Enter');
+    const at = (kind: OverviewBlock['kind']) =>
+      tree.blocks.findIndex((block) => block.kind === kind);
+    rerender(
+      page,
+      <OverviewDocument
+        tree={tree}
+        views={views}
+        focused={at('tabs')}
+        onFollow={() => undefined}
+      />,
+    );
+    expect(excerpt).toHaveBeenCalledTimes(1);
+
+    // The block that takes focus draws again, with its ring.
+    rerender(page, <OverviewDocument tree={tree} views={views} focused={at('excerpt')} />);
+    expect(excerpt).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -197,6 +333,22 @@ describe('blocks', () => {
     expect(isStop(tree.blocks[1]!)).toBe(false);
   });
 
+  it('stops at the glossary when a definition links to code or a term', () => {
+    const plain = overview(
+      'Uses [a cache](term:cache).\n\n## Glossary\n\n- **Cache**: kept in memory.\n',
+    );
+    expect(isStop(glossaryOf(plain))).toBe(false);
+    const linked = overview(
+      'Uses [a cache](term:cache).\n\n## Glossary\n\n- **Cache**: kept by [the store](code:src/store.ts).\n',
+    );
+    const page = render(
+      <OverviewDocument tree={linked} focused={linked.blocks.indexOf(glossaryOf(linked))} />,
+    );
+    const block = page.querySelector('.is-focused')!;
+    expect(block.className).toBe('lo-block lo-block--prose is-focused');
+    expect(block.firstElementChild?.localName).toBe('dl');
+  });
+
   it('draws the focused block’s ring and its keys, and keeps prose’s spacing around prose', () => {
     const tree = fixture('valid/example');
     const at = (kind: OverviewBlock['kind']) =>
@@ -219,12 +371,13 @@ describe('blocks', () => {
     page = focusedOn(at('details'));
     block = page.querySelector('.is-focused')!;
     expect(block.localName).toBe('details');
-    expect(block.className).toBe('lo-fold lo-ov-stop is-focused');
+    expect(block.className).toBe('lo-fold lo-block lo-block--fold is-focused');
+    expect(block.querySelector(':scope > summary > .lo-block__hints')).not.toBeNull();
     expect(hints(block)).toEqual(['⏎ Open or close']);
 
     page = focusedOn(at('paragraph') + 2);
     block = page.querySelector('.is-focused')!;
-    expect(block.className).toBe('lo-ov-stop is-focused');
+    expect(block.className).toBe('lo-block lo-block--prose is-focused');
     expect(block.firstElementChild?.localName).toBe('p');
     expect(hints(block)).toEqual(['Tab Next link', '⏎ Follow']);
 
@@ -252,6 +405,12 @@ describe('terms', () => {
     expect(card()?.textContent).toBe(
       'Bucketthe tokens a tenant has to spend. Each request takes one.Glossary⏎',
     );
+    expect(card()?.className).toContain('lo-popover lo-hovercard');
+    expect([...card()!.children].map((part) => part.className)).toEqual([
+      'lo-hovercard__term',
+      'lo-hovercard__body',
+      'lo-hovercard__foot',
+    ]);
     // The card is a copy: screen readers hear the glossary, which describes the term.
     expect(card()?.getAttribute('aria-hidden')).toBe('true');
     const described = document.getElementById(use.getAttribute('aria-describedby')!);
@@ -365,6 +524,66 @@ describe('terms', () => {
       'the store',
       'it',
     ]);
+  });
+
+  it('copies only a definition’s opening words: no id, nothing that takes focus, no code view', () => {
+    const tree = overview(
+      'Uses [a cache](term:cache).\n\n## Glossary\n\n- **Cache**: kept in memory.\n',
+    );
+    const definition = glossaryOf(tree).terms[0]!;
+    // A definition that goes on past its first paragraph.
+    definition.children.push(
+      {
+        kind: 'heading',
+        level: 3,
+        anchor: 'inside',
+        children: [{ kind: 'text', value: 'Inside' }],
+      },
+      { kind: 'excerpt', target: { kind: 'code', path: 'src/a.ts', lines: { start: 1, end: 2 } } },
+      {
+        kind: 'details',
+        open: true,
+        summary: [{ kind: 'text', value: 'Why' }],
+        children: [{ kind: 'paragraph', children: [{ kind: 'text', value: 'Because.' }] }],
+      },
+    );
+    const excerpt = vi.fn<(node: Excerpt) => ReactNode>((node: Excerpt) => (
+      <div className="excerpt">{node.target.path}</div>
+    ));
+    const views = { excerpt };
+    const page = render(<OverviewDocument tree={tree} views={views} />);
+    // The glossary draws the definition whole.
+    expect(excerpt).toHaveBeenCalledTimes(1);
+    expect(page.querySelector('dd h3')?.textContent).toBe('Inside');
+
+    focus(term(page));
+    expect(card()?.textContent).toBe('Cachekept in memory. More in the glossary.Glossary⏎');
+    expect(
+      card()?.querySelector('[id], [tabindex], a, summary, details, h1, h2, h3, h4, h5, h6'),
+    ).toBeNull();
+    expect(excerpt).toHaveBeenCalledTimes(1);
+  });
+
+  it('points to the glossary when a definition doesn’t open with a paragraph', () => {
+    const tree = overview(
+      'Uses [a cache](term:cache).\n\n## Glossary\n\n- **Cache**: kept in memory.\n',
+    );
+    const definition = glossaryOf(tree).terms[0]!;
+    definition.children = [{ kind: 'rule' }];
+    const page = render(<OverviewDocument tree={tree} />);
+    focus(term(page));
+    expect(card()?.querySelector('.lo-hovercard__body')?.textContent).toBe('In the glossary.');
+  });
+
+  it('adds nothing that takes focus, so Tab goes from a term to what follows it', () => {
+    const page = render(<OverviewDocument tree={example()} />);
+    const before = tabbable();
+    const use = term(page);
+    focus(use);
+    expect(card()).not.toBeNull();
+    expect(tabbable()).toEqual(before);
+    // What follows the term on the page is still its text, not a stop of the card's.
+    expect(use.nextElementSibling).toBeNull();
   });
 });
 
@@ -515,6 +734,44 @@ function allowed(element: string, attribute?: string): boolean {
   return isMarkdownAttribute(element, attribute) || (extra?.includes(attribute) ?? false);
 }
 
+/** What a term's card may hold: text and its inline marks, with classes, and hidden key caps. */
+const CARD: Readonly<Record<string, readonly string[]>> = {
+  div: [],
+  span: [],
+  strong: [],
+  em: [],
+  del: [],
+  code: [],
+  br: [],
+  sub: [],
+  sup: [],
+  kbd: ['aria-hidden'],
+};
+
+function cardAllowed(element: string, attribute?: string): boolean {
+  if (!Object.hasOwn(CARD, element)) return false;
+  return attribute === undefined || attribute === 'class' || CARD[element]!.includes(attribute);
+}
+
+/**
+ * Opens each term's card in `page` in turn, by focus, and lists what any holds that the card's
+ * allowlist lacks.
+ */
+function cardsHold(page: HTMLElement): string[] {
+  const found: string[] = [];
+  for (const use of page.querySelectorAll<HTMLElement>('.lo-term')) {
+    focus(use);
+    const shown = card();
+    if (!shown) {
+      found.push(`no card for ${use.textContent}`);
+      continue;
+    }
+    found.push(...disallowed(shown, cardAllowed));
+    act(() => use.blur());
+  }
+  return found;
+}
+
 describe('hostile overviews', () => {
   const hostile = new URL('hostile/', ARTIFACTS);
   const folders = readdirSync(hostile).filter((name) => {
@@ -531,10 +788,12 @@ describe('hostile overviews', () => {
 
   it.each(folders)('%s draws only what the allowlist has, and loads and runs nothing', (name) => {
     const page = render(<OverviewDocument tree={fixture(`hostile/${name}`)} />);
-    expect(disallowed(page, allowed)).toEqual([]);
-    expect(page.querySelectorAll('[id]').length).toBe(
-      page.querySelectorAll('[id^="lo-md"]').length,
+    const article = page.querySelector('.lo-ov')!;
+    expect(disallowed(article, allowed)).toEqual([]);
+    expect(article.querySelectorAll('[id]').length).toBe(
+      article.querySelectorAll('[id^="lo-md"]').length,
     );
+    expect(cardsHold(page)).toEqual([]);
   });
 
   const markdown = readdirSync(HOSTILE_MARKDOWN).filter((name) => name.endsWith('.md'));
@@ -544,6 +803,12 @@ describe('hostile overviews', () => {
       <OverviewDocument tree={parseArtifact(`${HEADER}## tl;dr\n\nA.\n\n${source}`).tree} />,
     );
     expect(disallowed(page, allowed)).toEqual([]);
+    expect(cardsHold(page)).toEqual([]);
+  });
+
+  it('opens a card for every term in the hostile terms overview', () => {
+    const page = render(<OverviewDocument tree={fixture('hostile/terms')} />);
+    expect(page.querySelectorAll('.lo-term').length).toBeGreaterThan(0);
   });
 
   it('a term whose key is an object’s own name is still only a term', () => {
@@ -567,15 +832,40 @@ describe('styles', () => {
     expect(markup).not.toMatch(/\sstyle=|<style/);
   });
 
-  it('draws a focused stop’s ring and keys on tokens, under the utilities', async () => {
+  it('keeps prose’s spacing around a prose block, and a fold’s rules edge to edge, under the utilities', async () => {
     const css = await buildCss([]);
-    expect(css).toMatch(
-      /@layer components\s*\{[^]*\.lo-ov-stop\.is-focused\s*\{[^}]*var\(--lo-focus\)/,
+    const components = /@layer components \{\n([^]*?)\n\}\n/.exec(css)?.[1] ?? '';
+    expect(components).toMatch(/\.lo-prose > \* \+ \.lo-block--prose\s*\{\s*margin-top: 14px;/);
+    expect(components).toMatch(/\.lo-prose > h2 \+ \.lo-block--prose\s*\{\s*margin-top: 12px;/);
+    expect(components).toMatch(/\.lo-block--fold\s*\{\s*border-radius: 0;/);
+    expect(components).toMatch(
+      /\.lo-block--fold\.is-focused > summary > \.lo-block__hints\s*\{\s*display: flex;/,
     );
-    expect(css).toMatch(/\.lo-ov-stop\.is-focused \.lo-block__hints\s*\{\s*display: flex;/);
-    expect(css).toMatch(/\.lo-hovercard\s*\{\s*width: calc\(var\(--lo-sp-64\) \* 5\);/);
+    expect(components).toMatch(/\.lo-popover\s*\{[^}]*var\(--lo-bg-overlay\)/);
+    expect(components).toMatch(/\.lo-hovercard__foot\s*\{/);
   });
 });
+
+/** What `Tab` can reach on the page. */
+function tabbable(): Element[] {
+  return [...document.querySelectorAll('[tabindex="0"], a[href], button, summary')];
+}
+
+/** The glossary block of `tree`. */
+function glossaryOf(tree: OverviewTree): GlossaryBlock {
+  const found = tree.blocks.find((block): block is GlossaryBlock => block.kind === 'glossary');
+  if (!found) throw new Error('The overview has no glossary.');
+  return found;
+}
+
+/** The link in `page` whose text is `words`. */
+function linkSaying(page: HTMLElement, words: string): HTMLElement {
+  const found = [...page.querySelectorAll<HTMLElement>('a')].find(
+    (each) => each.textContent === words,
+  );
+  if (!found) throw new Error(`No link says ${words}.`);
+  return found;
+}
 
 /** The pointer moving from `from` onto `to`, as the browser tells React. */
 function move(from: Element, to: Element): void {

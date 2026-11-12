@@ -1,4 +1,5 @@
 import { useCallback, useId, useMemo, useRef } from 'react';
+import { flushSync } from 'react-dom';
 
 import type { Extension, Plain, Tree } from '@lo/markdown';
 
@@ -10,7 +11,7 @@ import {
   type MarkdownExtension,
   type Rendering,
 } from './render.tsx';
-import { Anchors, scopePrefix } from './scope.ts';
+import { Anchors, generationOf, scopePrefix } from './scope.ts';
 
 export interface MarkdownProps<X extends Extension = Plain> {
   tree: Tree<X>;
@@ -50,7 +51,8 @@ export function Markdown<X extends Extension = Plain>({
   );
   return (
     <MarkdownProvider rendering={rendering}>
-      <div ref={root} className={className}>
+      {/* A new tree is drawn afresh, its folds closed or open as it says. */}
+      <div key={generationOf(tree)} ref={root} className={className}>
         <MarkdownBlocks blocks={tree.blocks} />
         <MarkdownNotes notes={tree.notes} />
       </div>
@@ -60,14 +62,50 @@ export function Markdown<X extends Extension = Plain>({
 
 /**
  * Brings the element with id `id` into view and gives it focus, when it's inside `within`: an
- * anchor's id is the document's own, so this never reaches past the document.
+ * anchor's id is the document's own, so this never reaches past the document. A closed fold around
+ * it opens first, and a tab panel around it that isn't shown is chosen through its tab, so what
+ * a link names is always there to see.
  */
 export function reveal(within: Element | null, id: string | undefined): HTMLElement | undefined {
   if (!within || id === undefined) return undefined;
   const element = within.ownerDocument.getElementById(id);
   if (!element || !within.contains(element) || !(element instanceof HTMLElement)) return undefined;
+  const hidden = hiders(element, within);
+  if (hidden.length > 0) {
+    // Drawn at once, so the element is on the page to scroll to.
+    flushSync(() => {
+      for (const hider of hidden) show(hider);
+    });
+  }
   // jsdom has no scrolling.
   if (typeof element.scrollIntoView === 'function') element.scrollIntoView({ block: 'start' });
   element.focus({ preventScroll: true });
   return element;
+}
+
+/** What hides `element`, inside `within`: closed folds and tab panels not shown, outermost first. */
+function hiders(element: Element, within: Element): HTMLElement[] {
+  const found: HTMLElement[] = [];
+  for (let at = element.parentElement; at && at !== within; at = at.parentElement) {
+    const closedFold = at.localName === 'details' && !at.hasAttribute('open');
+    const hiddenPanel = at.getAttribute('role') === 'tabpanel' && at.hasAttribute('hidden');
+    if ((closedFold || hiddenPanel) && at instanceof HTMLElement) found.unshift(at);
+  }
+  return found;
+}
+
+/**
+ * Shows a closed fold or a tab panel, as the reader would: the fold through its title, the panel
+ * through its tab, so what draws them knows they're shown.
+ */
+function show(hider: HTMLElement): void {
+  if (hider.localName === 'details') {
+    const title = [...hider.children].find((child) => child.localName === 'summary');
+    if (title instanceof HTMLElement) title.click();
+    else hider.setAttribute('open', '');
+    return;
+  }
+  const tab = hider.getAttribute('aria-labelledby');
+  const button = tab === null ? null : hider.ownerDocument.getElementById(tab);
+  button?.click();
 }

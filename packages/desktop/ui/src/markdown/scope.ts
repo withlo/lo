@@ -72,3 +72,21 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export function scopePrefix(reactId: string): string {
   return `lo-md${reactId.replace(/[^\w-]/g, '')}`;
 }
+
+const generations = new WeakMap<object, number>();
+let lastGeneration = 0;
+
+/**
+ * A number of Lo's own for a tree, the same for as long as it's the same tree. Keying what's
+ * drawn from a tree by it means a new tree's folds, tabs and the like start fresh, rather than
+ * taking on the state of what sat in their place before.
+ */
+export function generationOf(tree: object): number {
+  let generation = generations.get(tree);
+  if (generation === undefined) {
+    lastGeneration += 1;
+    generation = lastGeneration;
+    generations.set(tree, generation);
+  }
+  return generation;
+}

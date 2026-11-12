@@ -1,16 +1,17 @@
-import { Fragment, useMemo } from 'react';
+import { Fragment, useContext, useMemo } from 'react';
 
 import type { Glossary as GlossaryBlock, Overview } from '@lo/artifact';
 
 import { MarkdownBlocks } from '../markdown/index.ts';
-import { alphabetical, useGlossary } from './terms.ts';
+import { alphabetical, ReachedContext, useGlossary } from './terms.ts';
 
 /**
  * Every defined term and its definition, in alphabetical order, whatever order they were written
  * in. The entry a reader reached from a term in the text is marked until they move on.
  */
 export function Glossary({ node }: { node: GlossaryBlock }) {
-  const { glossary, target, leave } = useGlossary();
+  const { glossary } = useGlossary();
+  const { target, leave } = useContext(ReachedContext);
   const terms = useMemo(() => alphabetical(node.terms), [node.terms]);
   return (
     <dl className="lo-glossary">

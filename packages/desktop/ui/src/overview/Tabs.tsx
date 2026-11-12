@@ -11,11 +11,13 @@ import { MarkdownBlocks, useRendering } from '../markdown/index.ts';
 export function Tabs({ node }: { node: TabsBlock }) {
   const { anchors } = useRendering<Overview>();
   const own = `tabs${useId().replace(/[^\w-]/g, '')}`;
-  const [shown, setShown] = useState(0);
+  const [chosen, setShown] = useState(0);
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const tabId = (index: number) => anchors.own(`${own}-tab${index}`);
   const panelId = (index: number) => anchors.own(`${own}-panel${index}`);
   const count = node.tabs.length;
+  // A block with fewer tabs than the one chosen from shows its last.
+  const shown = Math.max(0, Math.min(chosen, count - 1));
   const show = (index: number) => {
     setShown(index);
     buttons.current[index]?.focus();
