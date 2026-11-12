@@ -990,6 +990,7 @@ class View implements DiffView {
   }
 
   filesOnScreen(): readonly string[] {
+    this.#measured();
     const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
     const view = this.#viewOf(pane);
     const top = this.dom.getBoundingClientRect().top - view.documentTop;
@@ -1012,6 +1013,7 @@ class View implements DiffView {
       };
     }
     this.#holding = undefined;
+    this.#measured();
     const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
     const view = this.#viewOf(pane);
     const top = this.dom.getBoundingClientRect().top - view.documentTop;
@@ -1029,6 +1031,17 @@ class View implements DiffView {
     const offset =
       drawn === undefined ? top - block.top : this.dom.getBoundingClientRect().top - drawn;
     return { at: this.#spot(this.#placeAt(pane, line)), offset };
+  }
+
+  /**
+   * Has the editors on screen do the measuring they have waiting, as the next frame would, so what
+   * a reading finds on screen is what that frame shows. A cursor a key or `reveal` moves comes on
+   * screen as its editor measures: until then the screen still shows where the reader was before,
+   * and a reading would take that as where they are. Side by side, the spacer pass has the editors
+   * measure in the task that moved the cursor; inline, nothing does before the next frame.
+   */
+  #measured(): void {
+    for (const pane of this.#panes()) this.#viewOf(pane).lineBlockAtHeight(0);
   }
 
   /** The line or header drawn at height `y` on the page, on the side that follows the screen. */
