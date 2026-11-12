@@ -5,13 +5,16 @@
 
 import type { Side, Target } from '@lo/ui/commands';
 
+import { notify, withdraw } from '../../../window/commands/notices.tsx';
 import { here, registry } from '../../../window/commands/registry.ts';
+import { HOLD_LIMIT } from '../../revisions/contract.ts';
 import { showMiddle } from '../../tab/window/shared.ts';
-import type { TreePath } from '../../tree/contract.ts';
+import { fileKey, type TreePath } from '../../tree/contract.ts';
 import { onShowFile, pathOf } from '../../tree/window/shared.ts';
 import type { Version } from '../contract.ts';
+import { keyOf } from './loader.ts';
 import { drawnFor, loaderOf, revealWhenDrawn } from './tabs.ts';
-import { changedIn, DIFF_VIEW, known, opened, versionOf, WHOLE_VIEW } from './whole.ts';
+import { changeAt, changedIn, DIFF_VIEW, known, opened, versionOf, WHOLE_VIEW } from './whole.ts';
 
 /** How many files have been asked to open whole, so each ask is told from the last. */
 let asks = 0;
@@ -29,8 +32,8 @@ function leave(): void {
 
 /**
  * Opens the file `key`, at `path`, whole in tab `tab`, in `version` where it has one, with its
- * cursor at `at` when given, and brings the whole-file view on screen. Focus goes to it with
- * `focus`, and otherwise only when it's nowhere in particular.
+ * cursor at `at` when given and the lines `marked` picked out, and brings the whole-file view on
+ * screen. Focus goes to it with `focus`, and otherwise only when it's nowhere in particular.
  */
 export function openWhole(
   tab: string,
@@ -39,6 +42,7 @@ export function openWhole(
     path: TreePath;
     version: Version;
     at?: Target | undefined;
+    marked?: { from: number; to: number } | undefined;
     focus: boolean;
   },
 ): void {
@@ -52,9 +56,105 @@ export function openWhole(
     id: loader.ids.of(file.key),
     path: file.path,
     version: versionOf(change, file.version),
+    marked: file.marked,
     ask: { at: file.at, focus: file.focus, count: asks },
   });
   showMiddle(tab, WHOLE_VIEW);
+}
+
+/** A place asked for in each tab before its diff's files were known, and what stops it waiting. */
+const waiting = new Map<string, () => void>();
+
+/** What the notes say while a place waits for the diff's files, and when it's dropped. */
+const WAITING = { title: 'Go to code', body: 'Waiting for the diff’s list of files.' };
+const TOO_LONG = 'The diff’s list of files hasn’t loaded yet. Try again in a moment.';
+const STOPPED = 'Lo stopped waiting for the diff’s list of files.';
+
+/** What the reader does that drops a place waiting for the diff's files: they've moved on. */
+const INPUT = ['keydown', 'pointerdown', 'wheel'] as const;
+
+/**
+ * Shows line `line` of the file at `path`, at the head on screen, in tab `tab`: in the diff, with
+ * the cursor on it, when the comparison on screen has the file; otherwise the file whole, at that
+ * head, with lines `marked` picked out. Without a line, the file's top. Where the tab was is
+ * recorded in its history first, as a jump's place, and focus goes to the code. Until the diff's
+ * files are known, which has the file isn't: a note says it waits for them, for up to
+ * `HOLD_LIMIT`. Past that, or once the reader does anything else, it's dropped, and a note says
+ * so; a later place asked for in the tab takes its place.
+ */
+export function showPlace(
+  tab: string,
+  path: string,
+  line: number | undefined,
+  marked?: { from: number; to: number },
+): void {
+  leave();
+  waiting.get(tab)?.();
+  const loader = loaderOf(tab);
+  if (loader.snapshot().state?.files) {
+    place(tab, path, line, marked);
+    return;
+  }
+  notify(WAITING.title, WAITING.body);
+  const stop = () => {
+    listening();
+    clearTimeout(bound);
+    for (const type of INPUT) window.removeEventListener(type, moved, true);
+    if (waiting.get(tab) === stop) waiting.delete(tab);
+  };
+  const drop = (why: string) => {
+    stop();
+    notify(WAITING.title, why);
+  };
+  const moved = () => drop(STOPPED);
+  const bound = setTimeout(() => drop(TOO_LONG), HOLD_LIMIT);
+  const listening = loader.subscribe(() => {
+    if (!loader.snapshot().state?.files) return;
+    stop();
+    withdraw(WAITING.title, WAITING.body);
+    place(tab, path, line, marked);
+  });
+  // Not the key or click that asked for the place: the window has heard it already.
+  for (const type of INPUT) window.addEventListener(type, moved, true);
+  waiting.set(tab, stop);
+}
+
+/** Shows the place {@link showPlace} asks for, once the diff's files are known. */
+function place(
+  tab: string,
+  path: string,
+  line: number | undefined,
+  marked: { from: number; to: number } | undefined,
+): void {
+  const loader = loaderOf(tab);
+  const change = changeAt(loader.snapshot().state?.files, path);
+  if (change) {
+    const file = loader.ids.of(keyOf(change));
+    const target: Target =
+      line === undefined || change.change === 'deleted'
+        ? { kind: 'file', file }
+        : { kind: 'line', at: { file, side: 'new', line } };
+    const drawn = drawnFor(tab);
+    if (drawn) {
+      drawn.view.reveal(target);
+      drawn.view.focus();
+      return;
+    }
+    revealWhenDrawn(tab, { target, focus: true });
+    showMiddle(tab, DIFF_VIEW);
+    return;
+  }
+  const whole: TreePath = { text: path };
+  const key = fileKey(whole);
+  const file = loader.ids.of(key);
+  openWhole(tab, {
+    key,
+    path: whole,
+    version: 'new',
+    at: line === undefined ? undefined : { kind: 'line', at: { file, side: 'new', line } },
+    marked,
+    focus: true,
+  });
 }
 
 /** The whole path of the file `key` names in tab `tab`, as it was opened, the diff has it, or the tree. */
@@ -129,6 +229,7 @@ export function placesFor(tab: string): void {
 /** Forgets the tabs that closed, those not in `open`: their history goes with them. */
 export function keepPlaces(open: ReadonlySet<string>): void {
   for (const tab of registered) if (!open.has(tab)) registered.delete(tab);
+  for (const [tab, stop] of waiting) if (!open.has(tab)) stop();
 }
 
 /**

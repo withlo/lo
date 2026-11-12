@@ -11,6 +11,20 @@ import { useGlossary } from './terms.ts';
 export const HOVER_OPEN_MS = 300;
 export const HOVER_CLOSE_MS = 150;
 
+/** How each term whose card is open closes it, as `Esc` does. */
+const openCards = new Set<() => void>();
+
+/**
+ * Closes every term's card that's open, as `Esc` on its term does, and says whether one was: for a
+ * window whose own `Esc` comes first, so a card closes before focus goes anywhere. A term that has
+ * focus keeps it, and its card stays closed until focus leaves it or the pointer opens it again.
+ */
+export function closeCards(): boolean {
+  const closers = [...openCards];
+  for (const close of closers) close();
+  return closers.length > 0;
+}
+
 /**
  * A use of a defined term: a dotted underline, and a card with its definition while the pointer
  * rests on it or it has focus. `⏎`, or a click, goes to its entry in the glossary; `Esc` closes the
@@ -26,20 +40,67 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // While the term has focus, its card stays, wherever the pointer goes.
   const focused = useRef(false);
-  // `Esc` closed the card, and focus hasn't left the term since.
-  const dismissed = useRef(false);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  // `Esc` closed the card, and focus hasn't left the term since: what stops watching for it to.
+  const dismissed = useRef<(() => void) | undefined>(undefined);
+
+  function undismiss(): void {
+    dismissed.current?.();
+    dismissed.current = undefined;
+  }
+
+  /**
+   * Keeps the card closed until focus leaves the term. While the window is away the term has had
+   * its blur, so focus a script moves elsewhere meanwhile is seen where it lands, as it lands or
+   * once the window is back, whichever the browser says: either way, not on the term.
+   */
+  function dismiss(): void {
+    const own = element.current;
+    if (dismissed.current || !own) return;
+    const page = own.ownerDocument;
+    const view = page.defaultView;
+    const left = () => {
+      if (page.activeElement !== own) undismiss();
+    };
+    page.addEventListener('focusin', left, true);
+    view?.addEventListener('focus', left);
+    dismissed.current = () => {
+      page.removeEventListener('focusin', left, true);
+      view?.removeEventListener('focus', left);
+    };
+  }
+
+  function show(next: boolean): void {
+    if (next) undismiss();
+    setOpen(next);
+  }
+
+  function now(next: boolean): void {
+    clearTimeout(timer.current);
+    show(next);
+  }
+
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      dismissed.current?.();
+    },
+    [],
+  );
+  // While the card is open, the window's own `Esc` can close it, as the term's does.
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = () => {
+      now(false);
+      if (focused.current) dismiss();
+    };
+    openCards.add(close);
+    return () => {
+      openCards.delete(close);
+    };
+  });
   const definition = glossary.definition(term.key);
   if (!definition) return children;
 
-  const show = (next: boolean) => {
-    if (next) dismissed.current = false;
-    setOpen(next);
-  };
-  const now = (next: boolean) => {
-    clearTimeout(timer.current);
-    show(next);
-  };
   const later = (next: boolean, wait: number) => {
     clearTimeout(timer.current);
     if (!next && focused.current) return;
@@ -70,7 +131,7 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
           // focus again when the window comes back: a card closed with `Esc` stays closed. Only
           // focus moving elsewhere undoes the `Esc`.
           if (event.currentTarget.ownerDocument.activeElement !== event.currentTarget) {
-            dismissed.current = false;
+            undismiss();
           }
           now(false);
         }}
@@ -83,7 +144,7 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
           } else if (event.key === 'Escape' && open) {
             event.preventDefault();
             now(false);
-            dismissed.current = true;
+            dismiss();
           }
         }}
       >

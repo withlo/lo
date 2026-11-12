@@ -19,6 +19,7 @@ import { cleanUp, click, disallowed, focus, ids, press, render, rerender } from 
 import { isMarkdownAttribute, MARKDOWN_ELEMENTS } from '../markdown/index.ts';
 import {
   alphabetical,
+  closeCards,
   HOVER_CLOSE_MS,
   HOVER_OPEN_MS,
   isStop,
@@ -157,7 +158,7 @@ describe('OverviewDocument', () => {
   });
 
   it('hands code links, and pages, to whoever shows it', () => {
-    const onFollow = vi.fn<(target: OverviewTarget, from: HTMLElement) => void>();
+    const onFollow = vi.fn<(target: OverviewTarget, from: Element) => void>();
     const page = render(
       <OverviewDocument
         tree={overview(
@@ -178,7 +179,7 @@ describe('OverviewDocument', () => {
 
   it('moves to a section a link names, in its own document only', () => {
     const first = render(<OverviewDocument tree={fixture('valid/example')} />);
-    const onFollow = vi.fn<(target: OverviewTarget, from: HTMLElement) => void>();
+    const onFollow = vi.fn<(target: OverviewTarget, from: Element) => void>();
     const second = render(<OverviewDocument tree={fixture('valid/example')} onFollow={onFollow} />);
     const all = [...ids(first), ...ids(second)];
     expect(new Set(all).size).toBe(all.length);
@@ -359,6 +360,23 @@ describe('blocks', () => {
     expect(block.firstElementChild?.localName).toBe('dl');
   });
 
+  it('stops at prose whose only links go to web pages, which can be followed, but not to http ones', () => {
+    const [, web, plain, insecure, section] = paragraphsOf(
+      [
+        'The [design notes](https://example.com/design) say why.',
+        'Nothing here links anywhere.',
+        'The [old notes](http://example.com/old) aren’t opened.',
+        'As [the tl;dr](#tldr) says.',
+      ].join('\n\n'),
+    );
+    expect([web, plain, insecure, section].map((block) => block && isStop(block))).toEqual([
+      true,
+      false,
+      false,
+      true,
+    ]);
+  });
+
   it('draws the focused block’s ring and its keys, and keeps prose’s spacing around prose', () => {
     const tree = fixture('valid/example');
     const at = (kind: OverviewBlock['kind']) =>
@@ -481,6 +499,39 @@ describe('terms', () => {
     expect(card()).not.toBeNull();
   });
 
+  it('closes on the window’s own Esc as on the term’s: focus stays, and the card stays closed', () => {
+    vi.useFakeTimers();
+    const page = render(<OverviewDocument tree={example()} />);
+    const use = term(page);
+    expect(closeCards()).toBe(false);
+    focus(use);
+    expect(card()).not.toBeNull();
+    act(() => {
+      expect(closeCards()).toBe(true);
+    });
+    expect(card()).toBeNull();
+    expect(document.activeElement).toBe(use);
+    expect(closeCards()).toBe(false);
+    // The window going and coming back leaves it closed, as the term's own `Esc` does.
+    act(() => {
+      use.dispatchEvent(new FocusEvent('blur'));
+      use.dispatchEvent(new FocusEvent('focus'));
+    });
+    expect(card()).toBeNull();
+
+    // One the pointer opened closes too.
+    act(() => use.blur());
+    move(document.body, use);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_OPEN_MS);
+    });
+    expect(card()).not.toBeNull();
+    act(() => {
+      expect(closeCards()).toBe(true);
+    });
+    expect(use.classList.contains('is-active')).toBe(false);
+  });
+
   it('opens on a pointer that rests on the term, and stays while it’s on the card', () => {
     vi.useFakeTimers();
     const page = render(<OverviewDocument tree={example()} />);
@@ -542,7 +593,7 @@ describe('terms', () => {
   });
 
   it('goes to its glossary entry on ⏎, and marks it until the reader moves on', () => {
-    const onFollow = vi.fn<(target: OverviewTarget, from: HTMLElement) => void>();
+    const onFollow = vi.fn<(target: OverviewTarget, from: Element) => void>();
     const page = render(<OverviewDocument tree={example()} onFollow={onFollow} />);
     const use = term(page);
     focus(use);
@@ -908,6 +959,13 @@ function glossaryOf(tree: OverviewTree): GlossaryBlock {
   const found = tree.blocks.find((block): block is GlossaryBlock => block.kind === 'glossary');
   if (!found) throw new Error('The overview has no glossary.');
   return found;
+}
+
+/** The paragraphs of an overview whose tl;dr is followed by `markdown`, findings or none. */
+function paragraphsOf(markdown: string): OverviewBlock[] {
+  return parseArtifact(`${HEADER}## tl;dr\n\nWhat it does.\n\n${markdown}`).tree.blocks.filter(
+    (block) => block.kind === 'paragraph',
+  );
 }
 
 /** The link in `page` whose text is `words`. */

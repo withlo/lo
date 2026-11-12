@@ -4,7 +4,16 @@ import { IpcError } from '../../../ipc/contract.ts';
 import { fileKey, type TreePath } from '../../tree/contract.ts';
 import type { FileVersions, WholeText } from '../contract.ts';
 import { fileLink } from './links.ts';
-import { changedIn, pathIn, readOf, reads, readWhole, versionOf, type WholeWork } from './whole.ts';
+import {
+  changeAt,
+  changedIn,
+  pathIn,
+  readOf,
+  reads,
+  readWhole,
+  versionOf,
+  type WholeWork,
+} from './whole.ts';
 
 const HEAD = 'a'.repeat(40);
 
@@ -138,6 +147,16 @@ describe('the version of a file shown whole', () => {
     expect(fileKey(long.path)).toBe(`\0#${'f'.repeat(64)}`);
     expect(changedIn(files, 'README.md')).toBeUndefined();
     expect(changedIn(null, 'src/parser.ts')).toBeUndefined();
+  });
+
+  it('is a changed file’s by its path at the head, however long, and never a path’s bytes', () => {
+    expect(changeAt(files, 'src/parser.ts')).toBe(renamed);
+    expect(changeAt(files, 'src/parse.ts')).toBeUndefined();
+    expect(changeAt(files, long.path.text)).toBe(long);
+    expect(changeAt(files, 'README.md')).toBeUndefined();
+    expect(changeAt(undefined, 'src/parser.ts')).toBeUndefined();
+    const bytes = changed({ text: 'caf\uFFFD.txt', hex: '636166e92e747874' }, 'modified');
+    expect(changeAt([bytes], 'caf\uFFFD.txt')).toBeUndefined();
   });
 
   it('is one the file has: an added file’s head, a deleted file’s base', () => {

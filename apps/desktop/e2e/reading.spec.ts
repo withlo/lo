@@ -1,12 +1,12 @@
 // Reading a pull request's overview in the app: Lo, started on the replay server as rozed-bot,
 // opens rozed-dev/e2e#80 on its overview when it shows within the bound, and on the diff when it
 // doesn't, there's none, or Settings says so, offering one that comes later; says why one can't be
-// shown; offers a newer one pushed while it's read; fills in its code blocks and walkthrough from
-// the local copy; and never moves what's on screen without the reader: not as banners come and go,
-// as it's checked again, as its code fills in, as a newer one is offered at any width, or as what's
-// above the line being read changes size. A server in front of the replay
-// server answers for the overview's ref as each test says: with the overview
-// `testing/fixtures/app.sh` wrote, none, one made here, or a failure.
+// shown; offers a newer one pushed while it's read; opens its links to web pages in the browser;
+// fills in its code blocks and walkthrough from the local copy; and never moves what's on screen
+// without the reader: not as banners come and go, as it's checked again, as its code fills in, as
+// a newer one is offered at any width, or as what's above the line being read changes size. A
+// server in front of the replay server answers for the overview's ref as each test says: with the
+// overview `testing/fixtures/app.sh` wrote, none, one made here, or a failure.
 
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -679,9 +679,72 @@ test('offers a newer overview pushed while one is read, and loads it only when a
   await expect(fold).toHaveAttribute('open', '');
   expect(await stillMoved(page)).toEqual([]);
 
-  await byline.getByRole('button', { name: 'Load it' }).click();
+  // From the overview itself, as Esc leaves it, ⇧Tab reaches the offer, and ⏎ takes it.
+  await fold.locator('summary').focus();
+  await page.keyboard.press('Escape');
+  await expect(shown.locator('.lo-ov')).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(byline.getByRole('button', { name: 'Load it' })).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(shown).toContainText('The second one.');
   await expect(byline).not.toContainText('A newer overview was pushed');
+  // Its blocks took the place of those that had focus: the overview itself has it, for ]b.
+  await expect(shown.locator('.lo-ov')).toBeFocused();
+  await page.keyboard.press(']');
+  await page.keyboard.press('b');
+  await expect(shown.locator('details > summary')).toBeFocused();
+});
+
+test('a block’s menu reads the overview again after a read failed, and loads a newer one', async ({
+  page,
+  ref,
+}) => {
+  ref.holds = { kind: 'made', overview: overviewOf({ 'artifact.md': longText('The first one.') }) };
+  const id = await open(page);
+  await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('Overview', {
+    timeout: 20_000,
+  });
+  await overviewTab(page).click();
+  const shown = overview(page, 'shown');
+  await expect(shown).toContainText('The first one.');
+  const fold = shown.locator('details');
+  const menu = page.getByRole('menu', { name: 'Block actions' });
+  const item = (name: RegExp) => menu.getByRole('menuitem', { name });
+
+  // Nothing newer and nothing failed: neither is on it.
+  await fold.click({ button: 'right' });
+  await expect(item(/^Copy prompt for an agent/)).toBeVisible();
+  await expect(item(/^Load the newer overview/)).toHaveCount(0);
+  await expect(item(/^Retry/)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+
+  // A read that failed: Retry reads the ref again, which finds a newer one, offered.
+  ref.holds = { kind: 'failing' };
+  await readAgain(page, id);
+  await expect
+    .poll(() => current(page, id), { timeout: 20_000 })
+    .toMatchObject({ problem: { kind: 'failed' } });
+  ref.holds = {
+    kind: 'made',
+    overview: overviewOf({ 'artifact.md': longText('The second one.') }),
+  };
+  await fold.click({ button: 'right' });
+  await item(/^Retry/).click();
+  const byline = page.locator('[data-lo-byline]');
+  await expect(byline).toContainText('A newer overview was pushed', { timeout: 20_000 });
+  await expect(shown).toContainText('The first one.');
+
+  await fold.click({ button: 'right' });
+  await expect(item(/^Retry/)).toHaveCount(0);
+  await item(/^Load the newer overview/).click();
+  await expect(shown).toContainText('The second one.');
+  await expect(byline).not.toContainText('A newer overview was pushed');
+  // Its blocks took the place of the block that had focus: the overview itself has it, for ]b.
+  await expect(shown.locator('.lo-ov')).toBeFocused();
+  await page.keyboard.press(']');
+  await page.keyboard.press('b');
+  await expect(shown.locator('details > summary')).toBeFocused();
 });
 
 test('keeps its byline as it is at any width, the commit’s name quoted and clipped, and a newer overview’s offer in reach and moving nothing', async ({
@@ -843,7 +906,9 @@ test('says why an overview can’t be shown, offering each newer one', async ({ 
     newer.getByRole('heading', { name: 'This overview needs a newer Lo' }),
   ).toBeVisible();
   await expect(newer).toContainText('format 2');
-  await newer.getByRole('button', { name: 'Get a newer Lo' }).click();
+  // ⏎ presses the button that has focus, with no overview drawn for it to follow.
+  await newer.getByRole('button', { name: 'Get a newer Lo' }).focus();
+  await page.keyboard.press('Enter');
   await expect.poll(browsed).toEqual(['https://github.com/withlo/lo/releases']);
 });
 
@@ -866,6 +931,35 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
   ref.holds = { kind: 'cassette' };
   await failed.getByRole('button', { name: 'Retry now' }).click();
   await expect(overview(page, 'shown')).toBeVisible({ timeout: 20_000 });
+});
+
+test('opens a link to a web page in the browser, on a click or ⏎', async ({ page, ref }) => {
+  ref.holds = {
+    kind: 'made',
+    overview: overviewOf({
+      'artifact.md': textOf(
+        '## tl;dr\n\nIt reads.\n\n## Where to look\n\nThe [design notes](https://example.com/design) say why.\n',
+      ),
+    }),
+  };
+  await open(page);
+  await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('Overview', {
+    timeout: 20_000,
+  });
+  await overviewTab(page).click();
+  const link = overview(page, 'shown').getByRole('link', { name: 'design notes' });
+  await link.click();
+  await expect.poll(browsed).toEqual(['https://example.com/design']);
+  // The overview stays on screen.
+  await expect(overview(page, 'shown')).toBeVisible();
+
+  // Prose whose only link is to a web page is a block the keys stop at, and Tab reaches its link.
+  await page.keyboard.press('Escape');
+  await expect(overview(page, 'shown').locator('.lo-ov')).toBeFocused();
+  for (const key of [']', 'b', 'Tab']) await page.keyboard.press(key);
+  await expect(link).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect.poll(browsed).toEqual(['https://example.com/design', 'https://example.com/design']);
 });
 
 test('nothing on the first screen moves from the first frame, as its figures fill in', async ({

@@ -32,6 +32,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { registry } from '../../../window/commands/registry.ts';
 import { usePull, useTabState } from '../../tab/window/shared.ts';
 import { findFile, showFile } from '../../tree/window/shared.ts';
+import { setStep, stepOf } from './blocks.ts';
 import type { CodeRead } from './checking.ts';
 import { useFirstDraw, type FirstDraw } from './drawing.ts';
 import { revisionAt } from './facts.ts';
@@ -362,8 +363,16 @@ export function WalkthroughBlock({
   node: WalkthroughNode;
   context: CodeContext;
 }) {
-  const [current, setCurrent] = useState(0);
+  // The step the reader left it at, when it's drawn again, and which following it goes to.
+  const [current, setCurrent] = useState(() => stepOf(node));
   const at = Math.max(0, Math.min(current, node.steps.length - 1));
+  const goTo = useCallback(
+    (next: number) => {
+      setCurrent(next);
+      setStep(node, next);
+    },
+    [node],
+  );
   const step = node.steps[at];
   const shows =
     step && showsOf(step.target, context.target(step.target), context.read, context.commit);
@@ -372,7 +381,7 @@ export function WalkthroughBlock({
       <Walkthrough
         node={node}
         current={at}
-        step={setCurrent}
+        step={goTo}
         code={
           step &&
           shows &&

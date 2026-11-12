@@ -45,6 +45,14 @@ export function notify(title: string, body: string): void {
   }, NOTICE_TIME);
 }
 
+/** Takes back the note `title` and `body` say, if it's the one showing: what it said is over. */
+export function withdraw(title: string, body: string): void {
+  if (current?.title !== title || current.body !== body) return;
+  clearTimeout(timer);
+  timer = undefined;
+  set(undefined);
+}
+
 /** The window's notes, as toasts: an info icon, what was asked for and why it didn't happen. */
 export function Notices() {
   const note = useSyncExternalStore(subscribe, notice);

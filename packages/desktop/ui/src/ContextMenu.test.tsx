@@ -54,10 +54,11 @@ const sections: ContextMenuItem[][] = [
 interface HarnessProps {
   onClosed?: (chosen: string | undefined) => void;
   onOpenChange?: (open: boolean) => void;
+  finalFocus?: HTMLElement | SVGElement;
 }
 
 /** A menu that opens at a point and closes as it's asked to. */
-function Harness({ onClosed, onOpenChange }: HarnessProps) {
+function Harness({ onClosed, onOpenChange, finalFocus }: HarnessProps) {
   const [open, setOpen] = useState(true);
   return (
     <ContextMenu
@@ -69,6 +70,7 @@ function Harness({ onClosed, onOpenChange }: HarnessProps) {
       label="File actions"
       anchor={{ x: 40, y: 60 }}
       sections={sections}
+      finalFocus={finalFocus}
       onClosed={onClosed}
     />
   );
@@ -173,6 +175,49 @@ describe('ContextMenu', () => {
     press(document.activeElement!, 'Escape');
     await vi.waitFor(() => expect(document.activeElement).toBe(before));
     before.remove();
+  });
+
+  it('gives focus back to an element only a script can focus, not to a control inside it', async () => {
+    // A block of text that has a link in it: the block had focus, not its link.
+    const block = document.createElement('div');
+    block.tabIndex = -1;
+    const link = document.createElement('button');
+    link.textContent = 'parse';
+    block.append(link);
+    document.body.append(block);
+    block.focus();
+    const onClosed = vi.fn<(chosen: string | undefined) => void>();
+    const page = render(<Harness finalFocus={block} onClosed={onClosed} />);
+    const menu = page.querySelector('[role="menu"]')!;
+    await vi.waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+    press(document.activeElement!, 'Escape');
+    await vi.waitFor(() => expect(onClosed).toHaveBeenCalledWith(undefined));
+    // Focus is the block's when the caller hears the menu closed, and stays so.
+    expect(document.activeElement).toBe(block);
+    await act(async () => {
+      await new Promise((settle) => setTimeout(settle, 0));
+    });
+    expect(document.activeElement).toBe(block);
+    block.remove();
+  });
+
+  it('gives focus back to a part of a drawing, such as a figure’s', async () => {
+    const drawing = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const part = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    part.setAttribute('tabindex', '0');
+    part.setAttribute('role', 'link');
+    drawing.append(part);
+    document.body.append(drawing);
+    part.focus();
+    expect(document.activeElement).toBe(part);
+    const onClosed = vi.fn<(chosen: string | undefined) => void>();
+    const page = render(<Harness finalFocus={part} onClosed={onClosed} />);
+    const menu = page.querySelector('[role="menu"]')!;
+    await vi.waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+    press(document.activeElement!, 'Escape');
+    await vi.waitFor(() => expect(onClosed).toHaveBeenCalledWith(undefined));
+    expect(document.activeElement).toBe(part);
+    drawing.remove();
   });
 
   it('opens nowhere without an anchor', () => {

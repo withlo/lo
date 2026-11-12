@@ -26,8 +26,8 @@ export interface FigureProps {
    * the check kept for this block are linked.
    */
   parts?: readonly PartLink[] | undefined;
-  /** Called when a part is clicked. */
-  onFollow?: ((part: PartLink) => void) | undefined;
+  /** Called when a part is clicked, with the part's link. */
+  onFollow?: ((part: PartLink, from: Element) => void) | undefined;
   /** What shows under a part while it's hovered or has focus, if anything. */
   preview?: ((part: PartLink) => ReactNode) | undefined;
 }
@@ -123,7 +123,7 @@ function SvgFigure({
     };
     const click = (event: Event): void => {
       const found = partOf(event);
-      if (found) follow.current?.(found.part);
+      if (found) follow.current?.(found.part, found.link);
     };
     const svg = drawn.svg;
     svg.addEventListener('mouseover', enter);

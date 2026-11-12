@@ -23,7 +23,7 @@ import { main } from './main.ts';
 import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
 import { LayoutRow } from './LayoutRow.tsx';
 import { DiffStatus } from './Status.tsx';
-import { drawnFor, keepOnly, loaderOf, takeState, type Drawn } from './tabs.ts';
+import { keepOnly, keysDiff, loaderOf, takeState, type Drawn } from './tabs.ts';
 import { markViewed } from './viewed.ts';
 import { WholeFile } from './WholeFile.tsx';
 import {
@@ -42,12 +42,12 @@ import {
 
 const tabs = () => client(tabContract);
 
-/** The diff on screen, or why a key for it can't run. */
+/** The diff on screen, or the file of it beside another view that has focus, or why a key can't run. */
 function onScreen(): Drawn | string {
   const tab = activeTab();
   if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
   if (wholeDrawn(tab.id)) return 'A whole file is on screen, not the diff.';
-  return drawnFor(tab.id) ?? 'The diff isn’t drawn yet.';
+  return keysDiff(tab.id) ?? 'The diff isn’t drawn yet.';
 }
 
 /** Runs `act` on the diff on screen. */
@@ -185,7 +185,11 @@ export default {
         view.setLayout(next);
         await changeSetting(layout, next);
       }),
-      enabled: drawnNow,
+      enabled: () => {
+        const drawn = onScreen();
+        if (typeof drawn === 'string') return drawn;
+        return !drawn.beside || 'Code beside the overview is always inline.';
+      },
     },
     whitespace: {
       run: withDiff(async ({ loader }) => {

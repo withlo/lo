@@ -72,6 +72,8 @@ export interface Drawn {
   readonly pull: { owner: string; repo: string; number: number };
   /** Its files' ids, in the order it shows them. */
   readonly order: readonly string[];
+  /** It's one file of the diff beside another view, such as the overview: always inline. */
+  readonly beside?: boolean;
   /** The reader opened or closed a file: how it starts out is theirs to say now. */
   acted(file: string): void;
   /**
@@ -92,6 +94,32 @@ const drawn = new Map<string, Drawn>();
 
 /** The view drawn for tab `id`, if it's drawn. */
 export function drawnFor(id: string): Drawn | undefined {
+  return drawn.get(id);
+}
+
+/** A file of a tab's diff drawn beside another view, and whether an element is in it. */
+export interface Beside {
+  readonly drawn: Drawn;
+  holds(element: Element | null): boolean;
+}
+
+const besides = new Map<string, Beside>();
+
+/** Records a file of tab `id`'s diff drawn beside another view. Returns a function that forgets it. */
+export function setBeside(id: string, beside: Beside): () => void {
+  besides.set(id, beside);
+  return () => {
+    if (besides.get(id) === beside) besides.delete(id);
+  };
+}
+
+/**
+ * The diff the keys act on in tab `id`: a file beside another view while focus is in it, otherwise
+ * the diff drawn, if it is.
+ */
+export function keysDiff(id: string): Drawn | undefined {
+  const beside = besides.get(id);
+  if (beside?.holds(document.activeElement)) return beside.drawn;
   return drawn.get(id);
 }
 
