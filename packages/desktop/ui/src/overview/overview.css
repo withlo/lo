@@ -348,9 +348,10 @@
 
 /*
  * The banner over an overview written for an older push is as tall from its first frame as it
- * stays, whatever it says of what changed since, at any width: its title is one line, what changed
- * since is two, kept free until it comes, and where the article is narrow its actions take a row
- * of their own.
+ * stays, whatever it says, at any width: its title is one line, and what changed since has its
+ * lines kept free until it comes, more where the banner is narrow. Its actions never wrap by what
+ * their labels say: beside the text where there's room, in a row of their own under it where
+ * there's room for the longest labels side by side, and one above the other where there isn't.
  */
 .lo-ov .lo-ov-stales {
   container: lo-ov-stale / inline-size;
@@ -381,8 +382,34 @@
   .lo-ov .lo-ov-stale__actions {
     grid-column: 2;
     grid-row: 3;
-    flex-wrap: wrap;
+    min-width: 0;
     margin-top: 8px;
+    overflow: clip;
+    overflow-clip-margin: 4px;
+  }
+}
+@container lo-ov-stale (width < 480px) {
+  .lo-ov .lo-ov-stale__actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  /* Too narrow for a whole label, it's cut at its end: centered, it would be cut at both. */
+  .lo-ov .lo-ov-stale__actions > button {
+    justify-content: flex-start !important;
+    max-width: 100%;
+    overflow: hidden;
+  }
+}
+@container lo-ov-stale (width < 300px) {
+  .lo-ov .lo-ov-stale__sub {
+    height: 4lh;
+    -webkit-line-clamp: 4;
+  }
+}
+@container lo-ov-stale (width < 200px) {
+  .lo-ov .lo-ov-stale__sub {
+    height: 6lh;
+    -webkit-line-clamp: 6;
   }
 }
 
