@@ -20,9 +20,9 @@ function CommandRow() {
   const current = state?.installed.some((each) => each.current) ?? false;
   const where =
     first === undefined
-      ? 'Open a pull request from a terminal with lo <link>.'
+      ? 'Review a pull request from a terminal with lo <link>.'
       : current
-        ? `Installed at ${first.path}. Open a pull request from a terminal with lo <link>.`
+        ? `Installed at ${first.path}. Review a pull request from a terminal with lo <link>.`
         : `Installed at ${first.path} by another copy of Lo. Install it again to open this one.`;
   return (
     <Setting

@@ -52,7 +52,7 @@ describe('TabBar', () => {
     expect(markup).toContain('role="tablist"');
     expect(markup).toContain('aria-label="Pull requests"');
     expect(markup).not.toContain('role="tab"');
-    expect(markup).toContain('aria-label="Open a pull request"');
+    expect(markup).toContain('aria-label="Review a pull request"');
     // Inert until there's a way to open one.
     expect(markup).toContain('aria-disabled="true"');
   });

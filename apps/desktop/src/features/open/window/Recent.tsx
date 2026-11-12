@@ -90,7 +90,7 @@ function FirstRun() {
         </p>
         <div className="mt-6 flex gap-8">
           <Button variant="primary" onClick={() => registry().run('open.box', NO_TARGET)}>
-            Open a PR
+            Review a pull request
             <KeyFor id="open.box" className="text-on-accent" />
           </Button>
           <Button onClick={() => void pasteLink()}>
@@ -184,7 +184,7 @@ export function RecentTab() {
           variant={any ? 'primary' : 'secondary'}
           onClick={() => registry().run('open.box', NO_TARGET)}
         >
-          Open a PR
+          Review a pull request
           <KeyFor id="open.box" className={any ? 'text-on-accent' : undefined} />
         </Button>
       </header>

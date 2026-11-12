@@ -12,7 +12,7 @@ export default defineCommands(
      * Ctrl+O, Vim's `⌃o`.
      */
     box: {
-      label: 'Open a pull request',
+      label: 'Review a pull request',
       group: 'Find',
       keys: ['cmd+l', { keys: 'cmd+o', on: 'mac' }],
       when: { except: ['dialog', 'palette'] },
@@ -54,7 +54,7 @@ export default defineCommands(
       repeat: true,
     },
     /**
-     * Installs `lo`, which opens a pull request from a terminal: done once, so it has no key. It's
+     * Installs `lo`, which reviews a pull request from a terminal: done once, so it has no key. It's
      * in the app's own menu on macOS, in Settings, and in the command palette.
      */
     installCommand: {

@@ -28,6 +28,9 @@ async function mark(page: Page): Promise<() => Promise<boolean>> {
   return () => page.evaluate(() => Reflect.get(window, 'loMarked') !== true);
 }
 
+/** The tab strip, which holds the button that reviews a pull request, not the ones in Recent. */
+const strip = (page: Page) => page.getByRole('tablist', { name: 'Pull requests' });
+
 test('Electron’s menu is gone: Linux has none, and macOS’s reloads nothing', async ({
   app,
   page,
@@ -70,7 +73,7 @@ test('reload and developer-tools keys do nothing in the built app', async ({ app
 });
 
 signedIn('Esc gives focus back to the middle of the window', async ({ page }) => {
-  const open = page.getByRole('button', { name: 'Open a pull request' });
+  const open = strip(page).getByRole('button', { name: 'Review a pull request' });
   await open.focus();
   await expect(open).toBeFocused();
   await page.keyboard.press('Escape');
@@ -80,7 +83,7 @@ signedIn('Esc gives focus back to the middle of the window', async ({ page }) =>
 signedIn(
   'the window runs only the app menu’s own commands that main sends back',
   async ({ app, page }) => {
-    const open = page.getByRole('button', { name: 'Open a pull request' });
+    const open = strip(page).getByRole('button', { name: 'Review a pull request' });
     await open.focus();
     // Esc's command isn't in the app menu, so a click can't have sent it.
     await app.evaluate(({ BrowserWindow }) => {
@@ -171,7 +174,7 @@ test('Tab moves focus only through commands, and forms that ask keep the browser
   await expect(page.locator('#second')).toBeFocused();
 
   // Nor out of the window's own scope: the tab strip's button keeps focus.
-  const open = page.getByRole('button', { name: 'Open a pull request' });
+  const open = strip(page).getByRole('button', { name: 'Review a pull request' });
   await open.focus();
   await page.keyboard.press('Tab');
   await expect(open).toBeFocused();

@@ -256,7 +256,7 @@ test('Tab and ⌘⏎ do nothing in the other palettes, and Tab still keeps the k
   await middle(page).focus();
   for (const [open, name] of [
     [`${held}+Shift+p`, 'Command palette'],
-    [`${held}+l`, 'Open a pull request'],
+    [`${held}+l`, 'Review a pull request'],
   ] as const) {
     await page.keyboard.press(open);
     const palette = page.getByRole('dialog', { name });
@@ -279,7 +279,7 @@ test('closing a palette or key help gives focus back to where it was, in a pull 
   await shown(page);
   const overlays = [
     [`${held}+Shift+p`, 'Command palette'],
-    [`${held}+l`, 'Open a pull request'],
+    [`${held}+l`, 'Review a pull request'],
     [`${held}+p`, 'Go to a file'],
     ['?', 'Every key'],
   ] as const;

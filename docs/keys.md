@@ -69,7 +69,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Next match                     | `n`                     | Vim's own key, in code views        | `diff.nextMatch`     |
 | Previous match                 | `N`                     | Vim's own key, in code views        | `diff.previousMatch` |
 | Command palette                | `⌘⇧P`                   | Anywhere                            | `keys.palette`       |
-| Open a pull request            | `⌘L`, `⌘O` (macOS only) | Anywhere but `dialog` and `palette` | `open.box`           |
+| Review a pull request          | `⌘L`, `⌘O` (macOS only) | Anywhere but `dialog` and `palette` | `open.box`           |
 | Open the link on the clipboard | `⌘V`                    | In `recent`                         | `open.paste`         |
 | Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`        |
 | Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent`    |
@@ -214,11 +214,11 @@ form: `⌘⇧P` is `Ctrl+Shift+P` on Linux. `⌃` is Ctrl on both, so Vim's `⌃
 
 These keys are on one system only:
 
-| Action              | Keys     | On    | Where                               | Command          |
-| ------------------- | -------- | ----- | ----------------------------------- | ---------------- |
-| Quit Lo             | `Ctrl+Q` | Linux | Anywhere                            | `app.quit`       |
-| Full screen         | `F11`    | Linux | Anywhere                            | `app.fullScreen` |
-| Open a pull request | `⌘O`     | macOS | Anywhere but `dialog` and `palette` | `open.box`       |
+| Action                | Keys     | On    | Where                               | Command          |
+| --------------------- | -------- | ----- | ----------------------------------- | ---------------- |
+| Quit Lo               | `Ctrl+Q` | Linux | Anywhere                            | `app.quit`       |
+| Full screen           | `F11`    | Linux | Anywhere                            | `app.fullScreen` |
+| Review a pull request | `⌘O`     | macOS | Anywhere but `dialog` and `palette` | `open.box`       |
 
 On Linux, in a comment box in insert mode, and in a field inside a code view such as Vim's search,
 Lo never takes `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A`, `Ctrl+Z` or `Ctrl+W`: they keep their editing

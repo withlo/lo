@@ -36,7 +36,7 @@ export function installedWords(done: Installed): string {
   switch (done.kind) {
     case 'installed':
       return done.onPath
-        ? `Installed ${done.path}. Open a pull request from a terminal with lo <link>.`
+        ? `Installed ${done.path}. Review a pull request from a terminal with lo <link>.`
         : `Installed ${done.path}. Add ${done.path.slice(0, done.path.lastIndexOf('/'))} to your PATH if your shell doesn't find lo.`;
     case 'taken':
       return `There's already a ${done.path} that Lo didn't write, so Lo left it as it is.`;
