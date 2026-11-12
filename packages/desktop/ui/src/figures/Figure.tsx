@@ -158,6 +158,8 @@ function SvgFigure({
   }, [active, content]);
 
   if (!drawn) return <Broken path={path} number={number} caption={caption} why="content" />;
+  // With no size of its own, it would be drawn at whatever size its box has, and cut there.
+  if (!drawn.box) return <Broken path={path} number={number} caption={caption} why="header" />;
   return (
     <figure ref={own} className="lo-figure relative">
       <div ref={frame} className="lo-figure__frame" />
@@ -251,7 +253,7 @@ const NAMES: Readonly<Record<ImageType, string>> = {
 };
 
 /** Why, in a sentence that follows the figure's path. */
-function reason(why: Why, type: ImageType | undefined): string {
+function reason(why: Why, path: string, type: ImageType | undefined): string {
   switch (why) {
     case 'missing':
       return "isn't in the overview's commit.";
@@ -260,7 +262,10 @@ function reason(why: Why, type: ImageType | undefined): string {
     case 'type':
       return "isn't the type its name says.";
     case 'header':
-      return "has a damaged header, so Lo can't tell its size.";
+      // An SVG's size is its viewBox; an image's is in its header.
+      return path.endsWith('.svg')
+        ? "has no viewBox, so Lo can't tell its size."
+        : "has a damaged header, so Lo can't tell its size.";
     case 'encoding':
       return "isn't UTF-8, which an SVG figure must be.";
     case 'content':
@@ -302,7 +307,7 @@ function Broken({
           <path d="M8 6.25v3M8 11.25v.01" />
         </svg>
         <p className="min-w-0 wrap-anywhere">
-          <strong>Figure {number} can't be shown.</strong> {path} {reason(why, type)}
+          <strong>Figure {number} can't be shown.</strong> {path} {reason(why, path, type)}
         </p>
       </div>
       <Caption number={number} caption={caption} />

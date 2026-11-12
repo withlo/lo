@@ -376,6 +376,43 @@ describe('a figure that can’t be shown', () => {
       "holds what a figure can't",
     );
   });
+
+  test('an SVG with no size of its own is one, never drawn and cut to some box', () => {
+    const unsized = sanitizeSvg('<svg width="50%"><rect width="900" height="900"/></svg>').svg!;
+    render(
+      {
+        path: 'figures/a.svg',
+        figure: { state: 'kept', type: 'svg', svg: unsized, parts: [] },
+        number: 1,
+      },
+      { path: 'figures/b.svg', figure: { state: 'leftOut', why: 'header' }, number: 2 },
+    );
+    expect(host.querySelectorAll('.lo-figure__frame > svg:not(.lo-i)')).toHaveLength(0);
+    expect(
+      [...host.querySelectorAll('.lo-figure--broken p')].map((note) => note.textContent),
+    ).toEqual([
+      "Figure 1 can't be shown. figures/a.svg has no viewBox, so Lo can't tell its size.",
+      "Figure 2 can't be shown. figures/b.svg has no viewBox, so Lo can't tell its size.",
+    ]);
+  });
+
+  test('an SVG sized by its width and height alone is drawn at that size', () => {
+    const sized = sanitizeSvg(
+      '<svg width="100" height="800"><rect width="1" height="1"/></svg>',
+    ).svg!;
+    render({
+      path: 'figures/a.svg',
+      figure: { state: 'kept', type: 'svg', svg: sized, parts: [] },
+      number: 1,
+    });
+    const svg = host.querySelector('.lo-figure__frame > svg');
+    expect(svg?.getAttribute('viewBox')).toBe('0 0 100 800');
+    expect(
+      host
+        .querySelector<HTMLElement>('.lo-figure__frame')
+        ?.style.getPropertyValue('--lo-fig-widest'),
+    ).toBe(`${(TALLEST * 100) / 800}px`);
+  });
 });
 
 describe('the stylesheet', () => {

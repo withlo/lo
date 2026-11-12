@@ -45,8 +45,9 @@ export type FigureType = 'svg' | ImageType;
  *   can start as one type and go on as another, so whatever shows it serves it as `type`, and
  *   never guesses another from its bytes.
  * - `leftOut`: Lo shows a note in its place, and why: nothing is at its path, the path is a link or
- *   folder, its bytes aren't the type its name says, its header is damaged, an SVG isn't UTF-8,
- *   `sanitizeSvg` removed some of what it holds, or it's past a limit.
+ *   folder, its bytes aren't the type its name says, its header is damaged or an SVG has no size
+ *   (`header`), an SVG isn't UTF-8, `sanitizeSvg` removed some of what it holds, or it's past a
+ *   limit.
  * - `unread`: the reader failed, or was stopped, before it answered.
  */
 export type FigureState =
@@ -259,6 +260,11 @@ function svgFigure(bytes: Uint8Array): Found {
   }
   const sanitized = sanitizeSvg(text);
   if (!sanitized.svg) return refusal(sanitized.removed[0]?.reason);
+  // Lo draws a figure at the size its viewBox gives, which its width and height make when it
+  // has none: with neither, it has no size to draw at.
+  if (sanitized.removed.length === 0 && sanitized.svg.attributes['viewBox'] === undefined) {
+    return { kind: 'header', why: 'has no viewBox, nor a width and height in pixels to make one' };
+  }
   return {
     kind: 'svg',
     svg: sanitized.svg,

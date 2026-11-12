@@ -874,19 +874,51 @@ describe('the caps', () => {
   });
 
   test("the figure's own width and height are dropped: the renderer sizes it, by its viewBox", () => {
+    const boxes: (string | undefined)[] = [];
     for (const sized of [
       'viewBox="0 0 860 320" width="1" height="100000"',
       'viewBox="0 0 860 320" width="1em" height="100000em"',
-      'width="1px" height="1000000"',
       'width="100%" height="50%"',
+      'width="1em" height="20"',
+      'width="20"',
+      'width="0" height="20"',
+      'width="-1" height="20"',
     ]) {
       const made = sanitized(`<svg ${sized}><rect width="1" height="1"/></svg>`);
       expect(made.removed).toEqual([]);
       expect(Object.keys(made.svg!.attributes).filter((name) => name !== 'viewBox')).toEqual([]);
+      boxes.push(made.svg!.attributes['viewBox']);
     }
+    expect(boxes).toEqual([
+      '0 0 860 320',
+      '0 0 860 320',
+      ...Array.from({ length: 5 }, () => undefined),
+    ]);
     // A shape's own are its own.
     expect(inside('<svg><rect width="10" height="20"/></svg>')).toEqual([
       rect({ width: '10', height: '20' }),
+    ]);
+  });
+
+  test('without a viewBox, its width and height in its own units give it one, within the caps', () => {
+    for (const [sized, box] of [
+      ['width="860" height="320"', '0 0 860 320'],
+      ['width=" 860px " height="320.5PX"', '0 0 860 320.5'],
+      ['width="1e2" height="5e1"', '0 0 100 50'],
+    ]) {
+      const made = sanitized(`<svg ${sized}><rect width="1" height="1"/></svg>`);
+      expect(made.removed).toEqual([]);
+      expect(made.svg!.attributes).toEqual({ viewBox: box });
+      // Its four numbers are counted, as a viewBox's are.
+      expect(made.drawn).toBe(
+        sanitized(`<svg viewBox="${box}"><rect width="1" height="1"/></svg>`).drawn,
+      );
+    }
+    expect(sanitized('<svg width="1px" height="1000000"><rect/></svg>').removed).toEqual([
+      { reason: 'aspect', element: 'svg' },
+    ]);
+    expect(sanitized('<svg width="100" height="801"><rect/></svg>').removed).toEqual([
+      { reason: 'aspect', element: 'svg' },
     ]);
   });
 
