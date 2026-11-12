@@ -7,7 +7,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { build } from 'vite';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
@@ -25,6 +25,7 @@ import {
 
 const PACKAGE = fileURLToPath(new URL('..', import.meta.url));
 const bundle = readFileSync(CHECKER, 'utf8');
+const installer = readFileSync(join(dirname(CHECKER), 'install.js'), 'utf8');
 const written = readFileSync(join(dirname(CHECKER), NOTICES), 'utf8');
 
 /** Each module the bundle holds from an installed package, as the bundle names it. */
@@ -51,6 +52,14 @@ describe('the bundle', () => {
     expect(imports.length).toBeGreaterThan(0);
     expect(imports.filter((name) => !name.startsWith('node:'))).toEqual([]);
     expect(bundle).not.toMatch(/\bcreateRequire\b|\bimport\(/);
+  });
+
+  test('has an installer of its own that imports nothing but Node’s own modules', () => {
+    const imports = importsOf(installer);
+    expect(imports.length).toBeGreaterThan(0);
+    expect(imports.filter((name) => !name.startsWith('node:'))).toEqual([]);
+    expect(installer).not.toMatch(/^#!/);
+    expect(installer).toMatch(/^export \{[^}]*\binstall\b[^}]*\};?$/m);
   });
 
   test('inlines a package even where Node could load it from beside the checker', async () => {
@@ -148,12 +157,17 @@ test('the packed package runs with Node alone, from an empty folder', () => {
     './package/LICENSE',
     './package/dist/THIRD_PARTY_NOTICES',
     './package/dist/checker.js',
+    './package/dist/install.js',
     './package/package.json',
   ]);
   const manifest = JSON.parse(readFileSync(join(empty, 'package/package.json'), 'utf8'));
   expect(manifest.name).toBe('@withlo/overview');
   expect(manifest.dependencies).toBeUndefined();
   expect(manifest.bin).toEqual({ 'lo-overview': './dist/checker.js' });
+  // In the workspace the app imports the installer's source; packed, the export is the built file,
+  // which the package ships, and the packed manifest keeps no `publishConfig` to override it.
+  expect(manifest.exports).toEqual({ './install': './dist/install.js' });
+  expect(manifest.publishConfig).toBeUndefined();
 
   const run = (args: string[], cwd: string) =>
     execFileSync(process.execPath, [join(empty, 'package/dist/checker.js'), ...args], {
@@ -182,6 +196,20 @@ test('the packed package runs with Node alone, from an empty folder', () => {
   );
   expect(listing(join(skills, 'lo-overview'))).toEqual([...skillFiles(), 'references/'].toSorted());
   expectSkill(join(skills, 'lo-overview'));
+  // The export installs the same skill, from the file the package ships, for a program that
+  // imports it by the name the package exports.
+  const script = join(root.dir, 'import-installer.mjs');
+  writeFileSync(
+    script,
+    `import { install, installedIn } from ${JSON.stringify(pathToFileURL(join(empty, 'package', manifest.exports['./install'])).href)};\n` +
+      `const skills = process.argv[2];\n` +
+      `if (installedIn(skills)) throw new Error('installed already');\n` +
+      `install([{ agent: undefined, skills }]);\n` +
+      `if (!installedIn(skills)) throw new Error('not installed');\n`,
+  );
+  const imported = join(root.dir, 'imported');
+  execFileSync(process.execPath, [script, imported], { cwd: empty });
+  expectSkill(join(imported, 'lo-overview'));
   // Its SKILL.md runs this package, at the version it was packed as.
   const shipped = readFileSync(join(skills, 'lo-overview', 'SKILL.md'), 'utf8');
   expect(shipped).toContain(

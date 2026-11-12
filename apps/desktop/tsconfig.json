@@ -3,6 +3,9 @@
   "files": [],
   "references": [
     {
+      "path": "../../skill/checker"
+    },
+    {
       "path": "../../packages/desktop/syntax"
     },
     {

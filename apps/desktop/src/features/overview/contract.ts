@@ -142,6 +142,70 @@ export type OverviewFile =
   | { kind: 'refused' }
   | { kind: 'unread'; why: string };
 
+/** A coding agent that Lo installs the overview skill for. */
+export const agent = z.enum(['claude', 'codex']);
+export type Agent = z.output<typeof agent>;
+
+/**
+ * Why the skill wasn't installed, as the installer found: no agent is set up (`nothingSetUp`); a
+ * link (`link`), or something that isn't a folder or file (`notFolder`, `notFile`), is where the
+ * skill goes at `path`; the skill's folder at `path` holds another skill, `name` if it says one
+ * (`otherSkill`), or files that aren't the skill's (`otherFiles`); or the file system refused
+ * something in the skills folder `skills`, at `path` when it says where, with its error `code`,
+ * such as `EACCES`, and `detail`, in its own words (`failed`). Paths are written for a person, with
+ * `~` for the home folder.
+ */
+export const skillRefusal = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('nothingSetUp') }),
+  z.strictObject({ kind: z.literal('link'), path: z.string() }),
+  z.strictObject({ kind: z.literal('notFolder'), path: z.string() }),
+  z.strictObject({ kind: z.literal('notFile'), path: z.string() }),
+  z.strictObject({ kind: z.literal('otherSkill'), path: z.string(), name: z.string().nullable() }),
+  z.strictObject({ kind: z.literal('otherFiles'), path: z.string() }),
+  z.strictObject({
+    kind: z.literal('failed'),
+    skills: z.string(),
+    path: z.string().nullable(),
+    code: z.string().nullable(),
+    detail: z.string(),
+  }),
+]);
+export type SkillRefusal = z.output<typeof skillRefusal>;
+
+/**
+ * One agent and the overview skill on this computer, as main finds them:
+ *
+ * - `name`: the agent's name, as its users know it;
+ * - `setUp`: whether the agent is set up here, which is whether its own folder, `config`, exists;
+ * - `installed`: whether its skills folder, `skills`, holds the skill;
+ * - `config`, `skills`: those folders as a person writes them, `~` for the home folder;
+ * - `blocked`: why installing the skill for the agent would be refused now, if it would be.
+ *
+ * A Lo opened from the Dock doesn't see the variables a shell sets, such as `CLAUDE_CONFIG_DIR`, so
+ * the folders are what it looked in, not what the agent uses.
+ */
+export const skillAgent = z.strictObject({
+  agent,
+  name: z.string(),
+  setUp: z.boolean(),
+  installed: z.boolean(),
+  config: z.string(),
+  skills: z.string(),
+  blocked: skillRefusal.nullable(),
+});
+export type SkillAgent = z.output<typeof skillAgent>;
+
+/** The overview skill for each agent, in the order they're installed for. */
+export const skillState = z.strictObject({ agents: z.array(skillAgent) });
+export type SkillState = z.output<typeof skillState>;
+
+/**
+ * What installing the skill did for one agent: installed, or refused, and why. A refusal for no
+ * agent in particular (`null`) is that none is set up.
+ */
+export type SkillResult =
+  { kind: 'installed'; agent: Agent } | { kind: 'refused'; agent: Agent | null; why: SkillRefusal };
+
 /** A pull request's tab, by its id. */
 const byId = z.strictObject({ id: tabId });
 
@@ -166,9 +230,25 @@ export const contract = defineContract('overview', {
     retry: { input: byId, reply: reply<void>() },
     /** Puts the newer overview on screen. */
     load: { input: byId, reply: reply<void>() },
+    /**
+     * Where the overview skill goes, for each coding agent, and whether it's there now, which the
+     * `skill` topic then keeps up to date.
+     */
+    currentSkill: { input: z.undefined(), reply: reply<SkillState>() },
+    /**
+     * Installs the overview skill for `agents`, each on its own, so one that's refused leaves the
+     * others installed; with none named, for each that's set up. Nothing is written through a link
+     * or over another skill. `skill` follows with where things stand.
+     */
+    installSkill: {
+      input: z.strictObject({ agents: z.array(agent).max(2) }),
+      reply: reply<SkillResult[]>(),
+    },
   },
   topics: {
     /** A pull request's tab's overview, each time it changes. */
     state: overviewState,
+    /** Where the overview skill is, each time installing it changes that. */
+    skill: skillState,
   },
 });

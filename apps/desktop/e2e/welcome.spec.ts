@@ -275,8 +275,10 @@ test.describe('with no git', () => {
 });
 
 test('installs the lo command from the screen', async ({ page }) => {
-  await welcome(page).getByRole('button', { name: 'Install', exact: true }).click();
-  await expect(welcome(page).getByRole('button', { name: 'Installed' })).toBeDisabled();
+  // The overview skill has a step of its own, with its own button.
+  const step = welcome(page).getByRole('listitem').filter({ hasText: 'Install the lo command' });
+  await step.getByRole('button', { name: 'Install', exact: true }).click();
+  await expect(step.getByRole('button', { name: 'Installed' })).toBeDisabled();
   await expect(page.getByRole('status').filter({ hasText: 'Installed' })).toBeVisible();
 });
 
