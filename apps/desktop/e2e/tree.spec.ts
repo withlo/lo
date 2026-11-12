@@ -1,6 +1,6 @@
 // The file tree in the app: Lo started on the replay server, as rozed-bot, opens rozed-dev/e2e#80
 // and shows the repository's files at its head in the left panel, its changes marked, and the tree
-// answers its keys and its files' right-click menu.
+// answers its keys, its clicks and its files' right-click menu.
 
 import { writeFileSync } from 'node:fs';
 
@@ -97,6 +97,28 @@ async function shown(page: Page): Promise<string> {
 
 const marks = (locator: Locator) => locator.evaluate((element) => element.textContent);
 
+/** The path of the file whose header the diff's cursor is on, if it's on one. */
+function cursorPath(page: Page): Promise<string | undefined> {
+  return page.evaluate(() => {
+    const at = window.loDiff?.probe.cursor()?.at;
+    const id = at?.kind === 'header' ? at.file : undefined;
+    return window.loDiff?.files.find((file) => file.id === id)?.path;
+  });
+}
+
+/** How far below the top of the diff's screen `path`'s header is, if it's drawn. */
+function headerBelow(page: Page, path: string): Promise<number | undefined> {
+  return page.evaluate((wanted) => {
+    const file = window.loDiff?.files.find((each) => each.path === wanted)?.id;
+    const box = document.querySelector('.lo-diffview')?.getBoundingClientRect();
+    const top =
+      file === undefined
+        ? undefined
+        : window.loDiff?.probe.spotTop({ kind: 'header', file, side: 'new' });
+    return box && top !== undefined ? Math.round(top - box.top) : undefined;
+  }, path);
+}
+
 test('shows the repository’s files at the head on screen, with the pull request’s changes marked', async ({
   page,
 }) => {
@@ -186,21 +208,120 @@ test('shows a changed file in the diff on ⏎, the keyboard staying in the tree'
   await expect(tree(page)).toBeFocused();
   expect(await focused(page)).toBe('src/format.ts');
   await page.keyboard.press('Enter');
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const at = window.loDiff?.probe.cursor()?.at;
-        const id = at?.kind === 'header' ? at.file : undefined;
-        return window.loDiff?.files.find((file) => file.id === id)?.path;
-      }),
-    )
-    .toBe('src/format.ts');
+  await expect.poll(() => cursorPath(page)).toBe('src/format.ts');
   await expect(tree(page)).toBeFocused();
   // On a folder, ⏎ opens and closes it.
   await row(page, 'data').click();
   await expect(row(page, 'data')).toHaveAttribute('aria-expanded', 'false');
   await page.keyboard.press('Enter');
   await expect(row(page, 'data')).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('a click puts the file’s start at the top of the diff, wherever it was, and makes it the tree’s', async ({
+  page,
+}) => {
+  await shown(page);
+  // A file kept out as large, its header on screen already; the last file, closed as generated;
+  // and one with its lines.
+  expect(await headerBelow(page, 'data/numbers.txt')).toBeGreaterThan(0);
+  for (const path of ['data/numbers.txt', 'pnpm-lock.yaml', 'src/format.ts']) {
+    await row(page, path).click();
+    await expect.poll(() => headerBelow(page, path)).toBe(0);
+    await expect(tree(page)).toBeFocused();
+    expect(await focused(page)).toBe(path);
+    await expect(row(page, path)).toHaveClass(/tree-current/);
+    expect(await cursorPath(page)).toBe(path);
+  }
+  // Vim's block cursor on the header draws none of the path under it.
+  const after = page.locator('.lo-diffview .cm-editor', {
+    has: page.locator('.cm-content[aria-label="After"]'),
+  });
+  await expect(after.locator('.cm-fat-cursor')).toHaveCSS('color', 'rgba(0, 0, 0, 0)');
+
+  // A folder opens or closes, and is the tree's, and the diff stays where it is.
+  await row(page, 'src/text').click();
+  await expect(row(page, 'src/text')).toHaveAttribute('aria-expanded', 'false');
+  expect(await focused(page)).toBe('src/text');
+  expect(await headerBelow(page, 'src/format.ts')).toBe(0);
+  await page.keyboard.press('j');
+  expect(await focused(page)).toBe('src/format.ts');
+
+  // `⌃o` comes back from each click.
+  await page.keyboard.press('Control+o');
+  await expect.poll(() => cursorPath(page)).toBe('pnpm-lock.yaml');
+  await page.keyboard.press('Control+o');
+  await expect.poll(() => cursorPath(page)).toBe('data/numbers.txt');
+
+  // Inline too.
+  await page.keyboard.press('g');
+  await page.keyboard.press('i');
+  await expect.poll(() => page.evaluate(() => window.loDiff?.probe.layout)).toBe('inline');
+  await row(page, 'src/parser.ts').click();
+  await expect.poll(() => headerBelow(page, 'src/parser.ts')).toBe(0);
+  await expect(row(page, 'src/parser.ts')).toHaveClass(/tree-current/);
+});
+
+/** Gives the diff's code the keyboard, moving neither its cursor nor its scroll. */
+async function focusCode(page: Page): Promise<void> {
+  await page
+    .locator('.lo-diffview .cm-editor:visible')
+    .last()
+    .locator('.cm-content')
+    .evaluate((content: HTMLElement) => content.focus({ preventScroll: true }));
+}
+
+for (const layout of ['split', 'inline'] as const) {
+  test(`a file a click brought to the top keeps its header there as it's folded, ${layout === 'split' ? 'side by side' : 'inline'}`, async ({
+    page,
+  }) => {
+    await shown(page);
+    if (layout === 'inline') {
+      await page.keyboard.press('g');
+      await page.keyboard.press('i');
+      await expect.poll(() => page.evaluate(() => window.loDiff?.probe.layout)).toBe('inline');
+    }
+    // Near the end, where closing one leaves less to scroll than the screen, and further up: closed
+    // and opened again, opened whole, and a run of its lines closed and opened.
+    for (const path of ['src/parser.ts', 'src/legacy.ts', 'src/format.ts']) {
+      await row(page, path).click();
+      await expect.poll(() => headerBelow(page, path)).toBe(0);
+      await focusCode(page);
+      for (const keys of ['za', 'za', 'zR', 'zc', 'zo']) {
+        await page.keyboard.press(keys[0]!);
+        await page.keyboard.press(keys[1]!);
+        await page.waitForTimeout(300);
+        expect(await headerBelow(page, path), `${path} after ${keys}`).toBe(0);
+        await expect(row(page, path)).toHaveClass(/tree-current/);
+        // Only the room after the last file that's on screen is left.
+        const below = await page
+          .locator('.lo-diffview')
+          .evaluate((box) =>
+            Math.min(
+              Number.parseFloat(box.style.paddingBottom || '0'),
+              box.scrollHeight - box.clientHeight - box.scrollTop,
+            ),
+          );
+        expect(below, `room below the screen after ${keys}`).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+}
+
+test('a banner coming over the diff after a click takes the file’s header down with it, never over it', async ({
+  page,
+}) => {
+  await shown(page);
+  await row(page, 'src/parser.ts').click();
+  await expect.poll(() => headerBelow(page, 'src/parser.ts')).toBe(0);
+  // A banner comes, which moves the diff's box down and shrinks it, then goes.
+  const view = page.locator('.lo-diffview');
+  await view.evaluate((each) => each.parentElement?.style.setProperty('padding-top', '30px'));
+  await page.waitForTimeout(300);
+  expect(await headerBelow(page, 'src/parser.ts'), 'as it comes').toBe(0);
+  await view.evaluate((each) => each.parentElement?.style.removeProperty('padding-top'));
+  // As it goes, nothing moves: the header stays where the banner left it.
+  await page.waitForTimeout(300);
+  expect(await headerBelow(page, 'src/parser.ts'), 'as it goes').toBe(30);
 });
 
 test('gives a file a right-click menu: marking it viewed, the whole file, its path and the file on GitHub', async ({

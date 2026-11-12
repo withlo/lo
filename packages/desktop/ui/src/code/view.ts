@@ -392,11 +392,13 @@ class View implements DiffView {
     this.#scrolled = this.dom.scrollTop;
     this.#boxHeight = this.dom.clientHeight;
     this.dom.addEventListener('scroll', this.#placeChosen, { passive: true });
+    this.dom.addEventListener('scroll', this.#trimRoom, { passive: true });
     for (const type of ['wheel', 'keydown', 'pointerdown'] as const) {
       this.dom.addEventListener(type, this.#letGo, { passive: true, capture: true });
     }
     this.#boxWatch = new ResizeObserver(this.#keepPlace);
-    this.#boxWatch.observe(this.dom);
+    // The box itself, not what's inside its padding, which is the room after the last file.
+    this.#boxWatch.observe(this.dom, { box: 'border-box' });
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
     this.dom.addEventListener('keydown', this.#escape, { capture: true });
     this.dom.addEventListener('scroll', this.#letNotesGo, { passive: true });
@@ -445,6 +447,14 @@ class View implements DiffView {
    * banner over it comes or goes.
    */
   #holdingAt = 0;
+  /**
+   * The line a jump put at the top of the screen, where on the page it is to be, and how far above
+   * the screen's top the jump put it, until the reader moves on. Held, it gets room after the last
+   * file when it's too near the end to come there otherwise. As the box moves down, as when a
+   * banner comes over it, the line goes down with it, never under the banner; as the box moves
+   * back up, the line stays where it is on the page, as everything does.
+   */
+  #jumped: { at: Spot; page: number; offset: number } | undefined;
   /** Counts the lines put back, so only the latest is held. */
   #holds = 0;
   /**
@@ -457,11 +467,18 @@ class View implements DiffView {
   /** The reader moves: what's at the top is theirs to choose again. */
   readonly #letGo = (): void => {
     this.#holding = undefined;
+    this.#jumped = undefined;
   };
 
   /** Room above the first file that keeps what's on screen in place as the box moves up. */
   readonly #slack = document.createElement('div');
   #slackHeight = 0;
+  /**
+   * Room after the last file, as the box's padding, which a jump makes so a line near the end
+   * comes to the top as it would anywhere else. It goes as it leaves the screen, which moves
+   * nothing on it. Padding, not an element, so the editors stay the box's last children.
+   */
+  #roomHeight = 0;
   /** Where the content's top was on the page when the reader last put it there. */
   #placed = 0;
   /** The scroll `#placed` counts, to take only what the scroll moved since. */
@@ -502,17 +519,20 @@ class View implements DiffView {
     this.#placeChosen();
     this.#boxHeight = this.dom.clientHeight;
     const moved = this.#contentTop() - this.#placed;
-    if (Math.abs(moved) < 0.5) return;
-    if (moved > 0) {
+    const kept = Math.abs(moved) >= 0.5;
+    if (kept && moved > 0) {
       const taken = Math.min(this.#slackHeight, moved);
       this.#setSlack(this.#slackHeight - taken);
       this.dom.scrollTop += moved - taken;
-    } else {
+    } else if (kept) {
       const up = -moved;
       const room = this.dom.scrollTop;
       this.dom.scrollTop -= Math.min(up, room);
       if (up > room) this.#setSlack(this.#slackHeight + up - room);
     }
+    // A jump's line goes where it belongs after, as after the browser pulled the scroll back to
+    // the end as the box grew, which leaves the content where it was.
+    if (!this.#keepJumped() && !kept) return;
     this.#scrolled = this.dom.scrollTop;
     // The scroll goes by whole pixels, or halves, which can leave the content a fraction from where
     // it's meant to be: that place stays, so the next move makes up for it rather than adding to
@@ -520,12 +540,33 @@ class View implements DiffView {
     if (Math.abs(this.#contentTop() - this.#placed) >= 1) this.#placed = this.#contentTop();
     // Room added above moves no scroll the pass would see: it keeps what's on screen as it is now.
     this.#aligner.anchorHere();
+    this.#trimRoom();
   };
 
   #setSlack(height: number): void {
     this.#slackHeight = Math.max(0, height);
     this.#slack.style.height = `${this.#slackHeight}px`;
   }
+
+  #setRoom(height: number): void {
+    this.#roomHeight = Math.max(0, height);
+    this.dom.style.paddingBottom = this.#roomHeight > 0 ? `${this.#roomHeight}px` : '';
+  }
+
+  /** Makes room after the last file for the scroll to go `by` pixels further down, if it needs it. */
+  #makeRoom(by: number): void {
+    const short = this.dom.scrollTop + by - (this.dom.scrollHeight - this.dom.clientHeight);
+    if (short > 0) this.#setRoom(this.#roomHeight + Math.ceil(short));
+  }
+
+  /** Takes away the room after the last file that's below the screen, as the reader leaves it. */
+  readonly #trimRoom = (): void => {
+    if (this.#roomHeight === 0) return;
+    // The scroll's end is the room's, this far below the screen.
+    const below = this.dom.scrollHeight - this.dom.clientHeight - this.dom.scrollTop;
+    const shown = Math.ceil(Math.max(0, this.#roomHeight - below));
+    if (shown < this.#roomHeight) this.#setRoom(shown);
+  };
 
   readonly #measure = (): void => {
     for (const view of this.#editors()) view.requestMeasure();
@@ -864,31 +905,40 @@ class View implements DiffView {
    * Makes a change to what the view draws, as when a note opens or closes, keeping the line at the
    * top of the screen where it is, and so everything above the change. Side by side, the spacer
    * pass holds it. Inline, the view puts it back at once, and with `hold`, holds it there as
-   * `holdTop` does while the editor measures.
+   * `holdTop` does while the editor measures. A `fold`, which can leave less below the line than
+   * the screen, does both in either layout, with the room after the last file that it needs.
    */
-  #keepTop(change: () => void, hold = true): void {
-    if (this.#pane === 'split') {
-      this.#aligner.anchorTop();
+  #keepTop(change: () => void, hold = true, fold = false): void {
+    const split = this.#pane === 'split';
+    if (split) this.#aligner.anchorTop();
+    if (split && !fold) {
       change();
       return;
     }
     const top = this.viewport();
-    const found = this.#atOf(top.at);
-    const view = this.#inline?.view;
-    const pos = found && view?.state.doc.line(this.#docLine('inline', found.place)).from;
-    const before = view && pos !== undefined ? drawnTop(view, pos) : undefined;
+    const topOf = (): number | undefined => {
+      const found = this.#atOf(top.at);
+      if (!found) return undefined;
+      const pane: Pane = split ? found.place.side : 'inline';
+      const view = this.#viewOf(pane);
+      return drawnTop(view, view.state.doc.line(this.#docLine(pane, found.place)).from);
+    };
+    const before = topOf();
     change();
+    const view = split ? undefined : this.#inline?.view;
     if (view) {
       // The editor measures what it drew now, as the spacer pass has it do, and anchors the scroll
       // as it does: from its estimates, which the line's place as drawn then puts right.
       view.requestMeasure();
       view.lineBlockAtHeight(0);
     }
-    const after = view && pos !== undefined ? drawnTop(view, pos) : undefined;
+    // Read after the change is laid out, which has pulled the scroll back if less is left below.
+    const after = topOf();
     if (before !== undefined && after !== undefined && Math.abs(after - before) >= 0.5) {
+      if (fold) this.#makeRoom(after - before);
       this.dom.scrollTop += after - before;
     }
-    if (hold) this.#hold(top);
+    if (hold) this.#hold(top, false, fold);
   }
 
   /**
@@ -1010,9 +1060,29 @@ class View implements DiffView {
   reveal(at: Target): boolean {
     const found = this.#atOf(at);
     if (!found) return false;
+    this.#moveCursor(found, false);
+    return true;
+  }
+
+  revealAtTop(at: Target): boolean {
+    const found = this.#atOf(at);
+    if (!found) return false;
+    // Room for any line to come to the top, there before the editor scrolls: what's left below
+    // the screen goes as the scroll comes.
+    this.#setRoom(Math.max(this.#roomHeight, this.dom.clientHeight));
+    this.#moveCursor(found, true);
+    return this.scrollTo({ at: this.#spot(found.place), offset: 0 });
+  }
+
+  /**
+   * Moves the cursor to `found`, and has the editor bring its line on screen as it next measures,
+   * by the least scroll or to the top of the screen. Either way the editor draws the line where it
+   * lands, never anywhere on the way.
+   */
+  #moveCursor({ place, column }: { place: At; column: number }, top: boolean): void {
     // What's at the top is wherever this puts it now.
     this.#holding = undefined;
-    const { place, column } = found;
+    this.#jumped = undefined;
     const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
     const view = this.#viewOf(pane);
     const line = view.state.doc.line(this.#docLine(pane, place));
@@ -1021,11 +1091,12 @@ class View implements DiffView {
     this.#lastPane = pane;
     this.#lastSide = place.side;
     this.#aligner.follow(pane === 'inline' ? undefined : pane);
-    view.dispatch({
-      selection: { anchor: line.from + Math.min(column, line.length) },
-      scrollIntoView: true,
-    });
-    return true;
+    const selection = { anchor: line.from + Math.min(column, line.length) };
+    view.dispatch(
+      top
+        ? { selection, effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 0 }) }
+        : { selection, scrollIntoView: true },
+    );
   }
 
   /** The place `at` names, and the column on it, if the view has it. */
@@ -1093,7 +1164,7 @@ class View implements DiffView {
     if (this.#holding && performance.now() < this.#holdEnds) {
       return {
         at: this.#holding.at,
-        offset: this.dom.getBoundingClientRect().top - this.#holdingAt,
+        offset: this.dom.getBoundingClientRect().top - this.#heldAt(this.#holding.at),
       };
     }
     this.#holding = undefined;
@@ -1168,7 +1239,7 @@ class View implements DiffView {
   }
 
   scrollTo(viewport: Viewport): boolean {
-    if (!this.#hold(viewport)) return false;
+    if (!this.#hold(viewport, true)) return false;
     // This is what's at the top now. A cursor a key or `reveal` just moved stays where it leaves
     // it: brought back on screen, it would take the line away again each frame the hold puts it
     // back.
@@ -1177,11 +1248,68 @@ class View implements DiffView {
   }
 
   holdTop(viewport: Viewport): boolean {
-    return this.#hold(viewport);
+    return this.#hold(viewport, false);
   }
 
-  /** Puts `viewport`'s line back at the top of the screen, and holds it there. */
-  #hold(viewport: Viewport): boolean {
+  /** Where line `place` of `pane`'s editor `view` is on the page, drawn or not. */
+  #lineTop(pane: Pane, view: EditorView, place: At): number {
+    const pos = view.state.doc.line(this.#docLine(pane, place)).from;
+    return drawnTop(view, pos) ?? view.documentTop + ownTop(view.lineBlockAt(pos));
+  }
+
+  /** Whether `a` and `b` are the same line or header on screen, in the layout shown. */
+  #samePlace(a: Spot, b: Spot): boolean {
+    const first = this.#atOf(a)?.place;
+    const second = this.#atOf(b)?.place;
+    if (!first || !second) return false;
+    const pane = (place: At): Pane => (this.#pane === 'inline' ? 'inline' : place.side);
+    return (
+      first.file === second.file &&
+      pane(first) === pane(second) &&
+      this.#docLine(pane(first), first) === this.#docLine(pane(second), second)
+    );
+  }
+
+  /**
+   * Where on the page the line the view holds, `at`, goes now: where it was put, or a jump's line
+   * where `#jumpedAt` says, though a change since held it again.
+   */
+  #heldAt(at: Spot): number {
+    const jumped = this.#jumped;
+    return jumped && this.#samePlace(jumped.at, at) ? this.#jumpedAt(jumped) : this.#holdingAt;
+  }
+
+  /**
+   * Where on the page a jump's line goes now: where it was, or lower, as far below the box's top as
+   * the jump put it, as the box moves down. It stays there as the box moves back up.
+   */
+  #jumpedAt(jumped: { page: number; offset: number }): number {
+    jumped.page = Math.max(jumped.page, this.dom.getBoundingClientRect().top - jumped.offset);
+    return jumped.page;
+  }
+
+  /**
+   * After the box moved: the line a jump put at the top goes no higher than where it was against
+   * the box's top, as `#jumped` says, which a box moving down, as a banner comes, takes it to. Says
+   * whether it scrolled.
+   */
+  #keepJumped(): boolean {
+    const jumped = this.#jumped;
+    const found = jumped && this.#atOf(jumped.at);
+    if (!jumped || !found) return false;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : found.place.side;
+    const moved = this.#lineTop(pane, this.#viewOf(pane), found.place) - this.#jumpedAt(jumped);
+    if (Math.abs(moved) < 0.5) return false;
+    this.#makeRoom(moved);
+    this.dom.scrollTop += moved;
+    return true;
+  }
+
+  /**
+   * Puts `viewport`'s line back at the top of the screen, and holds it there. A `jump`, or a hold
+   * with `room`, puts it there however near the end it is, with room after the last file.
+   */
+  #hold(viewport: Viewport, jump: boolean, room = false): boolean {
     const found = this.#atOf(viewport.at);
     if (!found) return false;
     const { place } = found;
@@ -1191,6 +1319,12 @@ class View implements DiffView {
     // holds still. Until then, what's at the top is this, whatever else changes.
     this.#holding = viewport;
     this.#holdingAt = this.dom.getBoundingClientRect().top - viewport.offset;
+    // A change held through keeps a jump's line where the jump put it; another line ends it.
+    if (jump) this.#jumped = { at: viewport.at, page: this.#holdingAt, offset: viewport.offset };
+    else if (this.#jumped && !this.#samePlace(this.#jumped.at, viewport.at)) {
+      this.#jumped = undefined;
+    }
+    const roomy = room || this.#jumped !== undefined;
     this.#holdEnds = Infinity;
     const run = ++this.#holds;
     let still = 0;
@@ -1198,10 +1332,9 @@ class View implements DiffView {
     const check = (): void => {
       // A later call, or the reader, takes over.
       if (this.#holds !== run || this.#holding !== viewport) return;
-      const pos = view.state.doc.line(this.#docLine(pane, place)).from;
-      const top = drawnTop(view, pos) ?? view.documentTop + ownTop(view.lineBlockAt(pos));
-      const moved = top - this.#holdingAt;
+      const moved = this.#lineTop(pane, view, place) - this.#heldAt(viewport.at);
       if (Math.abs(moved) >= 0.5) {
+        if (roomy) this.#makeRoom(moved);
         this.dom.scrollTop += moved;
         still = 0;
       } else {
@@ -1209,8 +1342,11 @@ class View implements DiffView {
       }
       frames += 1;
       // Put back, it stays for a while; one that can't be, as past the end, is let go.
-      if (still >= 2) this.#holdEnds = performance.now() + HOLD_AFTER;
-      else if (frames > 30) this.#holding = undefined;
+      if (still >= 2) {
+        this.#holdEnds = performance.now() + HOLD_AFTER;
+        // Room a jump made that the scroll didn't need, below the screen, goes now.
+        this.#trimRoom();
+      } else if (frames > 30) this.#holding = undefined;
       else requestAnimationFrame(check);
     };
     requestAnimationFrame(check);
@@ -1238,7 +1374,11 @@ class View implements DiffView {
   fold(at: Target, how: Fold): void {
     const found = this.#atOf(at);
     if (!found) return;
-    const { place } = found;
+    // What's at the top of the screen stays where it is, as does the header of a file there.
+    this.#keepTop(() => this.#fold(found.place, how), true, true);
+  }
+
+  #fold(place: At, how: Fold): void {
     const { file } = place;
     switch (how) {
       case 'open':
@@ -1276,8 +1416,11 @@ class View implements DiffView {
   }
 
   destroy(): void {
+    // A hold's check still to come finds it over.
+    this.#holding = undefined;
     this.#boxWatch.disconnect();
     this.dom.removeEventListener('scroll', this.#placeChosen);
+    this.dom.removeEventListener('scroll', this.#trimRoom);
     for (const type of ['wheel', 'keydown', 'pointerdown'] as const) {
       this.dom.removeEventListener(type, this.#letGo, { capture: true });
     }
@@ -1658,7 +1801,23 @@ class View implements DiffView {
     const moved = (): void => {
       if (this.#quiet === 0) this.#tell(pane);
     };
-    return [codeEditor(this.#nonce, moved), fileField];
+    return [
+      codeEditor(this.#nonce, moved),
+      fileField,
+      // Vim's block cursor draws the character under it, which on a header is the path its line
+      // holds, under the header: the cursor there shows none.
+      EditorView.editorAttributes.of((view) =>
+        this.#onHeader(pane, view) ? { class: 'lo-onheader' } : null,
+      ),
+    ];
+  }
+
+  /** Whether editor `view`, of `pane`, has its cursor on a file's header. */
+  #onHeader(pane: Pane, view: EditorView): boolean {
+    // The inline editor is asked as it's made, before the view has its layout.
+    if (pane === 'inline' && this.#inline?.view !== view) return false;
+    const line = view.state.doc.lineAt(view.state.selection.main.head).number;
+    return this.#placeAt(pane, line).line === 0;
   }
 
   #extensions(side: Side): Extension[] {

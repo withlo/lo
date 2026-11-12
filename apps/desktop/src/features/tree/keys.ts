@@ -91,13 +91,15 @@ export default defineCommands(
     },
     openAll: { label: 'Open every folder', group: 'Files', keys: ['z R'], when: tree },
     closeAll: { label: 'Close every folder', group: 'Files', keys: ['z M'], when: tree },
-    /** Shows the file: a changed one in the diff. On a folder, opens or closes it. */
+    /**
+     * Shows the file: a changed one at the top of the diff. On a folder, opens or closes it. Not a
+     * jump of its own: showing a file records one, as a click does, and a folder moves nothing.
+     */
     show: {
       label: 'Show the file',
       group: 'Files',
       keys: ['enter'],
       targets: ['file', 'none'],
-      jump: true,
       when: tree,
     },
     /**

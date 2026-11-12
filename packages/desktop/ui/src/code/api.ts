@@ -313,6 +313,13 @@ export interface DiffView extends KeySource {
    */
   reveal(at: Target): boolean;
   /**
+   * Moves the cursor as `reveal` does, and puts its line or header at the top of the screen in the
+   * frame that first draws it there, then holds it as `scrollTo` does: a jump the reader asked for,
+   * so it gets there however near the end it is. Says whether the view has it. Focus stays where
+   * it is.
+   */
+  revealAtTop(at: Target): boolean;
+  /**
    * Closes a shown file into one block, as `za` does, or opens it again; a file kept out or not
    * shown as a diff has nothing to close. Not a jump, and the cursor stays.
    */
@@ -326,9 +333,12 @@ export interface DiffView extends KeySource {
   viewport(): Viewport;
   /**
    * Scrolls so `viewport`'s line or header is at the top of the screen as it was, its own top
-   * `offset` pixels above the screen's, and holds it there while the editors measure. Says whether
-   * the view has it. Moves neither the cursor nor focus, and a cursor that a key or `reveal` just
-   * moved stays where this leaves it, on screen or off, as after the wheel.
+   * `offset` pixels above the screen's, and holds it there while the editors measure: as a jump the
+   * reader asked for, it gets there however near the end it is, with room after the last file
+   * that goes once it's off screen. Until the reader moves, a box moving down, as when a banner
+   * comes over the diff, takes the line down with it. Says whether the view has it. Moves neither
+   * the cursor nor focus, and a cursor that a key or `reveal` just moved stays where this leaves
+   * it, on screen or off, as after the wheel.
    */
   scrollTo(viewport: Viewport): boolean;
   /**

@@ -115,7 +115,7 @@ export interface MarkerSource {
   markerAt(first: number, last: number): GutterMarker | null;
   /** The marker beside a block drawn between lines: before document line `line`, or after it. */
   markerBetween(line: number, after: boolean): GutterMarker | null;
-  /** A click on the ball beside document lines `first` to `last`. */
+  /** A press on the ball beside document lines `first` to `last`, or a click with no press. */
   clicked(first: number, last: number): void;
 }
 
@@ -155,17 +155,26 @@ export function markerGutter(source: MarkerSource): Extension {
       update.transactions.some((transaction) =>
         transaction.effects.some((effect) => effect.is(marksChanged)),
       ),
+    // The ball acts as it's pressed, in the press's own frame, so what its note moves comes with
+    // the reader's input, never in a frame after it; a click then does nothing more. A click with
+    // no press before it, as a screen reader's, acts the same.
     domEventHandlers: {
       // Focus stays where it is, and no text is selected.
-      mousedown: (_view, _line, event) => {
+      mousedown: (view, line, event) => {
         if (!onBall(event)) return false;
         event.preventDefault();
+        if (event instanceof MouseEvent && event.button === 0) {
+          const { first, last } = linesOf(view, line);
+          source.clicked(first, last);
+        }
         return true;
       },
       click: (view, line, event) => {
         if (!onBall(event)) return false;
-        const { first, last } = linesOf(view, line);
-        source.clicked(first, last);
+        if (event instanceof MouseEvent && event.detail === 0) {
+          const { first, last } = linesOf(view, line);
+          source.clicked(first, last);
+        }
         return true;
       },
     },

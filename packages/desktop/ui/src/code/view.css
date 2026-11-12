@@ -50,6 +50,16 @@
   box-shadow: inset 2px 0 0 var(--lo-accent-line);
 }
 
+/*
+ * The cursor on a header draws no letter of the path the header's line holds: focused, over the
+ * colour Vim gives it; hollow, through the colour the design's hollow cursor takes from its layer.
+ */
+.lo-diffview .cm-editor.lo-onheader .cm-fat-cursor {
+  color: transparent !important;
+}
+.lo-diffview .cm-editor.lo-onheader .cm-vimCursorLayer {
+  color: transparent;
+}
 /* A file header inside a document scrolls with its file. */
 .lo-diffhead {
   position: static;
