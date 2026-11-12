@@ -216,7 +216,17 @@
   box-shadow: 0 0 0 1px var(--lo-border-subtle);
   color: var(--fig-ink);
 }
-.lo-figure__frame > svg:not(.lo-i) { display: block; width: 100%; height: auto; font-family: var(--fig-font); overflow: visible; }
+/* A figure is drawn at the frame's width, or smaller where that would make it taller than 960 px:
+   the renderer sets --lo-fig-widest to the width that keeps it within, so it's drawn smaller and
+   never cut. It draws nothing outside its own box, so nothing in it reaches past the frame. An
+   image's canvas takes its proportions from --lo-fig-aspect, before it's decoded. */
+.lo-figure__frame > svg:not(.lo-i),
+.lo-figure__frame > canvas {
+  display: block; width: 100%; height: auto; max-width: var(--lo-fig-widest, 100%); max-height: 960px;
+  margin-inline: auto; overflow: hidden;
+}
+.lo-figure__frame > svg:not(.lo-i) { font-family: var(--fig-font); }
+.lo-figure__frame > canvas { aspect-ratio: var(--lo-fig-aspect); object-fit: contain; }
 /* Agents write font-family="monospace" for code; Lo maps it to Fragment Mono */
 .lo-figure__frame > svg:not(.lo-i) [font-family="monospace"] { font-family: var(--fig-mono); }
 .lo-figure figcaption { margin-top: 10px; font: 400 13px/19px var(--lo-font-ui); color: var(--lo-fg-muted); max-width: var(--lo-read-measure); }

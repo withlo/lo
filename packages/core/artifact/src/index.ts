@@ -4,6 +4,7 @@ export { checkArtifact, type CheckedArtifact, type CheckOptions, type Outcome } 
 export type { CheckedCode, CodeState } from './code.ts';
 export type { CheckedFigure, FigureState, FigureType } from './figures.ts';
 export type { ImageType } from './images.ts';
+export { imageOrientation, isTurned, type Orientation } from './orientation.ts';
 export type { SizeKind, Sizes } from './commit.ts';
 export {
   SIZE_ONLY,

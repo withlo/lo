@@ -20,6 +20,17 @@ describe('contentSecurityPolicy', () => {
     );
   });
 
+  it('lets nothing load by an address but its own files: no blob:, data: or other scheme', () => {
+    // Overviews' figures are drawn from their bytes, on canvases and as SVG elements, so they
+    // need no source of their own.
+    const policy = contentSecurityPolicy('bm9uY2U=');
+    const sources = policy.split('; ').flatMap((directive) => directive.split(' ').slice(1));
+    expect(
+      sources.filter((source) => !["'self'", "'none'", "'nonce-bm9uY2U='"].includes(source)),
+    ).toEqual([]);
+    expect(policy).not.toMatch(/blob:|data:|filesystem:|lo-app:|\*/);
+  });
+
   it("loosens only what Vite's dev server needs, with no nonce to turn inline styles off", () => {
     const policy = contentSecurityPolicy('bm9uY2U=', dev);
     expect(policy).toContain("script-src 'self' 'unsafe-inline';");

@@ -296,7 +296,8 @@ another type, or past a limit, is left out, with a note in its place.
 - **Image figures**, such as screenshots, are shown as they are. Lo reads their size from their
   header alone, and never decodes them to check them: a PNG's `IHDR` chunk, a JPEG's frame header, a
   WebP's first chunk, or a GIF's screen, grown to take in its first frame. A figure whose header is
-  damaged or cut short is left out.
+  damaged or cut short is left out. A JPEG or PNG is turned as its Exif orientation says, and an
+  animated image shows its first frame, still.
 - **Parts** are an SVG's elements, each named by its id: a shape, a group or a text, but not the
   figure itself, its `<defs>`, a marker or what a marker draws, or a `<tspan>`. An id names an
   element in its own figure only, and an id two elements have names neither. A part that names no

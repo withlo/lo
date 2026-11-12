@@ -8,6 +8,7 @@
     "./code": "./src/code/index.ts",
     "./code/view.css": "./src/code/view.css",
     "./commands": "./src/commands/index.ts",
+    "./figures": "./src/figures/index.ts",
     "./styles.css": "./src/styles.css",
     "./fonts.css": "./src/fonts.css"
   },
@@ -30,8 +31,10 @@
     "@fontsource-variable/host-grotesk": "5.3.0",
     "@fontsource/fragment-mono": "5.3.0",
     "@lezer/highlight": "1.2.5",
+    "@lo/artifact": "workspace:*",
     "@lo/design": "workspace:*",
     "@lo/diff": "workspace:*",
+    "@lo/markdown": "workspace:*",
     "@replit/codemirror-vim": "6.4.0",
     "class-variance-authority": "0.7.1",
     "react": "19.3.1",

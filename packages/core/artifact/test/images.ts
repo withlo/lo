@@ -146,3 +146,48 @@ export function vp8l(width: number, height: number, version = 0): Uint8Array {
 export function vp8x(width: number, height: number): Uint8Array {
   return webp('VP8X', [0x10, 0, 0, 0, ...u24le(width - 1), ...u24le(height - 1)]);
 }
+
+/**
+ * TIFF data as Exif holds it: a byte order, then one directory at `directory` holding `entries`,
+ * each a tag, a type, a count and four bytes of value, then no next directory.
+ */
+export function tiff(
+  entries: readonly (readonly [tag: number, type: number, count: number, value: number])[],
+  { little = false, directory = 8 } = {},
+): Uint8Array {
+  const u16 = little ? u16le : u16be;
+  const u32 = little ? u32le : u32be;
+  const fields = entries.flatMap(([tag, type, count, value]) => [
+    ...u16(tag),
+    ...u16(type),
+    ...u32(count),
+    // A short sits in the value's first two bytes.
+    ...(type === 3 ? [...u16(value), 0, 0] : u32(value)),
+  ]);
+  return join(
+    little ? 'II' : 'MM',
+    u16(42),
+    u32(directory),
+    new Uint8Array(directory - 8),
+    u16(entries.length),
+    fields,
+    u32(0),
+  );
+}
+
+/** An orientation entry: tag 0x0112, one short. */
+export function orientation(value: number): [number, number, number, number] {
+  return [0x0112, 3, 1, value];
+}
+
+/** A JPEG's Exif segment, holding `data` after `Exif\0\0`. */
+export function exifSegment(data: Uint8Array): Uint8Array {
+  return segment(0xe1, join('Exif', [0, 0], data));
+}
+
+/** A PNG with the chunks given after its `IHDR`, then image data and its end. */
+export function pngWith(width: number, height: number, ...chunks: Uint8Array[]): Uint8Array {
+  const whole = png(width, height);
+  // The signature and IHDR: 8 bytes, then 12 around its 13 of data.
+  return join(whole.subarray(0, 33), ...chunks, chunk('IDAT', [0]), chunk('IEND', []));
+}
