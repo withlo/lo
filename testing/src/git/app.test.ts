@@ -22,7 +22,7 @@ test(
     // still there by its ID, as GitHub keeps it.
     expect(() =>
       git(bare, 'merge-base', '--is-ancestor', APP_PULL.firstHead, APP_PULL.head),
-    ).toThrow();
+    ).toThrow('git merge-base --is-ancestor');
     expect(git(bare, 'cat-file', '-t', APP_PULL.firstHead)).toBe('commit');
     expect(git(bare, 'merge-base', APP_PULL.firstHead, APP_PULL.base)).toBe(APP_PULL.firstBase);
     expect(git(bare, 'merge-base', APP_PULL.head, APP_PULL.base)).toBe(APP_PULL.base);
@@ -48,7 +48,9 @@ test(
     writeAppRemote(folder, { firstPush: false });
     const bare = join(folder, 'rozed-dev', 'e2e.git');
     expect(git(bare, 'rev-parse', 'refs/pull/80/head')).toBe(APP_PULL.head);
-    expect(() => git(bare, 'cat-file', '-t', APP_PULL.firstHead)).toThrow();
+    expect(() => git(bare, 'cat-file', '-t', APP_PULL.firstHead)).toThrow(
+      'could not get object info',
+    );
   },
 );
 

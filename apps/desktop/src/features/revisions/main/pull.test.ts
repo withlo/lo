@@ -360,9 +360,12 @@ describe('RevisionsTab', { timeout: 60_000 }, () => {
     });
     made.tab.update(e2eInfo());
     await made.settled((sent) => sent.shown === APP_PULL.head);
-    expect(made.sent.at(-1)?.status).toBe('loading');
+    // The history from before the second push, which the poller had, builds nothing.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(made.sent.at(-1)).toMatchObject({ status: 'loading', revisions: [] });
     made.source.read(history);
-    await made.settled((sent) => sent.status === 'ready');
+    const view = await made.settled((sent) => sent.status === 'ready');
+    expect(view.revisions.at(-1)?.head).toBe(APP_PULL.head);
   });
 
   it('notes the newest revision the reader saw as last seen here, on leaving, never an older one', async () => {
