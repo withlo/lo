@@ -120,6 +120,17 @@ function pathOfId(drawn: Drawn, id: string): TreePath | undefined {
   return entry?.versions.path;
 }
 
+/** The line a line target names: the cursor's, or the last of the lines `v` selected. */
+function placeOf(at: Place | Span): Place {
+  return 'line' in at ? at : { file: at.file, side: at.side, line: Math.max(at.from, at.to) };
+}
+
+/** Whether the diff on screen has an overview's note on the target's line. */
+function hasNote(target: LineTarget): boolean {
+  const drawn = onScreen();
+  return typeof drawn !== 'string' && drawn.view.hasNote(placeOf(target.at));
+}
+
 /** The lines a line target is on: the cursor's line, or the lines `v` selected. */
 function spanOf(at: Place | Span): Span {
   return 'line' in at ? { file: at.file, side: at.side, from: at.line, to: at.line } : at;
@@ -211,6 +222,13 @@ export default {
         if (!whole) return 'There’s no whole file on screen.';
         return whole.read?.content.kind === 'large' || 'The file on screen isn’t waiting to load.';
       },
+    },
+    overviewNote: {
+      run: withDiff(({ view }, target: LineTarget) => {
+        view.openNote(placeOf(target.at));
+      }),
+      enabled: (target) => hasNote(target) || 'There’s no overview note on this line.',
+      listed: hasNote,
     },
     copyLines: {
       run: inCode(

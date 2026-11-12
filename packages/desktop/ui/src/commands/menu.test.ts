@@ -165,6 +165,34 @@ describe('a right-click menu', () => {
     ]);
   });
 
+  it('leaves out a command its handler doesn’t list for the target', () => {
+    const listedOn = new Registry({
+      system: 'mac',
+      commands: handlers(declared, {
+        copyPath: run,
+        show: run,
+        markViewed: run,
+        comment: run,
+        openGithub: run,
+        // Listed on line 41 alone.
+        suggest: { run() {}, listed: (target) => 'line' in target.at && target.at.line === 41 },
+        quit: run,
+        open: run,
+        next: run,
+      }),
+    });
+    const flat = (target: Target) =>
+      menuSections(listedOn, target)
+        .flat()
+        .map((item) => item.label);
+    expect(flat(line)).toEqual(['Suggest a change']);
+    expect(flat({ kind: 'line', at: { file: 'rate-limit.ts', side: 'new', line: 42 } })).toEqual(
+      [],
+    );
+    // A command with no `listed` is listed, greyed or not.
+    expect(flat(file)).toContain('Show in the diff');
+  });
+
   it('lists the commands for the system it is on only', () => {
     expect(labels(file, 'mac')).not.toContain('Quit Lo');
     expect(labels(file, 'linux')).toContain('Quit Lo');

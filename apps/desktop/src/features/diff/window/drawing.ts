@@ -9,6 +9,8 @@
 import {
   createDiffView,
   type DiffView,
+  type Mark,
+  type Place as Line,
   type Probe,
   type Spot,
   type Target,
@@ -44,6 +46,10 @@ declare global {
           filesOnScreen(): readonly string[];
           /** Closes a file as the local copy's say would, keeping what's on screen in place. */
           close(file: string): void;
+          /** Gives the diff an overview's markers. */
+          setMarks(marks: readonly Mark[]): void;
+          /** Opens the note of the marker on a line, as its menu item does. */
+          openNote(at: Line): boolean;
         }
       | undefined;
   }
@@ -481,6 +487,8 @@ export function draw(options: DrawOptions): Drawing {
       setMiddle({
         focus: () => view.focus(),
         here: () => ({ view: 'diff', at: view.keyState().target }),
+        // An overview's note open in the diff closes on `Esc` in the diff.
+        escape: () => parent.contains(document.activeElement) && view.closeNote(),
       }),
     ];
     // The tree marks the file at the top of the screen again.
@@ -513,6 +521,8 @@ export function draw(options: DrawOptions): Drawing {
         scrollTo: (viewport: Viewport) => view.scrollTo(viewport),
         close: (id: string) => steady(() => view.setCollapsed(id, true)),
         filesOnScreen: () => view.filesOnScreen(),
+        setMarks: (given: readonly Mark[]) => view.setMarks(given),
+        openNote: (line: Line) => view.openNote(line),
       };
   if (testing) window.loDiff = testing;
   // Back where the tab's last view was: its cursor, and what was at the top of the screen. Or, for

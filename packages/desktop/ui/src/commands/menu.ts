@@ -23,8 +23,9 @@ export interface MenuItem {
  * The menu of a right-click on `target`: every command on this system that declares `menu.on` as
  * the target's kind, by `menu.order` (the registry's order among equals). A command that can't run
  * on the target now is there, greyed with its reason, so the menu never hides what the keys can
- * do elsewhere. The commands are in sections, which the menu draws a separator between: a new one
- * starts where the key table's group changes.
+ * do elsewhere; only a handler's `listed` leaves one out, for a target it doesn't apply to. The
+ * commands are in sections, which the menu draws a separator between: a new one starts where the
+ * key table's group changes.
  */
 export function menuSections(registry: Registry, target: Target): MenuItem[][] {
   const commands = registry
@@ -34,7 +35,8 @@ export function menuSections(registry: Registry, target: Target): MenuItem[][] {
         command.menu?.on === target.kind &&
         command.handler !== undefined &&
         command.vim !== 'own' &&
-        onSystem(registry, command),
+        onSystem(registry, command) &&
+        registry.listed(command.id, target),
     )
     .toSorted((a, b) => (a.menu?.order ?? 0) - (b.menu?.order ?? 0));
   const sections: MenuItem[][] = [];

@@ -6,7 +6,7 @@ import { applyKeymapFile, keymapOpenable } from '../../../window/commands/keymap
 import { currentMenu, openMenuAtFocus } from '../../../window/commands/menus.tsx';
 import { notify } from '../../../window/commands/notices.tsx';
 import { showHighlighted, toggleHelp, togglePalette } from '../../../window/commands/overlays.tsx';
-import { focusMiddle, here, registry } from '../../../window/commands/registry.ts';
+import { escapeToMiddle, here, registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client, type Client } from '../../../window/ipc.ts';
 import { contract } from '../contract.ts';
@@ -91,7 +91,7 @@ export default {
         openMenuAtFocus();
       },
     },
-    escape: { run: focusMiddle },
+    escape: { run: escapeToMiddle },
     back: {
       run() {
         if (!registry().history.back(here())) notify('Back', "There's nowhere to go back to.");

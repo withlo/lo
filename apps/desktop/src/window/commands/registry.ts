@@ -12,6 +12,11 @@ export interface Middle {
   focus(): void;
   /** Where the tab is in it, for history: the place a jump leaves. */
   here(): Entry | undefined;
+  /**
+   * `Esc` comes to it first: it closes something of its own it has open, such as a note in the
+   * diff, while focus is in it, and says whether it did. Otherwise `Esc` gives focus back to it.
+   */
+  escape?(): boolean;
 }
 
 let current: Registry | undefined;
@@ -66,6 +71,15 @@ export function setMiddle(view: Middle): () => void {
     const at = middles.lastIndexOf(view);
     if (at >= 0) middles.splice(at, 1);
   };
+}
+
+/**
+ * `Esc`: the middle view closes something of its own it has open, if it has; otherwise focus goes
+ * back to it.
+ */
+export function escapeToMiddle(): void {
+  if (middle()?.escape?.()) return;
+  focusMiddle();
 }
 
 /** Gives focus back to the middle view, or the middle of the window while there's none. */
