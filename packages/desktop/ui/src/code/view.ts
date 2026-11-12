@@ -17,6 +17,7 @@ import {
   StateEffect,
   StateField,
   type Text,
+  type Transaction,
 } from '@codemirror/state';
 import {
   type BlockInfo,
@@ -91,7 +92,7 @@ import {
   vimPending,
 } from './keys.ts';
 import { Layout } from './layout.ts';
-import { swapLines } from './lines.ts';
+import { swapLines, swapping } from './lines.ts';
 import {
   type MarkedLines,
   type MarkedSpan,
@@ -1870,14 +1871,14 @@ class View implements DiffView {
     };
   }
 
-  #blocks(side: Side, file: number): Range<Decoration>[] {
+  #blocks(side: Side, file: number, doc = this.views[side].state.doc): Range<Decoration>[] {
     const lines = this.#layout.files[file]!;
     return fileBlocks({
       ...this.#base(file),
       side,
       lines: lines[side],
       otherLines: lines[side === 'old' ? 'new' : 'old'].count > 0,
-      doc: this.views[side].state.doc,
+      doc,
       sizes: this.#sizes[side],
     });
   }
@@ -1969,25 +1970,35 @@ class View implements DiffView {
     return out;
   }
 
-  /** Draws a file again in every document, with `effects` alongside. */
-  #refresh(file: number, more: StateEffect<unknown>[] = []): void {
+  /**
+   * Draws a file again in every document, with `effects` alongside. `swaps`, each side's change to
+   * the file's lines, if they changed, is drawn in the same update of its editor.
+   */
+  #refresh(
+    file: number,
+    more: StateEffect<unknown>[] = [],
+    swaps?: Record<Side, Transaction[]>,
+  ): void {
     this.#rows[file] = this.#rowsOf(file);
     const effects = [...more, marksChanged.of(null)];
     const split = (): void => {
       for (const side of ['old', 'new'] as const) {
-        const doc = this.views[side].state.doc;
+        const swap = swaps?.[side] ?? [];
+        const state = swap.at(-1)?.state ?? this.views[side].state;
+        const doc = state.doc;
         const lines = this.#layout.files[file]![side];
-        this.views[side].dispatch({
+        const drawn = state.update({
           effects: [
             setFile.of({
               file,
               from: doc.line(lines.header).from,
               to: doc.line(lines.header + lines.count).to,
-              decorations: this.#blocks(side, file),
+              decorations: this.#blocks(side, file, doc),
             }),
             ...effects,
           ],
         });
+        this.views[side].dispatch([...swap, drawn]);
       }
     };
     const inline = (): void => {
@@ -2064,12 +2075,14 @@ class View implements DiffView {
     // The lines change under the editors: what the cursor is on is said once they settle.
     this.#quiet++;
     try {
+      // Each editor takes its new lines with their decorations in one update, which draws once.
+      const swaps: Record<Side, Transaction[]> = { old: [], new: [] };
       for (const side of ['old', 'new'] as const) {
         const lines = given[side];
         const triples = this.#triples[file]![side];
         if (triples) this.#tokens[file]![side] = { tokens: triples, starts: lineStarts(lines) };
         const { header } = this.#layout.files[file]![side];
-        swapLines(this.views[side], header, before[side], lines, fits[side]);
+        swaps[side] = swapping(this.views[side].state, header, before[side], lines, fits[side]);
         this.#layout.setCount(side, file, lines.length);
       }
       // Every file after it has moved by as many lines as it grew.
@@ -2084,7 +2097,7 @@ class View implements DiffView {
         }
       }
       if (this.#inline) this.#replaceInline(file, gaps);
-      this.#refresh(file, [tokensChanged.of(null)]);
+      this.#refresh(file, [tokensChanged.of(null)], swaps);
     } finally {
       this.#quiet--;
     }

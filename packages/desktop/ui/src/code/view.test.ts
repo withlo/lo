@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StateEffect } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { diffText } from '@lo/diff';
 import { getCM, Vim } from '@replit/codemirror-vim';
@@ -1053,6 +1054,27 @@ describe('gaps', () => {
     expect(lineOf('e 26')).toBe(drawn);
     shown.setLayout('inline');
     expect(shown.probe.cursor()?.at).toEqual(onLine('e', 'new', 26, 0));
+  });
+
+  test('the whole file comes in one update of each editor, with its decorations', () => {
+    const shown = gappedView();
+    const editors = [...document.querySelectorAll<HTMLElement>('.cm-editor')].flatMap(
+      (dom) => EditorView.findFromDOM(dom) ?? [],
+    );
+    const updates = new Map<EditorView, number>();
+    for (const editor of editors) {
+      const counted = EditorView.updateListener.of((update) => {
+        if (update.transactions.length > 0) {
+          updates.set(update.view, (updates.get(update.view) ?? 0) + 1);
+        }
+      });
+      editor.dispatch({ effects: StateEffect.appendConfig.of(counted) });
+    }
+    updates.clear();
+    shown.setLines('e', { old: eOld, new: eNew }, diffOf({ old: eOld, new: eNew }));
+    expect(editors).toHaveLength(2);
+    expect(editors.map((editor) => updates.get(editor))).toEqual([1, 1]);
+    expect(runs()).toEqual(['18 unchanged lines']);
   });
 
   test("the whole file after a diff that stopped short of it adds the rest, the cursor's line kept", () => {
