@@ -87,7 +87,7 @@ test('⌘, opens Settings in one tab, and shows it again from anywhere', async (
   await openSettings(page);
   await expect(tabs(page)).toHaveText(['Settings']);
   await expect(page.getByRole('navigation', { name: 'Settings' })).toBeVisible();
-  for (const section of ['Accounts', 'Opening PRs', 'Appearance', 'Cache', 'Keys']) {
+  for (const section of ['Accounts', 'Pull requests', 'Appearance', 'Cache', 'Keys']) {
     await expect(page.getByRole('heading', { name: section, level: 2 })).toBeVisible();
   }
 
@@ -116,7 +116,7 @@ test('the sections list moves between sections with j and k', async ({ page }) =
   const current = nav.locator('[aria-current="true"]');
   await expect(current).toHaveText('Accounts');
   await page.keyboard.press('j');
-  await expect(current).toHaveText('Opening PRs');
+  await expect(current).toHaveText('Pull requests');
   await page.keyboard.press('j');
   await expect(current).toHaveText('Appearance');
   await page.keyboard.press('j');
@@ -180,11 +180,11 @@ test('a change in Settings is written to the file, applied at once, and kept acr
   }
 });
 
-test('Opening PRs sets what a pull request opens on, and the diff’s layout', async ({ page }) => {
+test('Pull requests sets what a pull request opens on, and the diff’s layout', async ({ page }) => {
   await openSettings(page);
   await page
     .getByRole('navigation', { name: 'Settings' })
-    .getByRole('button', { name: 'Opening PRs' })
+    .getByRole('button', { name: 'Pull requests' })
     .click();
   const openOn = page.getByRole('radiogroup', { name: 'Open on' });
   await expect(openOn.getByRole('radio', { name: 'Overview' })).toHaveAttribute(

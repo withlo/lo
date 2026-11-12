@@ -239,7 +239,7 @@ export function elevateOnMac(
     'set source to item 1 of argv',
     'set target to item 2 of argv',
     'set folder to item 3 of argv',
-    'do shell script "/bin/mkdir -p " & quoted form of folder & " && /usr/bin/install -S -m 755 " & quoted form of source & " " & quoted form of target with prompt "Lo wants to install the lo command, which opens pull requests from a terminal." with administrator privileges',
+    'do shell script "/bin/mkdir -p " & quoted form of folder & " && /usr/bin/install -S -m 755 " & quoted form of source & " " & quoted form of target with prompt "Lo wants to install the lo command, which reviews pull requests from a terminal." with administrator privileges',
     'end run',
   ];
   return (from, to) =>
