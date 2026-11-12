@@ -10,6 +10,7 @@
 import { GitError, type Oid, parseOid, type Repo } from '@lo/git';
 import {
   activityEntries,
+  type Cached,
   GithubError,
   lastReview,
   PullRef,
@@ -32,7 +33,6 @@ import {
 } from '@lo/review';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import type { GithubAccess } from '../../accounts/service.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type { Compared, ComparisonView, Replay, RevisionRow } from '../contract.ts';
 import type { Comparing, OnScreen, Side } from '../service.ts';
@@ -45,9 +45,15 @@ import type { Marks } from './marks.ts';
  */
 export const HOLD_LIMIT = 15_000;
 
+/** What the revisions read of an account's poller: the push history it keeps, and its events. */
+export interface HistoryPoller extends Pick<Poller, 'pushHistory' | 'onEvent'> {
+  cachedRead(pull: PullRef, kind: typeof PUSH_HISTORY): Cached<PushHistory> | undefined;
+}
+
 export interface RevisionsTabOptions {
   readonly id: string;
-  readonly github: Pick<GithubAccess, 'poller'>;
+  /** The poller of each account, as the accounts feature provides it. */
+  readonly github: { poller(login: string): Promise<HistoryPoller> };
   /** The tab's local copy's clone, once it's opened. */
   readonly clone: () => Promise<Repo> | undefined;
   readonly marks: Marks;
@@ -88,7 +94,7 @@ export class RevisionsTab {
   #info: PullTabInfo | undefined;
   #pull: PullRef | undefined;
   #login: string | undefined;
-  #poller: Poller | undefined;
+  #poller: HistoryPoller | undefined;
   #unsubscribe: (() => void) | undefined;
   /** The push history the revisions are built from: one whose head is GitHub's newest. */
   #history: PushHistory | undefined;
@@ -370,7 +376,7 @@ export class RevisionsTab {
   }
 
   async #watch(pull: PullRef, login: string): Promise<void> {
-    let poller: Poller;
+    let poller: HistoryPoller;
     try {
       poller = await this.#options.github.poller(login);
     } catch (error) {
@@ -392,7 +398,7 @@ export class RevisionsTab {
     }
   }
 
-  #heardPoll(poller: Poller, pull: PullRef, event: PollEvent): void {
+  #heardPoll(poller: HistoryPoller, pull: PullRef, event: PollEvent): void {
     if (this.#poller !== poller || this.#closed) return;
     switch (event.kind) {
       case 'read':
@@ -605,20 +611,26 @@ export class RevisionsTab {
     if (!revisions || !history || !pull) return Promise.resolve();
     const key = this.#headsKey(revisions);
     if (this.#fetched === key && this.#fetching) return this.#fetching;
+    const opening = this.#options.clone();
+    // Once the clone is open: a fetch can't start before.
+    if (!opening) return Promise.resolve();
     this.#fetched = key;
-    const fetching = this.#fetchNow(revisions, history, pull.number).catch((error: unknown) => {
+    const heads = revisions.list().map((revision) => parseOid(revision.head));
+    const fetching = this.#fetchNow(opening, heads, pull.number).catch((error: unknown) => {
       this.#options.log(`fetching the revisions: ${describe(error)}`);
+      // Tried again the next time something asks.
+      if (this.#fetched === key) this.#fetched = undefined;
     });
     this.#fetching = fetching;
     return fetching;
   }
 
-  async #fetchNow(fetched: Revisions, history: PushHistory, number: number): Promise<void> {
-    let revisions = fetched;
-    const opening = this.#options.clone();
-    if (!opening) return;
+  /**
+   * Fetches `heads` into the clone, notes which GitHub no longer has, then works out each available
+   * revision's base. What it finds is kept by head, so revisions built again meanwhile take it too.
+   */
+  async #fetchNow(opening: Promise<Repo>, heads: readonly Oid[], number: number): Promise<void> {
     const repo = await opening;
-    const heads = revisions.list().map((revision) => parseOid(revision.head));
     let lost: Oid[] = [];
     if (repo.offline) {
       lost = await repo.unavailableRevisions(number);
@@ -638,8 +650,11 @@ export class RevisionsTab {
         this.#lost.add(head);
       }
     }
-    if (this.#revisions !== revisions) return;
-    revisions = this.#available(revisions, history);
+    if (this.#closed) return;
+    const history = this.#history;
+    const current = this.#revisions;
+    if (!history || !current) return;
+    const revisions = this.#available(current, history);
     this.#revisions = revisions;
     // Where each revision's base branch was when it was pushed.
     const info = this.#info;
@@ -661,9 +676,11 @@ export class RevisionsTab {
     }
     for (const [head, found] of tips) {
       this.#tips.set(head, found);
-      await this.#baseOf(repo, head).catch(() => undefined);
+      await this.#baseOf(repo, head).catch((error: unknown) => {
+        this.#options.log(`finding where ${this.#label(head)} branched off: ${describe(error)}`);
+      });
     }
-    if (this.#revisions !== revisions) return;
+    if (this.#closed) return;
     this.#publish();
     // A comparison that waited for the revisions' heads may go now.
     this.#advance();

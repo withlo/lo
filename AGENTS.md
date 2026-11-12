@@ -480,15 +480,17 @@ changing, as when the local copy marks one generated, doesn't reorder a drawn vi
 
 - Main lists each changed file's versions at the head on screen (`diff.state`): from the local
   copy's comparison once it's ready, with each side's blob and size, and from GitHub's list of the
-  pull request's files until then. Each says how the file starts out: shown, closed as generated,
-  kept out as large until `za`, binary, or unchanged. Files are named by their place in the list,
-  never by their paths.
+  pull request's files until then; or, while two revisions are compared, from their comparison in
+  the local copy, which a new comparison starts again. Each says how the file starts out: shown,
+  closed as generated, kept out as large until `za`, binary, or unchanged. Files are named by their
+  place in the list, never by their paths.
 - The window asks for files' texts in batches (`diff.texts`), first files first, and the background
   process diffs them (`diff.files`), finds moved code (`diff.moves`) and highlights them
   (`diff.highlight`). The view is drawn once every file that shows its lines has its diff, and the
   highlighting follows. A new order, or other files, is a new view, which puts the cursor's line
-  back where it was on the page, or else what was at the top of the screen. A batch that fails whole
-  is tried a file at a time, and closing the tab cancels its jobs.
+  back where it was on the page, or else what was at the top of the screen. Another comparison of
+  revisions is a new view with the cursor's file at the top, if it has that file. A batch that fails
+  whole is tried a file at a time, and closing the tab cancels its jobs.
 - GitHub's diff is drawn as GitHub gives it: its hunks at their real line numbers, and placeholders
   between them that stay collapsed. Its lines are never diffed again; only the words inside each
   change are looked for. A file whose hunks reach past line 100,000 waits for the local copy, as
@@ -504,6 +506,43 @@ changing, as when the local copy marks one generated, doesn't reorder a drawn vi
 - Once the view is drawn, the window says so (`diff.drawn`), and the tab keeps that head on screen,
   even one it took from what it saved: a newer one from GitHub is offered as a newer push.
 - `diff.layout` and `diff.whitespace` are settings; `gi` and `gw` change them.
+
+### Revisions
+
+The `revisions` feature lists a pull request's revisions, one for each push to its branch, and says
+what its tab compares: the whole pull request at the head on screen, or one revision with another.
+The diff and the tree follow it through the feature's `revisions.comparisons` service.
+
+- Main builds the revisions with `@lo/review` from the push history the account's poller keeps
+  (GitHub's GraphQL `PullRequestRevisions` and the activity API) and the heads every account's
+  poller saw (`revisions_seen`), once the history's head is GitHub's newest the tab knows of. Once
+  the local copy is ready, it fetches every revision's head into it, and the tips of the base branch
+  each was pushed on, and works out where each branched off. A revision whose head GitHub no longer
+  has, and the copy lacks, is no longer available, and can't be compared.
+- Two markers say where the reader left off: the commit of the account's last review, from the push
+  history, and "last seen here", the newest revision the diff was drawn with when the reader last
+  left the pull request: for another tab, as the tab closes, or as Lo quits (`revisions_lastseen`).
+  Rows go with their account, and 30 days after their pull request closed (`revisions_closed`),
+  unless noted since.
+- A tab opens on `defaultComparison`: the more recent marker's revision against the head on screen,
+  or the whole pull request, saying "Nothing new since" when a marker is on that head. When "last
+  seen here" asks for a comparison, the diff draws nothing until it's ready, for 15 s at most, so it
+  never draws the whole pull request and then moves.
+- Two revisions are compared in the local copy with `compareRevisions`, across a rebase when the
+  base moved, once it has both: until then the comparison on screen stays, and the note over the
+  diff says what waits. The comparison is made once, for the diff and the tree, and says how it
+  went: across a rebase, retargeted, or conflicted, with the files the replay conflicted on marked.
+  A comparison that can't be made says why, and the whole pull request shows.
+- Loading a newer push moves a comparison that ended at the head on screen to the new one, keeping
+  where it starts.
+- The window gets each tab's revisions on `revisions.comparison`, and asks for them with
+  `revisions.list` and for a comparison with `revisions.compare`. The header's button shows what's
+  compared ("r1 → r3"), and opens the revision picker, as `gv` does: `j` and `k` move, `Space` makes
+  a revision an end, `⏎` compares the ends, and `r`, `s` and `w` compare since your review, since
+  you last looked, or the whole pull request. The note over the diff, in the diff's `diff.notes`
+  slot, says what's compared, one line high from the first frame. While two revisions are compared,
+  the tree marks the files that changed between them, and steps the pull request's other changes
+  back.
 
 ### Opening pull requests
 

@@ -37,7 +37,7 @@ export function Revisions({ tab }: { tab: PullTab }) {
       <button
         ref={setButton}
         type="button"
-        aria-haspopup="dialog"
+        aria-haspopup="listbox"
         aria-expanded={picker.open}
         title="Compare revisions"
         className="inline-flex h-row-h flex-none items-center gap-6 rounded-sm border border-border ps-8 pe-6 whitespace-nowrap text-fg code-small hover:bg-hover"

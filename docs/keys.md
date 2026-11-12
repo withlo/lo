@@ -73,10 +73,11 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## View
 
-| Action               | Keys    | Where                                                                                  | Command            |
-| -------------------- | ------- | -------------------------------------------------------------------------------------- | ------------------ |
-| Next middle view     | `` ` `` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `tab.nextView`     |
-| Previous middle view | `~`     | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `tab.previousView` |
+| Action               | Keys    | Where                                                                                               | Command            |
+| -------------------- | ------- | --------------------------------------------------------------------------------------------------- | ------------------ |
+| Compare revisions    | `g v`   | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker` |
+| Next middle view     | `` ` `` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`     |
+| Previous middle view | `~`     | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView` |
 
 ## Files
 
@@ -110,6 +111,19 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Close unchanged lines                 | `z c` | In `diff`; in code views, only in normal mode | `diff.closeRun`   |
 | Open every unchanged line in the file | `z R` | In `diff`; in code views, only in normal mode | `diff.openFile`   |
 | Load, close or open the file          | `z a` | In `diff`; in code views, only in normal mode | `diff.toggleFile` |
+
+## Revision picker
+
+| Action                         | Keys     | Where          | Command                 |
+| ------------------------------ | -------- | -------------- | ----------------------- |
+| Next revision                  | `j`, `↓` | In `revisions` | `revisions.down`        |
+| Previous revision              | `k`, `↑` | In `revisions` | `revisions.up`          |
+| Set an end                     | `Space`  | In `revisions` | `revisions.end`         |
+| Compare                        | `⏎`      | In `revisions` | `revisions.compare`     |
+| Compare since your review      | `r`      | In `revisions` | `revisions.sinceReview` |
+| Compare since you last looked  | `s`      | In `revisions` | `revisions.sinceSeen`   |
+| Compare the whole pull request | `w`      | In `revisions` | `revisions.whole`       |
+| Close the revision picker      | `Esc`    | In `revisions` | `revisions.close`       |
 
 ## Palettes
 
@@ -152,20 +166,21 @@ A key applies in a scope: the nearest part of the window around the focused elem
 or `window`. A key for a scope beats one for anywhere, so the same chord can mean one thing in a
 comment box and another elsewhere.
 
-| Scope      | What it is                                                                            |
-| ---------- | ------------------------------------------------------------------------------------- |
-| `window`   | Anywhere no other scope has focus.                                                    |
-| `menu`     | A menu. Only commands that name it run there, and `j` and `k` move as `↓` and `↑` do. |
-| `dialog`   | A dialog, which keeps the browser's `Tab`.                                            |
-| `palette`  | A palette, such as the command palette.                                               |
-| `diff`     | The diff, a code view.                                                                |
-| `file`     | A whole file, a code view.                                                            |
-| `peek`     | A peek at code elsewhere, such as a definition, a code view.                          |
-| `box`      | A comment box, a code view with an insert mode.                                       |
-| `recent`   | Named by `open`.                                                                      |
-| `settings` | Named by `settings`.                                                                  |
-| `tree`     | Named by `tree`.                                                                      |
-| `welcome`  | Named by `welcome`.                                                                   |
+| Scope       | What it is                                                                            |
+| ----------- | ------------------------------------------------------------------------------------- |
+| `window`    | Anywhere no other scope has focus.                                                    |
+| `menu`      | A menu. Only commands that name it run there, and `j` and `k` move as `↓` and `↑` do. |
+| `dialog`    | A dialog, which keeps the browser's `Tab`.                                            |
+| `palette`   | A palette, such as the command palette.                                               |
+| `diff`      | The diff, a code view.                                                                |
+| `file`      | A whole file, a code view.                                                            |
+| `peek`      | A peek at code elsewhere, such as a definition, a code view.                          |
+| `box`       | A comment box, a code view with an insert mode.                                       |
+| `recent`    | Named by `open`.                                                                      |
+| `revisions` | Named by `revisions`.                                                                 |
+| `settings`  | Named by `settings`.                                                                  |
+| `tree`      | Named by `tree`.                                                                      |
+| `welcome`   | Named by `welcome`.                                                                   |
 
 In a code view, keys follow Vim's mode. In insert mode, and while Vim waits for the rest of a
 command (after a count or an operator), only chords are Lo's, and other keys go to Vim. In a text
@@ -211,6 +226,7 @@ these, which run Lo's command in place of Vim's key:
 | `?`              | Every key                       | `?`       | `diff`, `file`, `peek` and `box` (normal and visual)                 | `keys.help`        |
 | `⌃o`             | Back                            | `⌃o`      | `diff`, `file` and `peek`                                            | `keys.back`        |
 | `⌃i`             | Forward                         | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`     |
+| `g v`            | Compare revisions               | `g v`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `revisions.picker` |
 | `` ` ``          | Next middle view                | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`     |
 | `~`              | Previous middle view            | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView` |
 | `-`              | Go to the file tree             | `-`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tree.focus`       |
