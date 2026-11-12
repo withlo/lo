@@ -13,6 +13,9 @@
   "exclude": ["src/**/*.test.ts", "src/**/test/**"],
   "references": [
     {
+      "path": "../../skill/checker"
+    },
+    {
       "path": "../../packages/core/artifact"
     },
     {
