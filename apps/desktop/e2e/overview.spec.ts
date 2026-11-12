@@ -1,17 +1,22 @@
 // A pull request's overview in the app: Lo, started on the replay server as rozed-bot, reads
 // rozed-dev/e2e#80's from GitHub's REST API as its tab opens, as `testing/fixtures/app.sh` wrote
-// it, with who wrote it and when; gives the window its files; and shows it at once from what it
-// kept the next time, with GitHub out of reach.
+// it, with who wrote it and when; gives the window its files and the code it names, from the local
+// copy, for the background process to check it; and shows it at once from what it kept the next
+// time, with GitHub out of reach.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { CheckedArtifact } from '@lo/artifact';
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import { _electron as electron, type Page } from '@playwright/test';
 
+import type { CodeReply, OverviewFile, OverviewState } from '../src/features/overview/contract.ts';
+import type { CheckInput, Parsed } from '../src/features/overview/jobs.ts';
 import { appEnvironment, appFolder, dataFolder, expect, KEYCHAIN, test as base } from './app.ts';
+import { catchPorts } from './ports.ts';
 
 /** A stand-in token, never a real one: the cassette was recorded with the same. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
@@ -169,6 +174,121 @@ test("reads a pull request's overview as its tab opens, and gives the window its
     ],
   ]);
   expect(asked[0]).toEqual(['/repos/rozed-dev/e2e/git/matching-refs/lo/pr/80', expect.anything()]);
+});
+
+/** What main replies on the channels the overview's check asks it on. */
+interface Replies {
+  'overview.files': OverviewFile[];
+  'overview.code': CodeReply;
+  'overview.current': OverviewState;
+}
+
+/** What the overview's jobs reply. */
+interface Jobs {
+  'overview.parse': Parsed;
+  'overview.check': CheckedArtifact;
+}
+
+/**
+ * The overview on screen, checked as the window checks it, in the background process: its text
+ * and figures from main, read by `overview.parse`, the code it names from the local copy, at the
+ * commit its header names, and all of it checked by `overview.check`.
+ */
+async function checkShown(page: Page, id: string) {
+  return page.evaluate(
+    async ({ tab, commit, pr }) => {
+      const ports = window.backgroundPorts;
+      if (!ports) throw new Error('No port to the background process');
+      let jobs = 0;
+      // Main, about the tab.
+      const ask = async <C extends keyof Replies>(channel: C, input: object = {}) => {
+        const reply = await window.lo.invoke(channel, { id: tab, ...input });
+        if (!reply.ok) throw new Error(`${channel}: ${JSON.stringify(reply)}`);
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what the contract says.
+        return reply.value as Replies[C];
+      };
+      const run = async <J extends keyof Jobs>(job: J, input: unknown) => {
+        jobs += 1;
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what the contract says.
+        const reply = (await ports.run(0, { id: jobs, job, input }, 30_000)) as {
+          ok: boolean;
+          value: Jobs[J];
+        };
+        if (!reply.ok) throw new Error(`${job}: ${JSON.stringify(reply)}`);
+        return reply.value;
+      };
+
+      const [text] = await ask('overview.files', { commit, paths: ['artifact.md'] });
+      if (text?.kind !== 'file' || !text.bytes) throw new Error('artifact.md went unread');
+      const parsed = await run('overview.parse', { artifact: text.bytes });
+      const at = parsed.parsed.header?.commit;
+      if (at === undefined) throw new Error('The overview has no header');
+      const figures = await ask('overview.files', { commit, paths: parsed.figures });
+      const code = await ask('overview.code', { commit: at, files: parsed.code });
+      if (code.kind !== 'read') return { code };
+      const state = await ask('overview.current');
+      const input: CheckInput = {
+        artifact: text.bytes,
+        entries: state.overview?.entries ?? [],
+        pr,
+        figures: parsed.figures.map((path, index) => ({
+          path,
+          file: figures[index] ?? { kind: 'missing' },
+        })),
+        code: {
+          commit: at,
+          files: parsed.code.map(({ path }, index) => ({
+            path,
+            answer: code.files[index] ?? { kind: 'missing' },
+          })),
+        },
+      };
+      const checked = await run('overview.check', input);
+      return {
+        code: { kind: code.kind, files: code.files.map(({ kind }) => kind) },
+        checked: {
+          outcome: checked.outcome.kind,
+          findings: checked.findings.map(({ code: finding }) => finding),
+          code:
+            checked.outcome.kind === 'shown'
+              ? checked.outcome.code.map(({ code: shown }) => shown)
+              : [],
+          figures:
+            checked.outcome.kind === 'shown'
+              ? checked.outcome.figures.map(({ figure }) => figure.state)
+              : [],
+        },
+      };
+    },
+    { tab: id, commit: APP_PULL.overview, pr: APP_PULL.number },
+  );
+}
+
+test('checks the overview in the background process, against the code the local copy fetches', async ({
+  app,
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await catchPorts(app, page);
+  const id = await open(page);
+  // Main reads the code once the pull request's local copy is there.
+  await expect
+    .poll(() => current(page, id), { timeout: 30_000 })
+    .toMatchObject({ ...READ, code: 'ready' });
+
+  // The overview names the code of the first push, which the second force-pushed over, so the
+  // local copy, fetched at the head, fetches that commit by its ID. Each file is read once, and
+  // the cache that never landed isn't there.
+  const resolved = { state: 'resolved' };
+  expect(await checkShown(page, id)).toEqual({
+    code: { kind: 'read', files: ['file', 'file', 'file', 'file', 'missing'] },
+    checked: {
+      outcome: 'shown',
+      findings: ['code-missing'],
+      code: [...Array.from({ length: 11 }, () => resolved), { state: 'broken', why: 'missing' }],
+      figures: ['kept'],
+    },
+  });
 });
 
 test('shows the overview it kept at once the next time, with GitHub out of reach', async ({

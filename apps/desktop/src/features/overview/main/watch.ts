@@ -19,9 +19,17 @@ import {
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { OverviewCommit, OverviewFile, OverviewState, Problem } from '../contract.ts';
+import type {
+  CodeAccess,
+  CodeReply,
+  OverviewCommit,
+  OverviewFile,
+  OverviewState,
+  Problem,
+} from '../contract.ts';
 import { entryAt, isReadable } from './listing.ts';
 import type { Blobs } from './blobs.ts';
+import { codeAccess, CodeReading } from './code.ts';
 import { fetchBlob, isGone, readOverview, sizeOnly, type Github } from './fetch.ts';
 import { problemOf, retryWait } from './problems.ts';
 import type { SavedRefs } from './saved.ts';
@@ -82,6 +90,8 @@ export class OverviewTab {
   /** Whether the overview on screen is what was kept, and GitHub hasn't said since it's there. */
   #saved = false;
   #problem: Problem | undefined;
+  /** Whether the code the overview names can be read, by the tab's local copy. */
+  #code: CodeAccess = 'waiting';
   #failures = 0;
   /** Each repository's last answer, by its source and name. */
   readonly #heard = new Map<string, Heard>();
@@ -102,6 +112,8 @@ export class OverviewTab {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #closed = false;
   #said: string | undefined;
+  /** The read of the overview's code under way, which closing the tab stops. */
+  readonly #codeRead = new CodeReading();
 
   constructor(options: OverviewTabOptions) {
     this.#options = options;
@@ -128,6 +140,9 @@ export class OverviewTab {
       moved = pull !== undefined;
     }
     this.#acting = info.acting;
+    const code = codeAccess(info.local);
+    const access = code !== this.#code;
+    this.#code = code;
     const fork = info.head?.fork;
     const forkNow =
       info.head === undefined ? undefined : fork ? new RepoRef(fork.owner, fork.name) : null;
@@ -142,7 +157,7 @@ export class OverviewTab {
     else if (shown || moved) this.#read();
     else this.#schedule();
     // The tab changes often, as its local copy is fetched: only what this says is sent.
-    if (pull === undefined || moved || said !== info.acting?.kind) this.#publish();
+    if (pull === undefined || moved || access || said !== info.acting?.kind) this.#publish();
   }
 
   /**
@@ -191,6 +206,7 @@ export class OverviewTab {
       newer: this.#newer ?? null,
       saved: this.#saved,
       problem: this.#problem ?? null,
+      code: this.#code,
     };
   }
 
@@ -258,6 +274,16 @@ export class OverviewTab {
   close(): void {
     this.#closed = true;
     this.#stopTimer();
+    this.#codeRead.stop();
+  }
+
+  /**
+   * Reads the overview's code with `read`, asked for as `key` says: one read at a time, as
+   * {@link CodeReading} runs them, until the tab closes.
+   */
+  readCode(key: string, read: (signal: AbortSignal) => Promise<CodeReply>): Promise<CodeReply> {
+    if (this.#closed) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    return this.#codeRead.run(key, read);
   }
 
   /** What was kept of the pull request's overview, on screen at once if nothing is yet. */

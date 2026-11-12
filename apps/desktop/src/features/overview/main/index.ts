@@ -13,6 +13,7 @@ import type { Acting } from '../../tab/contract.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { Blobs } from './blobs.ts';
+import { codeReply, readKey } from './code.ts';
 import { SavedRefs } from './saved.ts';
 import { installSkill, skillState } from './skill.ts';
 import { OverviewTab } from './watch.ts';
@@ -86,6 +87,14 @@ export default defineFeature(contract, {
   handlers: {
     current: ({ id }) => followed.get(id)?.state(),
     files: ({ id, commit, paths }) => tabOf(id).files(commit, paths),
+    code({ id, commit, files }, context) {
+      const service = context.use(tabs);
+      const info = service.pull(id);
+      if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+      return tabOf(id).readCode(readKey(info.local, commit, files), (signal) =>
+        codeReply(info.local, () => service.clone(id), commit, files, { signal, log }),
+      );
+    },
     retry({ id }) {
       tabOf(id).retry();
     },

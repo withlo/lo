@@ -322,6 +322,39 @@ test('describes a file at any revision as a diff would', async () => {
   expect((await failure(at(f.head, 'src'))).message).toContain('src is a tree');
 });
 
+test('describes many files at once, as it describes each', async () => {
+  const f = await fixture();
+  await downloadChanges(f.repo, f.base, f.head);
+  const paths = ['keep.txt', 'run.sh', 'vendor/lib', 'src', 'src/', 'gone.txt', 'keep.txt/x'];
+  const versions = await f.repo.fileVersions(
+    f.head,
+    paths.map((path) => Buffer.from(path)),
+  );
+  expect(versions).toEqual([
+    await f.repo.fileVersion(f.head, Buffer.from('keep.txt')),
+    await f.repo.fileVersion(f.head, Buffer.from('run.sh')),
+    await f.repo.fileVersion(f.head, Buffer.from('vendor/lib')),
+    'folder',
+    undefined,
+    undefined,
+    undefined,
+  ]);
+  expect(versions[0]).toMatchObject({ size: expect.any(Number) });
+  // A file the clone lacks the contents of has no size yet.
+  const [lacking] = await f.repo.fileVersions(f.first, [Buffer.from('keep.txt')]);
+  expect(lacking).toEqual({
+    path: Buffer.from('keep.txt'),
+    oid: blobId(f.remote.work, f.first, 'keep.txt'),
+    mode: 'regular',
+  });
+  expect(await f.repo.objectSizes([parseOid(blobId(f.remote.work, f.first, 'keep.txt'))])).toEqual([
+    undefined,
+  ]);
+  expect((await failure(f.repo.fileVersions(f.head, [Buffer.from('')]))).detail.kind).toBe(
+    'invalid',
+  );
+});
+
 test('never fetches a submodules commit', async () => {
   const f = await fixture();
   await downloadChanges(f.repo, f.base, f.head);

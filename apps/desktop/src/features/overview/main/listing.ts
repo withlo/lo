@@ -2,10 +2,13 @@
 // which entries count, what each is, the bytes of its path, and which files main may read. Main
 // reads with it. Nothing here calls Node or Electron.
 
-import { ARTIFACT, FIGURE_TYPES, LIMITS, type TreeEntry } from '@lo/artifact';
+import { ARTIFACT, FIGURE_TYPES, LIMITS } from '@lo/artifact';
 import type { TreeItem } from '@lo/github';
 
 import type { Entry, EntryKind } from '../contract.ts';
+
+// How the checks take a listing's entries, as the check job does too.
+export { pathBytes, treeEntries } from '../jobs.ts';
 
 /** What GitHub writes in place of bytes of a path that aren't UTF-8. */
 const REPLACEMENT = '\uFFFD';
@@ -51,37 +54,6 @@ export function listedEntries(items: readonly TreeItem[]): Entry[] | undefined {
     });
   }
   return entries;
-}
-
-/**
- * The bytes of `path`, a path as GitHub's listing writes it, as the commit stores it as far as
- * can be told: its UTF-8, with a byte that's never UTF-8 for each U+FFFD, which GitHub writes for
- * bytes that weren't. Such a path isn't UTF-8 to the checks, as it isn't in the commit.
- */
-export function pathBytes(path: string): Uint8Array {
-  if (!path.includes(REPLACEMENT)) return new TextEncoder().encode(path);
-  const encoder = new TextEncoder();
-  const parts = path.split(REPLACEMENT).map((part) => encoder.encode(part));
-  const bytes = new Uint8Array(
-    parts.reduce((sum, part) => sum + part.length, 0) + parts.length - 1,
-  );
-  let at = 0;
-  for (const [index, part] of parts.entries()) {
-    if (index > 0) bytes[at++] = 0xff;
-    bytes.set(part, at);
-    at += part.length;
-  }
-  return bytes;
-}
-
-/** `entries` as the overview's checks take a commit's. */
-export function treeEntries(entries: readonly Entry[]): TreeEntry[] {
-  return entries.map(({ path, kind, size }): TreeEntry => {
-    const bytes = pathBytes(path);
-    // A file or link GitHub gives no size for has none: the checks refuse such a commit.
-    if (kind === 'file' || kind === 'link') return { path: bytes, kind, size: size ?? Number.NaN };
-    return { path: bytes, kind };
-  });
 }
 
 /**

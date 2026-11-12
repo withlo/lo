@@ -93,15 +93,21 @@ export function isHandOver(value: unknown): value is HandOver {
   );
 }
 
+/** The most bytes a job's input may hold in byte arrays, counting each array's whole buffer. */
+export const BYTES_LIMIT = 256 * 1024 * 1024;
+
 /**
  * Why a value can't go to the process, or undefined when it can: jobs take plain data (objects,
- * arrays, strings, numbers, booleans, null), nothing a port might drop, such as a Blob, and no
- * array with holes. Checked by the window before sending and by the process before anything else,
- * and cheap however a value is built: it visits only what's really there, within limits.
+ * arrays, strings, numbers, booleans, null, and bytes as a `Uint8Array` of its own memory),
+ * nothing a port might drop, such as a Blob, and no array with holes. Checked by the window before
+ * sending and by the process before anything else, and cheap however a value is built: it visits
+ * only what's really there, within limits. A byte array goes with its whole buffer, so that's what
+ * it counts.
  */
 export function plainDataProblem(value: unknown): string | undefined {
   let nodes = 0;
   let characters = 0;
+  let bytes = 0;
   const visit = (item: unknown, depth: number): string | undefined => {
     nodes += 1;
     if (nodes > 1_000_000) return 'it has more than a million values';
@@ -111,6 +117,16 @@ export function plainDataProblem(value: unknown): string | undefined {
     if (typeof item === 'string') {
       characters += item.length;
       return characters > 64 * 1024 * 1024 ? 'it holds more than 64 million characters' : undefined;
+    }
+    if (
+      item instanceof Uint8Array &&
+      Object.getPrototypeOf(item) === Uint8Array.prototype &&
+      item.buffer instanceof ArrayBuffer
+    ) {
+      bytes += item.buffer.byteLength;
+      return bytes > BYTES_LIMIT
+        ? `it holds more than ${BYTES_LIMIT / (1024 * 1024)} MiB of bytes`
+        : undefined;
     }
     if (Array.isArray(item)) {
       if (Object.keys(item).length !== item.length) return 'it has an array with holes';

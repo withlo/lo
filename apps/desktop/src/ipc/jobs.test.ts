@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isHandOver, plainDataProblem } from './jobs.ts';
+import { BYTES_LIMIT, isHandOver, plainDataProblem } from './jobs.ts';
 
 /**
  * An array claiming the most entries an array can have, with none: what a hostile page can send
@@ -22,6 +22,7 @@ describe('plainDataProblem', () => {
       'text',
       [1, 'two', { three: [3] }],
       { nested: { list: [null, false] } },
+      { bytes: new Uint8Array([0, 1, 2]) },
     ]) {
       expect(plainDataProblem(value)).toBe(undefined);
     }
@@ -33,7 +34,8 @@ describe('plainDataProblem', () => {
 
   it.each([
     ['a Blob', new Blob(['x']), 'it holds a Blob'],
-    ['a typed array', new Uint8Array(4), 'it holds a Uint8Array'],
+    ['a typed array other than bytes', new Uint16Array(4), 'it holds a Uint16Array'],
+    ['bytes of shared memory', new Uint8Array(new SharedArrayBuffer(4)), 'it holds a Uint8Array'],
     ['a Map', new Map(), 'it holds a Map'],
     ['a function', () => {}, 'it holds a function'],
     ['a bigint', 1n, 'it holds a bigint'],
@@ -50,6 +52,14 @@ describe('plainDataProblem', () => {
     );
     expect(plainDataProblem(['x'.repeat(40 * 1024 * 1024), 'x'.repeat(40 * 1024 * 1024)])).toBe(
       'it holds more than 64 million characters',
+    );
+  });
+
+  it('counts bytes by the buffers they go with, past the limit on them', () => {
+    const buffer = new Uint8Array(BYTES_LIMIT / 2);
+    expect(plainDataProblem([buffer, buffer.subarray(0, 1)])).toBe(undefined);
+    expect(plainDataProblem([buffer, buffer.subarray(0, 1), new Uint8Array(1)])).toBe(
+      'it holds more than 256 MiB of bytes',
     );
   });
 });

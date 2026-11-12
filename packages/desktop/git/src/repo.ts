@@ -447,21 +447,32 @@ export class Repo {
 
   /**
    * Downloads the objects in `oids` the clone lacks, such as the files a diff shows, by ID:
-   * {@link OBJECTS_PER_FETCH} at a time, one fetch each. Returns the ones still missing.
+   * {@link OBJECTS_PER_FETCH} at a time, one fetch each, each stopped once it brings more than
+   * `maxBytes`, or once `signal` aborts. Each fetch tells `received` how many bytes it brought,
+   * stopped or not, as its byte cap counts them. Returns the ones still missing.
    */
   async download(
     oids: readonly Oid[],
     what = 'the files to show',
-    options: { maxBytes?: number } = {},
+    options: {
+      maxBytes?: number;
+      signal?: AbortSignal | undefined;
+      received?: ((bytes: number) => void) | undefined;
+    } = {},
   ): Promise<Oid[]> {
-    return this.#locked(`downloading ${what}`, async () => {
-      const missing = await this.missingObjects([...new Set(oids)]);
-      for (let at = 0; at < missing.length; at += OBJECTS_PER_FETCH) {
-        const batch = missing.slice(at, at + OBJECTS_PER_FETCH);
-        await this.#fetch(what, [], { objects: batch, maxBytes: options.maxBytes });
-      }
-      return this.missingObjects(missing);
-    });
+    const { maxBytes, signal, received } = options;
+    return this.#locked(
+      `downloading ${what}`,
+      async () => {
+        const missing = await this.missingObjects([...new Set(oids)]);
+        for (let at = 0; at < missing.length; at += OBJECTS_PER_FETCH) {
+          const batch = missing.slice(at, at + OBJECTS_PER_FETCH);
+          await this.#fetch(what, [], { objects: batch, maxBytes, signal, received });
+        }
+        return this.missingObjects(missing);
+      },
+      signal,
+    );
   }
 
   /**
@@ -674,14 +685,7 @@ export class Repo {
       ),
     );
     if (versions.length === 0) return [...files];
-    const output = await this.#git()
-      .arg('cat-file', '--batch-check=%(objectname) %(objectsize)')
-      .run(versions.map((version) => `${version?.oid}\n`).join(''));
-    const sizes = new Map<string, number>();
-    for (const line of lines(output)) {
-      const [oid = '', size = ''] = line.split(' ');
-      if (/^\d+$/.test(size)) sizes.set(oid, Number(size));
-    }
+    const sizes = await this.#sizes(versions.flatMap((version) => version?.oid ?? []));
     const sized = (version: FileVersion | undefined) =>
       version === undefined || version.mode === 'submodule'
         ? version
@@ -760,6 +764,59 @@ export class Repo {
     const version = { path: Buffer.from(path), oid: found.oid, mode: found.mode };
     if (found.mode === 'submodule') return version;
     return { ...version, size: (await this.#reader.info(found.oid))?.size };
+  }
+
+  /**
+   * What's at each of `paths` in `rev`, a commit or a tree, in the order asked: a file, symlink or
+   * submodule as {@link Repo.fileVersion} gives it, `folder`, or `undefined` for nothing. One walk
+   * reads each tree once, however many of the paths go through it, and the sizes come in one
+   * batch, so a large tree costs its size once rather than once a path. It downloads nothing.
+   */
+  async fileVersions(
+    rev: Oid,
+    paths: readonly Uint8Array[],
+  ): Promise<(FileVersion | 'folder' | undefined)[]> {
+    checkPaths(paths);
+    const walk = new TreeWalk(this.#reader);
+    const root = await walk.root(rev);
+    const found: (Found | undefined)[] = [];
+    for (const path of paths) found.push(await walk.find(root, path));
+    const blobs = found.flatMap((entry) =>
+      entry === undefined || entry.mode === 'folder' || entry.mode === 'submodule'
+        ? []
+        : [entry.oid],
+    );
+    const sizes = await this.#sizes(blobs);
+    return found.map((entry, index) => {
+      if (entry === undefined) return undefined;
+      if (entry.mode === 'folder') return 'folder';
+      const version = { path: Buffer.from(paths[index] ?? []), oid: entry.oid, mode: entry.mode };
+      return entry.mode === 'submodule' ? version : { ...version, size: sizes.get(entry.oid) };
+    });
+  }
+
+  /**
+   * The size of each of `oids`, in the order asked, or `undefined` for one the clone lacks: one
+   * batch, which downloads nothing.
+   */
+  async objectSizes(oids: readonly Oid[]): Promise<(number | undefined)[]> {
+    const sizes = await this.#sizes(oids);
+    return oids.map((oid) => sizes.get(oid));
+  }
+
+  /** The size of each of `oids` the clone has, by ID, from one `git cat-file --batch-check`. */
+  async #sizes(oids: readonly Oid[]): Promise<Map<string, number>> {
+    const sizes = new Map<string, number>();
+    const wanted = unique(oids);
+    if (wanted.length === 0) return sizes;
+    const output = await this.#git()
+      .arg('cat-file', '--batch-check=%(objectname) %(objectsize)')
+      .run(wanted.map((oid) => `${oid}\n`).join(''));
+    for (const line of lines(output)) {
+      const [oid = '', size = ''] = line.split(' ');
+      if (/^\d+$/.test(size)) sizes.set(oid, Number(size));
+    }
+    return sizes;
   }
 
   /** What's at `path` in `rev`: a file, symlink or submodule, nothing, or an error for a folder. */
@@ -1688,6 +1745,7 @@ export class Repo {
       log: (line) => this.#cache.note(`${this.name}: ${line}`),
       signal: options.signal,
     });
+    options.received?.(watched.received);
     if (watched.kind === 'stopped') throw stoppedError(watched.stopped, what);
     const { exit, messages } = watched;
     if (exit.code !== 0) {
@@ -1775,6 +1833,8 @@ interface FetchOptions {
   readonly whole?: boolean | undefined;
   /** Stops the fetch once it aborts. */
   readonly signal?: AbortSignal | undefined;
+  /** Told how many bytes the fetch brought, as `maxBytes` counts them, once it's done or stopped. */
+  readonly received?: ((bytes: number) => void) | undefined;
 }
 
 /** What a comparison's downloads may still bring, in bytes, and the signal that stops them. */
