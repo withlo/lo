@@ -14,9 +14,9 @@ export const HOVER_CLOSE_MS = 150;
 /**
  * A use of a defined term: a dotted underline, and a card with its definition while the pointer
  * rests on it or it has focus. `⏎`, or a click, goes to its entry in the glossary; `Esc` closes the
- * card. The card never takes focus and holds nothing that can, so `Tab` goes on from the term to
- * whatever follows it. It copies the glossary, which holds the definition whole and describes the
- * term to screen readers.
+ * card until focus leaves the term or the pointer opens it again. The card never takes focus and
+ * holds nothing that can, so `Tab` goes on from the term to whatever follows it. It copies the
+ * glossary, which holds the definition whole and describes the term to screen readers.
  */
 export function Term({ term, children }: { term: TermTarget; children: ReactNode }) {
   const { glossary, container } = useGlossary();
@@ -26,18 +26,24 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // While the term has focus, its card stays, wherever the pointer goes.
   const focused = useRef(false);
+  // `Esc` closed the card, and focus hasn't left the term since.
+  const dismissed = useRef(false);
   useEffect(() => () => clearTimeout(timer.current), []);
   const definition = glossary.definition(term.key);
   if (!definition) return children;
 
+  const show = (next: boolean) => {
+    if (next) dismissed.current = false;
+    setOpen(next);
+  };
   const now = (next: boolean) => {
     clearTimeout(timer.current);
-    setOpen(next);
+    show(next);
   };
   const later = (next: boolean, wait: number) => {
     clearTimeout(timer.current);
     if (!next && focused.current) return;
-    timer.current = setTimeout(() => setOpen(next), wait);
+    timer.current = setTimeout(() => show(next), wait);
   };
   const follow = (from: HTMLElement) => {
     now(false);
@@ -56,10 +62,16 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
         onPointerLeave={() => later(false, HOVER_CLOSE_MS)}
         onFocus={() => {
           focused.current = true;
-          now(true);
+          if (!dismissed.current) now(true);
         }}
-        onBlur={() => {
+        onBlur={(event) => {
           focused.current = false;
+          // The window losing focus blurs the term but leaves it the focused element, and gives it
+          // focus again when the window comes back: a card closed with `Esc` stays closed. Only
+          // focus moving elsewhere undoes the `Esc`.
+          if (event.currentTarget.ownerDocument.activeElement !== event.currentTarget) {
+            dismissed.current = false;
+          }
           now(false);
         }}
         onClick={(event) => follow(event.currentTarget)}
@@ -71,6 +83,7 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
           } else if (event.key === 'Escape' && open) {
             event.preventDefault();
             now(false);
+            dismissed.current = true;
           }
         }}
       >
