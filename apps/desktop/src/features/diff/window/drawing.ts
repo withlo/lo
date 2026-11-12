@@ -247,7 +247,7 @@ export function draw(options: DrawOptions): Drawing {
 
   /**
    * Changes the view while what's at the top of the screen stays where it is. It only keeps the
-   * page: side by side, a cursor a key just moved still comes on screen.
+   * page: a cursor a key just moved stays where the key took the screen.
    */
   const steady = (change: () => void) => {
     const top = view.viewport();

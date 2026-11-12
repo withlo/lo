@@ -13,6 +13,7 @@ import {
   type RepoRef,
 } from '@lo/github';
 
+import type { Acting } from '../../tab/contract.ts';
 import { authorLogin, NAME_LIMIT, type Entry, type OverviewCommit } from '../contract.ts';
 import { entryAt, listedEntries, treeEntries } from './listing.ts';
 import type { Blobs } from './blobs.ts';
@@ -54,12 +55,13 @@ export async function readsText(entries: readonly Entry[], truncated: boolean): 
 }
 
 /**
- * Reads overview commit `sha` from `repository`, which is `source`: its byline and listing, and
- * `artifact.md` into `blobs`, unless the listing says not to read it. Throws what GitHub answered,
- * or {@link Unexpected}.
+ * Reads overview commit `sha` from `repository`, which is `source`, with `github`, as `acting`:
+ * its byline and listing, and `artifact.md` into `blobs`, unless the listing says not to read it.
+ * Throws what GitHub answered, or {@link Unexpected}.
  */
 export async function readOverview(
   github: Github,
+  acting: Acting,
   blobs: Blobs,
   repository: RepoRef,
   sha: string,
@@ -76,7 +78,7 @@ export async function readOverview(
     const text = entryAt(entries, 'artifact.md');
     if (text?.kind !== 'file' || text.size === null)
       throw new Unexpected('No artifact.md to read.');
-    await fetchBlob(github, blobs, repository, text.id);
+    await fetchBlob(github, acting, blobs, repository, text.id);
   }
   const login = summary.login !== undefined && authorLogin.safeParse(summary.login).success;
   return {
@@ -95,17 +97,53 @@ export async function readOverview(
 }
 
 /**
- * The file `id` names, from `blobs`, else fetched raw from `repository` and kept, once it hashes
- * to `id`. Throws {@link Unexpected} for bytes that don't.
+ * The files being fetched, by the store each goes into, then by who asked GitHub for them, their
+ * repository and ID.
+ */
+const fetching = new WeakMap<Blobs, Map<string, Promise<Uint8Array>>>();
+
+/** Who requests go as, for asks to share a fetch: an account, whatever its case, or nobody. */
+function askerOf(acting: Acting): string {
+  return acting.kind === 'account' ? `@${acting.login.toLowerCase()}` : 'nobody';
+}
+
+/**
+ * The file `id` names, from `blobs`, else fetched raw from `repository` with `github`, as
+ * `acting`, and kept once it hashes to `id`. An ask as the same account, or as nobody, while the
+ * same file is being fetched gets that fetch's answer, so asks at once, as the view's and its
+ * check's are, cost one request, in that account's turn. One as another account fetches it itself,
+ * so what GitHub tells one account, such as that it's signed out or past its rate limit, is never
+ * said of another. Throws {@link Unexpected} for bytes that don't hash to `id`.
  */
 export async function fetchBlob(
   github: Github,
+  acting: Acting,
   blobs: Blobs,
   repository: RepoRef,
   id: string,
 ): Promise<Uint8Array> {
   const kept = blobs.get(id);
   if (kept) return kept;
+  let under = fetching.get(blobs);
+  if (!under) {
+    under = new Map();
+    fetching.set(blobs, under);
+  }
+  const key = `${askerOf(acting)} ${repository.key} ${id}`;
+  const joined = under.get(key);
+  if (joined) return joined;
+  const started = fetchNew(github, blobs, repository, id).finally(() => under.delete(key));
+  under.set(key, started);
+  return started;
+}
+
+/** The file `id` names, fetched raw from `repository`, and kept once it hashes to `id`. */
+async function fetchNew(
+  github: Github,
+  blobs: Blobs,
+  repository: RepoRef,
+  id: string,
+): Promise<Uint8Array> {
   const bytes = await github((client) => blobBytes(client, repository, id));
   if (!blobs.put(id, bytes)) {
     throw new Unexpected(`GitHub sent a file of the overview that isn't the one its ID names.`);
