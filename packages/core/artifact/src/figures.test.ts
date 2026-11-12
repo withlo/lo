@@ -200,6 +200,25 @@ describe('an SVG figure', () => {
     );
   });
 
+  test('with no viewBox, takes one from its width and height in pixels, or is left out', async () => {
+    const kept = await check(shown('figures/a.svg'), {
+      'figures/a.svg': '<svg width="860" height="320px"><rect/></svg>',
+    });
+    expect(codes(kept)).toEqual([]);
+    expect(states(kept)[0]).toMatchObject({
+      state: 'kept',
+      svg: { attributes: { viewBox: '0 0 860 320' } },
+    });
+    for (const svg of ['<svg><rect/></svg>', '<svg width="100%" height="10em"><rect/></svg>']) {
+      const checked = await check(shown('figures/a.svg'), { 'figures/a.svg': svg });
+      expect(codes(checked)).toEqual([`figure-header@${LINE}`]);
+      expect(checked.findings[0]?.message).toBe(
+        "figures/a.svg has no viewBox, nor a width and height in pixels to make one, so Lo can't tell its size.",
+      );
+      expect(summary(checked)).toEqual(['leftOut header']);
+    }
+  });
+
   test('not UTF-8, is left out, saying from which line', async () => {
     const svg = join(`${SVG}\n<text>\n`, [0xe9], '</text></svg>');
     const checked = await check(shown('figures/a.svg'), { 'figures/a.svg': svg });
@@ -442,17 +461,22 @@ describe('an SVG figure’s parts', () => {
       'all',
       'the figure itself',
     ],
-    ['its definitions', '<svg><defs id="defs"/></svg>', 'defs', "the figure's definitions"],
-    ['a marker', '<svg><marker id="m"><path/></marker></svg>', 'm', 'a marker'],
+    [
+      'its definitions',
+      '<svg viewBox="0 0 1 1"><defs id="defs"/></svg>',
+      'defs',
+      "the figure's definitions",
+    ],
+    ['a marker', '<svg viewBox="0 0 1 1"><marker id="m"><path/></marker></svg>', 'm', 'a marker'],
     [
       'what a marker draws',
-      '<svg><marker id="m"><g><path id="p"/></g></marker></svg>',
+      '<svg viewBox="0 0 1 1"><marker id="m"><g><path id="p"/></g></marker></svg>',
       'p',
       'inside a marker',
     ],
     [
       'a span inside text',
-      '<svg><text>A <tspan id="s">b</tspan></text></svg>',
+      '<svg viewBox="0 0 1 1"><text>A <tspan id="s">b</tspan></text></svg>',
       's',
       'a span inside text',
     ],

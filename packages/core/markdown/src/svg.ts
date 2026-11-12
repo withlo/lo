@@ -15,6 +15,8 @@
  * - Scope every `id` and marker attribute to the figure, as it does a document's anchors, and write
  *   a marker attribute as `url(#<the scoped name>)`.
  * - Set text only as text.
+ * - Size the figure by its viewBox. One without a viewBox, and without a width and height in its own
+ *   units to make one from, has no size of its own to draw at.
  * - Clip the figure to its frame, and cap its height: the caps here refuse only proportions no
  *   figure needs, and drawn at the article's width, a figure four times as tall as it's wide is
  *   still tall.
@@ -22,7 +24,7 @@
 
 import { html as namespaces, type DefaultTreeAdapterTypes } from 'parse5';
 
-import { readValue, svgRule, type SvgName } from './allowlist.ts';
+import { readValue, svgRule, type Read, type SvgName } from './allowlist.ts';
 import { parseHtml, type Fragment } from './html.ts';
 import { dashCount, slack } from './length.ts';
 import { MAX_DIAGNOSTICS } from './limits.ts';
@@ -350,6 +352,8 @@ class Sanitizer {
     let vertices = name === 'line' ? 2 : 0;
     // At most how long a path or points are, in their own units, for counting dashes.
     let length = 0;
+    // The root's own width and height, as written.
+    const size: { width?: string; height?: string } = {};
     this.cost = 1;
     for (const attribute of node.attrs) {
       const written = attribute.prefix ? `${attribute.prefix}:${attribute.name}` : attribute.name;
@@ -358,8 +362,11 @@ class Sanitizer {
       const remove = (reason: SvgReason): void =>
         this.remove(this.within, reason, name, written, place);
       // The renderer sizes the figure, by its viewBox: a browser would take the figure's
-      // proportions from these first.
-      if (name === 'svg' && (written === 'width' || written === 'height')) continue;
+      // proportions from these first. Without a viewBox, they may give it one.
+      if (name === 'svg' && (written === 'width' || written === 'height')) {
+        size[written] = value;
+        continue;
+      }
       if (attribute.namespace === XMLNS) {
         if (DECLARATIONS.get(written) !== value) remove('attribute');
         continue;
@@ -410,6 +417,14 @@ class Sanitizer {
         const holders = this.ids.get(read.value) ?? [];
         holders.push({ element: made, place });
         this.ids.set(read.value, holders);
+      }
+    }
+    if (name === 'svg' && attributes['viewBox'] === undefined) {
+      const box = sizedBox(size.width, size.height);
+      if (box) {
+        attributes['viewBox'] = box.value;
+        this.numbers += box.numbers;
+        this.cost += box.numbers;
       }
     }
     this.cost += vertices;
@@ -555,6 +570,19 @@ function shapeLength(element: SvgElement, pathLength: number): number | undefine
   }
   // A path, or points.
   return pathLength;
+}
+
+/**
+ * The viewBox a figure with no viewBox has from its own `width` and `height`: `0 0 <width>
+ * <height>`, when both are sizes above 0 in its own units, as plain numbers or pixels. A width or
+ * height in `%` or `em` depends on what's around the figure, so gives none.
+ */
+function sizedBox(width: string | undefined, height: string | undefined): Read | undefined {
+  const sides = [width, height].map((side) => {
+    const read = side === undefined ? undefined : readValue('size', side);
+    return read && !/(?:em|%)$/.test(read.value) ? Number.parseFloat(read.value) : 0;
+  });
+  return readValue('viewBox', `0 0 ${sides.join(' ')}`);
 }
 
 /**

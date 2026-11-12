@@ -8,6 +8,7 @@
     "./code": "./src/code/index.ts",
     "./code/view.css": "./src/code/view.css",
     "./commands": "./src/commands/index.ts",
+    "./figures": "./src/figures/index.ts",
     "./markdown": "./src/markdown/index.ts",
     "./overview": "./src/overview/index.ts",
     "./styles.css": "./src/styles.css",

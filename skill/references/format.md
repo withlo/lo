@@ -288,15 +288,17 @@ endings `.svg`, `.png`, `.jpg`, `.jpeg`, `.gif` or `.webp`, in lower case. Lo re
 its first bytes, and they must be of the type its name says. A figure that isn't there as a file, of
 another type, or past a limit, is left out, with a note in its place.
 
-- **SVG figures** follow `figures.md`, in UTF-8. Lo keeps only what a figure may hold: no scripts,
-  styles, outside images or addresses, `<foreignObject>`, filters or gradients. A figure Lo had to
-  change, or refused whole, is left out, since a figure missing some of what it draws can mislead. A
-  color other than Lo's named colors, `var(--fig-*)`, doesn't follow the reader's theme, and is a
-  warning.
+- **SVG figures** follow `figures.md`, in UTF-8, and are drawn at the size their `viewBox` gives,
+  or, without one, their `width` and `height` in pixels. One with neither is left out. Lo keeps only
+  what a figure may hold: no scripts, styles, outside images or addresses, `<foreignObject>`,
+  filters or gradients. A figure Lo had to change, or refused whole, is left out, since a figure
+  missing some of what it draws can mislead. A color other than Lo's named colors, `var(--fig-*)`,
+  doesn't follow the reader's theme, and is a warning.
 - **Image figures**, such as screenshots, are shown as they are. Lo reads their size from their
   header alone, and never decodes them to check them: a PNG's `IHDR` chunk, a JPEG's frame header, a
   WebP's first chunk, or a GIF's screen, grown to take in its first frame. A figure whose header is
-  damaged or cut short is left out.
+  damaged or cut short is left out. A JPEG or PNG is turned as its Exif orientation says, and an
+  animated image shows its first frame, still.
 - **Parts** are an SVG's elements, each named by its id: a shape, a group or a text, but not the
   figure itself, its `<defs>`, a marker or what a marker draws, or a `<tspan>`. An id names an
   element in its own figure only, and an id two elements have names neither. A part that names no

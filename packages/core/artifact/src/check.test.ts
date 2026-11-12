@@ -42,10 +42,13 @@ function codes(checked: CheckedArtifact): string[] {
 
 const encoder = new TextEncoder();
 
+/** The smallest figure Lo draws: an SVG with a size. */
+const SVG = '<svg viewBox="0 0 1 1"/>';
+
 describe('the commit', () => {
   test('holds artifact.md and figures directly in figures/', async () => {
     const checked = await check(overview(':::figure figures/a.svg\nA.\n:::\n'), {
-      'figures/a.svg': '<svg/>',
+      'figures/a.svg': SVG,
       'figures/b.png': new Uint8Array(8),
     });
     expect(checked.findings).toEqual([]);
@@ -215,18 +218,18 @@ describe('the commit', () => {
 
   test('a path listed twice is a file only if it’s a file both times', async () => {
     const text = overview(':::figure figures/a.svg\nA.\n:::\n');
-    const files = await check(text, { 'figures/a.svg': '<svg/>' }, [
-      { path: encoder.encode('figures/a.svg'), kind: 'file', size: 6 },
+    const files = await check(text, { 'figures/a.svg': SVG }, [
+      { path: encoder.encode('figures/a.svg'), kind: 'file', size: SVG.length },
     ]);
     expect(codes(files)).toEqual(['tree-extra:figures/a.svg']);
     expect(files.findings[0]?.message).toBe("figures/a.svg is in the overview's commit twice.");
-    const twice = await check(text, { 'figures/a.svg': '<svg/>' }, [
+    const twice = await check(text, { 'figures/a.svg': SVG }, [
       { path: encoder.encode('figures/a.svg'), kind: 'link', size: 11 },
     ]);
     expect(codes(twice)).toEqual(['tree-extra:figures/a.svg', `figure-not-file@${LINE}`]);
     const link = await check(text, {}, [
       { path: encoder.encode('figures/a.svg'), kind: 'link', size: 11 },
-      { path: encoder.encode('figures/a.svg'), kind: 'file', size: 6 },
+      { path: encoder.encode('figures/a.svg'), kind: 'file', size: SVG.length },
     ]);
     expect(codes(link)).toEqual(['tree-extra:figures/a.svg', `figure-not-file@${LINE}`]);
   });

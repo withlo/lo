@@ -119,15 +119,20 @@ describe('sanitizeSvg’s hostile figures', () => {
       const past = bytes.length > LIMITS.svg;
       const made = past ? undefined : sanitizeSvg(new TextDecoder().decode(bytes));
       const whole = made?.svg !== undefined && made.removed.length === 0;
+      // Kept whole, it's drawn only with a size.
+      const sized = whole && made.svg?.attributes['viewBox'] !== undefined;
       expect(caps).toEqual(
         past || bytes.length <= FIGURE_HEAD ? [FIGURE_HEAD] : [FIGURE_HEAD, bytes.length],
       );
       expect(figure).toEqual(
-        whole
+        sized
           ? { state: 'kept', type: 'svg', svg: made.svg, parts: [] }
-          : { state: 'leftOut', why: past || made?.svg === undefined ? 'tooLarge' : 'content' },
+          : {
+              state: 'leftOut',
+              why: whole ? 'header' : past || made?.svg === undefined ? 'tooLarge' : 'content',
+            },
       );
-      expect(errors(checked)).toHaveLength(whole ? 0 : 1);
+      expect(errors(checked)).toHaveLength(sized ? 0 : 1);
       // Whatever sanitizeSvg refuses whole is left out.
       expect(input.refused === undefined || !whole).toBe(true);
     },
