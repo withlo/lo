@@ -2,8 +2,10 @@
 // opens rozed-dev/e2e#80 on its overview when it shows within the bound, and on the diff when it
 // doesn't, there's none, or Settings says so, offering one that comes later; says why one can't be
 // shown; offers a newer one pushed while it's read; and never moves what's on screen without the
-// reader. A server in front of the replay server answers for the overview's ref as each test says:
-// with the overview `testing/fixtures/app.sh` wrote, none, one made here, or a failure.
+// reader: not as banners come and go, as it's checked again, as a newer one is offered at any
+// width, or as what's above the line being read changes size. A server in front of the replay
+// server answers for the overview's ref as each test says: with the overview
+// `testing/fixtures/app.sh` wrote, none, one made here, or a failure.
 
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -22,6 +24,8 @@ declare global {
     loOverviewMoved?: string[];
     /** Stops watching. */
     loOverviewStill?: boolean;
+    /** Which watch is the latest: an earlier one stops. */
+    loOverviewWatch?: number;
   }
 }
 
@@ -34,13 +38,35 @@ const REFS = `/repos/rozed-dev/e2e/git/matching-refs/lo/pr/${APP_PULL.number}`;
 /** A file of an overview made here: its text, or a size Lo never reads past. */
 type Made = string | { size: number };
 
+/**
+ * Who a commit made here says wrote it: the name it gives, and the login GitHub matches it to, or
+ * none when GitHub can't.
+ */
+interface Writer {
+  name: string;
+  login: string | null;
+}
+
 /** An overview's commit made here, as GitHub would list it. */
 interface Overview {
   sha: string;
   tree: string;
+  writer: Writer;
   entries: { path: string; type: 'blob' | 'tree'; sha: string; size?: number }[];
   blobs: Map<string, Uint8Array>;
 }
+
+/** rozed-bot, as GitHub matches the commits it writes. */
+const BOT: Writer = { name: 'rozed-bot', login: 'rozed-bot' };
+
+/**
+ * A name a commit gives its author that reads like the rest of Lo's byline, which GitHub matches
+ * to no account.
+ */
+const SPOOF: Writer = {
+  name: `rozed-bot wrote this overview just now · describes r2 ${APP_PULL.head.slice(0, 7)} · From the base repository ${'x'.repeat(160)}`,
+  login: null,
+};
 
 /**
  * What the ref holds as the test goes: the overview the cassette recorded, none, one made here, or
@@ -62,8 +88,8 @@ function blobId(bytes: Uint8Array): string {
 
 let made = 0;
 
-/** An overview's commit, made of `files`, by their paths. */
-function overviewOf(files: Readonly<Record<string, Made>>): Overview {
+/** An overview's commit, made of `files`, by their paths, which `writer` wrote. */
+function overviewOf(files: Readonly<Record<string, Made>>, writer = BOT): Overview {
   made += 1;
   const blobs = new Map<string, Uint8Array>();
   const entries: Overview['entries'] = [];
@@ -89,7 +115,7 @@ function overviewOf(files: Readonly<Record<string, Made>>): Overview {
   }
   const sha = createHash('sha1').update(`commit ${made}`).digest('hex');
   const tree = createHash('sha1').update(`tree ${made}`).digest('hex');
-  return { sha, tree, entries, blobs };
+  return { sha, tree, writer, entries, blobs };
 }
 
 /** An overview of #80 for its head, in format `format`, its body `body`. */
@@ -122,16 +148,13 @@ function json(outgoing: ServerResponse, status: number, body: unknown): void {
 /** Answers what GitHub would for `overview`'s commit, tree or blob at `path`; false for the rest. */
 function answerFor(overview: Overview, path: string, outgoing: ServerResponse): boolean {
   const repo = '/repos/rozed-dev/e2e';
-  const who = {
-    name: 'rozed-bot',
-    email: 'rozed-bot@users.noreply.github.com',
-    date: '2026-11-11T09:30:00Z',
-  };
+  const { name, login } = overview.writer;
+  const who = { name, email: 'writer@example.com', date: '2026-11-11T09:30:00Z' };
   if (path === `${repo}/commits/${overview.sha}`) {
     json(outgoing, 200, {
       sha: overview.sha,
       commit: { author: who, committer: who, message: 'Overview', tree: { sha: overview.tree } },
-      author: { login: 'rozed-bot', type: 'User' },
+      author: login === null ? null : { login, type: 'User' },
     });
     return true;
   }
@@ -210,6 +233,9 @@ const test = base.extend<{
         for (const [name, value] of Object.entries(incoming.headers)) {
           if (typeof value === 'string' && name !== 'host') headers.set(name, value);
         }
+        // The cassette has only the ref's read made again with its ETag: anything else read again,
+        // such as the open pull requests as a tab opens a second time, it answers whole.
+        if (path !== REFS) headers.delete('if-none-match');
         const method = incoming.method ?? 'GET';
         const response = await fetch(`${origin}${incoming.url ?? '/'}`, {
           method,
@@ -302,14 +328,111 @@ const overview = (page: Page, kind: string) =>
 const clipboard = (app: ElectronApplication) =>
   app.evaluate(({ clipboard: board }) => board.readText());
 
+/**
+ * Watches, every frame from now until the test stops it, where each of the overview's blocks on
+ * screen is on the page, and says each time one has moved, or was drawn again, on a frame the
+ * reader gave no input: from the first frame the overview is drawn, as its figures fill in. A
+ * frame within half a second of the reader's wheel, keys, pointer or a change in the window's
+ * size, as the scroll it asked for runs its course, or with another overview put on screen, takes
+ * where each block is then as its place. Each counts as moved once it's been away from its place
+ * for two frames running, so a change made up for before it's painted doesn't.
+ */
+async function watchStill(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const moved: string[] = [];
+    const watch = (window.loOverviewWatch ?? 0) + 1;
+    window.loOverviewWatch = watch;
+    window.loOverviewMoved = moved;
+    window.loOverviewStill = false;
+    let input = Number.NEGATIVE_INFINITY;
+    for (const type of ['wheel', 'keydown', 'pointerdown', 'resize']) {
+      window.addEventListener(type, () => (input = performance.now()), { capture: true });
+    }
+    let article: Element | null = null;
+    let watched: { block: Element; y: number; away: number }[] = [];
+    /** The article's blocks on screen now, where they are. */
+    const onScreen = () => {
+      const scroller = article?.closest('.lo-ov');
+      if (!article || !scroller) return [];
+      const box = scroller.getBoundingClientRect();
+      return [...article.children].flatMap((block) => {
+        const { top, bottom } = block.getBoundingClientRect();
+        return bottom > box.top && top < box.bottom ? [{ block, y: top, away: 0 }] : [];
+      });
+    };
+    const tick = () => {
+      const now = document.querySelector('[data-lo-overview="shown"] .lo-ov__article');
+      if (now !== article || performance.now() - input < 500) {
+        article = now;
+        watched = onScreen();
+      } else {
+        for (const each of watched) {
+          const y = each.block.isConnected ? each.block.getBoundingClientRect().top : undefined;
+          const off = y === undefined || Math.abs(y - each.y) > 0.5;
+          each.away = off ? each.away + 1 : 0;
+          if (each.away === 2) {
+            moved.push(`${each.block.textContent?.slice(0, 40)} from ${each.y} to ${y}`);
+          }
+        }
+      }
+      if (!window.loOverviewStill && window.loOverviewWatch === watch) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+/** Stops watching, and says what moved. */
+async function stillMoved(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    window.loOverviewStill = true;
+    return window.loOverviewMoved ?? [];
+  });
+}
+
+/** Wheels the overview's scroll to `part` of the way down, as the reader would. */
+async function wheelTo(page: Page, part: number): Promise<void> {
+  const scroller = overview(page, 'shown').locator('.lo-ov');
+  const box = await scroller.boundingBox();
+  await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.6, (box?.y ?? 0) + 100);
+  const goal = await scroller.evaluate(
+    (element, at) => Math.round((element.scrollHeight - element.clientHeight) * at),
+    part,
+  );
+  await expect
+    .poll(
+      async () => {
+        const at = await scroller.evaluate((element) => element.scrollTop);
+        if (at > goal) await page.mouse.wheel(0, Math.max(-400, goal - at));
+        else if (at < goal) await page.mouse.wheel(0, Math.min(400, goal - at));
+        return Math.abs(at - goal) <= 1;
+      },
+      { timeout: 10_000, intervals: [100] },
+    )
+    .toBe(true);
+}
+
+/** Sets the window's size, as the reader would. */
+async function sizeWindow(app: ElectronApplication, width: number, height: number): Promise<void> {
+  await app.evaluate(
+    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setSize(size.width, size.height),
+    { width, height },
+  );
+}
+
 test.describe('as a pull request opens', () => {
-  test('opens on its overview when it shows within the bound, with who wrote it and its mark', async ({
+  test('opens on its overview when Lo knows in time that it shows, with who wrote it and its mark', async ({
     page,
   }) => {
     const refused: string[] = [];
     page.on('console', (message) => {
       if (/Content Security Policy|Refused to/i.test(message.text())) refused.push(message.text());
     });
+    // Read and checked once, so it's kept, and opened again with nothing left to fetch.
+    const first = await open(page);
+    await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
+    await page.evaluate((tab) => window.lo.invoke('tab.close', { id: tab }), first);
+    await expect(views(page)).toHaveCount(0);
+
     await open(page);
     await expect(overview(page, 'shown')).toBeVisible({ timeout: 10_000 });
     // It opened on the overview: the diff was never drawn.
@@ -346,7 +469,6 @@ test.describe('as a pull request opens', () => {
   });
 
   test('opens on the diff when there’s no overview, which offers the prompt to write one', async ({
-    app,
     page,
     ref,
   }) => {
@@ -358,24 +480,7 @@ test.describe('as a pull request opens', () => {
     await expect(overview(page, 'none')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'No overview yet' })).toBeVisible();
     await expect(page.locator('footer')).toContainText(`Watching refs/lo/pr/${APP_PULL.number}`);
-
-    const prompt = [
-      'Write a Lo overview for this pull request:',
-      `https://github.com/rozed-dev/e2e/pull/${APP_PULL.number}`,
-      '',
-      'Use the lo-overview skill. Read the diff, the description',
-      'and the commits; write artifact.md and its figures; run the',
-      `checker; then push to refs/lo/pr/${APP_PULL.number}.`,
-    ].join('\n');
-    await expect(overview(page, 'none').locator('pre')).toHaveText(prompt);
-    await overview(page, 'none').getByRole('button', { name: /^Copy/ }).click();
-    await expect(overview(page, 'none').getByRole('button', { name: /^Copied/ })).toBeVisible();
-    expect(await clipboard(app)).toBe(prompt);
-    // `ya` copies it too.
-    await app.evaluate(({ clipboard: board }) => board.writeText(''));
-    await page.keyboard.press('y');
-    await page.keyboard.press('a');
-    await expect.poll(() => clipboard(app)).toBe(prompt);
+    await expect(overview(page, 'none').locator('pre')).toHaveText(WRITE);
     expect(await current(page, id)).toMatchObject({ found: 'none', watching: true });
   });
 
@@ -404,6 +509,54 @@ test.describe('as a pull request opens', () => {
   });
 });
 
+/** The prompt that writes #80's overview. */
+const WRITE = [
+  'Write a Lo overview for this pull request:',
+  `https://github.com/rozed-dev/e2e/pull/${APP_PULL.number}`,
+  '',
+  'Use the lo-overview skill. Read the diff, the description',
+  'and the commits; write artifact.md and its figures; run the',
+  `checker; then push to refs/lo/pr/${APP_PULL.number}.`,
+].join('\n');
+
+test('copies the prompts, by their buttons and ya, with nothing an overview says', async ({
+  app,
+  page,
+  ref,
+}) => {
+  // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
+  test.skip(process.platform === 'darwin', "The Mac's clipboard is its user's.");
+  ref.holds = { kind: 'none' };
+  const id = await open(page);
+  await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('No overview yet', {
+    timeout: 20_000,
+  });
+  await overviewTab(page).click();
+  const none = overview(page, 'none');
+  await none.getByRole('button', { name: /^Copy/ }).click();
+  await expect(none.getByRole('button', { name: /^Copied/ })).toBeVisible();
+  expect(await clipboard(app)).toBe(WRITE);
+  await app.evaluate(({ clipboard: board }) => board.writeText(''));
+  await page.keyboard.press('y');
+  await page.keyboard.press('a');
+  await expect.poll(() => clipboard(app)).toBe(WRITE);
+
+  // One that can't be read: its prompt holds none of what its findings quote.
+  ref.holds = {
+    kind: 'made',
+    overview: overviewOf({
+      'artifact.md': textOf('## tl;dr\n\nIt reads.\n\n:::chart Lines\n:::\n'),
+    }),
+  };
+  await readAgain(page, id);
+  const invalid = overview(page, 'invalid');
+  await invalid
+    .getByRole('button', { name: /^Copy a prompt to fix it/ })
+    .click({ timeout: 20_000 });
+  await expect.poll(() => clipboard(app)).toMatch(/^Fix the Lo overview for this pull request:/);
+  expect(await clipboard(app)).not.toContain('chart');
+});
+
 test('offers a newer overview pushed while one is read, and loads it only when asked', async ({
   page,
   ref,
@@ -417,20 +570,16 @@ test('offers a newer overview pushed while one is read, and loads it only when a
   const shown = overview(page, 'shown');
   await expect(shown).toContainText('The first one.');
 
-  // The reader scrolls down and opens the fold.
-  const scroller = shown.locator('.lo-ov');
+  // The reader opens the fold and wheels down.
   const fold = shown.locator('details');
   await fold.locator('summary').click();
   await expect(fold).toHaveAttribute('open', '');
-  await scroller.evaluate((element) => {
-    element.scrollTop = 600;
-  });
+  await wheelTo(page, 0.3);
   await shown.locator('.lo-ov__article').evaluate((article) => {
     article.dataset.seen = 'yes';
   });
-  // A paragraph in the middle of the screen, where the reader is.
-  const reading = shown.getByText('Paragraph 20 says', { exact: false }).first();
-  const before = (await reading.boundingBox())?.y;
+  await page.waitForTimeout(500);
+  await watchStill(page);
 
   ref.holds = {
     kind: 'made',
@@ -442,14 +591,97 @@ test('offers a newer overview pushed while one is read, and loads it only when a
   // The one on screen stays as the reader left it.
   await expect(shown.locator('.lo-ov__article[data-seen="yes"]')).toContainText('The first one.');
   await expect(fold).toHaveAttribute('open', '');
-  expect((await reading.boundingBox())?.y).toBe(before);
+  expect(await stillMoved(page)).toEqual([]);
 
   await byline.getByRole('button', { name: 'Load it' }).click();
   await expect(shown).toContainText('The second one.');
   await expect(byline).not.toContainText('A newer overview was pushed');
 });
 
-test('says why an overview can’t be shown, offering each newer one', async ({ app, page, ref }) => {
+test('keeps its byline to one line at any width, the commit’s name quoted and clipped, and a newer overview’s offer moves nothing', async ({
+  app,
+  page,
+  ref,
+}) => {
+  test.setTimeout(90_000);
+  ref.holds = {
+    kind: 'made',
+    overview: overviewOf({ 'artifact.md': longText('Overview 0.') }, SPOOF),
+  };
+  const id = await open(page);
+  await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('Overview', {
+    timeout: 20_000,
+  });
+  await overviewTab(page).click();
+  const shown = overview(page, 'shown');
+  const byline = shown.locator('[data-lo-byline]');
+  const name = byline.locator('[data-lo-commit-name]');
+  for (const [at, width] of [1280, 960, 800].entries()) {
+    await sizeWindow(app, width, 700);
+    await expect(shown).toContainText(`Overview ${at}.`);
+    await shown.locator('.lo-ov').evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await page.waitForTimeout(500);
+
+    // One line, Lo's words first, and the commit's name in quotes, clipped, and not a login.
+    expect((await byline.boundingBox())?.height).toBeLessThanOrEqual(24);
+    await expect(byline).toContainText(/^Written .* by the commit author “rozed-bot wrote/);
+    expect(
+      (await byline.locator('strong').allTextContents()).filter((bold) => bold.includes('rozed')),
+    ).toEqual([]);
+    expect(
+      await name
+        .locator('.lo-ov-name__text')
+        .evaluate((text) => text.scrollWidth > text.clientWidth),
+    ).toBe(true);
+    const line = await byline.boundingBox();
+    const describes = await byline.getByText(/^describes/).boundingBox();
+    expect((describes?.x ?? 0) + (describes?.width ?? 0)).toBeLessThanOrEqual(
+      (line?.x ?? 0) + (line?.width ?? 0) + 1,
+    );
+
+    // A newer one comes, at the top of the page: nothing moves.
+    await watchStill(page);
+    ref.holds = {
+      kind: 'made',
+      overview: overviewOf({ 'artifact.md': longText(`Overview ${at + 1}.`) }, SPOOF),
+    };
+    await readAgain(page, id);
+    await expect(byline).toContainText('A newer overview was pushed', { timeout: 20_000 });
+    await page.waitForTimeout(300);
+    expect(await stillMoved(page)).toEqual([]);
+    expect((await byline.boundingBox())?.height).toBe(line?.height);
+    await byline.getByRole('button', { name: 'Load it' }).click();
+  }
+});
+
+test('keeps the line being read in place as what’s above it changes size', async ({
+  page,
+  ref,
+}) => {
+  ref.holds = { kind: 'made', overview: overviewOf({ 'artifact.md': longText('The lead.') }) };
+  await open(page);
+  await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('Overview', {
+    timeout: 20_000,
+  });
+  await overviewTab(page).click();
+  await expect(overview(page, 'shown')).toContainText('The lead.');
+  await wheelTo(page, 0.5);
+  await page.waitForTimeout(500);
+  await watchStill(page);
+  // The lead, long off screen above, takes more lines, as it does when its face loads late.
+  await overview(page, 'shown')
+    .locator('.lo-ov__article p')
+    .first()
+    .evaluate((lead) => {
+      lead.append(' And more.'.repeat(80));
+    });
+  await page.waitForTimeout(500);
+  expect(await stillMoved(page)).toEqual([]);
+});
+
+test('says why an overview can’t be shown, offering each newer one', async ({ page, ref }) => {
   ref.holds = {
     kind: 'made',
     overview: overviewOf({
@@ -471,9 +703,6 @@ test('says why an overview can’t be shown, offering each newer one', async ({ 
     .getByRole('listitem')
     .filter({ hasText: 'chart' });
   await expect(problem).toContainText('line 11');
-  await invalid.getByRole('button', { name: /^Copy a prompt to fix it/ }).click();
-  await expect.poll(() => clipboard(app)).toMatch(/^Fix the Lo overview for this pull request:/);
-  expect(await clipboard(app)).not.toContain('chart');
 
   // Too large: its figures are past what Lo shows.
   ref.holds = {
@@ -528,75 +757,17 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
   await expect(overview(page, 'shown')).toBeVisible({ timeout: 20_000 });
 });
 
-/**
- * Watches, every frame until the test stops it, where the overview's block at the top of the
- * screen and the one in its middle are on the page, and says each time either has moved, or was
- * drawn again, on a frame without the reader's input. Each counts as moved once it's been away
- * from its place for two frames running, so a change made up for before it's painted doesn't.
- */
-async function watchStill(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const scroller = document.querySelector<HTMLElement>('[data-lo-overview="shown"] .lo-ov');
-    const article = scroller?.querySelector<HTMLElement>('.lo-ov__article');
-    if (!scroller || !article) throw new Error('no overview to watch');
-    const box = scroller.getBoundingClientRect();
-    const x = article.getBoundingClientRect().left + article.clientWidth / 2;
-    /** The article's block at height `y` on the page, or the nearest under it. */
-    const blockAt = (y: number) => {
-      for (let dy = 0; dy < box.height / 2; dy += 4) {
-        let element = document.elementFromPoint(x, y + dy);
-        while (element && element.parentElement !== article) element = element.parentElement;
-        if (element) return element;
-      }
-      return undefined;
-    };
-    const watched = [
-      { name: 'top', block: blockAt(box.top + 8) },
-      { name: 'middle', block: blockAt(box.top + box.height / 2) },
-    ].flatMap(({ name, block }) =>
-      block ? [{ name, block, y: block.getBoundingClientRect().top, away: 0 }] : [],
-    );
-    if (watched.length < 2) throw new Error('no block to watch in the middle of the screen');
-    const moved: string[] = [];
-    window.loOverviewMoved = moved;
-    window.loOverviewStill = false;
-    let input = false;
-    for (const type of ['wheel', 'keydown', 'pointerdown']) {
-      window.addEventListener(type, () => (input = true), { capture: true });
-    }
-    const tick = () => {
-      for (const each of watched) {
-        const y = each.block.isConnected ? each.block.getBoundingClientRect().top : undefined;
-        if (input) {
-          if (y !== undefined) each.y = y;
-          each.away = 0;
-          continue;
-        }
-        const off = y === undefined || Math.abs(y - each.y) > 0.5;
-        each.away = off ? each.away + 1 : 0;
-        if (each.away === 2) {
-          moved.push(`${each.name} ${each.block.textContent?.slice(0, 40)} from ${each.y} to ${y}`);
-        }
-      }
-      input = false;
-      if (!window.loOverviewStill) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  });
-}
-
 test.describe('while the local copy comes late', () => {
   test.use({ cassette: 'app_e2e_late', lateRemote: true });
 
   for (const depth of [0, 0.5]) {
-    test(`nothing on screen moves as the banner goes and the overview is checked again, ${depth * 100}% of the way down`, async ({
+    test(`nothing on screen moves from the first frame, as figures fill in, the banner goes and the overview is checked again, ${depth * 100}% of the way down`, async ({
       app,
       page,
     }) => {
       test.setTimeout(90_000);
-      await app.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0]?.setSize(1100, 440),
-      );
+      await sizeWindow(app, 1100, 440);
+      await watchStill(page);
       const id = await open(page);
       await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
       await overviewTab(page).click();
@@ -608,35 +779,16 @@ test.describe('while the local copy comes late', () => {
         .poll(() => current(page, id), { timeout: 20_000 })
         .toMatchObject({ code: 'failed' });
 
-      // The reader opens the fold, which keeps focus, and wheels down to where they read.
-      const scroller = shown.locator('.lo-ov');
+      // The reader opens the fold, which keeps focus, and wheels to where they read.
       const fold = shown.locator('details').first();
       await fold.locator('summary').click();
       await expect(fold).toHaveAttribute('open', '');
-      const box = await scroller.boundingBox();
-      await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.6, (box?.y ?? 0) + 100);
-      const goal = await scroller.evaluate(
-        (element, part) => Math.round((element.scrollHeight - element.clientHeight) * part),
-        depth,
-      );
-      await expect
-        .poll(
-          async () => {
-            const at = await scroller.evaluate((element) => element.scrollTop);
-            if (at > goal) await page.mouse.wheel(0, Math.max(-400, goal - at));
-            else if (at < goal) await page.mouse.wheel(0, Math.min(400, goal - at));
-            return Math.abs(at - goal) <= 1;
-          },
-          { timeout: 10_000, intervals: [100] },
-        )
-        .toBe(true);
+      await wheelTo(page, depth);
       await page.evaluate(() => {
         const summary = document.querySelector<HTMLElement>('[data-lo-overview="shown"] summary');
         summary?.setAttribute('data-focused', String(document.activeElement === summary));
       });
       await expect(fold.locator('summary')).toHaveAttribute('data-focused', 'true');
-      await page.waitForTimeout(500);
-      await watchStill(page);
 
       // The banner goes, the local copy comes, and the overview is checked again with its code.
       writeAppRemote(test.info().outputPath('remote'));
@@ -646,12 +798,8 @@ test.describe('while the local copy comes late', () => {
         .poll(() => current(page, id), { timeout: 30_000 })
         .toMatchObject({ code: 'ready' });
       await page.waitForTimeout(2500);
-      const moved = await page.evaluate(() => {
-        window.loOverviewStill = true;
-        return window.loOverviewMoved ?? [];
-      });
 
-      expect(moved).toEqual([]);
+      expect(await stillMoved(page)).toEqual([]);
       await expect(fold).toHaveAttribute('open', '');
       expect(
         await page.evaluate(
