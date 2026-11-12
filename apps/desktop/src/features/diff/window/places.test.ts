@@ -1,7 +1,9 @@
-// Following a reference to code before a tab's diff has its files: the place waits for them, then
-// shows in the diff when it has the file, and whole when it doesn't.
+// @vitest-environment jsdom
+// Following a reference to code before a tab's diff has its files: the place waits for them, for a
+// while, saying so, then shows in the diff when it has the file, and whole when it doesn't; or
+// it's dropped, saying so, once it's waited too long or the reader does anything else.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { DiffState, FileVersions } from '../contract.ts';
@@ -13,6 +15,16 @@ const seen = vi.hoisted(() => ({
   loader: undefined as unknown,
   middles: [] as string[],
   reveals: [] as unknown[],
+  notes: [] as string[],
+}));
+
+vi.mock('../../../window/commands/notices.tsx', () => ({
+  notify: (_title: string, body: string) => {
+    seen.notes.push(body);
+  },
+  withdraw: (_title: string, body: string) => {
+    seen.notes.push(`withdrawn: ${body}`);
+  },
 }));
 
 vi.mock('../../../window/commands/registry.ts', () => ({
@@ -93,9 +105,14 @@ function loader(): Loader {
 const idOf = (diff: Loader, path: string) => diff.ids.of(keyOf(changed(path)));
 
 beforeEach(() => {
+  keepPlaces(new Set());
   seen.middles.length = 0;
   seen.reveals.length = 0;
-  keepPlaces(new Set());
+  seen.notes.length = 0;
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('showPlace', () => {
@@ -113,9 +130,43 @@ describe('showPlace', () => {
         focus: true,
       },
     ]);
-    // Once.
+    // Once, and the note that it waited is taken back.
     diff.take(state([changed('src/parser.ts')]));
     expect(seen.middles).toEqual(['diff.view']);
+    expect(seen.notes).toEqual([
+      'Waiting for the diff’s list of files.',
+      'withdrawn: Waiting for the diff’s list of files.',
+    ]);
+  });
+
+  it('drops the place, saying so, once it has waited too long', () => {
+    vi.useFakeTimers();
+    const diff = loader();
+    showPlace('t1', 'src/parser.ts', 7);
+    vi.advanceTimersByTime(999);
+    expect(seen.notes).toEqual(['Waiting for the diff’s list of files.']);
+    vi.advanceTimersByTime(1);
+    expect(seen.notes.at(-1)).toBe(
+      'The diff’s list of files hasn’t loaded yet. Try again in a moment.',
+    );
+    diff.take(state([changed('src/parser.ts')]));
+    expect(seen.middles).toEqual([]);
+  });
+
+  it('drops the place, saying so, once the reader does anything else', () => {
+    for (const input of [
+      new KeyboardEvent('keydown', { key: 'j' }),
+      new PointerEvent('pointerdown'),
+      new WheelEvent('wheel'),
+    ]) {
+      const diff = loader();
+      seen.notes.length = 0;
+      showPlace('t1', 'src/parser.ts', 7);
+      window.dispatchEvent(input);
+      expect(seen.notes.at(-1)).toBe('Lo stopped waiting for the diff’s list of files.');
+      diff.take(state([changed('src/parser.ts')]));
+      expect(seen.middles).toEqual([]);
+    }
   });
 
   it('shows a file the diff doesn’t have whole, once the files are known', () => {
