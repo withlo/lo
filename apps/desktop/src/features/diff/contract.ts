@@ -1,7 +1,8 @@
 // A pull request's diff: the versions of each file the comparison on screen holds, how each starts
 // out, and their texts. Main reads them from the tab's local copy, or GitHub's patches until the
 // copy is ready, and says each time what it has changed. The window draws them, and says once it
-// has, so the head it drew stays on screen.
+// has, so the head it drew stays on screen. It also reads a file whole, changed or not, for the
+// whole-file view.
 
 import { z } from 'zod';
 
@@ -84,6 +85,23 @@ export type FileText =
 /** The most files one `diff.texts` asks for. */
 export const TEXTS_LIMIT = 2000;
 
+/** Which version of a file: the base's, `old`, or the head's, `new`, as a diff's sides are. */
+export const version = z.enum(['old', 'new']);
+export type Version = z.output<typeof version>;
+
+/**
+ * A whole file, as `diff.whole` replies: its text; or what its whole-file view says in place of
+ * its lines. A file larger than Lo loads at once is `large` until it's asked for anyway; one that
+ * isn't text is `binary`; one too large to show even then, or with a line too long to lay out, is
+ * `refused`, with why; and until the local copy has the head on screen, it's `waiting`.
+ */
+export type WholeText =
+  | { kind: 'text'; text: string }
+  | { kind: 'large'; size: number }
+  | { kind: 'binary'; size: number }
+  | { kind: 'refused'; why: string }
+  | { kind: 'waiting' };
+
 export const contract = defineContract('diff', {
   requests: {
     /** What main has of a pull request's tab's diff now, which `state` then keeps up to date. */
@@ -101,6 +119,18 @@ export const contract = defineContract('diff', {
         files: z.array(z.number().int().nonnegative()).min(1).max(TEXTS_LIMIT),
       }),
       reply: reply<FileText[]>(),
+    },
+    /**
+     * A whole file from the local copy, for its whole-file view: the head's version of the file at
+     * `path` in the head on screen, `at`, or, for `old`, the base's version of a file the
+     * comparison changes, by its path in the base. Main reads only those: a path the head's tree
+     * doesn't hold, or that no changed file had in the base, fails as `invalid`, and a head other
+     * than the one on screen as `moved`. A file larger than Lo loads at once comes only when
+     * `large` asks for it anyway.
+     */
+    whole: {
+      input: z.strictObject({ id: tabId, at: oid, version, path: treePath, large: z.boolean() }),
+      reply: reply<WholeText>(),
     },
     /**
      * The window drew the diff at `at`: from now on that head stays on screen until the reader

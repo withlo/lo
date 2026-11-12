@@ -29,7 +29,7 @@ import {
   usePull,
   type PullTab,
 } from './shared.ts';
-import { panels, useTabPanels, viewCounts } from './panels.ts';
+import { middleIds, panels, useTabPanels, viewCounts } from './panels.ts';
 
 /** The time now, ticking each second while `ticking`, for what counts down. */
 function useNow(ticking: boolean): number {
@@ -213,11 +213,15 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const rights = useViews(right);
   viewCounts.left = lefts.length;
   viewCounts.middle = middles.length;
+  if (middleIds.ids.length !== middles.length) middleIds.ids = middles.map((each) => each.id);
   const heading = view?.header;
   const acting = view?.acting;
   const showLeft = leftOpen && lefts.length > 0;
   const showRight = rights.length > 0;
   const shownMiddle = middles[panels.get(tab.id).middle % Math.max(1, middles.length)];
+  // The middle views shown since the tab was drawn stay drawn, hidden while another is on screen.
+  const [kept, setKept] = useState<readonly string[]>([]);
+  if (shownMiddle && !kept.includes(shownMiddle.id)) setKept([...kept, shownMiddle.id]);
   return (
     <div className="flex h-full min-h-0 flex-col" data-lo-pull={tab.id}>
       <PRHeader
@@ -252,7 +256,25 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
           className="relative min-h-0 min-w-0 flex-1 overflow-hidden sheet"
           aria-label="Pull request"
         >
-          {shownMiddle ? <shownMiddle.render tab={tab} /> : <Placeholder view={view} />}
+          {shownMiddle ? (
+            middles
+              .filter((each) => each === shownMiddle || kept.includes(each.id))
+              .map((each) => {
+                const shown = each === shownMiddle;
+                return (
+                  <div
+                    key={each.id}
+                    className={shown ? 'absolute inset-0' : 'invisible absolute inset-0'}
+                    inert={!shown}
+                    data-lo-middle-view={each.id}
+                  >
+                    <each.render tab={tab} shown={shown} />
+                  </div>
+                );
+              })
+          ) : (
+            <Placeholder view={view} />
+          )}
         </section>
         {showRight && (
           <aside

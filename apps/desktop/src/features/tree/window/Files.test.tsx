@@ -129,7 +129,7 @@ describe('following the diff', () => {
     onTestFinished(stop);
     expect(showable(TAB.id, 'src/format.ts')).toBe(true);
     act(() => show(TAB.id, 'src/format.ts'));
-    expect(diff).toHaveBeenCalledWith(TAB.id, 'src/format.ts');
+    expect(diff).toHaveBeenCalledWith(TAB.id, 'src/format.ts', { text: 'src/format.ts' });
     expect(focus.get(TAB.id)).toBe('src/format.ts');
   });
 

@@ -14,7 +14,6 @@ import {
   goToTree,
   move,
   openRow,
-  pathOf,
   pullOnScreen,
   setAll,
   show,
@@ -28,7 +27,7 @@ import { openFinder, openWhole, toggleChangedOnly, wholeReady } from './finding.
 import { main } from './main.ts';
 import { pathOfKey } from './paths.ts';
 import { choices, showState } from './store.ts';
-import { showFile } from './shared.ts';
+import { pathOf, showFile } from './shared.ts';
 
 /** Runs `act` on the pull request's tab on screen. */
 function onTab(act: (tab: string) => void): () => void {

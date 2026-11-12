@@ -10,7 +10,7 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import { IpcError } from '../../../ipc/contract.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
-import type { Changed, Found, TreeState } from '../contract.ts';
+import type { Changed, Found, TreePath, TreeState } from '../contract.ts';
 import { Finder } from './Finder.tsx';
 import { closeFinder, finderClosed, finderStore } from './finding.ts';
 import feature from './index.ts';
@@ -345,12 +345,12 @@ function choose(text: string): void {
 
 describe('going to a file', () => {
   it('reveals a changed file in the tree and asks the diff to show it, then closes', async () => {
-    const diff = vi.fn<(tab: string, file: string) => void>();
+    const diff = vi.fn<(tab: string, file: string, path: TreePath) => void>();
     onTestFinished(onShowFile('diff', diff));
     await open();
     choose('parser.ts');
     await vi.waitFor(() => expect(dialog()).toBeNull());
-    expect(diff).toHaveBeenCalledWith(TAB.id, 'src/parser.ts');
+    expect(diff).toHaveBeenCalledWith(TAB.id, 'src/parser.ts', { text: 'src/parser.ts' });
     // The tree has its folder open and its keyboard on the file.
     expect(focus.get(TAB.id)).toBe('src/parser.ts');
     expect(choices.get(TAB.id).opened.has('src')).toBe(true);
@@ -369,12 +369,12 @@ describe('going to a file', () => {
   });
 
   it('asks the whole-file view for a file the pull request leaves alone', async () => {
-    const whole = vi.fn<(tab: string, file: string) => void>();
+    const whole = vi.fn<(tab: string, file: string, path: TreePath) => void>();
     onTestFinished(onShowFile('whole', whole));
     await open();
     choose('README.md');
     await vi.waitFor(() => expect(dialog()).toBeNull());
-    expect(whole).toHaveBeenCalledWith(TAB.id, 'README.md');
+    expect(whole).toHaveBeenCalledWith(TAB.id, 'README.md', { text: 'README.md' });
   });
 
   it('refuses an unchanged file until the whole-file view exists, with a reason', async () => {
@@ -388,7 +388,7 @@ describe('going to a file', () => {
   });
 
   it('opens the highlighted file whole with ⌘⏎, changed or not', async () => {
-    const whole = vi.fn<(tab: string, file: string) => void>();
+    const whole = vi.fn<(tab: string, file: string, path: TreePath) => void>();
     onTestFinished(onShowFile('whole', whole));
     await open();
     // The first row is highlighted, and it is a changed file.
@@ -397,7 +397,27 @@ describe('going to a file', () => {
       registry().run('tree.findWhole', NO_TARGET);
     });
     await vi.waitFor(() => expect(dialog()).toBeNull());
-    expect(whole).toHaveBeenCalledWith(TAB.id, 'src/format.ts');
+    expect(whole).toHaveBeenCalledWith(TAB.id, 'src/format.ts', { text: 'src/format.ts' });
+  });
+
+  it('opens a file whole by the path main found, however long, with no row of it in the tree', async () => {
+    const whole = vi.fn<(tab: string, file: string, path: TreePath) => void>();
+    onTestFinished(onShowFile('whole', whole));
+    // Files the pull request leaves alone, over a kilobyte and of 20 KB, known by their digests.
+    const paths = [1_229, 20_480].map((bytes, index) => ({
+      text: `docs/${'d'.repeat(bytes - 8)}.md`,
+      digest: String(index + 1).repeat(64),
+    }));
+    for (const path of paths) {
+      finding(() => [{ path, changed: false, matched: [] }]);
+      await open();
+      await vi.waitFor(() => expect(options()[0]?.hasAttribute('data-highlighted')).toBe(true));
+      act(() => {
+        registry().run('tree.findWhole', NO_TARGET);
+      });
+      await vi.waitFor(() => expect(dialog()).toBeNull());
+      expect(whole).toHaveBeenLastCalledWith(TAB.id, `\0#${path.digest}`, path);
+    }
   });
 
   it('refuses ⌘⏎ with a reason while no whole-file view can show the file', async () => {
