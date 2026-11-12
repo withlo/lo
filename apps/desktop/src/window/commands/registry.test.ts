@@ -2,7 +2,7 @@
 import type { Entry } from '@lo/ui/commands';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { focusMiddle, here, setMiddle, type Middle } from './registry.ts';
+import { escapeToMiddle, focusMiddle, here, setMiddle, type Middle } from './registry.ts';
 
 const taken: (() => void)[] = [];
 
@@ -47,6 +47,22 @@ describe('the middle view', () => {
     expect(here()).toBeUndefined();
     taken.push(setMiddle(view(entry)));
     expect(here()).toBe(entry);
+  });
+
+  it('takes Esc first, closing what it has open, and else has focus back', () => {
+    let open = 1;
+    const closing = { ...view(), escape: vi.fn<() => boolean>(() => open-- > 0) };
+    taken.push(setMiddle(closing));
+    escapeToMiddle();
+    expect(closing.escape).toHaveBeenCalledOnce();
+    expect(closing.focus).not.toHaveBeenCalled();
+    escapeToMiddle();
+    expect(closing.focus).toHaveBeenCalledOnce();
+    // A view with nothing of its own to close just has focus back.
+    const plain = view();
+    taken.push(setMiddle(plain));
+    escapeToMiddle();
+    expect(plain.focus).toHaveBeenCalledOnce();
   });
 
   it('is the window’s middle element while there is no view', () => {

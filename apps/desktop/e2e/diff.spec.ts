@@ -8,7 +8,7 @@ import { buffer } from 'node:stream/consumers';
 
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import type { Probe, Viewport } from '@lo/ui/code';
+import type { Mark, Place, Probe, Viewport } from '@lo/ui/code';
 import type { ElectronApplication, Page } from '@playwright/test';
 
 import {
@@ -33,6 +33,8 @@ declare global {
           scrollTo(viewport: Viewport): boolean;
           filesOnScreen(): readonly string[];
           close(file: string): void;
+          setMarks(marks: readonly Mark[]): void;
+          openNote(at: Place): boolean;
         }
       | undefined;
     /** How long each frame took while a test timed them, in milliseconds. */
@@ -330,6 +332,43 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds', as
         /^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/80\/files#diff-[0-9a-f]{64}R\d+$/,
       ),
     ]);
+});
+
+test('Esc in the diff closes an overview’s note, then does what it always does', async ({
+  page,
+}) => {
+  await drawn(page);
+  await focusDiff(page);
+  await press(page, ']', 'c');
+  const at = await page.evaluate(() => {
+    const reading = window.loDiff?.probe.cursor();
+    return reading?.at.kind === 'line' ? reading.at.at : undefined;
+  });
+  if (!at) throw new Error('The cursor isn’t on a line.');
+  const place = { file: at.file, side: at.side, line: at.line };
+  await page.evaluate((line) => {
+    window.loDiff?.setMarks([
+      {
+        kind: 'overview',
+        at: { file: line.file, side: line.side, from: line.line, to: line.line },
+        block: 'one',
+        note: { label: 'Where to look', text: 'Why this line changed.' },
+      },
+    ]);
+  }, place);
+  await expect(page.locator('.lo-diffview .lo-ov-marker:visible')).toHaveCount(1);
+  expect(await page.evaluate((line) => window.loDiff?.openNote(line), place)).toBe(true);
+  const note = page.locator('.lo-diffview .lo-ovnote:visible');
+  await expect(note).toHaveText(/Why this line changed\./);
+  await press(page, 'Escape');
+  await expect(note).toHaveCount(0);
+  // With no note open, Esc gives focus back to the middle view, which has it: nothing changes.
+  await press(page, 'Escape');
+  await expect(note).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement?.closest('.lo-diffview') !== null)).toBe(
+    true,
+  );
+  expect(await cursor(page)).toMatchObject({ line: place.line, side: place.side });
 });
 
 test('copies the lines, the line’s link and the file’s path', async ({ app, page }) => {

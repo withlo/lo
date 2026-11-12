@@ -36,7 +36,8 @@ export default defineCommands('keys', {
   },
   /**
    * Back to the middle view, from anywhere but the widgets that close on `Esc` themselves (menus,
-   * dialogs, the palette), a comment box, whose `Esc` is Vim's, and Vim's visual mode.
+   * dialogs, the palette), a comment box, whose `Esc` is Vim's, and Vim's visual mode. In the
+   * middle view, it first closes what that has open, such as a note in the diff.
    */
   escape: {
     label: 'Back to the middle view',

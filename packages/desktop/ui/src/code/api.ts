@@ -279,6 +279,28 @@ export interface DiffView extends KeySource {
   /** Replaces the threads drawn under lines. */
   setThreads(threads: readonly ThreadView[]): void;
   /**
+   * Replaces the marks on lines: overview markers, in a gutter that's there from the start, so
+   * marks change no line's width or height, and what's on screen stays where it is. Kinds the diff
+   * view doesn't draw, and marks on files it doesn't have, are left out. A note stays open while
+   * its mark does, or another from the same block on the same side of the file; one on screen stays
+   * as it was, its mark changed or gone, until it's off screen or closed.
+   */
+  setMarks(marks: readonly Mark[]): void;
+  /** Whether `openNote` would open a note at `at`: an overview marker's on its line, drawn. */
+  hasNote(at: Place): boolean;
+  /**
+   * Opens the notes of the overview markers on `at`'s line, each under its last line, as a click on
+   * a marker's ball does. Says whether there was one to open: a note that wouldn't be drawn, as on
+   * a file kept out, past a file's end or on lines GitHub's diff left out, isn't. What's at the top
+   * of the screen stays where it is; not a jump, and focus stays where it is.
+   */
+  openNote(at: Place): boolean;
+  /**
+   * Closes the note opened last of those drawn, as `Esc` does in the diff's code. Says whether one
+   * was open. What's at the top of the screen stays where it is.
+   */
+  closeNote(): boolean;
+  /**
    * Moves the cursor to what `at` names, and brings it on screen: a line, the last line `v`
    * selected, a header, a file's header on the side the cursor is on, or a thread's line. Says
    * whether it could: a file or a thread the view doesn't have, or a target of another kind, it
@@ -336,15 +358,39 @@ export interface DiffEvents {
   load(file: string): void;
   /** A right-click: the registry's menu for what was clicked. */
   menu(target: Target, x: number, y: number): void;
+  /**
+   * "Read it in the overview" in an overview marker's note: show the overview at the block that
+   * explains the lines. Without it, notes have no such link.
+   */
+  explained?(block: string): void;
 }
 
 /**
- * Something a code view marks on a file's lines. One kind so far: lines picked out, as those a
- * definition or an overview's block points at are when the whole file opens on them.
+ * Something a code view marks on a file's lines. A view draws the kinds it knows and leaves out the
+ * rest: the whole-file view draws `lines`, and the diff view `overview`.
  */
-export interface Mark {
+export type Mark = LinesMark | OverviewMark;
+
+/**
+ * Lines picked out, as those a definition or an overview's block points at are when the whole file
+ * opens on them.
+ */
+export interface LinesMark {
   kind: 'lines';
   at: Span;
+}
+
+/**
+ * Lines a block of the pull request's overview explains: a ball on the first, a rail down the
+ * rest, and a note under the last that says what the block says about them.
+ */
+export interface OverviewMark {
+  kind: 'overview';
+  at: Span;
+  /** The caller's id for the block, which `explained` gives back. */
+  block: string;
+  /** What the note shows, as plain text: a label, such as the block's section, and the text. */
+  note: { label: string; text: string };
 }
 
 /** Where a peek's answer came from: a language server, or Lo's own reading of the syntax. */
@@ -392,7 +438,10 @@ export interface FileInit {
 export interface FileView extends KeySource {
   /** Highlights it from `@lo/syntax`'s `[from, to, token]` triples over its text. */
   setTokens(triples: Uint32Array): void;
-  /** Replaces its marks. Marks on another file, or on its other side, are left out. */
+  /**
+   * Replaces its marks. Kinds it doesn't draw, and marks on another file or on its other side, are
+   * left out.
+   */
   setMarks(marks: readonly Mark[]): void;
   /**
    * Moves the cursor to what `at` names, and brings it on screen: a line, the last line `v`
@@ -421,6 +470,64 @@ export interface FileEvents {
   /** A right-click: the registry's menu for what was clicked. */
   menu(target: Target, x: number, y: number): void;
 }
+
+/**
+ * A range of a file's lines at one commit, as an excerpt shows it: an overview's code block, say,
+ * as an inline diff from the base.
+ */
+export interface ExcerptInit {
+  /** The caller's name for the file, which every place and event uses. */
+  id: string;
+  path: string;
+  /**
+   * The file's lines at the commit (`new`) and at the base (`old`): none on a side the file isn't
+   * on.
+   */
+  lines: { old: readonly string[]; new: readonly string[] };
+  /**
+   * The diff from the base to the commit, whose changes show inline, a change's deleted lines
+   * before its added ones. Without it, only `range`'s side's lines show, as plain lines, as for a
+   * file the pull request leaves alone.
+   */
+  diff?: FileDiff;
+  /**
+   * The lines shown: `from` to `to` on `side`, numbered as in the file, with the other side's lines
+   * in the rows between them, and where `to` ends a change, the rest of that change. It stops at
+   * the file's ends.
+   */
+  range: { side: Side; from: number; to: number };
+  /** Each side's highlighting, when it's ready: `setTokens` brings it later. */
+  tokens?: { old?: Uint32Array | undefined; new?: Uint32Array | undefined };
+  /** Lines on `range`'s side that changed since, whose numbers say so. */
+  stale?: readonly number[];
+  /** The keys Vim runs Lo's motions with, and the keymap's `vim` lines, from the registry. */
+  vimKeys: readonly VimKey[];
+  /** The nonce the window's content security policy lets the view's style elements carry. */
+  nonce: string;
+}
+
+/**
+ * An excerpt: a range of a file at one commit, read-only. Its places are on the file, on the side
+ * each line is on: a deleted line's on the old side, an added line's on the new, and an unchanged
+ * line's on the range's side. Its cursor shows only while it has focus.
+ */
+export interface ExcerptView extends KeySource {
+  /** Highlights a side from `@lo/syntax`'s `[from, to, token]` triples over its whole text. */
+  setTokens(side: Side, triples: Uint32Array): void;
+  /** Replaces the lines on the range's side marked as changed since. */
+  setStale(lines: readonly number[]): void;
+  /**
+   * Moves the cursor to what `at` names, and brings it on screen: a line the excerpt shows, the
+   * last line `v` selected, or its file, which is its first line. Says whether it could. Not a
+   * jump, and focus stays where it is: `focus()` takes it there.
+   */
+  reveal(at: Target): boolean;
+  focus(): void;
+  destroy(): void;
+}
+
+/** What an excerpt tells its caller, as a whole-file view does. */
+export type ExcerptEvents = FileEvents;
 
 /**
  * Lo's motions the diff view runs, by the ids of the commands that declare them: in a code view,

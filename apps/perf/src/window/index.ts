@@ -13,6 +13,7 @@ import {
   createDiffView,
   type DiffFile,
   type DiffView,
+  type Mark,
   type Place,
   type Span,
   type ThreadView,
@@ -228,8 +229,10 @@ async function linkTo(place: Place): Promise<string> {
 /** The local copy's files waiting for the test to say they come. */
 const copies: (() => void)[] = [];
 
-// For the measurements and the key spec, which drive the page from outside; and for the copy
-// spec, which says when the local copy comes, and hears how many of its files are waiting.
+// For the measurements and the key spec, which drive the page from outside; for the copy spec,
+// which says when the local copy comes, and hears how many of its files are waiting; and for the
+// marks spec, which hands the view an overview's markers, and opens and closes their notes, when
+// it likes.
 Object.assign(window, {
   diffView: view.probe,
   perfCopy: () => {
@@ -237,6 +240,9 @@ Object.assign(window, {
     for (const copy of waiting) copy();
     return waiting.length;
   },
+  perfOverview: (given: readonly Mark[]) => opened().setMarks(given),
+  perfOpenNote: (at: Place) => opened().openNote(at),
+  perfCloseNote: () => opened().closeNote(),
 });
 
 window.addEventListener('message', (event) => {

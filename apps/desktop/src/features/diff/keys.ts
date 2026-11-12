@@ -171,6 +171,17 @@ export default defineCommands('diff', {
     when: codeNormal,
     menu: { on: 'header', order: 30 },
   },
+  /**
+   * The note of an overview's marker on the line: what the overview says about it, under its
+   * lines. On the menu of a line with a marker only; a click on the marker's ball opens it too.
+   */
+  overviewNote: {
+    label: 'Overview note',
+    group: 'Copy and open',
+    keys: [],
+    targets: ['line'],
+    menu: { on: 'line', order: 40 },
+  },
   down: { label: 'Line down', group: 'Move', keys: ['j'], vim: 'own', when: code },
   up: { label: 'Line up', group: 'Move', keys: ['k'], vim: 'own', when: code },
   select: { label: 'Select lines', group: 'Move', keys: ['v'], vim: 'own', when: code },

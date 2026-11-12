@@ -174,6 +174,21 @@ export class Registry {
     return typeof ready === 'string' ? ready : true;
   }
 
+  /** Whether a right-click menu on `target` lists `id`, as its handler's `listed` says. */
+  listed(id: string, target: Target): boolean {
+    const command = this.byId.get(id);
+    const handler = command?.handler;
+    if (!command || !handler?.listed) return command !== undefined;
+    const fitted = fit(command.targets ?? ['none'], target);
+    if (!fitted) return false;
+    try {
+      return handler.listed(fitted);
+    } catch (error) {
+      this.onError(error, command);
+      return false;
+    }
+  }
+
   /**
    * Runs `id` on `target`, as a key, a menu or the palette asks: `true`, or why it didn't. A
    * `jump` command records where the tab is in its history first. A command that can't run is

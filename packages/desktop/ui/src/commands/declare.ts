@@ -104,6 +104,12 @@ export interface Handler<T extends Target = Target> {
   run(target: T): void | Promise<void>;
   /** `true`, or why it can't run on `target` now, as menus grey it out with. */
   enabled?(target: T): true | string;
+  /**
+   * Whether a right-click menu on `target` lists it: always, without this. For a keyless command
+   * that applies to only some targets of its kind, such as a line's overview note on a line with
+   * one, which no key could reach elsewhere.
+   */
+  listed?(target: T): boolean;
 }
 
 /** The target a command's handler gets, from the kinds it declares. */
