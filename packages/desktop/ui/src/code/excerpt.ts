@@ -12,7 +12,7 @@
 // the `file` scope's `KeySource`.
 
 import { EditorState, type Range, StateEffect, type Text } from '@codemirror/state';
-import { type Decoration, EditorView, gutter, GutterMarker } from '@codemirror/view';
+import { Decoration, EditorView, gutter, GutterMarker } from '@codemirror/view';
 import type { FileDiff } from '@lo/diff';
 
 import {
@@ -47,6 +47,7 @@ import {
   vimPending,
 } from './keys.ts';
 import { marking } from './marks.ts';
+import { FileNoteWidget } from './widgets.ts';
 
 /** Opens an excerpt of `init`'s file in `parent`, which tells `on` what happens in it. */
 export function createExcerptView(
@@ -61,13 +62,21 @@ export function createExcerptView(
 export interface ExcerptLines {
   old: number[];
   new: number[];
+  /**
+   * The lines of a change the range ends that are left out, past the most an excerpt shows, and the
+   * line, from 1, they'd follow.
+   */
+  more?: { after: number; count: number };
 }
+
+/** How many of a change's lines past a range's last line an excerpt shows. */
+export const CHANGE_REST = 50;
 
 /**
  * The lines an excerpt of `range` shows, in order: those of the rows from the range's first line
  * to its last, a change's deleted lines before its added ones, and where the range's last line ends
- * a change, the rest of the change's rows. Without a diff, the range's lines alone. The range stops
- * at the file's ends, `count` lines on its side.
+ * a change, the rest of the change's rows, `CHANGE_REST` at most. Without a diff, the range's lines
+ * alone. The range stops at the file's ends, `count` lines on its side.
  */
 export function excerptLines(
   diff: FileDiff | undefined,
@@ -103,25 +112,35 @@ export function excerptLines(
     for (let row = from; row <= to && row - block.row < block.oldCount; row++) {
       push(block.old + row - block.row, 0);
     }
+    // The rest of a change past the range is the other side's lines: what's left out follows them.
+    if (rows.more > 0 && block.row === rows.block && side === 'new') {
+      shown.more = { after: shown.old.length, count: rows.more };
+    }
     for (let row = from; row <= to && row - block.row < block.newCount; row++) {
       push(0, block.new + row - block.row);
+    }
+    if (rows.more > 0 && block.row === rows.block && side === 'old') {
+      shown.more = { after: shown.old.length, count: rows.more };
     }
   }
   return shown;
 }
 
 /**
- * The diff's rows from line `first` of `side` to line `last`, and on to the end of a change that
- * `last` ends; none if the diff doesn't have both lines.
+ * The diff's rows from line `first` of `side` to line `last`, and on through `CHANGE_REST` more of
+ * a change that `last` ends: with how many of the change's rows are left out past them, and the
+ * change's first row. None if the diff doesn't have both lines.
  */
 function rowsOf(
   diff: FileDiff,
   side: Side,
   first: number,
   last: number,
-): { first: number; last: number } | undefined {
+): { first: number; last: number; more: number; block: number } | undefined {
   let firstRow = -1;
   let lastRow = -1;
+  let more = 0;
+  let changed = -1;
   for (const block of diff.rows) {
     const start = block[side];
     const count = side === 'old' ? block.oldCount : block.newCount;
@@ -129,11 +148,15 @@ function rowsOf(
     if (last >= start && last < start + count) {
       lastRow = block.row + last - start;
       if (block.changed && last === start + count - 1) {
-        lastRow = block.row + Math.max(block.oldCount, block.newCount) - 1;
+        const end = block.row + Math.max(block.oldCount, block.newCount) - 1;
+        more = Math.max(0, end - lastRow - CHANGE_REST);
+        lastRow = end - more;
+        changed = block.row;
       }
     }
   }
-  return firstRow < 0 || lastRow < 0 ? undefined : { first: firstRow, last: lastRow };
+  if (firstRow < 0 || lastRow < 0) return undefined;
+  return { first: firstRow, last: lastRow, more, block: changed };
 }
 
 /** The lines marked as changed since arrived: number them again. */
@@ -213,6 +236,7 @@ class Excerpt implements ExcerptView {
           EditorView.contentAttributes.of({ 'aria-label': init.path }),
           sides.map((side) => this.#numbers(side)),
           marking((doc, first, last) => this.#marks(doc, first, last)),
+          moreRow(this.#shown.more),
           highlighting({
             lineAt: (line) => {
               const added = this.#shown.new[line - 1] ?? 0;
@@ -458,6 +482,19 @@ class Excerpt implements ExcerptView {
     const line = this.#view.state.doc.lineAt(pos).number;
     this.#on.menu(this.#targetAt(line), event.clientX, event.clientY);
   }
+}
+
+/** A row under the lines shown that says how many more lines the change has. */
+function moreRow(more: ExcerptLines['more']) {
+  if (!more || more.after < 1) return [];
+  const text = `${more.count} more line${more.count === 1 ? '' : 's'} in this change`;
+  return EditorView.decorations.compute([], (state) =>
+    Decoration.set(
+      Decoration.widget({ widget: new FileNoteWidget(0, text, false), block: true, side: 1 }).range(
+        state.doc.line(more.after).to,
+      ),
+    ),
+  );
 }
 
 /** Where each of one side's numbers shown is, as document lines: they're shown in order. */

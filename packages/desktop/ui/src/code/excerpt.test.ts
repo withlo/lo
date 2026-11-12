@@ -215,6 +215,26 @@ describe('the lines it shows', () => {
     });
   });
 
+  test('the rest of a change shows 50 lines at most, and says how many more it has', () => {
+    const many = Array.from({ length: 120 }, (_, index) => `gone ${index + 1}`);
+    const long = diffText(textOf(['a', ...many, 'z']), textOf(['a', 'b', 'z']));
+    const shown = excerptLines(long, { side: 'new', from: 1, to: 2 }, 3);
+    // Line a, then the deleted lines on the added line's row and 50 more, then the added line.
+    expect(shown.old).toEqual([1, ...Array.from({ length: 51 }, (_, index) => index + 2), 0]);
+    expect(shown.new).toEqual([1, ...Array.from({ length: 51 }, () => 0), 2]);
+    expect(shown.more).toEqual({ after: 52, count: 69 });
+    // From the old side, the added lines past it.
+    const grown = diffText(textOf(['a', 'b', 'z']), textOf(['a', ...many, 'z']));
+    expect(excerptLines(grown, { side: 'old', from: 2, to: 2 }, 3).more).toEqual({
+      after: 52,
+      count: 69,
+    });
+    // Short of the cap, nothing's left out.
+    expect(excerptLines(diff, { side: 'new', from: 4, to: 6 }, added.length)).not.toHaveProperty(
+      'more',
+    );
+  });
+
   test('a range at the file’s end stops there, either way round, and one past it shows nothing', () => {
     expect(excerptLines(diff, { side: 'new', from: 99, to: 18 }, added.length)).toEqual({
       old: [17, 18, 19, 20],
@@ -247,6 +267,23 @@ describe('what it draws', () => {
     expect(drawn('lo-line-del')).toEqual(['line 5']);
     expect(drawn('lo-line-add')).toEqual(['line 5, changed']);
     expect(parent!.querySelectorAll('.lo-word-add').length).toBeGreaterThan(0);
+  });
+
+  test('what a change has past the 50 lines shown is a row of its own, where they’d be', () => {
+    const many = Array.from({ length: 120 }, (_, index) => `gone ${index + 1}`);
+    const lines = { old: ['a', ...many, 'z'], new: ['a', 'b', 'z'] };
+    const shown = open(events(), {
+      lines,
+      diff: diffText(textOf(lines.old), textOf(lines.new)),
+      range: { side: 'new', from: 1, to: 2 },
+    });
+    // The editor draws the lines around the cursor: the excerpt's end.
+    shown.reveal({ kind: 'line', at: at(2) });
+    const row = parent!.querySelector('.lo-filenote');
+    expect(row?.textContent).toBe('69 more lines in this change');
+    expect(row?.previousElementSibling?.textContent).toBe('gone 51');
+    expect(row?.nextElementSibling?.textContent).toBe('b');
+    expect(numbers('new')).toContain('2');
   });
 
   test('a range at the file’s end, its numbers taken as they are', () => {
