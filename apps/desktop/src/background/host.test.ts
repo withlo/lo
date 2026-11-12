@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { answer, type Execute } from './host.ts';
+import { answer, host as portHost, type Execute } from './host.ts';
 import { defaultLimits } from './runners.ts';
 import sampleRunner from './test/jobs.ts';
 
@@ -19,6 +19,30 @@ function sparse(): unknown[] {
   return holes;
 }
 
+describe('a port’s jobs', () => {
+  it('stops a job the window cancels, by the id it sent it under', async () => {
+    let stopped: AbortSignal | undefined;
+    const execute: Execute = (_job, _input, _limits, signal) =>
+      new Promise((resolve) => {
+        stopped = signal;
+        signal?.addEventListener('abort', () =>
+          resolve({ ok: false, error: { code: 'cancelled', message: 'gone' } }),
+        );
+      });
+    const jobs = portHost([sampleRunner], execute);
+    const answered = jobs.receive({ id: 3, job: 'sample.double', input: 2 });
+    await vi.waitFor(() => expect(stopped).toBeDefined());
+    expect(await jobs.receive({ cancel: 9 })).toBe(undefined);
+    expect(stopped?.aborted).toBe(false);
+    expect(await jobs.receive({ cancel: 3 })).toBe(undefined);
+    expect(await answered).toEqual({
+      id: 3,
+      ok: false,
+      error: { code: 'cancelled', message: 'gone' },
+    });
+  });
+});
+
 describe('answer', () => {
   it('runs a job under its limits and answers under its id', async () => {
     const { ask, execute } = host();
@@ -27,12 +51,14 @@ describe('answer', () => {
       ok: true,
       value: 2,
     });
-    expect(execute).toHaveBeenCalledWith('sample.double', 2, defaultLimits);
+    expect(execute).toHaveBeenCalledWith('sample.double', 2, defaultLimits, undefined);
     await ask({ id: 8, job: 'sample.spin' });
-    expect(execute).toHaveBeenLastCalledWith('sample.spin', undefined, {
-      ...defaultLimits,
-      deadline: 200,
-    });
+    expect(execute).toHaveBeenLastCalledWith(
+      'sample.spin',
+      undefined,
+      { ...defaultLimits, deadline: 200 },
+      undefined,
+    );
   });
 
   it('refuses input that doesn’t match the job', async () => {

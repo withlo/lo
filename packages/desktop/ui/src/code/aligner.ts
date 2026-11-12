@@ -349,6 +349,14 @@ export class Aligner {
     this.#followSide = side;
   }
 
+  /**
+   * Takes what's on screen now as where things belong, as after the view moved everything on its
+   * own: the pass keeps it there from now on, rather than put back what it held before.
+   */
+  anchorHere(): void {
+    if (!this.#paused) this.#anchor = this.#anchorNow();
+  }
+
   /** Stops the pass, or starts it again. */
   set paused(paused: boolean) {
     this.#paused = paused;
@@ -1236,7 +1244,7 @@ export class Aligner {
  * Where on the page the line at `pos` is drawn, its own top below any blocks drawn above it, if
  * the editor draws it: its text, or the block that replaces it, as a file's header does.
  */
-function drawnTop(view: EditorView, pos: number): number | undefined {
+export function drawnTop(view: EditorView, pos: number): number | undefined {
   return drawnRect(view, pos)?.top;
 }
 
@@ -1318,7 +1326,7 @@ function ownParts(block: BlockInfo): readonly BlockInfo[] {
  * Where a line's own content starts in its block: its text, or the block that replaces it, below
  * any spacers, labels or other blocks drawn above it.
  */
-function ownTop(block: BlockInfo): number {
+export function ownTop(block: BlockInfo): number {
   if (!Array.isArray(block.type)) return block.top;
   for (const part of block.type) {
     if (part.type === BlockType.Text || part.type === BlockType.WidgetRange) return part.top;

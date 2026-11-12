@@ -14,7 +14,7 @@
 
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { link, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { link, readFile, rename, rm, writeFile } from 'node:fs/promises';
 
 import { GitError } from './errors.ts';
 import type { Activity } from './progress.ts';
@@ -200,15 +200,25 @@ export function cacheLockRecord(pid: number, started: string): string {
 }
 
 /**
- * When process `pid` started, as `ps` says, or `undefined` when it can't tell, as for a process
- * that's gone. Two processes that ever had one ID have different start times.
+ * When process `pid` started, as `ps` says, in UTC, or `undefined` when it can't tell, as for a
+ * process that's gone. Two processes that ever had one ID have different start times. `ps` writes
+ * the time in a time zone, the system's unless it's told one, so a running process would seem to
+ * have started at another time once the system's zone changed, as a laptop's does on a trip.
  */
-export async function startTime(pid: number): Promise<string | undefined> {
+export function startTime(pid: number): Promise<string | undefined> {
+  return psStartTime(pid, 'UTC');
+}
+
+/** When process `pid` started, as `ps` writes it in `zone`, or in the system's own without one. */
+async function psStartTime(pid: number, zone?: string): Promise<string | undefined> {
   const said = await new Promise<string | undefined>((resolve) => {
     execFile(
       'ps',
       ['-o', 'lstart=', '-p', String(pid)],
-      { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' }, timeout: 10_000 },
+      {
+        env: { PATH: '/usr/bin:/bin', LC_ALL: 'C', ...(zone === undefined ? {} : { TZ: zone }) },
+        timeout: 10_000,
+      },
       (error, stdout) => resolve(error ? undefined : stdout),
     );
   });
@@ -234,11 +244,10 @@ async function isHolding(holder: { pid: number; started: string }): Promise<bool
     if (!(error instanceof Error && 'code' in error && error.code === 'EPERM')) return false;
   }
   const started = await startTime(holder.pid);
-  return started === undefined || started === holder.started;
+  if (started === undefined || started === holder.started) return true;
+  // A record may give the start in the system's own time zone, as Lo once wrote it.
+  return (await psStartTime(holder.pid)) === holder.started;
 }
-
-/** How long a takeover may take before another process may take its place, in milliseconds. */
-const TAKEOVER_LIMIT = 10_000;
 
 /**
  * Takes the cache's lock file at `path` for this process, or fails naming the process that holds
@@ -247,6 +256,11 @@ const TAKEOVER_LIMIT = 10_000;
  * both take it. A lock whose process is gone, or that this code didn't write, is taken over: under
  * a second lock, `<path>.takeover`, taken the same way, the stale lock is read again and replaced
  * in one rename, so the lock file is never missing and two processes never both take one over.
+ *
+ * The second lock names the process taking over, and is its for as long as that process runs,
+ * however long the takeover takes, as when the computer sleeps in the middle of it: another
+ * process fails, naming it. Only one a process that's gone left is removed, never by its age, which
+ * would let a takeover that waited past it replace the lock another process took meanwhile.
  */
 export async function lockCache(path: string): Promise<Release> {
   if (held.has(path)) {
@@ -278,12 +292,12 @@ export async function lockCache(path: string): Promise<Release> {
       // What a process that's gone left, as after a crash.
       if (!(await linked(temporary, guard))) {
         // Another process is taking it over: once it has, the lock is its.
-        const since = await stat(guard).then(
-          (info) => Date.now() - info.mtimeMs,
-          () => 0,
-        );
-        if (since > TAKEOVER_LIMIT) await rm(guard, { force: true });
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        const taking = await readFile(guard, 'utf8').catch(() => undefined);
+        if (taking === undefined) continue;
+        const taker = parseCacheLock(taking);
+        if (taker !== undefined && (await isHolding(taker))) throw busy(taker);
+        // Its process is gone, as after a crash in the middle of it.
+        await removeLeft(guard, taking);
         continue;
       }
       try {
@@ -306,6 +320,28 @@ export async function lockCache(path: string): Promise<Release> {
     released = true;
     held.delete(path);
   };
+}
+
+/**
+ * Removes the file at `path` if it still holds `text`, which a process that's gone left. It's moved
+ * aside first, under a name of its own, and put back if what was moved is another process's, which
+ * took the place of the one read meanwhile: a file only one process may hold is never removed from
+ * under one that's running.
+ */
+async function removeLeft(path: string, text: string): Promise<void> {
+  const aside = `${path}.${process.pid}.${randomUUID()}`;
+  try {
+    await rename(path, aside);
+  } catch {
+    // Gone already, removed by another process.
+    return;
+  }
+  try {
+    const moved = await readFile(aside, 'utf8').catch(() => undefined);
+    if (moved !== text) await link(aside, path).catch(() => undefined);
+  } finally {
+    await rm(aside, { force: true });
+  }
 }
 
 /** Links `from` at `to`, or says it couldn't because something is there already. */

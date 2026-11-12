@@ -1,4 +1,8 @@
 @import '@lo/ui/styles.css';
+/* The code views' styles sit outside the layers, so they outrank the theme CodeMirror adds to the
+   page, which is outside them too. */
+@import '@lo/design/css/code.css';
+@import '@lo/ui/code/view.css';
 
 /* Classes in the window's code: its own folder, which Tailwind finds by itself, and the features'. */
 @source '../features';

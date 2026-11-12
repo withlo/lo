@@ -5,7 +5,9 @@
 // A value the schema refuses is reported and ignored: the setting is at its default, and the file
 // keeps what it says, so the person can fix it. What no feature declared is kept as it is. A file
 // that can't be read as a whole (a syntax error, say) leaves the settings as they were, and
-// nothing is written until it can be, since writing would lose what the person typed.
+// nothing is written until it can be, since writing would lose what the person typed. For the
+// same reason, a save made while a change is being written is kept, and the change made again on
+// top of it.
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { settingValue, type Problem, type Setting, type SettingsState } from '../contract.ts';
@@ -14,6 +16,7 @@ import {
   errorCode,
   readSettings,
   SETTINGS_SIZE_LIMIT,
+  SettingsChanged,
   shorten,
   signature,
   writeSettings,
@@ -22,6 +25,9 @@ import {
 
 /** How often the file is looked at, in ms. */
 const INTERVAL = 400;
+
+/** How many times a change is made, each on the file as it is then, while the file keeps changing. */
+const WRITE_ATTEMPTS = 3;
 
 /** A value as JSON holds it, which is all a setting's value can be. */
 type Json = SettingsState['values'][string];
@@ -64,8 +70,8 @@ export interface Settings extends SettingsStore {
   state(): Promise<SettingsState>;
   /**
    * Changes a setting and writes the file. Fails with an `IpcError`: `invalid` for a setting no
-   * feature declared or a value its schema refuses, `unwritable` when the file has a problem or
-   * can't be written.
+   * feature declared or a value its schema refuses, `unwritable` when the file has a problem, can't
+   * be written, or keeps changing while it's written.
    */
   set(key: string, value: unknown): Promise<void>;
   /** Looks at the file once. The store does it by itself every `interval`; tests call it. */
@@ -259,37 +265,51 @@ export function createSettings(options: SettingsOptions): Settings {
       const checked = entry.check(value);
       if (!checked.ok) throw new IpcError('invalid', `${key} must be ${entry.accepts}.`);
       return enqueue(async () => {
-        // The file as it is now, not as it was last looked at: a person may have just saved it.
-        const fresh = await readSettings(path);
-        take(fresh);
-        update();
-        if (fresh.kind === 'problem') {
-          throw new IpcError(
-            'unwritable',
-            `Lo didn't change ${key}, since the settings file has a problem. ${fresh.problem}`,
-          );
+        for (let attempt = 1; ; attempt++) {
+          // The file as it is now, not as it was last looked at: a person may have just saved it.
+          // Its signature comes first, so a save made after it is seen before the file is replaced.
+          const read = await signature(path);
+          const fresh = await readSettings(path);
+          take(fresh);
+          update();
+          if (fresh.kind === 'problem') {
+            throw new IpcError(
+              'unwritable',
+              `Lo didn't change ${key}, since the settings file has a problem. ${fresh.problem}`,
+            );
+          }
+          const next = { ...(fresh.kind === 'ok' ? fresh.values : {}), [key]: checked.value };
+          const text = `${JSON.stringify(next, null, 2)}\n`;
+          if (Buffer.byteLength(text) > SETTINGS_SIZE_LIMIT) {
+            throw new IpcError(
+              'unwritable',
+              `Lo didn't change ${key}: the settings file would be too big.`,
+            );
+          }
+          try {
+            await writeSettings(path, text, read);
+          } catch (error) {
+            if (error instanceof SettingsChanged) {
+              // Saved by someone else while this was being written: their save is kept, and the
+              // change is made again on top of it.
+              if (attempt < WRITE_ATTEMPTS) continue;
+              throw new IpcError(
+                'unwritable',
+                `Lo didn't change ${key}: the settings file kept changing while Lo saved it.`,
+              );
+            }
+            log("Lo couldn't write the settings file:", error);
+            const code = errorCode(error);
+            throw new IpcError(
+              'unwritable',
+              `Lo couldn't save ${key} to the settings file${code ? ` (${code})` : ''}.`,
+            );
+          }
+          raw = next;
+          wholeProblem = undefined;
+          update();
+          return;
         }
-        const next = { ...(fresh.kind === 'ok' ? fresh.values : {}), [key]: checked.value };
-        const text = `${JSON.stringify(next, null, 2)}\n`;
-        if (Buffer.byteLength(text) > SETTINGS_SIZE_LIMIT) {
-          throw new IpcError(
-            'unwritable',
-            `Lo didn't change ${key}: the settings file would be too big.`,
-          );
-        }
-        try {
-          await writeSettings(path, text);
-        } catch (error) {
-          log("Lo couldn't write the settings file:", error);
-          const code = errorCode(error);
-          throw new IpcError(
-            'unwritable',
-            `Lo couldn't save ${key} to the settings file${code ? ` (${code})` : ''}.`,
-          );
-        }
-        raw = next;
-        wholeProblem = undefined;
-        update();
       });
     },
 

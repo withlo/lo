@@ -38,6 +38,28 @@ export function useFileOrder(tab: string): readonly string[] {
   return orderOf(tab, state, mode);
 }
 
+/** How the panel orders the changed files: the tree's order, or review order. */
+export type OrderMode = Mode;
+
+/** The order `tab`'s panel lists its changed files in now, re-rendering when the reader changes it. */
+export function useOrderMode(tab: string): OrderMode {
+  return useTabState(choices, tab, (chosen) => chosen.mode);
+}
+
+/** {@link useOrderMode}, read once. */
+export function orderModeOf(tab: string): OrderMode {
+  return choices.get(tab).mode;
+}
+
+/**
+ * The order the panel lists `changes` in, by key, in `mode`, as {@link fileOrder} gives it once
+ * the tree has the same changes: for a view that has them first, so it's drawn in the panel's
+ * order from the start.
+ */
+export function orderIn(changes: readonly Changed[], mode: OrderMode): readonly string[] {
+  return panelOrder(changes, mode);
+}
+
 /**
  * Says which file the middle view has on screen, by key, as the diff's `file` event does, or none.
  * The tree marks it, and scrolls to it unless the reader is in the tree.

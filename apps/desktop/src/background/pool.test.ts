@@ -53,6 +53,22 @@ describe('pool', () => {
     });
   });
 
+  it('never starts a job cancelled while it waits', async () => {
+    const { execute, started, finish } = controlled();
+    const run = pool(execute, 1);
+    const first = run('a', undefined, defaultLimits);
+    const controller = new AbortController();
+    const second = run('b', undefined, defaultLimits, controller.signal);
+    controller.abort();
+    expect(await second).toEqual({
+      ok: false,
+      error: { code: 'cancelled', message: 'b was cancelled.' },
+    });
+    finish.get('a')?.();
+    await first;
+    expect(started).toEqual(['a']);
+  });
+
   it('answers a job whose run throws, and carries on', async () => {
     const run = pool(async (job) => {
       if (job === 'bad') throw new Error('Broken.');

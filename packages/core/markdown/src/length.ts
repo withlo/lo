@@ -13,7 +13,10 @@
  * Anything that doesn't come out finite is as long as can be.
  *
  * Dash patterns are also kept to a period of at least `MIN_DASH_PERIOD`, so a unit of a length
- * holds no more dashes than the pattern has numbers, however a browser rounds a float.
+ * holds no more dashes than the pattern has numbers. That doesn't free the count from how a browser
+ * rounds a float: a pattern of many tiny numbers that add up to 1, such as 2,001 of 0.0005, draws a
+ * thousand dashes a unit, so a browser that finds a path half a unit longer than it reads here
+ * draws five hundred more. Only each segment's slack counts those.
  */
 
 const f = Math.fround;
@@ -28,7 +31,9 @@ const SLACK_STEPS = 8;
 /**
  * The least a dash pattern's period may be, in the element's own units. Below it, a unit of the
  * shape holds more than a run of the pattern, and how a browser rounds a length or a point decides
- * how many dashes it draws.
+ * how many dashes it draws. At it or above, a pattern of many numbers still draws up to as many
+ * dashes a unit as it has numbers, and as many more for each unit a browser's rounding adds, which
+ * only the slack counts.
  */
 export const MIN_DASH_PERIOD = 1;
 

@@ -10,6 +10,7 @@ import {
   requestCodes,
   VERIFICATION_URL,
   waitForToken,
+  type DeviceFlowFailure,
   type Poll,
 } from './device-flow.ts';
 import { CLIENT_ID } from './errors.ts';
@@ -205,6 +206,20 @@ test('a sign-in asks for a token that renews', async () => {
   expect(form.get('scope')?.split(' ')).toEqual([...SCOPES, 'offline_access']);
   // GitHub doesn't grant it as a scope, and a token without it lacks nothing.
   expect(missingScopes(['read:org', 'repo', 'workflow'])).toEqual([]);
+});
+
+test('a failure Lo can’t put in words keeps its detail and cause, with a plain message', () => {
+  // A kind this build of Lo doesn't know, and a known one without what describing it reads.
+  const details: DeviceFlowFailure[] = JSON.parse(
+    '[{ "kind": "mystery" }, { "kind": "missingScopes" }]',
+  );
+  for (const given of details) {
+    const cause = new Error('the failure it reports');
+    const error = new DeviceFlowError(given, { cause });
+    expect(error.message).toBe("The sign-in ended in a way Lo couldn't describe.");
+    expect(error.detail).toBe(given);
+    expect(error.cause).toBe(cause);
+  }
 });
 
 test('missing scopes read well', () => {

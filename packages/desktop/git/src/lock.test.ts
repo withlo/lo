@@ -1,9 +1,18 @@
-import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import type * as childProcess from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { expect, onTestFinished, test } from 'vitest';
+import { expect, onTestFinished, test, vi } from 'vitest';
 
 import {
   cacheLockRecord,
@@ -14,6 +23,32 @@ import {
   unlockCache,
 } from './lock.ts';
 import type { Activity } from './progress.ts';
+
+/** The system's time zone, as a test sets it: what `ps` writes times in when it isn't told one. */
+const system = vi.hoisted(() => ({ zone: undefined as string | undefined }));
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof childProcess>();
+  return {
+    ...actual,
+    execFile: (
+      file: string,
+      args: readonly string[],
+      options: childProcess.ExecFileOptions,
+      done: (error: childProcess.ExecFileException | null, stdout: string, stderr: string) => void,
+    ) =>
+      actual.execFile(
+        file,
+        args,
+        {
+          ...options,
+          encoding: 'utf8',
+          env: system.zone === undefined ? options.env : { TZ: system.zone, ...options.env },
+        },
+        done,
+      ),
+  };
+});
 
 function folder(): string {
   const path = mkdtempSync(join(tmpdir(), 'lo-lock-'));
@@ -234,6 +269,82 @@ test('a lock a process that’s gone left is taken over', async () => {
   ]) {
     const path = join(dir, `${left.length}.lock`);
     writeFileSync(path, left);
+
+    const release = await lockCache(path);
+
+    expect(parseCacheLock(readFileSync(path, 'utf8'))?.pid).toBe(process.pid);
+    expect(readdirSync(dir).filter((name) => name.includes('.lock.'))).toEqual([]);
+    await unlockCache(path, release);
+  }
+});
+
+/** When this process's parent started, as `ps` writes it in `zone`. */
+function parentsStartIn(zone: string): string {
+  return execFileSync('ps', ['-o', 'lstart=', '-p', String(process.ppid)], {
+    env: { PATH: '/usr/bin:/bin', LC_ALL: 'C', TZ: zone },
+    encoding: 'utf8',
+  })
+    .trim()
+    .replaceAll(/\s+/g, ' ');
+}
+
+test('a running process’s start reads the same whatever the system’s time zone', async () => {
+  const path = join(folder(), 'lo-cache.lock');
+  // `ps` itself writes another time for the same start in each zone.
+  expect(parentsStartIn('Asia/Tokyo')).not.toBe(parentsStartIn('America/New_York'));
+  onTestFinished(() => {
+    system.zone = undefined;
+  });
+
+  system.zone = 'Asia/Tokyo';
+  const tokyo = await startTime(process.ppid);
+  writeFileSync(path, await parentsRecord());
+  system.zone = 'America/New_York';
+  const newYork = await startTime(process.ppid);
+
+  expect(tokyo).toBeDefined();
+  expect(newYork).toBe(tokyo);
+  // A lock its process took before the zone changed is still its.
+  await expect(lockCache(path)).rejects.toThrow(
+    `another program, process ${process.ppid}, is using ${path}`,
+  );
+  // And so is one whose start is in the system's own zone, as Lo once wrote it.
+  const started = parentsStartIn('America/New_York');
+  writeFileSync(path, cacheLockRecord(process.ppid, started));
+  await expect(lockCache(path)).rejects.toThrow(
+    `another program, process ${process.ppid}, is using ${path}`,
+  );
+});
+
+test('a takeover that stalls keeps its hold while its process runs, however long', async () => {
+  const dir = folder();
+  const path = join(dir, 'lo-cache.lock');
+  const gone = Number(spawnSync('sh', ['-c', 'echo $$']).stdout.toString('utf8').trim());
+  const stale = cacheLockRecord(gone, 'Thu Jan  1 00:00:00 1970');
+  writeFileSync(path, stale);
+  // A running process took the takeover's lock an hour ago, and hasn't finished, as when the
+  // computer slept: the lock is its to replace once it wakes, so nobody else may.
+  const taking = await parentsRecord();
+  writeFileSync(`${path}.takeover`, taking);
+  const hourAgo = new Date(Date.now() - 3_600_000);
+  utimesSync(`${path}.takeover`, hourAgo, hourAgo);
+
+  await expect(lockCache(path)).rejects.toThrow(
+    `another program, process ${process.ppid}, is using ${path}`,
+  );
+  expect(readFileSync(path, 'utf8')).toBe(stale);
+  expect(readFileSync(`${path}.takeover`, 'utf8')).toBe(taking);
+});
+
+test('a takeover a process that’s gone left is cleared, and the lock taken over', async () => {
+  const dir = folder();
+  const gone = Number(spawnSync('sh', ['-c', 'echo $$']).stdout.toString('utf8').trim());
+  const left = [cacheLockRecord(gone, 'Thu Jan  1 00:00:00 1970'), 'half written', ''];
+  for (const [index, taking] of left.entries()) {
+    const path = join(dir, `${index}.lock`);
+    writeFileSync(path, cacheLockRecord(gone, 'Thu Jan  1 00:00:00 1970'));
+    // Just now, so its age says nothing.
+    writeFileSync(`${path}.takeover`, taking);
 
     const release = await lockCache(path);
 

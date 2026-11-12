@@ -381,3 +381,15 @@ test('parses the sso header', () => {
   });
   expect(parseSsoHeader('something else')).toBeUndefined();
 });
+
+test('an error Lo can’t put in words keeps its detail and cause, with a plain message', () => {
+  // A kind this build of Lo doesn't know, and a known one without what describing it reads.
+  const details: GithubErrorDetail[] = JSON.parse('[{ "kind": "mystery" }, { "kind": "graphql" }]');
+  for (const given of details) {
+    const cause = new Error('the failure it reports');
+    const error = new GithubError(given, { cause });
+    expect(error.message).toBe("GitHub gave an error Lo couldn't describe");
+    expect(error.detail).toBe(given);
+    expect(error.cause).toBe(cause);
+  }
+});

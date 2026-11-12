@@ -28,13 +28,18 @@ not a `diff` object holding `layout`.
   what you typed.
 - **Keys Lo doesn't know are kept** when Settings changes a setting, so a file shared with another
   version of Lo stays whole. Settings writes the file whole, as JSON with two-space indents.
+- **A save of yours is never written over.** Settings reads the file as it is when you change a
+  setting, and if you save it again before the change is written, it reads it again and makes the
+  change on top of your save.
 - **A link to a file is followed.** A settings file kept with other dotfiles stays a link, and the
   file it leads to is the one Lo reads, watches and replaces.
 - The file is read up to 1 MiB.
 
 ## The settings
 
-| Setting     | Takes                                  | Default    | What it does                                                                            |
-| ----------- | -------------------------------------- | ---------- | --------------------------------------------------------------------------------------- |
-| `theme`     | dark, light or system                  | `"system"` | The theme: Lo Glow in dark or light, or whichever the system is in.                     |
-| `cache.cap` | a whole number of GB, from 1 to 10,000 | `10`       | The size Lo keeps its local copies of repos under. Past it, the least recently used go. |
+| Setting           | Takes                                  | Default    | What it does                                                                                                                                     |
+| ----------------- | -------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `theme`           | dark, light or system                  | `"system"` | The theme: Lo Glow in dark or light, or whichever the system is in.                                                                              |
+| `cache.cap`       | a whole number of GB, from 1 to 10,000 | `10`       | The size Lo keeps its local copies of repos under. Past it, the least recently used go.                                                          |
+| `diff.layout`     | split or inline                        | `"split"`  | The diff's layout: the two sides next to each other, or one column of both. `gi` switches it.                                                    |
+| `diff.whitespace` | show or hide                           | `"show"`   | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way. |

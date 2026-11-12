@@ -225,8 +225,19 @@ async function linkTo(place: Place): Promise<string> {
   return `https://github.com/${pull.repo}/pull/${pull.number}/files#diff-${hash.join('')}${side}${place.line}`;
 }
 
-// For the measurements and the key spec, which drive the page from outside.
-Object.assign(window, { diffView: view.probe });
+/** The local copy's files waiting for the test to say they come. */
+const copies: (() => void)[] = [];
+
+// For the measurements and the key spec, which drive the page from outside; and for the copy
+// spec, which says when the local copy comes, and hears how many of its files are waiting.
+Object.assign(window, {
+  diffView: view.probe,
+  perfCopy: () => {
+    const waiting = copies.splice(0);
+    for (const copy of waiting) copy();
+    return waiting.length;
+  },
+});
 
 window.addEventListener('message', (event) => {
   if (event.source !== window || event.data !== 'perf:port') return;
@@ -239,13 +250,15 @@ window.addEventListener('message', (event) => {
       if (file?.gaps) {
         // The local copy comes later, and takes the place of GitHub's diff: its lines, its diff,
         // then its highlighting.
-        setTimeout(() => {
+        const copy = () => {
           opened().setLines(id, { old: lines(file.old), new: lines(file.new) }, data.diff);
           for (const side of ['old', 'new'] as const) {
             const triples = data.tokens[side];
             if (triples) opened().setTokens(id, side, triples);
           }
-        }, pull.copyAfterMs ?? 0);
+        };
+        if (pull.copyWhenAsked) copies.push(copy);
+        else setTimeout(copy, 0);
         return;
       }
       // The highlighting first, so the file is drawn once, with its diff.

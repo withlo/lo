@@ -5,25 +5,39 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
   truncateSync,
   writeFileSync,
 } from 'node:fs';
+import type * as fsPromises from 'node:fs/promises';
+import { open, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
   parseSettings,
   readSettings,
   SETTINGS_SIZE_LIMIT,
+  SettingsChanged,
   signature,
   writeSettings,
   written,
 } from './file.ts';
+
+// The file system as it is, with its opens and renames watched where a test asks.
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fs = await importOriginal<typeof fsPromises>();
+  return {
+    ...fs,
+    open: vi.fn<typeof fs.open>(fs.open),
+    rename: vi.fn<typeof fs.rename>(fs.rename),
+  };
+});
 
 let folder: string;
 let path: string;
@@ -208,6 +222,59 @@ describe('writeSettings', () => {
     expect(execFileSync('readlink', [path], { encoding: 'utf8' }).trim()).toBe(
       join(folder, 'elsewhere'),
     );
+  });
+
+  it('writes nothing over a file changed since it was read, and leaves nothing beside it', async () => {
+    write('{ "theme": "dark" }');
+    const read = await signature(path);
+    // Saved by hand while the change was being made.
+    write('{ "theme": "dark", "mine": true }');
+    await expect(writeSettings(path, '{ "theme": "light" }', read)).rejects.toBeInstanceOf(
+      SettingsChanged,
+    );
+    expect(readFileSync(path, 'utf8')).toBe('{ "theme": "dark", "mine": true }');
+    expect(readdirSync(join(folder, 'config'))).toEqual(['settings.json']);
+    // Read again, it's written.
+    await writeSettings(path, '{ "theme": "light" }', await signature(path));
+    expect(readFileSync(path, 'utf8')).toBe('{ "theme": "light" }');
+  });
+
+  it('writes nothing over a file made since it was read as missing', async () => {
+    const read = await signature(path);
+    write('{ "mine": true }');
+    await expect(writeSettings(path, '{}', read)).rejects.toBeInstanceOf(SettingsChanged);
+    expect(readFileSync(path, 'utf8')).toBe('{ "mine": true }');
+  });
+
+  it('syncs the new file before it replaces the old one, and its folder after', async () => {
+    write('{}');
+    const fs = await vi.importActual<typeof fsPromises>('node:fs/promises');
+    const done: string[] = [];
+    vi.mocked(open).mockImplementation(async (file, flags, mode) => {
+      const handle = await fs.open(file, flags, mode);
+      const sync = handle.sync.bind(handle);
+      handle.sync = async () => {
+        done.push(`sync ${String(file)}`);
+        await sync();
+      };
+      return handle;
+    });
+    vi.mocked(rename).mockImplementation(async (from, to) => {
+      done.push(`rename to ${String(to)}`);
+      await fs.rename(from, to);
+    });
+    onTestFinished(() => {
+      vi.mocked(open).mockImplementation(fs.open);
+      vi.mocked(rename).mockImplementation(fs.rename);
+    });
+    await writeSettings(path, '{ "theme": "light" }');
+    const real = realpathSync(join(folder, 'config'));
+    expect(done).toEqual([
+      expect.stringMatching(/^sync .*\/\.settings\.json\.[\w-]+\.tmp$/),
+      `rename to ${join(real, 'settings.json')}`,
+      `sync ${real}`,
+    ]);
+    expect(readFileSync(path, 'utf8')).toBe('{ "theme": "light" }');
   });
 
   // Root writes wherever it likes.

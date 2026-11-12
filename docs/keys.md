@@ -12,12 +12,24 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Move
 
-| Action                       | Keys     | Where         | Command                    |
-| ---------------------------- | -------- | ------------- | -------------------------- |
-| Next pull request            | `j`, `↓` | In `recent`   | `open.nextRecent`          |
-| Previous pull request        | `k`, `↑` | In `recent`   | `open.previousRecent`      |
-| Next section of Settings     | `j`      | In `settings` | `settings.nextSection`     |
-| Previous section of Settings | `k`      | In `settings` | `settings.previousSection` |
+| Action                       | Keys     | Where                        | Command                    |
+| ---------------------------- | -------- | ---------------------------- | -------------------------- |
+| Line down                    | `j`      | Vim's own key, in code views | `diff.down`                |
+| Line up                      | `k`      | Vim's own key, in code views | `diff.up`                  |
+| Select lines                 | `v`      | Vim's own key, in code views | `diff.select`              |
+| Next pull request            | `j`, `↓` | In `recent`                  | `open.nextRecent`          |
+| Previous pull request        | `k`, `↑` | In `recent`                  | `open.previousRecent`      |
+| Next section of Settings     | `j`      | In `settings`                | `settings.nextSection`     |
+| Previous section of Settings | `k`      | In `settings`                | `settings.previousSection` |
+
+## Jump
+
+| Action          | Keys  | Where                                  | Command               |
+| --------------- | ----- | -------------------------------------- | --------------------- |
+| Next change     | `] c` | In `diff`; in code views, Vim's motion | `diff.nextChange`     |
+| Previous change | `[ c` | In `diff`; in code views, Vim's motion | `diff.previousChange` |
+| Next file       | `] f` | In `diff`; in code views, Vim's motion | `diff.nextFile`       |
+| Previous file   | `[ f` | In `diff`; in code views, Vim's motion | `diff.previousFile`   |
 
 ## Act
 
@@ -34,23 +46,30 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Copy and open
 
-| Action                | Keys  | Where       | Command             |
-| --------------------- | ----- | ----------- | ------------------- |
-| Copy the sign-in code | `y y` | In `dialog` | `accounts.copyCode` |
-| Whole file            | `g f` | In `tree`   | `tree.wholeFile`    |
-| Copy path             | `y p` | In `tree`   | `tree.copyPath`     |
-| Open on GitHub        | `g x` | In `tree`   | `tree.openOnGithub` |
+| Action                | Keys  | Where                                                    | Command             |
+| --------------------- | ----- | -------------------------------------------------------- | ------------------- |
+| Copy the sign-in code | `y y` | In `dialog`                                              | `accounts.copyCode` |
+| Copy the lines        | `y y` | In `diff`; in code views, only in normal and visual mode | `diff.copyLines`    |
+| Copy the line's link  | `y l` | In `diff`; in code views, only in normal mode            | `diff.copyLink`     |
+| Copy path             | `y p` | In `diff`; in code views, only in normal mode            | `diff.copyPath`     |
+| Open on GitHub        | `g x` | In `diff`; in code views, only in normal mode            | `diff.openOnGithub` |
+| Whole file            | `g f` | In `tree`                                                | `tree.wholeFile`    |
+| Copy path             | `y p` | In `tree`                                                | `tree.copyPath`     |
+| Open on GitHub        | `g x` | In `tree`                                                | `tree.openOnGithub` |
 
 ## Find
 
-| Action                         | Keys                    | Where                               | Command           |
-| ------------------------------ | ----------------------- | ----------------------------------- | ----------------- |
-| Command palette                | `⌘⇧P`                   | Anywhere                            | `keys.palette`    |
-| Open a pull request            | `⌘L`, `⌘O` (macOS only) | Anywhere but `dialog` and `palette` | `open.box`        |
-| Open the link on the clipboard | `⌘V`                    | In `recent`                         | `open.paste`      |
-| Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`     |
-| Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent` |
-| Go to a file                   | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`       |
+| Action                         | Keys                    | Where                               | Command              |
+| ------------------------------ | ----------------------- | ----------------------------------- | -------------------- |
+| Search                         | `/`                     | Vim's own key, in code views        | `diff.search`        |
+| Next match                     | `n`                     | Vim's own key, in code views        | `diff.nextMatch`     |
+| Previous match                 | `N`                     | Vim's own key, in code views        | `diff.previousMatch` |
+| Command palette                | `⌘⇧P`                   | Anywhere                            | `keys.palette`       |
+| Open a pull request            | `⌘L`, `⌘O` (macOS only) | Anywhere but `dialog` and `palette` | `open.box`           |
+| Open the link on the clipboard | `⌘V`                    | In `recent`                         | `open.paste`         |
+| Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`        |
+| Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent`    |
+| Go to a file                   | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`          |
 
 ## View
 
@@ -79,6 +98,18 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Action     | Keys | Where                               | Command         |
 | ---------- | ---- | ----------------------------------- | --------------- |
 | Left panel | `⌘\` | Anywhere but `dialog` and `palette` | `tab.leftPanel` |
+
+## Diff view
+
+| Action                                | Keys  | Where                                         | Command           |
+| ------------------------------------- | ----- | --------------------------------------------- | ----------------- |
+| The other side                        | `Tab` | In `diff`; in code views, only in normal mode | `diff.otherSide`  |
+| Inline or side by side                | `g i` | In `diff`; in code views, only in normal mode | `diff.inline`     |
+| Hide or show whitespace changes       | `g w` | In `diff`; in code views, only in normal mode | `diff.whitespace` |
+| Open unchanged lines                  | `z o` | In `diff`; in code views, only in normal mode | `diff.openRun`    |
+| Close unchanged lines                 | `z c` | In `diff`; in code views, only in normal mode | `diff.closeRun`   |
+| Open every unchanged line in the file | `z R` | In `diff`; in code views, only in normal mode | `diff.openFile`   |
+| Load, close or open the file          | `z a` | In `diff`; in code views, only in normal mode | `diff.toggleFile` |
 
 ## Palettes
 
@@ -170,17 +201,25 @@ meanings.
 Code views (`diff`, `file`, `peek` and `box`) run Vim, and Lo leaves Vim's keys to it there, except
 these, which run Lo's command in place of Vim's key:
 
-| Keys             | Action               | Vim's key | Where                                                                | Command            |
-| ---------------- | -------------------- | --------- | -------------------------------------------------------------------- | ------------------ |
-| `?`              | Every key            | `?`       | `diff`, `file`, `peek` and `box` (normal and visual)                 | `keys.help`        |
-| `⌃o`             | Back                 | `⌃o`      | `diff`, `file` and `peek`                                            | `keys.back`        |
-| `⌃i`             | Forward              | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`     |
-| `` ` ``          | Next middle view     | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`     |
-| `~`              | Previous middle view | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView` |
-| `-`              | Go to the file tree  | `-`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tree.focus`       |
-| `Ctrl+Q` (Linux) | Quit Lo              | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `app.quit`         |
-| `Ctrl+W` (Linux) | Close tab            | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`        |
-| `Ctrl+P` (Linux) | Go to a file         | `Ctrl+P`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `tree.find`        |
+| Keys             | Action                          | Vim's key | Where                                                                | Command            |
+| ---------------- | ------------------------------- | --------- | -------------------------------------------------------------------- | ------------------ |
+| `g i`            | Inline or side by side          | `g i`     | `diff` (normal)                                                      | `diff.inline`      |
+| `g w`            | Hide or show whitespace changes | `g w`     | `diff` (normal)                                                      | `diff.whitespace`  |
+| `y y`            | Copy the lines                  | `y`       | `diff`                                                               | `diff.copyLines`   |
+| `y l`            | Copy the line's link            | `y`       | `diff` (normal)                                                      | `diff.copyLink`    |
+| `y p`            | Copy path                       | `y`       | `diff` (normal)                                                      | `diff.copyPath`    |
+| `?`              | Every key                       | `?`       | `diff`, `file`, `peek` and `box` (normal and visual)                 | `keys.help`        |
+| `⌃o`             | Back                            | `⌃o`      | `diff`, `file` and `peek`                                            | `keys.back`        |
+| `⌃i`             | Forward                         | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`     |
+| `` ` ``          | Next middle view                | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`     |
+| `~`              | Previous middle view            | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView` |
+| `-`              | Go to the file tree             | `-`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tree.focus`       |
+| `Ctrl+Q` (Linux) | Quit Lo                         | `Ctrl+Q`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `app.quit`         |
+| `Ctrl+W` (Linux) | Close tab                       | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`        |
+| `Ctrl+P` (Linux) | Go to a file                    | `Ctrl+P`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `tree.find`        |
+
+In code views, Vim runs Lo's motions (next change, previous change, next file and previous file)
+under Lo's keys, so a count repeats them and they extend a selection in visual mode.
 
 ## The keymap file
 
@@ -213,9 +252,12 @@ shows the new keys and the lines Lo can't use. To open the file, use the button 
 command palette or `g ,`: Lo opens it as text in your system's text editor, writing it first, with a
 header of comments, if there isn't one. Opening never runs anything, so Lo doesn't open a file that
 is executable, isn't a plain file (a folder, or an app a link leads to) or is over the limit below:
-key help says why, and has no button. A link to a file in a dotfiles folder is followed. Lo reads a
-file of up to 1 MiB and lines of up to 1,000 characters; a longer line is reported and skipped, and
-a longer file isn't read. Nothing in the file is ever run.
+key help says why, and has no button. The editor is the app for text whatever the file's name or
+contents, even through a link to a file named like a launcher or a web page: on Linux, the app
+`xdg-mime query default text/plain` names, started with `gio launch`. Without one of those, Lo says
+so and opens nothing. A link to a file in a dotfiles folder is followed. Lo reads a file of up to 1
+MiB and lines of up to 1,000 characters; a longer line is reported and skipped, and a longer file
+isn't read. Nothing in the file is ever run.
 
 ### Writing keys
 
