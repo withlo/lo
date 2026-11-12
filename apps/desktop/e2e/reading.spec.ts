@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
 import { buffer } from 'node:stream/consumers';
+import { crc32, deflateSync } from 'node:zlib';
 
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
@@ -35,8 +36,8 @@ const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
 /** Where #80's overview's ref is read, past GitHub's origin. */
 const REFS = `/repos/rozed-dev/e2e/git/matching-refs/lo/pr/${APP_PULL.number}`;
 
-/** A file of an overview made here: its text, or a size Lo never reads past. */
-type Made = string | { size: number };
+/** A file of an overview made here: its text, its bytes, or a size Lo never reads past. */
+type Made = string | Uint8Array | { size: number };
 
 /**
  * Who a commit made here says wrote it: the name it gives, and the login GitHub matches it to, or
@@ -103,8 +104,8 @@ function overviewOf(files: Readonly<Record<string, Made>>, writer = BOT): Overvi
       const sha = createHash('sha1').update(`tree ${made} ${folder}`).digest('hex');
       entries.push({ path: folder, type: 'tree', sha });
     }
-    if (typeof file === 'string') {
-      const bytes = new TextEncoder().encode(file);
+    if (typeof file === 'string' || file instanceof Uint8Array) {
+      const bytes = typeof file === 'string' ? new TextEncoder().encode(file) : file;
       const sha = blobId(bytes);
       blobs.set(sha, bytes);
       entries.push({ path, type: 'blob', sha, size: bytes.length });
@@ -138,6 +139,41 @@ function longText(lead: string): string {
     ].join('\n'),
   );
 }
+
+/** A PNG's chunk of `type`, holding `data`. */
+function chunk(type: string, data: Buffer): Buffer {
+  const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const check = Buffer.alloc(4);
+  check.writeUInt32BE(crc32(body));
+  return Buffer.concat([length, body, check]);
+}
+
+/** A PNG `width` by `height` of one colour, as an overview's figure. */
+function pngOf(width: number, height: number): Uint8Array {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  // 8 bits a channel, RGB, no interlacing.
+  header.set([8, 2, 0, 0, 0], 8);
+  const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(width * 3, 0x5a)]);
+  const pixels = deflateSync(Buffer.concat(Array.from({ length: height }, () => row)));
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', pixels),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/** A figure drawn as an SVG, with nothing it links. */
+const SVG = [
+  '<svg viewBox="0 0 600 64" xmlns="http://www.w3.org/2000/svg">',
+  '  <rect x="0" y="8" width="600" height="48" rx="10" fill="var(--fig-blue-soft)" stroke="var(--fig-blue)"/>',
+  '</svg>',
+  '',
+].join('\n');
 
 /** Answers `outgoing` with `body`, as JSON. */
 function json(outgoing: ServerResponse, status: number, body: unknown): void {
@@ -411,12 +447,16 @@ async function wheelTo(page: Page, part: number): Promise<void> {
     .toBe(true);
 }
 
-/** Sets the window's size, as the reader would. */
+/**
+ * Sets the window's size, as the reader would, and waits past the half second a watch gives the
+ * page's new size as the reader's: the page has it a moment after the window does.
+ */
 async function sizeWindow(app: ElectronApplication, width: number, height: number): Promise<void> {
   await app.evaluate(
     ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setSize(size.width, size.height),
     { width, height },
   );
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 }
 
 test.describe('as a pull request opens', () => {
@@ -780,6 +820,52 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
   ref.holds = { kind: 'cassette' };
   await failed.getByRole('button', { name: 'Retry now' }).click();
   await expect(overview(page, 'shown')).toBeVisible({ timeout: 20_000 });
+});
+
+test('nothing on the first screen moves from the first frame, as its figures fill in', async ({
+  app,
+  page,
+  ref,
+}) => {
+  const paragraphs = Array.from({ length: 30 }, (_, index) => `Paragraph ${index + 1}.`);
+  ref.holds = {
+    kind: 'made',
+    overview: overviewOf({
+      'artifact.md': textOf(
+        [
+          '## tl;dr\n\nThe figures come first.\n',
+          ':::figure figures/bar.svg\nA bar, drawn.\n:::\n',
+          'Under the drawing.\n',
+          ':::figure figures/bar.png\nA bar, as a picture.\n:::\n',
+          'Under the picture.\n',
+          `## After\n\n${paragraphs.join('\n\n')}\n`,
+        ].join('\n'),
+      ),
+      'figures/bar.svg': SVG,
+      'figures/bar.png': pngOf(480, 64),
+    }),
+  };
+  await sizeWindow(app, 1100, 800);
+  await watchStill(page);
+  await open(page);
+  // It opens on the overview, with no input from the reader to take as theirs.
+  const shown = overview(page, 'shown');
+  await expect(shown).toBeVisible({ timeout: 20_000 });
+  const figures = shown.locator('figure.lo-figure:not(.lo-figure--broken)');
+  await expect(figures).toHaveCount(2);
+  // Both figures, and a block under each, are on the first screen.
+  const screen = await shown.locator('.lo-ov').boundingBox();
+  const under = await shown.getByText('Under the picture.').boundingBox();
+  expect((under?.y ?? 0) + (under?.height ?? 0)).toBeLessThan(
+    (screen?.y ?? 0) + (screen?.height ?? 0),
+  );
+  // The picture is drawn: its canvas holds its pixels.
+  await expect
+    .poll(() => figures.locator('canvas').evaluate((canvas: HTMLCanvasElement) => canvas.width))
+    .toBeGreaterThan(0);
+  await expect(figures.locator('svg')).toHaveCount(1);
+  await page.waitForTimeout(1000);
+  expect(await stillMoved(page)).toEqual([]);
 });
 
 test.describe('while the local copy comes late', () => {
