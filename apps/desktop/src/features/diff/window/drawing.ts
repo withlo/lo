@@ -400,12 +400,7 @@ export function draw(options: DrawOptions): Drawing {
    * goes to: the reader's jump, so it lands there however near the end it is. Says whether the view
    * has the file.
    */
-  const toTop = (id: string): boolean => {
-    if (!view.reveal({ kind: 'file', file: id })) return false;
-    const cursor = spotOf(view.keyState().target);
-    const side = cursor?.kind === 'header' ? cursor.side : (cursor?.at.side ?? 'new');
-    return view.scrollTo({ at: { kind: 'header', file: id, side }, offset: 0 });
-  };
+  const toTop = (id: string): boolean => view.revealAtTop({ kind: 'file', file: id });
   const view = createDiffView(
     parent,
     { files, layout: options.layout, vimKeys: keys.vimKeys(), nonce: options.nonce },

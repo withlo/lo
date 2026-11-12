@@ -65,6 +65,10 @@ vi.mock('@lo/ui/code', () => ({
       moved.push(`reveal ${target.kind === 'file' ? target.file : target.kind}`);
       return true;
     },
+    revealAtTop: (target) => {
+      moved.push(`top ${target.kind === 'file' ? target.file : target.kind}`);
+      return true;
+    },
     setVimKeys: () => undefined,
     destroy: () => undefined,
   }),
@@ -452,13 +456,13 @@ describe('a file the tree shows', () => {
     await drawTwo();
     tops.set('d1', 300);
     expect(drawnFor(TAB.id)?.toTop('d1')).toBe(true);
-    expect(moved).toEqual(['reveal d1', 'scroll d1 0']);
+    expect(moved).toEqual(['top d1']);
   });
 
   it('asked for before the diff is drawn, comes to the top as it’s drawn, where a place only shows', async () => {
     revealWhenDrawn(TAB.id, { target: { kind: 'file', file: 'd1' }, focus: false, top: true });
     await drawnGithub(work, ['src/a.ts', 'src/b.ts']);
-    expect(moved).toEqual(['reveal d1', 'scroll d1 0']);
+    expect(moved).toEqual(['top d1']);
     drawing?.stop();
     moved.length = 0;
     // A place `⌃o` goes back to is shown as it was, not brought to the top.
