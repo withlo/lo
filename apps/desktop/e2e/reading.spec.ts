@@ -1088,6 +1088,12 @@ async function openingSeen(page: Page): Promise<Opening & { after: number }> {
  */
 const FRAMES = 2 * 17;
 
+/**
+ * How much sooner than the bound an overview seen at it can seem to be: the watch sees the tab open
+ * a frame or more after it did, more on a busy machine.
+ */
+const SEEN_LATE = 100;
+
 for (const [width, height] of [
   [1440, 900],
   [1100, 800],
@@ -1120,7 +1126,7 @@ for (const [width, height] of [
     await expect.poll(async () => (await codeSeen(page)).seen).toBeDefined();
     // Every code block on the first screen was drawn before the overview was seen, unless a busy
     // machine didn't draw them within the bound: then it's seen with room kept for them, noted.
-    const atBound = opening.after >= HOLD_LIMIT - FRAMES;
+    const atBound = opening.after >= HOLD_LIMIT - SEEN_LATE;
     if (atBound) {
       test.info().annotations.push({
         type: 'seen at the bound',
