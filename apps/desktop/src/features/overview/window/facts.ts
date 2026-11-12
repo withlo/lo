@@ -88,7 +88,8 @@ export function standingOf(
 /**
  * What the tab can tell from `standing` about opening on the overview: nothing yet (`unknown`),
  * that it shows (`shown`), or that it doesn't (`other`): there's none, it can't be shown, or it
- * couldn't be read.
+ * couldn't be read. A check that failed says nothing yet: it's tried again when main next speaks,
+ * as when main can hand over the overview's files only once it knows the tab's account.
  */
 export type Known = 'unknown' | 'shown' | 'other';
 
@@ -96,12 +97,12 @@ export function knownOf(standing: Standing): Known {
   switch (standing.kind) {
     case 'reading':
     case 'checking':
+    case 'unchecked':
       return 'unknown';
     case 'shown':
       return 'shown';
     case 'none':
     case 'failed':
-    case 'unchecked':
     case 'invalid':
     case 'tooLarge':
     case 'newer':

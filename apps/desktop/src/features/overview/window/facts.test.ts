@@ -129,6 +129,8 @@ describe('what a tab’s overview is', () => {
       'shown',
     );
     expect(knownOf({ kind: 'none', notCommit: false })).toBe('other');
+    // A check that failed is tried again, so it says nothing yet.
+    expect(knownOf({ kind: 'unchecked', commit, why: 'Main moved on.' })).toBe('unknown');
     expect(knownOf({ kind: 'newer', commit, format: 2 })).toBe('other');
   });
 });

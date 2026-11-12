@@ -8,7 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { setMiddle } from '../../../window/commands/registry.ts';
 import { showDiff } from '../../diff/window/shared.ts';
 import { HOLD_LIMIT } from '../../revisions/contract.ts';
-import { useSetting } from '../../settings/window/shared.ts';
+import { useKnownSetting } from '../../settings/window/shared.ts';
 import { MiddlePlaceholder, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { open } from '../settings.ts';
 import { knownOf, type Known, type Standing } from './facts.ts';
@@ -18,16 +18,24 @@ import { Shown } from './Shown.tsx';
 import { CantShow, NoOverview, Quiet, ReadFailed } from './States.tsx';
 
 /**
- * What tab `tab` opens on, chosen once: until it's known, `waiting`, which wakes at the bound. Once
- * chosen, the diff is shown if that's the choice and this view is the one on screen, as it is when
- * the tab opens, so nothing the reader moved to is moved from.
+ * What tab `tab` opens on, chosen once, once Settings is known: until then, `waiting`, which wakes
+ * at the bound. Once chosen, the diff is shown if that's the choice and this view is on screen, as
+ * it is when the tab opens, unless the reader picked a view while it waited: where they are wins.
  */
 export function useOpening(tab: string, known: Known, shown: boolean): Opening {
-  const setting = useSetting(open);
+  const setting = useKnownSetting(open);
   const opened = useTabState(openings, tab);
   const [now, setNow] = useState(Date.now);
   const since = opened.since ?? now;
   const decided = opened.on ?? openingOf(setting, known, now - since);
+
+  // The overview leaves the screen while the tab waits only when the reader shows another view.
+  useLayoutEffect(() => {
+    const current = openings.get(tab);
+    if (!shown && current.on === undefined && !current.chose) {
+      openings.set(tab, { ...current, chose: true });
+    }
+  }, [tab, shown]);
 
   useLayoutEffect(() => {
     const current = openings.get(tab);
@@ -42,7 +50,7 @@ export function useOpening(tab: string, known: Known, shown: boolean): Opening {
       on: decided,
       late: decided === 'diff' && setting !== 'diff',
     });
-    if (decided === 'diff' && shown) showDiff(tab);
+    if (decided === 'diff' && shown && !current.chose) showDiff(tab);
   }, [tab, decided, since, setting, shown]);
 
   // The bound: past it, the tab opens on the diff, whatever is still to come.

@@ -46,6 +46,17 @@ export function useSetting<T>(setting: Setting<T>): T {
 }
 
 /**
+ * The value of a setting once main has said what the settings file holds, and `undefined` until
+ * then, for what mustn't act on the default by mistake; it follows changes.
+ */
+export function useKnownSetting<T>(setting: Setting<T>): T | undefined {
+  const settings = useStore(settingsStore, (state) => state.settings);
+  if (settings === undefined) return undefined;
+  const parsed = setting.schema.safeParse(settings.values[setting.key]);
+  return parsed.success ? parsed.data : setting.fallback;
+}
+
+/**
  * Changes a setting. Main checks the value again and writes the file; the setting then follows
  * through {@link useSetting}. When it can't be changed, Lo says why in a note, and this resolves
  * `false`.

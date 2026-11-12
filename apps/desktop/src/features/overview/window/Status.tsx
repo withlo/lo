@@ -5,7 +5,9 @@
 import { Key, StatusItem } from '@lo/ui';
 
 import { useKeys } from '../../../window/commands/registry.ts';
+import { useKnownSetting } from '../../settings/window/shared.ts';
 import { showMiddle, useMiddle, useTabState, type PullTab } from '../../tab/window/shared.ts';
+import { open } from '../settings.ts';
 import { knownOf } from './facts.ts';
 import { useStanding } from './hooks.ts';
 import { keyOf, OVERVIEW_VIEW, stepKeyOf } from './labels.ts';
@@ -17,9 +19,10 @@ export function OverviewStatus({ tab }: { tab: PullTab }) {
   const standing = useStanding(tab.id);
   const state = useTabState(states, tab.id);
   const opened = useTabState(openings, tab.id);
+  const setting = useKnownSetting(open);
   const { shown, ids } = useMiddle(tab.id);
   const onScreen = shown === OVERVIEW_VIEW;
-  if (!onScreen && offered(opened, knownOf(standing))) {
+  if (!onScreen && offered(opened, knownOf(standing), setting)) {
     const keys = keyOf(stepKeyOf(ids, shown, OVERVIEW_VIEW));
     return (
       <StatusItem dot="busy" onClick={() => showMiddle(tab.id, OVERVIEW_VIEW)}>

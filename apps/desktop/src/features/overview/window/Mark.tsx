@@ -9,7 +9,10 @@ export function OverviewMark({ tab }: { tab: PullTab }) {
   const standing = useStanding(tab.id);
   const pull = usePull(tab.id);
   const mark = markOf(standing, newestHead(pull));
-  if (mark === undefined) return null;
+  // Its room is kept while Lo finds out, so the switch doesn't move as the mark comes.
+  if (mark === undefined) {
+    return <span className="lo-ovmark lo-ovmark--pending" aria-hidden="true" data-lo-ovmark="" />;
+  }
   const words = markWords(mark);
   return (
     <span

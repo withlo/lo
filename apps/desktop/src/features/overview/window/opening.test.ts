@@ -32,24 +32,37 @@ describe('what a tab opens on', () => {
       expect(openingOf('diff', known, 0)).toBe('diff');
     }
   });
+
+  it('waits for what Settings says, up to the bound, and then opens on the diff', () => {
+    for (const known of ['unknown', 'shown', 'other'] as const) {
+      expect(openingOf(undefined, known, 0)).toBe('waiting');
+      expect(openingOf(undefined, known, HOLD_LIMIT - 1)).toBe('waiting');
+      expect(openingOf(undefined, known, HOLD_LIMIT)).toBe('diff');
+    }
+  });
 });
 
 /** A tab that opened late on the diff, as `change` has it otherwise. */
 function opened(change: Partial<Opened> = {}): Opened {
-  return { since: 0, on: 'diff', late: true, seen: false, ...change };
+  return { since: 0, on: 'diff', late: true, seen: false, chose: false, ...change };
 }
 
 describe('a late overview', () => {
   it('is offered once it shows, after the tab opened on the diff for want of one', () => {
-    expect(offered(opened(), 'shown')).toBe(true);
-    expect(offered(opened(), 'unknown')).toBe(false);
-    expect(offered(opened(), 'other')).toBe(false);
+    expect(offered(opened(), 'shown', 'overview')).toBe(true);
+    expect(offered(opened(), 'unknown', 'overview')).toBe(false);
+    expect(offered(opened(), 'other', 'overview')).toBe(false);
   });
 
   it('isn’t offered once it’s been seen, nor when Settings chose the diff, nor on the overview', () => {
-    expect(offered(opened({ seen: true }), 'shown')).toBe(false);
-    expect(offered(opened({ late: false }), 'shown')).toBe(false);
-    expect(offered(opened({ on: 'overview' }), 'shown')).toBe(false);
-    expect(offered(opened({ on: undefined }), 'shown')).toBe(false);
+    expect(offered(opened({ seen: true }), 'shown', 'overview')).toBe(false);
+    expect(offered(opened({ late: false }), 'shown', 'overview')).toBe(false);
+    expect(offered(opened({ on: 'overview' }), 'shown', 'overview')).toBe(false);
+    expect(offered(opened({ on: undefined }), 'shown', 'overview')).toBe(false);
+  });
+
+  it('isn’t offered while Settings is unknown, or says the diff, as for a tab that opened first', () => {
+    expect(offered(opened(), 'shown', undefined)).toBe(false);
+    expect(offered(opened(), 'shown', 'diff')).toBe(false);
   });
 });

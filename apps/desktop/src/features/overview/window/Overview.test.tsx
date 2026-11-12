@@ -2,17 +2,20 @@
 // The overview's view in a window of its own, with main answered by a stand-in bridge and the
 // overview checked as the window checks it, in this process: what it draws while the tab opens and
 // after, each state, and that a result checked again, or copied, leaves every node on screen as it
-// was, its folds open and its focus where it was.
+// was, its folds open and its focus where it was. What Settings says and showing the diff are
+// stood in for, so each test says what Settings holds and sees when the tab hands over to the diff.
 
 import { commandsOf } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { IpcError } from '../../../ipc/contract.ts';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { Slots } from '../../../window/slots.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
 import { HOLD_LIMIT } from '../../revisions/contract.ts';
+import type { Setting } from '../../settings/contract.ts';
 import tabKeys from '../../tab/keys.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewState, SkillState } from '../contract.ts';
@@ -20,9 +23,26 @@ import keys from '../keys.ts';
 import { checkOverview, parseOverview } from '../background/index.ts';
 import settingsKeys from '../../settings/keys.ts';
 import { Checking } from './checking.ts';
+import { OverviewMark } from './Mark.tsx';
 import { openings } from './opening.ts';
 import { OverviewView } from './Overview.tsx';
+import { OverviewStatus } from './Status.tsx';
 import { checked, publish, states } from './store.ts';
+
+/** What Settings says a pull request opens on: unknown until main has said. */
+const settings = vi.hoisted(() => ({ open: 'overview' as 'overview' | 'diff' | undefined }));
+/** The diff, shown as the tab hands over to it. */
+const showDiff = vi.hoisted(() => vi.fn<(tab: string) => boolean>(() => true));
+
+vi.mock(import('../../settings/window/shared.ts'), async (original) => ({
+  ...(await original()),
+  useKnownSetting: <T,>(setting: Setting<T>): T | undefined =>
+    settings.open === undefined ? undefined : setting.schema.parse(settings.open),
+}));
+vi.mock(import('../../diff/window/shared.ts'), async (original) => ({
+  ...(await original()),
+  showDiff,
+}));
 
 const encoder = new TextEncoder();
 const HEAD = 'a'.repeat(40);
@@ -116,19 +136,28 @@ beforeAll(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  settings.open = 'overview';
+  showDiff.mockClear();
 });
 
 /**
  * A tab's checking, as the store's, publishing as the store does, with its jobs run in this
- * process and what they answer copied as a port copies it.
+ * process and what they answer copied as a port copies it. Main refuses the overview's files
+ * `refusals` times first, as it does before it knows the tab's account.
  */
-function checkingFor(tab: PullTab, text = TEXT): Checking {
+function checkingFor(tab: PullTab, text = TEXT, refusals = 0): Checking {
+  let refused = 0;
   return new Checking(tab.id, {
-    files: async ({ paths }) =>
-      paths.map((path) => {
+    files: async ({ paths }) => {
+      if (refused < refusals) {
+        refused += 1;
+        throw new IpcError('moved', "That isn't the overview on screen, or the newer one.");
+      }
+      return paths.map((path) => {
         const bytes = path === 'artifact.md' ? text : SVG;
         return { kind: 'file' as const, size: bytes.length, bytes };
-      }),
+      });
+    },
     code: async () => ({ kind: 'noGit' }),
     parse: async ({ artifact }) => structuredClone(parseOverview(artifact)),
     check: async (input) => structuredClone(await checkOverview(input)),
@@ -147,24 +176,33 @@ async function until(done: () => boolean): Promise<void> {
   expect(done()).toBe(true);
 }
 
-/** The overview's view for `tab`, on screen, in a window of its own. */
+/**
+ * The overview's view for `tab`, in a window of its own, with the overview's mark and its item in
+ * the status bar beside it; on screen until `shown` says the reader showed another view.
+ */
 function render(tab: PullTab) {
   const container = document.createElement('div');
   container.className = 'lo-app';
   document.body.append(container);
   const root = createRoot(container);
-  act(() =>
-    root.render(
-      <Slots views={[]}>
-        <OverviewView tab={tab} shown />
-      </Slots>,
-    ),
-  );
+  const draw = (shown: boolean) =>
+    act(() =>
+      root.render(
+        <Slots views={[]}>
+          <OverviewMark tab={tab} />
+          <footer>
+            <OverviewStatus tab={tab} />
+          </footer>
+          <OverviewView tab={tab} shown={shown} />
+        </Slots>,
+      ),
+    );
+  draw(true);
   onTestFinished(() => {
     act(() => root.unmount());
     container.remove();
   });
-  return container;
+  return Object.assign(container, { shown: draw });
 }
 
 describe('as the tab opens', () => {
@@ -172,14 +210,68 @@ describe('as the tab opens', () => {
     const tab = tabOf();
     const view = render(tab);
     expect(view.textContent).toBe('Opening the pull request…');
+    // The mark's room is kept while Lo finds out.
+    expect(view.querySelector('.lo-ovmark--pending')).not.toBeNull();
     const checking = checkingFor(tab);
     act(() => states.set(tab.id, stateOf(tab)));
     checking.take(stateOf(tab));
     await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
     expect(openings.get(tab.id)).toMatchObject({ on: 'overview', late: false, seen: true });
+    expect(showDiff).not.toHaveBeenCalled();
     expect(view.querySelector('.lo-ov-byline')?.textContent).toContain(
       'ravi-k wrote this overview 2 days ago',
     );
+    expect(view.querySelector('.lo-ovmark--pending')).toBeNull();
+    expect(view.querySelector('.lo-ovmark[role="img"]')).not.toBeNull();
+  });
+
+  it('opens on the overview once a check main refused at first goes through, within the bound', async () => {
+    const tab = tabOf();
+    const checking = checkingFor(tab, TEXT, 1);
+    act(() => states.set(tab.id, stateOf(tab)));
+    const view = render(tab);
+    checking.take(stateOf(tab));
+    await until(() => checked.get(tab.id)?.kind === 'failed');
+    // Refused, it's not yet known whether it shows.
+    expect(view.textContent).toBe('Opening the pull request…');
+    // Main speaks again, as it does once it knows the tab's account.
+    act(() => states.set(tab.id, stateOf(tab, { saved: true })));
+    checking.take(stateOf(tab, { saved: true }));
+    await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
+    expect(openings.get(tab.id)).toMatchObject({ on: 'overview', late: false });
+    expect(showDiff).not.toHaveBeenCalled();
+  });
+
+  it('opens on the diff at the bound when a check keeps failing, says why, and only offers one that goes through later', async () => {
+    vi.useFakeTimers();
+    const tab = tabOf();
+    const commit = commitOf();
+    act(() => {
+      states.set(tab.id, stateOf(tab, { overview: commit }));
+      checked.set(tab.id, { kind: 'failed', key: 'k', commit, why: 'The port closed.' });
+    });
+    const view = render(tab);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_LIMIT - 1);
+    });
+    expect(view.textContent).toBe('Opening the pull request…');
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(openings.get(tab.id)).toMatchObject({ on: 'diff', late: true });
+    expect(showDiff).toHaveBeenCalledTimes(1);
+    expect(view.querySelector('[data-lo-overview="unchecked"] h2')?.textContent).toBe(
+      'Lo couldn’t check this overview',
+    );
+
+    // The diff is on screen, and the check goes through.
+    view.shown(false);
+    vi.useRealTimers();
+    checkingFor(tab).take(stateOf(tab, { overview: commit }));
+    await until(() => checked.get(tab.id)?.kind === 'checked');
+    expect(openings.get(tab.id)).toMatchObject({ on: 'diff' });
+    expect(showDiff).toHaveBeenCalledTimes(1);
+    expect(view.querySelector('footer')?.textContent).toContain('Overview ready');
   });
 
   it('opens on the diff at the bound when it still doesn’t know, and never comes back', () => {
@@ -195,7 +287,40 @@ describe('as the tab opens', () => {
       vi.advanceTimersByTime(1);
     });
     expect(openings.get(tab.id)).toMatchObject({ on: 'diff', late: true });
+    expect(showDiff).toHaveBeenCalledWith(tab.id);
     expect(view.querySelector('[data-lo-overview="reading"]')).not.toBeNull();
+  });
+
+  it('stays on the view the reader picks while it waits', () => {
+    vi.useFakeTimers();
+    const tab = tabOf();
+    const view = render(tab);
+    // The reader shows the diff, then the overview again.
+    view.shown(false);
+    view.shown(true);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_LIMIT);
+    });
+    expect(openings.get(tab.id)).toMatchObject({ on: 'diff', chose: true });
+    expect(showDiff).not.toHaveBeenCalled();
+    expect(view.querySelector('[data-lo-overview="reading"]')).not.toBeNull();
+  });
+
+  it('waits for what Settings says, and opens on the diff it says', () => {
+    vi.useFakeTimers();
+    settings.open = undefined;
+    const tab = tabOf();
+    act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
+    const view = render(tab);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_LIMIT - 1);
+    });
+    expect(openings.get(tab.id).on).toBeUndefined();
+    expect(view.textContent).toBe('Opening the pull request…');
+    settings.open = 'diff';
+    view.shown(true);
+    expect(openings.get(tab.id)).toMatchObject({ on: 'diff', late: false });
+    expect(showDiff).toHaveBeenCalledWith(tab.id);
   });
 
   it('opens on the diff at once when there’s no overview', () => {
@@ -343,6 +468,30 @@ describe('an overview on screen', () => {
     expect(view.querySelector('details')).toBe(fold);
     expect(fold.open).toBe(true);
     expect(document.activeElement).toBe(term);
+  });
+
+  it('draws the name a commit gives its author after Lo’s words, quoted, plain and on its own', async () => {
+    const tab = tabOf();
+    const name =
+      'rozed-bot wrote this overview just now · describes r2 57cc4a6 · From the base repository';
+    const commit = { ...commitOf(), byline: { login: null, name, at: Date.now() - 60_000 } };
+    const checking = checkingFor(tab);
+    act(() => states.set(tab.id, stateOf(tab, { overview: commit })));
+    const view = render(tab);
+    checking.take(stateOf(tab, { overview: commit }));
+    await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
+    const byline = view.querySelector<HTMLElement>('[data-lo-byline]');
+    if (!byline) throw new Error('no byline');
+    expect(
+      byline.textContent?.startsWith('Written a minute ago by the commit author “rozed-bot'),
+    ).toBe(true);
+    expect(byline.querySelector('[data-lo-commit-name]')?.textContent).toBe(`“${name}”`);
+    expect(byline.querySelector('.lo-ov-name__text')?.textContent).toBe(name);
+    // Not drawn as a login: no avatar of its initials, and nothing in bold.
+    expect(byline.querySelector('.lo-ov-byline__figure')).not.toBeNull();
+    expect(
+      [...byline.querySelectorAll('strong')].some((each) => each.textContent?.includes('rozed')),
+    ).toBe(false);
   });
 
   it('offers a newer overview, pushed while it’s on screen, in its byline', async () => {
