@@ -35,12 +35,12 @@ describe('InlineLayout', () => {
 
   test('places each file after the one before, a header and then its lines', () => {
     const layout = new InlineLayout([
-      { path: 'one', lines: twoLines, text: ['a', 'b'] },
-      { path: 'two' },
-      { path: 'three', lines: twoLines, text: ['a', 'b'] },
+      { lines: twoLines, text: ['a', 'b'] },
+      {},
+      { lines: twoLines, text: ['a', 'b'] },
     ]);
 
-    expect(layout.text).toBe('one\na\nb\ntwo\nthree\na\nb');
+    expect(layout.text).toBe(' \na\nb\n \n \na\nb');
     expect(layout.files).toEqual([
       { header: 1, count: 2 },
       { header: 4, count: 0 },
@@ -52,10 +52,7 @@ describe('InlineLayout', () => {
   });
 
   test('moves the files after one whose lines arrive', () => {
-    const layout = new InlineLayout([
-      { path: 'one' },
-      { path: 'two', lines: twoLines, text: ['a', 'b'] },
-    ]);
+    const layout = new InlineLayout([{}, { lines: twoLines, text: ['a', 'b'] }]);
 
     layout.setLines(0, twoLines);
 

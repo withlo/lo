@@ -7,7 +7,7 @@ import type { PullTab } from '../../tab/window/shared.ts';
 import type { DiffState, FileVersions, Source, Start } from '../contract.ts';
 import { draw, type Drawing, Pacer, samePlace } from './drawing.ts';
 import { Loader, type LoaderWork } from './loader.ts';
-import { drawnFor } from './tabs.ts';
+import { drawnFor, revealWhenDrawn } from './tabs.ts';
 
 /** What the stand-in view was told, in order, and the files it says are on screen. */
 const told: string[] = [];
@@ -445,6 +445,27 @@ describe('a file the reader acts on', () => {
 const at = (line: number, column?: number, side: 'old' | 'new' = 'new') => ({
   kind: 'line' as const,
   at: { file: 'd5', side, line, ...(column === undefined ? {} : { column }) },
+});
+
+describe('a file the tree shows', () => {
+  it('comes to the top of the screen, with the cursor on its header, wherever it is', async () => {
+    await drawTwo();
+    tops.set('d1', 300);
+    expect(drawnFor(TAB.id)?.toTop('d1')).toBe(true);
+    expect(moved).toEqual(['reveal d1', 'scroll d1 0']);
+  });
+
+  it('asked for before the diff is drawn, comes to the top as it’s drawn, where a place only shows', async () => {
+    revealWhenDrawn(TAB.id, { target: { kind: 'file', file: 'd1' }, focus: false, top: true });
+    await drawnGithub(work, ['src/a.ts', 'src/b.ts']);
+    expect(moved).toEqual(['reveal d1', 'scroll d1 0']);
+    drawing?.stop();
+    moved.length = 0;
+    // A place `⌃o` goes back to is shown as it was, not brought to the top.
+    revealWhenDrawn(TAB.id, { target: { kind: 'file', file: 'd1' }, focus: false });
+    await drawnGithub(work, ['src/a.ts', 'src/b.ts']);
+    expect(moved).toEqual(['reveal d1']);
+  });
 });
 
 describe('a place asked for as the diff comes back', () => {

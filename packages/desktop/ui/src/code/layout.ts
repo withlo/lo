@@ -7,9 +7,15 @@ import type { FileLines } from './rows.ts';
 
 export type Side = 'old' | 'new';
 
+/**
+ * What a header's line holds, which the block that replaces it covers: a space, which nothing
+ * draws. Text that showed through would be Vim's: its block cursor on a header draws the character
+ * under it, and its motions and searches reach the line's text.
+ */
+export const HEADER_TEXT = ' ';
+
 /** A file as the documents show it. */
 export interface LayoutFile {
-  path: string;
   /** Its lines on each side: none for a side it isn't on, or when it isn't shown as a diff. */
   old: readonly string[];
   new: readonly string[];
@@ -30,8 +36,7 @@ export class Layout {
     this.#headers = { old: new Int32Array(files.length), new: new Int32Array(files.length) };
     files.forEach((file, index) => {
       for (const side of ['old', 'new'] as const) {
-        // The header's line holds the path, so the block that replaces it covers some text.
-        parts[side].push(file.path || '/', ...file[side]);
+        parts[side].push(HEADER_TEXT, ...file[side]);
         this.#counts[side][index] = file[side].length;
       }
     });

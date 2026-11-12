@@ -132,20 +132,38 @@ export function keepPlaces(open: ReadonlySet<string>): void {
 }
 
 /**
- * Shows the files the tree asks for: a changed one in the diff, its header brought on screen with
- * focus staying in the tree, and the diff brought back to show it; any one whole.
+ * Whether the files tab `tab`'s diff has on their way, to be drawn anew, hold the file `id`, though
+ * the view drawn doesn't.
+ */
+function coming(tab: string, id: string): boolean {
+  const { ready } = loaderOf(tab).snapshot();
+  return ready?.entries.some((entry) => entry.id === id) ?? false;
+}
+
+/**
+ * Shows the files the tree asks for: a changed one in the diff, its header at the top of the
+ * screen with focus staying in the tree, and the diff brought back to show it; any one whole.
+ * Either is a jump, which `⌃o` comes back from, whether a key or a click asked for it.
  */
 export function showTreeFiles(): void {
   onShowFile('diff', (tab, key) => {
-    const id = loaderOf(tab).ids.find(key);
-    const target = id === undefined ? undefined : ({ kind: 'file', file: id } as const);
+    // Its id, though the diff hasn't had its files yet, as before it's first shown: the files take
+    // the same one as they come.
+    const target = { kind: 'file', file: loaderOf(tab).ids.of(key) } as const;
     const drawn = drawnFor(tab);
     if (drawn) {
-      if (target) drawn.view.reveal(target);
+      if (drawn.order.includes(target.file)) {
+        leave();
+        drawn.toTop(target.file);
+      } else if (coming(tab, target.file)) {
+        // A view of other files is about to be drawn, as the local copy's are: it shows it.
+        leave();
+        revealWhenDrawn(tab, { target, focus: false, top: true });
+      }
       return;
     }
     leave();
-    if (target) revealWhenDrawn(tab, { target, focus: false });
+    revealWhenDrawn(tab, { target, focus: false, top: true });
     showMiddle(tab, DIFF_VIEW);
   });
   onShowFile('whole', (tab, key, path) =>

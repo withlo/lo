@@ -22,7 +22,8 @@
   min-width: 0;
 }
 .lo-diffview > .lo-diffnote,
-.lo-diffview > .lo-diffslack {
+.lo-diffview > .lo-diffslack,
+.lo-diffview > .lo-diffroom {
   flex: 1 0 100%;
 }
 .lo-diffview > .cm-editor + .cm-editor {

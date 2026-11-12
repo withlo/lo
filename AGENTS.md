@@ -477,6 +477,10 @@ Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `c
   the middle view calls with the file on screen, for the tree to mark and scroll to; and
   `onShowFile`, through which the diff shows a changed file the tree asks for, and the whole-file
   view any file. Until a view has asked, `⏎` and "Whole file" say there's nowhere to show the file.
+- A click on a row, or `⏎` on it, makes it the row the keyboard is on, in the tree. On a changed
+  file, the diff puts the file's header at the top of the screen, on screen or not, however the file
+  shows and wherever the diff is in loading it: a jump, which `⌃o` comes back from. Near the end of
+  the diff it makes room after the last file to get there, which goes once it's off screen.
 
 ### A pull request's diff
 

@@ -395,6 +395,17 @@ export function draw(options: DrawOptions): Drawing {
 
   /** What the view registers while it's on screen, to take back as it's hidden. */
   let showing: (() => void)[] | undefined;
+  /**
+   * Puts file `id`'s header at the top of the screen with the cursor on it, on the side the cursor
+   * goes to: the reader's jump, so it lands there however near the end it is. Says whether the view
+   * has the file.
+   */
+  const toTop = (id: string): boolean => {
+    if (!view.reveal({ kind: 'file', file: id })) return false;
+    const cursor = spotOf(view.keyState().target);
+    const side = cursor?.kind === 'header' ? cursor.side : (cursor?.at.side ?? 'new');
+    return view.scrollTo({ at: { kind: 'header', file: id, side }, offset: 0 });
+  };
   const view = createDiffView(
     parent,
     { files, layout: options.layout, vimKeys: keys.vimKeys(), nonce: options.nonce },
@@ -506,6 +517,7 @@ export function draw(options: DrawOptions): Drawing {
           pending.delete(id);
           catchUp(id);
         },
+        toTop,
         fileAt(target) {
           const spot = spotOf(target);
           const top = spot && view.probe.spotTop(spot);
@@ -568,9 +580,11 @@ export function draw(options: DrawOptions): Drawing {
     followFile(tab.id, loader.ids.keyOf(top.kind === 'line' ? top.at.file : top.file));
     // A place asked for while another middle view was on screen, as `⌃o` back from a whole file
     // asks for the place it left. The cursor already there stays as it is: revealing it again
-    // would scroll it to the screen's edge, moving what's on screen.
+    // would scroll it to the screen's edge, moving what's on screen. A file the tree asked for
+    // comes to the top, wherever the cursor is.
     const waiting = takeReveal(tab.id);
-    if (waiting && !samePlace(waiting.target, view.keyState().target)) {
+    if (waiting?.top && waiting.target.kind === 'file') toTop(waiting.target.file);
+    else if (waiting && !samePlace(waiting.target, view.keyState().target)) {
       view.reveal(waiting.target);
     }
     // Focus that's nowhere in particular, or left behind in a middle view now hidden, comes to the
@@ -601,10 +615,7 @@ export function draw(options: DrawOptions): Drawing {
   // another comparison, the cursor's file at the top, if this one has it.
   const { before, onTop } = options;
   if (onTop !== undefined && files.some((file) => file.id === onTop)) {
-    view.reveal({ kind: 'file', file: onTop });
-    const cursor = spotOf(view.keyState().target);
-    const side = cursor?.kind === 'header' ? cursor.side : (cursor?.at.side ?? 'new');
-    view.scrollTo({ at: { kind: 'header', file: onTop, side }, offset: 0 });
+    toTop(onTop);
   } else if (before) {
     view.reveal(before.cursor);
     // The cursor's line where it was on the page, as when the reader changes the files' order; or

@@ -4,7 +4,7 @@
 
 import type { FileDiff } from '@lo/diff';
 
-import { lastAtOrBefore } from './layout.ts';
+import { HEADER_TEXT, lastAtOrBefore } from './layout.ts';
 
 /** A file's inline lines, each with its line on each side. */
 export interface InlineLines {
@@ -73,14 +73,13 @@ export class InlineLayout {
 
   constructor(
     files: readonly {
-      path: string;
       lines?: InlineLines | undefined;
       text?: readonly string[] | undefined;
     }[],
   ) {
     this.lines = files.map((file) => file.lines);
     this.#headers = new Int32Array(files.length);
-    this.text = files.flatMap((file) => [file.path || '/', ...(file.text ?? [])]).join('\n');
+    this.text = files.flatMap((file) => [HEADER_TEXT, ...(file.text ?? [])]).join('\n');
     this.#place(0);
   }
 
