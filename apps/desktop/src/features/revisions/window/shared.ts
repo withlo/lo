@@ -1,9 +1,11 @@
 // What the revisions feature shares with other features' window code: each pull request's tab's
 // viewed marks, as they show, and `e`, which marks a changed file viewed or clears its mark. The
-// tree and the diff draw the marks, and each moves on in its own way after `e`.
+// tree and the diff draw the marks, and each moves on in its own way after `e`. Another feature
+// marks a revision for the picker to show, as the overview marks the one it describes.
 
 import { useTabState } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
+import { marked } from './store.ts';
 import {
   markable,
   markIn,
@@ -58,4 +60,14 @@ export function toggleViewed(
   file: { readonly path: TreePath; readonly previous: TreePath | null },
 ): Toggled {
   return toggle(tab, file);
+}
+
+/**
+ * Marks the commit `head` in tab `tab`'s revision picker as `kind`, or clears the mark for none:
+ * `overview`, the commit the overview on screen describes. The picker marks the revision whose
+ * head it is, and names any other commit by its short id.
+ */
+export function markRevision(tab: string, kind: 'overview', head: string | undefined): void {
+  if (marked.get(tab)[kind] === head) return;
+  marked.update(tab, (current) => ({ ...current, [kind]: head }));
 }

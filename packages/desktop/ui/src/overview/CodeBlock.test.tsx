@@ -12,7 +12,16 @@ import { parseArtifact, type CodeRange } from '@lo/artifact';
 
 import { cleanUp, click, render, rerender } from '../../test/dom.ts';
 import { FakeResizeObserver, resize } from '../../test/figures.ts';
-import { CodeBlock, CodeBody, CodeNote, Held, OverviewDocument, Walkthrough } from './index.ts';
+import {
+  CodeBlock,
+  CodeBody,
+  CodeFlag,
+  CodeNote,
+  Held,
+  OutOfDate,
+  OverviewDocument,
+  Walkthrough,
+} from './index.ts';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -49,6 +58,29 @@ describe('a code block', () => {
       space.querySelectorAll('.lo-excerpt .cm-editor .cm-scroller .cm-content > .cm-line'),
     ).toHaveLength(33);
     expect(space.querySelector('[aria-hidden="true"]')).not.toBeNull();
+  });
+
+  it('flags lines that changed since under its head, over its code, with the way to compare', () => {
+    const page = render(
+      <CodeBlock
+        target={TARGET}
+        flag={<CodeFlag action={<button>Compare r3 → r5</button>}>Line 12 changed in r5.</CodeFlag>}
+      >
+        <CodeBody rows={4} />
+      </CodeBlock>,
+    );
+    const block = page.querySelector('.lo-codeblock')!;
+    expect([...block.children].map((child) => child.className)).toEqual([
+      'lo-codeblock__head',
+      'lo-codeblock__flag',
+      'lo-codeblock__body',
+    ]);
+    const flag = block.querySelector('.lo-codeblock__flag')!;
+    expect(flag.getAttribute('role')).toBe('note');
+    expect(flag.querySelector('.lo-codeblock__flagtext')?.textContent).toBe(
+      'Line 12 changed in r5.',
+    );
+    expect(flag.querySelector('button')?.textContent).toBe('Compare r3 → r5');
   });
 
   it('keeps what the reader can do in its head, whatever its body holds', () => {
@@ -245,5 +277,39 @@ describe('a held block', () => {
     expect(box.className).toBe('lo-held');
     expect(box.style.height).toBe('300px');
     expect(page.querySelector('.lo-held__more')).toBeNull();
+  });
+});
+
+describe('the banner over an overview written for an older push', () => {
+  it('has its title, the room for what changed since and its actions from the start', () => {
+    const page = render(
+      <OutOfDate
+        title="Written for r3. The PR is at r5."
+        detail=""
+        actions={<button>Compare r3 → r5</button>}
+      />,
+    );
+    const banner = page.querySelector('.lo-ov-stales > .lo-ov-stale')!;
+    expect(banner.getAttribute('role')).toBe('status');
+    expect(banner.querySelector('.lo-ov-stale__title')?.textContent).toBe(
+      'Written for r3. The PR is at r5.',
+    );
+    // What changed since has its room before it comes, and the same element once it has.
+    const sub = banner.querySelector('.lo-ov-stale__sub')!;
+    expect(sub.textContent).toBe('');
+    rerender(
+      page,
+      <OutOfDate
+        title="Written for r3. The PR is at r5."
+        detail="2 pushes since, touching 5 files."
+        actions={<button>Compare r3 → r5</button>}
+      />,
+    );
+    expect(page.querySelector('.lo-ov-stale__sub')).toBe(sub);
+    expect(sub.textContent).toBe('2 pushes since, touching 5 files.');
+    expect(sub.getAttribute('title')).toBe('2 pushes since, touching 5 files.');
+    expect(banner.querySelector('.lo-ov-stale__actions button')?.textContent).toBe(
+      'Compare r3 → r5',
+    );
   });
 });

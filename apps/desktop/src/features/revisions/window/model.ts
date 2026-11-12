@@ -81,8 +81,20 @@ function metaOf(revision: RevisionRow, now: number): string {
     .join(' · ');
 }
 
-/** The picker's rows: the revisions, newest first, then the base. */
-export function rowsOf(view: ComparisonView, now: number): RevisionPickerRow[] {
+/** What other features mark on a tab's revisions: the commit the overview describes. */
+export interface Marked {
+  readonly overview?: string | undefined;
+}
+
+/**
+ * The picker's rows: the revisions, newest first, then the base, each with its markers, and the
+ * overview's on the revision whose head it describes.
+ */
+export function rowsOf(
+  view: ComparisonView,
+  now: number,
+  marked: Marked = {},
+): RevisionPickerRow[] {
   const newest = view.revisions.at(-1)?.head;
   const rows = view.revisions.map((revision, index): RevisionPickerRow => {
     const tags: RevisionTag[] = [];
@@ -91,6 +103,7 @@ export function rowsOf(view: ComparisonView, now: number): RevisionPickerRow[] {
     if (revision.head === view.markers.lastSeen) {
       tags.push({ label: 'Last seen here', kind: 'seen' });
     }
+    if (revision.head === marked.overview) tags.push({ label: 'Overview', kind: 'overview' });
     return {
       key: revision.head,
       label: revision.number === null ? '' : `r${revision.number}`,
@@ -112,6 +125,17 @@ export function rowsOf(view: ComparisonView, now: number): RevisionPickerRow[] {
     base: true,
   };
   return [...rows.toReversed(), base];
+}
+
+/**
+ * What the picker says of the commit the overview describes when it's no revision's head, as when
+ * it was written for a commit inside a push: its short id. None while the revisions are read.
+ */
+export function overviewNote(view: ComparisonView, marked: Marked): string | undefined {
+  const { overview } = marked;
+  if (overview === undefined || view.status !== 'ready') return undefined;
+  if (view.revisions.some((revision) => revision.head === overview)) return undefined;
+  return `The overview describes ${short(overview)}, which isn’t one of these revisions.`;
 }
 
 /** The ends of `compared`, as rows' keys. */

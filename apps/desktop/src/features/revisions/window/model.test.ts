@@ -8,6 +8,7 @@ import {
   endsOf,
   moved,
   noteOf,
+  overviewNote,
   rowsOf,
   shortcutRows,
   shortcutsOf,
@@ -95,6 +96,31 @@ describe('the revision picker', () => {
       ['', 'Reviewed, never pushed'],
       ['base', 'main'],
     ]);
+  });
+
+  it('marks the revision the overview describes', () => {
+    const rows = rowsOf(view(), NOW, { overview: head('3') });
+    expect(rows[2]?.tags).toEqual([{ label: 'Overview', kind: 'overview' }]);
+    expect(rows.filter((row) => row.tags?.some((tag) => tag.kind === 'overview'))).toHaveLength(1);
+    // Beside the other markers on the same revision.
+    expect(rowsOf(view(), NOW, { overview: head('5') })[0]?.tags).toEqual([
+      { label: 'Newest', kind: 'newest' },
+      { label: 'Overview', kind: 'overview' },
+    ]);
+    expect(overviewNote(view(), { overview: head('3') })).toBeUndefined();
+  });
+
+  it('names an overview’s commit that’s no revision’s head by its short id', () => {
+    const marks = { overview: head('c') };
+    expect(
+      rowsOf(view(), NOW, marks).some((row) => row.tags?.some((tag) => tag.kind === 'overview')),
+    ).toBe(false);
+    expect(overviewNote(view(), marks)).toBe(
+      'The overview describes ccccccc, which isn’t one of these revisions.',
+    );
+    // Not before the revisions are read, nor with no overview.
+    expect(overviewNote(view({ status: 'loading', revisions: [] }), marks)).toBeUndefined();
+    expect(overviewNote(view(), {})).toBeUndefined();
   });
 
   it('moves between rows, stopping at either end', () => {

@@ -103,6 +103,11 @@
   background: transparent;
   box-shadow: inset 0 0 0 1.25px var(--lo-fg-dim);
 }
+/* On the revision the overview describes, in the revision picker. */
+.lo-ovmark--tag {
+  width: 6px;
+  height: 6px;
+}
 /* While Lo finds out: the mark's room, empty. */
 .lo-ovmark--pending {
   visibility: hidden;
@@ -339,6 +344,55 @@
 .lo-codeblock--illustration .lo-codeblock__head strong {
   color: var(--lo-fg);
   font-weight: 600;
+}
+
+/*
+ * The banner over an overview written for an older push is as tall from its first frame as it
+ * stays, whatever it says of what changed since, at any width: its title is one line, what changed
+ * since is two, kept free until it comes, and where the article is narrow its actions take a row
+ * of their own.
+ */
+.lo-ov .lo-ov-stales {
+  container: lo-ov-stale / inline-size;
+  margin-top: 16px;
+  max-width: var(--lo-read-measure);
+}
+.lo-ov .lo-ov-stale {
+  margin-top: 0;
+}
+.lo-ov-stale__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lo-ov-stale__sub {
+  display: -webkit-box;
+  min-width: 0;
+  height: 2lh;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+@container lo-ov-stale (width < 560px) {
+  .lo-ov .lo-ov-stale {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .lo-ov .lo-ov-stale__actions {
+    grid-column: 2;
+    grid-row: 3;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+}
+
+/* A code block's flag: what changed, then the way to the comparison, at its end. */
+.lo-codeblock__flagtext {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.lo-codeblock__flag > button {
+  margin-left: auto;
 }
 
 /*

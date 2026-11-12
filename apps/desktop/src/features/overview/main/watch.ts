@@ -33,6 +33,7 @@ import { codeAccess, CodeReading } from './code.ts';
 import { fetchBlob, isGone, readOverview, sizeOnly, type Github } from './fetch.ts';
 import { problemOf, retryWait } from './problems.ts';
 import type { SavedRefs } from './saved.ts';
+import { SinceReads } from './since.ts';
 import { BlockTexts } from './texts.ts';
 
 /** How often the ref is read while the tab is on screen and Lo is in front, in milliseconds. */
@@ -117,12 +118,15 @@ export class OverviewTab {
   readonly #codeRead = new CodeReading();
   /** The files the overview's blocks show, read until the tab closes. */
   readonly blocks: BlockTexts;
+  /** What changed since the overview's commit, read until the tab closes. */
+  readonly since: SinceReads;
 
   constructor(options: OverviewTabOptions) {
     this.#options = options;
     this.id = options.id;
     this.#now = options.now ?? Date.now;
     this.blocks = new BlockTexts({ log: options.log });
+    this.since = new SinceReads({ log: options.log });
   }
 
   /**
@@ -281,6 +285,7 @@ export class OverviewTab {
     this.#stopTimer();
     this.#codeRead.stop();
     this.blocks.stop();
+    this.since.stop();
   }
 
   /**

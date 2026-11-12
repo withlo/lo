@@ -8,8 +8,15 @@ import { useEffect, useState } from 'react';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { closePicker, compareEnds, compareShortcut, openPicker, setEnd } from './actions.ts';
-import { comparisonLabel, reasonOf, rowsOf, shortcutRows, comparedOf } from './model.ts';
-import { catchUp, pickers, views } from './store.ts';
+import {
+  comparisonLabel,
+  overviewNote,
+  reasonOf,
+  rowsOf,
+  shortcutRows,
+  comparedOf,
+} from './model.ts';
+import { catchUp, marked, pickers, views } from './store.ts';
 
 /** The first key of command `id`, as this system shows it. */
 function keyOf(id: string): string[] | undefined {
@@ -17,10 +24,18 @@ function keyOf(id: string): string[] | undefined {
   return first && keyLabels(first, registry().system);
 }
 
+/** The lines under the picker's rows, each its own, or none. */
+function notesOf(lines: readonly (string | undefined)[]) {
+  const said = lines.filter((line) => line !== undefined);
+  if (said.length === 0) return undefined;
+  return said.map((line) => <div key={line}>{line}</div>);
+}
+
 export function Revisions({ tab }: { tab: PullTab }) {
   useKeys();
   const view = useTabState(views, tab.id);
   const picker = useTabState(pickers, tab.id);
+  const marks = useTabState(marked, tab.id);
   const pull = usePull(tab.id);
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
   useEffect(() => {
@@ -33,7 +48,7 @@ export function Revisions({ tab }: { tab: PullTab }) {
   if (pull?.acting?.kind !== 'account' || !view || view.status === 'signIn') return null;
   const compared = view.comparison ?? view.pending;
   const reason = compared ? reasonOf(view, compared) : undefined;
-  const rows = picker.open ? rowsOf(view, Date.now()) : [];
+  const rows = picker.open ? rowsOf(view, Date.now(), marks) : [];
   const ends = picker.open ? picker.ends : undefined;
   const asked = ends && comparedOf(ends);
   return (
@@ -91,13 +106,14 @@ export function Revisions({ tab }: { tab: PullTab }) {
         }}
         moveKeys={keyOf('revisions.down')}
         endKeys={keyOf('revisions.end')}
-        note={
+        note={notesOf([
           view.waitingFor === 'local'
             ? 'Revisions are compared once the local copy is ready.'
             : view.waitingFor === 'git'
               ? 'Comparing revisions needs git, which Lo can’t find.'
-              : undefined
-        }
+              : undefined,
+          overviewNote(view, marks),
+        ])}
       />
     </>
   );

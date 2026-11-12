@@ -8,10 +8,10 @@ import { Key } from './Key.tsx';
 import { useReturnFocus } from './returnFocus.ts';
 import { Tag } from './Tag.tsx';
 
-/** A marker on a revision: your last review, last seen here, or the newest. */
+/** A marker on a revision: your last review, last seen here, the newest, or the overview's. */
 export interface RevisionTag {
   readonly label: string;
-  readonly kind: 'review' | 'seen' | 'newest';
+  readonly kind: 'review' | 'seen' | 'newest' | 'overview';
 }
 
 /** One row of the picker: a revision, or the base, last. */
@@ -127,6 +127,7 @@ function RevisionMark({ tag }: { tag: RevisionTag }) {
   return (
     <Tag tone={tag.kind === 'newest' ? 'info' : 'neutral'}>
       {tag.kind === 'seen' && <SeenIcon />}
+      {tag.kind === 'overview' && <span className="lo-ovmark lo-ovmark--tag" aria-hidden="true" />}
       {tag.label}
     </Tag>
   );

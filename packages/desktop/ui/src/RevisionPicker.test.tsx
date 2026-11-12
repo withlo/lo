@@ -45,7 +45,13 @@ const rows: RevisionPickerRow[] = [
     meta: 'ravi-k · 6 hours ago · d52a0f8',
     tags: [{ label: 'Last seen here', kind: 'seen' }],
   },
-  { key: 'r3', label: 'r3', line: 'Pushed', meta: 'ravi-k · 1 day ago · a91c4e2' },
+  {
+    key: 'r3',
+    label: 'r3',
+    line: 'Pushed',
+    meta: 'ravi-k · 1 day ago · a91c4e2',
+    tags: [{ label: 'Overview', kind: 'overview' }],
+  },
   {
     key: 'r1',
     label: 'r1',
@@ -116,6 +122,10 @@ describe('RevisionPicker', () => {
     expect(options[3]?.getAttribute('aria-disabled')).toBe('true');
     expect(page.textContent).toContain('Last seen here');
     expect(page.textContent).toContain('Revisions are compared once the local copy is ready.');
+    // The revision the overview describes, with the overview's mark.
+    expect(options[2]?.textContent).toContain('Overview');
+    expect(options[2]?.querySelector('.lo-ovmark')?.getAttribute('aria-hidden')).toBe('true');
+    expect(page.querySelectorAll('.lo-ovmark')).toHaveLength(1);
   });
 
   it('says what a click asks for: an end, a shortcut, or to compare', () => {
