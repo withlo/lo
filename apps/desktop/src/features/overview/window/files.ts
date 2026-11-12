@@ -49,10 +49,17 @@ export const IDLE_LIMIT = LIMITS.file;
  * The most text a file may have, both sides, to be diffed here as it's read, a moment's work,
  * rather than only by the diff's background job, which takes a few hundred milliseconds to start.
  */
-export const QUICK_LIMIT = 64 * 1024;
+export const QUICK_LIMIT = 16 * 1024;
 
-/** How long a diff here may take before it settles for a coarser one, in milliseconds. */
-const QUICK_BUDGET = 100;
+/**
+ * How long the diffs here may take in one frame, all told, in milliseconds: half of it, the rest
+ * left to draw. A file whose diff doesn't finish in what's left waits for the job's.
+ */
+const QUICK_BUDGET = 8;
+
+/** How long the diffs here have taken in this frame, and whether its end is watched for. */
+let spent = 0;
+let framing = false;
 
 interface Entry {
   readonly key: string;
@@ -107,15 +114,29 @@ async function read(
   return { code: { kind: 'code' as const, lines, diff, highlighted }, size, keep: true };
 }
 
-/** `texts` diffed here, as the diff's job diffs them, without highlighting; none if it can't be. */
+/**
+ * `texts` diffed here, as the diff's job diffs them, without highlighting; none if it can't be in
+ * what's left of this frame's share, as a coarser diff than the job's would be.
+ */
 function quickDiff(texts: { old: string | null; new: string | null }) {
+  const budget = QUICK_BUDGET - spent;
+  // A budget of 0 is none at all to the diff.
+  if (budget < 1) return undefined;
+  const start = performance.now();
   try {
-    const diff = diffText(texts.old ?? undefined, texts.new ?? undefined, {
-      budget: QUICK_BUDGET,
-    });
-    return { ok: true as const, diff, tokens: {} };
+    const diff = diffText(texts.old ?? undefined, texts.new ?? undefined, { budget });
+    return diff.approximate ? undefined : { ok: true as const, diff, tokens: {} };
   } catch {
     return undefined;
+  } finally {
+    spent += performance.now() - start;
+    if (!framing) {
+      framing = true;
+      requestAnimationFrame(() => {
+        spent = 0;
+        framing = false;
+      });
+    }
   }
 }
 

@@ -2,8 +2,8 @@
 // The files an overview's blocks show, held: read once for every block that holds one, kept a
 // little while once none does, up to a bound on their text, and let go oldest first; a failed read
 // is never kept, and one still being read when the last block lets it go is let go too. A small
-// file is diffed at once, the diff's job started only for its highlighting; a larger one waits for
-// the job's diff.
+// file is diffed at once, the diff's job started only for its highlighting; a larger one, or one
+// that takes longer than a frame's share to diff, waits for the job's diff.
 
 import { diffText } from '@lo/diff';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -151,6 +151,37 @@ describe('holdFile', () => {
     answer();
     await hold.code;
     expect(code).toMatchObject({ kind: 'code', diff: diffText('', large) });
+    hold.release();
+  });
+
+  it('waits for the job’s diff of a small file it can’t diff in a frame’s share', async () => {
+    const tab = tabOf();
+    // Every line differs, in words both sides share: about the most work a file this size can be.
+    const words = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'return', '=', ';'];
+    const sideOf = (seed: number) => {
+      let x = seed;
+      const word = () =>
+        words[Math.floor(((x = (x * 1103515245 + 12345) % 2 ** 31) / 2 ** 31) * 9)];
+      return Array.from({ length: 200 }, () => Array.from({ length: 6 }, word).join(' ')).join(
+        '\n',
+      );
+    };
+    const [old, now] = [sideOf(1), sideOf(2)];
+    expect(old.length + now.length).toBeLessThan(QUICK_LIMIT);
+    const answer = heldJob(old, now);
+    texts.set('busy.ts', {
+      kind: 'text',
+      text: now,
+      base: { kind: 'changed', path: 'busy.ts', text: old },
+    });
+    const hold = holdFile(tab, COMMIT, 'busy.ts');
+    let code: unknown;
+    void hold.code.then((found) => (code = found));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(code).toBeUndefined();
+    answer();
+    await hold.code;
+    expect(code).toMatchObject({ kind: 'code', diff: { approximate: false } });
     hold.release();
   });
 
