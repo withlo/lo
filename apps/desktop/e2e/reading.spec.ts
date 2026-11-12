@@ -371,8 +371,11 @@ const clipboard = (app: ElectronApplication) =>
  * reader gave no input: from the first frame the overview is drawn, as its figures fill in. A
  * frame within half a second of the reader's wheel, keys, pointer or a change in the window's
  * size, as the scroll it asked for runs its course, or with another overview put on screen, takes
- * where each block is then as its place. Each counts as moved once it's been away from its place
- * for two frames running, so a change made up for before it's painted doesn't.
+ * where each block is then as its place: where it was two frames running, unless the overview is
+ * new. Each counts as moved once it's been away from its place for two frames running. A frame
+ * reads where blocks are before a change is made up for, which is done before it's painted, so a
+ * place it's away from only for that frame isn't taken, and a move it's back from by the next
+ * frame doesn't count.
  */
 async function watchStill(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -387,6 +390,8 @@ async function watchStill(page: Page): Promise<void> {
     }
     let article: Element | null = null;
     let watched: { block: Element; y: number; away: number }[] = [];
+    /** Where the blocks on screen were the frame before, while places are being taken. */
+    let before: { block: Element; y: number }[] = [];
     /** The article's blocks on screen now, where they are. */
     const onScreen = () => {
       const scroller = article?.closest('.lo-ov');
@@ -400,9 +405,19 @@ async function watchStill(page: Page): Promise<void> {
     const tick = () => {
       const now = document.querySelector('[data-lo-overview="shown"] .lo-ov__article');
       if (now !== article || performance.now() - input < 500) {
+        const fresh = now !== article;
         article = now;
-        watched = onScreen();
+        const seen = onScreen();
+        const held =
+          seen.length === before.length &&
+          seen.every(
+            (each, at) =>
+              each.block === before[at]?.block && Math.abs(each.y - before[at].y) <= 0.5,
+          );
+        if (fresh || held) watched = seen;
+        before = seen;
       } else {
+        before = [];
         for (const each of watched) {
           const y = each.block.isConnected ? each.block.getBoundingClientRect().top : undefined;
           const off = y === undefined || Math.abs(y - each.y) > 0.5;
