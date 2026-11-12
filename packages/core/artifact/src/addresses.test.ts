@@ -1,8 +1,17 @@
 import { describe, expect, test } from 'vitest';
 
-import { collect, found, overview, PREAMBLE_LINES, timed } from '../test/support.ts';
+import { overviewFiles, repository } from '../test/readers.ts';
+import {
+  collect,
+  COMMIT,
+  found,
+  overview,
+  PREAMBLE_LINES,
+  textOf,
+  timed,
+} from '../test/support.ts';
 import { problems } from '../test/walker.ts';
-import { LIMITS, parseArtifact, type ParsedArtifact } from './index.ts';
+import { checkArtifact, LIMITS, parseArtifact, type ParsedArtifact } from './index.ts';
 
 const LINE = PREAMBLE_LINES + 1;
 
@@ -70,13 +79,28 @@ describe('a link whose address Markdown can’t read', () => {
       '[the limiter](code:src/limiter(1.ts)',
       "[the limiter](code:src/limiter(1.ts)… isn't a link, Markdown can't read its address, so it shows as text. Put the address in angle brackets, such as [the limiter](<code:docs/read me.md>).",
     ],
-  ])('%s is an error, at its line, with how to write it', (_name, link, message) => {
+  ])('%s is a warning, at its line, with how to write it', (_name, link, message) => {
     const parsed = parseArtifact(overview(`A ${link}\n`));
     expect(found(parsed)).toEqual([`link-address@${LINE}`]);
     expect(messages(parsed)).toEqual([message]);
-    expect(parsed.findings[0]?.severity).toBe('error');
+    expect(parsed.findings[0]?.severity).toBe('warning');
     expect(collect(parsed, 'link')).toEqual([]);
     expect(problems(parsed.tree)).toEqual([]);
+  });
+
+  test('the overview is still shown, with the link as its text', async () => {
+    const text = overview('A [wake timer](term:wake timer) and [the doc](#how it works).\n');
+    const parsed = parseArtifact(text);
+    expect(parsed.findings.map(({ severity }) => severity)).toEqual(['warning', 'warning']);
+    expect(textOf(parsed.tree)).toContain(
+      'A [wake timer](term:wake timer) and [the doc](#how it works).',
+    );
+    const { readCode } = repository(COMMIT, {});
+    const checked = await checkArtifact(parsed, overviewFiles({ 'artifact.md': text }), readCode, {
+      pr: 4797,
+    });
+    expect(checked.outcome.kind).toBe('shown');
+    expect(checked.findings.map(({ severity }) => severity)).toEqual(['warning', 'warning']);
   });
 
   test('the fix is a link Markdown reads, to the target the author meant', () => {
@@ -167,7 +191,8 @@ describe('a link whose address Markdown can’t read', () => {
     const parsed = parseArtifact(
       overview(':::figure figures/a.svg\nA box.\n\n- [box](code:src/a b.ts)\n:::\n'),
     );
-    expect(found(parsed)).toEqual([`link-address@${LINE + 3}`, `figure-part@${LINE + 3}`]);
+    // An error comes before a warning on the same line.
+    expect(found(parsed)).toEqual([`figure-part@${LINE + 3}`, `link-address@${LINE + 3}`]);
   });
 
   test('a path that a fuzzy link would take for a web address is read whole', () => {

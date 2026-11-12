@@ -179,7 +179,7 @@ describe('odd text', () => {
           ':::',
           ':::code \x1b]0;pwned\x07#L1',
           ':::',
-          // Control characters end a link's address, unless it's inside < and >: [c] is no link.
+          // Control characters end a link's address, unless it's inside < and >.
           '[a](<code:\u200B/\x1b[2J>)',
           '[b](<term:\u202E\x07>)',
           '[c](code:\x1b[2J)',
@@ -187,13 +187,7 @@ describe('odd text', () => {
         ].join('\n'),
       ),
     );
-    expect(errors(made)).toEqual([
-      'block-unknown',
-      'target-path',
-      'target-path',
-      'target-term',
-      'link-address',
-    ]);
+    expect(errors(made)).toEqual(['block-unknown', 'target-path', 'target-path', 'target-term']);
   });
 
   test('a separator, a combining mark and a byte-order mark in the middle are text', () => {

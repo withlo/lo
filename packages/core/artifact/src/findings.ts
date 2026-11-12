@@ -57,7 +57,6 @@ const SEVERITIES = {
   'target-lines': 'error',
   'target-term': 'error',
   'target-count': 'error',
-  'link-address': 'error',
   'term-undefined': 'error',
   'term-twice': 'error',
   'term-unused': 'warning',
@@ -67,6 +66,7 @@ const SEVERITIES = {
   'raw-html': 'warning',
   'outside-image': 'warning',
   'dead-link': 'warning',
+  'link-address': 'warning',
   // What the overview's commit holds.
   'artifact-missing': 'error',
   'artifact-not-file': 'error',

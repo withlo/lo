@@ -90,7 +90,7 @@ describe('check', () => {
     );
   });
 
-  test('reports a link Markdown can’t read as an error at its line, with how to write it', () => {
+  test('warns of a link Markdown can’t read, at its line, with how to write it', () => {
     const dir = folder('unread-links', {
       'artifact.md': overview(
         commit,
@@ -112,15 +112,16 @@ describe('check', () => {
       ),
     });
     const ran = runChecker(['check', dir], repo);
-    expect(ran.status).toBe(1);
+    // Lo shows the overview, with the link as text, so it passes.
+    expect(ran.status).toBe(0);
     expect(ran.stdout.split('\n')).toEqual([
-      "artifact.md:11: error: [wake timer](term:wake timer) isn't a link, a space ends a link's address, so it shows as text. Put the address in angle brackets: [wake timer](<term:wake timer>). [link-address]",
-      "artifact.md:11: error: [the file](code:src/a b.ts#L1) isn't a link, a space ends a link's address, so it shows as text. Put the address in angle brackets: [the file](<code:src/a b.ts#L1>). [link-address]",
-      "artifact.md:13: error: [wrapped](term:wake timer) isn't a link, a line break ends a link's address, so it shows as text. Write the address on one line, in angle brackets: [wrapped](<term:wake timer>). [link-address]",
-      "artifact.md:14: error: [above](#how it works) isn't a link, a space ends a link's address, so it shows as text. A heading's anchor is its text in lower case, with - for spaces: [above](#how-it-works). [link-address]",
+      "artifact.md:11: warning: [wake timer](term:wake timer) isn't a link, a space ends a link's address, so it shows as text. Put the address in angle brackets: [wake timer](<term:wake timer>). [link-address]",
+      "artifact.md:11: warning: [the file](code:src/a b.ts#L1) isn't a link, a space ends a link's address, so it shows as text. Put the address in angle brackets: [the file](<code:src/a b.ts#L1>). [link-address]",
+      "artifact.md:13: warning: [wrapped](term:wake timer) isn't a link, a line break ends a link's address, so it shows as text. Write the address on one line, in angle brackets: [wrapped](<term:wake timer>). [link-address]",
+      "artifact.md:14: warning: [above](#how it works) isn't a link, a space ends a link's address, so it shows as text. A heading's anchor is its text in lower case, with - for spaces: [above](#how-it-works). [link-address]",
       'artifact.md:22: warning: Nothing links to "Wake timer". Link its uses with term:, or leave it out. [term-unused]',
       '',
-      '4 errors and 1 warning.',
+      'No errors, and 5 warnings.',
       '',
     ]);
   });
