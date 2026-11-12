@@ -816,24 +816,62 @@ test.describe('when a banner over the diff goes', () => {
 
   test('leaves the diff where it is on the page, even at its top', async ({ page }) => {
     const id = await drawn(page, 'github', { moves: false });
-    const first = page.locator('.lo-diffview .cm-editor:last-of-type [data-row="h:0"]');
-    const at = () => first.evaluate((header) => header.getBoundingClientRect().top);
+    // Where the first file's header is on the page, read as frames start, once two running agree:
+    // a read between a change and the view making up for it, before the frame is painted, would
+    // see a place no frame shows.
+    const at = () =>
+      page.evaluate(
+        () =>
+          new Promise<number>((resolve) => {
+            let last = Number.NaN;
+            let frames = 0;
+            const tick = () => {
+              const top =
+                document
+                  .querySelector('.lo-diffview .cm-editor:last-of-type [data-row="h:0"]')
+                  ?.getBoundingClientRect().top ?? Number.NaN;
+              frames += 1;
+              if (Math.abs(top - last) <= 0.5 || frames > 30) resolve(top);
+              else requestAnimationFrame(tick);
+              last = top;
+            };
+            requestAnimationFrame(tick);
+          }),
+      );
     // The banner says the local copy's fetch failed, over the diff, which is at its top: there's
     // less to scroll up than the banner is tall. The banner can come after GitHub's diff, which
     // then scrolls to stay where it was, so the reader goes back to the top.
     await expect(page.locator('[data-lo-banners]')).toBeVisible({ timeout: 20_000 });
+    // Two frames on, the view has made up for the banner coming, which it does as a frame is laid
+    // out: a scroll to the top before then would be taken back.
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
     await page.locator('.lo-diffview').evaluate((view) => {
       view.scrollTop = 0;
     });
     await page.waitForTimeout(300);
     expect(await page.locator('.lo-diffview').evaluate((view) => view.scrollTop)).toBeLessThan(30);
     const before = await at();
+    await watchStill(page);
 
     writeAppRemote(test.info().outputPath('remote'));
     await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
     await expect(page.locator('[data-lo-banners]')).toHaveCount(0, { timeout: 30_000 });
+    // The local copy's diff then takes GitHub's place, which on a busy machine comes well after
+    // the banner goes: nothing moves meanwhile either.
+    const status = page.locator('footer');
+    await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
     await page.waitForTimeout(300);
+    const moved = await page.evaluate(() => {
+      window.loStill = true;
+      return window.loMoved ?? [];
+    });
 
+    expect(moved).toEqual([]);
     expect(Math.abs((await at()) - before)).toBeLessThanOrEqual(1);
   });
 
