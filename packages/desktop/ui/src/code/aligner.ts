@@ -1154,13 +1154,14 @@ export class Aligner {
     const pinSide = (['old', 'new'] as const).find((each) => this.#views[each] === pin?.view);
     if (pin && pinSide) {
       const screen = this.#scroller.getBoundingClientRect();
-      const top = drawnTop(pin.view, pin.pos);
-      if (top !== undefined && top >= screen.top - 1 && top < screen.bottom) {
+      // Any of it on screen: inside a line taller than the screen, its top is above it.
+      const drawn = drawnRect(pin.view, pin.pos);
+      if (drawn && drawn.top < screen.bottom && drawn.bottom > screen.top) {
         return {
           for: side,
           side: pinSide,
           pos: pin.pos,
-          offset: top - screen.top,
+          offset: drawn.top - screen.top,
           scrollTop: this.#scroller.scrollTop,
         };
       }
