@@ -174,34 +174,36 @@ test('a foreground read given up on while waiting leaves the queue', async () =>
   expect(log.map(([name]) => name)).toEqual(['poll a', 'poll c']);
 });
 
-test('a foreground read no longer waited on as one waits behind the background reads', async () => {
+test('a read is taken as its priority stands when the queue comes free, else in the order it came', async () => {
   const queue = new RequestQueue(0);
   const log: Log = [];
   const start = performance.now();
   void queue.read(request('poll a', 100, log, start));
   await settle();
-  // Two tabs opening, the first hidden while it waits.
+  // Two tabs opening, the first hidden while it waits: the one on screen goes first, and the
+  // hidden one waits with the polls, in the order it came.
   let shown = true;
-  const giveUp = new AbortController();
-  const hidden = queue
-    .read(request('hidden b', 100, log, start), giveUp.signal, () =>
-      shown ? 'foreground' : 'background',
-    )
-    .then(
-      () => 'made',
-      () => 'refused',
-    );
-  void queue.read(request('open c', 100, log, start), undefined, () => 'foreground');
-  void queue.read(request('poll d', 300, log, start));
+  void queue.read(request('hidden b', 100, log, start), undefined, () =>
+    shown ? 'foreground' : 'background',
+  );
+  void queue.read(request('open c', 100, log, start), undefined, 'foreground');
+  void queue.read(request('poll d', 100, log, start));
   shown = false;
-  // The tab still on screen goes first, then the poll that was waiting.
-  await advanceTo(start, 250);
-  expect(log.map(([name]) => name)).toEqual(['poll a', 'open c']);
-  // Given up on where it waits now, it's never made.
-  giveUp.abort();
+  await advanceTo(start, 500);
+  expect(log.map(([name]) => name)).toEqual(['poll a', 'open c', 'hidden b', 'poll d']);
+
+  // A tab hidden as its read came, shown again before the queue comes free: it goes ahead of the
+  // poll that came before it.
+  void queue.read(request('poll e', 100, log, start));
+  await settle();
+  let again = false;
+  void queue.read(request('poll f', 100, log, start));
+  void queue.read(request('shown g', 100, log, start), undefined, () =>
+    again ? 'foreground' : 'background',
+  );
+  again = true;
   await advanceTo(start, 900);
-  expect(await hidden).toBe('refused');
-  expect(log.map(([name]) => name)).toEqual(['poll a', 'open c', 'poll d']);
+  expect(log.map(([name]) => name).slice(4)).toEqual(['poll e', 'shown g', 'poll f']);
 });
 
 test('a request given up on while waiting doesnt hold up the rest', async () => {

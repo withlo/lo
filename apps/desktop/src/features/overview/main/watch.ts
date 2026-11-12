@@ -14,8 +14,9 @@
 // first figures the text names and its byline) take one turn in the account's queue, so nothing
 // else goes between them, and nothing in that turn waits on a read queued behind it. The overview
 // is sent to the window once its text is read; its first figures come next, for the window's
-// first frame, and its byline after them. A byline that fails is read again with the ref, and
-// never counts as the ref's failure. Nothing here calls Electron.
+// first frame, and its byline after them. A byline that fails is read again by itself, after a
+// wait that grows with each failure, and never counts as the ref's failure. Nothing here calls
+// Electron.
 
 import { ARTIFACT, namedFigures } from '@lo/artifact';
 import {
@@ -140,6 +141,9 @@ export class OverviewTab {
   /** Whether a public pull request read once has been. */
   #readOnce = false;
   #timer: ReturnType<typeof setTimeout> | undefined;
+  /** How many times in a row the byline failed to come, and when it's read again. */
+  #bylineFailures = 0;
+  #bylineTimer: ReturnType<typeof setTimeout> | undefined;
   #closed = false;
   #said: string | undefined;
   /** The read of the overview's code under way, which closing the tab stops. */
@@ -317,6 +321,7 @@ export class OverviewTab {
     this.#closed = true;
     this.#headKnown();
     this.#stopTimer();
+    clearTimeout(this.#bylineTimer);
     this.#codeRead.stop();
     this.blocks.stop();
     this.since.stop();
@@ -580,8 +585,8 @@ export class OverviewTab {
 
   /**
    * Reads the byline of `commit`, the overview on screen or the newer one, read without it, and
-   * keeps the commit with it. One that fails is read again with the ref: it's no failure of the
-   * ref's, and the overview shows the same without it.
+   * keeps the commit with it. One that fails is read again by itself, and with the ref: it's no
+   * failure of the ref's, and the overview shows the same without it.
    */
   async #readByline(
     commit: OverviewCommit,
@@ -594,8 +599,11 @@ export class OverviewTab {
       byline = await readByline(github, repository, commit.id);
     } catch (error) {
       this.#options.log(`reading who wrote overview ${commit.id}: ${describe(error)}`);
+      this.#bylineFailures += 1;
+      this.#retryByline();
       return;
     }
+    this.#bylineFailures = 0;
     if (this.#closed) return;
     const read = { ...commit, byline };
     // Another overview took its place meanwhile, kept as it was read.
@@ -603,6 +611,28 @@ export class OverviewTab {
     else if (this.#newer === commit) this.#newer = read;
     else return;
     this.#options.reads.saved.set(keyOf(pull), read);
+  }
+
+  /**
+   * Reads the byline of the overview on screen again by itself, as a public pull request's tab,
+   * which reads the ref once, needs: after a wait that grows with each failure, once the tab is on
+   * screen.
+   */
+  #retryByline(): void {
+    clearTimeout(this.#bylineTimer);
+    this.#bylineTimer = setTimeout(() => {
+      this.#bylineTimer = undefined;
+      const [commit, acting, pull] = [this.#shown, this.#acting, this.#pull];
+      if (this.#closed || !commit || commit.byline !== null || !acting || !pull) return;
+      // Hidden, it waits for the tab to be shown.
+      if (!this.#onScreen) {
+        this.#retryByline();
+        return;
+      }
+      void this.#options.reads
+        .github(acting, (client) => this.#readByline(commit, (request) => request(client), pull))
+        .then(() => this.#publish());
+    }, retryWait(this.#bylineFailures));
   }
 
   /** Reads the ref again after `wait`, while the tab is on screen. */

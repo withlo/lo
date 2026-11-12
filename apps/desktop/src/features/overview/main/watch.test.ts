@@ -700,46 +700,56 @@ describe('failing', () => {
     tab.close();
   });
 
-  it('shows and keeps an overview whose byline failed to come, and reads it again with the ref, failing nothing', async () => {
-    const db = database();
-    const github = new FakeGithub();
-    const made = overview('byline', { 'artifact.md': artifactText(5) });
-    github.push('rozed-dev/e2e', 5, made);
-    const commitPath = `rozed-dev/e2e/commits/${made.commit}`;
-    github.answer.set(commitPath, () =>
-      Response.json({ message: 'Server Error' }, { status: 500 }),
-    );
-    const { tab, last, saved } = tabWith(github.client, db);
-    tab.update(info(), true, true);
-    await settle();
-    // The ref was read: nothing failed but the byline, which shows nothing wrong.
-    expect(last()).toMatchObject({
-      overview: { id: made.commit, byline: null },
-      problem: null,
-    });
-    // Kept as it is, so it shows at once the next time too.
-    expect(saved.get({ repository: 'rozed-dev/e2e', number: 5 })).toMatchObject({ byline: null });
+  it.each<[string, Acting]>([
+    ['an account', ROZED],
+    ['nobody, which reads the ref once', { kind: 'anonymous' }],
+  ])(
+    'shows and keeps an overview whose byline failed to come as %s, and reads the byline again by itself',
+    async (_who, acting) => {
+      const db = database();
+      const github = new FakeGithub();
+      const made = overview('byline', { 'artifact.md': artifactText(5) });
+      github.push('rozed-dev/e2e', 5, made);
+      const commitPath = `rozed-dev/e2e/commits/${made.commit}`;
+      github.answer.set(commitPath, () =>
+        Response.json({ message: 'Server Error' }, { status: 500 }),
+      );
+      const { tab, last, saved } = tabWith(github.client, db);
+      tab.update(info({ acting }), true, true);
+      await settle();
+      // The ref was read: nothing failed but the byline, which shows nothing wrong.
+      expect(last()).toMatchObject({
+        overview: { id: made.commit, byline: null },
+        problem: null,
+      });
+      // Kept as it is, so it shows at once the next time too.
+      expect(saved.get({ repository: 'rozed-dev/e2e', number: 5 })).toMatchObject({
+        byline: null,
+      });
 
-    // Nothing is read sooner than the next read of the ref, which reads the byline again.
-    github.answer.delete(commitPath);
-    const before = github.asked.length;
-    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY - 1);
-    expect(github.asked).toHaveLength(before);
-    await vi.advanceTimersByTimeAsync(1);
-    await settle();
-    expect(last()).toMatchObject({
-      overview: { id: made.commit, byline: { login: 'rozed-bot' } },
-      problem: null,
-    });
-    expect(github.paths().slice(before)).toEqual([
-      'rozed-dev/e2e/git/matching-refs/lo/pr/5',
-      commitPath,
-    ]);
-    expect(saved.get({ repository: 'rozed-dev/e2e', number: 5 })).toMatchObject({
-      byline: { login: 'rozed-bot' },
-    });
-    tab.close();
-  });
+      // The byline alone, 5 s later, which fails again; then 10 s after that, which comes.
+      const before = github.asked.length;
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(github.asked).toHaveLength(before);
+      await vi.advanceTimersByTimeAsync(1);
+      await settle();
+      expect(github.paths().slice(before)).toEqual([commitPath]);
+      github.answer.delete(commitPath);
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(github.asked).toHaveLength(before + 1);
+      await vi.advanceTimersByTimeAsync(1);
+      await settle();
+      expect(github.paths().slice(before)).toEqual([commitPath, commitPath]);
+      expect(last()).toMatchObject({
+        overview: { id: made.commit, byline: { login: 'rozed-bot' } },
+        problem: null,
+      });
+      expect(saved.get({ repository: 'rozed-dev/e2e', number: 5 })).toMatchObject({
+        byline: { login: 'rozed-bot' },
+      });
+      tab.close();
+    },
+  );
 
   it('says an account is signed out, an organization blocks it, or the rate limit is used up', async () => {
     const path = 'rozed-dev/e2e/git/matching-refs/lo/pr/5';

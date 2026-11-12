@@ -6,11 +6,12 @@
 import type { RequestGate } from '../client.ts';
 
 /**
- * A request waiting for its turn: starting it, or leaving the queue when it's given up on; and, for
- * a foreground read, its priority as it stands now.
+ * A request waiting for its turn: starting it, or leaving the queue when it's given up on; when it
+ * came, by the queue's count; and, for a read that may be a foreground one, its priority now.
  */
 interface Waiter {
   start: (release: () => void) => void;
+  came: number;
   priority?: (() => ReadPriority) | undefined;
 }
 
@@ -30,9 +31,10 @@ export type ReadPriorityNow = ReadPriority | (() => ReadPriority);
  * Runs an account's requests one at a time, spacing its writes. Waiting requests take their turns
  * first in, first out, except that a waiting write goes before every waiting read, and a waiting
  * foreground read before every waiting background read: a comment or a merge the user is waiting
- * on doesn't queue behind polls, and nor does what a tab needs to open on. A foreground read no
- * longer waited on as one, as its tab was hidden, waits behind the background reads waiting then.
- * A request already under way always finishes first.
+ * on doesn't queue behind polls, and nor does what a tab needs to open on. A read's priority may
+ * change while it waits, as its tab is hidden or shown again: it's taken as it stands whenever the
+ * queue comes free, and a read that's a background one then waits in the order it came. A request
+ * already under way always finishes first.
  */
 export class RequestQueue {
   readonly #spacing: number;
@@ -41,8 +43,11 @@ export class RequestQueue {
   #busy = false;
   /** When the last write finished, by `#clock`. */
   #lastWrite: number | undefined;
+  /** How many requests have waited, which orders them by when they came. */
+  #came = 0;
   readonly #writes: Waiter[] = [];
-  readonly #foreground: Waiter[] = [];
+  /** Reads that are foreground ones, or may be by the time the queue comes free. */
+  readonly #leading: Waiter[] = [];
   readonly #reads: Waiter[] = [];
 
   /**
@@ -56,7 +61,8 @@ export class RequestQueue {
 
   /**
    * Waits for the queue: at once when it's free and nothing is waiting, else behind the requests
-   * already waiting, writes ahead of foreground reads, and those ahead of background reads.
+   * already waiting, writes ahead of foreground reads, and those ahead of background reads, as
+   * their priorities stand when the queue comes free.
    * Resolves with the function that ends the turn, which does so once however often it's called. A
    * request given up on through `signal` while it waits leaves the queue, and the wait rejects with
    * the signal's reason.
@@ -68,41 +74,25 @@ export class RequestQueue {
       return Promise.resolve(this.#release());
     }
     return new Promise((resolve, reject) => {
-      const priority = typeof kind === 'function' ? kind : undefined;
-      const waiting = this.#waiting(typeof kind === 'function' ? kind() : kind);
+      const priority = priorityOf(kind);
+      const waiting = kind === 'write' ? this.#writes : priority ? this.#leading : this.#reads;
+      this.#came += 1;
       const waiter: Waiter = {
         start: (release) => {
           signal?.removeEventListener('abort', abandon);
           resolve(release);
         },
+        came: this.#came,
         priority,
       };
       const abandon = () => {
-        // Where it waits: where it started, or with the background reads.
-        for (const list of [waiting, this.#reads]) {
-          const at = list.indexOf(waiter);
-          if (at >= 0) list.splice(at, 1);
-        }
+        const at = waiting.indexOf(waiter);
+        if (at >= 0) waiting.splice(at, 1);
         reject(abandoned(signal));
       };
       signal?.addEventListener('abort', abandon, { once: true });
       waiting.push(waiter);
     });
-  }
-
-  /** Where requests of `kind` wait their turns. */
-  #waiting(kind: 'write' | ReadPriority): Waiter[] {
-    switch (kind) {
-      case 'write':
-        return this.#writes;
-      case 'foreground':
-        return this.#foreground;
-      case 'background':
-        return this.#reads;
-      default:
-        kind satisfies never;
-        throw new Error(`A kind of request Lo doesn't know: ${String(kind)}.`);
-    }
   }
 
   /** The function that ends the current turn, handing the queue on. */
@@ -111,23 +101,23 @@ export class RequestQueue {
     return () => {
       if (released) return;
       released = true;
-      const next = this.#writes.shift() ?? this.#nextForeground() ?? this.#reads.shift();
+      const next = this.#writes.shift() ?? this.#nextRead();
       if (next) next.start(this.#release());
       else this.#busy = false;
     };
   }
 
   /**
-   * The first foreground read waiting that's still one; those that aren't go to wait behind the
-   * background reads waiting.
+   * The read to go next: the first to come of those that are foreground ones now, else the first
+   * to come of the rest.
    */
-  #nextForeground(): Waiter | undefined {
-    let next = this.#foreground.shift();
-    while (next?.priority?.() === 'background') {
-      this.#reads.push(next);
-      next = this.#foreground.shift();
-    }
-    return next;
+  #nextRead(): Waiter | undefined {
+    const lead = this.#leading.findIndex((waiter) => waiter.priority?.() === 'foreground');
+    if (lead >= 0) return this.#leading.splice(lead, 1)[0];
+    const [read] = this.#reads;
+    const [other] = this.#leading;
+    if (other && (!read || other.came < read.came)) return this.#leading.shift();
+    return this.#reads.shift();
   }
 
   /**
@@ -191,6 +181,15 @@ function pause(wait: number, signal: AbortSignal | undefined): Promise<void> {
     const timer = setTimeout(done, wait);
     signal?.addEventListener('abort', done, { once: true });
   });
+}
+
+/**
+ * How a read's priority stands as the queue comes free, for one that is or may become a foreground
+ * one; none for a write or a background read.
+ */
+function priorityOf(kind: 'write' | ReadPriorityNow): (() => ReadPriority) | undefined {
+  if (typeof kind === 'function') return kind;
+  return kind === 'foreground' ? () => 'foreground' : undefined;
 }
 
 /** The error a request given up on through `signal` fails with: the signal's reason, if it's an error. */

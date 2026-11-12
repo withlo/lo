@@ -239,6 +239,76 @@ describe('Checking', () => {
     expect(states(3)).toEqual(['kept', 'kept', 'kept']);
   });
 
+  it('never takes a figure drawn back to being read, as the local copy turns ready while the rest come', async () => {
+    const names = ['figures/a.svg', 'figures/b.svg', 'figures/c.svg'];
+    const text = encoder.encode(
+      `---\nformat: 1\npr: 7\ncommit: ${HEAD}\n---\n\n## tl;dr\n\nIt reads.\n\n${names
+        .map((path) => `:::figure ${path}\nA figure.\n:::\n`)
+        .join('\n')}`,
+    );
+    const svg = encoder.encode('<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg"/>');
+    // The first two come at once; the third waits until let go.
+    const asked: string[][] = [];
+    let letGo!: () => void;
+    const third = new Promise<void>((resolve) => (letGo = resolve));
+    const published: (CheckedOverview | undefined)[] = [];
+    const checking = new Checking('t1', {
+      files: async ({ paths }) => {
+        if (paths[0] !== 'artifact.md') asked.push(paths);
+        if (paths.includes('figures/c.svg')) await third;
+        return paths.map((path) => {
+          const bytes = path === 'artifact.md' ? text : svg;
+          return { kind: 'file' as const, size: bytes.length, bytes };
+        });
+      },
+      code: async () => READ,
+      parse: (input) => localJobs.parse(input),
+      check: (input) => localJobs.check(input),
+      publish: (value) => published.push(value),
+      log: () => {},
+    });
+    const commit = {
+      ...commitOf(),
+      entries: [
+        { path: 'artifact.md', kind: 'file' as const, size: text.length, id: 'b'.repeat(40) },
+        { path: 'figures', kind: 'folder' as const, size: null, id: 'd'.repeat(40) },
+        ...names.map((path, index) => ({
+          path,
+          kind: 'file' as const,
+          size: svg.length,
+          id: String(index + 1).repeat(40),
+        })),
+      ],
+    };
+    const coming = () =>
+      published.map((value) => (value?.kind === 'checked' ? value.coming.join() : undefined));
+    checking.take(stateOf(commit, 'waiting'));
+    await vi.waitFor(() => expect(asked).toHaveLength(3));
+    expect(coming()).toEqual([names.join(), 'figures/b.svg,figures/c.svg', 'figures/c.svg']);
+
+    // The local copy turns ready, which checks again; then the third comes.
+    checking.take(stateOf(commit, 'ready'));
+    await vi.waitFor(() => expect(asked).toHaveLength(4));
+    letGo();
+    await vi.waitFor(() => expect(coming().at(-1)).toBe(''));
+    // Nothing drawn went back to coming, and only the third was asked for again.
+    expect(coming()).toEqual([names.join(), 'figures/b.svg,figures/c.svg', 'figures/c.svg', '']);
+    expect(asked).toEqual([
+      ['figures/a.svg'],
+      ['figures/b.svg'],
+      ['figures/c.svg'],
+      ['figures/c.svg'],
+    ]);
+    const whole = published.at(-1);
+    if (whole?.kind !== 'checked' || whole.checked.outcome.kind !== 'shown')
+      throw new Error('not shown');
+    expect(whole.checked.outcome.figures.map(({ figure }) => figure.state)).toEqual([
+      'kept',
+      'kept',
+      'kept',
+    ]);
+  });
+
   it('publishes nothing new when nothing changed', async () => {
     const { checking, published, asked } = checkingWith(() => READ);
     const commit = commitOf();

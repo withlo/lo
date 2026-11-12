@@ -136,6 +136,17 @@ export class Checking {
   #published: string | undefined;
   /** Whether a check of the commit has been published, by its text alone or with the rest. */
   #told = false;
+  /**
+   * What main answered of the commit's figures so far, in the order the text shows them: kept when
+   * a check starts again before all are read, as the local copy turns ready, so none is asked for
+   * twice.
+   */
+  #figures: Read['figures'] = [];
+  /**
+   * How many of the first figures were published as answered: a check started again never
+   * publishes fewer, so a figure drawn never goes back to being read.
+   */
+  #drawn = 0;
   /** Whether the last check failed, so the next word from main tries again. */
   #failed = false;
   #running: AbortController | undefined;
@@ -189,6 +200,8 @@ export class Checking {
     this.#code = undefined;
     this.#failed = false;
     this.#told = false;
+    this.#figures = [];
+    this.#drawn = 0;
   }
 
   /**
@@ -373,7 +386,8 @@ export class Checking {
 
   /**
    * Checks and publishes `text` with `figures`, the first of those it shows, as main answered them
-   * so far: the rest coming, and the code as the text alone left it.
+   * so far: the rest coming, and the code as the text alone left it. Only while more are to come,
+   * and only with more than were published before.
    */
   async #checkFirst(
     commit: OverviewCommit,
@@ -382,6 +396,7 @@ export class Checking {
     signal: AbortSignal,
   ): Promise<void> {
     const paths = text.parse?.figures ?? [];
+    if (figures.length <= this.#drawn || figures.length >= paths.length) return;
     const code = this.#code ?? this.#codeBefore(text.parse);
     const key = keyOf(commit, `first:${figures.map(({ file }) => shape(file)).join()}`, code);
     if (key === this.#published) return;
@@ -401,6 +416,7 @@ export class Checking {
     this.#published = key;
     this.#told = true;
     this.#code = code;
+    this.#drawn = figures.length;
     this.#parts.publish({
       kind: 'checked',
       key,
@@ -436,7 +452,8 @@ export class Checking {
   /**
    * The figures `text` shows, as main has them, with `text`: the first few one at a time, each
    * checked and published as it comes while more are to come, since main reads them with the text
-   * and a first frame may draw them; then the rest, together.
+   * and a first frame may draw them; then the rest, together. What a check that started again
+   * read is kept, and only what it didn't is asked for.
    */
   async #readFigures(commit: OverviewCommit, text: Text, signal: AbortSignal): Promise<Read> {
     const { artifact, parse } = text;
@@ -444,20 +461,21 @@ export class Checking {
       return { artifact, parse, figures: [], key: '', settled: true };
     }
     const paths = parse.figures;
-    const figures: Read['figures'] = [];
+    const figures = this.#figures;
     const ask = async (asked: string[]) => {
       const answers = await this.#parts.files({ id: this.#id, commit: commit.id, paths: asked });
+      // A check that started again since asks for itself.
+      if (signal.aborted) return;
       for (const [index, path] of asked.entries()) {
         const file = answers[index] ?? { kind: 'unread', why: 'Main gave no answer for it.' };
         figures.push({ path, file, sent: firstSent(path, file) });
       }
     };
-    for (const path of paths.slice(0, FIRST_FIGURES)) {
-      await ask([path]);
-      // With none to come, the whole check comes next.
-      if (signal.aborted || figures.length === paths.length) break;
+    const first = Math.min(FIRST_FIGURES, paths.length);
+    while (!signal.aborted) {
       await this.#checkFirst(commit, text, figures, signal);
-      if (signal.aborted) break;
+      if (signal.aborted || figures.length >= first) break;
+      await ask(paths.slice(figures.length, figures.length + 1));
     }
     if (!signal.aborted && figures.length < paths.length) await ask(paths.slice(figures.length));
     const key = figures.map(({ file }) => shape(file)).join();
