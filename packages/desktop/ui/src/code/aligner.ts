@@ -45,6 +45,7 @@ import { alignRows, type RowHeights, type SideHeights } from './align.ts';
 import type { PassStats } from './api.ts';
 import type { Layout, Side } from './layout.ts';
 import type { FileRows } from './rows.ts';
+import { heldByScreenKey, screenKeyPin } from './screen.ts';
 import { SpacerWidget } from './widgets.ts';
 
 /** A spacer as a decoration: a block widget at `pos`, before (-1) or after (2) what's there. */
@@ -451,8 +452,15 @@ export class Aligner {
         // CodeMirror scrolled as it measured. To bring a moved cursor into view, that scroll stands,
         // so the anchor is taken again from where it left things. Otherwise it's CodeMirror's own
         // anchoring, from the top of a block that can hold the pass's spacers, and the pass's
-        // anchor, taken before CodeMirror measured, puts it right.
-        if (turn === 0 && this.#selected && Math.abs(this.#scroller.scrollTop - scrolled) > 0.5) {
+        // anchor, taken before CodeMirror measured, puts it right: as after a screen key, which
+        // holds back the scroll to the cursor.
+        if (
+          turn === 0 &&
+          this.#selected &&
+          !heldByScreenKey(this.#views.old) &&
+          !heldByScreenKey(this.#views.new) &&
+          Math.abs(this.#scroller.scrollTop - scrolled) > 0.5
+        ) {
           anchor = this.#anchorNow();
         } else if (
           turn === 0 &&
@@ -499,6 +507,8 @@ export class Aligner {
     const side = focused ?? this.#followSide;
     if (side === undefined) return;
     const view = this.#views[side];
+    // A screen key scrolled as far as it means to, and put the cursor where it wants it.
+    if (heldByScreenKey(view)) return;
     const head = view.state.selection.main.head;
     const line = drawnRect(view, head);
     const screen = this.#scroller.getBoundingClientRect();
@@ -1138,6 +1148,24 @@ export class Aligner {
   #anchorNow(): Anchor {
     const side = this.#anchorSide();
     const view = this.#views[side];
+    // After a screen key, the line it scrolled to the edge of the screen it moved away from: rows
+    // past it may not have been on screen yet, and as they're measured they move only away from it.
+    const pin = screenKeyPin(this.#views.old) ?? screenKeyPin(this.#views.new);
+    const pinSide = (['old', 'new'] as const).find((each) => this.#views[each] === pin?.view);
+    if (pin && pinSide) {
+      const screen = this.#scroller.getBoundingClientRect();
+      // Any of it on screen: inside a line taller than the screen, its top is above it.
+      const drawn = drawnRect(pin.view, pin.pos);
+      if (drawn && drawn.top < screen.bottom && drawn.bottom > screen.top) {
+        return {
+          for: side,
+          side: pinSide,
+          pos: pin.pos,
+          offset: drawn.top - screen.top,
+          scrollTop: this.#scroller.scrollTop,
+        };
+      }
+    }
     if (view.hasFocus) {
       const screen = this.#scroller.getBoundingClientRect();
       const cursor = view.lineBlockAt(view.state.selection.main.head);
