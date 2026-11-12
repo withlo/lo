@@ -1,9 +1,9 @@
 // An overview Lo shows: the document, with who wrote it and for which revision above it, each
 // figure as the check left it, and each code block and walkthrough filled in from the local copy
 // (`Code.tsx`). It's first seen once the code blocks near the screen have drawn, with the local
-// copy if it's coming, within the bound (`drawing.ts`). Every block is keyed by the parsed tree's
-// own objects, which stay the same for as long as the overview's commit is on screen, so nothing is
-// drawn again from scratch under the reader.
+// copy if it's coming, within the bound for each (`drawing.ts`). Every block is keyed by the parsed
+// tree's own objects, which stay the same for as long as the overview's commit is on screen, so
+// nothing is drawn again from scratch under the reader.
 
 import type {
   CheckedCode,
@@ -262,7 +262,7 @@ export function Shown({
     [figure, excerpt, walkthrough],
   );
   // Seen once the code blocks near the screen have drawn, or at the bound; while the local copy is
-  // coming, they wait for it too.
+  // coming, they wait for it too, and once it's in, they have the bound again to draw.
   const [drawing, setDrawing] = useState(true);
   const [first] = useState(() => firstDraw(() => setDrawing(false)));
   const copy = useRef<(() => void) | undefined>(undefined);
@@ -276,9 +276,11 @@ export function Shown({
   }, [first, coming]);
   useLayoutEffect(() => {
     first.settle();
+  }, [first]);
+  useLayoutEffect(() => {
     const bound = setTimeout(() => first.open(), HOLD_LIMIT);
     return () => clearTimeout(bound);
-  }, [first]);
+  }, [first, coming]);
   return (
     <FirstDrawContext value={first}>
       <OverviewDocument

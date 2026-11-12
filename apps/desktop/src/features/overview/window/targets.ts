@@ -214,6 +214,11 @@ function unreadShows(
   }
 }
 
+/** A file diffed, as `diffTexts` diffs it, highlighted or not, or why it couldn't be. */
+type Diffed =
+  | Pick<Extract<DiffedText, { ok: true }>, 'ok' | 'diff' | 'tokens'>
+  | Extract<DiffedText, { ok: false }>;
+
 /**
  * What a code block draws once its file is read, `read`, and diffed from where the pull request's
  * diff of it starts, `diffed`: each side's lines, the diff when the pull request changes the file,
@@ -222,7 +227,7 @@ function unreadShows(
  */
 export function excerptOf(
   read: Extract<BlockText, { kind: 'text' }>,
-  diffed: DiffedText | undefined,
+  diffed: Diffed | undefined,
 ): {
   lines: { old: string[]; new: string[] };
   diff: FileDiff | undefined;

@@ -373,13 +373,14 @@ const clipboard = (app: ElectronApplication) =>
  * Watches, every frame from now until the test stops it, where each of the overview's blocks on
  * screen is on the page, and says each time one has moved, or was drawn again, on a frame the
  * reader gave no input: from the first frame the overview is seen, as its figures fill in. A
- * frame within half a second of the reader's wheel, keys, pointer or a change in the window's
- * size, as the scroll it asked for runs its course, or with another overview put on screen, takes
- * where each block is then as its place: where it was two frames running, unless the overview is
- * new. Each counts as moved once it's been away from its place for two frames running. A frame
- * reads where blocks are before a change is made up for, which is done before it's painted, so a
- * place it's away from only for that frame isn't taken, and a move it's back from by the next
- * frame doesn't count.
+ * block across the screen's top edge is watched by its bottom: it's above the place being read,
+ * where what changes size moves only what's off screen. A frame within half a second of the
+ * reader's wheel, keys, pointer or a change in the window's size, as the scroll it asked for runs
+ * its course, or with another overview put on screen, takes where each block is then as its place:
+ * where it was two frames running, unless the overview is new. Each counts as moved once it's been
+ * away from its place for two frames running. A frame reads where blocks are before a change is
+ * made up for, which is done before it's painted, so a place it's away from only for that frame
+ * isn't taken, and a move it's back from by the next frame doesn't count.
  */
 async function watchStill(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -393,17 +394,25 @@ async function watchStill(page: Page): Promise<void> {
       window.addEventListener(type, () => (input = performance.now()), { capture: true });
     }
     let article: Element | null = null;
-    let watched: { block: Element; y: number; away: number }[] = [];
+    type Edge = 'top' | 'bottom';
+    let watched: { block: Element; edge: Edge; y: number; away: number }[] = [];
     /** Where the blocks on screen were the frame before, while places are being taken. */
     let before: { block: Element; y: number }[] = [];
-    /** The article's blocks on screen now, where they are. */
+    /** Where `block`'s `edge` is on the page. */
+    const edgeOf = (block: Element, edge: Edge) => block.getBoundingClientRect()[edge];
+    /**
+     * The article's blocks on screen now, where they are: by their top, or by their bottom for one
+     * across the screen's top edge, which is above the place being read.
+     */
     const onScreen = () => {
       const scroller = article?.closest('.lo-ov');
       if (!article || !scroller) return [];
       const box = scroller.getBoundingClientRect();
       return [...article.children].flatMap((block) => {
         const { top, bottom } = block.getBoundingClientRect();
-        return bottom > box.top && top < box.bottom ? [{ block, y: top, away: 0 }] : [];
+        if (bottom <= box.top || top >= box.bottom) return [];
+        const edge: Edge = top < box.top - 0.5 ? 'bottom' : 'top';
+        return [{ block, edge, y: edgeOf(block, edge), away: 0 }];
       });
     };
     const tick = () => {
@@ -425,7 +434,7 @@ async function watchStill(page: Page): Promise<void> {
       } else {
         before = [];
         for (const each of watched) {
-          const y = each.block.isConnected ? each.block.getBoundingClientRect().top : undefined;
+          const y = each.block.isConnected ? edgeOf(each.block, each.edge) : undefined;
           const off = y === undefined || Math.abs(y - each.y) > 0.5;
           each.away = off ? each.away + 1 : 0;
           if (each.away === 2) {

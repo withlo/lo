@@ -1,21 +1,28 @@
 // The files an overview's blocks show, read and diffed once for all the blocks that show each:
 // main reads a file's text at the overview's commit and where the pull request's diff of it
 // starts, and the diff's background job diffs and highlights them, once for every block on the
-// file that's drawing. A file no block holds any more is kept a little while, for the next block
-// that comes near, up to `IDLE_LIMIT` of text in all, then let go; one still being read when the
-// last block lets it go is stopped.
+// file that's drawing. A small file is diffed here too, at once, so its blocks draw without
+// waiting for a job to start, and take its highlighting when it comes. A file no block holds any
+// more is kept a little while, for the next block that comes near, up to `IDLE_LIMIT` of text in
+// all, then let go; one still being read when the last block lets it go is stopped.
 
 import { LIMITS } from '@lo/artifact';
-import type { FileDiff } from '@lo/diff';
+import { diffText, type FileDiff } from '@lo/diff';
 
 import { diffTexts } from '../../diff/window/shared.ts';
 import type { BlockText } from '../contract.ts';
 import { main } from './main.ts';
 import { excerptOf, textsOf } from './targets.ts';
 
+/** Each side's highlighting: `@lo/syntax`'s triples, where it could highlight. */
+export interface Tokens {
+  old?: Uint32Array | undefined;
+  new?: Uint32Array | undefined;
+}
+
 /**
  * A file's code, as the blocks that show it draw it: each side's lines, the pull request's diff of
- * it when it changes it, and each side's highlighting; or why it couldn't be read.
+ * it when it changes it, and each side's highlighting, once it's in; or why it couldn't be read.
  */
 export type FileCode =
   | { kind: 'unread'; why: string }
@@ -23,7 +30,7 @@ export type FileCode =
       kind: 'code';
       lines: { old: string[]; new: string[] };
       diff: FileDiff | undefined;
-      tokens: { old?: Uint32Array | undefined; new?: Uint32Array | undefined };
+      tokens: Promise<Tokens>;
     };
 
 /** A block's hold on a file's code: the code once it's in, and the way to let it go. */
@@ -34,6 +41,15 @@ export interface FileHold {
 
 /** The most text the files no block holds may have, kept for the next block, in all. */
 export const IDLE_LIMIT = LIMITS.file;
+
+/**
+ * The most text a file may have, both sides, to be diffed here as it's read, a moment's work,
+ * rather than only by the diff's background job, which takes a few hundred milliseconds to start.
+ */
+export const QUICK_LIMIT = 64 * 1024;
+
+/** How long a diff here may take before it settles for a coarser one, in milliseconds. */
+const QUICK_BUDGET = 100;
 
 interface Entry {
   readonly key: string;
@@ -62,11 +78,30 @@ async function read(tab: string, commit: string, path: string, signal: AbortSign
   }
   if (text.kind === 'unread') return { code: text, size: 0, keep: false };
   const size = text.text.length + (text.base?.kind === 'changed' ? text.base.text.length : 0);
-  const [diffed] = await diffTexts([textsOf(path, text)], signal).catch((error: unknown) => {
-    if (!signal.aborted) console.error("Lo couldn't diff a file an overview shows:", error);
-    return [undefined];
-  });
-  return { code: { kind: 'code' as const, ...excerptOf(text, diffed) }, size, keep: true };
+  const texts = textsOf(path, text);
+  const job = diffTexts([texts], signal).then(
+    ([diffed]) => diffed,
+    (error: unknown) => {
+      if (!signal.aborted) console.error("Lo couldn't diff a file an overview shows:", error);
+      return undefined;
+    },
+  );
+  const tokens = job.then((diffed) => excerptOf(text, diffed).tokens);
+  const quick = size <= QUICK_LIMIT ? quickDiff(texts) : undefined;
+  const { lines, diff } = excerptOf(text, quick ?? (await job));
+  return { code: { kind: 'code' as const, lines, diff, tokens }, size, keep: true };
+}
+
+/** `texts` diffed here, as the diff's job diffs them, without highlighting; none if it can't be. */
+function quickDiff(texts: { old: string | null; new: string | null }) {
+  try {
+    const diff = diffText(texts.old ?? undefined, texts.new ?? undefined, {
+      budget: QUICK_BUDGET,
+    });
+    return { ok: true as const, diff, tokens: {} };
+  } catch {
+    return undefined;
+  }
 }
 
 /**

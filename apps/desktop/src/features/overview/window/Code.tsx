@@ -198,12 +198,18 @@ function ExcerptCode({
         lines: code.lines,
         diff: code.diff,
         range: { side: 'new', from: start, to: end },
-        tokens: code.tokens,
         vimKeys: keys.vimKeys(),
         nonce: page.nonce,
       },
       QUIET,
     );
+    // Highlighted once the diff's job has it, which changes no line's height.
+    let live = true;
+    void code.tokens.then((tokens) => {
+      if (!live) return;
+      if (tokens.old) view.setTokens('old', tokens.old);
+      if (tokens.new) view.setTokens('new', tokens.new);
+    });
     // Its height is its code's once the view has measured its lines, which it does a frame on.
     let frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
@@ -213,6 +219,7 @@ function ExcerptCode({
     });
     const stop = keys.subscribe(() => view.setVimKeys(keys.vimKeys()));
     return () => {
+      live = false;
       cancelAnimationFrame(frame);
       // Let go far from the screen, it keeps its room: as tall as its lines, laid out.
       parent.style.minHeight = `${view.height()}px`;
@@ -259,7 +266,7 @@ export function WalkthroughBlock({
 
 /** A file read whole for a walkthrough's step: its lines and highlighting, or why it wasn't. */
 type StepFile =
-  | { path: string; lines: string[]; tokens: Uint32Array | undefined }
+  | { path: string; lines: string[]; tokens: Promise<Uint32Array | undefined> }
   | { path: string; unread: string };
 
 /**
@@ -287,7 +294,7 @@ function StepCode({ tab, commit, target }: { tab: string; commit: string; target
       setFile(
         found.kind === 'unread'
           ? { path, unread: found.why }
-          : { path, lines: found.lines.new, tokens: found.tokens.new },
+          : { path, lines: found.lines.new, tokens: found.tokens.then((tokens) => tokens.new) },
       );
     });
     return () => {
@@ -307,15 +314,19 @@ function StepCode({ tab, commit, target }: { tab: string; commit: string; target
         id,
         path: lines.path,
         lines: lines.lines,
-        tokens: lines.tokens,
         vimKeys: keys.vimKeys(),
         nonce: page.nonce,
       },
       QUIET,
     );
     view.current = made;
+    let live = true;
+    void lines.tokens.then((tokens) => {
+      if (live && tokens) made.setTokens(tokens);
+    });
     const stop = keys.subscribe(() => made.setVimKeys(keys.vimKeys()));
     return () => {
+      live = false;
       stop();
       view.current = undefined;
       made.destroy();
