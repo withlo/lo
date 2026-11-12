@@ -132,8 +132,11 @@ describe('watching', () => {
     ]);
     expect(fetch.seen.at(-1)?.headers.get('accept')).toBe('application/vnd.github.raw+json');
 
-    // 30 s on, the ref is asked about with its ETag, and GitHub says nothing changed.
-    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY);
+    // GitHub asked for 5 minutes between reads: then the ref is asked about with its ETag, and
+    // GitHub says nothing changed.
+    await vi.advanceTimersByTimeAsync(5 * 60_000 - 1);
+    expect(urls()).toHaveLength(4);
+    await vi.advanceTimersByTimeAsync(1);
     await settle();
     expect(urls()).toHaveLength(5);
     expect(fetch.seen.at(-1)?.headers.get('if-none-match')).toMatch(/^W\/"/);
@@ -179,25 +182,75 @@ describe('watching', () => {
     await vi.advanceTimersByTimeAsync(1);
     await settle();
     expect(reads()).toBe(3);
-    // In front again, it's read 30 s after the last time.
+    // Brought to the front, it's read at once, then every 30 s again.
     await vi.advanceTimersByTimeAsync(10_000);
     tab.setForeground(true);
-    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY - 10_001);
-    expect(reads()).toBe(3);
-    await vi.advanceTimersByTimeAsync(1);
     await settle();
     expect(reads()).toBe(4);
+    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY - 1);
+    expect(reads()).toBe(4);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+    expect(reads()).toBe(5);
 
     // Hidden, it's left alone; shown again, it's read at once.
     tab.update(info(), false, true);
     await vi.advanceTimersByTimeAsync(10 * BACKGROUND_EVERY);
+    expect(reads()).toBe(5);
+    tab.update(info(), true, true);
+    await settle();
+    expect(reads()).toBe(6);
+    tab.close();
+    await vi.advanceTimersByTimeAsync(10 * BACKGROUND_EVERY);
+    expect(reads()).toBe(6);
+  });
+
+  it("reads no sooner than GitHub's x-poll-interval asks, but at once when shown or in front", async () => {
+    const github = new FakeGithub();
+    github.pollInterval = '300';
+    github.push('rozed-dev/e2e', 5, overview('slow', { 'artifact.md': artifactText(5) }));
+    const { tab, last } = tabWith(github.client);
+    const reads = () => github.paths().filter((path) => path.includes('matching-refs')).length;
+    tab.update(info(), true, true);
+    await settle();
+    expect(reads()).toBe(1);
+
+    // In front, 5 minutes rather than 30 s; the `304` that follows doesn't say it again, and
+    // still counts.
+    for (const read of [2, 3]) {
+      await vi.advanceTimersByTimeAsync(5 * 60_000 - 1);
+      expect(reads()).toBe(read - 1);
+      await vi.advanceTimersByTimeAsync(1);
+      await settle();
+      expect(reads()).toBe(read);
+    }
+    expect(github.asked.at(-1)?.etag).toMatch(/^"/);
+
+    // A new overview pushed meanwhile still arrives at once as Lo comes to the front, or as the
+    // tab is shown.
+    const pushed = overview('pushed', { 'artifact.md': artifactText(5, '## tl;dr\n\nNew.\n') });
+    github.push('rozed-dev/e2e', 5, pushed);
+    tab.setForeground(false);
+    await vi.advanceTimersByTimeAsync(60_000);
+    tab.setForeground(true);
+    await settle();
     expect(reads()).toBe(4);
+    expect(last()?.newer?.id).toBe(pushed.commit);
+    tab.update(info(), false, true);
     tab.update(info(), true, true);
     await settle();
     expect(reads()).toBe(5);
+
+    // Once GitHub no longer asks, it's every 30 s again.
+    github.pollInterval = undefined;
+    github.push('rozed-dev/e2e', 5, overview('again', { 'artifact.md': artifactText(5, 'x') }));
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    await settle();
+    expect(reads()).toBe(6);
+    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY);
+    await settle();
+    expect(reads()).toBe(7);
     tab.close();
-    await vi.advanceTimersByTimeAsync(10 * BACKGROUND_EVERY);
-    expect(reads()).toBe(5);
   });
 
   it('waits to read until the tab knows who it acts as and where its head is', async () => {

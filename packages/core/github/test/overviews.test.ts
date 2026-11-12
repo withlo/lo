@@ -11,7 +11,9 @@ import { GithubError } from '../src/errors.ts';
 import {
   blobBytes,
   commitSummary,
+  MAX_POLL_INTERVAL,
   overviewRef,
+  pollInterval,
   readOverviewRef,
   watchOverviewRef,
 } from '../src/overviews.ts';
@@ -39,6 +41,8 @@ describe('the ref', () => {
       notModified: false,
       value: { kind: 'commit', sha: E2E_OVERVIEW.commit },
       etag: expect.stringMatching(/^W\/"[0-9a-f]{64}"$/),
+      // GitHub asks to be asked no more often than every 5 minutes.
+      pollInterval: 300,
     });
     if (first.notModified) throw new Error('unreachable');
     expect(await watchOverviewRef(client, E2E, 80, first.etag)).toEqual({ notModified: true });
@@ -76,6 +80,15 @@ describe('the ref', () => {
       read([{ ref: 'refs/lo/pr/5', object: { sha: '../../user', type: 'commit' } }]),
     ).toThrow("isn't an object's ID");
     expect(() => read([{ ref: 'refs/lo/pr/5' }])).toThrow(GithubError);
+  });
+
+  test("reads how long GitHub's x-poll-interval asks to wait, within bounds", () => {
+    expect(pollInterval('300')).toBe(300);
+    expect(pollInterval(' 60 ')).toBe(60);
+    expect(pollInterval('999999999')).toBe(MAX_POLL_INTERVAL);
+    for (const header of [undefined, '', '0', '-5', '1.5', '5 minutes', '1e3']) {
+      expect(pollInterval(header)).toBeUndefined();
+    }
   });
 
   test("refuses a number that isn't a pull request's", () => {

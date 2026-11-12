@@ -5,7 +5,7 @@
  */
 
 import type { Conditional, GithubClient } from './client.ts';
-import { GithubError } from './errors.ts';
+import { GithubError, MAX_RETRY_AFTER } from './errors.ts';
 import { Fields } from './json.ts';
 import type { RepoRef } from './refs.ts';
 
@@ -52,6 +52,23 @@ export function readOverviewRef(number: number): (json: unknown) => OverviewRef 
   };
 }
 
+/** The longest wait between reads GitHub's `x-poll-interval` is taken to ask for, in seconds. */
+export const MAX_POLL_INTERVAL = MAX_RETRY_AFTER;
+
+/**
+ * An answer about an overview's ref: unchanged, or what it holds and its ETag; and the seconds
+ * GitHub's `x-poll-interval` asks Lo to wait before asking again, up to {@link MAX_POLL_INTERVAL},
+ * if it sent one. GitHub sends it with a new answer, not with a `304`.
+ */
+export type OverviewRefAnswer = Conditional<OverviewRef> & { pollInterval: number | undefined };
+
+/** The seconds `x-poll-interval` asks for: a whole number of them, up to {@link MAX_POLL_INTERVAL}. */
+export function pollInterval(header: string | undefined): number | undefined {
+  if (header === undefined || !/^\s*\d{1,9}\s*$/.test(header)) return undefined;
+  const seconds = Number(header);
+  return seconds > 0 ? Math.min(seconds, MAX_POLL_INTERVAL) : undefined;
+}
+
 /**
  * Reads what pull request `number`'s overview's ref holds in `repo`, sending `etag`, the ETag of
  * the last answer, if there's one: GitHub answers `notModified`, free, when nothing changed.
@@ -61,8 +78,19 @@ export function watchOverviewRef(
   repo: RepoRef,
   number: number,
   etag: string | undefined,
-): Promise<Conditional<OverviewRef>> {
-  return client.getConditional(overviewRefsPath(repo, number), etag, readOverviewRef(number));
+): Promise<OverviewRefAnswer> {
+  const path = overviewRefsPath(repo, number);
+  const condition = etag === undefined ? undefined : { ifNoneMatch: etag };
+  return client.send('GET', path, { condition }).then((response) => {
+    const asked = pollInterval(response.header('x-poll-interval'));
+    if (response.status === 304) return { notModified: true, pollInterval: asked };
+    return {
+      notModified: false,
+      value: response.json(readOverviewRef(number)),
+      etag: response.etag,
+      pollInterval: asked,
+    };
+  });
 }
 
 /** A commit, as an overview's byline and its files need it. */

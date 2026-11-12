@@ -1,11 +1,12 @@
 // A pull request's tab's overview in main: the ref `refs/lo/pr/<n>`, read in the pull request's
 // repository, then in its fork, through GitHub's REST API as the tab's account, with each answer's
-// ETag, so a read that finds nothing changed costs nothing. It's read as the tab is shown, and again
-// every 30 s while the tab is on screen and Lo is in front (every 5 minutes behind other windows);
-// a public pull request opened without an account is read once. A commit Lo hasn't seen is read
-// whole before it's offered, and a newer one never takes the place of the one on screen until it's
-// loaded. What was read is kept, so the overview shows at once the next time, offline too. Nothing
-// here calls Electron.
+// ETag, so a read that finds nothing changed costs nothing. It's read as the tab is shown and as Lo
+// comes to the front, and again every 30 s while the tab is on screen and Lo is in front (every 5
+// minutes behind other windows), never sooner than GitHub's `x-poll-interval` asks; a public pull
+// request opened without an account is read once. A commit Lo hasn't seen is read whole before it's
+// offered, and a newer one never takes the place of the one on screen until it's loaded. What was
+// read is kept, so the overview shows at once the next time, offline too. Nothing here calls
+// Electron.
 
 import {
   overviewRef,
@@ -48,10 +49,14 @@ export interface OverviewTabOptions {
   readonly now?: (() => number) | undefined;
 }
 
-/** What was last read of the ref in one repository: the ETag GitHub gave, and what it said. */
+/**
+ * What was last read of the ref in one repository: the ETag GitHub gave, what it said, and how
+ * many seconds its `x-poll-interval` asked Lo to wait before asking again, if it did.
+ */
 interface Heard {
   readonly etag: string;
   readonly ref: OverviewRef;
+  readonly pollInterval: number | undefined;
 }
 
 /** What the ref holds, in the repository or its fork. */
@@ -86,6 +91,12 @@ export class OverviewTab {
   #again = false;
   /** When the ref was last read through, in milliseconds since the Unix epoch. */
   #readAt: number | undefined;
+  /**
+   * The least time between reads GitHub asked for, with `x-poll-interval`, in the last read, in
+   * milliseconds; and in the read under way.
+   */
+  #floor = 0;
+  #asking = 0;
   /** Whether a public pull request read once has been. */
   #readOnce = false;
   #timer: ReturnType<typeof setTimeout> | undefined;
@@ -134,11 +145,15 @@ export class OverviewTab {
     if (pull === undefined || moved || said !== info.acting?.kind) this.#publish();
   }
 
-  /** Lo came to the front, or went behind another window. */
+  /**
+   * Lo came to the front, which reads the ref at once, so a new overview shows promptly, unless
+   * GitHub asked Lo to wait for the rate limit; or it went behind another window.
+   */
   setForeground(foreground: boolean): void {
     if (this.#closed || foreground === this.#foreground) return;
     this.#foreground = foreground;
-    this.#schedule();
+    if (foreground && this.#onScreen && this.#problem?.kind !== 'rateLimited') this.#read();
+    else this.#schedule();
   }
 
   /** Reads the ref again now, after a failure. */
@@ -287,6 +302,7 @@ export class OverviewTab {
     const acting = this.#acting;
     if (!pull || !acting) return;
     const github: Github = (request) => this.#options.reads.github(acting, request);
+    this.#asking = 0;
     try {
       const found = await this.#find(github, pull);
       if (this.#closed) return;
@@ -295,6 +311,7 @@ export class OverviewTab {
       this.#failures = 0;
       this.#problem = undefined;
       this.#readAt = this.#now();
+      this.#floor = this.#asking;
       if (acting.kind === 'anonymous') this.#readOnce = true;
     } catch (error) {
       if (this.#closed) return;
@@ -342,11 +359,16 @@ export class OverviewTab {
       watchOverviewRef(client, repository, number, heard?.etag),
     );
     if (answer.notModified) {
-      if (heard) return heard.ref;
-      throw new Error('GitHub said nothing changed, with nothing asked before.');
+      if (!heard) throw new Error('GitHub said nothing changed, with nothing asked before.');
+      // A `304` doesn't say again how long to wait: the answer it stands for did.
+      const asked = answer.pollInterval ?? heard.pollInterval;
+      this.#asking = Math.max(this.#asking, (asked ?? 0) * 1000);
+      return heard.ref;
     }
+    const { pollInterval } = answer;
+    this.#asking = Math.max(this.#asking, (pollInterval ?? 0) * 1000);
     if (answer.etag === undefined) this.#heard.delete(key);
-    else this.#heard.set(key, { etag: answer.etag, ref: answer.value });
+    else this.#heard.set(key, { etag: answer.etag, ref: answer.value, pollInterval });
     return answer.value;
   }
 
@@ -400,8 +422,8 @@ export class OverviewTab {
 
   /**
    * Reads the ref again when it's next due, while the tab is on screen: 30 s after the last read,
-   * or 5 minutes behind other windows. A public pull request read once isn't read again, and a
-   * failure waits as long as it said.
+   * or 5 minutes behind other windows, and never sooner than GitHub's `x-poll-interval` asked. A
+   * public pull request read once isn't read again, and a failure waits as long as it said.
    */
   #schedule(): void {
     if (this.#reading || this.#closed) return;
@@ -412,7 +434,7 @@ export class OverviewTab {
     }
     this.#stopTimer();
     if (!this.#canRead()) return;
-    const every = this.#foreground ? FOREGROUND_EVERY : BACKGROUND_EVERY;
+    const every = Math.max(this.#foreground ? FOREGROUND_EVERY : BACKGROUND_EVERY, this.#floor);
     const due = this.#readAt === undefined ? 0 : this.#readAt + every - this.#now();
     this.#timer = setTimeout(
       () => {

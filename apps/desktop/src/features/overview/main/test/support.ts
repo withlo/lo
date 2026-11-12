@@ -111,6 +111,8 @@ export class FakeGithub {
   readonly blobs = new Map<string, Uint8Array>();
   /** Answers that stand in for GitHub's, by the request's path. */
   readonly answer = new Map<string, () => Response>();
+  /** The `x-poll-interval` new answers about refs carry, if any: GitHub's is 300. */
+  pollInterval: string | undefined;
   readonly asked: Asked[] = [];
   readonly client: GithubClient;
 
@@ -173,7 +175,9 @@ export class FakeGithub {
         .map(({ number, sha, type }) => ({ ref: `refs/lo/pr/${number}`, object: { sha, type } }));
       const tag = `"${createHash('sha256').update(JSON.stringify(listed)).digest('hex')}"`;
       if (etag === tag) return new Response(null, { status: 304, headers: { etag: tag } });
-      return Response.json(listed, { headers: { etag: tag } });
+      const headers: Record<string, string> = { etag: tag };
+      if (this.pollInterval !== undefined) headers['x-poll-interval'] = this.pollInterval;
+      return Response.json(listed, { headers });
     }
     match = /^[^/]+\/[^/]+\/commits\/([0-9a-f]+)$/.exec(path);
     if (match) {
