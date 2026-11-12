@@ -94,6 +94,11 @@ export interface OverviewDocumentProps {
   container?: HTMLElement | null | undefined;
   /** The scrolling element. */
   ref?: Ref<HTMLDivElement> | undefined;
+  /**
+   * Whether its blocks are still drawing what they show before it's first seen: the article is
+   * laid out, so they can tell where they are, but not shown.
+   */
+  drawing?: boolean | undefined;
 }
 
 /** A section of the outline: a heading of the article's own, by its block's number. */
@@ -123,6 +128,7 @@ export function OverviewDocument({
   hints = blockHints,
   container,
   ref,
+  drawing = false,
 }: OverviewDocumentProps) {
   const prefix = scopePrefix(useId());
   const anchors = useMemo(() => new Anchors(prefix, tree.blocks), [prefix, tree.blocks]);
@@ -238,7 +244,9 @@ export function OverviewDocument({
                 {outlineFoot !== undefined && <div className="lo-toc__foot">{outlineFoot}</div>}
               </nav>
             )}
-            <article className="lo-ov__article lo-prose">
+            <article
+              className={drawing ? 'lo-ov__article lo-prose is-drawing' : 'lo-ov__article lo-prose'}
+            >
               {byline}
               {banner}
               {tree.blocks.map((block, index) => (

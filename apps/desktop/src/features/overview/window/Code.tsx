@@ -1,45 +1,39 @@
-// An overview's code blocks and walkthroughs, filled in from the pull request's local copy. Each
-// block is laid out from what the overview says it points at, as tall as its lines, and keeps its
-// height while it's on screen (`Held`), so code coming moves nothing above or below it. Near the
-// screen, a block asks main for its file's text at the commit the overview describes, and, for a
-// code block, where the pull request's diff of the file starts; the diff's background job diffs
-// and highlights them; and the block draws its code once, when all of that is in. Far from the
-// screen, it lets its code go. The window keeps no code but what's drawn.
+// An overview's code blocks and walkthroughs, filled in from the pull request's local copy. A
+// code block is laid out from what the overview says it points at, as tall as its lines, and keeps
+// what's on screen where it is as its code comes (`Held`). Each file a block shows is read and
+// diffed once for every block on it (`files.ts`). A block near the screen draws its code once it's
+// in, and those near it as the overview is first laid out draw before it's seen (`drawing.ts`);
+// one far from it draws once too, in turn with the others, for its height, and lets its code go,
+// keeping its room. The window keeps no code but what's drawn, and what's read for it a little
+// while.
 
 import type { CodeRange, Excerpt, Walkthrough as WalkthroughNode } from '@lo/artifact';
 import { Button, Key } from '@lo/ui';
-import { createExcerptView, createFileView, type FileView } from '@lo/ui/code';
+import { codeTypeface, createExcerptView, createFileView, type FileView } from '@lo/ui/code';
 import {
   CodeBlock,
   CodeBody,
   CodeNote,
   Held,
   useNear,
+  useNearness,
   Walkthrough,
   type CodeBlockVariant,
 } from '@lo/ui/overview';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
-import { diffTexts } from '../../diff/window/shared.ts';
 import { usePull, useTabState } from '../../tab/window/shared.ts';
 import { findFile, showFile } from '../../tree/window/shared.ts';
 import type { CodeRead } from './checking.ts';
-import {
-  excerptOf,
-  nameOf,
-  showsOf,
-  textsOf,
-  type Shows,
-  type Target,
-  type Words,
-} from './targets.ts';
+import { useFirstDraw, type FirstDraw } from './drawing.ts';
 import { revisionAt } from './facts.ts';
+import { holdFile, type FileCode } from './files.ts';
 import { keyOf } from './labels.ts';
-import { main } from './main.ts';
 import { usePage } from './page.ts';
 import { shortId } from './says.ts';
 import { revisions } from './store.ts';
+import { nameOf, showsOf, type Shows, type Target, type Words } from './targets.ts';
 
 /**
  * What the overview's blocks read their code with: the pull request's tab, the commit the overview
@@ -77,10 +71,20 @@ export function ExcerptBlock({ node, context }: { node: Excerpt; context: CodeCo
   const variant: CodeBlockVariant = shows.kind === 'note' ? shows.variant : 'code';
   return (
     <Held>
-      <CodeBlock target={target} variant={variant}>
+      <CodeBlock
+        target={target}
+        variant={variant}
+        actions={
+          shows.kind === 'note' && shows.action ? (
+            <Action shows={shows} tab={context.tab} path={target.path} />
+          ) : undefined
+        }
+      >
         <CodeBody rows={rowsOf(target)}>
           {shows.kind === 'note' ? (
-            <Note shows={shows} tab={context.tab} path={target.path} />
+            <CodeNote title={shows.title}>
+              <Said words={shows.words} />
+            </CodeNote>
           ) : unread !== undefined ? (
             <CodeNote title="Lo couldn’t read this code.">{unread}</CodeNote>
           ) : (
@@ -97,7 +101,23 @@ export function ExcerptBlock({ node, context }: { node: Excerpt; context: CodeCo
   );
 }
 
-/** A code block's code: read near the screen, drawn once it's all in, let go far from it. */
+/** Far blocks drawn for their height, one at a time, after the overview is first seen. */
+let measuring: Promise<void> = Promise.resolve();
+
+/** A far block's turn to draw for its height: `ready` once it's its turn, `done` to end it. */
+function turn(first: FirstDraw | undefined): { ready: Promise<void>; done: () => void } {
+  let done!: () => void;
+  const finished = new Promise<void>((resolve) => (done = resolve));
+  const before = measuring;
+  measuring = before.then(() => finished);
+  return { ready: Promise.all([before, first?.seen]).then(() => undefined), done };
+}
+
+/**
+ * A code block's code: drawn once it's in, near the screen; far from it, drawn once in turn for its
+ * height, and let go, keeping its room. Near the screen as the overview is first laid out, it
+ * draws before the overview is seen.
+ */
 function ExcerptCode({
   tab,
   commit,
@@ -110,10 +130,15 @@ function ExcerptCode({
   unread: (why: string) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
-  const near = useNear(box);
+  const nearness = useNearness(box);
+  const near = nearness === 'near';
   const page = usePage();
+  const first = useFirstDraw();
   const id = `overview-code${useId()}`;
-  const [drawn, setDrawn] = useState<ReturnType<typeof excerptOf> | undefined>(undefined);
+  const [code, setCode] = useState<Extract<FileCode, { kind: 'code' }> | undefined>(undefined);
+  // Whether it's been drawn, so its room is its code's height.
+  const [measured, setMeasured] = useState(false);
+  const want = near || (nearness === 'far' && !measured);
   const { path } = target;
   const { start, end } = target.lines;
   // Who's told the code couldn't be read, which changes without asking for it again.
@@ -122,37 +147,47 @@ function ExcerptCode({
     failed.current = unread;
   }, [unread]);
 
+  // Near the screen as the overview is first laid out, it draws before it's seen.
+  const drawn = useRef<(() => void) | undefined>(undefined);
+  useLayoutEffect(() => {
+    drawn.current = first?.begin();
+    return () => drawn.current?.();
+  }, [first]);
   useEffect(() => {
-    if (!near) {
-      setDrawn(undefined);
+    if (nearness === 'far') drawn.current?.();
+  }, [nearness]);
+
+  useEffect(() => {
+    if (!want) {
+      setCode(undefined);
       return undefined;
     }
-    const controller = new AbortController();
+    let live = true;
+    const wait = near ? undefined : turn(first);
+    const hold = holdFile(tab, commit, path);
     void (async () => {
-      const read = await main().texts({ id: tab, commit, path, base: true });
-      if (controller.signal.aborted) return;
-      if (read.kind === 'unread') {
-        failed.current(read.why);
+      await wait?.ready;
+      const found = await hold.code;
+      // Drawn in its own typeface, it's as tall as it stays.
+      await codeTypeface();
+      if (!live) return;
+      if (found.kind === 'unread') {
+        drawn.current?.();
+        failed.current(found.why);
         return;
       }
-      const [diffed] = await diffTexts([textsOf(path, read)], controller.signal).catch(
-        (error: unknown) => {
-          if (!controller.signal.aborted) console.error("Lo couldn't diff a code block:", error);
-          return [undefined];
-        },
-      );
-      if (!controller.signal.aborted) setDrawn(excerptOf(read, diffed));
-    })().catch((error: unknown) => {
-      if (controller.signal.aborted) return;
-      console.error("Lo couldn't read a code block's code:", error);
-      failed.current(error instanceof Error ? error.message : String(error));
-    });
-    return () => controller.abort();
-  }, [near, tab, commit, path]);
+      setCode(found);
+    })();
+    return () => {
+      live = false;
+      wait?.done();
+      hold.release();
+    };
+  }, [want, near, first, tab, commit, path]);
 
   useLayoutEffect(() => {
     const parent = box.current;
-    if (!parent || !page || !drawn) return undefined;
+    if (!parent || !page || !code) return undefined;
     parent.style.minHeight = '';
     const keys = registry();
     const view = createExcerptView(
@@ -160,25 +195,33 @@ function ExcerptCode({
       {
         id,
         path,
-        lines: drawn.lines,
-        diff: drawn.diff,
+        lines: code.lines,
+        diff: code.diff,
         range: { side: 'new', from: start, to: end },
-        tokens: drawn.tokens,
+        tokens: code.tokens,
         vimKeys: keys.vimKeys(),
         nonce: page.nonce,
       },
       QUIET,
     );
+    // Its height is its code's once the view has measured its lines, which it does a frame on.
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        setMeasured(true);
+        drawn.current?.();
+      });
+    });
     const stop = keys.subscribe(() => view.setVimKeys(keys.vimKeys()));
     return () => {
-      // Let go far from the screen, it keeps its room.
-      parent.style.minHeight = `${parent.getBoundingClientRect().height}px`;
+      cancelAnimationFrame(frame);
+      // Let go far from the screen, it keeps its room: as tall as its lines, laid out.
+      parent.style.minHeight = `${view.height()}px`;
       stop();
       view.destroy();
     };
-  }, [drawn, page, id, path, start, end]);
+  }, [code, page, id, path, start, end]);
 
-  return <div ref={box} data-lo-code={drawn ? 'drawn' : 'waiting'} />;
+  return <div ref={box} data-lo-code={code ? 'drawn' : measured ? 'measured' : 'waiting'} />;
 }
 
 /** A `:::walkthrough` block: its steps beside the current one's file, its lines marked. */
@@ -237,26 +280,20 @@ function StepCode({ tab, commit, target }: { tab: string; commit: string; target
   useEffect(() => {
     setFile(undefined);
     if (!near) return undefined;
-    const controller = new AbortController();
-    void (async () => {
-      const read = await main().texts({ id: tab, commit, path, base: false });
-      if (controller.signal.aborted) return;
-      if (read.kind === 'unread') {
-        setFile({ path, unread: read.why });
-        return;
-      }
-      const [diffed] = await diffTexts(
-        [{ path, old: null, new: read.text }],
-        controller.signal,
-      ).catch(() => [undefined]);
-      if (controller.signal.aborted) return;
-      const { lines, tokens } = excerptOf({ ...read, base: null }, diffed);
-      setFile({ path, lines: lines.new, tokens: tokens.new });
-    })().catch((error: unknown) => {
-      if (controller.signal.aborted) return;
-      setFile({ path, unread: error instanceof Error ? error.message : String(error) });
+    let live = true;
+    const hold = holdFile(tab, commit, path);
+    void hold.code.then((found) => {
+      if (!live) return;
+      setFile(
+        found.kind === 'unread'
+          ? { path, unread: found.why }
+          : { path, lines: found.lines.new, tokens: found.tokens.new },
+      );
     });
-    return () => controller.abort();
+    return () => {
+      live = false;
+      hold.release();
+    };
   }, [near, tab, commit, path]);
 
   const lines = file && 'lines' in file ? file : undefined;
@@ -310,7 +347,7 @@ function Said({ words }: { words: Words }) {
   );
 }
 
-/** What a block says in its code's place, with what the reader can do about it. */
+/** What a walkthrough's step says in its code's place, with what the reader can do about it. */
 function Note({
   shows,
   tab,
@@ -320,21 +357,30 @@ function Note({
   tab: string;
   path: string;
 }) {
-  const { action } = shows;
   return (
     <CodeNote
       title={shows.title}
-      action={
-        action?.kind === 'find' ? (
-          <FindButton name={action.name} />
-        ) : action?.kind === 'latest' ? (
-          <LatestButton tab={tab} path={path} />
-        ) : undefined
-      }
+      action={shows.action && <Action shows={shows} tab={tab} path={path} />}
     >
       <Said words={shows.words} />
     </CodeNote>
   );
+}
+
+/** What the reader can do about a block's code that isn't there: find a file, or see the newest. */
+function Action({
+  shows,
+  tab,
+  path,
+}: {
+  shows: Extract<Shows, { kind: 'note' }>;
+  tab: string;
+  path: string;
+}) {
+  const { action } = shows;
+  if (action?.kind === 'find') return <FindButton name={action.name} />;
+  if (action?.kind === 'latest') return <LatestButton tab={tab} path={path} />;
+  return null;
 }
 
 /** "Find a file named cache.ts": the file finder, with the name typed. */

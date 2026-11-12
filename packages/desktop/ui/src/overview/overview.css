@@ -319,18 +319,22 @@
 }
 
 /*
- * A code block's code: as tall as its lines from the start, whatever it holds until they come, so
- * the code coming moves nothing. What it says in their place fills the same room.
+ * A code block's code: at least as tall as an excerpt of its lines that fit their width, from the
+ * start, whatever it holds until they come. The room and what it holds share one place; what it
+ * says in the code's place fills it, on its own background.
  */
 .lo-codeblock__body {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+}
+.lo-codeblock__body > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.lo-codeblock__space {
+  visibility: hidden;
 }
 .lo-codeblock__body:has(> .lo-codeblock__msg) {
-  padding: 0;
-}
-.lo-codeblock__body > .lo-codeblock__msg {
-  flex: 1 0 auto;
+  background: var(--lo-bg);
 }
 .lo-codeblock--illustration .lo-codeblock__head strong {
   color: var(--lo-fg);
@@ -338,23 +342,29 @@
 }
 
 /*
- * A block that keeps its height while it's on screen: contents grown taller are cut off, over a
- * button that shows them whole. The cut leaves the frame's 1 px ring.
+ * A block that keeps its height while taking its contents' would move what's on screen: contents
+ * grown taller are cut off above a row of its own, in the same room, whose button shows them whole.
+ * The cut leaves the frame's 1 px ring.
  */
-.lo-held {
-  position: relative;
-}
 .lo-held.is-cut {
+  display: flex;
+  flex-direction: column;
+}
+.lo-held.is-cut > .lo-held__clip {
+  flex: 1 1 0;
+  min-height: 0;
   overflow: clip;
   overflow-clip-margin: 1px;
 }
 .lo-held__more {
-  position: absolute;
-  inset: auto 0 0;
   display: flex;
+  flex: none;
   justify-content: center;
-  padding: 24px 0 8px;
-  background: linear-gradient(transparent, var(--lo-code-bg) 60%);
+  padding: 6px 0;
+  border-top: 1px solid var(--lo-border-subtle);
+  border-radius: 0 0 var(--lo-r-md) var(--lo-r-md);
+  background: var(--lo-bg-chrome);
+  box-shadow: 0 0 0 1px var(--lo-border);
 }
 
 /* A walkthrough's code: the same height whatever it holds, the code scrolling in its own box. */
@@ -375,4 +385,15 @@
 }
 .lo-walk__step[aria-current='step'] {
   cursor: default;
+}
+
+/* What's on screen stays where it is as what's above it changes size by the overview's own
+   reckoning (`hold.ts`), which the window's scroll anchoring would add to. */
+.lo-ov {
+  overflow-anchor: none;
+}
+
+/* An article whose blocks are still drawing before it's first seen: laid out, unseen. */
+.lo-ov__article.is-drawing {
+  visibility: hidden;
 }

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 // An overview's code blocks and walkthrough steps, with main answered by a stand-in bridge: a
-// block asks for its file only once it's near the screen, draws its code once it's all in, as the
-// pull request's diff of it when it changed it, and lets it go far from the screen, keeping its
-// room; one that couldn't be read says why; one that doesn't resolve offers to find a file of the
+// block asks for its file once it knows where it is, draws its code once it's all in, as the pull
+// request's diff of it when it changed it, near the screen; far from it, it draws once, in turn,
+// for its height, and lets its code go, keeping its room. Blocks on one file read and diff it once.
+// Near the screen as the overview is first laid out, a block draws before it's seen. One that
+// couldn't be read says why; one that doesn't resolve offers, in its head, to find a file of the
 // name it gave; and a walkthrough's step shows its file whole, its lines marked.
 
 import type { CodeRange, CodeState, Excerpt } from '@lo/artifact';
@@ -18,6 +20,7 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import type { BlockText } from '../contract.ts';
 import type { CodeRead } from './checking.ts';
 import { ExcerptBlock, WalkthroughBlock, type CodeContext } from './Code.tsx';
+import { drawing, FirstDrawContext } from './drawing.ts';
 
 const findFile = vi.hoisted(() => vi.fn<(name: string) => void>());
 
@@ -25,18 +28,23 @@ vi.mock(import('../../tree/window/shared.ts'), async (original) => ({
   ...(await original()),
   findFile,
 }));
+/** How many times files were diffed. */
+const diffs = vi.hoisted(() => ({ count: 0 }));
+
 vi.mock(import('../../diff/window/shared.ts'), async (original) => ({
   ...(await original()),
   // Diffed here, as the diff's background jobs diff.
-  diffTexts: (files) =>
-    Promise.resolve(
+  diffTexts: (files) => {
+    diffs.count += files.length;
+    return Promise.resolve(
       files.map((file) => ({
         ok: true as const,
         diff: diffText(file.old ?? undefined, file.new ?? undefined),
         tokens: {},
         changes: { deleted: [], added: [] },
       })),
-    ),
+    );
+  },
 }));
 
 /** What main answers for each file, by its path. */
@@ -140,10 +148,19 @@ afterEach(() => {
 
 const COMMIT = 'c'.repeat(40);
 
+/** Each test's own tab, so none reads a file another kept. */
+let tab = 't0';
+let tabs = 0;
+beforeEach(() => {
+  tabs += 1;
+  tab = `t${tabs}`;
+  diffs.count = 0;
+});
+
 /** The blocks' context: the files the check read, and each block's state. */
 function contextOf(state: CodeState, read: CodeRead = { kind: 'read', commit: COMMIT, files: [] }) {
   return {
-    tab: 't1',
+    tab,
     commit: COMMIT,
     read,
     target: () => ({ code: state, answer: undefined }),
@@ -184,8 +201,12 @@ function excerpt(path: string, start: number, end: number): Excerpt {
 /** What the blocks asked main for. */
 const asked = () => bridge.calls.filter(([channel]) => channel === 'overview.texts');
 
+/** The lines a block has drawn, of `kind`. */
+const drawnLines = (page: HTMLElement, kind = '') =>
+  [...page.querySelectorAll(`[data-lo-code] .cm-line${kind}`)].map((line) => line.textContent);
+
 describe('a code block', () => {
-  it('reads its file only near the screen, and draws it once, as the pull request changed it', async () => {
+  it('reads its file once it’s near the screen, and draws it once, as the pull request changed it', async () => {
     texts.set('src/a.ts', {
       kind: 'text',
       text: 'one\nTWO\nthree\n',
@@ -199,37 +220,110 @@ describe('a code block', () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
+    // Until it knows where it is, it reads nothing.
     expect(asked()).toEqual([]);
 
     place(true);
     await until(() => body.getAttribute('data-lo-code') === 'drawn');
     expect(asked()).toEqual([
-      ['overview.texts', { id: 't1', commit: COMMIT, path: 'src/a.ts', base: true }],
+      ['overview.texts', { id: tab, commit: COMMIT, path: 'src/a.ts', base: true }],
     ]);
-    expect(
-      [...page.querySelectorAll('.cm-line.lo-line-del')].map((line) => line.textContent),
-    ).toEqual(['two']);
-    expect(
-      [...page.querySelectorAll('.cm-line.lo-line-add')].map((line) => line.textContent),
-    ).toEqual(['TWO']);
+    expect(drawnLines(page, '.lo-line-del')).toEqual(['two']);
+    expect(drawnLines(page, '.lo-line-add')).toEqual(['TWO']);
 
     // Checked again, it's drawn as it was, and asks for nothing.
-    const view = page.querySelector('.cm-editor');
+    const view = page.querySelector('[data-lo-code] .cm-editor');
     page.again(<ExcerptBlock node={excerpt('src/a.ts', 1, 3)} context={contextOf(RESOLVED)} />);
-    expect(page.querySelector('.cm-editor')).toBe(view);
+    expect(page.querySelector('[data-lo-code] .cm-editor')).toBe(view);
     expect(asked()).toHaveLength(1);
 
     // A screen away, it's still drawn; three, and its code goes, its room kept.
     place(false, true);
     expect(body.getAttribute('data-lo-code')).toBe('drawn');
     place(false);
-    expect(body.getAttribute('data-lo-code')).toBe('waiting');
-    expect(page.querySelector('.cm-editor')).toBeNull();
+    await until(() => body.getAttribute('data-lo-code') === 'measured');
+    expect(page.querySelector('[data-lo-code] .cm-editor')).toBeNull();
     expect(body instanceof HTMLElement && body.style.minHeight).not.toBe('');
 
+    // Near again, it draws again from what was kept, asking main nothing.
     place(true);
     await until(() => body.getAttribute('data-lo-code') === 'drawn');
+    expect(asked()).toHaveLength(1);
+    expect(diffs.count).toBe(1);
+  });
+
+  it('draws once far from the screen, in turn, for its height, then lets its code go', async () => {
+    texts.set('src/a.ts', { kind: 'text', text: 'a\nb\n', base: { kind: 'same' } });
+    texts.set('src/b.ts', { kind: 'text', text: 'c\nd\n', base: { kind: 'same' } });
+    const page = draw(
+      <>
+        <ExcerptBlock node={excerpt('src/a.ts', 1, 2)} context={contextOf(RESOLVED)} />
+        <ExcerptBlock node={excerpt('src/b.ts', 1, 2)} context={contextOf(RESOLVED)} />
+      </>,
+    );
+    place(false);
+    const bodies = [...page.querySelectorAll('[data-lo-code]')];
+    await until(() => bodies.every((body) => body.getAttribute('data-lo-code') === 'measured'));
     expect(asked()).toHaveLength(2);
+    expect(page.querySelector('[data-lo-code] .cm-editor')).toBeNull();
+    for (const body of bodies) {
+      expect(body instanceof HTMLElement && body.style.minHeight).not.toBe('');
+    }
+    // Measured once, it reads nothing more while it's far.
+    place(false);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(asked()).toHaveLength(2);
+  });
+
+  it('reads and diffs a file once for every block on it', async () => {
+    texts.set('src/a.ts', {
+      kind: 'text',
+      text: 'one\nTWO\nthree\nfour\n',
+      base: { kind: 'changed', path: 'src/a.ts', text: 'one\ntwo\nthree\nfour\n' },
+    });
+    const page = draw(
+      <>
+        <ExcerptBlock node={excerpt('src/a.ts', 1, 2)} context={contextOf(RESOLVED)} />
+        <ExcerptBlock node={excerpt('src/a.ts', 3, 4)} context={contextOf(RESOLVED)} />
+      </>,
+    );
+    place(true);
+    await until(() => page.querySelectorAll('[data-lo-code="drawn"]').length === 2);
+    expect(asked()).toHaveLength(1);
+    expect(diffs.count).toBe(1);
+    expect(drawnLines(page)).toEqual(['one', 'two', 'TWO', 'three', 'four']);
+  });
+
+  it('draws before the overview is first seen when it’s near the screen then', async () => {
+    texts.set('src/a.ts', { kind: 'text', text: 'a\n', base: { kind: 'same' } });
+    texts.set('src/b.ts', { kind: 'text', text: 'b\n', base: { kind: 'same' } });
+    const opened = vi.fn<() => void>();
+    const first = drawing(opened);
+    const page = draw(
+      <FirstDrawContext value={first}>
+        <ExcerptBlock node={excerpt('src/a.ts', 1, 1)} context={contextOf(RESOLVED)} />
+      </FirstDrawContext>,
+    );
+    first.settle();
+    expect(opened).not.toHaveBeenCalled();
+    place(true);
+    await until(() => opened.mock.calls.length === 1);
+    expect(page.querySelector('[data-lo-code="drawn"]')).not.toBeNull();
+
+    // One far from the screen doesn't keep the overview from being seen.
+    const later = vi.fn<() => void>();
+    const second = drawing(later);
+    draw(
+      <FirstDrawContext value={second}>
+        <ExcerptBlock node={excerpt('src/b.ts', 1, 1)} context={contextOf(RESOLVED)} />
+      </FirstDrawContext>,
+    );
+    second.settle();
+    expect(later).not.toHaveBeenCalled();
+    place(false);
+    expect(later).toHaveBeenCalledTimes(1);
   });
 
   it('shows a file the pull request doesn’t change as plain lines', async () => {
@@ -239,12 +333,10 @@ describe('a code block', () => {
     );
     place(true);
     await until(() => page.querySelector('[data-lo-code="drawn"]') !== null);
-    expect([...page.querySelectorAll('.cm-line')].map((line) => line.textContent)).toEqual([
-      '# Read me',
-      '',
-      'More.',
-    ]);
-    expect(page.querySelector('.lo-line-add, .lo-line-del')).toBeNull();
+    expect(drawnLines(page)).toEqual(['# Read me', '', 'More.']);
+    expect(
+      page.querySelector('[data-lo-code] .lo-line-add, [data-lo-code] .lo-line-del'),
+    ).toBeNull();
   });
 
   it('says why it couldn’t read its file', async () => {
@@ -265,7 +357,7 @@ describe('a code block', () => {
     expect(asked()).toHaveLength(2);
   });
 
-  it('offers to find a file of the name it gave when it doesn’t resolve, reading nothing', () => {
+  it('offers, in its head, to find a file of the name it gave when it doesn’t resolve, reading nothing', () => {
     const page = draw(
       <ExcerptBlock
         node={excerpt('src/cache.ts', 1, 4)}
@@ -274,10 +366,13 @@ describe('a code block', () => {
     );
     place(true);
     expect(page.querySelector('.lo-codeblock--unresolved')).not.toBeNull();
-    const button = [...page.querySelectorAll('button')].find((each) =>
-      each.textContent?.startsWith('Find a file named cache.ts'),
+    const button = [...page.querySelectorAll<HTMLElement>('.lo-codeblock__head button')].find(
+      (each) => each.textContent?.startsWith('Find a file named cache.ts'),
     );
-    act(() => button?.click());
+    expect(page.querySelector('.lo-codeblock__msg button')).toBeNull();
+    act(() => {
+      button?.click();
+    });
     expect(findFile).toHaveBeenCalledWith('cache.ts');
     expect(asked()).toEqual([]);
   });
@@ -292,9 +387,7 @@ describe('a code block', () => {
     expect(page.querySelector('.lo-codeblock__msg strong')?.textContent).toBe(
       'Waiting for the local copy.',
     );
-    expect(page.querySelector<HTMLElement>('.lo-codeblock__body')?.style.minHeight).toBe(
-      'calc(7 * var(--lo-code-line) + 8px)',
-    );
+    expect(page.querySelectorAll('.lo-codeblock__space .cm-line')).toHaveLength(7);
   });
 });
 
@@ -315,9 +408,13 @@ describe('a walkthrough', () => {
     ].join('\n'),
   );
 
-  it('shows each step’s file whole, its lines marked, reading it without its base', async () => {
-    texts.set('src/a.ts', { kind: 'text', text: 'one\ntwo\nthree\nfour\n', base: null });
-    texts.set('src/b.ts', { kind: 'text', text: 'bee\n', base: null });
+  it('shows each step’s file whole, its lines marked', async () => {
+    texts.set('src/a.ts', {
+      kind: 'text',
+      text: 'one\ntwo\nthree\nfour\n',
+      base: { kind: 'same' },
+    });
+    texts.set('src/b.ts', { kind: 'text', text: 'bee\n', base: { kind: 'added' } });
     // Its steps' words are Markdown, which the document draws.
     const context = contextOf(RESOLVED);
     const page = draw(
@@ -332,7 +429,7 @@ describe('a walkthrough', () => {
     await until(() => marked().length > 0);
     expect(marked()).toEqual(['two', 'three']);
     expect(asked()).toEqual([
-      ['overview.texts', { id: 't1', commit: COMMIT, path: 'src/a.ts', base: false }],
+      ['overview.texts', { id: tab, commit: COMMIT, path: 'src/a.ts', base: true }],
     ]);
     const next = [...page.querySelectorAll('button')].find((each) => each.textContent === 'Next');
     act(() => next?.click());

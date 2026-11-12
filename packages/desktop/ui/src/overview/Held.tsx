@@ -17,9 +17,9 @@ function scrollerOf(element: HTMLElement): HTMLElement | null {
 
 /**
  * A block of the overview whose contents change size by themselves, as a code block's do when its
- * code comes: while any of it is on screen it keeps its height, so nothing above or below it moves,
- * and contents grown taller are cut off, with a button that shows them whole. Off screen, it takes
- * its contents' height.
+ * code comes: it takes their height whenever that moves nothing on screen (`hold.ts`). Wholly on
+ * screen with something under it, it keeps its height instead, and contents grown taller are cut
+ * off above a row of its own, in the same room, with a button that shows them whole.
  */
 export function Held({ children }: { children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
@@ -41,7 +41,9 @@ export function Held({ children }: { children: ReactNode }) {
 
   return (
     <div ref={box} className={cut ? 'lo-held is-cut' : 'lo-held'}>
-      <div ref={inner}>{children}</div>
+      <div className="lo-held__clip">
+        <div ref={inner}>{children}</div>
+      </div>
       {cut && (
         <div className="lo-held__more">
           <Button size="sm" onClick={() => held.current?.release()}>
@@ -57,25 +59,32 @@ export function Held({ children }: { children: ReactNode }) {
 const NEAR = '100% 0px';
 const FAR = '300% 0px';
 
+/** Where a block is from the screen: near it, far from it, or not known yet. */
+export type Nearness = 'near' | 'far' | undefined;
+
 /**
  * Whether the element `ref` holds is near the screen: within a screen of it, and until it's three
- * screens away. Without a way to tell, as in tests, everything is near.
+ * screens away; or not known yet, until the first look. Without a way to tell, as in tests,
+ * everything is near.
  */
-export function useNear(ref: RefObject<HTMLElement | null>): boolean {
-  const [near, setNear] = useState(typeof IntersectionObserver === 'undefined');
+export function useNearness(ref: RefObject<HTMLElement | null>): Nearness {
+  const [nearness, setNearness] = useState<Nearness>(
+    typeof IntersectionObserver === 'undefined' ? 'near' : undefined,
+  );
   useEffect(() => {
     const element = ref.current;
     if (!element || typeof IntersectionObserver === 'undefined') return undefined;
     const root = scrollerOf(element);
     const comes = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) setNear(true);
+        const near = entries.some((entry) => entry.isIntersecting);
+        setNearness((was) => (near ? 'near' : (was ?? 'far')));
       },
       { root, rootMargin: NEAR },
     );
     const goes = new IntersectionObserver(
       (entries) => {
-        if (entries.every((entry) => !entry.isIntersecting)) setNear(false);
+        if (entries.every((entry) => !entry.isIntersecting)) setNearness('far');
       },
       { root, rootMargin: FAR },
     );
@@ -86,5 +95,10 @@ export function useNear(ref: RefObject<HTMLElement | null>): boolean {
       goes.disconnect();
     };
   }, [ref]);
-  return near;
+  return nearness;
+}
+
+/** Whether the element `ref` holds is near the screen, as {@link useNearness} tells. */
+export function useNear(ref: RefObject<HTMLElement | null>): boolean {
+  return useNearness(ref) === 'near';
 }

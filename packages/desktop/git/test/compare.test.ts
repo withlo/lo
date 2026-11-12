@@ -1072,11 +1072,20 @@ test('a comparison whose downloads would bring more than it may is refused', asy
   const now = await pushRevision(f, 1, 'trunk');
   const limit = 600 * 1024;
 
-  expect(await f.repo.compareRevisions(old, now, { maxBytes: limit })).toEqual({
+  // Each download says what it brought, the one stopped too.
+  const brought: number[] = [];
+  expect(
+    await f.repo.compareRevisions(old, now, {
+      maxBytes: limit,
+      received: (bytes) => brought.push(bytes),
+    }),
+  ).toEqual({
     refused: 'tooLarge',
     limit,
   });
   expect(f.logged.some((line) => line.endsWith('of files, so Lo refused it'))).toBe(true);
+  expect(brought.length).toBeGreaterThan(0);
+  expect(brought.every((bytes) => bytes > 0)).toBe(true);
 
   // With room for both, it's compared.
   const comparison = await compared(f.repo, old, now, { maxBytes: 2 * limit });

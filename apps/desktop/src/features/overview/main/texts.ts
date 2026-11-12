@@ -5,11 +5,13 @@
 //
 // - Where the diff starts is the commit's merge base with the base branch: see `baseOf`.
 // - What the pull request changed there, renames found, is worked out once for each commit and
-//   base, from the local copy, which downloads both sides of each changed file as the diff does,
-//   up to `DOWNLOAD_LIMIT`. Past that, or when it fails, a file is looked for at the same path in
-//   the base.
+//   base, from the local copy, which downloads both sides of each changed file as the diff does.
+//   Past what's left to download, or when it fails, a file is looked for at the same path in the
+//   base.
 // - Each file is read whole, up to `LIMITS.file`, the most the overview's checks read of one, and
 //   must be text. What the copy lacks of it is downloaded alone, stopped past `PROBE`.
+// - Every download for one commit, the comparison's and each file's, counts against
+//   `DOWNLOAD_LIMIT`, as the checks' reads do: past it, nothing more is downloaded for the commit.
 // - It stops once the tab closes.
 //
 // Nothing here calls Electron.
@@ -68,14 +70,26 @@ export async function baseOf(
   return clone.mergeBase(commit, forked);
 }
 
+/** What's left to download for one commit's files, in bytes. */
+interface Budget {
+  left: number;
+}
+
 /** What the pull request changed at one commit, from where it branched off, worked out once. */
 interface Changes {
   /** The commit, and the local copy's base branch tip and merge base it was worked out from. */
   readonly key: string;
+  /** What's left to download for the commit, which the comparison and every file count against. */
+  readonly budget: Budget;
+  /** Whether a read asked where the diff starts, so the rest was set going. */
+  readonly started: boolean;
   readonly base: Promise<Oid | undefined>;
   /** Every file that changed, renames found; none when that couldn't be worked out. */
   readonly files: Promise<readonly ChangedFile[] | undefined>;
 }
+
+/** What a commit's changes are before a read asks where its diff starts: never awaited. */
+const NOT_ASKED: Promise<never> = new Promise(() => {});
 
 /**
  * A tab's reads of the files its overview's blocks show: any number at once, sharing what the pull
@@ -147,21 +161,21 @@ export class BlockTexts {
     if (found === undefined || found === 'folder') {
       return unread('There’s no file at that path at the commit the overview describes.');
     }
-    const text = await this.#readWhole(clone, found);
+    const changes = this.#changesAt(clone, local, commit, withBase);
+    const text = await this.#readWhole(clone, found, changes.budget);
     if (typeof text !== 'string') return unread(text.why);
     if (!withBase) return { kind: 'text', text, base: null };
-    return { kind: 'text', text, base: await this.#base(clone, local, commit, bytes, found) };
+    return { kind: 'text', text, base: await this.#base(clone, commit, bytes, found, changes) };
   }
 
   /** How the file `version`, at `path` in `commit`, was where its diff starts. */
   async #base(
     clone: TextsClone,
-    local: ReadyLocal,
     commit: Oid,
     path: Uint8Array,
     version: FileVersion,
+    changes: Changes,
   ): Promise<BaseText> {
-    const changes = this.#changesAt(clone, local, commit);
     let base: Oid | undefined;
     try {
       base = await changes.base;
@@ -186,24 +200,40 @@ export class BlockTexts {
     if (old === undefined) return { kind: 'added' };
     // Only its mode changed, such as being made executable.
     if (old.oid === version.oid && old.path.equals(path)) return { kind: 'same' };
-    const text = await this.#readWhole(clone, old);
+    const text = await this.#readWhole(clone, old, changes.budget);
     if (typeof text !== 'string') return unknown(text.why);
     return { kind: 'changed', path: decoder.decode(old.path), text };
   }
 
-  /** What the pull request changed at `commit`, worked out once for each commit and base. */
-  #changesAt(clone: TextsClone, local: ReadyLocal, commit: Oid): Changes {
+  /**
+   * What the pull request changed at `commit`, worked out once for each commit and base, once a
+   * read asks for where a diff starts (`withBase`); and what's left to download for the commit.
+   */
+  #changesAt(clone: TextsClone, local: ReadyLocal, commit: Oid, withBase: boolean): Changes {
     const key = [commit, local.base, local.mergeBase ?? ''].join(' ');
-    if (this.#changes?.key === key) return this.#changes;
+    const known = this.#changes?.key === key ? this.#changes : undefined;
+    if (known && (known.started || !withBase)) return known;
+    const budget = known?.budget ?? { left: DOWNLOAD_LIMIT };
+    if (!withBase) {
+      this.#changes = { key, budget, started: false, base: NOT_ASKED, files: NOT_ASKED };
+      return this.#changes;
+    }
     const signal = this.#stopped.signal;
     const base = baseOf(clone, local, commit);
     const files = base
       .then(async (from) => {
         if (from === undefined || from === commit) return [];
+        if (budget.left <= 0) return undefined;
         const compared = await clone.compareRevisions(
           { base: from, head: from },
           { base: from, head: commit },
-          { maxBytes: DOWNLOAD_LIMIT, signal },
+          {
+            maxBytes: budget.left,
+            signal,
+            received: (bytes) => {
+              budget.left -= bytes;
+            },
+          },
         );
         if ('refused' in compared) {
           this.#log('what an overview’s commit changed is past what Lo downloads for it');
@@ -217,7 +247,7 @@ export class BlockTexts {
         }
         return undefined;
       });
-    this.#changes = { key, base, files };
+    this.#changes = { key, budget, started: true, base, files };
     return this.#changes;
   }
 
@@ -225,20 +255,29 @@ export class BlockTexts {
    * The text of the file `version`, read whole, downloading it first when the copy lacks it; or why
    * it can't be: it isn't a file, or text, or it's larger than the most Lo reads of a file.
    */
-  async #readWhole(clone: TextsClone, version: FileVersion): Promise<string | { why: string }> {
+  async #readWhole(
+    clone: TextsClone,
+    version: FileVersion,
+    budget: Budget,
+  ): Promise<string | { why: string }> {
     if (version.mode !== 'regular' && version.mode !== 'executable') {
       return { why: 'It isn’t a file.' };
     }
     let { size } = version;
     if (size === undefined) {
       if (clone.offline) return { why: 'The local copy is offline, and lacks it.' };
+      const cap = Math.min(PROBE, budget.left);
+      if (cap <= 0) return { why: SPENT };
       try {
         await clone.download([version.oid], DOWNLOADING, {
-          maxBytes: PROBE,
+          maxBytes: cap,
           signal: this.#stopped.signal,
+          received: (bytes) => {
+            budget.left -= bytes;
+          },
         });
       } catch (error) {
-        if (pastCap(error)) return { why: TOO_LARGE };
+        if (pastCap(error)) return { why: cap === PROBE ? TOO_LARGE : SPENT };
         throw error;
       }
       [size] = await clone.objectSizes([version.oid]);
@@ -251,6 +290,9 @@ export class BlockTexts {
     return decoder.decode(bytes);
   }
 }
+
+/** Why a file isn't shown once what Lo downloads for a commit's code is spent. */
+const SPENT = 'Lo downloaded as much of this overview’s code as it downloads for one.';
 
 /** Why a file larger than Lo reads isn't shown. */
 const TOO_LARGE = `It’s larger than ${LIMITS.file / 2 ** 20} MB, the most Lo reads of a file.`;

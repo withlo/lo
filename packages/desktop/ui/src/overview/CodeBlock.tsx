@@ -5,12 +5,13 @@
  * illustration.
  */
 
-import type { CSSProperties, ReactNode, Ref } from 'react';
+import type { ReactNode, Ref } from 'react';
 
 import type { CodeRange } from '@lo/artifact';
 import type { Code } from '@lo/markdown';
 
 import { lineRange } from './placeholders.tsx';
+import { ExcerptSpace } from './space.tsx';
 
 /**
  * How a code block draws: its code, the file or lines it names missing (`unresolved`), or its
@@ -29,14 +30,19 @@ export function PathName({ path }: { path: string }) {
   );
 }
 
-/** A code block: the file and lines `target` names, and under them, `children`. */
+/**
+ * A code block: the file and lines `target` names, with what the reader can do about them,
+ * `actions`, in its head, where they stay whatever happens to the body; and under them, `children`.
+ */
 export function CodeBlock({
   target,
   variant = 'code',
+  actions,
   children,
 }: {
   target: CodeRange;
   variant?: CodeBlockVariant | undefined;
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   const className = variant === 'code' ? 'lo-codeblock' : `lo-codeblock lo-codeblock--${variant}`;
@@ -47,6 +53,7 @@ export function CodeBlock({
           <PathName path={target.path} />
         </span>
         <span className="lo-codeblock__lines">{lineRange(target.lines)}</span>
+        {actions !== undefined && <span className="lo-codeblock__actions">{actions}</span>}
       </div>
       {children}
     </div>
@@ -54,8 +61,9 @@ export function CodeBlock({
 }
 
 /**
- * Where a code block's code goes, as tall as `rows` lines of code from the start, whatever it holds
- * until then, so the code coming moves nothing.
+ * Where a code block's code goes: from the start at least as tall as an excerpt of `rows` lines,
+ * whatever it holds until the code comes, so code that doesn't wrap and adds no lines moves
+ * nothing as it comes.
  */
 export function CodeBody({
   rows,
@@ -66,10 +74,11 @@ export function CodeBody({
   children?: ReactNode;
   ref?: Ref<HTMLDivElement> | undefined;
 }) {
-  // Each line is `--lo-code-line` tall, and the body has 4 px above and below them.
-  const style: CSSProperties = { minHeight: `calc(${rows} * var(--lo-code-line) + 8px)` };
   return (
-    <div ref={ref} className="lo-codeblock__body" style={style}>
+    <div ref={ref} className="lo-codeblock__body">
+      <div className="lo-codeblock__space">
+        <ExcerptSpace rows={rows} />
+      </div>
       {children}
     </div>
   );

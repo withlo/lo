@@ -16,5 +16,5 @@ export {
   PathName,
   type CodeBlockVariant,
 } from './CodeBlock.tsx';
-export { Held, useNear } from './Held.tsx';
+export { Held, useNear, useNearness, type Nearness } from './Held.tsx';
 export { Walkthrough } from './Walkthrough.tsx';

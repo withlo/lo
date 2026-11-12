@@ -593,6 +593,7 @@ export class Repo {
             objects: batch,
             maxBytes: downloads.left,
             signal,
+            received: downloads.received,
           });
         } catch (error) {
           if (isFetchFailure(error, 'tooLarge')) throw new PastCap();
@@ -1088,8 +1089,9 @@ export class Repo {
    *   `notDownloaded`.
    * - Its downloads may bring `maxBytes` in all, {@link COMPARE_LIMIT} unless it says otherwise,
    *   counted as they come, compressed, past which they're stopped and the comparison is refused:
-   *   never part of one. Once `signal` aborts, its downloads and its replay stop, and the
-   *   comparison fails with its reason.
+   *   never part of one. Each download tells `received` how many bytes it brought, a stopped one
+   *   too. Once `signal` aborts, its downloads and its replay stop, and the comparison fails with
+   *   its reason.
    * - The replay's tree, and the files merged into it, exist only in the clone. The tree is
    *   pinned, at `refs/lo/replays/<tree>`, while a repository has the clone open, so keep one open
    *   while showing a comparison; the next open of the clone with none open removes the pins.
@@ -1104,11 +1106,16 @@ export class Repo {
       paths?: readonly Uint8Array[] | undefined;
       maxBytes?: number | undefined;
       signal?: AbortSignal | undefined;
+      received?: ((bytes: number) => void) | undefined;
     } = {},
   ): Promise<Comparison | ComparisonRefused> {
     options.signal?.throwIfAborted();
     const limit = options.maxBytes ?? COMPARE_LIMIT;
-    const downloads: Downloads = { left: limit, signal: options.signal };
+    const downloads: Downloads = {
+      left: limit,
+      signal: options.signal,
+      received: options.received,
+    };
     try {
       return await this.#compare(old, now, options.paths, downloads);
     } catch (error) {
@@ -1841,6 +1848,8 @@ interface FetchOptions {
 interface Downloads {
   left: number;
   readonly signal?: AbortSignal | undefined;
+  /** Told how many bytes each download brought, a stopped one too. */
+  readonly received?: ((bytes: number) => void) | undefined;
 }
 
 /** Downloads that would bring more than they may: the comparison is refused. */

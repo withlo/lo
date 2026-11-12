@@ -1,8 +1,9 @@
 // An overview Lo shows: the document, with who wrote it and for which revision above it, each
 // figure as the check left it, and each code block and walkthrough filled in from the local copy
-// (`Code.tsx`). Every block is keyed by the parsed tree's own objects, which stay the same for as
-// long as the overview's commit is on screen, so nothing is drawn again from scratch under the
-// reader.
+// (`Code.tsx`). It's first seen once the code blocks near the screen have drawn, with the local
+// copy if it's coming, within the bound (`drawing.ts`). Every block is keyed by the parsed tree's
+// own objects, which stay the same for as long as the overview's commit is on screen, so nothing is
+// drawn again from scratch under the reader.
 
 import type {
   CheckedCode,
@@ -18,12 +19,14 @@ import { Button } from '@lo/ui';
 import { Figure, type PartLink } from '@lo/ui/figures';
 import { MarkdownBlocks } from '@lo/ui/markdown';
 import { OverviewDocument, lineRange, type OverviewViews } from '@lo/ui/overview';
-import { useCallback, useMemo, type Ref } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 
+import { HOLD_LIMIT } from '../../revisions/contract.ts';
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewFile } from '../contract.ts';
 import { targetsOf } from './targets.ts';
 import { ExcerptBlock, WalkthroughBlock, type CodeContext } from './Code.tsx';
+import { drawing as firstDraw, FirstDrawContext } from './drawing.ts';
 import { revisionAt, type Standing } from './facts.ts';
 import { useNow } from './hooks.ts';
 import { main } from './main.ts';
@@ -258,12 +261,33 @@ export function Shown({
     () => ({ figure, excerpt, walkthrough }),
     [figure, excerpt, walkthrough],
   );
+  // Seen once the code blocks near the screen have drawn, or at the bound; while the local copy is
+  // coming, they wait for it too.
+  const [drawing, setDrawing] = useState(true);
+  const [first] = useState(() => firstDraw(() => setDrawing(false)));
+  const copy = useRef<(() => void) | undefined>(undefined);
+  const coming = result.code.kind === 'waiting';
+  useLayoutEffect(() => {
+    if (coming) {
+      copy.current ??= first.begin();
+      return;
+    }
+    copy.current?.();
+  }, [first, coming]);
+  useLayoutEffect(() => {
+    first.settle();
+    const bound = setTimeout(() => first.open(), HOLD_LIMIT);
+    return () => clearTimeout(bound);
+  }, [first]);
   return (
-    <OverviewDocument
-      ref={scroller}
-      tree={parsed.tree}
-      byline={<Byline tab={tab} commit={commit} described={header.commit} />}
-      views={views}
-    />
+    <FirstDrawContext value={first}>
+      <OverviewDocument
+        ref={scroller}
+        tree={parsed.tree}
+        byline={<Byline tab={tab} commit={commit} described={header.commit} />}
+        views={views}
+        drawing={drawing}
+      />
+    </FirstDrawContext>
   );
 }

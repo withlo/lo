@@ -187,6 +187,35 @@ describe('BlockTexts', () => {
     expect(caps).toEqual([DOWNLOAD_LIMIT]);
   });
 
+  it('counts every download for a commit against what Lo downloads for one', async () => {
+    const { repo, local } = await fetched();
+    const caps: (number | undefined)[] = [];
+    // The comparison brings all there is room for, and is refused.
+    const spending = through(repo, {
+      compareRevisions: (_base, _head, options) => {
+        options?.received?.(DOWNLOAD_LIMIT);
+        return Promise.resolve({ refused: 'tooLarge', limit: DOWNLOAD_LIMIT } as const);
+      },
+      download: (oids, what, options) => {
+        caps.push(options?.maxBytes);
+        return repo.download(oids, what, options);
+      },
+    });
+    const texts = new BlockTexts();
+    const read = (path: string) =>
+      texts.read(local, () => Promise.resolve(spending), second, path, true);
+    // The head's file comes first, with the whole cap; its old one finds nothing left.
+    expect(await read('src/old.ts')).toEqual({
+      kind: 'text',
+      text: 'after\n',
+      base: {
+        kind: 'unknown',
+        why: 'Lo downloaded as much of this overview’s code as it downloads for one.',
+      },
+    });
+    expect(caps).toEqual([PROBE]);
+  });
+
   it('reads nothing that isn’t a file, isn’t text, or is too large', async () => {
     const { repo, local } = await fetched();
     const texts = new BlockTexts();

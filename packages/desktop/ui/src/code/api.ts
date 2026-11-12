@@ -544,6 +544,11 @@ export interface ExcerptView extends KeySource {
    */
   reveal(at: Target): boolean;
   focus(): void;
+  /**
+   * How tall the excerpt is with its lines as they're laid out: as tall as it is once on screen,
+   * which a code view far from the window, whose lines it hasn't measured, may not be yet.
+   */
+  height(): number;
   destroy(): void;
 }
 

@@ -43,9 +43,30 @@ describe('a code block', () => {
     expect(page.querySelector('.lo-codeblock__path')?.textContent).toBe('src/cache/lru.ts');
     expect(page.querySelector('.lo-codeblock__path b')?.textContent).toBe('lru.ts');
     expect(page.querySelector('.lo-codeblock__lines')?.textContent).toBe('L12–44');
-    expect(page.querySelector<HTMLElement>('.lo-codeblock__body')?.style.minHeight).toBe(
-      'calc(33 * var(--lo-code-line) + 8px)',
+    // Its room is an excerpt's frame of as many empty lines, drawn by the code views' own rules.
+    const space = page.querySelector('.lo-codeblock__body > .lo-codeblock__space')!;
+    expect(
+      space.querySelectorAll('.lo-excerpt .cm-editor .cm-scroller .cm-content > .cm-line'),
+    ).toHaveLength(33);
+    expect(space.querySelector('[aria-hidden="true"]')).not.toBeNull();
+  });
+
+  it('keeps what the reader can do in its head, whatever its body holds', () => {
+    const page = render(
+      <CodeBlock target={TARGET} variant="unresolved" actions={<button>Find</button>}>
+        <CodeBody rows={4} />
+      </CodeBlock>,
     );
+    expect(
+      page.querySelector('.lo-codeblock__head .lo-codeblock__actions button')?.textContent,
+    ).toBe('Find');
+    rerender(
+      page,
+      <CodeBlock target={TARGET}>
+        <CodeBody rows={4} />
+      </CodeBlock>,
+    );
+    expect(page.querySelector('.lo-codeblock__actions')).toBeNull();
   });
 
   it('says why in the code’s place, framed for what went wrong, with what the reader can do', () => {
@@ -186,27 +207,38 @@ describe('a held block', () => {
     vi.stubGlobal('ResizeObserver', FakeResizeObserver);
   });
 
-  it('cuts off contents grown on screen, and shows them whole when the reader asks', () => {
+  it('cuts off contents grown on screen above a row of its own, and shows them whole when asked', () => {
     let contents = 100;
+    // A screen 400 pixels tall, with more under the block, which is at its top.
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: HTMLElement,
     ) {
+      if (this.classList.contains('lo-ov')) return new DOMRect(0, 0, 600, 400);
       const own = this.className.startsWith('lo-held')
         ? Number.parseFloat(this.style.height)
         : contents;
       return new DOMRect(0, 10, 600, own);
     });
+    vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(400);
+    vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(2000);
     const page = render(
-      <Held>
-        <div className="contents" />
-      </Held>,
+      <div className="lo-ov">
+        <Held>
+          <div className="contents" />
+        </Held>
+      </div>,
     );
     const box = page.querySelector<HTMLElement>('.lo-held')!;
     expect(box.style.height).toBe('100px');
     contents = 300;
-    act(() => resize(box.firstElementChild!));
+    act(() => resize(page.querySelector('.lo-held__clip > div')!));
     expect(box.className).toBe('lo-held is-cut');
     expect(box.style.height).toBe('100px');
+    // The row is under what's cut off, never over it.
+    expect([...box.children].map((child) => child.className)).toEqual([
+      'lo-held__clip',
+      'lo-held__more',
+    ]);
     const more = page.querySelector('.lo-held__more button')!;
     expect(more.textContent).toBe('Show the whole block');
     click(more);
