@@ -90,6 +90,67 @@ describe('check', () => {
     );
   });
 
+  test('reports a link Markdown can’t read as an error at its line, with how to write it', () => {
+    const dir = folder('unread-links', {
+      'artifact.md': overview(
+        commit,
+        [
+          'A [wake timer](term:wake timer) shows as text, as does [the file](code:src/a b.ts#L1).',
+          '',
+          '- [wrapped](term:wake',
+          '  timer), and [above](#how it works)',
+          '',
+          '## How it works',
+          '',
+          'Nothing here.',
+          '',
+          '## Glossary',
+          '',
+          '- **Wake timer**: what wakes a request.',
+          '',
+        ].join('\n'),
+      ),
+    });
+    const ran = runChecker(['check', dir], repo);
+    expect(ran.status).toBe(1);
+    expect(ran.stdout.split('\n')).toEqual([
+      "artifact.md:11: error: [wake timer](term:wake timer) isn't a link, a space ends a link's address, so it shows as text. Put the address in angle brackets: [wake timer](<term:wake timer>). [link-address]",
+      "artifact.md:11: error: [the file](code:src/a b.ts#L1) isn't a link, a space ends a link's address, so it shows as text. Put the address in angle brackets: [the file](<code:src/a b.ts#L1>). [link-address]",
+      "artifact.md:13: error: [wrapped](term:wake timer) isn't a link, a line break ends a link's address, so it shows as text. Write the address on one line, in angle brackets: [wrapped](<term:wake timer>). [link-address]",
+      "artifact.md:14: error: [above](#how it works) isn't a link, a space ends a link's address, so it shows as text. A heading's anchor is its text in lower case, with - for spaces: [above](#how-it-works). [link-address]",
+      'artifact.md:22: warning: Nothing links to "Wake timer". Link its uses with term:, or leave it out. [term-unused]',
+      '',
+      '4 errors and 1 warning.',
+      '',
+    ]);
+  });
+
+  test('passes links written as the errors say, and text that only looks like one', () => {
+    const dir = folder('read-links', {
+      'artifact.md': overview(
+        commit,
+        [
+          'A [wake timer](<term:wake timer>) and [the file](<code:src/a b.ts#L1>), [above](#how-it-works),',
+          '[hyphenated](term:wake-timer) and [plain](code:src/a.ts#L1-L2).',
+          '',
+          'Only text: `[a](term:wake timer)`, \\[b\\](term:wake timer) and [c](https://example.com/a b).',
+          '',
+          '## How it works',
+          '',
+          'Nothing here.',
+          '',
+          '## Glossary',
+          '',
+          '- **Wake timer**: what wakes a request.',
+          '- **Wake-timer**: the same, hyphenated.',
+          '',
+        ].join('\n'),
+      ),
+    });
+    const ran = runChecker(['check', dir], repo);
+    expect(ran).toEqual({ status: 0, stdout: 'No errors or warnings.\n', stderr: '' });
+  });
+
   test('checks the current folder unless given one, and a pull request when given one', () => {
     const dir = folder('here', { 'artifact.md': overview(commit) });
     // Run in the overview's folder, it reads code from the repository it's in: none here.

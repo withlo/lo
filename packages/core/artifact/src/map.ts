@@ -48,6 +48,10 @@ export function syntax(reading: Reading): Syntax<Building> {
     plugins: [
       fences,
       (md) => {
+        // Before markdown-it joins the text, which would hide an escape: `\[a\](b c)` isn't a link.
+        md.core.ruler.before('text_join', 'lo_unread', (state) => {
+          reading.unreadLinks(state.tokens);
+        });
         md.core.ruler.push('lo_reading', (state) => {
           reading.read(state.tokens);
         });

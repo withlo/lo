@@ -57,6 +57,7 @@ const SEVERITIES = {
   'target-lines': 'error',
   'target-term': 'error',
   'target-count': 'error',
+  'link-address': 'error',
   'term-undefined': 'error',
   'term-twice': 'error',
   'term-unused': 'warning',

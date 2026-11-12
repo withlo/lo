@@ -696,7 +696,7 @@ describe('glossary', () => {
       <OverviewDocument
         tree={overview(
           [
-            'Uses [w](term:weight), [c](term:Cost), [b](term:bucket), [p](term:page size), [10](term:item 10), [2](term:item 2).',
+            'Uses [w](term:weight), [c](term:Cost), [b](term:bucket), [p](<term:page size>), [10](<term:item 10>), [2](<term:item 2>).',
             '',
             '## Glossary',
             '',

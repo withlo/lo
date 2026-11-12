@@ -1,0 +1,12 @@
+{
+  "outcome": "invalid",
+  "findings": [
+    { "code": "link-address", "line": 13 },
+    { "code": "link-address", "line": 13 },
+    { "code": "link-address", "line": 13 },
+    { "code": "link-address", "line": 14 },
+    { "code": "link-address", "line": 15 },
+    { "code": "link-address", "line": 16 },
+    { "code": "link-address", "line": 17 }
+  ]
+}
