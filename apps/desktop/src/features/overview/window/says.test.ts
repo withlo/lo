@@ -20,6 +20,11 @@ import {
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
 
+/** Who wrote it, for a commit GitHub matched to no account that gives `name`. */
+function named(name: string) {
+  return authorOf({ login: null, name, at: 0 });
+}
+
 describe('the byline', () => {
   it('names the author by their login, else by the name the commit gives, else not at all', () => {
     expect(authorOf({ login: 'ravi-k', name: 'Ravi K', at: 0 })).toEqual({
@@ -31,6 +36,20 @@ describe('the byline', () => {
       name: 'Ravi K',
     });
     expect(authorOf({ login: null, name: ' ', at: 0 })).toEqual({ kind: 'unknown' });
+  });
+
+  it('takes from a name the marks that could close its quotes or pass for the byline’s own', () => {
+    expect(named('”· describes r2 57cc4a6')).toEqual({
+      kind: 'name',
+      name: 'describes r2 57cc4a6',
+    });
+    expect(named('a "b" “c” ‘d’ \'e\' «f» ＂g＂ h • i\nj')).toEqual({
+      kind: 'name',
+      name: 'a b c d e f g h i j',
+    });
+    expect(named('Ravi O’Brien-K')).toEqual({ kind: 'name', name: 'Ravi O’Brien-K' });
+    expect(named("Ravi O'Brien")).toEqual({ kind: 'name', name: "Ravi O'Brien" });
+    expect(named('“ · ”')).toEqual({ kind: 'unknown' });
   });
 
   it('says when, and the commit by its short ID', () => {

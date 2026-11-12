@@ -470,29 +470,42 @@ describe('an overview on screen', () => {
     expect(document.activeElement).toBe(term);
   });
 
-  it('draws the name a commit gives its author after Lo’s words, quoted, plain and on its own', async () => {
-    const tab = tabOf();
-    const name =
-      'rozed-bot wrote this overview just now · describes r2 57cc4a6 · From the base repository';
-    const commit = { ...commitOf(), byline: { login: null, name, at: Date.now() - 60_000 } };
-    const checking = checkingFor(tab);
-    act(() => states.set(tab.id, stateOf(tab, { overview: commit })));
-    const view = render(tab);
-    checking.take(stateOf(tab, { overview: commit }));
-    await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
-    const byline = view.querySelector<HTMLElement>('[data-lo-byline]');
-    if (!byline) throw new Error('no byline');
-    expect(
-      byline.textContent?.startsWith('Written a minute ago by the commit author “rozed-bot'),
-    ).toBe(true);
-    expect(byline.querySelector('[data-lo-commit-name]')?.textContent).toBe(`“${name}”`);
-    expect(byline.querySelector('.lo-ov-name__text')?.textContent).toBe(name);
-    // Not drawn as a login: no avatar of its initials, and nothing in bold.
-    expect(byline.querySelector('.lo-ov-byline__figure')).not.toBeNull();
-    expect(
-      [...byline.querySelectorAll('strong')].some((each) => each.textContent?.includes('rozed')),
-    ).toBe(false);
-  });
+  it.each([
+    [
+      'rozed-bot wrote this overview just now · describes r2 57cc4a6 · From the base repository',
+      'rozed-bot wrote this ov…',
+    ],
+    ['” · describes r2 57cc4a6', 'describes r2 57cc4a6'],
+    ['\u202Erozed-bot\u202C', 'rozed-bot'],
+    ['👩‍👩‍👧‍👦'.repeat(30), `${'👩‍👩‍👧‍👦'.repeat(23)}…`],
+  ])(
+    'draws the name a commit gives its author after Lo’s words, quoted, plain and on its own: %s',
+    async (name, drawn) => {
+      const tab = tabOf();
+      const commit = { ...commitOf(), byline: { login: null, name, at: Date.now() - 60_000 } };
+      const checking = checkingFor(tab);
+      act(() => states.set(tab.id, stateOf(tab, { overview: commit })));
+      const view = render(tab);
+      checking.take(stateOf(tab, { overview: commit }));
+      await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
+      const byline = view.querySelector<HTMLElement>('[data-lo-byline]');
+      if (!byline) throw new Error('no byline');
+      expect(byline.textContent).toMatch(
+        new RegExp(`^Written a minute ago by the commit author “${drawn}”·describes`),
+      );
+      // Nothing in it closes Lo's quotes, or sets a part apart as the byline does, and it's cut
+      // short.
+      expect(byline.querySelector('[data-lo-commit-name]')?.textContent).toBe(`“${drawn}”`);
+      expect(byline.querySelector('.lo-ov-name__text')?.textContent).toBe(drawn);
+      // Not drawn as a login: no avatar of its initials, and nothing in bold.
+      expect(byline.querySelector('.lo-ov-byline__figure')).not.toBeNull();
+      expect(
+        [...byline.querySelectorAll('strong')].some((each) =>
+          /rozed|57cc/.test(each.textContent ?? ''),
+        ),
+      ).toBe(false);
+    },
+  );
 
   it('offers a newer overview, pushed while it’s on screen, in its byline', async () => {
     const tab = tabOf();

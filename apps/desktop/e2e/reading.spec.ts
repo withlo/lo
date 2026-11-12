@@ -624,17 +624,13 @@ test('keeps its byline to one line at any width, the commit’s name quoted and 
     });
     await page.waitForTimeout(500);
 
-    // One line, Lo's words first, and the commit's name in quotes, clipped, and not a login.
+    // One line, Lo's words first, and the commit's name in quotes, cut short, and not a login.
     expect((await byline.boundingBox())?.height).toBeLessThanOrEqual(24);
     await expect(byline).toContainText(/^Written .* by the commit author “rozed-bot wrote/);
     expect(
       (await byline.locator('strong').allTextContents()).filter((bold) => bold.includes('rozed')),
     ).toEqual([]);
-    expect(
-      await name
-        .locator('.lo-ov-name__text')
-        .evaluate((text) => text.scrollWidth > text.clientWidth),
-    ).toBe(true);
+    await expect(name).toHaveText('“rozed-bot wrote this ov…”');
     const line = await byline.boundingBox();
     const describes = await byline.getByText(/^describes/).boundingBox();
     expect((describes?.x ?? 0) + (describes?.width ?? 0)).toBeLessThanOrEqual(

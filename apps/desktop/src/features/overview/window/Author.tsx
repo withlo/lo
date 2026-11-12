@@ -10,11 +10,26 @@ import { withoutBidi } from '../../tab/window/shared.ts';
 import type { OverviewCommit } from '../contract.ts';
 import { ago, authorOf, shortId, type Author } from './says.ts';
 
-/** The name a commit gives its author: quoted, plain, on one line, clipped. */
+/** The most of a commit's name drawn, in characters as people count them: past it, it's cut. */
+const NAME_LIMIT = 24;
+
+/** The characters of `text`, as people count them. */
+const characters = new Intl.Segmenter('en', { granularity: 'grapheme' });
+
+/** The name a commit gives its author: quoted, plain, on one line, cut short. */
 export function CommitName({ name }: { name: string }) {
+  const plain = withoutBidi(name);
+  const each = [...characters.segment(plain)].map((part) => part.segment);
+  const drawn =
+    each.length > NAME_LIMIT
+      ? `${each
+          .slice(0, NAME_LIMIT - 1)
+          .join('')
+          .trimEnd()}…`
+      : plain;
   return (
     <span className="lo-ov-name" data-lo-commit-name>
-      “<span className="lo-ov-name__text">{withoutBidi(name)}</span>”
+      “<span className="lo-ov-name__text">{drawn}</span>”
     </span>
   );
 }

@@ -256,18 +256,12 @@
 }
 
 /*
- * The name a commit gives its author, which anyone can write: plain, quoted, on one short line and
- * clipped, so it can't pass for a login or for Lo's words around it.
+ * The name a commit gives its author, which anyone can write: plain, quoted, on one line and cut
+ * short, so it can't pass for a login or for Lo's words around it.
  */
 .lo-ov-name {
   white-space: nowrap;
 }
 .lo-ov-name__text {
-  display: inline-block;
-  max-width: 24ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
   font-weight: 400;
 }
