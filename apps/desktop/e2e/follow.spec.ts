@@ -93,7 +93,7 @@ async function open(page: Page): Promise<string> {
   const id = reply.value;
   await expect(shown(page)).toBeVisible({ timeout: 20_000 });
   // Seen, once its first blocks have drawn.
-  await expect(shown(page).locator('.lo-ov__article')).not.toHaveClass(/is-drawing/, {
+  await expect(shown(page).locator('.lo-ov')).not.toHaveClass(/is-drawing/, {
     timeout: 10_000,
   });
   await expect
