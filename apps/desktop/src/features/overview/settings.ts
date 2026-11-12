@@ -1,5 +1,5 @@
 // The overview's setting: what a pull request's tab opens on when it has an overview. The window
-// shows it in Settings' Opening PRs, and reads it as a tab opens.
+// shows it in Settings' Pull requests, and reads it as a tab opens.
 
 import { z } from 'zod';
 

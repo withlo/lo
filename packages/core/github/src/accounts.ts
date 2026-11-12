@@ -420,7 +420,11 @@ export class Accounts {
     if (existing) return existing;
     const account = this.account(login);
     if (!account) {
-      throw new GithubError({ kind: 'unauthorized', message: `Lo isn't signed in to ${login}` });
+      throw new GithubError({
+        kind: 'unauthorized',
+        message: `Lo isn't signed in to ${login}`,
+        missing: login,
+      });
     }
     let stored: Grant | undefined;
     try {

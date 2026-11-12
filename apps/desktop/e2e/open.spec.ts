@@ -67,8 +67,8 @@ async function accountIn(page: Page): Promise<void> {
     .toContain('rozed-bot');
 }
 
-const box = (page: Page) => page.getByRole('dialog', { name: 'Open a pull request' });
-const input = (page: Page) => box(page).getByRole('combobox', { name: 'Open a pull request' });
+const box = (page: Page) => page.getByRole('dialog', { name: 'Review a pull request' });
+const input = (page: Page) => box(page).getByRole('combobox', { name: 'Review a pull request' });
 const heading = (page: Page) => page.getByRole('heading', { level: 1 });
 const header = (page: Page) => page.locator('header').first();
 const toast = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });

@@ -85,7 +85,9 @@ test('a first launch shows the welcome screen over Recent, with sign-in ready', 
   // The default action has focus and shows its key.
   await expect(signIn(page)).toBeFocused();
   await expect(signIn(page)).toContainText(mac ? '⏎' : 'Enter');
-  await expect(welcome(page).getByText('or open a public PR without signing in')).toBeVisible();
+  await expect(
+    welcome(page).getByText('or review a public pull request without signing in'),
+  ).toBeVisible();
   await expect(welcome(page).getByRole('list', { name: 'Optional steps' })).toContainText(
     'Send PR links to Lo',
   );

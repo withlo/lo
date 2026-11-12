@@ -235,7 +235,7 @@ export function OpenBox() {
         if (!next) closeBox();
       }}
       onClosed={boxClosed}
-      label="Open a pull request"
+      label="Review a pull request"
       placeholder="Paste a link to a pull request"
       keys={keyOf('open.box')}
       mono

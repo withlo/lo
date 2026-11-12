@@ -2,26 +2,25 @@
 // The feature's dialogs in a window of their own, with main answered by a stand-in bridge: what
 // each shows, what it asks main, and that closing one stops what it was doing.
 
-import { handlers } from '@lo/ui/commands';
+import { NO_TARGET } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { createRegistry } from '../../../window/commands/registry.ts';
+import { createRegistry, registry } from '../../../window/commands/registry.ts';
 import { Slots } from '../../../window/slots.tsx';
 import { installBridge as install } from '../../../window/test/bridge.ts';
 import type { AccountSummary, GhListing, SignInState } from '../contract.ts';
-import keys from '../keys.ts';
 import { AccountDialogs } from './AccountDialogs.tsx';
 import Accounts, { AccountsSection } from './Accounts.tsx';
-import { closeDialog, openImport, openSignIn, pickAccount } from './dialogs.ts';
+import { closeDialog, openImport, openSignIn, openSignOut, pickAccount } from './dialogs.ts';
 import feature from './index.ts';
 import { accountsStore, showAccounts } from './store.ts';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
-  createRegistry(handlers(keys, { copyCode: { run: () => undefined } }), 'mac');
+  createRegistry(feature.commands, 'mac');
 });
 
 afterEach(() => {
@@ -84,6 +83,11 @@ function button(within: Element | null, text: string): HTMLButtonElement {
   );
   if (!(found instanceof HTMLButtonElement)) throw new Error(`No button "${text}".`);
   return found;
+}
+
+/** The choices of the sign-out dialog, if it's open. */
+function choices(): Element[] {
+  return [...(dialog('sign-out')?.querySelectorAll('[role="radio"]') ?? [])];
 }
 
 function click(element: Element): void {
@@ -151,6 +155,34 @@ describe('the sign-in dialog', () => {
       bridge.push('accounts.signingIn', { kind: 'failed', id: 6, why: 'denied', message: 'No.' }),
     );
     expect(dialog('sign-in')?.textContent).toContain('Signed in as rozed-bot');
+  });
+
+  it('presses Done on ⏎ off its buttons, and says nothing of the keychain', async () => {
+    const bridge = installBridge({ 'accounts.signIn': () => waiting });
+    render();
+    act(() => openSignIn());
+    await settle();
+    act(() =>
+      bridge.push('accounts.signingIn', {
+        kind: 'signedIn',
+        id: 7,
+        login: 'rozed-bot',
+        name: null,
+      }),
+    );
+    const shown = dialog('sign-in');
+    expect(shown?.textContent).toContain('Signed in as rozed-bot');
+    expect(shown?.textContent).not.toMatch(/keychain/i);
+    // A button's own `⏎` is left to it.
+    const key = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    act(() => {
+      button(shown, 'Done').dispatchEvent(key);
+    });
+    expect(key.defaultPrevented).toBe(false);
+    // On the dialog's text, which a click there left focus on, `⏎` presses Done.
+    press(shown?.querySelector('p') ?? document.body, 'Enter');
+    await settle();
+    expect(dialog('sign-in')).toBeNull();
   });
 
   it('stops the sign-in when closed, even one main is still starting', async () => {
@@ -417,6 +449,90 @@ describe('the account picker', () => {
   });
 });
 
+describe('signing out', () => {
+  it('asks once, then signs out the account, and says if it could not', async () => {
+    let refuse = true;
+    const bridge = installBridge({
+      'accounts.remove': () => {
+        if (refuse) throw new IpcError('failed', "Lo couldn't sign out of rozed-bot completely.");
+        return undefined;
+      },
+    });
+    showAccounts([account('rozed-bot')]);
+    render();
+    act(() => openSignOut(['rozed-bot']));
+    await settle();
+    const shown = dialog('sign-out');
+    expect(shown?.textContent).toContain('Sign out of rozed-bot?');
+    expect(shown?.textContent).toContain("Lo removes rozed-bot's token from this computer");
+    expect(choices()).toHaveLength(0);
+    expect(document.activeElement).toBe(button(shown, 'Sign out'));
+    expect(bridge.calls.filter(([channel]) => channel === 'accounts.remove')).toEqual([]);
+
+    click(button(shown, 'Sign out'));
+    await settle();
+    expect(dialog('sign-out')?.querySelector('[role="alert"]')?.textContent).toBe(
+      "Lo couldn't sign out of rozed-bot completely.",
+    );
+
+    // Pressing `⏎` where focus has no control of its own tries again.
+    refuse = false;
+    press(dialog('sign-out')?.querySelector('p') ?? document.body, 'Enter');
+    await settle();
+    expect(bridge.calls.filter(([channel]) => channel === 'accounts.remove')).toEqual([
+      ['accounts.remove', { login: 'rozed-bot' }],
+      ['accounts.remove', { login: 'rozed-bot' }],
+    ]);
+    expect(dialog('sign-out')).toBeNull();
+  });
+
+  it('asks which account when there are several, and picks none for the person', async () => {
+    const bridge = installBridge({ 'accounts.remove': () => undefined });
+    showAccounts([account('rozed-bot'), account('tess-okafor', { source: 'gh' })]);
+    render();
+    act(() => openSignOut(['rozed-bot', 'tess-okafor']));
+    const shown = dialog('sign-out');
+    expect(shown?.textContent).toContain('Sign out of which account?');
+    expect(choices().map((each) => each.textContent)).toEqual([
+      'rozed-botSigned in with GitHub',
+      'tess-okaforImported from gh',
+    ]);
+    expect(choices().map((each) => each.getAttribute('aria-checked'))).toEqual(['false', 'false']);
+    // Nothing can be signed out of until one is picked.
+    expect(button(shown, 'Sign out').disabled).toBe(true);
+    press(shown ?? document.body, 'Enter');
+    await settle();
+    expect(bridge.calls.filter(([channel]) => channel === 'accounts.remove')).toEqual([]);
+
+    click(choices()[1] ?? document.body);
+    expect(button(shown, 'Sign out of tess-okafor').disabled).toBe(false);
+    click(button(shown, 'Sign out of tess-okafor'));
+    await settle();
+    expect(bridge.calls).toContainEqual(['accounts.remove', { login: 'tess-okafor' }]);
+    expect(dialog('sign-out')).toBeNull();
+  });
+
+  it('has commands for the palette and the app menu, which say when no account is left', async () => {
+    installBridge({ 'accounts.signIn': () => waiting });
+    render();
+    const signOut = registry().command('accounts.signOut')?.handler;
+    expect(signOut?.enabled?.(NO_TARGET)).toBe("Lo isn't signed in to any account.");
+    showAccounts([account('rozed-bot'), account('tess-okafor')]);
+    expect(signOut?.enabled?.(NO_TARGET)).toBe(true);
+    act(() => {
+      void signOut?.run(NO_TARGET);
+    });
+    expect(dialog('sign-out')?.textContent).toContain('Sign out of which account?');
+    // Adding an account starts signing in, in place of the dialog before it.
+    act(() => {
+      void registry().command('accounts.addAccount')?.handler?.run(NO_TARGET);
+    });
+    await settle();
+    expect(dialog('sign-out')).toBeNull();
+    expect(dialog('sign-in')?.textContent).toContain('FAKE-1234');
+  });
+});
+
 describe('Accounts in Settings', () => {
   it('shows each account and how it is, a missing keyring above all', () => {
     installBridge({});
@@ -437,5 +553,15 @@ describe('Accounts in Settings', () => {
     expect(rows[1]?.textContent).toContain('Import again');
     expect(rows[2]?.textContent).toContain('Needs a keyring');
     expect(page.textContent).toContain('Install or unlock GNOME Keyring or KWallet');
+  });
+
+  it('signs an account out after the dialog asks', () => {
+    installBridge({});
+    showAccounts([account('rozed-bot'), account('tess-okafor')]);
+    const page = render();
+    const rows = [...page.querySelectorAll('ul[aria-label="Accounts"] > li')];
+    click(button(rows[1] ?? null, 'Sign out'));
+    expect(dialog('sign-out')?.textContent).toContain('Sign out of tess-okafor?');
+    expect(page.textContent).not.toContain('Remove');
   });
 });

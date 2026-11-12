@@ -1,4 +1,4 @@
-// The diff's row in Settings' Opening PRs: its layout, side by side or inline, which `gi` changes
+// The diff's row in Settings' Pull requests: its layout, side by side or inline, which `gi` changes
 // from any diff too.
 
 import { Key, SegmentedControl, Setting } from '@lo/ui';

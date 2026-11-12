@@ -82,8 +82,9 @@ const row = cva(
   'relative flex min-h-list-row-h cursor-default items-center gap-8 rounded-sm px-8 py-6 hover:bg-hover',
   {
     variants: {
-      between: { true: 'bg-current', false: '' },
-      focused: { true: 'shadow-ring-inset', false: '' },
+      between: { true: 'bg-on-screen', false: '' },
+      // Only while the list has keyboard focus: opened with a click, it has none to show.
+      focused: { true: 'group-focus-visible/list:shadow-ring-inset', false: '' },
       disabled: { true: 'text-fg-dim', false: 'text-fg' },
     },
   },
@@ -210,7 +211,7 @@ export function RevisionPicker({
               tabIndex={-1}
               data-lo-scope={scope}
               aria-activedescendant={focused === undefined ? undefined : rowId(prefix, focused)}
-              className="flex max-h-palette-list-h flex-col overflow-auto px-6 pb-6 outline-none"
+              className="group/list flex max-h-palette-list-h flex-col overflow-auto px-6 pb-6 outline-none"
             >
               {rows.map((each, index) => {
                 const end = index === first || index === last;

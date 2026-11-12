@@ -57,9 +57,9 @@ export interface PaletteProps<T> {
 }
 
 /**
- * A keyboard list over the window: the command palette, the file finder and open a PR. Typing
- * narrows it, the arrows move through it, and `⏎` acts on the highlighted row, which is always
- * one: nothing hides behind a second step.
+ * A keyboard list over the window: the command palette, the file finder and the box that takes a
+ * pull request's link. Typing narrows it, the arrows move through it, and `⏎` acts on the
+ * highlighted row, which is always one: nothing hides behind a second step.
  */
 export function Palette<T>({
   open,

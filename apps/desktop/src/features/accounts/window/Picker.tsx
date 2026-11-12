@@ -25,7 +25,7 @@ export function unusable(account: AccountSummary | undefined): string | undefine
 }
 
 /** How `account` signed in, for its line. */
-function how(account: AccountSummary | undefined): string {
+export function how(account: AccountSummary | undefined): string {
   if (account === undefined) return '';
   const source = account.source === 'gh' ? 'Imported from gh' : 'Signed in with GitHub';
   return account.name === null ? source : `${account.name} · ${source.toLowerCase()}`;

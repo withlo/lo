@@ -1,4 +1,4 @@
-// The overview's row in Settings' Opening PRs: what a pull request opens on when it has an
+// The overview's row in Settings' Pull requests: what a pull request opens on when it has an
 // overview.
 
 import { SegmentedControl, Setting } from '@lo/ui';

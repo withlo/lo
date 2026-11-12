@@ -6,16 +6,24 @@ import { defineView } from '../../../window/slots.tsx';
 import { dialogs } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import Accounts from './Accounts.tsx';
-import { copyCode, heardSignIn, waitingSignIn } from './dialogs.ts';
+import { copyCode, heardSignIn, openSignIn, openSignOut, waitingSignIn } from './dialogs.ts';
 import { AccountDialogs } from './AccountDialogs.tsx';
 import { main } from './main.ts';
-import { showAccounts } from './store.ts';
+import { accountsStore, showAccounts } from './store.ts';
 
 export default {
   commands: handlers(keys, {
     copyCode: {
       run: () => copyCode(),
       enabled: () => (waitingSignIn() === undefined ? 'No sign-in is waiting for its code.' : true),
+    },
+    addAccount: { run: () => openSignIn() },
+    signOut: {
+      run: () => openSignOut((accountsStore.getState().accounts ?? []).map(({ login }) => login)),
+      enabled: () =>
+        (accountsStore.getState().accounts ?? []).length === 0
+          ? "Lo isn't signed in to any account."
+          : true,
     },
   }),
   views: [

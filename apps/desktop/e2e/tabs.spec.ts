@@ -66,7 +66,7 @@ async function expectFits(page: Page): Promise<void> {
     true,
   );
   await expectInside(page, shown(page));
-  await expectInside(page, strip(page).getByRole('button', { name: 'Open a pull request' }));
+  await expectInside(page, strip(page).getByRole('button', { name: 'Review a pull request' }));
   if ((await more(page).count()) > 0) await expectInside(page, more(page));
 }
 

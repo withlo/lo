@@ -316,7 +316,7 @@ export default {
       order: 20,
       render: ({ tab }) => createElement(DiffStatus, { tab }),
     }),
-    // After how a pull request opens, in Settings' Opening PRs.
+    // After how a pull request opens, in Settings' Pull requests.
     defineView(opening, {
       id: 'diff.layout',
       order: 20,

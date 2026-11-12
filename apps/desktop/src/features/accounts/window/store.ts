@@ -42,6 +42,8 @@ export interface SignInDialog {
 export type OpenDialog =
   | SignInDialog
   | { readonly kind: 'import' }
+  /** Signing out: of the one account in `logins`, or of the one chosen from several. */
+  | { readonly kind: 'signOut'; readonly logins: readonly string[] }
   | {
       readonly kind: 'pick';
       readonly question: AccountQuestion;

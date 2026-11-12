@@ -1,5 +1,5 @@
 // The welcome screen, over the Recent tab while no account is signed in: what Lo is, how to sign in
-// or import accounts from gh, a box to open a public pull request, the optional steps, and a
+// or import accounts from gh, a box to review a public pull request, the optional steps, and a
 // notice when Lo can't find git. It is a form like Settings, so `Tab` walks its controls.
 
 import { Button, Callout, Input, Key, Mark, SetupList, Spinner } from '@lo/ui';
@@ -50,7 +50,7 @@ function TerminalIcon() {
   );
 }
 
-/** The box to open a public pull request without signing in. */
+/** The box to review a public pull request without signing in. */
 function OpenField() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -243,7 +243,7 @@ function Welcome(): ReactNode {
         </div>
         <div className="flex items-center gap-12 text-fg-muted text-small">
           <span className="h-0 flex-1 border-t border-border" aria-hidden="true" />
-          or open a public PR without signing in
+          or review a public pull request without signing in
           <span className="h-0 flex-1 border-t border-border" aria-hidden="true" />
         </div>
         <OpenField />

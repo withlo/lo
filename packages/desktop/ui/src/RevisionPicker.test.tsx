@@ -3,7 +3,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { buildCss, hasRule } from '../scripts/stylesheet.ts';
+import { buildCss, declarations, hasRule } from '../scripts/stylesheet.ts';
 import { RevisionPicker, type RevisionPickerRow } from './RevisionPicker.tsx';
 
 beforeAll(() => {
@@ -118,7 +118,7 @@ describe('RevisionPicker', () => {
     ]);
     // The keyboard is on r4, between the ends.
     expect(list?.getAttribute('aria-activedescendant')).toBe(options[1]?.id);
-    expect(options[1]?.className).toContain('bg-current');
+    expect(options[1]?.className).toContain('bg-on-screen');
     expect(options[3]?.getAttribute('aria-disabled')).toBe('true');
     expect(page.textContent).toContain('Last seen here');
     expect(page.textContent).toContain('Revisions are compared once the local copy is ready.');
@@ -155,5 +155,16 @@ describe('RevisionPicker', () => {
     ].filter((name) => name !== '' && !name.startsWith('lo-'));
     const css = await buildCss(classes);
     expect(classes.filter((name) => !hasRule(css, name))).toEqual([]);
+  });
+
+  it('grounds what lies between the ends in the current tint, not in the text color', async () => {
+    // Tailwind's own `bg-current` is `currentcolor`: the text's color, which hides the text.
+    const { page } = picker();
+    const between = page.querySelector('[data-key="r4"]');
+    const classes = (between?.getAttribute('class') ?? '').split(/\s+/).filter(Boolean);
+    expect(classes).not.toContain('bg-current');
+    const css = await buildCss(classes);
+    expect(css).not.toMatch(/background(?:-color)?:\s*currentcolor/i);
+    expect(declarations(css, 'bg-on-screen')).toBe('background-color: var(--lo-current);');
   });
 });

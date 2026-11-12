@@ -3,7 +3,8 @@
 // little while once none does, up to a bound on their text, and let go oldest first; a failed read
 // is never kept, and one still being read when the last block lets it go is let go too. A small
 // file is diffed at once, the diff's job started only for its highlighting; a larger one, or one
-// that takes longer than a frame's share to diff, waits for the job's diff.
+// that comes once the frame's share is spent, waits for the job's diff. The clock is the test's own,
+// so which of the two a small file gets doesn't depend on how fast the machine is.
 
 import { diffText } from '@lo/diff';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installBridge } from '../../../window/test/bridge.ts';
 import type { DiffedText } from '../../diff/window/shared.ts';
 import type { BlockText } from '../contract.ts';
+import { quickClock } from '../test/clock.ts';
 import { heldFiles, holdFile, IDLE_LIMIT, QUICK_LIMIT } from './files.ts';
 
 /**
@@ -43,6 +45,7 @@ const bridge = installBridge({
 });
 
 const COMMIT = 'c'.repeat(40);
+const clock = quickClock();
 let tabs = 0;
 
 afterEach(() => {
@@ -54,6 +57,8 @@ afterEach(() => {
 
 /** Holds the diff's job back until the returned function answers it, diffing `old` to `now`. */
 function heldJob(old: string, now: string): () => void {
+  // Diffed now, before a test makes the clock run out, which would leave this diff coarse too.
+  const diff = diffText(old, now);
   let answer!: () => void;
   job.answer = () =>
     new Promise((resolve) => {
@@ -61,7 +66,7 @@ function heldJob(old: string, now: string): () => void {
         resolve([
           {
             ok: true,
-            diff: diffText(old, now),
+            diff,
             tokens: { new: Uint32Array.of(0, 1, 2) },
             changes: { deleted: [], added: [] },
           },
@@ -154,30 +159,49 @@ describe('holdFile', () => {
     hold.release();
   });
 
-  it('waits for the job’s diff of a small file it can’t diff in a frame’s share', async () => {
+  it('waits for the job’s diff of a small file once the frame’s share is spent, until the next frame', async () => {
     const tab = tabOf();
-    // Every line differs, in words both sides share: about the most work a file this size can be.
-    const words = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'return', '=', ';'];
-    const sideOf = (seed: number) => {
-      let x = seed;
-      const word = () =>
-        words[Math.floor(((x = (x * 1103515245 + 12345) % 2 ** 31) / 2 ** 31) * 9)];
-      return Array.from({ length: 200 }, () => Array.from({ length: 6 }, word).join(' ')).join(
-        '\n',
-      );
-    };
-    const [old, now] = [sideOf(1), sideOf(2)];
-    expect(old.length + now.length).toBeLessThan(QUICK_LIMIT);
-    const answer = heldJob(old, now);
+    // Each diff takes all of the share, so one spends it for the rest of its frame.
+    clock.takes(8);
+    for (const path of ['first.ts', 'second.ts', 'third.ts']) {
+      texts.set(path, { kind: 'text', text: 'b\n', base: { kind: 'changed', path, text: 'a\n' } });
+    }
+    const first = holdFile(tab, COMMIT, 'first.ts');
+    expect(await first.code).toMatchObject({ kind: 'code', diff: diffText('a\n', 'b\n') });
+    expect(job.asked).toBe(0);
+
+    const answer = heldJob('a\n', 'b\n');
+    const second = holdFile(tab, COMMIT, 'second.ts');
+    let code: unknown;
+    void second.code.then((found) => (code = found));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(job.asked).toBe(1);
+    expect(code).toBeUndefined();
+    answer();
+    expect(await second.code).toMatchObject({ kind: 'code', diff: diffText('a\n', 'b\n') });
+
+    // The frame over, its share is whole, and a small file is diffed at once again.
+    clock.endFrame();
+    const third = holdFile(tab, COMMIT, 'third.ts');
+    expect(await third.code).toMatchObject({ kind: 'code', diff: diffText('a\n', 'b\n') });
+    expect(job.asked).toBe(1);
+    for (const hold of [first, second, third]) hold.release();
+  });
+
+  it('waits for the job’s diff of a small file whose diff runs out of its budget', async () => {
+    const tab = tabOf();
+    const answer = heldJob('a\n', 'b\n');
+    clock.runsOut();
     texts.set('busy.ts', {
       kind: 'text',
-      text: now,
-      base: { kind: 'changed', path: 'busy.ts', text: old },
+      text: 'b\n',
+      base: { kind: 'changed', path: 'busy.ts', text: 'a\n' },
     });
     const hold = holdFile(tab, COMMIT, 'busy.ts');
     let code: unknown;
     void hold.code.then((found) => (code = found));
     await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(job.asked).toBe(1);
     expect(code).toBeUndefined();
     answer();
     await hold.code;

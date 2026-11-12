@@ -41,7 +41,7 @@ test('a second launch on the same data folder hands over to the first', async ({
 test('the window opens on Recent pull requests alone, in both of its fonts', async ({ page }) => {
   const strip = page.getByRole('tablist', { name: 'Pull requests' });
   await expect(strip.getByRole('tab')).toHaveText(['Recent pull requests']);
-  const open = strip.getByRole('button', { name: 'Open a pull request' });
+  const open = strip.getByRole('button', { name: 'Review a pull request' });
   await expect(open).toBeVisible();
   expect(
     await open.evaluate((button) => getComputedStyle(button).getPropertyValue('app-region')),
@@ -67,7 +67,7 @@ test('the window opens on Recent pull requests alone, in both of its fonts', asy
   expect(fonts.family).toMatch(/^"Host Grotesk"/);
   // It opens the box to open a pull request with.
   await open.click();
-  await expect(page.getByRole('dialog', { name: 'Open a pull request' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Review a pull request' })).toBeVisible();
   // Their licenses ship with the window's files.
   for (const font of ['host-grotesk', 'fragment-mono']) {
     expect(
