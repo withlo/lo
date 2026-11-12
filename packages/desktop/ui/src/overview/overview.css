@@ -210,10 +210,7 @@
   user-select: text;
 }
 
-/*
- * The overview's article keeps the line at the top of the screen where it is while what's above it
- * fills in: the browser's scroll anchoring, which nothing in the article turns off.
- */
-.lo-ov {
-  overflow-anchor: auto;
+/* The byline is as tall as the offer of a newer overview, so the offer coming moves nothing. */
+.lo-ov-byline {
+  min-height: var(--lo-control-h-sm);
 }

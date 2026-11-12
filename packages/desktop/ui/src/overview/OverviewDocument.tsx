@@ -38,6 +38,7 @@ import {
   type Rendering,
 } from '../markdown/index.ts';
 import { blockHints, isStop, type BlockHint } from './blocks.ts';
+import { holdPlace } from './hold.ts';
 import { Glossary } from './Glossary.tsx';
 import {
   GlossaryContext,
@@ -144,6 +145,14 @@ export function OverviewDocument({
     },
     [ref],
   );
+
+  // What's on screen stays where it is on the page as the box moves without the reader, as when a
+  // banner over it comes or goes.
+  useEffect(() => {
+    const element = root.current;
+    if (!element || typeof ResizeObserver === 'undefined') return undefined;
+    return holdPlace(element);
+  }, []);
 
   // The latest handler, read when a link is followed, so a new one doesn't draw the article again.
   const handler = useRef(onFollow);
