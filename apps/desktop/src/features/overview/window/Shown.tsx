@@ -222,10 +222,13 @@ export function Shown({
   tab,
   standing,
   scroller,
+  onScreen = true,
 }: {
   tab: PullTab;
   standing: ShownStanding;
   scroller?: Ref<HTMLDivElement> | undefined;
+  /** Whether the overview is the middle view on screen, rather than kept drawn behind another. */
+  onScreen?: boolean;
 }) {
   const { parsed, result, commit, header } = standing;
   const { outcome } = result.checked;
@@ -277,6 +280,11 @@ export function Shown({
   useLayoutEffect(() => {
     first.settle();
   }, [first]);
+  // Far blocks draw for their height only once the overview is on screen, and blocks diff their
+  // files here only then: before any block asks for its file.
+  useLayoutEffect(() => {
+    if (onScreen) first.show();
+  }, [first, onScreen]);
   useLayoutEffect(() => {
     const bound = setTimeout(() => first.open(), HOLD_LIMIT);
     return () => clearTimeout(bound);

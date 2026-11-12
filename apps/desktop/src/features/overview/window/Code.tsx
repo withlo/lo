@@ -9,7 +9,13 @@
 
 import type { CodeRange, Excerpt, Walkthrough as WalkthroughNode } from '@lo/artifact';
 import { Button, Key } from '@lo/ui';
-import { codeTypeface, createExcerptView, createFileView, type FileView } from '@lo/ui/code';
+import {
+  codeTypeface,
+  createExcerptView,
+  createFileView,
+  type ExcerptView,
+  type FileView,
+} from '@lo/ui/code';
 import {
   CodeBlock,
   CodeBody,
@@ -28,7 +34,7 @@ import { findFile, showFile } from '../../tree/window/shared.ts';
 import type { CodeRead } from './checking.ts';
 import { useFirstDraw, type FirstDraw } from './drawing.ts';
 import { revisionAt } from './facts.ts';
-import { holdFile, type FileCode } from './files.ts';
+import { holdFile, type FileCode, type FileHold } from './files.ts';
 import { keyOf } from './labels.ts';
 import { usePage } from './page.ts';
 import { shortId } from './says.ts';
@@ -101,15 +107,21 @@ export function ExcerptBlock({ node, context }: { node: Excerpt; context: CodeCo
   );
 }
 
-/** Far blocks drawn for their height, one at a time, after the overview is first seen. */
-let measuring: Promise<void> = Promise.resolve();
+/** Each overview's far blocks drawn for their height, one at a time, once it's first seen. */
+const measuring = new WeakMap<object, Promise<void>>();
+/** Where blocks outside an overview's first frame, as in tests, take turns. */
+const ALONE = {};
 
 /** A far block's turn to draw for its height: `ready` once it's its turn, `done` to end it. */
 function turn(first: FirstDraw | undefined): { ready: Promise<void>; done: () => void } {
   let done!: () => void;
   const finished = new Promise<void>((resolve) => (done = resolve));
-  const before = measuring;
-  measuring = before.then(() => finished);
+  const key = first ?? ALONE;
+  const before = measuring.get(key) ?? Promise.resolve();
+  measuring.set(
+    key,
+    before.then(() => finished),
+  );
   return { ready: Promise.all([before, first?.seen]).then(() => undefined), done };
 }
 
@@ -138,6 +150,7 @@ function ExcerptCode({
   const [code, setCode] = useState<Extract<FileCode, { kind: 'code' }> | undefined>(undefined);
   // Whether it's been drawn, so its room is its code's height.
   const [measured, setMeasured] = useState(false);
+  const drawnView = useRef<ExcerptView>(undefined);
   const want = near || (nearness === 'far' && !measured);
   const { path } = target;
   const { start, end } = target.lines;
@@ -164,9 +177,11 @@ function ExcerptCode({
     }
     let live = true;
     const wait = near ? undefined : turn(first);
-    const hold = holdFile(tab, commit, path);
+    let hold: FileHold | undefined;
     void (async () => {
       await wait?.ready;
+      if (!live) return;
+      hold = holdFile(tab, commit, path, first?.onScreen() ?? true);
       const found = await hold.code;
       // Drawn in its own typeface, it's as tall as it stays.
       await codeTypeface();
@@ -181,7 +196,7 @@ function ExcerptCode({
     return () => {
       live = false;
       wait?.done();
-      hold.release();
+      hold?.release();
     };
   }, [want, near, first, tab, commit, path]);
 
@@ -203,13 +218,7 @@ function ExcerptCode({
       },
       QUIET,
     );
-    // Highlighted once the diff's job has it, which changes no line's height.
-    let live = true;
-    void code.tokens.then((tokens) => {
-      if (!live) return;
-      if (tokens.old) view.setTokens('old', tokens.old);
-      if (tokens.new) view.setTokens('new', tokens.new);
-    });
+    drawnView.current = view;
     // Its height is its code's once the view has measured its lines, which it does a frame on.
     let frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
@@ -219,7 +228,7 @@ function ExcerptCode({
     });
     const stop = keys.subscribe(() => view.setVimKeys(keys.vimKeys()));
     return () => {
-      live = false;
+      drawnView.current = undefined;
       cancelAnimationFrame(frame);
       // Let go far from the screen, it keeps its room: as tall as its lines, laid out.
       parent.style.minHeight = `${view.height()}px`;
@@ -227,6 +236,22 @@ function ExcerptCode({
       view.destroy();
     };
   }, [code, page, id, path, start, end]);
+
+  // Highlighted near the screen once the diff's job has it, which changes no line's height; drawn
+  // only for its height, far from it, it isn't.
+  useEffect(() => {
+    const view = drawnView.current;
+    if (!near || !code || !view) return undefined;
+    let live = true;
+    void code.highlighted().then((tokens) => {
+      if (!live || drawnView.current !== view) return;
+      if (tokens.old) view.setTokens('old', tokens.old);
+      if (tokens.new) view.setTokens('new', tokens.new);
+    });
+    return () => {
+      live = false;
+    };
+  }, [near, code]);
 
   return <div ref={box} data-lo-code={code ? 'drawn' : measured ? 'measured' : 'waiting'} />;
 }
@@ -278,6 +303,7 @@ function StepCode({ tab, commit, target }: { tab: string; commit: string; target
   const box = useRef<HTMLDivElement>(null);
   const near = useNear(box);
   const page = usePage();
+  const first = useFirstDraw();
   const id = `overview-step${useId()}`;
   const view = useRef<FileView>(undefined);
   const [file, setFile] = useState<StepFile | undefined>(undefined);
@@ -288,20 +314,24 @@ function StepCode({ tab, commit, target }: { tab: string; commit: string; target
     setFile(undefined);
     if (!near) return undefined;
     let live = true;
-    const hold = holdFile(tab, commit, path);
+    const hold = holdFile(tab, commit, path, first?.onScreen() ?? true);
     void hold.code.then((found) => {
       if (!live) return;
       setFile(
         found.kind === 'unread'
           ? { path, unread: found.why }
-          : { path, lines: found.lines.new, tokens: found.tokens.then((tokens) => tokens.new) },
+          : {
+              path,
+              lines: found.lines.new,
+              tokens: found.highlighted().then((tokens) => tokens.new),
+            },
       );
     });
     return () => {
       live = false;
       hold.release();
     };
-  }, [near, tab, commit, path]);
+  }, [near, first, tab, commit, path]);
 
   const lines = file && 'lines' in file ? file : undefined;
   useLayoutEffect(() => {

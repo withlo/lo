@@ -71,10 +71,12 @@ function Body({
   tab,
   standing,
   scroller,
+  onScreen,
 }: {
   tab: PullTab;
   standing: Standing;
   scroller: (element: HTMLDivElement | null) => void;
+  onScreen: boolean;
 }) {
   switch (standing.kind) {
     case 'reading':
@@ -91,7 +93,7 @@ function Body({
     case 'newer':
       return <CantShow tab={tab} standing={standing} />;
     case 'shown':
-      return <Shown tab={tab} standing={standing} scroller={scroller} />;
+      return <Shown tab={tab} standing={standing} scroller={scroller} onScreen={onScreen} />;
     default:
       standing satisfies never;
       return null;
@@ -151,7 +153,7 @@ export function OverviewView({ tab, shown }: { tab: PullTab; shown: boolean }) {
       data-lo-scope="overview"
       data-lo-overview={standing.kind}
     >
-      <Body tab={tab} standing={standing} scroller={scroller} />
+      <Body tab={tab} standing={standing} scroller={scroller} onScreen={shown} />
     </div>
   );
 }

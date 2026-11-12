@@ -1002,10 +1002,13 @@ async function openAgain(page: Page, id: string, watch: () => Promise<void>): Pr
     await expect(views(page)).toHaveCount(0);
     await watch();
     tab = await open(page);
-    await expect(overview(page, 'shown').or(middleView(page, 'diff.view'))).toBeVisible({
-      timeout: 20_000,
-    });
-    if ((await overviewTab(page).getAttribute('aria-selected')) === 'true' || tries === 3) {
+    /** What the tab opened on, once it has. */
+    const opened = async () => {
+      if (await middleView(page, 'diff.view').isVisible()) return 'diff';
+      return (await overview(page, 'shown').isVisible()) ? 'overview' : 'waiting';
+    };
+    await expect.poll(opened, { timeout: 20_000 }).not.toBe('waiting');
+    if ((await opened()) === 'overview' || tries === 3) {
       await expect(overviewTab(page)).toHaveAttribute('aria-selected', 'true');
       return tab;
     }

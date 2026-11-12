@@ -13,31 +13,47 @@ export interface FirstDraw {
    * once the block has drawn, or found it's far from the screen, or that it can't.
    */
   begin(): () => void;
-  /** Settles once the overview is seen. */
+  /** Settles once the overview is seen: drawn, in the middle view on screen. */
   readonly seen: Promise<void>;
+  /** Whether the overview has been the middle view on screen, rather than kept behind another. */
+  onScreen(): boolean;
 }
 
-/** A first frame being drawn: `settle` once each block has said it'll draw, `open` at the bound. */
+/**
+ * A first frame being drawn: `settle` once each block has said it'll draw, `open` at the bound,
+ * and `show` once the overview is the middle view on screen.
+ */
 export interface Drawing extends FirstDraw {
   settle(): void;
   open(): void;
+  show(): void;
 }
 
-/** A first frame being drawn, which calls `opened` once, as it's seen. */
+/** A first frame being drawn, which calls `opened` once, as it's drawn. */
 export function drawing(opened: () => void): Drawing {
   let pending = 0;
   let settled = false;
   let open = false;
-  let seen!: () => void;
-  const promise = new Promise<void>((resolve) => (seen = resolve));
-  const show = () => {
+  let shown = false;
+  let drawn!: () => void;
+  let onScreen!: () => void;
+  const both = [
+    new Promise<void>((resolve) => (drawn = resolve)),
+    new Promise<void>((resolve) => (onScreen = resolve)),
+  ];
+  const draw = () => {
     if (open) return;
     open = true;
-    seen();
+    drawn();
     opened();
   };
   return {
-    seen: promise,
+    seen: Promise.all(both).then(() => undefined),
+    onScreen: () => shown,
+    show() {
+      shown = true;
+      onScreen();
+    },
     begin() {
       if (open) return () => {};
       pending += 1;
@@ -46,14 +62,14 @@ export function drawing(opened: () => void): Drawing {
         if (done) return;
         done = true;
         pending -= 1;
-        if (settled && pending === 0) show();
+        if (settled && pending === 0) draw();
       };
     },
     settle() {
       settled = true;
-      if (pending === 0) show();
+      if (pending === 0) draw();
     },
-    open: show,
+    open: draw,
   };
 }
 

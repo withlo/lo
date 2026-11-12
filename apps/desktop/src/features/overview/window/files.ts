@@ -1,15 +1,16 @@
 // The files an overview's blocks show, read and diffed once for all the blocks that show each:
 // main reads a file's text at the overview's commit and where the pull request's diff of it
 // starts, and the diff's background job diffs and highlights them, once for every block on the
-// file that's drawing. A small file is diffed here too, at once, so its blocks draw without
-// waiting for a job to start, and take its highlighting when it comes. A file no block holds any
+// file. A small file on an overview on screen is diffed here, at once, so its blocks draw without
+// waiting for a job to start, and the job runs only once a block asks for its highlighting; an
+// overview kept behind another view leaves the work to the job. A file no block holds any
 // more is kept a little while, for the next block that comes near, up to `IDLE_LIMIT` of text in
 // all, then let go; one still being read when the last block lets it go is stopped.
 
 import { LIMITS } from '@lo/artifact';
 import { diffText, type FileDiff } from '@lo/diff';
 
-import { diffTexts } from '../../diff/window/shared.ts';
+import { diffTexts, type DiffedText } from '../../diff/window/shared.ts';
 import type { BlockText } from '../contract.ts';
 import { main } from './main.ts';
 import { excerptOf, textsOf } from './targets.ts';
@@ -22,7 +23,8 @@ export interface Tokens {
 
 /**
  * A file's code, as the blocks that show it draw it: each side's lines, the pull request's diff of
- * it when it changes it, and each side's highlighting, once it's in; or why it couldn't be read.
+ * it when it changes it, and each side's highlighting, for a block that asks; or why it couldn't
+ * be read.
  */
 export type FileCode =
   | { kind: 'unread'; why: string }
@@ -30,7 +32,8 @@ export type FileCode =
       kind: 'code';
       lines: { old: string[]; new: string[] };
       diff: FileDiff | undefined;
-      tokens: Promise<Tokens>;
+      /** Each side's highlighting, from the diff's job, which this starts if it hasn't. */
+      highlighted(): Promise<Tokens>;
     };
 
 /** A block's hold on a file's code: the code once it's in, and the way to let it go. */
@@ -68,8 +71,17 @@ const entries = new Map<string, Entry>();
 /** The files no block holds, oldest first. */
 const idle = new Set<Entry>();
 
-/** Reads `path` at `commit` in tab `tab`, and diffs it, once its read starts. */
-async function read(tab: string, commit: string, path: string, signal: AbortSignal) {
+/**
+ * Reads `path` at `commit` in tab `tab`, and diffs it: here when it's small and `quick`, else in
+ * the diff's job.
+ */
+async function read(
+  tab: string,
+  commit: string,
+  path: string,
+  quick: boolean,
+  signal: AbortSignal,
+) {
   let text: BlockText;
   try {
     text = await main().texts({ id: tab, commit, path, base: true });
@@ -79,17 +91,20 @@ async function read(tab: string, commit: string, path: string, signal: AbortSign
   if (text.kind === 'unread') return { code: text, size: 0, keep: false };
   const size = text.text.length + (text.base?.kind === 'changed' ? text.base.text.length : 0);
   const texts = textsOf(path, text);
-  const job = diffTexts([texts], signal).then(
-    ([diffed]) => diffed,
-    (error: unknown) => {
-      if (!signal.aborted) console.error("Lo couldn't diff a file an overview shows:", error);
-      return undefined;
-    },
-  );
-  const tokens = job.then((diffed) => excerptOf(text, diffed).tokens);
-  const quick = size <= QUICK_LIMIT ? quickDiff(texts) : undefined;
-  const { lines, diff } = excerptOf(text, quick ?? (await job));
-  return { code: { kind: 'code' as const, lines, diff, tokens }, size, keep: true };
+  // The diff's job, started once something needs it: the diff of a larger file, or highlighting.
+  let job: Promise<DiffedText | undefined> | undefined;
+  const diffed = () =>
+    (job ??= diffTexts([texts], signal).then(
+      ([done]) => done,
+      (error: unknown) => {
+        if (!signal.aborted) console.error("Lo couldn't diff a file an overview shows:", error);
+        return undefined;
+      },
+    ));
+  const here = quick && size <= QUICK_LIMIT ? quickDiff(texts) : undefined;
+  const { lines, diff } = excerptOf(text, here ?? (await diffed()));
+  const highlighted = () => diffed().then((done) => excerptOf(text, done).tokens);
+  return { code: { kind: 'code' as const, lines, diff, highlighted }, size, keep: true };
 }
 
 /** `texts` diffed here, as the diff's job diffs them, without highlighting; none if it can't be. */
@@ -106,9 +121,11 @@ function quickDiff(texts: { old: string | null; new: string | null }) {
 
 /**
  * Holds the code of `path` at `commit`, in tab `tab`, for a block: read and diffed once for every
- * block that holds it at the same time, or that comes soon after. Each hold is let go once.
+ * block that holds it at the same time, or that comes soon after. A small file is diffed here when
+ * it's `quick`, as for a block on an overview on screen; one kept behind another view leaves it to
+ * the diff's job. Each hold is let go once.
  */
-export function holdFile(tab: string, commit: string, path: string): FileHold {
+export function holdFile(tab: string, commit: string, path: string, quick = true): FileHold {
   const key = `${tab}\n${commit}\n${path}`;
   let entry = entries.get(key);
   if (entry) {
@@ -122,7 +139,7 @@ export function holdFile(tab: string, commit: string, path: string): FileHold {
       size: 0,
       settled: false,
       keep: false,
-      code: read(tab, commit, path, stop.signal).then((done) => {
+      code: read(tab, commit, path, quick, stop.signal).then((done) => {
         made.settled = true;
         made.size = done.size;
         made.keep = done.keep;
