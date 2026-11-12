@@ -56,6 +56,15 @@ declare global {
      * a test watched it.
      */
     loLine?: { draws: number; y: number | undefined }[];
+    /**
+     * While a test watches jumps: each frame, how many had landed and where the cursor's line was;
+     * and each change that came, with how many had landed by then, the scroll as it came, and the
+     * scroll as the last one landed.
+     */
+    loJumps?: {
+      frames: { jumps: number; top: number; onScreen: boolean }[];
+      changes: { jumps: number; scroll: number; landed: number }[];
+    };
   }
 }
 
@@ -202,8 +211,11 @@ async function drawn(
   }
   // The local copy's diff takes GitHub's place a file at a time, which the status bar counts.
   await expect(page.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
-  // Every file's diff is in once the moves are: they're found last.
-  if (moves) await expect(page.locator('.lo-movedlabel').first()).toBeVisible({ timeout: 20_000 });
+  // Every file's diff is in once the moves are: they're found last. Inline, the sides' editors are
+  // hidden, labels and all.
+  if (moves) {
+    await expect(page.locator('.lo-movedlabel:visible').first()).toBeVisible({ timeout: 20_000 });
+  }
   return id;
 }
 
@@ -234,9 +246,9 @@ async function press(page: Page, ...keys: string[]): Promise<void> {
   for (const key of keys) await page.keyboard.press(key);
 }
 
-/** Puts the cursor in the diff, at the first header, on the new side. */
+/** Puts the cursor in the diff, at the first header, on the new side, or inline. */
 async function focusDiff(page: Page): Promise<void> {
-  const added = page.locator('.lo-diffview .cm-editor').nth(1);
+  const added = page.locator('.lo-diffview .cm-editor:visible').last();
   await added.locator('.cm-content').focus();
   await press(page, 'g', 'g');
   await expect.poll(async () => (await cursor(page))?.header).toBe(true);
@@ -485,6 +497,206 @@ test('a new order puts back what was at the top of the screen, with the cursor o
     .filter((frame) => frame.y === undefined || Math.abs(frame.y - (top.y ?? 0)) >= 1);
   expect(away, `the line was at ${top.y}`).toEqual([]);
 });
+
+/** When a change comes, against a jump. */
+type Landing = 'in its task' | 'just after it' | 'all along';
+
+/** A way to jump, and where it takes the cursor. */
+interface Jump {
+  name: string;
+  /** Gets ready to jump, before the change is armed. */
+  ready(page: Page): Promise<void>;
+  go(page: Page): Promise<void>;
+  /**
+   * The event the jump lands in, heard after whatever handles it, in the editor or the window.
+   * The finder gives focus back to the diff, then shows the file, in the same task.
+   */
+  heard: { type: 'keydown' | 'click' | 'focusin'; key?: string; on: 'editor' | 'window' };
+  to: { path: string; header: boolean };
+}
+
+const finder = (page: Page) => page.getByRole('dialog', { name: 'Go to a file' });
+
+const JUMPS: Jump[] = [
+  {
+    name: 'a click in the tree',
+    ready: async () => {},
+    go: (page) =>
+      page.locator('[role="tree"][data-lo-scope="tree"] [data-key="pnpm-lock.yaml"]').click(),
+    heard: { type: 'click', on: 'window' },
+    to: { path: 'pnpm-lock.yaml', header: true },
+  },
+  {
+    name: 'G',
+    ready: async () => {},
+    go: (page) => press(page, 'Shift+G'),
+    heard: { type: 'keydown', key: 'G', on: 'editor' },
+    to: { path: 'pnpm-lock.yaml', header: false },
+  },
+  {
+    // From data/numbers.txt's header, with its 5,001 lines loaded: past them all.
+    name: '`]f`',
+    ready: async (page) => {
+      await press(page, ']', 'f', 'z', 'a');
+      await expect(page.locator('.lo-diffview').getByText(/za loads them/)).toHaveCount(0, {
+        timeout: 20_000,
+      });
+      await expect
+        .poll(() => cursor(page))
+        .toMatchObject({ path: 'data/numbers.txt', header: true });
+      // Its lines are in once they fill the screen below its header.
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const diff = window.loDiff;
+            const shown = new Set(diff?.filesOnScreen());
+            return diff?.files.filter((file) => shown.has(file.id)).map((file) => file.path);
+          }),
+        )
+        .toEqual(['assets/mark.png', 'data/numbers.txt']);
+    },
+    go: (page) => press(page, ']', 'f'),
+    heard: { type: 'keydown', key: 'f', on: 'editor' },
+    to: { path: 'src/text/wrap.ts', header: true },
+  },
+  {
+    name: 'the finder',
+    ready: async (page) => {
+      await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+p`);
+      await expect(finder(page).getByRole('combobox')).toBeFocused();
+      await page.keyboard.type('pnpm-lock');
+      await expect(finder(page).getByRole('option').first()).toContainText('pnpm-lock.yaml');
+    },
+    go: (page) => press(page, 'Enter'),
+    heard: { type: 'focusin', on: 'editor' },
+    to: { path: 'pnpm-lock.yaml', header: true },
+  },
+];
+
+/**
+ * Watches for the jump, and every frame: as the jump lands, a change comes, as `landing` says. It
+ * closes a file that can't close, which changes nothing, but keeps what's at the top of the screen
+ * in place as the local copy's files do as they come: in the jump's own task; in the next task or
+ * the next frame, whichever comes first, before anything draws the jump; or every millisecond, in a
+ * stream of tasks, and every frame, for 1.5 s from now.
+ */
+async function watchJumps(page: Page, landing: Landing, heard: Jump['heard']): Promise<void> {
+  await page.evaluate(
+    ({ when, hear }) => {
+      const diff = window.loDiff;
+      const view = document.querySelector<HTMLElement>('.lo-diffview');
+      const file = diff?.files.find((each) => each.path === 'assets/mark.png')?.id;
+      if (!diff || !view || file === undefined) throw new Error('no diff to watch');
+      const watched: NonNullable<Window['loJumps']> = { frames: [], changes: [] };
+      window.loJumps = watched;
+      let jumps = 0;
+      let landed = view.scrollTop;
+      const change = () => {
+        watched.changes.push({ jumps, scroll: view.scrollTop, landed });
+        diff.close(file);
+      };
+      let waiting = false;
+      const comeNow = () => {
+        if (!waiting) return;
+        waiting = false;
+        change();
+      };
+      const jumped = (event: Event) => {
+        if (window.loJumps !== watched) return;
+        if (event instanceof KeyboardEvent && event.key !== hear.key) return;
+        jumps += 1;
+        landed = view.scrollTop;
+        if (when === 'in its task') {
+          queueMicrotask(change);
+        } else if (when === 'just after it') {
+          waiting = true;
+          setTimeout(comeNow, 0);
+        }
+      };
+      const targets =
+        hear.on === 'window' ? [window] : [...view.querySelectorAll<HTMLElement>('.cm-content')];
+      for (const target of targets) target.addEventListener(hear.type, jumped);
+      const end = performance.now() + 1500;
+      if (when === 'all along') {
+        // A task after every other, the change in one each millisecond.
+        const channel = new MessageChannel();
+        let last = -Infinity;
+        channel.port1.addEventListener('message', () => {
+          const now = performance.now();
+          if (now >= end) return;
+          if (now - last >= 1) {
+            last = now;
+            change();
+          }
+          channel.port2.postMessage(null);
+        });
+        channel.port1.start();
+        channel.port2.postMessage(null);
+      }
+      const tick = () => {
+        if (window.loJumps !== watched) return;
+        comeNow();
+        if (when === 'all along' && performance.now() < end) change();
+        const reading = diff.probe.cursor();
+        watched.frames.push({
+          jumps,
+          top: reading?.top ?? Number.NaN,
+          onScreen: reading?.onScreen ?? false,
+        });
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    },
+    { when: landing, hear: heard },
+  );
+}
+
+for (const layout of ['inline', 'split'] as const) {
+  test.describe(`${layout === 'inline' ? 'Inline' : 'Side by side'}, a change as a jump lands`, () => {
+    // On the diff first, as `DIFF_FIRST` has it, in this layout.
+    test.use({ settings: JSON.stringify({ 'overview.open': 'diff', 'diff.layout': layout }) });
+
+    for (const jump of JUMPS) {
+      for (const landing of ['in its task', 'just after it', 'all along'] as const) {
+        test(`leaves the screen where ${jump.name} takes it, with the change ${landing}`, async ({
+          page,
+        }) => {
+          await drawn(page);
+          await focusDiff(page);
+          await jump.ready(page);
+          await page.waitForTimeout(300);
+          await watchJumps(page, landing, jump.heard);
+          await jump.go(page);
+          await page.waitForTimeout(1600);
+          const { frames, changes } = await page.evaluate(() => {
+            const watched = window.loJumps;
+            window.loJumps = undefined;
+            return watched ?? { frames: [], changes: [] };
+          });
+
+          expect(frames.at(-1)?.jumps).toBe(1);
+          const after = changes.filter((change) => change.jumps === 1);
+          expect(after.length).toBeGreaterThan(0);
+          // Inline, the editor scrolls to the cursor a jump moved as it next measures, in the next
+          // frame: a change in the jump's task comes before the screen has moved.
+          if (layout === 'inline' && landing === 'in its task') {
+            expect(after[0]?.scroll).toBe(after[0]?.landed);
+          }
+          // From the first frame that shows where the jump took the cursor, its line stays
+          // drawn and on screen, where it is: with no input, nothing moves.
+          const shown = frames.findIndex((frame) => frame.jumps === 1 && frame.onScreen);
+          expect(shown).toBeGreaterThanOrEqual(0);
+          const top = frames[shown]?.top ?? Number.NaN;
+          const moved = frames
+            .slice(shown)
+            .filter((frame) => !frame.onScreen || Math.abs(frame.top - top) >= 1);
+          expect(moved, `the cursor's line was at ${top}`).toEqual([]);
+          expect(await cursor(page)).toMatchObject(jump.to);
+        });
+      }
+    }
+  });
+}
 
 /** What the settings file holds now. */
 function readSettings(): unknown {
