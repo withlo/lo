@@ -8,6 +8,9 @@
   "bin": {
     "lo-overview": "./dist/checker.js"
   },
+  "exports": {
+    "./install": "./src/install.ts"
+  },
   "files": [
     "dist",
     "LICENSE"

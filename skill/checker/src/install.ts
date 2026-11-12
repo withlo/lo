@@ -31,9 +31,35 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 import { SKILL_FILES, SKILL_NAME } from './skill.ts';
 
-/** The skill couldn't be installed, and why, in words. */
+/**
+ * Why the skill couldn't be installed, for a caller that words it for itself, since the messages
+ * speak to the command line. `path` is the folder or file the refusal is about.
+ *
+ * - `nothingSetUp`: no agent was named, and neither is set up here;
+ * - `link`: a link is where the skill's folder, a folder in it or one of its files goes;
+ * - `notFolder`, `notFile`: something else is where a folder or a file goes;
+ * - `otherSkill`: the skill's folder holds another skill, `name` if it says one;
+ * - `otherFiles`: the skill's folder holds files that aren't the skill's, and no `SKILL.md`;
+ * - `failed`: the file system refused something in the skills folder `skills`, saying `detail`.
+ */
+export type InstallReason =
+  | { kind: 'nothingSetUp' }
+  | { kind: 'link'; path: string }
+  | { kind: 'notFolder'; path: string }
+  | { kind: 'notFile'; path: string }
+  | { kind: 'otherSkill'; path: string; name: string | undefined }
+  | { kind: 'otherFiles'; path: string }
+  | { kind: 'failed'; skills: string; detail: string };
+
+/** The skill couldn't be installed. Its message says why to the command line; `reason` says it plain. */
 export class InstallError extends Error {
   override name = 'InstallError';
+  readonly reason: InstallReason;
+
+  constructor(message: string, reason: InstallReason) {
+    super(message);
+    this.reason = reason;
+  }
 }
 
 /** A coding agent with a skills folder of the user's own. */
@@ -112,7 +138,7 @@ export function targetsOf(wanted: Wanted, env: NodeJS.ProcessEnv): Target[] {
   }));
   if (wanted.dir !== undefined) targets.push({ agent: undefined, skills: resolve(wanted.dir) });
   if (targets.length === 0) {
-    targets = AGENTS.filter((agent) => isFolder(agentFolders(agent, env).setUp)).map((agent) => ({
+    targets = AGENTS.filter((agent) => isSetUp(agent, env)).map((agent) => ({
       agent,
       skills: agentFolders(agent, env).skills,
     }));
@@ -120,11 +146,17 @@ export function targetsOf(wanted: Wanted, env: NodeJS.ProcessEnv): Target[] {
   if (targets.length === 0) {
     throw new InstallError(
       `Lo found neither Claude Code nor Codex set up here. Say where to install the skill with --claude, --codex or --dir <folder>. ${NOTHING}`,
+      { kind: 'nothingSetUp' },
     );
   }
   return targets.filter(
     (target, at) => targets.findIndex(({ skills }) => skills === target.skills) === at,
   );
+}
+
+/** Whether `agent` is set up here: the folder that says so is there. */
+export function isSetUp(agent: Agent, env: NodeJS.ProcessEnv): boolean {
+  return isFolder(agentFolders(agent, env).setUp);
 }
 
 /** Whether there's a folder at `path`, or a link to one. */
@@ -163,11 +195,15 @@ function attempt<T>(skills: string, after: string, work: () => T): T {
   try {
     return work();
   } catch (error) {
-    const said =
-      error instanceof InstallError
-        ? error.message
-        : `Lo couldn't install the skill in ${skills}: ${error instanceof Error ? error.message : String(error)}`;
-    throw new InstallError(`${said} ${after}`);
+    if (error instanceof InstallError) {
+      throw new InstallError(`${error.message} ${after}`, error.reason);
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new InstallError(`Lo couldn't install the skill in ${skills}: ${detail} ${after}`, {
+      kind: 'failed',
+      skills,
+      detail,
+    });
   }
 }
 
@@ -194,10 +230,14 @@ function refuseOther(path: string, stats: Stats, kind: 'folder' | 'file'): void 
   if (stats.isSymbolicLink()) {
     throw new InstallError(
       `${path} is a link, and Lo doesn't install the skill through links, since one could lead anywhere. ${INSTEAD}`,
+      { kind: 'link', path },
     );
   }
   if (kind === 'folder' ? !stats.isDirectory() : !stats.isFile()) {
-    throw new InstallError(`${path} isn't a ${kind}, so the skill can't go there. ${INSTEAD}`);
+    throw new InstallError(`${path} isn't a ${kind}, so the skill can't go there. ${INSTEAD}`, {
+      kind: kind === 'folder' ? 'notFolder' : 'notFile',
+      path,
+    });
   }
 }
 
@@ -237,11 +277,16 @@ function check(folder: string): string {
     const name = skillName(head(skill));
     if (name !== SKILL_NAME) {
       const which = name === undefined ? 'another skill' : `another skill, ${JSON.stringify(name)}`;
-      throw new InstallError(`${folder} holds ${which}, so Lo left it alone. ${INSTEAD}`);
+      throw new InstallError(`${folder} holds ${which}, so Lo left it alone. ${INSTEAD}`, {
+        kind: 'otherSkill',
+        path: folder,
+        name,
+      });
     }
   } else if (!onlyOwn(folder, '')) {
     throw new InstallError(
       `${folder} holds files that aren't the ${SKILL_NAME} skill's, and no SKILL.md, so Lo left it alone. ${INSTEAD}`,
+      { kind: 'otherFiles', path: folder },
     );
   }
   return folder;
@@ -284,6 +329,18 @@ export function skillName(text: string): string | undefined {
     if (match) return match[2];
   }
   return undefined;
+}
+
+/**
+ * Whether the skill is installed in the skills folder `skills`: its folder holds a `SKILL.md` that
+ * names it. A link there counts, as it does for the agent that reads the skill through it.
+ */
+export function installedIn(skills: string): boolean {
+  try {
+    return skillName(head(join(skills, SKILL_NAME, 'SKILL.md'))) === SKILL_NAME;
+  } catch {
+    return false;
+  }
 }
 
 /** Writes the skill's files in its folder, `folder`, in `skills`, replacing each whole. */
