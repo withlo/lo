@@ -7,6 +7,7 @@ import { handlers, type Target } from '@lo/ui/commands';
 import { closeCards } from '@lo/ui/overview';
 import { createElement } from 'react';
 
+import { overlay } from '../../../window/commands/overlays.tsx';
 import { escapeToMiddle } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
@@ -224,6 +225,13 @@ export default {
         const overview = onScreen();
         if (typeof overview !== 'string' && closeBesideAt(overview)) return;
         escapeToMiddle();
+      },
+      enabled: () => {
+        const tab = activeTab();
+        if (tab?.kind === 'pull' && besides.get(tab.id) !== undefined) return true;
+        // From the palette or key help, it only closes the code beside. Its key, which reaches it
+        // only in the overview, still closes a term's card or gives the overview focus.
+        return overlay() === undefined ? true : 'There’s no code beside the overview.';
       },
     },
     scrollDown: scrolling('down'),
