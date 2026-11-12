@@ -339,8 +339,8 @@ export class RevisionsTab {
   /**
    * Marks the file GitHub lists at `path` viewed, or clears its mark, as the tab's account, through
    * its poller: `at` is the head of what the diff shows. GitHub marks a file as of its newest head
-   * (`markFileAsViewed` takes no commit), so marking refuses as `moved` unless that's `at`; clearing
-   * goes whatever the head. Both refuse as `paused` while GitHub has asked Lo to hold off, rather
+   * (`markFileAsViewed` takes no commit), so marking refuses as `moved` unless that's `at`, as GitHub
+   * has said since Lo started rather than from what Lo saved; clearing goes whatever the head. Both refuse as `paused` while GitHub has asked Lo to hold off, rather
    * than land minutes after the key. A file marked is noted at `at`, and its note forgotten once its
    * mark is cleared, even if the tab has moved on by then: the mark is the pull request's.
    */
@@ -357,7 +357,11 @@ export class RevisionsTab {
         'Sign in to mark files viewed: this pull request opened without an account.',
       );
     }
-    if (viewed && info.latest !== at) return { kind: 'moved', latest: info.latest ?? null };
+    // A head taken from what Lo saved, until GitHub says which is its newest, may be one a push has
+    // since passed.
+    if (viewed && (info.provisional || info.latest !== at)) {
+      return { kind: 'moved', latest: info.latest ?? null };
+    }
     const poller = this.#poller ?? (await this.#options.github.poller(login));
     const details = poller.pullRequest(pull)?.details;
     if (!details) {

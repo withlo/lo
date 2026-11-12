@@ -191,6 +191,20 @@ describe('marking files viewed', { timeout: 10_000 }, () => {
     expect(marks.viewed(LOGIN, PULL)).toEqual([]);
   });
 
+  it('refuses to mark at a head Lo saved, until GitHub has said it’s still the newest, but clears', async () => {
+    const fetch = replayFetch('graphql_viewed_marks');
+    // Offline at first, the tab shows the head the poller's cache had, which a push may have passed.
+    const { tab, marks } = viewedTab(fetch, info({ provisional: true }));
+
+    expect(await tab.markViewed(FILE, true, HEAD)).toEqual({ kind: 'moved', latest: HEAD });
+    expect(await writesSent(fetch.seen)).toEqual([]);
+
+    marks.noteViewed(LOGIN, PULL, FILE, OLDER, Date.now());
+    expect(await tab.markViewed(FILE, false, HEAD)).toEqual({ kind: 'done' });
+    expect(await writesSent(fetch.seen)).toEqual(['UnmarkFileAsViewed']);
+    expect(marks.viewed(LOGIN, PULL)).toEqual([]);
+  });
+
   it('refuses both while GitHub has asked Lo to hold off, rather than send them later', async () => {
     const replay = replayFetch('graphql_viewed_marks');
     let sent = 0;
