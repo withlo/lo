@@ -22,10 +22,11 @@
    ring, and a click doesn't, since `:focus-visible` follows what moved focus. Nothing draws
    Chromium's own ring, wherever it sits in the page. Rows, options and tabs take the inset ring,
    which what's beside them doesn't clip. Where focus is shown by something inside, the element
-   that holds it draws none: a list or tree shows it on its active row, and a code view with its
-   cursor. Otherwise a ring would box in the whole list, tree or editor, besides the row or cursor.
-   An element that draws its own focus some other way sets `shadow-none`, which the utilities layer
-   lets win. */
+   that holds it draws none: a list or tree shows it on its active row, a code view with its
+   cursor, and a pane, such as the overview, on the block or thing focused in it. Otherwise a ring
+   would box in the whole list, tree, editor or pane, besides the row, cursor or block. An element
+   that draws its own focus some other way sets `shadow-none`, which the utilities layer lets
+   win. */
 @layer base {
   :focus {
     outline: none;
@@ -38,6 +39,9 @@
     box-shadow: var(--lo-ring-inset);
   }
   .lo-app [aria-activedescendant]:focus-visible,
+  .lo-app [data-lo-middle]:focus-visible,
+  .lo-app [data-lo-overview]:focus-visible,
+  .lo-app .lo-ov:focus-visible,
   .lo-app .cm-editor :is(.cm-content, .cm-scroller):focus-visible {
     box-shadow: none;
   }

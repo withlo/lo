@@ -30,10 +30,14 @@ describe("Lo's focus style", () => {
     expect(inset?.body).toBe('box-shadow: var(--lo-ring-inset);');
   });
 
-  it('draws none on what shows its focus inside: a list or tree by its row, a code view by its cursor', async () => {
+  it('draws none on what shows its focus inside: a list or tree by its row, a code view by its cursor, a pane by its block', async () => {
     const rules = rulesOf(await buildCss([]));
     const none = rules.find((rule) => rule.selector.includes('aria-activedescendant'));
     expect(none?.selector).toContain('.cm-content');
+    // The panes: the middle view, the overview and the overview's scrolling article.
+    for (const pane of ['data-lo-middle', 'data-lo-overview', '.lo-ov']) {
+      expect(none?.selector).toContain(pane);
+    }
     expect(none?.body).toBe('box-shadow: none;');
   });
 
