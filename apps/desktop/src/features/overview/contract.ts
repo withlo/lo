@@ -98,6 +98,14 @@ export const problem = z.discriminatedUnion('kind', [
 export type Problem = z.output<typeof problem>;
 
 /**
+ * Whether the code an overview names can be read, from the pull request's local copy: `waiting`
+ * until the copy is there; `ready` once it is; `offline` when it's opened to read only what it has;
+ * `noGit` without git; and `failed` when it couldn't be fetched.
+ */
+export const codeAccess = z.enum(['waiting', 'ready', 'offline', 'noGit', 'failed']);
+export type CodeAccess = z.output<typeof codeAccess>;
+
+/**
  * A pull request's tab's overview, sent each time it changes:
  *
  * - `ref`: the ref main reads, `refs/lo/pr/<n>`;
@@ -111,7 +119,8 @@ export type Problem = z.output<typeof problem>;
  * - `newer`: a newer commit the ref holds, read and ready to load;
  * - `saved`: whether the overview on screen is from what main kept from an earlier read, and
  *   GitHub hasn't said since that the ref holds it;
- * - `problem`: why the last read failed, until one succeeds.
+ * - `problem`: why the last read failed, until one succeeds;
+ * - `code`: whether the code it names can be read yet, which `code` does.
  */
 export const overviewState = z.strictObject({
   id: tabId,
@@ -122,6 +131,7 @@ export const overviewState = z.strictObject({
   newer: overviewCommit.nullable(),
   saved: z.boolean(),
   problem: problem.nullable(),
+  code: codeAccess,
 });
 export type OverviewState = z.output<typeof overviewState>;
 
@@ -142,6 +152,38 @@ export type OverviewFile =
   | { kind: 'refused' }
   | { kind: 'unread'; why: string };
 
+/** The most files one `code` asks for: one for each place an overview may point. */
+export const CODE_LIMIT = 500;
+
+/** The longest path `code` reads, in characters: no place an overview points is longer. */
+export const PATH_LIMIT = 1024;
+
+/**
+ * A file an overview's code names, as `code` replies, for the overview's checks to read:
+ *
+ * - `file`: its size, and as much of it as the checks read: none, for a file named whole or one
+ *   larger than they read; its start, for one that isn't text or is past what's left of the code
+ *   they read; else all of it. A file named whole whose contents the local copy lacks has no size;
+ * - `missing`, `notFile` and `noCommit`, as the checks' readers answer;
+ * - `unread`: main couldn't read it, and why.
+ */
+export type CodeAnswer =
+  | { kind: 'file'; size: number | null; bytes: Uint8Array }
+  | { kind: 'missing' }
+  | { kind: 'notFile'; is: 'link' | 'folder' | 'submodule' }
+  | { kind: 'noCommit' }
+  | { kind: 'unread'; why: string };
+
+/**
+ * The code an overview names, as `code` replies: each file asked for, read; or none, since the
+ * local copy isn't there yet, there's no git, or it couldn't be fetched, and why.
+ */
+export type CodeReply =
+  | { kind: 'read'; files: CodeAnswer[] }
+  | { kind: 'waiting' }
+  | { kind: 'noGit' }
+  | { kind: 'failed'; why: string };
+
 /** A pull request's tab, by its id. */
 const byId = z.strictObject({ id: tabId });
 
@@ -161,6 +203,21 @@ export const contract = defineContract('overview', {
         paths: z.array(z.string().min(1).max(4096)).min(1).max(FILES_LIMIT),
       }),
       reply: reply<OverviewFile[]>(),
+    },
+    /**
+     * The code an overview names at `commit`, the commit its header names, from the pull
+     * request's local copy, read as the overview's checks read it: `files` in the order the
+     * overview first names each, with whether it names its lines. In the order asked.
+     */
+    code: {
+      input: z.strictObject({
+        id: tabId,
+        commit: oid,
+        files: z
+          .array(z.strictObject({ path: z.string().min(1).max(PATH_LIMIT), lines: z.boolean() }))
+          .max(CODE_LIMIT),
+      }),
+      reply: reply<CodeReply>(),
     },
     /** Reads the overview again now, after a failure. */
     retry: { input: byId, reply: reply<void>() },

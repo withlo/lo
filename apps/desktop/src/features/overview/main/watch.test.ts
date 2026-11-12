@@ -121,6 +121,7 @@ describe('watching', () => {
       newer: null,
       saved: false,
       problem: null,
+      code: 'waiting',
     });
     const urls = () =>
       fetch.seen.map(({ url }) => url.replace('https://api.github.com/repos/', ''));
@@ -801,5 +802,31 @@ describe('fetching', () => {
     });
     expect(offline.paths().filter((path) => !path.includes('matching-refs'))).toEqual([]);
     again.tab.close();
+  });
+});
+
+describe('the code', () => {
+  it('says whether the code an overview names can be read, as the local copy comes', () => {
+    const github = new FakeGithub();
+    const { tab, sent } = tabWith(github.client);
+    const ready = { kind: 'ready', head: fakeId('head'), base: fakeId('base'), mergeBase: null };
+    // Hidden, the tab reads nothing, and says only what changed.
+    tab.update(info(), false, true);
+    expect(sent.at(-1)?.code).toBe('waiting');
+    tab.update(info({ local: { kind: 'fetching', progress: null, attempt: 1 } }), false, true);
+    expect(sent).toHaveLength(1);
+    tab.update(info({ local: { ...ready, kind: 'ready', offline: true } }), false, true);
+    expect(sent.at(-1)?.code).toBe('offline');
+    tab.update(info({ local: { ...ready, kind: 'ready', offline: false } }), false, true);
+    expect(sent.at(-1)?.code).toBe('ready');
+    tab.update(
+      info({ local: { kind: 'noGit', message: 'No git.', install: 'Install git.' } }),
+      false,
+      true,
+    );
+    expect(sent.at(-1)?.code).toBe('noGit');
+    expect(sent).toHaveLength(4);
+    expect(github.asked).toEqual([]);
+    tab.close();
   });
 });
