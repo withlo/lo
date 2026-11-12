@@ -1,6 +1,7 @@
 // The overview skill on a computer of the test's own: a temporary home, with the settings that move
 // Claude Code's folder, so nothing reaches the real `~/.claude` or `~/.agents`.
 
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -16,7 +17,7 @@ import { join } from 'node:path';
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { installSkill, shown, skillState } from './skill.ts';
+import { installSkill, refusal, shown, skillState } from './skill.ts';
 
 let root: string;
 let made = 0;
@@ -70,6 +71,7 @@ describe('skillState', () => {
           installed: false,
           config: '~/.claude',
           skills: '~/.claude/skills',
+          blocked: null,
         },
         {
           agent: 'codex',
@@ -78,6 +80,7 @@ describe('skillState', () => {
           installed: false,
           config: '~/.codex',
           skills: '~/.agents/skills',
+          blocked: null,
         },
       ],
     });
@@ -112,6 +115,95 @@ describe('skillState', () => {
   it('counts a skill installed where its agent isn’t set up, as an install by name leaves one', () => {
     installSkill(['codex'], {});
     expect(skillState({}).agents[1]).toMatchObject({ setUp: false, installed: true });
+  });
+
+  it('says what stands in the way of an install, with paths written for a person', () => {
+    const skills = join(home, '.claude', 'skills');
+    mkdirSync(skills, { recursive: true });
+    const folder = join(skills, 'lo-overview');
+    writeFileSync(folder, 'A file.\n');
+    expect(skillState({}).agents[0]?.blocked).toEqual({
+      kind: 'notFolder',
+      path: '~/.claude/skills/lo-overview',
+    });
+    // Nothing stands in the way once it's gone, which a row that asks again finds out.
+    rmSync(folder);
+    expect(skillState({}).agents[0]?.blocked).toBeNull();
+  });
+
+  it('says the same of a skill that is reached through a link, and calls it installed', () => {
+    const elsewhere = join(home, 'checkout');
+    mkdirSync(elsewhere);
+    writeFileSync(join(elsewhere, 'SKILL.md'), '---\nname: lo-overview\n---\n\nMine.\n');
+    const skills = join(home, '.claude', 'skills');
+    mkdirSync(skills, { recursive: true });
+    symlinkSync(elsewhere, join(skills, 'lo-overview'));
+    expect(skillState({}).agents[0]).toMatchObject({
+      installed: true,
+      blocked: { kind: 'link', path: '~/.claude/skills/lo-overview' },
+    });
+  });
+
+  it('does not wait on a SKILL.md that is a pipe, which opening blocks on', () => {
+    const folder = join(home, '.claude', 'skills', 'lo-overview');
+    mkdirSync(folder, { recursive: true });
+    execFileSync('mkfifo', [join(folder, 'SKILL.md')]);
+    // A blocking open of it never returns, which in main would freeze the whole app.
+    const state = skillState({});
+    expect(state.agents[0]).toMatchObject({
+      installed: false,
+      blocked: { kind: 'notFile', path: '~/.claude/skills/lo-overview/SKILL.md' },
+    });
+  });
+
+  it('does not wait on a SKILL.md that is a link to a pipe', () => {
+    const folder = join(home, '.claude', 'skills', 'lo-overview');
+    mkdirSync(folder, { recursive: true });
+    const pipe = join(home, 'pipe');
+    execFileSync('mkfifo', [pipe]);
+    symlinkSync(pipe, join(folder, 'SKILL.md'));
+    expect(skillState({}).agents[0]?.installed).toBe(false);
+  });
+});
+
+describe('refusal', () => {
+  it('writes the paths in a reason for a person, and the home folder as ~', () => {
+    const at = (path: string) => `${home}${path}`;
+    expect(refusal({ kind: 'nothingSetUp' }, home)).toEqual({ kind: 'nothingSetUp' });
+    expect(refusal({ kind: 'link', path: at('/.claude/skills/lo-overview') }, home)).toEqual({
+      kind: 'link',
+      path: '~/.claude/skills/lo-overview',
+    });
+    expect(
+      refusal({ kind: 'otherSkill', path: '/opt/skills/lo-overview', name: undefined }, home),
+    ).toEqual({ kind: 'otherSkill', path: '/opt/skills/lo-overview', name: null });
+    expect(
+      refusal(
+        {
+          kind: 'failed',
+          skills: at('/.claude/skills'),
+          path: at('/.claude/skills'),
+          code: 'EACCES',
+          detail: `EACCES: permission denied, mkdir '${at('/.claude/skills')}'`,
+        },
+        home,
+      ),
+    ).toEqual({
+      kind: 'failed',
+      skills: '~/.claude/skills',
+      path: '~/.claude/skills',
+      code: 'EACCES',
+      detail: "EACCES: permission denied, mkdir '~/.claude/skills'",
+    });
+  });
+
+  it('leaves out what the file system did not say', () => {
+    expect(
+      refusal(
+        { kind: 'failed', skills: '/s', path: undefined, code: undefined, detail: 'Odd.' },
+        home,
+      ),
+    ).toEqual({ kind: 'failed', skills: '/s', path: null, code: null, detail: 'Odd.' });
   });
 });
 
@@ -168,7 +260,7 @@ describe('installSkill', () => {
       {
         kind: 'refused',
         agent: 'claude',
-        why: { kind: 'link', path: join(skills, 'lo-overview') },
+        why: { kind: 'link', path: '~/.claude/skills/lo-overview' },
       },
     ]);
     expect(readFileSync(join(elsewhere, 'SKILL.md'), 'utf8')).toContain('Mine.');
@@ -179,32 +271,55 @@ describe('installSkill', () => {
     const folder = join(skills, 'lo-overview');
     mkdirSync(skills, { recursive: true });
     writeFileSync(folder, 'A file.\n');
-    expect(why()).toEqual({ kind: 'notFolder', path: folder });
+    expect(why()).toEqual({ kind: 'notFolder', path: '~/.claude/skills/lo-overview' });
     rmSync(folder);
 
     mkdirSync(join(folder, 'SKILL.md'), { recursive: true });
-    expect(why()).toEqual({ kind: 'notFile', path: join(folder, 'SKILL.md') });
+    expect(why()).toEqual({
+      kind: 'notFile',
+      path: '~/.claude/skills/lo-overview/SKILL.md',
+    });
     rmSync(folder, { recursive: true });
 
     mkdirSync(folder);
     writeFileSync(join(folder, 'SKILL.md'), '---\nname: review\n---\n');
-    expect(why()).toEqual({ kind: 'otherSkill', path: folder, name: 'review' });
+    expect(why()).toEqual({
+      kind: 'otherSkill',
+      path: '~/.claude/skills/lo-overview',
+      name: 'review',
+    });
     writeFileSync(join(folder, 'SKILL.md'), 'No front matter.\n');
-    expect(why()).toEqual({ kind: 'otherSkill', path: folder, name: null });
+    expect(why()).toEqual({
+      kind: 'otherSkill',
+      path: '~/.claude/skills/lo-overview',
+      name: null,
+    });
     rmSync(join(folder, 'SKILL.md'));
 
     writeFileSync(join(folder, 'notes.md'), 'Mine.\n');
-    expect(why()).toEqual({ kind: 'otherFiles', path: folder });
+    expect(why()).toEqual({ kind: 'otherFiles', path: '~/.claude/skills/lo-overview' });
   });
 
-  it('says what the file system refused, when it does', () => {
+  it('says a file where the skills folder goes is not a folder, rather than a failure', () => {
+    mkdirSync(join(home, '.claude'));
+    writeFileSync(join(home, '.claude', 'skills'), 'A file.\n');
+    expect(installSkill(['claude'], {})).toEqual([
+      { kind: 'refused', agent: 'claude', why: { kind: 'notFolder', path: '~/.claude/skills' } },
+    ]);
+    expect(skillState({}).agents[0]?.blocked).toEqual({
+      kind: 'notFolder',
+      path: '~/.claude/skills',
+    });
+  });
+
+  it('says what the file system refused, when it does, with the path and code it gave', () => {
     // A file where the agent's folder goes: nothing can be made or read below it.
     writeFileSync(join(home, '.claude'), 'A file.\n');
     const [result] = installSkill(['claude'], {});
     expect(result).toMatchObject({
       kind: 'refused',
       agent: 'claude',
-      why: { kind: 'failed', skills: join(home, '.claude', 'skills') },
+      why: { kind: 'notFolder', path: '~/.claude' },
     });
   });
 
@@ -214,7 +329,11 @@ describe('installSkill', () => {
     writeFileSync(join(codex, 'SKILL.md'), '---\nname: review\n---\n');
     expect(installSkill(['claude', 'codex'], {})).toEqual([
       { kind: 'installed', agent: 'claude' },
-      { kind: 'refused', agent: 'codex', why: { kind: 'otherSkill', path: codex, name: 'review' } },
+      {
+        kind: 'refused',
+        agent: 'codex',
+        why: { kind: 'otherSkill', path: '~/.agents/skills/lo-overview', name: 'review' },
+      },
     ]);
     expect(skillIn(join(home, '.claude', 'skills'))).toContain('name: lo-overview');
     expect(readFileSync(join(codex, 'SKILL.md'), 'utf8')).toContain('name: review');

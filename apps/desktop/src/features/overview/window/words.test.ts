@@ -4,7 +4,6 @@ import type { SkillAgent, SkillRefusal, SkillResult, SkillState } from '../contr
 import {
   ABOUT,
   agentsToInstall,
-  anyRefused,
   installedEverywhere,
   installLabel,
   refusalWords,
@@ -23,6 +22,7 @@ function state(claude: Partial<SkillAgent> = {}, codex: Partial<SkillAgent> = {}
         installed: false,
         config: '~/.claude',
         skills: '~/.claude/skills',
+        blocked: null,
         ...claude,
       },
       {
@@ -32,6 +32,7 @@ function state(claude: Partial<SkillAgent> = {}, codex: Partial<SkillAgent> = {}
         installed: false,
         config: '~/.codex',
         skills: '~/.agents/skills',
+        blocked: null,
         ...codex,
       },
     ],
@@ -39,6 +40,18 @@ function state(claude: Partial<SkillAgent> = {}, codex: Partial<SkillAgent> = {}
 }
 
 const nothing = state({ setUp: false }, { setUp: false });
+
+/** A refusal for the file system's, in the Claude Code's skills folder, `changes` over it. */
+function failed(changes: Partial<Extract<SkillRefusal, { kind: 'failed' }>>): SkillRefusal {
+  return {
+    kind: 'failed',
+    skills: '~/.claude/skills',
+    path: null,
+    code: null,
+    detail: 'It failed.',
+    ...changes,
+  };
+}
 
 describe('standing', () => {
   it('says what the skill is for until Lo has looked', () => {
@@ -60,6 +73,34 @@ describe('standing', () => {
     );
     expect(standing(nothing)).toBe(
       "Claude Code isn't set up here: Lo found no ~/.claude. Codex isn't set up here: Lo found no ~/.codex.",
+    );
+  });
+});
+
+describe('standing, with what stops an install', () => {
+  const link: SkillRefusal = { kind: 'link', path: '~/.claude/skills/lo-overview' };
+  const LINK =
+    "~/.claude/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.";
+
+  it('says a skill reached through a link is installed, and that Lo can’t update it', () => {
+    expect(standing(state({ installed: true, blocked: link }))).toBe(
+      `Installed for Claude Code in ~/.claude/skills, but Lo can't update it. ${LINK} Not installed for Codex, which reads ~/.agents/skills.`,
+    );
+  });
+
+  it('says what stops an install where the skill is not installed, and keeps to the truth', () => {
+    const text = standing(
+      state({ blocked: link }, { blocked: { kind: 'notFolder', path: '~/.agents' } }),
+    );
+    expect(text).toBe(
+      `Not installed for Claude Code, which reads ~/.claude/skills. ${LINK} Not installed for Codex, which reads ~/.agents/skills. ~/.agents isn't a folder, so the skill can't go there. Remove it, then install again.`,
+    );
+    expect(text).not.toContain('Installed for');
+  });
+
+  it('says nothing of what stops an install for an agent that is not set up', () => {
+    expect(standing(state({ installed: true }, { setUp: false, blocked: link }))).toBe(
+      "Installed for Claude Code in ~/.claude/skills. Codex isn't set up here: Lo found no ~/.codex.",
     );
   });
 });
@@ -138,12 +179,28 @@ describe('refusalWords', () => {
       "/h/skills/lo-overview holds files that aren't the skill's. Move them, then install again.",
     ],
     [
-      { kind: 'failed', skills: '/h/.claude/skills', detail: 'EACCES: permission denied' },
-      "Lo couldn't write in /h/.claude/skills: EACCES: permission denied. Fix that, then install again.",
+      failed({ code: 'EACCES', path: '~/.claude/skills' }),
+      "Lo doesn't have permission to use ~/.claude/skills. Change its permissions, then install again.",
     ],
     [
-      { kind: 'failed', skills: '/h/.claude/skills', detail: 'It is read-only.' },
-      "Lo couldn't write in /h/.claude/skills: It is read-only. Fix that, then install again.",
+      failed({ code: 'EPERM', path: null }),
+      "Lo doesn't have permission to use ~/.claude/skills. Change its permissions, then install again.",
+    ],
+    [
+      failed({ code: 'EROFS', path: '~/.claude' }),
+      "~/.claude is read-only, so the skill can't go there. Make it writable, then install again.",
+    ],
+    [
+      failed({ code: 'ENOSPC', path: null }),
+      "The disk is full, so Lo couldn't write in ~/.claude/skills. Free some space, then install again.",
+    ],
+    [
+      failed({ code: 'EIO', path: null, detail: 'EIO: i/o error, mkdir.' }),
+      "Lo couldn't write in ~/.claude/skills: EIO: i/o error, mkdir. Fix that, then install again.",
+    ],
+    [
+      failed({ code: null, path: null, detail: 'Something odd' }),
+      "Lo couldn't write in ~/.claude/skills: Something odd. Fix that, then install again.",
     ],
   ];
 
@@ -182,14 +239,26 @@ describe('resultWords', () => {
       {
         kind: 'refused',
         agent: 'codex',
-        why: { kind: 'link', path: '/h/.agents/skills/lo-overview' },
+        why: { kind: 'link', path: '~/.agents/skills/lo-overview' },
       },
     ];
     expect(resultWords(results, both)).toBe(
-      "Installed the overview skill for Claude Code in ~/.claude/skills. Not installed for Codex. /h/.agents/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.",
+      "Installed the overview skill for Claude Code in ~/.claude/skills. Not installed for Codex. ~/.agents/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.",
     );
-    expect(anyRefused(results)).toBe(true);
-    expect(anyRefused(results.slice(0, 1))).toBe(false);
+  });
+
+  it('says a skill an agent has stays as it was when an update is refused, not that it is missing', () => {
+    const results: SkillResult[] = [
+      {
+        kind: 'refused',
+        agent: 'claude',
+        why: { kind: 'link', path: '~/.claude/skills/lo-overview' },
+      },
+    ];
+    expect(resultWords(results, state({ installed: true }))).toBe(
+      "Lo left the skill for Claude Code as it was. ~/.claude/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.",
+    );
+    expect(resultWords(results, state())).toContain('Not installed for Claude Code.');
   });
 
   it('says that none is set up without naming an agent', () => {

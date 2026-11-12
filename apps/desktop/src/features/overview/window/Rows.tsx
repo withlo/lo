@@ -15,12 +15,23 @@ function SkillIcon() {
   );
 }
 
-/** Installing the overview skill for each agent that's set up, on the welcome screen. */
-export function SkillStep() {
-  const { state, installing } = useStore(skillStore);
+/**
+ * Where the skill stands, asked for as a row appears and again whenever Lo comes to the front, since
+ * its folders change outside Lo: a link taken away, or an agent set up, while Lo was behind.
+ */
+function useSkill() {
   useEffect(() => {
     void checkSkill();
+    const again = () => void checkSkill();
+    window.addEventListener('focus', again);
+    return () => window.removeEventListener('focus', again);
   }, []);
+  return useStore(skillStore);
+}
+
+/** Installing the overview skill for each agent that's set up, on the welcome screen. */
+export function SkillStep() {
+  const { state, installing } = useSkill();
   const installed = installedEverywhere(state);
   return (
     <SetupItem icon={<SkillIcon />} title="Install the overview skill" description={ABOUT}>
@@ -33,10 +44,7 @@ export function SkillStep() {
 
 /** The skill's row in Settings: where it stands for each agent, and installing it. */
 export function SkillRow() {
-  const { state, installing, said } = useStore(skillStore);
-  useEffect(() => {
-    void checkSkill();
-  }, []);
+  const { state, installing, said } = useSkill();
   return (
     <Setting
       label="Overview skill"

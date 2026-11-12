@@ -27,6 +27,7 @@ function state(claude: Partial<SkillAgent> = {}, codex: Partial<SkillAgent> = {}
         installed: false,
         config: '~/.claude',
         skills: '~/.claude/skills',
+        blocked: null,
         ...claude,
       },
       {
@@ -36,6 +37,7 @@ function state(claude: Partial<SkillAgent> = {}, codex: Partial<SkillAgent> = {}
         installed: false,
         config: '~/.codex',
         skills: '~/.agents/skills',
+        blocked: null,
         ...codex,
       },
     ],
@@ -65,7 +67,7 @@ function main(
   now: SkillState,
   results: SkillResult[] = [],
   after?: SkillState,
-): { bridge: FakeBridge; asked: () => unknown[] } {
+): { bridge: FakeBridge; asked: () => unknown[]; leave: (state: SkillState) => void } {
   let current = now;
   for (const channel of Object.keys(answers)) delete answers[channel];
   Object.assign(answers, {
@@ -79,6 +81,10 @@ function main(
   return {
     bridge: shared,
     asked: () => shared.calls.filter(([channel]) => channel === 'overview.installSkill'),
+    // Things changing outside Lo, as a person fixing a folder does.
+    leave: (next) => {
+      current = next;
+    },
   };
 }
 
@@ -214,22 +220,117 @@ describe('Settings’ row', () => {
     ]);
   });
 
-  it('says why an agent was refused, until the next install', async () => {
-    main(state(), [
-      { kind: 'installed', agent: 'claude' },
+  it('says what stops an install for as long as something does, and no longer', async () => {
+    const stuck = state(
+      { installed: true },
       {
-        kind: 'refused',
-        agent: 'codex',
-        why: { kind: 'otherSkill', path: '/h/.agents/skills/lo-overview', name: 'review' },
+        blocked: { kind: 'otherSkill', path: '~/.agents/skills/lo-overview', name: 'review' },
       },
-    ]);
+    );
+    const { leave } = main(
+      state(),
+      [
+        { kind: 'installed', agent: 'claude' },
+        {
+          kind: 'refused',
+          agent: 'codex',
+          why: { kind: 'otherSkill', path: '~/.agents/skills/lo-overview', name: 'review' },
+        },
+      ],
+      stuck,
+    );
     render();
     await settle();
     click(button(row(), 'Install'));
     await settle();
+    const said =
+      'Installed for Claude Code in ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills. ~/.agents/skills/lo-overview holds another skill, "review". Move it, then install again.';
+    expect(row()?.querySelector('[role="status"]')?.textContent).toBe(said);
+    // The notice goes by itself; the row keeps saying it while it holds.
+    expect(notice()?.body).toContain('Not installed for Codex. ~/.agents/skills/lo-overview holds');
+
+    // Fixed outside Lo, which finds out when it comes to the front again.
+    leave(state({ installed: true }));
+    expect(row()?.querySelector('[role="status"]')?.textContent).toBe(said);
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await settle();
     expect(row()?.querySelector('[role="status"]')?.textContent).toBe(
-      'Installed the overview skill for Claude Code in ~/.claude/skills. Not installed for Codex. /h/.agents/skills/lo-overview holds another skill, "review". Move it, then install again.',
+      'Installed for Claude Code in ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills.',
     );
+  });
+
+  it('says a skill reached through a link is installed, and that Lo left it as it was', async () => {
+    const link = {
+      kind: 'link',
+      path: '~/.claude/skills/lo-overview',
+    } as const;
+    const asked = main(state({ installed: true, blocked: link }, { installed: true }), [
+      { kind: 'refused', agent: 'claude', why: link },
+      { kind: 'installed', agent: 'codex' },
+    ]);
+    render();
+    await settle();
+    const text = () => row()?.querySelector('[role="status"]')?.textContent;
+    expect(text()).toContain(
+      "Installed for Claude Code in ~/.claude/skills, but Lo can't update it.",
+    );
+    expect(text()).not.toContain('Not installed for Claude Code');
+    click(button(row(), 'Install again'));
+    await settle();
+    expect(asked.asked()).toEqual([['overview.installSkill', { agents: ['claude', 'codex'] }]]);
+    expect(notice()?.body).toBe(
+      "Installed the overview skill for Codex in ~/.agents/skills. Lo left the skill for Claude Code as it was. ~/.claude/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.",
+    );
+    expect(text()).not.toContain('Not installed for Claude Code');
+  });
+
+  it('keeps the state main pushed over an answer it gave from before', async () => {
+    const after = state({ installed: true }, { installed: true });
+    const { bridge } = main(state(), [{ kind: 'installed', agent: 'claude' }]);
+    // The answer after the install comes from before it, while main pushes where things stand.
+    let asks = 0;
+    answers['overview.currentSkill'] = () => {
+      asks++;
+      // The first asks are the rows' own as they appear, then the install's, then the one after it.
+      if (asks === 4) bridge.push('overview.skill', after);
+      return state();
+    };
+    render();
+    await settle();
+    click(button(step(), 'Install'));
+    await settle();
+    expect(asks).toBe(4);
+    expect(button(step(), 'Installed').disabled).toBe(true);
+    expect(row()?.querySelector('[role="status"]')?.textContent).toBe(
+      'Installed for Claude Code in ~/.claude/skills. Installed for Codex in ~/.agents/skills.',
+    );
+  });
+
+  it('offers nothing to install while it learns where things stand after an install', async () => {
+    const { bridge } = main(state(), [{ kind: 'installed', agent: 'claude' }]);
+    let release: (() => void) | undefined;
+    let asks = 0;
+    answers['overview.currentSkill'] = async () => {
+      asks++;
+      // The fourth is the one after the install, which waits.
+      if (asks === 4) await new Promise<void>((resolve) => (release = resolve));
+      return asks === 4
+        ? state({ installed: true }, { setUp: false })
+        : state({}, { setUp: false });
+    };
+    render();
+    await settle();
+    click(button(step(), 'Install'));
+    await settle();
+    // The install is over, and the window hasn't heard where things stand: no button to press.
+    expect(button(step(), 'Install').disabled).toBe(true);
+    expect(button(row(), 'Install').disabled).toBe(true);
+    act(() => release?.());
+    await settle();
+    expect(bridge.calls.filter(([channel]) => channel === 'overview.installSkill')).toHaveLength(1);
+    expect(button(step(), 'Installed').disabled).toBe(true);
   });
 
   it('follows what main pushes', async () => {

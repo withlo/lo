@@ -5,7 +5,9 @@
  * Nothing here touches the real home folder.
  */
 
+import { execFileSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -21,6 +23,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import {
   agentFolders,
+  blockedBy,
   install,
   InstallError,
   installedIn,
@@ -239,14 +242,41 @@ describe('a reason', () => {
     expect(reasonOf([target])).toEqual({ kind: 'otherFiles', path: folder });
   });
 
-  test('failed, with what the file system said, when the folder can’t be made or read', () => {
-    // A file where the skills folder's parent goes: it can be neither read nor made.
+  test('notFolder, for a file where the skills folder, or a folder above it, goes', () => {
     writeFileSync(join(home, 'file'), 'A file.\n');
-    const target: Target = { agent: undefined, skills: join(home, 'file', 'skills') };
-    const reason = reasonOf([target]);
-    expect(reason).toMatchObject({ kind: 'failed', skills: target.skills });
-    expect(reason.kind === 'failed' && reason.detail).toMatch(/ENOTDIR|not a directory/i);
+    // Not the file system's ENOTDIR, which names no path: the file is what's in the way.
+    expect(reasonOf([{ agent: undefined, skills: join(home, 'file') }])).toEqual({
+      kind: 'notFolder',
+      path: join(home, 'file'),
+    });
+    expect(reasonOf([{ agent: undefined, skills: join(home, 'file', 'a', 'skills') }])).toEqual({
+      kind: 'notFolder',
+      path: join(home, 'file'),
+    });
+    // A link to a folder above is fine, as a skills folder kept with other settings often is.
+    mkdirSync(join(home, 'kept'));
+    symlinkSync(join(home, 'kept'), join(home, 'linked'));
+    expect(blockedBy(join(home, 'linked', 'skills'))).toBeUndefined();
   });
+
+  // Root ignores permissions, so there's nothing for the file system to refuse.
+  test.skipIf(process.getuid?.() === 0)(
+    'failed, with the file system’s code, the path and its words, when it refuses',
+    () => {
+      const locked = join(home, 'locked');
+      mkdirSync(locked);
+      chmodSync(locked, 0o555);
+      try {
+        const target: Target = { agent: undefined, skills: join(locked, 'skills') };
+        const reason = reasonOf([target]);
+        expect(reason).toMatchObject({ kind: 'failed', skills: target.skills, code: 'EACCES' });
+        expect(reason.kind === 'failed' && reason.detail).toContain('EACCES');
+        expect(reason.kind === 'failed' && reason.path).toBe(target.skills);
+      } finally {
+        chmodSync(locked, 0o755);
+      }
+    },
+  );
 
   test('keeps its message for the command line, with the reason beside it', () => {
     const target = skills();
@@ -265,5 +295,110 @@ describe('a reason', () => {
     const before = listing(home);
     expect(reasonOf([fine, refused])).toMatchObject({ kind: 'otherSkill' });
     expect(listing(home)).toEqual(before);
+  });
+});
+
+/** A skills folder holding a pipe named `SKILL.md`, and the pipe. */
+function pipe(): { place: string; file: string } {
+  const place = join(home, 'skills');
+  const folder = join(place, 'lo-overview');
+  mkdirSync(folder, { recursive: true });
+  const file = join(folder, 'SKILL.md');
+  // Opened to read, it waits for a writer that never comes.
+  execFileSync('mkfifo', [file]);
+  return { place, file };
+}
+
+/** A skills folder with the skill part-written, and `name` among its files, as a cut-short install. */
+function cutShort(name: string): { place: string; temporary: string } {
+  const place = join(home, 'skills');
+  const folder = join(place, 'lo-overview');
+  mkdirSync(join(folder, 'references'), { recursive: true });
+  writeFileSync(join(folder, 'LICENSE'), 'Part.\n');
+  const temporary = join(folder, name);
+  writeFileSync(temporary, 'Half.\n');
+  return { place, temporary };
+}
+
+describe('a pipe where the skill’s file goes', () => {
+  test('is not read, and so is not waited for: the skill is not installed', () => {
+    const { place } = pipe();
+    expect(installedIn(place)).toBe(false);
+  });
+
+  test('is not waited for through a link either', () => {
+    const { place, file } = pipe();
+    rmSync(file);
+    execFileSync('mkfifo', [join(home, 'fifo')]);
+    symlinkSync(join(home, 'fifo'), file);
+    expect(installedIn(place)).toBe(false);
+  });
+
+  test('is a file that is not one, for an install and for what blocks one', () => {
+    const { place, file } = pipe();
+    const reason = { kind: 'notFile', path: file };
+    expect(blockedBy(place)).toEqual(reason);
+    expect(reasonOf([{ agent: undefined, skills: place }])).toEqual(reason);
+  });
+});
+
+describe('blockedBy', () => {
+  test('is nothing where the skill can go, and writes nothing', () => {
+    const place = join(home, 'skills');
+    expect(blockedBy(place)).toBeUndefined();
+    expect(existsSync(place)).toBe(false);
+    install([{ agent: undefined, skills: place }]);
+    expect(blockedBy(place)).toBeUndefined();
+  });
+
+  test('is what an install would be refused for', () => {
+    const place = join(home, 'skills');
+    mkdirSync(join(home, 'outside'));
+    mkdirSync(place);
+    symlinkSync(join(home, 'outside'), join(place, 'lo-overview'));
+    expect(blockedBy(place)).toEqual({ kind: 'link', path: join(place, 'lo-overview') });
+    expect(blockedBy(place)).toEqual(reasonOf([{ agent: undefined, skills: place }]));
+  });
+});
+
+describe('an install cut short', () => {
+  test('leaves a file it was writing, which the next install ignores and leaves', () => {
+    const { place, temporary } = cutShort('.lo-overview-0123456789abcdef.tmp');
+    expect(blockedBy(place)).toBeUndefined();
+    install([{ agent: undefined, skills: place }]);
+    expectSkill(join(place, 'lo-overview'));
+    expect(existsSync(temporary)).toBe(true);
+  });
+
+  test('also leaves one in a folder of the skill’s', () => {
+    const { place } = cutShort('.lo-overview-0123456789abcdef.tmp');
+    const inner = join(place, 'lo-overview', 'references', '.lo-overview-fedcba9876543210.tmp');
+    writeFileSync(inner, 'Half.\n');
+    expect(blockedBy(place)).toBeUndefined();
+  });
+
+  test('does not ignore a file that only looks like one', () => {
+    for (const name of [
+      '.lo-overview-0123.tmp',
+      '.lo-overview-0123456789abcdeg.tmp',
+      'notes.tmp',
+    ]) {
+      const { place, temporary } = cutShort(name);
+      expect({ name, blocked: blockedBy(place) }).toEqual({
+        name,
+        blocked: { kind: 'otherFiles', path: join(place, 'lo-overview') },
+      });
+      rmSync(temporary);
+    }
+  });
+
+  test('does not ignore a link or a folder named like one', () => {
+    const { place, temporary } = cutShort('.lo-overview-0123456789abcdef.tmp');
+    rmSync(temporary);
+    mkdirSync(temporary);
+    expect(blockedBy(place)).toMatchObject({ kind: 'otherFiles' });
+    rmSync(temporary, { recursive: true });
+    symlinkSync(join(home, 'elsewhere'), temporary);
+    expect(blockedBy(place)).toMatchObject({ kind: 'otherFiles' });
   });
 });

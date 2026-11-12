@@ -3,14 +3,18 @@
 // its own, so the skill goes into folders the test made and never into the real ~/.claude or
 // ~/.agents, and with the variables that move an agent's folder cleared or set to folders there.
 
+import { execFileSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -171,15 +175,106 @@ test.describe('in Settings', () => {
     const skills = join(home, '.agents', 'skills');
     mkdirSync(skills, { recursive: true });
     symlinkSync(outside, join(skills, 'lo-overview'));
+    const link =
+      "~/.agents/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.";
 
     await openSettings(page);
-    await row(page).getByRole('button', { name: 'Install', exact: true }).click();
+    // What would stop the install is said before it's tried.
     await expect(row(page).getByRole('status')).toHaveText(
-      `Installed the overview skill for Claude Code in ~/.claude/skills. Not installed for Codex. ${join(skills, 'lo-overview')} is a link, and Lo doesn't install the skill through links. Remove it, then install again.`,
+      `Not installed for Claude Code, which reads ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills. ${link}`,
+    );
+    await row(page).getByRole('button', { name: 'Install', exact: true }).click();
+    await expect(toast(page, 'Installed the overview skill')).toHaveText(
+      `Install overview skillInstalled the overview skill for Claude Code in ~/.claude/skills. Not installed for Codex. ${link}`,
+    );
+    // It stays said, since the link is still there, and it isn't in the way of Claude Code's.
+    await expect(row(page).getByRole('status')).toHaveText(
+      `Installed for Claude Code in ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills. ${link}`,
     );
     expect(isSkill(claudeSkill(home))).toBe(true);
     expect(lstatSync(join(skills, 'lo-overview')).isSymbolicLink()).toBe(true);
     expect(readdirSync(outside)).toEqual([]);
+  });
+
+  test('stops saying a refusal once what caused it is gone, when Lo comes to the front', async ({
+    page,
+    home,
+  }) => {
+    mkdirSync(join(home, '.claude', 'skills'), { recursive: true });
+    // The skill is there, reached through a link: it reads as installed, and Lo can't update it.
+    const outside = join(home, 'checkout');
+    mkdirSync(outside);
+    writeFileSync(join(outside, 'SKILL.md'), '---\nname: lo-overview\n---\n\nMine.\n');
+    const link = join(home, '.claude', 'skills', 'lo-overview');
+    symlinkSync(outside, link);
+
+    await openSettings(page);
+    await expect(row(page).getByRole('status')).toHaveText(
+      "Installed for Claude Code in ~/.claude/skills, but Lo can't update it. ~/.claude/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again. Codex isn't set up here: Lo found no ~/.codex.",
+    );
+    await expect(row(page).getByRole('button', { name: 'Install again' })).toBeEnabled();
+
+    // The link is removed outside Lo, which learns of it when it comes to the front.
+    unlinkSync(link);
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(row(page).getByRole('status')).toHaveText(
+      "Not installed for Claude Code, which reads ~/.claude/skills. Codex isn't set up here: Lo found no ~/.codex.",
+    );
+    await expect(row(page).getByRole('button', { name: 'Install', exact: true })).toBeEnabled();
+    expect(readFileSync(join(outside, 'SKILL.md'), 'utf8')).toContain('Mine.');
+  });
+
+  test('says a file where the skills folder goes is not a folder', async ({ page, home }) => {
+    mkdirSync(join(home, '.claude'));
+    writeFileSync(join(home, '.claude', 'skills'), 'A file.\n');
+    const words =
+      "~/.claude/skills isn't a folder, so the skill can't go there. Remove it, then install again.";
+
+    await openSettings(page);
+    await expect(row(page).getByRole('status')).toHaveText(
+      `Not installed for Claude Code, which reads ~/.claude/skills. ${words} Codex isn't set up here: Lo found no ~/.codex.`,
+    );
+    await row(page).getByRole('button', { name: 'Install', exact: true }).click();
+    await expect(toast(page, 'Install overview skill')).toHaveText(
+      `Install overview skillNot installed for Claude Code. ${words}`,
+    );
+    expect(readFileSync(join(home, '.claude', 'skills'), 'utf8')).toBe('A file.\n');
+  });
+
+  test('does not freeze on a SKILL.md that is a pipe, which opening waits on forever', async ({
+    page,
+    home,
+  }) => {
+    test.skip(process.platform === 'win32', 'Pipes are a Unix thing.');
+    const folder = join(home, '.claude', 'skills', 'lo-overview');
+    mkdirSync(folder, { recursive: true });
+    execFileSync('mkfifo', [join(folder, 'SKILL.md')]);
+
+    await openSettings(page);
+    await expect(row(page).getByRole('status')).toHaveText(
+      "Not installed for Claude Code, which reads ~/.claude/skills. ~/.claude/skills/lo-overview/SKILL.md isn't a file, so the skill can't go there. Remove it, then install again. Codex isn't set up here: Lo found no ~/.codex.",
+    );
+    // Main still answers, and the app with it.
+    await row(page).getByRole('button', { name: 'Install', exact: true }).click();
+    await expect(toast(page, 'Install overview skill')).toBeVisible();
+  });
+
+  test('says in its own words when the folder will not let Lo write', async ({ page, home }) => {
+    test.skip(process.platform === 'win32' || process.getuid?.() === 0, 'Needs permissions.');
+    const claude = join(home, '.claude');
+    mkdirSync(claude);
+    chmodSync(claude, 0o500);
+    try {
+      await openSettings(page);
+      await row(page).getByRole('button', { name: 'Install', exact: true }).click();
+      await expect(toast(page, 'Install overview skill')).toHaveText(
+        "Install overview skillNot installed for Claude Code. Lo doesn't have permission to use ~/.claude/skills. Change its permissions, then install again.",
+      );
+    } finally {
+      // So that the test's folder can be cleared.
+      chmodSync(claude, 0o700);
+      rmSync(claude, { recursive: true, force: true });
+    }
   });
 
   test.describe('with Claude Code’s folder moved by CLAUDE_CONFIG_DIR', () => {

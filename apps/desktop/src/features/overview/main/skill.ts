@@ -12,6 +12,7 @@ import {
   agentFolders,
   AGENT_NAMES,
   AGENTS,
+  blockedBy,
   install,
   installedIn,
   InstallError,
@@ -28,25 +29,14 @@ export function shown(path: string, home: string = homedir()): string {
   return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
 }
 
-/** Where the skill goes for each agent, and what's there, in the environment `env`. */
-export function skillState(env: NodeJS.ProcessEnv): SkillState {
-  return {
-    agents: AGENTS.map((agent) => {
-      const { skills, setUp } = agentFolders(agent, env);
-      return {
-        agent,
-        name: AGENT_NAMES[agent],
-        setUp: isSetUp(agent, env),
-        installed: installedIn(skills),
-        config: shown(setUp),
-        skills: shown(skills),
-      };
-    }),
-  };
+/** `text` with the home folder written as `~` wherever it names a path in it. */
+function written(text: string, home: string = homedir()): string {
+  return text.replaceAll(`${home}/`, '~/');
 }
 
-/** The refusal `reason` gives, for the window to word. */
-function refusal(reason: InstallReason): SkillRefusal {
+/** The refusal `reason` gives, for the window to word, with its paths written for a person. */
+export function refusal(reason: InstallReason, home: string = homedir()): SkillRefusal {
+  const at = (path: string) => shown(path, home);
   switch (reason.kind) {
     case 'nothingSetUp':
       return { kind: 'nothingSetUp' };
@@ -54,15 +44,40 @@ function refusal(reason: InstallReason): SkillRefusal {
     case 'notFolder':
     case 'notFile':
     case 'otherFiles':
-      return { kind: reason.kind, path: reason.path };
+      return { kind: reason.kind, path: at(reason.path) };
     case 'otherSkill':
-      return { kind: 'otherSkill', path: reason.path, name: reason.name ?? null };
+      return { kind: 'otherSkill', path: at(reason.path), name: reason.name ?? null };
     case 'failed':
-      return { kind: 'failed', skills: reason.skills, detail: reason.detail };
+      return {
+        kind: 'failed',
+        skills: at(reason.skills),
+        path: reason.path === undefined ? null : at(reason.path),
+        code: reason.code ?? null,
+        detail: written(reason.detail, home),
+      };
     default:
       reason satisfies never;
       throw new Error(`Unknown reason ${JSON.stringify(reason)}`);
   }
+}
+
+/** Where the skill goes for each agent, and what's there, in the environment `env`. */
+export function skillState(env: NodeJS.ProcessEnv): SkillState {
+  return {
+    agents: AGENTS.map((agent) => {
+      const { skills, setUp } = agentFolders(agent, env);
+      const blocked = blockedBy(skills);
+      return {
+        agent,
+        name: AGENT_NAMES[agent],
+        setUp: isSetUp(agent, env),
+        installed: installedIn(skills),
+        config: shown(setUp),
+        skills: shown(skills),
+        blocked: blocked === undefined ? null : refusal(blocked),
+      };
+    }),
+  };
 }
 
 /** Installs the skill for `agent`, and says how that went. */

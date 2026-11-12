@@ -6,7 +6,7 @@ import { createStore } from 'zustand/vanilla';
 import { notify } from '../../../window/commands/notices.tsx';
 import type { SkillResult, SkillState } from '../contract.ts';
 import { main } from './main.ts';
-import { agentsToInstall, anyRefused, resultWords } from './words.ts';
+import { agentsToInstall, resultWords } from './words.ts';
 
 /** What the notice and the command are called. */
 export const TITLE = 'Install overview skill';
@@ -16,7 +16,7 @@ export interface SkillStore {
   readonly state: SkillState | undefined;
   /** Whether it's being installed. */
   readonly installing: boolean;
-  /** What the last install said, when it didn't go as asked. */
+  /** What went wrong when main couldn't be asked to install it, until the next install. */
   readonly said: string | undefined;
 }
 
@@ -26,10 +26,18 @@ export const skillStore = createStore<SkillStore>()(() => ({
   said: undefined,
 }));
 
-/** Asks main where the skill stands. */
+/** How many times main has pushed where the skill stands. */
+let pushes = 0;
+
+/**
+ * Asks main where the skill stands. What main pushed while it was being asked is newer than the
+ * answer, which it gave from before, so the answer is dropped then.
+ */
 export async function checkSkill(): Promise<void> {
+  const asked = pushes;
   try {
-    skillStore.setState({ state: await main().currentSkill() });
+    const state = await main().currentSkill();
+    if (pushes === asked) skillStore.setState({ state });
   } catch (error) {
     console.error("Lo couldn't find out where the overview skill is:", error);
   }
@@ -37,33 +45,35 @@ export async function checkSkill(): Promise<void> {
 
 /** Takes where the skill stands each time main says it changed. Returns a way to stop. */
 export function followSkill(): () => void {
-  return main().subscribe('skill', (state) => skillStore.setState({ state }));
+  return main().subscribe('skill', (state) => {
+    pushes++;
+    skillStore.setState({ state });
+  });
 }
 
 /**
  * Installs the skill for the agents that lack it, else again for those that are set up, and says
- * how it went: in a notice, and in Settings' row when something was refused. Resolves with what
- * main did, or nothing when it couldn't be asked.
+ * how it went in a notice. Where the skill stands then, and what stops it where it does, are
+ * Settings' row's to say. Resolves with what main did, or nothing when it couldn't be asked.
  */
 export async function installSkill(): Promise<readonly SkillResult[] | undefined> {
   if (skillStore.getState().installing) return undefined;
   skillStore.setState({ installing: true, said: undefined });
+  let said: string;
+  let results: readonly SkillResult[] | undefined;
   try {
     // Asked just now, so the choice is made of where things stand and not of when the window looked.
-    const state = await main().currentSkill();
-    const results = await main().installSkill({ agents: agentsToInstall(state) });
-    const said = resultWords(results, state);
-    skillStore.setState({ state, said: anyRefused(results) ? said : undefined });
-    notify(TITLE, said);
-    return results;
+    const before = await main().currentSkill();
+    results = await main().installSkill({ agents: agentsToInstall(before) });
+    said = resultWords(results, before);
   } catch (error) {
     console.error("Lo couldn't install the overview skill:", error);
-    const said = "Lo couldn't install the overview skill.";
+    said = "Lo couldn't install the overview skill.";
     skillStore.setState({ said });
-    notify(TITLE, said);
-    return undefined;
-  } finally {
-    skillStore.setState({ installing: false });
-    await checkSkill();
   }
+  // Still installing while the window learns where things stand, so no button offers what it was.
+  await checkSkill();
+  skillStore.setState({ installing: false });
+  notify(TITLE, said);
+  return results;
 }
