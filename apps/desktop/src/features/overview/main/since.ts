@@ -2,15 +2,19 @@
 // screen, read from the pull request's local copy, for the window to say how far the overview is
 // out of date and to map its lines onto the head.
 //
-// - The two are compared once, as the revisions feature compares two revisions: each from where it
-//   branched off the base branch, the older one's changes replayed onto the newer base when the
-//   base moved, so what a rebase brought with the base doesn't count as the pushes'. That gives
-//   how many files the pushes since changed, and where each file went when one was renamed.
+// - What the pushes since changed is compared once, as the revisions feature compares two
+//   revisions: each from where it branched off the base branch, the older one's changes replayed
+//   onto the newer base when the base moved, so what a rebase brought with the base doesn't count
+//   as the pushes'. That gives how many files the pushes changed, and whether they changed a file.
+// - Where each file went is found from everything that changed from the commit to the head, the
+//   base branch's changes too, renames found, compared once as a file first needs it. A file with
+//   the same blob at the same path needs neither comparison. Past what Lo downloads for them, a
+//   file is looked for at the same path, and one that isn't there can't be told apart from one
+//   that moved, so Lo says it can't tell.
 // - The overview's commit is fetched by its ID when the copy lacks it, as the overview's checks
 //   fetch it, once for every read that needs it.
-// - A file is looked for at the head where the comparison says it went, else at the same path.
-//   When its blob differs, both its texts are read whole, as a block's are (`readWhole`).
-// - Every download for one commit and head, the comparison's and each file's, counts against
+// - When a file's blob differs, both its texts are read whole, as a block's are (`readWhole`).
+// - Every download for one commit and head, the comparisons' and each file's, counts against
 //   `DOWNLOAD_LIMIT`: past it, nothing more is downloaded for them.
 // - It stops once the tab closes.
 //
@@ -20,9 +24,11 @@ import {
   GitError,
   parseOid,
   type ChangedFile,
+  type ComparedFile,
   type FileVersion,
   type Oid,
   type Repo,
+  type Revision,
 } from '@lo/git';
 
 import type { LocalState } from '../../tab/contract.ts';
@@ -61,7 +67,10 @@ interface Comparing {
   /** The two, and the local copy's base branch tip and merge base they were worked out from. */
   readonly key: string;
   readonly budget: Budget;
-  readonly compared: Promise<Compared | undefined>;
+  /** What the pushes since changed, replayed across a rebase. */
+  readonly pushes: Promise<Compared | undefined>;
+  /** Everything that changed from the commit to the head, the base's changes too, once asked. */
+  whole: Promise<readonly ChangedFile[] | undefined> | undefined;
 }
 
 /** Why the local copy can't be read for what changed now, as `since` says it. */
@@ -93,7 +102,7 @@ export class SinceReads {
     if ('kind' in ready) return ready;
     try {
       const compared = await this.#comparingAt(ready.clone, ready.local, ready.commit, ready.head)
-        .compared;
+        .pushes;
       return { kind: 'read', files: compared?.count ?? null };
     } catch (error) {
       return this.#failed(error);
@@ -215,22 +224,32 @@ export class SinceReads {
       return { kind: 'unread', why: 'There’s no file at that path at the overview’s commit.' };
     }
     if (commit === head) return { kind: 'same', path };
+    const [found] = await clone.fileVersions(head, [bytes]);
+    const there = found === 'folder' ? undefined : found;
+    // The same blob at the same path: nothing to compare.
+    if (there?.oid === was.oid) return { kind: 'same', path };
     const comparing = this.#comparingAt(clone, local, commit, head);
-    const compared = await comparing.compared;
-    // Where the comparison says the file went, else the same path.
-    const change = compared?.changes.find((each) => each.old?.path.equals(bytes));
+    const whole = await this.#wholeOf(clone, commit, head, comparing);
     let now: FileVersion | undefined;
-    if (change) {
-      now = change.new;
+    if (whole) {
+      // Where everything that changed says it went, base branch and all; else it's where it was.
+      const change = whole.find((each) => each.old?.path.equals(bytes));
+      now = change ? change.new : there;
+      if (now === undefined) return { kind: 'deleted' };
     } else {
-      const [there] = await clone.fileVersions(head, [bytes]);
-      now = there === 'folder' ? undefined : there;
+      now = there;
+      if (now === undefined) {
+        return { kind: 'unread', why: 'Lo couldn’t tell where the file went since.' };
+      }
     }
-    if (now === undefined) return { kind: 'deleted' };
     const at = decoder.decode(now.path);
     if (now.oid === was.oid) return { kind: 'same', path: at };
-    // Without a comparison, every change might be the pushes'.
-    const pushed = compared === undefined || change !== undefined;
+    // The pushes changed it when their comparison lists it where it is now; without that
+    // comparison, every change might be the pushes'.
+    const pushes = await comparing.pushes;
+    const moved = now.path;
+    const pushed =
+      pushes === undefined || pushes.changes.some((each) => each.new?.path.equals(moved));
     const signal = this.#stopped.signal;
     const old = await readWhole(clone, was, comparing.budget, signal);
     if (typeof old !== 'string') return { kind: 'changed', path: at, pushed, texts: old };
@@ -239,46 +258,85 @@ export class SinceReads {
     return { kind: 'changed', path: at, pushed, texts: { old, new: text } };
   }
 
-  /** `commit` compared with `head`, worked out once for the two and the copy's base. */
+  /** What the pushes since `commit` changed up to `head`, worked out once for the two and the copy's base. */
   #comparingAt(clone: SinceClone, local: ReadyLocal, commit: Oid, head: Oid): Comparing {
     const key = [commit, head, local.base, local.mergeBase ?? ''].join(' ');
     if (this.#comparing?.key === key) return this.#comparing;
-    const signal = this.#stopped.signal;
     const budget: Budget = { left: DOWNLOAD_LIMIT };
-    const compared = (async (): Promise<Compared | undefined> => {
+    const pushes = (async (): Promise<Compared | undefined> => {
       if (commit === head) return { count: 0, changes: [] };
       const [from, to] = await Promise.all([
         baseOf(clone, local, commit),
         baseOf(clone, local, head),
       ]);
       if (from === undefined || to === undefined) return undefined;
-      const made = await clone.compareRevisions(
+      const files = await this.#compare(
+        clone,
         { base: from, head: commit },
         { base: to, head },
-        {
-          maxBytes: budget.left,
-          signal,
-          received: (bytes) => {
-            budget.left -= bytes;
-          },
-        },
+        budget,
       );
-      if ('refused' in made) {
-        this.#log('what changed since an overview’s commit is past what Lo downloads for it');
-        return undefined;
-      }
-      return {
-        count: made.files.length,
-        changes: made.files.flatMap((file) => (file.change ? [file.change] : [])),
-      };
-    })().catch((error: unknown) => {
-      if (!signal.aborted) {
-        this.#log(`comparing an overview’s commit with the head: ${describe(error)}`);
-      }
-      return undefined;
-    });
-    this.#comparing = { key, budget, compared };
+      return files && { count: files.length, changes: changesIn(files) };
+    })().catch((error: unknown) => this.#notCompared(error));
+    this.#comparing = { key, budget, pushes, whole: undefined };
     return this.#comparing;
+  }
+
+  /**
+   * Everything that changed from `commit` to `head`, the base branch's changes too, renames found:
+   * compared once it's first asked for, after the pushes' comparison, whose downloads it uses.
+   */
+  #wholeOf(
+    clone: SinceClone,
+    commit: Oid,
+    head: Oid,
+    comparing: Comparing,
+  ): Promise<readonly ChangedFile[] | undefined> {
+    comparing.whole ??= comparing.pushes
+      .then(async () => {
+        // From the history the two share, so the two trees are compared as they are.
+        const shared = await clone.mergeBase(commit, head);
+        if (shared === undefined) return undefined;
+        const files = await this.#compare(
+          clone,
+          { base: shared, head: commit },
+          { base: shared, head },
+          comparing.budget,
+        );
+        return files && changesIn(files);
+      })
+      .catch((error: unknown) => this.#notCompared(error));
+    return comparing.whole;
+  }
+
+  /** `old` compared with `now`, as revisions are, within `budget`; none past it. */
+  async #compare(
+    clone: SinceClone,
+    old: Revision,
+    now: Revision,
+    budget: Budget,
+  ): Promise<readonly ComparedFile[] | undefined> {
+    if (budget.left <= 0) return undefined;
+    const made = await clone.compareRevisions(old, now, {
+      maxBytes: budget.left,
+      signal: this.#stopped.signal,
+      received: (bytes) => {
+        budget.left -= bytes;
+      },
+    });
+    if ('refused' in made) {
+      this.#log('what changed since an overview’s commit is past what Lo downloads for it');
+      return undefined;
+    }
+    return made.files;
+  }
+
+  /** A comparison that failed, logged unless it was stopped: none. */
+  #notCompared(error: unknown): undefined {
+    if (!this.#stopped.signal.aborted) {
+      this.#log(`comparing an overview’s commit with the head: ${describe(error)}`);
+    }
+    return undefined;
   }
 
   /** A read that failed, logged, unless it was stopped. */
@@ -287,6 +345,11 @@ export class SinceReads {
     this.#log(`reading what changed since an overview’s commit: ${describe(error)}`);
     return { kind: 'failed', why: `Lo couldn’t read it from the local copy: ${describe(error)}` };
   }
+}
+
+/** The changes a comparison lists. */
+function changesIn(files: readonly ComparedFile[]): ChangedFile[] {
+  return files.flatMap((file) => (file.change ? [file.change] : []));
 }
 
 function describe(error: unknown): string {

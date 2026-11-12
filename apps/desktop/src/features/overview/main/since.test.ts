@@ -29,6 +29,8 @@ const PARSER = 'export function parse(text) {\n  return text.split(/\\r?\\n/);\n
 const PARSER_2 =
   'export function parse(text) {\n  if (text === "") return [];\n  return text.split(/\\r?\\n/);\n}\n';
 const FORMAT = 'export const format = String;\n';
+const WORDS = 'one\ntwo\nthree\nfour\nfive\nsix\n';
+const WORDS_2 = WORDS.replace('two', 'TWO');
 
 let server: RepoServer;
 /** The pull request's first push, and its second, rebased onto a newer base. */
@@ -45,7 +47,8 @@ beforeAll(() => {
     .write('src/gone.ts', 'gone\n')
     .write('src/kept.ts', 'kept\n')
     .write('data.bin', BINARY)
-    .write('huge.txt', 'small\n');
+    .write('huge.txt', 'small\n')
+    .write('src/old.ts', WORDS);
   remote.commit('The base.');
   remote.publish('refs/heads/trunk');
 
@@ -55,8 +58,9 @@ beforeAll(() => {
   first = remote.commit('Renames the parser.');
   remote.publish('refs/heads/first');
 
-  // The base branch moves on.
+  // The base branch moves on, renaming a file the first push doesn't touch.
   remote.switch('trunk').write('README.md', 'Read me, now.\n');
+  remote.remove('src/old.ts').write('src/new.ts', WORDS);
   remote.commit('The base moves on.');
   remote.publish('refs/heads/trunk');
 
@@ -66,7 +70,7 @@ beforeAll(() => {
   remote.commit('Renames the parser.');
   remote.write('src/parser.ts', PARSER_2).remove('src/gone.ts');
   remote.remove('src/format.ts').write('src/text/format.ts', FORMAT);
-  remote.write('data.bin', BINARY_2).write('huge.txt', HUGE);
+  remote.write('data.bin', BINARY_2).write('huge.txt', HUGE).write('src/new.ts', WORDS_2);
   second = remote.commit('Handles empty input.');
   remote.publish('refs/pull/1/head');
 }, 60_000);
@@ -112,10 +116,10 @@ describe('SinceReads', () => {
   it('counts the files the pushes since changed, leaving out what came with the base', async () => {
     const { repo, local } = await fetched();
     const since = new SinceReads();
-    // README.md came with the rebase; the other five are the second push's.
+    // README.md and the rename came with the rebase; the other six are the second push's.
     expect(await since.count(local, () => Promise.resolve(repo), first, second)).toEqual({
       kind: 'read',
-      files: 5,
+      files: 6,
     });
     expect(await since.count(local, () => Promise.resolve(repo), second, second)).toEqual({
       kind: 'read',
@@ -151,6 +155,19 @@ describe('SinceReads', () => {
     expect(await file('src/format.ts')).toEqual({ kind: 'same', path: 'src/text/format.ts' });
     expect(await file('src/kept.ts')).toEqual({ kind: 'same', path: 'src/kept.ts' });
     expect(await file('src/gone.ts')).toEqual({ kind: 'deleted' });
+  });
+
+  it('finds a file the base branch renamed, which the pushes then changed', async () => {
+    const { repo, local } = await fetched();
+    const since = new SinceReads();
+    expect(
+      await since.file(local, () => Promise.resolve(repo), first, second, 'src/old.ts'),
+    ).toEqual({
+      kind: 'changed',
+      path: 'src/new.ts',
+      pushed: true,
+      texts: { old: WORDS, new: WORDS_2 },
+    });
   });
 
   it('reads nothing that isn’t text or is too large, saying the file changed', async () => {
@@ -202,8 +219,11 @@ describe('SinceReads', () => {
     await since.count(local, clone, first, second);
     await since.file(local, clone, first, second, 'src/parser.ts');
     await since.file(local, clone, first, second, 'README.md');
-    expect(compared).toEqual([DOWNLOAD_LIMIT]);
-    // What the comparison brought counts against what the files may download.
+    // The pushes', then everything that changed, each once, the second within what the first left.
+    expect(compared).toHaveLength(2);
+    expect(compared[0]).toBe(DOWNLOAD_LIMIT);
+    expect(compared[1]).toBeLessThan(DOWNLOAD_LIMIT);
+    // What the comparisons brought counts against what the files may download.
     expect(received).toBeGreaterThan(0);
     for (const cap of caps) expect(cap).toBeLessThanOrEqual(DOWNLOAD_LIMIT - received);
     for (const cap of caps) expect(cap).toBeLessThanOrEqual(PROBE);
@@ -227,7 +247,7 @@ describe('SinceReads', () => {
     });
   });
 
-  it('looks at the same path when the comparison is past what Lo downloads, counting every change', async () => {
+  it('looks at the same path when the comparisons are past what Lo downloads, counting every change', async () => {
     const { repo, local } = await fetched();
     const refusing = through(repo, {
       compareRevisions: () => Promise.resolve({ refused: 'tooLarge', limit: 1 } as const),
@@ -235,10 +255,14 @@ describe('SinceReads', () => {
     const since = new SinceReads();
     const clone = () => Promise.resolve(refusing);
     expect(await since.count(local, clone, first, second)).toEqual({ kind: 'read', files: null });
-    // Its new name is unknown, so it's gone; and every change may be the pushes'.
-    expect(await since.file(local, clone, first, second, 'src/format.ts')).toEqual({
-      kind: 'deleted',
-    });
+    // Renamed or deleted, it isn't where it was, and Lo can't tell which; every change may be the
+    // pushes'.
+    for (const path of ['src/format.ts', 'src/gone.ts', 'src/old.ts']) {
+      expect(await since.file(local, clone, first, second, path)).toEqual({
+        kind: 'unread',
+        why: 'Lo couldn’t tell where the file went since.',
+      });
+    }
     expect(await since.file(local, clone, first, second, 'README.md')).toMatchObject({
       kind: 'changed',
       pushed: true,
@@ -306,7 +330,7 @@ describe('SinceReads', () => {
       since.count(local, () => Promise.resolve(clone), first, second),
       since.file(local, () => Promise.resolve(clone), first, second, 'src/parser.ts'),
     ]);
-    expect(count).toEqual({ kind: 'read', files: 5 });
+    expect(count).toEqual({ kind: 'read', files: 6 });
     expect(parser).toMatchObject({ kind: 'changed', path: 'src/parser.ts', pushed: true });
     expect(fetches).toEqual([first]);
 
