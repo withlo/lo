@@ -15,6 +15,7 @@ import {
   appFolder,
   browsed,
   dataFolder,
+  DIFF_FIRST,
   expect,
   KEYCHAIN,
   settingsPath,
@@ -156,6 +157,9 @@ const test = base.extend<{
     });
   },
 });
+
+// The diff, not the overview, is what these tests open on.
+test.use({ settings: DIFF_FIRST });
 
 /** Waits for the account from the token file, then opens #80's tab, and returns its id. */
 async function openE2e(page: Page): Promise<string> {

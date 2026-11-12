@@ -204,6 +204,12 @@ export const test = base.extend<Fixtures>({
 
 export { expect };
 
+/**
+ * A settings file that opens a pull request on its diff, overview or not, for tests of the diff and
+ * what's beside it, which would otherwise find the overview first.
+ */
+export const DIFF_FIRST = '{ "overview.open": "diff" }\n';
+
 /** A stand-in token, never a real one: the `user` cassette answers for it as rozed-bot. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
 
