@@ -245,13 +245,16 @@ export function draw(options: DrawOptions): Drawing {
   const asked = new Set<string>();
   const pacer = new Pacer();
 
-  /** Changes the view while what's at the top of the screen stays where it is. */
+  /**
+   * Changes the view while what's at the top of the screen stays where it is. It only keeps the
+   * page: a cursor a key just moved still comes on screen.
+   */
   const steady = (change: () => void) => {
     const top = view.viewport();
     change();
     // A line that was on screen stays drawn, though the new diff collapses the lines around it.
     if (top.at.kind === 'line') view.fold({ kind: 'line', at: top.at.at }, 'open');
-    view.scrollTo(top);
+    view.holdTop(top);
   };
 
   const setTokens = (id: string, tokens: Shown['tokens']) => {

@@ -16,6 +16,24 @@ import { _electron as electron, type ElectronApplication, type Page } from '@pla
 
 import { appEnvironment, appFolder, dataFolder, expect, KEYCHAIN, test as base } from './app.ts';
 
+/** Where a header was drawn and how far the diff was scrolled, as a frame started. */
+interface HeaderFrame {
+  /** How far down the page the header was, if it was drawn. */
+  y: number | undefined;
+  scroll: number;
+  /** How far the diff scrolls. */
+  end: number;
+  /** Whether the cursor was in the header's file. */
+  cursor: boolean;
+}
+
+declare global {
+  interface Window {
+    /** Each frame's {@link HeaderFrame}, while a test watches a header. */
+    loHeader?: HeaderFrame[];
+  }
+}
+
 /** A stand-in token, never a real one: the cassette was recorded with the same. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
 
@@ -343,6 +361,38 @@ test('`e` marks the file viewed and closes it, and the next file’s header stay
   await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('title', 'Viewed');
 });
 
+/**
+ * Notes, as each frame starts, where file `id`'s header is drawn, how far the diff is scrolled and
+ * whether the cursor is in the file, until the function it returns is called, which returns the
+ * frames.
+ */
+async function watchHeader(page: Page, id: string): Promise<() => Promise<HeaderFrame[]>> {
+  await page.evaluate((file) => {
+    const frames: HeaderFrame[] = [];
+    window.loHeader = frames;
+    const tick = () => {
+      const view = document.querySelector('.lo-diffview');
+      const at = window.loDiff?.probe.cursor()?.at;
+      if (view) {
+        frames.push({
+          y: window.loDiff?.probe.spotTop({ kind: 'header', file, side: 'new' }),
+          scroll: view.scrollTop,
+          end: view.scrollHeight - view.clientHeight,
+          cursor: (at?.kind === 'line' ? at.at.file : at?.file) === file,
+        });
+      }
+      if (window.loHeader === frames) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, id);
+  return () =>
+    page.evaluate(() => {
+      const frames = window.loHeader ?? [];
+      window.loHeader = undefined;
+      return frames;
+    });
+}
+
 test('`e` goes on to the next file not viewed, its header staying put or coming up, and round the end', async ({
   page,
   fake,
@@ -357,21 +407,34 @@ test('`e` goes on to the next file not viewed, its header staying put or coming 
   for (const [step, file] of rest.entries()) {
     const following = rest[step + 1] ?? order[0];
     await expect.poll(() => cursorPath(page)).toBe(file.path);
-    const before = following ? await headerTop(page, following.id) : undefined;
+    if (!following) throw new Error('the diff has no files');
+    const before = await headerTop(page, following.id);
     const { top, height } = await box(page);
     const onScreen = before !== undefined && before >= top && before < top + height;
+    const watched = await watchHeader(page, following.id);
     await page.keyboard.press('e');
     await expect(ball(page, file.path)).toHaveAttribute('title', 'Viewed');
-    if (!following) continue;
     await expect.poll(() => cursorPath(page)).toBe(following.path);
-    // Once the file closed above it has been measured and the sides levelled, the next header is
-    // where it was, if it was on screen; else at the top of the screen, or as near as the scroll
-    // goes.
-    await page.waitForTimeout(500);
-    const now = await box(page);
-    const header = (await headerTop(page, following.id)) ?? Number.NaN;
-    if (onScreen) expect(Math.abs(header - before)).toBeLessThan(2);
-    else expect(Math.abs(header - now.top) < 2 || now.end - now.scroll < 2).toBe(true);
+    await page.waitForTimeout(1000);
+    const frames = await watched();
+    // The next header is where it was, if it was on screen; else at the top of the screen, or as
+    // near as the scroll goes. It's there from the first frame after the key moved the cursor to
+    // it, and stays as the file closed above it is measured and the sides are levelled: away for
+    // two frames running, it moved on screen, since a frame that starts before the view puts it
+    // back isn't painted so.
+    const there = ({ y, scroll, end }: HeaderFrame) =>
+      y !== undefined &&
+      (onScreen
+        ? Math.abs(y - (before ?? Number.NaN)) < 2
+        : Math.abs(y - top) < 2 || end - scroll < 2);
+    const moving = frames.findIndex((frame) => frame.cursor);
+    expect(moving, JSON.stringify(frames)).toBeGreaterThanOrEqual(0);
+    // On screen, from before the key too.
+    const watchedFrames = frames.slice(onScreen ? 0 : moving);
+    const moved = watchedFrames.findIndex(
+      (frame, index) => !there(frame) && !there(watchedFrames[index + 1] ?? frame),
+    );
+    expect(moved, JSON.stringify(watchedFrames)).toBe(-1);
   }
   // Round the end, to the first file, which isn't viewed.
   await expect.poll(() => cursorPath(page)).toBe(order[0]?.path);

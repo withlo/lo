@@ -412,14 +412,17 @@ class View implements DiffView {
     });
   }
 
-  /** The line `scrollTo` is putting back at the top, until it's there or the reader moves. */
+  /**
+   * The line `scrollTo` or `holdTop` is putting back at the top, until it's there or the reader
+   * moves.
+   */
   #holding: Viewport | undefined;
   /**
    * Where on the page the line `#holding` names goes, which stays put as the box moves, as when a
    * banner over it comes or goes.
    */
   #holdingAt = 0;
-  /** Counts calls to `scrollTo`, so only the latest puts its line back. */
+  /** Counts the lines put back, so only the latest is held. */
   #holds = 0;
   /**
    * Until when a line put back stays the one at the top, though it's settled: the next change
@@ -786,7 +789,7 @@ class View implements DiffView {
    * Makes a change to what the view draws, as when a note opens or closes, keeping the line at the
    * top of the screen where it is, and so everything above the change. Side by side, the spacer
    * pass holds it. Inline, the view puts it back at once, and with `hold`, holds it there as
-   * `scrollTo` does while the editor measures.
+   * `holdTop` does while the editor measures.
    */
   #keepTop(change: () => void, hold = true): void {
     if (this.#pane === 'split') {
@@ -810,7 +813,7 @@ class View implements DiffView {
     if (before !== undefined && after !== undefined && Math.abs(after - before) >= 0.5) {
       this.dom.scrollTop += after - before;
     }
-    if (hold) this.scrollTo(top);
+    if (hold) this.#hold(top);
   }
 
   /**
@@ -1055,6 +1058,20 @@ class View implements DiffView {
   }
 
   scrollTo(viewport: Viewport): boolean {
+    if (!this.#hold(viewport)) return false;
+    // This is what's at the top now. A cursor a key or `reveal` just moved stays where it leaves
+    // it: brought back on screen, it would take the line away again each frame the hold puts it
+    // back.
+    this.#aligner.unfollow();
+    return true;
+  }
+
+  holdTop(viewport: Viewport): boolean {
+    return this.#hold(viewport);
+  }
+
+  /** Puts `viewport`'s line back at the top of the screen, and holds it there. */
+  #hold(viewport: Viewport): boolean {
     const found = this.#atOf(viewport.at);
     if (!found) return false;
     const { place } = found;

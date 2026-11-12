@@ -318,10 +318,18 @@ export interface DiffView extends KeySource {
   viewport(): Viewport;
   /**
    * Scrolls so `viewport`'s line or header is at the top of the screen as it was, its own top
-   * `offset` pixels above the screen's. Says whether the view has it. Moves neither the cursor nor
-   * focus.
+   * `offset` pixels above the screen's, and holds it there while the editors measure. Says whether
+   * the view has it. Moves neither the cursor nor focus, and a cursor that a key or `reveal` just
+   * moved stays where this leaves it, on screen or off, as after the wheel.
    */
   scrollTo(viewport: Viewport): boolean;
+  /**
+   * Holds `viewport`, as `viewport()` read it before a change to what the view draws, at the top of
+   * the screen while the change is measured, as `scrollTo` does. Unlike `scrollTo`, it leaves a
+   * cursor that a key just moved to be kept on screen, as after any key: it keeps the page through
+   * the change, and doesn't choose where the reader is.
+   */
+  holdTop(viewport: Viewport): boolean;
   /** `]c` and kin: `count` changes, files or threads on, or back where it's negative. */
   jump(to: JumpTo, count: number): void;
   /** `Tab`: the cursor goes to its row on the other side. A jump. */

@@ -30,6 +30,8 @@ vi.mock('@lo/ui/code', () => ({
       moved.push(`scroll ${at.kind === 'header' ? at.file : at.at.file} ${viewport.offset}`);
       return true;
     },
+    // What's at the top kept through a change, which moves nothing.
+    holdTop: () => true,
     probe: {
       spotTop: (spot) => (spot.kind === 'header' ? tops.get(spot.file) : undefined),
     },
@@ -257,8 +259,9 @@ function marksOf(entries: [string, 'viewed' | 'unviewed' | 'dismissed'][]) {
 
 /**
  * Draws two files from the local copy, `src/a.ts` and `src/b.ts`, both showing their lines, in a
- * box 800 pixels tall, with the stand-in's own record cleared. From GitHub's first, `swapped`, the
- * local copy's lines come while both are on screen, so the view holds them back.
+ * box 800 pixels tall, with the stand-in's own record cleared once they're drawn. From GitHub's
+ * first, `swapped`, the local copy's lines come while both are on screen, so the view holds them
+ * back: what the stand-in was told as they came stays in its record.
  */
 async function drawTwo(swapped = false): Promise<Drawing> {
   const loader = new Loader(work);
@@ -288,15 +291,15 @@ async function drawTwo(swapped = false): Promise<Drawing> {
   });
   drawing = made;
   await frames(2);
+  told.length = 0;
+  moved.length = 0;
+  headers.length = 0;
   if (swapped) {
     onScreen = ['d0', 'd1'];
     loader.subscribe(() => drawing?.update(loader.snapshot().ready?.entries ?? []));
     loader.take({ ...state('shown', 'local'), files });
     await frames();
   }
-  told.length = 0;
-  moved.length = 0;
-  headers.length = 0;
   return made;
 }
 
