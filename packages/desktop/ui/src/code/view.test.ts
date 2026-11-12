@@ -11,6 +11,7 @@ import type {
   DiffFile,
   DiffInit,
   DiffView,
+  Mark,
   Place,
   Spot,
   VimKey,
@@ -1169,6 +1170,222 @@ describe('the inline layout', () => {
     expect(shown.probe.cursor()?.at).toEqual(onHeader('b', 'new'));
     shown.setLayout('split');
     expect(shown.probe.cursor()).toMatchObject({ at: onHeader('b', 'new'), pane: 'new' });
+  });
+});
+
+/** An overview mark on file `a`'s lines `from` to `to` of `side`, from block `block`. */
+function overview(
+  side: 'old' | 'new',
+  from: number,
+  to: number,
+  block = 'one',
+  text = 'A query over the plan’s ceiling is refused before it touches the bucket.',
+): Mark {
+  return {
+    kind: 'overview',
+    at: { file: 'a', side, from, to },
+    block,
+    note: { label: 'Where to look', text },
+  };
+}
+
+/** The markers' gutter of the editor labelled `label`, if it has one. */
+function markerColumn(label: string): Element | null {
+  const content = parent!.querySelector(`.cm-content[aria-label="${label}"]`);
+  return content?.closest('.cm-editor')?.querySelector('.cm-gutter.lo-ovcolumn') ?? null;
+}
+
+/** What the markers' gutter of the editor labelled `label` draws, top to bottom. */
+function markers(label: string): string[] {
+  return [...(markerColumn(label)?.querySelectorAll('.cm-gutterElement') ?? [])].map((element) => {
+    const ball = element.querySelector('.lo-ov-marker');
+    const parts = [ball ? (ball.classList.contains('is-open') ? 'open' : 'ball') : 'rail'];
+    if (element.classList.contains('is-first')) parts.push('first');
+    if (element.classList.contains('is-last')) parts.push('last');
+    return parts.join(' ');
+  });
+}
+
+/** What the editor labelled `label` draws in its text. */
+function drawnText(label: string): string {
+  return parent!.querySelector(`.cm-content[aria-label="${label}"]`)!.innerHTML;
+}
+
+/** The notes drawn in the editor labelled `label`: each one's label and text. */
+function noted(label: string): string[] {
+  const shown = parent!.querySelectorAll(`.cm-content[aria-label="${label}"] .lo-ovnote`);
+  return [...shown].map(
+    (note) =>
+      `${note.querySelector('.lo-ovnote__label')?.textContent}: ${note.querySelector('.lo-ovnote__text')?.textContent}`,
+  );
+}
+
+describe('overview marks', () => {
+  test('their gutter is there before any mark, in both layouts', () => {
+    const shown = open();
+    expect(markerColumn('Before')).not.toBeNull();
+    expect(markerColumn('After')).not.toBeNull();
+    expect(markers('After')).toEqual([]);
+    shown.setLayout('inline');
+    expect(markerColumn('Changes')).not.toBeNull();
+  });
+
+  test('marks on each side draw a ball and a rail beside their lines, and nothing else changes', () => {
+    const shown = open();
+    const before = { old: drawnText('Before'), new: drawnText('After') };
+    shown.setMarks([overview('new', 4, 6), overview('old', 3, 2, 'two')]);
+    expect(markers('After')).toEqual(['ball first', 'rail', 'rail last']);
+    expect(markers('Before')).toEqual(['ball first', 'rail last']);
+    expect({ old: drawnText('Before'), new: drawnText('After') }).toEqual(before);
+    shown.setMarks([]);
+    expect(markers('After')).toEqual([]);
+    expect(markers('Before')).toEqual([]);
+    expect({ old: drawnText('Before'), new: drawnText('After') }).toEqual(before);
+  });
+
+  test("kinds the diff doesn't draw, and files it doesn't have, are left out", () => {
+    const shown = open();
+    shown.setMarks([
+      { kind: 'lines', at: { file: 'a', side: 'new', from: 4, to: 6 } },
+      { ...overview('new', 4, 6), at: { file: 'z', side: 'new', from: 4, to: 6 } },
+    ]);
+    expect(markers('After')).toEqual([]);
+  });
+
+  test('ranges that overlap share a rail, each with its ball', () => {
+    const shown = open();
+    shown.setMarks([overview('new', 2, 4), overview('new', 3, 6, 'two')]);
+    expect(markers('After')).toEqual(['ball first', 'ball', 'rail', 'rail', 'rail last']);
+  });
+
+  test('lines collapsed into a block carry the rail, and the ball where a range starts', () => {
+    const shown = open();
+    // New lines 9 to 17 are collapsed.
+    shown.setMarks([overview('new', 12, 14)]);
+    expect(markers('After')).toEqual(['ball first last']);
+    shown.setMarks([overview('new', 7, 12)]);
+    expect(markers('After')).toEqual(['ball first', 'rail', 'rail last']);
+  });
+
+  test('inline, both sides’ marks, the rail running past the other side’s lines', () => {
+    const shown = open();
+    shown.setLayout('inline');
+    shown.setMarks([overview('new', 4, 6), overview('old', 2, 3, 'two')]);
+    // Old 2, old 3; new 4, then old 5 deleted and new 5 added, and new 6.
+    expect(markers('Changes')).toEqual([
+      'ball first',
+      'rail last',
+      'ball first',
+      'rail',
+      'rail',
+      'rail last',
+    ]);
+  });
+
+  test('a note opens under the range’s last line, and the ball says it’s open', () => {
+    const shown = open();
+    shown.setMarks([overview('new', 4, 6)]);
+    expect(shown.openNote(at('a', 'new', 8))).toBe(false);
+    expect(shown.openNote(at('a', 'old', 5))).toBe(false);
+    expect(noted('After')).toEqual([]);
+    expect(shown.openNote(at('a', 'new', 5))).toBe(true);
+    expect(noted('After')).toEqual([
+      'Overview · Where to look: A query over the plan’s ceiling is refused before it touches the bucket.',
+    ]);
+    expect(markers('After')).toEqual(['open first', 'rail', 'rail last']);
+    // Under line 6: the note's block follows line 6, before line 7.
+    const note = parent!.querySelector('.cm-content[aria-label="After"] .lo-ovnote')!;
+    const block = note.closest('.cm-content > *')!;
+    expect(block.previousElementSibling?.textContent).toBe('line 6');
+    expect(block.nextElementSibling?.textContent).toBe('line 7');
+    // Opening it again changes nothing.
+    expect(shown.openNote(at('a', 'new', 4))).toBe(true);
+    expect(noted('After')).toHaveLength(1);
+    expect(shown.closeNote()).toBe(true);
+    expect(noted('After')).toEqual([]);
+    expect(markers('After')).toEqual(['ball first', 'rail', 'rail last']);
+    expect(shown.closeNote()).toBe(false);
+  });
+
+  test('Esc in the diff closes the note opened last, once Vim is waiting on nothing', () => {
+    const shown = open();
+    shown.setMarks([overview('new', 2, 3), overview('new', 5, 6, 'two', 'The second.')]);
+    shown.openNote(at('a', 'new', 2));
+    shown.openNote(at('a', 'new', 5));
+    shown.reveal(onLine('a', 'new', 8));
+    shown.focus();
+    const after = vimIn('After');
+    after.keys('v');
+    press(after.content, 'Escape');
+    expect(after.mode).toBe('normal');
+    expect(noted('After')).toHaveLength(2);
+    press(after.content, 'Escape');
+    expect(noted('After')).toEqual([expect.stringContaining('A query')]);
+    press(after.content, 'Escape', { shiftKey: true });
+    expect(noted('After')).toHaveLength(1);
+    press(after.content, 'Escape');
+    expect(noted('After')).toEqual([]);
+  });
+
+  test('Esc in a comment box is the box’s, and leaves the note open', () => {
+    const shown = open();
+    shown.setMarks([overview('new', 4, 6)]);
+    shown.openNote(at('a', 'new', 4));
+    shown.compose(at('a', 'new', 6), '', composerEvents());
+    const { content: box } = vimIn('Comment');
+    press(box, 'Escape');
+    expect(vimIn('Comment').mode).toBe('normal');
+    expect(noted('After')).toHaveLength(1);
+    // The note and the box are under the same line, in one block.
+    expect(
+      parent!.querySelector(
+        '.cm-content[aria-label="After"] .lo-diffthread .lo-ovnote + .lo-diffthread__card',
+      ),
+    ).not.toBeNull();
+  });
+
+  test('a note keeps its line shown, among collapsed lines, once it closes too', () => {
+    const shown = open();
+    shown.setMarks([overview('new', 12, 13)]);
+    const before = runs();
+    shown.openNote(at('a', 'new', 12));
+    expect(noted('After')).toHaveLength(1);
+    const opened = runs();
+    expect(opened).not.toEqual(before);
+    shown.closeNote();
+    expect(noted('After')).toEqual([]);
+    expect(runs()).toEqual(opened);
+  });
+
+  test('“Read it in the overview” names the block, when the caller hears it', () => {
+    const on = { ...events(), explained: vi.fn<NonNullable<DiffEvents['explained']>>() };
+    const shown = open(on);
+    shown.setMarks([overview('new', 4, 6, 'block-7')]);
+    shown.openNote(at('a', 'new', 4));
+    const link = parent!.querySelector<HTMLElement>('.lo-ovnote__read');
+    expect(link?.textContent).toBe('Read it in the overview');
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    link!.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    link!.click();
+    expect(on.explained).toHaveBeenCalledWith('block-7');
+    shown.destroy();
+    parent!.remove();
+    const quiet = open();
+    quiet.setMarks([overview('new', 4, 6)]);
+    quiet.openNote(at('a', 'new', 4));
+    expect(parent!.querySelector('.lo-ovnote__read')).toBeNull();
+  });
+
+  test('a note stays open while its mark does, and says what the mark says now', () => {
+    const shown = open();
+    shown.setMarks([overview('new', 4, 6), overview('new', 8, 9, 'two')]);
+    shown.openNote(at('a', 'new', 4));
+    shown.setMarks([overview('new', 4, 6, 'one', 'Said again.'), overview('new', 8, 9, 'two')]);
+    expect(noted('After')).toEqual(['Overview · Where to look: Said again.']);
+    shown.setMarks([overview('new', 8, 9, 'two')]);
+    expect(noted('After')).toEqual([]);
+    expect(shown.closeNote()).toBe(false);
   });
 });
 

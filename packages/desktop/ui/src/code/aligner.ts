@@ -357,6 +357,19 @@ export class Aligner {
     if (!this.#paused) this.#anchor = this.#anchorNow();
   }
 
+  /**
+   * Takes the first line drawn on screen as where things belong, not the cursor's: the view is
+   * about to change heights itself, as when a note opens, and what's on screen above the change
+   * stays where it is, the cursor's line too if it's above it. The pass keeps it there until the
+   * scroll moves.
+   */
+  anchorTop(): void {
+    if (this.#paused) return;
+    const side = this.#anchorSide();
+    const found = this.#screenLine(side, true) ?? this.#screenLine(otherSide(side), true);
+    if (found) this.#anchor = { for: side, ...found };
+  }
+
   /** Stops the pass, or starts it again. */
   set paused(paused: boolean) {
     this.#paused = paused;
@@ -1204,9 +1217,10 @@ export class Aligner {
    * The line `side`'s editor draws on screen furthest from where rows come into view, if it draws
    * one: the first when the scroll last went down, and rows come in at the bottom, the last when it
    * went up. The pass changes the spacers of rows as they come in, and heights CodeMirror measures
-   * for the first time are theirs, so what was on screen already stays where it was.
+   * for the first time are theirs, so what was on screen already stays where it was. `down` asks
+   * for the first whichever way the scroll went.
    */
-  #screenLine(side: Side): Omit<Anchor, 'for'> | undefined {
+  #screenLine(side: Side, down = this.#direction > 0): Omit<Anchor, 'for'> | undefined {
     const view = this.#views[side];
     const screen = this.#scroller.getBoundingClientRect();
     const y = screen.top - origin(view);
@@ -1215,7 +1229,6 @@ export class Aligner {
     // From the top on the way down, from the bottom on the way up, to the first drawn on screen.
     const first = blockIndex(blocks, y);
     const last = blockIndex(blocks, y + screen.height);
-    const down = this.#direction > 0;
     for (
       let index = down ? first : last;
       down ? index <= last : index >= first;

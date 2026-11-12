@@ -11,6 +11,9 @@ export type {
   DiffLayout,
   DiffNote,
   DiffView,
+  ExcerptEvents,
+  ExcerptInit,
+  ExcerptView,
   FileDiff,
   FileEvents,
   FileHeader,
@@ -21,12 +24,14 @@ export type {
   JumpTo,
   KeySource,
   LineTarget,
+  LinesMark,
   Mark,
   Misalignment,
   Mode,
   MovedCode,
   MovedEnd,
   Movement,
+  OverviewMark,
   PassStats,
   PeekAnswer,
   PeekSource,
@@ -45,5 +50,6 @@ export type {
   WordRange,
 } from './api.ts';
 export { diffMotions } from './api.ts';
+export { createExcerptView } from './excerpt.ts';
 export { createFileView } from './file.ts';
 export { createDiffView } from './view.ts';

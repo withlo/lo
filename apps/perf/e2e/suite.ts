@@ -4,7 +4,7 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import type { CursorReading, Probe, Spot } from '@lo/ui/code';
+import type { CursorReading, Mark, Probe, Spot } from '@lo/ui/code';
 import { _electron as electron, test as base, type Page } from '@playwright/test';
 // Imported from Node, the electron package is the path to its binary, whatever its types say.
 import electronPackage from 'electron';
@@ -90,6 +90,8 @@ declare global {
     diffLoaded?: boolean;
     /** Brings the local copy's files that are waiting, and says how many there were. */
     perfCopy(): number;
+    /** Gives the view an overview's markers, in place of those it had. */
+    perfOverview(marks: readonly Mark[]): void;
   }
 }
 

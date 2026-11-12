@@ -414,6 +414,21 @@ describe('what it draws', () => {
     expect(drawn('lo-line-marked')).toEqual([7]);
   });
 
+  test("an overview's markers are the diff's, and left out", () => {
+    const shown = open();
+    shown.setMarks([
+      {
+        kind: 'overview',
+        at: { file: 'a', side: 'new', from: 3, to: 5 },
+        block: 'one',
+        note: { label: 'Where to look', text: 'Why it changed.' },
+      },
+      { kind: 'lines', at: { file: 'a', side: 'new', from: 9, to: 9 } },
+    ]);
+    expect(drawn('lo-line-marked')).toEqual([9]);
+    expect(parent!.querySelector('.lo-ov-marker, .lo-ovnote')).toBeNull();
+  });
+
   test('tokens highlight its text, given at first or later', () => {
     const keyword = tokenNames.indexOf('keyword');
     // `line` on lines 1 and 2: each line is 6 characters and a line break, or 7 from line 10 on.

@@ -30,7 +30,8 @@
 }
 /* The view scrolls, not each editor. */
 .lo-diffview .cm-scroller,
-.lo-fileview .cm-scroller {
+.lo-fileview .cm-scroller,
+.lo-excerpt .cm-scroller {
   overflow: visible;
 }
 
@@ -92,8 +93,51 @@
  * sets the animation on the element itself, which only an important rule outranks.
  */
 .lo-diffview .cm-vimCursorLayer,
-.lo-fileview .cm-vimCursorLayer {
+.lo-fileview .cm-vimCursorLayer,
+.lo-excerpt .cm-vimCursorLayer {
   animation-name: none !important;
+}
+/* An excerpt shows its cursor only while it has focus: it's a block of code to read. */
+.lo-excerpt .cm-editor:not(.cm-focused) .cm-vimCursorLayer {
+  visibility: hidden;
+}
+
+/*
+ * An excerpt: lines of a file as an inline diff, as tall as they are, inside whatever scrolls
+ * around it. A line that changed since it was written about has its number marked.
+ */
+.lo-excerpt .cm-gutterElement.is-stale {
+  color: var(--lo-warning);
+  box-shadow: inset 2px 0 0 var(--lo-warning);
+}
+
+/*
+ * Overview markers: a gutter as wide with none as with them, so markers that come later move
+ * nothing. The ball's ring may reach past the column's edges.
+ */
+.lo-app .cm-editor .cm-gutter.lo-ovcolumn {
+  width: 14px;
+  overflow: visible;
+}
+/* A note under the lines it's about, in the block that holds the line's threads. */
+.lo-diffthread > .lo-ovnote {
+  margin: 0;
+  white-space: normal;
+}
+.lo-diffthread > .lo-ovnote + * {
+  margin-top: 8px;
+}
+.lo-ovnote__text {
+  overflow-wrap: anywhere;
+}
+.lo-ovnote__read {
+  color: var(--lo-link);
+  font: inherit;
+}
+.lo-ovnote__read:hover {
+  color: var(--lo-link-hover);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 /* A file's note looks like collapsed code, but there's nothing under it to open. */
 .lo-filenote,

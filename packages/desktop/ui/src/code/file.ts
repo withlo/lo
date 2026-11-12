@@ -139,10 +139,13 @@ class WholeFile implements FileView {
     this.#view.dispatch({ effects: marksChanged.of(null) });
   }
 
-  /** The lines `marks` pick out in this file and side, each range first to last. */
+  /**
+   * The lines `marks` pick out in this file and side, each range first to last. Overview markers
+   * are the diff's: they're left out.
+   */
   #ownMarks(marks: readonly Mark[]): { from: number; to: number }[] {
     return marks
-      .filter(({ at }) => at.file === this.#id && at.side === this.#side)
+      .filter(({ kind, at }) => kind === 'lines' && at.file === this.#id && at.side === this.#side)
       .map(({ at }) => ({ from: Math.min(at.from, at.to), to: Math.max(at.from, at.to) }));
   }
 

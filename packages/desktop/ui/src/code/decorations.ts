@@ -1,11 +1,12 @@
 // A file's decorations in one document, in two kinds. Its blocks, which change the document's
 // heights: its header, with a note in it where the file has no lines, a note where its lines
-// aren't shown, its collapsed code, the labels on its moved code, and its threads and comment
-// boxes; each carries the file's index, so a file's can be replaced alone when its diff or the
-// moves arrive, a run opens, or a comment is written. And its marks: changed lines and words, and
-// moved lines and their edits, which the view makes only for the lines it draws, so a
-// transaction's cost doesn't grow with the pull request. A side's document and the inline one draw
-// the same things; the inline one has both sides' lines, one after the other.
+// aren't shown, its collapsed code, the labels on its moved code, and its threads, comment boxes
+// and overview markers' notes; each carries the file's index, so a file's can be replaced alone
+// when its diff or the moves arrive, a run opens, a comment is written or a note opens. And its
+// marks: changed lines and words, and moved lines and their edits, which the view makes only for
+// the lines it draws, so a transaction's cost doesn't grow with the pull request. A side's document
+// and the inline one draw the same things; the inline one has both sides' lines, one after the
+// other.
 
 import type { Range, Text } from '@codemirror/state';
 import { Decoration } from '@codemirror/view';
@@ -21,6 +22,7 @@ import {
   type HeaderInfo,
   HeaderWidget,
   MovedLabelWidget,
+  type NoteDraw,
   type ThreadDraw,
   type ThreadSizes,
   ThreadWidget,
@@ -32,7 +34,10 @@ export interface ViewFile extends HeaderInfo {
   skipped?: 'too-large' | 'binary' | 'empty' | undefined;
 }
 
-/** The threads under one of a file's lines, or a comment box there, or both. */
+/**
+ * What's under one of a file's lines: the threads there, a comment box, the notes of overview
+ * markers that end there, or any of them together.
+ */
 export interface ViewThread {
   id: string;
   side: Side;
@@ -41,6 +46,7 @@ export interface ViewThread {
   box?: BoxHost | undefined;
   /** Changes when the box must be drawn again, to move it into the editor showing. */
   drawing?: number | undefined;
+  notes?: readonly NoteDraw[] | undefined;
 }
 
 /** What a file shows where its lines would be, when they aren't shown as a diff. */
@@ -230,7 +236,14 @@ function threadAt(
   tag: { file: number },
   at: number,
 ): Range<Decoration> {
-  const widget = new ThreadWidget(thread.id, thread.threads, sizes, thread.box, thread.drawing);
+  const widget = new ThreadWidget(
+    thread.id,
+    thread.threads,
+    sizes,
+    thread.box,
+    thread.drawing,
+    thread.notes,
+  );
   return Decoration.widget({ widget, block: true, side: 1, ...tag }).range(at);
 }
 

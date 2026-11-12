@@ -1,8 +1,8 @@
 // The blocks the diff view draws between lines: file headers, with notes on files not shown,
-// collapsed code and notes in place of lines, threads and the comment boxes in them, the labels on
-// moved code, and the spacers that keep the two sides lined up. A block that starts a row with
-// lines on both sides carries the row's key as `data-row`, as the first line of a row does, so the
-// alignment drawn on screen can be checked row by row.
+// collapsed code and notes in place of lines, threads and the comment boxes in them, overview
+// markers' notes, the labels on moved code, and the spacers that keep the two sides lined up. A
+// block that starts a row with lines on both sides carries the row's key as `data-row`, as the
+// first line of a row does, so the alignment drawn on screen can be checked row by row.
 
 import { WidgetType } from '@codemirror/view';
 
@@ -238,9 +238,25 @@ export interface ThreadDraw {
   readonly comments: readonly ThreadComment[];
 }
 
+/** An overview marker's note, open under the last line the marker covers. */
+export interface NoteDraw {
+  /** Which marker's it is. */
+  readonly key: string;
+  /** The overview's block that explains the lines, which "Read it in the overview" names. */
+  readonly block: string;
+  readonly label: string;
+  readonly text: string;
+  /** Whether it links back to the overview. */
+  readonly link: boolean;
+}
+
+/** The attribute on a note's link that names the overview's block it shows. */
+export const NOTE_BLOCK_ATTRIBUTE = 'data-note-block';
+
 /**
- * The review threads under a line, each a card, and the comment box being written there, if there
- * is one, in the last: one block a line, for the same reason as a header's note.
+ * What goes under a line: the notes of the overview markers that end there, the review threads
+ * there, each a card, and the comment box being written there, if there is one, in the last. One
+ * block a line, for the same reason as a header's note.
  */
 export class ThreadWidget extends WidgetType {
   readonly id: string;
@@ -248,6 +264,7 @@ export class ThreadWidget extends WidgetType {
   readonly box: BoxHost | undefined;
   readonly drawing: number;
   readonly sizes: ThreadSizes;
+  readonly notes: readonly NoteDraw[];
 
   /**
    * `drawing` changes when the box must be drawn again, to move it into another editor; `sizes`
@@ -259,6 +276,7 @@ export class ThreadWidget extends WidgetType {
     sizes: ThreadSizes,
     box?: BoxHost,
     drawing = 0,
+    notes: readonly NoteDraw[] = [],
   ) {
     super();
     this.id = id;
@@ -266,6 +284,7 @@ export class ThreadWidget extends WidgetType {
     this.sizes = sizes;
     this.box = box;
     this.drawing = drawing;
+    this.notes = notes;
   }
 
   override eq(other: ThreadWidget): boolean {
@@ -278,7 +297,9 @@ export class ThreadWidget extends WidgetType {
       ) &&
       other.box === this.box &&
       other.drawing === this.drawing &&
-      other.sizes === this.sizes
+      other.sizes === this.sizes &&
+      other.notes.length === this.notes.length &&
+      other.notes.every((note, index) => sameNote(note, this.notes[index]))
     );
   }
 
@@ -290,6 +311,7 @@ export class ThreadWidget extends WidgetType {
       block.dataset.thread = this.#key;
       this.sizes.observe(block);
     }
+    for (const note of this.notes) block.append(noteElement(note));
     let card: HTMLElement | undefined;
     for (const thread of this.threads) {
       card = element('div', 'lo-diffthread__card');
@@ -322,15 +344,17 @@ export class ThreadWidget extends WidgetType {
     if (body) this.sizes.unobserve(body);
   }
 
-  /** The threads' size as drawn, for drawing them again. */
+  /** The threads' and notes' size as drawn, for drawing them again. */
   get #key(): string {
-    return `${this.id}:${this.threads.map((thread) => thread.comments.length).join(',')}`;
+    const threads = this.threads.map((thread) => thread.comments.length).join(',');
+    const notes = this.notes.map((note) => `${note.key}:${note.text.length}`).join(',');
+    return notes === '' ? `${this.id}:${threads}` : `${this.id}:${threads}:${notes}`;
   }
 
   /**
    * As tall as it was last drawn in its editor at this width, if it was. Else its comments' lines
    * of 18 pixels, at the characters the editor's threads wrap at, under each comment's author line
-   * and padding.
+   * and padding, and its notes' lines of 21 pixels, between a label and a foot.
    */
   override get estimatedHeight(): number {
     const drawn = this.box ? undefined : this.sizes.drawn(this.#key);
@@ -341,13 +365,49 @@ export class ThreadWidget extends WidgetType {
         comments += 36 + Math.max(1, Math.ceil(comment.body.length / this.sizes.charsPerLine)) * 18;
       }
     }
-    return 16 + comments + (this.box ? this.box.dom.offsetHeight || 60 : 0);
+    let notes = 0;
+    for (const note of this.notes) {
+      notes += 70 + Math.max(1, Math.ceil(note.text.length / this.sizes.charsPerLine)) * 21;
+    }
+    return 16 + notes + comments + (this.box ? this.box.dom.offsetHeight || 60 : 0);
   }
 
   /** The box handles its own events. */
   override ignoreEvent(): boolean {
     return true;
   }
+}
+
+function sameNote(a: NoteDraw, b: NoteDraw | undefined): boolean {
+  return (
+    b !== undefined &&
+    a.key === b.key &&
+    a.block === b.block &&
+    a.label === b.label &&
+    a.text === b.text &&
+    a.link === b.link
+  );
+}
+
+/**
+ * An overview marker's note: its label, its text, and a foot with the way back to the overview,
+ * all plain text.
+ */
+function noteElement(note: NoteDraw): HTMLElement {
+  const box = element('div', 'lo-ovnote');
+  box.setAttribute('role', 'note');
+  const label = element('div', 'lo-ovnote__label');
+  label.append(element('span', 'lo-ov-dot'), note.label ? `Overview · ${note.label}` : 'Overview');
+  const foot = element('div', 'lo-ovnote__foot');
+  if (note.link) {
+    const link = element('button', 'lo-ovnote__read', 'Read it in the overview');
+    link.type = 'button';
+    link.setAttribute(NOTE_BLOCK_ATTRIBUTE, note.block);
+    foot.append(link);
+  }
+  foot.append(element('span', '', 'Esc closes it'));
+  box.append(label, element('div', 'lo-ovnote__text', note.text), foot);
+  return box;
 }
 
 /**
