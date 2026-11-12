@@ -105,6 +105,21 @@ describe('the files as the view gets them', () => {
     const lock = diffFileOf(entry('d0', 'pnpm-lock.yaml', 'collapsed'), shown);
     expect(lock).toMatchObject({ collapsed: true, gaps: shown.gaps, header: { additions: 3 } });
   });
+
+  it('start a viewed file closed, its ball in its header, and say where one shows from', () => {
+    const viewed = diffFileOf(entry('d0', 'a.ts'), shown, 'viewed');
+    expect(viewed).toMatchObject({ collapsed: true, header: { viewed: 'viewed' } });
+    expect(diffFileOf(entry('d0', 'a.ts'), shown, 'unviewed')).not.toHaveProperty('collapsed');
+    expect(diffFileOf(entry('d0', 'a.ts'), shown).header).not.toHaveProperty('viewed');
+
+    const since = entry('d0', 'a.ts');
+    const narrowed = { ...since.versions, since: { label: 'r1', why: 'viewed' as const } };
+    expect(headerOf(narrowed, 'dismissed')).toMatchObject({ viewed: 'stale', tags: ['since r1'] });
+    expect(headerOf({ ...narrowed, since: { label: 'r1', why: 'review' } }).tags).toEqual([
+      'since your review in r1',
+    ]);
+    expect(headerOf({ ...narrowed, start: 'unchanged' }).tags).toEqual(['no change since r1']);
+  });
 });
 
 /** The files' paths with generated ones last, as review order puts them. */
