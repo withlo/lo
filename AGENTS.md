@@ -431,7 +431,7 @@ status bar.
   changes, and asks for all three with `tab.state`. None of it holds a token. `tab.copy` puts up to
   1 MiB of text on the clipboard, and `tab.openExternal` opens pages on `https://github.com/` only,
   for every feature.
-- Its smoke test opens rozed-dev/e2e#78, whose repository `testing/fixtures/app.sh` builds with
+- Its smoke test opens rozed-dev/e2e#80, whose repository `testing/fixtures/app.sh` builds with
   GitHub's commit IDs, as `LO_GIT_REMOTE`, while the replay server answers from the `app_e2e`
   cassette, recorded from the app itself (`testing/README.md`).
 

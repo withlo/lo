@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { patchShown } from './patch.ts';
 
-/** src/parser.ts in rozed-dev/e2e#78, as GitHub's list of the pull request's files gives it. */
+/** src/parser.ts in rozed-dev/e2e#80, as GitHub's list of the pull request's files gives it. */
 const PARSER = [
   '@@ -4,9 +4,10 @@ export interface Line {',
   '   readonly text: string;',

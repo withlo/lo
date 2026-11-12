@@ -24,6 +24,7 @@ import {
 import { MAX_SHOWN_BYTES, tooLargeToShow } from '@lo/review';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import type { Comparing, OnScreen } from '../../revisions/service.ts';
 import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type { DiffState, FileText, FileVersions, Source } from '../contract.ts';
@@ -57,9 +58,14 @@ export interface DiffTabOptions {
   readonly log: (line: string) => void;
 }
 
-/** What's known of the comparison at the head on screen. */
+/**
+ * What's known of the comparison on screen: of the whole pull request at the head on screen, or of
+ * two revisions.
+ */
 interface At {
   readonly head: Oid;
+  /** The two revisions compared, when it isn't the whole pull request. */
+  readonly comparing: Comparing | undefined;
   from: Source | undefined;
   files: FileVersions[] | undefined;
   /** GitHub's patches, by the files' places, while the files are GitHub's. */
@@ -81,6 +87,8 @@ export class DiffTab {
   readonly #options: DiffTabOptions;
   #info: PullTabInfo | undefined;
   #at: At | undefined;
+  /** What the diff waits for before anything is drawn, if anything. */
+  #waiting: string | undefined;
   #closed = false;
 
   constructor(options: DiffTabOptions) {
@@ -94,6 +102,8 @@ export class DiffTab {
     return {
       id: this.id,
       at: at?.head ?? null,
+      comparison: at?.comparing?.key ?? null,
+      waiting: this.#waiting ?? null,
       from: at?.from ?? null,
       files: at?.files ?? null,
       partial: at?.partial ?? false,
@@ -102,34 +112,51 @@ export class DiffTab {
   }
 
   /**
-   * Follows the tab as it is now: a new head on screen starts the diff again, a local copy ready at
-   * it reads the diff from there, and until then GitHub's API does, once GitHub has said the head
-   * is its own.
+   * Follows the tab as it is now, and what it compares: a new head on screen, or another comparison
+   * of revisions, starts the diff again. The whole pull request at the head on screen is read from
+   * the local copy once it's ready at that head, and from GitHub's API until then, once GitHub has
+   * said the head is its own. Two revisions are compared in the local copy; until the revisions
+   * feature has both, if it says to wait, nothing is drawn.
    */
-  update(info: PullTabInfo): void {
+  update(info: PullTabInfo, screen: OnScreen = { kind: 'head' }): void {
     if (this.#closed) return;
     this.#info = info;
+    if (screen.kind === 'waiting') {
+      if (this.#at !== undefined || this.#waiting !== screen.why) {
+        this.#at = undefined;
+        this.#waiting = screen.why;
+        this.#publish();
+      }
+      return;
+    }
+    const waited = this.#waiting !== undefined;
+    this.#waiting = undefined;
+    if (screen.kind === 'revisions') {
+      const { comparing } = screen;
+      if (this.#at?.comparing?.key !== comparing.key) {
+        const at = this.#newAt(comparing.new.head, comparing);
+        at.started.add('local');
+        void this.#fromComparing(at, comparing);
+      } else if (waited) {
+        this.#publish();
+      }
+      return;
+    }
     const { shown } = info;
-    if (shown === undefined) return;
+    if (shown === undefined) {
+      if (waited) this.#publish();
+      return;
+    }
     let head: Oid;
     try {
       head = parseOid(shown);
     } catch {
       return;
     }
-    if (this.#at?.head !== head) {
-      this.#at = {
-        head,
-        from: undefined,
-        files: undefined,
-        patches: [],
-        partial: false,
-        problem: undefined,
-        started: new Set(),
-      };
-      this.#publish();
-    }
+    if (this.#at?.head !== head || this.#at.comparing !== undefined) this.#newAt(head, undefined);
+    else if (waited) this.#publish();
     const at = this.#at;
+    if (!at) return;
     const { local } = info;
     if (local.kind === 'ready' && local.head === head) {
       if (!at.started.has('local')) {
@@ -143,17 +170,45 @@ export class DiffTab {
     }
   }
 
+  /** Starts the diff again at `head`, of `comparing`, if it's two revisions. */
+  #newAt(head: Oid, comparing: Comparing | undefined): At {
+    const at: At = {
+      head,
+      comparing,
+      from: undefined,
+      files: undefined,
+      patches: [],
+      partial: false,
+      problem: undefined,
+      started: new Set(),
+    };
+    this.#at = at;
+    this.#publish();
+    return at;
+  }
+
   /** The window drew the diff at `head`. */
   drawn(head: string): void {
     if (this.#closed || this.#at?.head !== head) return;
     this.#options.drawn(head);
   }
 
-  /** The texts of the files at places `files` of the diff at `head`, from `from`. */
-  async texts(head: string, from: Source, files: readonly number[]): Promise<FileText[]> {
+  /** The texts of the files at places `files` of the diff at `head`, of `comparison`, from `from`. */
+  async texts(
+    head: string,
+    comparison: string | null,
+    from: Source,
+    files: readonly number[],
+  ): Promise<FileText[]> {
     const at = this.#at;
-    if (!at || at.head !== head || at.from !== from || !at.files) {
-      throw new IpcError('moved', 'The diff is of another head or source now.');
+    if (
+      !at ||
+      at.head !== head ||
+      (at.comparing?.key ?? null) !== comparison ||
+      at.from !== from ||
+      !at.files
+    ) {
+      throw new IpcError('moved', 'The diff is of another head, comparison or source now.');
     }
     const list = at.files;
     const asked = files.map((place) => {
@@ -256,6 +311,42 @@ export class DiffTab {
       this.#options.log(`finding what changed at ${at.head}: ${describe(error)}`);
       at.problem = `Lo couldn’t read what changed from the local copy: ${describe(error)}`;
       this.#fallBackToGithub(at);
+    }
+    this.#publish();
+  }
+
+  /**
+   * Two revisions' diff, from the comparison the revisions feature made in the local copy: across a
+   * rebase when the base moved, each file the replay conflicted on marked. GitHub has nothing to
+   * stand in for it, so a comparison that can't be made says why, and shows nothing.
+   */
+  async #fromComparing(at: At, comparing: Comparing): Promise<void> {
+    const opening = this.#options.reads.clone();
+    try {
+      if (!opening) throw new Error('The local copy isn’t open.');
+      const repo = await opening;
+      const compared = await comparing.compared();
+      if (!this.#current(at)) return;
+      if ('refused' in compared) {
+        at.problem = `The files changed between these revisions are larger than ${Math.round(compared.limit / 2 ** 20)} MB, so Lo doesn’t compare them.`;
+        this.#publish();
+        return;
+      }
+      const changed = compared.files.flatMap((file) =>
+        file.change ? [{ change: file.change, conflicted: file.resolution !== undefined }] : [],
+      );
+      const files = changed.map((file) => file.change);
+      const generated = await this.#generated(repo, at.head, files);
+      if (!this.#current(at)) return;
+      at.files = changed.map((file, index) =>
+        localVersions(file.change, generated[index], file.conflicted),
+      );
+      at.from = 'local';
+      at.problem = undefined;
+    } catch (error) {
+      if (!this.#current(at)) return;
+      this.#options.log(`comparing the revisions: ${describe(error)}`);
+      at.problem = `Lo couldn’t compare the revisions: ${describe(error)}`;
     }
     this.#publish();
   }

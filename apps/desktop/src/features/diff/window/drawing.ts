@@ -157,6 +157,11 @@ export interface DrawOptions {
   packaged: boolean;
   /** Where the tab's last view was, to come back to. */
   before: Place | undefined;
+  /**
+   * A file to put at the top of the screen, with the cursor on its header, in place of `before`: as
+   * when the reader compares other revisions. Nothing happens when the view hasn't it.
+   */
+  onTop?: string | undefined;
 }
 
 /** How many views the page has drawn, for the smoke test. */
@@ -417,9 +422,15 @@ export function draw(options: DrawOptions): Drawing {
         filesOnScreen: () => view.filesOnScreen(),
       };
   if (testing) window.loDiff = testing;
-  // Back where the tab's last view was: its cursor, and what was at the top of the screen.
-  const { before } = options;
-  if (before) {
+  // Back where the tab's last view was: its cursor, and what was at the top of the screen. Or, for
+  // another comparison, the cursor's file at the top, if this one has it.
+  const { before, onTop } = options;
+  if (onTop !== undefined && files.some((file) => file.id === onTop)) {
+    view.reveal({ kind: 'file', file: onTop });
+    const cursor = spotOf(view.keyState().target);
+    const side = cursor?.kind === 'header' ? cursor.side : (cursor?.at.side ?? 'new');
+    view.scrollTo({ at: { kind: 'header', file: onTop, side }, offset: 0 });
+  } else if (before) {
     view.reveal(before.cursor);
     // The cursor's line where it was on the page, as when the reader changes the files' order; or
     // what was at the top of the screen.

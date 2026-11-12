@@ -88,9 +88,14 @@ function startOf(
 
 /**
  * A file the local copy's comparison lists. `linguistGenerated` is its `linguist-generated`
- * attribute in the head, if `.gitattributes` says.
+ * attribute in the head, if `.gitattributes` says; `conflicted`, whether a comparison of revisions
+ * across a rebase conflicted on it.
  */
-export function localVersions(file: ChangedFile, linguistGenerated?: boolean): FileVersions {
+export function localVersions(
+  file: ChangedFile,
+  linguistGenerated?: boolean,
+  conflicted = false,
+): FileVersions {
   const path = treePathOf(changedPath(file));
   const change = changeOf(file);
   const previous = change === 'renamed' && file.old ? treePathOf(file.old.path) : null;
@@ -125,6 +130,7 @@ export function localVersions(file: ChangedFile, linguistGenerated?: boolean): F
     ...startOf(review, { binary: file.binary && submodule === null, unchanged }),
     submodule,
     reach: 0,
+    conflicted,
   };
 }
 
@@ -171,6 +177,7 @@ export function githubVersions(file: PullFile): FileVersions {
     new: null,
     submodule: null,
     reach,
+    conflicted: false,
     ...(shape.start === 'large'
       ? shape
       : noPatch && counted

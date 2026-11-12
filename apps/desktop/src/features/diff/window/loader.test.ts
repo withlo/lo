@@ -22,11 +22,17 @@ function versions(path: string, start: Start = 'shown', size = 10): FileVersions
     large: start === 'large' ? 'large' : null,
     submodule: null,
     reach: 0,
+    conflicted: false,
   };
 }
 
-function state(files: FileVersions[] | null, from: Source | null = 'local', at = HEAD): DiffState {
-  return { id: 't1', at, from, files, partial: false, problem: null };
+function state(
+  files: FileVersions[] | null,
+  from: Source | null = 'local',
+  at = HEAD,
+  comparison: string | null = null,
+): DiffState {
+  return { id: 't1', at, comparison, waiting: null, from, files, partial: false, problem: null };
 }
 
 /** Work answered at once: each file's texts are its path's, before and after. */
@@ -345,7 +351,7 @@ describe('a tab’s diff in the window', () => {
       texts: ({ from, files: places }) =>
         from === 'github'
           ? Promise.resolve(places.map(() => ({ kind: 'texts' as const, old: 'x\n', new: 'y\n' })))
-          : done.texts({ at: HEAD, from, files: places }),
+          : done.texts({ at: HEAD, comparison: null, from, files: places }),
     });
     loader.setWhitespace(true);
     loader.take(state(files, 'github'));

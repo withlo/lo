@@ -17,7 +17,7 @@ beforeAll(() => {
   createRegistry(feature.commands, 'mac');
 });
 
-const TAB: PullTab = { id: 't1', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 78 };
+const TAB: PullTab = { id: 't1', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 };
 
 const change = (text: string, how: Changed['change'], previous?: string): Changed => ({
   path: { text },
@@ -26,10 +26,10 @@ const change = (text: string, how: Changed['change'], previous?: string): Change
   generated: text === 'pnpm-lock.yaml' ? 'lockfile' : null,
 });
 
-/** #78's tree, as the local copy has it. */
+/** #80's tree, as the local copy has it. */
 const LOCAL: TreeState = {
   id: TAB.id,
-  at: '5530830f535b2947f1b50a184dc58a9c7b2845ad',
+  at: '57cc4a6dadfa23849df45e1084fd4869401bec53',
   listing: {
     kind: 'whole',
     entries: [
@@ -57,6 +57,7 @@ const LOCAL: TreeState = {
   partial: false,
   problem: null,
   omitted: 0,
+  compared: null,
 };
 
 afterEach(() => {
@@ -64,7 +65,7 @@ afterEach(() => {
   choices.set(TAB.id, { mode: 'tree', changedOnly: false, opened: new Set(), closed: new Set() });
 });
 
-/** The panel for #78's tab, showing `state`. */
+/** The panel for #80's tab, showing `state`. */
 function render(state: TreeState = LOCAL) {
   act(() => showState(state));
   const container = document.createElement('div');

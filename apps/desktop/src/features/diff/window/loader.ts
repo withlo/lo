@@ -24,7 +24,12 @@ import { FileIds } from './ids.ts';
 
 /** What the loader asks main and the background process for. */
 export interface LoaderWork {
-  texts(input: { at: string; from: Source; files: number[] }): Promise<FileText[]>;
+  texts(input: {
+    at: string;
+    comparison: string | null;
+    from: Source;
+    files: number[];
+  }): Promise<FileText[]>;
   /** The background process's jobs, each stopped once `signal` aborts. */
   files(
     input: { files: FileJob[]; whitespace: boolean; highlight: boolean; budget: number },
@@ -89,6 +94,8 @@ export interface Sink {
 /** The files to draw, once every one that shows its lines has them. */
 export interface Ready {
   readonly at: string;
+  /** The two revisions compared, by key, when it isn't the whole pull request. */
+  readonly comparison: string | null;
   readonly from: Source;
   readonly entries: readonly Entry[];
 }
@@ -125,9 +132,10 @@ export function keyOf(versions: FileVersions): string {
   return fileKey(versions.path);
 }
 
-/** What's being loaded: of one head, from one source. */
+/** What's being loaded: of one head, in one comparison, from one source. */
 interface Run {
   readonly at: string;
+  readonly comparison: string | null;
   readonly from: Source;
   readonly entries: readonly Entry[];
   /** Files the view shows the lines of, which it loads whether or not they start out shown. */
@@ -142,9 +150,10 @@ interface Run {
   moved: boolean;
 }
 
-/** A run of `entries`, at a head, from a source, loading `shown`'s lines too. */
+/** A run of `entries`, at a head, in a comparison, from a source, loading `shown`'s lines too. */
 function runOf(
   at: string,
+  comparison: string | null,
   from: Source,
   entries: readonly Entry[],
   shown: ReadonlySet<string>,
@@ -152,6 +161,7 @@ function runOf(
   const controller = new AbortController();
   return {
     at,
+    comparison,
     from,
     entries,
     shown,
@@ -230,8 +240,8 @@ export class Loader {
   /** Takes what main says of the diff. */
   take(state: DiffState): void {
     this.#state = state;
-    const { at } = state;
-    if (at === null || this.#run?.at !== at) this.#reset();
+    const { at, comparison } = state;
+    if (at === null || this.#run?.at !== at || this.#run.comparison !== comparison) this.#reset();
     this.#startIfDue();
     this.#changed();
   }
@@ -240,9 +250,12 @@ export class Loader {
   #startIfDue(): void {
     const state = this.#state;
     if (!state || !this.#whitespaceKnown) return;
-    const { at, from, files } = state;
+    const { at, comparison, from, files } = state;
     if (at === null || from === null || files === null) return;
-    if (this.#run?.from !== from || this.#run.at !== at) this.#start(at, from, files);
+    const run = this.#run;
+    if (run?.from !== from || run.at !== at || run.comparison !== comparison) {
+      this.#start(at, comparison, from, files);
+    }
   }
 
   /** Shows or hides changes to whitespace alone, diffing the files from the local copy again. */
@@ -327,7 +340,12 @@ export class Loader {
     this.#moves = [];
   }
 
-  #start(at: string, from: Source, files: readonly FileVersions[]): void {
+  #start(
+    at: string,
+    comparison: string | null,
+    from: Source,
+    files: readonly FileVersions[],
+  ): void {
     this.#run?.controller.abort();
     const listed = files.map((versions, place) => {
       const key = keyOf(versions);
@@ -342,16 +360,17 @@ export class Loader {
     const inPlace =
       ready !== undefined &&
       ready.at === at &&
+      ready.comparison === comparison &&
       ready.entries.length === entries.length &&
       entries.every((entry) => drawn.has(entry.id));
     // A file the view shows lines of gets the local copy's, however it starts out now.
     const shown = inPlace
       ? new Set(ready.entries.flatMap((entry) => (this.#shown.has(entry.id) ? [entry.id] : [])))
       : new Set<string>();
-    const run = runOf(at, from, entries, shown);
+    const run = runOf(at, comparison, from, entries, shown);
     this.#run = run;
     this.#failed.clear();
-    if (inPlace) this.#ready = { at, from, entries };
+    if (inPlace) this.#ready = { at, comparison, from, entries };
     void this.#load(run).catch((error: unknown) => {
       if (!run.stopped) this.#work.log('Lo couldn’t load the diff:', error);
     });
@@ -367,7 +386,7 @@ export class Loader {
       if (run.stopped) return;
       // Before the view is drawn, the diffs come first and the highlighting after, so it's drawn
       // sooner; a view already drawn takes both at once, so what it shows isn't left plain.
-      const drawn = this.#ready?.at === run.at && this.#ready.from === run.from;
+      const drawn = this.#drawing(run);
       const next = this.#batch(run, batch, BUDGET, drawn)
         .catch((error: unknown) => this.#oneByOne(run, batch, error))
         .finally(() => going.delete(next));
@@ -453,6 +472,7 @@ export class Loader {
   ): Promise<void> {
     const texts = await this.#work.texts({
       at: run.at,
+      comparison: run.comparison,
       from: run.from,
       files: batch.map((entry) => entry.place),
     });
@@ -518,20 +538,19 @@ export class Loader {
       };
       this.#shown.set(entry.id, shown);
       this.#failed.delete(entry.id);
-      if (this.#ready?.at === run.at && this.#ready.from === run.from)
-        this.#sink?.lines(entry.id, shown);
+      if (this.#drawing(run)) this.#sink?.lines(entry.id, shown);
     });
   }
 
   #fail(run: Run, entry: Entry, why: string): void {
     this.#work.log(`Lo couldn’t show ${entry.versions.path.text}:`, why);
     this.#failed.add(entry.id);
-    if (this.#ready?.at === run.at && this.#ready.from === run.from) this.#sink?.failed(entry.id);
+    if (this.#drawing(run)) this.#sink?.failed(entry.id);
   }
 
   /** Once every file that shows its lines has them, or couldn't, the run's files can be drawn. */
   #readyIfDone(run: Run): void {
-    if (run.stopped || (this.#ready?.at === run.at && this.#ready.from === run.from)) return;
+    if (run.stopped || this.#drawing(run)) return;
     if (!run.moved) return;
     const done = run.entries.every(
       (entry) =>
@@ -539,7 +558,14 @@ export class Loader {
         this.#failed.has(entry.id) ||
         this.#shown.get(entry.id)?.from === run.from,
     );
-    if (done) this.#ready = { at: run.at, from: run.from, entries: run.entries };
+    if (done) {
+      this.#ready = {
+        at: run.at,
+        comparison: run.comparison,
+        from: run.from,
+        entries: run.entries,
+      };
+    }
   }
 
   /** Finds the code the run's files move, and gives it to the view. */
@@ -615,8 +641,7 @@ export class Loader {
       const found = tokens[index];
       if (!kept || kept.from !== run.from || !found) return;
       this.#shown.set(entry.id, { ...kept, tokens: found });
-      if (this.#ready?.at === run.at && this.#ready.from === run.from)
-        this.#sink?.tokens(entry.id, found);
+      if (this.#drawing(run)) this.#sink?.tokens(entry.id, found);
     });
   }
 
@@ -626,6 +651,7 @@ export class Loader {
       if (run.stopped || this.#whitespace !== whitespace) return;
       const texts = await this.#work.texts({
         at: run.at,
+        comparison: run.comparison,
         from: run.from,
         files: batch.map((entry) => entry.place),
       });
@@ -660,6 +686,12 @@ export class Loader {
       });
     }
     if (!run.stopped) await this.#findMoves(run);
+  }
+
+  /** Whether what's drawn is `run`'s files: the same head, comparison and source. */
+  #drawing(run: Run): boolean {
+    const ready = this.#ready;
+    return ready?.at === run.at && ready.comparison === run.comparison && ready.from === run.from;
   }
 
   #changed(): void {

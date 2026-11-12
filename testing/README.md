@@ -101,11 +101,13 @@ Lo never holds the bot's token. Drive Lo through what the cassette should hold, 
 polls to repeat, then stop the proxy with Ctrl+C. It checks the token's account and every file as
 `record.ts` does, and sends nothing that writes to GitHub.
 
-The pull request the app's tests open, rozed-dev/e2e#78, comes from `fixtures/app.sh`, which builds
+The pull request the app's tests open, rozed-dev/e2e#80, comes from `fixtures/app.sh`, which builds
 its repository with fixed names, dates and contents, so every commit has the ID GitHub has for it: a
-rename, a move, a lockfile, a 5,001-line file, a binary and a deletion, in two pushes with the base
-moving on between them. `writeAppRemote` from `@lo/testing/git` builds it as a remote for
-`LO_GIT_REMOTE`, and `APP_PULL` names its commits. Its cassette is `app_e2e`.
+rename, a move, a lockfile, a 5,001-line file, a binary and a deletion, in two pushes, the second a
+force-push that rebased the first onto a newer base. `writeAppRemote` from `@lo/testing/git` builds
+it as a remote for `LO_GIT_REMOTE`, and `APP_PULL` names its commits; `{ firstPush: false }` leaves
+the first push out, as if GitHub no longer had it. Its cassette is `app_e2e`, and `app_e2e_late` is
+the same with GitHub's patch of one file left out.
 
 ## The credential scan
 

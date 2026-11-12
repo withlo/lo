@@ -15,12 +15,17 @@ test(
     onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
     expect(writeAppRemote(folder)).toBe(`file://${folder}`);
     const bare = join(folder, 'rozed-dev', 'e2e.git');
-    expect(git(bare, 'rev-parse', 'refs/heads/app/base', 'refs/pull/78/head')).toBe(
-      `${APP_PULL.base}\n${APP_PULL.head}`,
-    );
-    // The first push is still there by its ID, as GitHub keeps it, under the second.
-    expect(git(bare, 'merge-base', '--is-ancestor', APP_PULL.firstHead, APP_PULL.head)).toBe('');
+    expect(
+      git(bare, 'rev-parse', 'refs/heads/app/base', 'refs/heads/app/feature', 'refs/pull/80/head'),
+    ).toBe(`${APP_PULL.base}\n${APP_PULL.head}\n${APP_PULL.head}`);
+    // The second push rebased the first onto the moved base: the first is no ancestor of it, but
+    // still there by its ID, as GitHub keeps it.
+    expect(() =>
+      git(bare, 'merge-base', '--is-ancestor', APP_PULL.firstHead, APP_PULL.head),
+    ).toThrow();
+    expect(git(bare, 'cat-file', '-t', APP_PULL.firstHead)).toBe('commit');
     expect(git(bare, 'merge-base', APP_PULL.firstHead, APP_PULL.base)).toBe(APP_PULL.firstBase);
+    expect(git(bare, 'merge-base', APP_PULL.head, APP_PULL.base)).toBe(APP_PULL.base);
     // Clients may filter, and fetch any commit by ID, as from GitHub.
     expect(git(bare, 'config', 'uploadpack.allowFilter')).toBe('true');
     expect(git(bare, 'config', 'uploadpack.allowAnySHA1InWant')).toBe('true');
@@ -28,9 +33,22 @@ test(
     const again = mkdtempSync(join(tmpdir(), 'lo-app-'));
     onTestFinished(() => rmSync(again, { recursive: true, force: true }));
     writeAppRemote(again);
-    expect(git(join(again, 'rozed-dev', 'e2e.git'), 'rev-parse', 'refs/pull/78/head')).toBe(
+    expect(git(join(again, 'rozed-dev', 'e2e.git'), 'rev-parse', 'refs/pull/80/head')).toBe(
       APP_PULL.head,
     );
+  },
+);
+
+test(
+  'app.sh can leave the first push out, as if GitHub no longer had it',
+  { timeout: 30_000 },
+  () => {
+    const folder = mkdtempSync(join(tmpdir(), 'lo-app-'));
+    onTestFinished(() => rmSync(folder, { recursive: true, force: true }));
+    writeAppRemote(folder, { firstPush: false });
+    const bare = join(folder, 'rozed-dev', 'e2e.git');
+    expect(git(bare, 'rev-parse', 'refs/pull/80/head')).toBe(APP_PULL.head);
+    expect(() => git(bare, 'cat-file', '-t', APP_PULL.firstHead)).toThrow();
   },
 );
 

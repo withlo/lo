@@ -7,6 +7,7 @@ import type { GithubClient } from '@lo/github';
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { github } from '../../accounts/service.ts';
+import { comparisons } from '../../revisions/service.ts';
 import { settings } from '../../settings/service.ts';
 import type { Acting } from '../../tab/contract.ts';
 import { tabs } from '../../tab/service.ts';
@@ -15,7 +16,7 @@ import { layout, whitespace } from '../settings.ts';
 import { DiffTab } from './diff.ts';
 
 const diffs = new Map<string, DiffTab>();
-let unfollow: (() => void) | undefined;
+const unfollow: (() => void)[] = [];
 
 const log = (line: string) => console.error(`diff: ${line}`);
 
@@ -49,20 +50,23 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
         },
       },
       publish: (state) => context.publish('state', state),
-      drawn: (head) => service.drawn(id, head),
+      drawn: (head) => {
+        service.drawn(id, head);
+        context.use(comparisons).drawn(id, head);
+      },
       log: (line) =>
         log(`${info.repository.owner}/${info.repository.name}#${info.number}: ${line}`),
     });
     diffs.set(id, diff);
   }
-  diff.update(info);
+  diff.update(info, context.use(comparisons).onScreen(id));
 }
 
 export default defineFeature(contract, {
-  uses: [tabs, github, settings],
+  uses: [tabs, github, settings, comparisons],
   handlers: {
     versions: ({ id }) => diffs.get(id)?.state(),
-    texts: ({ id, at, from, files }) => diffOf(id).texts(at, from, files),
+    texts: ({ id, at, comparison, from, files }) => diffOf(id).texts(at, comparison, from, files),
     drawn({ id, at }) {
       diffOf(id).drawn(at);
     },
@@ -72,11 +76,14 @@ export default defineFeature(contract, {
     store.declare(layout);
     store.declare(whitespace);
     const service = context.use(tabs);
-    unfollow = service.onPull((id) => follow(context, id));
+    unfollow.push(
+      service.onPull((id) => follow(context, id)),
+      context.use(comparisons).onChange((id) => follow(context, id)),
+    );
     for (const tab of service.list().tabs) if (tab.kind === 'pull') follow(context, tab.id);
   },
   stop() {
-    unfollow?.();
+    for (const stop of unfollow.splice(0)) stop();
     for (const diff of diffs.values()) diff.close();
     diffs.clear();
   },

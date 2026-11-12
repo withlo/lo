@@ -1,4 +1,4 @@
-// The diff in the app: Lo started on the replay server, as rozed-bot, opens rozed-dev/e2e#78 and
+// The diff in the app: Lo started on the replay server, as rozed-bot, opens rozed-dev/e2e#80 and
 // draws every changed file in one scroll, in the left panel's order, each starting out as it should,
 // and answers the diff's keys. Without git, it draws GitHub's diff, hunks only.
 
@@ -145,7 +145,7 @@ const test = base.extend<{
   },
 });
 
-/** Waits for the account from the token file, then opens #78's tab, and returns its id. */
+/** Waits for the account from the token file, then opens #80's tab, and returns its id. */
 async function openE2e(page: Page): Promise<string> {
   await expect
     .poll(async () => JSON.stringify(await page.evaluate(() => window.lo.invoke('accounts.list'))))
@@ -159,7 +159,7 @@ async function openE2e(page: Page): Promise<string> {
   return reply.value;
 }
 
-/** Opens #78 and waits for its diff, drawn from `from`. */
+/** Opens #80 and waits for its diff, drawn from `from`. */
 async function drawn(
   page: Page,
   from: 'local' | 'github' = 'local',
@@ -327,7 +327,7 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds', as
     .poll(() => browsed())
     .toEqual([
       expect.stringMatching(
-        /^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/78\/files#diff-[0-9a-f]{64}R\d+$/,
+        /^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/80\/files#diff-[0-9a-f]{64}R\d+$/,
       ),
     ]);
 });
@@ -345,7 +345,7 @@ test('copies the lines, the line’s link and the file’s path', async ({ app, 
   await press(page, 'y', 'l');
   await expect
     .poll(clipboard)
-    .toMatch(/^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/78\/files#diff-[0-9a-f]{64}R1$/);
+    .toMatch(/^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/80\/files#diff-[0-9a-f]{64}R1$/);
   await press(page, 'y', 'y');
   await expect
     .poll(clipboard)
@@ -775,7 +775,7 @@ test.describe('when the local copy comes after GitHub’s diff, on a file the re
 });
 
 /**
- * Opens #78 in a short window, GitHub's diff with the banner over it, wheels down, and returns
+ * Opens #80 in a short window, GitHub's diff with the banner over it, wheels down, and returns
  * where the first row below the box's top is on the page now, and how to read it again.
  */
 async function scrolled(app: ElectronApplication, page: Page) {

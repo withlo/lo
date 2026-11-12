@@ -22,7 +22,7 @@ function folder(prefix = 'lo-diff-'): string {
 
 let remote: string | undefined;
 
-/** rozed-dev/e2e's clone in a new cache, with #78 fetched into it. */
+/** rozed-dev/e2e's clone in a new cache, with #80 fetched into it. */
 async function e2eClone(): Promise<Repo> {
   remote ??= writeAppRemote(realpathSync(mkdtempSync(join(tmpdir(), 'lo-diff-remote-'))));
   const git = createGit({
@@ -69,7 +69,7 @@ const READY: LocalState = {
   offline: false,
 };
 
-/** rozed-dev/e2e#78's tab, shown at its head. */
+/** rozed-dev/e2e#80's tab, shown at its head. */
 function e2eInfo(
   local: LocalState = { kind: 'fetching', progress: null, attempt: 1 },
 ): PullTabInfo {
@@ -79,6 +79,7 @@ function e2eInfo(
     number: APP_PULL.number,
     acting: { kind: 'account', login: 'rozed-bot' },
     shown: APP_PULL.head,
+    latest: APP_PULL.head,
     provisional: false,
     local,
   };
@@ -157,7 +158,7 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     const parser = find(state, 'src/parser.ts');
     const legacy = find(state, 'src/legacy.ts');
 
-    const [renamed, deleted] = await diff.texts(APP_PULL.head, 'local', [
+    const [renamed, deleted] = await diff.texts(APP_PULL.head, null, 'local', [
       parser.place,
       legacy.place,
     ]);
@@ -167,13 +168,15 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     expect(renamed.new).toContain('Empty input has no lines.');
     expect(deleted).toMatchObject({ kind: 'texts', new: null });
 
-    await expect(diff.texts(APP_PULL.firstHead, 'local', [parser.place])).rejects.toMatchObject({
+    await expect(
+      diff.texts(APP_PULL.firstHead, null, 'local', [parser.place]),
+    ).rejects.toMatchObject({
       code: 'moved',
     });
-    await expect(diff.texts(APP_PULL.head, 'github', [parser.place])).rejects.toMatchObject({
+    await expect(diff.texts(APP_PULL.head, null, 'github', [parser.place])).rejects.toMatchObject({
       code: 'moved',
     });
-    await expect(diff.texts(APP_PULL.head, 'local', [999])).rejects.toMatchObject({
+    await expect(diff.texts(APP_PULL.head, null, 'local', [999])).rejects.toMatchObject({
       code: 'invalid',
     });
   });
@@ -192,7 +195,9 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     diff.update(e2eInfo(READY));
     const state = await settled((each) => each.from === 'local');
 
-    const [text] = await diff.texts(APP_PULL.head, 'local', [find(state, 'src/parser.ts').place]);
+    const [text] = await diff.texts(APP_PULL.head, null, 'local', [
+      find(state, 'src/parser.ts').place,
+    ]);
     expect(text).toEqual({ kind: 'missing', why: expect.stringContaining('a line over 1 MiB') });
   });
 
@@ -218,20 +223,20 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     });
     const parser = find(github, 'src/parser.ts');
     expect(parser.file.old).toBe(null);
-    const [patch] = await diff.texts(APP_PULL.head, 'github', [parser.place]);
+    const [patch] = await diff.texts(APP_PULL.head, null, 'github', [parser.place]);
     expect(patch).toMatchObject({
       kind: 'patch',
       patch: expect.stringContaining('@@ -4,9 +4,10 @@'),
     });
     const numbers = find(github, 'data/numbers.txt');
-    expect(await diff.texts(APP_PULL.head, 'github', [numbers.place])).toEqual([
+    expect(await diff.texts(APP_PULL.head, null, 'github', [numbers.place])).toEqual([
       { kind: 'missing', why: expect.any(String) },
     ]);
 
     diff.update(e2eInfo(READY));
     const local = await settled((each) => each.from === 'local');
     expect(local.files).toHaveLength(github.files?.length ?? 0);
-    await expect(diff.texts(APP_PULL.head, 'github', [parser.place])).rejects.toMatchObject({
+    await expect(diff.texts(APP_PULL.head, null, 'github', [parser.place])).rejects.toMatchObject({
       code: 'moved',
     });
   });

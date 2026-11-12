@@ -17,7 +17,7 @@ import feature from './index.ts';
 import { choices, focus, showState, states } from './store.ts';
 import { onShowFile } from './shared.ts';
 
-const TAB: PullTab = { id: 't1', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 78 };
+const TAB: PullTab = { id: 't1', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 };
 
 // The tab on screen is the pull request's; the tab feature isn't loaded.
 const screen = vi.hoisted(() => ({ tab: undefined as unknown }));
@@ -40,7 +40,7 @@ const change = (text: string, how: Changed['change'], previous?: string): Change
 
 const TREE: TreeState = {
   id: TAB.id,
-  at: '5530830f535b2947f1b50a184dc58a9c7b2845ad',
+  at: '57cc4a6dadfa23849df45e1084fd4869401bec53',
   listing: {
     kind: 'whole',
     entries: [
@@ -61,6 +61,7 @@ const TREE: TreeState = {
   partial: false,
   problem: null,
   omitted: 0,
+  compared: null,
 };
 
 const found = (text: string, changed: boolean, matched: number[] = []): Found => ({
@@ -284,6 +285,7 @@ describe('searching', () => {
         ...TREE,
         listing: { kind: 'changed', why: 'GitHub lists only part of this repository’s files.' },
         omitted: 2,
+        compared: null,
       }),
     );
     await open();

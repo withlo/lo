@@ -1,5 +1,5 @@
 /**
- * The pull request the app's end-to-end tests open, rozed-dev/e2e#78, as a git remote on this
+ * The pull request the app's end-to-end tests open, rozed-dev/e2e#80, as a git remote on this
  * machine: `testing/fixtures/app.sh` makes every commit with the ID GitHub has for it, so Lo can
  * fetch it from here while the replay server answers for GitHub's API.
  */
@@ -16,10 +16,10 @@ export const appScript = fileURLToPath(new URL('../../fixtures/app.sh', import.m
 export const APP_PULL = {
   owner: 'rozed-dev',
   repo: 'e2e',
-  number: 78,
-  /** The head now: the second push. */
-  head: '5530830f535b2947f1b50a184dc58a9c7b2845ad',
-  /** The first push's head, which the second built on. */
+  number: 80,
+  /** The head now: the second push, which rebased the first onto `base`. */
+  head: '57cc4a6dadfa23849df45e1084fd4869401bec53',
+  /** The first push's head, which the second force-pushed over. */
   firstHead: '45e4f22d09ea29631f43d3f8c1e05b7fb4001099',
   /** `app/base` now. */
   base: 'dccd782aff9cd7a5088122cd3fb4a515964acee7',
@@ -29,10 +29,11 @@ export const APP_PULL = {
 
 /**
  * Makes the pull request's repository in `folder`, as `rozed-dev/e2e.git`, and returns the
- * address to give Lo as `LO_GIT_REMOTE`.
+ * address to give Lo as `LO_GIT_REMOTE`. Without `firstPush`, it lacks the first push, as if
+ * GitHub no longer had it.
  */
-export function writeAppRemote(folder: string): string {
-  execFileSync('bash', [appScript, folder], {
+export function writeAppRemote(folder: string, { firstPush = true } = {}): string {
+  execFileSync('bash', [appScript, folder, ...(firstPush ? [] : ['--without-first-push'])], {
     env: testGitEnvironment(),
     stdio: ['ignore', 'ignore', 'inherit'],
   });

@@ -29,15 +29,15 @@ const URLS = {
   web: 'https://github.com',
   uploads: 'https://uploads.github.com',
 };
-const E2E = new PullRef('rozed-dev', 'e2e', 78);
+const E2E = new PullRef('rozed-dev', 'e2e', 80);
 
 const summary = (change: Partial<PullSummary> = {}): PullSummary => ({
-  number: 78,
+  number: 80,
   title: 'A title',
   state: 'open',
   draft: false,
   updated_at: '2026-11-11T10:20:00Z',
-  head: { ref: 'app/head', sha: 'a'.repeat(40) },
+  head: { ref: 'app/feature', sha: 'a'.repeat(40) },
   base: { ref: 'app/base', sha: 'b'.repeat(40) },
   ...change,
 });
@@ -47,14 +47,14 @@ describe('reading a pull request to open it', () => {
     const fetch = replayFetch('app_e2e');
     const opened = await readPull(new GithubClient({ fetch, urls: URLS }), E2E);
     expect(fetch.seen.map(({ url }) => url)).toEqual([
-      'https://api.github.com/repos/rozed-dev/e2e/pulls/78',
+      'https://api.github.com/repos/rozed-dev/e2e/pulls/80',
     ]);
     expect(opened.toOpen.base.repo.full_name).toBe('rozed-dev/e2e');
     expect(headerFromOpened(opened)).toEqual({
       title: "App: the pull request Lo's end-to-end tests open",
       state: 'open',
       author: 'rozed-bot',
-      head: { branch: 'app/head', fork: null },
+      head: { branch: 'app/feature', fork: null },
       base: { branch: 'app/base' },
     });
   });
@@ -71,7 +71,7 @@ describe('reading a pull request to open it', () => {
         head: { ...opened.toOpen.head, repo: { id: 1, full_name: 'someone/e2e' } },
       },
     };
-    expect(headerFromOpened(fork).head).toEqual({ branch: 'app/head', fork: 'someone/e2e' });
+    expect(headerFromOpened(fork).head).toEqual({ branch: 'app/feature', fork: 'someone/e2e' });
   });
 
   it("fails as GitHub's not found for a pull request it doesn't have", async () => {
@@ -82,7 +82,7 @@ describe('reading a pull request to open it', () => {
     expect(error).toBeInstanceOf(GithubError);
     expect(problemOf(error, E2E, { kind: 'account', login: 'rozed-bot' }, undefined)).toEqual({
       kind: 'notFound',
-      message: "GitHub has no pull request rozed-dev/e2e#78, or rozed-bot can't see it.",
+      message: "GitHub has no pull request rozed-dev/e2e#80, or rozed-bot can't see it.",
     });
   });
 });
@@ -113,7 +113,7 @@ describe('a pull request’s state', () => {
       title: 'New',
       state: 'closed',
       author: 'rozed-bot',
-      head: { branch: 'app/head', fork: 'someone/e2e' },
+      head: { branch: 'app/feature', fork: 'someone/e2e' },
       base: { branch: 'app/base' },
     });
     expect(withSummary(undefined, summary()).author).toBe(null);
@@ -181,7 +181,7 @@ describe('what reading it ran into', () => {
     expect(problemOf(missing, E2E, { kind: 'anonymous', canSignIn: true }, 5)).toEqual({
       kind: 'notFound',
       message:
-        "GitHub has no public pull request rozed-dev/e2e#78. If it's private, sign in with an account that can see it.",
+        "GitHub has no public pull request rozed-dev/e2e#80. If it's private, sign in with an account that can see it.",
     });
     const gone = new GithubError({ kind: 'api', status: 410, message: 'Gone', errors: [] });
     expect(problemOf(gone, E2E, account, undefined).kind).toBe('notFound');
@@ -243,7 +243,7 @@ describe('what reading it ran into', () => {
     });
     expect(problemOf(error, E2E, account, 1234.6)).toEqual({
       kind: 'failed',
-      message: "Lo couldn't read rozed-dev/e2e#78: the answer made no sense",
+      message: "Lo couldn't read rozed-dev/e2e#80: the answer made no sense",
       retryAt: 1235,
     });
   });

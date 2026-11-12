@@ -59,6 +59,8 @@ export interface FileTreeFile {
   folder?: string | undefined;
   /** The whole path, as the name's tooltip, when the name shows only part of it. */
   title?: string | undefined;
+  /** While two revisions are compared, whether it changed between them. */
+  hit?: boolean | undefined;
 }
 
 /** A label over a group of files, in review order. */
@@ -198,6 +200,11 @@ export interface FileTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'chi
   onFileMenu?: ((key: string, event: MouseEvent<HTMLElement>) => void) | undefined;
   /** Scrolls the row with this key into view, each time the count changes. */
   reveal?: { key: string; count: number } | undefined;
+  /**
+   * Whether two revisions are compared: the files that changed between them stand out, and the
+   * pull request's other changes step back.
+   */
+  comparing?: boolean | undefined;
   /** The scrolling element, which is the tree and takes focus. */
   treeRef?: Ref<HTMLDivElement> | undefined;
 }
@@ -218,6 +225,7 @@ export function FileTree({
   onRowClick,
   onFileMenu,
   reveal,
+  comparing = false,
   treeRef,
   className = '',
   ...rest
@@ -290,6 +298,7 @@ export function FileTree({
                 id={treeItemId(prefix, index)}
                 focused={hasFocus && index === focusedIndex}
                 current={each.key === current}
+                comparing={comparing}
                 onClick={onRowClick}
                 onFileMenu={onFileMenu}
               />
@@ -306,6 +315,7 @@ function Row({
   id,
   focused,
   current,
+  comparing,
   onClick,
   onFileMenu,
 }: {
@@ -313,6 +323,7 @@ function Row({
   id: string;
   focused: boolean;
   current: boolean;
+  comparing: boolean;
   onClick?: ((key: string, twisty: boolean) => void) | undefined;
   onFileMenu?: ((key: string, event: MouseEvent<HTMLElement>) => void) | undefined;
 }): ReactNode {
@@ -368,6 +379,8 @@ function Row({
     );
   }
   const dim = each.change === undefined;
+  // Comparing two revisions, the pull request's changes that aren't between them step back.
+  const aside = comparing && !dim && each.hit !== true;
   return (
     <div
       id={id}
@@ -375,9 +388,13 @@ function Row({
       aria-level={each.depth + 1}
       aria-selected={focused}
       aria-current={current ? 'true' : undefined}
+      aria-description={
+        comparing && each.hit ? 'Changed between the revisions compared' : undefined
+      }
       data-key={each.key}
+      data-hit={comparing && each.hit ? '' : undefined}
       className={row({
-        tone: dim ? 'dim' : each.viewed === 'viewed' ? 'viewed' : 'changed',
+        tone: dim || aside ? 'dim' : each.viewed === 'viewed' ? 'viewed' : 'changed',
         current,
         focused,
       })}
@@ -406,11 +423,19 @@ function Row({
           ← {each.previous}
         </span>
       )}
-      <span className="ms-auto flex flex-none items-center gap-6 ps-6">
+      <span
+        className={`ms-auto flex flex-none items-center gap-6 ps-6 ${aside ? 'opacity-45' : ''}`}
+      >
         {each.change && (
           <FileMarks change={each.change} viewed={each.viewed} generated={each.generated} />
         )}
       </span>
+      {comparing && each.hit && (
+        <span
+          className="absolute -end-4 top-6 bottom-6 w-2 rounded-xs bg-accent"
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }

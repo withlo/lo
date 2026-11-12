@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { currentMenu, openMenu } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { useChangedFiles, useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { PATH_LIMIT, pathBytes, type TreeState } from '../contract.ts';
+import { fileKey, PATH_LIMIT, pathBytes, type TreeState } from '../contract.ts';
 import { model as modelOf, type Row, type Viewed } from './model.ts';
 import {
   askFolders,
@@ -29,8 +29,11 @@ function keyOf(id: string): string[] | undefined {
   return first && keyLabels(first, registry().system);
 }
 
-/** The row as the tree draws it. */
-function drawn(row: Row): FileTreeRow {
+/**
+ * The row as the tree draws it. `hits` are the files that changed between two revisions compared,
+ * by key, while two are.
+ */
+function drawn(row: Row, hits: ReadonlySet<string> | undefined): FileTreeRow {
   switch (row.kind) {
     case 'group':
       return row;
@@ -57,6 +60,7 @@ function drawn(row: Row): FileTreeRow {
         viewed: row.viewed,
         folder: row.folder,
         title: row.title,
+        hit: hits?.has(row.key),
       };
     default:
       row satisfies never;
@@ -165,7 +169,12 @@ export function Files({
     [tab.id],
   );
 
-  const rows = useMemo(() => model?.rows.map(drawn) ?? [], [model]);
+  const hits = useMemo(
+    () =>
+      state?.compared ? new Set(state.compared.map((change) => fileKey(change.path))) : undefined,
+    [state],
+  );
+  const rows = useMemo(() => model?.rows.map((row) => drawn(row, hits)) ?? [], [model, hits]);
   const viewedCount = changed && {
     viewed: changed.files.filter((file) => file.viewed === 'viewed').length,
     total: changed.total,
@@ -191,6 +200,7 @@ export function Files({
           data-lo-scope="tree"
           aria-label={chosen.mode === 'review' ? 'Changed files in review order' : 'Files'}
           rows={rows}
+          comparing={hits !== undefined}
           focused={focused}
           current={current}
           reveal={revealed}
