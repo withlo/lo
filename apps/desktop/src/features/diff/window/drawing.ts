@@ -311,6 +311,8 @@ export function draw(options: DrawOptions): Drawing {
     else showMoves();
   };
 
+  /** What the view registers while it's on screen, to take back as it's hidden. */
+  let showing: (() => void)[] | undefined;
   const view = createDiffView(
     parent,
     { files, layout: options.layout, vimKeys: keys.vimKeys(), nonce: options.nonce },
@@ -318,7 +320,9 @@ export function draw(options: DrawOptions): Drawing {
       cursor: settle,
       mode() {},
       file(id) {
-        followFile(tab.id, loader.ids.keyOf(id));
+        // Only while the diff is on screen: hidden behind another middle view, it still lays out,
+        // and the tree marks that view's file.
+        if (showing) followFile(tab.id, loader.ids.keyOf(id));
         settle();
       },
       jumped: (from) => keys.history.record({ view: 'diff', at: from }),
@@ -396,8 +400,6 @@ export function draw(options: DrawOptions): Drawing {
     },
     keys.subscribe(() => view.setVimKeys(keys.vimKeys())),
   ];
-  /** What the view registers while it's on screen, to take back as it's hidden. */
-  let showing: (() => void)[] | undefined;
   const setShown = (shown: boolean) => {
     if (shown === (showing !== undefined)) return;
     if (!shown) {

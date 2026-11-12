@@ -781,6 +781,8 @@ test.describe('when the local copy comes after GitHub’s diff, on a file the re
 async function scrolled(app: ElectronApplication, page: Page) {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
   await drawn(page, 'github', { moves: false });
+  // The banner that says the local copy couldn't be fetched, which can come after GitHub's diff.
+  await expect(page.locator('[data-lo-banners]')).toBeVisible({ timeout: 20_000 });
   const view = page.locator('.lo-diffview');
   const box = await view.boundingBox();
   await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
@@ -844,6 +846,8 @@ test.describe('when a banner over the diff goes', () => {
   }) => {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
     await drawn(page, 'github', { moves: false });
+    // The banner that says the local copy couldn't be fetched, which can come after GitHub's diff.
+    await expect(page.locator('[data-lo-banners]')).toBeVisible({ timeout: 20_000 });
     const view = page.locator('.lo-diffview');
     // Two pixels short of the end, then at it: the box growing pulls the scroll back to the end.
     for (const short of [2, 0]) {
