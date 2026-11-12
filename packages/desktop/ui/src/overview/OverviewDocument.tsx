@@ -87,7 +87,7 @@ export interface OverviewDocumentProps {
    * A link was followed, from `from`. A section or a term has already been brought into view,
    * and a web target is always an `https://` page, for main to open.
    */
-  onFollow?: ((target: OverviewTarget, from: HTMLElement) => void) | undefined;
+  onFollow?: ((target: OverviewTarget, from: Element) => void) | undefined;
   /** Says what each focused block can do: by default, what its kind can. */
   hints?: ((block: OverviewBlock) => readonly BlockHint[]) | undefined;
   /** Where hover cards go: an element inside `.lo-app`. By default, the `.lo-app` it's in. */
@@ -168,7 +168,7 @@ export function OverviewDocument({
   }, [onFollow]);
 
   const follow = useCallback(
-    (to: OverviewTarget, from: HTMLElement) => {
+    (to: OverviewTarget, from: Element) => {
       if (to.kind === 'anchor') {
         reveal(root.current, anchors.id(to.name));
         const section = sections.find((each) => each.anchor === to.name);

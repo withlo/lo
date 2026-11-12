@@ -8,7 +8,7 @@
 import { sizeText } from '@lo/review';
 import { Button, Key, Spinner, Tag } from '@lo/ui';
 import { keyLabels, NO_TARGET, setScopeSource, type Target } from '@lo/ui/commands';
-import { createFileView, type FileView } from '@lo/ui/code';
+import { createFileView, type FileView, type Mark } from '@lo/ui/code';
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import { openMenu } from '../../../window/commands/menus.tsx';
@@ -57,6 +57,11 @@ const cursors = tabState<{ key: string; version: Version; at: Target } | undefin
 
 /** The last ask each tab's view answered, so it answers each once. */
 const answered = tabState<number>(() => 0);
+
+/** The marks for lines `marked` picks out in file `id`'s `version`, if any. */
+function marksOf(id: string, version: Version, marked: Opened['marked']): Mark[] {
+  return marked ? [{ kind: 'lines', at: { file: id, side: version, ...marked } }] : [];
+}
 
 /** The file's header, which keys act on while it shows no lines. */
 function headerOf(open: Opened): Target {
@@ -175,6 +180,7 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
   // The code, once its lines are read.
   const id = open?.id;
   const version = open?.version;
+  const marked = open?.marked;
   useEffect(() => {
     const parent = box.current;
     const filePath = latest.current.path;
@@ -198,6 +204,7 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
         side: version,
         lines,
         tokens: latest.current.tokens,
+        marks: marksOf(id, version, opened.get(tab.id)?.marked),
         vimKeys: keys.vimKeys(),
         nonce: page.nonce,
       },
@@ -230,6 +237,12 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
   useEffect(() => {
     if (tokens) view.current?.setTokens(tokens);
   }, [tokens]);
+
+  // The lines picked out, which another ask for the same file can change.
+  useEffect(() => {
+    if (id === undefined || !version) return;
+    view.current?.setMarks(marksOf(id, version, marked));
+  }, [id, version, marked]);
 
   // Each ask answered once, while the view is on screen: its place, and focus when it asks for it
   // or focus is free. Without code to show, the view's note takes focus in its place. Shown again

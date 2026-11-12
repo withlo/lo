@@ -81,7 +81,7 @@ export interface MarkdownExtension<X extends Extension> {
 export interface Rendering<X extends Extension = Plain> {
   readonly anchors: Anchors;
   /** A link was followed, from `from`. Web targets are only ever `https://` pages. */
-  follow(target: Followed<X>, from: HTMLElement): void;
+  follow(target: Followed<X>, from: Element): void;
   readonly extension: MarkdownExtension<X>;
   /**
    * Whether links can be followed. A copy of text from elsewhere in the document, such as a

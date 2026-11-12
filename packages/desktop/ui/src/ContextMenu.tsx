@@ -42,9 +42,9 @@ export interface ContextMenuProps {
   sections: readonly (readonly ContextMenuItem[])[];
   /**
    * Where focus goes when the menu closes: the element that had it when the menu was asked to
-   * open. Without one, wherever Base UI found focus to give back.
+   * open, of the page or of a drawing in it. Without one, wherever Base UI found focus to give back.
    */
-  finalFocus?: HTMLElement | undefined;
+  finalFocus?: HTMLElement | SVGElement | undefined;
   /**
    * Highlights the first action as the menu opens, as a menu opened from the keyboard does, so
    * `⏎` acts at once. A pointer opens it with nothing highlighted.
@@ -98,6 +98,13 @@ export function ContextMenu({
             popup.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
           return;
         }
+        // Focus goes back to the element itself. Base UI would give it to the element's first
+        // tabbable child when the element is focusable only from a script, such as a block of
+        // text with a link in it.
+        const active = document.activeElement;
+        const lost = active === null || active === document.body || !active.isConnected;
+        if (finalFocus?.isConnected && (lost || popup.current?.contains(active)))
+          finalFocus.focus({ preventScroll: true });
         const id = chosen.current;
         chosen.current = undefined;
         onClosed?.(id);
@@ -114,7 +121,7 @@ export function ContextMenu({
         >
           <Menu.Popup
             ref={mounted}
-            finalFocus={() => (finalFocus?.isConnected ? finalFocus : true)}
+            finalFocus={() => !finalFocus?.isConnected}
             aria-label={label}
             data-lo-scope="menu"
             className="min-w-menu-w rounded-md bg-bg-overlay p-4 text-fg shadow-pop outline-none text-ui"

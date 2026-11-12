@@ -15,8 +15,11 @@ interface Open {
   readonly anchor: ContextMenuAnchor;
   /** It was opened from the keyboard, so its first action is highlighted. */
   readonly keyboard: boolean;
-  /** What had focus when it was asked to open, which gets focus back when it closes. */
-  readonly from: HTMLElement | undefined;
+  /**
+   * What had focus when it was asked to open, which gets focus back when it closes: an element of
+   * the page or of a drawing in it, such as a figure's part.
+   */
+  readonly from: HTMLElement | SVGElement | undefined;
 }
 
 let current: Open | undefined;
@@ -53,7 +56,8 @@ export function openMenu(
   if (menuSections(registry(), target).length === 0) return false;
   closing = undefined;
   const active = document.activeElement;
-  set({ target, anchor, keyboard, from: active instanceof HTMLElement ? active : undefined });
+  const from = active instanceof HTMLElement || active instanceof SVGElement ? active : undefined;
+  set({ target, anchor, keyboard, from });
   return true;
 }
 

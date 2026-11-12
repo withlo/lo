@@ -40,6 +40,8 @@ export interface Opened {
    */
   readonly path: TreePath;
   readonly version: Version;
+  /** Lines picked out in it, as a block of an overview that points at them has them marked. */
+  readonly marked?: { readonly from: number; readonly to: number } | undefined;
   readonly ask: Ask;
 }
 
@@ -104,6 +106,18 @@ export function changedIn(
   key: string,
 ): FileVersions | undefined {
   return files?.find((file) => fileKey(file.path) === key);
+}
+
+/**
+ * The file of `files` whose head's path is `path`, if the comparison has one: by its text, since a
+ * path given as text is UTF-8, so never one whose bytes aren't. A file the comparison deletes is
+ * there under its path in the base.
+ */
+export function changeAt(
+  files: readonly FileVersions[] | null | undefined,
+  path: string,
+): FileVersions | undefined {
+  return files?.find((file) => file.path.hex === undefined && file.path.text === path);
 }
 
 /**

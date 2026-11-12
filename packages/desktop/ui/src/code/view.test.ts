@@ -1228,6 +1228,17 @@ describe('input methods', () => {
 });
 
 describe('the inline layout', () => {
+  test('drawn from the start, it takes no focus, and the reader changing to it does', () => {
+    const focused = vi.spyOn(HTMLElement.prototype, 'focus');
+    const shown = open(events(), { layout: 'inline' });
+    expect(shown.probe.layout).toBe('inline');
+    expect(focused).not.toHaveBeenCalled();
+    shown.setLayout('split');
+    shown.setLayout('inline');
+    expect(focused).toHaveBeenCalled();
+    focused.mockRestore();
+  });
+
   test('gi from a header comes back on the side it left', () => {
     const shown = open();
     shown.reveal(onHeader('b', 'new'));

@@ -56,6 +56,19 @@ export async function openRow(row?: RecentPull): Promise<void> {
   }
 }
 
+/**
+ * Opens `url`, an `https` link followed in a view, such as one in an overview: a pull request in
+ * its tab, any other page in the browser. Says why when it opens nothing.
+ */
+export async function followLink(url: string): Promise<void> {
+  try {
+    said('Open the link', await main().open({ text: url }));
+  } catch (error) {
+    console.error("Lo couldn't open the link:", error);
+    notify('Open the link', error instanceof IpcError ? error.message : "Lo couldn't open it.");
+  }
+}
+
 /** Opens the pull request link on the clipboard, which main reads; or says there's none. */
 export async function pasteLink(): Promise<void> {
   try {

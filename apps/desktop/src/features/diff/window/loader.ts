@@ -209,6 +209,8 @@ export class Loader {
   #whitespaceKnown = false;
   #sink: Sink | undefined;
   readonly #listeners = new Set<() => void>();
+  /** Who hears of each file's lines, diff, highlighting or failure as it comes, by its id. */
+  readonly #fileListeners = new Set<(id: string) => void>();
   #snapshot: Snapshot = {
     state: undefined,
     ready: undefined,
@@ -256,6 +258,23 @@ export class Loader {
   /** Lets the drawn view hear what arrives, or no view, as it goes. */
   attach(sink: Sink | undefined): void {
     this.#sink = sink;
+  }
+
+  /**
+   * Calls `listener` with a file's id each time what's been worked out of it changes, or it fails,
+   * whether or not the diff is drawn: for a view of one file, such as the code beside an overview.
+   * Returns a function that stops it.
+   */
+  onFile(listener: (id: string) => void): () => void {
+    this.#fileListeners.add(listener);
+    return () => {
+      this.#fileListeners.delete(listener);
+    };
+  }
+
+  /** Tells those who listen for files that `id`'s changed. */
+  #fileChanged(id: string): void {
+    for (const listener of this.#fileListeners) listener(id);
   }
 
   /** Takes what main says of the diff. */
@@ -327,6 +346,7 @@ export class Loader {
     const entry = run?.entries.find((each) => each.id === id);
     if (!run || !entry) {
       this.#sink?.failed(id);
+      this.#fileChanged(id);
       return;
     }
     this.#failed.delete(id);
@@ -336,6 +356,7 @@ export class Loader {
         if (this.#shown.get(id)?.from !== run.from) {
           this.#failed.add(id);
           this.#sink?.failed(id);
+          this.#fileChanged(id);
           return;
         }
         // Its changed lines may be code moved from or to another file.
@@ -346,6 +367,7 @@ export class Loader {
         if (run.stopped) return;
         this.#failed.add(id);
         this.#sink?.failed(id);
+        this.#fileChanged(id);
       });
   }
 
@@ -355,15 +377,18 @@ export class Loader {
     this.#run = undefined;
     this.#sink = undefined;
     this.#listeners.clear();
+    this.#fileListeners.clear();
   }
 
   #reset(): void {
     this.#run?.controller.abort();
     this.#run = undefined;
     this.#ready = undefined;
+    const gone = new Set([...this.#shown.keys(), ...this.#failed]);
     this.#shown.clear();
     this.#failed.clear();
     this.#moves = [];
+    for (const id of gone) this.#fileChanged(id);
   }
 
   #start(
@@ -577,6 +602,7 @@ export class Loader {
       this.#shown.set(entry.id, shown);
       this.#failed.delete(entry.id);
       if (this.#drawing(run)) this.#sink?.lines(entry.id, shown);
+      this.#fileChanged(entry.id);
     });
   }
 
@@ -584,6 +610,7 @@ export class Loader {
     this.#work.log(`Lo couldn’t show ${entry.versions.path.text}:`, why);
     this.#failed.add(entry.id);
     if (this.#drawing(run)) this.#sink?.failed(entry.id);
+    this.#fileChanged(entry.id);
   }
 
   /** Once every file that shows its lines has them, or couldn't, the run's files can be drawn. */
@@ -680,6 +707,7 @@ export class Loader {
       if (!kept || kept.from !== run.from || !found) return;
       this.#shown.set(entry.id, { ...kept, tokens: found });
       if (this.#drawing(run)) this.#sink?.tokens(entry.id, found);
+      this.#fileChanged(entry.id);
     });
   }
 
@@ -722,6 +750,7 @@ export class Loader {
           whitespace,
         });
         this.#sink?.diff(entry.id, result.diff);
+        this.#fileChanged(entry.id);
       });
     }
     if (!run.stopped) await this.#findMoves(run);

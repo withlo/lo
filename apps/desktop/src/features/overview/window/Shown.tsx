@@ -17,19 +17,28 @@ import type {
 } from '@lo/artifact';
 import { Button } from '@lo/ui';
 import { Figure, type PartLink } from '@lo/ui/figures';
-import { MarkdownBlocks } from '@lo/ui/markdown';
-import { OverviewDocument, lineRange, type OverviewViews } from '@lo/ui/overview';
+import { MarkdownBlocks, secureLink, useRendering } from '@lo/ui/markdown';
+import {
+  OverviewDocument,
+  blockHints,
+  lineRange,
+  type BlockHint,
+  type OverviewTarget,
+  type OverviewViews,
+} from '@lo/ui/overview';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 
+import { followLink } from '../../open/window/shared.ts';
 import { HOLD_LIMIT } from '../../revisions/contract.ts';
 import { MiddlePlaceholder, usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewFile } from '../contract.ts';
 import { targetsOf } from './targets.ts';
+import { codeAt } from './blocks.ts';
 import { ExcerptBlock, WalkthroughBlock, type CodeContext } from './Code.tsx';
 import { drawing as firstDraw, FirstDrawContext } from './drawing.ts';
 import { revisionAt, type Standing } from './facts.ts';
+import { drawnIn, followCode, loadNewer, recordFrom } from './follow.ts';
 import { useNow } from './hooks.ts';
-import { main } from './main.ts';
 import { openings } from './opening.ts';
 import { OutOfDateBanner } from './OutOfDate.tsx';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
@@ -130,6 +139,16 @@ function ShownFigure({
     () => node.parts.map((part) => ({ id: part.id, label: partLabel(part.target) })),
     [node.parts],
   );
+  const rendering = useRendering<Overview>();
+  // A part goes where it points, as a link in the overview does.
+  const follow = useCallback(
+    (link: PartLink, from: Element) => {
+      const target = node.parts.find((part) => part.id === link.id)?.target;
+      const followed = target && partTarget(target);
+      if (followed) rendering.follow(followed, from);
+    },
+    [node.parts, rendering],
+  );
   return (
     <Figure
       path={node.path}
@@ -138,7 +157,22 @@ function ShownFigure({
       number={(at ?? 0) + 1}
       caption={<MarkdownBlocks<Overview> blocks={node.caption} />}
       parts={parts}
+      onFollow={follow}
     />
+  );
+}
+
+/** Where a figure's part goes, as a link's target: a web page only when Lo may open it. */
+function partTarget(target: FigurePart['target']): OverviewTarget | undefined {
+  if (target.kind !== 'web') return target;
+  const url = secureLink(target.url);
+  return url === undefined ? undefined : { kind: 'web', url };
+}
+
+/** What a focused block's chip says: while the code is beside, `o` closes it. */
+function besideHints(block: Parameters<typeof blockHints>[0]): readonly BlockHint[] {
+  return blockHints(block).map((hint) =>
+    hint.label === 'Open beside' ? { ...hint, label: 'Close beside' } : hint,
   );
 }
 
@@ -204,17 +238,7 @@ export function NewerOffer({ tab }: { tab: string }) {
           ·
         </span>
       </span>
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={() => {
-          main()
-            .load({ id: tab })
-            .catch((error: unknown) =>
-              console.error("Lo couldn't load the newer overview:", error),
-            );
-        }}
-      >
+      <Button size="sm" variant="ghost" onClick={() => loadNewer(tab)}>
         Load it
       </Button>
     </span>
@@ -226,12 +250,18 @@ export function Shown({
   standing,
   scroller,
   onScreen = true,
+  focused,
+  beside = false,
 }: {
   tab: PullTab;
   standing: ShownStanding;
   scroller?: Ref<HTMLDivElement> | undefined;
   /** Whether the overview is the middle view on screen, rather than kept drawn behind another. */
   onScreen?: boolean;
+  /** The block that shows its ring and its keys, by its number. */
+  focused?: number | undefined;
+  /** Whether the code is beside it, which takes the outline's room. */
+  beside?: boolean;
 }) {
   const { parsed, result, commit, header } = standing;
   const { outcome } = result.checked;
@@ -276,6 +306,24 @@ export function Shown({
     () => ({ figure, excerpt, walkthrough }),
     [figure, excerpt, walkthrough],
   );
+  // A link followed: code goes to the diff; a section or a term, which the overview has brought
+  // on screen, leaves its block in the tab's history for `⌃o`; and a web page opens through main,
+  // in a tab when it's a pull request, only when it's `https://`.
+  const tabId = tab.id;
+  const follow = useCallback(
+    (target: OverviewTarget, from: Element) => {
+      if (target.kind === 'web') {
+        const url = secureLink(target.url);
+        if (url !== undefined) void followLink(url);
+        return;
+      }
+      const overview = drawnIn(tabId);
+      if (!overview) return;
+      if (target.kind === 'code') followCode(overview, from, codeAt(target));
+      else if (target.kind === 'term' || target.kind === 'anchor') recordFrom(overview, from);
+    },
+    [tabId],
+  );
   // Seen once the code blocks near the screen have drawn, with the local copy if it's coming, or at
   // the bound, counted from when the tab opened and never again; until then, the tab's placeholder.
   const [drawing, setDrawing] = useState(true);
@@ -316,6 +364,10 @@ export function Shown({
           }
           views={views}
           drawing={drawing}
+          focused={focused}
+          outline={!beside}
+          hints={beside ? besideHints : undefined}
+          onFollow={follow}
         />
         {drawing && (
           <div className="absolute inset-0">

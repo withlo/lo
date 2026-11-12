@@ -202,7 +202,7 @@ describe('Markdown', () => {
 });
 
 function followed() {
-  const onFollow = vi.fn<(target: Followed, from: HTMLElement) => void>();
+  const onFollow = vi.fn<(target: Followed, from: Element) => void>();
   const link = (url: string, words: string): Inline => ({
     kind: 'link',
     target: { kind: 'web', url },
@@ -270,7 +270,7 @@ describe('links', () => {
   });
 
   it('never makes a link of an address that isn’t an https:// page, even one put in a tree', () => {
-    const onFollow = vi.fn<(target: Followed, from: HTMLElement) => void>();
+    const onFollow = vi.fn<(target: Followed, from: Element) => void>();
     const addresses = [
       'javascript:alert(1)',
       'JavaScript:alert(1)',
@@ -350,7 +350,7 @@ describe('anchors', () => {
 
   it('keeps two documents’ anchors apart, and follows each to its own', () => {
     const first = render(<Markdown tree={scoped()} />);
-    const onFollow = vi.fn<(target: Followed, from: HTMLElement) => void>();
+    const onFollow = vi.fn<(target: Followed, from: Element) => void>();
     const second = render(<Markdown tree={scoped()} onFollow={onFollow} />);
     const all = [...ids(first), ...ids(second)];
     expect(new Set(all).size).toBe(all.length);

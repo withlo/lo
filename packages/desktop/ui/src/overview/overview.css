@@ -479,3 +479,56 @@
 .lo-ov.is-drawing > * {
   visibility: hidden;
 }
+
+/*
+ * Code beside the overview: the middle splits in two, the overview on the left and the code it's
+ * at on the right, each pane under a bar of its own. Without the code, the overview's pane is the
+ * whole middle, as the same element, so nothing in it is drawn again as the code comes and goes.
+ */
+.lo-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  height: 100%;
+}
+.lo-split--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.lo-split__pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.lo-split__pane + .lo-split__pane {
+  box-shadow: inset 1px 0 0 var(--lo-border);
+}
+.lo-split__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--lo-border-subtle);
+  background: var(--lo-bg);
+  color: var(--lo-fg-muted);
+  font: var(--lo-text-small);
+  white-space: nowrap;
+}
+.lo-split__bar .lo-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--lo-fg);
+  text-overflow: ellipsis;
+}
+.lo-split__body {
+  flex: 1;
+  min-height: 0;
+  background: var(--lo-bg);
+}
+
+/* A block the block keys put focus on draws its own ring, `is-focused`, at its own radius. */
+.lo-app .lo-block:focus-visible {
+  border-radius: var(--lo-r-md);
+}
