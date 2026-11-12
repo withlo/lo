@@ -379,6 +379,14 @@ class Excerpt implements ExcerptView {
     this.#tell();
   }
 
+  height(): number {
+    // Off screen, CodeMirror sizes the gutters by its guess at each line's height; the lines
+    // themselves are laid out as they'll be.
+    const view = this.#view;
+    const around = this.dom.getBoundingClientRect().height - view.scrollDOM.offsetHeight;
+    return around + view.contentDOM.getBoundingClientRect().height;
+  }
+
   destroy(): void {
     for (const stop of this.#stops) stop();
     this.#view.destroy();

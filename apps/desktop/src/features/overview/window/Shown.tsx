@@ -1,27 +1,36 @@
-// An overview Lo shows: the document, with who wrote it and for which revision above it, and each
-// figure as the check left it. Code blocks and walkthroughs show what they point at until their
-// code is read. Every block is keyed by the parsed tree's own objects, which stay the same for as
-// long as the overview's commit is on screen, so nothing is drawn again from scratch under the
-// reader.
+// An overview Lo shows: the document, with who wrote it and for which revision above it, each
+// figure as the check left it, and each code block and walkthrough filled in from the local copy
+// (`Code.tsx`). It's first seen once the code blocks near the screen have drawn, with the local
+// copy if it's coming, within the bound for each (`drawing.ts`). Every block is keyed by the parsed
+// tree's own objects, which stay the same for as long as the overview's commit is on screen, so
+// nothing is drawn again from scratch under the reader.
 
 import type {
+  CheckedCode,
   CheckedFigure,
+  Excerpt,
   Figure as FigureNode,
   FigureState,
   FigurePart,
   Overview,
+  Walkthrough as WalkthroughNode,
 } from '@lo/artifact';
 import { Button } from '@lo/ui';
 import { Figure, type PartLink } from '@lo/ui/figures';
 import { MarkdownBlocks } from '@lo/ui/markdown';
 import { OverviewDocument, lineRange, type OverviewViews } from '@lo/ui/overview';
-import { useCallback, useMemo, type Ref } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 
-import { useTabState, type PullTab } from '../../tab/window/shared.ts';
+import { HOLD_LIMIT } from '../../revisions/contract.ts';
+import { MiddlePlaceholder, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewFile } from '../contract.ts';
+import { targetsOf } from './targets.ts';
+import { ExcerptBlock, WalkthroughBlock, type CodeContext } from './Code.tsx';
+import { drawing as firstDraw, FirstDrawContext } from './drawing.ts';
 import { revisionAt, type Standing } from './facts.ts';
 import { useNow } from './hooks.ts';
 import { main } from './main.ts';
+import { openings } from './opening.ts';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
 import { ago, authorOf, shortId } from './says.ts';
 import { revisions, states } from './store.ts';
@@ -29,6 +38,7 @@ import { revisions, states } from './store.ts';
 type ShownStanding = Extract<Standing, { kind: 'shown' }>;
 
 const NO_FIGURES: readonly CheckedFigure[] = [];
+const NO_CODE: readonly CheckedCode[] = [];
 
 /** What a figure the check didn't read for its block shows as. */
 const UNREAD: FigureState = { state: 'unread', why: 'failed' };
@@ -213,14 +223,18 @@ export function Shown({
   tab,
   standing,
   scroller,
+  onScreen = true,
 }: {
   tab: PullTab;
   standing: ShownStanding;
   scroller?: Ref<HTMLDivElement> | undefined;
+  /** Whether the overview is the middle view on screen, rather than kept drawn behind another. */
+  onScreen?: boolean;
 }) {
   const { parsed, result, commit, header } = standing;
   const { outcome } = result.checked;
   const checked = outcome.kind === 'shown' ? outcome.figures : NO_FIGURES;
+  const code = outcome.kind === 'shown' ? outcome.code : NO_CODE;
   const files = result.figures;
   const index = useMemo(() => figuresIn(parsed.tree), [parsed.tree]);
   const figure = useCallback(
@@ -229,13 +243,70 @@ export function Shown({
     ),
     [index, checked, files],
   );
-  const views = useMemo<OverviewViews>(() => ({ figure }), [figure]);
+  // How each block's code stands, the same object for as long as the check's result is.
+  const context = useMemo<CodeContext>(
+    () => ({
+      tab: tab.id,
+      commit: header.commit,
+      read: result.code,
+      target: targetsOf(code, result.code),
+    }),
+    [tab.id, header.commit, result.code, code],
+  );
+  const excerpt = useCallback(
+    (node: Excerpt) => <ExcerptBlock node={node} context={context} />,
+    [context],
+  );
+  const walkthrough = useCallback(
+    (node: WalkthroughNode) => <WalkthroughBlock node={node} context={context} />,
+    [context],
+  );
+  const views = useMemo<OverviewViews>(
+    () => ({ figure, excerpt, walkthrough }),
+    [figure, excerpt, walkthrough],
+  );
+  // Seen once the code blocks near the screen have drawn, with the local copy if it's coming, or at
+  // the bound, counted from when the tab opened and never again; until then, the tab's placeholder.
+  const [drawing, setDrawing] = useState(true);
+  const [first] = useState(() => firstDraw(() => setDrawing(false)));
+  const copy = useRef<(() => void) | undefined>(undefined);
+  const coming = result.code.kind === 'waiting';
+  useLayoutEffect(() => {
+    if (coming) {
+      copy.current ??= first.begin();
+      return;
+    }
+    copy.current?.();
+  }, [first, coming]);
+  useLayoutEffect(() => {
+    first.settle();
+  }, [first]);
+  // Far blocks draw for their height only once the overview is on screen, and blocks diff their
+  // files here only then: before any block asks for its file.
+  useLayoutEffect(() => {
+    if (onScreen) first.show();
+  }, [first, onScreen]);
+  useLayoutEffect(() => {
+    const opened = openings.get(tab.id).since ?? Date.now();
+    const bound = setTimeout(() => first.open(), Math.max(0, opened + HOLD_LIMIT - Date.now()));
+    return () => clearTimeout(bound);
+  }, [first, tab.id]);
   return (
-    <OverviewDocument
-      ref={scroller}
-      tree={parsed.tree}
-      byline={<Byline tab={tab} commit={commit} described={header.commit} />}
-      views={views}
-    />
+    <FirstDrawContext value={first}>
+      <div className="relative h-full">
+        <OverviewDocument
+          ref={scroller}
+          tree={parsed.tree}
+          byline={<Byline tab={tab} commit={commit} described={header.commit} />}
+          views={views}
+          drawing={drawing}
+        />
+        {drawing && (
+          <div className="absolute inset-0">
+            <MiddlePlaceholder tab={tab} />
+          </div>
+        )}
+      </div>
+    </FirstDrawContext>
   );
 }

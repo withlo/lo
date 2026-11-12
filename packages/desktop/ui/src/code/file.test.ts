@@ -113,6 +113,19 @@ function cursorAt(shown: FileView) {
   return shown.keyState().target;
 }
 
+/** Each scroll asked of `element`, which jsdom, laying nothing out, never scrolls. */
+function scrolled(element: HTMLElement): number[] {
+  const sets: number[] = [];
+  Object.defineProperty(element, 'scrollTop', {
+    configurable: true,
+    get: () => 0,
+    set: (to: number) => {
+      sets.push(to);
+    },
+  });
+  return sets;
+}
+
 describe('places', () => {
   test('reveal takes a line, a column on it, or the last line of a span', () => {
     const shown = open();
@@ -179,6 +192,25 @@ describe('places', () => {
       (each) => each.textContent,
     );
     expect(numbers.filter(Boolean)).toEqual([]);
+  });
+
+  test('showLine scrolls its own box alone to the line, leaving the cursor, and is no jump', async () => {
+    const on = events();
+    const shown = open(on);
+    shown.reveal(onLine(3));
+    const own = scrolled(parent!.querySelector<HTMLElement>('.lo-fileview')!);
+    const around = scrolled(parent!);
+    const page = scrolled(document.documentElement);
+    // The editor scrolls to a line only once it has a height.
+    Object.defineProperty(parent!.querySelector('.cm-scroller'), 'clientHeight', { value: 280 });
+    shown.showLine(30);
+    await vi.waitFor(() => expect(own.length).toBe(1));
+    expect([around, page]).toEqual([[], []]);
+    expect(cursorAt(shown)).toMatchObject({ at: at(3) });
+    expect(on.jumped).not.toHaveBeenCalled();
+    // A place revealed after it scrolls as the editor does.
+    shown.reveal(onLine(1));
+    expect(cursorAt(shown)).toMatchObject({ at: at(1) });
   });
 
   test('reveal leaves focus where it is, for focus() to move', () => {

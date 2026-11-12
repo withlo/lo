@@ -53,3 +53,4 @@ export { diffMotions } from './api.ts';
 export { createExcerptView } from './excerpt.ts';
 export { createFileView } from './file.ts';
 export { createDiffView } from './view.ts';
+export { codeTypeface } from './typeface.ts';

@@ -317,3 +317,84 @@
 .lo-ov-name__text {
   font-weight: 400;
 }
+
+/*
+ * A code block's code: at least as tall as an excerpt of its lines that fit their width, from the
+ * start, whatever it holds until they come. The room and what it holds share one place; what it
+ * says in the code's place fills it, on its own background.
+ */
+.lo-codeblock__body {
+  display: grid;
+}
+.lo-codeblock__body > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.lo-codeblock__space {
+  visibility: hidden;
+}
+.lo-codeblock__body:has(> .lo-codeblock__msg) {
+  background: var(--lo-bg);
+}
+.lo-codeblock--illustration .lo-codeblock__head strong {
+  color: var(--lo-fg);
+  font-weight: 600;
+}
+
+/*
+ * A block that keeps its height while taking its contents' would move what's on screen: contents
+ * grown taller are cut off above a row of its own, in the same room, whose button shows them whole.
+ * The cut leaves the frame's 1 px ring.
+ */
+.lo-held.is-cut {
+  display: flex;
+  flex-direction: column;
+}
+.lo-held.is-cut > .lo-held__clip {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: clip;
+  overflow-clip-margin: 1px;
+}
+.lo-held__more {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--lo-border-subtle);
+  border-radius: 0 0 var(--lo-r-md) var(--lo-r-md);
+  background: var(--lo-bg-chrome);
+  box-shadow: 0 0 0 1px var(--lo-border);
+}
+
+/* A walkthrough's code: the same height whatever it holds, the code scrolling in its own box. */
+.lo-walk__code {
+  display: flex;
+  flex-direction: column;
+}
+.lo-walk__view {
+  position: relative;
+  height: 280px;
+  overflow: hidden;
+}
+.lo-walk__view > .lo-codeblock__msg {
+  height: 100%;
+}
+.lo-walk__step {
+  cursor: pointer;
+}
+.lo-walk__step[aria-current='step'] {
+  cursor: default;
+}
+
+/* What's on screen stays where it is as what's above it changes size by the overview's own
+   reckoning (`hold.ts`), which the window's scroll anchoring would add to. */
+.lo-ov {
+  overflow-anchor: none;
+}
+
+/* An overview whose blocks are still drawing before it's first seen: laid out, unseen, the box
+   itself still there to take focus. */
+.lo-ov.is-drawing > * {
+  visibility: hidden;
+}

@@ -15,7 +15,7 @@ import { Finder } from './Finder.tsx';
 import { closeFinder, finderClosed, finderStore } from './finding.ts';
 import feature from './index.ts';
 import { choices, focus, showState, states } from './store.ts';
-import { onShowFile } from './shared.ts';
+import { findFile, onShowFile } from './shared.ts';
 
 const TAB: PullTab = { id: 't1', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 };
 
@@ -204,6 +204,21 @@ describe('opening the finder', () => {
     // The whole path is a tooltip away.
     expect(row?.querySelector('[title]')?.getAttribute('title')).toBe(long);
     expect(row?.querySelectorAll('mark')).toHaveLength(2);
+  });
+});
+
+describe('finding a file by name', () => {
+  it('opens the finder with the name typed, once the tree has started', async () => {
+    findFile('parser.ts');
+    expect(dialog()).toBeNull();
+    feature.start();
+    finding((query) =>
+      query === 'parser.ts' ? [found('src/parser.ts', true, [4, 12])] : EVERYTHING,
+    );
+    act(() => findFile('parser.ts'));
+    await vi.waitFor(() => expect(options()).toHaveLength(1));
+    expect(field().value).toBe('parser.ts');
+    expect(bridge.calls).toContainEqual(['tree.find', { id: TAB.id, query: 'parser.ts' }]);
   });
 });
 

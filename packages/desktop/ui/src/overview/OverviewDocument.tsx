@@ -47,6 +47,7 @@ import {
   type GlossaryState,
   type Reached,
 } from './terms.ts';
+import { Illustration } from './CodeBlock.tsx';
 import { ExcerptHead, FigureCaption, WalkthroughSteps } from './placeholders.tsx';
 import { Tabs } from './Tabs.tsx';
 import { Term } from './Term.tsx';
@@ -65,7 +66,7 @@ export interface OverviewViews {
   figure?: ((node: Figure) => ReactNode) | undefined;
   /** A `:::walkthrough` block, its steps beside their code. */
   walkthrough?: ((node: Walkthrough) => ReactNode) | undefined;
-  /** A plain fenced block, which is never code from the pull request. */
+  /** A plain fenced block, which is never code from the pull request: an illustration unless given. */
   fence?: ((node: Code) => ReactNode) | undefined;
 }
 
@@ -93,6 +94,11 @@ export interface OverviewDocumentProps {
   container?: HTMLElement | null | undefined;
   /** The scrolling element. */
   ref?: Ref<HTMLDivElement> | undefined;
+  /**
+   * Whether its blocks are still drawing what they show before it's first seen: the outline and
+   * the article are laid out, so the blocks can tell where they are, but not shown.
+   */
+  drawing?: boolean | undefined;
 }
 
 /** A section of the outline: a heading of the article's own, by its block's number. */
@@ -122,6 +128,7 @@ export function OverviewDocument({
   hints = blockHints,
   container,
   ref,
+  drawing = false,
 }: OverviewDocumentProps) {
   const prefix = scopePrefix(useId());
   const anchors = useMemo(() => new Anchors(prefix, tree.blocks), [prefix, tree.blocks]);
@@ -216,7 +223,16 @@ export function OverviewDocument({
     <MarkdownProvider rendering={rendering}>
       <GlossaryContext value={terms}>
         <ReachedContext value={reached}>
-          <div ref={scroller} className={outline ? 'lo-ov' : 'lo-ov grid-cols-1'}>
+          <div
+            ref={scroller}
+            className={[
+              'lo-ov',
+              outline ? undefined : 'grid-cols-1',
+              drawing ? 'is-drawing' : undefined,
+            ]
+              .filter(Boolean)
+              .join(' ')}
+          >
             {outline && (
               <nav className="lo-ov__toc" aria-label="Sections">
                 <div className="lo-toc__label">Overview</div>
@@ -374,7 +390,8 @@ function overviewExtension(views: OverviewViews | undefined): MarkdownExtension<
       }
     },
     details: (node) => <Fold node={node} kind="More detail" />,
-    code: views?.fence,
+    // A plain fence is never code from the pull request: an illustration, unless given otherwise.
+    code: views?.fence ?? ((node) => <Illustration node={node} />),
   };
 }
 
