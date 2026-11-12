@@ -254,6 +254,87 @@ test('a click shows a tab, its button closes it, and its right-click menu closes
   await expect(tabs(page)).toHaveText(['a #1']);
 });
 
+/** The middle of `locator`, which must be on screen. */
+async function middleOf(locator: Locator): Promise<{ x: number; y: number }> {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error('It isn’t on screen.');
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+/** Presses on `tab` and drags it level to `to`'s middle and `by` pixels on, without letting go. */
+async function dragTab(page: Page, tab: Locator, to: Locator, by: number): Promise<void> {
+  const from = await middleOf(tab);
+  const target = await middleOf(to);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x + by, from.y, { steps: 8 });
+}
+
+test('a tab dragged along the strip lands where it’s let go, the others sliding aside, and Esc puts it back', async ({
+  page,
+}) => {
+  await open(page, pull('withlo', 'a', 1), pull('withlo', 'b', 2), pull('withlo', 'c', 3));
+  await expect(tabs(page)).toHaveText(['a #1', 'b #2', 'c #3']);
+
+  // Past b's middle, a is over it, and b has slid back a place. The tab is never the window's to
+  // drag.
+  await dragTab(page, tabs(page).nth(0), tabs(page).nth(1), 10);
+  await expect(tabs(page).nth(0)).toHaveAttribute('style', /translateX\(\d/);
+  await expect(tabs(page).nth(1)).toHaveAttribute('style', /translateX\(-\d/);
+  expect(
+    await tabs(page)
+      .nth(0)
+      .evaluate((tab) => getComputedStyle(tab).getPropertyValue('app-region')),
+  ).toBe('no-drag');
+  // Esc puts it back, sliding home, and letting go after moves nothing, and shows nothing new.
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  for (const tab of await tabs(page).all()) await expect(tab).not.toHaveAttribute('style', /\(/);
+  await expect(tabs(page)).toHaveText(['a #1', 'b #2', 'c #3']);
+  await expect(shown(page)).toHaveText('c #3');
+
+  // Let go past c, it's last, and the tab on screen stays.
+  await dragTab(page, tabs(page).nth(0), tabs(page).nth(2), 10);
+  await page.mouse.up();
+  await expect(tabs(page)).toHaveText(['b #2', 'c #3', 'a #1']);
+  await expect(shown(page)).toHaveText('c #3');
+  await expect(said(page, 'a #1 is now tab 3 of 3.')).toBeAttached();
+
+  // A click still shows a tab, and its button still closes it.
+  await tabs(page).nth(2).click();
+  await expect(shown(page)).toHaveText('a #1');
+  await shown(page).getByRole('button', { name: 'Close tab' }).click();
+  await expect(tabs(page)).toHaveText(['b #2', 'c #3']);
+});
+
+test('⌃⇧PageUp and ⌃⇧PageDown move the tab on screen a place, keeping its focus and saying where', async ({
+  page,
+}) => {
+  await open(page, pull('withlo', 'a', 1), pull('withlo', 'b', 2), pull('withlo', 'c', 3));
+  await expect(shown(page)).toHaveText('c #3');
+  await page.keyboard.press('Control+Shift+PageUp');
+  await expect(tabs(page)).toHaveText(['a #1', 'c #3', 'b #2']);
+  await expect(said(page, 'c #3 is now tab 2 of 3.')).toBeAttached();
+
+  // From the tab itself, focus stays on it as it moves.
+  await shown(page).focus();
+  await page.keyboard.press('Control+Shift+PageDown');
+  await expect(tabs(page)).toHaveText(['a #1', 'b #2', 'c #3']);
+  await expect(said(page, 'c #3 is now tab 3 of 3.')).toBeAttached();
+  await expect(shown(page)).toBeFocused();
+  // Not round the end.
+  await page.keyboard.press('Control+Shift+PageDown');
+  await expect(said(page, 'The tab is last in the strip already.')).toBeVisible();
+  await expect(tabs(page)).toHaveText(['a #1', 'b #2', 'c #3']);
+
+  // Two quick presses move it two places.
+  await page.keyboard.press('Control+Shift+PageUp');
+  await page.keyboard.press('Control+Shift+PageUp');
+  await expect(tabs(page)).toHaveText(['c #3', 'a #1', 'b #2']);
+  await expect(shown(page)).toBeFocused();
+  await expect(shown(page)).toHaveText('c #3');
+});
+
 test('⌃o and ⌃i walk the history of the tab on screen, and each tab keeps its own', async ({
   page,
 }) => {
@@ -485,18 +566,14 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page }> {
   return { app, page };
 }
 
-test('the tabs come back after Lo restarts, in their order, with the same one on screen', async () => {
+test('the tabs come back after Lo restarts, in the order they were moved to, with the same one on screen', async () => {
   const first = await launch();
   try {
-    const [, , c] = await open(
-      first.page,
-      pull('withlo', 'a', 1),
-      { kind: 'settings' },
-      pull('withlo', 'c', 3),
-    );
-    await first.page.evaluate(async (id) => {
-      await window.lo.invoke('tab.move', { id, to: 0 });
-    }, c);
+    await open(first.page, pull('withlo', 'a', 1), { kind: 'settings' }, pull('withlo', 'c', 3));
+    await expect(shown(first.page)).toHaveText('c #3');
+    await first.page.keyboard.press('Control+Shift+PageUp');
+    await first.page.keyboard.press('Control+Shift+PageUp');
+    await expect(tabs(first.page)).toHaveText(['c #3', 'a #1', 'Settings']);
     await first.page.keyboard.press(`${cmd}+Digit2`);
     await expect(tabs(first.page)).toHaveText(['c #3', 'a #1', 'Settings']);
     await expect(shown(first.page)).toHaveText('a #1');

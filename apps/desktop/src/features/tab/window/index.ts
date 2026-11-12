@@ -11,6 +11,7 @@ import keys from '../keys.ts';
 import { follow } from './follow.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
+import { movable, stepTab } from './order.ts';
 import { panels, viewCounts } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
 import { activeTab, kinds } from './shared.ts';
@@ -92,6 +93,14 @@ export default {
     showLast: { run: () => select({ last: true }) },
     next: { run: () => select({ step: 1 }) },
     previous: { run: () => select({ step: -1 }) },
+    moveLeft: {
+      run: (target) => stepTab(target, -1),
+      enabled: (target) => movable(tabsStore.getState(), target, -1),
+    },
+    moveRight: {
+      run: (target) => stepTab(target, 1),
+      enabled: (target) => movable(tabsStore.getState(), target, 1),
+    },
     more: {
       run: () => setMoreOpen(true),
       enabled: () => moreStore.getState().folded.length > 0 || 'Every tab fits in the strip.',

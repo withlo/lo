@@ -12,6 +12,7 @@ import { Slot } from '../../../window/slots.tsx';
 import type { PullView, Tab } from '../contract.ts';
 import { main } from './main.ts';
 import { moreStore, setFolded, setMoreOpen } from './more.ts';
+import { dropTab, movedStore } from './order.ts';
 import { cover, kinds, useActiveTab, useTabs } from './shared.ts';
 import { pullsStore } from './store.ts';
 import { withoutBidi } from './title.ts';
@@ -53,12 +54,14 @@ function tabAt(target: EventTarget): string | undefined {
 
 /**
  * The strip. A click shows a tab; its close button closes it as `⌘W` would, and a right-click on
- * it lists what can be done to it.
+ * it lists what can be done to it. A tab dragged along it moves there, and a screen reader hears
+ * where a tab moved to, however it was moved.
  */
 export function TabStrip() {
   const { tabs, active } = useTabs();
   const views = useStore(pullsStore, (state) => state.views);
   const moreOpen = useStore(moreStore, (state) => state.open);
+  const said = useStore(movedStore, (state) => state.said);
   const menu = useMenuTarget((event) => {
     const id = tabAt(event.target);
     return id === undefined ? undefined : { kind: 'tab', tab: id };
@@ -78,8 +81,16 @@ export function TabStrip() {
         }}
         onClose={(id) => registry().run('tab.close', { kind: 'tab', tab: id })}
         onNew={() => registry().run('open.box', NO_TARGET)}
+        onMove={(id, to) =>
+          dropTab(id, to).catch((error: unknown) =>
+            console.error("Lo couldn't move the tab:", error),
+          )
+        }
         menuContainer={document.getElementById('root')}
       />
+      <div role="status" className="sr-only">
+        {said}
+      </div>
     </div>
   );
 }

@@ -426,6 +426,10 @@ status bar.
   GitHub gives it, so it comes back as it was, offline too. A tab with no account yet works it out
   as a link does the first time it's shown: the one that can see the repository, the one remembered
   for it, nobody for a public repository, or a question.
+- Main keeps the strip's order in `tab_tabs`. A tab dragged along the strip, or moved a place by
+  `⌃⇧PgUp` and `⌃⇧PgDn`, moves there through `tab.move`, so the tabs come back in that order after
+  Lo restarts. A step with no tab named moves the one on screen as main has it, so two quick presses
+  move it two places.
 - The first time a tab is shown, main reads the pull request and fetches it into the local copy
   through `@lo/git`, with the account's token, read as each fetch starts. A fetch that fails is
   tried again after 5 s, doubling to 5 minutes, unless waiting won't help, and a tab reads what an

@@ -42,6 +42,21 @@ describe("the tab feature's contract", () => {
     expect(input.safeParse({ id: '' }).success).toBe(false);
   });
 
+  it('moves a tab to a place, or one place along: the one on screen without an id', () => {
+    const { input } = contract.requests.move;
+    for (const move of [{ id: 't1', to: 0 }, { id: 't1', step: 1 }, { step: -1 }]) {
+      expect(input.parse(move)).toEqual(move);
+    }
+    const refused = [
+      { to: 0 },
+      { id: 't1', to: -1 },
+      { step: 2 },
+      { id: 't1', to: 0, step: 1 },
+      {},
+    ];
+    expect(refused.filter((move) => input.safeParse(move).success)).toEqual([]);
+  });
+
   it('opens only pages on github.com, over HTTPS, in the browser', () => {
     const { input } = contract.requests.openExternal;
     const allowed = [

@@ -86,6 +86,22 @@ export const choice = z.union([
 ]);
 export type Choice = z.output<typeof choice>;
 
+/**
+ * Where to move a tab: to a place in the strip, from 0, counted without it; or one place along the
+ * strip, but not round its ends. Without an id, a step moves the tab on screen.
+ */
+export const move = z.union([
+  z.strictObject({ id: tabId, to: z.number().int().min(0).max(1_000_000) }),
+  z.strictObject({ id: tabId.optional(), step: z.union([z.literal(1), z.literal(-1)]) }),
+]);
+export type Move = z.output<typeof move>;
+
+/** A tab asked to move, and its place in the strip now, from 0. */
+export interface Moved {
+  readonly id: string;
+  readonly place: number;
+}
+
 /** A commit's ID, as git and GitHub write it: 40 hex digits, or 64 in a SHA-256 repository. */
 export const oid = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
 
@@ -283,11 +299,12 @@ export const contract = defineContract('tab', {
     /** Closes a tab, or without an id, the one on screen. Recent can't be closed. */
     close: { input: z.strictObject({ id: tabId.optional() }), reply: reply<void>() },
     select: { input: choice, reply: reply<void>() },
-    /** Moves a tab to another place in the strip, from 0. */
-    move: {
-      input: z.strictObject({ id: tabId, to: z.number().int().min(0).max(1_000_000) }),
-      reply: reply<void>(),
-    },
+    /**
+     * Moves a tab to another place in the strip, or one place along it, and replies with where it
+     * is now: nothing when there's no such tab. A step without an id moves the tab on screen as
+     * main has it, so two quick presses move it two places.
+     */
+    move: { input: move, reply: reply<Moved | undefined>() },
     /**
      * What main has for a pull request's tab now, which `pull`, `files` and `local` then keep up
      * to date: nothing for a tab that isn't a pull request's.

@@ -183,8 +183,42 @@ describe('moving a tab', () => {
 
   it('changes nothing for a tab that isn’t open, or one already there', () => {
     const { tabs, heard } = three();
-    tabs.move('gone', 0);
-    tabs.move('t2', 1);
+    expect(tabs.move('gone', 0)).toBeUndefined();
+    expect(tabs.move('t2', 1)).toEqual({ id: 't2', place: 1 });
+    expect(heard).toEqual([]);
+  });
+
+  it('says where the tab is now', () => {
+    const { tabs } = three();
+    expect(tabs.move('t1', 99)).toEqual({ id: 't1', place: 2 });
+    expect(tabs.move('t1', 0)).toEqual({ id: 't1', place: 0 });
+  });
+
+  it('steps the tab on screen, or another, one place along, but not round the ends', () => {
+    const { tabs, heard } = three();
+    expect(tabs.step(undefined, -1)).toEqual({ id: 't3', place: 1 });
+    expect(names(tabs.list())).toEqual(['fd#2212', '*lo#1', 'bat#7']);
+    // As main has it, so two quick steps take it two places.
+    expect(tabs.step(undefined, -1)).toEqual({ id: 't3', place: 0 });
+    expect(names(tabs.list())).toEqual(['*lo#1', 'fd#2212', 'bat#7']);
+    expect(heard).toHaveLength(2);
+    // At the start of the strip, it stays.
+    expect(tabs.step(undefined, -1)).toEqual({ id: 't3', place: 0 });
+    expect(heard).toHaveLength(2);
+    expect(tabs.step('t1', 1)).toEqual({ id: 't1', place: 2 });
+    expect(names(tabs.list())).toEqual(['*lo#1', 'bat#7', 'fd#2212']);
+    expect(tabs.step('t1', 1)).toEqual({ id: 't1', place: 2 });
+    expect(heard).toHaveLength(3);
+    // The one on screen stays on screen.
+    expect(tabs.list().active).toBe('t3');
+  });
+
+  it('steps nothing while only Recent is open, or for a tab that isn’t', () => {
+    const alone = tabsOn(database());
+    expect(alone.tabs.step(undefined, 1)).toBeUndefined();
+    expect(alone.tabs.step('recent', -1)).toBeUndefined();
+    const { tabs, heard } = three();
+    expect(tabs.step('gone', 1)).toBeUndefined();
     expect(heard).toEqual([]);
   });
 });
@@ -274,7 +308,8 @@ describe('restoring the tabs', () => {
     const on = database();
     const before = tabsOn(on).tabs;
     for (const opening of [fd, { kind: 'settings' } as const, bat, lo]) before.open(opening);
-    before.move('t4', 0);
+    before.move('t4', 1);
+    before.step('t4', -1);
     before.describe('t1', { title: 'Honor explicit use-jemalloc requests', state: 'merged' });
     before.select({ position: 3 });
     before.close('t3');

@@ -1,7 +1,7 @@
-// The tab strip's keys: a tab by its place, the next and previous tab, the tabs that don't fit and
-// closing one. They work wherever focus is, a text field included, but not under a dialog or a
-// palette, which hold the keys while they're open. And a pull request's tab's: its left panel, and
-// its middle views.
+// The tab strip's keys: a tab by its place, the next and previous tab, moving one, the tabs that
+// don't fit and closing one. They work wherever focus is, a text field included, but not under a
+// dialog or a palette, which hold the keys while they're open. And a pull request's tab's: its left
+// panel, and its middle views.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -42,6 +42,28 @@ export default defineCommands('tab', {
     when: outside,
     repeat: true,
     bar: { menu: 'Window', order: 20 },
+  },
+  /**
+   * The tab on screen, or the one right-clicked, one place along the strip, but not round its
+   * ends. `⌃⇧PgUp` and `⌃⇧PgDn` move a tab in browsers and terminals, on both systems.
+   */
+  moveLeft: {
+    label: 'Move tab left',
+    group: 'Tabs and window',
+    keys: ['ctrl+shift+pageup'],
+    targets: ['tab', 'none'],
+    when: outside,
+    repeat: true,
+    menu: { on: 'tab', order: 1 },
+  },
+  moveRight: {
+    label: 'Move tab right',
+    group: 'Tabs and window',
+    keys: ['ctrl+shift+pagedown'],
+    targets: ['tab', 'none'],
+    when: outside,
+    repeat: true,
+    menu: { on: 'tab', order: 2 },
   },
   /**
    * The menu of the tabs that don't fit in the strip, "N more", to show one of them. Browsers

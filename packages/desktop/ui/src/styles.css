@@ -283,6 +283,16 @@
   }
 }
 
+/* A tab dragged along the strip, over the tabs it passes. */
+@utility tab-dragged {
+  z-index: 1;
+}
+
+/* Tabs sliding aside for one dragged past them, and one put back. */
+@utility tab-slide {
+  transition: transform var(--lo-dur) var(--lo-ease-out);
+}
+
 /* The file tree's rows: indented by their depth, with a hairline down each level they're in. */
 @utility tree-row {
   padding-inline: calc(var(--lo-sp-6) + var(--depth, 0) * var(--lo-sp-12)) var(--lo-sp-8);
