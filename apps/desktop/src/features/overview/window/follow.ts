@@ -22,6 +22,7 @@ import { showPlace } from '../../diff/window/shared.ts';
 import { showMiddle, tabState } from '../../tab/window/shared.ts';
 import { blockId, blockIn, codeOf, onHead, type CodeAt } from './blocks.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
+import { main } from './main.ts';
 
 /** An overview drawn in a tab while it's on screen, as the keys act on it. */
 export interface DrawnOverview {
@@ -534,6 +535,32 @@ export function closeBesideAt(overview: DrawnOverview): boolean {
   return true;
 }
 
+/** The tabs whose newer overview was asked for, with the tree each showed then, if any. */
+const loading = new Map<string, { from: number | undefined }>();
+
+/**
+ * Loads the newer overview pushed while tab `tab`'s was read. The blocks it replaces go, and with
+ * them what had focus, so once it's drawn the overview itself takes focus: see `loadedNewer`.
+ */
+export function loadNewer(tab: string): void {
+  loading.set(tab, { from: trees.get(tab) });
+  main()
+    .load({ id: tab })
+    .catch((error: unknown) => console.error("Lo couldn't load the newer overview:", error));
+}
+
+/**
+ * Whether the overview drawn in tab `tab`, the tree numbered `generation`, is the newer one asked
+ * for there, once: the overview itself takes focus, as after `Esc`, unless the reader has put it
+ * somewhere else since.
+ */
+export function loadedNewer(tab: string, generation: number): boolean {
+  const asked = loading.get(tab);
+  if (!asked || asked.from === generation) return false;
+  loading.delete(tab);
+  return true;
+}
+
 /** Tabs whose history can reveal places in the overview. */
 const registered = new Set<string>();
 
@@ -561,6 +588,7 @@ export function placesFor(tab: string): void {
 export function keepPlaces(open: ReadonlySet<string>): void {
   for (const tab of registered) if (!open.has(tab)) registered.delete(tab);
   for (const tab of left.keys()) if (!open.has(tab)) left.delete(tab);
+  for (const tab of loading.keys()) if (!open.has(tab)) loading.delete(tab);
 }
 
 /**

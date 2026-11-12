@@ -688,6 +688,11 @@ test('offers a newer overview pushed while one is read, and loads it only when a
   await page.keyboard.press('Enter');
   await expect(shown).toContainText('The second one.');
   await expect(byline).not.toContainText('A newer overview was pushed');
+  // Its blocks took the place of those that had focus: the overview itself has it, for ]b.
+  await expect(shown.locator('.lo-ov')).toBeFocused();
+  await page.keyboard.press(']');
+  await page.keyboard.press('b');
+  await expect(shown.locator('details > summary')).toBeFocused();
 });
 
 test('a block’s menu reads the overview again after a read failed, and loads a newer one', async ({
@@ -735,6 +740,11 @@ test('a block’s menu reads the overview again after a read failed, and loads a
   await item(/^Load the newer overview/).click();
   await expect(shown).toContainText('The second one.');
   await expect(byline).not.toContainText('A newer overview was pushed');
+  // Its blocks took the place of the block that had focus: the overview itself has it, for ]b.
+  await expect(shown.locator('.lo-ov')).toBeFocused();
+  await page.keyboard.press(']');
+  await page.keyboard.press('b');
+  await expect(shown.locator('details > summary')).toBeFocused();
 });
 
 test('keeps its byline as it is at any width, the commit’s name quoted and clipped, and a newer overview’s offer in reach and moving nothing', async ({

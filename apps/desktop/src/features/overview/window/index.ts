@@ -37,6 +37,7 @@ import {
   follow,
   followOf,
   keepPlaces,
+  loadNewer,
   looseControl,
   nextBlock,
   nextLink,
@@ -243,10 +244,7 @@ export default {
     loadNewer: {
       run: () => {
         const tab = activeTab();
-        if (tab?.kind !== 'pull') return;
-        main()
-          .load({ id: tab.id })
-          .catch((error: unknown) => console.error("Lo couldn't load the newer overview:", error));
+        if (tab?.kind === 'pull') loadNewer(tab.id);
       },
       enabled: () => (stateNow()?.newer ? true : 'No newer overview was pushed.'),
       listed: () => Boolean(stateNow()?.newer),

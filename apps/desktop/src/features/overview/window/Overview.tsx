@@ -37,6 +37,7 @@ import {
   hereIn,
   holdBlock,
   keptPlace,
+  loadedNewer,
   placesFor,
   setDrawn,
   takeReveal,
@@ -246,7 +247,13 @@ export function OverviewView({ tab, shown }: { tab: PullTab; shown: boolean }) {
       scroller: () => article.current,
     };
     const stop = setDrawn(drawn);
-    takeReveal(drawn);
+    // A newer overview asked for replaced the blocks, and what had focus with them.
+    const newer = loadedNewer(tab.id, generation);
+    const active = document.activeElement;
+    const lost = active === null || active === document.body || element.contains(active);
+    if (!takeReveal(drawn) && newer && lost) {
+      (article.current ?? element).focus({ preventScroll: true });
+    }
     return stop;
   }, [tab.id, shown, waiting, tree, generation]);
 

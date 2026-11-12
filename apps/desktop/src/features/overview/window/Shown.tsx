@@ -37,9 +37,8 @@ import { codeAt } from './blocks.ts';
 import { ExcerptBlock, WalkthroughBlock, type CodeContext } from './Code.tsx';
 import { drawing as firstDraw, FirstDrawContext } from './drawing.ts';
 import { revisionAt, type Standing } from './facts.ts';
-import { drawnIn, followCode, recordFrom } from './follow.ts';
+import { drawnIn, followCode, loadNewer, recordFrom } from './follow.ts';
 import { useNow } from './hooks.ts';
-import { main } from './main.ts';
 import { openings } from './opening.ts';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
 import { ago, authorOf, shortId } from './says.ts';
@@ -237,17 +236,7 @@ export function NewerOffer({ tab }: { tab: string }) {
           ·
         </span>
       </span>
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={() => {
-          main()
-            .load({ id: tab })
-            .catch((error: unknown) =>
-              console.error("Lo couldn't load the newer overview:", error),
-            );
-        }}
-      >
+      <Button size="sm" variant="ghost" onClick={() => loadNewer(tab)}>
         Load it
       </Button>
     </span>
