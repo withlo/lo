@@ -82,6 +82,12 @@ export interface Drawn {
    */
   fileAt(target: LineTarget | HeaderTarget): string;
   /**
+   * Puts file `id`'s header at the top of the screen, with the cursor on it, as the tree asks: a
+   * jump, which lands there however the file shows, kept out, closed or still coming, and however
+   * near the end it is. Says whether the view has the file.
+   */
+  toTop(id: string): boolean;
+  /**
    * The reader marked file `id` viewed (`viewed`), or cleared its mark, here: marked, it closes at
    * once and the cursor goes to `next`'s header, which stays where it is on screen if it's there
    * and otherwise comes to the top; cleared, it opens, and what's on screen stays. Either way how
@@ -131,10 +137,14 @@ export function setDrawn(id: string, view: Drawn): () => void {
   };
 }
 
-/** A place to show in a tab's diff once it's drawn, and whether focus goes there too. */
+/**
+ * A place to show in a tab's diff once it's drawn, and whether focus goes there too. A file the tree
+ * asks for (`top`) comes to the top of the screen, as `Drawn.toTop` puts it.
+ */
 export interface Reveal {
   readonly target: Target;
   readonly focus: boolean;
+  readonly top?: boolean | undefined;
 }
 
 /**

@@ -235,8 +235,9 @@ Wherever an overview points, it uses one form:
 
 Blocks take targets as their argument. Links take them with a scheme, through Markdown's link
 syntax: `[the limiter](code:src/limiter.ts#L12-L40)`, `[buckets](term:bucket)`,
-`[as above](#how-it-works)`. A path with spaces goes inside `<` and `>`:
-`[it](<code:docs/read me.md>)`.
+`[as above](#how-it-works)`. A path or a term with spaces goes inside `<` and `>`:
+`[it](<code:docs/read me.md>)`, `[maps](<term:hash map>)`. Otherwise the space ends the address,
+Markdown makes no link of it, and Lo shows the text as written, with a warning.
 
 - **Paths** are from the repository's root, without a leading `/`, and exactly as the repository
   writes them: the same case, the same Unicode form, no `%` escapes. No part is empty, `.`, `..` or

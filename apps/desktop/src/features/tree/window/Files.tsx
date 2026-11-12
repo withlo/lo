@@ -153,12 +153,12 @@ export function Files({
 
   // Keys in the tree act on the row the keyboard is on.
   const stop = useRef<(() => void) | undefined>(undefined);
+  const element = useRef<HTMLDivElement | null>(null);
   const treeRef = useCallback(
-    (element: HTMLDivElement | null) => {
+    (tree: HTMLDivElement | null) => {
+      element.current = tree;
       stop.current?.();
-      stop.current = element
-        ? setScopeSource(element, { target: () => treeTarget(tab.id) })
-        : undefined;
+      stop.current = tree ? setScopeSource(tree, { target: () => treeTarget(tab.id) }) : undefined;
     },
     [tab.id],
   );
@@ -196,7 +196,11 @@ export function Files({
           current={current}
           reveal={revealed}
           onRowClick={(key, twisty) => {
+            // The row clicked is the keyboard's, in the tree, as a press on it focuses it; a click
+            // that came without one, as a screen reader's, focuses it too.
             focus.set(tab.id, key);
+            const tree = element.current;
+            if (tree && !tree.contains(document.activeElement)) tree.focus({ preventScroll: true });
             onRow(tab.id, key, twisty);
           }}
           onFileMenu={(key, event) => {

@@ -6,6 +6,7 @@ export {
   resolveLimits,
   type Limits,
 } from './limits.ts';
+export { slug } from './anchors.ts';
 export { isWebLink, webLink } from './links.ts';
 export { imageAddress, imageSources, isImageAddress, type ImageSource } from './images.ts';
 export {

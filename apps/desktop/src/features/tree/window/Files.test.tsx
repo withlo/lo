@@ -111,6 +111,26 @@ describe('the files panel', () => {
   });
 });
 
+describe('a click', () => {
+  it('makes the row clicked the keyboard’s, in the tree, a file’s or a folder’s', () => {
+    const { container, row, onRow } = render();
+    const tree = container.querySelector<HTMLElement>('[role="tree"]');
+    const elsewhere = document.body.appendChild(document.createElement('button'));
+    onTestFinished(() => elsewhere.remove());
+    for (const key of ['src/format.ts', 'src']) {
+      elsewhere.focus();
+      // A click with no press before it, as a screen reader's, which focuses nothing itself.
+      act(() => {
+        row(key)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      expect(focus.get(TAB.id)).toBe(key);
+      expect(document.activeElement).toBe(tree);
+      expect(tree?.getAttribute('aria-activedescendant')).toBe(row(key)?.id);
+      expect(onRow).toHaveBeenLastCalledWith(TAB.id, key, false);
+    }
+  });
+});
+
 describe('following the diff', () => {
   it('marks the file the diff says is on screen, through the stand-in the diff will be', () => {
     const { row } = render();
