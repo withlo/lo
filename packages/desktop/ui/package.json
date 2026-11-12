@@ -8,6 +8,8 @@
     "./code": "./src/code/index.ts",
     "./code/view.css": "./src/code/view.css",
     "./commands": "./src/commands/index.ts",
+    "./markdown": "./src/markdown/index.ts",
+    "./overview": "./src/overview/index.ts",
     "./styles.css": "./src/styles.css",
     "./fonts.css": "./src/fonts.css"
   },
@@ -16,7 +18,7 @@
   },
   "scripts": {
     "codegen": "node scripts/theme.ts && prettier --write src/theme.css",
-    "lint": "oxlint && node scripts/check-classes.ts src && node scripts/check-surface.ts",
+    "lint": "oxlint && stylelint --config ../../../design/stylelint.config.mjs 'src/overview/*.css' && node scripts/check-classes.ts src && node scripts/check-surface.ts",
     "test": "vitest run --root ../../.. --project @lo/ui"
   },
   "dependencies": {
@@ -30,8 +32,10 @@
     "@fontsource-variable/host-grotesk": "5.3.0",
     "@fontsource/fragment-mono": "5.3.0",
     "@lezer/highlight": "1.2.5",
+    "@lo/artifact": "workspace:*",
     "@lo/design": "workspace:*",
     "@lo/diff": "workspace:*",
+    "@lo/markdown": "workspace:*",
     "@replit/codemirror-vim": "6.4.0",
     "class-variance-authority": "0.7.1",
     "react": "19.3.1",
@@ -59,6 +63,7 @@
           "default",
           "^production",
           "{workspaceRoot}/.oxlintrc.json",
+          "{workspaceRoot}/design/stylelint.config.mjs",
           "{workspaceRoot}/scripts/oxlint/plugin.ts",
           {
             "dependentTasksOutputFiles": "**/*.{d.ts,d.cts,d.mts,tsbuildinfo}",

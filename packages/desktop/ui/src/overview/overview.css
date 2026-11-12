@@ -1,0 +1,23 @@
+/*
+ * The overview's blocks the block keys stop at that have no frame of their own: prose that links
+ * to code or terms, and folds. Focused, they take a block's ring and hint chip, and they keep the
+ * spacing and borders prose has.
+ */
+.lo-ov-stop {
+  position: relative;
+}
+.lo-ov-stop.is-focused {
+  border-radius: var(--lo-r-md);
+  box-shadow:
+    0 0 0 1.5px var(--lo-focus),
+    0 0 0 5px var(--lo-focus-glow);
+}
+.lo-ov-stop.is-focused .lo-block__hints {
+  display: flex;
+}
+
+/* A term's card: five of the widest steps across, and never wider than the window. */
+.lo-hovercard {
+  width: calc(var(--lo-sp-64) * 5);
+  max-width: calc(100vw - var(--lo-sp-32));
+}

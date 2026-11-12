@@ -8,6 +8,8 @@
 @import './fonts.css';
 @import 'tailwindcss/utilities.css' layer(utilities);
 @import './theme.css';
+/* The overview's own rules, over the design system's and under the utilities. */
+@import './overview/overview.css' layer(components);
 
 /* Classes in ui's components; the window's own are found from its stylesheet. The code view styles
    itself in code/view.css, so its files hold none. */
