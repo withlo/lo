@@ -153,6 +153,34 @@ describe('the sign-in dialog', () => {
     expect(dialog('sign-in')?.textContent).toContain('Signed in as rozed-bot');
   });
 
+  it('presses Done on ⏎ off its buttons, and says nothing of the keychain', async () => {
+    const bridge = installBridge({ 'accounts.signIn': () => waiting });
+    render();
+    act(() => openSignIn());
+    await settle();
+    act(() =>
+      bridge.push('accounts.signingIn', {
+        kind: 'signedIn',
+        id: 7,
+        login: 'rozed-bot',
+        name: null,
+      }),
+    );
+    const shown = dialog('sign-in');
+    expect(shown?.textContent).toContain('Signed in as rozed-bot');
+    expect(shown?.textContent).not.toMatch(/keychain/i);
+    // A button's own `⏎` is left to it.
+    const key = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    act(() => {
+      button(shown, 'Done').dispatchEvent(key);
+    });
+    expect(key.defaultPrevented).toBe(false);
+    // On the dialog's text, which a click there left focus on, `⏎` presses Done.
+    press(shown?.querySelector('p') ?? document.body, 'Enter');
+    await settle();
+    expect(dialog('sign-in')).toBeNull();
+  });
+
   it('stops the sign-in when closed, even one main is still starting', async () => {
     const bridge = installBridge({
       'accounts.signIn': () => waiting,

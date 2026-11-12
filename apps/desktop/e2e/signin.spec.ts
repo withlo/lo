@@ -117,6 +117,10 @@ test('signs in with GitHub: the code, GitHub’s page, and the account, never it
   await expect(dialog).toContainText('Signed in as rozed-bot', { timeout: 30_000 });
   expect(polls(github)).toBe(3);
   await expect(dialog.getByRole('button', { name: /Done/ })).toBeFocused();
+  // Coming back to the window with a click on the dialog's text takes focus off Done, and `⏎`
+  // still presses it.
+  await dialog.getByText(/Lo is signed in to GitHub as/).click();
+  await expect(dialog.getByRole('button', { name: /Done/ })).not.toBeFocused();
   await page.keyboard.press('Enter');
   await expect(dialog).toBeHidden();
 
