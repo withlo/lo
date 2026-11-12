@@ -63,8 +63,8 @@ const test = base.extend<{ github: ReplayServer; remote: string; tokenFile: stri
   },
 });
 
-/** Opens #78, and waits for its diff from the local copy and its tree. */
-async function drawn(page: Page): Promise<void> {
+/** Opens #78, waits for its diff from the local copy and its tree, and returns the tab's id. */
+async function drawn(page: Page): Promise<string> {
   await expect
     .poll(async () => JSON.stringify(await page.evaluate(() => window.lo.invoke('accounts.list'))))
     .toContain('rozed-bot');
@@ -92,6 +92,7 @@ async function drawn(page: Page): Promise<void> {
     timeout: 20_000,
   });
   await expect(row(page, 'README.md')).toBeVisible({ timeout: 20_000 });
+  return id;
 }
 
 const tree = (page: Page) => page.locator('[role="tree"][data-lo-scope="tree"]');
@@ -109,6 +110,8 @@ function diffCursor(page: Page) {
       path: window.loDiff?.files.find((file) => file.id === id)?.path,
       line: reading.at.kind === 'line' ? reading.at.at.line : 0,
       pane: reading.pane,
+      /** How far down the window its line is drawn. */
+      top: reading.top,
     };
   });
 }
@@ -141,7 +144,7 @@ test('gf opens the file at the cursor whole, at its line and in its side’s ver
   page,
 }) => {
   const refused = refusals(page);
-  await drawn(page);
+  const id = await drawn(page);
   // To src/parser.ts's change, on the head's side.
   await page.locator('.lo-diffview .cm-editor').nth(1).locator('.cm-content').focus();
   await press(page, 'g', 'g', ']', 'f', ']', 'f', ']', 'f', ']', 'f', ']', 'f', ']', 'c');
@@ -149,12 +152,13 @@ test('gf opens the file at the cursor whole, at its line and in its side’s ver
   const before = await diffCursor(page);
   expect(before?.line).toBeGreaterThan(1);
 
-  // The whole file, at the same line, highlighted, with the diff gone from the middle.
+  // The whole file, at the same line, highlighted, in place of the diff.
   await press(page, 'g', 'f');
+  await expect(code(page)).toBeVisible();
   await expect(code(page)).toContainText(
     '/** A line of input: its number, from 1, and its text. */',
   );
-  await expect(page.locator('.lo-diffview')).toHaveCount(0);
+  await expect(page.locator('.lo-diffview')).toBeHidden();
   await expect
     .poll(() => wholeAt(page))
     .toEqual({ path: 'src/parser.ts', version: 'new', line: before?.line });
@@ -164,20 +168,35 @@ test('gf opens the file at the cursor whole, at its line and in its side’s ver
   // The tree marks it.
   await expect(row(page, 'src/parser.ts')).toHaveClass(/tree-current/);
 
-  // ⌃o: the diff, at the same place, with focus.
+  // ⌃o: the diff, with its cursor on the same line, where it was on the page, and focus.
   await press(page, 'Control+o');
   await expect(page.locator('.lo-diffview')).toBeVisible();
-  await expect(code(page)).toHaveCount(0);
-  await expect.poll(() => diffCursor(page)).toEqual(before);
+  await expect(code(page)).toBeHidden();
+  await expect
+    .poll(() => diffCursor(page))
+    .toMatchObject({ path: before?.path, line: before?.line, pane: before?.pane });
+  expect(Math.abs((await diffCursor(page))!.top - before!.top)).toBeLessThanOrEqual(1);
   await expect(page.locator('.lo-diffview .cm-editor').nth(1).locator('.cm-content')).toBeFocused();
 
   // ⌃i: the whole file again, where it was.
   await press(page, 'Control+i');
+  await expect(code(page)).toBeVisible();
   await expect
     .poll(() => wholeAt(page))
     .toEqual({ path: 'src/parser.ts', version: 'new', line: before?.line });
+
+  // Drawn afresh, as after showing another tab, the diff still comes back where it was.
+  await page.evaluate(() => window.lo.invoke('tab.open', { kind: 'settings' }));
+  await expect(page.locator('.lo-diffview')).toHaveCount(0);
+  await page.evaluate((tab) => window.lo.invoke('tab.select', { id: tab }), id);
+  await expect(code(page)).toBeVisible();
+  await expect(page.locator('.lo-diffview')).toHaveCount(0);
   await press(page, 'Control+o');
-  await expect.poll(() => diffCursor(page)).toEqual(before);
+  await expect(page.locator('.lo-diffview')).toBeVisible();
+  await expect
+    .poll(() => diffCursor(page))
+    .toMatchObject({ path: before?.path, line: before?.line, pane: before?.pane });
+  expect(Math.abs((await diffCursor(page))!.top - before!.top)).toBeLessThanOrEqual(1);
 
   // From the base's side, the base's version, by its old path.
   await press(page, 'Tab');
@@ -196,6 +215,7 @@ test('a file the pull request leaves alone opens whole from the tree, and Back r
   const refused = refusals(page);
   await drawn(page);
   await row(page, 'README.md').click();
+  await expect(code(page)).toBeVisible();
   await expect(code(page)).toContainText('# App fixture');
   await expect(whole(page)).toContainText('Unchanged in this pull request');
   await expect.poll(() => wholeAt(page)).toMatchObject({ path: 'README.md', version: 'new' });
@@ -218,6 +238,7 @@ test('a file the pull request leaves alone opens whole from the tree, and Back r
 
   // ⌃o from the tree goes back to the file left, and the bar's Back to the diff again.
   await press(page, 'Control+o');
+  await expect(code(page)).toBeVisible();
   await expect(code(page)).toContainText('# App fixture');
   await whole(page).getByRole('button', { name: /^Back/ }).click();
   await expect(page.locator('.lo-diffview')).toBeVisible();
@@ -247,7 +268,9 @@ test('the finder’s ⌘⏎ opens any file whole, and ` steps between the diff a
   await expect.poll(async () => (await wholeAt(page))?.line).toBe(3);
   await press(page, '`');
   await expect(page.locator('.lo-diffview')).toBeVisible();
+  await expect(code(page)).toBeHidden();
   await press(page, '`');
+  await expect(code(page)).toBeVisible();
   await expect(code(page)).toContainText('export function wrap(text: string, width: number)');
   await expect
     .poll(() => wholeAt(page))

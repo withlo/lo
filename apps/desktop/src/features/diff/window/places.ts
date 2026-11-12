@@ -7,10 +7,11 @@ import type { Side, Target } from '@lo/ui/commands';
 
 import { here, registry } from '../../../window/commands/registry.ts';
 import { showMiddle } from '../../tab/window/shared.ts';
-import { onShowFile } from '../../tree/window/shared.ts';
+import type { TreePath } from '../../tree/contract.ts';
+import { onShowFile, pathOf } from '../../tree/window/shared.ts';
 import type { Version } from '../contract.ts';
 import { drawnFor, loaderOf, revealWhenDrawn } from './tabs.ts';
-import { changedIn, DIFF_VIEW, opened, versionOf, WHOLE_VIEW } from './whole.ts';
+import { changedIn, DIFF_VIEW, known, opened, versionOf, WHOLE_VIEW } from './whole.ts';
 
 /** How many files have been asked to open whole, so each ask is told from the last. */
 let asks = 0;
@@ -27,25 +28,39 @@ function leave(): void {
 }
 
 /**
- * Opens the file `key` whole in tab `tab`, in `version` where it has one, with its cursor at `at`
- * when given, and brings the whole-file view on screen. Focus goes to it with `focus`, and
- * otherwise only when it's nowhere in particular.
+ * Opens the file `key`, at `path`, whole in tab `tab`, in `version` where it has one, with its
+ * cursor at `at` when given, and brings the whole-file view on screen. Focus goes to it with
+ * `focus`, and otherwise only when it's nowhere in particular.
  */
 export function openWhole(
   tab: string,
-  file: { key: string; version: Version; at?: Target | undefined; focus: boolean },
+  file: {
+    key: string;
+    path: TreePath;
+    version: Version;
+    at?: Target | undefined;
+    focus: boolean;
+  },
 ): void {
   leave();
   const loader = loaderOf(tab);
   const change = changedIn(loader.snapshot().state?.files, file.key);
   asks += 1;
+  known.update(tab, (paths) => new Map(paths).set(file.key, file.path));
   opened.set(tab, {
     key: file.key,
     id: loader.ids.of(file.key),
+    path: file.path,
     version: versionOf(change, file.version),
     ask: { at: file.at, focus: file.focus, count: asks },
   });
   showMiddle(tab, WHOLE_VIEW);
+}
+
+/** The whole path of the file `key` names in tab `tab`, as it was opened, the diff has it, or the tree. */
+function pathFor(tab: string, key: string): TreePath {
+  const change = changedIn(loaderOf(tab).snapshot().state?.files, key);
+  return known.get(tab).get(key) ?? change?.path ?? pathOf(tab, key);
 }
 
 /** The file and side a place in a code view is on, if it's on one. */
@@ -92,7 +107,7 @@ function revealWhole(tab: string, target: Target): boolean {
   const at = placeOf(target);
   const key = at && loaderOf(tab).ids.keyOf(at.file);
   if (!at || key === undefined) return false;
-  openWhole(tab, { key, version: at.side, at: target, focus: true });
+  openWhole(tab, { key, path: pathFor(tab, key), version: at.side, at: target, focus: true });
   return true;
 }
 
@@ -133,5 +148,7 @@ export function showTreeFiles(): void {
     if (target) revealWhenDrawn(tab, { target, focus: false });
     showMiddle(tab, DIFF_VIEW);
   });
-  onShowFile('whole', (tab, key) => openWhole(tab, { key, version: 'new', focus: false }));
+  onShowFile('whole', (tab, key, path) =>
+    openWhole(tab, { key, path, version: 'new', focus: false }),
+  );
 }

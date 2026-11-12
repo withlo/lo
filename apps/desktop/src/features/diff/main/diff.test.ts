@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { parseOid, type Repo } from '@lo/git';
 import { GithubClient, Token } from '@lo/github';
 import { replayFetch } from '@lo/testing';
-import { APP_PULL, gitProgram, writeAppRemote } from '@lo/testing/git';
+import { APP_PULL, gitProgram, RepoServer, writeAppRemote } from '@lo/testing/git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { createGit } from '../../../main/git.ts';
@@ -25,8 +25,21 @@ let remote: string | undefined;
 /** rozed-dev/e2e's clone in a new cache, with #78 fetched into it. */
 async function e2eClone(): Promise<Repo> {
   remote ??= writeAppRemote(realpathSync(mkdtempSync(join(tmpdir(), 'lo-diff-remote-'))));
+  return cloneOf(remote, {
+    number: APP_PULL.number,
+    head: APP_PULL.head,
+    baseBranch: 'app/base',
+    base: APP_PULL.base,
+  });
+}
+
+/** A clone of rozed-dev/e2e from `from`, in a new cache, with pull request `pull` fetched into it. */
+async function cloneOf(
+  from: string,
+  pull: { number: number; head: string; baseBranch: string; base: string },
+): Promise<Repo> {
   const git = createGit({
-    settings: { program: gitProgram(), test: { remote } },
+    settings: { program: gitProgram(), test: { remote: from } },
     root: join(folder(), 'cache'),
     env: process.env,
     platform: process.platform,
@@ -40,10 +53,10 @@ async function e2eClone(): Promise<Repo> {
   const repo = await cache.open('rozed-dev', 'e2e', {});
   onTestFinished(() => repo.close());
   await repo.fetchPull({
-    number: APP_PULL.number,
-    head: parseOid(APP_PULL.head),
-    baseBranch: 'app/base',
-    base: parseOid(APP_PULL.base),
+    number: pull.number,
+    head: parseOid(pull.head),
+    baseBranch: pull.baseBranch,
+    base: parseOid(pull.base),
   });
   return repo;
 }
@@ -354,6 +367,48 @@ describe('a whole file', { timeout: 60_000 }, () => {
     expect(await diff.whole(APP_PULL.head, 'new', at('README.md'), false)).toEqual({
       kind: 'waiting',
     });
+  });
+
+  it('reads a file the pull request leaves alone by its bytes, however long its path', async () => {
+    const server = new RepoServer();
+    onTestFinished(() => server.remove());
+    const origin = server.repo('rozed-dev', 'e2e');
+    // Paths a disk can't hold, which go straight into the index: over a kilobyte, and 20 KB, in
+    // folders of 100 bytes, so they're no deeper than git allows.
+    const paths = [1_229, 20_480].map((bytes) => {
+      const folders = Math.floor((bytes - 24) / 100);
+      const name = 'a'.repeat(bytes - 4 - folders * 100 - 3);
+      return Buffer.from(`src/${`${'d'.repeat(99)}/`.repeat(folders)}${name}.ts`);
+    });
+    const files = paths.map((path, index): [Buffer, string] => [path, `alone ${index}\n`]);
+    origin.write('README.md', 'base\n');
+    const base = origin.commitWithNames(files, 'base');
+    origin.publish('refs/heads/trunk');
+    origin.write('short.txt', 'short\n');
+    const head = origin.commitWithNames(files, 'short');
+    origin.publish(`refs/pull/${APP_PULL.number}/head`);
+    const repo = await cloneOf(server.baseUrl, {
+      number: APP_PULL.number,
+      head,
+      baseBranch: 'trunk',
+      base,
+    });
+    const { diff, settled } = diffTab({ clone: () => Promise.resolve(repo) });
+    diff.update({
+      ...e2eInfo({ kind: 'ready', head, base, mergeBase: base, offline: false }),
+      shown: head,
+    });
+    await settled((each) => each.from === 'local');
+
+    for (const [index, path] of paths.entries()) {
+      expect(path.length).toBe([1_229, 20_480][index]);
+      // Its key is its digest, which says nothing of where it is: its bytes do.
+      const named = { text: path.toString('utf8'), digest: 'f'.repeat(64) };
+      expect(await diff.whole(head, 'new', named, false)).toEqual({
+        kind: 'text',
+        text: `alone ${index}\n`,
+      });
+    }
   });
 
   it('says a binary file isn’t text', async () => {

@@ -15,7 +15,7 @@ import { openMenu } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { tabState, useLocalCopy, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
-import { followFile, pathOf } from '../../tree/window/shared.ts';
+import { followFile } from '../../tree/window/shared.ts';
 import type { FileVersions, Version } from '../contract.ts';
 import { shownPath } from './files.ts';
 import { usePage } from './page.ts';
@@ -63,14 +63,18 @@ function headerOf(open: Opened): Target {
   return { kind: 'header', file: open.id, side: open.version };
 }
 
-/** Whether focus is nowhere in particular, or on the view itself, so the code can take it. */
+/**
+ * Whether focus is nowhere in particular, on the view itself, or left behind in a middle view now
+ * hidden, so the code can take it.
+ */
 function focusIsFree(own: HTMLElement | null): boolean {
   const focused = document.activeElement;
   return (
     !focused ||
     focused === document.body ||
     focused === own ||
-    focused.hasAttribute('data-lo-middle')
+    focused.hasAttribute('data-lo-middle') ||
+    focused.closest('[inert]') !== null
   );
 }
 
@@ -86,8 +90,11 @@ function KeyFor({ id, className }: { id: string; className?: string }) {
   return keys ? <Key keys={keys} decorative className={className} /> : null;
 }
 
-/** A pull request's tab's whole-file view. */
-export function WholeFile({ tab }: { tab: PullTab }) {
+/**
+ * A pull request's tab's whole-file view. While another middle view is on screen it stays drawn,
+ * hidden, so coming back to it finds the file as it was.
+ */
+export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
   useKeys();
   const open = useTabState(opened, tab.id);
   const read = useTabState(reads, tab.id);
@@ -98,7 +105,7 @@ export function WholeFile({ tab }: { tab: PullTab }) {
   const head = state?.at ?? undefined;
   const copyReady = local?.kind === 'ready' && local.head === head;
   const change = open && changedIn(state?.files, open.key);
-  const path = open && pathIn(change, open.version, () => pathOf(tab.id, open.key));
+  const path = open && pathIn(change, open.version, () => open.path);
   const content = open && head !== undefined && readOf(read, open, head) ? read.content : undefined;
   const lines = content?.kind === 'text' ? content.lines : undefined;
   const tokens = content?.kind === 'text' ? content.tokens : undefined;
@@ -107,8 +114,8 @@ export function WholeFile({ tab }: { tab: PullTab }) {
   const box = useRef<HTMLDivElement>(null);
   const view = useRef<FileView>(undefined);
   // What a new code view is made with, read as it's made.
-  const latest = useRef({ path, tokens });
-  latest.current = { path, tokens };
+  const latest = useRef({ path, tokens, shown });
+  latest.current = { path, tokens, shown };
 
   // The tab's places in the diff and here, for `⌃o` and `⌃i`.
   useEffect(() => placesFor(tab.id), [tab.id]);
@@ -116,25 +123,38 @@ export function WholeFile({ tab }: { tab: PullTab }) {
   // The tree marks the file on screen.
   const key = open?.key;
   useEffect(() => {
-    if (key !== undefined) followFile(tab.id, key);
-  }, [tab.id, key]);
+    if (shown && key !== undefined) followFile(tab.id, key);
+  }, [tab.id, key, shown]);
 
   // Read anew for another file, version or head; again once the local copy has the head, and
   // after a failure when the file is asked for again.
   useEffect(() => {
-    const shown = latest.current.path;
-    if (!open || head === undefined || !shown) return;
+    const filePath = latest.current.path;
+    if (!open || head === undefined || !filePath) return;
     const now = reads.get(tab.id);
     if (readOf(now, open, head)) {
       const again = (now.content.kind === 'waiting' && copyReady) || now.content.kind === 'failed';
       if (!again) return;
     }
     const large = readOf(now, open, head) && now.large;
-    readWhole(tab.id, { ...open, path: shown }, head, large, wholeWork(tab.id));
+    readWhole(tab.id, { ...open, path: filePath }, head, large, wholeWork(tab.id));
   }, [tab.id, open, head, copyReady]);
 
-  // The middle view, for `Esc` and history; what keys act on while there's no code to act on.
+  // What keys act on while there's no code to act on.
   useEffect(() => {
+    const element = scope.current;
+    if (!element) return undefined;
+    return setScopeSource(element, {
+      target: () => {
+        const now = opened.get(tab.id);
+        return now ? headerOf(now) : NO_TARGET;
+      },
+    });
+  }, [tab.id]);
+
+  // While it's on screen, the middle view, for `Esc` and history, and the keys' whole file.
+  useEffect(() => {
+    if (!shown) return undefined;
     const element = scope.current;
     const stops = [
       setMiddle({
@@ -147,28 +167,26 @@ export function WholeFile({ tab }: { tab: PullTab }) {
       }),
       setWholeDrawn(tab.id, () => view.current),
     ];
-    if (element) {
-      stops.push(
-        setScopeSource(element, {
-          target: () => {
-            const now = opened.get(tab.id);
-            return now ? headerOf(now) : NO_TARGET;
-          },
-        }),
-      );
-    }
     return () => {
       for (const stop of stops) stop();
     };
-  }, [tab.id]);
+  }, [tab.id, shown]);
 
   // The code, once its lines are read.
   const id = open?.id;
   const version = open?.version;
   useEffect(() => {
     const parent = box.current;
-    const shown = latest.current.path;
-    if (!parent || !lines || !page || id === undefined || !version || !shown || key === undefined) {
+    const filePath = latest.current.path;
+    if (
+      !parent ||
+      !lines ||
+      !page ||
+      id === undefined ||
+      !version ||
+      !filePath ||
+      key === undefined
+    ) {
       return undefined;
     }
     const keys = registry();
@@ -176,7 +194,7 @@ export function WholeFile({ tab }: { tab: PullTab }) {
       parent,
       {
         id,
-        path: shownPath(shown.text),
+        path: shownPath(filePath.text),
         side: version,
         lines,
         tokens: latest.current.tokens,
@@ -200,7 +218,7 @@ export function WholeFile({ tab }: { tab: PullTab }) {
     if (answered.get(tab.id) === asked && before?.key === key && before.version === version) {
       made.reveal(before.at);
     }
-    if (focusIsFree(scope.current)) made.focus();
+    if (latest.current.shown && focusIsFree(scope.current)) made.focus();
     return () => {
       cursors.set(tab.id, { key, version, at: made.keyState().target });
       stop();
@@ -213,16 +231,19 @@ export function WholeFile({ tab }: { tab: PullTab }) {
     if (tokens) view.current?.setTokens(tokens);
   }, [tokens]);
 
-  // Each ask answered once: its place, and focus when it asks for it or focus is free. Without
-  // code to show, the view's note takes focus in its place, also when it's shown again with nothing
-  // new asked, as after `` ` ``, and focus is free.
+  // Each ask answered once, while the view is on screen: its place, and focus when it asks for it
+  // or focus is free. Without code to show, the view's note takes focus in its place. Shown again
+  // with nothing new asked, as after `` ` ``, it takes focus that's free.
   const settled = content !== undefined && content.kind !== 'reading' && content.kind !== 'waiting';
   useEffect(() => {
+    if (!shown) return;
     const fresh = open !== undefined && answered.get(tab.id) !== open.ask.count;
     const made = view.current;
     if (made) {
-      // Code shown again with nothing new asked took focus as it was made.
-      if (!open || !fresh) return;
+      if (!open || !fresh) {
+        if (focusIsFree(scope.current)) made.focus();
+        return;
+      }
       answered.set(tab.id, open.ask.count);
       if (open.ask.at) made.reveal(open.ask.at);
       if (open.ask.focus || focusIsFree(scope.current)) made.focus();
@@ -230,16 +251,16 @@ export function WholeFile({ tab }: { tab: PullTab }) {
     }
     if ((fresh && open.ask.focus) || focusIsFree(scope.current)) scope.current?.focus();
     if (open && fresh && settled) answered.set(tab.id, open.ask.count);
-  }, [tab.id, open, lines, settled]);
+  }, [tab.id, open, lines, settled, shown]);
 
-  // Readings for the smoke test, in a build run from source.
+  // Readings for the smoke test, in a build run from source, while it's on screen.
   useEffect(() => {
-    if (!page || page.packaged) return undefined;
+    if (!page || page.packaged || !shown) return undefined;
     const testing: NonNullable<Window['loWhole']> = {
       file() {
         const now = opened.get(tab.id);
-        const shown = latest.current.path;
-        return now && shown && { id: now.id, path: shown.text, version: now.version };
+        const filePath = latest.current.path;
+        return now && filePath && { id: now.id, path: filePath.text, version: now.version };
       },
       content: () => reads.get(tab.id)?.content.kind,
       cursor: () => view.current?.keyState().target,
@@ -248,7 +269,7 @@ export function WholeFile({ tab }: { tab: PullTab }) {
     return () => {
       if (window.loWhole === testing) window.loWhole = undefined;
     };
-  }, [tab.id, page]);
+  }, [tab.id, page, shown]);
 
   return (
     <div

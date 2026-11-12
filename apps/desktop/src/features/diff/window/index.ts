@@ -14,7 +14,6 @@ import { changeSetting } from '../../settings/window/shared.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { activeTab, middle, status, type PullTab } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
-import { pathOf } from '../../tree/window/shared.ts';
 import type { FileVersions } from '../contract.ts';
 import keys from '../keys.ts';
 import { layout, whitespace } from '../settings.ts';
@@ -83,7 +82,7 @@ function wholeOnScreen(): WholeOn | undefined {
   if (!open) return undefined;
   const state = loaderOf(tab.id).snapshot().state;
   const change = changedIn(state?.files, open.key);
-  const path = pathIn(change, open.version, () => pathOf(tab.id, open.key));
+  const path = pathIn(change, open.version, () => open.path);
   return { tab, open, change, path, head: state?.at ?? undefined, read: reads.get(tab.id) };
 }
 
@@ -190,9 +189,11 @@ export default {
         const file = target.kind === 'header' ? target.file : target.at.file;
         const key = drawn.loader.ids.keyOf(file);
         if (tab?.kind !== 'pull' || key === undefined) return;
+        const path = pathOfId(drawn, file);
+        if (!path) return;
         const side = target.kind === 'header' ? target.side : target.at.side;
         const at: Target = target.kind === 'header' ? target : { kind: 'line', at: target.at };
-        openWhole(tab.id, { key, version: side, at, focus: true });
+        openWhole(tab.id, { key, path, version: side, at, focus: true });
       }),
       enabled: drawnNow,
     },
@@ -270,13 +271,13 @@ export default {
     defineView(middle, {
       id: DIFF_VIEW,
       order: 20,
-      render: ({ tab }) => createElement(Diff, { tab }),
+      render: ({ tab, shown }) => createElement(Diff, { tab, shown }),
     }),
     // After the diff, among the middle views `` ` `` steps through.
     defineView(middle, {
       id: WHOLE_VIEW,
       order: 25,
-      render: ({ tab }) => createElement(WholeFile, { tab }),
+      render: ({ tab, shown }) => createElement(WholeFile, { tab, shown }),
     }),
     defineView(status, {
       id: 'diff.status',

@@ -218,10 +218,11 @@ test('gives a file a right-click menu: the whole file, its path and the file on 
   // "Whole file" opens it in the middle, in place of the diff.
   await row(page, 'src/format.ts').click({ button: 'right' });
   await page.getByRole('menuitem', { name: /^Whole file/ }).click();
+  await expect(page.locator('[data-lo-whole] .lo-fileview')).toBeVisible();
   await expect(page.locator('[data-lo-whole] .lo-fileview')).toContainText(
     'export function format(lines',
   );
-  await expect(page.locator('.lo-diffview')).toHaveCount(0);
+  await expect(page.locator('.lo-diffview')).toBeHidden();
   // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
   test.skip(process.platform === 'darwin', "The Mac's clipboard is its user's.");
   await row(page, 'src/parser.ts').click({ button: 'right' });

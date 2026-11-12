@@ -53,9 +53,12 @@ export const left = defineSlot<{ tab: PullTab }>('tab.left');
 
 /**
  * The middle of a pull request's tab: its overview, its diff or its timeline. Each view here is
- * one of the middle views, in order; `` ` `` and `~` go from one to the next.
+ * one of the middle views, in order; `` ` `` and `~` go from one to the next. One is on screen at a
+ * time, and `shown` says which: a view the tab has shown stays drawn, hidden, while another is on
+ * screen, so coming back to it is instant and finds it as it was. A hidden view keeps its keys,
+ * its focus and its place in the window's history to itself until it's shown again.
  */
-export const middle = defineSlot<{ tab: PullTab }>('tab.middle');
+export const middle = defineSlot<{ tab: PullTab; shown: boolean }>('tab.middle');
 
 /**
  * Shows the middle view `id`, one of those in {@link middle}, in pull request's tab `tab`, as

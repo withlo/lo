@@ -34,12 +34,20 @@ export interface Opened {
   readonly key: string;
   /** Its id in the tab's views: the diff's for it, if the pull request changes it. */
   readonly id: string;
+  /**
+   * Its whole path, as main sent it with its key, which a key made of a long path's digest doesn't
+   * hold: a changed file's in the head, or for one the pull request deletes, in the base.
+   */
+  readonly path: TreePath;
   readonly version: Version;
   readonly ask: Ask;
 }
 
 /** The file each tab has open whole, if any. */
 export const opened = tabState<Opened | undefined>(() => undefined);
+
+/** The paths of the files each tab has opened whole, by key, to open them again by key alone. */
+export const known = tabState<ReadonlyMap<string, TreePath>>(() => new Map());
 
 /** What a whole file shows: its lines, or a note in their place, or that it's being read. */
 export type Content =
