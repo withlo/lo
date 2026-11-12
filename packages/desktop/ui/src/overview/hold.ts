@@ -5,6 +5,12 @@
 // face loads, the scroll takes the change: that place is the first of the article's blocks that
 // starts on screen. The window's own scroll anchoring is off, so the change is taken once.
 //
+// Until the reader first scrolls, or jumps somewhere in it, the place they read from is the
+// document's top, banners included: nothing scrolls it out of sight. A box moving down takes the
+// document with it, but for room above the article it can take back; a box moving up leaves it
+// where it is, by room above it; and what comes in at the top, such as a banner, pushes the rest
+// down. Holding a place in the document starts with that first scroll or jump.
+//
 // Only the scroll the reader, or the document, asks for moves what's on screen. A scroll seen as
 // something changes size is the reader's only when it follows their input, as a wheel, a key or a
 // drag of the scroll bar; otherwise it's the browser's, as when it pulls the scroll back to an end
@@ -40,6 +46,11 @@ const ROUNDING = 1;
 export function holdPlace(scroller: HTMLElement): () => void {
   let slack = 0;
   let room = 0;
+  /**
+   * Whether the reader has scrolled or jumped since it was first drawn. Until then nothing here
+   * scrolls, so any scroll is theirs or the document's.
+   */
+  let started = scroller.scrollTop !== 0;
   /** The scroll `placed` counts, to take only what the scroll moved since. */
   let scrolled = scroller.scrollTop;
   /** The box's height when its place was last kept, to tell a box that grew. */
@@ -115,17 +126,20 @@ export function holdPlace(scroller: HTMLElement): () => void {
     return true;
   };
 
-  /** The box moved or changed size: the content goes back where it was on the page. */
+  /**
+   * The box moved or changed size: the content goes back where it was on the page, but for the
+   * document's top, which stays in sight until the reader moves from it.
+   */
   const keep = () => {
     height = scroller.clientHeight;
-    const moved = contentTop() - placed;
-    if (Math.abs(moved) < 0.5) return;
-    if (moved > 0) {
-      const taken = Math.min(slack, moved);
+    const by = contentTop() - placed;
+    if (Math.abs(by) < 0.5) return;
+    if (by > 0) {
+      const taken = Math.min(slack, by);
       setSlack(slack - taken);
-      scroller.scrollTop += moved - taken;
+      if (started) scroller.scrollTop += by - taken;
     } else {
-      const up = -moved;
+      const up = -by;
       const above = scroller.scrollTop;
       scroller.scrollTop -= Math.min(up, above);
       if (up > above) setSlack(slack + up - above);
@@ -140,7 +154,7 @@ export function holdPlace(scroller: HTMLElement): () => void {
   /** What's above the block being read changed size: the scroll takes the change. */
   const follow = () => {
     const block = reading?.block;
-    if (!reading || !block?.isConnected) return;
+    if (!started || !reading || !block?.isConnected) return;
     const moved = block.getBoundingClientRect().top - reading.top;
     if (Math.abs(moved) < 0.5) return;
     const to = scroller.scrollTop + moved;
@@ -157,6 +171,7 @@ export function holdPlace(scroller: HTMLElement): () => void {
     // A scroll whose event hasn't come yet is the reader's when it follows their input, and the
     // block being read is taken again after it; else it's the browser's, and doesn't count.
     const unheard = chosen();
+    started ||= unheard;
     keep();
     const ours = !unheard || !theirs();
     if (ours) follow();
@@ -166,7 +181,7 @@ export function holdPlace(scroller: HTMLElement): () => void {
 
   /** A block is about to get shorter: room at the end, so the scroll isn't pulled back. */
   const resizing = (by: number) => {
-    if (by >= 0) return;
+    if (!started || by >= 0) return;
     const end = scroller.scrollHeight - scroller.clientHeight;
     const short = scroller.scrollTop - (end + by) + ROUNDING;
     if (short > 0) setRoom(room + short);
@@ -176,6 +191,7 @@ export function holdPlace(scroller: HTMLElement): () => void {
   // be where it was.
   const onScroll = () => {
     const moved = chosen();
+    started ||= moved;
     trim();
     read(!moved);
   };

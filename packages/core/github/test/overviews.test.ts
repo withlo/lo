@@ -127,8 +127,14 @@ describe('the commit', () => {
     });
   });
 
-  test('lists its files with their sizes, and its folders', async () => {
-    const tree = await repoTree(signedIn(replayFetch('rest_overview_e2e')), E2E, E2E_OVERVIEW.tree);
+  test('lists its files with their sizes, and its folders, by its own ID', async () => {
+    const tree = await repoTree(
+      signedIn(replayFetch('rest_overview_e2e')),
+      E2E,
+      E2E_OVERVIEW.commit,
+    );
+    // GitHub names the tree by what was asked for: the commit.
+    expect(tree.sha).toBe(E2E_OVERVIEW.commit);
     expect(tree.truncated).toBe(false);
     expect(tree.items.map(({ path, type, size }) => ({ path, type, size }))).toEqual([
       { path: 'artifact.md', type: 'blob', size: 2016 },

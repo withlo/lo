@@ -1,11 +1,13 @@
 // A pull request's tab's overview, checked, in the window. As main says which overview the tab
 // shows, `artifact.md` is read in the background process, main is asked for the figures and the
-// code it names, and the overview is checked there against what main read. Until the local copy is
-// there, it's checked with no code, so each target is unread, and again once it is; without git,
-// its code stays unread. Code once read stays read: a later read that reads less, or none, leaves
-// it. What's published changes only when the check's result could: a result with the same key as
-// the one before is the same, and isn't published again, so a view keeping what it drew by the
-// parse's objects keeps them.
+// code it names, and the overview is checked there against what main read. What the text alone
+// says is checked and published first, since whether the overview shows depends on nothing else
+// and the tab's opening waits for it: until main answers for its figures they're coming, and until
+// it reads the code, the code waits. Until the local copy is there, it's checked with no code, so
+// each target is unread, and again once it is; without git, its code stays unread. Code once read
+// stays read: a later read that reads less, or none, leaves it. What's published changes only when
+// the check's result could: a result with the same key as the one before is the same, and isn't
+// published again, so a view keeping what it drew by the parse's objects keeps them.
 //
 // The check is sent only what it reads: of each figure, its start, all of an SVG it reads whole,
 // and all of an image whose header goes on past its start once a check has said so. What's kept
@@ -36,8 +38,9 @@ export type CodeSeen =
 
 /**
  * The code an overview names, as far as it's read: it names none, or has no header to read it at;
- * it's waiting for the local copy; there's no git; the copy, or main's reading, failed, and why; or
- * main read it, at the header's commit, each file the parse names with main's answer.
+ * it's waiting for the local copy, or for main to read it from there; there's no git; the copy, or
+ * main's reading, failed, and why; or main read it, at the header's commit, each file the parse
+ * names with main's answer.
  */
 export type CodeRead =
   | { kind: 'none' }
@@ -56,7 +59,8 @@ export type CodeRead =
  * - `checked`: what checking found. A shown overview's code follows `parsed.references`, and its
  *   figures `parsed.figures`, one for one;
  * - `figures`: what main read of each figure, by its path: all of one the check kept, to draw it,
- *   and of the rest what the check read;
+ *   and of the rest what the check read; or none yet, while they're coming, which leaves each
+ *   unread;
  * - `code`: what main read of the code.
  *
  * Or `failed`: it couldn't be read or checked just now, and why. It's tried again when main next
@@ -69,7 +73,7 @@ export type CheckedOverview =
       commit: OverviewCommit;
       parsed: ParsedArtifact | undefined;
       checked: CheckedArtifact;
-      figures: ReadonlyMap<string, OverviewFile>;
+      figures: ReadonlyMap<string, OverviewFile> | undefined;
       code: CodeRead;
     }
   | { kind: 'failed'; key: string; commit: OverviewCommit; why: string };
@@ -89,10 +93,14 @@ export interface CheckingParts {
   log(message: string, error: unknown): void;
 }
 
-/** What was read of the overview's commit, kept to check it again with its code. */
-interface Read {
+/** `artifact.md`, as main read it, and read. */
+interface Text {
   artifact: Uint8Array | null;
   parse: Parsed | undefined;
+}
+
+/** What was read of the overview's commit, kept to check it again with its code. */
+interface Read extends Text {
   /**
    * Each figure: as main answered it, kept to draw it or to send the check more of it; and what's
    * sent to the check.
@@ -122,6 +130,8 @@ export class Checking {
   #code: CodeRead | undefined;
   /** The key of what was last published for the commit, if anything was. */
   #published: string | undefined;
+  /** Whether a check of the commit has been published, by its text alone or with the rest. */
+  #told = false;
   /** Whether the last check failed, so the next word from main tries again. */
   #failed = false;
   #running: AbortController | undefined;
@@ -174,6 +184,7 @@ export class Checking {
     this.#read = undefined;
     this.#code = undefined;
     this.#failed = false;
+    this.#told = false;
   }
 
   /**
@@ -213,9 +224,19 @@ export class Checking {
   }
 
   async #check(commit: OverviewCommit, signal: AbortSignal): Promise<void> {
-    const read = this.#read ?? (await this.#readCommit(commit, signal));
-    if (signal.aborted) return;
-    this.#read = read;
+    let read = this.#read;
+    if (!read) {
+      const text = await this.#readText(commit, signal);
+      if (signal.aborted) return;
+      // What the text alone says, first, while the figures and the code are to come.
+      if (!this.#told && this.#comes(text)) {
+        await this.#checkText(commit, text, signal);
+        if (signal.aborted) return;
+      }
+      read = await this.#readFigures(commit, text, signal);
+      if (signal.aborted) return;
+      this.#read = read;
+    }
     const fresh = await this.#readCode(read.parse, signal);
     // What was checked last stands.
     if (signal.aborted || fresh === undefined) return;
@@ -246,6 +267,7 @@ export class Checking {
     }
     this.#settle(read, checked);
     this.#published = key;
+    this.#told = true;
     this.#code = fresh.code;
     this.#parts.publish({
       kind: 'checked',
@@ -293,21 +315,80 @@ export class Checking {
     for (const figure of read.figures) if (!kept.has(figure.path)) figure.file = figure.sent;
   }
 
-  /** `artifact.md`, read, and the figures it shows, as main has them. */
-  async #readCommit(commit: OverviewCommit, signal: AbortSignal): Promise<Read> {
+  /** `artifact.md`, as main has it, read. */
+  async #readText(commit: OverviewCommit, signal: AbortSignal): Promise<Text> {
     // Main reads no file of a commit its listing says is too large, or that holds no artifact.md.
-    if (!commit.read) {
-      return { artifact: null, parse: undefined, figures: [], key: '', settled: true };
-    }
+    if (!commit.read) return { artifact: null, parse: undefined };
     const [text] = await this.#parts.files({ id: this.#id, commit: commit.id, paths: [ARTIFACT] });
     if (text?.kind === 'unread') throw new Error(`Lo couldn't read artifact.md: ${text.why}`);
     // The listing says what else it is, which the check reports.
-    if (text?.kind !== 'file' || text.bytes === null) {
-      return { artifact: null, parse: undefined, figures: [], key: '', settled: true };
-    }
+    if (text?.kind !== 'file' || text.bytes === null) return { artifact: null, parse: undefined };
     const artifact = text.bytes;
-    const parse = await this.#parts.parse({ artifact }, signal);
-    if (signal.aborted || parse.figures.length === 0) {
+    return { artifact, parse: await this.#parts.parse({ artifact }, signal) };
+  }
+
+  /**
+   * Whether checking `text` with what it names would wait for more than it: figures to read, or
+   * code main reads now, from the local copy.
+   */
+  #comes(text: Text): boolean {
+    const { parse } = text;
+    if (!parse) return false;
+    if (parse.figures.length > 0) return true;
+    const readable = this.#access === 'ready' || this.#access === 'offline';
+    return readable && parse.parsed.header !== undefined && parse.code.length > 0;
+  }
+
+  /**
+   * Checks and publishes `text` alone: each figure coming, unread, and the code waiting, unless
+   * it's known not to come.
+   */
+  async #checkText(commit: OverviewCommit, text: Text, signal: AbortSignal): Promise<void> {
+    const code = this.#codeBefore(text.parse);
+    const checked = await this.#parts.check(
+      { artifact: text.artifact, entries: commit.entries, pr: this.#pr, figures: [], code: null },
+      signal,
+    );
+    if (signal.aborted) return;
+    const key = keyOf(commit, 'coming', code);
+    this.#published = key;
+    this.#told = true;
+    this.#code = code;
+    this.#parts.publish({
+      kind: 'checked',
+      key,
+      commit,
+      parsed: text.parse?.parsed,
+      checked,
+      figures: undefined,
+      code,
+    });
+  }
+
+  /** The code `parse` names, before main reads it: none, or as far as the local copy allows. */
+  #codeBefore(parse: Parsed | undefined): CodeRead {
+    if (!parse || parse.parsed.header === undefined || parse.code.length === 0) {
+      return { kind: 'none' };
+    }
+    switch (this.#access) {
+      case 'waiting':
+      case 'ready':
+      case 'offline':
+        return { kind: 'waiting' };
+      case 'noGit':
+        return { kind: 'noGit' };
+      case 'failed':
+        return { kind: 'failed', why: "The pull request's local copy couldn't be fetched." };
+      default:
+        this.#access satisfies never;
+        return { kind: 'waiting' };
+    }
+  }
+
+  /** The figures `text` shows, as main has them, with `text`. */
+  async #readFigures(commit: OverviewCommit, text: Text, signal: AbortSignal): Promise<Read> {
+    const { artifact, parse } = text;
+    if (signal.aborted || !parse || parse.figures.length === 0) {
       return { artifact, parse, figures: [], key: '', settled: true };
     }
     const answers = await this.#parts.files({

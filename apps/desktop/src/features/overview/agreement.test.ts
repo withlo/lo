@@ -6,7 +6,8 @@
 // commit as GitHub does, gives its files as `files` does and reads its code from a local copy
 // fetching from a server standing in for GitHub; the window reads and checks it through the
 // overview's two jobs, run as the background process runs them. So Lo, the checker and the app
-// can't disagree.
+// can't disagree. What the window first finds from the text alone, before the figures and code are
+// read, is the same outcome as the whole check's: whether an overview shows depends on its text.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -88,14 +89,16 @@ function commitOf(entries: OverviewCommit['entries'], read: boolean): OverviewCo
 
 /**
  * The overview `commit`, on pull request `pr`'s ref, checked as the window checks it: its files
- * from `file`, as main gives them, and its code from the local copy.
+ * from `file`, as main gives them, and its code from the local copy. With what it published first,
+ * from the text alone while the rest was to come, if it did.
  */
-function checkInApp(
+async function checkInApp(
   commit: OverviewCommit,
   pr: number,
   file: (path: string) => OverviewFile,
-): Promise<CheckedOverview | undefined> {
-  return new Promise((resolve) => {
+): Promise<{ first: CheckedOverview | undefined; last: CheckedOverview | undefined }> {
+  const published: (CheckedOverview | undefined)[] = [];
+  const last = await new Promise<CheckedOverview | undefined>((resolve) => {
     const checking = new Checking('t1', {
       files: async ({ paths }) => paths.map(file),
       code: ({ commit: at, files }) =>
@@ -107,7 +110,11 @@ function checkInApp(
         ),
       parse: (input) => localJobs.parse(input),
       check: (input) => localJobs.check(input),
-      publish: resolve,
+      publish: (value) => {
+        published.push(value);
+        // The whole check has the figures main answered.
+        if (value?.kind !== 'checked' || value.figures !== undefined) resolve(value);
+      },
       log: () => {},
     });
     const state: OverviewState = {
@@ -123,6 +130,7 @@ function checkInApp(
     };
     checking.take(state);
   });
+  return { first: published[0], last };
 }
 
 describe.each(fixtures)('$group/$name', ({ dir }) => {
@@ -163,7 +171,9 @@ describe.each(fixtures)('$group/$name', ({ dir }) => {
       }
       return mainFile(entries, path);
     };
-    const shown = await checkInApp(commit, pr, given);
+    const { first, last: shown } = await checkInApp(commit, pr, given);
+    // The text alone tells whether it shows, before any figure or code comes.
+    expect(outcomeOf(first)).toBe(outcomeOf(shown));
     // Where main has the listing, but can't read artifact.md, the window tries again later rather
     // than show it, and a check of what main has finds what the fixtures' readers do.
     expect(shown?.kind === 'checked' || given('artifact.md').kind === 'unread').toBe(true);
@@ -181,6 +191,11 @@ describe.each(fixtures)('$group/$name', ({ dir }) => {
     expect(expectedOf(checked)).toEqual(expected);
   });
 });
+
+/** What a check in the app found the overview to be, or that it couldn't check it. */
+function outcomeOf(value: CheckedOverview | undefined): string | undefined {
+  return value?.kind === 'checked' ? value.checked.outcome.kind : value?.kind;
+}
 
 /** Text of `size` bytes, lines of `x`. */
 function textOf(size: number): Uint8Array {
@@ -387,7 +402,9 @@ describe('an overview whose figures’ headers go on past their starts', () => {
           sent.push(input.figures);
           return localJobs.check(input);
         },
-        publish: resolve,
+        publish: (value) => {
+          if (value?.kind !== 'checked' || value.figures !== undefined) resolve(value);
+        },
         log: () => {},
       });
       checking.take({
@@ -404,13 +421,16 @@ describe('an overview whose figures’ headers go on past their starts', () => {
     });
     if (shown?.kind !== 'checked') throw new Error('The overview wasn’t checked');
     expect(shown.checked).toEqual(reference);
-    // Each figure's start, then all of the one whose header goes on past it.
+    // The text alone, then each figure's start, then all of the one whose header goes on past it.
     expect(sent.map(sizes)).toEqual([
+      [],
       [FIGURE_HEAD, FIGURE_HEAD, FIGURE_HEAD],
       [FIGURE_HEAD, figures.get('figures/far.jpg')?.length, FIGURE_HEAD],
     ]);
     // What's kept is what's drawn: all of each figure kept, and the start of the rest.
-    expect([...shown.figures].map(([path, file]) => [path, sizes([{ path, file }])[0]])).toEqual([
+    expect(
+      [...(shown.figures ?? [])].map(([path, file]) => [path, sizes([{ path, file }])[0]]),
+    ).toEqual([
       ['figures/near.jpg', figures.get('figures/near.jpg')?.length],
       ['figures/far.jpg', figures.get('figures/far.jpg')?.length],
       ['figures/wrong.png', FIGURE_HEAD],

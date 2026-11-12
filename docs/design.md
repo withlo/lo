@@ -190,9 +190,10 @@ and the whole-file view.
   (`refs/pull/<n>/head`, including PRs from forks) and base branches as it needs them. It keeps
   every revision it has fetched under its own refs, so force-pushed commits survive.
 - **Overviews don't come through it.** Lo reads each PR's artifact ref (`refs/lo/pr/<n>`) through
-  GitHub's REST API, with or without git: it watches the ref with ETags, then reads its commit, the
-  commit's tree and the artifact's files by their IDs, and keeps them so an overview shows at once,
-  offline too. The code an overview shows comes from the local copy.
+  GitHub's REST API, with or without git: it watches the ref with ETags, then reads the tree of the
+  commit it holds, by the commit's ID, the artifact's files by their IDs, and the commit, for who
+  wrote it, and keeps them so an overview shows at once, offline too. As a tab opens, these reads go
+  ahead of polls. The code an overview shows comes from the local copy.
 - **Sign-in.** Git signs in with the account's token, and your git config is never touched.
 - **Checkouts.** Trusted repos get a checkout at the PR head for language servers. The old side is
   read straight from git.

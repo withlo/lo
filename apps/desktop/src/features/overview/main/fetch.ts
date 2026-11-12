@@ -1,7 +1,9 @@
-// Reading an overview's commit from GitHub's REST API: the commit, for its tree and byline; the
-// tree, every entry with its kind and size, so the overview's limits are checked before any of its
-// files comes; then `artifact.md`, unless the listing says it's too large or holds none. Files come
-// raw, by their IDs, and are kept only once they hash to them. Nothing here calls Electron.
+// Reading an overview's commit from GitHub's REST API: the commit's tree, read by the commit's ID,
+// every entry with its kind and size, so the overview's limits are checked before any of its files
+// comes; then `artifact.md`, unless the listing says it's too large or holds none; and last the
+// commit itself, for its byline, which nothing the overview shows waits for. Everything is read by
+// the one commit's ID, or by IDs its tree gives, so no two pushes mix. Files come raw, by their IDs,
+// and are kept only once they hash to them. Nothing here calls Electron.
 
 import { checkArtifact, SIZE_ONLY, type FileAnswer } from '@lo/artifact';
 import {
@@ -14,11 +16,20 @@ import {
 } from '@lo/github';
 
 import type { Acting } from '../../tab/contract.ts';
-import { authorLogin, NAME_LIMIT, type Entry, type OverviewCommit } from '../contract.ts';
+import {
+  authorLogin,
+  NAME_LIMIT,
+  type Byline,
+  type Entry,
+  type OverviewCommit,
+} from '../contract.ts';
 import { entryAt, listedEntries, treeEntries } from './listing.ts';
 import type { Blobs } from './blobs.ts';
 
-/** Runs `request` with the tab's GitHub client, in its turn in the account's queue. */
+/**
+ * Runs `request` with the tab's GitHub client, in its turn in the account's queue, or in a turn
+ * already held.
+ */
 export type Github = <T>(request: (client: GithubClient) => Promise<T>) => Promise<T>;
 
 /** A file GitHub sent that isn't the one its ID names, or a listing that isn't GitHub's. */
@@ -55,9 +66,10 @@ export async function readsText(entries: readonly Entry[], truncated: boolean): 
 }
 
 /**
- * Reads overview commit `sha` from `repository`, which is `source`, with `github`, as `acting`:
- * its byline and listing, and `artifact.md` into `blobs`, unless the listing says not to read it.
- * Throws what GitHub answered, or {@link Unexpected}.
+ * Reads overview commit `sha` from `repository`, which is `source`, with `github`, as `acting`: its
+ * listing, by the commit's ID, and `artifact.md` into `blobs`, unless the listing says not to read
+ * it. Its byline is `null`, for {@link readByline} to read next. Throws what GitHub answered, or
+ * {@link Unexpected}.
  */
 export async function readOverview(
   github: Github,
@@ -67,9 +79,9 @@ export async function readOverview(
   sha: string,
   source: OverviewCommit['source'],
 ): Promise<OverviewCommit> {
-  const summary = await github((client) => commitSummary(client, repository, sha));
-  if (summary.sha !== sha) throw new Unexpected(`GitHub answered for commit ${summary.sha}.`);
-  const tree = await github((client) => repoTree(client, repository, summary.tree));
+  // A commit's ID names its tree as well as the tree's own does, which saves reading the commit
+  // before the overview's text.
+  const tree = await github((client) => repoTree(client, repository, sha));
   const entries = listedEntries(tree.items);
   if (!entries)
     throw new Unexpected("GitHub's listing of the overview named an object no ID names.");
@@ -80,19 +92,34 @@ export async function readOverview(
       throw new Unexpected('No artifact.md to read.');
     await fetchBlob(github, acting, blobs, repository, text.id);
   }
-  const login = summary.login !== undefined && authorLogin.safeParse(summary.login).success;
   return {
     id: sha,
     source,
     repository: { owner: repository.owner, name: repository.name },
-    byline: {
-      login: login ? (summary.login ?? null) : null,
-      name: clip(summary.name, NAME_LIMIT),
-      at: Math.max(0, Math.round(summary.committedAt)),
-    },
+    byline: null,
     entries,
     truncated: tree.truncated,
     read,
+  };
+}
+
+/**
+ * Who wrote overview commit `sha` in `repository`, and when, read with `github`: the author as
+ * GitHub maps them, else the name git records, and the commit's time. Throws what GitHub answered,
+ * or {@link Unexpected}.
+ */
+export async function readByline(
+  github: Github,
+  repository: RepoRef,
+  sha: string,
+): Promise<Byline> {
+  const summary = await github((client) => commitSummary(client, repository, sha));
+  if (summary.sha !== sha) throw new Unexpected(`GitHub answered for commit ${summary.sha}.`);
+  const login = summary.login !== undefined && authorLogin.safeParse(summary.login).success;
+  return {
+    login: login ? (summary.login ?? null) : null,
+    name: clip(summary.name, NAME_LIMIT),
+    at: Math.max(0, Math.round(summary.committedAt)),
   };
 }
 

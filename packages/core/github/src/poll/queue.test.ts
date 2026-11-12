@@ -127,6 +127,53 @@ test('waiting requests run in order writes first', async () => {
   ]);
 });
 
+test('foreground reads go ahead of waiting background reads, behind writes', async () => {
+  const queue = new RequestQueue(0);
+  const log: Log = [];
+  const start = performance.now();
+  for (const [name, kind] of [
+    ['poll a', 'background'],
+    ['poll b', 'background'],
+    ['open c', 'foreground'],
+    ['write d', 'write'],
+    ['poll e', 'background'],
+    ['open f', 'foreground'],
+  ] as const) {
+    const made = request(name, 100, log, start);
+    void (kind === 'write' ? queue.write(made) : queue.read(made, undefined, kind));
+    await settle();
+  }
+  await advanceTo(start, 1000);
+  // The poll under way finishes first: nothing cuts a request short.
+  expect(log.map(([name]) => name)).toEqual([
+    'poll a',
+    'write d',
+    'open c',
+    'open f',
+    'poll b',
+    'poll e',
+  ]);
+});
+
+test('a foreground read given up on while waiting leaves the queue', async () => {
+  const queue = new RequestQueue(0);
+  const log: Log = [];
+  const start = performance.now();
+  void queue.read(request('poll a', 100, log, start));
+  await settle();
+  const giveUp = new AbortController();
+  const refused = queue.read(request('open b', 100, log, start), giveUp.signal, 'foreground').then(
+    () => 'made',
+    () => 'refused',
+  );
+  void queue.read(request('poll c', 100, log, start));
+  await settle();
+  giveUp.abort();
+  await advanceTo(start, 500);
+  expect(await refused).toBe('refused');
+  expect(log.map(([name]) => name)).toEqual(['poll a', 'poll c']);
+});
+
 test('a request given up on while waiting doesnt hold up the rest', async () => {
   const queue = new RequestQueue(0);
   const log: Log = [];

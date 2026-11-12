@@ -1,9 +1,10 @@
 // An overview Lo shows: the document, with who wrote it and for which revision above it, each
 // figure as the check left it, and each code block and walkthrough filled in from the local copy
-// (`Code.tsx`). It's first seen once the code blocks near the screen have drawn, with the local
-// copy if it's coming, within the bound for each (`drawing.ts`). Every block is keyed by the parsed
-// tree's own objects, which stay the same for as long as the overview's commit is on screen, so
-// nothing is drawn again from scratch under the reader.
+// (`Code.tsx`). It's first seen once the code blocks and figures near the screen have drawn, with
+// the local copy if it's coming, within the bound for each (`drawing.ts`); a figure still being
+// read then says so, and fills in keeping what's on screen where it is, as code does (`Held`).
+// Every block is keyed by the parsed tree's own objects, which stay the same for as long as the
+// overview's commit is on screen, so nothing is drawn again from scratch under the reader.
 
 import type {
   CheckedCode,
@@ -19,14 +20,24 @@ import { Button } from '@lo/ui';
 import { Figure, type PartLink } from '@lo/ui/figures';
 import { MarkdownBlocks, secureLink, useRendering } from '@lo/ui/markdown';
 import {
+  Held,
   OverviewDocument,
   blockHints,
   lineRange,
+  useNearness,
   type BlockHint,
   type OverviewTarget,
   type OverviewViews,
 } from '@lo/ui/overview';
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from 'react';
 
 import { followLink } from '../../open/window/shared.ts';
 import { HOLD_LIMIT } from '../../revisions/contract.ts';
@@ -35,7 +46,7 @@ import type { OverviewCommit, OverviewFile } from '../contract.ts';
 import { targetsOf } from './targets.ts';
 import { codeAt } from './blocks.ts';
 import { ExcerptBlock, WalkthroughBlock, type CodeContext } from './Code.tsx';
-import { drawing as firstDraw, FirstDrawContext } from './drawing.ts';
+import { drawing as firstDraw, FirstDrawContext, useFirstDraw } from './drawing.ts';
 import { revisionAt, type Standing } from './facts.ts';
 import { drawnIn, followCode, loadNewer, recordFrom } from './follow.ts';
 import { useNow } from './hooks.ts';
@@ -118,7 +129,12 @@ function partLabel(target: FigurePart['target']): string {
   }
 }
 
-/** One figure, as its check left it, with an image's bytes as main read them. */
+/**
+ * One figure, as its check left it, with an image's bytes as main read them, or none yet while
+ * they're coming (`files`). Near the screen as the overview is first laid out, one still coming
+ * holds the first frame back, within the bound; then it fills in as it comes, held where it would
+ * move what's on screen.
+ */
 function ShownFigure({
   node,
   at,
@@ -128,12 +144,29 @@ function ShownFigure({
   node: FigureNode;
   at: number | undefined;
   checked: readonly CheckedFigure[];
-  files: ReadonlyMap<string, OverviewFile>;
+  files: ReadonlyMap<string, OverviewFile> | undefined;
 }) {
   const found = at === undefined ? undefined : checked[at];
   // A figure the check didn't read for this block is left out, as one it couldn't read.
   const figure = found?.reference.path === node.path ? found.figure : UNREAD;
-  const file = files.get(node.path);
+  const coming = files === undefined;
+  const file = files?.get(node.path);
+  const box = useRef<HTMLDivElement>(null);
+  const nearness = useNearness(box);
+  const first = useFirstDraw();
+  const drawn = useRef<(() => void) | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (!coming) return undefined;
+    const done = first?.begin();
+    drawn.current = done;
+    return () => {
+      drawn.current = undefined;
+      done?.();
+    };
+  }, [first, coming]);
+  useEffect(() => {
+    if (nearness === 'far') drawn.current?.();
+  }, [nearness]);
   const bytes = file?.kind === 'file' && file.bytes ? ownBytes(file.bytes) : undefined;
   const parts = useMemo<PartLink[]>(
     () => node.parts.map((part) => ({ id: part.id, label: partLabel(part.target) })),
@@ -150,15 +183,20 @@ function ShownFigure({
     [node.parts, rendering],
   );
   return (
-    <Figure
-      path={node.path}
-      figure={figure}
-      bytes={figure.state === 'kept' && figure.type !== 'svg' ? bytes : undefined}
-      number={(at ?? 0) + 1}
-      caption={<MarkdownBlocks<Overview> blocks={node.caption} />}
-      parts={parts}
-      onFollow={follow}
-    />
+    <Held>
+      <div ref={box}>
+        <Figure
+          path={node.path}
+          figure={figure}
+          reading={coming}
+          bytes={figure.state === 'kept' && figure.type !== 'svg' ? bytes : undefined}
+          number={(at ?? 0) + 1}
+          caption={<MarkdownBlocks<Overview> blocks={node.caption} />}
+          parts={parts}
+          onFollow={follow}
+        />
+      </div>
+    </Held>
   );
 }
 
@@ -178,7 +216,8 @@ function besideHints(block: Parameters<typeof blockHints>[0]): readonly BlockHin
 
 /**
  * Who wrote the overview and when, which revision it describes, and a newer one, when pushed: as
- * tall with the offer as without it, at any width, so nothing under it moves as the offer comes.
+ * tall with the offer as without it, at any width, so nothing under it moves as the offer comes,
+ * nor as who wrote it does, which main reads after the rest.
  * Where the article is too narrow for the offer beside the rest, the offer has a line of its own,
  * kept free for it, and narrower still, so has what it describes. Who wrote it gives up its room
  * first, clipped, then the offer's words and what it describes; the way to load it never does.
@@ -196,18 +235,26 @@ function Byline({
   const known = useTabState(revisions, tab.id);
   // The time it was written ages as the overview stays on screen.
   const now = useNow(true, 60_000);
-  const author = authorOf(commit.byline);
+  const { byline } = commit;
+  const author = byline && authorOf(byline);
   const revision = revisionAt(known, described)?.number;
   return (
     <div className="lo-ov-bylines" data-lo-byline>
       <div className="lo-ov-byline">
-        <AuthorPicture author={author} />
-        <span className="lo-ov-byline__who">
-          <WhoWrote author={author} when={ago(commit.byline.at, now)} />
-        </span>
-        <span className="lo-ov-byline__dot" aria-hidden="true">
-          ·
-        </span>
+        {author && byline ? (
+          <>
+            <AuthorPicture author={author} />
+            <span className="lo-ov-byline__who">
+              <WhoWrote author={author} when={ago(byline.at, now)} />
+            </span>
+            <span className="lo-ov-byline__dot" aria-hidden="true">
+              ·
+            </span>
+          </>
+        ) : (
+          // The picture's room, kept for it.
+          <span className="size-20" aria-hidden="true" />
+        )}
         <span className="lo-ov-byline__said">
           describes {revision !== undefined && <strong>r{revision}</strong>}{' '}
           <span className="lo-commit" title={described}>

@@ -5,7 +5,8 @@
  * - `rest_overview_refs_e2e`: the refs that start #80's overview's ref, then again with the ETag
  *   GitHub gave, which it answers with a `304`; the same for #8, whose prefix only #80's ref starts,
  *   and #9, which nothing starts.
- * - `rest_overview_e2e`: #80's overview's commit, its tree, and its two files, raw.
+ * - `rest_overview_e2e`: #80's overview, as Lo reads it: the commit's tree, by the commit's ID, its
+ *   `artifact.md`, raw, the commit, and its figure, raw.
  */
 
 import type { Scenario } from '@lo/testing';
@@ -46,13 +47,13 @@ export const scenarios: Scenario[] = [
   {
     name: 'rest_overview_e2e',
     description:
-      "rozed-dev/e2e#80's overview (testing/fixtures/app.sh): its commit, its tree, and its artifact.md and figure, raw, as rozed-bot",
+      "rozed-dev/e2e#80's overview (testing/fixtures/app.sh), as Lo reads it: its commit's tree, by the commit's ID, its artifact.md, raw, the commit, and its figure, raw, as rozed-bot",
     repo: 'rozed-dev/e2e',
     async run(fetch, token) {
       const client = new GithubClient({ fetch, token: new Token(token) });
-      const commit = await commitSummary(client, E2E, E2E_OVERVIEW.commit);
-      await repoTree(client, E2E, commit.tree);
+      await repoTree(client, E2E, E2E_OVERVIEW.commit);
       await blobBytes(client, E2E, E2E_OVERVIEW.artifact);
+      await commitSummary(client, E2E, E2E_OVERVIEW.commit);
       await blobBytes(client, E2E, E2E_OVERVIEW.figure);
       return undefined;
     },

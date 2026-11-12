@@ -1,12 +1,14 @@
 // An overview's figure, as the check left it: an SVG drawn from its checked tree, an image drawn on
-// a canvas, or, for a figure left out, a note saying why (the Figure guideline's `--broken`). The
-// overview's renderer places one for each `:::figure` block, giving it what the check found for
-// that block, the bytes of an image, its caption as it renders it, and the parts it links.
+// a canvas, or, for a figure left out, a note saying why (the Figure guideline's `--broken`); or,
+// while its file is still being read, its frame saying so. The overview's renderer places one for
+// each `:::figure` block, giving it what the check found for that block, the bytes of an image, its
+// caption as it renders it, and the parts it links.
 
 import type { FigureState, ImageType } from '@lo/artifact';
 import type { SvgElement } from '@lo/markdown';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
+import { Spinner } from '../Spinner.tsx';
 import { imageSize, scroller, showImage, widest, type DrawFailure } from './image.ts';
 import { drawSvg, linkParts, sizeHits, type PartLink } from './svg.ts';
 
@@ -15,6 +17,11 @@ export interface FigureProps {
   path: string;
   /** What the overview's check found it to be, for this block. */
   figure: FigureState;
+  /**
+   * Whether its file is still being read, so the check left it unread for now: it's drawn as
+   * coming, rather than as left out.
+   */
+  reading?: boolean | undefined;
   /** The bytes of an image the check kept, whole, as the check read them. */
   bytes?: Uint8Array<ArrayBuffer> | undefined;
   /** Its number in the overview, from 1. */
@@ -42,7 +49,9 @@ export function Figure(props: FigureProps) {
       }
       return <ImageFigure {...props} type={figure.type} size={figure} />;
     case 'leftOut':
+      return <Broken path={path} number={number} caption={caption} why={figure.why} />;
     case 'unread':
+      if (props.reading) return <Reading number={number} caption={caption} />;
       return <Broken path={path} number={number} caption={caption} why={figure.why} />;
     default:
       // From another process: say so, rather than draw what Lo doesn't know.
@@ -284,6 +293,19 @@ function reason(why: Why, path: string, type: ImageType | undefined): string {
       why satisfies never;
       return "couldn't be shown.";
   }
+}
+
+/** A figure whose file is still being read: its frame, saying so, and its caption. */
+function Reading({ number, caption }: { number: number; caption?: ReactNode }) {
+  return (
+    <figure className="lo-figure" aria-busy="true">
+      <div className="lo-figure__frame flex items-center gap-8 text-fg-muted">
+        <Spinner />
+        <p>Reading figure {number}…</p>
+      </div>
+      <Caption number={number} caption={caption} />
+    </figure>
+  );
 }
 
 function Broken({

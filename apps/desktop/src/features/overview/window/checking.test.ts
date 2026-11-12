@@ -1,7 +1,8 @@
-// A tab's overview, checked in the window: with no code until the local copy is there, and again
-// once it is; never with code without git; with code once read kept, whatever a later read says;
-// published again only when the result changes, with the same parse for as long as the commit is
-// the same.
+// A tab's overview, checked in the window: by its text alone first, while its figures and code are
+// to come, so whether it shows never waits for them; with no code until the local copy is there,
+// and again once it is; never with code without git; with code once read kept, whatever a later
+// read says; published again only when the result changes, with the same parse for as long as the
+// commit is the same.
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -104,18 +105,82 @@ describe('Checking', () => {
     expect(asked).toMatchObject({ files: 1, parse: 1, code: 1, check: 2 });
   });
 
+  it('publishes what the text alone says first, never waiting for the figures or the code', async () => {
+    const WITH_FIGURE = encoder.encode(
+      `---\nformat: 1\npr: 7\ncommit: ${HEAD}\n---\n\n## tl;dr\n\nIt reads.\n\n:::code src/a.ts#L2\n:::\n\n:::figure figures/a.svg\nA figure.\n:::\n`,
+    );
+    const SVG = encoder.encode('<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg"/>');
+    // The figure and the code come only when let go.
+    let letGo!: () => void;
+    const held = new Promise<void>((resolve) => (letGo = resolve));
+    const published: (CheckedOverview | undefined)[] = [];
+    const checking = new Checking('t1', {
+      files: async ({ paths }) => {
+        if (paths[0] !== 'artifact.md') await held;
+        return paths.map((path) => {
+          const bytes = path === 'artifact.md' ? WITH_FIGURE : SVG;
+          return { kind: 'file' as const, size: bytes.length, bytes };
+        });
+      },
+      code: async () => {
+        await held;
+        return READ;
+      },
+      parse: (input) => localJobs.parse(input),
+      check: (input) => localJobs.check(input),
+      publish: (value) => published.push(value),
+      log: () => {},
+    });
+    const commit = {
+      ...commitOf(),
+      entries: [
+        {
+          path: 'artifact.md',
+          kind: 'file' as const,
+          size: WITH_FIGURE.length,
+          id: 'b'.repeat(40),
+        },
+        { path: 'figures', kind: 'folder' as const, size: null, id: 'd'.repeat(40) },
+        { path: 'figures/a.svg', kind: 'file' as const, size: SVG.length, id: 'e'.repeat(40) },
+      ],
+    };
+    checking.take(stateOf(commit, 'ready'));
+    await vi.waitFor(() => expect(published).toHaveLength(1));
+    const [first] = published;
+    if (first?.kind !== 'checked' || first.checked.outcome.kind !== 'shown') {
+      throw new Error('not shown');
+    }
+    // Its figures are coming, and its code waits.
+    expect(first.figures).toBeUndefined();
+    expect(first.code).toEqual({ kind: 'waiting' });
+    expect(first.checked.outcome.figures.map(({ figure }) => figure.state)).toEqual(['unread']);
+    expect(firstCode(first)).toMatchObject({ state: 'unread' });
+
+    letGo();
+    await vi.waitFor(() => expect(published).toHaveLength(2));
+    const [, whole] = published;
+    if (whole?.kind !== 'checked' || whole.checked.outcome.kind !== 'shown') {
+      throw new Error('not shown');
+    }
+    expect(whole.parsed).toBe(first.parsed);
+    expect(whole.figures?.get('figures/a.svg')).toMatchObject({ kind: 'file' });
+    expect(whole.checked.outcome.figures.map(({ figure }) => figure.state)).toEqual(['kept']);
+    expect(firstCode(whole)).toEqual({ state: 'resolved' });
+  });
+
   it('publishes nothing new when nothing changed', async () => {
     const { checking, published, asked } = checkingWith(() => READ);
     const commit = commitOf();
     checking.take(stateOf(commit, 'ready'));
-    await vi.waitFor(() => expect(published).toHaveLength(1));
+    // The text alone, then with its code.
+    await vi.waitFor(() => expect(published).toHaveLength(2));
     // Main says more of the tab, or the copy goes offline: the code read stays read.
     checking.take({ ...stateOf(commit, 'ready'), saved: true });
     checking.take(stateOf(commit, 'offline'));
     checking.take(stateOf(commit, 'waiting'));
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(published).toHaveLength(1);
-    expect(asked).toMatchObject({ code: 1, check: 1 });
+    expect(published).toHaveLength(2);
+    expect(asked).toMatchObject({ code: 1, check: 2 });
   });
 
   it('reads code that was unread again, and publishes only what changed', async () => {
@@ -123,18 +188,18 @@ describe('Checking', () => {
     const { checking, published, asked } = checkingWith(() => reply);
     const commit = commitOf();
     checking.take(stateOf(commit, 'offline'));
-    await vi.waitFor(() => expect(published).toHaveLength(1));
+    await vi.waitFor(() => expect(published).toHaveLength(2));
     // Read again, the same: nothing is checked or published again.
     checking.take(stateOf(commit, 'ready'));
     await vi.waitFor(() => expect(asked.code).toBe(2));
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(published).toHaveLength(1);
-    expect(asked.check).toBe(1);
+    expect(published).toHaveLength(2);
+    expect(asked.check).toBe(2);
     reply = READ;
     checking.take(stateOf(commit, 'offline'));
-    await vi.waitFor(() => expect(published).toHaveLength(2));
-    expect(firstCode(published[1])).toEqual({ state: 'resolved' });
-    expect(asked.check).toBe(2);
+    await vi.waitFor(() => expect(published).toHaveLength(3));
+    expect(firstCode(published[2])).toEqual({ state: 'resolved' });
+    expect(asked.check).toBe(3);
   });
 
   it('keeps code it read when reading it again fails, or reads less of it', async () => {
@@ -165,7 +230,7 @@ describe('Checking', () => {
     });
     const commit = commitOf();
     checking.take(stateOf(commit, 'offline'));
-    await vi.waitFor(() => expect(published).toHaveLength(1));
+    await vi.waitFor(() => expect(published).toHaveLength(2));
     const states = () => {
       const last = published.at(-1);
       if (last?.kind !== 'checked' || last.checked.outcome.kind !== 'shown') return [];
@@ -192,12 +257,12 @@ describe('Checking', () => {
       await vi.waitFor(() => expect(asked.code).toBe(before + 1));
       // Settled before the copy's state changes again.
       await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(published).toHaveLength(1);
+      expect(published).toHaveLength(2);
     }
-    expect(asked.check).toBe(1);
+    expect(asked.check).toBe(2);
     expect(states()).toEqual(['resolved', 'unread']);
     // What was read of it is kept by its size, not its bytes.
-    expect(published[0]).toMatchObject({
+    expect(published[1]).toMatchObject({
       code: { kind: 'read', files: [{ answer: { kind: 'file', size: 8, read: 8 } }, {}] },
     });
 
@@ -207,7 +272,7 @@ describe('Checking', () => {
       files: [READ.files[0] ?? { kind: 'missing' }, READ.files[0] ?? { kind: 'missing' }],
     };
     checking.take(stateOf(commit, asked.code % 2 === 0 ? 'offline' : 'ready'));
-    await vi.waitFor(() => expect(published).toHaveLength(2));
+    await vi.waitFor(() => expect(published).toHaveLength(3));
     expect(states()).toEqual(['resolved', 'resolved']);
   });
 
@@ -231,15 +296,15 @@ describe('Checking', () => {
   it('starts again for a new commit, and forgets the overview once there’s none', async () => {
     const { checking, published, last } = checkingWith(() => READ);
     checking.take(stateOf(commitOf(), 'ready'));
-    await vi.waitFor(() => expect(published).toHaveLength(1));
-    checking.take(stateOf(commitOf('e'.repeat(40)), 'ready'));
     await vi.waitFor(() => expect(published).toHaveLength(2));
+    checking.take(stateOf(commitOf('e'.repeat(40)), 'ready'));
+    await vi.waitFor(() => expect(published).toHaveLength(4));
     expect(last()).toMatchObject({ commit: { id: 'e'.repeat(40) } });
-    const [first, second] = published;
+    const [, first, , second] = published;
     if (first?.kind !== 'checked' || second?.kind !== 'checked') throw new Error('not checked');
     expect(second.parsed).not.toBe(first.parsed);
     checking.take(stateOf(null, 'ready'));
-    expect(published).toHaveLength(3);
+    expect(published).toHaveLength(5);
     expect(last()).toBe(undefined);
   });
 
@@ -266,7 +331,7 @@ describe('Checking', () => {
     expect(last()).toMatchObject({ kind: 'failed', why: expect.stringContaining('out of reach') });
     fail = false;
     failing.take({ ...stateOf(commit, 'ready'), problem: null, saved: true });
-    await vi.waitFor(() => expect(published).toHaveLength(2));
+    await vi.waitFor(() => expect(published).toHaveLength(3));
     expect(firstCode(last())).toEqual({ state: 'resolved' });
   });
 
