@@ -1,10 +1,11 @@
 // Moving through an overview in the app by its keys, and following it to the code: Lo, started on
 // the replay server as rozed-bot, opens rozed-dev/e2e#80 on its overview. `]b` and `[b` go between
-// its blocks, `Tab` between a block's links and parts, `←` and `→` step a walkthrough or tabs, `⏎`
-// follows a block, a link or a part to its code in the diff, or to the file whole where the diff
-// doesn't have it, and `⌃o` comes back to the block. `o` puts the block's code beside the overview,
-// following the blocks, and `o` or `Esc` takes it away. A block's right-click menu does the same.
-// What the reader is at stays where it is through each.
+// its blocks, `Tab` and `⇧Tab` through its outline, its blocks and their links and parts as they're
+// written, `←` and `→` step a walkthrough or tabs, `⏎` follows a block, a link or a part to its
+// code in the diff, or to the file whole where the diff doesn't have it, and `⌃o` comes back to the
+// block. `o` puts the block's code beside the overview, following the blocks, and `o` or `Esc`
+// takes it away. A block's right-click menu does the same, and gives focus back to the block. What
+// the reader is at stays where it is through each, or comes on screen where that's off it now.
 
 import { writeFileSync } from 'node:fs';
 
@@ -222,11 +223,11 @@ test(']b and [b go between the blocks, Tab between a block’s links, and ← an
   await press(page, '[', 'b');
   expect(await focused(page)).toMatchObject({ block: BLOCK.parserLink, own: true });
 
-  // Tab goes round the block's links, and back to the block.
+  // Tab goes through the block's links, then on to the next block, as they're written.
   await press(page, 'Tab');
   expect(await focused(page)).toMatchObject({ block: BLOCK.parserLink, text: 'The parser' });
   await press(page, 'Tab');
-  expect(await focused(page)).toMatchObject({ block: BLOCK.parserLink, own: true });
+  expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
   await press(page, 'Shift+Tab');
   expect(await focused(page)).toMatchObject({ block: BLOCK.parserLink, text: 'The parser' });
 
@@ -257,7 +258,7 @@ test(']b and [b go between the blocks, Tab between a block’s links, and ← an
     'src/text/wrap.ts, L2–15',
   ]);
   await press(page, 'Tab');
-  expect(await focused(page)).toMatchObject({ block: BLOCK.figure, own: true });
+  expect(await focused(page)).toMatchObject({ block: BLOCK.walk, own: true });
 
   // A walkthrough steps with → and ←, stopping at its first and last steps.
   await toBlock(page, BLOCK.walk);
@@ -305,6 +306,68 @@ test(']b and [b go between the blocks, Tab between a block’s links, and ← an
   await press(page, ']', 'b');
   await expect(said(page, 'This is the last block.')).toBeVisible();
   expect((await focused(page)).block).toBe(BLOCK.fold);
+});
+
+test('Tab and ⇧Tab go through the outline and the blocks as they’re written', async ({
+  app,
+  page,
+}) => {
+  await sizeWindow(app, 1400, 900);
+  await open(page);
+  const sections = (await shown(page).locator('.lo-ov__toc .lo-toc__item').allTextContents()).map(
+    (text) => text.trim().slice(0, 40),
+  );
+  expect(sections.length).toBeGreaterThan(1);
+
+  // Before the first block, the outline, which ⇧Tab goes back through to its first section.
+  await press(page, ']', 'b');
+  expect(await focused(page)).toMatchObject({ block: BLOCK.tldr, own: true });
+  for (const section of sections.toReversed()) {
+    await press(page, 'Shift+Tab');
+    expect(await focused(page)).toMatchObject({ block: undefined, text: section });
+  }
+  await press(page, 'Shift+Tab');
+  await expect(said(page, 'There’s nothing before this in the overview.')).toBeVisible();
+  expect(await focused(page)).toMatchObject({ text: sections[0] });
+
+  // And Tab goes on through it to the first block.
+  for (const section of sections.slice(1)) {
+    await press(page, 'Tab');
+    expect(await focused(page)).toMatchObject({ block: undefined, text: section });
+  }
+  await press(page, 'Tab');
+  expect(await focused(page)).toMatchObject({ block: BLOCK.tldr, own: true });
+});
+
+test('a block’s menu gives focus back to the block, not to what’s in it', async ({ app, page }) => {
+  await sizeWindow(app, 1400, 900);
+  await open(page);
+  const menu = menuOf(page);
+
+  // ⇧F10 on a figure, whose parts can take focus, and Esc.
+  await toBlock(page, BLOCK.figure);
+  await press(page, 'Shift+F10');
+  await expect(menu).toBeVisible();
+  await press(page, 'Escape');
+  await expect(menu).toHaveCount(0);
+  expect(await focused(page)).toMatchObject({ block: BLOCK.figure, own: true });
+
+  // A right-click on a code block, whose code can take focus, and an action that leaves focus be.
+  await block(page, BLOCK.parser).scrollIntoViewIfNeeded();
+  await block(page, BLOCK.parser).click(CORNER);
+  await expect(menu).toBeVisible();
+  await menu.getByRole('menuitem', { name: /^Open or close code beside/ }).click();
+  await expect(beside(page)).toBeVisible();
+  expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
+  await block(page, BLOCK.parser).click(CORNER);
+  await expect(menu).toBeVisible();
+  await press(page, 'Escape');
+  await expect(menu).toHaveCount(0);
+  expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
+
+  // The block keys go on from it.
+  await press(page, ']', 'b');
+  expect(await focused(page)).toMatchObject({ block: BLOCK.formatHead, own: true });
 });
 
 test('j, k, gg, G and the page keys scroll the overview', async ({ app, page }) => {
@@ -438,6 +501,74 @@ test('⏎ follows a block, a part or a link to its code, and ⌃o comes back to 
   await block(page, BLOCK.parserLink).getByRole('link', { name: 'The parser' }).click();
   await expect.poll(() => diffCursor(page)).toMatchObject({ path: 'src/parser.ts', header: true });
   await back(page, BLOCK.parserLink, top);
+});
+
+test('⌃o puts the block back where it was, cut by the top of the screen', async ({ app, page }) => {
+  test.setTimeout(120_000);
+  await sizeWindow(app, 1200, 900);
+  await open(page);
+  const scroller = shown(page).locator('.lo-ov');
+  await toBlock(page, BLOCK.format);
+  // Just below the screen's top edge, nearer it than `]b` would leave a block it brings on screen.
+  await scroller.evaluate((element, number) => {
+    const at = element.querySelector(`.lo-ov__article > [data-lo-block="${number}"]`);
+    if (!at) throw new Error(`No block ${number}.`);
+    element.scrollTop += at.getBoundingClientRect().top - element.getBoundingClientRect().top - 5;
+  }, BLOCK.format);
+  const top = await topOf(page, BLOCK.format);
+  await press(page, 'Enter');
+  await expect
+    .poll(() => diffCursor(page), { timeout: 20_000 })
+    .toMatchObject({ path: 'src/format.ts' });
+  await back(page, BLOCK.format, top);
+});
+
+test('⌃o puts the block back where it was, the window narrower while away', async ({
+  app,
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await sizeWindow(app, 1200, 900);
+  await open(page);
+  await toBlock(page, BLOCK.format);
+  const top = await topOf(page, BLOCK.format);
+  await press(page, 'Enter');
+  await expect
+    .poll(() => diffCursor(page), { timeout: 20_000 })
+    .toMatchObject({ path: 'src/format.ts' });
+  await sizeWindow(app, 900, 900);
+  await back(page, BLOCK.format, top);
+});
+
+test('⌃o brings the block on screen when the window got shorter while away', async ({
+  app,
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await sizeWindow(app, 1200, 900);
+  await open(page);
+  const scroller = shown(page).locator('.lo-ov');
+  await toBlock(page, BLOCK.format);
+  // Low on the screen, below where the shorter window ends.
+  await scroller.evaluate((element, number) => {
+    const at = element.querySelector(`.lo-ov__article > [data-lo-block="${number}"]`);
+    if (!at) throw new Error(`No block ${number}.`);
+    element.scrollTop +=
+      at.getBoundingClientRect().top - element.getBoundingClientRect().bottom + 150;
+  }, BLOCK.format);
+  const top = await topOf(page, BLOCK.format);
+  await press(page, 'Enter');
+  await expect
+    .poll(() => diffCursor(page), { timeout: 20_000 })
+    .toMatchObject({ path: 'src/format.ts' });
+  await sizeWindow(app, 1200, 500);
+  await press(page, 'Control+o');
+  await expect(shown(page)).toBeVisible();
+  await expect.poll(async () => (await focused(page)).block).toBe(BLOCK.format);
+  // Where it was is past the screen's foot now.
+  const foot = await scroller.evaluate((element) => element.getBoundingClientRect().bottom);
+  expect(top).toBeGreaterThan(foot);
+  await expect(block(page, BLOCK.format)).toBeInViewport();
 });
 
 test('o puts a block’s code beside the overview, which follows the blocks, and o or Esc takes it away, moving nothing', async ({

@@ -133,11 +133,30 @@ describe('a control outside the blocks', () => {
     stops[0]!.focus();
     expect(looseControl(overview)).toBeUndefined();
   });
+
+  it('is the view’s own with no overview drawn, such as its Retry now', () => {
+    const view = document.createElement('div');
+    view.dataset.loScope = 'overview';
+    const retry = document.createElement('button');
+    retry.textContent = 'Retry now';
+    view.append(retry);
+    const elsewhere = document.createElement('button');
+    document.body.append(view, elsewhere);
+    try {
+      retry.focus();
+      expect(looseControl(undefined)).toBe(retry);
+      elsewhere.focus();
+      expect(looseControl(undefined)).toBeUndefined();
+    } finally {
+      view.remove();
+      elsewhere.remove();
+    }
+  });
 });
 
-describe('Tab in a block', () => {
-  it('goes round its links and back to the block', () => {
-    const { overview, stops } = drawn();
+describe('Tab', () => {
+  it('goes through a block’s links, then on to the next block, as they’re written', () => {
+    const { overview, stops, tree } = drawn();
     const last = stops.at(-1)!;
     last.focus();
     const first = nextLink(overview, 1);
@@ -148,15 +167,26 @@ describe('Tab in a block', () => {
     if (typeof second === 'string') throw new Error(second);
     expect(second.textContent).toBe('the rest');
     second.focus();
-    expect(nextLink(overview, 1)).toBe(last);
+    expect(nextLink(overview, 1)).toBe('There’s nothing after this in the overview.');
     expect(nextLink(overview, -1)).toBe(first);
-  });
-
-  it('says so in a block with nothing in it to go to', () => {
-    const { overview, stops, tree } = drawn();
+    // A block with nothing in it to go to: on to the next.
     const code = stops.find((stop) => kindOf(tree, stop) === 'excerpt')!;
     code.focus();
-    expect(nextLink(overview, 1)).toBe('This block has no links or parts.');
+    expect(nextLink(overview, 1)).toBe(stops[stops.indexOf(code) + 1]);
+  });
+
+  it('goes back from the first block through the outline, and on from it to the first block', () => {
+    const { overview, stops } = drawn();
+    const sections = [...overview.root.querySelectorAll<HTMLElement>('.lo-toc__item')];
+    expect(sections.length).toBeGreaterThan(1);
+    stops[0]!.focus();
+    expect(nextLink(overview, -1)).toBe(sections.at(-1));
+    sections[1]!.focus();
+    expect(nextLink(overview, -1)).toBe(sections[0]);
+    sections[0]!.focus();
+    expect(nextLink(overview, -1)).toBe('There’s nothing before this in the overview.');
+    sections.at(-1)!.focus();
+    expect(nextLink(overview, 1)).toBe(stops[0]);
   });
 });
 

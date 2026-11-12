@@ -4,8 +4,10 @@
 // overview skill's rows.
 
 import { handlers, type Target } from '@lo/ui/commands';
+import { closeCards } from '@lo/ui/overview';
 import { createElement } from 'react';
 
+import { escapeToMiddle } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
@@ -26,6 +28,7 @@ import {
   besideFor,
   besides,
   blockAt,
+  closeBesideAt,
   codeIn,
   drawnIn,
   focusBlock,
@@ -61,10 +64,13 @@ function onScreen(): DrawnOverview | string {
   return drawnIn(tab.id) ?? 'There’s no overview on screen.';
 }
 
-/** A control with focus in the overview on screen, outside its blocks, which `⏎` presses. */
+/**
+ * A control with focus in the overview's view on screen, outside its blocks, which `⏎` presses:
+ * with no overview drawn, such as one that couldn't be fetched, the view's own buttons.
+ */
 function looseOnScreen(): HTMLElement | undefined {
-  const overview = onScreen();
-  return typeof overview === 'string' ? undefined : looseControl(overview);
+  const tab = activeTab();
+  return tab?.kind === 'pull' ? looseControl(drawnIn(tab.id)) : undefined;
 }
 
 /** Whether there's an overview on screen for a key to act on, or why not. */
@@ -210,6 +216,15 @@ export default {
         return typeof chosen === 'string' ? chosen : true;
       },
       listed: hasCode,
+    },
+    closeBeside: {
+      run: () => {
+        // A term's card closes first, as `Esc` closes it anywhere in the overview.
+        if (closeCards()) return;
+        const overview = onScreen();
+        if (typeof overview !== 'string' && closeBesideAt(overview)) return;
+        escapeToMiddle();
+      },
     },
     scrollDown: scrolling('down'),
     scrollUp: scrolling('up'),

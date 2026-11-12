@@ -1,12 +1,12 @@
 // Reading a pull request's overview in the app: Lo, started on the replay server as rozed-bot,
 // opens rozed-dev/e2e#80 on its overview when it shows within the bound, and on the diff when it
 // doesn't, there's none, or Settings says so, offering one that comes later; says why one can't be
-// shown; offers a newer one pushed while it's read; fills in its code blocks and walkthrough from
-// the local copy; and never moves what's on screen without the reader: not as banners come and go,
-// as it's checked again, as its code fills in, as a newer one is offered at any width, or as what's
-// above the line being read changes size. A server in front of the replay
-// server answers for the overview's ref as each test says: with the overview
-// `testing/fixtures/app.sh` wrote, none, one made here, or a failure.
+// shown; offers a newer one pushed while it's read; opens its links to web pages in the browser;
+// fills in its code blocks and walkthrough from the local copy; and never moves what's on screen
+// without the reader: not as banners come and go, as it's checked again, as its code fills in, as
+// a newer one is offered at any width, or as what's above the line being read changes size. A
+// server in front of the replay server answers for the overview's ref as each test says: with the
+// overview `testing/fixtures/app.sh` wrote, none, one made here, or a failure.
 
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -910,9 +910,36 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
   await expect(failed).toContainText(`Lo couldn't read refs/lo/pr/${APP_PULL.number}`);
   await expect(failed).toContainText(/Trying again in \d+ s\./);
 
+  // ⏎ presses the button that has focus, with no overview drawn for it to follow.
   ref.holds = { kind: 'cassette' };
-  await failed.getByRole('button', { name: 'Retry now' }).click();
+  await failed.getByRole('button', { name: 'Retry now' }).focus();
+  await page.keyboard.press('Enter');
   await expect(overview(page, 'shown')).toBeVisible({ timeout: 20_000 });
+});
+
+test('opens a link to a web page in the browser, on a click or ⏎', async ({ page, ref }) => {
+  ref.holds = {
+    kind: 'made',
+    overview: overviewOf({
+      'artifact.md': textOf(
+        '## tl;dr\n\nIt reads.\n\n## Where to look\n\nThe [design notes](https://example.com/design) say why.\n',
+      ),
+    }),
+  };
+  await open(page);
+  await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('Overview', {
+    timeout: 20_000,
+  });
+  await overviewTab(page).click();
+  const link = overview(page, 'shown').getByRole('link', { name: 'design notes' });
+  await link.click();
+  await expect.poll(browsed).toEqual(['https://example.com/design']);
+  // The overview stays on screen.
+  await expect(overview(page, 'shown')).toBeVisible();
+
+  await link.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(browsed).toEqual(['https://example.com/design', 'https://example.com/design']);
 });
 
 test('nothing on the first screen moves from the first frame, as its figures fill in', async ({

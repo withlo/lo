@@ -37,7 +37,15 @@ export default defineCommands(
       when: overview,
       menu: { on: 'block', order: 20 },
     },
-    /** Within the block that has focus, its next link, figure part or control. */
+    /**
+     * Closes the code beside the overview, as the button over it does, after a term's card that's
+     * open. With neither open, focus goes back to the overview, as `Esc` does in any middle view.
+     */
+    closeBeside: { label: 'Close code beside', group: 'Overview', keys: ['esc'], when: overview },
+    /**
+     * The next link, figure part or control, in reading order: the outline's sections, the
+     * byline's offer, then each block and what's in it.
+     */
     nextLink: { label: 'Next link or part', group: 'Overview', keys: ['tab'], when: overview },
     previousLink: {
       label: 'Previous link or part',

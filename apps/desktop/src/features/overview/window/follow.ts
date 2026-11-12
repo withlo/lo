@@ -244,19 +244,69 @@ export function nextBlock(overview: DrawnOverview, by: 1 | -1): HTMLElement | st
   return by > 0 ? 'This is the last block.' : 'This is the first block.';
 }
 
+/** What `Tab` stops at outside the blocks: the outline's sections, the byline's offer, links. */
+const CONTROLS = 'button, a[href], [role="link"], summary';
+
+/** Whether `element` is drawn: the outline isn't in a narrow window. */
+function drawnOnPage(element: Element): boolean {
+  // The unit tests' page has no `checkVisibility`, nor a layout to check.
+  return typeof element.checkVisibility !== 'function' || element.checkVisibility();
+}
+
 /**
- * Where `Tab` (`1`) or `⇧Tab` (`-1`) goes in the block that has focus: the next or previous of its
- * links, figure parts and controls, round through the block itself. From no block, the block `]b`
- * or `[b` would go to. Or why there's nowhere.
+ * Everything `Tab` goes between in the overview, in reading order: the outline's sections, the
+ * byline's offer, then each block the block keys stop at followed by its links, parts and
+ * controls, and a link outside any such block where it's written.
+ */
+function tabOrder(overview: DrawnOverview): (HTMLElement | SVGElement)[] {
+  const scroller = overview.scroller();
+  const article = articleOf(overview);
+  if (!scroller || !article) return [];
+  const stops = blockStops(article);
+  const loose = [...scroller.querySelectorAll(CONTROLS)].filter(
+    (element): element is HTMLElement | SVGElement =>
+      (element instanceof HTMLElement || element instanceof SVGElement) &&
+      blockOf(article, element) === undefined &&
+      element.tabIndex >= 0 &&
+      !(element instanceof HTMLButtonElement && element.disabled) &&
+      element.closest('[hidden]') === null &&
+      drawnOnPage(element),
+  );
+  const written = [...stops, ...loose].toSorted((a, b) =>
+    a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+  );
+  return written.flatMap((each) =>
+    each instanceof HTMLElement && stops.includes(each)
+      ? [focusTargetOf(each), ...linksIn(each)]
+      : [each],
+  );
+}
+
+/**
+ * Where `Tab` (`1`) or `⇧Tab` (`-1`) goes: the next or previous of the overview's sections,
+ * byline, blocks and the links, parts and controls in them, in reading order. From none of them,
+ * the block `]b` or `[b` would go to, or before the first block, the byline and the outline. Or
+ * why there's nowhere.
  */
 export function nextLink(overview: DrawnOverview, by: 1 | -1): HTMLElement | SVGElement | string {
-  const block = focusedBlock(overview);
-  if (!block) return nextBlock(overview, by);
-  const order = [focusTargetOf(block), ...linksIn(block)];
-  if (order.length === 1) return 'This block has no links or parts.';
+  const order = tabOrder(overview);
   const active = document.activeElement;
-  const at = order.findIndex((each) => each === active);
-  return order[(Math.max(0, at) + by + order.length) % order.length] ?? order[0]!;
+  const block = focusedBlock(overview);
+  let at = order.findIndex((each) => each === active);
+  // Something in a block `Tab` doesn't stop at: from the block.
+  if (at === -1 && block) at = order.indexOf(focusTargetOf(block));
+  if (at === -1) {
+    const next = nextBlock(overview, by);
+    if (typeof next !== 'string' || by > 0) return next;
+    const article = articleOf(overview);
+    const [first] = article ? blockStops(article) : [];
+    return (first && order[order.indexOf(focusTargetOf(first)) - 1]) ?? next;
+  }
+  const next = order[at + by];
+  if (next) return next;
+  return by > 0
+    ? 'There’s nothing after this in the overview.'
+    : 'There’s nothing before this in the overview.';
 }
 
 /** Gives `element`, a link, part or control in a block, focus, and brings it on screen. */
@@ -268,14 +318,17 @@ export function focusLink(overview: DrawnOverview, element: HTMLElement | SVGEle
 }
 
 /**
- * The control with focus in the view, if it's outside the overview's blocks: a section in its
- * outline, the byline's offer, or the button over the code beside it.
+ * The control with focus in the overview's view, if it's outside the overview's blocks: a section
+ * in its outline, the byline's offer, a link no block holds, or the button over the code beside
+ * it. With no overview drawn, any of the view's own, such as its Retry now.
  */
-export function looseControl(overview: DrawnOverview): HTMLElement | undefined {
+export function looseControl(overview: DrawnOverview | undefined): HTMLElement | undefined {
   const active = document.activeElement;
-  if (!(active instanceof HTMLElement) || !overview.root.contains(active)) return undefined;
-  if (focusedBlock(overview)) return undefined;
-  return active.matches('button, a[href], [role="link"], summary') ? active : undefined;
+  if (!(active instanceof HTMLElement)) return undefined;
+  const root = overview?.root ?? active.closest('[data-lo-scope="overview"]');
+  if (!root?.contains(active)) return undefined;
+  if (overview && focusedBlock(overview)) return undefined;
+  return active.matches(CONTROLS) ? active : undefined;
 }
 
 /** Runs a link's, a part's or a control's own action, as a click on it does. */
@@ -474,6 +527,17 @@ export function closeBeside(tab: string): boolean {
   return true;
 }
 
+/**
+ * Closes the code beside the overview, if it's open, focus going to the block the reader is at.
+ * Says whether it was open.
+ */
+export function closeBesideAt(overview: DrawnOverview): boolean {
+  const block = currentBlock(overview);
+  if (!closeBeside(overview.tab)) return false;
+  if (block) focusTargetOf(block).focus({ preventScroll: true });
+  return true;
+}
+
 /** Tabs whose history can reveal places in the overview. */
 const registered = new Set<string>();
 
@@ -505,7 +569,8 @@ export function keepPlaces(open: ReadonlySet<string>): void {
 
 /**
  * Shows the block history asked for in the overview drawn, if one is waiting, once: focus goes to
- * it, and it's brought on screen if it isn't. Says whether there was one.
+ * it, where it was on the page when the tab left it, or brought on screen when that's off it now.
+ * Says whether there was one.
  */
 export function takeReveal(overview: DrawnOverview): boolean {
   const waiting = reveals.get(overview.tab);
@@ -514,7 +579,8 @@ export function takeReveal(overview: DrawnOverview): boolean {
   if (!block) return false;
   reveals.set(overview.tab, undefined);
   const top = left.get(overview.tab)?.get(blockId(overview.generation, waiting.block));
-  if (top === undefined) {
+  const scroller = overview.scroller();
+  if (top === undefined || !scroller || !onScreenAt(scroller, block, top)) {
     focusBlock(overview, block);
     return true;
   }
@@ -522,4 +588,14 @@ export function takeReveal(overview: DrawnOverview): boolean {
   focusTargetOf(block).focus({ preventScroll: true });
   holdBlock(overview, block, top);
   return true;
+}
+
+/**
+ * Whether `block`, at `top` on the page, would show on screen: its start, or enough of it to read.
+ * A window made shorter since leaves a place near its foot off screen.
+ */
+function onScreenAt(scroller: HTMLElement, block: Element, top: number): boolean {
+  const box = scroller.getBoundingClientRect();
+  const { height } = block.getBoundingClientRect();
+  return top < box.bottom - MARGIN && top + height > box.top + MARGIN;
 }

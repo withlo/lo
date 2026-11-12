@@ -8,7 +8,7 @@
 import { Button, Key } from '@lo/ui';
 import { NO_TARGET, setScopeSource } from '@lo/ui/commands';
 import { generationOf } from '@lo/ui/markdown';
-import { blockNumber, blockOf as blockAround, closeCards, focusTargetOf } from '@lo/ui/overview';
+import { blockNumber, blockOf as blockAround, closeCards } from '@lo/ui/overview';
 import {
   useCallback,
   useEffect,
@@ -31,7 +31,7 @@ import {
   besides,
   blockElement,
   closeBeside,
-  currentBlock,
+  closeBesideAt,
   drawnIn,
   focusedBlock,
   hereIn,
@@ -227,10 +227,7 @@ export function OverviewView({ tab, shown }: { tab: PullTab; shown: boolean }) {
         if (closeCards()) return true;
         const now = drawnIn(tab.id);
         if (!now || !root.current?.contains(document.activeElement)) return false;
-        const block = currentBlock(now);
-        if (!closeBeside(tab.id)) return false;
-        if (block) focusTargetOf(block).focus({ preventScroll: true });
-        return true;
+        return closeBesideAt(now);
       },
     });
   }, [tab.id, shown, waiting]);
@@ -378,9 +375,8 @@ function CloseBeside({ tab }: { tab: string }) {
       size="sm"
       onClick={() => {
         const drawn = drawnIn(tab);
-        const block = drawn && currentBlock(drawn);
-        closeBeside(tab);
-        if (block) focusTargetOf(block).focus({ preventScroll: true });
+        if (drawn) closeBesideAt(drawn);
+        else closeBeside(tab);
       }}
     >
       Close code beside
