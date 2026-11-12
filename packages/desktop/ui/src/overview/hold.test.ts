@@ -240,6 +240,7 @@ function articleOf(heights: number[]) {
   /** How many times the scroll was pulled back to the end. */
   let pulls = 0;
   /** The scroll, pulled back to the end when the content got shorter, as a browser pulls it. */
+  // The scroll goes by whole pixels, as a browser's does on a screen of one pixel to the point.
   const scrolled = () => {
     const end = Math.max(0, total() - 400);
     if (scrollTop > end) {
@@ -259,7 +260,7 @@ function articleOf(heights: number[]) {
     scrollTop: {
       get: scrolled,
       set: (to: number) => {
-        scrollTop = Math.min(Math.max(0, total() - 400), Math.max(0, to));
+        scrollTop = Math.round(Math.min(Math.max(0, total() - 400), Math.max(0, to)));
       },
     },
     getBoundingClientRect: { value: () => new DOMRect(0, 0, 600, 400) },
@@ -370,6 +371,17 @@ describe('a block’s height', () => {
     expect(cuts).toEqual([]);
   });
 
+  it('keeps the block being read within half a pixel of its place as what’s above it changes by fractions, the scroll going by whole pixels', () => {
+    const page = articleOf([300, 100, 400, 400]);
+    holdPlace(page.scroller);
+    page.scroll(350);
+    expect(page.top(2)).toBe(50);
+    for (const to of [124.6, 149.2, 173.8, 149.2, 124.6]) {
+      page.change(1, to);
+      expect(Math.abs(page.top(2) - 50)).toBeLessThanOrEqual(0.5);
+    }
+  });
+
   it('gets shorter above the screen at the end with room there first, which goes once it’s off screen', () => {
     const page = articleOf([300, 100, 400]);
     holdPlace(page.scroller);
@@ -380,8 +392,11 @@ describe('a block’s height', () => {
     page.grow(100);
     expect(page.top(2)).toBe(0);
     expect(page.scroller.scrollTop).toBe(200);
-    expect(page.scroller.style.paddingBottom).toBe('');
     expect(page.pulls()).toBe(0);
+    // A pixel at most stays, in case the page's end is a fraction from where it's read to be.
+    expect(Number.parseFloat(page.scroller.style.paddingBottom || '0')).toBeLessThanOrEqual(1);
+    page.scroll(150);
+    expect(page.scroller.style.paddingBottom).toBe('');
   });
 
   it('grows when nothing is under it on screen', () => {
