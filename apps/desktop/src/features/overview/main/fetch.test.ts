@@ -1,6 +1,7 @@
-import { RepoRef } from '@lo/github';
+import { GithubError, RepoRef } from '@lo/github';
 import { describe, expect, it } from 'vitest';
 
+import type { Acting } from '../../tab/contract.ts';
 import { NAME_LIMIT } from '../contract.ts';
 import { Blobs } from './blobs.ts';
 import { fetchBlob, readOverview, type Github } from './fetch.ts';
@@ -8,13 +9,16 @@ import { artifactText, database, FakeGithub, idOf, notFound, overview } from './
 
 const E2E = new RepoRef('rozed-dev', 'e2e');
 
+/** Who reads, as the e2e tests' account. */
+const ROZED: Acting = { kind: 'account', login: 'rozed-bot' };
+
 /** The byline of an overview whose commit's author is `login`, named `name`, on GitHub. */
 async function bylineOf(login: string | null, name: string) {
   const github = new FakeGithub();
   const made = overview('byline', { 'artifact.md': artifactText(5) });
   github.push('rozed-dev/e2e', 5, made, { login, name });
   const reads: Github = (request) => request(github.client);
-  return (await readOverview(reads, new Blobs(database()), E2E, made.commit, 'base')).byline;
+  return (await readOverview(reads, ROZED, new Blobs(database()), E2E, made.commit, 'base')).byline;
 }
 
 describe('the byline', () => {
@@ -46,7 +50,7 @@ describe('a file of the overview', () => {
     const path = `rozed-dev/e2e/git/blobs/${id}`;
     const reads: Github = (request) => request(github.client);
     const blobs = new Blobs(database());
-    const ask = () => fetchBlob(reads, blobs, E2E, id);
+    const ask = () => fetchBlob(reads, ROZED, blobs, E2E, id);
     const fetches = () => github.paths().filter((each) => each === path).length;
 
     // Two asks at once while GitHub can't find it: one request, and both hear why.
@@ -66,4 +70,40 @@ describe('a file of the overview', () => {
     expect(await ask()).toEqual(bytes);
     expect(fetches()).toBe(2);
   });
+
+  it.each([
+    ['signed out', new GithubError({ kind: 'unauthorized', message: 'Bad credentials' })],
+    [
+      'past its rate limit',
+      new GithubError({ kind: 'rateLimited', message: 'limit', secondary: false, reset: 3600 }),
+    ],
+  ])(
+    'is fetched apart for each account that asks, so one %s says nothing of another',
+    async (_why, refusal) => {
+      const github = new FakeGithub();
+      const bytes = new TextEncoder().encode(artifactText(5));
+      const id = idOf(bytes);
+      github.blobs.set(id, bytes);
+      const path = `rozed-dev/e2e/git/blobs/${id}`;
+      const blobs = new Blobs(database());
+      // GitHub refuses account a, a moment after it asks.
+      const asA: Github = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        throw refusal;
+      };
+      const asOthers: Github = (request) => request(github.client);
+      const [a, b, sameB, nobody] = await Promise.allSettled([
+        fetchBlob(asA, { kind: 'account', login: 'a' }, blobs, E2E, id),
+        fetchBlob(asOthers, { kind: 'account', login: 'b' }, blobs, E2E, id),
+        // The same account, whatever its case, shares b's fetch.
+        fetchBlob(asOthers, { kind: 'account', login: 'B' }, blobs, E2E, id),
+        fetchBlob(asOthers, { kind: 'anonymous' }, blobs, E2E, id),
+      ]);
+      expect(a).toEqual({ status: 'rejected', reason: refusal });
+      for (const each of [b, sameB, nobody])
+        expect(each).toEqual({ status: 'fulfilled', value: bytes });
+      // One request as b, one as nobody.
+      expect(github.paths().filter((each) => each === path)).toHaveLength(2);
+    },
+  );
 });
