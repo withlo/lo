@@ -71,7 +71,7 @@ export async function cloneOf(
   return repo;
 }
 
-/** The clone of rozed-dev/e2e with #78 fetched. */
+/** The clone of rozed-dev/e2e with #80 fetched. */
 export function e2eClone(): Promise<Repo> {
   return cloneOf(e2eRemote(), {
     owner: 'rozed-dev',
@@ -99,7 +99,7 @@ export function replayClient(cassette: string): GithubClient {
   });
 }
 
-/** The local copy ready at #78's head. */
+/** The local copy ready at #80's head. */
 export const READY: LocalState = {
   kind: 'ready',
   head: APP_PULL.head,
@@ -108,7 +108,7 @@ export const READY: LocalState = {
   offline: false,
 };
 
-/** rozed-dev/e2e#78's tab, as the tab feature says it, shown at its head. */
+/** rozed-dev/e2e#80's tab, as the tab feature says it, shown at its head. */
 export function e2eInfo(
   local: LocalState = { kind: 'fetching', progress: null, attempt: 1 },
 ): PullTabInfo {
@@ -118,6 +118,7 @@ export function e2eInfo(
     number: APP_PULL.number,
     acting: { kind: 'account', login: 'rozed-bot' },
     shown: APP_PULL.head,
+    latest: APP_PULL.head,
     provisional: false,
     local,
   };

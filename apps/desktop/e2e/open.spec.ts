@@ -16,7 +16,7 @@ import { appFolder, browsed, dataFolder, expect, KEYCHAIN, test as base } from '
 /** A stand-in token, never a real one: the cassette was recorded with the same. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
 const TITLE = "App: the pull request Lo's end-to-end tests open";
-const E2E = 'https://github.com/rozed-dev/e2e/pull/78';
+const E2E = 'https://github.com/rozed-dev/e2e/pull/80';
 
 const mac = process.platform === 'darwin';
 const cmd = (key: string) => `${mac ? 'Meta' : 'Control'}+${key}`;
@@ -84,7 +84,7 @@ test('⌘L opens a pull request link as the account that can see it', async ({ p
   await accountIn(page);
   await type(page, `${E2E}/files#diff-1`);
   const row = box(page).getByRole('option');
-  await expect(row).toContainText('e2e #78');
+  await expect(row).toContainText('e2e #80');
   await expect(row).toContainText(TITLE);
   await expect(row).toContainText('as rozed-bot');
   await expect(box(page)).toContainText('Open');
@@ -114,7 +114,7 @@ test('says what a link it doesn’t open is, and sends a web link to the browser
   await expect(box(page)).toBeHidden();
   await expect.poll(browsed).toEqual(['https://github.com/rozed-dev/e2e/issues/12']);
 
-  await type(page, 'rozed-dev/e2e#78');
+  await type(page, 'rozed-dev/e2e#80');
   await expect(box(page)).toContainText('That isn’t a link Lo opens');
   await page.keyboard.press('Enter');
   await expect(box(page)).toBeVisible();
@@ -167,7 +167,7 @@ test('opens lo:// links and a second launch’s links as a typed link, and says 
   page,
 }) => {
   await accountIn(page);
-  await openUrl(app, 'lo://github.com/rozed-dev/e2e/pull/78');
+  await openUrl(app, 'lo://github.com/rozed-dev/e2e/pull/80');
   await expect(heading(page)).toHaveText(TITLE);
 
   await openUrl(app, 'lo://github.com/rozed-dev/e2e/issues/12');
@@ -230,7 +230,7 @@ test('lists the pull requests opened lately, filters them and opens one by its k
 
   const list = page.getByRole('listbox', { name: 'Recent pull requests' });
   await expect(list.getByRole('option')).toHaveCount(1);
-  await expect(list.getByRole('option')).toContainText('rozed-dev/e2e #78');
+  await expect(list.getByRole('option')).toContainText('rozed-dev/e2e #80');
   await expect(list.getByRole('option')).toContainText(TITLE);
   await expect(list.getByRole('option')).toContainText('rozed-bot');
   await expect(list).toBeFocused();
@@ -240,7 +240,7 @@ test('lists the pull requests opened lately, filters them and opens one by its k
   await expect(filter).toBeFocused();
   await page.keyboard.type('nothing like it');
   await expect(page.getByText('No recent pull request matches “nothing like it”.')).toBeVisible();
-  await filter.fill('e2e 78');
+  await filter.fill('e2e 80');
   await expect(list.getByRole('option')).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(list).toBeFocused();

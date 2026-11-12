@@ -21,7 +21,7 @@ import type { Page } from '@playwright/test';
 import { appFolder, browsed, expect, KEYCHAIN, test as base } from './app.ts';
 
 const TITLE = "App: the pull request Lo's end-to-end tests open";
-const E2E = 'https://github.com/rozed-dev/e2e/pull/78';
+const E2E = 'https://github.com/rozed-dev/e2e/pull/80';
 const DOCS = 'https://github.com/withlo/lo/blob/main/docs/link-routers.md';
 
 const mac = process.platform === 'darwin';

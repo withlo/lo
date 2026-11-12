@@ -3,14 +3,7 @@
 // row, and the groups, counts and hints around them. Pure, so it's tested without a window.
 
 import { withoutBidi } from '../../tab/window/shared.ts';
-import {
-  PATH_LIMIT,
-  pathBytes,
-  type Change,
-  type Changed,
-  type Found,
-  type TreePath,
-} from '../contract.ts';
+import { type Change, type Changed, type Found, type TreePath } from '../contract.ts';
 import { viewedOf, type Viewed } from './model.ts';
 import { keyOf } from './paths.ts';
 
@@ -143,17 +136,6 @@ export function changesByKey(changes: readonly Changed[] | null): ReadonlyMap<st
     byKey.set(changes, kept);
   }
   return kept;
-}
-
-/** GitHub's viewed marks by path, kept only for paths short enough to key a map by. */
-export function viewedByPath(
-  files: readonly { readonly path: string; readonly viewed: Viewed }[],
-): ReadonlyMap<string, Viewed> {
-  return new Map(
-    files.flatMap((file) =>
-      pathBytes({ text: file.path }) <= PATH_LIMIT ? [[file.path, file.viewed] as const] : [],
-    ),
-  );
 }
 
 /**

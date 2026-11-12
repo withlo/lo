@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FIND_LIMIT, PATH_LIMIT, type Changed, type Found, type TreePath } from '../contract.ts';
+import { FIND_LIMIT, type Changed, type Found, type TreePath } from '../contract.ts';
 import {
   changesByKey,
   countText,
@@ -12,7 +12,6 @@ import {
   placeOf,
   plain,
   shorten,
-  viewedByPath,
   type Answer,
 } from './found.ts';
 import { keyOf } from './paths.ts';
@@ -154,14 +153,6 @@ describe('the files the finder lists', () => {
     expect(items[0]?.id).toBe(keyOf(withDigest));
     expect(items[0]?.id).toBe(`\0#${'ab'.repeat(32)}`);
     expect(items[0]?.change).toBe('added');
-  });
-
-  it('keeps GitHub’s viewed marks only for paths short enough to key a map by', () => {
-    const marks = viewedByPath([
-      { path: 'src/a.ts', viewed: 'viewed' },
-      { path: 'x'.repeat(PATH_LIMIT + 1), viewed: 'viewed' },
-    ]);
-    expect([...marks.keys()]).toEqual(['src/a.ts']);
   });
 
   it('groups the changed files before the others, each counted', () => {

@@ -88,9 +88,14 @@ function startOf(
 
 /**
  * A file the local copy's comparison lists. `linguistGenerated` is its `linguist-generated`
- * attribute in the head, if `.gitattributes` says.
+ * attribute in the head, if `.gitattributes` says; `conflicted`, whether a comparison of revisions
+ * across a rebase conflicted on it.
  */
-export function localVersions(file: ChangedFile, linguistGenerated?: boolean): FileVersions {
+export function localVersions(
+  file: ChangedFile,
+  linguistGenerated?: boolean,
+  conflicted = false,
+): FileVersions {
   const path = treePathOf(changedPath(file));
   const change = changeOf(file);
   const previous = change === 'renamed' && file.old ? treePathOf(file.old.path) : null;
@@ -125,6 +130,52 @@ export function localVersions(file: ChangedFile, linguistGenerated?: boolean): F
     ...startOf(review, { binary: file.binary && submodule === null, unchanged }),
     submodule,
     reach: 0,
+    conflicted,
+    since: null,
+  };
+}
+
+/**
+ * A file a comparison of revisions across a rebase conflicted on that's the same on both of its
+ * sides, as when the author kept their version over the base's: no text changed, but the author
+ * resolved a conflict in it.
+ */
+export function conflictedVersions(bytes: Uint8Array): FileVersions {
+  return {
+    path: treePathOf(bytes),
+    previous: null,
+    change: 'modified',
+    additions: 0,
+    deletions: 0,
+    old: null,
+    new: null,
+    start: 'unchanged',
+    generated: null,
+    large: null,
+    submodule: null,
+    reach: 0,
+    conflicted: true,
+    since: null,
+  };
+}
+
+/**
+ * `versions`, a file a push changed since the reader marked it viewed, which nothing changed in
+ * since then (`since`), as when only the base moved under it: no change to show.
+ */
+export function unchangedSince(
+  versions: FileVersions,
+  since: NonNullable<FileVersions['since']>,
+): FileVersions {
+  return {
+    ...versions,
+    additions: 0,
+    deletions: 0,
+    old: versions.new ?? versions.old,
+    new: versions.new ?? versions.old,
+    start: 'unchanged',
+    large: null,
+    since,
   };
 }
 
@@ -171,6 +222,8 @@ export function githubVersions(file: PullFile): FileVersions {
     new: null,
     submodule: null,
     reach,
+    conflicted: false,
+    since: null,
     ...(shape.start === 'large'
       ? shape
       : noPatch && counted

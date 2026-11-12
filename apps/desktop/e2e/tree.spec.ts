@@ -1,4 +1,4 @@
-// The file tree in the app: Lo started on the replay server, as rozed-bot, opens rozed-dev/e2e#78
+// The file tree in the app: Lo started on the replay server, as rozed-bot, opens rozed-dev/e2e#80
 // and shows the repository's files at its head in the left panel, its changes marked, and the tree
 // answers its keys and its files' right-click menu.
 
@@ -43,7 +43,7 @@ const test = base.extend<{ github: ReplayServer; remote: string; tokenFile: stri
   },
 });
 
-/** Waits for the account from the token file, then opens #78's tab, and returns its id. */
+/** Waits for the account from the token file, then opens #80's tab, and returns its id. */
 async function openE2e(page: Page): Promise<string> {
   await expect
     .poll(async () => JSON.stringify(await page.evaluate(() => window.lo.invoke('accounts.list'))))
@@ -69,7 +69,7 @@ async function focused(page: Page): Promise<string | null> {
 }
 
 /**
- * Opens #78 and waits for its tree from the local copy, and its diff, which the tree follows: the
+ * Opens #80 and waits for its tree from the local copy, and its diff, which the tree follows: the
  * first changed file is on screen.
  */
 async function shown(page: Page): Promise<string> {
@@ -200,7 +200,7 @@ test('shows a changed file in the diff on ⏎, the keyboard staying in the tree'
   await expect(row(page, 'data')).toHaveAttribute('aria-expanded', 'true');
 });
 
-test('gives a file a right-click menu: the whole file, its path and the file on GitHub', async ({
+test('gives a file a right-click menu: marking it viewed, the whole file, its path and the file on GitHub', async ({
   app,
   page,
 }) => {
@@ -209,10 +209,11 @@ test('gives a file a right-click menu: the whole file, its path and the file on 
   const menu = page.getByRole('menu', { name: 'File actions' });
   await expect(menu).toBeVisible();
   const items = menu.getByRole('menuitem');
-  await expect(items).toHaveText([/^Whole file/, /^Copy path/, /^Open on GitHub/]);
-  await expect(items.first()).not.toHaveAttribute('data-disabled');
-  await expect(items.first()).toContainText('gf');
-  await expect(items.nth(1)).toContainText('yp');
+  await expect(items).toHaveText([/^Mark viewed/, /^Whole file/, /^Copy path/, /^Open on GitHub/]);
+  await expect(items.first()).toContainText('e');
+  await expect(items.nth(1)).not.toHaveAttribute('data-disabled');
+  await expect(items.nth(1)).toContainText('gf');
+  await expect(items.nth(2)).toContainText('yp');
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
   // "Whole file" opens it in the middle, in place of the diff.

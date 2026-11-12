@@ -42,6 +42,11 @@ const rows: FileTreeRow[] = [
   { kind: 'file', key: 'README.md', name: 'README.md', depth: 0, entry: 'submodule' },
 ];
 
+/** An unchanged file's row. */
+function fileRow(name: string): FileTreeRow & { kind: 'file' } {
+  return { kind: 'file', key: name, name, depth: 0, entry: 'file' };
+}
+
 function markup(): string {
   return renderToStaticMarkup(
     <FileTreePanel
@@ -74,6 +79,32 @@ describe('FileTree', () => {
     expect(html).toContain('Only the changed files show.');
   });
 
+  it('marks the files that changed between two revisions compared, and steps the others back', () => {
+    const html = renderToStaticMarkup(
+      <FileTree
+        comparing
+        rows={[
+          { ...fileRow('a.ts'), change: 'modified', hit: true },
+          { ...fileRow('b.ts'), change: 'modified' },
+          fileRow('c.ts'),
+        ]}
+      />,
+    );
+    const [a, b, c] = html.split('role="treeitem"').slice(1);
+    expect(a).toContain('data-hit=""');
+    expect(a).toContain('bg-accent');
+    expect(b).not.toContain('data-hit');
+    expect(b).toContain('text-fg-dim');
+    expect(b).toContain('opacity-45');
+    expect(c).not.toContain('data-hit');
+    // Not comparing, nothing's marked.
+    expect(
+      renderToStaticMarkup(
+        <FileTree rows={[{ ...fileRow('a.ts'), change: 'modified', hit: true }]} />,
+      ),
+    ).not.toContain('data-hit');
+  });
+
   it("only uses utilities that Lo's stylesheet has, so no spacing is silently dropped", async () => {
     const classes = [
       ...new Set(
@@ -82,6 +113,8 @@ describe('FileTree', () => {
         ),
       ),
     ].filter((name) => name !== '' && !name.startsWith('lo-'));
+    // And those the marks of a comparison add.
+    classes.push('opacity-45', '-end-4', 'top-6', 'bottom-6', 'w-2', 'rounded-xs', 'bg-accent');
     expect(classes.length).toBeGreaterThan(30);
     const css = await buildCss(classes);
     expect(classes.filter((name) => !hasRule(css, name))).toEqual([]);

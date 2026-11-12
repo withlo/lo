@@ -1,25 +1,27 @@
 #!/usr/bin/env bash
-# The pull request the app's end-to-end tests open: rozed-dev/e2e#78, from `app/head` into
-# `app/base`, in GitHub's rozed-dev/e2e test repository.
+# The pull request the app's end-to-end tests open: rozed-dev/e2e#80, from
+# `app/feature` into `app/base`, in GitHub's rozed-dev/e2e test repository.
 #
-#   bash testing/fixtures/app.sh <folder>
+#   bash testing/fixtures/app.sh <folder> [--without-first-push]
 #
 # makes, in <folder>:
 #
 # - `rozed-dev/e2e.git`, a bare repository holding what GitHub holds for the pull request, commit
-#   for commit: `app/base` and `app/head` as they are now, and the head again as
-#   `refs/pull/78/head`. It lets clients filter and fetch any commit by ID, as GitHub does, so Lo
-#   can fetch from it with `LO_GIT_REMOTE=file://<folder>`;
+#   for commit: `app/base` and `app/feature` as they are now, the head again as
+#   `refs/pull/<number>/head`, and the first push's head, which GitHub keeps after the second
+#   replaced it, under a ref of its own. It lets clients filter and fetch any commit by ID, as
+#   GitHub does, so Lo can fetch from it with `LO_GIT_REMOTE=file://<folder>`. With
+#   `--without-first-push` it leaves the first push out, as if GitHub no longer had it;
 # - `work`, a working copy with every commit on a branch: `app/base-1` and `app/head-1` for the
 #   first push, `app/base` and `app/head` for the second.
 #
 # Nothing here reads the network. Every commit has fixed names, dates and contents, so it comes out
 # with the ID GitHub has for it, on any machine, with any git. The pull request was made by pushing
-# `app/base-1` and `app/head-1` to `app/base` and `app/head` and opening it, then pushing `app/base`
-# and `app/head` again.
+# `app/base` (its two commits, earlier) and `app/head-1` to `app/feature`, and opening it; then
+# force-pushing `app/head` to `app/feature`.
 #
-# The pull request has two pushes, with the base moving on between them. The first, on the base's
-# first commit:
+# The pull request has two pushes, across a rebase: the first is on the base's first commit, and
+# the base has moved on since. The first push:
 #
 # - renames src/parse.ts to src/parser.ts, changing two lines;
 # - moves `wrap` from src/format.ts into src/text/wrap.ts, unchanged;
@@ -28,15 +30,25 @@
 # - changes pnpm-lock.yaml, a lockfile;
 # - redraws assets/mark.png, a binary, from 1×1 to 2×2.
 #
-# Then the base moves on, changing README.md, and the second push merges it into the head, then
-# adds a commit that changes src/parser.ts.
+# The base's second commit changes README.md. The second push rebases the first push's two commits
+# onto it, as `git rebase` does, each keeping its author's date, then adds a commit that changes
+# src/parser.ts.
 
 set -euo pipefail
 
 # The pull request's number on GitHub.
-APP_PULL=78
+APP_PULL=80
 
-folder=${1:?usage: bash testing/fixtures/app.sh <folder>}
+folder=${1:?usage: bash testing/fixtures/app.sh <folder> [--without-first-push]}
+first_push=true
+case ${2:-} in
+  '') ;;
+  --without-first-push) first_push=false ;;
+  *)
+    echo "usage: bash testing/fixtures/app.sh <folder> [--without-first-push]" >&2
+    exit 2
+    ;;
+esac
 mkdir -p "$folder"
 folder=$(cd "$folder" && pwd)
 work=$folder/work
@@ -288,10 +300,14 @@ g switch -q -c app/base app/base-1
 base_moves_on
 commit 'Say where the fixture comes from' 2026-11-11T10:00:00Z 2026-11-11T10:00:00Z
 
-# The moved base merged into the first push, then one more commit.
-g switch -q -c app/head app/head-1
-GIT_AUTHOR_DATE=2026-11-11T10:10:00Z GIT_COMMITTER_DATE=2026-11-11T10:10:00Z \
-  g merge -q --no-ff --no-edit -m "Merge app/base into app/head" app/base
+# The first push's two commits rebased onto the moved base, then one more commit.
+g switch -q -c app/head app/base
+first_change
+commit 'Rename the parser, move wrap into its own module, and drop legacy.ts' \
+  2026-11-11T09:10:00Z 2026-11-11T10:10:00Z
+second_change
+commit 'Add the numbers, update zod in the lockfile, and redraw the mark' \
+  2026-11-11T09:20:00Z 2026-11-11T10:11:00Z
 third_change
 commit 'Read empty input as no lines' 2026-11-11T10:20:00Z 2026-11-11T10:20:00Z
 
@@ -302,5 +318,8 @@ git -C "$bare" config uploadpack.allowAnySHA1InWant true
 git -C "$bare" config gc.auto 0
 g push -q "$bare" \
   app/base:refs/heads/app/base \
-  app/head:refs/heads/app/head \
+  app/head:refs/heads/app/feature \
   "app/head:refs/pull/$APP_PULL/head"
+if $first_push; then
+  g push -q "$bare" app/head-1:refs/fixture/first-push
+fi

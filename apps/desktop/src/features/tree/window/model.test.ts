@@ -34,6 +34,7 @@ function whole(files: readonly string[], changes: readonly Changed[]): TreeState
     partial: false,
     problem: null,
     omitted: 0,
+    compared: null,
   };
 }
 

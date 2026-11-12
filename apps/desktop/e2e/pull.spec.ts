@@ -1,5 +1,5 @@
 // A pull request's tab in the app: Lo started on the replay server, as rozed-bot, opens
-// rozed-dev/e2e#78 with its header and its local copy, fetched from the same pull request built on
+// rozed-dev/e2e#80 with its header and its local copy, fetched from the same pull request built on
 // this machine; says so in a banner when a pull request can't be opened; comes back offline with
 // what it saved; and never gives the window the token.
 
@@ -83,15 +83,15 @@ test('opens a pull request with its header, and fetches its local copy at the he
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(TITLE);
   const header = page.locator('header').first();
   await expect(header).toContainText('Open');
-  await expect(header).toContainText('#78');
+  await expect(header).toContainText('#80');
   await expect(header).toContainText('as rozed-bot');
   await expect(header).toContainText('rozed-bot wants to merge');
-  await expect(header).toContainText('app/head');
+  await expect(header).toContainText('app/feature');
   await expect(header).toContainText('app/base');
   // The strip and the window take its title, once it's arrived.
   await expect(strip(page).getByRole('tab', { selected: true })).toContainText(TITLE);
   await expect(strip(page).getByRole('tab', { selected: true })).not.toHaveAttribute('aria-busy');
-  await expect(page).toHaveTitle(`rozed-dev/e2e#78 — ${TITLE}`);
+  await expect(page).toHaveTitle(`rozed-dev/e2e#80 — ${TITLE}`);
 
   await expect(status(page)).toContainText('Local copy', { timeout: 20_000 });
   await expect
@@ -200,11 +200,11 @@ test('shows a spinner and a placeholder on a tab still opening, until GitHub ans
     const page = await app.firstWindow();
     await page.waitForLoadState('load');
     await page.evaluate(() =>
-      window.lo.invoke('tab.open', { kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 78 }),
+      window.lo.invoke('tab.open', { kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 }),
     );
     const tab = strip(page).getByRole('tab', { selected: true });
     await expect(tab).toHaveAttribute('aria-busy', 'true');
-    await expect(tab).toHaveText('e2e #78');
+    await expect(tab).toHaveText('e2e #80');
     await expect(tab.locator('.spinner')).toBeVisible();
     await expect(tab.locator('.skeleton')).toBeVisible();
     // The header holds the places of what hasn't arrived, and the middle says it's opening.
@@ -261,10 +261,10 @@ test('opens only pages on github.com, and copies 1 MiB at most', async ({ app, p
   // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
   test.skip(process.platform === 'darwin', "The Mac's clipboard is its user's.");
   expect(
-    await page.evaluate(() => window.lo.invoke('tab.copy', { text: 'rozed-dev/e2e#78' })),
+    await page.evaluate(() => window.lo.invoke('tab.copy', { text: 'rozed-dev/e2e#80' })),
   ).toEqual({
     ok: true,
     value: undefined,
   });
-  expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe('rozed-dev/e2e#78');
+  expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe('rozed-dev/e2e#80');
 });

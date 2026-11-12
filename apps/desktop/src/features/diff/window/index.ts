@@ -23,6 +23,7 @@ import { main } from './main.ts';
 import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
 import { DiffStatus } from './Status.tsx';
 import { drawnFor, keepOnly, loaderOf, takeState, type Drawn } from './tabs.ts';
+import { markViewed } from './viewed.ts';
 import { WholeFile } from './WholeFile.tsx';
 import {
   changedIn,
@@ -163,6 +164,7 @@ export default {
     previousChange: { run: withDiff(({ view }) => view.jump('change', -1)), enabled: drawnNow },
     nextFile: { run: withDiff(({ view }) => view.jump('file', 1)), enabled: drawnNow },
     previousFile: { run: withDiff(({ view }) => view.jump('file', -1)), enabled: drawnNow },
+    markViewed: { run: withDiff(markViewed), enabled: drawnNow },
     otherSide: { run: withDiff(({ view }) => view.otherSide()), enabled: drawnNow },
     inline: {
       run: withDiff(async ({ view }) => {

@@ -30,7 +30,7 @@ function changes(state: TreeState): string[] {
 const longPath = (bytes: number) =>
   `src/${'deep/'.repeat(Math.ceil(bytes / 5)).slice(0, bytes - 11)}evil.ts`;
 
-/** #78's changes, as the local copy and GitHub both list them. */
+/** #80's changes, as the local copy and GitHub both list them. */
 const E2E_CHANGES = [
   'added data/numbers.txt',
   'added src/text/wrap.ts',
@@ -135,7 +135,7 @@ describe('TreeTab', () => {
   });
 
   it('shows only the changed files while GitHub lists the repository’s files only in part', async () => {
-    // GitHub's answer for a tree it cut short, standing in for #78's.
+    // GitHub's answer for a tree it cut short, standing in for #80's.
     const truncated = replayFetch('rest_tree_truncated');
     const files = replayFetch('rest_tree_e2e');
     const client = new GithubClient({

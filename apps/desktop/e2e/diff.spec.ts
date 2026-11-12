@@ -1,4 +1,4 @@
-// The diff in the app: Lo started on the replay server, as rozed-bot, opens rozed-dev/e2e#78 and
+// The diff in the app: Lo started on the replay server, as rozed-bot, opens rozed-dev/e2e#80 and
 // draws every changed file in one scroll, in the left panel's order, each starting out as it should,
 // and answers the diff's keys. Without git, it draws GitHub's diff, hunks only.
 
@@ -145,7 +145,7 @@ const test = base.extend<{
   },
 });
 
-/** Waits for the account from the token file, then opens #78's tab, and returns its id. */
+/** Waits for the account from the token file, then opens #80's tab, and returns its id. */
 async function openE2e(page: Page): Promise<string> {
   await expect
     .poll(async () => JSON.stringify(await page.evaluate(() => window.lo.invoke('accounts.list'))))
@@ -159,7 +159,7 @@ async function openE2e(page: Page): Promise<string> {
   return reply.value;
 }
 
-/** Opens #78 and waits for its diff, drawn from `from`. */
+/** Opens #80 and waits for its diff, drawn from `from`. */
 async function drawn(
   page: Page,
   from: 'local' | 'github' = 'local',
@@ -327,7 +327,7 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds', as
     .poll(() => browsed())
     .toEqual([
       expect.stringMatching(
-        /^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/78\/files#diff-[0-9a-f]{64}R\d+$/,
+        /^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/80\/files#diff-[0-9a-f]{64}R\d+$/,
       ),
     ]);
 });
@@ -345,7 +345,7 @@ test('copies the lines, the line’s link and the file’s path', async ({ app, 
   await press(page, 'y', 'l');
   await expect
     .poll(clipboard)
-    .toMatch(/^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/78\/files#diff-[0-9a-f]{64}R1$/);
+    .toMatch(/^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/80\/files#diff-[0-9a-f]{64}R1$/);
   await press(page, 'y', 'y');
   await expect
     .poll(clipboard)
@@ -587,7 +587,8 @@ test.describe('while the local copy takes GitHub’s place', () => {
 });
 
 test.describe('when the local copy comes after GitHub’s diff', () => {
-  test.use({ cassette: 'app_e2e_late', lateRemote: true });
+  // Its frames are timed, which a trace's snapshots would slow.
+  test.use({ cassette: 'app_e2e_late', lateRemote: true, traced: false });
 
   test('takes its place in place: what’s at the top of the screen holds, and no frame runs long', async ({
     app,
@@ -775,12 +776,14 @@ test.describe('when the local copy comes after GitHub’s diff, on a file the re
 });
 
 /**
- * Opens #78 in a short window, GitHub's diff with the banner over it, wheels down, and returns
+ * Opens #80 in a short window, GitHub's diff with the banner over it, wheels down, and returns
  * where the first row below the box's top is on the page now, and how to read it again.
  */
 async function scrolled(app: ElectronApplication, page: Page) {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
   await drawn(page, 'github', { moves: false });
+  // The banner that says the local copy couldn't be fetched, which can come after GitHub's diff.
+  await expect(page.locator('[data-lo-banners]')).toBeVisible({ timeout: 20_000 });
   const view = page.locator('.lo-diffview');
   const box = await view.boundingBox();
   await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
@@ -811,7 +814,13 @@ test.describe('when a banner over the diff goes', () => {
     const first = page.locator('.lo-diffview .cm-editor:last-of-type [data-row="h:0"]');
     const at = () => first.evaluate((header) => header.getBoundingClientRect().top);
     // The banner says the local copy's fetch failed, over the diff, which is at its top: there's
-    // less to scroll up than the banner is tall.
+    // less to scroll up than the banner is tall. The banner can come after GitHub's diff, which
+    // then scrolls to stay where it was, so the reader goes back to the top.
+    await expect(page.locator('[data-lo-banners]')).toBeVisible({ timeout: 20_000 });
+    await page.locator('.lo-diffview').evaluate((view) => {
+      view.scrollTop = 0;
+    });
+    await page.waitForTimeout(300);
     expect(await page.locator('.lo-diffview').evaluate((view) => view.scrollTop)).toBeLessThan(30);
     const before = await at();
 
@@ -844,6 +853,8 @@ test.describe('when a banner over the diff goes', () => {
   }) => {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
     await drawn(page, 'github', { moves: false });
+    // The banner that says the local copy couldn't be fetched, which can come after GitHub's diff.
+    await expect(page.locator('[data-lo-banners]')).toBeVisible({ timeout: 20_000 });
     const view = page.locator('.lo-diffview');
     // Two pixels short of the end, then at it: the box growing pulls the scroll back to the end.
     for (const short of [2, 0]) {

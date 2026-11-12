@@ -16,6 +16,8 @@ export interface PullTabInfo {
    * until the newer push is loaded.
    */
   readonly shown: string | undefined;
+  /** GitHub's newest head, as far as the tab knows: the head on screen, or a newer push. */
+  readonly latest: string | undefined;
   /**
    * Whether the head on screen is the one Lo saved, shown until GitHub says which head the pull
    * request is at now, which replaces it.
@@ -46,6 +48,11 @@ export interface TabService {
    * it may have changed, and once it's closed. Returns a function that stops it.
    */
   onPull(listener: (id: string) => void): () => void;
+  /**
+   * Calls `listener` with the tabs each time they change, as the window hears them: one opened,
+   * closed, moved or shown. Returns a function that stops it.
+   */
+  onTabs(listener: (tabs: Tabs) => void): () => void;
   /**
    * A pull request's tab's local copy, opened, to read what's been fetched into it: nothing until
    * the tab first fetches. The tab closes it as the tab closes, so a reader never does.

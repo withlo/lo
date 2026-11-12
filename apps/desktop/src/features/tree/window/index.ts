@@ -12,6 +12,8 @@ import {
   focusedFile,
   githubPage,
   goToTree,
+  markable,
+  markViewed,
   move,
   openRow,
   pullOnScreen,
@@ -97,6 +99,16 @@ export default {
         if (typeof tab === 'string') return tab;
         const key = fileOf(target, tab.id);
         return key === undefined ? true : showable(tab.id, key);
+      },
+    },
+    markViewed: {
+      run: (target) => {
+        const tab = pullOnScreen();
+        if (typeof tab !== 'string') markViewed(tab.id, target.file);
+      },
+      enabled: (target) => {
+        const tab = pullOnScreen();
+        return typeof tab === 'string' ? tab : markable(tab.id, target.file);
       },
     },
     wholeFile: {

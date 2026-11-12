@@ -742,10 +742,31 @@ describe('headers and notes', () => {
   test("a header shows what it's given", () => {
     const shown = open();
     shown.reveal({ kind: 'file', file: 'b' });
-    shown.setHeader('b', { additions: 10, deletions: 0, viewed: true, comments: 2, tags: ['new'] });
+    shown.setHeader('b', {
+      additions: 10,
+      deletions: 0,
+      viewed: 'viewed',
+      comments: 2,
+      tags: ['new'],
+    });
     const header = parent!.querySelector('.cm-content[aria-label="After"] [data-row="h:1"]')!;
     expect(header.classList.contains('is-viewed')).toBe(true);
     expect(header.textContent).toContain('new · 2 comments');
+    expect(header.querySelector('.lo-diffhead__ball.is-viewed')?.getAttribute('title')).toBe(
+      'Viewed',
+    );
+  });
+
+  test('a header draws its viewed mark as a ball', () => {
+    const shown = open();
+    shown.reveal({ kind: 'file', file: 'b' });
+    expect(ballOf('h:1')).toBeNull();
+    shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'unviewed' });
+    expect(ballOf('h:1')?.className).toBe('lo-diffhead__ball');
+    expect(headerOf('h:1').classList.contains('is-viewed')).toBe(false);
+    shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'stale' });
+    expect(ballOf('h:1')?.className).toBe('lo-diffhead__ball is-stale');
+    expect(ballOf('h:1')?.getAttribute('aria-label')).toBe('Changed since you viewed it');
   });
 
   test('a note on the comparison sits above the sides', () => {
@@ -754,6 +775,16 @@ describe('headers and notes', () => {
     expect(note?.textContent).toBe('r3 → r5, since you last looked');
   });
 });
+
+/** The header of the row `row` in the new side's editor. */
+function headerOf(row: string): Element {
+  return document.querySelector(`.cm-content[aria-label="After"] [data-row="${row}"]`)!;
+}
+
+/** The viewed ball in that header, if it draws one. */
+function ballOf(row: string): Element | null {
+  return headerOf(row).querySelector('.lo-diffhead__ball');
+}
 
 /** Runs `command` from Vim's `:` prompt in the editor labelled `label`, as `Enter` there does. */
 function ex(label: string, command: string): void {

@@ -22,11 +22,29 @@ function versions(path: string, start: Start = 'shown', size = 10): FileVersions
     large: start === 'large' ? 'large' : null,
     submodule: null,
     reach: 0,
+    conflicted: false,
+    since: null,
   };
 }
 
-function state(files: FileVersions[] | null, from: Source | null = 'local', at = HEAD): DiffState {
-  return { id: 't1', at, from, files, partial: false, problem: null };
+function state(
+  files: FileVersions[] | null,
+  from: Source | null = 'local',
+  at = HEAD,
+  comparison: string | null = null,
+  since: string | null = null,
+): DiffState {
+  return {
+    id: 't1',
+    at,
+    comparison,
+    since,
+    waiting: null,
+    from,
+    files,
+    partial: false,
+    problem: null,
+  };
 }
 
 /** Work answered at once: each file's texts are its path's, before and after. */
@@ -345,7 +363,7 @@ describe('a tab’s diff in the window', () => {
       texts: ({ from, files: places }) =>
         from === 'github'
           ? Promise.resolve(places.map(() => ({ kind: 'texts' as const, old: 'x\n', new: 'y\n' })))
-          : done.texts({ at: HEAD, from, files: places }),
+          : done.texts({ at: HEAD, comparison: null, since: null, from, files: places }),
     });
     loader.setWhitespace(true);
     loader.take(state(files, 'github'));
@@ -363,6 +381,43 @@ describe('a tab’s diff in the window', () => {
       github?.entries.map((entry) => entry.id),
     );
     expect(heard).toEqual(['lines d0 local', 'lines d1 local', 'moves 1']);
+  });
+
+  it('takes files that come to show from where they left off in place, loading only those again', async () => {
+    const files = [versions('a.ts'), versions('b.ts'), versions('c.ts')];
+    const { done, list, asked } = work();
+    list(files);
+    const loader = new Loader(done);
+    loader.setWhitespace(true);
+    loader.take(state(files, 'local'));
+    await settle(loader);
+    const drawn = loader.snapshot().ready;
+    const { made, heard } = sink();
+    loader.attach(made);
+    asked.texts.length = 0;
+
+    // b.ts now shows since r1: its old side is another blob, and it says where it shows from.
+    const since = [
+      versions('a.ts'),
+      {
+        ...versions('b.ts'),
+        old: { blob: 'e'.repeat(40), size: 10 },
+        since: { label: 'r1', why: 'viewed' as const },
+      },
+      versions('c.ts'),
+    ];
+    list(since);
+    loader.take(state(since, 'local', HEAD, null, 'since:1'));
+    await settle(loader);
+
+    expect(asked.texts).toEqual([[1]]);
+    expect(heard).toEqual(['lines d1 local', 'moves 1']);
+    // The same files, drawn in place.
+    const ready = loader.snapshot().ready;
+    expect(ready?.entries.map((entry) => entry.id)).toEqual(
+      drawn?.entries.map((entry) => entry.id),
+    );
+    expect(ready?.entries[1]?.versions.since).toEqual({ label: 'r1', why: 'viewed' });
   });
 
   it('takes the local copy’s files in place even where they start out otherwise, loading the lines the view shows', async () => {

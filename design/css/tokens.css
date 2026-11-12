@@ -398,6 +398,8 @@
   --lo-avatar-lg: 28px; /* A large avatar, beside an account's name in lists of accounts. */
   --lo-switch-w: 26px; /* Width of a switch's track. */
   --lo-file-header-h: 38px; /* Sticky file headers in the diff. */
+  --lo-diffnote-h: 38px; /* The note at the top of the diff that says what it compares. */
+  --lo-revpicker-w: 470px; /* Width of the revision picker. */
   --lo-window-inset-start: 78px; /* Space before the first tab: 78px for the macOS traffic lights, 0 on Linux. */
   --lo-window-inset-end: 0px; /* Space after the last tab: 0, or the system controls' width in a frameless Linux window. */
   --lo-code-size: 12.5px; /* Code in every CodeMirror view. */

@@ -4,7 +4,7 @@
 // a place in it while another middle view is on screen.
 
 import type { Target } from '@lo/ui/commands';
-import type { DiffView } from '@lo/ui/code';
+import type { DiffView, HeaderTarget, LineTarget } from '@lo/ui/code';
 import { useCallback, useSyncExternalStore } from 'react';
 
 import { orderIn, orderModeOf } from '../../tree/window/shared.ts';
@@ -66,10 +66,26 @@ export function keepOnly(open: ReadonlySet<string>): void {
 export interface Drawn {
   readonly view: DiffView;
   readonly loader: Loader;
+  /** The tab it's drawn for. */
+  readonly tab: string;
   /** The pull request it shows. */
   readonly pull: { owner: string; repo: string; number: number };
+  /** Its files' ids, in the order it shows them. */
+  readonly order: readonly string[];
   /** The reader opened or closed a file: how it starts out is theirs to say now. */
   acted(file: string): void;
+  /**
+   * The file a command on `target` acts on, by id: the target's, when it's on screen; else, as when
+   * the cursor was scrolled away, the file at the top of the screen.
+   */
+  fileAt(target: LineTarget | HeaderTarget): string;
+  /**
+   * The reader marked file `id` viewed (`viewed`), or cleared its mark, here: marked, it closes at
+   * once and the cursor goes to `next`'s header, which stays where it is on screen if it's there
+   * and otherwise comes to the top; cleared, it opens, and what's on screen stays. Either way how
+   * it shows is the reader's from now on.
+   */
+  viewedHere(id: string, viewed: boolean, next: string | undefined): void;
 }
 
 const drawn = new Map<string, Drawn>();

@@ -10,6 +10,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
+import { Slot } from '../../../window/slots.tsx';
+import { useViewedMarks } from '../../revisions/window/shared.ts';
 import { useSetting } from '../../settings/window/shared.ts';
 import { tabState, usePull, type PullTab } from '../../tab/window/shared.ts';
 import { orderIn, useOrderMode } from '../../tree/window/shared.ts';
@@ -19,6 +21,7 @@ import { inOrder, keptOrder, type KeptOrder, viewKey } from './files.ts';
 import type { Snapshot } from './loader.ts';
 import { usePage } from './page.ts';
 import { placesFor } from './places.ts';
+import { notes } from './shared.ts';
 import { loaderOf, useSnapshot } from './tabs.ts';
 
 /** Where each tab's view was when it last went, to come back to. */
@@ -26,6 +29,26 @@ const places = tabState<Place | undefined>(() => undefined);
 
 /** The order each tab's diff is drawn in. */
 const orders = tabState<KeptOrder | undefined>(() => undefined);
+
+/**
+ * What each tab's last view compared: two revisions by their comparison's key, or the whole pull
+ * request at a head. Another comparison is the reader's own doing, and draws with the cursor's file
+ * at the top.
+ */
+const compared = tabState<string | undefined>(() => undefined);
+
+/** What `ready` compares, as {@link compared} keeps it. */
+function comparisonOf(ready: { at: string; comparison: string | null }): string {
+  return ready.comparison ?? `head:${ready.at}`;
+}
+
+/** The file a view's cursor was in, when it was in one. */
+function cursorFile(place: Place | undefined): string | undefined {
+  const cursor = place?.cursor;
+  if (cursor?.kind === 'line') return cursor.at.file;
+  if (cursor?.kind === 'header' || cursor?.kind === 'file') return cursor.file;
+  return undefined;
+}
 
 /**
  * A pull request's tab's diff. While another middle view is on screen it stays drawn, hidden, so
@@ -41,14 +64,19 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const mode = useOrderMode(tab.id);
   const order = useMemo(() => {
     if (!ready) return undefined;
-    const kept = keptOrder(orders.get(tab.id), ready.at, ready.entries, mode, (changes) =>
-      orderIn(changes, mode),
+    const kept = keptOrder(
+      orders.get(tab.id),
+      comparisonOf(ready),
+      ready.entries,
+      mode,
+      (changes) => orderIn(changes, mode),
     );
     orders.set(tab.id, kept);
     return kept.order;
   }, [ready, mode, tab.id]);
   const layout = useSetting(layoutSetting);
   const whitespace = useSetting(whitespaceSetting);
+  const marks = useViewedMarks(tab.id);
   const page = usePage();
   const nonceValue = page?.nonce;
   const packaged = page?.packaged ?? true;
@@ -63,10 +91,12 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
       ready && order ? inOrder(ready.entries, order, (key) => loader.ids.find(key)) : undefined,
     [ready, order, loader],
   );
-  const key = ready && entries ? viewKey(ready.at, entries) : undefined;
+  const key =
+    ready && entries ? viewKey(`${ready.at}|${ready.comparison ?? ''}`, entries) : undefined;
   // What a new view is drawn with, read as it's drawn: a change of layout alone needs no new view.
-  const latest = useRef({ entries, layout, packaged, shown });
-  latest.current = { entries, layout, packaged, shown };
+  const comparison = ready && comparisonOf(ready);
+  const latest = useRef({ entries, layout, packaged, shown, marks, comparison });
+  latest.current = { entries, layout, packaged, shown, marks, comparison };
 
   useEffect(() => {
     const parent = box.current;
@@ -75,6 +105,11 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
       return undefined;
     }
     const at = key.slice(0, key.indexOf('|'));
+    // Another comparison than the last view's: the cursor's file at the top, if this one has it.
+    const before = places.get(tab.id);
+    const last = compared.get(tab.id);
+    const another = last !== undefined && last !== drawn.comparison;
+    compared.set(tab.id, drawn.comparison);
     const made = draw({
       parent,
       tab,
@@ -85,7 +120,9 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
       nonce: nonceValue,
       packaged: drawn.packaged,
       shown: drawn.shown,
-      before: places.get(tab.id),
+      before: another ? undefined : before,
+      onTop: another ? cursorFile(before) : undefined,
+      marks: drawn.marks,
     });
     view.current = made;
     return () => {
@@ -114,14 +151,28 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     view.current?.setShown(shown);
   }, [shown]);
 
+  // Viewed marks change the headers' balls, and close the files marked viewed elsewhere, or that
+  // GitHub said were viewed after the view was drawn, where the reader isn't looking.
+  useEffect(() => {
+    view.current?.setMarks(marks);
+  }, [marks]);
+
   // The local copy's files, taken in place of GitHub's, say more of each, and may start out
   // otherwise.
   useEffect(() => {
     if (ready) view.current?.update(ready.entries);
   }, [ready]);
 
-  if (!ready || nonceValue === undefined) return <Waiting tab={tab} snapshot={snapshot} />;
-  return <div ref={box} className="h-full min-h-0" data-lo-diff={tab.id} />;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <Slot slot={notes} props={{ tab }} />
+      {!ready || nonceValue === undefined ? (
+        <Waiting tab={tab} snapshot={snapshot} />
+      ) : (
+        <div ref={box} className="min-h-0 flex-1" data-lo-diff={tab.id} />
+      )}
+    </div>
+  );
 }
 
 /** What the middle says until the diff is drawn. */
@@ -131,11 +182,16 @@ function Waiting({ tab, snapshot }: { tab: PullTab; snapshot: Snapshot }) {
   let text = 'Reading what the pull request changes…';
   // Until the tab knows its head, it's still opening, or can't.
   if (!pull?.shown) text = pull?.problem ? 'Nothing to show yet.' : 'Opening the pull request…';
-  else if (state?.files?.length === 0) text = 'The pull request changes no files.';
-  else if (state?.problem && state.files === null) text = state.problem;
+  else if (state?.waiting) text = state.waiting;
+  else if (state?.files?.length === 0) {
+    text =
+      state.comparison === null
+        ? 'The pull request changes no files.'
+        : 'No file changed between these revisions.';
+  } else if (state?.problem && state.files === null) text = state.problem;
   else if (progress.of > 0) text = `Diffing the files: ${progress.done} of ${progress.of}…`;
   return (
-    <div className="grid h-full place-items-center p-32 text-center text-fg-muted text-ui">
+    <div className="grid min-h-0 flex-1 place-items-center p-32 text-center text-fg-muted text-ui">
       <p className="max-w-read-measure">{text}</p>
     </div>
   );

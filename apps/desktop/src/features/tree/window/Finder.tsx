@@ -7,7 +7,8 @@ import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react'
 import { useStore } from 'zustand';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
-import { useActiveTab, useChangedFiles } from '../../tab/window/shared.ts';
+import { useViewedMarks } from '../../revisions/window/shared.ts';
+import { useActiveTab } from '../../tab/window/shared.ts';
 import { PATH_LIMIT, type TreeState } from '../contract.ts';
 import {
   changesByKey,
@@ -16,7 +17,6 @@ import {
   groupsOf,
   itemsOf,
   placeOf,
-  viewedByPath,
   type Item,
   type Shown,
 } from './found.ts';
@@ -157,10 +157,9 @@ export function Finder() {
   const tree = useSyncExternalStore(states.subscribe, () =>
     tab === undefined ? undefined : states.get(tab),
   );
-  const viewedFiles = useChangedFiles(tab ?? '');
+  const viewed = useViewedMarks(tab ?? '').byPath;
   const active = useActiveTab();
   const changes = useMemo(() => changesByKey(tree?.changes ?? null), [tree?.changes]);
-  const viewed = useMemo(() => viewedByPath(viewedFiles?.files ?? []), [viewedFiles]);
   const items = useMemo(
     () => itemsOf(state.answer, changes, viewed, state.changedOnly),
     [state.answer, changes, viewed, state.changedOnly],

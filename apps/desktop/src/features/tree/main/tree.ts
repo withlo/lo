@@ -22,6 +22,7 @@ import {
 } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import type { Comparing, OnScreen } from '../../revisions/service.ts';
 import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import {
@@ -78,6 +79,10 @@ export interface TreeTabOptions {
 /** What's known of the commit on screen. */
 interface At {
   readonly head: Oid;
+  /** The two revisions compared, when it isn't the whole pull request: `head` is the newer's. */
+  readonly comparing: Comparing | undefined;
+  /** The files that changed between them, once they're known. */
+  compared: Changed[] | undefined;
   files: Files | undefined;
   listing: Listing;
   from: Source | undefined;
@@ -112,6 +117,8 @@ export class TreeTab {
   readonly id: string;
   readonly #options: TreeTabOptions;
   #info: PullTabInfo | undefined;
+  /** What the tab compares, as last said. */
+  #screen: OnScreen = { kind: 'head' };
   #at: At | undefined;
   #closed = false;
   /** The search under way, which a newer one stops. */
@@ -135,36 +142,46 @@ export class TreeTab {
       partial: at?.partial ?? false,
       problem: at?.problem ?? null,
       omitted: at === undefined ? 0 : omittedOf(at),
+      compared: at?.compared ?? null,
     };
   }
 
   /**
-   * Follows the tab as it is now: a new head on screen starts the tree again, a local copy ready at
-   * it reads the tree from there, and until then GitHub's API does.
+   * Follows the tab as it is now, and what it compares: a new head on screen starts the tree again,
+   * a local copy ready at it reads the tree from there, and until then GitHub's API does. Two
+   * revisions compared are read from the local copy, at the newer, with the files that changed
+   * between them; the tree already listed at that commit stays.
    */
-  update(info: PullTabInfo): void {
+  update(info: PullTabInfo, screen: OnScreen = this.#screen): void {
     if (this.#closed) return;
     this.#info = info;
-    const { shown } = info;
-    if (shown === undefined) return;
+    this.#screen = screen;
+    const comparing = screen.kind === 'revisions' ? screen.comparing : undefined;
     let head: Oid;
     try {
-      head = parseOid(shown);
+      if (comparing) head = comparing.new.head;
+      else if (info.shown === undefined) return;
+      else head = parseOid(info.shown);
     } catch {
       return;
     }
-    if (this.#at?.head !== head) {
-      if (this.#at) this.#stopRetries(this.#at);
+    const before = this.#at;
+    if (before?.head !== head || before.comparing?.key !== comparing?.key) {
+      if (before) this.#stopRetries(before);
+      // The same commit's files, listed from the local copy, stay.
+      const kept = before?.head === head && before.from === 'local' ? before : undefined;
       this.#at = {
         head,
-        files: undefined,
-        listing: { kind: 'loading' },
-        from: undefined,
+        comparing,
+        compared: undefined,
+        files: kept?.files,
+        listing: kept?.listing ?? { kind: 'loading' },
+        from: kept?.from,
         changes: undefined,
         changesFrom: undefined,
         partial: false,
         problem: undefined,
-        listedOmitted: 0,
+        listedOmitted: kept?.listedOmitted ?? 0,
         started: new Set(),
         wantsGithub: false,
         failures: { local: 0, github: 0 },
@@ -173,6 +190,14 @@ export class TreeTab {
       this.#publish();
     }
     const at = this.#at;
+    if (!at) return;
+    if (comparing) {
+      if (!at.started.has('local')) {
+        at.started.add('local');
+        void this.#fromLocal(at, comparing.new.base);
+      }
+      return;
+    }
     const { local } = info;
     if (local.kind === 'ready' && local.head === head) {
       if (!at.started.has('local')) {
@@ -248,6 +273,42 @@ export class TreeTab {
     return !this.#closed && this.#at === at;
   }
 
+  /** Lists the files at `at`'s commit from the local copy. Says whether that failed. */
+  async #list(repo: Repo, at: At): Promise<boolean> {
+    try {
+      const listed = fromLocal(
+        await repo.tree(at.head, { maxEntries: MAX_ENTRIES }),
+        this.#options.listingBytes,
+      );
+      if (!this.#current(at)) return false;
+      if (listed.tooLarge) {
+        at.files = undefined;
+        at.listing = { kind: 'changed', why: TOO_MANY_BYTES };
+      } else {
+        at.files = new Files(listed.files, this.#options.wholeLimit);
+        at.listing = at.files.listing();
+        at.listedOmitted = listed.omitted;
+      }
+      at.from = 'local';
+      at.problem = undefined;
+      return false;
+    } catch (error) {
+      if (!this.#current(at)) return false;
+      if (error instanceof GitError && error.detail.kind === 'tooLarge') {
+        at.files = undefined;
+        at.listing = {
+          kind: 'changed',
+          why: `This repository has more than ${MAX_ENTRIES.toLocaleString('en')} files, so the tree shows only the changed ones.`,
+        };
+        at.from = 'local';
+        return false;
+      }
+      this.#options.log(`listing the files at ${at.head}: ${describe(error)}`);
+      at.problem = `Lo couldn't list the files in the local copy: ${describe(error)}`;
+      return true;
+    }
+  }
+
   async #fromLocal(at: At, mergeBase: Oid | undefined): Promise<void> {
     const opening = this.#options.reads.clone();
     if (!opening) return;
@@ -259,39 +320,9 @@ export class TreeTab {
       if (this.#current(at)) this.#retry(at, 'local');
       return;
     }
-    let failed = false;
-    // The files.
-    try {
-      const listed = fromLocal(
-        await repo.tree(at.head, { maxEntries: MAX_ENTRIES }),
-        this.#options.listingBytes,
-      );
-      if (!this.#current(at)) return;
-      if (listed.tooLarge) {
-        at.files = undefined;
-        at.listing = { kind: 'changed', why: TOO_MANY_BYTES };
-      } else {
-        at.files = new Files(listed.files, this.#options.wholeLimit);
-        at.listing = at.files.listing();
-        at.listedOmitted = listed.omitted;
-      }
-      at.from = 'local';
-      at.problem = undefined;
-    } catch (error) {
-      if (!this.#current(at)) return;
-      if (error instanceof GitError && error.detail.kind === 'tooLarge') {
-        at.files = undefined;
-        at.listing = {
-          kind: 'changed',
-          why: `This repository has more than ${MAX_ENTRIES.toLocaleString('en')} files, so the tree shows only the changed ones.`,
-        };
-        at.from = 'local';
-      } else {
-        this.#options.log(`listing the files at ${at.head}: ${describe(error)}`);
-        at.problem = `Lo couldn't list the files in the local copy: ${describe(error)}`;
-        failed = true;
-      }
-    }
+    // The files, unless they're listed already, for another comparison at the same commit.
+    let failed = at.from === 'local' ? false : await this.#list(repo, at);
+    if (!this.#current(at)) return;
     this.#publish();
     // What changed, from where the head branched off the base. With no history in common, the
     // copy can't say, and GitHub's list stands.
@@ -314,12 +345,33 @@ export class TreeTab {
         return;
       }
       const files = compared.files.flatMap((file) => (file.change ? [file.change] : []));
+      // Between two revisions, what changed from one to the other.
+      const between = at.comparing ? await at.comparing.compared() : undefined;
+      if (!this.#current(at)) return;
+      if (between && 'refused' in between) {
+        throw new Error(
+          `the files changed between the revisions are larger than ${Math.round(between.limit / 2 ** 20)} MB`,
+        );
+      }
+      const betweenFiles = (between?.files ?? []).flatMap((file) =>
+        file.change ? [file.change] : [],
+      );
       // `.gitattributes` is asked only about paths short enough to key a map by.
-      const short = files.filter((file) => changedPath(file).length <= PATH_LIMIT);
+      const all = [...files, ...betweenFiles];
+      const short = all.filter((file) => changedPath(file).length <= PATH_LIMIT);
       const generated = await this.#generated(repo, at.head, short.map(changedPath));
       if (!this.#current(at)) return;
       const attributes = new Map(short.map((file, index) => [file, generated[index]]));
-      at.changes = files.map((file) => localChange(file, attributes.get(file)));
+      const changes = files.map((file) => localChange(file, attributes.get(file)));
+      if (between) {
+        const hits = betweenFiles.map((file) => localChange(file, attributes.get(file)));
+        // A file that changed between the revisions shows, though the pull request as a whole
+        // doesn't change it, as when the newer revision put it back.
+        const listed = new Set(changes.map((change) => changeKey(change.path)));
+        changes.push(...hits.filter((change) => !listed.has(changeKey(change.path))));
+        at.compared = hits;
+      }
+      at.changes = changes;
       at.changesFrom = 'local';
       at.partial = false;
     } catch (error) {
@@ -359,7 +411,8 @@ export class TreeTab {
 
   /** Reads what changed from GitHub, when the local copy couldn't say, if it hasn't yet. */
   #fallBackToGithub(at: At): void {
-    if (at.changesFrom !== undefined) return;
+    // GitHub has nothing to stand in for a comparison of revisions.
+    if (at.changesFrom !== undefined || at.comparing) return;
     at.wantsGithub = true;
     this.#fromGithubIfWanted(at);
   }

@@ -1,8 +1,10 @@
 // A tab's diff view, while it's drawn: what's been worked out of each file goes in as it arrives,
 // a frame's worth at a time, so the page never stalls. When the local copy's files take the place
-// of GitHub's and some start out otherwise (generated, large, or no longer either), a file off
-// screen changes at once; one the reader is looking at stays as it is until it's off screen once
-// the reader stops scrolling, or until the reader moves the cursor, opens or closes it.
+// of GitHub's and some start out otherwise (generated, large, or no longer either), or a file's
+// viewed mark changes elsewhere, a file off screen changes at once; one the reader is looking at
+// stays as it is until it's off screen once the reader stops scrolling, or until the reader moves
+// the cursor, opens or closes it. `e` closes a file the reader marks viewed at once, and puts the
+// next file's header where the reader expects it.
 
 import {
   createDiffView,
@@ -16,10 +18,11 @@ import { plainTarget } from '@lo/ui/commands';
 
 import { openMenu } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle } from '../../../window/commands/registry.ts';
+import { type ShownMarks, viewedMarkOf } from '../../revisions/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import { followFile } from '../../tree/window/shared.ts';
 import type { Start } from '../contract.ts';
-import { diffFileOf, headerOf } from './files.ts';
+import { diffFileOf, headerOf, startWith } from './files.ts';
 import type { Entry, Loader, Moved, Shown } from './loader.ts';
 import { main } from './main.ts';
 import { setDrawn, takeReveal } from './tabs.ts';
@@ -72,6 +75,8 @@ export interface Drawing {
   readonly view: DiffView;
   /** Takes the files as they are now: their headers, and how each starts out. */
   update(entries: readonly Entry[]): void;
+  /** Takes the viewed marks as they show now: the headers' balls, and the files viewed closed. */
+  setMarks(marks: ShownMarks): void;
   /** Where the view is, to come back to in another. */
   place(): Place;
   /**
@@ -166,6 +171,13 @@ export interface DrawOptions {
   shown: boolean;
   /** Where the tab's last view was, to come back to. */
   before: Place | undefined;
+  /**
+   * A file to put at the top of the screen, with the cursor on its header, in place of `before`: as
+   * when the reader compares other revisions. Nothing happens when the view hasn't it.
+   */
+  onTop?: string | undefined;
+  /** The viewed marks as they show: viewed files start closed. */
+  marks: ShownMarks;
 }
 
 /** How many views the page has drawn, for the smoke test. */
@@ -176,7 +188,17 @@ export function draw(options: DrawOptions): Drawing {
   draws += 1;
   const { parent, tab, loader, entries, at } = options;
   const keys = registry();
-  const files = entries.map((entry) => diffFileOf(entry, loader.shown(entry.id)));
+  let marks = options.marks;
+  /** The files as they are now, as `update` last gave them. */
+  let latest: readonly Entry[] = entries;
+  const markOf = (entry: Entry) =>
+    viewedMarkOf(marks, entry.versions.path, entry.versions.previous);
+  /**
+   * Files the reader marked viewed, or cleared, here: how they show is theirs to say now, so a
+   * mark that changes again, as when GitHub didn't take it, doesn't open or close them.
+   */
+  const own = new Set<string>();
+  const files = entries.map((entry) => diffFileOf(entry, loader.shown(entry.id), markOf(entry)));
   const drawn = new Map<string, Drawn>(
     files.map((file) => [
       file.id,
@@ -306,6 +328,8 @@ export function draw(options: DrawOptions): Drawing {
     else showMoves();
   };
 
+  /** What the view registers while it's on screen, to take back as it's hidden. */
+  let showing: (() => void)[] | undefined;
   const view = createDiffView(
     parent,
     { files, layout: options.layout, vimKeys: keys.vimKeys(), nonce: options.nonce },
@@ -313,7 +337,9 @@ export function draw(options: DrawOptions): Drawing {
       cursor: settle,
       mode() {},
       file(id) {
-        followFile(tab.id, loader.ids.keyOf(id));
+        // Only while the diff is on screen: hidden behind another middle view, it still lays out,
+        // and the tree marks that view's file.
+        if (showing) followFile(tab.id, loader.ids.keyOf(id));
         settle();
       },
       jumped: (from) => keys.history.record({ view: 'diff', at: from }),
@@ -391,8 +417,6 @@ export function draw(options: DrawOptions): Drawing {
     },
     keys.subscribe(() => view.setVimKeys(keys.vimKeys())),
   ];
-  /** What the view registers while it's on screen, to take back as it's hidden. */
-  let showing: (() => void)[] | undefined;
   const setShown = (shown: boolean) => {
     if (shown === (showing !== undefined)) return;
     if (!shown) {
@@ -404,10 +428,54 @@ export function draw(options: DrawOptions): Drawing {
       setDrawn(tab.id, {
         view,
         loader,
+        tab: tab.id,
         pull: { owner: tab.owner, repo: tab.repo, number: tab.number },
+        order: files.map((file) => file.id),
         acted(id) {
           pending.delete(id);
           release(id);
+        },
+        fileAt(target) {
+          const spot = spotOf(target);
+          const top = spot && view.probe.spotTop(spot);
+          const box = parent.getBoundingClientRect();
+          if (spot && top !== undefined && top >= box.top && top < box.bottom) {
+            return spot.kind === 'header' ? spot.file : spot.at.file;
+          }
+          const [first] = view.filesOnScreen();
+          if (first !== undefined) return first;
+          const there = spot ?? view.viewport().at;
+          return there.kind === 'header' ? there.file : there.at.file;
+        },
+        viewedHere(id, viewed, next) {
+          own.add(id);
+          pending.delete(id);
+          release(id);
+          // However the reader left it with `za`, as a file with lines to show is.
+          const lines = drawn.get(id) === 'shown' || drawn.get(id) === 'collapsed';
+          if (!viewed) {
+            // Its lines come back under its header, and what's at the top of the screen stays.
+            if (lines) {
+              steady(() => view.setCollapsed(id, false));
+              drawn.set(id, 'shown');
+            }
+            return;
+          }
+          // The next file's header stays where it is on screen, if it's there, and otherwise
+          // comes to the top, as the next thing to read; with no file left to read, this one's.
+          const to = next ?? id;
+          const cursor = spotOf(view.keyState().target);
+          const side = cursor?.kind === 'header' ? cursor.side : (cursor?.at.side ?? 'new');
+          const header: Spot = { kind: 'header', file: to, side };
+          const box = parent.getBoundingClientRect();
+          const top = view.probe.spotTop(header);
+          const onScreen = top !== undefined && top >= box.top && top < box.bottom;
+          if (lines) {
+            view.setCollapsed(id, true);
+            drawn.set(id, 'collapsed');
+          }
+          view.reveal({ kind: 'file', file: to });
+          view.scrollTo({ at: header, offset: onScreen ? box.top - top : 0 });
         },
       }),
       setMiddle({
@@ -447,9 +515,15 @@ export function draw(options: DrawOptions): Drawing {
         filesOnScreen: () => view.filesOnScreen(),
       };
   if (testing) window.loDiff = testing;
-  // Back where the tab's last view was: its cursor, and what was at the top of the screen.
-  const { before } = options;
-  if (before) {
+  // Back where the tab's last view was: its cursor, and what was at the top of the screen. Or, for
+  // another comparison, the cursor's file at the top, if this one has it.
+  const { before, onTop } = options;
+  if (onTop !== undefined && files.some((file) => file.id === onTop)) {
+    view.reveal({ kind: 'file', file: onTop });
+    const cursor = spotOf(view.keyState().target);
+    const side = cursor?.kind === 'header' ? cursor.side : (cursor?.at.side ?? 'new');
+    view.scrollTo({ at: { kind: 'header', file: onTop, side }, offset: 0 });
+  } else if (before) {
     view.reveal(before.cursor);
     // The cursor's line where it was on the page, as when the reader changes the files' order; or
     // what was at the top of the screen.
@@ -461,23 +535,34 @@ export function draw(options: DrawOptions): Drawing {
     .drawn({ id: tab.id, at })
     .catch((error: unknown) => console.error("Lo couldn't say the diff was drawn:", error));
   const headers = new Map(files.map((file) => [file.id, JSON.stringify(file.header)]));
+  /** Takes the files as they are now, with their marks: headers, and how each starts out. */
+  const take = (next: readonly Entry[]) => {
+    latest = next;
+    for (const entry of next) {
+      const mark = markOf(entry);
+      const header = headerOf(entry.versions, mark);
+      const said = JSON.stringify(header);
+      if (headers.has(entry.id) && headers.get(entry.id) !== said) {
+        headers.set(entry.id, said);
+        // A header at a time, as a new list can change every file's.
+        pacer.run(() => steady(() => view.setHeader(entry.id, header)));
+      }
+      if (own.has(entry.id)) continue;
+      const start = startWith(entry.versions, mark);
+      const now = drawn.get(entry.id);
+      const change = now === undefined ? undefined : changeFor(now, start);
+      if (change) pending.set(entry.id, { change, start });
+      else pending.delete(entry.id);
+    }
+    settle();
+  };
   return {
     view,
-    update(next) {
-      for (const entry of next) {
-        const header = headerOf(entry.versions);
-        const said = JSON.stringify(header);
-        if (headers.has(entry.id) && headers.get(entry.id) !== said) {
-          headers.set(entry.id, said);
-          // A header at a time, as a new list can change every file's.
-          pacer.run(() => steady(() => view.setHeader(entry.id, header)));
-        }
-        const now = drawn.get(entry.id);
-        const change = now === undefined ? undefined : changeFor(now, entry.versions.start);
-        if (change) pending.set(entry.id, { change, start: entry.versions.start });
-        else pending.delete(entry.id);
-      }
-      settle();
+    update: take,
+    setMarks(next) {
+      if (next === marks) return;
+      marks = next;
+      take(latest);
     },
     place: () => {
       const cursor = view.keyState().target;

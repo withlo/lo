@@ -60,7 +60,7 @@ function keptFromTheFirstPush(cache: MemoryPollCache): number {
     }
     if ('head' in value && 'base' in value) {
       Object.assign(value, {
-        head: { ref: 'app/head', sha: APP_PULL.firstHead },
+        head: { ref: 'app/feature', sha: APP_PULL.firstHead },
         base: { ref: 'app/base', sha: APP_PULL.firstBase },
       });
       changed += 1;
@@ -162,7 +162,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
         title: TITLE,
         state: 'open',
         author: 'rozed-bot',
-        head: { branch: 'app/head', fork: null },
+        head: { branch: 'app/feature', fork: null },
         base: { branch: 'app/base' },
       },
       connection: { kind: 'live' },
@@ -417,7 +417,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
       state: 'open',
       draft: false,
       updated_at: '2026-11-11T14:00:00Z',
-      head: { ref: 'app/head', sha: APP_PULL.firstHead },
+      head: { ref: 'app/feature', sha: APP_PULL.firstHead },
       base: { ref: 'app/base', sha: APP_PULL.firstBase },
     };
     expect(poller?.watches(tab.pull)).toBe(true);
@@ -486,7 +486,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
         state: 'open',
         draft: false,
         updated_at: '2026-11-11T14:00:00Z',
-        head: { ref: 'app/head', sha: APP_PULL.firstHead },
+        head: { ref: 'app/feature', sha: APP_PULL.firstHead },
         base: { ref: 'app/base', sha: APP_PULL.firstBase },
       },
     });
