@@ -331,11 +331,13 @@ files or the network for the window.
   window refuses anything else before sending, and the process checks every message, then each job's
   input, before anything runs.
 - Jobs wait for one of as many workers as the machine has cores, each a thread of its own, under a
-  deadline that starts when the job does and a cap on its JavaScript heap (10 s and 256 MB unless
-  the job sets its own). Past either, the job fails as `timeout` or `memory`. Every message with an
-  id gets an answer, and the window gives up on one after a minute (`unanswered`). The window can
-  cancel a job it sent (`run`'s `signal`): one still waiting never starts, and one running has its
-  worker stopped; either fails as `cancelled`.
+  deadline and a cap on its JavaScript heap (10 s and 256 MB unless the job sets its own). Past
+  either, the job fails as `timeout` or `memory`. The deadline starts when the job's code does, once
+  its worker has loaded the process's script, so neither the wait for a worker nor the load counts
+  against it. A worker gets 10 s of its own to load, past which the job fails as `busy`, as it does
+  when too many jobs are waiting. Every message with an id gets an answer, and the window gives up
+  on one after a minute (`unanswered`). The window can cancel a job it sent (`run`'s `signal`): one
+  still waiting never starts, and one running has its worker stopped; either fails as `cancelled`.
 - Main watches the process's memory and stops it past 2 GB, since memory outside the heap
   (WebAssembly's) can't be capped any other way, and treats a fatal error the same way. Jobs the
   window had sent fail as `restarted` at once; the process starts again, waiting longer after each
