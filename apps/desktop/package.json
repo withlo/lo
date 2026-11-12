@@ -63,6 +63,11 @@
           "build"
         ]
       },
+      "dev": {
+        "dependsOn": [
+          "^build"
+        ]
+      },
       "e2e": {
         "dependsOn": [
           "build"
