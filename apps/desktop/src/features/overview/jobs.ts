@@ -25,6 +25,12 @@ export const ARTIFACT_BYTES = 256 * 1024 + 3;
  */
 export const FILE_BYTES = 10 * 1024 * 1024;
 
+/** How much of a figure the checks read first: `@lo/artifact`'s `FIGURE_HEAD`. */
+export const FIGURE_HEAD = 4 * 1024;
+
+/** The most bytes in an SVG figure, which the checks read whole: `@lo/artifact`'s `LIMITS.svg`. */
+export const SVG_BYTES = 512 * 1024;
+
 /** The most figures an overview shows: `@lo/artifact`'s `LIMITS.figures`. */
 export const FIGURES_LIMIT = 100;
 
@@ -64,6 +70,7 @@ const codeAnswer = z.discriminatedUnion('kind', [
     size: z.number().int().nonnegative().nullable(),
     bytes: byteArray(FILE_BYTES),
   }),
+  z.strictObject({ kind: z.literal('tooLarge') }),
   z.strictObject({ kind: z.literal('missing') }),
   z.strictObject({ kind: z.literal('notFile'), is: z.enum(['link', 'folder', 'submodule']) }),
   z.strictObject({ kind: z.literal('noCommit') }),

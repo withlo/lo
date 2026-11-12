@@ -164,11 +164,14 @@ export const PATH_LIMIT = 1024;
  * - `file`: its size, and as much of it as the checks read: none, for a file named whole or one
  *   larger than they read; its start, for one that isn't text or is past what's left of the code
  *   they read; else all of it. A file named whole whose contents the local copy lacks has no size;
+ * - `tooLarge`: larger than the checks read of a file, its download stopped past that before its
+ *   size was known;
  * - `missing`, `notFile` and `noCommit`, as the checks' readers answer;
  * - `unread`: main couldn't read it, and why.
  */
 export type CodeAnswer =
   | { kind: 'file'; size: number | null; bytes: Uint8Array }
+  | { kind: 'tooLarge' }
   | { kind: 'missing' }
   | { kind: 'notFile'; is: 'link' | 'folder' | 'submodule' }
   | { kind: 'noCommit' }

@@ -1,13 +1,14 @@
 // A tab's overview, checked in the window: with no code until the local copy is there, and again
-// once it is; never with code without git; published again only when the result changes, with the
-// same parse for as long as the commit is the same.
+// once it is; never with code without git; with code once read kept, whatever a later read says;
+// published again only when the result changes, with the same parse for as long as the commit is
+// the same.
 
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CodeAccess, CodeReply, OverviewCommit, OverviewState } from '../contract.ts';
 import type { CodeFile } from '../jobs.ts';
 import { localJobs } from '../test/jobs.ts';
-import { Checking, keyOf, prOf, type CheckedOverview } from './checking.ts';
+import { Checking, keyOf, prOf, type CheckedOverview, type CodeRead } from './checking.ts';
 
 const encoder = new TextEncoder();
 const HEAD = 'a'.repeat(40);
@@ -136,6 +137,80 @@ describe('Checking', () => {
     expect(asked.check).toBe(2);
   });
 
+  it('keeps code it read when reading it again fails, or reads less of it', async () => {
+    const TWO = encoder.encode(
+      `---\nformat: 1\npr: 7\ncommit: ${HEAD}\n---\n\n## tl;dr\n\nIt reads.\n\n:::code src/a.ts#L2\n:::\n\n:::code src/b.ts#L1\n:::\n`,
+    );
+    const half: CodeReply = {
+      kind: 'read',
+      files: [READ.files[0] ?? { kind: 'missing' }, { kind: 'unread', why: 'Offline.' }],
+    };
+    let reply: CodeReply = half;
+    const published: (CheckedOverview | undefined)[] = [];
+    const asked = { code: 0, check: 0 };
+    const checking = new Checking('t1', {
+      files: async ({ paths }) =>
+        paths.map(() => ({ kind: 'file' as const, size: TWO.length, bytes: TWO })),
+      code: async () => {
+        asked.code += 1;
+        return reply;
+      },
+      parse: (input) => localJobs.parse(input),
+      check: (input) => {
+        asked.check += 1;
+        return localJobs.check(input);
+      },
+      publish: (value) => published.push(value),
+      log: () => {},
+    });
+    const commit = commitOf();
+    checking.take(stateOf(commit, 'offline'));
+    await vi.waitFor(() => expect(published).toHaveLength(1));
+    const states = () => {
+      const last = published.at(-1);
+      if (last?.kind !== 'checked' || last.checked.outcome.kind !== 'shown') return [];
+      return last.checked.outcome.code.map(({ code }) => code.state);
+    };
+    expect(states()).toEqual(['resolved', 'unread']);
+
+    // Read again as the copy comes back, the read fails, or the copy isn't there after all, or
+    // what was read is unread now: what was read stays.
+    for (const again of [
+      { kind: 'failed', why: 'It broke.' },
+      { kind: 'waiting' },
+      {
+        kind: 'read',
+        files: [
+          { kind: 'unread', why: 'Gone.' },
+          { kind: 'unread', why: 'Gone.' },
+        ],
+      },
+    ] satisfies CodeReply[]) {
+      reply = again;
+      const before = asked.code;
+      checking.take(stateOf(commit, asked.code % 2 === 0 ? 'offline' : 'ready'));
+      await vi.waitFor(() => expect(asked.code).toBe(before + 1));
+      // Settled before the copy's state changes again.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(published).toHaveLength(1);
+    }
+    expect(asked.check).toBe(1);
+    expect(states()).toEqual(['resolved', 'unread']);
+    // What was read of it is kept by its size, not its bytes.
+    expect(published[0]).toMatchObject({
+      code: { kind: 'read', files: [{ answer: { kind: 'file', size: 8, read: 8 } }, {}] },
+    });
+
+    // Read in full at last.
+    reply = {
+      kind: 'read',
+      files: [READ.files[0] ?? { kind: 'missing' }, READ.files[0] ?? { kind: 'missing' }],
+    };
+    checking.take(stateOf(commit, asked.code % 2 === 0 ? 'offline' : 'ready'));
+    await vi.waitFor(() => expect(published).toHaveLength(2));
+    expect(states()).toEqual(['resolved', 'resolved']);
+  });
+
   it('never asks for code without git', async () => {
     const { checking, published, asked, last } = checkingWith(() => READ);
     checking.take(stateOf(commitOf(), 'noGit'));
@@ -204,32 +279,24 @@ describe('Checking', () => {
   });
 });
 
-/** Code read at `HEAD`: one file, of `size` bytes. */
-function readOf(size: number) {
+/** Code read at `HEAD`: one file, of `size` bytes, all of it read. */
+function readOf(size: number): CodeRead {
   return {
-    kind: 'read' as const,
+    kind: 'read',
     commit: HEAD,
-    files: [
-      {
-        path: 'a',
-        lines: true,
-        answer: { kind: 'file' as const, size, bytes: new Uint8Array(size) },
-      },
-    ],
+    files: [{ path: 'a', lines: true, answer: { kind: 'file', size, read: size } }],
   };
 }
 
 describe('keyOf', () => {
   it('tells results apart by what was read, not by the bytes read', () => {
     const commit = commitOf();
-    const figure = { file: { kind: 'file' as const, size: 3, bytes: new Uint8Array(3) } };
-    expect(keyOf(commit, [figure], readOf(3))).toBe(keyOf(commit, [figure], readOf(3)));
-    expect(keyOf(commit, [figure], readOf(3))).not.toBe(keyOf(commit, [figure], readOf(4)));
-    expect(keyOf(commit, [figure], { kind: 'waiting' })).not.toBe(
-      keyOf(commit, [figure], { kind: 'noGit' }),
-    );
-    expect(keyOf(commit, [], { kind: 'none' })).not.toBe(
-      keyOf(commitOf('f'.repeat(40)), [], { kind: 'none' }),
+    expect(keyOf(commit, 'f', readOf(3))).toBe(keyOf(commit, 'f', readOf(3)));
+    expect(keyOf(commit, 'f', readOf(3))).not.toBe(keyOf(commit, 'f', readOf(4)));
+    expect(keyOf(commit, 'f', readOf(3))).not.toBe(keyOf(commit, 'g', readOf(3)));
+    expect(keyOf(commit, 'f', { kind: 'waiting' })).not.toBe(keyOf(commit, 'f', { kind: 'noGit' }));
+    expect(keyOf(commit, '', { kind: 'none' })).not.toBe(
+      keyOf(commitOf('f'.repeat(40)), '', { kind: 'none' }),
     );
   });
 });

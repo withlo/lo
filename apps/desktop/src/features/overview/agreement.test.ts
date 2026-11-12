@@ -1,10 +1,12 @@
 // Every overview in `testing/fixtures/artifacts/` checks the same in the app as through
 // `@lo/artifact`'s readers of the fixture's folder and its code's repository: the same outcome,
-// findings and state of each code block and figure, and so does one naming more code than the
-// checks read. In the app, main lists the overview's commit as
-// GitHub does, gives its files as `files` does and reads its code from a local copy fetching from a
-// server standing in for GitHub; the window reads and checks it through the overview's two jobs,
-// run as the background process runs them. So Lo, the checker and the app can't disagree.
+// findings and state of each code block and figure. So does one naming more code than the checks
+// read, from a local copy that has it or one that must download it, and one whose figures' headers
+// go on past their starts, which the check is sent first. In the app, main lists the overview's
+// commit as GitHub does, gives its files as `files` does and reads its code from a local copy
+// fetching from a server standing in for GitHub; the window reads and checks it through the
+// overview's two jobs, run as the background process runs them. So Lo, the checker and the app
+// can't disagree.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,8 +23,8 @@ import type { Repo } from '@lo/git';
 import { RepoServer } from '@lo/testing/git';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-import type { OverviewCommit, OverviewFile, OverviewState } from './contract.ts';
-import { treeEntries } from './jobs.ts';
+import type { Entry, OverviewCommit, OverviewFile, OverviewState } from './contract.ts';
+import { FIGURE_HEAD, treeEntries, type CheckInput } from './jobs.ts';
 import { codeReply, readCode } from './main/code.ts';
 import { readsText, sizeOnly } from './main/fetch.ts';
 import { entryAt, isReadable, listedEntries } from './main/listing.ts';
@@ -41,6 +43,7 @@ import {
   type Expected,
   type FixtureInput,
 } from './test/fixtures.ts';
+import { jpeg } from './test/images.ts';
 import { localJobs } from './test/jobs.ts';
 import { memoryClone } from './test/memory.ts';
 import { Checking, type CheckedOverview } from './window/checking.ts';
@@ -193,65 +196,199 @@ function binaryOf(size: number, at: number): Uint8Array {
   return bytes;
 }
 
-describe('an overview naming more code than the checks read', () => {
-  test('reads it as the checks do, up to the last byte they read', async () => {
-    const files = new Map<string, Uint8Array>();
-    // Six files of text as large as the checks read: nearly all they read of code.
-    for (let n = 0; n < 6; n++) files.set(`text/${n}.txt`, textOf(LIMITS.file - 1));
-    // One that isn't text, of which only its start counts.
-    files.set('bin/early.bin', binaryOf(1024 * 1024, 0));
-    // Text that leaves 100 bytes to read, then one that's past them, by its start alone.
-    const used = 6 * (LIMITS.file - 1) + BINARY_WINDOW;
-    files.set('text/fills.txt', textOf(LIMITS.code - used - 100));
-    files.set('text/past.txt', textOf(1000));
-    // With nothing left to read: one that isn't text, though nothing of it is read to say so.
-    files.set('bin/late.bin', binaryOf(4096, 50));
-    files.set('text/empty.txt', new Uint8Array());
-    files.set('big/huge.txt', textOf(LIMITS.file + 1));
-    const blocks = [...files.keys()].map((path) => `:::code ${path}#L1\n:::\n`).join('\n');
-    const artifact = new TextEncoder().encode(
-      `---\nformat: 1\npr: 1\ncommit: ${'a'.repeat(40)}\n---\n\n## tl;dr\n\nIt reads.\n\n${blocks}`,
-    );
-    const entries = [
-      { path: 'artifact.md', kind: 'file' as const, size: artifact.length, id: 'b'.repeat(40) },
-    ];
+/** An overview showing `body`, at a commit of its code, on pull request #1. */
+function overviewOf(body: string): Uint8Array {
+  return new TextEncoder().encode(
+    `---\nformat: 1\npr: 1\ncommit: ${'a'.repeat(40)}\n---\n\n## tl;dr\n\nIt reads.\n\n${body}`,
+  );
+}
 
+/**
+ * `files` named by their lines, read as the checks read them and as main reads them from a copy
+ * that has them all, or with `lacking`, one that must download them. Both checks, and what each
+ * found of the code.
+ */
+async function bothWays(files: ReadonlyMap<string, Uint8Array>, lacking: boolean) {
+  const artifact = overviewOf(
+    [...files.keys()].map((path) => `:::code ${path}#L1\n:::\n`).join('\n'),
+  );
+  const entries = [
+    { path: 'artifact.md', kind: 'file' as const, size: artifact.length, id: 'b'.repeat(40) },
+  ];
+  const reference = await checkArtifact(
+    parseArtifact(artifact),
+    { entries: treeEntries(entries), read: () => Promise.resolve({ kind: 'missing' }) },
+    async (_commit, path, cap) => {
+      const bytes = files.get(path) ?? new Uint8Array();
+      return { kind: 'file', size: bytes.length, bytes: bytes.subarray(0, cap) };
+    },
+    { pr: 1 },
+  );
+  const parsed = await localJobs.parse({ artifact });
+  const { clone } = memoryClone(files, { lacking });
+  const answers = await readCode(clone, 'a'.repeat(40), parsed.code);
+  const checked = await localJobs.check({
+    artifact,
+    entries,
+    pr: 1,
+    figures: [],
+    code: {
+      commit: 'a'.repeat(40),
+      files: parsed.code.map(({ path }, index) => ({
+        path,
+        answer: answers[index] ?? { kind: 'unread', why: '' },
+      })),
+    },
+  });
+  return { reference, checked, code: codeOf(checked) };
+}
+
+/** The state of each code block a check found. */
+function codeOf(result: CheckedArtifact) {
+  return result.outcome.kind === 'shown' ? result.outcome.code.map(({ code }) => code) : [];
+}
+
+/** How much of each figure `figures` holds, or what main answered instead. */
+function sizes(figures: CheckInput['figures']) {
+  return figures.map(({ file }) => (file.kind === 'file' ? file.bytes?.length : file.kind));
+}
+
+describe.each([
+  { copy: 'has', lacking: false },
+  { copy: 'must download', lacking: true },
+])(
+  'an overview naming more code than the checks read, from a copy that $copy it',
+  ({ lacking }) => {
+    test('reads it as the checks do, up to the last byte they read', async () => {
+      const files = new Map<string, Uint8Array>();
+      // Six files of text as large as the checks read: nearly all they read of code.
+      for (let n = 0; n < 6; n++) files.set(`text/${n}.txt`, textOf(LIMITS.file - 1));
+      // One that isn't text, of which only its start counts.
+      files.set('bin/early.bin', binaryOf(1024 * 1024, 0));
+      // Text that leaves 100 bytes to read, then one that's past them, by its start alone.
+      const used = 6 * (LIMITS.file - 1) + BINARY_WINDOW;
+      files.set('text/fills.txt', textOf(LIMITS.code - used - 100));
+      files.set('text/past.txt', textOf(1000));
+      // With nothing left to read: one that isn't text, though nothing of it is read to say so.
+      files.set('bin/late.bin', binaryOf(4096, 50));
+      files.set('text/empty.txt', new Uint8Array());
+      files.set('big/huge.txt', textOf(LIMITS.file + 1));
+      const { reference, checked, code } = await bothWays(files, lacking);
+      expect(code).toEqual([
+        ...Array.from({ length: 6 }, () => ({ state: 'resolved' })),
+        { state: 'broken', why: 'binary' },
+        { state: 'resolved' },
+        { state: 'broken', why: 'tooLarge' },
+        { state: 'broken', why: 'tooLarge' },
+        { state: 'broken', why: 'lines' },
+        { state: 'broken', why: 'tooLarge' },
+      ]);
+      expect(checked).toEqual(reference);
+    }, 60_000);
+
+    test('reads a small file after large ones that take up what the checks read', async () => {
+      const files = new Map<string, Uint8Array>();
+      for (let n = 0; n < 7; n++) files.set(`text/${n}.txt`, textOf(LIMITS.file - 1));
+      files.set('text/small.txt', textOf(4));
+      // Larger than the checks read of a file, by any measure.
+      files.set('big/huge.txt', textOf(3 * LIMITS.file));
+      files.set('text/last.txt', textOf(4));
+      const { reference, checked, code } = await bothWays(files, lacking);
+      expect(code).toEqual([
+        ...Array.from({ length: 6 }, () => ({ state: 'resolved' })),
+        { state: 'broken', why: 'tooLarge' },
+        { state: 'resolved' },
+        { state: 'broken', why: 'tooLarge' },
+        { state: 'resolved' },
+      ]);
+      expect(checked).toEqual(reference);
+    }, 60_000);
+  },
+);
+
+describe('an overview whose figures’ headers go on past their starts', () => {
+  test('checks the same, the check sent all of a figure only once it reads it', async () => {
+    const figures = new Map<string, Uint8Array>([
+      // Its size in its start, and a megabyte after.
+      ['figures/near.jpg', jpeg(30, 20, { after: 1024 * 1024 })],
+      // Its size past its start.
+      ['figures/far.jpg', jpeg(40, 10, { before: 20_000, after: 1024 * 1024 })],
+      // Not what its name says: left out, from its start.
+      ['figures/wrong.png', jpeg(5, 5, { after: 1024 * 1024 })],
+    ]);
+    const artifact = overviewOf(
+      [...figures.keys()].map((path) => `:::figure ${path}\nA figure.\n:::\n`).join('\n'),
+    );
+    const entries: Entry[] = [
+      { path: 'artifact.md', kind: 'file', size: artifact.length, id: 'b'.repeat(40) },
+      { path: 'figures', kind: 'folder', size: null, id: 'c'.repeat(40) },
+      ...[...figures].map(([path, bytes]): Entry => ({
+        path,
+        kind: 'file',
+        size: bytes.length,
+        id: 'd'.repeat(40),
+      })),
+    ];
     const reference = await checkArtifact(
       parseArtifact(artifact),
-      { entries: treeEntries(entries), read: () => Promise.resolve({ kind: 'missing' }) },
-      async (_commit, path, cap) => {
-        const bytes = files.get(path) ?? new Uint8Array();
-        return { kind: 'file', size: bytes.length, bytes: bytes.subarray(0, cap) };
+      {
+        entries: treeEntries(entries),
+        read: async (path, cap) => {
+          const bytes = figures.get(path) ?? new Uint8Array();
+          return { kind: 'file', size: bytes.length, bytes: bytes.subarray(0, cap) };
+        },
       },
+      () => Promise.resolve({ kind: 'missing' }),
       { pr: 1 },
     );
     if (reference.outcome.kind !== 'shown') throw new Error('The overview isn’t shown');
-    expect(reference.outcome.code.map(({ code }) => code)).toEqual([
-      ...Array.from({ length: 6 }, () => ({ state: 'resolved' })),
-      { state: 'broken', why: 'binary' },
-      { state: 'resolved' },
-      { state: 'broken', why: 'tooLarge' },
-      { state: 'broken', why: 'tooLarge' },
-      { state: 'broken', why: 'lines' },
-      { state: 'broken', why: 'tooLarge' },
+    expect(reference.outcome.figures.map(({ figure }) => figure.state)).toEqual([
+      'kept',
+      'kept',
+      'leftOut',
     ]);
 
-    const parsed = await localJobs.parse({ artifact });
-    const { clone } = memoryClone(files);
-    const answers = await readCode(clone, 'a'.repeat(40), parsed.code);
-    const checked = await localJobs.check({
-      artifact,
-      entries,
-      pr: 1,
-      figures: [],
-      code: {
-        commit: 'a'.repeat(40),
-        files: parsed.code.map(({ path }, index) => ({
-          path,
-          answer: answers[index] ?? { kind: 'unread', why: '' },
-        })),
-      },
+    const sent: CheckInput['figures'][] = [];
+    const shown = await new Promise<CheckedOverview | undefined>((resolve) => {
+      const checking = new Checking('t1', {
+        files: async ({ paths }) =>
+          paths.map((path): OverviewFile => {
+            const bytes = path === 'artifact.md' ? artifact : figures.get(path);
+            return bytes ? { kind: 'file', size: bytes.length, bytes } : { kind: 'missing' };
+          }),
+        code: () => Promise.resolve({ kind: 'read', files: [] }),
+        parse: (input) => localJobs.parse(input),
+        check: (input) => {
+          sent.push(input.figures);
+          return localJobs.check(input);
+        },
+        publish: resolve,
+        log: () => {},
+      });
+      checking.take({
+        id: 't1',
+        ref: 'refs/lo/pr/1',
+        watching: true,
+        found: 'commit',
+        overview: { ...commitOf(entries, true), repository: { owner: 'o', name: 'r' } },
+        newer: null,
+        saved: false,
+        problem: null,
+        code: 'ready',
+      });
     });
-    expect(checked).toEqual(reference);
-  }, 60_000);
+    if (shown?.kind !== 'checked') throw new Error('The overview wasn’t checked');
+    expect(shown.checked).toEqual(reference);
+    // Each figure's start, then all of the one whose header goes on past it.
+    expect(sent.map(sizes)).toEqual([
+      [FIGURE_HEAD, FIGURE_HEAD, FIGURE_HEAD],
+      [FIGURE_HEAD, figures.get('figures/far.jpg')?.length, FIGURE_HEAD],
+    ]);
+    // What's kept is what's drawn: all of each figure kept, and the start of the rest.
+    expect([...shown.figures].map(([path, file]) => [path, sizes([{ path, file }])[0]])).toEqual([
+      ['figures/near.jpg', figures.get('figures/near.jpg')?.length],
+      ['figures/far.jpg', figures.get('figures/far.jpg')?.length],
+      ['figures/wrong.png', FIGURE_HEAD],
+    ]);
+  });
 });

@@ -13,11 +13,13 @@ import type { Acting } from '../../tab/contract.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { Blobs } from './blobs.ts';
-import { codeReply } from './code.ts';
+import { codeReply, CodeReads, readKey } from './code.ts';
 import { SavedRefs } from './saved.ts';
 import { OverviewTab } from './watch.ts';
 
 const followed = new Map<string, OverviewTab>();
+/** Each tab's read of an overview's code, stopped as the tab closes. */
+const codeReads = new CodeReads();
 const stops: (() => void)[] = [];
 /** Whether Lo's window is in front, which reads the ref on screen more often. */
 let foreground = false;
@@ -56,6 +58,7 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
   if (!info) {
     followed.get(id)?.close();
     followed.delete(id);
+    codeReads.stop(id);
     return;
   }
   let tab = followed.get(id);
@@ -90,7 +93,9 @@ export default defineFeature(contract, {
       const service = context.use(tabs);
       const info = service.pull(id);
       if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
-      return codeReply(info.local, () => service.clone(id), commit, files, log);
+      return codeReads.run(id, readKey(info.local, commit, files), (signal) =>
+        codeReply(info.local, () => service.clone(id), commit, files, { signal, log }),
+      );
     },
     retry({ id }) {
       tabOf(id).retry();
@@ -121,6 +126,7 @@ export default defineFeature(contract, {
   },
   stop() {
     for (const stop of stops.splice(0)) stop();
+    codeReads.stopAll();
     for (const tab of followed.values()) tab.close();
     followed.clear();
   },

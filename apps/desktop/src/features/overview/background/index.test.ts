@@ -1,18 +1,21 @@
 // The overview's jobs: the parse says what main reads for the checks, and the check reads
 // `artifact.md` again and answers its readers only from what main read, leaving the rest unread.
 
-import { BINARY_WINDOW, LIMITS, SIZE_ONLY } from '@lo/artifact';
+import { BINARY_WINDOW, FIGURE_HEAD as CHECKS_FIGURE_HEAD, LIMITS, SIZE_ONLY } from '@lo/artifact';
 import { describe, expect, it } from 'vitest';
 
 import {
   ARTIFACT_BYTES,
   contract,
   ENTRIES_LIMIT,
+  FIGURE_HEAD,
   FIGURES_LIMIT,
   FILE_BYTES,
+  SVG_BYTES,
   type CheckInput,
 } from '../jobs.ts';
 import { CODE_LIMIT, PATH_LIMIT, type Entry } from '../contract.ts';
+import { jpeg } from '../test/images.ts';
 import { runJob } from '../test/jobs.ts';
 import { checkOverview, parseOverview } from './index.ts';
 
@@ -59,6 +62,8 @@ describe('the limits the jobs take things to', () => {
     expect(ENTRIES_LIMIT).toBe(LIMITS.entries + 2);
     expect(CODE_LIMIT).toBe(LIMITS.targets);
     expect(PATH_LIMIT).toBe(LIMITS.argument);
+    expect(FIGURE_HEAD).toBe(CHECKS_FIGURE_HEAD);
+    expect(SVG_BYTES).toBe(LIMITS.svg);
   });
 });
 
@@ -179,6 +184,38 @@ describe('overview.check', () => {
     expect(checked.outcome).toMatchObject({
       kind: 'shown',
       code: [{ code: { state: 'broken', why: 'tooLarge' } }],
+    });
+  });
+
+  it('judges a file whose download main stopped past what the checks read too large', async () => {
+    const checked = await checkOverview(
+      inputOf(artifactOf(block), {
+        code: { commit: COMMIT, files: [{ path: 'src/a.ts', answer: { kind: 'tooLarge' } }] },
+      }),
+    );
+    expect(checked.outcome).toMatchObject({
+      kind: 'shown',
+      code: [{ code: { state: 'broken', why: 'tooLarge' } }],
+    });
+    expect(checked.findings.map(({ code }) => code)).toEqual(['code-too-large']);
+  });
+
+  it('reads all of an image whose header goes on past its start, when main sent it', async () => {
+    const photo = jpeg(30, 20, { before: 20_000, after: 1024 });
+    const artifact = artifactOf(':::figure figures/a.jpg\nA photo.\n:::\n');
+    const input = (bytes: Uint8Array) =>
+      inputOf(artifact, {
+        entries: entriesOf(artifact, { 'figures/a.jpg': photo.length }),
+        figures: [{ path: 'figures/a.jpg', file: { kind: 'file', size: photo.length, bytes } }],
+      });
+    expect((await checkOverview(input(photo))).outcome).toMatchObject({
+      kind: 'shown',
+      figures: [{ figure: { state: 'kept', type: 'jpeg', width: 30, height: 20 } }],
+    });
+    // Sent its start alone, it's left unread, for the window to send all of it.
+    expect((await checkOverview(input(photo.slice(0, FIGURE_HEAD)))).outcome).toMatchObject({
+      kind: 'shown',
+      figures: [{ figure: { state: 'unread', why: 'failed' } }],
     });
   });
 

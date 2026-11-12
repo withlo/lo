@@ -1,18 +1,28 @@
-// Main's reader of an overview's code: the pull request's local copy at the header's commit, read
-// as the overview's checks read code. A commit GitHub doesn't have, links, submodules and folders
-// answer as the checks' readers do; a file past what the checks read is judged by its size and
-// never read; downloads are capped at what's left of the code the checks read; and git reads no
-// more than its limit for one overview.
+// Main's reader of an overview's code: the pull request's local copy at the commit its header
+// names, read as the overview's checks read code. A commit GitHub doesn't have, or a header naming
+// something else, links, submodules and folders answer as the checks' readers do; every path is
+// looked up in one walk of the commit's trees, however large; a file past what the checks read is
+// judged by its size and never read; downloads are stopped past what one file the checks read
+// brings, and past what's left for one overview; git reads no more than its limit for one
+// overview; and a read stops once it's asked for again.
 
 import { BINARY_WINDOW, LIMITS } from '@lo/artifact';
 import { GitError, parseOid, type Oid, type Repo } from '@lo/git';
-import { git, RepoServer } from '@lo/testing/git';
+import { git, gitBytes, RepoServer } from '@lo/testing/git';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { CodeAnswer } from '../contract.ts';
+import type { CodeAnswer, CodeReply } from '../contract.ts';
 import { testClone } from '../test/clone.ts';
 import { memoryClone } from '../test/memory.ts';
-import { codeReply, readCode, STREAM_LIMIT, type CodeClone } from './code.ts';
+import {
+  codeReply,
+  CodeReads,
+  DOWNLOAD_LIMIT,
+  PROBE,
+  readCode,
+  STREAM_LIMIT,
+  type CodeClone,
+} from './code.ts';
 
 const encoder = new TextEncoder();
 const text = (value: string) => encoder.encode(value);
@@ -32,6 +42,14 @@ let commit: string;
 let lost: string;
 /** An annotated tag of `commit`, on the server. */
 let tag: string;
+/** `commit`'s tree, and a file in it: objects on the server that aren't commits. */
+let tree: string;
+let blob: string;
+/** A commit of one folder, `big/`, of `BIG` files, each named in the tree once. */
+let big: string;
+
+/** How many files `big/` holds: a tree of megabytes, as anyone may push. */
+const BIG = 200_000;
 
 beforeAll(() => {
   server = new RepoServer();
@@ -50,18 +68,32 @@ beforeAll(() => {
   tag = git(remote.work, 'rev-parse', 'v1');
   remote.publish('refs/heads/trunk');
   git(remote.gitDir, 'fetch', '-q', remote.work, 'refs/tags/v1:refs/tags/v1');
+  tree = git(remote.work, 'rev-parse', `${commit}^{tree}`);
+  blob = git(remote.work, 'rev-parse', `${commit}:src/a.ts`);
   remote.write('src/a.ts', 'lost\n');
   lost = remote.commit('Never pushed.');
-}, 60_000);
+
+  // One file's contents under every name, written straight into the server's repository.
+  const contents = gitBytes(remote.gitDir, ['hash-object', '-w', '--stdin'], 'big\n')
+    .toString('utf8')
+    .trim();
+  const listing = Array.from({ length: BIG }, (_, n) => `100644 blob ${contents}\tf${n}.ts\n`);
+  const folder = gitBytes(remote.gitDir, ['mktree'], listing.join('')).toString('utf8').trim();
+  const root = gitBytes(remote.gitDir, ['mktree'], `040000 tree ${folder}\tbig\n`)
+    .toString('utf8')
+    .trim();
+  big = git(remote.gitDir, 'commit-tree', root, '-m', 'A large folder.');
+}, 120_000);
 
 afterAll(() => server.remove());
 
 /** The pull request's local copy, with nothing fetched into it yet. */
 const fresh = () => testClone(server.baseUrl, 'o', 'r');
 
-/** `repo`, counting what's read of it and downloaded into it. */
+/** `repo`, counting what's read of it, looked up in it and downloaded into it. */
 function watched(repo: CodeClone) {
   const reads: Oid[] = [];
+  const lookups: number[] = [];
   const downloads: { oids: readonly Oid[]; maxBytes: number | undefined }[] = [];
   const clone: CodeClone = {
     get offline() {
@@ -69,7 +101,12 @@ function watched(repo: CodeClone) {
     },
     hasCommit: (oid) => repo.hasCommit(oid),
     fetchCommit: (oid) => repo.fetchCommit(oid),
-    fileVersion: (rev, path) => repo.fileVersion(rev, path),
+    missingObjects: (oids) => repo.missingObjects(oids),
+    fileVersions(rev, paths) {
+      lookups.push(paths.length);
+      return repo.fileVersions(rev, paths);
+    },
+    objectSizes: (oids) => repo.objectSizes(oids),
     download(oids, what, options) {
       downloads.push({ oids, maxBytes: options?.maxBytes });
       return repo.download(oids, what, options);
@@ -79,7 +116,7 @@ function watched(repo: CodeClone) {
       return repo.readBlob(oid, options);
     },
   };
-  return { clone, reads, downloads };
+  return { clone, reads, lookups, downloads };
 }
 
 const file = (size: number | null, bytes: Uint8Array | string = new Uint8Array()) => ({
@@ -139,10 +176,30 @@ describe('readCode', () => {
       { path: 'src/a.ts', lines: true },
       { path: 'docs/readme.md', lines: false },
     ];
-    expect(await readCode(repo, lost, files)).toEqual([{ kind: 'noCommit' }, { kind: 'noCommit' }]);
-    // A tag names a commit, but isn't the commit an overview names.
-    expect(await readCode(repo, tag, files)).toEqual([{ kind: 'noCommit' }, { kind: 'noCommit' }]);
+    const none = [{ kind: 'noCommit' }, { kind: 'noCommit' }];
+    expect(await readCode(repo, lost, files)).toEqual(none);
+    // A tag names a commit, but isn't the commit an overview names; nor is a tree or a file.
+    expect(await readCode(repo, tag, files)).toEqual(none);
+    expect(await readCode(repo, tree, files)).toEqual(none);
+    expect(await readCode(repo, blob, files)).toEqual(none);
+    // Asked again, with each already in the copy.
+    expect(await readCode(repo, tree, files)).toEqual(none);
+    expect(await readCode(repo, blob, files)).toEqual(none);
   });
+
+  it('looks every path up in one walk of a large tree, reading it once', async () => {
+    const { clone, lookups } = watched(await fresh());
+    const files = Array.from({ length: 500 }, (_, n) => ({
+      path: `big/f${n * 397}.ts`,
+      lines: false,
+    }));
+    const started = performance.now();
+    const answers = await readCode(clone, big, files);
+    // Reading the tree once a path takes minutes; once, well under a second.
+    expect(performance.now() - started).toBeLessThan(10_000);
+    expect(lookups).toEqual([500]);
+    expect(answers.every((answer) => answer.kind === 'file')).toBe(true);
+  }, 60_000);
 
   it('judges a file past what the checks read by its size, never reading it', async () => {
     const { clone: repo, reads, downloads } = watched(await fresh());
@@ -156,7 +213,7 @@ describe('readCode', () => {
     expect(reads).toEqual([]);
   });
 
-  it('downloads what the copy lacks, capped at what’s left of the code the checks read', async () => {
+  it('downloads what the copy lacks all at once, stopped past what one file brings', async () => {
     const real = await fresh();
     const { clone: repo, downloads } = watched(real);
     // The copy has one file the overview names by its lines already.
@@ -167,16 +224,15 @@ describe('readCode', () => {
       { path: 'src/a.ts', lines: true },
       { path: 'docs/readme.md', lines: true },
     ]);
-    // All at once, as if what the copy has were read whole.
     expect(downloads).toEqual([
-      { oids: [expect.any(String), expect.any(String)], maxBytes: LIMITS.code - BINARY.length },
+      { oids: [expect.any(String), expect.any(String)], maxBytes: PROBE },
     ]);
   });
 
-  it('downloads one at a time once all at once is past the cap, each capped at what’s left', async () => {
+  it('downloads one at a time once all at once is stopped', async () => {
     const real = await fresh();
     const { clone: inner, downloads } = watched(real);
-    // Downloading more than one file at once brings more than the cap allows.
+    // Downloading more than one file at once brings more than it may.
     const repo: CodeClone = {
       ...inner,
       offline: false,
@@ -203,16 +259,11 @@ describe('readCode', () => {
       file(BINARY.length, BINARY.subarray(0, BINARY_WINDOW)),
       file(9, 'Read me.\n'),
     ]);
-    expect(downloads.map(({ maxBytes }) => maxBytes)).toEqual([
-      LIMITS.code,
-      // What's left once the text before it was read, and its download counted.
-      LIMITS.code,
-      LIMITS.code - 14,
-      LIMITS.code - 14 - BINARY.length,
-    ]);
+    expect(downloads.map(({ oids }) => oids.length)).toEqual([3, 1, 1, 1]);
+    expect(downloads.every(({ maxBytes }) => maxBytes === PROBE)).toBe(true);
   });
 
-  it('leaves a file unread when its download is past what’s left', async () => {
+  it('judges a file whose download is stopped past what one file brings too large', async () => {
     const { clone: inner } = watched(await fresh());
     const repo: CodeClone = {
       ...inner,
@@ -223,8 +274,77 @@ describe('readCode', () => {
         ),
     };
     expect(await readCode(repo, commit, [{ path: 'src/a.ts', lines: true }])).toEqual([
+      { kind: 'tooLarge' },
+    ]);
+  });
+
+  it('leaves a file unread when its download failed, and downloads nothing more', async () => {
+    const { clone: inner, downloads } = watched(await fresh());
+    const repo: CodeClone = {
+      ...inner,
+      offline: false,
+      download(oids, what, options) {
+        downloads.push({ oids, maxBytes: options?.maxBytes });
+        return Promise.reject(
+          new GitError({ kind: 'fetch', what: what ?? '', failure: 'network', message: 'gone' }),
+        );
+      },
+    };
+    const answers = await readCode(repo, commit, [
+      { path: 'src/a.ts', lines: true },
+      { path: 'docs/readme.md', lines: true },
+    ]);
+    expect(answers).toEqual([
+      { kind: 'unread', why: expect.any(String) },
       { kind: 'unread', why: expect.any(String) },
     ]);
+    expect(downloads).toHaveLength(1);
+  });
+});
+
+/** Text of `size` bytes. */
+const textOf = (size: number) => new Uint8Array(size).fill(0x78);
+
+describe('the limit on what downloads bring', () => {
+  it('reads what the checks read past files larger than they read, judged by their downloads', async () => {
+    const files = new Map([
+      // Past what one file brings: stopped there.
+      ['huge.txt', textOf(3 * LIMITS.file)],
+      // Within it, though past what the checks read: its size is known once it's here.
+      ['large.txt', textOf(LIMITS.file + 1)],
+      ['small.txt', text('one\n')],
+    ]);
+    const { clone, downloads } = memoryClone(files, { lacking: true });
+    const answers = await readCode(
+      clone,
+      'a'.repeat(40),
+      [...files.keys()].map((path) => ({ path, lines: true })),
+    );
+    expect(answers).toEqual([{ kind: 'tooLarge' }, file(LIMITS.file + 1), file(4, 'one\n')]);
+    expect(downloads.map(({ paths }) => paths)).toEqual([
+      [...files.keys()],
+      ['huge.txt'],
+      ['large.txt'],
+      ['small.txt'],
+    ]);
+  });
+
+  it('leaves files unread past it, having brought no more', async () => {
+    // Each past what one file brings, so each costs that much to find out.
+    const count = Math.ceil(DOWNLOAD_LIMIT / PROBE) + 2;
+    const files = new Map(
+      Array.from({ length: count }, (_, n) => [`huge/${n}.txt`, textOf(3 * LIMITS.file)]),
+    );
+    const { clone, downloads } = memoryClone(files, { lacking: true });
+    const answers = await readCode(
+      clone,
+      'a'.repeat(40),
+      [...files.keys()].map((path) => ({ path, lines: true })),
+    );
+    const brought = downloads.reduce((sum, { brought: each }) => sum + each, 0);
+    expect(brought).toBeLessThanOrEqual(DOWNLOAD_LIMIT);
+    expect(answers.filter(({ kind }) => kind === 'tooLarge').length).toBeGreaterThan(0);
+    expect(answers.at(-1)).toEqual({ kind: 'unread', why: expect.any(String) });
   });
 });
 
@@ -295,5 +415,50 @@ describe('codeReply', () => {
     );
     const answers: CodeAnswer[] = [file(14, 'one\ntwo\nthree\n')];
     expect(reply).toEqual({ kind: 'read', files: answers });
+  });
+});
+
+describe('stopping a read', () => {
+  it('stops a read asked for another way, or whose tab closed, and joins one asked for alike', async () => {
+    const reads = new CodeReads();
+    const stopped: string[] = [];
+    let started = 0;
+    const waiting = (name: string) => (signal: AbortSignal) => {
+      started += 1;
+      return new Promise<CodeReply>((resolve) => {
+        signal.addEventListener('abort', () => {
+          stopped.push(name);
+          resolve({ kind: 'failed', why: name });
+        });
+      });
+    };
+    const first = reads.run('t1', 'a', waiting('first'));
+    const other = reads.run('t2', 'a', waiting('other'));
+    // Asked the same way: the read under way answers both.
+    const again = reads.run('t1', 'a', waiting('again'));
+    expect(started).toBe(2);
+    const second = reads.run('t1', 'b', waiting('second'));
+    expect(await first).toEqual({ kind: 'failed', why: 'first' });
+    expect(await again).toEqual({ kind: 'failed', why: 'first' });
+    expect(stopped).toEqual(['first']);
+    reads.stop('t1');
+    reads.stop('t2');
+    await Promise.all([second, other]);
+    expect(stopped).toEqual(['first', 'second', 'other']);
+  });
+
+  it('reads nothing more once stopped', async () => {
+    const { clone, reads } = watched(await fresh());
+    const controller = new AbortController();
+    controller.abort();
+    const reply = await codeReply(
+      { kind: 'ready', head: commit, base: commit, mergeBase: commit, offline: false },
+      () => Promise.resolve(clone),
+      commit,
+      [{ path: 'src/a.ts', lines: true }],
+      { signal: controller.signal },
+    );
+    expect(reply).toEqual({ kind: 'failed', why: expect.any(String) });
+    expect(reads).toEqual([]);
   });
 });

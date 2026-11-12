@@ -101,6 +101,10 @@ function codeReader(code: CheckInput['code']): CodeReader {
           throw new Error('Main read none of the file.');
         }
         return answer(file.size, file.bytes, cap);
+      case 'tooLarge':
+        // Larger than the checks read of a file, by how much main didn't learn: past it is all
+        // they look at.
+        return { kind: 'file', size: SIZE_ONLY + 1, bytes: new Uint8Array() };
       case 'missing':
       case 'noCommit':
         return { kind: file.kind };
