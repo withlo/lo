@@ -104,10 +104,14 @@ polls to repeat, then stop the proxy with Ctrl+C. It checks the token's account 
 The pull request the app's tests open, rozed-dev/e2e#80, comes from `fixtures/app.sh`, which builds
 its repository with fixed names, dates and contents, so every commit has the ID GitHub has for it: a
 rename, a move, a lockfile, a 5,001-line file, a binary and a deletion, in two pushes, the second a
-force-push that rebased the first onto a newer base. `writeAppRemote` from `@lo/testing/git` builds
-it as a remote for `LO_GIT_REMOTE`, and `APP_PULL` names its commits; `{ firstPush: false }` leaves
-the first push out, as if GitHub no longer had it. Its cassette is `app_e2e`, and `app_e2e_late` is
-the same with GitHub's patch of one file left out.
+force-push that rebased the first onto a newer base. It has an overview at `refs/lo/pr/80`, written
+for the first push, which rozed-bot pushed once: one commit of `artifact.md` and a figure, as
+`lo-overview commit` writes it, with code blocks, a figure with parts, a walkthrough, terms, tabs, a
+fold, an illustration and a broken reference. `writeAppRemote` from `@lo/testing/git` builds it as a
+remote for `LO_GIT_REMOTE`, and `APP_PULL` names its commits; `{ firstPush: false }` leaves the
+first push out, as if GitHub no longer had it. The overview's files are left in `overview/` beside
+it. Its cassette is `app_e2e`, and `app_e2e_late` is the same with GitHub's patch of one file left
+out.
 
 ## The credential scan
 

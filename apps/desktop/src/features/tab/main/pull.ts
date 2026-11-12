@@ -112,6 +112,11 @@ export class PullTab {
   #poller: Poller | undefined;
   readonly #unsubscribe: (() => void)[] = [];
   #header: Header | undefined;
+  /**
+   * The fork the head is in, `null` when it's in the repository itself, once a read that names it
+   * has said: a poll's summary doesn't, so the header's guess from one isn't taken.
+   */
+  #fork: RepoRef | null | undefined;
   /** When GitHub last confirmed what the header shows, for "saved" while offline. */
   #savedAt: number | undefined;
   #problem: Problem | undefined;
@@ -310,11 +315,23 @@ export class PullTab {
       repository: { owner: repository.owner, name: repository.name },
       number: this.pull.number,
       acting: this.#acting,
+      head: this.#fork === undefined ? undefined : { fork: this.#forkName() },
       shown: this.#started ? this.#shown : undefined,
       latest: this.#started ? this.#latest : undefined,
       provisional: this.#provisional,
       local: this.#localState(),
     };
+  }
+
+  #forkName(): { owner: string; name: string } | null {
+    const fork = this.#fork;
+    return fork ? { owner: fork.owner, name: fork.name } : null;
+  }
+
+  /** Keeps the fork the header names, from a read that names it. */
+  #learnFork(header: Header): void {
+    const named = header.head.fork;
+    this.#fork = named === null ? null : (RepoRef.parse(named) ?? null);
   }
 
   /** Tells the features that follow the tab, if what {@link PullTab.info} says changed. */
@@ -499,6 +516,7 @@ export class PullTab {
       this.#anonymousOfflineSince = undefined;
       this.#learnRepository(RepoRef.parse(opened.toOpen.base.repo.full_name));
       this.#header = headerFromOpened(opened);
+      this.#learnFork(this.#header);
       this.#savedAt = Date.now();
       this.#keepHeader();
       const { summary } = opened;
@@ -680,6 +698,7 @@ export class PullTab {
    */
   #takeDetails(details: PullRequest, fetchedAt: number, { live }: { live: boolean }): void {
     this.#header = headerFromDetails(details);
+    this.#learnFork(this.#header);
     this.#savedAt = fetchedAt;
     this.#keepHeader();
     const base = { branch: details.baseRefName, sha: details.baseRefOid };

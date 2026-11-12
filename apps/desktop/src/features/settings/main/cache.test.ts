@@ -89,4 +89,26 @@ describe('clear', () => {
     ).rejects.toThrow('The database is locked.');
     expect(cache.clear).not.toHaveBeenCalled();
   });
+
+  it('clears what other features keep, before the copies, and fails when one can’t', async () => {
+    const cache = open(5, 10);
+    const order: string[] = [];
+    vi.mocked(cache.clear).mockImplementation(async () => {
+      order.push('copies');
+      return [];
+    });
+    const saved = { clearAnswers: () => order.push('answers') };
+    await clear({ cache }, saved, [() => order.push('overviews'), () => order.push('other')]);
+    expect(order).toEqual(['answers', 'overviews', 'other', 'copies']);
+
+    const failing = open(5, 10);
+    await expect(
+      clear({ cache: failing }, answers(), [
+        () => {
+          throw new Error('The database is locked.');
+        },
+      ]),
+    ).rejects.toThrow('locked');
+    expect(failing.clear).not.toHaveBeenCalled();
+  });
 });

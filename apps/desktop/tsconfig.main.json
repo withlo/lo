@@ -13,6 +13,9 @@
   "exclude": ["src/**/*.test.ts", "src/**/test/**"],
   "references": [
     {
+      "path": "../../packages/core/artifact"
+    },
+    {
       "path": "../../packages/core/review"
     },
     {

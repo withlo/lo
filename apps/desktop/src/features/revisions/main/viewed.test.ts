@@ -59,6 +59,7 @@ function info(overrides: Partial<PullTabInfo> = {}): PullTabInfo {
     repository: { owner: 'rozed-dev', name: 'playground' },
     number: 2,
     acting: { kind: 'account', login: LOGIN },
+    head: { fork: null },
     shown: HEAD,
     latest: HEAD,
     provisional: false,

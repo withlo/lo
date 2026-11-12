@@ -220,6 +220,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@lo/artifact':
+        specifier: workspace:*
+        version: link:../../packages/core/artifact
       '@lo/design':
         specifier: workspace:*
         version: link:../../design

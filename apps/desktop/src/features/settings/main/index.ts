@@ -12,7 +12,7 @@ import { provides } from '../../../main/services.ts';
 import { IpcError } from '../../../ipc/contract.ts';
 import { github } from '../../accounts/service.ts';
 import { contract } from '../contract.ts';
-import { settings as service } from '../service.ts';
+import { clearing, settings as service } from '../service.ts';
 import { applySettings } from './apply.ts';
 import { clear, measure } from './cache.ts';
 import { written } from './file.ts';
@@ -34,6 +34,9 @@ function settingsPath(): string {
 
 let kept: Settings | undefined;
 
+/** What other features clear with the cache. */
+const clearers = new Set<() => void>();
+
 function settings(): Settings {
   if (!kept) throw new IpcError('unavailable', "Lo isn't keeping the settings file yet.");
   return kept;
@@ -50,13 +53,25 @@ export default defineFeature(contract, {
       changed: (state) => publish('state', state),
       log: (message, error) => console.error(message, error),
     });
-    return [provides(service, kept)];
+    return [
+      provides(service, kept),
+      provides(clearing, {
+        onClear(each) {
+          // Each its own, so one feature adding the same function twice stops each separately.
+          const added = () => each();
+          clearers.add(added);
+          return () => {
+            clearers.delete(added);
+          };
+        },
+      }),
+    ];
   },
   handlers: {
     read: () => settings().state(),
     set: ({ key, value }) => settings().set(key, value),
     cacheUsage: (_input, { git }) => measure(git),
-    clearCache: (_input, { git, use }) => clear(git, use(github)),
+    clearCache: (_input, { git, use }) => clear(git, use(github), [...clearers]),
   },
   start({ git }) {
     // The window follows the system's appearance, which this sets: the app feature reports it.

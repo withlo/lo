@@ -92,6 +92,7 @@ function e2eInfo(
     repository: { owner: 'rozed-dev', name: 'e2e' },
     number: APP_PULL.number,
     acting: { kind: 'account', login: 'rozed-bot' },
+    head: { fork: null },
     shown: APP_PULL.head,
     latest: APP_PULL.head,
     provisional: false,

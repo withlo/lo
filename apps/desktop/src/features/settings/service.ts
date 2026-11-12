@@ -19,3 +19,17 @@ export interface SettingsStore {
 }
 
 export const settings = defineService<SettingsStore>('settings.file');
+
+/**
+ * What Settings' "Clear the cache" clears besides the local copies and the answers saved from
+ * GitHub: what other features keep to open pull requests fast, each added by its own feature.
+ */
+export interface CacheClearing {
+  /**
+   * Calls `clear` each time the cache is cleared, before the local copies are. One that throws
+   * fails the clearing. Returns a function that stops it.
+   */
+  onClear(clear: () => void): () => void;
+}
+
+export const clearing = defineService<CacheClearing>('settings.clearing');
