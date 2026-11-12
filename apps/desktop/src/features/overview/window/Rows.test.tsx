@@ -357,8 +357,7 @@ describe('Settings’ row', () => {
 describe('the command in the app menu', () => {
   it('has no key, and installs as the buttons do', async () => {
     const asked = main(state(), [{ kind: 'installed', agent: 'claude' }]);
-    const [command] = feature.commands ?? [];
-    expect(command?.id).toBe('overview.installSkill');
+    const command = feature.commands?.find((each) => each.id === 'overview.installSkill');
     expect(command?.keys).toEqual([]);
     expect(command?.bar).toEqual({ menu: 'App', order: 20 });
     await act(async () => {

@@ -4,7 +4,7 @@
 import { createStore } from 'zustand/vanilla';
 
 import { notify } from '../../../window/commands/notices.tsx';
-import type { SkillResult, SkillState } from '../contract.ts';
+import type { Agent, SkillResult, SkillState } from '../contract.ts';
 import { main } from './main.ts';
 import { agentsToInstall, resultWords } from './words.ts';
 
@@ -52,11 +52,14 @@ export function followSkill(): () => void {
 }
 
 /**
- * Installs the skill for the agents that lack it, else again for those that are set up, and says
- * how it went in a notice. Where the skill stands then, and what stops it where it does, are
- * Settings' row's to say. Resolves with what main did, or nothing when it couldn't be asked.
+ * Installs the skill for `only`, the agents a row names, or else for the agents that lack it, or
+ * again for those that are set up, and says how it went in a notice. Where the skill stands then,
+ * and what stops it where it does, are the rows' to say. Resolves with what main did, or nothing
+ * when it couldn't be asked.
  */
-export async function installSkill(): Promise<readonly SkillResult[] | undefined> {
+export async function installSkill(
+  only?: readonly Agent[],
+): Promise<readonly SkillResult[] | undefined> {
   if (skillStore.getState().installing) return undefined;
   skillStore.setState({ installing: true, said: undefined });
   let said: string;
@@ -64,7 +67,7 @@ export async function installSkill(): Promise<readonly SkillResult[] | undefined
   try {
     // Asked just now, so the choice is made of where things stand and not of when the window looked.
     const before = await main().currentSkill();
-    results = await main().installSkill({ agents: agentsToInstall(before) });
+    results = await main().installSkill({ agents: [...(only ?? agentsToInstall(before))] });
     said = resultWords(results, before);
   } catch (error) {
     console.error("Lo couldn't install the overview skill:", error);

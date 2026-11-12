@@ -8,10 +8,11 @@ import { app } from 'electron';
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { github } from '../../accounts/service.ts';
-import { clearing } from '../../settings/service.ts';
+import { clearing, settings } from '../../settings/service.ts';
 import type { Acting } from '../../tab/contract.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
+import { open } from '../settings.ts';
 import { Blobs } from './blobs.ts';
 import { codeReply, readKey } from './code.ts';
 import { SavedRefs } from './saved.ts';
@@ -83,7 +84,7 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
 }
 
 export default defineFeature(contract, {
-  uses: [tabs, github, clearing],
+  uses: [tabs, github, clearing, settings],
   handlers: {
     current: ({ id }) => followed.get(id)?.state(),
     files: ({ id, commit, paths }) => tabOf(id).files(commit, paths),
@@ -109,6 +110,8 @@ export default defineFeature(contract, {
     },
   },
   start(context) {
+    // The window reads it as a pull request's tab opens, and changes it from Settings.
+    context.use(settings).declare(open);
     const service = context.use(tabs);
     const { blobs, saved } = keptIn(context);
     app.on('browser-window-focus', focused);

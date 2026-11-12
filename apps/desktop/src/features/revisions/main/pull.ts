@@ -43,16 +43,16 @@ import {
 import { IpcError } from '../../../ipc/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import { PATH_LIMIT, pathBytes } from '../../tree/contract.ts';
-import type { Compared, ComparisonView, Marked, Replay, RevisionRow } from '../contract.ts';
+import {
+  HOLD_LIMIT,
+  type Compared,
+  type ComparisonView,
+  type Marked,
+  type Replay,
+  type RevisionRow,
+} from '../contract.ts';
 import type { Comparing, OnScreen, Side, Since, SinceGroup } from '../service.ts';
 import type { Marks, ViewedRecord } from './marks.ts';
-
-/**
- * How long the diff waits, as a tab opens, for the comparison "last seen here" asks for, in
- * milliseconds: about as long as a large pull request's diff takes to load and draw anyway. Past
- * it, the whole pull request is drawn, and the comparison is offered, never put in its place.
- */
-export const HOLD_LIMIT = 1_000;
 
 /**
  * What the revisions use of an account's poller: the push history it keeps, and its events; the
