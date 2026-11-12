@@ -307,6 +307,17 @@ describe('terms', () => {
     });
     expect(card()).toBeNull();
 
+    // With focus, the pointer leaving doesn't close it.
+    focus(use);
+    move(document.body, use);
+    move(use, document.body);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_CLOSE_MS * 2);
+    });
+    expect(open()).toBe(true);
+    act(() => use.blur());
+    expect(open()).toBe(false);
+
     // Passing over a term opens nothing.
     move(document.body, use);
     act(() => {

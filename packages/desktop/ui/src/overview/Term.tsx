@@ -23,6 +23,8 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
   const element = useRef<HTMLSpanElement | null>(null);
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // While the term has focus, its card stays, wherever the pointer goes.
+  const focused = useRef(false);
   useEffect(() => () => clearTimeout(timer.current), []);
   const definition = glossary.definition(term.key);
   if (!definition) return children;
@@ -33,6 +35,7 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
   };
   const later = (next: boolean, wait: number) => {
     clearTimeout(timer.current);
+    if (!next && focused.current) return;
     timer.current = setTimeout(() => setOpen(next), wait);
   };
   const follow = (from: HTMLElement) => {
@@ -50,8 +53,14 @@ export function Term({ term, children }: { term: TermTarget; children: ReactNode
         className={open ? 'lo-term is-active' : 'lo-term'}
         onPointerEnter={() => later(true, HOVER_OPEN_MS)}
         onPointerLeave={() => later(false, HOVER_CLOSE_MS)}
-        onFocus={() => now(true)}
-        onBlur={() => now(false)}
+        onFocus={() => {
+          focused.current = true;
+          now(true);
+        }}
+        onBlur={() => {
+          focused.current = false;
+          now(false);
+        }}
         onClick={(event) => follow(event.currentTarget)}
         onKeyDown={(event) => {
           if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
