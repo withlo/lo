@@ -18,6 +18,7 @@ import {
   tiff,
   vp8x,
 } from '../test/images.ts';
+import { imageHeader } from './images.ts';
 import { imageOrientation, isTurned, type Orientation } from './orientation.ts';
 
 const ALL: Orientation[] = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -55,6 +56,19 @@ describe('a JPEG', () => {
     expect(imageOrientation(jpeg(sof(40, 20), six))).toBe(6);
     const after = join([0xff, 0xd8], sof(40, 20), [0xff, 0xda, 0, 2], six, [0xff, 0xd9]);
     expect(imageOrientation(after)).toBe(1);
+  });
+
+  test('skips the bytes libjpeg skips between segments (jpeg-sof-junk-then-o6)', () => {
+    const six = exifSegment(tiff([orientation(6)]));
+    const bytes = jpeg(sof(40, 20), [0x00, 0x12], six);
+    // The check reads its size from its frame header, and stops there, so it's kept.
+    expect(imageHeader('jpeg', bytes, true)).toEqual({ kind: 'size', width: 40, height: 20 });
+    expect(imageOrientation(bytes)).toBe(6);
+    // 0xFF 0x00, bytes around 0xFF runs, and many bytes, as Chromium turns each.
+    expect(imageOrientation(jpeg(sof(40, 20), [0xff, 0x00], six))).toBe(6);
+    expect(imageOrientation(jpeg(sof(40, 20), [0x41, 0xff, 0xff, 0x00, 0x42], six))).toBe(6);
+    expect(imageOrientation(jpeg(sof(40, 20), new Uint8Array(1_000).fill(0x37), six))).toBe(6);
+    expect(imageOrientation(jpeg(APP0, [0x12], six, sof(40, 20)))).toBe(6);
   });
 
   test('reads only an APP1 segment that starts Exif\\0\\0', () => {

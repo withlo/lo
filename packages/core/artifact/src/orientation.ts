@@ -4,7 +4,7 @@
  * turn it a quarter, so it's drawn as tall as its header says it's wide, and as wide as it's tall.
  *
  * Chromium takes a JPEG's orientation from its first `APP1` segment that starts `Exif\0\0`, before
- * its image data, and a PNG's from its first `eXIf` chunk before its image data whose checksum
+ * its image data, wherever libjpeg finds it, and a PNG's from its first `eXIf` chunk before its image data whose checksum
  * matches. Within either, it's the first entry of the first image's directory that's an
  * orientation: a tag of 0x0112, holding one short from 1 to 8. A WebP's Exif data, and a GIF, don't
  * turn the image. Anything that can't be read leaves the image as it is, as it does there.
@@ -56,20 +56,21 @@ function u32be(bytes: Uint8Array, at: number): number {
 /**
  * The TIFF data of a JPEG's Exif segment: the first `APP1` that starts `Exif\0\0`, among the
  * segments before its image data. Undefined when there's none, or the segments can't be walked.
+ * Between segments, the walk skips what libjpeg skips, as Chromium decodes the image whatever is
+ * there: bytes that aren't 0xFF, any run of 0xFF before a marker, and 0xFF 0x00.
  */
 function jpegExif(bytes: Uint8Array): Uint8Array | undefined {
   let at = 2;
-  while (at < bytes.length) {
-    if (bytes[at] !== 0xff) return undefined;
-    // Any number of 0xFF may come before a marker.
+  for (;;) {
+    while (at < bytes.length && bytes[at] !== 0xff) at += 1;
     while (bytes[at] === 0xff) at += 1;
     const marker = bytes[at];
     at += 1;
     if (marker === undefined) return undefined;
-    // Markers that stand alone: restarts, and `TEM`.
-    if ((marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) continue;
-    // The image's data, or its end: nothing after counts.
-    if (marker === 0xda || marker === 0xd9 || marker === 0x00 || marker === 0xd8) return undefined;
+    // 0xFF 0x00, and the markers that stand alone: restarts, and `TEM`.
+    if (marker === 0x00 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) continue;
+    // The image's data, or its end: nothing after counts. A second start isn't a JPEG libjpeg reads.
+    if (marker === 0xda || marker === 0xd9 || marker === 0xd8) return undefined;
     const length = u16be(bytes, at);
     if (length < 2 || at + length > bytes.length) return undefined;
     if (marker === 0xe1 && startsWith(bytes, EXIF, at + 2)) {
@@ -77,7 +78,6 @@ function jpegExif(bytes: Uint8Array): Uint8Array | undefined {
     }
     at += length;
   }
-  return undefined;
 }
 
 /**
