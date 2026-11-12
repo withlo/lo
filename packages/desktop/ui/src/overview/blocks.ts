@@ -6,6 +6,7 @@
 
 import type { OverviewBlock } from '@lo/artifact';
 
+import { secureLink } from '../markdown/links.ts';
 import { isRecord } from '../markdown/scope.ts';
 
 /** A key, or keys that each do it, and what it does: `{ keys: [['←'], ['→']], label: 'Step' }`. */
@@ -17,8 +18,8 @@ export interface BlockHint {
 
 /**
  * Whether the block keys stop at `block`: it holds something to act on. Code, figures,
- * walkthroughs, tabs and folds always do; prose, the glossary among it, does when it links to code
- * or a term.
+ * walkthroughs, tabs and folds always do; prose, the glossary among it, does when it holds a link:
+ * to code, a term, a section, a note or a web page Lo opens.
  */
 export function isStop(block: OverviewBlock): boolean {
   switch (block.kind) {
@@ -35,7 +36,7 @@ export function isStop(block: OverviewBlock): boolean {
     case 'alert':
     case 'footnotes':
     case 'glossary':
-      return linksToCodeOrTerm(block);
+      return holdsLink(block);
     case 'heading':
     case 'code':
     case 'rule':
@@ -84,10 +85,10 @@ const OPEN_BESIDE: BlockHint = { keys: [['o']], label: 'Open beside' };
 const FOLLOW: BlockHint = { keys: [['⏎']], label: 'Follow' };
 
 /**
- * Whether `block` holds a link to code or a term, however deep. It walks with an explicit stack,
- * so no tree can overflow it.
+ * Whether `block` holds a link, however deep: one the overview draws as a link, so a web page only
+ * when it's `https://`. It walks with an explicit stack, so no tree can overflow it.
  */
-function linksToCodeOrTerm(block: OverviewBlock): boolean {
+function holdsLink(block: OverviewBlock): boolean {
   const stack: unknown[] = [block];
   while (stack.length > 0) {
     const value = stack.pop();
@@ -96,12 +97,22 @@ function linksToCodeOrTerm(block: OverviewBlock): boolean {
       continue;
     }
     if (!isRecord(value)) continue;
-    const node = value;
-    const target = node['target'];
-    if (node['kind'] === 'link' && isRecord(target)) {
-      if (target['kind'] === 'code' || target['kind'] === 'term') return true;
-    }
-    for (const field of Object.values(node)) if (typeof field === 'object') stack.push(field);
+    if (isLink(value)) return true;
+    for (const field of Object.values(value)) if (typeof field === 'object') stack.push(field);
   }
   return false;
+}
+
+/** Whether `node`, in a block, is drawn as a link: a link, an image, a mention or a note's mark. */
+function isLink(node: Record<string, unknown>): boolean {
+  const { kind, target, url } = node;
+  if (kind === 'footnoteReference') return true;
+  if ((kind === 'image' || kind === 'mention') && typeof url === 'string') {
+    return secureLink(url) !== undefined;
+  }
+  if (kind !== 'link' || !isRecord(target)) return false;
+  if (target['kind'] === 'web') {
+    return typeof target['url'] === 'string' && secureLink(target['url']) !== undefined;
+  }
+  return true;
 }

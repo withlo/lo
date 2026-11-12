@@ -219,10 +219,14 @@ export function focusBlock(overview: DrawnOverview, block: HTMLElement): void {
 
 /**
  * The block `]b` (`1`) or `[b` (`-1`) goes to: the next or previous one the block keys stop at,
- * from the block the reader is at; from none, the first that starts at the top of the screen or
- * below it, or the last that starts above it. Or why there's none.
+ * from the block the reader is at; from none, or with `fromScreen`, the first that starts at the
+ * top of the screen or below it, or the last that starts above it. Or why there's none.
  */
-export function nextBlock(overview: DrawnOverview, by: 1 | -1): HTMLElement | string {
+export function nextBlock(
+  overview: DrawnOverview,
+  by: 1 | -1,
+  fromScreen = false,
+): HTMLElement | string {
   const article = articleOf(overview);
   const scroller = overview.scroller();
   // Unseen while its first blocks draw, it has nothing to take focus yet.
@@ -230,7 +234,9 @@ export function nextBlock(overview: DrawnOverview, by: 1 | -1): HTMLElement | st
     return 'The overview isn’t drawn yet.';
   }
   const stops = blockStops(article);
-  const focused = focusedBlock(overview) ?? (focusIn(overview) ? besideBlock(overview) : undefined);
+  const focused = fromScreen
+    ? undefined
+    : (focusedBlock(overview) ?? (focusIn(overview) ? besideBlock(overview) : undefined));
   let next: HTMLElement | undefined;
   if (focused) {
     next = stops[stops.indexOf(focused) + by];
@@ -244,7 +250,7 @@ export function nextBlock(overview: DrawnOverview, by: 1 | -1): HTMLElement | st
   return by > 0 ? 'This is the last block.' : 'This is the first block.';
 }
 
-/** What `Tab` stops at outside the blocks: the outline's sections, the byline's offer, links. */
+/** What `Tab` stops at before the blocks: the outline's sections and the byline's offer. */
 const CONTROLS = 'button, a[href], [role="link"], summary';
 
 /** Whether `element` is drawn: the outline isn't in a narrow window. */
@@ -254,59 +260,49 @@ function drawnOnPage(element: Element): boolean {
 }
 
 /**
- * Everything `Tab` goes between in the overview, in reading order: the outline's sections, the
- * byline's offer, then each block the block keys stop at followed by its links, parts and
- * controls, and a link outside any such block where it's written.
+ * What `Tab` goes through from the overview itself before it reaches a block, as they're written:
+ * the outline's sections, then the byline's offer, which come before the first block.
  */
-function tabOrder(overview: DrawnOverview): (HTMLElement | SVGElement)[] {
+function leadIn(overview: DrawnOverview): (HTMLElement | SVGElement)[] {
   const scroller = overview.scroller();
   const article = articleOf(overview);
   if (!scroller || !article) return [];
-  const stops = blockStops(article);
-  const loose = [...scroller.querySelectorAll(CONTROLS)].filter(
+  const [first] = blockStops(article);
+  return [...scroller.querySelectorAll(CONTROLS)].filter(
     (element): element is HTMLElement | SVGElement =>
       (element instanceof HTMLElement || element instanceof SVGElement) &&
       blockOf(article, element) === undefined &&
+      (first === undefined ||
+        Boolean(element.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING)) &&
       element.tabIndex >= 0 &&
       !(element instanceof HTMLButtonElement && element.disabled) &&
       element.closest('[hidden]') === null &&
       drawnOnPage(element),
   );
-  const written = [...stops, ...loose].toSorted((a, b) =>
-    a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
-  );
-  return written.flatMap((each) =>
-    each instanceof HTMLElement && stops.includes(each)
-      ? [focusTargetOf(each), ...linksIn(each)]
-      : [each],
-  );
 }
 
 /**
- * Where `Tab` (`1`) or `⇧Tab` (`-1`) goes: the next or previous of the overview's sections,
- * byline, blocks and the links, parts and controls in them, in reading order. From none of them,
- * the block `]b` or `[b` would go to, or before the first block, the byline and the outline. Or
+ * Where `Tab` (`1`) or `⇧Tab` (`-1`) goes. In a block, the next or previous of its links, figure
+ * parts and controls, round through the block itself: it never leaves the block. From the
+ * overview itself, as `Esc` leaves it, the outline's sections, then the byline's offer, then the
+ * block `]b` goes to, which takes focus; `⇧Tab` goes back through the byline and the outline. Or
  * why there's nowhere.
  */
 export function nextLink(overview: DrawnOverview, by: 1 | -1): HTMLElement | SVGElement | string {
-  const order = tabOrder(overview);
   const active = document.activeElement;
   const block = focusedBlock(overview);
-  let at = order.findIndex((each) => each === active);
-  // Something in a block `Tab` doesn't stop at: from the block.
-  if (at === -1 && block) at = order.indexOf(focusTargetOf(block));
-  if (at === -1) {
-    const next = nextBlock(overview, by);
-    if (typeof next !== 'string' || by > 0) return next;
-    const article = articleOf(overview);
-    const [first] = article ? blockStops(article) : [];
-    return (first && order[order.indexOf(focusTargetOf(first)) - 1]) ?? next;
+  if (block) {
+    const order = [focusTargetOf(block), ...linksIn(block)];
+    if (order.length === 1) return 'This block has no links or parts.';
+    const at = order.findIndex((each) => each === active);
+    return order[(Math.max(0, at) + by + order.length) % order.length] ?? order[0]!;
   }
-  const next = order[at + by];
+  const lead = leadIn(overview);
+  const at = lead.findIndex((each) => each === active);
+  if (at === -1) return (by > 0 ? lead[0] : lead.at(-1)) ?? nextBlock(overview, 1, true);
+  const next = lead[at + by];
   if (next) return next;
-  return by > 0
-    ? 'There’s nothing after this in the overview.'
-    : 'There’s nothing before this in the overview.';
+  return by > 0 ? nextBlock(overview, 1, true) : 'There’s nothing before this in the overview.';
 }
 
 /** Gives `element`, a link, part or control in a block, focus, and brings it on screen. */

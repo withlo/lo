@@ -43,12 +43,18 @@ export default defineCommands(
      */
     closeBeside: { label: 'Close code beside', group: 'Overview', keys: ['esc'], when: overview },
     /**
-     * The next link, figure part or control, in reading order: the outline's sections, the
-     * byline's offer, then each block and what's in it.
+     * In the block that has focus, its next link, figure part or control, round through the block
+     * itself. From the overview itself, as `Esc` leaves it, the outline's sections, the byline's
+     * offer, then the block `]b` goes to.
      */
-    nextLink: { label: 'Next link or part', group: 'Overview', keys: ['tab'], when: overview },
+    nextLink: {
+      label: 'Next link, part or section',
+      group: 'Overview',
+      keys: ['tab'],
+      when: overview,
+    },
     previousLink: {
-      label: 'Previous link or part',
+      label: 'Previous link, part or section',
       group: 'Overview',
       keys: ['shift+tab'],
       when: overview,

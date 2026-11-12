@@ -155,8 +155,8 @@ describe('a control outside the blocks', () => {
 });
 
 describe('Tab', () => {
-  it('goes through a block’s links, then on to the next block, as they’re written', () => {
-    const { overview, stops, tree } = drawn();
+  it('goes round the links in the block with focus and back to the block, never leaving it', () => {
+    const { overview, stops } = drawn();
     const last = stops.at(-1)!;
     last.focus();
     const first = nextLink(overview, 1);
@@ -167,26 +167,33 @@ describe('Tab', () => {
     if (typeof second === 'string') throw new Error(second);
     expect(second.textContent).toBe('the rest');
     second.focus();
-    expect(nextLink(overview, 1)).toBe('There’s nothing after this in the overview.');
+    expect(nextLink(overview, 1)).toBe(last);
     expect(nextLink(overview, -1)).toBe(first);
-    // A block with nothing in it to go to: on to the next.
-    const code = stops.find((stop) => kindOf(tree, stop) === 'excerpt')!;
-    code.focus();
-    expect(nextLink(overview, 1)).toBe(stops[stops.indexOf(code) + 1]);
+    last.focus();
+    expect(nextLink(overview, -1)).toBe(second);
   });
 
-  it('goes back from the first block through the outline, and on from it to the first block', () => {
+  it('says so in a block with nothing in it to go to', () => {
+    const { overview, stops, tree } = drawn();
+    const code = stops.find((stop) => kindOf(tree, stop) === 'excerpt')!;
+    code.focus();
+    expect(nextLink(overview, 1)).toBe('This block has no links or parts.');
+  });
+
+  it('goes from the overview itself through the outline to the first block, and back', () => {
     const { overview, stops } = drawn();
     const sections = [...overview.root.querySelectorAll<HTMLElement>('.lo-toc__item')];
     expect(sections.length).toBeGreaterThan(1);
-    stops[0]!.focus();
+    overview.scroller()!.tabIndex = -1;
+    overview.scroller()!.focus();
+    expect(nextLink(overview, 1)).toBe(sections[0]);
     expect(nextLink(overview, -1)).toBe(sections.at(-1));
+    sections.at(-1)!.focus();
+    expect(nextLink(overview, 1)).toBe(stops[0]);
     sections[1]!.focus();
     expect(nextLink(overview, -1)).toBe(sections[0]);
     sections[0]!.focus();
     expect(nextLink(overview, -1)).toBe('There’s nothing before this in the overview.');
-    sections.at(-1)!.focus();
-    expect(nextLink(overview, 1)).toBe(stops[0]);
   });
 });
 

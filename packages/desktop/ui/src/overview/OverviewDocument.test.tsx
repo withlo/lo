@@ -360,6 +360,23 @@ describe('blocks', () => {
     expect(block.firstElementChild?.localName).toBe('dl');
   });
 
+  it('stops at prose whose only links go to web pages, which can be followed, but not to http ones', () => {
+    const [, web, plain, insecure, section] = paragraphsOf(
+      [
+        'The [design notes](https://example.com/design) say why.',
+        'Nothing here links anywhere.',
+        'The [old notes](http://example.com/old) aren’t opened.',
+        'As [the tl;dr](#tldr) says.',
+      ].join('\n\n'),
+    );
+    expect([web, plain, insecure, section].map((block) => block && isStop(block))).toEqual([
+      true,
+      false,
+      false,
+      true,
+    ]);
+  });
+
   it('draws the focused block’s ring and its keys, and keeps prose’s spacing around prose', () => {
     const tree = fixture('valid/example');
     const at = (kind: OverviewBlock['kind']) =>
@@ -942,6 +959,13 @@ function glossaryOf(tree: OverviewTree): GlossaryBlock {
   const found = tree.blocks.find((block): block is GlossaryBlock => block.kind === 'glossary');
   if (!found) throw new Error('The overview has no glossary.');
   return found;
+}
+
+/** The paragraphs of an overview whose tl;dr is followed by `markdown`, findings or none. */
+function paragraphsOf(markdown: string): OverviewBlock[] {
+  return parseArtifact(`${HEADER}## tl;dr\n\nWhat it does.\n\n${markdown}`).tree.blocks.filter(
+    (block) => block.kind === 'paragraph',
+  );
 }
 
 /** The link in `page` whose text is `words`. */
