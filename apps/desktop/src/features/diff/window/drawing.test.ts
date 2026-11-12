@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { DiffState, FileVersions, Source, Start } from '../contract.ts';
-import { draw, type Drawing } from './drawing.ts';
+import { draw, type Drawing, samePlace } from './drawing.ts';
 import { Loader, type LoaderWork } from './loader.ts';
 import { drawnFor } from './tabs.ts';
 
@@ -130,6 +130,7 @@ async function swapUnderReader(): Promise<Loader> {
     layout: 'split',
     nonce: '',
     packaged: true,
+    shown: true,
     before: undefined,
   });
   // As the diff's component does: each new list goes to the drawing.
@@ -189,5 +190,26 @@ describe('a file under the reader that starts out otherwise in the local copy', 
     drawnFor(TAB.id)?.acted('d0');
     await frames();
     expect(told).toContain('tokens d0 new');
+  });
+});
+
+/** A line of file `d5`, and a column on it if given. */
+const at = (line: number, column?: number, side: 'old' | 'new' = 'new') => ({
+  kind: 'line' as const,
+  at: { file: 'd5', side, line, ...(column === undefined ? {} : { column }) },
+});
+
+describe('a place asked for as the diff comes back', () => {
+  it('is the cursor’s own when it’s on the same line of the same side, whatever the column', () => {
+    expect(samePlace(at(12, 4), at(12))).toBe(true);
+    // A span is on the line its cursor is on, its end.
+    expect(
+      samePlace({ kind: 'line', at: { file: 'd5', side: 'new', from: 9, to: 12 } }, at(12)),
+    ).toBe(true);
+    expect(samePlace(at(12), at(13))).toBe(false);
+    expect(samePlace(at(12, 0, 'old'), at(12))).toBe(false);
+    const header = { kind: 'header', file: 'd5', side: 'new' } as const;
+    expect(samePlace(header, { kind: 'header', side: 'new', file: 'd5' })).toBe(true);
+    expect(samePlace(header, { kind: 'file', file: 'd5' })).toBe(false);
   });
 });

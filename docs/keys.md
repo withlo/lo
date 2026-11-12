@@ -46,16 +46,17 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Copy and open
 
-| Action                | Keys  | Where                                                    | Command             |
-| --------------------- | ----- | -------------------------------------------------------- | ------------------- |
-| Copy the sign-in code | `y y` | In `dialog`                                              | `accounts.copyCode` |
-| Copy the lines        | `y y` | In `diff`; in code views, only in normal and visual mode | `diff.copyLines`    |
-| Copy the line's link  | `y l` | In `diff`; in code views, only in normal mode            | `diff.copyLink`     |
-| Copy path             | `y p` | In `diff`; in code views, only in normal mode            | `diff.copyPath`     |
-| Open on GitHub        | `g x` | In `diff`; in code views, only in normal mode            | `diff.openOnGithub` |
-| Whole file            | `g f` | In `tree`                                                | `tree.wholeFile`    |
-| Copy path             | `y p` | In `tree`                                                | `tree.copyPath`     |
-| Open on GitHub        | `g x` | In `tree`                                                | `tree.openOnGithub` |
+| Action                   | Keys  | Where                                                               | Command             |
+| ------------------------ | ----- | ------------------------------------------------------------------- | ------------------- |
+| Copy the sign-in code    | `y y` | In `dialog`                                                         | `accounts.copyCode` |
+| Whole file at the cursor | `g f` | In `diff`; in code views, only in normal mode                       | `diff.wholeFile`    |
+| Copy the lines           | `y y` | In `diff` and `file`; in code views, only in normal and visual mode | `diff.copyLines`    |
+| Copy the line's link     | `y l` | In `diff` and `file`; in code views, only in normal mode            | `diff.copyLink`     |
+| Copy path                | `y p` | In `diff` and `file`; in code views, only in normal mode            | `diff.copyPath`     |
+| Open on GitHub           | `g x` | In `diff` and `file`; in code views, only in normal mode            | `diff.openOnGithub` |
+| Whole file               | `g f` | In `tree`                                                           | `tree.wholeFile`    |
+| Copy path                | `y p` | In `tree`                                                           | `tree.copyPath`     |
+| Open on GitHub           | `g x` | In `tree`                                                           | `tree.openOnGithub` |
 
 ## Find
 
@@ -110,6 +111,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Close unchanged lines                 | `z c` | In `diff`; in code views, only in normal mode | `diff.closeRun`   |
 | Open every unchanged line in the file | `z R` | In `diff`; in code views, only in normal mode | `diff.openFile`   |
 | Load, close or open the file          | `z a` | In `diff`; in code views, only in normal mode | `diff.toggleFile` |
+| Load a large file anyway              | `z a` | In `file`; in code views, only in normal mode | `diff.loadWhole`  |
 
 ## Palettes
 
@@ -205,9 +207,9 @@ these, which run Lo's command in place of Vim's key:
 | ---------------- | ------------------------------- | --------- | -------------------------------------------------------------------- | ------------------ |
 | `g i`            | Inline or side by side          | `g i`     | `diff` (normal)                                                      | `diff.inline`      |
 | `g w`            | Hide or show whitespace changes | `g w`     | `diff` (normal)                                                      | `diff.whitespace`  |
-| `y y`            | Copy the lines                  | `y`       | `diff`                                                               | `diff.copyLines`   |
-| `y l`            | Copy the line's link            | `y`       | `diff` (normal)                                                      | `diff.copyLink`    |
-| `y p`            | Copy path                       | `y`       | `diff` (normal)                                                      | `diff.copyPath`    |
+| `y y`            | Copy the lines                  | `y`       | `diff` and `file`                                                    | `diff.copyLines`   |
+| `y l`            | Copy the line's link            | `y`       | `diff` (normal) and `file` (normal)                                  | `diff.copyLink`    |
+| `y p`            | Copy path                       | `y`       | `diff` (normal) and `file` (normal)                                  | `diff.copyPath`    |
 | `?`              | Every key                       | `?`       | `diff`, `file`, `peek` and `box` (normal and visual)                 | `keys.help`        |
 | `⌃o`             | Back                            | `⌃o`      | `diff`, `file` and `peek`                                            | `keys.back`        |
 | `⌃i`             | Forward                         | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`     |
