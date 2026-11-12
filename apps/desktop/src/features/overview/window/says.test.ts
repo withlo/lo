@@ -21,10 +21,16 @@ const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
 
 describe('the byline', () => {
-  it('names the author by their login, else their name', () => {
-    expect(authorOf({ login: 'ravi-k', name: 'Ravi K', at: 0 })).toBe('ravi-k');
-    expect(authorOf({ login: null, name: '  Ravi K ', at: 0 })).toBe('Ravi K');
-    expect(authorOf({ login: null, name: '', at: 0 })).toBe('Someone');
+  it('names the author by their login, else by the name the commit gives, else not at all', () => {
+    expect(authorOf({ login: 'ravi-k', name: 'Ravi K', at: 0 })).toEqual({
+      kind: 'login',
+      login: 'ravi-k',
+    });
+    expect(authorOf({ login: null, name: '  Ravi K ', at: 0 })).toEqual({
+      kind: 'name',
+      name: 'Ravi K',
+    });
+    expect(authorOf({ login: null, name: ' ', at: 0 })).toEqual({ kind: 'unknown' });
   });
 
   it('says when, and the commit by its short ID', () => {

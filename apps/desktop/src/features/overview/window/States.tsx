@@ -11,20 +11,18 @@ import { showDiff } from '../../diff/window/shared.ts';
 import { client } from '../../../window/ipc.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
-import type { OverviewCommit, Problem, SkillAgent, SkillState } from '../contract.ts';
+import type { Problem, SkillAgent, SkillState } from '../contract.ts';
 import type { Standing } from './facts.ts';
 import { copyPrompt, promptFor } from './copy.ts';
+import { WrittenBy } from './Author.tsx';
 import { useNow } from './hooks.ts';
 import { keyOf } from './labels.ts';
 import { main } from './main.ts';
 import {
-  ago,
-  authorOf,
   findingPlace,
   invalidSummary,
   newerWords,
   problemWords,
-  shortId,
   sizeRows,
   tooLargeWords,
 } from './says.ts';
@@ -159,11 +157,6 @@ function CopyButton({
       {keys !== undefined && <Key keys={keys} quiet decorative />}
     </Button>
   );
-}
-
-/** Who wrote an overview's commit and when, for the reports: "a91c4e2, by ravi-k 2 days ago". */
-function writtenBy(commit: OverviewCommit, now: number): string {
-  return `${shortId(commit.id)}, by ${withoutBidi(authorOf(commit.byline))} ${ago(commit.byline.at, now)}`;
 }
 
 /** What the skill's row for one agent says: what installing does, or what stops it. */
@@ -359,7 +352,8 @@ export function CantShow({
           }
         >
           <p>
-            {invalidSummary(standing.findings)} It’s at {writtenBy(standing.commit, now)}.
+            {invalidSummary(standing.findings)} It’s at{' '}
+            <WrittenBy commit={standing.commit} now={now} />.
           </p>
           {standing.findings.length > 0 && (
             <ul className="lo-ovstate__report" aria-label="Problems">
@@ -387,8 +381,8 @@ export function CantShow({
           }
         >
           <p>
-            {tooLargeWords(standing.what, standing.sizes)} It’s at {writtenBy(standing.commit, now)}
-            .
+            {tooLargeWords(standing.what, standing.sizes)} It’s at{' '}
+            <WrittenBy commit={standing.commit} now={now} />.
           </p>
           {standing.sizes.kinds.length > 0 && (
             <ul className="lo-ovstate__report" aria-label="Sizes">

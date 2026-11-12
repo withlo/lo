@@ -11,17 +11,18 @@ import type {
   FigurePart,
   Overview,
 } from '@lo/artifact';
-import { Avatar, Button } from '@lo/ui';
+import { Button } from '@lo/ui';
 import { Figure, type PartLink } from '@lo/ui/figures';
 import { MarkdownBlocks } from '@lo/ui/markdown';
 import { OverviewDocument, lineRange, type OverviewViews } from '@lo/ui/overview';
 import { useCallback, useMemo, type Ref } from 'react';
 
-import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
+import { useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewFile } from '../contract.ts';
 import { revisionAt, type Standing } from './facts.ts';
 import { useNow } from './hooks.ts';
 import { main } from './main.ts';
+import { AuthorPicture, WhoWrote } from './Author.tsx';
 import { ago, authorOf, shortId } from './says.ts';
 import { revisions, states } from './store.ts';
 
@@ -129,7 +130,11 @@ function ShownFigure({
   );
 }
 
-/** Who wrote the overview and when, which revision it describes, and a newer one, when pushed. */
+/**
+ * Who wrote the overview and when, which revision it describes, and a newer one, when pushed: one
+ * line, whatever its width, so nothing under it moves as the offer comes. Who wrote it gives up
+ * its room first, clipped.
+ */
 function Byline({
   tab,
   commit,
@@ -143,13 +148,13 @@ function Byline({
   const known = useTabState(revisions, tab.id);
   // The time it was written ages as the overview stays on screen.
   const now = useNow(true, 60_000);
-  const who = withoutBidi(authorOf(commit.byline));
+  const author = authorOf(commit.byline);
   const revision = revisionAt(known, described)?.number;
   return (
     <div className="lo-ov-byline" data-lo-byline>
-      <Avatar login={who} size="sm" />
-      <span>
-        <strong>{who}</strong> wrote this overview {ago(commit.byline.at, now)}
+      <AuthorPicture author={author} />
+      <span className="lo-ov-byline__who">
+        <WhoWrote author={author} when={ago(commit.byline.at, now)} />
       </span>
       <span aria-hidden="true">·</span>
       <span>

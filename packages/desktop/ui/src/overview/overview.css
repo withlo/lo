@@ -103,6 +103,10 @@
   background: transparent;
   box-shadow: inset 0 0 0 1.25px var(--lo-fg-dim);
 }
+/* While Lo finds out: the mark's room, empty. */
+.lo-ovmark--pending {
+  visibility: hidden;
+}
 
 /* The middle when there's no overview, or it can't be shown: a column in the middle of the sheet. */
 .lo-ovstate {
@@ -210,7 +214,46 @@
   user-select: text;
 }
 
-/* The byline is as tall as the offer of a newer overview, so the offer coming moves nothing. */
-.lo-ov-byline {
+/*
+ * The byline is one line, as tall as the offer of a newer overview, at any width, so nothing under
+ * it moves as the offer comes: who wrote it gives up its room first, clipped, and the line is
+ * clipped past the article's edge, with room for a focus ring.
+ */
+.lo-ov .lo-ov-byline {
+  flex-wrap: nowrap;
   min-height: var(--lo-control-h-sm);
+  white-space: nowrap;
+  overflow: clip;
+  overflow-clip-margin: 4px;
+}
+.lo-ov .lo-ov-byline > * {
+  flex: none;
+}
+.lo-ov .lo-ov-byline > .lo-ov-byline__who {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lo-ov-byline .lo-ov-byline__figure {
+  width: 20px;
+  height: 20px;
+  color: var(--lo-fg-muted);
+}
+
+/*
+ * The name a commit gives its author, which anyone can write: plain, quoted, on one short line and
+ * clipped, so it can't pass for a login or for Lo's words around it.
+ */
+.lo-ov-name {
+  white-space: nowrap;
+}
+.lo-ov-name__text {
+  display: inline-block;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  font-weight: 400;
 }

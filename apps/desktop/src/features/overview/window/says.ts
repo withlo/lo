@@ -32,10 +32,18 @@ export function until(then: number, now: number): string {
   return `in ${whole(Math.ceil(seconds / 60) * 60) ?? `${seconds} s`}`;
 }
 
-/** Who wrote an overview, as its byline names them: their login on GitHub, else their name. */
-export function authorOf(byline: Byline): string {
+/**
+ * Who wrote an overview: their login, when GitHub matched the commit to an account; else the name
+ * the commit gives its author, which anyone can write, so it's never drawn as Lo's own words; or
+ * nobody Lo can name.
+ */
+export type Author =
+  { kind: 'login'; login: string } | { kind: 'name'; name: string } | { kind: 'unknown' };
+
+export function authorOf(byline: Byline): Author {
+  if (byline.login !== null) return { kind: 'login', login: byline.login };
   const name = byline.name.trim();
-  return byline.login ?? (name === '' ? 'Someone' : name);
+  return name === '' ? { kind: 'unknown' } : { kind: 'name', name };
 }
 
 /** A commit's short ID, as the byline and the reports write it. */
