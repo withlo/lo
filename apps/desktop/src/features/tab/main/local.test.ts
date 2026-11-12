@@ -3,11 +3,18 @@ import { join } from 'node:path';
 
 import { GitError, parseOid, type GitStatus, type PullRequestRefs } from '@lo/git';
 import { APP_PULL, git, writeAppRemote } from '@lo/testing/git';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { LocalGit } from '../../../main/git.ts';
 import type { LocalState } from '../contract.ts';
-import { describeActivity, failureOf, LocalCopy, retryWait } from './local.ts';
+import {
+  describeActivity,
+  failureOf,
+  LocalCopy,
+  paced,
+  PROGRESS_EVERY,
+  retryWait,
+} from './local.ts';
 import { appRemote, folder, testGit } from './test/support.ts';
 
 const REFS: PullRequestRefs = {
@@ -20,16 +27,21 @@ const REFS: PullRequestRefs = {
 /** A local copy of the e2e pull request in `git`'s cache, with what it says collected. */
 function copyIn(localGit: LocalGit, token?: () => Promise<string | undefined>) {
   const states: LocalState[] = [];
+  /** When each state was said, in milliseconds since the Unix epoch. */
+  const times: number[] = [];
   const lines: string[] = [];
   const local = new LocalCopy({
     git: localGit,
     repository: { owner: 'rozed-dev', name: 'e2e' },
     number: APP_PULL.number,
     token,
-    changed: (state) => states.push(state),
+    changed: (state) => {
+      states.push(state);
+      times.push(Date.now());
+    },
     log: (line) => lines.push(line),
   });
-  return { local, states, lines, last: () => states.at(-1) };
+  return { local, states, times, lines, last: () => states.at(-1) };
 }
 
 describe('retryWait', () => {
@@ -90,11 +102,47 @@ describe('describeActivity', () => {
   });
 });
 
+describe('paced', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('says the first call at once, and the calls within the wait after it once the wait is up', () => {
+    vi.useFakeTimers();
+    let said = 0;
+    const pace = paced(100, () => (said += 1));
+    pace.call();
+    expect(said).toBe(1);
+    pace.call();
+    vi.advanceTimersByTime(40);
+    pace.call();
+    vi.advanceTimersByTime(59);
+    expect(said).toBe(1);
+    vi.advanceTimersByTime(1);
+    expect(said).toBe(2);
+    // A call longer than the wait after the last said is said at once.
+    vi.advanceTimersByTime(100);
+    pace.call();
+    expect(said).toBe(3);
+  });
+
+  it('drops the call waiting when cancelled', () => {
+    vi.useFakeTimers();
+    let said = 0;
+    const pace = paced(100, () => (said += 1));
+    pace.call();
+    pace.call();
+    pace.cancel();
+    vi.advanceTimersByTime(1_000);
+    expect(said).toBe(1);
+  });
+});
+
 describe('a local copy', { timeout: 60_000 }, () => {
   it('fetches the pull request and says the head on screen is ready, with its base', async () => {
     const localGit = await testGit();
     const asked: string[] = [];
-    const { local, states, last } = copyIn(localGit, () => {
+    const { local, states, times, last } = copyIn(localGit, () => {
       asked.push('token');
       return Promise.resolve('gho_FAKE_TOKEN');
     });
@@ -109,6 +157,12 @@ describe('a local copy', { timeout: 60_000 }, () => {
       offline: false,
     });
     expect(states[0]).toEqual({ kind: 'fetching', progress: null, attempt: 1 });
+    // What git was doing was said at most every PROGRESS_EVERY ms, give or take the clock's tick.
+    const progress = states.flatMap((state, index) =>
+      state.kind === 'fetching' && state.progress !== null ? [times[index] ?? 0] : [],
+    );
+    const gaps = progress.slice(1).map((at, index) => at - (progress[index] ?? 0));
+    expect(gaps.filter((gap) => gap < PROGRESS_EVERY - 2)).toEqual([]);
     // The token is read as the fetch starts, and only for it.
     expect(asked).toEqual(['token']);
     const clone = localGit.cache?.repoFolder('rozed-dev', 'e2e') ?? '';
