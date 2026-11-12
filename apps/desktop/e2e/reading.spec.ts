@@ -684,6 +684,53 @@ test('offers a newer overview pushed while one is read, and loads it only when a
   await expect(byline).not.toContainText('A newer overview was pushed');
 });
 
+test('a block’s menu reads the overview again after a read failed, and loads a newer one', async ({
+  page,
+  ref,
+}) => {
+  ref.holds = { kind: 'made', overview: overviewOf({ 'artifact.md': longText('The first one.') }) };
+  const id = await open(page);
+  await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('Overview', {
+    timeout: 20_000,
+  });
+  await overviewTab(page).click();
+  const shown = overview(page, 'shown');
+  await expect(shown).toContainText('The first one.');
+  const fold = shown.locator('details');
+  const menu = page.getByRole('menu', { name: 'Block actions' });
+  const item = (name: RegExp) => menu.getByRole('menuitem', { name });
+
+  // Nothing newer and nothing failed: neither is on it.
+  await fold.click({ button: 'right' });
+  await expect(item(/^Copy prompt for an agent/)).toBeVisible();
+  await expect(item(/^Load the newer overview/)).toHaveCount(0);
+  await expect(item(/^Retry/)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+
+  // A read that failed: Retry reads the ref again, which finds a newer one, offered.
+  ref.holds = { kind: 'failing' };
+  await readAgain(page, id);
+  await expect
+    .poll(() => current(page, id), { timeout: 20_000 })
+    .toMatchObject({ problem: { kind: 'failed' } });
+  ref.holds = {
+    kind: 'made',
+    overview: overviewOf({ 'artifact.md': longText('The second one.') }),
+  };
+  await fold.click({ button: 'right' });
+  await item(/^Retry/).click();
+  const byline = page.locator('[data-lo-byline]');
+  await expect(byline).toContainText('A newer overview was pushed', { timeout: 20_000 });
+  await expect(shown).toContainText('The first one.');
+
+  await fold.click({ button: 'right' });
+  await expect(item(/^Retry/)).toHaveCount(0);
+  await item(/^Load the newer overview/).click();
+  await expect(shown).toContainText('The second one.');
+  await expect(byline).not.toContainText('A newer overview was pushed');
+});
+
 test('keeps its byline as it is at any width, the commit’s name quoted and clipped, and a newer overview’s offer in reach and moving nothing', async ({
   app,
   page,

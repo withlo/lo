@@ -543,4 +543,39 @@ describe('a tab’s diff in the window', () => {
     expect(loader.shown('d0')?.lines).toBe(before?.lines);
     expect(loader.snapshot().whitespace).toBe(false);
   });
+
+  it('tells those listening each time a file’s lines or diff come, and when it fails or goes', async () => {
+    const files = [versions('a.ts'), versions('big.txt', 'large'), versions('gone.txt', 'large')];
+    const { done, list, failing } = work();
+    list(files);
+    failing.add('gone.txt');
+    const loader = new Loader(done);
+    const heard: string[] = [];
+    const stop = loader.onFile((id) => heard.push(id));
+    loader.setWhitespace(true);
+    loader.take(state(files));
+    await settle(loader);
+    expect(heard).toContain('d0');
+    expect(loader.shown('d0')).toBeDefined();
+
+    heard.length = 0;
+    loader.load('d1');
+    loader.load('d2');
+    await settle(loader);
+    expect(heard).toContain('d1');
+    expect(heard).toContain('d2');
+    expect(loader.failed('d2')).toBe(true);
+
+    // A new head goes on from nothing: the files it had are gone.
+    heard.length = 0;
+    loader.take(state([], 'local', NEXT));
+    await settle(loader);
+    expect(new Set(heard)).toEqual(new Set(['d0', 'd1', 'd2']));
+
+    stop();
+    heard.length = 0;
+    loader.take(state(files));
+    await settle(loader);
+    expect(heard).toEqual([]);
+  });
 });

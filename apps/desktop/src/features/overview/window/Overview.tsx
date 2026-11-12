@@ -1,18 +1,51 @@
 // The overview, the first of a pull request's tab's middle views. As the tab opens it draws the
 // tab's placeholder until it knows whether the overview shows, for `HOLD_LIMIT` at most, then
 // stays, or hands the middle to the diff before either has drawn anything. After that it shows the
-// overview, or why there's none to show; one that comes later is offered, never switched to.
+// overview, or why there's none to show; one that comes later is offered, never switched to. While
+// it's on screen the overview's keys act on it (`follow.ts`), and the code of one of its blocks can
+// sit beside it, which `o` and `Esc` take away again, the block the reader is at staying put.
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Button, Key } from '@lo/ui';
+import { NO_TARGET, setScopeSource } from '@lo/ui/commands';
+import { generationOf } from '@lo/ui/markdown';
+import { blockNumber, blockOf as blockAround, closeCards, focusTargetOf } from '@lo/ui/overview';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
-import { setMiddle } from '../../../window/commands/registry.ts';
-import { showDiff } from '../../diff/window/shared.ts';
+import { useMenuTarget } from '../../../window/commands/menus.tsx';
+import { setMiddle, useKeys } from '../../../window/commands/registry.ts';
+import { DiffBeside, showDiff } from '../../diff/window/shared.ts';
 import { HOLD_LIMIT } from '../../revisions/contract.ts';
 import { useKnownSetting } from '../../settings/window/shared.ts';
 import { MiddlePlaceholder, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { open } from '../settings.ts';
+import { blockIn, codeOf, onHead, onStep, stepsChanged } from './blocks.ts';
 import { knownOf, type Known, type Standing } from './facts.ts';
+import {
+  besides,
+  blockElement,
+  closeBeside,
+  currentBlock,
+  drawnIn,
+  focusedBlock,
+  hereIn,
+  holdBlock,
+  keptPlace,
+  placesFor,
+  setDrawn,
+  takeReveal,
+  targetOf,
+  trees,
+  type DrawnOverview,
+} from './follow.ts';
 import { useStanding } from './hooks.ts';
+import { keyOf } from './labels.ts';
 import { openingOf, openings, type Opening } from './opening.ts';
 import { Shown } from './Shown.tsx';
 import { CantShow, NoOverview, Quiet, ReadFailed } from './States.tsx';
@@ -72,11 +105,17 @@ function Body({
   standing,
   scroller,
   onScreen,
+  focused,
+  beside,
 }: {
   tab: PullTab;
   standing: Standing;
   scroller: (element: HTMLDivElement | null) => void;
   onScreen: boolean;
+  /** The block that has focus, by its number. */
+  focused: number | undefined;
+  /** Whether the code is beside it. */
+  beside: boolean;
 }) {
   switch (standing.kind) {
     case 'reading':
@@ -93,7 +132,16 @@ function Body({
     case 'newer':
       return <CantShow tab={tab} standing={standing} />;
     case 'shown':
-      return <Shown tab={tab} standing={standing} scroller={scroller} onScreen={onScreen} />;
+      return (
+        <Shown
+          tab={tab}
+          standing={standing}
+          scroller={scroller}
+          onScreen={onScreen}
+          focused={focused}
+          beside={beside}
+        />
+      );
     default:
       standing satisfies never;
       return null;
@@ -115,7 +163,7 @@ function focusIsFree(own: HTMLElement): boolean {
   );
 }
 
-/** A pull request's tab's overview, in its middle. */
+/** A pull request's tab's overview, in its middle, with the code of one of its blocks beside it. */
 export function OverviewView({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const standing = useStanding(tab.id);
   const known = knownOf(standing);
@@ -127,6 +175,29 @@ export function OverviewView({ tab, shown }: { tab: PullTab; shown: boolean }) {
     article.current = element;
     if (element) element.tabIndex = -1;
   }, []);
+  const tree = standing.kind === 'shown' ? standing.parsed.tree : undefined;
+  const generation = tree && generationOf(tree);
+  // A walkthrough's step changing changes the code it points at.
+  useSyncExternalStore(onStep, stepsChanged);
+
+  // The block with focus, for its ring; the block whose code is beside, while that's open.
+  const [focused, setFocused] = useState<number | undefined>(undefined);
+  const besideId = useTabState(besides, tab.id);
+  const besideAt =
+    besideId === undefined || generation === undefined ? undefined : blockIn(besideId, generation);
+  const besideNode = besideAt === undefined ? undefined : tree?.blocks[besideAt];
+  const besideCode = besideNode && codeOf(besideNode);
+  const beside = besideCode && onHead(besideCode);
+
+  // The tab's places in the overview, for `⌃o` and `⌃i`.
+  useEffect(() => placesFor(tab.id), [tab.id]);
+
+  // Code beside a block of an overview no longer on screen goes with it.
+  useEffect(() => {
+    if (besideId !== undefined && besideAt === undefined && generation !== undefined) {
+      besides.set(tab.id, undefined);
+    }
+  }, [tab.id, besideId, besideAt, generation]);
 
   // Seen on screen as it shows, it's no longer offered.
   useEffect(() => {
@@ -135,16 +206,111 @@ export function OverviewView({ tab, shown }: { tab: PullTab; shown: boolean }) {
     }
   }, [tab.id, shown, known]);
 
-  // While it's on screen, the middle view, which `Esc` gives focus back to.
+  // While it's on screen, the middle view, which `Esc` gives focus back to, after closing a term's
+  // card or the code beside; and where the tab is in it, for history.
   const waiting = opening === 'waiting';
   useEffect(() => {
     if (!shown || waiting) return undefined;
     const take = () => (article.current ?? root.current)?.focus({ preventScroll: true });
-    if (root.current && focusIsFree(root.current)) take();
-    return setMiddle({ focus: take, here: () => undefined });
-  }, [shown, waiting]);
+    // A block history brought back has focus already.
+    const own = root.current;
+    const active = document.activeElement;
+    const placed = active !== own && active !== article.current && own?.contains(active);
+    if (own && !placed && focusIsFree(own)) take();
+    return setMiddle({
+      focus: take,
+      here: () => {
+        const now = drawnIn(tab.id);
+        return now && hereIn(now);
+      },
+      escape: () => {
+        if (closeCards()) return true;
+        const now = drawnIn(tab.id);
+        if (!now || !root.current?.contains(document.activeElement)) return false;
+        const block = currentBlock(now);
+        if (!closeBeside(tab.id)) return false;
+        if (block) focusTargetOf(block).focus({ preventScroll: true });
+        return true;
+      },
+    });
+  }, [tab.id, shown, waiting]);
+
+  // While it's on screen and shows an overview, the keys act on it, and a block history asked
+  // for meanwhile is shown.
+  useLayoutEffect(() => {
+    const element = root.current;
+    if (!shown || waiting || !tree || generation === undefined || !element) return undefined;
+    trees.set(tab.id, generation);
+    const drawn: DrawnOverview = {
+      tab: tab.id,
+      tree,
+      generation,
+      root: element,
+      scroller: () => article.current,
+    };
+    const stop = setDrawn(drawn);
+    takeReveal(drawn);
+    return stop;
+  }, [tab.id, shown, waiting, tree, generation]);
+
+  // What a key acts on: the block with focus.
+  useEffect(() => {
+    const element = root.current;
+    if (!element) return undefined;
+    return setScopeSource(element, {
+      target: () => {
+        const drawn = drawnIn(tab.id);
+        const block = drawn && focusedBlock(drawn);
+        return (drawn && block && targetOf(drawn, block)) ?? NO_TARGET;
+      },
+    });
+  }, [tab.id, waiting]);
+
+  // The block with focus, as focus moves; the code beside follows it to each block with code.
+  useEffect(() => {
+    const element = root.current;
+    if (!element) return undefined;
+    const track = () => {
+      const drawn = drawnIn(tab.id);
+      const block = drawn && focusedBlock(drawn);
+      setFocused(block && blockNumber(block));
+      if (!drawn || !block || besides.get(tab.id) === undefined) return;
+      const at = targetOf(drawn, block);
+      const index = blockNumber(block);
+      const node = index === undefined ? undefined : drawn.tree.blocks[index];
+      if (at?.kind === 'block' && node && codeOf(node) && besides.get(tab.id) !== at.block) {
+        besides.set(tab.id, at.block);
+      }
+    };
+    element.addEventListener('focusin', track);
+    element.addEventListener('focusout', track);
+    return () => {
+      element.removeEventListener('focusin', track);
+      element.removeEventListener('focusout', track);
+    };
+  }, [tab.id, waiting]);
+
+  // The block the reader is at stays where it is on the page as the code beside comes and goes:
+  // as the overview takes its new width, and as the blocks above it settle to it.
+  const split = beside !== undefined;
+  useLayoutEffect(() => {
+    const drawn = drawnIn(tab.id);
+    const kept = keptPlace(tab.id);
+    const block = drawn && kept && blockElement(drawn, kept.block);
+    return drawn && kept && block ? holdBlock(drawn, block, kept.top) : undefined;
+  }, [tab.id, split]);
+
+  // A right-click on a block: the block's menu.
+  const menu = useMenuTarget((event) => {
+    const drawn = drawnIn(tab.id);
+    const box = article.current?.querySelector('.lo-ov__article');
+    if (!drawn || !box || !(event.target instanceof Element)) return undefined;
+    const block = blockAround(box, event.target);
+    return block && targetOf(drawn, block);
+  });
 
   if (waiting) return <MiddlePlaceholder tab={tab} />;
+  const ring = focused ?? (split ? besideAt : undefined);
   return (
     <div
       ref={root}
@@ -152,8 +318,73 @@ export function OverviewView({ tab, shown }: { tab: PullTab; shown: boolean }) {
       tabIndex={-1}
       data-lo-scope="overview"
       data-lo-overview={standing.kind}
+      {...menu}
     >
-      <Body tab={tab} standing={standing} scroller={scroller} onScreen={shown} />
+      <div className={split ? 'lo-split' : 'lo-split lo-split--single'}>
+        <section className="lo-split__pane" aria-label="Overview">
+          {split && <OverviewBar />}
+          <div className="lo-split__body">
+            <Body
+              tab={tab}
+              standing={standing}
+              scroller={scroller}
+              onScreen={shown}
+              focused={ring}
+              beside={split}
+            />
+          </div>
+        </section>
+        {beside && (
+          <section className="lo-split__pane" aria-label="Code beside">
+            <DiffBeside
+              tab={tab}
+              path={beside.path}
+              line={beside.line}
+              end={<CloseBeside tab={tab.id} />}
+            />
+          </section>
+        )}
+      </div>
     </div>
+  );
+}
+
+/** A key's caps for command `id`, as this system shows its first key, if it has one. */
+function KeyFor({ id }: { id: string }) {
+  useKeys();
+  const keys = keyOf(id);
+  return keys ? <Key keys={keys} quiet decorative /> : null;
+}
+
+/** Over the overview while its code is beside it: what it is, and how the code follows. */
+function OverviewBar() {
+  return (
+    <div className="lo-split__bar">
+      <span className="text-fg">Overview</span>
+      <span className="min-w-8 flex-1" />
+      <span className="flex items-center gap-6">
+        <KeyFor id="overview.nextBlock" />
+        Next block; the code follows
+      </span>
+    </div>
+  );
+}
+
+/** Back to the overview alone, as `Esc` and `o` go. */
+function CloseBeside({ tab }: { tab: string }) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => {
+        const drawn = drawnIn(tab);
+        const block = drawn && currentBlock(drawn);
+        closeBeside(tab);
+        if (block) focusTargetOf(block).focus({ preventScroll: true });
+      }}
+    >
+      Close code beside
+      <KeyFor id="keys.escape" />
+    </Button>
   );
 }

@@ -1,17 +1,18 @@
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 
 import type { Overview, Walkthrough as WalkthroughNode } from '@lo/artifact';
 
 import { Button } from '../Button.tsx';
 import { MarkdownBlocks } from '../markdown/index.ts';
 import { PathName } from './CodeBlock.tsx';
+import { setStepper } from './moving.ts';
 import { lineRange } from './placeholders.tsx';
 
 /**
  * A walkthrough: its numbered steps beside a code view that follows the current one, `code`, which
  * whoever has the code draws. Its height comes from its steps' words alone, since the code view's
- * box is the same height whatever it holds, so the code coming moves nothing. A step clicked, or
- * Previous and Next, ask for another with `step`.
+ * box is the same height whatever it holds, so the code coming moves nothing. A step clicked,
+ * Previous and Next, or the block keys through `stepIn`, ask for another with `step`.
  */
 export function Walkthrough({
   node,
@@ -26,8 +27,22 @@ export function Walkthrough({
 }) {
   const count = node.steps.length;
   const shown = node.steps[current];
+  const own = useRef<HTMLDivElement>(null);
+  const latest = useRef({ current, count, step });
+  latest.current = { current, count, step };
+  useLayoutEffect(() => {
+    const element = own.current;
+    if (!element) return undefined;
+    return setStepper(element, (by) => {
+      const now = latest.current;
+      const next = now.current + by;
+      if (next < 0 || next >= now.count) return false;
+      now.step(next);
+      return true;
+    });
+  }, []);
   return (
-    <div className="lo-walk">
+    <div ref={own} className="lo-walk">
       <div className="lo-walk__head">
         <span className="lo-walk__title">{node.title}</span>
         <span>
