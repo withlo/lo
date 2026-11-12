@@ -244,6 +244,9 @@ importers:
       '@lo/ui':
         specifier: workspace:*
         version: link:../../packages/desktop/ui
+      '@withlo/overview':
+        specifier: workspace:*
+        version: link:../../skill/checker
       react:
         specifier: 19.3.1
         version: 19.3.1

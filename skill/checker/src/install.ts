@@ -15,6 +15,8 @@
 import { randomBytes } from 'node:crypto';
 import {
   closeSync,
+  constants,
+  fstatSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -31,9 +33,42 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 import { SKILL_FILES, SKILL_NAME } from './skill.ts';
 
-/** The skill couldn't be installed, and why, in words. */
+/**
+ * Why the skill couldn't be installed, for a caller that words it for itself, since the messages
+ * speak to the command line. `path` is the folder or file the refusal is about.
+ *
+ * - `nothingSetUp`: no agent was named, and neither is set up here;
+ * - `link`: a link is where the skill's folder, a folder in it or one of its files goes;
+ * - `notFolder`, `notFile`: something else is where a folder or a file goes;
+ * - `otherSkill`: the skill's folder holds another skill, `name` if it says one;
+ * - `otherFiles`: the skill's folder holds files that aren't the skill's, and no `SKILL.md`;
+ * - `failed`: the file system refused something in the skills folder `skills`, at `path` when it
+ *   says where, with its error `code`, such as `EACCES`, and `detail`, in its own words.
+ */
+export type InstallReason =
+  | { kind: 'nothingSetUp' }
+  | { kind: 'link'; path: string }
+  | { kind: 'notFolder'; path: string }
+  | { kind: 'notFile'; path: string }
+  | { kind: 'otherSkill'; path: string; name: string | undefined }
+  | { kind: 'otherFiles'; path: string }
+  | {
+      kind: 'failed';
+      skills: string;
+      path: string | undefined;
+      code: string | undefined;
+      detail: string;
+    };
+
+/** The skill couldn't be installed. Its message says why to the command line; `reason` says it plain. */
 export class InstallError extends Error {
   override name = 'InstallError';
+  readonly reason: InstallReason;
+
+  constructor(message: string, reason: InstallReason) {
+    super(message);
+    this.reason = reason;
+  }
 }
 
 /** A coding agent with a skills folder of the user's own. */
@@ -112,7 +147,7 @@ export function targetsOf(wanted: Wanted, env: NodeJS.ProcessEnv): Target[] {
   }));
   if (wanted.dir !== undefined) targets.push({ agent: undefined, skills: resolve(wanted.dir) });
   if (targets.length === 0) {
-    targets = AGENTS.filter((agent) => isFolder(agentFolders(agent, env).setUp)).map((agent) => ({
+    targets = AGENTS.filter((agent) => isSetUp(agent, env)).map((agent) => ({
       agent,
       skills: agentFolders(agent, env).skills,
     }));
@@ -120,11 +155,17 @@ export function targetsOf(wanted: Wanted, env: NodeJS.ProcessEnv): Target[] {
   if (targets.length === 0) {
     throw new InstallError(
       `Lo found neither Claude Code nor Codex set up here. Say where to install the skill with --claude, --codex or --dir <folder>. ${NOTHING}`,
+      { kind: 'nothingSetUp' },
     );
   }
   return targets.filter(
     (target, at) => targets.findIndex(({ skills }) => skills === target.skills) === at,
   );
+}
+
+/** Whether `agent` is set up here: the folder that says so is there. */
+export function isSetUp(agent: Agent, env: NodeJS.ProcessEnv): boolean {
+  return isFolder(agentFolders(agent, env).setUp);
 }
 
 /** Whether there's a folder at `path`, or a link to one. */
@@ -163,11 +204,70 @@ function attempt<T>(skills: string, after: string, work: () => T): T {
   try {
     return work();
   } catch (error) {
-    const said =
-      error instanceof InstallError
-        ? error.message
-        : `Lo couldn't install the skill in ${skills}: ${error instanceof Error ? error.message : String(error)}`;
-    throw new InstallError(`${said} ${after}`);
+    throw refused(error, skills, after);
+  }
+}
+
+/**
+ * The refusal that `error` comes to, raised for the skills folder `skills`, its message ended with
+ * `after`. A file where a folder above the skill's goes is that, not the file system's `ENOTDIR`.
+ */
+function refused(error: unknown, skills: string, after: string): InstallError {
+  if (error instanceof InstallError) {
+    return new InstallError(`${error.message} ${after}`, error.reason);
+  }
+  const code = fieldOf(error, 'code');
+  if (code === 'ENOTDIR') {
+    const path = fileAbove(skills);
+    if (path !== undefined) {
+      return new InstallError(
+        `${path} isn't a folder, so the skill can't go there. ${INSTEAD} ${after}`,
+        { kind: 'notFolder', path },
+      );
+    }
+  }
+  const detail = error instanceof Error ? error.message : String(error);
+  return new InstallError(`Lo couldn't install the skill in ${skills}: ${detail} ${after}`, {
+    kind: 'failed',
+    skills,
+    path: fieldOf(error, 'path'),
+    code,
+    detail,
+  });
+}
+
+/** The text field `name` of `error`, such as a file system error's `code`, if it has one. */
+function fieldOf(error: unknown, name: string): string | undefined {
+  if (!(error instanceof Error) || !(name in error)) return undefined;
+  const value: unknown = Reflect.get(error, name);
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * The nearest of `path` and the folders above it that is there but isn't a folder (a link to a
+ * folder is one), or `undefined` when there's none.
+ */
+function fileAbove(path: string): string | undefined {
+  for (let at = path; ; at = dirname(at)) {
+    try {
+      return statSync(at).isDirectory() ? undefined : at;
+    } catch {
+      // Nothing, or no folder, to hold anything at this path: the cause is higher.
+    }
+    if (dirname(at) === at) return undefined;
+  }
+}
+
+/**
+ * Why the skill can't be installed in the skills folder `skills` now, or `undefined` when it can.
+ * Checks as `install` does, and writes nothing.
+ */
+export function blockedBy(skills: string): InstallReason | undefined {
+  try {
+    check(join(skills, SKILL_NAME));
+    return undefined;
+  } catch (error) {
+    return refused(error, skills, '').reason;
   }
 }
 
@@ -194,10 +294,14 @@ function refuseOther(path: string, stats: Stats, kind: 'folder' | 'file'): void 
   if (stats.isSymbolicLink()) {
     throw new InstallError(
       `${path} is a link, and Lo doesn't install the skill through links, since one could lead anywhere. ${INSTEAD}`,
+      { kind: 'link', path },
     );
   }
   if (kind === 'folder' ? !stats.isDirectory() : !stats.isFile()) {
-    throw new InstallError(`${path} isn't a ${kind}, so the skill can't go there. ${INSTEAD}`);
+    throw new InstallError(`${path} isn't a ${kind}, so the skill can't go there. ${INSTEAD}`, {
+      kind: kind === 'folder' ? 'notFolder' : 'notFile',
+      path,
+    });
   }
 }
 
@@ -237,23 +341,34 @@ function check(folder: string): string {
     const name = skillName(head(skill));
     if (name !== SKILL_NAME) {
       const which = name === undefined ? 'another skill' : `another skill, ${JSON.stringify(name)}`;
-      throw new InstallError(`${folder} holds ${which}, so Lo left it alone. ${INSTEAD}`);
+      throw new InstallError(`${folder} holds ${which}, so Lo left it alone. ${INSTEAD}`, {
+        kind: 'otherSkill',
+        path: folder,
+        name,
+      });
     }
   } else if (!onlyOwn(folder, '')) {
     throw new InstallError(
       `${folder} holds files that aren't the ${SKILL_NAME} skill's, and no SKILL.md, so Lo left it alone. ${INSTEAD}`,
+      { kind: 'otherFiles', path: folder },
     );
   }
   return folder;
 }
 
+/** The name of the file `replace` writes before it renames it over a file of the skill's. */
+const TEMPORARY = new RegExp(`^\\.${SKILL_NAME}-[0-9a-f]{16}\\.tmp$`);
+
 /**
  * Whether the folder `inner`, inside the skill's folder `folder`, holds nothing but the skill's own
- * files and folders, as an install cut short leaves it. Its folders have been checked aren't links.
+ * files and folders, as an install cut short leaves it, and files it was writing when it was. Its
+ * folders have been checked aren't links.
  */
 function onlyOwn(folder: string, inner: string): boolean {
   for (const name of readdirSync(join(folder, inner))) {
     const path = inner === '' ? name : `${inner}/${name}`;
+    // What an install cut short leaves is only ever ignored: nothing is deleted.
+    if (TEMPORARY.test(name) && entryAt(join(folder, path))?.isFile()) continue;
     if (!OWN.has(path)) return false;
     if (OWN_FOLDERS.includes(path) && !onlyOwn(folder, path)) return false;
   }
@@ -263,11 +378,15 @@ function onlyOwn(folder: string, inner: string): boolean {
 /** The most of a `SKILL.md` read to find its name. */
 const HEAD = 64 * 1024;
 
-/** The start of the file at `path`, as text. */
+/**
+ * The start of the file at `path`, as text. It opens without waiting, so that a pipe there, or a
+ * link to one, is no wait for a writer that never comes, and reads only a file.
+ */
 function head(path: string): string {
   const bytes = Buffer.alloc(HEAD);
-  const file = openSync(path, 'r');
+  const file = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
+    if (!fstatSync(file).isFile()) throw new Error(`${path} isn't a file.`);
     return bytes.subarray(0, readSync(file, bytes, 0, HEAD, 0)).toString('utf8');
   } finally {
     closeSync(file);
@@ -284,6 +403,18 @@ export function skillName(text: string): string | undefined {
     if (match) return match[2];
   }
   return undefined;
+}
+
+/**
+ * Whether the skill is installed in the skills folder `skills`: its folder holds a `SKILL.md` that
+ * names it. A link there counts, as it does for the agent that reads the skill through it.
+ */
+export function installedIn(skills: string): boolean {
+  try {
+    return skillName(head(join(skills, SKILL_NAME, 'SKILL.md'))) === SKILL_NAME;
+  } catch {
+    return false;
+  }
 }
 
 /** Writes the skill's files in its folder, `folder`, in `skills`, replacing each whole. */
