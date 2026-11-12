@@ -16,7 +16,7 @@ import { _electron as electron, type ElectronApplication, type Page } from '@pla
 
 import { appEnvironment, appFolder, dataFolder, expect, KEYCHAIN, test as base } from './app.ts';
 
-/** Where a header was drawn and how far the diff was scrolled, as a frame started. */
+/** Where a header was drawn, and how far the diff was scrolled, as a frame was painted. */
 interface HeaderFrame {
   /** How far down the page the header was, if it was drawn. */
   y: number | undefined;
@@ -362,26 +362,48 @@ test('`e` marks the file viewed and closes it, and the next file’s header stay
 });
 
 /**
- * Notes, as each frame starts, where file `id`'s header is drawn, how far the diff is scrolled and
- * whether the cursor is in the file, until the function it returns is called, which returns the
- * frames.
+ * Notes, every frame just before it's painted, where file `id`'s header is drawn, how far the diff
+ * is scrolled and whether the cursor is in the file, until the function it returns is called, which
+ * returns the frames. Each is read once the frame's callbacks have run and it's laid out, so a place
+ * the view makes up for before the paint isn't noted, and one it shows for a single frame is.
  */
 async function watchHeader(page: Page, id: string): Promise<() => Promise<HeaderFrame[]>> {
   await page.evaluate((file) => {
     const frames: HeaderFrame[] = [];
     window.loHeader = frames;
-    const tick = () => {
+    // A box that changes size every frame: its observer hears of it once the frame is laid out,
+    // after the view's own observers, as the last thing before the paint.
+    const beat = document.body.appendChild(document.createElement('div'));
+    const styles: [string, string][] = [
+      ['position', 'fixed'],
+      ['top', '0'],
+      ['left', '0'],
+      ['width', '1px'],
+      ['height', '1px'],
+      ['visibility', 'hidden'],
+      ['pointer-events', 'none'],
+    ];
+    for (const [name, value] of styles) beat.style.setProperty(name, value);
+    const observer = new ResizeObserver(() => {
       const view = document.querySelector('.lo-diffview');
       const at = window.loDiff?.probe.cursor()?.at;
-      if (view) {
-        frames.push({
-          y: window.loDiff?.probe.spotTop({ kind: 'header', file, side: 'new' }),
-          scroll: view.scrollTop,
-          end: view.scrollHeight - view.clientHeight,
-          cursor: (at?.kind === 'line' ? at.at.file : at?.file) === file,
-        });
+      if (!view || window.loHeader !== frames) return;
+      frames.push({
+        y: window.loDiff?.probe.spotTop({ kind: 'header', file, side: 'new' }),
+        scroll: view.scrollTop,
+        end: view.scrollHeight - view.clientHeight,
+        cursor: (at?.kind === 'line' ? at.at.file : at?.file) === file,
+      });
+    });
+    observer.observe(beat);
+    const tick = () => {
+      if (window.loHeader !== frames) {
+        observer.disconnect();
+        beat.remove();
+        return;
       }
-      if (window.loHeader === frames) requestAnimationFrame(tick);
+      beat.style.setProperty('width', beat.style.width === '1px' ? '2px' : '1px');
+      requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   }, id);
@@ -391,6 +413,57 @@ async function watchHeader(page: Page, id: string): Promise<() => Promise<Header
       window.loHeader = undefined;
       return frames;
     });
+}
+
+/**
+ * How tall `path`'s header is drawn on the new side, if it's drawn: the whole block the editor
+ * draws for it, with the note a file of no lines has in it.
+ */
+function headerHeight(page: Page, path: string): Promise<number | undefined> {
+  return page.evaluate((file) => {
+    const after = document.querySelector('.lo-diffview .cm-content[aria-label="After"]');
+    const header = [...(after?.querySelectorAll('.lo-diffhead') ?? [])].find((each) =>
+      each.textContent?.includes(file),
+    );
+    return header?.closest('.cm-content > *')?.getBoundingClientRect().height;
+  }, path);
+}
+
+/**
+ * Presses `e` in `path`, and watches the next file's header, `following`'s, every frame for a
+ * second. It stays where it was, if it was wholly on screen; one the foot of the screen cut off
+ * comes up just far enough to show whole; any other comes to the top of the screen, or as near as
+ * the scroll goes. It's there from the first frame the cursor is on it, or from before the key when
+ * it stays, and never leaves.
+ */
+async function viewAndWatch(
+  page: Page,
+  path: string,
+  following: { id: string; path: string },
+): Promise<void> {
+  const before = await headerTop(page, following.id);
+  const tall = await headerHeight(page, following.path);
+  const bottom = before === undefined || tall === undefined ? undefined : before + tall;
+  const { top, height } = await box(page);
+  const foot = top + height;
+  const drawn = before !== undefined && bottom !== undefined && before >= top && before < foot;
+  const whole = drawn && bottom <= foot;
+  const goal = !drawn ? top : whole ? before : foot - (bottom - before);
+  const watched = await watchHeader(page, following.id);
+  await page.keyboard.press('e');
+  await expect(ball(page, path)).toHaveAttribute('title', 'Viewed');
+  await expect.poll(() => cursorPath(page)).toBe(following.path);
+  await page.waitForTimeout(1000);
+  const frames = await watched();
+  const there = ({ y, scroll, end }: HeaderFrame) =>
+    y !== undefined && (Math.abs(y - goal) < 2 || (!drawn && end - scroll < 2));
+  const moving = frames.findIndex((frame) => frame.cursor);
+  expect(moving, JSON.stringify(frames)).toBeGreaterThanOrEqual(0);
+  const watchedFrames = frames.slice(whole ? 0 : moving);
+  expect(
+    watchedFrames.findIndex((frame) => !there(frame)),
+    `the header belongs at ${goal}: ${JSON.stringify(watchedFrames)}`,
+  ).toBe(-1);
 }
 
 test('`e` goes on to the next file not viewed, its header staying put or coming up, and round the end', async ({
@@ -408,33 +481,7 @@ test('`e` goes on to the next file not viewed, its header staying put or coming 
     const following = rest[step + 1] ?? order[0];
     await expect.poll(() => cursorPath(page)).toBe(file.path);
     if (!following) throw new Error('the diff has no files');
-    const before = await headerTop(page, following.id);
-    const { top, height } = await box(page);
-    const onScreen = before !== undefined && before >= top && before < top + height;
-    const watched = await watchHeader(page, following.id);
-    await page.keyboard.press('e');
-    await expect(ball(page, file.path)).toHaveAttribute('title', 'Viewed');
-    await expect.poll(() => cursorPath(page)).toBe(following.path);
-    await page.waitForTimeout(1000);
-    const frames = await watched();
-    // The next header is where it was, if it was on screen; else at the top of the screen, or as
-    // near as the scroll goes. It's there from the first frame after the key moved the cursor to
-    // it, and stays as the file closed above it is measured and the sides are levelled: away for
-    // two frames running, it moved on screen, since a frame that starts before the view puts it
-    // back isn't painted so.
-    const there = ({ y, scroll, end }: HeaderFrame) =>
-      y !== undefined &&
-      (onScreen
-        ? Math.abs(y - (before ?? Number.NaN)) < 2
-        : Math.abs(y - top) < 2 || end - scroll < 2);
-    const moving = frames.findIndex((frame) => frame.cursor);
-    expect(moving, JSON.stringify(frames)).toBeGreaterThanOrEqual(0);
-    // On screen, from before the key too.
-    const watchedFrames = frames.slice(onScreen ? 0 : moving);
-    const moved = watchedFrames.findIndex(
-      (frame, index) => !there(frame) && !there(watchedFrames[index + 1] ?? frame),
-    );
-    expect(moved, JSON.stringify(watchedFrames)).toBe(-1);
+    await viewAndWatch(page, file.path, following);
   }
   // Round the end, to the first file, which isn't viewed.
   await expect.poll(() => cursorPath(page)).toBe(order[0]?.path);
@@ -442,6 +489,20 @@ test('`e` goes on to the next file not viewed, its header staying put or coming 
     .poll(() => fake.writes, { timeout: 20_000 })
     .toEqual(rest.map((file) => `MarkFileAsViewed ${file.path}`));
 });
+
+for (const showing of [4, 12, 24]) {
+  test(`\`e\` brings up the next file’s header, ${showing} px of it on screen, just far enough to show whole`, async ({
+    page,
+  }) => {
+    const order = await shown(page);
+    const parser = order.find((file) => file.path === 'src/parser.ts');
+    if (!parser) throw new Error('the diff has no src/parser.ts');
+    await cursorTo(page, 'src/legacy.ts');
+    const { height } = await box(page);
+    await headerAt(page, 'src/parser.ts', height - showing);
+    await viewAndWatch(page, 'src/legacy.ts', parser);
+  });
+}
 
 /** The key of the tree's row the keyboard is on. */
 function treeFocus(page: Page): Promise<string | null> {

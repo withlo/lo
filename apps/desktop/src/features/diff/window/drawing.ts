@@ -459,14 +459,17 @@ export function draw(options: DrawOptions): Drawing {
         viewedHere(id, viewed, next) {
           // The next file's header stays where it is on screen, if it's there, and otherwise
           // comes to the top, as the next thing to read; with no file left to read, this one's.
-          // Where it is is where the reader sees it now, before anything of this file changes:
-          // the lines it takes in below, held back while the reader looked at it, move it.
+          // One the foot of the screen cuts off comes up just far enough to show whole, since the
+          // cursor goes to it. Where it is is where the reader sees it now, before anything of
+          // this file changes: the lines it takes in below, held back while the reader looked at
+          // it, move it.
           const to = next ?? id;
           const cursor = spotOf(view.keyState().target);
           const side = cursor?.kind === 'header' ? cursor.side : (cursor?.at.side ?? 'new');
           const header: Spot = { kind: 'header', file: to, side };
           const box = parent.getBoundingClientRect();
           const top = viewed ? view.probe.spotTop(header) : undefined;
+          const bottom = viewed ? view.probe.spotBottom(header) : undefined;
           own.add(id);
           pending.delete(id);
           release(id);
@@ -485,8 +488,10 @@ export function draw(options: DrawOptions): Drawing {
             view.setCollapsed(id, true);
             drawn.set(id, 'collapsed');
           }
+          const height = top !== undefined && bottom !== undefined ? bottom - top : 0;
+          const place = onScreen ? Math.max(box.top, Math.min(top, box.bottom - height)) : box.top;
           view.reveal({ kind: 'file', file: to });
-          view.scrollTo({ at: header, offset: onScreen ? box.top - top : 0 });
+          view.scrollTo({ at: header, offset: box.top - place });
         },
       }),
       setMiddle({

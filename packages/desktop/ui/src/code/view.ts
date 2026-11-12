@@ -64,7 +64,7 @@ import type {
   Viewport,
   VimKey,
 } from './api.ts';
-import { Aligner, alignerFields, drawnTop, ownTop } from './aligner.ts';
+import { Aligner, alignerFields, drawnBottom, drawnTop, ownTop } from './aligner.ts';
 import { CommentBox, placeKey } from './comments.ts';
 import {
   type FileNote,
@@ -409,6 +409,7 @@ class View implements DiffView {
       cursor: () => this.#cursorReading(),
       spotAt: (y) => this.#spotAt(y),
       spotTop: (spot) => this.#spotTop(spot),
+      spotBottom: (spot) => this.#spotBottom(spot),
     });
   }
 
@@ -1041,11 +1042,23 @@ class View implements DiffView {
 
   /** How far down the page `spot` is drawn, if it is. */
   #spotTop(spot: Spot): number | undefined {
+    const found = this.#spotLine(spot);
+    return found && drawnTop(found.view, found.pos);
+  }
+
+  /** How far down the page `spot` ends, if it's drawn. */
+  #spotBottom(spot: Spot): number | undefined {
+    const found = this.#spotLine(spot);
+    return found && drawnBottom(found.view, found.pos);
+  }
+
+  /** The editor `spot` is in, and where its line starts in it. */
+  #spotLine(spot: Spot): { view: EditorView; pos: number } | undefined {
     const found = this.#atOf(spot);
     if (!found) return undefined;
     const pane: Pane = this.#pane === 'inline' ? 'inline' : found.place.side;
     const view = this.#viewOf(pane);
-    return drawnTop(view, view.state.doc.line(this.#docLine(pane, found.place)).from);
+    return { view, pos: view.state.doc.line(this.#docLine(pane, found.place)).from };
   }
 
   /** Whether a block keeps its place and size as its file's lines change: a line, or a header. */
@@ -2315,6 +2328,10 @@ class ViewProbe implements Probe {
 
   spotTop(spot: Spot): number | undefined {
     return this.#read.spotTop(spot);
+  }
+
+  spotBottom(spot: Spot): number | undefined {
+    return this.#read.spotBottom(spot);
   }
 }
 

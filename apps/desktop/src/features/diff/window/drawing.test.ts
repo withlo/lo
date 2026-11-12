@@ -17,13 +17,17 @@ const moved: string[] = [];
 const headers: string[] = [];
 /** How far down the page each file's header is drawn, by its id. */
 const tops = new Map<string, number>();
+/** How tall the stand-in's headers are, in pixels. */
+const HEADER = 38;
 /** What a file taking its lines does to the page, as one that grows moves the headers below it. */
 let tookLines: ((id: string) => void) | undefined;
 /** Each diff's name, to say which one the view was given. */
 const names = new WeakMap<FileDiff, string>();
 
 vi.mock('@lo/ui/code', () => ({
-  createDiffView: (): Partial<Omit<DiffView, 'probe'>> & { probe: Pick<Probe, 'spotTop'> } => ({
+  createDiffView: (): Partial<Omit<DiffView, 'probe'>> & {
+    probe: Pick<Probe, 'spotTop' | 'spotBottom'>;
+  } => ({
     viewport: () => ({ at: { kind: 'header', file: 'd0', side: 'new' }, offset: 0 }),
     scrollTo: (viewport) => {
       const { at } = viewport;
@@ -34,6 +38,10 @@ vi.mock('@lo/ui/code', () => ({
     holdTop: () => true,
     probe: {
       spotTop: (spot) => (spot.kind === 'header' ? tops.get(spot.file) : undefined),
+      spotBottom: (spot) => {
+        const top = spot.kind === 'header' ? tops.get(spot.file) : undefined;
+        return top === undefined ? undefined : top + HEADER;
+      },
     },
     fold: () => undefined,
     filesOnScreen: () => onScreen,
@@ -344,6 +352,13 @@ describe('viewed files', () => {
     expect(told[0]).toBe('lines d0 local shown');
     expect(told).toContain('collapsed d0 true');
     expect(moved.slice(-2)).toEqual(['reveal d1', 'scroll d1 -300']);
+  });
+
+  it('e brings the next file’s header up to show whole when the foot of the screen cuts it off', async () => {
+    await drawTwo();
+    tops.set('d1', 790);
+    drawnFor(TAB.id)?.viewedHere('d0', true, 'd1');
+    expect(moved).toEqual(['reveal d1', `scroll d1 -${800 - HEADER}`]);
   });
 
   it('e brings the next file’s header to the top when it isn’t on screen', async () => {

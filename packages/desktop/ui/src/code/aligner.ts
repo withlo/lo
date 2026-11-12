@@ -1297,6 +1297,11 @@ export function drawnTop(view: EditorView, pos: number): number | undefined {
   return drawnRect(view, pos)?.top;
 }
 
+/** Where on the page the line at `pos` ends, as {@link drawnTop} finds it, if it's drawn. */
+export function drawnBottom(view: EditorView, pos: number): number | undefined {
+  return drawnRect(view, pos)?.bottom;
+}
+
 /** The box the line at `pos` is drawn in, without the blocks drawn around it, if it's drawn. */
 function drawnRect(view: EditorView, pos: number): DOMRect | undefined {
   if (pos < view.viewport.from || pos > view.viewport.to) return undefined;

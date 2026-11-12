@@ -236,6 +236,8 @@ export interface Probe {
   spotAt(y: number): Spot | undefined;
   /** How far down the page a line or header is drawn, if it's drawn. */
   spotTop(spot: Spot): number | undefined;
+  /** How far down the page a line or header ends, if it's drawn. */
+  spotBottom(spot: Spot): number | undefined;
 }
 
 /** A pull request's diff, both sides in one scroll. */
