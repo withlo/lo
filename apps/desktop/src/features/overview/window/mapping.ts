@@ -121,6 +121,40 @@ function locate(changes: readonly LineChange[], line: number): Located {
   return { kind: 'kept', at: before.new.end + (line - before.old.end) };
 }
 
+/**
+ * Where lines `lines` at the overview's commit are at the head, as the diff's markers go: the
+ * file's path there, and the runs of those lines still there, unchanged, in order. A line that
+ * changed or went is in none, and lines added among them since split a run. Nothing for a file
+ * that's gone, or whose lines Lo can't compare, or when it can't tell.
+ */
+export function runsOnHead(
+  since: FileSince,
+  lines: { readonly start: number; readonly end: number },
+): { readonly path: string; readonly runs: readonly Run[] } | undefined {
+  switch (since.kind) {
+    case 'same':
+      return { path: since.path, runs: [{ from: lines.start, to: lines.end }] };
+    case 'changed': {
+      const runs: Run[] = [];
+      for (let line = lines.start; line <= lines.end; line++) {
+        const at = lineOnHead(since, line);
+        if (at === undefined) continue;
+        const last = runs.at(-1);
+        if (last && at === last.to + 1) runs[runs.length - 1] = { from: last.from, to: at };
+        else runs.push({ from: at, to: at });
+      }
+      return { path: since.path, runs };
+    }
+    case 'opaque':
+    case 'deleted':
+    case 'unknown':
+      return undefined;
+    default:
+      since satisfies never;
+      return undefined;
+  }
+}
+
 /** The line at the head that line `line` at the overview's commit is, unchanged; none when it changed or Lo can't tell. */
 export function lineOnHead(since: FileSince, line: number): number | undefined {
   switch (since.kind) {

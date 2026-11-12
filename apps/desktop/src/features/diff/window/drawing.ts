@@ -24,6 +24,7 @@ import { type ShownMarks, viewedMarkOf } from '../../revisions/window/shared.ts'
 import type { PullTab } from '../../tab/window/shared.ts';
 import { followFile } from '../../tree/window/shared.ts';
 import type { Start } from '../contract.ts';
+import { explainer, marksOf, onExplained, sameMarks } from './explained.ts';
 import { diffFileOf, headerOf, startWith } from './files.ts';
 import type { Entry, Loader, Moved, Shown } from './loader.ts';
 import { main } from './main.ts';
@@ -50,6 +51,8 @@ declare global {
           setMarks(marks: readonly Mark[]): void;
           /** Opens the note of the marker on a line, as its menu item does. */
           openNote(at: Line): boolean;
+          /** The marks on the lines the overview explains, as the diff last gave them. */
+          explained(): readonly Mark[];
         }
       | undefined;
   }
@@ -419,8 +422,23 @@ export function draw(options: DrawOptions): Drawing {
       menu: (target, x, y) => {
         openMenu(target, { x, y });
       },
+      // "Read it in the overview": a jump, from the line the note is under.
+      explained(block, line) {
+        if (explainer()?.read(tab.id, block)) {
+          keys.history.record({ view: 'diff', at: { kind: 'line', at: line } });
+        }
+      },
     },
   );
+  // The lines another feature explains, marked as it says, now and each time that changes.
+  let explained: readonly Mark[] = [];
+  const explain = () => {
+    const next = marksOf(explainer()?.linesAt(tab.id, at) ?? [], files);
+    if (sameMarks(next, explained)) return;
+    explained = next;
+    view.setMarks(next);
+  };
+  explain();
   // Each file's diff and highlighting came with it.
   view.setMoves(shownMoves);
   loader.attach({
@@ -487,6 +505,7 @@ export function draw(options: DrawOptions): Drawing {
       clearTimeout(still);
     },
     keys.subscribe(() => view.setVimKeys(keys.vimKeys())),
+    onExplained(tab.id, explain),
   ];
   const setShown = (shown: boolean) => {
     if (shown === (showing !== undefined)) return;
@@ -595,6 +614,7 @@ export function draw(options: DrawOptions): Drawing {
         filesOnScreen: () => view.filesOnScreen(),
         setMarks: (given: readonly Mark[]) => view.setMarks(given),
         openNote: (line: Line) => view.openNote(line),
+        explained: () => explained,
       };
   if (testing) window.loDiff = testing;
   // Back where the tab's last view was: its cursor, and what was at the top of the screen. Or, for

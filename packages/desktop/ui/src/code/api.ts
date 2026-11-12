@@ -286,7 +286,9 @@ export interface DiffView extends KeySource {
    * marks change no line's width or height, and what's on screen stays where it is. Kinds the diff
    * view doesn't draw, and marks on files it doesn't have, are left out. A note stays open while
    * its mark does, or another from the same block on the same side of the file; one on screen stays
-   * as it was, its mark changed or gone, until it's off screen or closed.
+   * as it was, its mark changed or gone, until it's off screen or closed, or in a diff too short to
+   * scroll, until the reader's next wheel, key or click. Its link then shows what its mark says
+   * now: a note whose mark went closes rather than show a block.
    */
   setMarks(marks: readonly Mark[]): void;
   /** Whether `openNote` would open a note at `at`: an overview marker's on its line, drawn. */
@@ -375,9 +377,10 @@ export interface DiffEvents {
   menu(target: Target, x: number, y: number): void;
   /**
    * "Read it in the overview" in an overview marker's note: show the overview at the block that
-   * explains the lines. Without it, notes have no such link.
+   * explains the lines. `at` is the line the note is under, where the reader was. Without it, notes
+   * have no such link.
    */
-  explained?(block: string): void;
+  explained?(block: string, at: Place): void;
 }
 
 /**

@@ -305,6 +305,20 @@ export function placing(tab: string, path: string): Promise<unknown> | undefined
   return fileSince(tab, compared.commit, compared.head, path, { soon: true });
 }
 
+/**
+ * How the file at `path` at `commit` is at `head`, in tab `tab`, if Lo has worked it out: nothing
+ * while it hasn't, which `fileSince` asks for.
+ */
+export function knownSince(
+  tab: string,
+  commit: string,
+  head: string,
+  path: string,
+): FileSince | undefined {
+  const entry = entries.get(tab);
+  return entry?.commit === commit && entry.head === head ? entry.known.get(path) : undefined;
+}
+
 /** Lets go of what was worked out for the tabs that closed: those not in `open`. */
 export function keepSinceOnly(open: ReadonlySet<string>): void {
   for (const [tab, entry] of entries) {

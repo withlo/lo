@@ -235,6 +235,9 @@ importers:
       '@lo/github':
         specifier: workspace:*
         version: link:../../packages/core/github
+      '@lo/markdown':
+        specifier: workspace:*
+        version: link:../../packages/core/markdown
       '@lo/review':
         specifier: workspace:*
         version: link:../../packages/core/review

@@ -128,8 +128,14 @@ function placeOf(at: Place | Span): Place {
 
 /** Whether the diff on screen has an overview's note on the target's line. */
 function hasNote(target: LineTarget): boolean {
+  return noteNow(target) === true;
+}
+
+/** Whether "Overview note" can open a note on the target's line, or why not. */
+function noteNow(target: LineTarget): true | string {
   const drawn = onScreen();
-  return typeof drawn !== 'string' && drawn.view.hasNote(placeOf(target.at));
+  if (typeof drawn === 'string') return drawn;
+  return drawn.view.hasNote(placeOf(target.at)) || 'There’s no overview note on this line.';
 }
 
 /** The lines a line target is on: the cursor's line, or the lines `v` selected. */
@@ -232,7 +238,7 @@ export default {
       run: withDiff(({ view }, target: LineTarget) => {
         view.openNote(placeOf(target.at));
       }),
-      enabled: (target) => hasNote(target) || 'There’s no overview note on this line.',
+      enabled: noteNow,
       listed: hasNote,
     },
     copyLines: {

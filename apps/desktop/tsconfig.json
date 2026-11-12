@@ -12,6 +12,9 @@
       "path": "../../packages/core/review"
     },
     {
+      "path": "../../packages/core/markdown"
+    },
+    {
       "path": "../../packages/desktop/git"
     },
     {
