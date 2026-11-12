@@ -729,11 +729,17 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
       timeout: 30_000,
     });
     await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
-    // src/format.ts, off screen, came in; src/parser.ts, on screen, keeps GitHub's lines.
-    await expect(formatNote).toHaveCount(0);
-    await expect(
-      page.locator('.lo-diffview .lo-collapsed', { hasText: 'not loaded yet' }).first(),
-    ).toBeAttached();
+    // src/format.ts, off screen, comes in, which can be just after: its note goes from both sides.
+    // Looked for among the files' notes alone, every 100 ms. Playwright's search by text reads the
+    // text of the whole diff, which costs the frame it lands in about what a file's swap does.
+    await page.waitForFunction(
+      (text) =>
+        ![...document.querySelectorAll('.lo-diffview .lo-filenote')].some(
+          (note) => note.textContent === text,
+        ),
+      '20 changed lines: za loads them',
+      { polling: 100, timeout: 5_000 },
+    );
     await page.waitForTimeout(500);
     const { frames, tops } = await page.evaluate(() => {
       const timed = { frames: window.loFrames ?? [], tops: window.loTops ?? [] };
@@ -741,6 +747,12 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
       window.loTops = undefined;
       return timed;
     });
+    // With the frames no longer timed: src/format.ts came in; src/parser.ts, on screen, keeps
+    // GitHub's lines.
+    await expect(formatNote).toHaveCount(0);
+    await expect(
+      page.locator('.lo-diffview .lo-collapsed', { hasText: 'not loaded yet' }).first(),
+    ).toBeAttached();
 
     // The same view, and the row that was at the top of the screen where it was on the page,
     // through the banners going and the files changing above it.
