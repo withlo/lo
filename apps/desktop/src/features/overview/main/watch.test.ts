@@ -182,14 +182,18 @@ describe('watching', () => {
     await vi.advanceTimersByTimeAsync(1);
     await settle();
     expect(reads()).toBe(3);
-    // Brought to the front, it's read at once, then every 30 s again.
+    // Brought to the front 10 s after a read, it's read 30 s after it.
     await vi.advanceTimersByTimeAsync(10_000);
     tab.setForeground(true);
+    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY - 10_001);
+    expect(reads()).toBe(3);
+    await vi.advanceTimersByTimeAsync(1);
     await settle();
     expect(reads()).toBe(4);
-    await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY - 1);
-    expect(reads()).toBe(4);
-    await vi.advanceTimersByTimeAsync(1);
+    // Brought to the front a minute after one, it's read at once.
+    tab.setForeground(false);
+    await vi.advanceTimersByTimeAsync(60_000);
+    tab.setForeground(true);
     await settle();
     expect(reads()).toBe(5);
 
@@ -236,6 +240,11 @@ describe('watching', () => {
     await settle();
     expect(reads()).toBe(4);
     expect(last()?.newer?.id).toBe(pushed.commit);
+    // Coming to the front again at once reads nothing more.
+    tab.setForeground(false);
+    tab.setForeground(true);
+    await settle();
+    expect(reads()).toBe(4);
     tab.update(info(), false, true);
     tab.update(info(), true, true);
     await settle();

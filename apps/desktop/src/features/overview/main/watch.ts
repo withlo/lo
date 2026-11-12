@@ -1,12 +1,12 @@
 // A pull request's tab's overview in main: the ref `refs/lo/pr/<n>`, read in the pull request's
 // repository, then in its fork, through GitHub's REST API as the tab's account, with each answer's
 // ETag, so a read that finds nothing changed costs nothing. It's read as the tab is shown and as Lo
-// comes to the front, and again every 30 s while the tab is on screen and Lo is in front (every 5
-// minutes behind other windows), never sooner than GitHub's `x-poll-interval` asks; a public pull
-// request opened without an account is read once. A commit Lo hasn't seen is read whole before it's
-// offered, and a newer one never takes the place of the one on screen until it's loaded. What was
-// read is kept, so the overview shows at once the next time, offline too. Nothing here calls
-// Electron.
+// comes to the front (once in 30 s at most), and again every 30 s while the tab is on screen and Lo
+// is in front (every 5 minutes behind other windows), never sooner than GitHub's `x-poll-interval`
+// asks; a public pull request opened without an account is read once. A commit Lo hasn't seen is
+// read whole before it's offered, and a newer one never takes the place of the one on screen until
+// it's loaded. What was read is kept, so the overview shows at once the next time, offline too.
+// Nothing here calls Electron.
 
 import {
   overviewRef,
@@ -146,14 +146,20 @@ export class OverviewTab {
   }
 
   /**
-   * Lo came to the front, which reads the ref at once, so a new overview shows promptly, unless
-   * GitHub asked Lo to wait for the rate limit; or it went behind another window.
+   * Lo came to the front, which reads the ref at once if it hasn't been read in the last 30 s, so a
+   * new overview shows promptly, unless GitHub asked Lo to wait for the rate limit; or it went
+   * behind another window. Coming to the front often reads no more often than that.
    */
   setForeground(foreground: boolean): void {
     if (this.#closed || foreground === this.#foreground) return;
     this.#foreground = foreground;
-    if (foreground && this.#onScreen && this.#problem?.kind !== 'rateLimited') this.#read();
-    else this.#schedule();
+    const readAt = this.#readAt;
+    const stale = readAt === undefined || this.#now() - readAt >= FOREGROUND_EVERY;
+    if (foreground && stale && this.#onScreen && this.#problem?.kind !== 'rateLimited') {
+      this.#read();
+    } else {
+      this.#schedule();
+    }
   }
 
   /** Reads the ref again now, after a failure. */

@@ -87,11 +87,13 @@ const test = base.extend<{
       await use(origin);
       return;
     }
-    // Passes each request on to the replay server, holding the repository's files back.
+    // Passes each request on to the replay server, holding the repository's files at the head back,
+    // and nothing else, such as the overview's: a request held past the test's end would find the
+    // replay server gone.
     const front = createServer((incoming, outgoing) => {
       void (async () => {
         const body = await buffer(incoming);
-        if (incoming.url?.includes('/git/trees/')) {
+        if (incoming.url?.includes(`/git/trees/${APP_PULL.head}`)) {
           await new Promise((resolve) => setTimeout(resolve, slowTree));
         }
         const headers = new Headers();
@@ -113,7 +115,10 @@ const test = base.extend<{
         });
         outgoing.writeHead(response.status, out);
         outgoing.end(Buffer.from(await response.arrayBuffer()));
-      })();
+      })().catch(() => {
+        // The test has ended, and the replay server with it: the request goes unanswered.
+        outgoing.destroy();
+      });
     });
     await new Promise<void>((resolve) => front.listen(0, '127.0.0.1', resolve));
     const address = front.address();
