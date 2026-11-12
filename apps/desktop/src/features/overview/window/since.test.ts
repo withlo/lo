@@ -3,7 +3,8 @@
 // once for the head on screen, without highlighting, keeping only which lines changed; a newer head
 // replaces it all; a block on screen goes first; a file the local copy wasn't ready for is asked
 // again; a closed tab's goes; and following maps a place onto the head only for the overview on
-// screen and the head it's out of date against.
+// screen and the head it's out of date against. The clock is the test's own, so whether a small file
+// is diffed at once or by the diff's job doesn't depend on how fast the machine is.
 
 import { checkArtifact, parseArtifact } from '@lo/artifact';
 import { diffText } from '@lo/diff';
@@ -13,12 +14,14 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import type { LocalState, PullView } from '../../tab/contract.ts';
 import type { FileSinceText, OverviewCommit, OverviewState, SinceReply } from '../contract.ts';
 import { treeEntries } from '../jobs.ts';
+import { quickClock } from '../test/clock.ts';
 import type { CheckedOverview } from './checking.ts';
 import { QUICK_LIMIT } from './files.ts';
 
 const R1 = '1'.repeat(40);
 const R2 = '2'.repeat(40);
 const R3 = '3'.repeat(40);
+const clock = quickClock();
 
 /** What the window asked the diff, the tab's head on screen and its overview, as the test sets them. */
 const fake = vi.hoisted(() => ({
@@ -185,6 +188,28 @@ describe('what changed since', () => {
       { path: 'src/large.ts', highlight: false },
       { path: 'src/b.ts', highlight: false },
     ]);
+  });
+
+  it('diffs a small file by the diff’s job, without highlighting, once the frame’s share is spent, until the next frame', async () => {
+    // Each diff takes all of the share, so one spends it for the rest of its frame.
+    clock.takes(8);
+    for (const path of ['src/first.ts', 'src/second.ts', 'src/third.ts']) {
+      files.set(path, { kind: 'changed', path, pushed: true, texts: { old: OLD, new: NOW } });
+    }
+    const first = await fileSince(tab, R1, R2, 'src/first.ts');
+    expect(fake.diffed).toEqual([]);
+    expect(await fileSince(tab, R1, R2, 'src/second.ts')).toEqual({
+      ...first,
+      path: 'src/second.ts',
+    });
+    expect(fake.diffed).toEqual([{ path: 'src/second.ts', highlight: false }]);
+    // The frame over, its share is whole, and a small file is diffed at once again.
+    clock.endFrame();
+    expect(await fileSince(tab, R1, R2, 'src/third.ts')).toEqual({
+      ...first,
+      path: 'src/third.ts',
+    });
+    expect(fake.diffed).toEqual([{ path: 'src/second.ts', highlight: false }]);
   });
 
   it('works it all out again for a newer head, which replaces the last', async () => {
