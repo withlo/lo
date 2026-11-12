@@ -264,6 +264,14 @@ function ExcerptCode({
     };
   }, [want, near, first, tab, commit, head, path, start, end]);
 
+  // Its lines that changed, marked on the view it has, which isn't drawn again for them, so it
+  // keeps its highlighting; and on the next one it's drawn with.
+  const marked = useRef(stale);
+  useLayoutEffect(() => {
+    marked.current = stale;
+    drawnView.current?.setStale(stale);
+  }, [stale]);
+
   useLayoutEffect(() => {
     const parent = box.current;
     if (!parent || !page || !code) return undefined;
@@ -277,7 +285,7 @@ function ExcerptCode({
         lines: code.lines,
         diff: code.diff,
         range: { side: 'new', from: start, to: end },
-        stale,
+        stale: marked.current,
         vimKeys: keys.vimKeys(),
         nonce: page.nonce,
       },
@@ -300,7 +308,7 @@ function ExcerptCode({
       stop();
       view.destroy();
     };
-  }, [code, stale, page, id, path, start, end]);
+  }, [code, page, id, path, start, end]);
 
   // Highlighted near the screen once the diff's job has it, which changes no line's height; drawn
   // only for its height, far from it, it isn't.

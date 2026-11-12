@@ -61,11 +61,38 @@ vi.mock(import('../../diff/window/shared.ts'), async (original) => ({
       files.map((file) => ({
         ok: true as const,
         diff: diffText(file.old ?? undefined, file.new ?? undefined, { whitespace: true }),
-        tokens: {},
+        // Highlighting with nothing in it, which a view is still given.
+        tokens: { old: new Uint32Array(0), new: new Uint32Array(0) },
         changes: { deleted: [], added: [] },
       })),
     ),
 }));
+
+/** Each code view drawn: whether it's been given its highlighting, and whether it's gone. */
+const views = vi.hoisted(() => [] as { highlighted: boolean; destroyed: boolean }[]);
+
+vi.mock(import('@lo/ui/code'), async (original) => {
+  const real = await original();
+  return {
+    ...real,
+    createExcerptView: (parent, init, on) => {
+      const view = real.createExcerptView(parent, init, on);
+      const seen = { highlighted: false, destroyed: false };
+      views.push(seen);
+      const setTokens = view.setTokens.bind(view);
+      const destroy = view.destroy.bind(view);
+      view.setTokens = (side, tokens) => {
+        seen.highlighted = true;
+        setTokens(side, tokens);
+      };
+      view.destroy = () => {
+        seen.destroyed = true;
+        destroy();
+      };
+      return view;
+    },
+  };
+});
 
 /** What an author could write, each meant for the agent the prompt goes to. */
 const HOSTILE = {
@@ -149,6 +176,7 @@ beforeEach(() => {
   gate = undefined;
   notReady.clear();
   tabState.listeners.clear();
+  views.length = 0;
   bridge.calls.length = 0;
   tabState.pull = pullAt(R2);
   tabState.local = {
@@ -359,6 +387,11 @@ describe('a code block of an overview written for an older push', () => {
     await until(() => flag()?.includes('in r3') === true);
     expect(flag()).toBe('Lines 7–8 changed in r3. This block shows r1, which the text describes.');
     expect(seen.some(([drawn, flagged]) => drawn && !flagged)).toBe(false);
+    // Its code, still highlighted, with the lines that changed by the newer push marked.
+    expect(views.filter((each) => !each.destroyed)).toEqual([
+      { highlighted: true, destroyed: false },
+    ]);
+    expect(staleNumbers(page)).toEqual(['7', '8']);
   });
 
   it('compares the two revisions in the diff from its flag', async () => {
