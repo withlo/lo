@@ -49,8 +49,6 @@ export { Child, type Finished, type StartOptions } from './spawn.ts';
 export {
   type FetchedPull,
   type HeadSource,
-  type Overview,
-  type OverviewFile,
   PATCH_LIMIT,
   type PullRequestRefs,
   Repo,

@@ -135,6 +135,11 @@ export interface SendOptions {
   body?: string | Uint8Array | undefined;
   /** The body's type, when it isn't JSON. */
   contentType?: string | undefined;
+  /**
+   * The media type to ask for, when it isn't GitHub's JSON: `application/vnd.github.raw+json` for
+   * a file's bytes as they are.
+   */
+  accept?: string | undefined;
   condition?: Condition;
   /** Statuses answered rather than thrown, for a request whose refusals carry a body Lo reads. */
   answers?: readonly number[] | undefined;
@@ -430,7 +435,7 @@ export class GithubClient {
     let headers: Headers;
     try {
       headers = new Headers({
-        accept: 'application/vnd.github+json',
+        accept: options.accept ?? 'application/vnd.github+json',
         'x-github-api-version': API_VERSION,
         'user-agent': this.#userAgent,
       });

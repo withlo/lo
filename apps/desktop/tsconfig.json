@@ -15,10 +15,13 @@
       "path": "../../packages/core/diff"
     },
     {
-      "path": "../../packages/desktop/ui"
+      "path": "../../packages/core/artifact"
     },
     {
       "path": "../../packages/core/github"
+    },
+    {
+      "path": "../../packages/desktop/ui"
     },
     {
       "path": "../../testing"

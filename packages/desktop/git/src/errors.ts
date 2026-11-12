@@ -18,8 +18,8 @@ import { formatDuration } from './limits.ts';
  *   doesn't.
  * - `timedOut`: the fetch ran out a limit, so Lo stopped it. The message, Lo's own, says which, and
  *   what git was doing then.
- * - `tooLarge`: the fetch brought more than it may, such as an overview over 50 MB, so Lo stopped
- *   it.
+ * - `tooLarge`: the fetch brought more than it may, such as a comparison's downloads past their
+ *   cap, so Lo stopped it.
  * - `other`: something else, in git's words.
  */
 export type FetchFailure =

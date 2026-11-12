@@ -187,15 +187,18 @@ and the whole-file view.
 ### The local copy
 
 - **What it fetches.** Each repo gets a bare partial clone. Lo fetches PR heads
-  (`refs/pull/<n>/head`, including PRs from forks), base branches and each PR's artifact ref
-  (`refs/lo/pr/<n>`) as it needs them. It keeps every revision it has fetched under its own refs, so
-  force-pushed commits survive.
+  (`refs/pull/<n>/head`, including PRs from forks) and base branches as it needs them. It keeps
+  every revision it has fetched under its own refs, so force-pushed commits survive.
+- **Overviews don't come through it.** Lo reads each PR's artifact ref (`refs/lo/pr/<n>`) through
+  GitHub's REST API, with or without git: it watches the ref with ETags, then reads its commit, the
+  commit's tree and the artifact's files by their IDs, and keeps them so an overview shows at once,
+  offline too. The code an overview shows comes from the local copy.
 - **Sign-in.** Git signs in with the account's token, and your git config is never touched.
 - **Checkouts.** Trusted repos get a checkout at the PR head for language servers. The old side is
   read straight from git.
 - **Before the copy is ready.** Lo shows GitHub's own diff, builds the file tree from GitHub's API
-  and loads the artifact through the API. Whole-file context, navigation and rebase-aware comparison
-  turn on when the copy arrives, with progress shown.
+  and shows the overview. Whole-file context, navigation and rebase-aware comparison turn on when
+  the copy arrives, with progress shown.
 - **Cleanup.** Settings shows how much space the cache uses and can clear it. Repos unused for 30
   days are removed. The cache also has a size cap, 10 GB by default and changeable in Settings, and
   past it the least recently used copies are removed.

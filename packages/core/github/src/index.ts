@@ -29,6 +29,7 @@ export {
   type Metadata,
   type RemovedMetadata,
 } from './metadata.ts';
+export * from './overviews.ts';
 export * from './pager.ts';
 export * from './patch.ts';
 export * from './pending.ts';

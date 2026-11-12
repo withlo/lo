@@ -26,6 +26,16 @@ test(
     expect(git(bare, 'cat-file', '-t', APP_PULL.firstHead)).toBe('commit');
     expect(git(bare, 'merge-base', APP_PULL.firstHead, APP_PULL.base)).toBe(APP_PULL.firstBase);
     expect(git(bare, 'merge-base', APP_PULL.head, APP_PULL.base)).toBe(APP_PULL.base);
+    // The overview, as GitHub holds it: one commit of artifact.md and its figure, and nothing else.
+    expect(git(bare, 'rev-parse', 'refs/lo/pr/80')).toBe(APP_PULL.overview);
+    expect(git(bare, 'ls-tree', '-r', '--name-only', 'refs/lo/pr/80').split('\n')).toEqual([
+      'artifact.md',
+      'figures/flow.svg',
+    ]);
+    expect(git(bare, 'rev-list', '--count', 'refs/lo/pr/80')).toBe('1');
+    expect(git(bare, 'show', 'refs/lo/pr/80:artifact.md')).toContain(
+      `commit: ${APP_PULL.firstHead}`,
+    );
     // Clients may filter, and fetch any commit by ID, as from GitHub.
     expect(git(bare, 'config', 'uploadpack.allowFilter')).toBe('true');
     expect(git(bare, 'config', 'uploadpack.allowAnySHA1InWant')).toBe('true');
@@ -33,9 +43,9 @@ test(
     const again = mkdtempSync(join(tmpdir(), 'lo-app-'));
     onTestFinished(() => rmSync(again, { recursive: true, force: true }));
     writeAppRemote(again);
-    expect(git(join(again, 'rozed-dev', 'e2e.git'), 'rev-parse', 'refs/pull/80/head')).toBe(
-      APP_PULL.head,
-    );
+    expect(
+      git(join(again, 'rozed-dev', 'e2e.git'), 'rev-parse', 'refs/pull/80/head', 'refs/lo/pr/80'),
+    ).toBe(`${APP_PULL.head}\n${APP_PULL.overview}`);
   },
 );
 

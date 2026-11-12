@@ -25,6 +25,8 @@ export const APP_PULL = {
   base: 'dccd782aff9cd7a5088122cd3fb4a515964acee7',
   /** `app/base` when the first push was made. */
   firstBase: '99d29e0c4b73b37b7a59349c8ab0744d02ddf575',
+  /** The overview at `refs/lo/pr/80`, written for the first push. */
+  overview: 'ad1cfa3d053a10b8fc8e46ad786f284509e4b8a9',
 } as const;
 
 /**

@@ -28,16 +28,19 @@ export interface Answers {
 }
 
 /**
- * Clears what Lo keeps to open pull requests fast: the answers it saved from GitHub, and the local
- * copies that aren't in use, which it says how many it had to leave. Accounts, the pull requests
- * opened lately and every mark are elsewhere, and stay. With no cache, there are no copies to clear
- * but the answers go all the same.
+ * Clears what Lo keeps to open pull requests fast: the answers it saved from GitHub, what `others`
+ * clear (what other features keep, such as overviews' files), and the local copies that aren't in
+ * use, which it says how many it had to leave. Accounts, the pull requests opened lately and every
+ * mark are elsewhere, and stay. With no cache, there are no copies to clear but the rest goes all
+ * the same.
  */
 export async function clear(
   { cache }: Pick<Copies, 'cache'>,
   answers: Answers,
+  others: Iterable<() => void> = [],
 ): Promise<CacheCleared> {
   answers.clearAnswers();
+  for (const each of others) each();
   const left = cache ? await cache.clear() : [];
   return cacheCleared.parse({ kept: left.length });
 }

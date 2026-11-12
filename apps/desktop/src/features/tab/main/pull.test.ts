@@ -141,6 +141,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     // Nothing is read until it's shown.
     await tab.watch();
     expect(sent.pulls).toEqual([]);
+    expect(tab.info().head).toBeUndefined();
     tab.show();
     expect(sent.pull?.loading).toBe(true);
 
@@ -170,6 +171,8 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
       shown: APP_PULL.head,
       newer: null,
     });
+    // Its head isn't in a fork, as GitHub says.
+    expect(tab.info().head).toEqual({ fork: null });
     // What it fetched with is kept with the tab, as is what the strip shows.
     expect(kept).toContainEqual({ login: 'rozed-bot' });
     expect(kept).toContainEqual({ repository: 'rozed-dev/e2e' });

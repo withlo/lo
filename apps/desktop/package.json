@@ -16,6 +16,7 @@
     "test": "vitest run --root ../.. --project @lo/desktop"
   },
   "dependencies": {
+    "@lo/artifact": "workspace:*",
     "@lo/design": "workspace:*",
     "@lo/diff": "workspace:*",
     "@lo/git": "workspace:*",

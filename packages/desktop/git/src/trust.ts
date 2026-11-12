@@ -69,13 +69,12 @@ const OWN_SETTINGS: ReadonlyMap<string, Check> = new Map<string, Check>([
 /**
  * Why the clone at `clone` can't be trusted, or `undefined` when it can. `options.checkouts` is
  * the folder its checkouts are in: a checkout's `gitdir` must point inside it, and without it, it
- * may have none. A clone of code must hold its whole history; only one that holds overviews,
- * `options.shallow` says so, may hold commits without their parents.
+ * may have none. A clone must hold its whole history.
  */
 export async function distrust(
   runner: Runner,
   clone: string,
-  options: { checkouts?: string | undefined; shallow?: boolean | undefined } = {},
+  options: { checkouts?: string | undefined } = {},
 ): Promise<string | undefined> {
   const folder = await lstat(clone).catch(() => undefined);
   if (!folder?.isDirectory()) return 'it isn’t a folder';
@@ -90,7 +89,7 @@ export async function distrust(
     return `${relative(clone, join(link.parentPath, link.name))} is a link to somewhere else`;
   }
   // Commits without their parents would cut every pull request's history short.
-  if (!options.shallow && (await lstat(join(clone, 'shallow')).catch(() => undefined))) {
+  if (await lstat(join(clone, 'shallow')).catch(() => undefined)) {
     return 'it holds commits without their history (shallow)';
   }
   for (const file of FOREIGN_FILES) {
