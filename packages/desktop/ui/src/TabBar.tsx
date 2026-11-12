@@ -196,7 +196,7 @@ export function TabBar({
         <button
           ref={plus}
           type="button"
-          aria-label="Open a pull request"
+          aria-label="Review a pull request"
           aria-disabled={onNew ? undefined : true}
           onClick={onNew}
           className="ms-6 grid size-control-h-sm flex-none place-items-center self-center rounded-sm text-fg-muted no-drag hover:bg-hover hover:text-fg focus-visible:shadow-ring"

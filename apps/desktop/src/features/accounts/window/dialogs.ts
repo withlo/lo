@@ -36,6 +36,7 @@ function finish(dialog: OpenDialog): void {
       dialog.answer(undefined);
       break;
     case 'import':
+    case 'signOut':
       break;
     default:
       throw new Error(`A dialog Lo doesn't know: ${JSON.stringify(dialog satisfies never)}`);
@@ -148,6 +149,14 @@ export async function openGithub(): Promise<void> {
 /** Opens the dialog for importing accounts from `gh`. */
 export function openImport(): void {
   show({ kind: 'import' });
+}
+
+/**
+ * Opens the dialog for signing out of one of `logins`: it asks which when there are several, and
+ * confirms what signing out does either way.
+ */
+export function openSignOut(logins: readonly string[]): void {
+  show({ kind: 'signOut', logins });
 }
 
 /**

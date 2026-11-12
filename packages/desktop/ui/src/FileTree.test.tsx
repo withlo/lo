@@ -112,8 +112,10 @@ describe('FileTree', () => {
           (value ?? '').split(/\s+/),
         ),
       ),
-    ].filter((name) => name !== '' && !name.startsWith('lo-'));
-    // And those the marks of a comparison add.
+    ].filter((name) => name !== '' && !name.startsWith('lo-') && !name.startsWith('group/'));
+    // And those the marks of a comparison add, and the row's ring, which only the group marked by
+    // the tree's own `group/tree` can switch on.
+    classes.push('group-focus-visible/tree:shadow-ring-inset');
     classes.push('opacity-45', '-end-4', 'top-6', 'bottom-6', 'w-2', 'rounded-xs', 'bg-accent');
     expect(classes.length).toBeGreaterThan(30);
     const css = await buildCss(classes);

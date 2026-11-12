@@ -2,14 +2,11 @@
 // add one. The window never sees a token; each account's summary says all it needs.
 
 import { Avatar, Button, Callout, Tag, type TagTone } from '@lo/ui';
-import { useState } from 'react';
 import { useStore } from 'zustand';
 
-import { IpcError } from '../../../ipc/contract.ts';
 import { defineSection } from '../../settings/window/shared.ts';
 import type { AccountSummary } from '../contract.ts';
-import { openImport, openSignIn } from './dialogs.ts';
-import { main } from './main.ts';
+import { openImport, openSignIn, openSignOut } from './dialogs.ts';
 import { accountsStore } from './store.ts';
 
 /** How an account is, in a word or two, with what it means. */
@@ -48,22 +45,8 @@ function status(account: AccountSummary): { tag: string; tone: TagTone; detail?:
 }
 
 function Account({ account }: { account: AccountSummary }) {
-  const [error, setError] = useState<string>();
-  const [removing, setRemoving] = useState(false);
   const { tag, tone, detail } = status(account);
   const source = account.source === 'gh' ? 'imported from gh' : 'signed in with GitHub';
-  const remove = () => {
-    setRemoving(true);
-    setError(undefined);
-    main()
-      .remove({ login: account.login })
-      .catch((thrown: unknown) => {
-        setRemoving(false);
-        setError(
-          thrown instanceof IpcError ? thrown.message : `Lo couldn't remove ${account.login}.`,
-        );
-      });
-  };
   const again = account.signedOut !== null;
   return (
     <li className="flex items-center gap-12 border-t border-border-subtle py-12">
@@ -77,11 +60,6 @@ function Account({ account }: { account: AccountSummary }) {
           github.com{account.name === null ? '' : ` · ${account.name}`} · {source}
         </span>
         {detail !== undefined && <span className="text-fg-muted text-small">{detail}</span>}
-        {error !== undefined && (
-          <span role="alert" className="text-danger text-small">
-            {error}
-          </span>
-        )}
       </div>
       <div className="flex flex-none items-center gap-6">
         {again && (
@@ -92,11 +70,10 @@ function Account({ account }: { account: AccountSummary }) {
         <Button
           size="sm"
           variant="ghost"
-          disabled={removing}
-          aria-label={`Remove ${account.login}`}
-          onClick={remove}
+          aria-label={`Sign out of ${account.login}`}
+          onClick={() => openSignOut([account.login])}
         >
-          Remove
+          Sign out
         </Button>
       </div>
     </li>

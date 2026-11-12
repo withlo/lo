@@ -2,13 +2,21 @@
 // it signed in, or why it didn't and what to do about it.
 
 import { Button, Callout, Dialog, DialogSpacer, Key, Spinner } from '@lo/ui';
-import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 
 import { client } from '../../../window/ipc.ts';
 import { contract as app } from '../../app/contract.ts';
 import type { SignInFailure, SignInState } from '../contract.ts';
 import { closeDialog, copyCode, openGithub, openSignIn } from './dialogs.ts';
-import { useFocusOnStep } from './focus.ts';
+import { enterOffControls, useFocusOnStep } from './focus.ts';
 import { keyOf, labels } from './labels.ts';
 import type { SignInDialog } from './store.ts';
 
@@ -61,6 +69,14 @@ export function SignInView({
   // Focus follows the main button as the dialog changes from one step to the next.
   useFocusOnStep(primary, `${state?.kind ?? 'starting'} ${dialog?.error ?? ''}`);
   const content = dialog === undefined ? undefined : view(dialog, primary);
+  // `⏎` presses the main button wherever focus is in the dialog but on a control of its own: a
+  // click on its text, coming back from GitHub's page, takes focus off the button.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const button = primary.current;
+    if (!enterOffControls(event) || button === null || button.disabled) return;
+    event.preventDefault();
+    button.click();
+  };
   return (
     <Dialog
       open={dialog !== undefined}
@@ -71,6 +87,7 @@ export function SignInView({
       description={content?.description}
       foot={content?.foot}
       initialFocus={primary}
+      onKeyDown={onKeyDown}
       container={container}
       testId="sign-in"
     >
@@ -139,8 +156,7 @@ function view(dialog: SignInDialog, primary: RefObject<HTMLButtonElement | null>
         body: (
           <p className="m-0">
             Lo is signed in to GitHub as <strong className="font-semibold">{state.login}</strong>
-            {state.name === null ? '' : ` (${state.name})`}. Its token is kept in your system's
-            keychain.
+            {state.name === null ? '' : ` (${state.name})`}.
           </p>
         ),
         foot: (

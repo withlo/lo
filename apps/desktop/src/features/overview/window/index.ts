@@ -292,7 +292,7 @@ export default {
       order: 30,
       render: ({ tab }) => createElement(OverviewStatus, { tab }),
     }),
-    // Before the diff's layout (20), in Settings' Opening PRs.
+    // Before the diff's layout (20), in Settings' Pull requests.
     defineView(opening, {
       id: 'overview.open',
       order: 10,

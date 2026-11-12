@@ -41,8 +41,8 @@ export function CommandStep() {
       }
       description={
         <>
-          Open a PR from a terminal with <span className="text-fg code-small">lo &lt;link&gt;</span>
-          .
+          Review a pull request from a terminal with{' '}
+          <span className="text-fg code-small">lo &lt;link&gt;</span>.
         </>
       }
     >

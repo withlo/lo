@@ -521,7 +521,9 @@ describe('the optional steps', () => {
       'Install the lo command',
       'Send PR links to Lo',
     ]);
-    expect(steps[0]?.textContent).toContain('Open a PR from a terminal with lo <link>.');
+    expect(steps[0]?.textContent).toContain(
+      'Review a pull request from a terminal with lo <link>.',
+    );
     expect(steps[1]?.textContent).toContain('Your browser stays the default.');
     expect(screen()?.textContent).not.toContain('overview skill');
   });

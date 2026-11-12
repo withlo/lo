@@ -175,6 +175,36 @@ test('the account stays across a restart, and removing it removes its token', as
   }
 });
 
+test('Sign out… in the palette asks first, then removes the account and its token', async ({
+  page,
+}) => {
+  await listed(page);
+  await page.locator('main[data-lo-middle]').focus();
+  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+KeyP`);
+  await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
+  await page.keyboard.type('Sign out');
+  await page.keyboard.press('Enter');
+  // One account: the dialog says what happens, with nothing done yet, and `⏎` does it.
+  const dialog = page.getByTestId('sign-out');
+  await expect(dialog).toContainText('Sign out of rozed-bot?');
+  expect(rows('SELECT count(*) AS n FROM accounts_grants')).toEqual([{ n: 1 }]);
+  await expect(dialog.getByRole('button', { name: /^Sign out/ })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => rows('SELECT count(*) AS n FROM accounts_accounts')).toEqual([{ n: 0 }]);
+  expect(rows('SELECT count(*) AS n FROM accounts_grants')).toEqual([{ n: 0 }]);
+});
+
+test('the app menu has Add an account and Sign out…', async ({ app, page }) => {
+  test.skip(process.platform !== 'darwin', 'The app menu is the Mac’s.');
+  await listed(page);
+  const labels = await app.evaluate(({ Menu }) =>
+    (Menu.getApplicationMenu()?.items[0]?.submenu?.items ?? []).map((item) => item.label),
+  );
+  expect(labels).toContain('Add an account');
+  expect(labels).toContain('Sign out…');
+});
+
 test("Linux's fallback encrypts with the built-in key, marked v10, which Lo takes only in a test run", async ({
   app,
   page,

@@ -16,12 +16,12 @@ import { settingsStore } from './store.ts';
  * Where features put their sections of Settings. Each view is a section's settings, one `Setting`
  * after another; Settings draws its title, the line under it and its place in the list beside the
  * page. Make one with {@link defineSection}. Sections go in `order`, lower first: Accounts 10,
- * Trust 20, Opening PRs 30, Appearance 40, Cache 50, Keys 60, Command line 70.
+ * Trust 20, Pull requests 30, Appearance 40, Cache 50, Keys 60, Command line 70.
  */
 export const sections = defineSlot('settings.sections');
 
 /**
- * The rows of Settings' Opening PRs section, one `Setting` per view, in `order`, lower first: how
+ * The rows of Settings' Pull requests section, one `Setting` per view, in `order`, lower first: how
  * a pull request's tab opens, such as on its overview or its diff (10), and how its diff is laid
  * out (20).
  */

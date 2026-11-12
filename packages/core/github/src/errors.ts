@@ -32,8 +32,12 @@ export type NetworkFailure = 'offline' | 'tunnel' | 'refused' | 'lost' | 'unknow
 
 /** What went wrong, with what GitHub said. */
 export type GithubErrorDetail =
-  /** The token was revoked or is invalid (`401`). The account is signed out. */
-  | { kind: 'unauthorized'; message: string }
+  /**
+   * The token was revoked or is invalid (`401`). The account is signed out. `missing` is the login
+   * of an account Lo has no more, or never had: the reader signed out of it, so no token was
+   * refused.
+   */
+  | { kind: 'unauthorized'; message: string; missing?: string | undefined }
   /**
    * An organization requires single sign-on, and the token isn't authorized for it. `url`
    * authorizes it; GitHub's link is valid for an hour.
@@ -321,7 +325,9 @@ function describeOr(detail: GithubErrorDetail): string {
 function describe(detail: GithubErrorDetail): string {
   switch (detail.kind) {
     case 'unauthorized':
-      return `GitHub didn't accept the token: ${detail.message}`;
+      return detail.missing === undefined
+        ? `GitHub didn't accept the token: ${detail.message}`
+        : detail.message;
     case 'rateLimited':
       return `GitHub's rate limit was hit: ${detail.message}`;
     case 'api':
