@@ -1377,6 +1377,67 @@ describe('overview marks', () => {
     expect(parent!.querySelector('.lo-ovnote__read')).toBeNull();
   });
 
+  test('a note that wouldn’t be drawn isn’t opened, and Esc passes over one that isn’t now', () => {
+    const shown = open();
+    shown.setMarks([
+      // A file kept out, a range past the file's end, and an old-side line.
+      { ...overview('new', 1, 3), at: { file: 'd', side: 'new', from: 1, to: 3 } },
+      overview('new', 39, 45),
+      overview('old', 4, 6),
+    ]);
+    expect(shown.hasNote(at('d', 'new', 2))).toBe(false);
+    expect(shown.openNote(at('d', 'new', 2))).toBe(false);
+    expect(shown.hasNote(at('a', 'new', 40))).toBe(false);
+    expect(shown.openNote(at('a', 'new', 40))).toBe(false);
+    expect(shown.closeNote()).toBe(false);
+    expect(shown.hasNote(at('a', 'old', 5))).toBe(true);
+    expect(shown.openNote(at('a', 'old', 5))).toBe(true);
+    expect(noted('Before')).toHaveLength(1);
+    // Closed into one block, the file draws no note, and Esc leaves it be.
+    shown.setCollapsed('a', true);
+    expect(noted('Before')).toEqual([]);
+    expect(shown.closeNote()).toBe(false);
+    shown.setCollapsed('a', false);
+    expect(noted('Before')).toHaveLength(1);
+    expect(shown.closeNote()).toBe(true);
+    expect(noted('Before')).toEqual([]);
+  });
+
+  test('a note on lines GitHub’s diff left out isn’t opened', () => {
+    const shown = open(events(), {
+      files: [
+        {
+          id: 'a',
+          path: 'src/a.ts',
+          change: 'modified',
+          lines: {
+            old: aOld.map((line, index) => (index >= 9 && index < 16 ? '' : line)),
+            new: aNew.map((line, index) => (index >= 9 && index < 16 ? '' : line)),
+          },
+          gaps: [
+            { side: 'old', from: 10, to: 16 },
+            { side: 'new', from: 10, to: 16 },
+          ],
+          header: { additions: 3, deletions: 2 },
+        },
+      ],
+    });
+    shown.setMarks([overview('new', 8, 12), overview('new', 3, 4, 'two')]);
+    expect(shown.hasNote(at('a', 'new', 9))).toBe(false);
+    expect(shown.openNote(at('a', 'new', 9))).toBe(false);
+    expect(shown.openNote(at('a', 'new', 3))).toBe(true);
+  });
+
+  test('a note follows its block’s mark to its new lines', () => {
+    const shown = open();
+    shown.setMarks([overview('new', 4, 6)]);
+    shown.openNote(at('a', 'new', 4));
+    shown.setMarks([overview('new', 5, 7)]);
+    const note = parent!.querySelector('.cm-content[aria-label="After"] .lo-ovnote')!;
+    expect(note.closest('.cm-content > *')!.previousElementSibling?.textContent).toBe('line 7');
+    expect(markers('After')).toEqual(['open first', 'rail', 'rail last']);
+  });
+
   test('a note stays open while its mark does, and says what the mark says now', () => {
     const shown = open();
     shown.setMarks([overview('new', 4, 6), overview('new', 8, 9, 'two')]);

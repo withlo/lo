@@ -195,6 +195,26 @@ interface OverviewAt extends MarkedLines {
   text: string;
 }
 
+/** What a note shows, and where: under a line of one side of a file, by its index. */
+interface NoteShown {
+  file: number;
+  side: Side;
+  line: number;
+  block: string;
+  label: string;
+  text: string;
+}
+
+/**
+ * A note open: the mark it's for and what it shows. While it's on screen, a change to its mark
+ * waits in `next` (another mark, or `null` when its mark went), until it's off screen.
+ */
+interface OpenNote {
+  key: string;
+  shown: NoteShown;
+  next?: { key: string; shown: NoteShown } | null;
+}
+
 class View implements DiffView {
   readonly dom: HTMLElement;
   readonly views: { old: EditorView; new: EditorView };
@@ -217,8 +237,8 @@ class View implements DiffView {
   #marked = new Map<number, { old: OverviewAt[]; new: OverviewAt[] }>();
   /** The same marks, by their keys. */
   #markKeys = new Map<string, OverviewAt>();
-  /** The keys of the marks whose notes are open, in the order they opened. */
-  #notes: string[] = [];
+  /** The notes open, in the order they opened. */
+  #notes: OpenNote[] = [];
   /** Lines notes were opened under, which stay shown once they close, as a box's do. */
   readonly #noteLines: { old: Set<number>; new: Set<number> }[];
   /** Each file's opened runs, by their first old line. */
@@ -362,6 +382,7 @@ class View implements DiffView {
     this.#boxWatch.observe(this.dom);
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
     this.dom.addEventListener('keydown', this.#escape, { capture: true });
+    this.dom.addEventListener('scroll', this.#letNotesGo, { passive: true });
     this.dom.addEventListener('mousedown', this.#readNote);
     this.dom.addEventListener('click', this.#readNote);
     for (const side of ['old', 'new'] as const) {
@@ -600,53 +621,103 @@ class View implements DiffView {
       byFile.old.sort((a, b) => a.from - b.from);
       byFile.new.sort((a, b) => a.from - b.from);
     }
-    // Open notes stay open while their marks do. The files whose open notes close, or now say
-    // something else, are drawn again.
-    const changed = new Set<number>();
-    for (const key of this.#notes) {
-      const before = this.#markKeys.get(key)!;
-      const after = keys.get(key);
-      if (!after || after.label !== before.label || after.text !== before.text) {
-        changed.add(before.file);
+    // Open notes stay open while their marks do, or another mark from the same block on the same
+    // side of the file. One on screen stays as it is until it's off screen; the rest change now.
+    const claimed = new Set<string>();
+    const wanted = this.#notes.map((note) => {
+      const key = note.next === undefined ? note.key : note.next?.key;
+      let mark = key === undefined ? undefined : keys.get(key);
+      if (!mark || claimed.has(mark.key)) {
+        const { file, side, block } = note.shown;
+        mark = next
+          .get(file)
+          ?.[side].find((each) => each.block === block && !claimed.has(each.key));
       }
-    }
-    this.#notes = this.#notes.filter((key) => keys.has(key));
+      if (mark) claimed.add(mark.key);
+      return mark ? { key: mark.key, shown: shownOf(mark) } : null;
+    });
     this.#marked = next;
     this.#markKeys = keys;
+    const changed = new Set<number>();
+    const kept: OpenNote[] = [];
+    this.#notes.forEach((note, index) => {
+      const want = wanted[index]!;
+      if (want && want.key === note.key && sameShown(want.shown, note.shown)) {
+        kept.push({ key: note.key, shown: note.shown });
+      } else if (this.#noteOnScreen(note)) {
+        kept.push({ ...note, next: want });
+      } else {
+        changed.add(note.shown.file);
+        if (!want) return;
+        kept.push(want);
+        this.#noteLines[want.shown.file]![want.shown.side].add(want.shown.line);
+        changed.add(want.shown.file);
+      }
+    });
+    this.#notes = kept;
     if (changed.size > 0) {
       this.#keepTop(() => {
-        for (const file of changed) this.#refresh(file);
+        for (const file of changed) {
+          this.#keepAt(file);
+          this.#refresh(file);
+        }
       });
     }
     // The markers are in the gutters: no line changes height.
     for (const view of this.#editors()) view.dispatch({ effects: marksChanged.of(null) });
   }
 
+  hasNote(at: Place): boolean {
+    return this.#noteKeys(at).length > 0;
+  }
+
   openNote(at: Place): boolean {
-    const file = this.#index.get(at.file);
-    const marks = file === undefined ? undefined : this.#marked.get(file)?.[at.side];
-    const keys = (marks ?? [])
-      .filter(({ from, to }) => from <= at.line && at.line <= to)
-      .map(({ key }) => key);
+    const keys = this.#noteKeys(at);
     if (keys.length === 0) return false;
     this.#openNotes(keys);
     return true;
   }
 
   closeNote(): boolean {
-    const key = this.#notes.at(-1);
-    if (key === undefined) return false;
-    this.#closeNotes([key]);
+    // The note opened last that's drawn: one that isn't, as on a file closed since, waits.
+    const note = this.#notes.findLast(({ shown }) => this.#drawable(shown));
+    if (!note) return false;
+    this.#closeNotes([note]);
     return true;
   }
 
-  /** Opens the notes of the marks `keys` names, under each mark's last line. */
+  /** The marks on `at`'s line whose notes would be drawn, by their keys. */
+  #noteKeys(at: Place): string[] {
+    const file = this.#index.get(at.file);
+    const marks = file === undefined ? undefined : this.#marked.get(file)?.[at.side];
+    return (marks ?? [])
+      .filter((mark) => mark.from <= at.line && at.line <= mark.to)
+      .filter((mark) => this.#drawable(shownOf(mark)))
+      .map(({ key }) => key);
+  }
+
+  /**
+   * Whether a note would be drawn now: under a line of a file shown as a diff, which the view has,
+   * not one GitHub's diff left out.
+   */
+  #drawable({ file, side, line }: NoteShown): boolean {
+    if (this.#noteOf(file)) return false;
+    if (line < 1 || line > this.#lines[file]![side].length) return false;
+    return !isGapLine(this.#gaps[file]!, side, line);
+  }
+
+  /** The open note for the mark `key`, or the one waiting to show it. */
+  #noteFor(key: string): OpenNote | undefined {
+    return this.#notes.find((note) => note.key === key || (note.next && note.next.key === key));
+  }
+
+  /** Opens the notes of the marks `keys` names, under each mark's last line, if they're drawn. */
   #openNotes(keys: readonly string[]): void {
     const files = new Set<number>();
     for (const key of keys) {
       const mark = this.#markKeys.get(key);
-      if (!mark || this.#notes.includes(key)) continue;
-      this.#notes.push(key);
+      if (!mark || this.#noteFor(key) || !this.#drawable(shownOf(mark))) continue;
+      this.#notes.push({ key, shown: shownOf(mark) });
       this.#noteLines[mark.file]![mark.side].add(mark.to);
       files.add(mark.file);
     }
@@ -659,31 +730,87 @@ class View implements DiffView {
     });
   }
 
-  /** Closes the notes of the marks `keys` names. */
-  #closeNotes(keys: readonly string[]): void {
-    const closing = new Set(keys.filter((key) => this.#notes.includes(key)));
-    if (closing.size === 0) return;
-    this.#notes = this.#notes.filter((key) => !closing.has(key));
-    const files = new Set([...closing].map((key) => this.#markKeys.get(key)!.file));
+  /** Closes `notes`. */
+  #closeNotes(notes: readonly OpenNote[]): void {
+    const closing = new Set(notes);
+    this.#notes = this.#notes.filter((note) => !closing.has(note));
+    const files = new Set(notes.map(({ shown }) => shown.file));
+    if (files.size === 0) return;
     this.#keepTop(() => {
       for (const file of files) this.#refresh(file);
     });
   }
 
+  /** Whether any of an open note is drawn on screen. */
+  #noteOnScreen(note: OpenNote): boolean {
+    const screen = this.dom.getBoundingClientRect();
+    for (const element of this.dom.querySelectorAll<HTMLElement>('.lo-ovnote')) {
+      if (element.dataset.note !== note.key) continue;
+      for (const rect of element.getClientRects()) {
+        if (rect.height > 0 && rect.bottom > screen.top && rect.top < screen.bottom) return true;
+      }
+    }
+    return false;
+  }
+
+  /** The scroll moved: notes held as they were on screen, and off it now, change as they wait to. */
+  readonly #letNotesGo = (): void => {
+    if (!this.#notes.some((note) => note.next !== undefined)) return;
+    const changed = new Set<number>();
+    const kept: OpenNote[] = [];
+    for (const note of this.#notes) {
+      if (note.next === undefined || this.#noteOnScreen(note)) {
+        kept.push(note);
+        continue;
+      }
+      changed.add(note.shown.file);
+      if (!note.next) continue;
+      kept.push(note.next);
+      const { shown } = note.next;
+      this.#noteLines[shown.file]![shown.side].add(shown.line);
+      changed.add(shown.file);
+    }
+    this.#notes = kept;
+    if (changed.size === 0) return;
+    // The reader is scrolling: what's on screen stays where it is now, and isn't held after.
+    this.#keepTop(() => {
+      for (const file of changed) {
+        this.#keepAt(file);
+        this.#refresh(file);
+      }
+    }, false);
+    for (const view of this.#editors()) view.dispatch({ effects: marksChanged.of(null) });
+  };
+
   /**
    * Makes a change to what the view draws, as when a note opens or closes, keeping the line at the
-   * top of the screen where it is, and so everything above the change: side by side, the spacer
-   * pass holds it; inline, the view puts it back as `scrollTo` does.
+   * top of the screen where it is, and so everything above the change. Side by side, the spacer
+   * pass holds it. Inline, the view puts it back at once, and with `hold`, holds it there as
+   * `scrollTo` does while the editor measures.
    */
-  #keepTop(change: () => void): void {
+  #keepTop(change: () => void, hold = true): void {
     if (this.#pane === 'split') {
       this.#aligner.anchorTop();
       change();
       return;
     }
     const top = this.viewport();
+    const found = this.#atOf(top.at);
+    const view = this.#inline?.view;
+    const pos = found && view?.state.doc.line(this.#docLine('inline', found.place)).from;
+    const before = view && pos !== undefined ? drawnTop(view, pos) : undefined;
     change();
-    this.scrollTo(top);
+    if (view) {
+      // The editor measures what it drew now, as the spacer pass has it do, and anchors the scroll
+      // as it does: from its estimates, which the line's place as drawn then puts right.
+      view.requestMeasure();
+      view.lineBlockAtHeight(0);
+    }
+    const after = view && pos !== undefined ? drawnTop(view, pos) : undefined;
+    if (before !== undefined && after !== undefined && Math.abs(after - before) >= 0.5) {
+      this.dom.scrollTop += after - before;
+    }
+    if (hold) this.scrollTo(top);
   }
 
   /**
@@ -740,7 +867,7 @@ class View implements DiffView {
   /** The marker beside document lines `first` to `last` of `pane`. */
   #markerAt(pane: Pane, first: number, last: number): GutterMarker | null {
     const spans = this.#spansAt(pane, first, last);
-    return spans.length === 0 ? null : markerOf(spans, (key) => this.#notes.includes(key));
+    return spans.length === 0 ? null : markerOf(spans, (key) => this.#noteFor(key) !== undefined);
   }
 
   /** The marker beside a block drawn before document line `line` of `pane`, or after it. */
@@ -752,13 +879,14 @@ class View implements DiffView {
       first: half(span.first),
       last: half(span.last),
     }));
-    return spans.length === 0 ? null : markerOf(spans, (key) => this.#notes.includes(key));
+    return spans.length === 0 ? null : markerOf(spans, (key) => this.#noteFor(key) !== undefined);
   }
 
   /** A click on the ball beside document lines `first` to `last`: its notes open, or close. */
   #clickedBall(pane: Pane, first: number, last: number): void {
     const keys = startingIn(this.#spansAt(pane, first, last));
-    if (keys.some((key) => this.#notes.includes(key))) this.#closeNotes(keys);
+    const open = keys.flatMap((key) => this.#noteFor(key) ?? []);
+    if (open.length > 0) this.#closeNotes(open);
     else this.#openNotes(keys);
   }
 
@@ -1662,10 +1790,9 @@ class View implements DiffView {
       const shown = byPlace.get(key) ?? { id: placeKey(box.place), side, line, threads: [] };
       byPlace.set(key, { ...shown, box, drawing: this.#drawing });
     }
-    for (const markKey of this.#notes) {
-      const mark = this.#markKeys.get(markKey)!;
-      const { side, to: line } = mark;
-      if (mark.file !== file || line > this.#layout.files[file]![side].count) continue;
+    for (const { key: markKey, shown: mark } of this.#notes) {
+      const { side, line } = mark;
+      if (mark.file !== file || !this.#drawable(mark)) continue;
       const key = `${side}:${line}`;
       const shown = byPlace.get(key) ?? {
         id: placeKey({ file, side, line }),
@@ -2238,6 +2365,23 @@ function viewFile(file: DiffFile): ViewFile {
   if (file.skip === 'binary' || file.skip === 'empty') shown.skipped = file.skip;
   else if (keptOut(file)) shown.skipped = 'too-large';
   return shown;
+}
+
+/** What a mark's note shows, under its last line. */
+function shownOf(mark: OverviewAt): NoteShown {
+  const { file, side, to: line, block, label, text } = mark;
+  return { file, side, line, block, label, text };
+}
+
+function sameShown(a: NoteShown, b: NoteShown): boolean {
+  return (
+    a.file === b.file &&
+    a.side === b.side &&
+    a.line === b.line &&
+    a.block === b.block &&
+    a.label === b.label &&
+    a.text === b.text
+  );
 }
 
 /** The block of the diff's rows that has line `line` of `side`, if one has. */

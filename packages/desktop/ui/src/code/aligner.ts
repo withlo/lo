@@ -254,6 +254,8 @@ export class Aligner {
   #running = false;
   #paused = false;
   #anchor: Anchor | undefined;
+  /** Whether `anchorTop` has taken the anchor the coming pass restores. */
+  #topTaken = false;
   /** Which way the scroll last went: down (1) or up (-1). */
   #direction: 1 | -1 = 1;
   /**
@@ -360,11 +362,18 @@ export class Aligner {
   /**
    * Takes the first line drawn on screen as where things belong, not the cursor's: the view is
    * about to change heights itself, as when a note opens, and what's on screen above the change
-   * stays where it is, the cursor's line too if it's above it. The pass keeps it there until the
+   * stays where it is, the cursor's line too if it's below it. The pass keeps it there until the
    * scroll moves.
+   *
+   * It's taken once, before the first change, and stands until the pass runs: a change already
+   * made has moved what's drawn, and the pass that puts it back is still to come, so reading where
+   * lines are now would keep the move. When a change has been made since the last pass, the anchor
+   * that pass left, or the scroll took, stands.
    */
   anchorTop(): void {
-    if (this.#paused) return;
+    if (this.#paused || this.#topTaken) return;
+    this.#topTaken = true;
+    if (this.#scheduled) return;
     const side = this.#anchorSide();
     const found = this.#screenLine(side, true) ?? this.#screenLine(otherSide(side), true);
     if (found) this.#anchor = { for: side, ...found };
@@ -374,6 +383,7 @@ export class Aligner {
   set paused(paused: boolean) {
     this.#paused = paused;
     this.#anchor = undefined;
+    this.#topTaken = false;
     if (!paused) this.schedule();
   }
 
@@ -501,6 +511,7 @@ export class Aligner {
     } finally {
       this.#running = false;
       this.#selected = false;
+      this.#topTaken = false;
       const ms = performance.now() - started;
       this.stats.passes++;
       if (changed) this.stats.changed++;

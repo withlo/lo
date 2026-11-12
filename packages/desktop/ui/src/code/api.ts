@@ -282,18 +282,22 @@ export interface DiffView extends KeySource {
    * Replaces the marks on lines: overview markers, in a gutter that's there from the start, so
    * marks change no line's width or height, and what's on screen stays where it is. Kinds the diff
    * view doesn't draw, and marks on files it doesn't have, are left out. A note stays open while
-   * its mark does.
+   * its mark does, or another from the same block on the same side of the file; one on screen stays
+   * as it was, its mark changed or gone, until it's off screen or closed.
    */
   setMarks(marks: readonly Mark[]): void;
+  /** Whether `openNote` would open a note at `at`: an overview marker's on its line, drawn. */
+  hasNote(at: Place): boolean;
   /**
    * Opens the notes of the overview markers on `at`'s line, each under its last line, as a click on
-   * a marker's ball does. Says whether the line has a marker. What's at the top of the screen stays
-   * where it is; not a jump, and focus stays where it is.
+   * a marker's ball does. Says whether there was one to open: a note that wouldn't be drawn, as on
+   * a file kept out, past a file's end or on lines GitHub's diff left out, isn't. What's at the top
+   * of the screen stays where it is; not a jump, and focus stays where it is.
    */
   openNote(at: Place): boolean;
   /**
-   * Closes the note opened last, as `Esc` does in the diff. Says whether one was open. What's at
-   * the top of the screen stays where it is.
+   * Closes the note opened last of those drawn, as `Esc` does in the diff's code. Says whether one
+   * was open. What's at the top of the screen stays where it is.
    */
   closeNote(): boolean;
   /**

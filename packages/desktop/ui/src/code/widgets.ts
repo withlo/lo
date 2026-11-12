@@ -396,6 +396,7 @@ function sameNote(a: NoteDraw, b: NoteDraw | undefined): boolean {
 function noteElement(note: NoteDraw): HTMLElement {
   const box = element('div', 'lo-ovnote');
   box.setAttribute('role', 'note');
+  box.dataset.note = note.key;
   const label = element('div', 'lo-ovnote__label');
   label.append(element('span', 'lo-ov-dot'), note.label ? `Overview · ${note.label}` : 'Overview');
   const foot = element('div', 'lo-ovnote__foot');
