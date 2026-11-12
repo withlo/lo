@@ -33,9 +33,11 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Act
 
-| Action              | Keys | Where        | Command          |
-| ------------------- | ---- | ------------ | ---------------- |
-| Sign in with GitHub | `⏎`  | In `welcome` | `welcome.signIn` |
+| Action              | Keys | Where                                         | Command           |
+| ------------------- | ---- | --------------------------------------------- | ----------------- |
+| Mark viewed         | `e`  | In `diff`; in code views, only in normal mode | `diff.markViewed` |
+| Mark viewed         | `e`  | In `tree`                                     | `tree.markViewed` |
+| Sign in with GitHub | `⏎`  | In `welcome`                                  | `welcome.signIn`  |
 
 ## Code
 
@@ -220,6 +222,7 @@ these, which run Lo's command in place of Vim's key:
 
 | Keys             | Action                          | Vim's key | Where                                                                | Command            |
 | ---------------- | ------------------------------- | --------- | -------------------------------------------------------------------- | ------------------ |
+| `e`              | Mark viewed                     | `e`       | `diff` (normal)                                                      | `diff.markViewed`  |
 | `g i`            | Inline or side by side          | `g i`     | `diff` (normal)                                                      | `diff.inline`      |
 | `g w`            | Hide or show whitespace changes | `g w`     | `diff` (normal)                                                      | `diff.whitespace`  |
 | `y y`            | Copy the lines                  | `y`       | `diff` and `file`                                                    | `diff.copyLines`   |

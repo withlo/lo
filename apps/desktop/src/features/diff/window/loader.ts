@@ -3,7 +3,8 @@
 // what comes back kept, so the view can be drawn again as it was when the tab comes back. A new
 // head on screen starts again. When the local copy replaces GitHub's diff, each file is swapped in
 // place as its diff arrives, unless the files themselves changed, in which case the view is drawn
-// anew once they're all in. Nothing here touches the DOM: the view hears through a sink.
+// anew once they're all in; so are files that come to show from where the reader left off. Nothing
+// here touches the DOM: the view hears through a sink.
 
 import { splitLines, type FileDiff, type MovedBlock } from '@lo/diff';
 
@@ -27,6 +28,7 @@ export interface LoaderWork {
   texts(input: {
     at: string;
     comparison: string | null;
+    since: string | null;
     from: Source;
     files: number[];
   }): Promise<FileText[]>;
@@ -132,14 +134,25 @@ export function keyOf(versions: FileVersions): string {
   return fileKey(versions.path);
 }
 
-/** What's being loaded: of one head, in one comparison, from one source. */
+/**
+ * What's being loaded: of one head, in one comparison, with one set of files shown from where the
+ * reader left off, from one source.
+ */
 interface Run {
   readonly at: string;
   readonly comparison: string | null;
+  readonly since: string | null;
   readonly from: Source;
   readonly entries: readonly Entry[];
   /** Files the view shows the lines of, which it loads whether or not they start out shown. */
   readonly shown: ReadonlySet<string>;
+  /**
+   * The only files it loads, when it follows a run of the same files that loaded them all, and
+   * these are the ones whose versions changed: as when some come to show from where they left off.
+   */
+  readonly only: ReadonlySet<string> | undefined;
+  /** Whether it has loaded every file it loads. */
+  done: boolean;
   /** Stops its jobs in the background process, as a new run takes its place or the tab closes. */
   readonly controller: AbortController;
   readonly stopped: boolean;
@@ -150,21 +163,29 @@ interface Run {
   moved: boolean;
 }
 
-/** A run of `entries`, at a head, in a comparison, from a source, loading `shown`'s lines too. */
+/**
+ * A run of `entries`, at a head, in a comparison, with `since`'s files from where they left off,
+ * from a source, loading `shown`'s lines too, or only `only`'s.
+ */
 function runOf(
   at: string,
   comparison: string | null,
+  since: string | null,
   from: Source,
   entries: readonly Entry[],
   shown: ReadonlySet<string>,
+  only?: ReadonlySet<string>,
 ): Run {
   const controller = new AbortController();
   return {
     at,
     comparison,
+    since,
     from,
     entries,
     shown,
+    only,
+    done: false,
     controller,
     moved: false,
     get stopped() {
@@ -250,11 +271,16 @@ export class Loader {
   #startIfDue(): void {
     const state = this.#state;
     if (!state || !this.#whitespaceKnown) return;
-    const { at, comparison, from, files } = state;
+    const { at, comparison, since, from, files } = state;
     if (at === null || from === null || files === null) return;
     const run = this.#run;
-    if (run?.from !== from || run.at !== at || run.comparison !== comparison) {
-      this.#start(at, comparison, from, files);
+    if (
+      run?.from !== from ||
+      run.at !== at ||
+      run.comparison !== comparison ||
+      run.since !== since
+    ) {
+      this.#start(at, comparison, since, from, files);
     }
   }
 
@@ -343,10 +369,12 @@ export class Loader {
   #start(
     at: string,
     comparison: string | null,
+    since: string | null,
     from: Source,
     files: readonly FileVersions[],
   ): void {
-    this.#run?.controller.abort();
+    const previous = this.#run;
+    previous?.controller.abort();
     const listed = files.map((versions, place) => {
       const key = keyOf(versions);
       return { place, versions, key, id: this.ids.of(key) };
@@ -367,7 +395,13 @@ export class Loader {
     const shown = inPlace
       ? new Set(ready.entries.flatMap((entry) => (this.#shown.has(entry.id) ? [entry.id] : [])))
       : new Set<string>();
-    const run = runOf(at, comparison, from, entries, shown);
+    // When only which files show from where they left off changed, after every file loaded, only
+    // the files whose versions changed load again.
+    const only =
+      inPlace && previous?.done === true && previous.from === from && previous.at === at
+        ? changedEntries(previous.entries, entries)
+        : undefined;
+    const run = runOf(at, comparison, since, from, entries, shown, only);
     this.#run = run;
     this.#failed.clear();
     if (inPlace) this.#ready = { at, comparison, from, entries };
@@ -378,7 +412,9 @@ export class Loader {
 
   /** Loads every file that shows its lines, in the left panel's order, a batch at a time. */
   async #load(run: Run): Promise<void> {
-    const wanted = this.#ordered(run.entries.filter((entry) => wants(run, entry)));
+    const wanted = this.#ordered(
+      run.entries.filter((entry) => wants(run, entry) && (run.only?.has(entry.id) ?? true)),
+    );
     const batches = batchesOf(wanted);
     this.#readyIfDone(run);
     const going = new Set<Promise<void>>();
@@ -403,6 +439,7 @@ export class Loader {
       run.moved = true;
     }
     if (run.stopped) return;
+    run.done = true;
     this.#readyIfDone(run);
     this.#changed();
     await this.#highlight(run);
@@ -473,6 +510,7 @@ export class Loader {
     const texts = await this.#work.texts({
       at: run.at,
       comparison: run.comparison,
+      since: run.since,
       from: run.from,
       files: batch.map((entry) => entry.place),
     });
@@ -652,6 +690,7 @@ export class Loader {
       const texts = await this.#work.texts({
         at: run.at,
         comparison: run.comparison,
+        since: run.since,
         from: run.from,
         files: batch.map((entry) => entry.place),
       });
@@ -719,6 +758,16 @@ export class Loader {
     this.#snapshot = snapshot;
     for (const listener of this.#listeners) listener();
   }
+}
+
+/** The entries of `next` whose versions differ from the same file's in `before`, by id. */
+function changedEntries(before: readonly Entry[], next: readonly Entry[]): Set<string> {
+  const was = new Map(before.map((entry) => [entry.id, JSON.stringify(entry.versions)]));
+  return new Set(
+    next.flatMap((entry) =>
+      was.get(entry.id) === JSON.stringify(entry.versions) ? [] : [entry.id],
+    ),
+  );
 }
 
 /** Whether a run loads a file's lines: it shows them from the start, or the view shows them. */

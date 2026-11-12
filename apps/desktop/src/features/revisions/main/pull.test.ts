@@ -4,12 +4,15 @@ import { join } from 'node:path';
 
 import { parseOid, type Repo } from '@lo/git';
 import {
+  type FileViewedState,
   GithubClient,
   PullRef,
   type PollEvent,
+  type PullRequest,
   type PushHistory,
   readPushHistory,
   Token,
+  unchecked,
 } from '@lo/github';
 import { replayFetch } from '@lo/testing';
 import { APP_PULL, gitProgram, writeAppRemote } from '@lo/testing/git';
@@ -121,6 +124,7 @@ function e2eInfo(local: LocalState = READY): PullTabInfo {
 function pollerOf(history: PushHistory | undefined) {
   const listeners = new Set<(event: PollEvent) => void>();
   let kept = history;
+  let details: PullRequest | undefined;
   const poller: HistoryPoller = {
     pushHistory: () =>
       Promise.resolve(kept === undefined ? undefined : { value: kept, fetchedAt: Date.now() }),
@@ -129,9 +133,29 @@ function pollerOf(history: PushHistory | undefined) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    pullRequest: () =>
+      details === undefined ? undefined : { details, fetchedAt: Date.now(), offlineAge: undefined },
+    // Writes are viewed.test.ts's.
+    writeChanging: () => Promise.reject(new Error('no writes here')),
   };
   return {
     poller,
+    /**
+     * A poll read #80's details at `head`, its own unless said, with `files`' viewed marks, as the
+     * poller says once the tab listens to it.
+     */
+    async polled(files: [string, FileViewedState][], head: string = APP_PULL.head) {
+      await vi.waitFor(() => expect(listeners.size).toBeGreaterThan(0));
+      details = unchecked<PullRequest>({
+        id: 'PR_e2e',
+        headRefOid: head,
+        files: {
+          totalCount: files.length,
+          nodes: files.map(([path, viewerViewedState]) => ({ path, viewerViewedState })),
+        },
+      });
+      for (const listener of listeners) listener({ kind: 'details', pull: PULL, details });
+    },
     /** GitHub gave another push history, as a poll that read it again would say. */
     read(next: PushHistory) {
       kept = next;
@@ -199,6 +223,12 @@ function revisionsTab(options: {
       );
     },
   };
+}
+
+/** The files shown from where they left off in `screen`, by group, with their paths. */
+function sinceOf(screen: OnScreen) {
+  if (screen.kind === 'waiting') return undefined;
+  return screen.since?.groups.map(({ label, why, paths }) => ({ label, why, paths }));
 }
 
 describe('RevisionsTab', { timeout: 60_000 }, () => {
@@ -433,5 +463,71 @@ describe('RevisionsTab', { timeout: 60_000 }, () => {
     expect(() => made.tab.compare(null, APP_PULL.head)).toThrow(
       expect.objectContaining({ code: 'refused' }),
     );
+  });
+
+  describe('files a push changed since they were viewed', () => {
+    it('a viewed file a later push changed shows what changed since it was viewed, across the rebase', async () => {
+      const made = revisionsTab({ repo: await e2eClone(), history: await e2eHistory() });
+      // Viewed here at the first push; one viewed elsewhere, with no review to go by.
+      made.marks.noteViewed(LOGIN, PULL, 'src/parser.ts', APP_PULL.firstHead, Date.now());
+      made.tab.update(e2eInfo());
+      await made.source.polled([
+        ['src/parser.ts', 'DISMISSED'],
+        ['src/format.ts', 'DISMISSED'],
+        ['src/legacy.ts', 'VIEWED'],
+      ]);
+      const screen = await made.onScreen((shown) => sinceOf(shown) !== undefined);
+      expect(screen.kind).toBe('head');
+      expect(sinceOf(screen)).toEqual([{ label: 'r1', why: 'viewed', paths: ['src/parser.ts'] }]);
+      if (screen.kind !== 'head' || !screen.since) throw new Error('nothing since');
+      const [group] = screen.since.groups;
+      // From where the first push branched, onto the base the second rebased onto.
+      expect(group?.comparing.old).toEqual({ head: APP_PULL.firstHead, base: APP_PULL.firstBase });
+      expect(group?.comparing.new).toEqual({ head: APP_PULL.head, base: APP_PULL.base });
+      const compared = await group?.comparing.compared();
+      if (!compared || 'refused' in compared) throw new Error('refused');
+      expect(compared.replay.kind).toBe('clean');
+    });
+
+    it('a file keeps showing from where it left off once it’s marked viewed again', async () => {
+      const made = revisionsTab({ repo: await e2eClone(), history: await e2eHistory() });
+      made.marks.noteViewed(LOGIN, PULL, 'src/parser.ts', APP_PULL.firstHead, Date.now());
+      made.tab.update(e2eInfo());
+      await made.source.polled([['src/parser.ts', 'DISMISSED']]);
+      const screen = await made.onScreen((shown) => sinceOf(shown) !== undefined);
+      const key = screen.kind === 'head' ? screen.since?.key : undefined;
+
+      await made.source.polled([['src/parser.ts', 'VIEWED']]);
+      const again = made.tab.onScreen();
+      expect(again.kind === 'head' ? again.since?.key : undefined).toBe(key);
+    });
+
+    it('only narrows: a comparison that starts where a file was viewed shows it as it is', async () => {
+      const made = revisionsTab({ repo: await e2eClone(), history: await e2eHistory() });
+      made.marks.noteViewed(LOGIN, PULL, 'src/parser.ts', APP_PULL.firstHead, Date.now());
+      made.tab.update(e2eInfo());
+      await made.source.polled([['src/parser.ts', 'DISMISSED']]);
+      await made.onScreen((shown) => sinceOf(shown) !== undefined);
+
+      made.tab.compare(APP_PULL.firstHead, APP_PULL.head);
+      const screen = await made.onScreen((shown) => shown.kind === 'revisions');
+      expect(sinceOf(screen)).toBeUndefined();
+    });
+
+    it('waits for GitHub’s marks to be of the head on screen', async () => {
+      const made = revisionsTab({ repo: await e2eClone(), history: await e2eHistory() });
+      made.marks.noteViewed(LOGIN, PULL, 'src/parser.ts', APP_PULL.firstHead, Date.now());
+      made.tab.update(e2eInfo());
+      // GitHub's details are of a push since, which the tab hasn't heard of yet: its marks say
+      // what changed since the file was viewed as of that one.
+      await made.source.polled([['src/parser.ts', 'DISMISSED']], 'f'.repeat(40));
+      await made.settled((sent) => sent.revisions.some((revision) => revision.rebased));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(sinceOf(made.tab.onScreen())).toBeUndefined();
+
+      // Once they're of the head on screen, the file shows from where it was viewed.
+      await made.source.polled([['src/parser.ts', 'DISMISSED']]);
+      await made.onScreen((shown) => sinceOf(shown) !== undefined);
+    });
   });
 });

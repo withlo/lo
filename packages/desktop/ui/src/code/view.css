@@ -53,6 +53,25 @@
 .lo-diffhead {
   position: static;
 }
+/*
+ * A file's viewed mark in its header, as the file tree draws it: an empty ring not yet, a filled
+ * ball viewed, an amber ring with a dot when a push changed it since.
+ */
+.lo-diffhead__ball {
+  width: calc(var(--lo-sp-12) - var(--lo-sp-2));
+  height: calc(var(--lo-sp-12) - var(--lo-sp-2));
+  flex: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--lo-fg-dim);
+}
+.lo-diffhead__ball.is-viewed {
+  background: var(--lo-fg-muted);
+  box-shadow: none;
+}
+.lo-diffhead__ball.is-stale {
+  box-shadow: inset 0 0 0 1.5px var(--lo-warning);
+  background: radial-gradient(circle, var(--lo-warning) 0 2px, transparent 2.5px);
+}
 
 /*
  * No block the editors draw between lines may make their content wider than the editor: a long

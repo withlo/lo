@@ -2,11 +2,14 @@
 // request, or one revision with another. Main builds the revisions from GitHub's push history and
 // the heads Lo's pollers saw, marks where the reader left off, and compares revisions in the local
 // copy, across a rebase. The window shows them in the revision picker, and asks for a comparison.
+// Main also marks files viewed on GitHub, and keeps the head each was marked at, so a file a later
+// push changed shows what changed since.
 
 import { z } from 'zod';
 
 import { defineContract, reply } from '../../ipc/contract.ts';
 import { oid, tabId } from '../tab/contract.ts';
+import { PATH_LIMIT, pathBytes } from '../tree/contract.ts';
 
 /** A moment, in milliseconds since the Unix epoch. */
 const time = z.number().int().nonnegative();
@@ -95,6 +98,25 @@ export const comparisonView = z.strictObject({
 });
 export type ComparisonView = z.output<typeof comparisonView>;
 
+/**
+ * A changed file's path, as GitHub lists it: no longer than the tree's limit, the longest path Lo
+ * keys anything by.
+ */
+const githubPath = z
+  .string()
+  .min(1)
+  .max(PATH_LIMIT)
+  .refine((text) => pathBytes({ text }) <= PATH_LIMIT, `A path longer than ${PATH_LIMIT} bytes.`);
+
+/**
+ * How marking a file viewed, or clearing its mark, went: `done`, GitHub took it; `paused`, GitHub
+ * has asked Lo to hold off writing until `until`, so nothing was sent; `moved`, GitHub's newest head
+ * isn't the one the diff shows, `latest`, so marking the file would say the reader saw what they
+ * haven't.
+ */
+export type Marked =
+  { kind: 'done' } | { kind: 'paused'; until: number } | { kind: 'moved'; latest: string | null };
+
 export const contract = defineContract('revisions', {
   requests: {
     /** What main has of a pull request's tab's revisions now, which `comparison` keeps up to date. */
@@ -108,6 +130,17 @@ export const contract = defineContract('revisions', {
     compare: {
       input: z.strictObject({ id: tabId, from: oid.nullable(), to: oid }),
       reply: reply<void>(),
+    },
+    /**
+     * Marks a changed file viewed on GitHub (`viewed`), or clears its mark, as the tab's account, in
+     * the account's turn: `at` is the head of what the diff shows. Marking refuses as `moved` when
+     * that isn't GitHub's newest head, and both refuse as `paused` while GitHub has asked Lo to hold
+     * off. Fails as `refused` for a tab that acts as nobody, and as `failed`, with why, when GitHub
+     * didn't take it. A file marked is noted at `at`, and its note forgotten as its mark is cleared.
+     */
+    markViewed: {
+      input: z.strictObject({ id: tabId, path: githubPath, viewed: z.boolean(), at: oid }),
+      reply: reply<Marked>(),
     },
   },
   topics: {

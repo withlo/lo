@@ -135,6 +135,7 @@ describe('Marks', () => {
       'revisions_closed',
       'revisions_lastseen',
       'revisions_seen',
+      'revisions_viewed',
     ]);
     expect(marks.seen(e2e)).toHaveLength(2);
     expect(marks.lastSeen('bot', e2e)).toBe('h2');
@@ -142,5 +143,115 @@ describe('Marks', () => {
     marks.forget('BOT');
     expect(marks.seen(e2e)).toEqual([seen('h2', 20)]);
     expect(marks.lastSeen('bot', e2e)).toBeUndefined();
+  });
+});
+
+/** Where files were marked viewed, by path, as `viewed` lists them. */
+const heads = (entries: [string, string][]) => entries.map(([path, head]) => ({ path, head }));
+
+describe('where files were marked viewed', () => {
+  it('each file keeps the head it was last marked viewed at', () => {
+    const marks = new Marks(database());
+    const playground = pr('rozed-dev', 'playground', 2);
+    expect(marks.viewed('bot', playground)).toEqual([]);
+
+    marks.noteViewed('bot', playground, 'a.ts', 'h1', at(10));
+    marks.noteViewed('bot', playground, 'docs/b.md', 'h1', at(10));
+    marks.noteViewed('bot', playground, 'a.ts', 'h2', at(20));
+
+    expect(marks.viewed('bot', playground)).toEqual(
+      heads([
+        ['a.ts', 'h2'],
+        ['docs/b.md', 'h1'],
+      ]),
+    );
+    // Owners, repositories and logins match ignoring case, as on GitHub.
+    expect(marks.viewed('BOT', pr('Rozed-Dev', 'Playground', 2))).toHaveLength(2);
+  });
+
+  it('records belong to one account and one pull request', () => {
+    const marks = new Marks(database());
+    marks.noteViewed('bot', pr('rozed-dev', 'playground', 2), 'a.ts', 'h1', at(10));
+
+    for (const [login, pull] of [
+      ['other', pr('rozed-dev', 'playground', 2)],
+      ['bot', pr('rozed-dev', 'playground', 1)],
+      ['bot', pr('rozed-dev', 'elsewhere', 2)],
+      ['bot', pr('someone', 'playground', 2)],
+    ] as const) {
+      expect(marks.viewed(login, pull)).toEqual([]);
+    }
+  });
+
+  it('clearing a mark forgets its record', () => {
+    const marks = new Marks(database());
+    const playground = pr('rozed-dev', 'playground', 2);
+    for (const path of ['a.ts', 'b.ts']) marks.noteViewed('bot', playground, path, 'h1', at(10));
+
+    marks.forgetViewed('bot', playground, 'a.ts');
+    // Forgetting a file with no record does nothing.
+    marks.forgetViewed('bot', playground, 'c.ts');
+
+    expect(marks.viewed('bot', playground)).toEqual(heads([['b.ts', 'h1']]));
+  });
+
+  it('clearing the cache keeps them and removing the account removes them', () => {
+    const opened = database();
+    const marks = new Marks(opened);
+    const playground = pr('rozed-dev', 'playground', 2);
+    marks.noteViewed('bot', playground, 'a.ts', 'h1', at(10));
+    marks.noteViewed('other', playground, 'a.ts', 'h2', at(10));
+
+    // The cache is the accounts feature's poll answers, which this table isn't among: no other
+    // feature can touch it, so clearing the cache can't.
+    expect(marks.viewed('bot', playground)).toHaveLength(1);
+
+    marks.forget('Bot');
+    expect(marks.viewed('bot', playground)).toEqual([]);
+    expect(marks.viewed('other', playground)).toEqual(heads([['a.ts', 'h2']]));
+  });
+
+  it('marks followed from GitHub are noted and forgotten together', () => {
+    const marks = new Marks(database());
+    const playground = pr('rozed-dev', 'playground', 2);
+    marks.noteViewed('bot', playground, 'a.ts', 'h1', at(10));
+    marks.noteViewed('bot', playground, 'b.ts', 'h1', at(10));
+
+    marks.followViewed(
+      'bot',
+      playground,
+      heads([
+        ['c.ts', 'h2'],
+        ['a.ts', 'h2'],
+      ]),
+      ['b.ts'],
+      at(20),
+    );
+
+    expect(marks.viewed('bot', playground)).toEqual(
+      heads([
+        ['a.ts', 'h2'],
+        ['c.ts', 'h2'],
+      ]),
+    );
+  });
+
+  it('a pull request closed a month ago forgets where its files were marked viewed', () => {
+    const marks = new Marks(database());
+    const now = at(100 * DAY);
+    const closedLongAgo = pr('rozed-dev', 'e2e', 1);
+    const closedLately = pr('rozed-dev', 'e2e', 2);
+    const open = pr('rozed-dev', 'e2e', 3);
+    for (const pull of [closedLongAgo, closedLately, open]) {
+      marks.noteViewed('bot', pull, 'a.ts', 'h1', now - 45 * DAY);
+    }
+    marks.noteClosed(closedLongAgo, now - 40 * DAY);
+    marks.noteClosed(closedLately, now - 10 * DAY);
+
+    marks.prune(now);
+
+    expect(marks.viewed('bot', closedLongAgo)).toEqual([]);
+    expect(marks.viewed('bot', closedLately)).toHaveLength(1);
+    expect(marks.viewed('bot', open)).toHaveLength(1);
   });
 });

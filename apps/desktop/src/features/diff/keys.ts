@@ -1,7 +1,8 @@
 // The diff view's keys, and the whole-file view's. Lo's jumps run in Vim, under the keys the
 // registry gives it, so counts and visual mode work; the rest act on the cursor's line, or the
-// lines `v` selected, or the header the cursor is on, or in the whole-file view on the file while
-// it shows a note. Vim's own moves and search are listed too, for key help: they're never taken.
+// lines `v` selected, or the header the cursor is on, and `e` on the file, or in the whole-file view
+// on the file while it shows a note. Vim's own moves and search are listed too, for key help:
+// they're never taken.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -43,6 +44,19 @@ export default defineCommands('diff', {
     targets: ['line'],
     vim: 'motion',
     when: diff,
+  },
+  /**
+   * Marks the file viewed, or clears its mark. Marking closes it and goes to the next file that
+   * isn't viewed, round the end. `e` is Vim's "end of word", which `w` and `b` stand in for.
+   */
+  markViewed: {
+    label: 'Mark viewed',
+    group: 'Act',
+    keys: ['e'],
+    targets: ['line', 'header'],
+    overVim: true,
+    when: normal,
+    menu: { on: 'header', order: 5 },
   },
   /** The cursor's row on the other side. */
   otherSide: { label: 'The other side', group: 'Diff view', keys: ['tab'], when: normal },

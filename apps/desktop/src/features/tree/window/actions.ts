@@ -1,6 +1,8 @@
 // What the tree's keys and clicks do to a tab's tree: move the keyboard's row, open and close
-// folders, show a file, and the file's menu. They act on what the tree last showed.
+// folders, show a file, mark it viewed, and the file's menu. They act on what the tree last showed.
 
+import { notify } from '../../../window/commands/notices.tsx';
+import { toggleViewed, viewedMarkOf, viewedMarksOf } from '../../revisions/window/shared.ts';
 import { activeTab, type PullTab } from '../../tab/window/shared.ts';
 import { canShow, pathOf, showFile } from './shared.ts';
 import { foldersOf, parentRow, rowAt, type Row } from './model.ts';
@@ -94,6 +96,48 @@ export function setAll(tab: string, open: boolean): void {
 /** A changed file of `tab`'s, by key. */
 function changeOf(tab: string, key: string) {
   return states.get(tab)?.changes?.find((change) => keyOf(change.path) === key);
+}
+
+/** Why `key` can't be marked viewed, or `true`: only a changed file has a mark. */
+export function markable(tab: string, key: string): true | string {
+  return changeOf(tab, key) ? true : 'Only a changed file has a viewed mark.';
+}
+
+/**
+ * `e` on the file `key`: marks it viewed, or clears its mark. Marking moves the keyboard to the next
+ * changed file that isn't viewed, in the panel's order, round the end.
+ */
+export function markViewed(tab: string, key: string): void {
+  const changes = states.get(tab)?.changes ?? [];
+  const byKey = new Map(changes.map((change) => [keyOf(change.path), change]));
+  const change = byKey.get(key);
+  if (!change) {
+    notify('Mark viewed', 'Only a changed file has a viewed mark.');
+    return;
+  }
+  const toggled = toggleViewed(tab, { path: change.path, previous: change.previous });
+  if (toggled.kind === 'refused') {
+    notify('Mark viewed', toggled.why);
+    return;
+  }
+  if (toggled.kind !== 'marking') return;
+  // Read after the toggle, so the file just marked counts as viewed.
+  const marks = viewedMarksOf(tab);
+  const order = shown.get(tab)?.order ?? [];
+  const from = order.indexOf(key);
+  if (from < 0) return;
+  for (let step = 1; step < order.length; step++) {
+    const next = order[(from + step) % order.length];
+    const other = next === undefined ? undefined : byKey.get(next);
+    if (
+      next !== undefined &&
+      other &&
+      viewedMarkOf(marks, other.path, other.previous) !== 'viewed'
+    ) {
+      revealFile(tab, next);
+      return;
+    }
+  }
 }
 
 /** Why the file `key` can't be shown, or `true`: a changed file in the diff, any whole. */

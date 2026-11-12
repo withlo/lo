@@ -200,7 +200,7 @@ test('shows a changed file in the diff on ⏎, the keyboard staying in the tree'
   await expect(row(page, 'data')).toHaveAttribute('aria-expanded', 'true');
 });
 
-test('gives a file a right-click menu: the whole file, its path and the file on GitHub', async ({
+test('gives a file a right-click menu: marking it viewed, the whole file, its path and the file on GitHub', async ({
   app,
   page,
 }) => {
@@ -209,10 +209,11 @@ test('gives a file a right-click menu: the whole file, its path and the file on 
   const menu = page.getByRole('menu', { name: 'File actions' });
   await expect(menu).toBeVisible();
   const items = menu.getByRole('menuitem');
-  await expect(items).toHaveText([/^Whole file/, /^Copy path/, /^Open on GitHub/]);
-  await expect(items.first()).not.toHaveAttribute('data-disabled');
-  await expect(items.first()).toContainText('gf');
-  await expect(items.nth(1)).toContainText('yp');
+  await expect(items).toHaveText([/^Mark viewed/, /^Whole file/, /^Copy path/, /^Open on GitHub/]);
+  await expect(items.first()).toContainText('e');
+  await expect(items.nth(1)).not.toHaveAttribute('data-disabled');
+  await expect(items.nth(1)).toContainText('gf');
+  await expect(items.nth(2)).toContainText('yp');
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
   // "Whole file" opens it in the middle, in place of the diff.

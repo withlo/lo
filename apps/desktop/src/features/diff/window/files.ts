@@ -1,12 +1,18 @@
 // The files as the diff view is given them: in the left panel's order, each starting out as main
-// said, with what's been worked out of it so far.
+// said, closed when it's viewed, with its viewed mark and what's been worked out of it so far.
 
 import { sizeText } from '@lo/review';
 import type { DiffFile, FileHeader } from '@lo/ui/code';
 
+import type { Mark } from '../../revisions/window/shared.ts';
 import type { Changed } from '../../tree/contract.ts';
-import type { FileVersions } from '../contract.ts';
+import type { FileVersions, Start } from '../contract.ts';
 import type { Entry, Shown } from './loader.ts';
+
+/** How a file starts out, with its viewed mark: one viewed that would show its lines starts closed. */
+export function startWith(versions: FileVersions, mark: Mark | undefined): Start {
+  return mark === 'viewed' && versions.start === 'shown' ? 'collapsed' : versions.start;
+}
 
 /**
  * `entries` in the left panel's `order`, by key, then any it doesn't list, in main's order. `find`
@@ -88,9 +94,18 @@ function sizeOf(side: FileVersions['old']): string | undefined {
   return side?.size === null || side === null ? undefined : sizeText(side.size);
 }
 
-/** The labels after a file's counts: why it starts as it does. */
+/** What a header says of where a file shows from, for one a push changed since it was viewed. */
+function sinceText(since: NonNullable<FileVersions['since']>): string {
+  return since.why === 'viewed' ? since.label : `your review in ${since.label}`;
+}
+
+/** The labels after a file's counts: where it shows from, and why it starts as it does. */
 export function tagsOf(versions: FileVersions): string[] {
   const tags: string[] = [];
+  const { since } = versions;
+  // A file nothing changed in since it was viewed says only that.
+  if (since && versions.start === 'unchanged') return [`no change since ${sinceText(since)}`];
+  if (since) tags.push(`since ${sinceText(since)}`);
   if (versions.conflicted) tags.push('resolved a conflict');
   if (versions.generated === 'attribute') tags.push('generated');
   if (versions.generated === 'lockfile') tags.push('lockfile');
@@ -133,20 +148,21 @@ export function tagsOf(versions: FileVersions): string[] {
   return tags;
 }
 
-/** A file's header: its counts and tags. */
-export function headerOf(versions: FileVersions): FileHeader {
+/** A file's header: its counts, tags and viewed mark. */
+export function headerOf(versions: FileVersions, mark?: Mark): FileHeader {
   const tags = tagsOf(versions);
   const header: FileHeader = { additions: versions.additions, deletions: versions.deletions };
   if (tags.length > 0) header.tags = tags;
+  if (mark) header.viewed = mark === 'dismissed' ? 'stale' : mark;
   return header;
 }
 
 /**
- * A file as the view is given it. One that shows its lines has them by the time it's drawn, or
- * couldn't be loaded and waits for `za`, as a large file does; a large one has them once it's been
- * loaded.
+ * A file as the view is given it, with its viewed mark. One that shows its lines has them by the
+ * time it's drawn, or couldn't be loaded and waits for `za`, as a large file does; a large one has
+ * them once it's been loaded. A viewed one starts closed.
  */
-export function diffFileOf(entry: Entry, shown: Shown | undefined): DiffFile {
+export function diffFileOf(entry: Entry, shown: Shown | undefined, mark?: Mark): DiffFile {
   const { versions } = entry;
   const file: DiffFile = {
     id: entry.id,
@@ -157,7 +173,7 @@ export function diffFileOf(entry: Entry, shown: Shown | undefined): DiffFile {
         : versions.change === 'deleted'
           ? 'deleted'
           : 'modified',
-    header: headerOf(versions),
+    header: headerOf(versions, mark),
   };
   if (versions.previous) file.previousPath = shownPath(versions.previous.text);
   switch (versions.start) {
@@ -183,6 +199,6 @@ export function diffFileOf(entry: Entry, shown: Shown | undefined): DiffFile {
   file.diff = shown.diff;
   file.tokens = shown.tokens;
   if (shown.gaps.length > 0) file.gaps = shown.gaps;
-  if (versions.start === 'collapsed') file.collapsed = true;
+  if (startWith(versions, mark) === 'collapsed') file.collapsed = true;
   return file;
 }

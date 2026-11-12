@@ -1,5 +1,6 @@
 // The revisions feature in the window: the header's revision button and its picker, the note over
-// the diff on what it compares, and their keys.
+// the diff on what it compares, and their keys; and each tab's viewed marks, which follow the
+// files GitHub lists.
 
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
@@ -7,7 +8,7 @@ import { createElement } from 'react';
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { notes } from '../../diff/window/shared.ts';
-import { header } from '../../tab/window/shared.ts';
+import { header, onChangedFiles } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import {
   canPick,
@@ -24,6 +25,7 @@ import { main } from './main.ts';
 import { Note } from './Note.tsx';
 import { Revisions } from './Revisions.tsx';
 import { showView } from './store.ts';
+import { takeFiles } from './viewed.ts';
 
 export default {
   commands: handlers(keys, {
@@ -52,5 +54,6 @@ export default {
   ],
   start() {
     main().subscribe('comparison', showView);
+    onChangedFiles(takeFiles);
   },
 } satisfies WindowFeature;

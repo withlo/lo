@@ -8,6 +8,13 @@ import { WidgetType } from '@codemirror/view';
 
 import type { FileHeader, ThreadComment } from './api.ts';
 
+/** How each viewed mark is drawn: a ring, a filled ball, or an amber ring with a dot. */
+const BALLS: Record<NonNullable<FileHeader['viewed']>, { className: string; title: string }> = {
+  unviewed: { className: '', title: 'Not viewed' },
+  viewed: { className: ' is-viewed', title: 'Viewed' },
+  stale: { className: ' is-stale', title: 'Changed since you viewed it' },
+};
+
 /** What a file header shows. */
 export interface HeaderInfo {
   path: string;
@@ -49,7 +56,10 @@ export class HeaderWidget extends WidgetType {
 
   #head(): HTMLElement {
     const { header } = this.info;
-    const head = element('div', `lo-filehead lo-diffhead${header.viewed ? ' is-viewed' : ''}`);
+    const head = element(
+      'div',
+      `lo-filehead lo-diffhead${header.viewed === 'viewed' ? ' is-viewed' : ''}`,
+    );
     head.dataset.row = `h:${this.file}`;
     const path = element('span', 'lo-path');
     if (this.info.previousPath && this.info.previousPath !== this.info.path) {
@@ -67,7 +77,18 @@ export class HeaderWidget extends WidgetType {
       ...(header.tags ?? []),
       ...(header.comments ? [`${header.comments} comment${header.comments === 1 ? '' : 's'}`] : []),
     ];
-    if (end.length > 0) head.append(element('span', 'lo-filehead__end', end.join(' · ')));
+    if (end.length > 0 || header.viewed) {
+      const after = element('span', 'lo-filehead__end', end.join(' · '));
+      if (header.viewed) {
+        const { className, title } = BALLS[header.viewed];
+        const ball = element('span', `lo-diffhead__ball${className}`);
+        ball.title = title;
+        ball.setAttribute('role', 'img');
+        ball.setAttribute('aria-label', title);
+        after.append(ball);
+      }
+      head.append(after);
+    }
     return head;
   }
 

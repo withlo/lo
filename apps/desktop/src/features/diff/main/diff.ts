@@ -1,10 +1,12 @@
 // A pull request's tab's diff in main: each changed file's versions at the head on screen, and
 // their texts on request. Both come from the local copy once it's ready at that head, and from
 // GitHub's list of the pull request's files, with their patches, until then; what the copy says
-// replaces what GitHub said, and a new head on screen starts again. Files are named by their place
-// in the list, never by their paths, which can be long enough to slow any map keyed by them. A
-// whole file, for the whole-file view, comes from the local copy alone: any file of the head on
-// screen, or the base's version of one the comparison changes. Nothing here calls Electron.
+// replaces what GitHub said, and a new head on screen starts again. A file a push changed since the
+// reader marked it viewed shows, from the local copy, only what changed since, as the revisions
+// feature says. Files are named by their place in the list, never by their paths, which can be long
+// enough to slow any map keyed by them. A whole file, for the whole-file view, comes from the local
+// copy alone: any file of the head on screen, or the base's version of one the comparison changes.
+// Nothing here calls Electron.
 
 import {
   changedPath,
@@ -26,13 +28,19 @@ import {
 import { LARGE_FILE_BYTES, MAX_SHOWN_BYTES, tooLargeToShow } from '@lo/review';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import type { Comparing, OnScreen } from '../../revisions/service.ts';
+import type { Comparing, OnScreen, Since } from '../../revisions/service.ts';
 import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type { TreePath } from '../../tree/contract.ts';
 import type { DiffState, FileText, FileVersions, Source, Version, WholeText } from '../contract.ts';
 import { listedAt } from './listed.ts';
-import { conflictedVersions, githubVersions, localVersions } from './versions.ts';
+import {
+  conflictedVersions,
+  githubVersions,
+  localVersions,
+  treePathOf,
+  unchangedSince,
+} from './versions.ts';
 
 /** Requests GitHub's API keeps for the poller: the diff reads no page of files past them. */
 export const KEEP_REQUESTS = 100;
@@ -77,6 +85,14 @@ interface At {
   problem: string | undefined;
   /** What's been started for it, so nothing starts twice. */
   readonly started: Set<Source>;
+  /** The local copy's files as the comparison lists them, before any shows from where it left off. */
+  listed: FileVersions[] | undefined;
+  /** The files to show from where they left off, as the revisions feature last said. */
+  wanted: Since | undefined;
+  /** The key of those `files` show from where they left off. */
+  since: string | undefined;
+  /** Counts the times the files are worked out from {@link At.listed}, so a late one is dropped. */
+  narrowing: number;
 }
 
 const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
@@ -140,6 +156,7 @@ export class DiffTab {
       id: this.id,
       at: at?.head ?? null,
       comparison: at?.comparing?.key ?? null,
+      since: at?.since ?? null,
       waiting: this.#waiting ?? null,
       from: at?.from ?? null,
       files: at?.files ?? null,
@@ -172,10 +189,12 @@ export class DiffTab {
       const { comparing } = screen;
       if (this.#at?.comparing?.key !== comparing.key) {
         const at = this.#newAt(comparing.new.head, comparing);
+        at.wanted = screen.since;
         at.started.add('local');
         void this.#fromComparing(at, comparing);
-      } else if (waited) {
-        this.#publish();
+      } else {
+        if (waited) this.#publish();
+        this.#want(this.#at, screen.since);
       }
       return;
     }
@@ -194,6 +213,7 @@ export class DiffTab {
     else if (waited) this.#publish();
     const at = this.#at;
     if (!at) return;
+    this.#want(at, screen.since);
     const { local } = info;
     if (local.kind === 'ready' && local.head === head) {
       if (!at.started.has('local')) {
@@ -218,10 +238,89 @@ export class DiffTab {
       partial: false,
       problem: undefined,
       started: new Set(),
+      listed: undefined,
+      wanted: undefined,
+      since: undefined,
+      narrowing: 0,
     };
     this.#at = at;
     this.#publish();
     return at;
+  }
+
+  /**
+   * The revisions feature says which files show from where they left off: once the local copy's
+   * files are in, they're worked out again, unless that's what they show already.
+   */
+  #want(at: At, since: Since | undefined): void {
+    at.wanted = since;
+    if (at.from === 'local' && at.listed && at.since !== since?.key) void this.#narrowAgain(at);
+  }
+
+  /** Works the files out again from the local copy's list, with the files shown from where they left off. */
+  async #narrowAgain(at: At): Promise<void> {
+    const listed = at.listed;
+    if (!listed) return;
+    const run = ++at.narrowing;
+    const narrowed = await this.#narrowed(at, listed);
+    if (!this.#current(at) || at.narrowing !== run) return;
+    at.files = narrowed.files;
+    at.since = narrowed.key;
+    this.#publish();
+    if (at.wanted?.key !== at.since) void this.#narrowAgain(at);
+  }
+
+  /**
+   * `listed`, the local copy's files, with those the revisions feature wants shown from where they
+   * left off, `at.wanted`, shown from there: each from its group's comparison, of the revision it
+   * shows from with the newer side, or as unchanged since when that lists nothing of it. Only a
+   * replay that kept the author's own change apart narrows a file: after one that conflicted or
+   * was retargeted, a narrowed diff would show the base's changes as the author's, so the file shows
+   * its whole change. The list keeps its files and their order.
+   */
+  async #narrowed(
+    at: At,
+    listed: FileVersions[],
+  ): Promise<{ files: FileVersions[]; key: string | undefined }> {
+    const since = at.wanted;
+    if (!since) return { files: listed, key: undefined };
+    const wanted = new Map<
+      string,
+      { label: string; why: 'viewed' | 'review'; change?: ChangedFile }
+    >();
+    for (const group of since.groups) {
+      let compared: Awaited<ReturnType<Comparing['compared']>>;
+      try {
+        compared = await group.comparing.compared();
+      } catch (error) {
+        this.#options.log(`comparing ${group.label} with the head: ${describe(error)}`);
+        continue;
+      }
+      if ('refused' in compared) continue;
+      const { kind } = compared.replay;
+      if (kind !== 'sameBase' && kind !== 'clean') continue;
+      const paths = new Set(group.paths);
+      const shown = { label: group.label, why: group.why };
+      for (const path of paths) wanted.set(path, shown);
+      for (const file of compared.files) {
+        if (!file.change) continue;
+        const path = shortText(file.change);
+        if (path !== undefined && paths.has(path))
+          wanted.set(path, { ...shown, change: file.change });
+      }
+    }
+    const files = listed.map((versions) => {
+      const { path } = versions;
+      const narrowed =
+        path.hex === undefined && path.digest === undefined ? wanted.get(path.text) : undefined;
+      if (!narrowed) return versions;
+      const from = { label: narrowed.label, why: narrowed.why };
+      if (!narrowed.change) return unchangedSince(versions, from);
+      const generated =
+        versions.generated === 'attribute' ? true : versions.generated === null ? false : undefined;
+      return { ...localVersions(narrowed.change, generated, versions.conflicted), since: from };
+    });
+    return { files, key: since.key };
   }
 
   /** The window drew the diff at `head`. */
@@ -230,10 +329,14 @@ export class DiffTab {
     this.#options.drawn(head);
   }
 
-  /** The texts of the files at places `files` of the diff at `head`, of `comparison`, from `from`. */
+  /**
+   * The texts of the files at places `files` of the diff at `head`, of `comparison`, with `since`'s
+   * files from where they left off, from `from`.
+   */
   async texts(
     head: string,
     comparison: string | null,
+    since: string | null,
     from: Source,
     files: readonly number[],
   ): Promise<FileText[]> {
@@ -242,6 +345,7 @@ export class DiffTab {
       !at ||
       at.head !== head ||
       (at.comparing?.key ?? null) !== comparison ||
+      (at.since ?? null) !== since ||
       at.from !== from ||
       !at.files
     ) {
@@ -427,7 +531,13 @@ export class DiffTab {
       const files = compared.files.flatMap((file) => (file.change ? [file.change] : []));
       const generated = await this.#generated(repo, at.head, files);
       if (!this.#current(at)) return;
-      at.files = files.map((file, index) => localVersions(file, generated[index]));
+      const listed = files.map((file, index) => localVersions(file, generated[index]));
+      const run = ++at.narrowing;
+      const narrowed = await this.#narrowed(at, listed);
+      if (!this.#current(at) || at.narrowing !== run) return;
+      at.listed = listed;
+      at.files = narrowed.files;
+      at.since = narrowed.key;
       at.from = 'local';
       at.patches = [];
       at.partial = false;
@@ -439,6 +549,14 @@ export class DiffTab {
       this.#fallBackToGithub(at);
     }
     this.#publish();
+    this.#caughtUp(at);
+  }
+
+  /** What the revisions feature said while the files were worked out, if it changed, is shown too. */
+  #caughtUp(at: At): void {
+    if (this.#current(at) && at.from === 'local' && at.listed && at.wanted?.key !== at.since) {
+      void this.#narrowAgain(at);
+    }
   }
 
   /**
@@ -462,13 +580,19 @@ export class DiffTab {
       const generated = await this.#generated(repo, at.head, changed);
       if (!this.#current(at)) return;
       let next = 0;
-      at.files = compared.files.map((file) => {
+      const listed = compared.files.map((file) => {
         const conflicted = file.resolution !== undefined;
         // A file the replay conflicted on, which the author left as it was on one side, is listed
         // all the same: they resolved a conflict in it.
         if (!file.change) return conflictedVersions(file.path);
         return localVersions(file.change, generated[next++], conflicted);
       });
+      const run = ++at.narrowing;
+      const narrowed = await this.#narrowed(at, listed);
+      if (!this.#current(at) || at.narrowing !== run) return;
+      at.listed = listed;
+      at.files = narrowed.files;
+      at.since = narrowed.key;
       at.from = 'local';
       at.problem = undefined;
     } catch (error) {
@@ -477,6 +601,7 @@ export class DiffTab {
       at.problem = `Lo couldn’t compare the revisions: ${describe(error)}`;
     }
     this.#publish();
+    this.#caughtUp(at);
   }
 
   /**
@@ -546,4 +671,10 @@ export class DiffTab {
     if (this.#closed) return;
     this.#options.publish(this.state());
   }
+}
+
+/** A changed file's path as GitHub would list it: its text, if it's UTF-8 and short enough. */
+function shortText(file: ChangedFile): string | undefined {
+  const path = treePathOf(changedPath(file));
+  return path.hex === undefined && path.digest === undefined ? path.text : undefined;
 }
