@@ -214,7 +214,8 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   in `e2e/` drives the built app with Playwright, each test on an empty data folder, and covers what
   needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`. In CI each test records
   a trace of the window, kept in its results when it fails, which CI uploads; a test that times the
-  page's frames opts out (`traced: false`), since recording slows them.
+  page's frames opts out (`traced: false`), since recording slows them. CI retries a failed test
+  once, and Playwright shows one that then passes as flaky.
 
 The window shows untrusted content, so it's locked down, and the smoke test shows each guard
 holding:

@@ -8,6 +8,8 @@ export default defineConfig({
   // Each test starts its own copy of Lo, so two at a time.
   workers: 2,
   forbidOnly: Boolean(process.env.CI),
+  // CI retries a failed test once, and reports one that then passes as flaky.
+  retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['github']] : 'list',
   timeout: 30_000,
   // Baselines are made on Linux only, so they carry no system in their names.
