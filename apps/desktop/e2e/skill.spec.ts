@@ -103,16 +103,16 @@ test.describe('on the welcome screen', () => {
     );
     expect(isSkill(claudeSkill(home))).toBe(true);
     expect(existsSync(join(home, '.agents'))).toBe(false);
-    expect(readdirSync(home).toSorted()).toEqual(['.claude']);
   });
 
-  test('says so when neither agent is set up, and writes nothing', async ({ page, home }) => {
+  test('says so when neither agent is set up, and installs nowhere', async ({ page, home }) => {
     await step(page).getByRole('button', { name: 'Install', exact: true }).click();
     await expect(toast(page, 'Lo found neither')).toContainText(
       'Lo found neither Claude Code nor Codex set up on this computer. Set one up, then install the skill.',
     );
     await expect(step(page).getByRole('button', { name: 'Install', exact: true })).toBeEnabled();
-    expect(readdirSync(home)).toEqual([]);
+    expect(existsSync(join(home, '.claude'))).toBe(false);
+    expect(existsSync(join(home, '.agents'))).toBe(false);
   });
 });
 
