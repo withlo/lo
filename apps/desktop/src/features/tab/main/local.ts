@@ -35,9 +35,9 @@ export function retryWait(failures: number): number {
 export const PROGRESS_EVERY = 100;
 
 /**
- * Calls `say` once for a run of calls, at most once every `every` milliseconds: once the code making
- * them is done, so calls made together are said once, or, within `every` of when it last said, once
- * that's up. It keeps time by a clock that never steps back, as the wall clock can.
+ * Calls `say` once for a run of calls, at most once every `every` milliseconds: once the code
+ * making them is done, so calls made together are said once, or, within `every` of when it last
+ * said, once that's up. It keeps time by a clock that never steps back, as the wall clock can.
  */
 export function paced(every: number, say: () => void): () => void {
   let saidAt = -Infinity;

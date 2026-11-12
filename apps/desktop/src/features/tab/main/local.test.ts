@@ -201,22 +201,22 @@ describe('paced', () => {
   });
 });
 
+/** A local copy fetching from a stand-in clone, on fake timers, with what it has said settled. */
+async function fetching() {
+  vi.useFakeTimers();
+  const fake = fakeGit();
+  const copy = copyIn(fake.localGit);
+  copy.local.want(REFS);
+  copy.local.show(APP_PULL.head);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(copy.states).toEqual([{ kind: 'fetching', progress: null, attempt: 1 }]);
+  return { ...fake, ...copy };
+}
+
 describe('a local copy saying what git is doing', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  /** A local copy fetching from a stand-in clone, with what it has said settled. */
-  async function fetching() {
-    vi.useFakeTimers();
-    const fake = fakeGit();
-    const copy = copyIn(fake.localGit);
-    copy.local.want(REFS);
-    copy.local.show(APP_PULL.head);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(copy.states).toEqual([{ kind: 'fetching', progress: null, attempt: 1 }]);
-    return { ...fake, ...copy };
-  }
 
   it(`says it at most every ${PROGRESS_EVERY} ms, with the latest`, async () => {
     const { tell, states } = await fetching();
