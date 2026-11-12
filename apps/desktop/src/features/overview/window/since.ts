@@ -11,7 +11,8 @@
 import type { CodeRange } from '@lo/artifact';
 
 import { diffTexts } from '../../diff/window/shared.ts';
-import { pullOf } from '../../tab/window/shared.ts';
+import type { LocalState } from '../../tab/contract.ts';
+import { localCopyOf, onLocalCopy, pullOf } from '../../tab/window/shared.ts';
 import type { SinceReply } from '../contract.ts';
 import { standingOf } from './facts.ts';
 import { QUICK_LIMIT, quickDiff } from './files.ts';
@@ -69,17 +70,57 @@ function entryOf(tab: string, commit: string, head: string): Entry {
 }
 
 /**
+ * Whether tab `tab`'s local copy is other than `asked`, now or once it changes: never once `stop`
+ * aborts.
+ */
+function changedFrom(
+  tab: string,
+  asked: LocalState | undefined,
+  stop: AbortSignal,
+): Promise<boolean> {
+  if (stop.aborted) return Promise.resolve(false);
+  if (localCopyOf(tab) !== asked) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const done = (changed: boolean) => {
+      listening();
+      stop.removeEventListener('abort', aborted);
+      resolve(changed);
+    };
+    const aborted = () => done(false);
+    const listening = onLocalCopy((which) => {
+      if (which === tab) done(true);
+    });
+    stop.addEventListener('abort', aborted, { once: true });
+  });
+}
+
+/**
+ * What main answers with `ask` for tab `tab`, asked again each time the tab's local copy changes
+ * while main says it's waiting for it, as it does until the copy has the commit and the head; none
+ * once `stop` aborts first.
+ */
+async function untilReady<T extends { readonly kind: string }>(
+  tab: string,
+  stop: AbortSignal,
+  ask: () => Promise<T>,
+): Promise<T | undefined> {
+  const asked = localCopyOf(tab);
+  const reply = await ask();
+  if (reply.kind !== 'waiting') return reply;
+  return (await changedFrom(tab, asked, stop)) ? untilReady(tab, stop, ask) : undefined;
+}
+
+/**
  * How many files the pushes since `commit` changed, up to `head`, the head on screen, in tab
- * `tab`: asked once, unless the local copy wasn't ready, when it's asked again next time.
+ * `tab`: asked once, and again as the local copy changes while it isn't ready for them.
  */
 export function sinceCount(tab: string, commit: string, head: string): Promise<SinceReply> {
   const entry = entryOf(tab, commit, head);
   if (entry.count) return entry.count;
-  const count = main()
-    .since({ id: tab, commit, head })
-    .then((reply) => {
-      if (reply.kind !== 'read' && entry.count === count) entry.count = undefined;
-      return reply;
+  const count = untilReady(tab, entry.stop.signal, () => main().since({ id: tab, commit, head }))
+    .then((reply): SinceReply => {
+      if (reply?.kind !== 'read' && entry.count === count) entry.count = undefined;
+      return reply ?? { kind: 'waiting' };
     })
     .catch((error: unknown): SinceReply => {
       if (entry.count === count) entry.count = undefined;
@@ -91,8 +132,8 @@ export function sinceCount(tab: string, commit: string, head: string): Promise<S
 
 /**
  * How the file at `path` at `commit` is at `head`, the head on screen, in tab `tab`: read and diffed
- * once, a few files at a time, those asked for `soon` first, as a block on screen asks. One the
- * local copy wasn't ready for is unknown, and asked again next time.
+ * once, a few files at a time, those asked for `soon` first, as a block on screen asks. While the
+ * local copy isn't ready for it, it's asked again each time the copy changes, until it is.
  */
 export function fileSince(
   tab: string,
@@ -146,11 +187,13 @@ async function read(entry: Entry, path: string): Promise<FileSince> {
   const { tab, commit, head, stop } = entry;
   let since: FileSince;
   try {
-    const text = await main().sinceFile({ id: tab, commit, head, path });
-    if (text.kind === 'waiting') {
-      // Asked again once the local copy has both.
+    const text = await untilReady(tab, stop.signal, () =>
+      main().sinceFile({ id: tab, commit, head, path }),
+    );
+    if (text === undefined || text.kind === 'waiting') {
+      // Stopped for another head, or as the tab closed.
       entry.files.delete(path);
-      return { kind: 'unknown', why: 'The local copy isn’t ready.' };
+      return { kind: 'unknown', why: 'The read was stopped.' };
     }
     if (text.kind === 'changed' && 'old' in text.texts) {
       const { old, new: now } = text.texts;

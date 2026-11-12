@@ -144,6 +144,24 @@ export function pullOf(tab: string): PullView | undefined {
   return pullsStore.getState().views.get(tab);
 }
 
+/** A pull request's tab's local copy, as main last said, read once. */
+export function localCopyOf(tab: string): LocalState | undefined {
+  return pullsStore.getState().locals.get(tab);
+}
+
+/**
+ * Calls `listener` with a pull request's tab and its local copy each time main says it anew.
+ * Returns a function that stops it.
+ */
+export function onLocalCopy(listener: (tab: string, local: LocalState) => void): () => void {
+  return pullsStore.subscribe((next, previous) => {
+    if (next.locals === previous.locals) return;
+    for (const [tab, local] of next.locals) {
+      if (previous.locals.get(tab) !== local) listener(tab, local);
+    }
+  });
+}
+
 /** The files a pull request's tab's pull request changes, as main last said, read once. */
 export function changedFiles(tab: string): Files | undefined {
   return pullsStore.getState().files.get(tab);

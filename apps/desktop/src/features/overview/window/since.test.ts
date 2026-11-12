@@ -10,7 +10,7 @@ import { diffText } from '@lo/diff';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installBridge } from '../../../window/test/bridge.ts';
-import type { PullView } from '../../tab/contract.ts';
+import type { LocalState, PullView } from '../../tab/contract.ts';
 import type { FileSinceText, OverviewCommit, OverviewState, SinceReply } from '../contract.ts';
 import { treeEntries } from '../jobs.ts';
 import type { CheckedOverview } from './checking.ts';
@@ -26,6 +26,9 @@ const fake = vi.hoisted(() => ({
   pull: undefined as PullView | undefined,
   state: undefined as OverviewState | undefined,
   result: undefined as CheckedOverview | undefined,
+  /** Each tab's local copy, and who's told as it changes. */
+  locals: new Map<string, LocalState>(),
+  listeners: new Set<(tab: string, local: LocalState) => void>(),
 }));
 
 vi.mock(import('../../diff/window/shared.ts'), async (original) => ({
@@ -46,7 +49,18 @@ vi.mock(import('../../diff/window/shared.ts'), async (original) => ({
 vi.mock(import('../../tab/window/shared.ts'), async (original) => ({
   ...(await original()),
   pullOf: () => fake.pull,
+  localCopyOf: (tab) => fake.locals.get(tab),
+  onLocalCopy: (listener) => {
+    fake.listeners.add(listener);
+    return () => fake.listeners.delete(listener);
+  },
 }));
+
+/** Tab `tab`'s local copy changes to `local`, as main says. */
+function copyIs(local: LocalState): void {
+  fake.locals.set(tab, local);
+  for (const listener of fake.listeners) listener(tab, local);
+}
 
 vi.mock(import('./store.ts'), async (original) => ({
   ...(await original()),
@@ -102,6 +116,20 @@ const asked = (field: string) =>
 
 /** The reads of files main was asked for, as `[channel, input]`. */
 const fileReads = () => bridge.calls.filter(([channel]) => channel === 'overview.sinceFile');
+
+/** The local copy, ready at the head. */
+const READY: LocalState = {
+  kind: 'ready',
+  head: R2,
+  base: 'b'.repeat(40),
+  mergeBase: null,
+  offline: false,
+};
+
+/** Lets what's under way settle. */
+async function settled(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 /** A code block's lines. */
 function block(path: string, start: number, end: number) {
@@ -169,24 +197,47 @@ describe('what changed since', () => {
     ]);
   });
 
-  it('counts once, and asks again when the local copy wasn’t ready', async () => {
+  it('counts once, asking again as the local copy changes while it isn’t ready', async () => {
     count = { kind: 'waiting' };
-    expect(await sinceCount(tab, R1, R2)).toEqual({ kind: 'waiting' });
+    const counting = sinceCount(tab, R1, R2);
+    await settled();
     count = { kind: 'read', files: 4 };
-    expect(await sinceCount(tab, R1, R2)).toEqual({ kind: 'read', files: 4 });
+    // Nothing changed of the copy, so it isn't asked again.
+    await settled();
+    expect(bridge.calls.filter(([channel]) => channel === 'overview.since')).toHaveLength(1);
+    copyIs(READY);
+    expect(await counting).toEqual({ kind: 'read', files: 4 });
     expect(await sinceCount(tab, R1, R2)).toEqual({ kind: 'read', files: 4 });
     expect(bridge.calls.filter(([channel]) => channel === 'overview.since')).toHaveLength(2);
   });
 
-  it('asks again for a file the local copy wasn’t ready for', async () => {
+  it('asks again for a file as the local copy changes, until it’s ready for it', async () => {
     files.set('src/later.ts', { kind: 'waiting' });
-    expect(await fileSince(tab, R1, R2, 'src/later.ts')).toEqual({
-      kind: 'unknown',
-      why: 'The local copy isn’t ready.',
-    });
-    files.set('src/later.ts', { kind: 'deleted' });
-    expect(await fileSince(tab, R1, R2, 'src/later.ts')).toEqual({ kind: 'deleted' });
+    const later = fileSince(tab, R1, R2, 'src/later.ts');
+    await settled();
+    copyIs({ kind: 'fetching', progress: null, attempt: 1 });
+    await settled();
     expect(fileReads()).toHaveLength(2);
+    files.set('src/later.ts', { kind: 'deleted' });
+    copyIs(READY);
+    expect(await later).toEqual({ kind: 'deleted' });
+    expect(fileReads()).toHaveLength(3);
+    // Known now, it isn't asked again.
+    expect(await fileSince(tab, R1, R2, 'src/later.ts')).toEqual({ kind: 'deleted' });
+    expect(fileReads()).toHaveLength(3);
+  });
+
+  it('stops waiting for the local copy once the head on screen moves on', async () => {
+    files.set('src/later.ts', { kind: 'waiting' });
+    const later = fileSince(tab, R1, R2, 'src/later.ts');
+    await settled();
+    files.set('src/later.ts', { kind: 'same', path: 'src/later.ts' });
+    expect(await fileSince(tab, R1, R3, 'src/later.ts')).toEqual({
+      kind: 'same',
+      path: 'src/later.ts',
+    });
+    expect(await later).toEqual({ kind: 'unknown', why: 'The read was stopped.' });
+    expect(fake.listeners.size).toBe(0);
   });
 
   it('reads two files at a time, a block on screen’s first', async () => {
@@ -229,7 +280,10 @@ describe('what changed since', () => {
       ]),
     ).toBe(1);
     // None while how a file changed isn't known.
-    files.set('src/later.ts', { kind: 'waiting' });
+    files.set('src/later.ts', {
+      kind: 'unread',
+      why: 'Lo couldn’t tell where the file went since.',
+    });
     expect(
       await blocksChanged(tab, R1, R2, [block('src/a.ts', 2, 3), block('src/later.ts', 1, 1)]),
     ).toBeUndefined();

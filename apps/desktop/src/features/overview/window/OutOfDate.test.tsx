@@ -28,11 +28,14 @@ import { revisions } from './store.ts';
 
 const R1 = '1'.repeat(40);
 const R2 = '2'.repeat(40);
+const R3 = '3'.repeat(40);
 
 /** The tab's pull request and local copy, as the stand-in tab feature says them. */
 const tabState = vi.hoisted(() => ({
   pull: undefined as PullView | undefined,
   local: undefined as LocalState | undefined,
+  /** Who's told as the local copy changes. */
+  listeners: new Set<(tab: string, local: LocalState) => void>(),
 }));
 
 const shownDiff = vi.hoisted(() => vi.fn<(tab: string) => boolean>(() => true));
@@ -42,6 +45,11 @@ vi.mock(import('../../tab/window/shared.ts'), async (original) => ({
   usePull: () => tabState.pull,
   pullOf: () => tabState.pull,
   useLocalCopy: () => tabState.local,
+  localCopyOf: () => tabState.local,
+  onLocalCopy: (listener) => {
+    tabState.listeners.add(listener);
+    return () => tabState.listeners.delete(listener);
+  },
 }));
 
 vi.mock(import('../../diff/window/shared.ts'), async (original) => ({
@@ -85,9 +93,10 @@ const SECOND = FIRST.replace(
   "or `\\r\\n`. Empty input has no lines. */\nexport function parse(input: string): Line[] {\n  if (input === '') return [];\n",
 );
 
-/** What main answers for each file, by its path. */
+/** What main answers for each file, by its path; and the heads the local copy isn't ready for. */
 const texts = new Map<string, BlockText>();
 const since = new Map<string, FileSinceText>();
+const notReady = new Set<string>();
 let count: SinceReply = { kind: 'read', files: 1 };
 /** Holds main's answers for files until the test lets them go, when set. */
 let gate: Promise<void> | undefined;
@@ -101,6 +110,7 @@ const bridge = installBridge({
   },
   'overview.sinceFile': async (input) => {
     await gate;
+    if (notReady.has(String(Reflect.get(Object(input), 'head')))) return { kind: 'waiting' };
     const found = since.get(String(Reflect.get(Object(input), 'path')));
     if (!found) throw new Error('No file.');
     return found;
@@ -137,6 +147,8 @@ beforeEach(() => {
   since.clear();
   count = { kind: 'read', files: 1 };
   gate = undefined;
+  notReady.clear();
+  tabState.listeners.clear();
   bridge.calls.length = 0;
   tabState.pull = pullAt(R2);
   tabState.local = {
@@ -218,6 +230,17 @@ function excerpt(path: string, start: number, end: number): Excerpt {
   return { kind: 'excerpt', target };
 }
 
+/** A block on the parser's lines 7–10, out of date against `head`. */
+function parserBlock(head: string) {
+  return <ExcerptBlock node={excerpt('src/parser.ts', 7, 10)} context={contextOf(head)} />;
+}
+
+/** The tab's local copy changes to `local`, as main says. */
+function copyIs(local: LocalState): void {
+  tabState.local = local;
+  for (const listener of tabState.listeners) listener(tab, local);
+}
+
 /** Draws `node` on the page, until the test ends. */
 function draw(node: ReactNode): HTMLElement & { again: (node: ReactNode) => void } {
   const host = document.createElement('div');
@@ -278,6 +301,64 @@ describe('a code block of an overview written for an older push', () => {
     expect(bridge.calls.filter(([channel]) => channel === 'overview.sinceFile')).toEqual([
       ['overview.sinceFile', { id: tab, commit: R1, head: R2, path: 'src/parser.ts' }],
     ]);
+  });
+
+  it('draws nothing of its code until what changed in its file is known', async () => {
+    let open!: () => void;
+    gate = new Promise((resolve) => (open = resolve));
+    const page = draw(
+      <ExcerptBlock node={excerpt('src/parser.ts', 7, 10)} context={contextOf(R2)} />,
+    );
+    await until(() => bridge.calls.some(([channel]) => channel === 'overview.sinceFile'));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    // Its code is read, but waits for what changed in its file.
+    expect(bridge.calls.some(([channel]) => channel === 'overview.texts')).toBe(true);
+    expect(page.querySelector('[data-lo-code="drawn"]')).toBeNull();
+    expect(page.textContent).not.toContain('export function parse');
+    open();
+    await until(() => page.querySelector('[data-lo-code="drawn"]') !== null);
+    expect(page.querySelector('[data-lo-code-flag]')).not.toBeNull();
+  });
+
+  it('keeps its flag as a newer push loads, and says the new one’s once the local copy has it', async () => {
+    revisions.set(tab, viewOf([revisionOf(R1, 1), revisionOf(R2, 2), revisionOf(R3, 3)]));
+    const page = draw(parserBlock(R2));
+    const seen = watchDrawing(page);
+    await until(() => page.querySelector('[data-lo-code-flag]') !== null);
+    const flag = () => page.querySelector('.lo-codeblock__flagtext')?.textContent;
+    expect(flag()).toContain('in r2');
+
+    // The newer push is on screen, its local copy still coming.
+    notReady.add(R3);
+    tabState.pull = pullAt(R3);
+    copyIs({ kind: 'fetching', progress: null, attempt: 1 });
+    since.set('src/parser.ts', {
+      kind: 'changed',
+      path: 'src/parser.ts',
+      pushed: true,
+      texts: { old: FIRST, new: SECOND.replace('[]', 'Line[]') },
+    });
+    page.again(parserBlock(R3));
+    const asked = () =>
+      bridge.calls.filter(([channel, input]) => {
+        const head = Reflect.get(Object(input), 'head');
+        return channel === 'overview.sinceFile' && head === R3;
+      }).length;
+    await until(() => asked() === 1);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(asked()).toBe(1);
+    expect(flag()).toContain('in r2');
+
+    // Once the copy has it, the flag says what changed by the newer push.
+    notReady.delete(R3);
+    copyIs({ kind: 'ready', head: R3, base: 'b'.repeat(40), mergeBase: null, offline: false });
+    await until(() => flag()?.includes('in r3') === true);
+    expect(flag()).toBe('Lines 7–8 changed in r3. This block shows r1, which the text describes.');
+    expect(seen.some(([drawn, flagged]) => drawn && !flagged)).toBe(false);
   });
 
   it('compares the two revisions in the diff from its flag', async () => {
@@ -466,10 +547,14 @@ describe('the banner', () => {
   });
 
   it('compares the two in the diff, and copies a prompt with nothing the overview wrote', async () => {
+    // A newer push GitHub has, not loaded: the banner and the prompt both say the head on screen.
+    revisions.set(tab, viewOf([revisionOf(R1, 1), revisionOf(R2, 2), revisionOf(R3, 3)]));
+    tabState.pull = { ...pullAt(R2), newer: R3 };
     const shown = await standing(R1);
     const page = draw(
       <OutOfDateBanner tab={{ ...pull, id: tab }} standing={shown} head={R2} targets={[]} />,
     );
+    expect(title(page)).toBe('Written for r1. The PR is at r2.');
     // With no code blocks, it says nothing of them.
     await until(() => detail(page) === '1 push since, touching 1 file.');
 
