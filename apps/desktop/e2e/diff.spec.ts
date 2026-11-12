@@ -587,7 +587,8 @@ test.describe('while the local copy takes GitHub’s place', () => {
 });
 
 test.describe('when the local copy comes after GitHub’s diff', () => {
-  test.use({ cassette: 'app_e2e_late', lateRemote: true });
+  // Its frames are timed, which a trace's snapshots would slow.
+  test.use({ cassette: 'app_e2e_late', lateRemote: true, traced: false });
 
   test('takes its place in place: what’s at the top of the screen holds, and no frame runs long', async ({
     app,
@@ -813,7 +814,13 @@ test.describe('when a banner over the diff goes', () => {
     const first = page.locator('.lo-diffview .cm-editor:last-of-type [data-row="h:0"]');
     const at = () => first.evaluate((header) => header.getBoundingClientRect().top);
     // The banner says the local copy's fetch failed, over the diff, which is at its top: there's
-    // less to scroll up than the banner is tall.
+    // less to scroll up than the banner is tall. The banner can come after GitHub's diff, which
+    // then scrolls to stay where it was, so the reader goes back to the top.
+    await expect(page.locator('[data-lo-banners]')).toBeVisible({ timeout: 20_000 });
+    await page.locator('.lo-diffview').evaluate((view) => {
+      view.scrollTop = 0;
+    });
+    await page.waitForTimeout(300);
     expect(await page.locator('.lo-diffview').evaluate((view) => view.scrollTop)).toBeLessThan(30);
     const before = await at();
 

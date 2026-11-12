@@ -143,6 +143,11 @@ interface Fixtures {
   settings: string | undefined;
   /** Extra options for starting Lo, for tests that need it started differently. Its `env` adds to Lo's. */
   launch: LaunchOptions;
+  /**
+   * Whether CI records a trace of the window, kept when the test fails: not for a test that times
+   * the page's frames, which recording slows.
+   */
+  traced: boolean;
   /** Lo, started on an empty data folder with Chromium's sandbox on. */
   app: ElectronApplication;
   /** Lo's window, once its page has loaded. */
@@ -151,9 +156,10 @@ interface Fixtures {
 
 export const test = base.extend<Fixtures>({
   launch: [{}, { option: true }],
+  traced: [true, { option: true }],
   keymap: [undefined, { option: true }],
   settings: [undefined, { option: true }],
-  app: async ({ launch, keymap, settings }, use, testInfo) => {
+  app: async ({ launch, keymap, settings, traced }, use, testInfo) => {
     const { env, ...options } = launch;
     const data = dataFolder();
     writeEditor(data);
@@ -176,7 +182,7 @@ export const test = base.extend<Fixtures>({
     // In CI, a trace of the window, kept beside the test's results when it fails, which CI keeps:
     // what was on screen and asked for, for a failure that won't happen again on demand. A test that
     // closed Lo itself has no window left to trace.
-    const tracing = process.env.CI ? app.context().tracing : undefined;
+    const tracing = process.env.CI && traced ? app.context().tracing : undefined;
     await tracing?.start({ screenshots: true, snapshots: true });
     await use(app);
     if (tracing) {
