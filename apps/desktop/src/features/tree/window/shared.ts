@@ -1,11 +1,12 @@
 // What the file tree shares with other features' window code: the order it lists the changed files
 // in, which the diff shows them in; the file on screen, which the diff says as it scrolls and the
-// tree follows; and the views that show a file the tree asks for.
+// tree follows; the views that show a file the tree asks for; and the path a file's key names.
 
 import { useTabState } from '../../tab/window/shared.ts';
-import type { Changed, TreeState } from '../contract.ts';
+import type { Changed, TreePath, TreeState } from '../contract.ts';
 import { panelOrder, type Mode } from './model.ts';
-import { choices, onScreen, reveal, states } from './store.ts';
+import { keyOf, pathOfKey } from './paths.ts';
+import { choices, onScreen, picked, reveal, shown, states } from './store.ts';
 
 /** The order of each tab's changed files, kept until its changes or its mode change. */
 const orders = new Map<
@@ -61,6 +62,19 @@ export function orderIn(changes: readonly Changed[], mode: OrderMode): readonly 
 }
 
 /**
+ * The whole path of the file `key` names in `tab`'s tree, as the tree has it: a key made of a
+ * path's digest doesn't hold its path, but the row, the change or the file finder's answer it names
+ * does, as main sent it.
+ */
+export function pathOf(tab: string, key: string): TreePath {
+  if (!key.startsWith('\0#') && !key.startsWith('\0~')) return pathOfKey(key);
+  const row = shown.get(tab)?.rows.find((each) => each.key === key);
+  if (row !== undefined && row.kind !== 'group') return row.path;
+  const change = states.get(tab)?.changes?.find((each) => keyOf(each.path) === key);
+  return change?.path ?? picked.get(tab).get(key) ?? pathOfKey(key);
+}
+
+/**
  * Says which file the middle view has on screen, by key, as the diff's `file` event does, or none.
  * The tree marks it, and scrolls to it unless the reader is in the tree.
  */
@@ -76,9 +90,10 @@ export function followFile(tab: string, file: string | undefined): void {
 
 /**
  * Shows a file the tree asks for, by key, in `tab`: the diff scrolls to a changed one, the
- * whole-file view opens any.
+ * whole-file view opens any. `path` is the file's whole path, as main sent it, which a key made of
+ * a long path's digest doesn't hold.
  */
-export type ShowFile = (tab: string, file: string) => void;
+export type ShowFile = (tab: string, file: string, path: TreePath) => void;
 
 /** The views that show files: the diff, and the whole-file view. */
 export type FileView = 'diff' | 'whole';
@@ -110,6 +125,6 @@ export function canShow(view: FileView): boolean {
 export function showFile(view: FileView, tab: string, file: string): boolean {
   const show = showers.get(view)?.at(-1);
   if (!show) return false;
-  show(tab, file);
+  show(tab, file, pathOf(tab, file));
   return true;
 }

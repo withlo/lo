@@ -39,6 +39,12 @@ export const onScreen = tabState<string | undefined>(() => undefined);
 /** A row to scroll into view, each time the count goes up. */
 export const reveal = tabState<{ key: string; count: number } | undefined>(() => undefined);
 
+/**
+ * The paths of files the file finder took the reader to, by key: a file's row may not be in the
+ * tree, with its folder closed, and a key made of a long path's digest doesn't hold its path.
+ */
+export const picked = tabState<ReadonlyMap<string, TreePath>>(() => new Map());
+
 /** What each tab's tree last showed, for the keys, which act on what's on screen. */
 export const shown = new Map<string, Model>();
 

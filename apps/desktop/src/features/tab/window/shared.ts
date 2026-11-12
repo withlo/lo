@@ -1,12 +1,12 @@
 // What the tab feature shares with other features' window code: the tabs and the one on screen,
 // state a feature keeps for each tab, and the slot each kind of tab draws what it holds in.
 
-import { useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
-import { createStore } from 'zustand/vanilla';
 
 import { defineSlot } from '../../../window/slots.tsx';
 import type { Files, LocalState, PullView, Tab } from '../contract.ts';
+import { makeTabState, type TabState, useKept } from './kept.ts';
+import { middleIds, panels } from './panels.ts';
 import { activeOf, pullsStore, tabsStore, type TabsState } from './store.ts';
 
 export type {
@@ -53,9 +53,24 @@ export const left = defineSlot<{ tab: PullTab }>('tab.left');
 
 /**
  * The middle of a pull request's tab: its overview, its diff or its timeline. Each view here is
- * one of the middle views, in order; `` ` `` and `~` go from one to the next.
+ * one of the middle views, in order; `` ` `` and `~` go from one to the next. One is on screen at a
+ * time, and `shown` says which: a view the tab has shown stays drawn, hidden, while another is on
+ * screen, so coming back to it is instant and finds it as it was. A hidden view keeps its keys,
+ * its focus and its place in the window's history to itself until it's shown again.
  */
-export const middle = defineSlot<{ tab: PullTab }>('tab.middle');
+export const middle = defineSlot<{ tab: PullTab; shown: boolean }>('tab.middle');
+
+/**
+ * Shows the middle view `id`, one of those in {@link middle}, in pull request's tab `tab`, as
+ * `` ` `` and `~` step to it. Says whether the tab has it. A view that shows something another
+ * feature asks for, such as a file whole, calls this to come on screen.
+ */
+export function showMiddle(tab: string, id: string): boolean {
+  const at = middleIds.ids.indexOf(id);
+  if (at < 0) return false;
+  if (panels.get(tab).middle !== at) panels.update(tab, (current) => ({ ...current, middle: at }));
+  return true;
+}
 
 /** The right panel of a pull request's tab: its threads. */
 export const right = defineSlot<{ tab: PullTab }>('tab.right');
@@ -110,20 +125,7 @@ export function activeTab(): Tab | undefined {
 }
 
 /** State a feature keeps for each open tab: a value a tab, forgotten as the tab closes. */
-export interface TabState<T> {
-  /** `tab`'s value: the one `initial` made for it, until it's set. */
-  get(tab: string): T;
-  set(tab: string, value: T): void;
-  /** Sets `tab`'s value from its current one. */
-  update(tab: string, change: (current: T) => T): void;
-  /** Calls `listener` when a tab's value is set. Returns a function that stops it. */
-  readonly subscribe: (listener: () => void) => () => void;
-}
-
-/** A value of a tab's, boxed, so a value that's undefined is still one. */
-interface Box<T> {
-  readonly value: T;
-}
+export type { TabState } from './kept.ts';
 
 /**
  * Makes a store of a feature's state for each tab, a Zustand store of its own: what the tree has
@@ -131,35 +133,7 @@ interface Box<T> {
  * makes it, the first time it's asked for, and goes when the tab closes.
  */
 export function tabState<T>(initial: () => T): TabState<T> {
-  const store = createStore<ReadonlyMap<string, Box<T>>>()(() => new Map());
-  /** The values `initial` made for tabs whose value hasn't been set, kept so each is made once. */
-  const initials = new Map<string, Box<T>>();
-  const boxOf = (tab: string): Box<T> => {
-    const box = store.getState().get(tab) ?? initials.get(tab);
-    if (box) return box;
-    const made = { value: initial() };
-    initials.set(tab, made);
-    return made;
-  };
-  const set = (tab: string, value: T) => {
-    initials.delete(tab);
-    store.setState(new Map(store.getState()).set(tab, { value }), true);
-  };
-  // A closed tab's value goes with it.
-  tabsStore.subscribe((next, previous) => {
-    const open = new Set(next.tabs.map(({ id }) => id));
-    const closed = previous.tabs.filter(({ id }) => !open.has(id)).map(({ id }) => id);
-    for (const id of closed) initials.delete(id);
-    const values = store.getState();
-    if (!closed.some((id) => values.has(id))) return;
-    store.setState(new Map([...values].filter(([id]) => open.has(id))), true);
-  });
-  return {
-    get: (tab) => boxOf(tab).value,
-    set,
-    update: (tab, change) => set(tab, change(boxOf(tab).value)),
-    subscribe: (listener) => store.subscribe(listener),
-  };
+  return makeTabState(initial);
 }
 
 /**
@@ -173,6 +147,5 @@ export function useTabState<T, U>(
   tab: string,
   select?: (value: T) => U,
 ): T | U {
-  const read = () => (select ? select(state.get(tab)) : state.get(tab));
-  return useSyncExternalStore(state.subscribe, read);
+  return useKept(state, tab, select);
 }

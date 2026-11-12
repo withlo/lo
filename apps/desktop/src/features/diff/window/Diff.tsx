@@ -8,20 +8,20 @@
 // What arrives after it's drawn goes into the view in place (`drawing.ts`). The tree follows the
 // file on screen, and asks the diff to show the files it picks.
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
-import { client } from '../../../window/ipc.ts';
 import { Slot } from '../../../window/slots.tsx';
-import { contract as app } from '../../app/contract.ts';
 import { useSetting } from '../../settings/window/shared.ts';
 import { tabState, usePull, type PullTab } from '../../tab/window/shared.ts';
 import { orderIn, useOrderMode } from '../../tree/window/shared.ts';
 import { layout as layoutSetting, whitespace as whitespaceSetting } from '../settings.ts';
 import { draw, type Drawing, type Place } from './drawing.ts';
 import { inOrder, keptOrder, type KeptOrder, viewKey } from './files.ts';
-import type { Loader, Snapshot } from './loader.ts';
+import type { Snapshot } from './loader.ts';
+import { usePage } from './page.ts';
+import { placesFor } from './places.ts';
 import { notes } from './shared.ts';
-import { loaderOf } from './tabs.ts';
+import { loaderOf, useSnapshot } from './tabs.ts';
 
 /** Where each tab's view was when it last went, to come back to. */
 const places = tabState<Place | undefined>(() => undefined);
@@ -49,49 +49,11 @@ function cursorFile(place: Place | undefined): string | undefined {
   return undefined;
 }
 
-let page: Promise<{ nonce: string; packaged: boolean }> | undefined;
-
 /**
- * The nonce in the page's content security policy, which the view's style elements carry, from
- * `app.info`, once per page load, and whether Lo runs as it ships.
+ * A pull request's tab's diff. While another middle view is on screen it stays drawn, hidden, so
+ * coming back to it moves nothing.
  */
-function pageInfo(): Promise<{ nonce: string; packaged: boolean }> {
-  page ??= client(app)
-    .info()
-    .then(({ nonce, packaged: shipped }) => ({ nonce, packaged: shipped }));
-  return page;
-}
-
-/** Whether Lo runs as it ships, once `app.info` has said. */
-let packaged = true;
-
-function useNonce(): string | undefined {
-  const [found, setFound] = useState<string>();
-  useEffect(() => {
-    let live = true;
-    pageInfo()
-      .then((info) => {
-        packaged = info.packaged;
-        if (live) setFound(info.nonce);
-      })
-      .catch((error: unknown) => {
-        console.error("Lo couldn't read the page's nonce:", error);
-        if (live) setFound('');
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
-  return found;
-}
-
-function useSnapshot(loader: Loader): Snapshot {
-  const subscribe = useCallback((listener: () => void) => loader.subscribe(listener), [loader]);
-  return useSyncExternalStore(subscribe, () => loader.snapshot());
-}
-
-/** A pull request's tab's diff. */
-export function Diff({ tab }: { tab: PullTab }) {
+export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const loader = loaderOf(tab.id);
   const snapshot = useSnapshot(loader);
   const { ready } = snapshot;
@@ -113,10 +75,14 @@ export function Diff({ tab }: { tab: PullTab }) {
   }, [ready, mode, tab.id]);
   const layout = useSetting(layoutSetting);
   const whitespace = useSetting(whitespaceSetting);
-  const nonceValue = useNonce();
+  const page = usePage();
+  const nonceValue = page?.nonce;
+  const packaged = page?.packaged ?? true;
   const box = useRef<HTMLDivElement>(null);
   const view = useRef<Drawing>(undefined);
   useEffect(() => loader.setWhitespace(whitespace === 'show'), [loader, whitespace]);
+  // The tab's places in the diff and the whole-file view, for `⌃o` and `⌃i`.
+  useEffect(() => placesFor(tab.id), [tab.id]);
 
   const entries = useMemo(
     () =>
@@ -126,8 +92,9 @@ export function Diff({ tab }: { tab: PullTab }) {
   const key =
     ready && entries ? viewKey(`${ready.at}|${ready.comparison ?? ''}`, entries) : undefined;
   // What a new view is drawn with, read as it's drawn: a change of layout alone needs no new view.
-  const latest = useRef({ entries, layout, comparison: ready && comparisonOf(ready) });
-  latest.current = { entries, layout, comparison: ready && comparisonOf(ready) };
+  const comparison = ready && comparisonOf(ready);
+  const latest = useRef({ entries, layout, packaged, shown, comparison });
+  latest.current = { entries, layout, packaged, shown, comparison };
 
   useEffect(() => {
     const parent = box.current;
@@ -149,23 +116,37 @@ export function Diff({ tab }: { tab: PullTab }) {
       at,
       layout: drawn.layout,
       nonce: nonceValue,
-      packaged,
+      packaged: drawn.packaged,
+      shown: drawn.shown,
       before: another ? undefined : before,
       onTop: another ? cursorFile(before) : undefined,
     });
     view.current = made;
     return () => {
       view.current = undefined;
-      places.set(tab.id, made.place());
       made.stop();
       made.view.destroy();
     };
     // A new view only for new files, or a new order of them.
   }, [key, nonceValue]);
 
+  // Where the view is as it goes, read while it's still on the page: as the tab goes off screen,
+  // its view is taken off the page before the effects above are undone.
+  useLayoutEffect(
+    () => () => {
+      const made = view.current;
+      if (made) places.set(tab.id, made.place());
+    },
+    [key, nonceValue, tab.id],
+  );
+
   useEffect(() => {
     view.current?.view.setLayout(layout);
   }, [layout]);
+
+  useEffect(() => {
+    view.current?.setShown(shown);
+  }, [shown]);
 
   // The local copy's files, taken in place of GitHub's, say more of each, and may start out
   // otherwise.

@@ -214,9 +214,7 @@ test('⏎ reveals a changed file in the tree, and the diff shows it', async ({ p
   await expect(diffHeader(page, 'src/text/wrap.ts')).toBeInViewport();
 });
 
-test('⏎ on an unchanged file and ⌘⏎ ask for the whole file, and say why they can’t yet', async ({
-  page,
-}) => {
+test('⏎ on an unchanged file and ⌘⏎ on any open the file whole, and focus it', async ({ page }) => {
   await shown(page);
   await middle(page).focus();
   await openFinder(page);
@@ -224,10 +222,9 @@ test('⏎ on an unchanged file and ⌘⏎ ask for the whole file, and say why th
   await expect(options(page).first()).toContainText('README.md');
   await page.keyboard.press('Enter');
   await expect(finder(page)).toBeHidden();
-  await expect(middle(page)).toBeFocused();
-  await expect(page.getByRole('status').filter({ hasText: 'Show the file' })).toContainText(
-    'Lo has no whole-file view to open it in.',
-  );
+  const whole = page.locator('[data-lo-whole]');
+  await expect(whole.locator('.lo-fileview')).toContainText('# App fixture');
+  await expect(whole.locator('.cm-content')).toBeFocused();
 
   // ⌘⏎ opens a changed file whole too.
   await openFinder(page);
@@ -235,10 +232,8 @@ test('⏎ on an unchanged file and ⌘⏎ ask for the whole file, and say why th
   await expect(options(page).first()).toContainText('format.ts');
   await page.keyboard.press(`${held}+Enter`);
   await expect(finder(page)).toBeHidden();
-  await expect(middle(page)).toBeFocused();
-  await expect(page.getByRole('status').filter({ hasText: 'Whole file' })).toContainText(
-    'Lo has no whole-file view to open it in.',
-  );
+  await expect(whole.locator('.lo-fileview')).toContainText('export function format(lines');
+  await expect(whole.locator('.cm-content')).toBeFocused();
 });
 
 test('⌘P says there’s no pull request on screen when none is', async ({ page }) => {

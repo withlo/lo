@@ -1,15 +1,21 @@
 // Each pull request's tab's diff in the window: its loader, made the first time anything asks for
-// it, fed what main says, and stopped as the tab closes; and the view drawn of it while the tab is
-// on screen, which the keys act on.
+// it, fed what main says, and stopped as the tab closes; the view drawn of it while the diff is on
+// screen, which the keys act on; and what it shows once it's drawn again, when something asks for
+// a place in it while another middle view is on screen.
 
+import type { Target } from '@lo/ui/commands';
 import type { DiffView } from '@lo/ui/code';
+import { useCallback, useSyncExternalStore } from 'react';
 
 import { orderIn, orderModeOf } from '../../tree/window/shared.ts';
 import type { DiffState } from '../contract.ts';
-import { Loader } from './loader.ts';
+import { Loader, type Snapshot } from './loader.ts';
 import { diffJobs, main } from './main.ts';
 
 const loaders = new Map<string, Loader>();
+
+/** Places to show in each tab's diff once it's drawn: see {@link revealWhenDrawn}. */
+const reveals = new Map<string, Reveal>();
 
 /** The diff of tab `id`, its loader made and told what main has the first time it's asked for. */
 export function loaderOf(id: string): Loader {
@@ -35,6 +41,12 @@ export function loaderOf(id: string): Loader {
   return made;
 }
 
+/** What `loader` has to draw, re-rendering when it changes. */
+export function useSnapshot(loader: Loader): Snapshot {
+  const subscribe = useCallback((listener: () => void) => loader.subscribe(listener), [loader]);
+  return useSyncExternalStore(subscribe, () => loader.snapshot());
+}
+
 /** Takes what main says of a tab's diff. */
 export function takeState(state: DiffState): void {
   loaderOf(state.id).take(state);
@@ -47,6 +59,7 @@ export function keepOnly(open: ReadonlySet<string>): void {
     loader.stop();
     loaders.delete(id);
   }
+  for (const id of reveals.keys()) if (!open.has(id)) reveals.delete(id);
 }
 
 /** A diff view drawn for a tab, while the tab is on screen. */
@@ -72,4 +85,25 @@ export function setDrawn(id: string, view: Drawn): () => void {
   return () => {
     if (drawn.get(id) === view) drawn.delete(id);
   };
+}
+
+/** A place to show in a tab's diff once it's drawn, and whether focus goes there too. */
+export interface Reveal {
+  readonly target: Target;
+  readonly focus: boolean;
+}
+
+/**
+ * Shows `reveal`'s place in tab `id`'s diff once it's drawn: for a place asked for while another
+ * middle view is on screen, such as `⌃o` back from a whole file. The newest asked for wins.
+ */
+export function revealWhenDrawn(id: string, reveal: Reveal): void {
+  reveals.set(id, reveal);
+}
+
+/** The place to show in tab `id`'s diff as it's drawn, if one was asked for, once. */
+export function takeReveal(id: string): Reveal | undefined {
+  const reveal = reveals.get(id);
+  reveals.delete(id);
+  return reveal;
 }

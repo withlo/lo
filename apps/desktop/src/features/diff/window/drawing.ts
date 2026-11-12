@@ -12,16 +12,17 @@ import {
   type Target,
   type Viewport,
 } from '@lo/ui/code';
+import { plainTarget } from '@lo/ui/commands';
 
 import { openMenu } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle } from '../../../window/commands/registry.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
-import { followFile, onShowFile } from '../../tree/window/shared.ts';
+import { followFile } from '../../tree/window/shared.ts';
 import type { Start } from '../contract.ts';
 import { diffFileOf, headerOf } from './files.ts';
 import type { Entry, Loader, Moved, Shown } from './loader.ts';
 import { main } from './main.ts';
-import { setDrawn } from './tabs.ts';
+import { setDrawn, takeReveal } from './tabs.ts';
 
 declare global {
   interface Window {
@@ -73,6 +74,12 @@ export interface Drawing {
   update(entries: readonly Entry[]): void;
   /** Where the view is, to come back to in another. */
   place(): Place;
+  /**
+   * Says whether the diff is the middle view on screen: while it's hidden, its keys and its place
+   * in the window's history are another view's, and once it's shown again it takes them back,
+   * shows a place asked for meanwhile, and takes focus that's nowhere in particular.
+   */
+  setShown(shown: boolean): void;
   /** Unhooks it, before it's destroyed. */
   stop(): void;
 }
@@ -155,6 +162,8 @@ export interface DrawOptions {
   layout: 'split' | 'inline';
   nonce: string;
   packaged: boolean;
+  /** Whether it's the middle view on screen as it's drawn. */
+  shown: boolean;
   /** Where the tab's last view was, to come back to. */
   before: Place | undefined;
   /**
@@ -385,31 +394,52 @@ export function draw(options: DrawOptions): Drawing {
       parent.removeEventListener('scroll', scrolled, { capture: true });
       clearTimeout(still);
     },
-    setDrawn(tab.id, {
-      view,
-      loader,
-      pull: { owner: tab.owner, repo: tab.repo, number: tab.number },
-      acted(id) {
-        pending.delete(id);
-        release(id);
-      },
-    }),
-    setMiddle({
-      focus: () => view.focus(),
-      here: () => ({ view: 'diff', at: view.keyState().target }),
-    }),
-    keys.history.register(tab.id, 'diff', (target) => {
-      if (!view.reveal(target)) return false;
-      view.focus();
-      return true;
-    }),
-    // A changed file the tree asks for: its header comes on screen, focus staying in the tree.
-    onShowFile('diff', (id, key) => {
-      const file = id === tab.id ? loader.ids.find(key) : undefined;
-      if (file !== undefined) view.reveal({ kind: 'file', file });
-    }),
     keys.subscribe(() => view.setVimKeys(keys.vimKeys())),
   ];
+  /** What the view registers while it's on screen, to take back as it's hidden. */
+  let showing: (() => void)[] | undefined;
+  const setShown = (shown: boolean) => {
+    if (shown === (showing !== undefined)) return;
+    if (!shown) {
+      for (const stop of showing ?? []) stop();
+      showing = undefined;
+      return;
+    }
+    showing = [
+      setDrawn(tab.id, {
+        view,
+        loader,
+        pull: { owner: tab.owner, repo: tab.repo, number: tab.number },
+        acted(id) {
+          pending.delete(id);
+          release(id);
+        },
+      }),
+      setMiddle({
+        focus: () => view.focus(),
+        here: () => ({ view: 'diff', at: view.keyState().target }),
+      }),
+    ];
+    // The tree marks the file at the top of the screen again.
+    const top = view.viewport().at;
+    followFile(tab.id, loader.ids.keyOf(top.kind === 'line' ? top.at.file : top.file));
+    // A place asked for while another middle view was on screen, as `⌃o` back from a whole file
+    // asks for the place it left. The cursor already there stays as it is: revealing it again
+    // would scroll it to the screen's edge, moving what's on screen.
+    const waiting = takeReveal(tab.id);
+    if (waiting && !samePlace(waiting.target, view.keyState().target)) {
+      view.reveal(waiting.target);
+    }
+    // Focus that's nowhere in particular, or left behind in a middle view now hidden, comes to the
+    // diff, as it does to any middle view.
+    const focused = document.activeElement;
+    const free =
+      !focused ||
+      focused === document.body ||
+      focused.hasAttribute('data-lo-middle') ||
+      focused.closest('[inert]') !== null;
+    if (waiting?.focus || free) view.focus();
+  };
   const testing = options.packaged
     ? undefined
     : {
@@ -436,11 +466,7 @@ export function draw(options: DrawOptions): Drawing {
     // what was at the top of the screen.
     if (!(before.cursorAt && view.scrollTo(before.cursorAt))) view.scrollTo(before.viewport);
   }
-  // Focus that's nowhere in particular comes to the diff, as it does to any middle view.
-  const focused = document.activeElement;
-  if (!focused || focused === document.body || focused.hasAttribute('data-lo-middle')) {
-    view.focus();
-  }
+  setShown(options.shown);
   // The diff at this head is on screen: it stays, until the reader loads a newer push.
   main()
     .drawn({ id: tab.id, at })
@@ -476,7 +502,9 @@ export function draw(options: DrawOptions): Drawing {
         cursorAt: spot && shown ? { at: spot, offset: box.top - top } : undefined,
       };
     },
+    setShown,
     stop() {
+      setShown(false);
       pacer.stop();
       if (testing && window.loDiff === testing) window.loDiff = undefined;
       loader.attach(undefined);
@@ -490,4 +518,17 @@ function sameMoves(a: readonly Moved[], b: readonly Moved[]): boolean {
   if (a.length !== b.length) return false;
   const seen = new Set(a.map((move) => JSON.stringify(move)));
   return b.every((move) => seen.has(JSON.stringify(move)));
+}
+
+/** The line a target's cursor is on, or for a header or a file, the target itself. */
+function cursorOf(target: Target): string {
+  if (target.kind !== 'line') return JSON.stringify(plainTarget(target));
+  const { at } = target;
+  const line = 'line' in at ? at.line : Math.max(at.from, at.to);
+  return JSON.stringify({ file: at.file, side: at.side, line });
+}
+
+/** Whether two targets put the cursor in one place: on one line of one side of one file. */
+export function samePlace(a: Target, b: Target): boolean {
+  return cursorOf(a) === cursorOf(b);
 }

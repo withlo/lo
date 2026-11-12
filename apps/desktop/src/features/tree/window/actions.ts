@@ -2,10 +2,9 @@
 // folders, show a file, and the file's menu. They act on what the tree last showed.
 
 import { activeTab, type PullTab } from '../../tab/window/shared.ts';
-import { canShow, showFile } from './shared.ts';
+import { canShow, pathOf, showFile } from './shared.ts';
 import { foldersOf, parentRow, rowAt, type Row } from './model.ts';
-import type { TreePath } from '../contract.ts';
-import { addressPath, keyOf, pathOfKey } from './paths.ts';
+import { addressPath, keyOf } from './paths.ts';
 import { choices, focus, onScreen, reveal, setOpen, shown, states } from './store.ts';
 
 /** The pull request's tab on screen, or why a key for the tree can't run. */
@@ -95,17 +94,6 @@ export function setAll(tab: string, open: boolean): void {
 /** A changed file of `tab`'s, by key. */
 function changeOf(tab: string, key: string) {
   return states.get(tab)?.changes?.find((change) => keyOf(change.path) === key);
-}
-
-/**
- * The whole path of the file `key` names in `tab`'s tree: a key made of a path's digest doesn't
- * hold its path, but the change it names does.
- */
-export function pathOf(tab: string, key: string): TreePath {
-  if (!key.startsWith('\0#') && !key.startsWith('\0~')) return pathOfKey(key);
-  const row = shown.get(tab)?.rows.find((each) => each.key === key);
-  if (row !== undefined && row.kind !== 'group') return row.path;
-  return changeOf(tab, key)?.path ?? pathOfKey(key);
 }
 
 /** Why the file `key` can't be shown, or `true`: a changed file in the diff, any whole. */

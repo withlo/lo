@@ -1,6 +1,7 @@
 // The diff feature in main: for each pull request's tab, each changed file's versions at the head
-// on screen, sent to the window each time they change, and their texts on request. The window says
-// once it has drawn the diff, and the tab keeps that head on screen.
+// on screen, sent to the window each time they change, their texts on request, and any file whole
+// for the whole-file view. The window says once it has drawn the diff, and the tab keeps that head
+// on screen.
 
 import type { GithubClient } from '@lo/github';
 
@@ -67,6 +68,7 @@ export default defineFeature(contract, {
   handlers: {
     versions: ({ id }) => diffs.get(id)?.state(),
     texts: ({ id, at, comparison, from, files }) => diffOf(id).texts(at, comparison, from, files),
+    whole: ({ id, at, version, path, large }) => diffOf(id).whole(at, version, path, large),
     drawn({ id, at }) {
       diffOf(id).drawn(at);
     },

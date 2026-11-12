@@ -9,7 +9,7 @@ import { focusMiddle, registry } from '../../../window/commands/registry.ts';
 import { pullOnScreen, revealFile } from './actions.ts';
 import type { Answer, Item } from './found.ts';
 import { main } from './main.ts';
-import { states } from './store.ts';
+import { picked, states } from './store.ts';
 
 export interface FinderState {
   readonly open: boolean;
@@ -174,6 +174,8 @@ export type Way = 'show' | 'whole';
 export function go(item: Item, way: Way): void {
   const { tab } = finderStore.getState();
   if (tab === undefined) return;
+  // Its path, from main, for whatever shows it: the key may not hold it.
+  picked.update(tab, (known) => new Map(known).set(item.id, item.path));
   closeFinder(() => {
     const target = { kind: 'file', file: item.id } as const;
     if (way === 'whole') {
