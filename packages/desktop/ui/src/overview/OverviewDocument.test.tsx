@@ -429,6 +429,48 @@ describe('terms', () => {
     expect(card()).toBeNull();
   });
 
+  it('keeps a card closed by Esc closed while the window is away, until focus leaves the term', () => {
+    vi.useFakeTimers();
+    const page = render(<OverviewDocument tree={example()} />);
+    const use = term(page);
+    /** The window losing focus, then getting it back: the term stays the focused element. */
+    const away = () => {
+      act(() => {
+        use.dispatchEvent(new FocusEvent('blur'));
+        use.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+      });
+      expect(document.activeElement).toBe(use);
+      act(() => {
+        use.dispatchEvent(new FocusEvent('focus'));
+        use.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+      });
+    };
+
+    focus(use);
+    // Without `Esc`, the card comes back with the window, as focus does.
+    away();
+    expect(card()).not.toBeNull();
+
+    press(use, 'Escape');
+    away();
+    expect(card()).toBeNull();
+    // Focus leaving the term ends it.
+    act(() => use.blur());
+    focus(use);
+    expect(card()).not.toBeNull();
+
+    // So does the pointer opening the card again.
+    press(use, 'Escape');
+    move(document.body, use);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_OPEN_MS);
+    });
+    expect(card()).not.toBeNull();
+    move(use, document.body);
+    away();
+    expect(card()).not.toBeNull();
+  });
+
   it('opens on a pointer that rests on the term, and stays while it’s on the card', () => {
     vi.useFakeTimers();
     const page = render(<OverviewDocument tree={example()} />);

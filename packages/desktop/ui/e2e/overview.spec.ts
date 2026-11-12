@@ -1,5 +1,6 @@
 // The overview's terms in Chromium itself, where focus moves as it does for a reader: `Tab` from a
-// term with its card open goes on to what follows it, as it does with the card closed.
+// term with its card open goes on to what follows it, as it does with the card closed, and a card
+// closed with `Esc` stays closed when the window loses focus and gets it back.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -11,8 +12,11 @@ import { build } from 'vite';
 
 const electronBinary: unknown = electronPackage;
 
-/** Where the page is built, and the Electron main process that opens it. */
-const harness = fileURLToPath(new URL('../test-results/harness/', import.meta.url));
+/**
+ * Where the page is built, and the Electron main process that opens it: a folder for each worker,
+ * since building empties the folder first.
+ */
+let harness = '';
 
 /**
  * Electron's side: one window, never shown, with the page. As a file, the page loads its script as
@@ -38,6 +42,8 @@ const PAGE =
   '<div id="root" class="lo-app"></div><script src="./overview.js"></script>';
 
 test.beforeAll(async () => {
+  const worker = test.info().workerIndex;
+  harness = fileURLToPath(new URL(`../test-results/harness-${worker}/`, import.meta.url));
   mkdirSync(harness, { recursive: true });
   await build({
     configFile: false,
@@ -121,10 +127,48 @@ test('Esc closes a term’s card and leaves focus on the term, and Tab still goe
   const page = await open();
   await page.focus('#start');
   await page.keyboard.press('Tab');
-  await expect(page.locator('.lo-hovercard')).toHaveCount(1);
+  const card = page.locator('.lo-hovercard[data-open]');
+  await expect(card).toHaveCount(1);
   await page.keyboard.press('Escape');
-  await expect(page.locator('.lo-hovercard')).toHaveCount(0);
+  // Base UI takes a closed card out of the page on the next frame. This window is never shown,
+  // and while other windows draw on the same display, as the app's smoke test does in CI, its
+  // frames can come seconds apart, so what's asked is that the card closed, not that it's gone.
+  await expect(card).toHaveCount(0);
   expect(await page.evaluate(() => document.activeElement?.textContent)).toBe('bucket');
   await page.keyboard.press('Tab');
   expect(await page.evaluate(() => document.activeElement?.textContent)).toBe('tokens');
+});
+
+test('a card closed with Esc stays closed when the window loses focus and gets it back', async () => {
+  const page = await open();
+  const card = page.locator('.lo-hovercard[data-open]');
+  const devtools = await page.context().newCDPSession(page);
+  const focused = () => page.evaluate(() => document.hasFocus());
+  /**
+   * The page losing focus and getting it back, as it does when the reader switches windows, without
+   * showing the window: DevTools stops holding the page focused, the window's view gives up focus,
+   * and DevTools holding it focused again gives it back.
+   */
+  const away = async () => {
+    await devtools.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+    await app?.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.blurWebView());
+    await expect.poll(focused).toBe(false);
+    await devtools.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    await expect.poll(focused).toBe(true);
+  };
+
+  await page.focus('#start');
+  await page.keyboard.press('Tab');
+  await expect(card).toHaveCount(1);
+  // Without `Esc`, the card comes back with the window, as focus does.
+  await away();
+  await expect(card).toHaveCount(1);
+
+  await page.keyboard.press('Escape');
+  await expect(card).toHaveCount(0);
+  await away();
+  // Focus comes back to the term as the page gets focus, before `away` sees it has: a card that
+  // opened again would be open now.
+  expect(await page.evaluate(() => document.activeElement?.textContent)).toBe('bucket');
+  expect(await card.count()).toBe(0);
 });
