@@ -17,21 +17,31 @@ const moved: string[] = [];
 const headers: string[] = [];
 /** How far down the page each file's header is drawn, by its id. */
 const tops = new Map<string, number>();
+/** How tall the stand-in's headers are, in pixels. */
+const HEADER = 38;
 /** What a file taking its lines does to the page, as one that grows moves the headers below it. */
 let tookLines: ((id: string) => void) | undefined;
 /** Each diff's name, to say which one the view was given. */
 const names = new WeakMap<FileDiff, string>();
 
 vi.mock('@lo/ui/code', () => ({
-  createDiffView: (): Partial<Omit<DiffView, 'probe'>> & { probe: Pick<Probe, 'spotTop'> } => ({
+  createDiffView: (): Partial<Omit<DiffView, 'probe'>> & {
+    probe: Pick<Probe, 'spotTop' | 'spotBottom'>;
+  } => ({
     viewport: () => ({ at: { kind: 'header', file: 'd0', side: 'new' }, offset: 0 }),
     scrollTo: (viewport) => {
       const { at } = viewport;
       moved.push(`scroll ${at.kind === 'header' ? at.file : at.at.file} ${viewport.offset}`);
       return true;
     },
+    // What's at the top kept through a change, which moves nothing.
+    holdTop: () => true,
     probe: {
       spotTop: (spot) => (spot.kind === 'header' ? tops.get(spot.file) : undefined),
+      spotBottom: (spot) => {
+        const top = spot.kind === 'header' ? tops.get(spot.file) : undefined;
+        return top === undefined ? undefined : top + HEADER;
+      },
     },
     fold: () => undefined,
     filesOnScreen: () => onScreen,
@@ -257,8 +267,9 @@ function marksOf(entries: [string, 'viewed' | 'unviewed' | 'dismissed'][]) {
 
 /**
  * Draws two files from the local copy, `src/a.ts` and `src/b.ts`, both showing their lines, in a
- * box 800 pixels tall, with the stand-in's own record cleared. From GitHub's first, `swapped`, the
- * local copy's lines come while both are on screen, so the view holds them back.
+ * box 800 pixels tall, with the stand-in's own record cleared once they're drawn. From GitHub's
+ * first, `swapped`, the local copy's lines come while both are on screen, so the view holds them
+ * back: what the stand-in was told as they came stays in its record.
  */
 async function drawTwo(swapped = false): Promise<Drawing> {
   const loader = new Loader(work);
@@ -288,15 +299,15 @@ async function drawTwo(swapped = false): Promise<Drawing> {
   });
   drawing = made;
   await frames(2);
+  told.length = 0;
+  moved.length = 0;
+  headers.length = 0;
   if (swapped) {
     onScreen = ['d0', 'd1'];
     loader.subscribe(() => drawing?.update(loader.snapshot().ready?.entries ?? []));
     loader.take({ ...state('shown', 'local'), files });
     await frames();
   }
-  told.length = 0;
-  moved.length = 0;
-  headers.length = 0;
   return made;
 }
 
@@ -341,6 +352,13 @@ describe('viewed files', () => {
     expect(told[0]).toBe('lines d0 local shown');
     expect(told).toContain('collapsed d0 true');
     expect(moved.slice(-2)).toEqual(['reveal d1', 'scroll d1 -300']);
+  });
+
+  it('e brings the next file’s header up to show whole when the foot of the screen cuts it off', async () => {
+    await drawTwo();
+    tops.set('d1', 790);
+    drawnFor(TAB.id)?.viewedHere('d0', true, 'd1');
+    expect(moved).toEqual(['reveal d1', `scroll d1 -${800 - HEADER}`]);
   });
 
   it('e brings the next file’s header to the top when it isn’t on screen', async () => {

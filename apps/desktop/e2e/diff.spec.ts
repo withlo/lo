@@ -50,6 +50,11 @@ declare global {
     loStill?: boolean;
     /** Each change, frame by frame, in where a row is, the box and the scroll, while a test traces it. */
     loTrace?: string[];
+    /**
+     * Where a line was drawn as each frame started, and how many views the page had drawn, while
+     * a test watched it.
+     */
+    loLine?: { draws: number; y: number | undefined }[];
   }
 }
 
@@ -416,6 +421,65 @@ test('the tree follows the file on screen, and shows the file it’s asked for',
   await expect(tree.locator('[data-key="src/legacy.ts"]')).toHaveClass(/tree-current/);
   await focusDiff(page);
   await expect(tree.locator('[data-key="assets/mark.png"]')).toHaveClass(/tree-current/);
+});
+
+test('a new order puts back what was at the top of the screen, with the cursor off it, and holds it', async ({
+  page,
+}) => {
+  await drawn(page);
+  await focusDiff(page);
+  // Wheeled down, the cursor on the first header left above the screen.
+  const view = page.locator('.lo-diffview');
+  const box = await view.boundingBox();
+  await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
+  await page.mouse.wheel(0, 700);
+  await expect.poll(() => view.evaluate((each) => each.scrollTop)).toBeGreaterThan(600);
+  await page.waitForTimeout(300);
+  const top = await page.evaluate(() => {
+    const at = window.loDiff?.viewport().at;
+    return at && { at, y: window.loDiff?.probe.spotTop(at) };
+  });
+  if (top?.y === undefined) throw new Error('nothing at the top of the screen');
+  // Where that line is drawn as each frame starts, from before the new order on.
+  await page.evaluate((spot) => {
+    const frames: { draws: number; y: number | undefined }[] = [];
+    window.loLine = frames;
+    const tick = () => {
+      frames.push({ draws: window.loDiff?.draws ?? 0, y: window.loDiff?.probe.spotTop(spot) });
+      if (window.loLine === frames) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, top.at);
+
+  const tree = page.locator('[role="tree"][data-lo-scope="tree"]');
+  await tree.focus();
+  await page.keyboard.press('t');
+  await expect(tree).toHaveAttribute('aria-label', 'Changed files in review order');
+  await expect.poll(() => page.evaluate(() => window.loDiff?.draws)).toBe(2);
+  await page.waitForTimeout(1500);
+  const frames = await page.evaluate(() => {
+    const seen = window.loLine ?? [];
+    window.loLine = undefined;
+    return seen;
+  });
+
+  // The new view puts the line back where it was on the page, though that leaves the cursor off
+  // screen, and it stays there: from the view's second frame, every frame.
+  expect(await paths(page)).not.toEqual([
+    'assets/mark.png',
+    'data/numbers.txt',
+    'src/text/wrap.ts',
+    'src/format.ts',
+    'src/legacy.ts',
+    'src/parser.ts',
+    'pnpm-lock.yaml',
+  ]);
+  const drawnAt = frames.findIndex((frame) => frame.draws === 2);
+  expect(drawnAt).toBeGreaterThanOrEqual(0);
+  const away = frames
+    .slice(drawnAt + 1)
+    .filter((frame) => frame.y === undefined || Math.abs(frame.y - (top.y ?? 0)) >= 1);
+  expect(away, `the line was at ${top.y}`).toEqual([]);
 });
 
 /** What the settings file holds now. */

@@ -326,11 +326,7 @@ export class Aligner {
     scroller.addEventListener('keydown', () => (this.#keyed = performance.now()), {
       capture: true,
     });
-    const stop = (): void => {
-      this.#keyed = -Infinity;
-      this.#following = 0;
-      this.#followSide = undefined;
-    };
+    const stop = (): void => this.unfollow();
     scroller.addEventListener('wheel', stop, { capture: true, passive: true });
     scroller.addEventListener('pointerdown', stop, { capture: true });
     // A block that grows where CodeMirror doesn't look, or a width that changes, resizes the
@@ -349,6 +345,17 @@ export class Aligner {
   follow(side?: Side): void {
     this.#keyed = performance.now();
     this.#followSide = side;
+  }
+
+  /**
+   * Stops keeping the cursor on screen after the last move, as the wheel or a pointer does: the
+   * view has put something else at the top of the screen, and the cursor stays where that leaves
+   * it.
+   */
+  unfollow(): void {
+    this.#keyed = -Infinity;
+    this.#following = 0;
+    this.#followSide = undefined;
   }
 
   /**
@@ -1288,6 +1295,11 @@ export class Aligner {
  */
 export function drawnTop(view: EditorView, pos: number): number | undefined {
   return drawnRect(view, pos)?.top;
+}
+
+/** Where on the page the line at `pos` ends, as {@link drawnTop} finds it, if it's drawn. */
+export function drawnBottom(view: EditorView, pos: number): number | undefined {
+  return drawnRect(view, pos)?.bottom;
 }
 
 /** The box the line at `pos` is drawn in, without the blocks drawn around it, if it's drawn. */
