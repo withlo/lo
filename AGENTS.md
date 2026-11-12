@@ -208,7 +208,8 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   place of the system's text editor, so a test starts no editor.
 - Code that doesn't call Electron goes in its own module, with unit tests beside it. The smoke test
   in `e2e/` drives the built app with Playwright, each test on an empty data folder, and covers what
-  needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`.
+  needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`. In CI each test records
+  a trace of the window, kept in its results when it fails, which CI uploads.
 
 The window shows untrusted content, so it's locked down, and the smoke test shows each guard
 holding:
@@ -525,9 +526,13 @@ The diff and the tree follow it through the feature's `revisions.comparisons` se
   Rows go with their account, and 30 days after their pull request closed (`revisions_closed`),
   unless noted since.
 - A tab opens on `defaultComparison`: the more recent marker's revision against the head on screen,
-  or the whole pull request, saying "Nothing new since" when a marker is on that head. When "last
-  seen here" asks for a comparison, the diff draws nothing until it's ready, for 15 s at most, so it
-  never draws the whole pull request and then moves.
+  or the whole pull request, saying "Nothing new since" when a marker is on that head. Once anything
+  is drawn, what's compared changes only when the reader asks. When "last seen here" asks for a
+  comparison, the diff waits for it for 1 s, about as long as a large pull request's diff takes to
+  load and draw anyway. A comparison that isn't ready by then, or that only the push history asks
+  for, as one since the reader's last review, is offered in the note over the diff instead, and `gv`
+  opens the picker at it. A build run from source takes another wait from `LO_COMPARE_WAIT_MS`, for
+  its tests; a packaged build ignores it.
 - Two revisions are compared in the local copy with `compareRevisions`, across a rebase when the
   base moved, once it has both: until then the comparison on screen stays, and the note over the
   diff says what waits. The comparison is made once, for the diff and the tree, and says how it

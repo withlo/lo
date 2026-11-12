@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import { _electron as electron, type Page } from '@playwright/test';
+import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 
 import { appEnvironment, appFolder, dataFolder, expect, KEYCHAIN, test as base } from './app.ts';
 
@@ -152,14 +152,15 @@ test('the picker lists the revisions and compares two, across the rebase', async
   await expect(row(page, 'src/format.ts')).not.toHaveClass(/text-fg-dim/);
 });
 
-test('opens on what changed since the reader last looked, across the rebase, and `gv` comes back to it', async ({
-  app,
-  github,
-  remote,
-  tokenFile,
-}) => {
-  test.setTimeout(90_000);
-  // A first run makes the database; the reader left the pull request at its first push.
+/**
+ * Closes the first copy of Lo, which made the database, and notes that the reader left the pull
+ * request at its first push; then starts Lo again on the same data, fetching from `remote`, and
+ * waiting `wait` milliseconds for the comparison that asks for.
+ */
+async function leftAtFirstPush(
+  app: ElectronApplication,
+  options: { github: ReplayServer; tokenFile: string; remote: string; wait: number },
+): Promise<ElectronApplication> {
   await app.close();
   const database = new DatabaseSync(join(dataFolder(), 'lo.db'));
   try {
@@ -169,16 +170,36 @@ test('opens on what changed since the reader last looked, across the rebase, and
   } finally {
     database.close();
   }
-  const again = await electron.launch({
+  return electron.launch({
     args: [appFolder, ...KEYCHAIN],
     env: {
       ...appEnvironment(dataFolder()),
-      LO_GITHUB: new URL(github.urls.api).origin,
-      LO_TEST_TOKEN_FILE: tokenFile,
-      LO_GIT_REMOTE: remote,
+      LO_GITHUB: new URL(options.github.urls.api).origin,
+      LO_TEST_TOKEN_FILE: options.tokenFile,
+      LO_GIT_REMOTE: options.remote,
+      LO_COMPARE_WAIT_MS: String(options.wait),
     },
     chromiumSandbox: true,
   });
+}
+
+/** The file at the top of the diff, by its id in the view. */
+async function fileAtTop(page: Page): Promise<string | undefined> {
+  return page.evaluate(() => {
+    const top = window.loDiff?.viewport().at;
+    return top?.kind === 'line' ? top.at.file : top?.file;
+  });
+}
+
+test('opens on what changed since the reader last looked, across the rebase, and `gv` comes back to it', async ({
+  app,
+  github,
+  remote,
+  tokenFile,
+}) => {
+  test.setTimeout(90_000);
+  // Waiting long enough for the comparison, however slow the machine: it's drawn first.
+  const again = await leftAtFirstPush(app, { github, tokenFile, remote, wait: 30_000 });
   try {
     const page = await again.firstWindow();
     await page.waitForLoadState('load');
@@ -206,6 +227,82 @@ test('opens on what changed since the reader last looked, across the rebase, and
     await page.keyboard.press('v');
     await expect(page.getByRole('button', { name: /Since last seen · r1 → r2/ })).toBeVisible();
     await page.keyboard.press('s');
+    await expect(button(page)).toContainText('r1 → r2');
+    await expect.poll(() => diffFiles(page), { timeout: 20_000 }).toEqual(['src/parser.ts']);
+  } finally {
+    await again.close();
+  }
+});
+
+test('draws the whole pull request when the local copy comes late, and only offers what changed since the reader last looked', async ({
+  app,
+  github,
+  tokenFile,
+}) => {
+  test.setTimeout(90_000);
+  // No remote yet: the local copy can't be fetched, so the comparison can't be ready in time.
+  const late = test.info().outputPath('late-remote');
+  const again = await leftAtFirstPush(app, {
+    github,
+    tokenFile,
+    remote: `file://${late}`,
+    wait: 1_000,
+  });
+  try {
+    const page = await again.firstWindow();
+    await page.waitForLoadState('load');
+    const id = await openE2e(page);
+    // GitHub's diff of the whole pull request, once the wait is over.
+    await expect(page.locator('.lo-diffview')).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => diffFiles(page)).toHaveLength(7);
+    await expect(button(page)).toContainText('base → r2');
+    // The reader moves on, two files down.
+    await page.locator('.lo-diffview').click();
+    await page.keyboard.press(']');
+    await page.keyboard.press('f');
+    await page.keyboard.press(']');
+    await page.keyboard.press('f');
+    await page.waitForTimeout(300);
+    const top = await fileAtTop(page);
+    expect(top).toBeDefined();
+
+    // The local copy comes: the comparison is ready, and offered.
+    writeAppRemote(late);
+    await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+    await expect
+      .poll(() => revisions(page, id), { timeout: 30_000 })
+      .toMatchObject({
+        comparison: { from: null, to: APP_PULL.head },
+        offered: { from: APP_PULL.firstHead, to: APP_PULL.head },
+        waitingFor: null,
+      });
+    await expect
+      .poll(
+        async () => {
+          const reply = await page.evaluate(
+            (tab) => window.lo.invoke('diff.versions', { id: tab }),
+            id,
+          );
+          return reply.ok ? reply.value : reply;
+        },
+        { timeout: 30_000 },
+      )
+      .toMatchObject({ from: 'local', comparison: null });
+    await expect(note(page)).toContainText('r1 → r2, since you last looked: gv');
+    await page.waitForTimeout(1500);
+    // Nothing changed by itself: the same view, its files, and the reader's place in it.
+    expect(await page.evaluate(() => window.loDiff?.draws)).toBe(1);
+    expect(await diffFiles(page)).toHaveLength(7);
+    expect(await fileAtTop(page)).toBe(top);
+    await expect(button(page)).toContainText('base → r2');
+
+    // Until the reader asks: `gv` opens at the comparison offered, and `⏎` takes it.
+    await page.keyboard.press('g');
+    await page.keyboard.press('v');
+    await expect(picker(page)).toBeFocused();
+    await expect(option(page, APP_PULL.firstHead)).toHaveAttribute('aria-selected', 'true');
+    await expect(option(page, APP_PULL.head)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Enter');
     await expect(button(page)).toContainText('r1 → r2');
     await expect.poll(() => diffFiles(page), { timeout: 20_000 }).toEqual(['src/parser.ts']);
   } finally {

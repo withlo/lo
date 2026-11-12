@@ -153,7 +153,7 @@ export const test = base.extend<Fixtures>({
   launch: [{}, { option: true }],
   keymap: [undefined, { option: true }],
   settings: [undefined, { option: true }],
-  app: async ({ launch, keymap, settings }, use) => {
+  app: async ({ launch, keymap, settings }, use, testInfo) => {
     const { env, ...options } = launch;
     const data = dataFolder();
     writeEditor(data);
@@ -173,7 +173,20 @@ export const test = base.extend<Fixtures>({
       chromiumSandbox: true,
       ...options,
     });
+    // In CI, a trace of the window, kept beside the test's results when it fails, which CI keeps:
+    // what was on screen and asked for, for a failure that won't happen again on demand. A test that
+    // closed Lo itself has no window left to trace.
+    const tracing = process.env.CI ? app.context().tracing : undefined;
+    await tracing?.start({ screenshots: true, snapshots: true });
     await use(app);
+    if (tracing) {
+      const failed = testInfo.status !== testInfo.expectedStatus;
+      await tracing
+        .stop(failed ? { path: testInfo.outputPath('trace.zip') } : undefined)
+        .catch((error: unknown) => {
+          if (failed) console.error("The test's trace couldn't be kept:", error);
+        });
+    }
     await app.close();
   },
   page: async ({ app }, use) => {
