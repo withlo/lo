@@ -27,6 +27,40 @@ export function retryWait(failures: number): number {
   return Math.min(FIRST_RETRY * 2 ** Math.max(0, failures - 1), LAST_RETRY);
 }
 
+/**
+ * How often, at most, the local copy says what git is doing while it fetches, in milliseconds. Git
+ * reports each percent of each stage, which a fast fetch passes through dozens of times in a few
+ * frames, and the window draws the tab again for each it hears.
+ */
+export const PROGRESS_EVERY = 100;
+
+/**
+ * Calls `say` for a run of calls at most once every `every` milliseconds: at once when it last said
+ * longer ago than that, else once the wait is up, for the calls made meanwhile. `cancel` drops a
+ * call that's waiting, once what it would say has been said some other way.
+ */
+export function paced(every: number, say: () => void): { call(): void; cancel(): void } {
+  let saidAt = -Infinity;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const sayNow = (): void => {
+    timer = undefined;
+    saidAt = Date.now();
+    say();
+  };
+  return {
+    call() {
+      if (timer !== undefined) return;
+      const wait = saidAt + every - Date.now();
+      if (wait <= 0) sayNow();
+      else timer = setTimeout(sayNow, wait);
+    },
+    cancel() {
+      clearTimeout(timer);
+      timer = undefined;
+    },
+  };
+}
+
 /** Whether `a` and `b` ask for the same fetch. */
 function sameRefs(a: PullRequestRefs | undefined, b: PullRequestRefs): boolean {
   return (
@@ -113,7 +147,10 @@ export interface LocalCopyOptions {
   readonly number: number;
   /** The tab's account's token, read as each fetch starts, or none for a public repository. */
   readonly token?: TokenSource | undefined;
-  /** Hears the state each time it changes. */
+  /**
+   * Hears the state each time it changes, but for what git is doing, which it hears at most every
+   * {@link PROGRESS_EVERY} milliseconds, with the latest.
+   */
   readonly changed: (state: LocalState) => void;
   readonly log: (line: string) => void;
 }
@@ -163,6 +200,13 @@ export class LocalCopy {
   readonly #closing = new AbortController();
   /** The state last said, so the same one isn't said twice. */
   #said: string | undefined;
+  /**
+   * Says what git is doing, paced to {@link PROGRESS_EVERY}: only while it's still fetching, since
+   * a fetch that's over says what comes next itself, once it knows.
+   */
+  readonly #sayProgress = paced(PROGRESS_EVERY, () => {
+    if (this.#fetching.kind === 'fetching') this.#changed();
+  });
 
   constructor(options: LocalCopyOptions) {
     this.#options = options;
@@ -265,6 +309,7 @@ export class LocalCopy {
     if (this.#closed) return;
     this.#closed = true;
     clearTimeout(this.#timer);
+    this.#sayProgress.cancel();
     this.#closing.abort(new Error('the tab closed'));
     const repo = this.#repo;
     if (!repo) return;
@@ -361,7 +406,7 @@ export class LocalCopy {
   #progress(activity: Activity): void {
     if (this.#closed || this.#fetching.kind !== 'fetching') return;
     this.#fetching = { kind: 'fetching', progress: describeActivity(activity) };
-    this.#changed();
+    this.#sayProgress.call();
   }
 
   /**
@@ -418,6 +463,8 @@ export class LocalCopy {
 
   /** Says the state, if it changed. */
   #changed(): void {
+    // What git is doing now is in what's said, so progress waiting to be said goes.
+    this.#sayProgress.cancel();
     if (this.#closed) return;
     const state = this.state;
     const said = JSON.stringify(state);
