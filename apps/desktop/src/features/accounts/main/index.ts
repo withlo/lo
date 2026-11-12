@@ -158,7 +158,7 @@ export default defineFeature(contract, {
         await feature().github.remove(login);
       } catch (error) {
         log(`removing ${login}: ${String(error)}`);
-        throw new IpcError('failed', `Lo couldn't remove ${login} completely.`);
+        throw new IpcError('failed', `Lo couldn't sign out of ${login} completely.`);
       }
     },
     async keyring() {

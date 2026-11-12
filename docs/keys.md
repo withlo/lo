@@ -148,6 +148,8 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 | Action                    | Keys                                  | Where                                                                                  | Command                 |
 | ------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------- |
+| Add an account            | None: in the app menu and the palette | Anywhere                                                                               | `accounts.addAccount`   |
+| Sign out…                 | None: in the app menu and the palette | Anywhere                                                                               | `accounts.signOut`      |
 | Zoom in                   | `⌘=`, `⌘⇧=`                           | Anywhere                                                                               | `app.zoomIn`            |
 | Zoom out                  | `⌘-`                                  | Anywhere                                                                               | `app.zoomOut`           |
 | Actual size               | `⌘0`                                  | Anywhere                                                                               | `app.actualSize`        |
