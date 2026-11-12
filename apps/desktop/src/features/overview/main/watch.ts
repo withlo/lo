@@ -21,6 +21,7 @@ import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type {
   CodeAccess,
+  CodeReply,
   OverviewCommit,
   OverviewFile,
   OverviewState,
@@ -28,7 +29,7 @@ import type {
 } from '../contract.ts';
 import { entryAt, isReadable } from './listing.ts';
 import type { Blobs } from './blobs.ts';
-import { codeAccess } from './code.ts';
+import { codeAccess, CodeReading } from './code.ts';
 import { fetchBlob, isGone, readOverview, sizeOnly, type Github } from './fetch.ts';
 import { problemOf, retryWait } from './problems.ts';
 import type { SavedRefs } from './saved.ts';
@@ -111,6 +112,8 @@ export class OverviewTab {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #closed = false;
   #said: string | undefined;
+  /** The read of the overview's code under way, which closing the tab stops. */
+  readonly #codeRead = new CodeReading();
 
   constructor(options: OverviewTabOptions) {
     this.#options = options;
@@ -271,6 +274,16 @@ export class OverviewTab {
   close(): void {
     this.#closed = true;
     this.#stopTimer();
+    this.#codeRead.stop();
+  }
+
+  /**
+   * Reads the overview's code with `read`, asked for as `key` says: one read at a time, as
+   * {@link CodeReading} runs them, until the tab closes.
+   */
+  readCode(key: string, read: (signal: AbortSignal) => Promise<CodeReply>): Promise<CodeReply> {
+    if (this.#closed) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    return this.#codeRead.run(key, read);
   }
 
   /** What was kept of the pull request's overview, on screen at once if nothing is yet. */

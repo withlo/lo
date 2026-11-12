@@ -447,21 +447,32 @@ export class Repo {
 
   /**
    * Downloads the objects in `oids` the clone lacks, such as the files a diff shows, by ID:
-   * {@link OBJECTS_PER_FETCH} at a time, one fetch each. Returns the ones still missing.
+   * {@link OBJECTS_PER_FETCH} at a time, one fetch each, each stopped once it brings more than
+   * `maxBytes`, or once `signal` aborts. Each fetch tells `received` how many bytes it brought,
+   * stopped or not, as its byte cap counts them. Returns the ones still missing.
    */
   async download(
     oids: readonly Oid[],
     what = 'the files to show',
-    options: { maxBytes?: number } = {},
+    options: {
+      maxBytes?: number;
+      signal?: AbortSignal | undefined;
+      received?: ((bytes: number) => void) | undefined;
+    } = {},
   ): Promise<Oid[]> {
-    return this.#locked(`downloading ${what}`, async () => {
-      const missing = await this.missingObjects([...new Set(oids)]);
-      for (let at = 0; at < missing.length; at += OBJECTS_PER_FETCH) {
-        const batch = missing.slice(at, at + OBJECTS_PER_FETCH);
-        await this.#fetch(what, [], { objects: batch, maxBytes: options.maxBytes });
-      }
-      return this.missingObjects(missing);
-    });
+    const { maxBytes, signal, received } = options;
+    return this.#locked(
+      `downloading ${what}`,
+      async () => {
+        const missing = await this.missingObjects([...new Set(oids)]);
+        for (let at = 0; at < missing.length; at += OBJECTS_PER_FETCH) {
+          const batch = missing.slice(at, at + OBJECTS_PER_FETCH);
+          await this.#fetch(what, [], { objects: batch, maxBytes, signal, received });
+        }
+        return this.missingObjects(missing);
+      },
+      signal,
+    );
   }
 
   /**
@@ -1734,6 +1745,7 @@ export class Repo {
       log: (line) => this.#cache.note(`${this.name}: ${line}`),
       signal: options.signal,
     });
+    options.received?.(watched.received);
     if (watched.kind === 'stopped') throw stoppedError(watched.stopped, what);
     const { exit, messages } = watched;
     if (exit.code !== 0) {
@@ -1821,6 +1833,8 @@ interface FetchOptions {
   readonly whole?: boolean | undefined;
   /** Stops the fetch once it aborts. */
   readonly signal?: AbortSignal | undefined;
+  /** Told how many bytes the fetch brought, as `maxBytes` counts them, once it's done or stopped. */
+  readonly received?: ((bytes: number) => void) | undefined;
 }
 
 /** What a comparison's downloads may still bring, in bytes, and the signal that stops them. */

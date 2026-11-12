@@ -205,10 +205,14 @@ function overviewOf(body: string): Uint8Array {
 
 /**
  * `files` named by their lines, read as the checks read them and as main reads them from a copy
- * that has them all, or with `lacking`, one that must download them. Both checks, and what each
- * found of the code.
+ * that has them all, or with `lacking`, one that must download them, each bringing what `wire`
+ * says of it, else its size. Both checks, and what each found of the code.
  */
-async function bothWays(files: ReadonlyMap<string, Uint8Array>, lacking: boolean) {
+async function bothWays(
+  files: ReadonlyMap<string, Uint8Array>,
+  lacking: boolean,
+  wire?: ReadonlyMap<string, number>,
+) {
   const artifact = overviewOf(
     [...files.keys()].map((path) => `:::code ${path}#L1\n:::\n`).join('\n'),
   );
@@ -225,7 +229,7 @@ async function bothWays(files: ReadonlyMap<string, Uint8Array>, lacking: boolean
     { pr: 1 },
   );
   const parsed = await localJobs.parse({ artifact });
-  const { clone } = memoryClone(files, { lacking });
+  const { clone } = memoryClone(files, { lacking, wire });
   const answers = await readCode(clone, 'a'.repeat(40), parsed.code);
   const checked = await localJobs.check({
     artifact,
@@ -305,6 +309,27 @@ describe.each([
     }, 60_000);
   },
 );
+
+test('large files that compress well leave room for the files after them', async () => {
+  const files = new Map<string, Uint8Array>([
+    ['big/0.txt', textOf(60 * 1024 * 1024)],
+    ['big/1.txt', textOf(60 * 1024 * 1024)],
+  ]);
+  for (let n = 0; n < 4; n++) files.set(`text/${n}.txt`, textOf(3 * 1024 * 1024));
+  files.set('text/small.txt', textOf(4));
+  // Each large one comes in as a fifth of a megabyte.
+  const wire = new Map([
+    ['big/0.txt', 200 * 1024],
+    ['big/1.txt', 200 * 1024],
+  ]);
+  const { reference, checked, code } = await bothWays(files, true, wire);
+  expect(code).toEqual([
+    { state: 'broken', why: 'tooLarge' },
+    { state: 'broken', why: 'tooLarge' },
+    ...Array.from({ length: 5 }, () => ({ state: 'resolved' })),
+  ]);
+  expect(checked).toEqual(reference);
+}, 60_000);
 
 describe('an overview whose figures’ headers go on past their starts', () => {
   test('checks the same, the check sent all of a figure only once it reads it', async () => {

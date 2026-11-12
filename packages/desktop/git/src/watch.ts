@@ -345,8 +345,8 @@ export interface WatchOptions {
 }
 
 /**
- * How a watched fetch ended: git exited by itself, whatever its status, having brought `received`
- * bytes as far as Lo could tell, or Lo stopped it.
+ * How a watched fetch ended: git exited by itself, whatever its status, or Lo stopped it, having
+ * brought `received` bytes as far as Lo could tell.
  */
 export type Watched =
   | {
@@ -355,7 +355,12 @@ export type Watched =
       readonly messages: string;
       readonly received: number;
     }
-  | { readonly kind: 'stopped'; readonly stopped: Stopped; readonly messages: string };
+  | {
+      readonly kind: 'stopped';
+      readonly stopped: Stopped;
+      readonly messages: string;
+      readonly received: number;
+    };
 
 /**
  * Runs `command`, a `git fetch` with `--progress`, under watch: tells `options.progress` what it's
@@ -412,6 +417,7 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
     tell();
     let told = Date.now();
     let stopped: Stopped | undefined;
+    let received = 0;
     for (;;) {
       await Promise.race([running.gone.catch(() => undefined), sleep(POLL)]);
       if (exited) break;
@@ -421,6 +427,7 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
       const over = state.over(options.limits, options.whole, options.maxBytes);
       if (over !== undefined) {
         stopped = { ...over, doing: state.doing(), pid: running.pid ?? 0 };
+        received = state.received;
         await running.stopGently();
         break;
       }
@@ -445,7 +452,7 @@ export async function watch(command: GitCommand, options: WatchOptions): Promise
     );
     cleaned = true;
     await options.afterStop?.(stopped.pid);
-    return { kind: 'stopped', stopped, messages };
+    return { kind: 'stopped', stopped, messages, received };
   } catch (error) {
     if (child !== undefined && !cleaned) {
       await child.stopGently();

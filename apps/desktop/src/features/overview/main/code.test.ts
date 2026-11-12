@@ -16,7 +16,7 @@ import { testClone } from '../test/clone.ts';
 import { memoryClone } from '../test/memory.ts';
 import {
   codeReply,
-  CodeReads,
+  CodeReading,
   DOWNLOAD_LIMIT,
   PROBE,
   readCode,
@@ -341,12 +341,61 @@ describe('the limit on what downloads bring', () => {
       'a'.repeat(40),
       [...files.keys()].map((path) => ({ path, lines: true })),
     );
-    const brought = downloads.reduce((sum, { brought: each }) => sum + each, 0);
-    expect(brought).toBeLessThanOrEqual(DOWNLOAD_LIMIT);
+    expect(brought(downloads)).toBeLessThanOrEqual(DOWNLOAD_LIMIT + downloads.length);
     expect(answers.filter(({ kind }) => kind === 'tooLarge').length).toBeGreaterThan(0);
     expect(answers.at(-1)).toEqual({ kind: 'unread', why: expect.any(String) });
   });
+
+  it('counts what comes in, not the files’ sizes: a small file padded out costs what it brings', async () => {
+    // Nine bytes each, sent as nearly 10 MiB.
+    const files = new Map(
+      Array.from({ length: 16 }, (_, n) => [`small/${n}.txt`, text('ninebytes')]),
+    );
+    const wire = new Map([...files.keys()].map((path) => [path, 9.5 * 1024 * 1024]));
+    const { clone, downloads } = memoryClone(files, { lacking: true, wire });
+    const answers = await readCode(
+      clone,
+      'a'.repeat(40),
+      [...files.keys()].map((path) => ({ path, lines: true })),
+    );
+    expect(brought(downloads)).toBeLessThanOrEqual(DOWNLOAD_LIMIT + downloads.length);
+    expect(answers[0]).toEqual(file(9, 'ninebytes'));
+    expect(answers.at(-1)).toEqual({ kind: 'unread', why: expect.any(String) });
+  });
+
+  it('stops a download once the read is stopped', async () => {
+    const files = new Map([
+      ['a.txt', text('one\n')],
+      ['b.txt', text('two\n')],
+    ]);
+    const { clone: inner } = memoryClone(files, { lacking: true });
+    const controller = new AbortController();
+    const signals: (AbortSignal | undefined)[] = [];
+    const clone: CodeClone = {
+      ...inner,
+      download(oids, what, options) {
+        signals.push(options?.signal);
+        controller.abort(new Error('closed'));
+        return inner.download(oids, what, options);
+      },
+    };
+    await expect(
+      readCode(
+        clone,
+        'a'.repeat(40),
+        [...files.keys()].map((path) => ({ path, lines: true })),
+        { signal: controller.signal },
+      ),
+    ).rejects.toThrow('closed');
+    // The download itself was given the read's signal, which stops git.
+    expect(signals).toEqual([controller.signal]);
+  });
 });
+
+/** What `downloads` brought in all, stopped or not. */
+function brought(downloads: readonly { brought: number }[]): number {
+  return downloads.reduce((sum, { brought: each }) => sum + each, 0);
+}
 
 describe('the limit on what git reads', () => {
   it('leaves files unread past it, though the checks count only their starts', async () => {
@@ -419,8 +468,8 @@ describe('codeReply', () => {
 });
 
 describe('stopping a read', () => {
-  it('stops a read asked for another way, or whose tab closed, and joins one asked for alike', async () => {
-    const reads = new CodeReads();
+  it('stops a read asked for another way, or stopped, and joins one asked for alike', async () => {
+    const reading = new CodeReading();
     const stopped: string[] = [];
     let started = 0;
     const waiting = (name: string) => (signal: AbortSignal) => {
@@ -432,19 +481,17 @@ describe('stopping a read', () => {
         });
       });
     };
-    const first = reads.run('t1', 'a', waiting('first'));
-    const other = reads.run('t2', 'a', waiting('other'));
+    const first = reading.run('a', waiting('first'));
     // Asked the same way: the read under way answers both.
-    const again = reads.run('t1', 'a', waiting('again'));
-    expect(started).toBe(2);
-    const second = reads.run('t1', 'b', waiting('second'));
+    const again = reading.run('a', waiting('again'));
+    expect(started).toBe(1);
+    const second = reading.run('b', waiting('second'));
     expect(await first).toEqual({ kind: 'failed', why: 'first' });
     expect(await again).toEqual({ kind: 'failed', why: 'first' });
     expect(stopped).toEqual(['first']);
-    reads.stop('t1');
-    reads.stop('t2');
-    await Promise.all([second, other]);
-    expect(stopped).toEqual(['first', 'second', 'other']);
+    reading.stop();
+    await second;
+    expect(stopped).toEqual(['first', 'second']);
   });
 
   it('reads nothing more once stopped', async () => {

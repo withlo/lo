@@ -10,9 +10,9 @@
 // - Every path is looked up in one walk of the commit's trees, which reads each tree once, and the
 //   copy says the size of each file it has before anything reads it.
 // - What the copy lacks is downloaded: all at once, then one at a time in the order the checks
-//   read them, each download stopped past `PROBE`, and `DOWNLOAD_LIMIT` in all. A file whose
-//   download is stopped past `PROBE` is larger than the checks read; past `DOWNLOAD_LIMIT`, a file
-//   is unread.
+//   read them, each download stopped once what comes in is past `PROBE`, or past what's left of
+//   `DOWNLOAD_LIMIT`, counted by what came in. A file whose download is stopped past `PROBE` is
+//   larger than the checks read; past `DOWNLOAD_LIMIT`, a file is unread.
 // - Git writes no more than `STREAM_LIMIT` of files for one overview; past it, files are unread.
 // - It stops once its signal aborts, as the tab closes or the window asks again.
 //
@@ -47,16 +47,17 @@ export const STREAM_LIMIT = 4 * LIMITS.code;
 
 /**
  * The most one download brings: a file as large as the checks read, compressed as badly as zlib
- * can, and the pack around it. A download of one file stopped past this is of a file larger than
- * the checks read, which they judge by its size alone.
+ * compresses, and the pack around it. A download of one file stopped past this is of a file larger
+ * than the checks read, which they judge by its size alone. A pack made to pad a small file past it
+ * makes that file look too large, and can do no more.
  */
 export const PROBE = LIMITS.file + Math.ceil(LIMITS.file / 2048) + 64 * 1024;
 
 /**
- * The most downloads bring for one overview's code: twice what the checks read, for what they read
- * whole and as much again for files they read only the start of, or judge by size, and a first
- * download of everything at once that's stopped. A file is downloaded whole to know either, so
- * past this, the files left are unread rather than downloaded without end.
+ * The most downloads bring for one overview's code, counted as they come in: twice what the checks
+ * read, for what they read whole and as much again for files they read only the start of, or judge
+ * by size, and a first download of everything at once that's stopped. A file is downloaded whole
+ * to know either, so past this, the files left are unread rather than downloaded without end.
  */
 export const DOWNLOAD_LIMIT = 2 * LIMITS.code;
 
@@ -121,43 +122,31 @@ export interface Options {
 }
 
 /**
- * One code read at a time for each tab: a read asked for the same way as the one under way, as when
- * two ask at once, waits for it; any other starts in its place, stopping it, as
- * when the window checks again once the local copy changes. A tab's read stops as the tab closes.
+ * A tab's reads of an overview's code, one at a time: a read asked for the same way as the one under
+ * way, as when two ask at once, waits for it; any other starts in its place, stopping it, as when
+ * the window checks again once the local copy changes. `stop` stops the read under way, git and
+ * all, as the tab closes.
  */
-export class CodeReads {
-  readonly #running = new Map<
-    string,
-    { key: string; controller: AbortController; reading: Promise<CodeReply> }
-  >();
+export class CodeReading {
+  #running: { key: string; controller: AbortController; reading: Promise<CodeReply> } | undefined;
 
-  /** Reads for tab `id` with `read`, asked for as `key` says. */
-  run(
-    id: string,
-    key: string,
-    read: (signal: AbortSignal) => Promise<CodeReply>,
-  ): Promise<CodeReply> {
-    const running = this.#running.get(id);
+  /** Reads with `read`, asked for as `key` says. */
+  run(key: string, read: (signal: AbortSignal) => Promise<CodeReply>): Promise<CodeReply> {
+    const running = this.#running;
     if (running?.key === key) return running.reading;
     running?.controller.abort();
     const controller = new AbortController();
     const reading = read(controller.signal).finally(() => {
-      if (this.#running.get(id)?.controller === controller) this.#running.delete(id);
+      if (this.#running?.controller === controller) this.#running = undefined;
     });
-    this.#running.set(id, { key, controller, reading });
+    this.#running = { key, controller, reading };
     return reading;
   }
 
-  /** Stops tab `id`'s read, as the tab closes. */
-  stop(id: string): void {
-    this.#running.get(id)?.controller.abort();
-    this.#running.delete(id);
-  }
-
-  /** Stops every read, as Lo quits. */
-  stopAll(): void {
-    for (const { controller } of this.#running.values()) controller.abort();
-    this.#running.clear();
+  /** Stops the read under way. */
+  stop(): void {
+    this.#running?.controller.abort();
+    this.#running = undefined;
   }
 }
 
@@ -199,7 +188,7 @@ class Reading {
   readonly #clone: CodeClone;
   readonly #signal: AbortSignal | undefined;
   readonly #log: (line: string) => void;
-  /** What downloads have brought, or would have when stopped. */
+  /** What downloads have brought, as it came in. */
   #downloaded = 0;
   /** What git has written of files. */
   #streamed = 0;
@@ -235,7 +224,6 @@ class Reading {
       if ((await this.#download(oids)) === 'brought') {
         const sized = await this.#clone.objectSizes(oids);
         const sizes = new Map(oids.map((oid, at) => [oid, sized[at]]));
-        for (const size of sized) this.#downloaded += size ?? 0;
         for (const place of places) {
           if (place.kind === 'blob' && place.size === undefined) place.size = sizes.get(place.oid);
         }
@@ -269,7 +257,6 @@ class Reading {
         case 'brought':
           [size] = await this.#clone.objectSizes([place.oid]);
           if (size === undefined) return unread("The local copy doesn't have it.");
-          this.#downloaded += size;
           break;
         case 'pastProbe':
           return { kind: 'tooLarge' };
@@ -308,9 +295,10 @@ class Reading {
   }
 
   /**
-   * Downloads `oids`, stopped past `PROBE` or what's left of `DOWNLOAD_LIMIT`, whichever is less,
-   * and says how it went: `brought`; stopped, past `PROBE` or past what was left; not started, with
-   * nothing left; or `failed`, which no other download tries again.
+   * Downloads `oids`, stopped once what comes in is past `PROBE` or what's left of
+   * `DOWNLOAD_LIMIT`, whichever is less, counting what came in, and says how it went: `brought`;
+   * stopped, past `PROBE` or past what was left; not started, with nothing left; or `failed`,
+   * which no other download tries again. It stops once the read's signal aborts.
    */
   async #download(
     oids: readonly Oid[],
@@ -319,15 +307,21 @@ class Reading {
     if (cap <= 0) return 'spent';
     this.#stopIfAsked();
     try {
-      await this.#clone.download(oids, DOWNLOADING, { maxBytes: cap });
+      await this.#clone.download(oids, DOWNLOADING, {
+        maxBytes: cap,
+        signal: this.#signal,
+        received: (bytes) => {
+          this.#downloaded += bytes;
+        },
+      });
       return 'brought';
     } catch (error) {
+      this.#stopIfAsked();
       if (!pastCap(error)) {
         this.#log(`downloading the code of an overview: ${describe(error)}`);
         this.#cannot = `Lo couldn't download it: ${describe(error)}`;
         return 'failed';
       }
-      this.#downloaded += cap;
       return cap === PROBE ? 'pastProbe' : 'pastCap';
     }
   }

@@ -803,12 +803,47 @@ test('a file larger than a download may is stopped as it comes in', async () => 
   const repo = await cache.open('owner', 'repo');
 
   const began = Date.now();
-  const error = await failure(repo.download(blobs.map(parseOid), 'the figure', { maxBytes: MIB }));
+  const received: number[] = [];
+  const error = await failure(
+    repo.download(blobs.map(parseOid), 'the figure', {
+      maxBytes: MIB,
+      received: (bytes) => received.push(bytes),
+    }),
+  );
 
   expect(Date.now() - began).toBeLessThan(4000);
   expect(error.detail).toMatchObject({ kind: 'fetch', what: 'the figure', failure: 'tooLarge' });
+  // What came in before it was stopped: past the cap, and far short of the file.
+  expect(received).toHaveLength(1);
+  expect(received[0]).toBeGreaterThan(MIB);
+  expect(received[0]).toBeLessThan(4 * MIB);
   expect(await noProcessSoon(`127.0.0.1:${server.port}`)).toEqual([]);
   expect(readdirSync(join(repo.folder, 'objects', 'pack'))).toEqual([]);
+});
+
+test('a download stops once its signal aborts', async () => {
+  const github = join(tempFolder(), 'github.git');
+  const { first: main, last: head } = history(github, 1);
+  const { blobs, pack } = packOf(github, [randomBytes(8 * MIB)]);
+  const server = await slowly(main, head, pack);
+  const cache = await cacheFor(server.url, { git: await plainGit(), limits: SHORT_STALL });
+  const repo = await cache.open('owner', 'repo');
+  const controller = new AbortController();
+  const reason = new Error('the overview was closed');
+  const downloading = repo.download(blobs.map(parseOid), 'the code', {
+    signal: controller.signal,
+  });
+  await eventually(() => server.commands().includes('fetch'));
+
+  const began = Date.now();
+  controller.abort(reason);
+
+  await expect(downloading).rejects.toBe(reason);
+  // At once, not once the file is in.
+  expect(Date.now() - began).toBeLessThan(2000);
+  expect(await noProcessSoon(`127.0.0.1:${server.port}`)).toEqual([]);
+  expect(readdirSync(join(repo.folder, 'objects', 'pack'))).toEqual([]);
+  expect(cache.cloneLock('owner', 'repo').holder).toBeUndefined();
 });
 
 test('a large file that stops coming in stops at the stall limit', async () => {

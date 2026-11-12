@@ -1,7 +1,8 @@
 // A pull request's local copy held in memory, for tests of reading code that needs more of it than
 // a repository on disk would comfortably hold: every file there, at any commit. Its contents are
 // there from the start, or downloaded as GitHub sends them: a download brings what it asks for,
-// stopped as `@lo/git` stops one once it brings more than it may, here counted as the files' sizes.
+// stopped as `@lo/git` stops one once more than it may has come in. What comes in for a file is
+// its size, or what `wire` says, as for one that compresses well, or one a pack pads out.
 
 import { GitError, parseOid, type Oid } from '@lo/git';
 
@@ -11,6 +12,7 @@ import type { CodeClone } from '../main/code.ts';
 export interface MemoryClone {
   clone: CodeClone;
   reads: string[];
+  /** Each download: what it asked for, its cap, and what came in, stopped or not. */
   downloads: { paths: string[]; maxBytes: number | undefined; brought: number }[];
 }
 
@@ -19,11 +21,14 @@ const oidOf = (index: number): Oid => parseOid(index.toString(16).padStart(40, '
 
 /**
  * A local copy of `files`, by path: with all their contents, or with `lacking` none of them until
- * they're downloaded.
+ * they're downloaded, each bringing what `wire` says of it, else its size.
  */
 export function memoryClone(
   files: ReadonlyMap<string, Uint8Array>,
-  { lacking = false } = {},
+  {
+    lacking = false,
+    wire = new Map<string, number>(),
+  }: { lacking?: boolean; wire?: ReadonlyMap<string, number> } = {},
 ): MemoryClone {
   const paths = [...files.keys()];
   const pathOf = (oid: string) => paths[Number.parseInt(oid, 16)] ?? '';
@@ -40,16 +45,23 @@ export function memoryClone(
     fetchCommit: () => Promise.resolve(),
     missingObjects: (oids) => Promise.resolve(oids.filter((oid) => sizeOf(oid) === undefined)),
     download(oids, what, options) {
+      options?.signal?.throwIfAborted();
       const wanted = oids.map(pathOf).filter((path) => !present.has(path));
-      const size = wanted.reduce((sum, path) => sum + (files.get(path)?.length ?? 0), 0);
+      if (wanted.length === 0) return Promise.resolve([]);
+      const coming = wanted.reduce(
+        (sum, path) => sum + (wire.get(path) ?? files.get(path)?.length ?? 0),
+        0,
+      );
       const maxBytes = options?.maxBytes;
-      if (maxBytes !== undefined && size > maxBytes) {
-        downloads.push({ paths: wanted, maxBytes, brought: maxBytes });
+      // Stopped once a little more than it may has come in.
+      const brought = maxBytes !== undefined && coming > maxBytes ? maxBytes + 1 : coming;
+      downloads.push({ paths: wanted, maxBytes, brought });
+      options?.received?.(brought);
+      if (brought < coming) {
         return Promise.reject(
           new GitError({ kind: 'fetch', what: what ?? '', failure: 'tooLarge', message: 'past' }),
         );
       }
-      downloads.push({ paths: wanted, maxBytes, brought: size });
       for (const path of wanted) present.add(path);
       return Promise.resolve([]);
     },

@@ -829,4 +829,26 @@ describe('the code', () => {
     expect(github.asked).toEqual([]);
     tab.close();
   });
+
+  it('stops reading the code as the tab closes, and reads none after', async () => {
+    const github = new FakeGithub();
+    const { tab } = tabWith(github.client);
+    let stopped = false;
+    const reading = tab.readCode(
+      'a',
+      (signal) =>
+        new Promise((resolve) => {
+          signal.addEventListener('abort', () => {
+            stopped = true;
+            resolve({ kind: 'failed', why: 'stopped' });
+          });
+        }),
+    );
+    tab.close();
+    await reading;
+    expect(stopped).toBe(true);
+    expect(() => tab.readCode('a', () => Promise.resolve({ kind: 'waiting' }))).toThrow(
+      "There's no pull request's tab with that id.",
+    );
+  });
 });
