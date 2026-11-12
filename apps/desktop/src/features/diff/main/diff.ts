@@ -29,7 +29,7 @@ import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type { DiffState, FileText, FileVersions, Source } from '../contract.ts';
 import { listedAt } from './listed.ts';
-import { githubVersions, localVersions } from './versions.ts';
+import { conflictedVersions, githubVersions, localVersions } from './versions.ts';
 
 /** Requests GitHub's API keeps for the poller: the diff reads no page of files past them. */
 export const KEEP_REQUESTS = 100;
@@ -332,15 +332,17 @@ export class DiffTab {
         this.#publish();
         return;
       }
-      const changed = compared.files.flatMap((file) =>
-        file.change ? [{ change: file.change, conflicted: file.resolution !== undefined }] : [],
-      );
-      const files = changed.map((file) => file.change);
-      const generated = await this.#generated(repo, at.head, files);
+      const changed = compared.files.flatMap((file) => (file.change ? [file.change] : []));
+      const generated = await this.#generated(repo, at.head, changed);
       if (!this.#current(at)) return;
-      at.files = changed.map((file, index) =>
-        localVersions(file.change, generated[index], file.conflicted),
-      );
+      let next = 0;
+      at.files = compared.files.map((file) => {
+        const conflicted = file.resolution !== undefined;
+        // A file the replay conflicted on, which the author left as it was on one side, is listed
+        // all the same: they resolved a conflict in it.
+        if (!file.change) return conflictedVersions(file.path);
+        return localVersions(file.change, generated[next++], conflicted);
+      });
       at.from = 'local';
       at.problem = undefined;
     } catch (error) {

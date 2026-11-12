@@ -134,6 +134,29 @@ export function localVersions(
   };
 }
 
+/**
+ * A file a comparison of revisions across a rebase conflicted on that's the same on both of its
+ * sides, as when the author kept their version over the base's: no text changed, but the author
+ * resolved a conflict in it.
+ */
+export function conflictedVersions(bytes: Uint8Array): FileVersions {
+  return {
+    path: treePathOf(bytes),
+    previous: null,
+    change: 'modified',
+    additions: 0,
+    deletions: 0,
+    old: null,
+    new: null,
+    start: 'unchanged',
+    generated: null,
+    large: null,
+    submodule: null,
+    reach: 0,
+    conflicted: true,
+  };
+}
+
 /** Which of a changed file's sides are submodules, if any are. */
 function submoduleSides(file: ChangedFile): FileVersions['submodule'] {
   if (!isSubmodule(file)) return null;
