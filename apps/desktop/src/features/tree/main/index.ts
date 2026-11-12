@@ -7,13 +7,14 @@ import type { GithubClient } from '@lo/github';
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { github } from '../../accounts/service.ts';
+import { comparisons } from '../../revisions/service.ts';
 import type { Acting } from '../../tab/contract.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { TreeTab } from './tree.ts';
 
 const trees = new Map<string, TreeTab>();
-let unfollow: (() => void) | undefined;
+const unfollow: (() => void)[] = [];
 
 const log = (line: string) => console.error(`tree: ${line}`);
 
@@ -52,11 +53,11 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
     });
     trees.set(id, tree);
   }
-  tree.update(info);
+  tree.update(info, context.use(comparisons).onScreen(id));
 }
 
 export default defineFeature(contract, {
-  uses: [tabs, github],
+  uses: [tabs, github, comparisons],
   handlers: {
     current: ({ id }) => trees.get(id)?.state(),
     folder: ({ id, at, paths }) => treeOf(id).folders(at, paths),
@@ -66,11 +67,14 @@ export default defineFeature(contract, {
   },
   start(context) {
     const service = context.use(tabs);
-    unfollow = service.onPull((id) => follow(context, id));
+    unfollow.push(
+      service.onPull((id) => follow(context, id)),
+      context.use(comparisons).onChange((id) => follow(context, id)),
+    );
     for (const tab of service.list().tabs) if (tab.kind === 'pull') follow(context, tab.id);
   },
   stop() {
-    unfollow?.();
+    for (const stop of unfollow.splice(0)) stop();
     for (const tree of trees.values()) tree.close();
     trees.clear();
   },

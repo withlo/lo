@@ -72,11 +72,21 @@ function versions(start: Start): FileVersions {
     large: null,
     submodule: null,
     reach: 0,
+    conflicted: false,
   };
 }
 
 function state(start: Start, from: Source): DiffState {
-  return { id: TAB.id, at: HEAD, from, files: [versions(start)], partial: false, problem: null };
+  return {
+    id: TAB.id,
+    at: HEAD,
+    comparison: null,
+    waiting: null,
+    from,
+    files: [versions(start)],
+    partial: false,
+    problem: null,
+  };
 }
 
 /**

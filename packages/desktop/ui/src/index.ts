@@ -43,6 +43,13 @@ export { SetupItem, SetupList, type SetupItemProps, type SetupListProps } from '
 export { Switch, type SwitchProps } from './Switch.tsx';
 export { Tag, type TagTone } from './Tag.tsx';
 export {
+  RevisionPicker,
+  type RevisionPickerProps,
+  type RevisionPickerRow,
+  type RevisionShortcut,
+  type RevisionTag,
+} from './RevisionPicker.tsx';
+export {
   FileIcon,
   FileMarks,
   FileTree,

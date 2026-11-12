@@ -17,31 +17,123 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4998",
-      "x-ratelimit-reset": "1794414795",
+      "x-ratelimit-remaining": "4940",
+      "x-ratelimit-reset": "1794442211",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "2"
+      "x-ratelimit-used": "60"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4998,
-          "used": 2,
-          "resetAt": "2026-11-11T16:33:15Z"
+          "remaining": 4940,
+          "used": 60,
+          "resetAt": "2026-11-12T00:10:11Z"
         },
         "repository": {
           "defaultBranchRef": {
             "name": "main"
           },
           "pullRequests": {
-            "totalCount": 31,
+            "totalCount": 33,
             "pageInfo": {
               "hasNextPage": false,
               "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wNlQxODo0NDoyNVrPAAAAATWFNWI="
             },
             "nodes": [
+              {
+                "id": "PR_kwDOVleUfc8AAAABOgnSkg",
+                "number": 80,
+                "title": "App: the pull request Lo's end-to-end tests open",
+                "isDraft": false,
+                "createdAt": "2026-11-11T23:58:17Z",
+                "updatedAt": "2026-11-11T23:58:37Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "app/base",
+                "baseRefOid": "dccd782aff9cd7a5088122cd3fb4a515964acee7",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "dccd782aff9cd7a5088122cd3fb4a515964acee7"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "app/feature",
+                "headRefOid": "57cc4a6dadfa23849df45e1084fd4869401bec53",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "0d64a8db0e7c0bd2a1ff238ed43b220c7fea79b3"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "7e787551d107032a501659219139e21c03459837"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "57cc4a6dadfa23849df45e1084fd4869401bec53"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
+              {
+                "id": "PR_kwDOVleUfc8AAAABOcFC3A",
+                "number": 79,
+                "title": "feat(overview): retry a call that fails for a moment",
+                "isDraft": false,
+                "createdAt": "2026-11-11T17:30:34Z",
+                "updatedAt": "2026-11-11T17:30:34Z",
+                "author": {
+                  "__typename": "User",
+                  "login": "rozed-bot"
+                },
+                "baseRefName": "main",
+                "baseRefOid": "4bc87281f47234fc959197ed593116d7ddcdb4e8",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "4bc87281f47234fc959197ed593116d7ddcdb4e8"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "overview/retry",
+                "headRefOid": "dcecae612d55b6676fe7d86a7de877cadbde0a01",
+                "headRef": {
+                  "refUpdateRule": null
+                },
+                "isCrossRepository": false,
+                "headRepositoryOwner": {
+                  "__typename": "Organization",
+                  "login": "rozed-dev"
+                },
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "dcecae612d55b6676fe7d86a7de877cadbde0a01"
+                      }
+                    }
+                  ]
+                },
+                "stackEntry": null
+              },
               {
                 "id": "PR_kwDOVleUfc8AAAABOZALvg",
                 "number": 78,

@@ -12,7 +12,7 @@ import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
 import { login as accountLogin } from '../../accounts/contract.ts';
-import { contract, isGithubPage, opening as openingSchema } from '../contract.ts';
+import { contract, isGithubPage, opening as openingSchema, type Tabs } from '../contract.ts';
 import { tabs } from '../service.ts';
 import { createTabs, type TabList } from './tabs.ts';
 import { Watcher } from './watcher.ts';
@@ -21,6 +21,8 @@ let kept: TabList | undefined;
 let watcher: Watcher | undefined;
 /** Other features following pull requests' tabs, which may start listening before the watcher. */
 const following = new Set<(id: string) => void>();
+/** Other features following the tabs themselves: which are open, and which is on screen. */
+const watchingTabs = new Set<(value: Tabs) => void>();
 
 const log = (line: string) => console.error(`tab: ${line}`);
 
@@ -31,6 +33,13 @@ function tabsOf({ database, publish }: FeatureContext<typeof contract>): TabList
     changed: (value) => {
       publish('tabs', value);
       watcher?.follow(value);
+      for (const listener of watchingTabs) {
+        try {
+          listener(value);
+        } catch (error) {
+          log(`a listener failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
     },
   });
   return kept;
@@ -67,6 +76,12 @@ export default defineFeature(contract, {
         following.add(listener);
         return () => {
           following.delete(listener);
+        };
+      },
+      onTabs(listener) {
+        watchingTabs.add(listener);
+        return () => {
+          watchingTabs.delete(listener);
         };
       },
       clone: (id) => watcher?.clone(id),
@@ -134,6 +149,7 @@ export default defineFeature(contract, {
   },
   stop() {
     following.clear();
+    watchingTabs.clear();
     watcher?.stop();
   },
 });

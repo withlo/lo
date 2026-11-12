@@ -311,6 +311,7 @@ export class PullTab {
       number: this.pull.number,
       acting: this.#acting,
       shown: this.#started ? this.#shown : undefined,
+      latest: this.#started ? this.#latest : undefined,
       provisional: this.#provisional,
       local: this.#localState(),
     };

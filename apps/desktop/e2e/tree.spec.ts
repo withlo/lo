@@ -1,4 +1,4 @@
-// The file tree in the app: Lo started on the replay server, as rozed-bot, opens rozed-dev/e2e#78
+// The file tree in the app: Lo started on the replay server, as rozed-bot, opens rozed-dev/e2e#80
 // and shows the repository's files at its head in the left panel, its changes marked, and the tree
 // answers its keys and its files' right-click menu.
 
@@ -43,7 +43,7 @@ const test = base.extend<{ github: ReplayServer; remote: string; tokenFile: stri
   },
 });
 
-/** Waits for the account from the token file, then opens #78's tab, and returns its id. */
+/** Waits for the account from the token file, then opens #80's tab, and returns its id. */
 async function openE2e(page: Page): Promise<string> {
   await expect
     .poll(async () => JSON.stringify(await page.evaluate(() => window.lo.invoke('accounts.list'))))
@@ -69,7 +69,7 @@ async function focused(page: Page): Promise<string | null> {
 }
 
 /**
- * Opens #78 and waits for its tree from the local copy, and its diff, which the tree follows: the
+ * Opens #80 and waits for its tree from the local copy, and its diff, which the tree follows: the
  * first changed file is on screen.
  */
 async function shown(page: Page): Promise<string> {

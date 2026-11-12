@@ -8,10 +8,10 @@ import type { Kept } from './pull.ts';
 import { published, replayGithub, testGit } from './test/support.ts';
 import { Watcher } from './watcher.ts';
 
-const e2e = { id: 'p1', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 78 } as const;
+const e2e = { id: 'p1', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 } as const;
 const missing = { id: 'p2', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 9999 } as const;
 const settings = { id: 's1', kind: 'settings' } as const;
-const E2E = new PullRef('rozed-dev', 'e2e', 78);
+const E2E = new PullRef('rozed-dev', 'e2e', 80);
 
 /** A watcher on GitHub replayed, keeping what tabs keep in a map. */
 async function watcher(kept: Record<string, { login?: string; repository?: string }> = {}) {
@@ -100,7 +100,7 @@ describe('the watcher', { timeout: 60_000 }, () => {
       .toMatchObject({
         id: 'p1',
         repository: { owner: 'rozed-dev', name: 'e2e' },
-        number: 78,
+        number: 80,
         acting: { kind: 'account', login: 'rozed-bot' },
         shown: APP_PULL.head,
         local: { kind: 'ready', head: APP_PULL.head, mergeBase: APP_PULL.base },

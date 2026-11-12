@@ -91,6 +91,7 @@ function sizeOf(side: FileVersions['old']): string | undefined {
 /** The labels after a file's counts: why it starts as it does. */
 export function tagsOf(versions: FileVersions): string[] {
   const tags: string[] = [];
+  if (versions.conflicted) tags.push('resolved a conflict');
   if (versions.generated === 'attribute') tags.push('generated');
   if (versions.generated === 'lockfile') tags.push('lockfile');
   switch (versions.start) {

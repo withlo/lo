@@ -14,6 +14,7 @@ import {
   ghProgram,
   githubSettings,
   keymapEditor,
+  compareWait,
   offlineAfter,
 } from './environment.ts';
 
@@ -110,6 +111,17 @@ describe('offlineAfter', () => {
         'LO_OFFLINE_AFTER_MS',
       );
     }
+  });
+});
+
+describe('compareWait', () => {
+  it('takes another wait for a comparison of revisions in a build run from source, for tests', () => {
+    expect(compareWait({ packaged: false, env: { LO_COMPARE_WAIT_MS: '20000' } })).toBe(20_000);
+    expect(compareWait({ packaged: false, env: {} })).toBe(undefined);
+    expect(compareWait({ packaged: true, env: { LO_COMPARE_WAIT_MS: '20000' } })).toBe(undefined);
+    expect(() => compareWait({ packaged: false, env: { LO_COMPARE_WAIT_MS: 'soon' } })).toThrow(
+      'LO_COMPARE_WAIT_MS',
+    );
   });
 });
 

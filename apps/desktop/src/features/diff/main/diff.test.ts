@@ -9,6 +9,7 @@ import { APP_PULL, gitProgram, RepoServer, writeAppRemote } from '@lo/testing/gi
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { createGit } from '../../../main/git.ts';
+import type { Comparing, Side } from '../../revisions/service.ts';
 import type { LocalState } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type { DiffState, FileVersions } from '../contract.ts';
@@ -22,7 +23,7 @@ function folder(prefix = 'lo-diff-'): string {
 
 let remote: string | undefined;
 
-/** rozed-dev/e2e's clone in a new cache, with #78 fetched into it. */
+/** rozed-dev/e2e's clone in a new cache, with #80 fetched into it. */
 async function e2eClone(): Promise<Repo> {
   remote ??= writeAppRemote(realpathSync(mkdtempSync(join(tmpdir(), 'lo-diff-remote-'))));
   return cloneOf(remote, {
@@ -82,7 +83,7 @@ const READY: LocalState = {
   offline: false,
 };
 
-/** rozed-dev/e2e#78's tab, shown at its head. */
+/** rozed-dev/e2e#80's tab, shown at its head. */
 function e2eInfo(
   local: LocalState = { kind: 'fetching', progress: null, attempt: 1 },
 ): PullTabInfo {
@@ -92,6 +93,7 @@ function e2eInfo(
     number: APP_PULL.number,
     acting: { kind: 'account', login: 'rozed-bot' },
     shown: APP_PULL.head,
+    latest: APP_PULL.head,
     provisional: false,
     local,
   };
@@ -170,7 +172,7 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     const parser = find(state, 'src/parser.ts');
     const legacy = find(state, 'src/legacy.ts');
 
-    const [renamed, deleted] = await diff.texts(APP_PULL.head, 'local', [
+    const [renamed, deleted] = await diff.texts(APP_PULL.head, null, 'local', [
       parser.place,
       legacy.place,
     ]);
@@ -180,13 +182,15 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     expect(renamed.new).toContain('Empty input has no lines.');
     expect(deleted).toMatchObject({ kind: 'texts', new: null });
 
-    await expect(diff.texts(APP_PULL.firstHead, 'local', [parser.place])).rejects.toMatchObject({
+    await expect(
+      diff.texts(APP_PULL.firstHead, null, 'local', [parser.place]),
+    ).rejects.toMatchObject({
       code: 'moved',
     });
-    await expect(diff.texts(APP_PULL.head, 'github', [parser.place])).rejects.toMatchObject({
+    await expect(diff.texts(APP_PULL.head, null, 'github', [parser.place])).rejects.toMatchObject({
       code: 'moved',
     });
-    await expect(diff.texts(APP_PULL.head, 'local', [999])).rejects.toMatchObject({
+    await expect(diff.texts(APP_PULL.head, null, 'local', [999])).rejects.toMatchObject({
       code: 'invalid',
     });
   });
@@ -205,7 +209,9 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     diff.update(e2eInfo(READY));
     const state = await settled((each) => each.from === 'local');
 
-    const [text] = await diff.texts(APP_PULL.head, 'local', [find(state, 'src/parser.ts').place]);
+    const [text] = await diff.texts(APP_PULL.head, null, 'local', [
+      find(state, 'src/parser.ts').place,
+    ]);
     expect(text).toEqual({ kind: 'missing', why: expect.stringContaining('a line over 1 MiB') });
   });
 
@@ -231,20 +237,20 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     });
     const parser = find(github, 'src/parser.ts');
     expect(parser.file.old).toBe(null);
-    const [patch] = await diff.texts(APP_PULL.head, 'github', [parser.place]);
+    const [patch] = await diff.texts(APP_PULL.head, null, 'github', [parser.place]);
     expect(patch).toMatchObject({
       kind: 'patch',
       patch: expect.stringContaining('@@ -4,9 +4,10 @@'),
     });
     const numbers = find(github, 'data/numbers.txt');
-    expect(await diff.texts(APP_PULL.head, 'github', [numbers.place])).toEqual([
+    expect(await diff.texts(APP_PULL.head, null, 'github', [numbers.place])).toEqual([
       { kind: 'missing', why: expect.any(String) },
     ]);
 
     diff.update(e2eInfo(READY));
     const local = await settled((each) => each.from === 'local');
     expect(local.files).toHaveLength(github.files?.length ?? 0);
-    await expect(diff.texts(APP_PULL.head, 'github', [parser.place])).rejects.toMatchObject({
+    await expect(diff.texts(APP_PULL.head, null, 'github', [parser.place])).rejects.toMatchObject({
       code: 'moved',
     });
   });
@@ -280,6 +286,138 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     diff.drawn(APP_PULL.head);
 
     expect(drawn).toEqual([APP_PULL.head]);
+  });
+});
+
+/** A comparison of `old` with `now` in `repo`, as the revisions feature makes one. */
+function comparing(repo: Repo, old: Side, now: Side): Comparing {
+  let made: ReturnType<Comparing['compared']> | undefined;
+  return {
+    key: `${old.base}:${old.head}..${now.base}:${now.head}`,
+    old,
+    new: now,
+    compared: () => (made ??= repo.compareRevisions(old, now)),
+  };
+}
+
+const side = (head: string, base: string): Side => ({ head: parseOid(head), base: parseOid(base) });
+
+describe('a comparison of revisions', { timeout: 60_000 }, () => {
+  it('between revisions across a rebase shows only the author’s change', async () => {
+    const repo = await e2eClone();
+    await repo.fetchCommits(APP_PULL.number, [parseOid(APP_PULL.firstHead)]);
+    const { diff, settled } = diffTab({ clone: () => Promise.resolve(repo) });
+    const between = comparing(
+      repo,
+      side(APP_PULL.firstHead, APP_PULL.firstBase),
+      side(APP_PULL.head, APP_PULL.base),
+    );
+    diff.update(e2eInfo(READY), { kind: 'revisions', comparing: between });
+    const state = await settled((each) => each.files !== null);
+    expect(state).toMatchObject({ at: APP_PULL.head, comparison: between.key, from: 'local' });
+    // The README the base changed, and all the first push had, stay out.
+    expect(state.files?.map((file) => [file.path.text, file.change, file.conflicted])).toEqual([
+      ['src/parser.ts', 'modified', false],
+    ]);
+    // Its texts are the comparison's, asked for by its key.
+    const [text] = await diff.texts(APP_PULL.head, between.key, 'local', [0]);
+    expect(text).toMatchObject({
+      kind: 'texts',
+      new: expect.stringContaining("if (input === '')"),
+    });
+    await expect(diff.texts(APP_PULL.head, null, 'local', [0])).rejects.toMatchObject({
+      code: 'moved',
+    });
+  });
+
+  it('revisions on one base compare their heads', async () => {
+    const repo = await e2eClone();
+    await repo.fetchCommits(APP_PULL.number, [parseOid(APP_PULL.firstHead)]);
+    const [renamed] = await repo.parents(parseOid(APP_PULL.firstHead));
+    if (!renamed) throw new Error('the first push has no parent');
+    const { diff, settled } = diffTab({ clone: () => Promise.resolve(repo) });
+    // The first push's first commit, then its second, both on the base's first commit.
+    diff.update(e2eInfo(READY), {
+      kind: 'revisions',
+      comparing: comparing(
+        repo,
+        side(renamed, APP_PULL.firstBase),
+        side(APP_PULL.firstHead, APP_PULL.firstBase),
+      ),
+    });
+    const state = await settled((each) => each.files !== null);
+    expect(state.files?.map((file) => file.path.text).toSorted()).toEqual([
+      'assets/mark.png',
+      'data/numbers.txt',
+      'pnpm-lock.yaml',
+    ]);
+  });
+
+  it('a conflicted rebase lists every file it conflicted on', async () => {
+    const repo = await e2eClone();
+    const { diff, settled } = diffTab({ clone: () => Promise.resolve(repo) });
+    const changed = await repo.compareRevisions(
+      side(APP_PULL.base, APP_PULL.base),
+      side(APP_PULL.head, APP_PULL.base),
+    );
+    if ('refused' in changed) throw new Error('refused');
+    const parser = changed.files.find((file) => file.path.toString() === 'src/parser.ts');
+    if (!parser?.change) throw new Error('src/parser.ts is in the pull request');
+    // As a replay that conflicted on two files would say: one the author changed, and one they
+    // left as it was on their side.
+    const conflicted: Comparing = {
+      key: 'conflicted',
+      old: side(APP_PULL.firstHead, APP_PULL.firstBase),
+      new: side(APP_PULL.head, APP_PULL.base),
+      compared: () =>
+        Promise.resolve({
+          ...changed,
+          files: [
+            { ...parser, resolution: [] },
+            { path: Buffer.from('README.md'), resolution: [] },
+          ],
+          replay: { kind: 'conflicted', tree: parseOid(APP_PULL.base), retargeted: false },
+        }),
+    };
+    diff.update(e2eInfo(READY), { kind: 'revisions', comparing: conflicted });
+    const state = await settled((each) => each.files !== null);
+    expect(state.files?.map((file) => [file.path.text, file.start, file.conflicted])).toEqual([
+      ['src/parser.ts', 'shown', true],
+      ['README.md', 'unchanged', true],
+    ]);
+  });
+
+  it('showing other revisions leaves the load alone', async () => {
+    const repo = await e2eClone();
+    const { diff, sent, settled } = diffTab({ clone: () => Promise.resolve(repo) });
+    diff.update(e2eInfo(READY));
+    await settled((each) => each.from === 'local');
+    // While the revisions feature makes another comparison ready, it keeps saying the one on
+    // screen, and the diff stays as it is.
+    const before = sent.length;
+    diff.update(e2eInfo(READY), { kind: 'head' });
+    expect(sent).toHaveLength(before);
+    // Waiting, nothing is drawn.
+    diff.update(e2eInfo(READY), { kind: 'waiting', why: 'Comparing r1 with r2…' });
+    expect(sent.at(-1)).toMatchObject({ at: null, files: null, waiting: 'Comparing r1 with r2…' });
+  });
+
+  it('a comparison is made in the background', async () => {
+    const repo = await e2eClone();
+    await repo.fetchCommits(APP_PULL.number, [parseOid(APP_PULL.firstHead)]);
+    const between = comparing(
+      repo,
+      side(APP_PULL.firstHead, APP_PULL.firstBase),
+      side(APP_PULL.head, APP_PULL.base),
+    );
+    const { diff, settled } = diffTab({ clone: () => Promise.resolve(repo) });
+    // Updating returns at once: nothing waits on git.
+    const started = performance.now();
+    diff.update(e2eInfo(READY), { kind: 'revisions', comparing: between });
+    expect(performance.now() - started).toBeLessThan(50);
+    await settled((each) => each.files !== null);
+    // Made once, whoever else shows it.
+    expect(between.compared()).toBe(between.compared());
   });
 });
 

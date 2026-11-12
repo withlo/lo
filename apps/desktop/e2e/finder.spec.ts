@@ -1,4 +1,4 @@
-// The file finder in the app: Lo started on the replay server, as rozed-bot, opens rozed-dev/e2e#78,
+// The file finder in the app: Lo started on the replay server, as rozed-bot, opens rozed-dev/e2e#80,
 // and ⌘P lists the repository's files by name, the pull request's changes first and marked. Tab lists
 // only the changed files, ⏎ goes to a file, ⌘⏎ opens it whole, and Esc gives focus back.
 
@@ -46,7 +46,7 @@ const test = base.extend<{ github: ReplayServer; remote: string; tokenFile: stri
   },
 });
 
-/** Waits for the account from the token file, then opens #78's tab, and returns its id. */
+/** Waits for the account from the token file, then opens #80's tab, and returns its id. */
 async function openE2e(page: Page): Promise<string> {
   await expect
     .poll(async () => JSON.stringify(await page.evaluate(() => window.lo.invoke('accounts.list'))))
@@ -78,7 +78,7 @@ async function focused(page: Page): Promise<string | null> {
   });
 }
 
-/** Opens #78 and waits for its tree from the local copy. */
+/** Opens #80 and waits for its tree from the local copy. */
 async function shown(page: Page): Promise<void> {
   const id = await openE2e(page);
   await expect

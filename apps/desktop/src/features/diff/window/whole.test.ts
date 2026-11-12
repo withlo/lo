@@ -23,6 +23,7 @@ function changed(path: TreePath, change: FileVersions['change'], previous?: Tree
     large: null,
     submodule: null,
     reach: 0,
+    conflicted: false,
   } satisfies FileVersions;
 }
 

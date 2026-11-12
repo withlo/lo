@@ -18,6 +18,7 @@ function entry(id: string, path: string, start: Start = 'shown', place = 0): Ent
     large: null,
     submodule: null,
     reach: 0,
+    conflicted: false,
   };
   return { id, key: path, place, versions };
 }
@@ -82,6 +83,13 @@ describe('the files as the view gets them', () => {
     };
     expect(headerOf(lock).tags).toEqual(['lockfile']);
     expect(headerOf(entry('d0', 'a.ts').versions).tags).toBe(undefined);
+    // A file a rebase's replay conflicted on, in a comparison of revisions.
+    const resolved = { ...entry('d0', 'a.ts').versions, conflicted: true };
+    expect(headerOf(resolved).tags).toEqual(['resolved a conflict']);
+    expect(headerOf({ ...resolved, start: 'unchanged' }).tags).toEqual([
+      'resolved a conflict',
+      'no change to its text',
+    ]);
   });
 
   it('keep binary, unchanged and large files out, and give the rest their lines and gaps', () => {

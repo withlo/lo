@@ -225,7 +225,7 @@ describe('a local copy', { timeout: 60_000 }, () => {
     // A remote with the base branch, and no pull request.
     const remote = folder();
     const url = writeAppRemote(remote);
-    git(join(remote, 'rozed-dev', 'e2e.git'), 'update-ref', '-d', 'refs/pull/78/head');
+    git(join(remote, 'rozed-dev', 'e2e.git'), 'update-ref', '-d', 'refs/pull/80/head');
     const localGit = await testGit(url);
     const { local, last, states } = copyIn(localGit);
     local.want(REFS);
@@ -235,7 +235,7 @@ describe('a local copy', { timeout: 60_000 }, () => {
     expect(last()).toEqual({
       kind: 'failed',
       failure: 'refNotFound',
-      message: expect.stringContaining("can't fetch pull request #78"),
+      message: expect.stringContaining("can't fetch pull request #80"),
     });
     const said = states.length;
     local.retry();

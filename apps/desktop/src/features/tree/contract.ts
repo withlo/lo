@@ -123,10 +123,13 @@ export const source = z.enum(['local', 'github']);
 export type Source = z.output<typeof source>;
 
 /**
- * A pull request's tab's tree, sent each time it changes: the commit it's of (the head on screen),
- * the files and where they came from, and the changed files and where they came from: none until
- * they're known. `partial` when GitHub listed only some of the changed files, as it lists 3,000 at
- * most. `problem` says what couldn't be read, if anything.
+ * A pull request's tab's tree, sent each time it changes: the commit it's of (the head on screen,
+ * or the newer of two revisions compared), the files and where they came from, and the changed
+ * files and where they came from: none until they're known. `partial` when GitHub listed only some
+ * of the changed files, as it lists 3,000 at most. `problem` says what couldn't be read, if
+ * anything. While two revisions are compared, `compared` lists the files that changed between
+ * them, which `changes` holds too, besides the pull request's own: the tree marks them, and steps
+ * the pull request's other changes back.
  */
 export const treeState = z.strictObject({
   id: tabId,
@@ -139,6 +142,7 @@ export const treeState = z.strictObject({
   problem: z.string().nullable(),
   /** How many unchanged files it leaves out, since their paths are longer than {@link PATH_LIMIT} bytes. */
   omitted: z.number().int().nonnegative(),
+  compared: z.array(changed).nullable(),
 });
 export type TreeState = z.output<typeof treeState>;
 

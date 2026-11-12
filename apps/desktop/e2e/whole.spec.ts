@@ -1,5 +1,5 @@
 // The whole-file view in the app: Lo started on the replay server, as rozed-bot, opens
-// rozed-dev/e2e#78, and shows a file whole in the middle of the tab, in place of the diff: from the
+// rozed-dev/e2e#80, and shows a file whole in the middle of the tab, in place of the diff: from the
 // diff with `gf`, at the cursor's line and in the version on its side; a file the pull request
 // leaves alone, from the tree; and any file from the file finder's `⌘⏎`. `⌃o` goes back to where it
 // was opened from, and `` ` `` steps between the diff and it. Nothing it draws breaks the window's
@@ -63,7 +63,7 @@ const test = base.extend<{ github: ReplayServer; remote: string; tokenFile: stri
   },
 });
 
-/** Opens #78, waits for its diff from the local copy and its tree, and returns the tab's id. */
+/** Opens #80, waits for its diff from the local copy and its tree, and returns the tab's id. */
 async function drawn(page: Page): Promise<string> {
   await expect
     .poll(async () => JSON.stringify(await page.evaluate(() => window.lo.invoke('accounts.list'))))

@@ -14,6 +14,9 @@ const strip = (page: Page) => page.getByRole('tablist', { name: 'Pull requests' 
 const tabs = (page: Page) => strip(page).getByRole('tab');
 const shown = (page: Page) => strip(page).getByRole('tab', { selected: true });
 
+/** withlo/lo#1's tab: its number, then its title once GitHub has given it. */
+const PULL = /^lo #1/;
+
 const theme = (page: Page, name: string) => page.getByRole('radio', { name });
 const sizeLimit = (page: Page) => page.getByRole('textbox', { name: 'Size limit in GB' });
 /** What is wrong with the settings file, which Settings says above its sections. */
@@ -90,21 +93,21 @@ test('⌘, opens Settings in one tab, and shows it again from anywhere', async (
 
   // With others open, it goes to the end once, and a second press shows it, not another.
   await openPull(page, 1);
-  await expect(tabs(page)).toHaveText(['Settings', 'lo #1']);
-  await expect(shown(page)).toHaveText('lo #1');
+  await expect(tabs(page)).toHaveText(['Settings', PULL]);
+  await expect(shown(page)).toHaveText(PULL);
   await page.keyboard.press(`${cmd}+Comma`);
   await expect(shown(page)).toHaveText('Settings');
   await page.keyboard.press(`${cmd}+Comma`);
-  await expect(tabs(page)).toHaveText(['Settings', 'lo #1']);
+  await expect(tabs(page)).toHaveText(['Settings', PULL]);
   await expect(shown(page)).toHaveText('Settings');
   // The page is drawn once, however many times it was asked for.
   await expect(page.getByRole('navigation', { name: 'Settings' })).toHaveCount(1);
 
   // Closed, and asked for again, it comes back as one tab.
   await page.keyboard.press(`${cmd}+KeyW`);
-  await expect(tabs(page)).toHaveText(['lo #1']);
+  await expect(tabs(page)).toHaveText([PULL]);
   await page.keyboard.press(`${cmd}+Comma`);
-  await expect(tabs(page)).toHaveText(['lo #1', 'Settings']);
+  await expect(tabs(page)).toHaveText([PULL, 'Settings']);
 });
 
 test('the sections list moves between sections with j and k', async ({ page }) => {
