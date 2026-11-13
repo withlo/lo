@@ -143,6 +143,11 @@ export const treeState = z.strictObject({
   /** How many unchanged files it leaves out, since their paths are longer than {@link PATH_LIMIT} bytes. */
   omitted: z.number().int().nonnegative(),
   compared: z.array(changed).nullable(),
+  /**
+   * The commit a stack's layer is compared with, where its own changes start, while no revisions
+   * are compared; none otherwise.
+   */
+  start: oid.nullable(),
 });
 export type TreeState = z.output<typeof treeState>;
 

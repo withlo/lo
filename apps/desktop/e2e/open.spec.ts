@@ -80,51 +80,53 @@ async function type(page: Page, text: string): Promise<void> {
   await input(page).fill(text);
 }
 
-test('⌘L opens a pull request link as the account that can see it', async ({ page }) => {
-  await accountIn(page);
-  await type(page, `${E2E}/files#diff-1`);
-  const row = box(page).getByRole('option');
-  await expect(row).toContainText('e2e #80');
-  await expect(row).toContainText(TITLE);
-  await expect(row).toContainText('as rozed-bot');
-  await expect(box(page)).toContainText('Open');
-  await page.keyboard.press('Enter');
-
-  await expect(box(page)).toBeHidden();
-  await expect(heading(page)).toHaveText(TITLE);
-  await expect(header(page)).toContainText('as rozed-bot');
-  // `⌘O` opens it too on macOS, and the link to an open pull request shows its tab.
-  await page.keyboard.press(mac ? 'Meta+O' : 'Control+L');
-  await input(page).fill(E2E);
-  await expect(box(page).getByRole('option')).toContainText('as rozed-bot');
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('tablist', { name: 'Pull requests' }).getByRole('tab')).toHaveCount(
-    1,
-  );
-});
-
-test('says what a link it doesn’t open is, and sends a web link to the browser', async ({
+test('says what a link it doesn’t open is, and sends a web link to the browser; and ⌘L opens a pull request link as the account that can see it', async ({
   page,
 }) => {
   await accountIn(page);
-  await type(page, 'https://github.com/rozed-dev/e2e/issues/12');
-  await expect(box(page)).toContainText('That’s an issue, not a pull request');
-  await expect(box(page)).toContainText('Open in the browser');
-  await page.keyboard.press('Enter');
-  await expect(box(page)).toBeHidden();
-  await expect.poll(browsed).toEqual(['https://github.com/rozed-dev/e2e/issues/12']);
 
-  await type(page, 'rozed-dev/e2e#80');
-  await expect(box(page)).toContainText('That isn’t a link Lo opens');
-  await page.keyboard.press('Enter');
-  await expect(box(page)).toBeVisible();
+  await test.step('says what a link it doesn’t open is, and sends a web link to the browser', async () => {
+    await type(page, 'https://github.com/rozed-dev/e2e/issues/12');
+    await expect(box(page)).toContainText('That’s an issue, not a pull request');
+    await expect(box(page)).toContainText('Open in the browser');
+    await page.keyboard.press('Enter');
+    await expect(box(page)).toBeHidden();
+    await expect.poll(browsed).toEqual(['https://github.com/rozed-dev/e2e/issues/12']);
 
-  await input(page).fill('https://github.com/rozed-dev/gone/pull/1');
-  await expect(box(page)).toContainText('None of your accounts can see rozed-dev/gone');
-  await expect(box(page).getByRole('button', { name: 'Add an account' })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(box(page)).toBeHidden();
-  expect(browsed()).toHaveLength(1);
+    await type(page, 'rozed-dev/e2e#80');
+    await expect(box(page)).toContainText('That isn’t a link Lo opens');
+    await page.keyboard.press('Enter');
+    await expect(box(page)).toBeVisible();
+
+    await input(page).fill('https://github.com/rozed-dev/gone/pull/1');
+    await expect(box(page)).toContainText('None of your accounts can see rozed-dev/gone');
+    await expect(box(page).getByRole('button', { name: 'Add an account' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(box(page)).toBeHidden();
+    expect(browsed()).toHaveLength(1);
+  });
+
+  await test.step('⌘L opens a pull request link as the account that can see it', async () => {
+    await type(page, `${E2E}/files#diff-1`);
+    const row = box(page).getByRole('option');
+    await expect(row).toContainText('e2e #80');
+    await expect(row).toContainText(TITLE);
+    await expect(row).toContainText('as rozed-bot');
+    await expect(box(page)).toContainText('Open');
+    await page.keyboard.press('Enter');
+
+    await expect(box(page)).toBeHidden();
+    await expect(heading(page)).toHaveText(TITLE);
+    await expect(header(page)).toContainText('as rozed-bot');
+    // `⌘O` opens it too on macOS, and the link to an open pull request shows its tab.
+    await page.keyboard.press(mac ? 'Meta+O' : 'Control+L');
+    await input(page).fill(E2E);
+    await expect(box(page).getByRole('option')).toContainText('as rozed-bot');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('tablist', { name: 'Pull requests' }).getByRole('tab')).toHaveCount(
+      1,
+    );
+  });
 });
 
 test.describe('without an account', () => {
@@ -162,37 +164,68 @@ async function openUrl(app: ElectronApplication, url: string): Promise<void> {
   }, url);
 }
 
-test('opens lo:// links and a second launch’s links as a typed link, and says why it can’t', async ({
+/** Runs `program` with `args`, and resolves once it exits. */
+function run(program: string, args: readonly string[]): Promise<number> {
+  return new Promise((resolve) => {
+    execFile(program, args, { timeout: 30_000 }, (error) => {
+      resolve(error ? Number(error.code ?? 1) : 0);
+    });
+  });
+}
+
+test('opens lo:// links and a second launch’s links as a typed link, and says why it can’t; and installs the lo command, which hands a link to the Lo running', async ({
   app,
   page,
 }) => {
   await accountIn(page);
-  await openUrl(app, 'lo://github.com/rozed-dev/e2e/pull/80');
-  await expect(heading(page)).toHaveText(TITLE);
 
-  await openUrl(app, 'lo://github.com/rozed-dev/e2e/issues/12');
-  await expect(toast(page, 'lo:// links to pull requests only')).toBeVisible();
-  expect(browsed()).toEqual([]);
+  await test.step('opens lo:// links and a second launch’s links as a typed link, and says why it can’t', async () => {
+    await openUrl(app, 'lo://github.com/rozed-dev/e2e/pull/80');
+    await expect(heading(page)).toHaveText(TITLE);
 
-  // A second launch's switches are never taken, nor anything but links.
-  await app.evaluate(({ app: electron }) => {
-    electron.emit(
-      'second-instance',
-      {},
-      [
-        '/Applications/Lo.app/Contents/MacOS/Lo',
-        '--inspect=9229',
-        'https://github.com/rozed-dev/e2e/pull/9999',
-      ],
-      '/',
+    await openUrl(app, 'lo://github.com/rozed-dev/e2e/issues/12');
+    await expect(toast(page, 'lo:// links to pull requests only')).toBeVisible();
+    expect(browsed()).toEqual([]);
+
+    // A second launch's switches are never taken, nor anything but links.
+    await app.evaluate(({ app: electron }) => {
+      electron.emit(
+        'second-instance',
+        {},
+        [
+          '/Applications/Lo.app/Contents/MacOS/Lo',
+          '--inspect=9229',
+          'https://github.com/rozed-dev/e2e/pull/9999',
+        ],
+        '/',
+      );
+    });
+    await expect(page.getByRole('tablist', { name: 'Pull requests' }).getByRole('tab')).toHaveCount(
+      2,
     );
+    await expect(
+      page.getByRole('alert').filter({ hasText: "Lo can't open this pull request." }),
+    ).toBeVisible();
   });
-  await expect(page.getByRole('tablist', { name: 'Pull requests' }).getByRole('tab')).toHaveCount(
-    2,
-  );
-  await expect(
-    page.getByRole('alert').filter({ hasText: "Lo can't open this pull request." }),
-  ).toBeVisible();
+
+  await test.step('installs the lo command, which hands a link to the Lo running', async () => {
+    if (mac) {
+      const labels = await app.evaluate(({ Menu }) =>
+        (Menu.getApplicationMenu()?.items[0]?.submenu?.items ?? []).map((item) => item.label),
+      );
+      expect(labels).toContain('Install command-line tool');
+    }
+    const reply = await page.evaluate(() => window.lo.invoke('open.installCommand'));
+    const lo = join(test.info().outputPath('bin'), 'lo');
+    expect(reply).toEqual({ ok: true, value: { kind: 'installed', path: lo, onPath: false } });
+    expect(statSync(lo).mode & 0o111).not.toBe(0);
+    expect(readFileSync(lo, 'utf8')).toContain(`LO_USER_DATA_DIR=${dataFolder()}`);
+
+    // An option never reaches Lo.
+    expect(await run(lo, ['--remote-debugging-port=9222'])).toBe(2);
+    expect(await run(lo, [E2E])).toBe(0);
+    await expect(heading(page)).toHaveText(TITLE);
+  });
 });
 
 test.describe('started with a link', () => {
@@ -280,33 +313,4 @@ test('fills the box from the clipboard, and never takes anything else on it', as
   await page.keyboard.press(cmd('V'));
   await expect(heading(page)).toHaveText(TITLE);
   await app.evaluate(({ clipboard }) => clipboard.writeText(''));
-});
-
-/** Runs `program` with `args`, and resolves once it exits. */
-function run(program: string, args: readonly string[]): Promise<number> {
-  return new Promise((resolve) => {
-    execFile(program, args, { timeout: 30_000 }, (error) => {
-      resolve(error ? Number(error.code ?? 1) : 0);
-    });
-  });
-}
-
-test('installs the lo command, which hands a link to the Lo running', async ({ app, page }) => {
-  await accountIn(page);
-  if (mac) {
-    const labels = await app.evaluate(({ Menu }) =>
-      (Menu.getApplicationMenu()?.items[0]?.submenu?.items ?? []).map((item) => item.label),
-    );
-    expect(labels).toContain('Install command-line tool');
-  }
-  const reply = await page.evaluate(() => window.lo.invoke('open.installCommand'));
-  const lo = join(test.info().outputPath('bin'), 'lo');
-  expect(reply).toEqual({ ok: true, value: { kind: 'installed', path: lo, onPath: false } });
-  expect(statSync(lo).mode & 0o111).not.toBe(0);
-  expect(readFileSync(lo, 'utf8')).toContain(`LO_USER_DATA_DIR=${dataFolder()}`);
-
-  // An option never reaches Lo.
-  expect(await run(lo, ['--remote-debugging-port=9222'])).toBe(2);
-  expect(await run(lo, [E2E])).toBe(0);
-  await expect(heading(page)).toHaveText(TITLE);
 });

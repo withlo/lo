@@ -410,6 +410,39 @@
   line-height: var(--lo-sp-16);
 }
 
+/* The editor's mode in a comment box's foot, beside `mode-chip`: Normal in Powder's soft ground,
+   Insert in green. Visual is `mode-chip` as it is. */
+@utility mode-chip-normal {
+  background: var(--lo-accent-soft);
+  color: var(--lo-fg-accent);
+}
+@utility mode-chip-insert {
+  background: var(--lo-success-bg);
+  color: var(--lo-success);
+}
+
+/* A timeline row, inset so the ring of the row the keyboard is on clears its marker and its time,
+   and its stretch of the rail that runs down the markers' centers. The first row's starts at its
+   marker's center and the last row's ends there, so the line never runs past either end. */
+@utility tl-row {
+  position: relative;
+  padding-inline: var(--lo-sp-8);
+  &::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: calc(var(--lo-sp-8) + var(--lo-sp-16) - 0.75px);
+    inset-block: 0;
+    width: 1.5px;
+    background: var(--lo-border);
+  }
+  &:first-child::before {
+    top: calc(var(--lo-sp-8) + var(--lo-sp-16));
+  }
+  &:last-child::before {
+    bottom: calc(100% - var(--lo-sp-8) - var(--lo-sp-16));
+  }
+}
+
 /* A closed folder's count of the changed files it holds. */
 @utility tree-badge {
   min-width: calc(var(--lo-sp-16) + var(--lo-sp-2));

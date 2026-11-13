@@ -254,33 +254,10 @@ test.describe('with a git too old', () => {
   });
 });
 
-test('"Send PR links to Lo" opens the rules for Finicky, Velja and Choosy to copy', async ({
+test('"Send PR links to Lo" opens the rules for Finicky, Velja and Choosy to copy, which link to the docs, and copy a router’s rule through main, which writes the clipboard', async ({
+  app,
   page,
 }) => {
-  await welcome(page).getByRole('button', { name: 'Set up' }).click();
-  const dialog = page.getByTestId('link-rules');
-  await expect(dialog.getByRole('heading', { name: 'Send PR links to Lo' })).toBeVisible();
-  await expect(dialog.getByRole('heading', { level: 3 })).toHaveText([
-    'Finicky',
-    'Velja',
-    'Choosy',
-  ]);
-  await expect(dialog).toContainText('~/.finicky.js');
-  await expect(dialog.getByRole('button', { name: /Done/ })).toBeFocused();
-
-  // ⏎ is Done, and focus goes back to "Set up".
-  await page.keyboard.press('Enter');
-  await expect(dialog).toBeHidden();
-  await expect(welcome(page).getByRole('button', { name: 'Set up' })).toBeFocused();
-});
-
-test('the rules link to the docs, which open in the browser', async ({ page }) => {
-  await welcome(page).getByRole('button', { name: 'Set up' }).click();
-  await page.getByTestId('link-rules').getByRole('button', { name: 'Read the docs' }).click();
-  await expect.poll(browsed).toEqual([DOCS]);
-});
-
-test('copies a router’s rule through main, which writes the clipboard', async ({ app, page }) => {
   // Main's clipboard is the system's, which the tests running beside this one use too: it records
   // what it is given instead of writing it.
   await app.evaluate(({ clipboard }) => {
@@ -295,19 +272,45 @@ test('copies a router’s rule through main, which writes the clipboard', async 
       const written: unknown = Reflect.get(globalThis, 'written');
       return Array.isArray(written) ? written.map(String) : [];
     });
-  await welcome(page).getByRole('button', { name: 'Set up' }).click();
   const dialog = page.getByTestId('link-rules');
-  await dialog.getByRole('button', { name: 'Copy the rule for Finicky' }).click();
-  await expect.poll(copied).toHaveLength(1);
-  expect((await copied())[0]).toContain('browser: "com.scornz.lo"');
-  await dialog.getByRole('button', { name: 'Copy the rule for Choosy' }).click();
-  await expect.poll(copied).toHaveLength(2);
-  expect((await copied())[1]).toContain('^https://github\\.com/');
-  await expect(dialog.getByRole('button', { name: 'Copy the rule for Choosy' })).toHaveText(
-    'Copied',
-  );
-  await expect(dialog.getByRole('button', { name: 'Copy the rule for Finicky' })).toHaveText(
-    'Copy',
-  );
-  await expect(dialog.getByRole('status')).toHaveText('Copied the rule for Choosy.');
+
+  await test.step('"Send PR links to Lo" opens the rules for Finicky, Velja and Choosy to copy', async () => {
+    await welcome(page).getByRole('button', { name: 'Set up' }).click();
+    await expect(dialog.getByRole('heading', { name: 'Send PR links to Lo' })).toBeVisible();
+    await expect(dialog.getByRole('heading', { level: 3 })).toHaveText([
+      'Finicky',
+      'Velja',
+      'Choosy',
+    ]);
+    await expect(dialog).toContainText('~/.finicky.js');
+    await expect(dialog.getByRole('button', { name: /Done/ })).toBeFocused();
+
+    // ⏎ is Done, and focus goes back to "Set up".
+    await page.keyboard.press('Enter');
+    await expect(dialog).toBeHidden();
+    await expect(welcome(page).getByRole('button', { name: 'Set up' })).toBeFocused();
+  });
+
+  // Opened again, and left open for the two that follow.
+  await test.step('copies a router’s rule through main, which writes the clipboard', async () => {
+    await welcome(page).getByRole('button', { name: 'Set up' }).click();
+    await dialog.getByRole('button', { name: 'Copy the rule for Finicky' }).click();
+    await expect.poll(copied).toHaveLength(1);
+    expect((await copied())[0]).toContain('browser: "com.scornz.lo"');
+    await dialog.getByRole('button', { name: 'Copy the rule for Choosy' }).click();
+    await expect.poll(copied).toHaveLength(2);
+    expect((await copied())[1]).toContain('^https://github\\.com/');
+    await expect(dialog.getByRole('button', { name: 'Copy the rule for Choosy' })).toHaveText(
+      'Copied',
+    );
+    await expect(dialog.getByRole('button', { name: 'Copy the rule for Finicky' })).toHaveText(
+      'Copy',
+    );
+    await expect(dialog.getByRole('status')).toHaveText('Copied the rule for Choosy.');
+  });
+
+  await test.step('the rules link to the docs, which open in the browser', async () => {
+    await dialog.getByRole('button', { name: 'Read the docs' }).click();
+    await expect.poll(browsed).toEqual([DOCS]);
+  });
 });

@@ -17,6 +17,7 @@ import { PullRef } from '../src/refs.ts';
 import {
   READ_IN_FULL_EVERY,
   readTimeline,
+  type Actor,
   type AutoMergeChange,
   type PullRequestTimeline,
   type TimelineCommit,
@@ -57,8 +58,13 @@ function other(typename: string): TimelineItem {
   return { kind: 'other', typename };
 }
 
-function event(actor: string, at: string): TimelineEvent {
-  return { actor, at };
+/** A person's account. */
+function user(login: string): Actor {
+  return { login, type: 'User' };
+}
+
+function event(login: string, at: string): TimelineEvent {
+  return { actor: user(login), at };
 }
 
 function commits(all: TimelineItem[]): TimelineCommit[] {
@@ -99,7 +105,7 @@ test('fd 2212s timeline is read in full then by its newest page', async () => {
   // The cross-reference from rozed-dev/playground#13, the latest item the timeline shows.
   expect(first.shownUpdatedAt).toBe('2026-11-06T14:25:39Z');
   expect(first.readInFullAt).toBe(noon().toISOString());
-  expect(first.description.author).toBe('voidsipp');
+  expect(first.description.author).toEqual(user('voidsipp'));
   expect(first.description.body).not.toBe('');
 
   const firstPush = '15635d66ba7ff3d2da0e50392fbcd37c90d83de5';
@@ -110,7 +116,7 @@ test('fd 2212s timeline is read in full then by its newest page', async () => {
       kind: 'review',
       review: {
         id: 'PRR_kwDOBWllys8AAAABVqux2w',
-        author: 'tmccombs',
+        author: user('tmccombs'),
         // The body as it is: what it says isn't the point.
         body: expect.any(String),
         state: 'CHANGES_REQUESTED',
@@ -128,7 +134,7 @@ test('fd 2212s timeline is read in full then by its newest page', async () => {
       kind: 'comment',
       comment: {
         id: 'IC_kwDOBWllys8AAAABiW8w-w',
-        author: 'voidsipp',
+        author: user('voidsipp'),
         body: expect.any(String),
         createdAt: '2026-11-03T10:05:55Z',
         lastEditedAt: undefined,
@@ -206,7 +212,7 @@ test('cli 13057s timeline reads each item once where items share a time', async 
 
   // What the items say.
   const { description } = first;
-  expect(description.author).toBe('BagToad');
+  expect(description.author).toEqual(user('BagToad'));
   expect(description.createdAt).toBe('2026-03-30T00:42:33Z');
   expect(description.lastEditedAt).toBe('2026-05-06T21:08:32Z');
   const all = items(first);
@@ -229,7 +235,7 @@ test('cli 13057s timeline reads each item once where items share a time', async 
     {
       kind: 'reviewRequest',
       event: bagtoad('2026-04-30T14:49:49Z'),
-      reviewer: { kind: 'account', login: 'williammartin' },
+      reviewer: { kind: 'account', login: 'williammartin', type: 'User' },
       added: true,
     },
     {
@@ -251,13 +257,20 @@ test('cli 13057s timeline reads each item once where items share a time', async 
     disabled,
     { kind: 'enabledSquash' },
   ] satisfies AutoMergeChange[]);
-  expect(reviews(all).map((review) => [review.author, review.state, review.comments])).toEqual([
-    ['copilot-pull-request-reviewer', 'COMMENTED', 6],
-    ['BagToad', 'COMMENTED', 1],
-    ['camchenry', 'COMMENTED', 1],
-    ['babakks', 'CHANGES_REQUESTED', 20],
-    ['babakks', 'CHANGES_REQUESTED', 3],
-    ['babakks', 'APPROVED', 0],
+  // A bot's login, as GraphQL gives it, is told apart by its type.
+  const authors = reviews(all).map((review) => [
+    review.author?.login,
+    review.author?.type,
+    review.state,
+    review.comments,
+  ]);
+  expect(authors).toEqual([
+    ['copilot-pull-request-reviewer', 'Bot', 'COMMENTED', 6],
+    ['BagToad', 'User', 'COMMENTED', 1],
+    ['camchenry', 'User', 'COMMENTED', 1],
+    ['babakks', 'User', 'CHANGES_REQUESTED', 20],
+    ['babakks', 'User', 'CHANGES_REQUESTED', 3],
+    ['babakks', 'User', 'APPROVED', 0],
   ]);
   expect(all.filter((item) => item.kind === 'crossReference')).toHaveLength(37);
 
@@ -280,11 +293,11 @@ test('the playgrounds review checks timeline has its reviews and close', async (
   const held = reviews(all);
   expect(held).toHaveLength(8);
   for (const review of held) {
-    expect(review.author).toBe('rozed-bot');
+    expect(review.author).toEqual(user('rozed-bot'));
     expect(review.state).toBe('COMMENTED');
     expect(review.submittedAt).toBeDefined();
   }
-  expect(all[11]).toMatchObject({ kind: 'closed', event: { actor: 'rozed-bot' } });
+  expect(all[11]).toMatchObject({ kind: 'closed', event: { actor: user('rozed-bot') } });
 });
 
 test('e2es timelines have their force push and base change', async () => {
@@ -295,7 +308,7 @@ test('e2es timelines have their force push and base change', async () => {
   const pushed = e1.find((item) => item.kind === 'forcePushed');
   expect(pushed).toMatchObject({
     kind: 'forcePushed',
-    event: { actor: 'rozed-bot' },
+    event: { actor: user('rozed-bot') },
     branch: 'head',
     after: expect.any(String),
   });
@@ -307,7 +320,7 @@ test('e2es timelines have their force push and base change', async () => {
   const changed = e8.find((item) => item.kind === 'baseChanged');
   expect(
     changed?.kind === 'baseChanged'
-      ? [changed.event.actor, changed.from, changed.to, changed.how]
+      ? [changed.event.actor?.login, changed.from, changed.to, changed.how]
       : undefined,
   ).toEqual(['rozed-bot', 'main', 'e8/base', 'changed']);
 });

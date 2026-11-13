@@ -347,36 +347,89 @@ async function headerAt(page: Page, path: string, down = 0): Promise<void> {
     .toBe(Math.round(top + down));
 }
 
-test('`e` marks the file viewed and closes it, and the next file’s header stays where it was', async ({
+test('`e` marks the file viewed and closes it, and the next file’s header stays where it was; a write GitHub refuses takes back the mark alone; and it is refused while GitHub has asked Lo to hold off', async ({
   page,
   fake,
 }) => {
+  test.setTimeout(60_000);
   const order = await shown(page);
-  const format = order.find((file) => file.path === 'src/format.ts');
-  if (!format) throw new Error('the diff has no src/format.ts');
-  await cursorTo(page, 'src/text/wrap.ts');
-  // src/format.ts's header a little way down the screen, src/text/wrap.ts's lines above it, and its
-  // header, where the cursor is, scrolled away above: `e` acts on the file at the top.
-  await headerAt(page, 'src/format.ts', 100);
-  const before = (await headerTop(page, format.id)) ?? Number.NaN;
 
-  await page.keyboard.press('e');
-  // The mark shows at once, in the tree and the header, and GitHub gets it.
-  await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('title', 'Viewed');
-  await expect(headerBall(page, 'src/text/wrap.ts')).toHaveClass(/is-viewed/);
-  await expect.poll(() => closed(page, 'src/text/wrap.ts')).toBe(true);
-  await expect.poll(() => fake.writes).toEqual(['MarkFileAsViewed src/text/wrap.ts']);
-  // The cursor is on src/format.ts's header, which hasn't moved: what was above it closed up.
-  await expect.poll(() => cursorPath(page)).toBe('src/format.ts');
-  await expect
-    .poll(async () => Math.abs(((await headerTop(page, format.id)) ?? Number.NaN) - before))
-    .toBeLessThan(2);
-  await page.waitForTimeout(300);
-  expect(Math.abs(((await headerTop(page, format.id)) ?? Number.NaN) - before)).toBeLessThan(2);
+  await test.step('`e` marks the file viewed and closes it, and the next file’s header stays where it was', async () => {
+    const format = order.find((file) => file.path === 'src/format.ts');
+    if (!format) throw new Error('the diff has no src/format.ts');
+    await cursorTo(page, 'src/text/wrap.ts');
+    // src/format.ts's header a little way down the screen, src/text/wrap.ts's lines above it, and its
+    // header, where the cursor is, scrolled away above: `e` acts on the file at the top.
+    await headerAt(page, 'src/format.ts', 100);
+    const before = (await headerTop(page, format.id)) ?? Number.NaN;
 
-  // GitHub's details, read again after the write, say so too: the mark stays.
-  await page.waitForTimeout(1500);
-  await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('title', 'Viewed');
+    await page.keyboard.press('e');
+    // The mark shows at once, in the tree and the header, and GitHub gets it.
+    await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('title', 'Viewed');
+    await expect(headerBall(page, 'src/text/wrap.ts')).toHaveClass(/is-viewed/);
+    await expect.poll(() => closed(page, 'src/text/wrap.ts')).toBe(true);
+    await expect.poll(() => fake.writes).toEqual(['MarkFileAsViewed src/text/wrap.ts']);
+    // The cursor is on src/format.ts's header, which hasn't moved: what was above it closed up.
+    await expect.poll(() => cursorPath(page)).toBe('src/format.ts');
+    await expect
+      .poll(async () => Math.abs(((await headerTop(page, format.id)) ?? Number.NaN) - before))
+      .toBeLessThan(2);
+    await page.waitForTimeout(300);
+    expect(Math.abs(((await headerTop(page, format.id)) ?? Number.NaN) - before)).toBeLessThan(2);
+
+    // GitHub's details, read again after the write, say so too: the mark stays.
+    await page.waitForTimeout(1500);
+    await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('title', 'Viewed');
+  });
+
+  await test.step('a write GitHub refuses takes back the mark alone, not the closing, the cursor or the scroll', async () => {
+    await cursorTo(page, 'src/format.ts');
+    fake.next = 'refuse';
+
+    await page.keyboard.press('e');
+    const next = order[order.findIndex((file) => file.path === 'src/format.ts') + 1]?.path;
+    await expect.poll(() => cursorPath(page)).toBe(next);
+    const viewport = await page.evaluate(() => window.loDiff?.viewport());
+    await expect
+      .poll(() => fake.writes)
+      .toEqual(['MarkFileAsViewed src/text/wrap.ts', 'MarkFileAsViewed src/format.ts']);
+    await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
+    await expect(headerBall(page, 'src/format.ts')).not.toHaveClass(/is-viewed/);
+    await expect(page.getByText(/GitHub doesn't list src\/format.ts/).first()).toBeVisible();
+
+    // The file stays closed, and the cursor and what's at the top of the screen stay put.
+    await expect.poll(() => closed(page, 'src/format.ts')).toBe(true);
+    expect(await cursorPath(page)).toBe(next);
+    const after = await page.evaluate(() => window.loDiff?.viewport());
+    expect(after?.at).toEqual(viewport?.at);
+    expect(Math.abs((after?.offset ?? 0) - (viewport?.offset ?? 0))).toBeLessThan(2);
+  });
+
+  // Last: GitHub's pause lasts a minute, and nothing is sent in it.
+  await test.step('`e` is refused while GitHub has asked Lo to hold off, and the mark goes back', async () => {
+    // Every write so far: the first file's mark, the refused one, and the one the pause turns away.
+    const WRITES = [
+      'MarkFileAsViewed src/text/wrap.ts',
+      'MarkFileAsViewed src/format.ts',
+      'MarkFileAsViewed src/format.ts',
+    ];
+    await cursorTo(page, 'src/format.ts');
+    fake.next = 'slowDown';
+
+    await page.keyboard.press('e');
+    await expect.poll(() => fake.writes).toEqual(WRITES);
+    // GitHub turned it away: the mark goes back, and Lo says why.
+    await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
+    await expect(page.getByText('GitHub asked Lo to slow down').first()).toBeVisible();
+
+    // Now nothing is sent until the pause ends, marking or clearing.
+    await cursorTo(page, 'src/format.ts');
+    await page.keyboard.press('e');
+    await expect(page.getByText(/GitHub asked Lo to hold off until/).first()).toBeVisible();
+    await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
+    await page.waitForTimeout(1000);
+    expect(fake.writes).toEqual(WRITES);
+  });
 });
 
 /**
@@ -556,56 +609,6 @@ test('`e` in the tree marks the file viewed and goes on to the next changed file
   await expect
     .poll(() => fake.writes)
     .toEqual(['MarkFileAsViewed src/text/wrap.ts', 'UnmarkFileAsViewed src/text/wrap.ts']);
-});
-
-test('`e` is refused while GitHub has asked Lo to hold off, and the mark goes back', async ({
-  page,
-  fake,
-}) => {
-  test.setTimeout(60_000);
-  await shown(page);
-  await cursorTo(page, 'src/format.ts');
-  fake.next = 'slowDown';
-
-  await page.keyboard.press('e');
-  await expect.poll(() => fake.writes).toEqual(['MarkFileAsViewed src/format.ts']);
-  // GitHub turned it away: the mark goes back, and Lo says why.
-  await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
-  await expect(page.getByText('GitHub asked Lo to slow down').first()).toBeVisible();
-
-  // Now nothing is sent until the pause ends, marking or clearing.
-  await cursorTo(page, 'src/format.ts');
-  await page.keyboard.press('e');
-  await expect(page.getByText(/GitHub asked Lo to hold off until/).first()).toBeVisible();
-  await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
-  await page.waitForTimeout(1000);
-  expect(fake.writes).toEqual(['MarkFileAsViewed src/format.ts']);
-});
-
-test('a write GitHub refuses takes back the mark alone, not the closing, the cursor or the scroll', async ({
-  page,
-  fake,
-}) => {
-  test.setTimeout(60_000);
-  const order = await shown(page);
-  await cursorTo(page, 'src/format.ts');
-  fake.next = 'refuse';
-
-  await page.keyboard.press('e');
-  const next = order[order.findIndex((file) => file.path === 'src/format.ts') + 1]?.path;
-  await expect.poll(() => cursorPath(page)).toBe(next);
-  const viewport = await page.evaluate(() => window.loDiff?.viewport());
-  await expect.poll(() => fake.writes).toEqual(['MarkFileAsViewed src/format.ts']);
-  await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
-  await expect(headerBall(page, 'src/format.ts')).not.toHaveClass(/is-viewed/);
-  await expect(page.getByText(/GitHub doesn't list src\/format.ts/).first()).toBeVisible();
-
-  // The file stays closed, and the cursor and what's at the top of the screen stay put.
-  await expect.poll(() => closed(page, 'src/format.ts')).toBe(true);
-  expect(await cursorPath(page)).toBe(next);
-  const after = await page.evaluate(() => window.loDiff?.viewport());
-  expect(after?.at).toEqual(viewport?.at);
-  expect(Math.abs((after?.offset ?? 0) - (viewport?.offset ?? 0))).toBeLessThan(2);
 });
 
 test('clearing a viewed file’s mark opens it again, and the cursor stays', async ({

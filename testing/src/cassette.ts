@@ -37,6 +37,11 @@ export interface CassetteInfo {
    * which a replay reads to send the requests the recording sent.
    */
   setup?: Json;
+  /**
+   * The GraphQL operations whose answers were recorded again in place after a query changed, each
+   * with when (`testing/scripts/rerecord.ts`). The rest is as of `recorded_at`.
+   */
+  rerecorded?: Record<string, string>;
 }
 
 /** One request and the response GitHub gave it. */

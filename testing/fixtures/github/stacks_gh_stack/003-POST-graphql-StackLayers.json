@@ -13,26 +13,26 @@
         "PR_kwDORKR9iM7Y94pq"
       ]
     },
-    "query_sha256": "f9c380a8f0858512aa296fa8f436a8ee18a78ee11b5fa3d1112439b166df6cc1"
+    "query_sha256": "095c3e85eea36b83ab9ae99c7ef12a09b61c598cd065fb1decf711fd952194af"
   },
   "response": {
     "status": 200,
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4970",
-      "x-ratelimit-reset": "1794024620",
+      "x-ratelimit-remaining": "4988",
+      "x-ratelimit-reset": "1794564294",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "30"
+      "x-ratelimit-used": "12"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4970,
-          "used": 30,
-          "resetAt": "2026-11-07T04:10:20Z"
+          "remaining": 4988,
+          "used": 12,
+          "resetAt": "2026-11-13T10:04:54Z"
         },
         "nodes": [
           {
@@ -55,6 +55,10 @@
                 }
               ]
             },
+            "reviewThreads": {
+              "totalCount": 0,
+              "nodes": []
+            },
             "movedFrom": {
               "nodes": []
             }
@@ -65,7 +69,7 @@
             "number": 614,
             "state": "OPEN",
             "headRefOid": "51ab7fc963aea931df1c29f8801b1e702ac51f62",
-            "reviewDecision": "REVIEW_REQUIRED",
+            "reviewDecision": "APPROVED",
             "statusCheckRollup": {
               "state": "SUCCESS"
             },
@@ -88,6 +92,20 @@
                 },
                 {
                   "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            },
+            "reviewThreads": {
+              "totalCount": 3,
+              "nodes": [
+                {
+                  "isResolved": false
+                },
+                {
+                  "isResolved": false
+                },
+                {
+                  "isResolved": false
                 }
               ]
             },
@@ -133,6 +151,26 @@
                 }
               ]
             },
+            "reviewThreads": {
+              "totalCount": 5,
+              "nodes": [
+                {
+                  "isResolved": false
+                },
+                {
+                  "isResolved": false
+                },
+                {
+                  "isResolved": false
+                },
+                {
+                  "isResolved": false
+                },
+                {
+                  "isResolved": false
+                }
+              ]
+            },
             "movedFrom": {
               "nodes": []
             }
@@ -166,6 +204,14 @@
                 },
                 {
                   "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            },
+            "reviewThreads": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "isResolved": false
                 }
               ]
             },
@@ -238,6 +284,26 @@
                 }
               ]
             },
+            "reviewThreads": {
+              "totalCount": 5,
+              "nodes": [
+                {
+                  "isResolved": false
+                },
+                {
+                  "isResolved": false
+                },
+                {
+                  "isResolved": false
+                },
+                {
+                  "isResolved": false
+                },
+                {
+                  "isResolved": false
+                }
+              ]
+            },
             "movedFrom": {
               "nodes": []
             }
@@ -303,6 +369,10 @@
                   "viewerViewedState": "UNVIEWED"
                 }
               ]
+            },
+            "reviewThreads": {
+              "totalCount": 0,
+              "nodes": []
             },
             "movedFrom": {
               "nodes": []

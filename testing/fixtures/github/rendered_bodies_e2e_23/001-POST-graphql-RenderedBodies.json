@@ -1,0 +1,77 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "RenderedBodies",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 23,
+      "description": false,
+      "ids": [
+        "PRRC_kwDOVleUfc8AAAABDjlwiA",
+        "PRRC_kwDOVleUfc8AAAABDjl0_g",
+        "PRR_kwDOVleUfc8AAAABXON7uA",
+        "PRRC_kwDOVleUfc8AAAABDS30Vg"
+      ]
+    },
+    "query_sha256": "285b3a71ef24563ae33870f157b845fcb0e9fc71ff54b6235fa3b18c95041504"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4986",
+      "x-ratelimit-reset": "1794564299",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "14"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4986,
+          "used": 14,
+          "resetAt": "2026-11-13T10:04:59Z"
+        },
+        "repository": {},
+        "nodes": [
+          {
+            "__typename": "PullRequestReviewComment",
+            "id": "PRRC_kwDOVleUfc8AAAABDjlwiA",
+            "bodyHTML": "<p dir=\"auto\">Fixture E11: a line thread, the first comment of a pending review.</p>"
+          },
+          {
+            "__typename": "PullRequestReviewComment",
+            "id": "PRRC_kwDOVleUfc8AAAABDjl0_g",
+            "bodyHTML": "<p dir=\"auto\">Fixture E11: a reply in the pending review.</p>"
+          },
+          {
+            "__typename": "PullRequestReview",
+            "id": "PRR_kwDOVleUfc8AAAABXON7uA",
+            "bodyHTML": "<p dir=\"auto\">Fixture E11: the pending review's summary, submitted as a comment.</p>"
+          },
+          null
+        ]
+      },
+      "errors": [
+        {
+          "type": "NOT_FOUND",
+          "path": [
+            "nodes",
+            3
+          ],
+          "locations": [
+            {
+              "line": 15,
+              "column": 3
+            }
+          ],
+          "message": "Could not resolve to a node with the global id of 'PRRC_kwDOVleUfc8AAAABDS30Vg'."
+        }
+      ]
+    }
+  }
+}

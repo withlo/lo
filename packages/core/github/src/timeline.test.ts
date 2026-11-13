@@ -7,6 +7,7 @@ import {
   dueInFull,
   joinNewestPage,
   READ_IN_FULL_EVERY,
+  type Actor,
   type ForcePushedBranch,
   type PullRequestTimeline,
   type TimelineDescription,
@@ -49,8 +50,13 @@ function at(minute: number): string {
   return new Date(minute * 60_000).toISOString();
 }
 
+/** A person's account. */
+function user(login: string): Actor {
+  return { login, type: 'User' };
+}
+
 function event(): TimelineEvent {
-  return { actor: 'alice', at: at(0) };
+  return { actor: user('alice'), at: at(0) };
 }
 
 function comment(body: string): TimelineItem {
@@ -58,7 +64,7 @@ function comment(body: string): TimelineItem {
     kind: 'comment',
     comment: {
       id: 'IC_1',
-      author: 'alice',
+      author: user('alice'),
       body,
       createdAt: at(0),
       lastEditedAt: undefined,
@@ -75,7 +81,7 @@ function review(id: string): TimelineItem {
     kind: 'review',
     review: {
       id,
-      author: 'bob',
+      author: user('bob'),
       body: '',
       state: 'APPROVED',
       createdAt: at(0),
@@ -108,7 +114,7 @@ function dismissed(id: string): TimelineItem {
     kind: 'reviewDismissed',
     event: event(),
     review: id,
-    reviewer: 'bob',
+    reviewer: user('bob'),
     message: undefined,
     previousState: 'APPROVED',
   };
@@ -129,7 +135,7 @@ function plain(names: readonly string[]): Items {
 }
 
 function description(): TimelineDescription {
-  return { author: 'alice', body: '', createdAt: at(0), lastEditedAt: undefined };
+  return { author: user('alice'), body: '', createdAt: at(0), lastEditedAt: undefined };
 }
 
 /**
