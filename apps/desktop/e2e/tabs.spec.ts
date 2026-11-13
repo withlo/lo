@@ -186,56 +186,62 @@ test('a pull request opens in Recent’s place, titles the window, and opens onc
   await expect(page).toHaveTitle('Lo');
 });
 
-test('⌘1 to ⌘8 show a tab by its place, and ⌘9 the last however many are open', async ({
+test('a place past the last tab shows nothing new; ⌘1 to ⌘8 show a tab by its place, and ⌘9 the last however many are open', async ({
   page,
 }) => {
-  const repos = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
-  await open(page, ...repos.map((repo, index) => pull('withlo', repo, index + 1)));
-  await expect.poll(() => openCount(page)).toBe(10);
-  for (const place of [1, 2, 3, 4, 5, 6, 7, 8]) {
-    const tab = (await inOrder(page))[place - 1] ?? '';
-    await page.keyboard.press(`${cmd}+Digit${place}`);
-    await expect(shown(page)).toHaveText(tab);
-    await expect(page).toHaveTitle(`withlo/${tab.replace(' ', '')}`);
-  }
-  const last = (await inOrder(page)).at(-1) ?? '';
-  await page.keyboard.press(`${cmd}+Digit9`);
-  await expect(shown(page)).toHaveText(last);
+  await test.step('a place past the last tab shows nothing new', async () => {
+    await open(page, pull('withlo', 'a', 1), pull('withlo', 'b', 2));
+    await page.keyboard.press(`${cmd}+Digit1`);
+    await page.keyboard.press(`${cmd}+Digit5`);
+    await page.keyboard.press(`${cmd}+Digit1`);
+    await expect(shown(page)).toHaveText('a #1');
+    await expect(tabs(page)).toHaveText(['a #1', 'b #2']);
+  });
+
+  // The two that are open stay among the ten.
+  await test.step('⌘1 to ⌘8 show a tab by its place, and ⌘9 the last however many are open', async () => {
+    const repos = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
+    await open(page, ...repos.map((repo, index) => pull('withlo', repo, index + 1)));
+    await expect.poll(() => openCount(page)).toBe(10);
+    for (const place of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const tab = (await inOrder(page))[place - 1] ?? '';
+      await page.keyboard.press(`${cmd}+Digit${place}`);
+      await expect(shown(page)).toHaveText(tab);
+      await expect(page).toHaveTitle(`withlo/${tab.replace(' ', '')}`);
+    }
+    const last = (await inOrder(page)).at(-1) ?? '';
+    await page.keyboard.press(`${cmd}+Digit9`);
+    await expect(shown(page)).toHaveText(last);
+  });
 });
 
-test('a place past the last tab shows nothing new', async ({ page }) => {
-  await open(page, pull('withlo', 'a', 1), pull('withlo', 'b', 2));
-  await page.keyboard.press(`${cmd}+Digit1`);
-  await page.keyboard.press(`${cmd}+Digit5`);
-  await page.keyboard.press(`${cmd}+Digit1`);
-  await expect(shown(page)).toHaveText('a #1');
-  await expect(tabs(page)).toHaveText(['a #1', 'b #2']);
-});
-
-test('⌘W closes the tab on screen and shows the one after it, until Recent comes back', async ({
+test('⌘W closes the tab on screen and shows the one after it, until Recent comes back; and two quick ⌘Ws close two tabs', async ({
   page,
 }) => {
-  await open(page, pull('withlo', 'a', 1), pull('withlo', 'b', 2), pull('withlo', 'c', 3));
-  await page.keyboard.press(`${cmd}+Digit2`);
-  await expect(shown(page)).toHaveText('b #2');
-  await page.keyboard.press(`${cmd}+KeyW`);
-  await expect(tabs(page)).toHaveText(['a #1', 'c #3']);
-  await expect(shown(page)).toHaveText('c #3');
-  // At the end of the strip, the one before it.
-  await page.keyboard.press(`${cmd}+KeyW`);
-  await expect(tabs(page)).toHaveText(['a #1']);
-  await page.keyboard.press(`${cmd}+KeyW`);
-  await expect(tabs(page)).toHaveText(['Recent pull requests']);
-  await expect(page).toHaveTitle('Lo');
-});
+  await test.step('⌘W closes the tab on screen and shows the one after it, until Recent comes back', async () => {
+    await open(page, pull('withlo', 'a', 1), pull('withlo', 'b', 2), pull('withlo', 'c', 3));
+    await page.keyboard.press(`${cmd}+Digit2`);
+    await expect(shown(page)).toHaveText('b #2');
+    await page.keyboard.press(`${cmd}+KeyW`);
+    await expect(tabs(page)).toHaveText(['a #1', 'c #3']);
+    await expect(shown(page)).toHaveText('c #3');
+    // At the end of the strip, the one before it.
+    await page.keyboard.press(`${cmd}+KeyW`);
+    await expect(tabs(page)).toHaveText(['a #1']);
+    await page.keyboard.press(`${cmd}+KeyW`);
+    await expect(tabs(page)).toHaveText(['Recent pull requests']);
+    await expect(page).toHaveTitle('Lo');
+  });
 
-test('two quick ⌘Ws close two tabs', async ({ page }) => {
-  await open(page, pull('withlo', 'a', 1), pull('withlo', 'b', 2), pull('withlo', 'c', 3));
-  await page.keyboard.press(`${cmd}+Digit1`);
-  await expect(shown(page)).toHaveText('a #1');
-  await page.keyboard.press(`${cmd}+KeyW`);
-  await page.keyboard.press(`${cmd}+KeyW`);
-  await expect(tabs(page)).toHaveText(['c #3']);
+  // Recent is all there is: three tabs again.
+  await test.step('two quick ⌘Ws close two tabs', async () => {
+    await open(page, pull('withlo', 'a', 1), pull('withlo', 'b', 2), pull('withlo', 'c', 3));
+    await page.keyboard.press(`${cmd}+Digit1`);
+    await expect(shown(page)).toHaveText('a #1');
+    await page.keyboard.press(`${cmd}+KeyW`);
+    await page.keyboard.press(`${cmd}+KeyW`);
+    await expect(tabs(page)).toHaveText(['c #3']);
+  });
 });
 
 test('a click shows a tab, its button closes it, and its right-click menu closes it', async ({
