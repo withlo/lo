@@ -114,6 +114,29 @@ function said(element: Element): string {
   return '';
 }
 
+/** A layer with the fields a row needs, and the rest of `LAYERS`' first as it has them. */
+function sample(key: string, over: Partial<StackTreeLayer> = {}): StackTreeLayer {
+  const [first] = LAYERS;
+  if (!first) throw new Error('No layers.');
+  return { ...first, key, number: key.codePointAt(0) ?? 0, ...over };
+}
+
+/** What each row's rail does: its ball's row has the elbow, the trunk and the rail's end. */
+function shape(host: HTMLElement): Record<string, string> {
+  return Object.fromEntries(
+    [...rows(host)].map(([key, each]) => [
+      key,
+      [
+        each.classList.contains('stack-sprout') ? 'elbow' : undefined,
+        each.classList.contains('stack-trunk') ? 'trunk' : undefined,
+        each.querySelector('.stack-rail-last') ? 'ends' : undefined,
+      ]
+        .filter(Boolean)
+        .join(' '),
+    ]),
+  );
+}
+
 describe('StackTree', () => {
   it('is a labelled panel holding one tree, with a treeitem for each layer', () => {
     const host = render(<StackTree {...props()} data-lo-scope="stack" />);
@@ -122,15 +145,20 @@ describe('StackTree', () => {
     expect(panel?.querySelector('h2')?.textContent).toBe('Stack');
     const trees = host.querySelectorAll('[role="tree"]');
     expect(trees).toHaveLength(1);
-    // One tab stop for the whole tree, which the caller's attributes reach.
-    expect(tree(host).getAttribute('aria-label')).toBe('Stack');
+    // One tab stop for the whole tree, which the caller's attributes reach. The panel and its tree
+    // have names of their own.
+    expect(tree(host).getAttribute('aria-label')).toBe('Layers');
     expect(tree(host).tabIndex).toBe(0);
     expect(tree(host).getAttribute('data-lo-scope')).toBe('stack');
     expect([...rows(host).keys()]).toEqual(['a', 'b', 'c', 'd', 'e']);
     expect(host.querySelectorAll('[role="tree"] > [role="treeitem"]')).toHaveLength(5);
-    // The root names the base branch, and isn't a row.
-    expect(tree(host).textContent).toContain('Base branch main');
+    // The root isn't a row. What it stands for is the tree's description, which a screen reader
+    // reaches from the tree.
     expect(host.querySelectorAll('[role="treeitem"]')).toHaveLength(LAYERS.length);
+    const described = document.getElementById(tree(host).getAttribute('aria-describedby') ?? '');
+    expect(described?.textContent).toBe('Base branch main');
+    expect(tree(host).contains(described)).toBe(false);
+    expect(panel?.contains(described)).toBe(true);
   });
 
   it('hands out the tree element, and answers a click and a right-click with the layer', () => {
@@ -186,24 +214,40 @@ describe('StackTree', () => {
       expect(said(row(host, 'a'))).not.toContain('RK');
     });
 
-    it('says the review and the checks in a word, with no counts', () => {
+    it('says the review in a word, and the checks as an icon with its state for a name', () => {
       const host = render(<StackTree {...props()} />);
       expect(said(row(host, 'a'))).toContain('Approved');
-      expect(said(row(host, 'a'))).toContain('Passing');
       expect(said(row(host, 'c'))).toContain('Review required');
-      expect(said(row(host, 'c'))).toContain('Running');
       expect(said(row(host, 'e'))).toContain('Changes requested');
-      expect(said(row(host, 'e'))).toContain('Failing');
-      // A screen reader hears what the word is about.
-      expect(row(host, 'a').textContent).toContain('Checks Passing');
-      expect(row(host, 'c').querySelector('[title="Checks running"]')).toBeTruthy();
-      // Each is an icon as well, so a color never stands alone.
-      for (const key of ['a', 'c', 'e']) {
-        expect(row(host, key).querySelectorAll('svg').length).toBeGreaterThanOrEqual(3);
-      }
-      expect(host.querySelector('[role="tree"]')?.textContent).not.toMatch(
-        /\d+ (running|passing)/i,
+      // The checks are an icon alone, so a row keeps to two lines; its name says what it shows.
+      const checks = (key: string) => row(host, key).querySelector('[data-checks]');
+      expect(checks('a')?.getAttribute('aria-label')).toBe('Checks passing');
+      expect(checks('a')?.getAttribute('title')).toBe('Checks passing');
+      expect(checks('c')?.getAttribute('aria-label')).toBe('Checks running');
+      expect(checks('e')?.getAttribute('aria-label')).toBe('Checks failing');
+      expect(checks('a')?.getAttribute('role')).toBe('img');
+      expect(checks('a')?.querySelector('svg')).toBeTruthy();
+      expect(checks('a')?.textContent).toBe('');
+      expect(said(row(host, 'a'))).not.toMatch(/passing|running|failing/i);
+      // A layer with none says nothing about them.
+      expect(row(host, 'd').querySelector('[data-checks]')).toBeNull();
+      // No counts anywhere.
+      expect(tree(host).textContent).not.toMatch(/\d+ (running|passing|failing)/i);
+    });
+
+    it('keeps a long login to its row, cut with an ellipsis', () => {
+      const [first] = LAYERS;
+      if (!first) throw new Error('No layers.');
+      const login = 'a'.repeat(39);
+      const host = render(<StackTree {...props({ layers: [{ ...first, author: login }] })} />);
+      const name = [...row(host, 'a').querySelectorAll('span')].find(
+        (each) => each.textContent === login,
       );
+      expect(name?.classList.contains('truncate')).toBe(true);
+      expect(name?.classList.contains('min-w-0')).toBe(true);
+      // The item that holds it can shrink, and is never wider than the row.
+      expect(name?.parentElement?.classList.contains('min-w-0')).toBe(true);
+      expect(name?.parentElement?.classList.contains('max-w-full')).toBe(true);
     });
 
     it('says Draft in place of the review', () => {
@@ -327,21 +371,25 @@ describe('StackTree', () => {
       Object.defineProperty(scroller, 'scrollTop', { value: 0, writable: true });
       for (const [key, element] of rows(host)) {
         Object.defineProperty(element, 'offsetTop', {
-          value: LAYERS.findIndex((each) => each.key === key) * 40,
+          // The root is 24 above the first row.
+          value: 24 + LAYERS.findIndex((each) => each.key === key) * 40,
         });
         Object.defineProperty(element, 'offsetHeight', { value: 40 });
       }
       // Past the bottom: the row's bottom meets the tree's.
       rerender(host, <StackTree {...props({ focused: 'e' })} />);
-      expect(scroller.scrollTop).toBe(4 * 40 + 40 - 100);
+      expect(scroller.scrollTop).toBe(24 + 4 * 40 + 40 - 100);
       // Already in view: nothing moves.
       rerender(host, <StackTree {...props({ focused: 'd' })} />);
-      expect(scroller.scrollTop).toBe(4 * 40 + 40 - 100);
+      expect(scroller.scrollTop).toBe(24 + 4 * 40 + 40 - 100);
       // Above the top: the row's top meets the tree's.
+      rerender(host, <StackTree {...props({ focused: 'c' })} />);
+      expect(scroller.scrollTop).toBe(24 + 2 * 40);
+      // The first layer brings the root above it into view as well.
       rerender(host, <StackTree {...props({ focused: 'a' })} />);
       expect(scroller.scrollTop).toBe(0);
       rerender(host, <StackTree {...props({ focused: 'a', current: 'e' })} />);
-      expect(scroller.scrollTop).toBe(4 * 40 + 40 - 100);
+      expect(scroller.scrollTop).toBe(24 + 4 * 40 + 40 - 100);
     });
   });
 
@@ -468,6 +516,69 @@ describe('StackTree', () => {
       const host = render(<StackTree {...props()} />);
       const last = [...rows(host).values()].map((each) => each.querySelector('.stack-rail-last'));
       expect(last.map((each) => each !== null)).toEqual([false, false, false, false, true]);
+      // With no branch, the trunk is nowhere but in the rail.
+      expect(host.querySelector('.stack-trunk')).toBeNull();
+    });
+
+    it('draws the trunk down to each later child’s elbow, and ends each branch at its last ball', () => {
+      // A layer with three children: the first continues the trunk, the other two branch off it.
+      const host = render(
+        <StackTree
+          {...props({
+            layers: [
+              sample('a'),
+              sample('b'),
+              sample('c'),
+              sample('s1', { sitsOn: 4819 }),
+              sample('s2', { sitsOn: 4819 }),
+              sample('s3', { sitsOn: 4819 }),
+            ],
+          })}
+        />,
+      );
+      expect(shape(host)).toEqual({
+        // The trunk's own rail goes on to whatever is below it.
+        a: '',
+        b: '',
+        c: '',
+        // Each branch has one layer, so its rail ends at its ball; the trunk runs on past the
+        // first two to the last one's elbow, and stops there.
+        s1: 'elbow trunk ends',
+        s2: 'elbow trunk ends',
+        s3: 'elbow ends',
+      });
+    });
+
+    it('carries a branch’s own layers on its rail, and the trunk past them to the next elbow', () => {
+      const host = render(
+        <StackTree
+          {...props({
+            layers: [
+              sample('a'),
+              sample('b'),
+              sample('s1', { sitsOn: 4819 }),
+              sample('s1a', { branch: true }),
+              sample('s1b', { branch: true }),
+              sample('s2', { sitsOn: 4819 }),
+              sample('s2a', { branch: true }),
+            ],
+          })}
+        />,
+      );
+      expect(shape(host)).toEqual({
+        a: '',
+        b: '',
+        // The first branch's rail runs through its layers and ends at the last one's ball, while
+        // the trunk goes on beside it to the second branch's elbow.
+        s1: 'elbow trunk',
+        s1a: 'trunk',
+        s1b: 'trunk ends',
+        // Nothing branches below the second, so no trunk runs beside it.
+        s2: 'elbow',
+        s2a: 'ends',
+      });
+      expect(row(host, 's1a').getAttribute('aria-level')).toBe('2');
+      expect(row(host, 's1a').classList.contains('stack-branch')).toBe(true);
     });
   });
 
@@ -574,7 +685,8 @@ describe('StackTree', () => {
     it('has no note, and no callout, unless it is given one', () => {
       const host = render(<StackTree {...props()} />);
       expect(host.querySelector('[role="note"]')).toBeNull();
-      expect(host.querySelectorAll('section > *')).toHaveLength(2);
+      // The head and the tree, and the tree's description, which draws nothing.
+      expect(host.querySelectorAll('section > *')).toHaveLength(3);
     });
 
     it('puts what it is given as a callout between the head and the rows', () => {

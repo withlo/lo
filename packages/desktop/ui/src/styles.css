@@ -435,6 +435,20 @@
   }
 }
 
+/* Where a branch's layers are, the trunk runs on down the rows' left edge as far as the last layer
+   that branches off it. */
+@utility stack-trunk {
+  &::after {
+    content: '';
+    position: absolute;
+    inset-inline-start: calc(var(--stack-line) / -2);
+    inset-block: 0;
+    width: var(--stack-line);
+    background: var(--lo-border-strong);
+    pointer-events: none;
+  }
+}
+
 /* A layer's rail: a line through its row to its neighbours, and its ball. The line runs on past the
    row's padding to meet the next row's, unless a modifier ends it at the ball. A hollow ball is a
    layer not on screen; the modifiers below fill it. */

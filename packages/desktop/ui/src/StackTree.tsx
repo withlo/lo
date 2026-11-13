@@ -150,10 +150,17 @@ function headText(count: number, found: StackTreeFound): string {
   }
 }
 
+/** Whether a layer is on a branch's own rail: one that starts a branch, or sits above one. */
+function onBranch(layer: StackTreeLayer): boolean {
+  return layer.branch === true || layer.sitsOn !== undefined;
+}
+
 const row = cva('stack-layer', {
   variants: {
     branch: { true: 'stack-branch', false: '' },
     sprout: { true: 'stack-sprout', false: '' },
+    // The trunk the later children branch off, running down past the branch's rows to the last.
+    trunk: { true: 'stack-trunk', false: '' },
     // A run shares one band, rounded at its ends. The layer on screen, outside a run, has the
     // ground of what's on screen; any other layer takes the pointer's.
     ground: {
@@ -190,37 +197,16 @@ const title = cva('truncate', {
   },
 });
 
-const REVIEWS: Record<StackReview, { word: string; tone: string; icon: ReactNode }> = {
-  approved: {
-    word: 'Approved',
-    tone: 'text-review-approved',
-    icon: <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />,
-  },
-  changes: {
-    word: 'Changes requested',
-    tone: 'text-review-changes',
-    icon: (
-      <>
-        <path d="M2.75 3.25h10.5v9.5H2.75Z" />
-        <path d="M5.5 8h5" />
-      </>
-    ),
-  },
-  required: {
-    word: 'Review required',
-    tone: 'text-review-required',
-    icon: (
-      <>
-        <path d="M1.75 8S4 3.75 8 3.75 14.25 8 14.25 8 12 12.25 8 12.25 1.75 8 1.75 8Z" />
-        <circle cx="8" cy="8" r="2" />
-      </>
-    ),
-  },
+/** What each review says, in a word and the color GitHub gives it. */
+const REVIEWS: Record<StackReview, { word: string; tone: string }> = {
+  approved: { word: 'Approved', tone: 'text-review-approved' },
+  changes: { word: 'Changes requested', tone: 'text-review-changes' },
+  required: { word: 'Review required', tone: 'text-review-required' },
 };
 
-const CHECKS: Record<StackChecks, { word: string; tone: string; icon: ReactNode }> = {
+const CHECKS: Record<StackChecks, { words: string; tone: string; icon: ReactNode }> = {
   passing: {
-    word: 'Passing',
+    words: 'Checks passing',
     tone: 'text-check-pass',
     icon: (
       <>
@@ -230,7 +216,7 @@ const CHECKS: Record<StackChecks, { word: string; tone: string; icon: ReactNode 
     ),
   },
   running: {
-    word: 'Running',
+    words: 'Checks running',
     tone: 'text-check-running',
     icon: (
       <>
@@ -240,7 +226,7 @@ const CHECKS: Record<StackChecks, { word: string; tone: string; icon: ReactNode 
     ),
   },
   failing: {
-    word: 'Failing',
+    words: 'Checks failing',
     tone: 'text-check-fail',
     icon: (
       <>
@@ -267,7 +253,7 @@ function Icon({ children }: { children: ReactNode }) {
   );
 }
 
-/** One thing in a layer's meta, which wraps as a whole. */
+/** One thing in a layer's meta, which wraps as a whole and never runs wider than the row. */
 function Item({
   tone = 'text-fg-muted',
   title: hint,
@@ -278,7 +264,10 @@ function Item({
   children: ReactNode;
 }) {
   return (
-    <span className={`inline-flex items-center gap-4 whitespace-nowrap ${tone}`} title={hint}>
+    <span
+      className={`inline-flex max-w-full min-w-0 items-center gap-4 whitespace-nowrap ${tone}`}
+      title={hint}
+    >
       {children}
     </span>
   );
@@ -315,18 +304,17 @@ function Meta({ layer }: { layer: StackTreeLayer }) {
           {state !== 'draft' && layer.when !== undefined && ` ${layer.when}`}
         </Item>
       )}
-      {reviewed !== undefined && (
-        <Item tone={reviewed.tone}>
-          <Icon>{reviewed.icon}</Icon>
-          {reviewed.word}
-        </Item>
-      )}
+      {reviewed !== undefined && <Item tone={reviewed.tone}>{reviewed.word}</Item>}
       {checked !== undefined && (
-        <Item tone={checked.tone} title={`Checks ${checked.word.toLowerCase()}`}>
+        <span
+          className={`inline-flex ${checked.tone}`}
+          role="img"
+          aria-label={checked.words}
+          title={checked.words}
+          data-checks={checks}
+        >
           <Icon>{checked.icon}</Icon>
-          <span className="sr-only">Checks </span>
-          {checked.word}
-        </Item>
+        </span>
       )}
       {queue !== undefined && (
         <Item tone="text-queue">
@@ -364,14 +352,16 @@ function Meta({ layer }: { layer: StackTreeLayer }) {
   );
 }
 
-/** Brings the row with `key` into view in `tree`, scrolling no more than it takes. */
+/**
+ * Brings the row with `key` into view in `tree`, scrolling no more than it takes. The first layer
+ * brings the root above it too, so walking up to the top shows what the stack sits on.
+ */
 function reveal(tree: HTMLElement | null, key: string | undefined): void {
   if (tree === null || key === undefined) return;
-  const found = [...tree.querySelectorAll<HTMLElement>('[role="treeitem"]')].find(
-    (each) => each.dataset['key'] === key,
-  );
+  const items = [...tree.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+  const found = items.find((each) => each.dataset['key'] === key);
   if (found === undefined) return;
-  const top = found.offsetTop;
+  const top = found === items[0] ? 0 : found.offsetTop;
   const bottom = top + found.offsetHeight;
   if (top < tree.scrollTop) tree.scrollTop = top;
   else if (bottom > tree.scrollTop + tree.clientHeight) tree.scrollTop = bottom - tree.clientHeight;
@@ -406,6 +396,12 @@ export function StackTree({
   const choosing = layers.some((each) => each.run !== undefined);
   const focusedIndex =
     focused === undefined ? -1 : layers.findIndex((each) => each.key === focused);
+  // Whether a later layer starts a branch, for each layer: the trunk runs on down to its elbow.
+  const branchesBelow: boolean[] = [];
+  for (let index = layers.length - 1, below = false; index >= 0; index--) {
+    branchesBelow[index] = below;
+    if (layers[index]?.sitsOn !== undefined) below = true;
+  }
 
   // The layer the keyboard moved to, and the one on screen when it changes, come into view.
   useEffect(() => reveal(scroller.current, focused), [focused]);
@@ -419,9 +415,12 @@ export function StackTree({
 
   return (
     <section aria-label="Stack" className="flex min-h-0 flex-col bg-bg-chrome">
+      <span id={`${prefix}-root`} className="sr-only">
+        Base branch {root}
+      </span>
       <div className="flex flex-none items-center gap-6 ps-16 pe-8 pt-12 pb-8">
         <h2 className="label-caps text-fg-muted text-label">Stack</h2>
-        <span className="ms-auto text-fg-muted text-small">
+        <span className="ms-auto text-end text-fg-muted text-small">
           <span className="lo-num">{headText(layers.length, found)}</span>
         </span>
       </div>
@@ -432,7 +431,8 @@ export function StackTree({
         ref={setRefs}
         role="tree"
         tabIndex={0}
-        aria-label="Stack"
+        aria-label="Layers"
+        aria-describedby={`${prefix}-root`}
         aria-multiselectable={choosing ? true : undefined}
         aria-activedescendant={
           focusedIndex < 0 ? undefined : `${prefix}-${layers[focusedIndex]?.key ?? ''}`
@@ -449,7 +449,6 @@ export function StackTree({
               <path d="M4.5 5.25v5.5M11.5 6.5c0 2.75-4 2.5-6.6 4.4" />
             </svg>
           </span>
-          <span className="sr-only">Base branch {root}</span>
           <span
             aria-hidden="true"
             className="min-w-0 truncate text-fg-muted code-small"
@@ -460,7 +459,11 @@ export function StackTree({
         </div>
         {layers.map((layer, index) => {
           const sprouts = layer.sitsOn !== undefined;
-          const branch = layer.branch === true || sprouts;
+          const branch = onBranch(layer);
+          const next = layers[index + 1];
+          // A branch's rail ends at its last layer's ball; the trunk's goes on to whatever's below.
+          const last =
+            next === undefined || (branch && (next.sitsOn !== undefined || !onBranch(next)));
           const finished = layer.state === 'merged' || layer.state === 'closed';
           const onScreen = layer.key === current;
           const outside = choosing && layer.run === undefined;
@@ -480,6 +483,7 @@ export function StackTree({
               className={row({
                 branch,
                 sprout: sprouts,
+                trunk: branch && branchesBelow[index] === true,
                 ground: layer.run ?? (onScreen ? 'current' : 'rest'),
                 focused: layer.key === focused,
               })}
@@ -490,7 +494,7 @@ export function StackTree({
                 aria-hidden="true"
                 className={rail({
                   sprout: sprouts,
-                  last: index === layers.length - 1,
+                  last,
                   ball:
                     layer.state === 'merged'
                       ? 'merged'
