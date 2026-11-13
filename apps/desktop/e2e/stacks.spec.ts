@@ -159,6 +159,10 @@ test('draws the stack above the files, with each layer’s marks, the offer and 
   await expect(rowOf(page, STACK.a).getByRole('img', { name: 'No overview yet' })).toBeVisible();
   await expect(rowOf(page, STACK.c).getByRole('img', { name: 'No overview yet' })).toBeVisible();
   await expect(rowOf(page, STACK.a)).toContainText(/Viewed \d+\/\d+/);
+  // #C's diff starts at #B's head, so it shows one file, and the layer's row and the files' head
+  // count that one, not the three its pull request changes against `stack/root`.
+  await expect(rowOf(page, STACK.c)).toContainText('Viewed 0/1', { timeout: 20_000 });
+  await expect(page.getByRole('region', { name: 'Files' })).toContainText('0 / 1 viewed');
   // #A, #B and #C could be a GitHub stack, which is offered, worded for how they were found.
   await expect(stack).toContainText(
     "These PRs sit on each other's branches and share commits but aren't a GitHub stack.",
@@ -310,7 +314,10 @@ test.describe('a run of layers', () => {
       `2 layers as one diff · #${STACK.b} Stack B: rate limit GraphQL queries by cost and #${STACK.c} Stack C: count a query's nodes`,
       { timeout: 20_000 },
     );
-    await expect(bar(page)).toContainText('stack/a → stack/c · 2 files', { timeout: 20_000 });
+    // The window's default width has no room for the branches beside the layers' names, so the bar
+    // leaves them out and keeps the count of files whole.
+    await expect(bar(page).getByText('2 files')).toBeVisible({ timeout: 20_000 });
+    await expect(bar(page).getByText('stack/a → stack/c')).toBeHidden();
     await expect(bar(page).getByRole('button')).toHaveText(new RegExp(`^Back to #${STACK.c}`));
     const run = `${c}:${STACK.b}-${STACK.c}`;
     await expect
@@ -323,6 +330,13 @@ test.describe('a run of layers', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
       "Stack C: count a query's nodes",
     );
+    // The diff's note names the run's ends, and the tab's name agrees with the heading on its top
+    // layer, #C.
+    await expect(page.getByRole('note', { name: 'What the diff compares' })).toHaveText(
+      `Every change, #${STACK.b} → #${STACK.c}`,
+    );
+    await expect(page.locator('[data-tab]').first()).toContainText(`#${STACK.c}`);
+    await expect(page.locator('[data-tab]').first()).not.toContainText(`#${STACK.b}`);
     // It opens on its diff, which marks no file viewed, and `e` says why; it compares no
     // revisions.
     await settled(page);

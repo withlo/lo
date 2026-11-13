@@ -268,6 +268,20 @@ async function middleOf(locator: Locator): Promise<{ x: number; y: number }> {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
+/**
+ * Keeps the system's pointer out of Lo's window, for a test that drags. In CI, every test's copy of
+ * Lo shares one virtual display, whose pointer rests over the window. As another copy opens or
+ * closes, the system tells Lo's window the pointer is there, with no button held, and Chromium takes
+ * that for the button let go outside the window: it lets go of the pointer the dragged tab holds,
+ * which puts the tab back. Playwright's pointer doesn't come through the system, so it still
+ * reaches the window.
+ */
+async function ignoreSystemPointer(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ BrowserWindow }) => {
+    for (const window of BrowserWindow.getAllWindows()) window.setIgnoreMouseEvents(true);
+  });
+}
+
 /** Presses on `tab` and drags it level to `to`'s middle and `by` pixels on, without letting go. */
 async function dragTab(page: Page, tab: Locator, to: Locator, by: number): Promise<void> {
   const from = await middleOf(tab);
@@ -278,15 +292,17 @@ async function dragTab(page: Page, tab: Locator, to: Locator, by: number): Promi
 }
 
 test('a tab dragged along the strip lands where it’s let go, the others sliding aside, and Esc puts it back', async ({
+  app,
   page,
 }) => {
+  await ignoreSystemPointer(app);
   await open(page, pull('withlo', 'a', 1), pull('withlo', 'b', 2), pull('withlo', 'c', 3));
   await expect(tabs(page)).toHaveText(['a #1', 'b #2', 'c #3']);
 
   // Past b's middle, a is over it, and b has slid back a place. The tab is never the window's to
   // drag.
   await dragTab(page, tabs(page).nth(0), tabs(page).nth(1), 10);
-  await expect(tabs(page).nth(0)).toHaveAttribute('style', /translateX\(\d/);
+  await expect(tabs(page).nth(0)).toHaveAttribute('style', /translateX\([1-9]/);
   await expect(tabs(page).nth(1)).toHaveAttribute('style', /translateX\(-\d/);
   expect(
     await tabs(page)
@@ -515,6 +531,7 @@ test('with a tab brought in from "N more", a drag and the keys move exactly what
   page,
 }) => {
   await resize(app, page, 1440);
+  await ignoreSystemPointer(app);
   await open(page, ...many(16));
   await page.keyboard.press(`${cmd}+Digit1`);
   const folded = await more(page).getAttribute('aria-label');

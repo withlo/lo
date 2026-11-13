@@ -84,11 +84,13 @@ export const sinceKey = z.string().min(1).max(1024);
  * request of a stack's layer, the commit it's compared with, `compareFrom`, which another starts
  * anew; which files show from where they left off, named by `since`, which changes their versions
  * but not the list; where its files came from, and the files, in git's order, none until they're
- * known. `partial` when GitHub listed only some of them, and `uncompared` when GitHub couldn't
- * compare a stack's layer with `compareFrom`, so its files from GitHub are the pull request's own,
- * the layers below included. `problem` says what couldn't be read, and
- * `waiting` what the diff waits for before anything is drawn: a comparison of revisions the local
- * copy doesn't have yet.
+ * known. `start` is the commit those files' changes start from, once the local copy has worked
+ * them out, as where the head meets the base branch, or `compareFrom` for a stack's layer: GitHub
+ * doesn't say, so it's `null` while they're GitHub's. `partial` when GitHub listed only some of
+ * them, and `uncompared` when GitHub couldn't compare a stack's layer with `compareFrom`, so its
+ * files from GitHub are the pull request's own, the layers below included. `problem` says what
+ * couldn't be read, and `waiting` what the diff waits for before anything is drawn: a comparison of
+ * revisions the local copy doesn't have yet.
  */
 export const diffState = z.strictObject({
   id: tabId,
@@ -98,6 +100,7 @@ export const diffState = z.strictObject({
   since: sinceKey.nullable(),
   waiting: z.string().nullable(),
   from: source.nullable(),
+  start: oid.nullable(),
   files: z.array(fileVersions).nullable(),
   partial: z.boolean(),
   uncompared: z.boolean(),

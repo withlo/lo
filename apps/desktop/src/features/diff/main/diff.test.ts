@@ -143,7 +143,13 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     diff.update(e2eInfo(READY));
     const state = await settled((each) => each.from === 'local');
 
-    expect(state).toMatchObject({ at: APP_PULL.head, partial: false, problem: null });
+    // Where its changes start, which the local copy worked out: GitHub's files don't say.
+    expect(state).toMatchObject({
+      at: APP_PULL.head,
+      start: READY.mergeBase,
+      partial: false,
+      problem: null,
+    });
     const starts = Object.fromEntries(
       (state.files ?? []).map((file) => [file.path.text, file.start]),
     );
@@ -775,7 +781,13 @@ describe('a stack’s layer’s diff', { timeout: 60_000 }, () => {
     diff.update(layerInfo());
     const state = await settled((each) => each.from === 'github');
 
-    expect(state).toMatchObject({ at: C, compareFrom: B, partial: false, uncompared: false });
+    expect(state).toMatchObject({
+      at: C,
+      compareFrom: B,
+      start: null,
+      partial: false,
+      uncompared: false,
+    });
     expect(state.files?.map((file) => file.path.text)).toEqual(['e2/c.txt']);
     expect(asked).toEqual([`/repos/rozed-dev/e2e/compare/${B}...${C}`]);
     const [patch] = await diff.texts(C, null, B, null, 'github', [0]);

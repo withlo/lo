@@ -9,6 +9,7 @@ import type { TreePath } from '../../tree/contract.ts';
 import { holdLimit as heldFor } from './hold.ts';
 import { marked } from './store.ts';
 import {
+  countIn,
   markable,
   markIn,
   shownMarks,
@@ -49,6 +50,18 @@ export function viewedMarkOf(
   previous?: TreePath | null,
 ): Mark | undefined {
   return markIn(marks, path, previous);
+}
+
+/**
+ * How many of `files`, the changed files a diff shows, are viewed in `marks`, of how many there
+ * are. `marks`' own count is of every file the pull request changes, which a stack's layer's diff,
+ * compared with the layer below it, doesn't all show.
+ */
+export function viewedCountIn(
+  marks: ShownMarks,
+  files: readonly { readonly path: TreePath; readonly previous: TreePath | null }[],
+): { readonly viewed: number; readonly total: number } {
+  return countIn(marks, files);
 }
 
 /**

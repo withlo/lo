@@ -1,5 +1,6 @@
 import { cva } from 'class-variance-authority';
 import {
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -7,6 +8,7 @@ import {
   type MouseEvent,
   type ReactNode,
   type Ref,
+  type RefObject,
 } from 'react';
 
 import { Avatar } from './Avatar.tsx';
@@ -380,18 +382,84 @@ function Meta({ layer }: { layer: StackTreeLayer }) {
 }
 
 /**
- * Brings the row with `key` into view in `tree`, scrolling no more than it takes. The first layer
- * brings the root above it too, so walking up to the top shows what the stack sits on.
+ * Brings the row with `key` into view in `tree`, scrolling no more than it takes, and says whether
+ * the row was there. The first layer brings the root above it too, so walking up to the top shows
+ * what the stack sits on.
  */
-function reveal(tree: HTMLElement | null, key: string | undefined): void {
-  if (tree === null || key === undefined) return;
+function reveal(tree: HTMLElement | null, key: string | undefined): boolean {
+  if (tree === null || key === undefined) return false;
   const items = [...tree.querySelectorAll<HTMLElement>('[role="treeitem"]')];
   const found = items.find((each) => each.dataset['key'] === key);
-  if (found === undefined) return;
+  if (found === undefined) return false;
   const top = found === items[0] ? 0 : found.offsetTop;
   const bottom = top + found.offsetHeight;
   if (top < tree.scrollTop) tree.scrollTop = top;
   else if (bottom > tree.scrollTop + tree.clientHeight) tree.scrollTop = bottom - tree.clientHeight;
+  return true;
+}
+
+/**
+ * Brings the layer the keyboard moved to, and the one on screen when it changes, into view, and
+ * keeps it in view when the tree's height changes under it: an offer arriving above it, a note
+ * below, or the window's size. Once the tree has been scrolled by hand, a change in its height
+ * leaves it where it is, until another layer is moved to. A run on screen has no one layer, so it
+ * keeps none: a resize doesn't bring back the layer the run was chosen from.
+ */
+function useKeptInView(
+  scroller: RefObject<HTMLDivElement | null>,
+  focused: string | undefined,
+  current: string | undefined,
+): void {
+  const keeping = useRef<string | undefined>(undefined);
+  // Where the last reveal left the tree, and whether it's been scrolled by hand since.
+  const placed = useRef<{ key: string | undefined; top: number; byHand: boolean }>({
+    key: undefined,
+    top: 0,
+    byHand: false,
+  });
+  const show = useCallback(
+    (key: string | undefined) => {
+      const tree = scroller.current;
+      if (tree === null) return;
+      placed.current = {
+        key: reveal(tree, key) ? key : undefined,
+        top: tree.scrollTop,
+        byHand: false,
+      };
+    },
+    [scroller],
+  );
+  useEffect(() => {
+    if (focused !== undefined) keeping.current = focused;
+    show(focused);
+  }, [focused, show]);
+  useEffect(() => {
+    keeping.current = current;
+    show(current);
+  }, [current, show]);
+  useEffect(() => {
+    const tree = scroller.current;
+    if (tree === null) return undefined;
+    // Reveals move the tree to where `placed` says; any other place it's at was somebody's hand.
+    const scrolled = () => {
+      if (Math.abs(tree.scrollTop - placed.current.top) >= 1) placed.current.byHand = true;
+    };
+    tree.addEventListener('scroll', scrolled, { passive: true });
+    const watching =
+      typeof ResizeObserver === 'undefined'
+        ? undefined
+        : new ResizeObserver(() => {
+            const kept = keeping.current;
+            if (kept === undefined) return;
+            if (kept === placed.current.key && placed.current.byHand) return;
+            show(kept);
+          });
+    watching?.observe(tree);
+    return () => {
+      tree.removeEventListener('scroll', scrolled);
+      watching?.disconnect();
+    };
+  }, [scroller, show]);
 }
 
 /**
@@ -433,9 +501,7 @@ export function StackTree({
     if (layers[index]?.sitsOn !== undefined) below = true;
   }
 
-  // The layer the keyboard moved to, and the one on screen when it changes, come into view.
-  useEffect(() => reveal(scroller.current, focused), [focused]);
-  useEffect(() => reveal(scroller.current, current), [current]);
+  useKeptInView(scroller, focused, current);
 
   const setRefs = (element: HTMLDivElement | null) => {
     scroller.current = element;

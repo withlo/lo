@@ -80,6 +80,7 @@ function state(files: FileVersions[] | null): DiffState {
     waiting: null,
     from: 'github',
     files,
+    start: null,
     partial: false,
     uncompared: false,
     problem: null,

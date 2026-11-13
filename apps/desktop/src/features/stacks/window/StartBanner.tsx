@@ -5,12 +5,15 @@
 
 import { Banner } from '@lo/ui';
 
+import { useDiffState } from '../../diff/window/shared.ts';
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { applyOffer, offers } from './offers.ts';
+import { applyOffer, offers, startedAt } from './offers.ts';
 
 export function StartBanner({ tab }: { tab: PullTab }) {
   const offer = useTabState(offers, tab.id);
-  if (!offer) return null;
+  const state = useDiffState(tab.id);
+  // Not once the diff on screen starts where it offers.
+  if (!offer || startedAt(offer, state)) return null;
   return (
     <Banner
       tone="info"

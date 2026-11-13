@@ -44,6 +44,7 @@ function state(
     waiting: null,
     from,
     files,
+    start: null,
     partial: false,
     uncompared: false,
     problem: null,
@@ -391,6 +392,38 @@ describe('a tab’s diff in the window', () => {
       github?.entries.map((entry) => entry.id),
     );
     expect(heard).toEqual(['lines d0 local', 'lines d1 local', 'moves 1']);
+  });
+
+  it('says what GitHub said of the files drawn: that it couldn’t compare them, only until the local copy’s replace them', async () => {
+    const files = [versions('a.ts'), versions('b.ts')];
+    const { done, list } = work();
+    list(files);
+    const loader = new Loader(done);
+    loader.setWhitespace(true);
+    // Main keeps saying GitHub couldn't compare it, and that it listed only some files, after the
+    // local copy's files replace GitHub's.
+    const said = (from: Source) => ({
+      ...state(files, from, HEAD, null, null, 'c'.repeat(40)),
+      uncompared: true,
+      partial: from === 'github',
+    });
+    loader.take(said('github'));
+    expect(loader.snapshot().ready).toBeUndefined();
+    await settle(loader);
+    expect(loader.snapshot().ready).toMatchObject({
+      from: 'github',
+      uncompared: true,
+      partial: true,
+    });
+
+    loader.take(said('local'));
+    await settle(loader);
+    expect(loader.snapshot().state?.uncompared).toBe(true);
+    expect(loader.snapshot().ready).toMatchObject({
+      from: 'local',
+      uncompared: false,
+      partial: false,
+    });
   });
 
   it('takes files that come to show from where they left off in place, loading only those again', async () => {
