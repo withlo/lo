@@ -127,6 +127,85 @@ test('waiting requests run in order writes first', async () => {
   ]);
 });
 
+test('foreground reads go ahead of waiting background reads, behind writes', async () => {
+  const queue = new RequestQueue(0);
+  const log: Log = [];
+  const start = performance.now();
+  for (const [name, kind] of [
+    ['poll a', 'background'],
+    ['poll b', 'background'],
+    ['open c', 'foreground'],
+    ['write d', 'write'],
+    ['poll e', 'background'],
+    ['open f', 'foreground'],
+  ] as const) {
+    const made = request(name, 100, log, start);
+    void (kind === 'write' ? queue.write(made) : queue.read(made, undefined, kind));
+    await settle();
+  }
+  await advanceTo(start, 1000);
+  // The poll under way finishes first: nothing cuts a request short.
+  expect(log.map(([name]) => name)).toEqual([
+    'poll a',
+    'write d',
+    'open c',
+    'open f',
+    'poll b',
+    'poll e',
+  ]);
+});
+
+test('a foreground read given up on while waiting leaves the queue', async () => {
+  const queue = new RequestQueue(0);
+  const log: Log = [];
+  const start = performance.now();
+  void queue.read(request('poll a', 100, log, start));
+  await settle();
+  const giveUp = new AbortController();
+  const refused = queue.read(request('open b', 100, log, start), giveUp.signal, 'foreground').then(
+    () => 'made',
+    () => 'refused',
+  );
+  void queue.read(request('poll c', 100, log, start));
+  await settle();
+  giveUp.abort();
+  await advanceTo(start, 500);
+  expect(await refused).toBe('refused');
+  expect(log.map(([name]) => name)).toEqual(['poll a', 'poll c']);
+});
+
+test('a read is taken as its priority stands when the queue comes free, else in the order it came', async () => {
+  const queue = new RequestQueue(0);
+  const log: Log = [];
+  const start = performance.now();
+  void queue.read(request('poll a', 100, log, start));
+  await settle();
+  // Two tabs opening, the first hidden while it waits: the one on screen goes first, and the
+  // hidden one waits with the polls, in the order it came.
+  let shown = true;
+  void queue.read(request('hidden b', 100, log, start), undefined, () =>
+    shown ? 'foreground' : 'background',
+  );
+  void queue.read(request('open c', 100, log, start), undefined, 'foreground');
+  void queue.read(request('poll d', 100, log, start));
+  shown = false;
+  await advanceTo(start, 500);
+  expect(log.map(([name]) => name)).toEqual(['poll a', 'open c', 'hidden b', 'poll d']);
+
+  // A tab hidden as its read came, shown again before the queue comes free: it goes ahead of the
+  // poll that came before it.
+  void queue.read(request('poll e', 100, log, start));
+  await settle();
+  let again = false;
+  void queue.read(request('poll f', 100, log, start));
+  void queue.read(request('shown g', 100, log, start), undefined, () =>
+    again ? 'foreground' : 'background',
+  );
+  again = true;
+  await advanceTo(start, 900);
+  expect(log.map(([name]) => name).slice(4)).toEqual(['poll e', 'shown g', 'poll f']);
+});
+
 test('a request given up on while waiting doesnt hold up the rest', async () => {
   const queue = new RequestQueue(0);
   const log: Log = [];

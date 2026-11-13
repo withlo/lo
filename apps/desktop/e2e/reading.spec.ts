@@ -214,9 +214,10 @@ function answerFor(overview: Overview, path: string, outgoing: ServerResponse): 
     });
     return true;
   }
-  if (path === `${repo}/git/trees/${overview.tree}`) {
+  // Lo asks for the tree by the commit's ID, and GitHub names the answer by what was asked for.
+  if (path === `${repo}/git/trees/${overview.sha}`) {
     json(outgoing, 200, {
-      sha: overview.tree,
+      sha: overview.sha,
       tree: overview.entries.map((entry) => ({
         ...entry,
         mode: entry.type === 'tree' ? '040000' : '100644',

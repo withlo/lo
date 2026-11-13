@@ -70,11 +70,13 @@ export function WhoWrote({ author, when }: { author: Author; when: string }): Re
 
 /**
  * The commit an overview is at, and who wrote it when, for the reports: "a91c4e2, written 2 days
- * ago by ravi-k".
+ * ago by ravi-k", or the commit alone until main has read who wrote it.
  */
 export function WrittenBy({ commit, now }: { commit: OverviewCommit; now: number }) {
-  const author = authorOf(commit.byline);
-  const when = ago(commit.byline.at, now);
+  const { byline } = commit;
+  if (byline === null) return <span className="code-text">{shortId(commit.id)}</span>;
+  const author = authorOf(byline);
+  const when = ago(byline.at, now);
   return (
     <>
       <span className="code-text">{shortId(commit.id)}</span>, written {when}

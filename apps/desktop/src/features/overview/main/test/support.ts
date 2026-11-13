@@ -196,8 +196,9 @@ export class FakeGithub {
     }
     match = /^[^/]+\/[^/]+\/git\/trees\/([0-9a-f]+)\?recursive=1$/.exec(path);
     if (match) {
+      // A commit's ID names its tree too, and GitHub names the answer by what was asked for.
       const sha = match[1] ?? '';
-      const tree = this.trees.get(sha);
+      const tree = this.trees.get(this.commits.get(sha)?.tree ?? sha);
       if (!tree) return notFound();
       return Response.json({ sha, tree: tree.items, truncated: tree.truncated });
     }

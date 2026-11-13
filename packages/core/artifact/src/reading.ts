@@ -902,6 +902,30 @@ export class Reading {
   }
 }
 
+/**
+ * The figures `text` names first, at most `most` of them, each once, in the order its fences name
+ * them: found line by line, never parsed, so they can be read before the text is. A fence the
+ * parse wouldn't take for one, such as one in a code block, counts here too; the parse says which
+ * figures the overview shows.
+ */
+export function namedFigures(text: string, most: number): string[] {
+  const named: string[] = [];
+  let start = 0;
+  while (start < text.length && named.length < most) {
+    const newline = text.indexOf('\n', start);
+    const end = newline === -1 ? text.length : newline;
+    const line = text.slice(start, end).trimStart();
+    start = end + 1;
+    const colons = /^:{3,}/.exec(line)?.[0].length ?? 0;
+    if (colons === 0) continue;
+    const { kind, argument } = opening(line.slice(colons));
+    if (kind !== 'figure') continue;
+    const read = readFigure(unbracket(argument));
+    if (read.ok && !named.includes(read.value)) named.push(read.value);
+  }
+  return named;
+}
+
 /** A block's argument as a target: inside `<` and `>` when it's written so, for a path with spaces. */
 function unbracket(argument: string): string {
   return argument.length >= 2 && argument.startsWith('<') && argument.endsWith('>')

@@ -15,7 +15,12 @@ export {
   type TreeEntry,
 } from './readers.ts';
 export type { Header } from './header.ts';
-export type { CodeReference, FigureReference, PartReference } from './reading.ts';
+export {
+  namedFigures,
+  type CodeReference,
+  type FigureReference,
+  type PartReference,
+} from './reading.ts';
 export {
   ARTIFACT,
   FINDING_CODES,

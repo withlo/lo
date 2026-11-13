@@ -364,6 +364,20 @@ describe('a figure that can’t be shown', () => {
     expect(shown.querySelector('figcaption')?.textContent).toBe('Figure 3. The dashboard.');
   });
 
+  test('one still being read says so, in its frame, rather than why it can’t be shown', () => {
+    render({
+      path: 'figures/a.png',
+      figure: { state: 'unread', why: 'failed' },
+      reading: true,
+      number: 3,
+      caption: 'The dashboard.',
+    });
+    expect(host.querySelector('figure.lo-figure--broken')).toBeNull();
+    const shown = host.querySelector('figure.lo-figure[aria-busy="true"]')!;
+    expect(shown.querySelector('.lo-figure__frame p')?.textContent).toBe('Reading figure 3…');
+    expect(shown.querySelector('figcaption')?.textContent).toBe('Figure 3. The dashboard.');
+  });
+
   test('a kept SVG whose tree has no svg at its root is one', () => {
     render({
       path: 'figures/a.svg',

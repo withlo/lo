@@ -12,6 +12,14 @@ import { helpLink, oid, tabId } from '../tab/contract.ts';
 /** A moment, in milliseconds since the Unix epoch. */
 const time = z.number().int().nonnegative();
 
+/**
+ * How many of the figures an overview's text names first come with the text as its tab opens:
+ * main reads them in the turn that reads the text, and the window draws each as it comes, before
+ * it asks for the rest, so a first screen's figures are in its first frame. A figure is drawn up to
+ * 960 px tall, so a first screen rarely shows more.
+ */
+export const FIRST_FIGURES = 2;
+
 /** What a path in the overview's commit is. A link is a symbolic link. */
 export const entryKind = z.enum(['file', 'link', 'folder', 'submodule']);
 export type EntryKind = z.output<typeof entryKind>;
@@ -57,8 +65,10 @@ export const repository = z.strictObject({
 
 /**
  * An overview's commit, as main read it: its ID, whether it came from the pull request's own
- * repository or the fork its head is in, and which that is; its byline; its files and folders, as
- * GitHub listed them; and whether `artifact.md` was read, which `files` then gives at once.
+ * repository or the fork its head is in, and which that is; its byline, `null` until main has read
+ * it, which it does after the rest, since nothing the overview shows waits for it; its files and
+ * folders, as GitHub listed them; and whether `artifact.md` was read, which `files` then gives at
+ * once.
  *
  * Past the most files and folders an overview may hold, only one more than that are listed, with
  * `artifact.md` wherever it is, which is all the overview's checks look at. `artifact.md` isn't
@@ -69,7 +79,7 @@ export const overviewCommit = z.strictObject({
   id: oid,
   source: z.enum(['base', 'fork']),
   repository,
-  byline,
+  byline: byline.nullable(),
   entries: z.array(entry),
   truncated: z.boolean(),
   read: z.boolean(),

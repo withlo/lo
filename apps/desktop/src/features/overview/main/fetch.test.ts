@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { Acting } from '../../tab/contract.ts';
 import { NAME_LIMIT } from '../contract.ts';
 import { Blobs } from './blobs.ts';
-import { fetchBlob, readOverview, type Github } from './fetch.ts';
+import { fetchBlob, readByline, readOverview, type Github } from './fetch.ts';
 import { artifactText, database, FakeGithub, idOf, notFound, overview } from './test/support.ts';
 
 const E2E = new RepoRef('rozed-dev', 'e2e');
@@ -18,8 +18,53 @@ async function bylineOf(login: string | null, name: string) {
   const made = overview('byline', { 'artifact.md': artifactText(5) });
   github.push('rozed-dev/e2e', 5, made, { login, name });
   const reads: Github = (request) => request(github.client);
-  return (await readOverview(reads, ROZED, new Blobs(database()), E2E, made.commit, 'base')).byline;
+  return readByline(reads, E2E, made.commit);
 }
+
+describe('reading an overview', () => {
+  it('reads the tree by the commit, then the text, and the byline apart', async () => {
+    const github = new FakeGithub();
+    const made = overview('order', {
+      'artifact.md': artifactText(5),
+      'figures/a.svg': '<svg viewBox="0 0 1 1"/>',
+    });
+    github.push('rozed-dev/e2e', 5, made);
+    const reads: Github = (request) => request(github.client);
+    const blobs = new Blobs(database());
+    const read = await readOverview(reads, ROZED, blobs, E2E, made.commit, 'base');
+    // Two reads before the text is in, all by the one commit's ID or IDs its tree gave.
+    expect(github.paths()).toEqual([
+      `rozed-dev/e2e/git/trees/${made.commit}?recursive=1`,
+      `rozed-dev/e2e/git/blobs/${idOf(artifactText(5))}`,
+    ]);
+    expect(read).toMatchObject({ id: made.commit, byline: null, read: true, truncated: false });
+    expect(blobs.get(idOf(artifactText(5)))).toEqual(new TextEncoder().encode(artifactText(5)));
+    expect(await readByline(reads, E2E, made.commit)).toMatchObject({
+      login: 'rozed-bot',
+    });
+    expect(github.paths().at(-1)).toBe(`rozed-dev/e2e/commits/${made.commit}`);
+  });
+
+  it("refuses a commit GitHub answers for with another's", async () => {
+    const github = new FakeGithub();
+    const made = overview('other', { 'artifact.md': artifactText(5) });
+    github.push('rozed-dev/e2e', 5, made);
+    const reads: Github = (request) => request(github.client);
+    const asked = `rozed-dev/e2e/commits/${'d'.repeat(40)}`;
+    github.answer.set(asked, () =>
+      Response.json({
+        sha: made.commit,
+        author: null,
+        commit: {
+          author: { name: 'A', date: '2026-11-11T09:30:00Z' },
+          committer: { name: 'A', date: '2026-11-11T09:30:00Z' },
+          tree: { sha: made.tree },
+        },
+      }),
+    );
+    await expect(readByline(reads, E2E, 'd'.repeat(40))).rejects.toThrow('answered for commit');
+  });
+});
 
 describe('the byline', () => {
   it("names the author by the login GitHub maps them to, an app's too, else by name", async () => {

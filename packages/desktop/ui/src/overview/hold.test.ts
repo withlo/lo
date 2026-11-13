@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-// What keeps an overview where it is on the page as its box moves: a banner over it coming or
-// going leaves every line where it was, by the scroll, or at the very top by room above the
-// article; what's above the block being read changing size leaves it where it is, by the scroll;
-// a scroll the reader asks for moves it. And what keeps a block from moving what's on
+// What keeps an overview where it is on the page as its box moves: until the reader first scrolls
+// or jumps, the document's top stays at the box's top, banners and all; after, a banner over it
+// coming or going leaves every line where it was, by the scroll, or at the very top by room above
+// the article; what's above the block being read changing size leaves it where it is, by the
+// scroll; a scroll the reader asks for moves it. And what keeps a block from moving what's on
 // screen as its contents change size: it takes their height unseen, off screen, past the screen's
 // bottom edge, above its top with the scroll taking the change, and with nothing under it; wholly
 // on screen with more under it, contents grown taller are cut off until the reader asks to see
@@ -65,6 +66,43 @@ afterEach(() => {
 });
 
 describe('an overview’s place on the page', () => {
+  it('is its top until the reader first scrolls or jumps, banners and all', () => {
+    const view = scrollerOf(3000);
+    holdPlace(view.element);
+    // A banner over the box moves the document down with it, its top still in sight.
+    view.banner(60);
+    expect(view.element.scrollTop).toBe(0);
+    expect(view.first()).toBe(160);
+    // The banner going leaves the document where it is, by room above it, which the next banner
+    // takes back.
+    view.banner(-60);
+    expect(view.element.scrollTop).toBe(0);
+    expect(view.element.style.paddingTop).toBe('60px');
+    expect(view.first()).toBe(160);
+    view.banner(40);
+    expect(view.element.style.paddingTop).toBe('20px');
+    expect(view.first()).toBe(160);
+    view.banner(40);
+    expect(view.element.scrollTop).toBe(0);
+    expect(view.element.style.paddingTop).toBe('');
+    expect(view.first()).toBe(180);
+  });
+
+  it('keeps the top in view as what comes in at the top grows, until the reader scrolls', () => {
+    const page = articleOf([300, 100, 400]);
+    holdPlace(page.scroller);
+    // A banner comes in over the first block: the scroll stays at the top.
+    page.change(1, 160);
+    page.grow(360);
+    expect(page.scroller.scrollTop).toBe(0);
+    // A jump, as `]b` or a link makes, starts holding the place from where it lands.
+    page.scroll(400);
+    const landed = page.top(2);
+    page.change(1, 100);
+    expect(page.top(2)).toBe(landed);
+    expect(page.scroller.scrollTop).toBe(340);
+  });
+
   it('stays as a banner comes and goes, by the scroll', () => {
     const view = scrollerOf(3000);
     holdPlace(view.element);
@@ -141,6 +179,7 @@ describe('an overview’s place on the page', () => {
   it('is let go once stopped, room above and all', () => {
     const view = scrollerOf(3000);
     const stop = holdPlace(view.element);
+    view.scroll(60);
     view.banner(60);
     view.scroll(0);
     view.banner(-60);

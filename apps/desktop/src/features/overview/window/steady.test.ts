@@ -86,12 +86,17 @@ describe('a result checked again', () => {
   it('keeps the tree and the figures the view drew when nothing they show changed', async () => {
     const { checks, results } = checking(() => ({ kind: 'noGit' }));
     checks.take(stateOf('waiting'));
-    await settled(results, 1);
+    // The text alone, then with its figure.
+    await settled(results, 2);
+    const [text, first] = results;
+    if (text?.kind !== 'checked' || first?.kind !== 'checked') throw new Error('not checked');
+    expect(text.coming).toEqual(['figures/flow.svg']);
+    expect(first.parsed).toBe(text.parsed);
     // Git turns out to be missing: the check runs again, and finds the same.
     checks.take(stateOf('noGit'));
-    await settled(results, 2);
-    const [first, second] = results;
-    if (first?.kind !== 'checked' || second?.kind !== 'checked') throw new Error('not checked');
+    await settled(results, 3);
+    const second = results[2];
+    if (second?.kind !== 'checked') throw new Error('not checked');
     expect(second).not.toBe(first);
     expect(second.parsed).toBe(first.parsed);
     expect(second.checked).toBe(first.checked);
@@ -104,10 +109,10 @@ describe('a result checked again', () => {
       files: [{ kind: 'file', size: 8, bytes: encoder.encode('one\ntwo\n') }],
     }));
     checks.take(stateOf('waiting'));
-    await settled(results, 1);
-    checks.take(stateOf('ready'));
     await settled(results, 2);
-    const [first, second] = results;
+    checks.take(stateOf('ready'));
+    await settled(results, 3);
+    const [, first, second] = results;
     if (first?.kind !== 'checked' || second?.kind !== 'checked') throw new Error('not checked');
     const [before, after] = [first.checked.outcome, second.checked.outcome];
     if (before.kind !== 'shown' || after.kind !== 'shown') throw new Error('not shown');
@@ -122,8 +127,8 @@ describe('a result checked again', () => {
   it('is the one before, whole, when it comes again equal, as a copy over a port does', async () => {
     const { checks, results } = checking(() => ({ kind: 'noGit' }));
     checks.take(stateOf('waiting'));
-    await settled(results, 1);
-    const first = results[0];
+    await settled(results, 2);
+    const first = results[1];
     expect(steady(first, structuredClone(first))).toBe(first);
     // For another commit, nothing is kept.
     const other = structuredClone(first);

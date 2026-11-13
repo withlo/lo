@@ -162,21 +162,17 @@ test("reads a pull request's overview as its tab opens, and gives the window its
   );
   expect(other).toMatchObject({ ok: false, error: { code: 'moved' } });
 
-  // What Lo asked GitHub for the overview: the ref, its commit, the commit's tree, and each file
-  // once, raw, the figure only once asked for.
+  // What Lo asked GitHub for the overview: the ref, the tree of its commit by the commit's ID,
+  // artifact.md, raw, the figure it names first, raw, then the commit for its byline.
   const asked = github.replay.seen
     .map(({ url, headers }) => [new URL(url).pathname, headers.get('accept')])
     .filter(([path]) =>
-      ['/git/matching-refs/', '/commits/', '/git/trees/3691c0b1', '/git/blobs/'].some((part) =>
-        path?.includes(part),
+      ['/git/matching-refs/', '/commits/', `/git/trees/${APP_PULL.overview}`, '/git/blobs/'].some(
+        (part) => path?.includes(part),
       ),
     );
   expect(asked.filter(([path]) => !path?.includes('matching-refs'))).toEqual([
-    [`/repos/rozed-dev/e2e/commits/${APP_PULL.overview}`, 'application/vnd.github+json'],
-    [
-      '/repos/rozed-dev/e2e/git/trees/3691c0b1986fa31d3bca412d2f4d6c1d3379edde',
-      'application/vnd.github+json',
-    ],
+    [`/repos/rozed-dev/e2e/git/trees/${APP_PULL.overview}`, 'application/vnd.github+json'],
     [
       '/repos/rozed-dev/e2e/git/blobs/a481067b4846c72fa4b637d20e40108b20985b66',
       'application/vnd.github.raw+json',
@@ -185,6 +181,7 @@ test("reads a pull request's overview as its tab opens, and gives the window its
       '/repos/rozed-dev/e2e/git/blobs/9e34eac2018965ce2375440252619e90d6b45b33',
       'application/vnd.github.raw+json',
     ],
+    [`/repos/rozed-dev/e2e/commits/${APP_PULL.overview}`, 'application/vnd.github+json'],
   ]);
   expect(asked[0]).toEqual(['/repos/rozed-dev/e2e/git/matching-refs/lo/pr/80', expect.anything()]);
 });

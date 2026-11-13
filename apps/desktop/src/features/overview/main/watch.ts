@@ -6,31 +6,46 @@
 // asks; a public pull request opened without an account is read once. A commit Lo hasn't seen is
 // read whole before it's offered, and a newer one never takes the place of the one on screen until
 // it's loaded. What was read is kept, so the overview shows at once the next time, offline too.
-// Nothing here calls Electron.
+//
+// The tab opens on its overview when it has one to show, deciding within a bound, so what that
+// waits for goes first: as the tab is shown, the ref is read at once, in the pull request's own
+// repository before the tab knows where its head is, ahead of the account's polls and other
+// background reads. The reads that wait on each other (the ref, the commit's listing, its text, the
+// first figures the text names and its byline) take one turn in the account's queue, so nothing
+// else goes between them, and nothing in that turn waits on a read queued behind it. The overview
+// is sent to the window once its text is read; its first figures come next, for the window's
+// first frame, and its byline after them. A byline that fails is read again by itself, after a
+// wait that grows with each failure, and never counts as the ref's failure. Nothing here calls
+// Electron.
 
+import { ARTIFACT, namedFigures } from '@lo/artifact';
 import {
   overviewRef,
   RepoRef,
   watchOverviewRef,
   type GithubClient,
   type OverviewRef,
+  type ReadPriority,
+  type ReadPriorityNow,
 } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type {
-  CodeAccess,
-  CodeReply,
-  OverviewCommit,
-  OverviewFile,
-  OverviewState,
-  Problem,
+import {
+  FIRST_FIGURES,
+  type Byline,
+  type CodeAccess,
+  type CodeReply,
+  type OverviewCommit,
+  type OverviewFile,
+  type OverviewState,
+  type Problem,
 } from '../contract.ts';
 import { entryAt, isReadable } from './listing.ts';
 import type { Blobs } from './blobs.ts';
 import { codeAccess, CodeReading } from './code.ts';
-import { fetchBlob, isGone, readOverview, sizeOnly, type Github } from './fetch.ts';
+import { fetchBlob, isGone, readByline, readOverview, sizeOnly, type Github } from './fetch.ts';
 import { problemOf, retryWait } from './problems.ts';
 import type { SavedRefs } from './saved.ts';
 import { SinceReads } from './since.ts';
@@ -43,8 +58,15 @@ export const BACKGROUND_EVERY = 5 * 60_000;
 
 /** What a tab's overview reads with. */
 export interface OverviewReads {
-  /** Runs `request` with GitHub's client for `acting`, in its turn. */
-  github<T>(acting: Acting, request: (client: GithubClient) => Promise<T>): Promise<T>;
+  /**
+   * Runs `request` with GitHub's client for `acting`, in its turn: ahead of background reads while
+   * it's a `foreground` one.
+   */
+  github<T>(
+    acting: Acting,
+    request: (client: GithubClient) => Promise<T>,
+    priority?: ReadPriorityNow,
+  ): Promise<T>;
   readonly blobs: Blobs;
   readonly saved: SavedRefs;
 }
@@ -101,6 +123,13 @@ export class OverviewTab {
   #reading: Promise<void> | undefined;
   /** Whether to read again once the one under way is done. */
   #again = false;
+  /**
+   * Whether someone waits on the next read to go through, so it goes ahead of background reads:
+   * the tab was just shown, or Retry was pressed.
+   */
+  #awaited = false;
+  /** What waits for the tab to know where its head is, which tells the fork to look in. */
+  #headWaiters: (() => void)[] = [];
   /** When the ref was last read through, in milliseconds since the Unix epoch. */
   #readAt: number | undefined;
   /**
@@ -112,6 +141,9 @@ export class OverviewTab {
   /** Whether a public pull request read once has been. */
   #readOnce = false;
   #timer: ReturnType<typeof setTimeout> | undefined;
+  /** How many times in a row the byline failed to come, and when it's read again. */
+  #bylineFailures = 0;
+  #bylineTimer: ReturnType<typeof setTimeout> | undefined;
   #closed = false;
   #said: string | undefined;
   /** The read of the overview's code under way, which closing the tab stops. */
@@ -157,8 +189,10 @@ export class OverviewTab {
     if (!sameFork(this.#fork, forkNow)) {
       moved ||= this.#fork !== undefined;
       this.#fork = forkNow;
+      if (forkNow !== undefined) this.#headKnown();
     }
     const shown = onScreen && !this.#onScreen;
+    if (shown) this.#awaited = true;
     this.#onScreen = onScreen;
     this.#foreground = foreground;
     if (!onScreen) this.#stopTimer();
@@ -189,6 +223,7 @@ export class OverviewTab {
   retry(): void {
     if (this.#closed) return;
     this.#failures = 0;
+    this.#awaited = true;
     this.#read();
   }
 
@@ -231,7 +266,9 @@ export class OverviewTab {
     if (!overview || !acting) {
       throw new IpcError('moved', "That isn't the overview on screen, or the newer one.");
     }
-    const github: Github = (request) => this.#options.reads.github(acting, request);
+    // What the window draws on screen, as the overview's figures fill in, while it's on screen.
+    const priority = (): ReadPriority => (this.#onScreen ? 'foreground' : 'background');
+    const github: Github = (request) => this.#options.reads.github(acting, request, priority);
     const repository = new RepoRef(overview.repository.owner, overview.repository.name);
     const answers: OverviewFile[] = [];
     // Each file's answer, by its ID, never by its path, which may be long.
@@ -282,7 +319,9 @@ export class OverviewTab {
   /** Stops everything, as the tab closes or Lo quits. */
   close(): void {
     this.#closed = true;
+    this.#headKnown();
     this.#stopTimer();
+    clearTimeout(this.#bylineTimer);
     this.#codeRead.stop();
     this.blocks.stop();
     this.since.stop();
@@ -313,11 +352,24 @@ export class OverviewTab {
     }
   }
 
-  /** Whether the ref is read now: the tab is on screen, and knows who it acts as and its head. */
+  /**
+   * Whether the ref is read now: the tab is on screen, and knows who it acts as. Where its head is
+   * matters only once the pull request's repository holds no overview.
+   */
   #canRead(): boolean {
     if (this.#closed || !this.#onScreen || !this.#pull || !this.#acting) return false;
-    if (this.#fork === undefined) return false;
     return this.#acting.kind === 'account' || !this.#readOnce;
+  }
+
+  /** Settles once the tab knows where its head is, or closes. */
+  #headKnowable(): Promise<void> {
+    if (this.#fork !== undefined || this.#closed) return Promise.resolve();
+    return new Promise((resolve) => this.#headWaiters.push(resolve));
+  }
+
+  /** The tab knows where its head is, or closed: what waited for it goes on. */
+  #headKnown(): void {
+    for (const resolve of this.#headWaiters.splice(0)) resolve();
   }
 
   /** Reads the ref now, or once the read under way is done. */
@@ -328,7 +380,12 @@ export class OverviewTab {
       this.#again = true;
       return;
     }
-    this.#reading = this.#readNow().finally(() => {
+    // Waited on while the tab is on screen. Shown again, or Retry pressed, while this read is under
+    // way: the next goes ahead too.
+    const awaited = this.#awaited;
+    this.#awaited = false;
+    const priority = (): ReadPriority => (awaited && this.#onScreen ? 'foreground' : 'background');
+    this.#reading = this.#readNow(priority).finally(() => {
       this.#reading = undefined;
       if (this.#again) {
         this.#again = false;
@@ -340,16 +397,22 @@ export class OverviewTab {
     });
   }
 
-  async #readNow(): Promise<void> {
+  async #readNow(priority: ReadPriorityNow): Promise<void> {
     const pull = this.#pull;
     const acting = this.#acting;
     if (!pull || !acting) return;
-    const github: Github = (request) => this.#options.reads.github(acting, request);
+    // Each read waits on the one before, so they go in one turn in the account's queue.
+    const inTurn = (work: (github: Github) => Promise<boolean>) =>
+      this.#options.reads.github(acting, (client) => work((request) => request(client)), priority);
     this.#asking = 0;
     try {
-      const found = await this.#find(github, pull);
-      if (this.#closed) return;
-      await this.#take(found, github, acting, pull);
+      if (!(await inTurn((github) => this.#readRef(github, acting, pull, true)))) {
+        // The fork is for the tab's head to say, which the tab reads in the same queue: it's
+        // waited for between turns, never in one.
+        await this.#headKnowable();
+        if (this.#closed) return;
+        await inTurn((github) => this.#readRef(github, acting, pull, false));
+      }
       if (this.#closed) return;
       this.#failures = 0;
       this.#problem = undefined;
@@ -366,14 +429,41 @@ export class OverviewTab {
     }
   }
 
-  /** What the ref holds: in the pull request's repository, else in its fork. */
-  async #find(github: Github, pull: { repository: RepoRef; number: number }): Promise<Found> {
-    const base = await this.#ask(github, 'base', pull.repository, pull.number);
-    if (base.kind === 'commit') {
-      return { kind: 'commit', sha: base.sha, source: 'base', repository: pull.repository };
+  /**
+   * Reads the ref, in the pull request's repository unless `base` is false, then in its fork, and
+   * takes what it holds. Says whether it did: not when what it holds is for the fork to say, and
+   * the tab doesn't know where its head is yet.
+   */
+  async #readRef(
+    github: Github,
+    acting: Acting,
+    pull: { repository: RepoRef; number: number },
+    base: boolean,
+  ): Promise<boolean> {
+    const found = await this.#find(github, pull, base);
+    if (found === undefined) return false;
+    if (!this.#closed) await this.#take(found, github, acting, pull);
+    return true;
+  }
+
+  /**
+   * What the ref holds: in the pull request's repository, unless `base` is false, else in its fork;
+   * nothing yet when that's for the fork to say, and the tab doesn't know where its head is.
+   */
+  async #find(
+    github: Github,
+    pull: { repository: RepoRef; number: number },
+    base: boolean,
+  ): Promise<Found | undefined> {
+    if (base) {
+      const there = await this.#ask(github, 'base', pull.repository, pull.number);
+      if (there.kind === 'commit') {
+        return { kind: 'commit', sha: there.sha, source: 'base', repository: pull.repository };
+      }
+      if (there.kind === 'other') return { kind: 'other' };
     }
-    if (base.kind === 'other') return { kind: 'other' };
     const fork = this.#fork;
+    if (fork === undefined) return undefined;
     if (!fork || fork.equals(pull.repository)) return { kind: 'none' };
     let there: OverviewRef;
     try {
@@ -415,7 +505,10 @@ export class OverviewTab {
     return answer.value;
   }
 
-  /** Takes what the ref holds: a commit Lo hasn't seen is read whole, then shown or offered. */
+  /**
+   * Takes what the ref holds: a commit Lo hasn't seen is read whole, then offered; or, with nothing
+   * on screen yet, shown and kept once its text is read, and its byline read after.
+   */
   async #take(
     found: Found,
     github: Github,
@@ -434,10 +527,16 @@ export class OverviewTab {
     if (shown?.id === found.sha && shown.source === found.source) {
       this.#saved = false;
       this.#newer = undefined;
+      // One shown before its byline came, which failed to: read it again.
+      if (shown.byline === null) await this.#readByline(shown, github, pull);
       return;
     }
-    if (this.#newer?.id === found.sha && this.#newer.source === found.source) return;
-    const commit = await readOverview(
+    const newer = this.#newer;
+    if (newer?.id === found.sha && newer.source === found.source) {
+      if (newer.byline === null) await this.#readByline(newer, github, pull);
+      return;
+    }
+    const listed = await readOverview(
       github,
       acting,
       this.#options.reads.blobs,
@@ -446,13 +545,94 @@ export class OverviewTab {
       found.source,
     );
     if (this.#closed) return;
-    saved.set(keyOf(pull), commit);
+    saved.set(keyOf(pull), listed);
     if (this.#shown) {
-      this.#newer = commit;
-    } else {
-      this.#shown = commit;
-      this.#saved = false;
+      // A newer commit is offered once read, with its byline when that comes.
+      this.#newer = listed;
+      await this.#readByline(listed, github, pull);
+      return;
     }
+    // The window checks it while its first figures and its byline come.
+    this.#shown = listed;
+    this.#saved = false;
+    this.#publish();
+    await this.#readFirstFigures(listed, github, acting);
+    if (!this.#closed) await this.#readByline(listed, github, pull);
+  }
+
+  /**
+   * Reads the first figures `commit`'s text names, which a first screen may show, into the store,
+   * so the window's first frame has them: in the turn held, never waiting on a read behind it. One
+   * that fails is left for the window to ask for.
+   */
+  async #readFirstFigures(commit: OverviewCommit, github: Github, acting: Acting): Promise<void> {
+    const { blobs } = this.#options.reads;
+    const text = commit.read ? entryAt(commit.entries, ARTIFACT) : undefined;
+    const bytes = text?.kind === 'file' ? blobs.get(text.id) : undefined;
+    if (!bytes) return;
+    const repository = new RepoRef(commit.repository.owner, commit.repository.name);
+    for (const path of namedFigures(new TextDecoder().decode(bytes), FIRST_FIGURES)) {
+      const entry = isReadable(path) ? entryAt(commit.entries, path) : undefined;
+      if (entry?.kind !== 'file' || entry.size === null || sizeOnly(entry.size)) continue;
+      try {
+        await fetchBlob(github, acting, blobs, repository, entry.id, true);
+      } catch (error) {
+        this.#options.log(`reading ${path} of the overview: ${describe(error)}`);
+      }
+      if (this.#closed) return;
+    }
+  }
+
+  /**
+   * Reads the byline of `commit`, the overview on screen or the newer one, read without it, and
+   * keeps the commit with it. One that fails is read again by itself, and with the ref: it's no
+   * failure of the ref's, and the overview shows the same without it.
+   */
+  async #readByline(
+    commit: OverviewCommit,
+    github: Github,
+    pull: { repository: RepoRef; number: number },
+  ): Promise<void> {
+    const repository = new RepoRef(commit.repository.owner, commit.repository.name);
+    let byline: Byline;
+    try {
+      byline = await readByline(github, repository, commit.id);
+    } catch (error) {
+      this.#options.log(`reading who wrote overview ${commit.id}: ${describe(error)}`);
+      this.#bylineFailures += 1;
+      this.#retryByline();
+      return;
+    }
+    this.#bylineFailures = 0;
+    if (this.#closed) return;
+    const read = { ...commit, byline };
+    // Another overview took its place meanwhile, kept as it was read.
+    if (this.#shown === commit) this.#shown = read;
+    else if (this.#newer === commit) this.#newer = read;
+    else return;
+    this.#options.reads.saved.set(keyOf(pull), read);
+  }
+
+  /**
+   * Reads the byline of the overview on screen again by itself, as a public pull request's tab,
+   * which reads the ref once, needs: after a wait that grows with each failure, once the tab is on
+   * screen.
+   */
+  #retryByline(): void {
+    clearTimeout(this.#bylineTimer);
+    this.#bylineTimer = setTimeout(() => {
+      this.#bylineTimer = undefined;
+      const [commit, acting, pull] = [this.#shown, this.#acting, this.#pull];
+      if (this.#closed || !commit || commit.byline !== null || !acting || !pull) return;
+      // Hidden, it waits for the tab to be shown.
+      if (!this.#onScreen) {
+        this.#retryByline();
+        return;
+      }
+      void this.#options.reads
+        .github(acting, (client) => this.#readByline(commit, (request) => request(client), pull))
+        .then(() => this.#publish());
+    }, retryWait(this.#bylineFailures));
   }
 
   /** Reads the ref again after `wait`, while the tab is on screen. */

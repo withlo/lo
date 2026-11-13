@@ -225,6 +225,47 @@ describe('as the tab opens', () => {
     expect(view.querySelector('.lo-ovmark[role="img"]')).not.toBeNull();
   });
 
+  it('opens on the overview from its text alone, its figure and byline filling in after', async () => {
+    const tab = tabOf();
+    const view = render(tab);
+    // Main has the text, and holds the figure back until let go.
+    let letGo!: () => void;
+    const held = new Promise<void>((resolve) => (letGo = resolve));
+    const checking = new Checking(tab.id, {
+      files: async ({ paths }) => {
+        if (paths[0] !== 'artifact.md') await held;
+        return paths.map((path) => {
+          // Bytes of this window's own kind, which the check takes as a figure's.
+          const bytes = Uint8Array.from(path === 'artifact.md' ? TEXT : SVG);
+          return { kind: 'file' as const, size: bytes.length, bytes };
+        });
+      },
+      code: async () => ({ kind: 'noGit' }),
+      parse: async ({ artifact }) => structuredClone(parseOverview(artifact)),
+      check: async (input) => structuredClone(await checkOverview(input)),
+      publish: (value) => publish(tab.id, value),
+      log: () => {},
+    });
+    const unread = stateOf(tab, { overview: { ...commitOf(), byline: null } });
+    act(() => states.set(tab.id, unread));
+    checking.take(unread);
+    await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
+    expect(openings.get(tab.id)).toMatchObject({ on: 'overview', late: false });
+    expect(view.querySelector('.lo-figure[aria-busy="true"]')?.textContent).toContain(
+      'Reading figure 1…',
+    );
+    expect(view.querySelector('.lo-ov-byline')?.textContent).not.toContain('wrote this overview');
+
+    letGo();
+    await until(() => view.querySelector('.lo-figure[aria-busy]') === null);
+    expect(view.querySelector('.lo-figure--broken')).toBeNull();
+    expect(view.querySelector('.lo-figure__frame svg:not(.lo-i)')).not.toBeNull();
+    act(() => states.set(tab.id, stateOf(tab)));
+    expect(view.querySelector('.lo-ov-byline')?.textContent).toContain(
+      'ravi-k wrote this overview',
+    );
+  });
+
   it('opens on the overview once a check main refused at first goes through, within the bound', async () => {
     const tab = tabOf();
     const checking = checkingFor(tab, TEXT, 1);
@@ -404,6 +445,7 @@ describe('an overview that can’t be shown', () => {
         parsed: undefined,
         checked: { outcome: { kind: 'newer', format: 3 }, findings: [] },
         figures: new Map(),
+        coming: [],
         code: { kind: 'none' },
       });
     });
