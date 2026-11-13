@@ -1986,7 +1986,7 @@ class View implements DiffView {
    * no input asked for, and what's on screen stays where it is.
    */
   #boxResized(box: CommentBox, place: At): void {
-    if (box.dom.contains(box.dom.ownerDocument.activeElement)) this.#keepLine(place, () => {});
+    if (box.hasFocus) this.#keepLine(place, () => {});
     else this.#keepUnasked(() => {});
   }
 
@@ -2042,7 +2042,7 @@ class View implements DiffView {
     if (sent && !answered) this.#boxClosed.add(waitKey(place.file, `${place.side}:${place.line}`));
     const document = box.dom.ownerDocument;
     const active = document.activeElement;
-    const inBox = box.dom.contains(active);
+    const inBox = box.hasFocus;
     const nowhere = active === null || active === document.body;
     if (sent) this.#keepUnasked(() => this.#refresh(place.file));
     else this.#keepLine(place, () => this.#refresh(place.file));

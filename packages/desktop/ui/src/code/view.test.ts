@@ -1238,6 +1238,15 @@ describe('threads', () => {
     last.close();
     expect(document.activeElement?.closest('.lo-diffcomposer')).toBeNull();
     expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 8));
+    // Also when what was sent came first, drawing the box again: its focus was on its way back.
+    const sent = shown.compose(at('a', 'new', 10), 'Sent', composerEvents());
+    shown.setThreads(
+      [thread('sent', at('a', 'new', 4)), thread('mine', at('a', 'new', 10))],
+      plain().render,
+    );
+    sent.close();
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 10));
+    expect(document.activeElement).toBe(vimIn('After').content);
   });
 
   test('a box held, as while it’s sent, takes no change to its text until it’s let go', () => {

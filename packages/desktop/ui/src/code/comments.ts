@@ -92,6 +92,8 @@ export class CommentBox implements BoxHost, KeySource {
   /** What makes the text read-only while the caller holds it. */
   readonly #held = new Compartment();
   #holding = false;
+  /** Focus left the box as it moved into another widget, and is on its way back. */
+  #refocusing = false;
 
   constructor(options: BoxOptions) {
     installVim();
@@ -225,10 +227,21 @@ export class CommentBox implements BoxHost, KeySource {
   }
 
   attach(parent: HTMLElement): void {
-    const focused = this.dom.contains(this.dom.ownerDocument.activeElement);
+    const focused = this.hasFocus;
     parent.append(this.dom);
     // The widget isn't in the page until the editor that draws it has put it there.
-    if (focused) queueMicrotask(() => this.#focusShown());
+    if (!focused) return;
+    this.#refocusing = true;
+    queueMicrotask(() => {
+      if (!this.#refocusing) return;
+      this.#refocusing = false;
+      this.#focusShown();
+    });
+  }
+
+  /** Whether focus is in the box, or on its way back to it after it moved. */
+  get hasFocus(): boolean {
+    return this.#refocusing || this.dom.contains(this.dom.ownerDocument.activeElement);
   }
 
   /** Focuses the box: in insert mode at the end of the draft, or its preview while that shows. */
@@ -325,6 +338,7 @@ export class CommentBox implements BoxHost, KeySource {
   }
 
   destroy(): void {
+    this.#refocusing = false;
     for (const stop of this.#stops) stop();
     this.#stops.length = 0;
     const frame = this.#frame;
