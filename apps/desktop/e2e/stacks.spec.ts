@@ -86,6 +86,19 @@ async function pullTabs(page: Page): Promise<number> {
   return tabs.filter((tab) => tab.kind === 'pull').length;
 }
 
+/**
+ * Waits for the middle view of the layer on screen, its diff or its overview, to take focus, as it
+ * does once it's drawn. A focus move drops keys typed before it, so the next keys wait for it.
+ */
+async function settled(page: Page): Promise<void> {
+  await expect
+    .poll(
+      () => page.evaluate(() => document.activeElement?.closest('[data-lo-middle-view]') !== null),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+}
+
 /** Waits for the diff on screen to show its files, then puts focus in it, at the top. */
 async function inDiff(page: Page): Promise<void> {
   await expect
@@ -183,9 +196,11 @@ test(']s and [s walk the layers in the tree’s order, in one tab, and stop at t
   test.setTimeout(90_000);
   await open(page, STACK.a);
   await expect(current(page)).toHaveAttribute('data-key', String(STACK.a), { timeout: 20_000 });
+  await settled(page);
   for (const layer of [STACK.b, STACK.c, STACK.d]) {
     await type(page, ']', 's');
     await expect(current(page)).toHaveAttribute('data-key', String(layer), { timeout: 20_000 });
+    await settled(page);
   }
   await type(page, ']', 's');
   await expect(said(page, `#${STACK.d} is the last layer.`)).toHaveCount(1);
@@ -198,6 +213,7 @@ test(']s and [s walk the layers in the tree’s order, in one tab, and stop at t
   for (const layer of [STACK.c, STACK.b, STACK.a]) {
     await type(page, '[', 's');
     await expect(current(page)).toHaveAttribute('data-key', String(layer), { timeout: 20_000 });
+    await settled(page);
   }
   await type(page, '[', 's');
   await expect(said(page, `#${STACK.a} is the first layer.`)).toHaveCount(1);
@@ -273,10 +289,7 @@ test('each layer keeps its place as ]s and [s leave it and come back', async ({ 
 
   await type(page, ']', 's');
   await expect(current(page)).toHaveAttribute('data-key', String(STACK.d), { timeout: 20_000 });
-  // Focus left with #C's diff, and comes to #D's once it's drawn, which drops keys typed before.
-  await expect(page.locator('.lo-diffview .cm-editor:visible .cm-content:focus')).toHaveCount(1, {
-    timeout: 20_000,
-  });
+  await settled(page);
   await type(page, '[', 's');
   await expect(current(page)).toHaveAttribute('data-key', String(STACK.c), { timeout: 20_000 });
   await expect.poll(cursor, { timeout: 20_000 }).toBe(before);

@@ -287,10 +287,14 @@ export function clearVim(view: EditorView): void {
   CodeMirror.signal(cm, 'vim-command-done', 'clear');
 }
 
-/** Hands `keys`, in Vim's notation, to Vim in `view`, as if they were typed there. */
+/**
+ * Hands `keys`, in Vim's notation, to Vim in `view`, as if they were typed there: only while its
+ * editor has focus. Typed keys reach Vim only there, so with focus elsewhere in the view, on its
+ * scroller say, Vim would wait for keys that never come, and every key after would go to it.
+ */
 export function passToVim(view: EditorView, keys: readonly string[]): void {
   const cm = getCM(view);
-  if (!cm) return;
+  if (!cm || !view.contentDOM.contains(view.root.activeElement)) return;
   for (const key of keys) Vim.handleKey(cm, key, 'user');
 }
 
