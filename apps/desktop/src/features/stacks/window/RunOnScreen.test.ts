@@ -54,6 +54,14 @@ describe('the bar over a run of layers', () => {
     });
   });
 
+  it('says only the top layer’s pull request shows while GitHub couldn’t compare the run', () => {
+    const run = { layers: [83, 84], start: START, from: 84 };
+    expect(barOf(run, VIEW).instead).toBeUndefined();
+    expect(barOf(run, VIEW, true).instead).toBe(
+      'Only #84’s pull request: GitHub couldn’t compare the run as one diff',
+    );
+  });
+
   it('names its layers by number until the stack is known', () => {
     expect(barOf({ layers: [83, 84], start: START, from: 84 }, undefined)).toEqual({
       layers: [

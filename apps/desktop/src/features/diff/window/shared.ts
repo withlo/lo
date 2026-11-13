@@ -34,13 +34,21 @@ export function showDiff(tab: string): boolean {
 
 /**
  * How many files pull request's tab `tab`'s diff shows, once main has said, with whether GitHub
- * listed only some of them; re-rendering as that changes.
+ * listed only some of them, and whether GitHub couldn't compare it from where it should start, so
+ * it shows the pull request's own files until the local copy is ready; re-rendering as that
+ * changes.
  */
 export function useDiffFiles(
   tab: string,
-): { readonly count: number; readonly partial: boolean } | undefined {
+): { readonly count: number; readonly partial: boolean; readonly uncompared: boolean } | undefined {
   const { state } = useSnapshot(loaderOf(tab));
-  return state?.files ? { count: state.files.length, partial: state.partial } : undefined;
+  return state?.files
+    ? {
+        count: state.files.length,
+        partial: state.partial,
+        uncompared: state.uncompared && state.from === 'github',
+      }
+    : undefined;
 }
 
 /**

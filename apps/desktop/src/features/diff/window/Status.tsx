@@ -35,14 +35,23 @@ export function DiffStatus({ tab }: { tab: PullTab }) {
           Some files left out
         </StatusItem>
       )}
-      {state?.uncompared && ready?.from === 'github' && (
-        <StatusItem
-          dot="warn"
-          title={`GitHub couldn’t compare ${tab.run ? 'this run' : 'this layer'} with the layer below it, so its diff includes the layers below${later}.`}
-        >
-          Layers below included
-        </StatusItem>
-      )}
+      {state?.uncompared &&
+        ready?.from === 'github' &&
+        (tab.run ? (
+          <StatusItem
+            dot="warn"
+            title={`GitHub couldn’t compare the run from where its bottom layer starts, so this is #${tab.number}’s pull request as GitHub lists it${later}.`}
+          >
+            Run not compared
+          </StatusItem>
+        ) : (
+          <StatusItem
+            dot="warn"
+            title={`GitHub couldn’t compare this layer with the layer below it, so its diff includes the layers below${later}.`}
+          >
+            Layers below included
+          </StatusItem>
+        ))}
       {ready && progress.done < progress.of && (
         <StatusItem>
           Diffing {progress.done} of {progress.of}
