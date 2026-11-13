@@ -455,6 +455,23 @@ describe('running', () => {
     });
   });
 
+  it('says a base branch GitHub may have changed apart from one it did', async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    const poller = new FakePoller();
+    poller.steps.push(BAD_GATEWAY);
+    const { conversions, last } = started(poller, found);
+    conversions.convert(planOf(await conversions.plan(tab(6))).key);
+    await until(() => last()?.phase === 'failed');
+    expect(changes(last())).toEqual([
+      '#6 main -> e2/c: unknown (GitHub answered 502: Bad Gateway.)',
+      'create 2 3 4 6: skipped',
+    ]);
+    expect(last()).toMatchObject({
+      description: 'One base branch may have changed.',
+      putBackLabel: 'Put the base branch back',
+    });
+  });
+
   it('stops before the next change once the reader stops it', async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
     const poller = new FakePoller();

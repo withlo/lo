@@ -47,9 +47,9 @@ function numbers(prs: readonly number[]): string {
   return named.length === 0 ? last : `${named.join(', ')} and ${last}`;
 }
 
-/** A branch's name, in code type: GitHub's text, which may be long, so it breaks anywhere. */
+/** A branch's name, in code type: GitHub's text, which may be long, so it breaks if it must. */
 function Branch({ name }: { name: string }) {
-  return <span className="break-all code-small">{withoutBidi(name)}</span>;
+  return <span className="break-words code-small">{withoutBidi(name)}</span>;
 }
 
 /** How each change's state shows as a step. */
@@ -164,37 +164,41 @@ function enterButton(
   );
 }
 
-/** Each pull request the plan changes, with its base branch and the one it gets. */
+/**
+ * Each pull request the plan changes, with its base branch and the one it gets. Only titles wrap: a
+ * branch too long for the dialog scrolls the table sideways.
+ */
 function Bases({ plan }: { plan: Plan }) {
+  const cell = 'border-t border-border-subtle py-6 pe-8 align-middle';
   return (
-    <table className="w-full border-collapse text-small">
-      <tbody>
-        {plan.rows.map((row) => (
-          <tr key={row.number} className={row.to === null ? '' : 'bg-accent-soft'}>
-            <td
-              className={`border-t border-border-subtle py-6 ps-8 pe-8 align-top whitespace-nowrap tabular-nums ${row.to === null ? 'text-fg-muted' : 'text-fg'}`}
-            >
-              #{row.number}
-            </td>
-            <td className="w-full border-t border-border-subtle py-6 pe-8 align-top text-fg">
-              {withoutBidi(row.title)}
-            </td>
-            <td className="border-t border-border-subtle py-6 pe-8 align-top">
-              <Branch name={row.base} />
-              {row.to !== null && (
-                <>
-                  {' → '}
-                  <Branch name={row.to} />
-                </>
-              )}
-            </td>
-            <td className="border-t border-border-subtle py-6 pe-8 align-top whitespace-nowrap text-fg-muted">
-              {row.to === null ? 'no change' : ''}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-small">
+        <tbody>
+          {plan.rows.map((row) => (
+            <tr key={row.number} className={row.to === null ? '' : 'bg-accent-soft'}>
+              <td
+                className={`${cell} ps-8 whitespace-nowrap tabular-nums ${row.to === null ? 'text-fg-muted' : 'text-fg'}`}
+              >
+                #{row.number}
+              </td>
+              <td className={`${cell} w-full text-fg`}>{withoutBidi(row.title)}</td>
+              <td className={`${cell} whitespace-nowrap`}>
+                <Branch name={row.base} />
+                {row.to !== null && (
+                  <>
+                    {' → '}
+                    <Branch name={row.to} />
+                  </>
+                )}
+              </td>
+              <td className={`${cell} whitespace-nowrap text-fg-muted`}>
+                {row.to === null ? 'no change' : ''}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -341,12 +345,14 @@ function conversionShown(
           <>
             <DialogSpacer />
             {label === null ? (
-              <>
-                {escButton('Close')}
-                {phase === 'putBack'
-                  ? enterButton('Done', dismiss, primary)
-                  : enterButton('Try again', tryAgain, primary)}
-              </>
+              phase === 'putBack' ? (
+                enterButton('Done', dismiss, primary)
+              ) : (
+                <>
+                  {escButton('Close')}
+                  {enterButton('Try again', tryAgain, primary)}
+                </>
+              )
             ) : (
               <>
                 {phase === 'putBack' ? null : <Button onClick={tryAgain}>Try again</Button>}

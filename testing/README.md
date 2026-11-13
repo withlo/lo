@@ -99,7 +99,9 @@ address to start Lo with as `LO_GITHUB`. Start Lo with a stand-in token in `LO_T
 proxy signs each request it forwards with the bot's token, and an anonymous one stays anonymous, so
 Lo never holds the bot's token. Drive Lo through what the cassette should hold, long enough for its
 polls to repeat, then stop the proxy with Ctrl+C. It checks the token's account and every file as
-`record.ts` does, and sends nothing that writes to GitHub.
+`record.ts` does, and sends nothing that writes to GitHub unless `LO_RECORD_WRITES=1` is set: then
+each write Lo sends goes to GitHub and is recorded, so record writes only to rozed-dev's fixtures,
+and put them back after.
 
 The pull request the app's tests open, rozed-dev/e2e#80, comes from `fixtures/app.sh`, which builds
 its repository with fixed names, dates and contents, so every commit has the ID GitHub has for it: a
@@ -122,10 +124,15 @@ The stacks the app's tests open come from `fixtures/stack.sh`, built the same wa
 - #88 and #89, GitHub stack #90.
 
 #83 has an overview at `refs/lo/pr/83`. `writeStackRemote` from `@lo/testing/git` builds the remote,
-and `STACK_PULLS` names the pull requests and their heads. Their cassette is `app_stack`. Making a
-GitHub stack of #82, #83 and #84 changes #84's base branch on GitHub; `fixtures/stack-reset.sh`, run
-with `LO_FIXTURE_TOKEN_FILE` as `record.ts` is, puts them back as `stack.sh` made them, so that can
-be recorded again.
+and `STACK_PULLS` names the pull requests and their heads. Their cassette is `app_stack`.
+
+`app_stack_convert` was recorded with writes, as Lo made #82, #83 and #84 a GitHub stack: it changed
+#84's base branch to `stack/b`, then made GitHub stack #91. `fixtures/stack-reset.sh`, run with
+`LO_FIXTURE_TOKEN_FILE` as `record.ts` is, unstacks them and changes #84's base back, as `stack.sh`
+made them, so that can be recorded again. What GitHub can't be made to do on demand, a lost answer,
+a refusal or a base branch changed elsewhere meanwhile, the app's tests answer from the same
+cassette with those answers changed (`apps/desktop/e2e/convert.spec.ts`). `app_stack_nobody` is #84
+opened with no account.
 
 ## The credential scan
 

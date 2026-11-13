@@ -265,12 +265,19 @@ export const STACK = {
 
 /**
  * `test`, with Lo signed in as rozed-bot on a replay server that answers from `app_stack`, recorded
- * from the app on the stacks, and fetching from their repository, built on this machine.
+ * from the app on the stacks, or the cassette `cassette` names, and fetching from their repository,
+ * built on this machine. With `account` false, Lo starts with no account.
  */
-export const onStacks = test.extend<{ github: ReplayServer; remote: string }>({
-  // oxlint-disable-next-line no-empty-pattern
-  github: async ({}, use) => {
-    const server = await serveReplay('app_stack');
+export const onStacks = test.extend<{
+  cassette: string;
+  account: boolean;
+  github: ReplayServer;
+  remote: string;
+}>({
+  cassette: ['app_stack', { option: true }],
+  account: [true, { option: true }],
+  github: async ({ cassette }, use) => {
+    const server = await serveReplay(cassette);
     await use(server);
     await server.close();
   },
@@ -278,14 +285,14 @@ export const onStacks = test.extend<{ github: ReplayServer; remote: string }>({
   remote: async ({}, use) => {
     await use(writeStackRemote(base.info().outputPath('remote')));
   },
-  launch: async ({ github, remote }, use) => {
+  launch: async ({ github, remote, account }, use) => {
     const tokenFile = base.info().outputPath('token');
     writeFileSync(tokenFile, `${TOKEN}\n`);
     await use({
       args: [appFolder, ...KEYCHAIN],
       env: {
         LO_GITHUB: new URL(github.urls.api).origin,
-        LO_TEST_TOKEN_FILE: tokenFile,
+        ...(account ? { LO_TEST_TOKEN_FILE: tokenFile } : {}),
         LO_GIT_REMOTE: remote,
       },
     });

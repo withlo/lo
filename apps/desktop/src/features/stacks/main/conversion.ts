@@ -678,6 +678,23 @@ function planRows(plan: Plan, list: OpenPullRequestList): PlanRow[] {
   });
 }
 
+/** "One base branch", or "2 base branches", as a sentence starts. */
+function branches(count: number): string {
+  return count === 1 ? 'One base branch' : `${count} base branches`;
+}
+
+/** How many base branches `changes` changed, and how many it may have: GitHub's answer was lost. */
+function changedText(changes: readonly ChangeRow[]): string {
+  const count = (status: ChangeStatus) =>
+    changes.filter((row) => row.change.kind === 'retarget' && row.status === status).length;
+  const done = count('done');
+  const unsure = count('unknown');
+  if (done === 0 && unsure === 0) return 'No base branch had changed.';
+  if (unsure === 0) return `${branches(done)} had already changed.`;
+  if (done === 0) return `${branches(unsure)} may have changed.`;
+  return `${branches(done)} had already changed, and ${unsure === 1 ? 'one more' : `${unsure} more`} may have.`;
+}
+
 /** The title and the line under it, for where `run` is. */
 function titled(run: Run): { title: string; description: string } {
   const { plan, phase } = run;
@@ -687,12 +704,7 @@ function titled(run: Run): { title: string; description: string } {
   const changed = run.changes.filter(
     (row) => row.change.kind === 'retarget' && UNDONE.includes(row.status),
   ).length;
-  const already =
-    changed === 0
-      ? 'No base branch had changed.'
-      : changed === 1
-        ? 'One base branch had already changed.'
-        : `${changed} base branches had already changed.`;
+  const already = changedText(run.changes);
   const unsure = run.changes.some(
     (row) => row.change.kind !== 'retarget' && row.status === 'unknown',
   );

@@ -1,0 +1,58 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/84/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"aaa7af31c3daa8c020f8c4ce8f078a2014f0c9c124bfdc7564bac986fa081366\"",
+      "last-modified": "Fri, 13 Nov 2026 02:43:48 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "60",
+      "x-ratelimit-remaining": "56",
+      "x-ratelimit-reset": "1794541562",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "4"
+    },
+    "body": [
+      {
+        "sha": "653061cf96e8207374bde16297807734da8cd603",
+        "filename": "src/cost.ts",
+        "status": "added",
+        "additions": 11,
+        "deletions": 0,
+        "changes": 11,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/f9db1743681826e72f3b31e3d9967d28a55af20d/src%2Fcost.ts",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/f9db1743681826e72f3b31e3d9967d28a55af20d/src%2Fcost.ts",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/src%2Fcost.ts?ref=f9db1743681826e72f3b31e3d9967d28a55af20d",
+        "patch": "@@ -0,0 +1,11 @@\n+import type { Limit } from './limits.ts';\n+\n+/** What GitHub charges for a query: one point for each 100 nodes it may read, at least one. */\n+export function costOf(nodes: number): number {\n+  return Math.max(1, Math.ceil(nodes / 100));\n+}\n+\n+/** Whether a query of `nodes` fits in what's left of `limit` after `spent` points. */\n+export function fits(limit: Limit, spent: number, nodes: number): boolean {\n+  return spent + costOf(nodes) <= limit.points;\n+}"
+      },
+      {
+        "sha": "ce3bf32308e20e116ecf19b0ce00cb2863fd37b0",
+        "filename": "src/nodes.ts",
+        "status": "added",
+        "additions": 4,
+        "deletions": 0,
+        "changes": 4,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/f9db1743681826e72f3b31e3d9967d28a55af20d/src%2Fnodes.ts",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/f9db1743681826e72f3b31e3d9967d28a55af20d/src%2Fnodes.ts",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/src%2Fnodes.ts?ref=f9db1743681826e72f3b31e3d9967d28a55af20d",
+        "patch": "@@ -0,0 +1,4 @@\n+/** How many nodes a connection of `first` items, each with `inner` items of its own, may read. */\n+export function nodesOf(first: number, inner = 0): number {\n+  return first + first * inner;\n+}"
+      },
+      {
+        "sha": "fe7a2a9edc8a1b774021f294e1170aa894a53ffd",
+        "filename": "src/plans.ts",
+        "status": "added",
+        "additions": 12,
+        "deletions": 0,
+        "changes": 12,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/f9db1743681826e72f3b31e3d9967d28a55af20d/src%2Fplans.ts",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/f9db1743681826e72f3b31e3d9967d28a55af20d/src%2Fplans.ts",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/src%2Fplans.ts?ref=f9db1743681826e72f3b31e3d9967d28a55af20d",
+        "patch": "@@ -0,0 +1,12 @@\n+import { DEFAULT_LIMIT, type Limit } from './limits.ts';\n+\n+/** Each plan's limit, by the plan's name. */\n+const PLANS: Readonly<Record<string, Limit>> = {\n+  free: DEFAULT_LIMIT,\n+  team: { points: 15000 },\n+};\n+\n+/** The limit of the plan named `name`, or the default for a plan Lo doesn't know. */\n+export function limitOf(name: string): Limit {\n+  return Object.hasOwn(PLANS, name) ? (PLANS[name] ?? DEFAULT_LIMIT) : DEFAULT_LIMIT;\n+}"
+      }
+    ]
+  }
+}
