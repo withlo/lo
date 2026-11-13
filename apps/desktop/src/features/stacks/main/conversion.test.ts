@@ -628,6 +628,76 @@ describe('putting back', () => {
     expect(none.poller.sent).toEqual(['#6 e2/c -> main', '#3 e2/a -> main']);
   });
 
+  it('reads a stack again when its unstack’s answer was lost, before sending it again', async () => {
+    const lost = async () => {
+      const run = await failed(BAD_GATEWAY);
+      run.poller.holding = [githubStack(70, [2, 3, 4, 6])];
+      run.poller.unstacked = BAD_GATEWAY;
+      run.conversions.putBack(run.key);
+      await until(() => run.last()?.phase === 'putBack');
+      expect(changes(run.last(), 'putBack')).toEqual([
+        'unstack #70: unknown (GitHub answered 502: Bad Gateway.)',
+        '#6 e2/c -> main: todo',
+        '#3 e2/a -> main: todo',
+      ]);
+      expect(run.last()?.putBackLabel).toBe('Put the base branches back');
+      run.poller.sent.length = 0;
+      return run;
+    };
+
+    // GitHub took it: the stack is gone, so only the base branches go back.
+    const gone = await lost();
+    gone.poller.holding = [];
+    gone.conversions.putBack(gone.key);
+    await until(() => gone.last()?.phase === 'putBack' && !gone.last()?.putBackLabel);
+    expect(gone.poller.sent).toEqual(['#6 e2/c -> main', '#3 e2/a -> main']);
+    expect(changes(gone.last(), 'putBack')).toEqual([
+      'unstack #70: done',
+      '#6 e2/c -> main: done',
+      '#3 e2/a -> main: done',
+    ]);
+    expect(gone.last()?.title).toBe('The stack is gone, and the base branches are back');
+
+    // It didn't: the stack still holds just what Lo made, so the unstack is sent again.
+    const there = await lost();
+    there.poller.unstacked = { left: undefined };
+    there.conversions.putBack(there.key);
+    await until(() => there.last()?.phase === 'putBack' && !there.last()?.putBackLabel);
+    expect(there.poller.sent).toEqual([
+      'unstack #70 (2 3 4 6)',
+      '#6 e2/c -> main',
+      '#3 e2/a -> main',
+    ]);
+
+    // The stack holds other PRs now: Lo leaves it, says so, and still puts the base branches back.
+    const grown = await lost();
+    grown.poller.holding = [githubStack(70, [2, 3, 4, 6, 5])];
+    grown.conversions.putBack(grown.key);
+    await until(() => grown.last()?.phase === 'putBack' && !grown.last()?.putBackLabel);
+    expect(grown.poller.sent).toEqual(['#6 e2/c -> main', '#3 e2/a -> main']);
+    expect(changes(grown.last(), 'putBack')[0]).toBe(
+      'unstack #70: left (It holds other PRs now, so Lo left it.)',
+    );
+    expect(grown.last()).toMatchObject({
+      title: 'Not everything was put back',
+      description: 'GitHub stack #70 changed since, so Lo left it.',
+    });
+  });
+
+  it('leaves a stack that changed before Lo could unstack it, and goes on', async () => {
+    const { conversions, last, poller, key } = await failed(BAD_GATEWAY);
+    poller.holding = [githubStack(70, [2, 3, 4, 6])];
+    poller.unstacked = { refusal: 'stackChanged' };
+    conversions.putBack(key);
+    await until(() => last()?.phase === 'putBack');
+    expect(changes(last(), 'putBack')).toEqual([
+      'unstack #70: left (It changed since Lo read it, so Lo left it.)',
+      '#6 e2/c -> main: done',
+      '#3 e2/a -> main: done',
+    ]);
+    expect(last()?.putBackLabel).toBeNull();
+  });
+
   it('goes on from where it stopped when a change fails, once asked again', async () => {
     const { conversions, last, poller, key } = await failed({ refusal: 'notAChain' });
     poller.retargets.push(summary(6, 'main'), BAD_GATEWAY);

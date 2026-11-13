@@ -5,7 +5,7 @@
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { announce, notify } from '../../../window/commands/notices.tsx';
-import { activeTab } from '../../tab/window/shared.ts';
+import { activeTab, withoutBidi } from '../../tab/window/shared.ts';
 import type { ConversionView } from '../contract.ts';
 import { main } from './main.ts';
 import { stacksStore, type Dialog } from './store.ts';
@@ -31,9 +31,11 @@ function log(error: unknown): void {
   console.error('stacks:', error);
 }
 
-/** What went wrong asking main, in words to show. */
+/** What went wrong asking main, in words to show: GitHub's, too, which may carry bidi controls. */
 function whyNot(error: unknown): string {
-  return error instanceof IpcError ? error.message : 'Lo couldn’t ask for it. Try again.';
+  return error instanceof IpcError
+    ? withoutBidi(error.message)
+    : 'Lo couldn’t ask for it. Try again.';
 }
 
 /** Whether `gS` can run now, or why not: it needs a pull request on screen. */
@@ -72,7 +74,8 @@ export function makeStack(tab: string, number: number): void {
         }
         if (planned.kind === 'notOffered') {
           setDialog(undefined);
-          notify(TITLE, planned.reasons.join('\n'));
+          // Reasons name branches, GitHub's text, which may carry bidi controls.
+          notify(TITLE, withoutBidi(planned.reasons.join('\n')));
           return;
         }
         setDialog({
@@ -105,7 +108,7 @@ export function confirm(): void {
       (view) => {
         const at = dialogNow();
         if (at?.kind === 'confirm' && at.plan.key === key) {
-          setDialog({ kind: 'conversion', tab: at.tab, number: at.number, key });
+          setDialog({ kind: 'conversion', tab: at.tab, number: at.number, key, asking: false });
         }
         take(view);
       },
@@ -156,14 +159,29 @@ export function dismiss(): void {
   }
 }
 
-/** Puts back the base branches the conversion on screen changed. */
+/** Puts back the base branches the conversion on screen changed, asking main once. */
 export function putBack(): void {
   const now = dialogNow();
-  if (now?.kind !== 'conversion') return;
+  if (now?.kind !== 'conversion' || now.asking) return;
   if (sending(stacksStore.getState().conversions.get(now.key))) return;
+  const { key } = now;
+  setDialog({ ...now, asking: true });
+  const answered = () => {
+    const at = dialogNow();
+    if (at?.kind === 'conversion' && at.key === key) setDialog({ ...at, asking: false });
+  };
   main()
-    .putBack({ key: now.key })
-    .then(take, (error: unknown) => notify('Put the base branches back', whyNot(error)));
+    .putBack({ key })
+    .then(
+      (view) => {
+        answered();
+        take(view);
+      },
+      (error: unknown) => {
+        answered();
+        notify('Put the base branches back', whyNot(error));
+      },
+    );
 }
 
 /** Plans again, from what GitHub says now, and asks again. */

@@ -317,7 +317,7 @@ export class Conversions {
       throw new IpcError('gone', "There's nothing to put back.");
     }
     if (this.#busy.has(run.repo.key)) throw new IpcError('busy', OWN.running(run.repository));
-    if (!putBackOf(run).some((row) => row.status === 'todo')) {
+    if (!putBackOf(run).some(toDo)) {
       throw new IpcError('gone', "There's nothing to put back.");
     }
     run.phase = 'puttingBack';
@@ -454,6 +454,31 @@ export class Conversions {
         }
       }
     }
+    // An unstack whose answer was lost: whether GitHub took it decides whether it's sent again.
+    for (const [index, row] of rows.entries()) {
+      const { change } = row;
+      if (change.kind !== 'unstack' || row.status !== 'unknown') continue;
+      const first = change.prs[0];
+      let holding: GithubStack[] | undefined;
+      try {
+        holding =
+          first === undefined
+            ? undefined
+            : await poller.readOnce((client) => stacksHolding(client, repo, first), signal);
+      } catch (error) {
+        if (signal?.aborted) return this.#putBackOver(run, 'stopped');
+        run.notes.push({
+          text: `Lo couldn't read whether GitHub unstacked GitHub stack #${change.stack}: ${errorText(error)} Nothing was put back.`,
+          link: null,
+        });
+        return this.#putBackOver(run, 'again');
+      }
+      const still = holding?.find((stack) => stack.number === change.stack && stack.open);
+      if (!still) this.#mark(rows, index, 'done', null);
+      else if (sameNumbers(stackNumbers(still), change.prs)) this.#mark(rows, index, 'todo', null);
+      else this.#mark(rows, index, 'left', 'It holds other PRs now, so Lo left it.');
+      this.#publish(run);
+    }
     for (const [index, row] of rows.entries()) {
       if (row.status !== 'todo') continue;
       if (signal?.aborted) break;
@@ -480,6 +505,12 @@ export class Conversions {
         if (answer.refusal === 'baseChanged') {
           // Changed elsewhere since: someone meant it.
           this.#mark(rows, index, 'left', answer.now);
+          continue;
+        }
+        if (answer.refusal === 'stackChanged') {
+          // The stack holds other PRs now, or it's gone: unstacking would take out more than Lo
+          // put in, or there's nothing to take out.
+          this.#mark(rows, index, 'left', 'It changed since Lo read it, so Lo left it.');
           continue;
         }
         this.#mark(rows, index, 'failed', `${describeMergeRefusal(answer)}.`);
@@ -591,7 +622,7 @@ export class Conversions {
   /** What the window shows of `run`. */
   #view(run: Run): ConversionView {
     const { phase, plan } = run;
-    const left = putBackOf(run).filter((row) => row.status === 'todo');
+    const left = putBackOf(run).filter(toDo);
     const canPutBack =
       (phase === 'failed' || phase === 'stopped' || (phase === 'putBack' && run.again)) &&
       left.length > 0;
@@ -644,7 +675,7 @@ function changeOf(step: Step): Change {
 function putBackOf(run: Run): ChangeRow[] {
   if (run.putBack.length > 0) {
     return run.putBack.map((row) =>
-      row.status === 'done' || row.status === 'left'
+      row.status === 'done' || row.status === 'left' || unsureUnstack(row)
         ? row
         : { ...row, status: 'todo' as const, detail: null },
     );
@@ -657,6 +688,19 @@ function putBackOf(run: Run): ChangeRow[] {
       return [{ change: { kind: 'retarget', ...back }, status: 'todo', detail: null }];
     })
     .toReversed();
+}
+
+/**
+ * Whether `row` is an unstack whose answer was lost. It's read again before anything is sent: sent
+ * again, it would find the stack gone and be refused, and the base branches would never go back.
+ */
+function unsureUnstack(row: ChangeRow): boolean {
+  return row.change.kind === 'unstack' && row.status === 'unknown';
+}
+
+/** Whether putting back has `row` still to do: to send, or to read again first. */
+function toDo(row: ChangeRow): boolean {
+  return row.status === 'todo' || unsureUnstack(row);
 }
 
 /** What a plan shows of each pull request it changes: every one in the path, or those added. */
@@ -740,7 +784,10 @@ function titled(run: Run): { title: string; description: string } {
     case 'putBack': {
       const rows = run.putBack;
       const back = rows.length > 0 && rows.every((row) => row.status === 'done');
-      const left = rows.filter((row) => row.status === 'left').length;
+      const left = rows.filter(
+        (row) => row.status === 'left' && row.change.kind === 'retarget',
+      ).length;
+      const stack = rows.find((row) => row.status === 'left' && row.change.kind === 'unstack');
       return {
         title: back
           ? rows.some((row) => row.change.kind === 'unstack')
@@ -750,11 +797,14 @@ function titled(run: Run): { title: string; description: string } {
               : 'The base branches are back'
           : 'Not everything was put back',
         description:
-          left > 0
-            ? `${left === 1 ? 'One base branch was' : `${left} base branches were`} changed elsewhere since, so Lo left ${left === 1 ? 'it' : 'them'}.`
-            : run.again
-              ? 'You can try putting the rest back again.'
-              : '',
+          [
+            stack?.change.kind === 'unstack' &&
+              `GitHub stack #${stack.change.stack} changed since, so Lo left it.`,
+            left > 0 &&
+              `${left === 1 ? 'One base branch was' : `${left} base branches were`} changed elsewhere since, so Lo left ${left === 1 ? 'it' : 'them'}.`,
+          ]
+            .filter((text) => typeof text === 'string')
+            .join(' ') || (run.again ? 'You can try putting the rest back again.' : ''),
       };
     }
     default:

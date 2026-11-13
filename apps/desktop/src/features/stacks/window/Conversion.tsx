@@ -15,7 +15,14 @@ import {
   type StepState,
 } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
-import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
@@ -96,18 +103,23 @@ function changeTitle(change: Change): ReactNode {
 
 /** What's said under a change: what GitHub said of it, or what came of it. */
 function changeDetail(row: ChangeRow): ReactNode {
+  // GitHub's words, or a branch's name, which may carry controls that reorder what follows.
+  const detail = withoutBidi(row.detail ?? '');
   switch (row.status) {
     case 'unchanged':
       return 'It was so already, so nothing was sent.';
     case 'failed':
-      return row.detail ?? undefined;
+      return detail || undefined;
     case 'unknown':
-      return `${row.detail ?? ''} It may have gone through.`.trim();
+      return `${detail} It may have gone through.`.trim();
     case 'left':
-      return (
+      // A base branch changed elsewhere names the branch; a stack that changed says how.
+      return row.change.kind === 'retarget' ? (
         <>
-          Its base is now <Branch name={row.detail ?? ''} />. Lo left it.
+          Its base is now <Branch name={detail} />. Lo left it.
         </>
+      ) : (
+        detail
       );
     case 'skipped':
       return 'Not sent.';
@@ -139,10 +151,20 @@ interface Shown {
   readonly step: string;
 }
 
+/**
+ * `run`, for a button's click, but not for a double click's second: the first can bring up another
+ * button in the same place, which the second would press unseen.
+ */
+function pressed(run: () => void): (event: MouseEvent) => void {
+  return (event) => {
+    if (event.detail <= 1) run();
+  };
+}
+
 /** A button that closes the dialog, or stops what's being sent, with `Esc`. */
 function escButton(label: string, disabled = false) {
   return (
-    <Button onClick={dismiss} disabled={disabled}>
+    <Button onClick={pressed(dismiss)} disabled={disabled}>
       {label}
       <Key keys={labels('esc')} decorative />
     </Button>
@@ -157,7 +179,12 @@ function enterButton(
   busy = false,
 ) {
   return (
-    <Button ref={primary} variant="primary" onClick={run} aria-disabled={busy || undefined}>
+    <Button
+      ref={primary}
+      variant="primary"
+      onClick={pressed(run)}
+      aria-disabled={busy || undefined}
+    >
       {label}
       <Key keys={labels('enter')} decorative className="text-on-accent" />
     </Button>
@@ -206,7 +233,7 @@ function Bases({ plan }: { plan: Plan }) {
 function Notes({ notes }: { notes: readonly ConversionNote[] }) {
   return notes.map((note) => (
     <Callout key={note.text} tone="warning">
-      <span>{note.text}</span>
+      <span>{withoutBidi(note.text)}</span>
       {note.link !== null && (
         <span className="mt-6 block">
           <Button
@@ -280,6 +307,7 @@ function confirmShown(
 function conversionShown(
   view: ConversionView | undefined,
   primary: RefObject<HTMLButtonElement | null>,
+  asking: boolean,
 ): Shown {
   if (!view) {
     return {
@@ -355,9 +383,11 @@ function conversionShown(
               )
             ) : (
               <>
-                {phase === 'putBack' ? null : <Button onClick={tryAgain}>Try again</Button>}
+                {phase === 'putBack' ? null : (
+                  <Button onClick={pressed(tryAgain)}>Try again</Button>
+                )}
                 {escButton('Close')}
-                {enterButton(label, putBack, primary)}
+                {enterButton(label, putBack, primary, asking)}
               </>
             )}
           </>
@@ -395,7 +425,7 @@ function shownOf(
     case 'confirm':
       return confirmShown(open, primary);
     case 'conversion':
-      return conversionShown(views.get(open.key), primary);
+      return conversionShown(views.get(open.key), primary, open.asking);
     default:
       throw new Error(`a dialog Lo doesn't know: ${JSON.stringify(open satisfies never)}`);
   }
@@ -411,6 +441,20 @@ export function ConversionDialog() {
   const primary = useRef<HTMLButtonElement>(null);
   const shown = open && shownOf(open, views, primary);
   const step = shown?.step;
+  const isOpen = open !== undefined;
+  // A held key repeats, and focus follows each main button as it comes up, so a held `⏎` would
+  // press the next one too, such as "Make the stack" after "Try again". While the dialog is open,
+  // only a key's first press acts: a repeat is stopped before a button, or anything else, sees it.
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const held = (event: globalThis.KeyboardEvent) => {
+      if (!event.repeat) return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    document.addEventListener('keydown', held, true);
+    return () => document.removeEventListener('keydown', held, true);
+  }, [isOpen]);
   // The main button takes focus as the dialog moves on, so `⏎` does what it says. Two frames: the
   // button that had it may have just gone, and the dialog takes focus back for itself first.
   useEffect(() => {
@@ -421,7 +465,7 @@ export function ConversionDialog() {
   }, [step]);
   // `⏎` on the dialog itself, where a click leaves focus, presses its main button.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Enter' || event.defaultPrevented) return;
+    if (event.key !== 'Enter' || event.repeat || event.defaultPrevented) return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.target instanceof Element && event.target.closest(CONTROLS) !== null) return;
     event.preventDefault();

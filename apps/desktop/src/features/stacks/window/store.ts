@@ -11,7 +11,8 @@ import type { ConversionView, Plan } from '../contract.ts';
  * - `planning`: main is asking GitHub; the dialog shows only once that takes a moment (`shown`);
  * - `confirm`: the plan, for the reader to confirm; `sending` once they have, and `problem`, why
  *   main didn't run it, if it didn't;
- * - `conversion`: the conversion named `key`, as main says it goes.
+ * - `conversion`: the conversion named `key`, as main says it goes; `asking` while main is asked to
+ *   put its base branches back.
  */
 export type Dialog =
   | {
@@ -33,6 +34,7 @@ export type Dialog =
       readonly tab: string;
       readonly number: number;
       readonly key: string;
+      readonly asking: boolean;
     };
 
 export interface StacksWindowState {
