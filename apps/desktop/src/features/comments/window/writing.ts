@@ -1,6 +1,6 @@
-// Writing comments in a view's diff, worked out: where a comment on the cursor's line, the lines `v`
-// selected or a file goes, as GitHub takes it and as main keeps its draft; where a draft's box goes
-// in the diff as drawn; and what a box's frame says of where it is and how sending it stands.
+// Writing comments in a view's diff, worked out: where a comment on the cursor's line, the lines
+// `v` selected or a file goes, as GitHub takes it and as main keeps its draft; where a draft's box
+// goes in the diff as drawn; and what a box's frame says of where it is and how sending it stands.
 
 import { CommentableLines, Line, type Lines, type Screen } from '@lo/review';
 import type { OnFile, Place, Span } from '@lo/ui/code';
@@ -74,9 +74,9 @@ function githubSide(side: 'old' | 'new'): 'LEFT' | 'RIGHT' {
 }
 
 /**
- * The lines a comment on `at`, the cursor's line or the lines `v` selected, goes on, as GitHub takes
- * it: nothing where it takes none, as outside the pull request's diff. An unchanged line picked in
- * the older column goes on the newer, as `CommentableLines` says.
+ * The lines a comment on `at`, the cursor's line or the lines `v` selected, goes on, as GitHub
+ * takes it: nothing where it takes none, as outside the pull request's diff. An unchanged line
+ * picked in the older column goes on the newer, as `CommentableLines` says.
  */
 export function linesAt(
   commentable: CommentableLines | undefined,
@@ -304,6 +304,10 @@ export function restoredNote(savedAt: number, now: number): BoxNote {
 /** Why a line refuses a comment, after `c` on it: what `⏎` does next. */
 export const NOT_IN_DIFF =
   'GitHub takes comments only on lines in the pull request’s diff. ⏎ comments on the file instead.';
+
+/** Why a line refuses a comment where Lo couldn't read its file's patch: what `⏎` does next. */
+export const NO_LINES =
+  'Lo couldn’t read which of this file’s lines GitHub takes comments on. ⏎ comments on the file instead.';
 
 /** Why sending is off while GitHub can't be reached. */
 export const OFFLINE = 'Offline. Lo keeps this as a draft until you send it.';

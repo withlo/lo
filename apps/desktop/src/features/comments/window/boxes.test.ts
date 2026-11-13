@@ -27,7 +27,7 @@ import {
   type Box,
 } from './boxes.ts';
 import { landed } from './landed.ts';
-import { NEW_SIDE_ONLY, NOT_IN_DIFF } from './writing.ts';
+import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
 let VIEW = 'v0';
@@ -44,7 +44,7 @@ interface Drawn {
   at: unknown;
   on: ComposerEvents;
   options: ComposeOptions | undefined;
-  composer: Composer & { text: string; closed?: 'close' | 'dismiss' };
+  composer: Composer & { text: string; held: boolean; closed?: 'close' | 'dismiss' };
 }
 
 const diff = vi.hoisted(() => ({
@@ -96,6 +96,10 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
           on.change(composer.text);
         },
         preview: vi.fn<(on: boolean) => void>(),
+        held: false,
+        hold(held: boolean) {
+          composer.held = held;
+        },
         close() {
           composer.closed = 'close';
         },
@@ -221,6 +225,24 @@ describe('opening a box', () => {
     expect(vim).not.toHaveBeenCalled();
   });
 
+  test('a file whose lines Lo couldn’t read says so, `⏎` comments on the file, and it asks again', async () => {
+    const { drawn } = fakeDiff();
+    answers['comments.commentable'] = () => ({ kind: 'unknown' });
+    const line = { kind: 'line', at: { file: 'f0', side: 'new', line: 5 } } as const;
+    await comment(tab(), line, 'review');
+    expect(drawn).toEqual([]);
+    expect(notice()?.body).toBe(NO_LINES);
+    expect(takeOffer(tab())).toBe(true);
+    await vi.waitFor(() => expect(drawn.map((each) => each.at)).toEqual([{ file: 'f0' }]));
+    // Main can tell now: the line takes its comment.
+    answers['comments.commentable'] = () => IN_DIFF;
+    await comment(tab(), line, 'review');
+    expect(drawn.map((each) => each.at)).toEqual([
+      { file: 'f0' },
+      { file: 'f0', side: 'new', line: 5 },
+    ]);
+  });
+
   test('`s` opens the lines in a suggestion block; on the older side it refuses', async () => {
     const { drawn } = fakeDiff();
     await comment(
@@ -319,6 +341,26 @@ describe('drafts', () => {
     expect(drawn[1]!.composer.text).toBe('New');
   });
 
+  test('after the window loads again, each draft’s box comes back, unfocused, saying so', () => {
+    const { drawn } = fakeDiff();
+    takeDrafts({ id: VIEW, drafts: [row(onLines(null, 5), 'Kept', { savedAt: 1 })] });
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]).toMatchObject({
+      at: { file: 'f0', side: 'new', line: 5 },
+      options: { focus: false },
+    });
+    expect(boxIn(drawn[0]!).state.restored).toBe(1);
+    // A draft heard of after, as one kept with `Esc Esc` in another tab, stays shut.
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(null, 5), 'Kept', { savedAt: 1 }),
+        row(onLines(null, 7), 'Shut', { savedAt: 2 }),
+      ],
+    });
+    expect(drawn).toHaveLength(1);
+  });
+
   test('what a box’s notes offer is a command on the box, there only while it offers it', () => {
     const { drawn } = fakeDiff();
     takeDrafts({
@@ -385,6 +427,25 @@ describe('sending', () => {
     ]);
     expect(drawn[0]!.composer.closed).toBe('close');
     expect(landed.get(VIEW).has('T_1')).toBe(true);
+  });
+
+  test('while it’s sent, and until Lo knows whether it posted, its text is held', async () => {
+    const { drawn, box } = await opened();
+    let answer!: (outcome: SendOutcome) => void;
+    answers['comments.send'] = () =>
+      new Promise<SendOutcome>((resolve) => {
+        answer = resolve;
+      });
+    const sending = send(box, 'review');
+    expect(drawn[0]!.composer.held).toBe(true);
+    answer({ kind: 'refused', refusal: { kind: 'paused', until: 1 } });
+    await sending;
+    expect(drawn[0]!.composer.held).toBe(false);
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'checking', sent: 'Ship it?' })],
+    });
+    expect(drawn[0]!.composer.held).toBe(true);
   });
 
   test('refused, the box stays with why; offline, nothing sends', async () => {

@@ -66,8 +66,16 @@ function info(overrides: Partial<PullTabInfo> = {}): PullTabInfo {
   };
 }
 
-/** A thread on `path`'s new line 5, or on the file, with rozed-bot's comment `body`. */
-function node(path: string, body: string, file = false): ReviewThread {
+/**
+ * A thread on `path`'s new line 5, or on the file, with rozed-bot's comment `body`, made at
+ * `createdAt`: now, unless it's given.
+ */
+function node(
+  path: string,
+  body: string,
+  file = false,
+  createdAt = new Date().toISOString(),
+): ReviewThread {
   return {
     id: `T_${path}`,
     path,
@@ -92,7 +100,7 @@ function node(path: string, body: string, file = false): ReviewThread {
           author: { __typename: 'User', login: 'rozed-bot' },
           body,
           state: 'PENDING',
-          createdAt: '2026-11-13T12:00:00Z',
+          createdAt,
           url: 'https://github.com/rozed-dev/e2e/pull/94#discussion_r1',
           isMinimized: false,
           minimizedReason: null,
@@ -108,14 +116,23 @@ function node(path: string, body: string, file = false): ReviewThread {
 
 type Answer = Sent | ReviewWriteRefusal | Error | Promise<Sent | ReviewWriteRefusal>;
 
-/** An account's poller that answers each write with the next of `answers`. */
+/**
+ * An account's poller that answers each write with the next of `answers`, with `pending` as your
+ * pending review it last read.
+ */
 function poller(
   answers: Answer[],
   pending: PendingReviewRead = { kind: 'read', review: undefined },
 ) {
   const listeners = new Set<(event: PollEvent) => void>();
   const sent: ReviewWrite[] = [];
-  let since: ReturnType<WriterPoller['readSince']> = { kind: 'waiting' };
+  /** What each read holds against the last mark, by its name. */
+  const since = new Map<string, ReturnType<WriterPoller['readSince']>>();
+  /** The reads asked for afresh, by name, in order. */
+  const afresh: string[] = [];
+  const told = (name: string) => {
+    for (const listener of listeners) listener({ kind: 'read', pull: PULL, name });
+  };
   const fake = {
     pullRequest: () => ({ details: { id: 'PR_94', headRefOid: HEAD } }),
     cachedRead: () => ({ value: pending, fetchedAt: 0 }),
@@ -127,8 +144,13 @@ function poller(
       if (answer === undefined) throw new Error('No answer left.');
       return Promise.resolve(answer);
     },
-    readAfresh: (): ReadMark => ({ read: 1, generation: 2 }),
-    readSince: () => since,
+    readAfresh(_pull: PullRef, kind: { name: string }): ReadMark {
+      afresh.push(kind.name);
+      since.set(kind.name, { kind: 'waiting' });
+      return { read: 1, generation: afresh.length };
+    },
+    readSince: (_pull: PullRef, kind: { name: string }) =>
+      since.get(kind.name) ?? { kind: 'stale' },
     onEvent(listener: (event: PollEvent) => void) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -138,12 +160,16 @@ function poller(
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only these are read.
     poller: fake as unknown as WriterPoller,
     sent,
+    afresh,
     /** The threads read again after the mark, as the poller tells it. */
     reads(threads: ReviewThreadList): void {
-      since = { kind: 'read', read: { value: threads, fetchedAt: Date.now() } };
-      for (const listener of listeners) {
-        listener({ kind: 'read', pull: PULL, name: 'ReviewThreads' });
-      }
+      since.set('ReviewThreads', { kind: 'read', read: { value: threads, fetchedAt: Date.now() } });
+      told('ReviewThreads');
+    },
+    /** Your pending review read again after the mark, as the poller tells it. */
+    reviewReads(read: PendingReviewRead): void {
+      since.set('PendingReview', { kind: 'read', read: { value: read, fetchedAt: Date.now() } });
+      told('PendingReview');
     },
     failsToRead(): void {
       for (const listener of listeners) {
@@ -237,12 +263,12 @@ describe('sending', () => {
     expect(joining.sent.map((write) => write.kind)).toEqual(['addThread']);
   });
 
-  test('one write to a pull request goes at a time: the next waits for its answer', async () => {
+  test('one write to a pull request goes at a time, the next planned from your pending review as read after', async () => {
     let answer!: (sent: Sent) => void;
     const first = new Promise<Sent>((resolve) => {
       answer = resolve;
     });
-    const fake = poller([first, { review: 'PRR_1', comment: 'C_2' }]);
+    const fake = poller([first, { review: 'PRR_1', thread: 'T_2', comment: 'C_2', commit: HEAD }]);
     const { made, last } = writer(fake);
     const one = made.send('t1', onLine(), 'One.', 'review');
     const other = {
@@ -255,9 +281,36 @@ describe('sending', () => {
     // The same draft isn't sent twice meanwhile.
     expect(await made.send('t1', other, 'Two.', 'review')).toMatchObject({ kind: 'refused' });
     answer({ review: 'PRR_1', comment: 'C_1' });
-    await Promise.all([one, two]);
-    expect(fake.sent).toHaveLength(2);
+    expect(await one).toMatchObject({ kind: 'sent' });
+    // The first started your pending review, which the poller hasn't read since: the next waits
+    // for a read made after, rather than starting a second review GitHub would refuse.
+    await vi.waitFor(() => expect(fake.afresh).toEqual(['PendingReview']));
+    expect(fake.sent).toHaveLength(1);
+    fake.reviewReads({
+      kind: 'read',
+      review: { id: 'PRR_1', commit: { oid: HEAD }, comments: { totalCount: 1 } },
+    });
+    expect(await two).toMatchObject({ kind: 'sent', pending: true });
+    expect(fake.sent.map((write) => write.kind)).toEqual(['startReview', 'addThread']);
+    expect(fake.sent[1]).toMatchObject({ variables: { pullRequestReviewId: 'PRR_1' } });
     expect(last()).toEqual([]);
+  });
+
+  test('text that changed while it was sent stays as the draft', async () => {
+    let answer!: (sent: Sent) => void;
+    const fake = poller([
+      new Promise<Sent>((resolve) => {
+        answer = resolve;
+      }),
+    ]);
+    const { made, last } = writer(fake);
+    const sending = made.send('t1', onLine(), 'Sent.', 'review');
+    await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
+    // Typed meanwhile, as in another tab on the pull request.
+    made.save('t1', onLine(), 'Sent. And more.');
+    answer({ review: 'PRR_1', comment: 'C_1' });
+    expect(await sending).toMatchObject({ kind: 'sent' });
+    expect(last()).toMatchObject([{ text: 'Sent. And more.', sending: null, sent: null }]);
   });
 
   test('a refusal keeps the draft, in the box’s words', async () => {
@@ -338,30 +391,82 @@ describe('a lost answer', () => {
     expect([...missing.sent, ...failing.sent]).toHaveLength(2);
   });
 
-  test('one lost before Lo started settles against a read made after it', () => {
+  test('one lost before a restart is checked, and can’t be sent, until a read settles it', async () => {
+    vi.useFakeTimers();
+    const database = fresh();
+    const before = writer(poller([lost()]), info(), database);
+    expect(await before.made.send('t1', onLine(), 'Lost?', 'review')).toEqual({ kind: 'lost' });
+    before.made.stop();
+    const sentAt = Date.now();
+    await vi.advanceTimersByTimeAsync(1_000);
+    const fake = poller([]);
+    const { made, last } = writer(fake, info(), database);
+    expect(last()).toMatchObject([{ restored: true, sending: 'checking', sent: 'Lost?' }]);
+    expect(await made.send('t1', onLine(), 'Lost?', 'review')).toEqual({
+      kind: 'refused',
+      refusal: { kind: 'github', message: 'Lo is still looking whether it posted.' },
+    });
+    expect(fake.sent).toEqual([]);
+    const rows = threadRowsOf({ nodes: [node('src/backoff.ts', 'Something else')], missing: 0 });
+    made.threadsRead('t1', rows, sentAt + 10_000);
+    expect(last()).toMatchObject([{ sending: 'notPosted', sent: null, text: 'Lost?' }]);
+  });
+
+  test('one lost before Lo started settles only against a read fetched the wait after it was sent', () => {
     const database = fresh();
     new DraftStore(database, () => 1_000).save('rozed-bot', PULL, ON_FILE, 'Lost before.');
-    const before = new DraftStore(database);
-    before.markSent('rozed-bot', PULL, ON_FILE, 'Lost before.');
+    new DraftStore(database).markSent('rozed-bot', PULL, ON_FILE, 'Lost before.', 50_000);
     const { made, last } = writer(poller([]), info(), database);
-    expect(last()).toMatchObject([{ restored: true, sent: 'Lost before.' }]);
+    expect(last()).toMatchObject([{ restored: true, sending: 'checking', sent: 'Lost before.' }]);
     const thread = { nodes: [node('docs/usage.md', 'Lost before.', true)], missing: 0 };
     const rows = threadRowsOf(thread);
-    // A read older than the send, as from the poll cache, says nothing.
-    made.threadsRead('t1', rows, 5_000);
-    expect(last()).toHaveLength(1);
+    // Fetched after it was last typed in, but before it was sent, as from the poll cache.
     made.threadsRead('t1', rows, 20_000);
+    // Fetched after it was sent, but within the wait.
+    made.threadsRead('t1', rows, 55_000);
+    expect(last()).toHaveLength(1);
+    made.threadsRead('t1', rows, 60_000);
     expect(last()).toEqual([]);
+  });
+
+  test('discarded while Lo checks, it’s gone, and what Lo finds brings nothing back', async () => {
+    vi.useFakeTimers();
+    const fake = poller([lost()]);
+    const { made, last, database } = writer(fake);
+    await made.send('t1', onLine(), 'Lost?', 'review');
+    expect(last()).toMatchObject([{ sending: 'checking' }]);
+    made.discard('t1', onLine());
+    expect(last()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    fake.reads({ nodes: [node('src/backoff.ts', 'Something else')], missing: 0 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(last()).toEqual([]);
+    expect(new DraftStore(database).of('rozed-bot', PULL)).toEqual([]);
   });
 });
 
-test('a comment is found by its file, lines, author and text', () => {
-  const rows = threadRowsOf({ nodes: [node('src/backoff.ts', 'Text\r\n')], missing: 0 });
-  expect(holdsComment(rows, 'Rozed-Bot', onLine(), 'Text')).toBe(true);
-  expect(holdsComment(rows, 'someone', onLine(), 'Text')).toBe(false);
-  expect(holdsComment(rows, 'rozed-bot', { ...onLine(), path: 'src/other.ts' }, 'Text')).toBe(
-    false,
-  );
+test('a comment is found by its file, lines, author and text, made since it was sent', () => {
+  const sentAt = Date.parse('2026-11-13T12:00:00Z');
+  const made = '2026-11-13T12:00:01Z';
+  const rows = threadRowsOf({
+    nodes: [node('src/backoff.ts', 'Text\r\n', false, made)],
+    missing: 0,
+  });
+  expect(holdsComment(rows, 'Rozed-Bot', onLine(), 'Text', sentAt)).toBe(true);
+  expect(holdsComment(rows, 'someone', onLine(), 'Text', sentAt)).toBe(false);
+  expect(
+    holdsComment(rows, 'rozed-bot', { ...onLine(), path: 'src/other.ts' }, 'Text', sentAt),
+  ).toBe(false);
   const nine = { ...onLine(), lines: { start: null, end: { side: 'RIGHT' as const, number: 9 } } };
-  expect(holdsComment(rows, 'rozed-bot', nine, 'Text')).toBe(false);
+  expect(holdsComment(rows, 'rozed-bot', nine, 'Text', sentAt)).toBe(false);
+  const range = {
+    ...onLine(),
+    lines: {
+      start: { side: 'RIGHT' as const, number: 3 },
+      end: { side: 'RIGHT' as const, number: 5 },
+    },
+  };
+  expect(holdsComment(rows, 'rozed-bot', range, 'Text', sentAt)).toBe(false);
+  // The same text, written well before it was sent, is another comment.
+  expect(holdsComment(rows, 'rozed-bot', onLine(), 'Text', sentAt + 10 * 60_000)).toBe(false);
 });

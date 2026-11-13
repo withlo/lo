@@ -713,7 +713,8 @@ class View implements DiffView {
   ): void {
     this.#hosts.render = render;
     // What comes under the line of a comment box, open or closed since, is the reader's doing,
-    // as when they sent it: it comes now, and grows, that line staying where it is.
+    // as when they sent it: it comes now, and grows. It came with no input, though, so what's on
+    // screen stays where it is.
     const theirs = this.#readerLines();
     const changed = new Set<string>();
     const next: FileThreads[] = this.#ids.map(() => new Map());
@@ -751,7 +752,7 @@ class View implements DiffView {
       if (changed.has(waitKey(file, `${side}:${line}`))) open.answered = true;
     }
     const now = this.#freeLines((file, key) => theirs.has(waitKey(file, key)));
-    if (now[0]) this.#keepLine(lineAt(now[0].file, now[0].key), () => this.#showLines(now));
+    if (now[0]) this.#keepUnasked(() => this.#showLines(now));
     this.#letThreadsGo(options.now ? 'all' : 'off', true);
     this.#dropThreads();
   }
@@ -2027,7 +2028,11 @@ class View implements DiffView {
 
   /**
    * Closes `box`. One the caller closed, as after it was sent, leaves its line the reader's until
-   * what was sent comes there; one closed with `Esc Esc`, or dismissed, sent nothing, and leaves no claim.
+   * what was sent comes there; one closed with `Esc Esc`, or dismissed, sent nothing, and leaves no
+   * claim. The caller closes it as GitHub's answer comes, with no input of the reader's: what's on
+   * screen stays where it is, and focus too, unless it was in the box. Closed by the reader, its
+   * line stays where it is. Focus in the box goes to its line, as does focus nowhere after the
+   * reader closed it, as from its menu.
    */
   #closeBox(box: CommentBox, sent: boolean): void {
     const found = [...this.#boxes].find(([, open]) => open.box === box);
@@ -2035,12 +2040,19 @@ class View implements DiffView {
     const [key, { place, answered }] = found;
     this.#boxes.delete(key);
     if (sent && !answered) this.#boxClosed.add(waitKey(place.file, `${place.side}:${place.line}`));
-    this.#keepLine(place, () => this.#refresh(place.file));
-    const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
-    const view = this.#viewOf(pane);
-    const line = this.#docLine(pane, place);
-    view.dispatch({ selection: { anchor: view.state.doc.line(line).from } });
-    view.focus();
+    const document = box.dom.ownerDocument;
+    const active = document.activeElement;
+    const inBox = box.dom.contains(active);
+    const nowhere = active === null || active === document.body;
+    if (sent) this.#keepUnasked(() => this.#refresh(place.file));
+    else this.#keepLine(place, () => this.#refresh(place.file));
+    if (inBox || (!sent && nowhere)) {
+      const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
+      const view = this.#viewOf(pane);
+      const line = this.#docLine(pane, place);
+      view.dispatch({ selection: { anchor: view.state.doc.line(line).from } });
+      view.focus();
+    }
     box.destroy();
   }
 

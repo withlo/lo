@@ -1214,6 +1214,47 @@ describe('threads', () => {
     expect(line).toHaveBeenCalled();
   });
 
+  test('a box its caller closes, as its answer came, keeps what’s on screen, and focus where it was', () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 10));
+    shown.focus();
+    const answered = shown.compose(at('a', 'new', 4), 'Sent', composerEvents());
+    shown.compose(at('a', 'new', 6), 'Typing', composerEvents());
+    const typing = document.activeElement;
+    expect(typing?.closest('.lo-diffcomposer')?.textContent).toContain('Typing');
+    const line = vi.spyOn(Aligner.prototype, 'anchorAt');
+    const top = vi.spyOn(Aligner.prototype, 'anchorTop');
+    answered.close();
+    expect(line).not.toHaveBeenCalled();
+    expect(top).toHaveBeenCalled();
+    expect(document.activeElement).toBe(typing);
+    // What was sent comes under its line, with no input either.
+    line.mockClear();
+    shown.setThreads([thread('sent', at('a', 'new', 4))], plain().render);
+    expect(drawnThreads()).toEqual(['sent']);
+    expect(line).not.toHaveBeenCalled();
+    // With focus in it, focus goes to its line.
+    const last = shown.compose(at('a', 'new', 8), 'Last', composerEvents());
+    last.close();
+    expect(document.activeElement?.closest('.lo-diffcomposer')).toBeNull();
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 8));
+  });
+
+  test('a box held, as while it’s sent, takes no change to its text until it’s let go', () => {
+    const shown = open();
+    const box = shown.compose(at('a', 'new', 4), 'Sent as it is', composerEvents());
+    const comment = vimIn('Comment');
+    expect(comment.mode).toBe('insert');
+    box.hold(true);
+    expect(comment.mode).toBe('normal');
+    comment.keys('d', 'd', 'x', 'p');
+    box.replace(0, 4, '');
+    expect(box.text).toBe('Sent as it is');
+    box.hold(false);
+    comment.keys('0', 'x');
+    expect(box.text).toBe('ent as it is');
+  });
+
   test("]t stops at a file's threads, on its header", () => {
     const shown = open();
     shown.setThreads([onFile('on b', 'b'), thread('line', at('b', 'new', 6))], plain().render);

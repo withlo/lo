@@ -332,7 +332,9 @@ function reasonsOf(foot: CommentBoxFoot | undefined): string[] {
   ];
 }
 
-/** The id of the note that says `why` a button is off, among `reasons`, for a box whose id is `id`. */
+/**
+ * The id of the note that says `why` a button is off, among `reasons`, for a box whose id is `id`.
+ */
 function reasonId(id: string, reasons: readonly string[], why: string | undefined) {
   return why === undefined ? undefined : `${id}-why-${reasons.indexOf(why)}`;
 }

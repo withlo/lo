@@ -2,7 +2,8 @@
 // head, with Write and Preview, where the comment goes and who it's from; the notes, of a restored
 // draft, a refusal with what to do about it, or how sending stands; the preview, the text as GitHub
 // would render it; and the foot, with Vim's mode and the buttons that send. Each part is a React
-// root of its own, drawn from the box's state.
+// root of its own, drawn from the box's state, and drawn at once as the box is made, so it's as
+// tall as it'll be before it's on screen.
 
 import {
   CommentBoxFootBar,
@@ -16,6 +17,7 @@ import type { BoxFrame, Composer, Mode } from '@lo/ui/code';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { Markdown, secureLink, type Followed } from '@lo/ui/markdown';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
@@ -24,7 +26,7 @@ import { avatarImage, postImage } from '../../../window/images.ts';
 import { followLink } from '../../open/window/shared.ts';
 import { usePull, useRun } from '../../tab/window/shared.ts';
 import { MARKDOWN_LIMIT, type Rendered } from '../jobs.ts';
-import { act, type Box, type BoxState, pullIn, send, takenDown } from './boxes.ts';
+import { act, type Box, type BoxState, pullIn, send, sendingNow, takenDown } from './boxes.ts';
 import { commentsJobs } from './main.ts';
 import {
   IN_A_LAYER,
@@ -67,11 +69,7 @@ function useWhyNot(box: Box): string | undefined {
 
 /** The foot's buttons: the main one, as `c` or `C` opened the box, last. */
 function footOf(box: Box, state: BoxState, why: string | undefined): CommentBoxFoot {
-  const waiting =
-    state.busy ||
-    state.sending === 'waiting' ||
-    state.sending === 'sending' ||
-    state.sending === 'checking';
+  const waiting = sendingNow(state);
   const blank = state.text.trim() === '';
   const button = (how: 'review' | 'now'): CommentBoxAction => ({
     label: how === 'review' ? 'Add to review' : 'Comment now',
@@ -218,10 +216,11 @@ export function frameOf(box: Box): BoxFrame {
         </OnMenu>,
       ],
     ] as const;
-    const made = roots.map(([part, drawn]) => {
-      const root = createRoot(part);
-      root.render(drawn);
-      return root;
+    const made = roots.map(([part]) => createRoot(part));
+    // Drawn now, not after the page is painted with the box: one that opens with no input, as a
+    // draft restored, would grow after, and move what's under it on screen.
+    flushSync(() => {
+      for (const [at, root] of made.entries()) root.render(roots[at]![1]);
     });
     // Focus in the box lights its mode chip.
     const frame = parts.head.parentElement;

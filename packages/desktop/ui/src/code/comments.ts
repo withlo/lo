@@ -4,13 +4,14 @@
 // that takes the editor's place, a dropzone over it, the uploads and a foot. `⌘⏎` adds the comment
 // to the review and `⌥⏎` posts it now; `⌘⇧V` shows the preview or the editor, and `⌘⇧A` asks to
 // attach files; `Esc` leaves insert mode, and `Esc` again closes the box. Files dropped or pasted
-// go to the caller, never into the text. The box is a scope of its own, `box`, so Lo's keys for the
+// go to the caller, never into the text. While the caller holds it, as while it's sent, no key
+// changes its text. The box is a scope of its own, `box`, so Lo's keys for the
 // diff don't reach it, and its Vim keeps its own jumps: `⌃o` and `⌃i` there are Vim's.
 
 import { history, indentLess, indentMore } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting } from '@codemirror/language';
-import { findClusterBreak, Prec } from '@codemirror/state';
+import { Compartment, findClusterBreak, Prec } from '@codemirror/state';
 import { drawSelection, EditorView, keymap, runScopeHandlers } from '@codemirror/view';
 import { classHighlighter } from '@lezer/highlight';
 import { getCM, Vim, vim } from '@replit/codemirror-vim';
@@ -31,6 +32,7 @@ import {
   leaveToNormal,
   onVimMode,
   passToVim,
+  readOnly,
   setVimKeys,
   vimMode,
   vimPending,
@@ -87,6 +89,9 @@ export class CommentBox implements BoxHost, KeySource {
   #dragged = 0;
   /** How tall the box was when its editor last changed. */
   #height = 0;
+  /** What makes the text read-only while the caller holds it. */
+  readonly #held = new Compartment();
+  #holding = false;
 
   constructor(options: BoxOptions) {
     installVim();
@@ -120,6 +125,7 @@ export class CommentBox implements BoxHost, KeySource {
       doc: options.draft,
       extensions: [
         vim(),
+        this.#held.of([]),
         drawSelection(),
         history(),
         markdown(),
@@ -233,7 +239,8 @@ export class CommentBox implements BoxHost, KeySource {
     }
     const { doc } = this.view.state;
     const cm = getCM(this.view);
-    // In insert mode the cursor goes to the end itself; otherwise `A` takes it there, into insert mode.
+    // In insert mode the cursor goes to the end itself; otherwise `A` takes it there, into insert
+    // mode.
     const inserting = cm?.state.vim?.insertMode === true;
     this.view.dispatch({
       selection: { anchor: inserting ? doc.length : doc.line(doc.lines).from },
@@ -264,6 +271,14 @@ export class CommentBox implements BoxHost, KeySource {
     const start = clamp(Math.min(from, to));
     const end = clamp(Math.max(from, to));
     this.view.dispatch({ changes: { from: start, to: end, insert: text } });
+  }
+
+  /** Holds the text as it is, leaving insert mode, or lets it go. */
+  hold(on: boolean): void {
+    if (on === this.#holding) return;
+    this.#holding = on;
+    if (on) leaveToNormal(this.view);
+    this.view.dispatch({ effects: this.#held.reconfigure(on ? readOnly() : []) });
   }
 
   /**
@@ -341,6 +356,7 @@ export class CommentBox implements BoxHost, KeySource {
         return previewing();
       },
       focus: () => this.focus(),
+      hold: (on) => this.hold(on),
       insert: (text) => this.insert(text),
       replace: (from, to, text) => this.replace(from, to, text),
       preview: (on) => this.preview(on),

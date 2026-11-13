@@ -233,9 +233,15 @@ export interface Composer {
    */
   preview(on: boolean): void;
   /**
-   * Closes the box, as after it was sent: in a code view, giving focus back to the line it was on,
-   * and taking what comes under that line next as what was sent, at once. A box `createComposer`
-   * made is taken away.
+   * Holds the text as it is, as while it's being sent, so that nothing typed then is lost as the
+   * box closes once it's sent: no key changes it, and insert mode ends. `false` lets it go.
+   */
+  hold(on: boolean): void;
+  /**
+   * Closes the box, as after it was sent: in a code view, taking what comes under its line next as
+   * what was sent, at once. That comes with no input of the reader's, so what's on screen stays
+   * where it is, and focus does too, unless it was in the box: then it goes to the box's line. A
+   * box `createComposer` made is taken away.
    */
   close(): void;
   /**

@@ -1,9 +1,9 @@
 // The comments feature in the window: each view's review threads, as main sends them, placed under
 // their lines in the view's diff and drawn there, and counted on each file's header and its row in
-// the tree; posts' text, as other features draw it through `Post`, from the HTML main reads for
-// the posts on screen; and writing comments: the keys that open a comment box in the diff, the box's
-// frame, and its draft, which main keeps until it's sent. What it keeps of a view goes as the view's
-// tab closes.
+// the tree; posts' text, as other features draw it through `Post`, from the HTML main reads for the
+// posts on screen; and writing comments: the keys that open a comment box in the diff, the box's
+// frame, and its draft, which main keeps until it's sent. What it keeps of a view goes as the
+// view's tab closes.
 
 import { handlers, type HeaderTarget, type LineTarget } from '@lo/ui/commands';
 

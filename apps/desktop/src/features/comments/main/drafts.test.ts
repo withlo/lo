@@ -39,7 +39,14 @@ test('a draft is saved as typed, comes back restored, and blank text removes it'
   expect(store.save('Rozed-Bot', PULL, on(R1, 'a.ts', 4), 'Typed')).toBe(true);
   expect(store.save('rozed-bot', PULL, on(R1, 'a.ts', 4), 'Typed')).toBe(false);
   expect(store.of('rozed-bot', PULL)).toEqual([
-    { place: on(R1, 'a.ts', 4), text: 'Typed', savedAt: 500, restored: false, sent: null },
+    {
+      place: on(R1, 'a.ts', 4),
+      text: 'Typed',
+      savedAt: 500,
+      restored: false,
+      sent: null,
+      sentAt: null,
+    },
   ]);
   const again = new DraftStore(db);
   expect(again.of('ROZED-BOT', new PullRef('Rozed-Dev', 'E2E', 94))).toMatchObject([
@@ -61,14 +68,25 @@ test('a place of a kind Lo doesn’t know is kept in the database and never open
   expect(db.prepare('SELECT count(*) AS n FROM comments_drafts').get()?.n).toBe(1);
 });
 
-test('the sent mark keeps a draft through blank text until it’s settled', () => {
-  const store = new DraftStore(database());
+test('the sent mark, with when it was sent, keeps a draft through blank text and a restart until it’s settled', () => {
+  const db = database();
+  const store = new DraftStore(db, () => 500);
   const place = on(R1, 'a.ts', 4);
   store.save('rozed-bot', PULL, place, 'Sent');
-  store.markSent('rozed-bot', PULL, place, 'Sent');
+  store.markSent('rozed-bot', PULL, place, 'Sent', 9_000);
   expect(store.save('rozed-bot', PULL, place, '')).toBe(true);
-  expect(store.get('rozed-bot', PULL, place)).toMatchObject({ text: '', sent: 'Sent' });
+  expect(store.get('rozed-bot', PULL, place)).toMatchObject({
+    text: '',
+    savedAt: 500,
+    sent: 'Sent',
+    sentAt: 9_000,
+  });
+  expect(new DraftStore(db).get('rozed-bot', PULL, place)).toMatchObject({
+    sent: 'Sent',
+    sentAt: 9_000,
+  });
   store.markSent('rozed-bot', PULL, place, null);
+  expect(store.get('rozed-bot', PULL, place)).toMatchObject({ sent: null, sentAt: null });
   expect(store.take('rozed-bot', PULL, place)).toMatchObject({ sent: null });
 });
 

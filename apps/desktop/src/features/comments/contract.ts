@@ -2,9 +2,10 @@
 // your pending review, which main reads for the view on screen and sends each time they change;
 // and the HTML GitHub renders for posts, which threads and the timeline show in place of their
 // Markdown. The comments you write: the drafts main keeps of each comment box, which lines GitHub
-// takes a comment on, and sending one, which only the reader does. The window asks for the posts on screen or near it, and keeps what comes back in its
-// memory only. It loads the images in posts, and avatars, on the image scheme (`ipc/images.ts`),
-// which the feature serves in main, so nothing of that goes through a request.
+// takes a comment on, and sending one, which only the reader does. The window asks for the posts on
+// screen or near it, and keeps what comes back in its memory only. It loads the images in posts,
+// and avatars, on the image scheme (`ipc/images.ts`), which the feature serves in main, so nothing
+// of that goes through a request.
 
 import { z } from 'zod';
 
@@ -158,7 +159,9 @@ export type PendingReviewRow = z.output<typeof pendingReview>;
 export const reviewView = z.strictObject({ id: tabId, review: pendingReview });
 export type ReviewView = z.output<typeof reviewView>;
 
-/** A line of a pull request's diff as a comment names it: its side, by GraphQL's names, and number. */
+/**
+ * A line of a pull request's diff as a comment names it: its side, by GraphQL's names, and number.
+ */
 export const commentLine = z.strictObject({ side: diffSide, number: lineNumber });
 
 /** The lines a new thread is on: one, or a range from `start`, which may be on the other side. */
@@ -185,9 +188,9 @@ export type DraftPlaceRow = z.output<typeof draftPlace>;
 
 /**
  * Where sending a draft stands, when it's been sent: `waiting` for the answer to the last write to
- * its pull request, since one goes at a time; `sending`; `checking`, after GitHub's answer was lost,
- * whether it posted, by reading your comments once the write's read-back lands; `notPosted`, when
- * it found it didn't; `unknown`, when it couldn't read them.
+ * its pull request, since one goes at a time; `sending`; `checking`, after GitHub's answer was
+ * lost, whether it posted, by reading your comments once the write's read-back lands; `notPosted`,
+ * when it found it didn't; `unknown`, when it couldn't read them.
  */
 export const sending = z.enum(['waiting', 'sending', 'checking', 'notPosted', 'unknown']);
 export type Sending = z.output<typeof sending>;
@@ -288,7 +291,8 @@ export const contract = defineContract('comments', {
     },
     /**
      * What main has of a view's review threads, your pending review and your drafts now, which
-     * `threads`, `review` and `drafts` then keep up to date: nothing for a view main doesn't follow.
+     * `threads`, `review` and `drafts` then keep up to date: nothing for a view main doesn't
+     * follow.
      */
     current: {
       input: z.strictObject({ id: tabId }),

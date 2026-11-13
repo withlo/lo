@@ -1,9 +1,11 @@
 // The comment boxes of each view's diff, in the window until the view's tab closes: where each is,
 // its text, and how sending it stands, as main keeps its draft. A box opens from `c`, `C`, `s` or a
 // file's `c`; a draft main restored reopens, unfocused, once its view's diff draws its line, and so
-// does a box the diff took down as it was drawn again. Text is saved 300 ms after typing stops, and
-// at once as the box closes or the window goes. A box goes once what it sent is on GitHub, or its
-// draft is discarded; `Esc Esc` closes it and keeps the draft for the next box there.
+// does a box the diff took down as it was drawn again, and, after the window is loaded again, every
+// draft's. Text is saved 300 ms after typing stops, and at once as the box closes or the window
+// goes. While it's sent, and until Lo knows whether it posted, its text is held as it is. A box
+// goes once what it sent is on GitHub, or its draft is discarded; `Esc Esc` closes it and keeps the
+// draft for the next box there.
 
 import { Lines, suggestionBlock, takesSuggestion } from '@lo/review';
 import type { Composer, ComposerEvents, Mode, Send } from '@lo/ui/code';
@@ -34,6 +36,7 @@ import {
   IN_A_LAYER,
   linesAt,
   NEW_SIDE_ONLY,
+  NO_LINES,
   NOT_IN_DIFF,
   offerLabels,
   offersOf,
@@ -46,7 +49,10 @@ import {
 /** How long after the last key a box's text is saved, in milliseconds. */
 export const SAVE_AFTER = 300;
 
-/** How often a box that couldn't open yet tries again while its file's lines come, and how many times. */
+/**
+ * How often a box that couldn't open yet tries again while its file's lines come, and how many
+ * times.
+ */
 const RETRY_AFTER = 500;
 const RETRIES = 20;
 
@@ -68,6 +74,12 @@ export interface BoxState {
   readonly busy: boolean;
   /** Why the last send was refused. */
   readonly refusal: SendRefusal | undefined;
+}
+
+/** Whether a box's comment is being sent, or may be on GitHub: its text is held as it is. */
+export function sendingNow(state: BoxState): boolean {
+  const { busy, sending } = state;
+  return busy || sending === 'waiting' || sending === 'sending' || sending === 'checking';
 }
 
 /** A comment box of a view's diff. */
@@ -116,6 +128,7 @@ export class Box {
 
   set(change: Partial<BoxState>): void {
     this.#state = { ...this.#state, ...change };
+    this.composer?.hold(sendingNow(this.#state));
     for (const listener of this.#listeners) listener();
   }
 
@@ -168,6 +181,9 @@ const commentables = new Map<string, { view: string; asked: Promise<Commentable>
  * heard don't bring their boxes back.
  */
 const dropped = new Map<string, Set<string>>();
+
+/** The views whose drafts the window has heard of since it was loaded. */
+const heard = new Set<string>();
 
 function boxesOf(view: string): Map<string, Box> {
   let own = views.get(view);
@@ -228,7 +244,10 @@ function screenFor(view: string, diff: WritingDiff, since: boolean) {
   return since ? { ...screen, left: { kind: 'replayed' as const, head: drawn.at } } : screen;
 }
 
-/** Which comments GitHub takes on a file at a revision, as main says, asked once a view. */
+/**
+ * Which comments GitHub takes on a file at a revision, as main says, asked once a view: asked again
+ * while main can't tell.
+ */
 function commentableOf(
   view: string,
   commit: string,
@@ -238,13 +257,19 @@ function commentableOf(
   const key = JSON.stringify([view, commit, path, previous]);
   let asked = commentables.get(key)?.asked;
   if (!asked) {
-    asked = main()
+    const asking: Promise<Commentable> = main()
       .commentable({ id: view, commit, path, previous })
       .catch((error: unknown): Commentable => {
-        commentables.delete(key);
         console.error("Lo couldn't read which lines take a comment:", error);
         return { kind: 'unknown' };
+      })
+      .then((answer) => {
+        if (answer.kind === 'unknown' && commentables.get(key)?.asked === asking) {
+          commentables.delete(key);
+        }
+        return answer;
       });
+    asked = asking;
     commentables.set(key, { view, asked });
   }
   return asked;
@@ -283,7 +308,9 @@ function eventsOf(box: Box): ComposerEvents {
   };
 }
 
-/** What draws a box's frame: given by the window feature, so the frame's React stays out of here. */
+/**
+ * What draws a box's frame: given by the window feature, so the frame's React stays out of here.
+ */
 let framer: ((box: Box) => Parameters<WritingDiff['compose']>[3]) | undefined;
 
 /** Takes `given` as what draws boxes' frames. */
@@ -314,6 +341,7 @@ function show(box: Box, diff: WritingDiff): boolean {
     // Its line isn't drawn yet, as while its file's diff is worked out.
     return false;
   }
+  box.composer.hold(sendingNow(box.state));
   box.set({ mode: box.composer.mode });
   box.focusOnOpen = false;
   box.retries = 0;
@@ -378,6 +406,10 @@ function sameLines(a: DraftPlaceRow, b: DraftPlaceRow): boolean {
 export function takeDrafts(given: DraftsView): void {
   const { id: view } = given;
   const own = boxesOf(view);
+  // The first the window hears of a view's drafts, as after it's loaded again, each draft's box
+  // comes back, as after a restart.
+  const first = !heard.has(view);
+  heard.add(view);
   const rows = new Map(given.drafts.map((row) => [placeKey(row.place), row]));
   // A draft dropped here is gone, whatever main sent before it heard; once it says so, it's done.
   const dropping = dropped.get(view);
@@ -408,7 +440,8 @@ export function takeDrafts(given: DraftsView): void {
         (each) => sameLines(each.state.place, row.place) && each.state.text === row.text,
       );
       box = new Box(view, row.place, moved?.state.primary ?? 'review', row.text);
-      box.open = row.restored || (moved?.open ?? false);
+      box.open = row.restored || first || (moved?.open ?? false);
+      if (first) box.set({ restored: row.savedAt });
       own.set(key, box);
     }
     takeRow(box, row);
@@ -416,12 +449,13 @@ export function takeDrafts(given: DraftsView): void {
   restore(view);
 }
 
+/** A box takes its draft's row: how sending it stands, and its text unless it was typed in. */
 function takeRow(box: Box, row: DraftRow): void {
   box.sentMark = row.sent !== null;
   const typed = box.composer !== undefined || box.saving;
   box.set({
     sending: row.sending,
-    restored: row.restored ? row.savedAt : undefined,
+    ...(row.restored ? { restored: row.savedAt } : {}),
     ...(typed ? {} : { text: row.text }),
   });
 }
@@ -463,8 +497,8 @@ function previousOf(file: { path: string | null; old: string | null }): string |
   return file.path !== null && file.old !== null && file.old !== file.path ? file.old : null;
 }
 
-/** A line a comment was refused on, whose file `⏎` comments on while the note says so. */
-let offered: { view: string; file: string; how: Send } | undefined;
+/** A line a comment was refused on, whose file `⏎` comments on while the note says so, `said`. */
+let offered: { view: string; file: string; how: Send; said: string } | undefined;
 
 /**
  * `c`, `C` or `s` in view `tab`'s diff, on `target`: opens a box under the cursor's line, or the
@@ -511,8 +545,10 @@ export async function comment(
       );
       return;
     }
-    offered = { view, file: file.id, how };
-    notify(title, NOT_IN_DIFF);
+    // Where main couldn't read the file's patch, it takes a comment on the file only.
+    const said = takes ? NOT_IN_DIFF : NO_LINES;
+    offered = { view, file: file.id, how, said };
+    notify(title, said);
     return;
   }
   if (suggest && !takesSuggestion(on)) {
@@ -553,8 +589,8 @@ export async function comment(
 export function takeOffer(tab: PullTab): boolean {
   const offer = offered;
   offered = undefined;
-  if (offer?.view !== tab.id || notice()?.body !== NOT_IN_DIFF) return false;
-  withdraw(notice()!.title, NOT_IN_DIFF);
+  if (offer?.view !== tab.id || notice()?.body !== offer.said) return false;
+  withdraw(notice()!.title, offer.said);
   void comment(tab, { kind: 'header', file: offer.file, side: 'new' }, offer.how);
   return true;
 }
@@ -583,8 +619,8 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
 /** Sends a box's text, as `⌘⏎` (`review`) or `⌥⏎` (`now`) asks. */
 export async function send(box: Box, how: Send): Promise<void> {
   const { view } = box;
-  const { place, text, busy, sending } = box.state;
-  if (busy || sending === 'waiting' || sending === 'sending' || sending === 'checking') return;
+  const { place, text } = box.state;
+  if (sendingNow(box.state)) return;
   if (text.trim() === '' || offline(view) || canWrite(view) !== true) return;
   box.dropSave();
   box.lastHow = how;

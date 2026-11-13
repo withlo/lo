@@ -1,22 +1,26 @@
 // Writing comments, in main: each view's drafts, as the window hands over what the reader types,
 // and sending one, which only the reader does. `@lo/review`'s pending review plans each write from
 // your pending review as the account's poller last read it, and the poller sends it. One write to a
-// pull request goes at a time: a second waits for the first's answer, since two comments sent at
-// once would each start a review, and GitHub refuses the second. A draft stays until GitHub takes
-// its comment. When GitHub's answer is lost, the draft is marked with the text sent, and once the
-// write's read-back lands, and no sooner than a while after the failure, Lo looks among your
-// comments for it: found, the draft goes; otherwise the reader is told, and may send it again.
-// Nothing is ever sent again by itself. Nothing here calls Electron.
+// pull request goes at a time: a second waits for the first's answer, and is planned from your
+// pending review as read after it, since two comments planned from one read would each start a
+// review, and GitHub refuses the second. A draft stays until GitHub takes its comment, and is
+// marked with the text sent, and when, while it's sent: when GitHub's answer is lost, the mark
+// stays, a restart included, and once the write's read-back lands, and no sooner than a while
+// after, Lo looks among your comments for it: found, the draft goes; otherwise the reader is told,
+// and may send it again. Until then it can't be sent again. Text that changed since it was sent is
+// never dropped. Nothing is ever sent again by itself. Nothing here calls Electron.
 
 import {
+  type Cached,
   GithubError,
   PENDING_REVIEW,
   type PendingReviewRead,
   type PollEvent,
   type Poller,
   PullRef,
+  type ReadKind,
+  type ReadMark,
   REVIEW_THREADS,
-  type ReviewThreadList,
   type ReviewWrite,
   type ReviewWriteRefusal,
   describeReviewRefusal,
@@ -81,6 +85,12 @@ export const SETTLE_AFTER = 10_000;
 /** How long Lo waits for the read that says whether a comment posted. */
 export const READ_WAIT = 120_000;
 
+/**
+ * How much earlier than Lo sent it GitHub may say a comment was made, as this computer's clock and
+ * GitHub's differ, and GitHub's times are to the second.
+ */
+export const CLOCK_SLACK = 60_000;
+
 /** A view's account and pull request, as it writes. */
 interface Target {
   readonly login: string;
@@ -139,31 +149,51 @@ export function writeRefusal(refusal: ReviewWriteRefusal): SendRefusal {
 }
 
 /**
- * Whether `threads` hold the comment sent as `sent` by `login` at `place`: a thread on its file,
- * on its lines or on the file as it is, with a comment of `login`'s whose text is the same.
+ * Whether `thread` is on `place`'s file and lines, or on the file as it is, as it is now or was.
+ */
+function threadOn(thread: ThreadRow, place: DraftPlaceRow): boolean {
+  if (thread.path !== place.path) return false;
+  const { lines } = place;
+  if (lines === null) return thread.subject === 'FILE';
+  const { start, end } = lines;
+  if (thread.subject !== 'LINE' || thread.side !== end.side) return false;
+  if (start === null) {
+    return (
+      [thread.line, thread.originalLine].includes(end.number) &&
+      [thread.startLine, thread.originalStartLine].some(
+        (first) => first === null || first === end.number,
+      )
+    );
+  }
+  return (
+    (thread.startSide ?? thread.side) === start.side &&
+    ((thread.line === end.number && thread.startLine === start.number) ||
+      (thread.originalLine === end.number && thread.originalStartLine === start.number))
+  );
+}
+
+/**
+ * Whether `threads` hold the comment `login` sent as `sent` at `place`, at `sentAt`: a thread on
+ * its file and lines, or on the file as it is, with a comment of `login`'s whose text is the same,
+ * made no earlier than it was sent, give or take {@link CLOCK_SLACK}.
  */
 export function holdsComment(
   threads: readonly ThreadRow[],
   login: string,
   place: DraftPlaceRow,
   sent: string,
+  sentAt: number,
 ): boolean {
-  return threads.some((thread) => {
-    if (thread.path !== place.path) return false;
-    const { lines } = place;
-    if (lines === null) {
-      if (thread.subject !== 'FILE') return false;
-    } else {
-      const { end } = lines;
-      const at = [thread.line, thread.originalLine];
-      if (thread.subject !== 'LINE' || thread.side !== end.side || !at.includes(end.number)) {
-        return false;
-      }
-    }
-    return thread.comments.some(
-      (comment) => sameLogin(comment.author, login) && sameCommentText(comment.body, sent),
-    );
-  });
+  return threads.some(
+    (thread) =>
+      threadOn(thread, place) &&
+      thread.comments.some(
+        (comment) =>
+          sameLogin(comment.author, login) &&
+          Date.parse(comment.createdAt) >= sentAt - CLOCK_SLACK &&
+          sameCommentText(comment.body, sent),
+      ),
+  );
 }
 
 /** Whether a write starts or adds to your pending review, rather than posting at once. */
@@ -182,6 +212,11 @@ export class Writer {
   readonly #shown = new Map<string, string>();
   /** The last write to each pull request, by its key, which the next one waits for. */
   readonly #lastWrite = new Map<string, Promise<unknown>>();
+  /**
+   * The pull requests, by their keys, written to since your pending review on them was last read
+   * afresh: the next write is planned from a read made after.
+   */
+  readonly #written = new Set<string>();
   #stopped = false;
 
   constructor(options: WriterOptions) {
@@ -189,7 +224,10 @@ export class Writer {
     this.#now = options.now ?? Date.now;
   }
 
-  /** Follows view `id`, sending it its drafts: as it opens, and as its account or pull request changes. */
+  /**
+   * Follows view `id`, sending it its drafts: as it opens, and as its account or pull request
+   * changes.
+   */
   follow(id: string): void {
     if (this.#stopped) return;
     if (!this.#options.view(id)) {
@@ -215,19 +253,21 @@ export class Writer {
   save(id: string, place: DraftPlaceRow, text: string): void {
     const { login, pull } = this.#writing(id);
     const key = this.#key({ login, pull }, place);
-    const stands = this.#sending.get(key);
-    // What's typed after a send settled says nothing more of it.
-    if (stands === 'notPosted' || stands === 'unknown') this.#sending.delete(key);
+    // What's typed after it didn't post says nothing more of it. Whether one Lo can't tell of
+    // posted still stands.
+    if (this.#sending.get(key) === 'notPosted') this.#sending.delete(key);
     if (this.#options.drafts.save(login, pull, place, text)) this.#changed({ login, pull });
   }
 
-  /** Removes the draft at `place` on view `id`, as "Discard" does. */
+  /**
+   * Removes the draft at `place` on view `id`, as "Discard" does: whatever Lo was looking for of it
+   * on GitHub, it stops.
+   */
   discard(id: string, place: DraftPlaceRow): void {
     const target = this.#writing(id);
     const key = this.#key(target, place);
-    if (this.#sending.get(key) === 'checking') return;
-    this.#sending.delete(key);
-    if (this.#options.drafts.take(target.login, target.pull, place)) this.#changed(target);
+    const had = this.#sending.delete(key);
+    if (this.#options.drafts.take(target.login, target.pull, place) || had) this.#changed(target);
   }
 
   /**
@@ -247,7 +287,7 @@ export class Writer {
     const target = this.#targetOf(id);
     if (!target) return Promise.resolve({ kind: 'refused', refusal: { kind: 'signIn' } });
     const key = this.#key(target, place);
-    const stands = this.#sending.get(key);
+    const stands = this.#standing(key, this.#options.drafts.get(target.login, target.pull, place));
     // Sent already, and not settled: sending it again could post it twice.
     if (stands === 'waiting' || stands === 'sending' || stands === 'checking') {
       const message =
@@ -264,7 +304,8 @@ export class Writer {
     const run = (before ?? Promise.resolve()).then(() =>
       this.#send(target, key, place, text, how).catch((error: unknown): SendOutcome => {
         this.#options.log(`sending a comment: ${describe(error)}`);
-        this.#settled(target, key, null);
+        // It didn't post: what may have came back as lost.
+        this.#unsent(target, key, place);
         return { kind: 'refused', refusal: { kind: 'github', message: describe(error) } };
       }),
     );
@@ -276,19 +317,22 @@ export class Writer {
   }
 
   /**
-   * View `id`'s threads were read, at `fetchedAt`: a draft whose answer was lost before Lo started,
-   * and which nothing since Lo started is settling, is settled against them, once they were read
-   * after it was sent and the wait.
+   * View `id`'s threads were fetched from GitHub at `fetchedAt`: a draft marked sent that nothing
+   * since Lo started is settling, as one whose answer was lost before, or one Lo couldn't tell of,
+   * is settled against them, once they were fetched the wait after it was sent.
    */
   threadsRead(id: string, rows: readonly ThreadRow[], fetchedAt: number): void {
     const target = this.#targetOf(id);
     if (!target) return;
     const settleAfter = this.#options.settleAfter ?? SETTLE_AFTER;
     for (const kept of this.#options.drafts.of(target.login, target.pull)) {
-      if (kept.sent === null || fetchedAt < kept.savedAt + settleAfter) continue;
+      const { sent } = kept;
+      const sentAt = kept.sentAt ?? kept.savedAt;
+      if (sent === null || fetchedAt < sentAt + settleAfter) continue;
       const key = this.#key(target, kept.place);
-      if (this.#sending.has(key)) continue;
-      this.#look(target, key, kept.place, kept.sent, rows);
+      const stands = this.#sending.get(key);
+      if (stands !== undefined && stands !== 'unknown') continue;
+      this.#look(target, key, kept.place, sent, kept.sentAt, rows);
     }
   }
 
@@ -337,19 +381,22 @@ export class Writer {
     how: 'review' | 'now',
   ): Promise<SendOutcome> {
     const { login, pull } = target;
+    // Discarded while it waited: nothing goes.
+    if (!this.#options.drafts.get(login, pull, place)) {
+      this.#settled(target, key, null);
+      return { kind: 'refused', refusal: { kind: 'github', message: 'It was discarded.' } };
+    }
     this.#sending.set(key, 'sending');
     this.#changed(target);
     const poller = await this.#options.poller(login);
     const details = poller.pullRequest(pull)?.details;
-    const read: PendingReviewRead | undefined =
-      poller.cachedRead<PendingReviewRead>(pull, PENDING_REVIEW)?.value ??
-      (await poller.pendingReview(pull))?.value;
+    const read = await this.#reviewRead(poller, pull);
     if (!details) {
       this.#settled(target, key, null);
       const message = 'Lo hasn’t read the pull request from GitHub yet. Send it once it has.';
       return { kind: 'refused', refusal: { kind: 'github', message } };
     }
-    const review = yourReview(details.id, read ?? { kind: 'unknown', why: 'not read yet' });
+    const review = yourReview(details.id, read ?? { kind: 'unknown', why: 'not read since' });
     const head = details.headRefOid;
     const comment: NewThread = {
       kind: 'thread',
@@ -370,10 +417,18 @@ export class Writer {
       joined = planned.pending;
       write = planned.mutation;
     } else write = planned;
+    if ('refusal' in write) {
+      this.#settled(target, key, null);
+      return { kind: 'refused', refusal: planRefusal(write) };
+    }
+    // From here it may be on GitHub, until GitHub says otherwise: a restart keeps that.
+    const sentAt = this.#now();
+    this.#options.drafts.markSent(login, pull, place, text, sentAt);
+    this.#changed(target);
     // A comment on the file, with no pending review, starts an empty one first: two writes.
     for (let step = 0; step < 2; step++) {
       if ('refusal' in write) {
-        this.#settled(target, key, null);
+        this.#unsent(target, key, place);
         return { kind: 'refused', refusal: planRefusal(write) };
       }
       let sent;
@@ -381,11 +436,13 @@ export class Writer {
         sent = await poller.sendReview(pull, write);
       } catch (error) {
         if (!(error instanceof GithubError) || !error.mayHavePosted()) throw error;
-        this.#lost(target, key, place, text, poller);
+        this.#lost(target, key, place, text, sentAt, poller);
         return { kind: 'lost' };
+      } finally {
+        this.#written.add(pull.key);
       }
       if ('refusal' in sent) {
-        this.#settled(target, key, null);
+        this.#unsent(target, key, place);
         return { kind: 'refused', refusal: writeRefusal(sent) };
       }
       if (write.kind === 'startReview' && !sendsComment(write)) {
@@ -393,8 +450,7 @@ export class Writer {
         write = review.add(place.commit, head, comment);
         continue;
       }
-      this.#options.drafts.take(login, pull, place);
-      this.#settled(target, key, null);
+      this.#posted(target, key, place, text);
       return {
         kind: 'sent',
         pending: intoReview(write),
@@ -403,53 +459,120 @@ export class Writer {
         landedOn: sent.landedOn ? { head: sent.landedOn.head ?? null } : null,
       };
     }
-    this.#settled(target, key, null);
+    this.#unsent(target, key, place);
     return { kind: 'refused', refusal: { kind: 'github', message: 'GitHub didn’t take it.' } };
   }
 
   /**
-   * GitHub's answer to sending `text` at `place` was lost: the draft is marked sent, and once the
-   * threads are read again after the failure, and no sooner than the wait, Lo looks for it.
+   * Your pending review on `pull`, from which a write is planned: as the poller last read it, or,
+   * after a write to `pull`, as read again after its answer. Nothing when that can't be read.
+   */
+  async #reviewRead(poller: WriterPoller, pull: PullRef): Promise<PendingReviewRead | undefined> {
+    if (!this.#written.has(pull.key)) {
+      return (
+        poller.cachedRead<PendingReviewRead>(pull, PENDING_REVIEW)?.value ??
+        (await poller.pendingReview(pull))?.value
+      );
+    }
+    let mark = poller.readAfresh(pull, PENDING_REVIEW);
+    if (!mark) {
+      // Not kept, as for a pull request no view follows: kept from now.
+      await poller.pendingReview(pull);
+      mark = poller.readAfresh(pull, PENDING_REVIEW);
+    }
+    if (!mark) return undefined;
+    const readWait = this.#options.readWait ?? READ_WAIT;
+    const read = await this.#readAfter(poller, pull, PENDING_REVIEW, mark, this.#now() + readWait);
+    if (typeof read !== 'object') return undefined;
+    this.#written.delete(pull.key);
+    return read.value;
+  }
+
+  /**
+   * What the read of `kind` kept for `pull` holds once a run that started after `mark` has
+   * finished with it, or why there's none by `deadline`: `stale`, when the read is no longer the
+   * one marked, `failed` or `late`.
+   */
+  async #readAfter<T>(
+    poller: WriterPoller,
+    pull: PullRef,
+    kind: ReadKind<T>,
+    mark: ReadMark,
+    deadline: number,
+  ): Promise<Cached<T> | 'stale' | 'failed' | 'late' | 'stopped'> {
+    for (;;) {
+      if (this.#stopped) return 'stopped';
+      const since = poller.readSince<T>(pull, kind, mark);
+      if (since.kind === 'read') return since.read;
+      if (since.kind === 'stale') return 'stale';
+      const heard = await this.#nextRead(poller, pull, kind.name, deadline - this.#now());
+      if (heard !== 'read') return heard;
+    }
+  }
+
+  /**
+   * The comment sent from the draft at `place` posted: the draft goes, unless its text changed
+   * since.
+   */
+  #posted(target: Target, key: string, place: DraftPlaceRow, text: string): void {
+    const { login, pull } = target;
+    const kept = this.#options.drafts.get(login, pull, place);
+    if (kept?.text === text) this.#options.drafts.take(login, pull, place);
+    else this.#options.drafts.markSent(login, pull, place, null);
+    this.#settled(target, key, null);
+  }
+
+  /** The comment sent from the draft at `place` didn't post: the draft stays, as it is. */
+  #unsent(target: Target, key: string, place: DraftPlaceRow): void {
+    this.#options.drafts.markSent(target.login, target.pull, place, null);
+    this.#settled(target, key, null);
+  }
+
+  /**
+   * GitHub's answer to sending `text` at `place`, at `sentAt`, was lost: the draft stays marked
+   * sent, and once the threads are read again after the failure, and no sooner than the wait, Lo
+   * looks for it.
    */
   #lost(
     target: Target,
     key: string,
     place: DraftPlaceRow,
     text: string,
+    sentAt: number,
     poller: WriterPoller,
   ): void {
-    const { login, pull } = target;
+    const { pull } = target;
     const failedAt = this.#now();
-    this.#options.drafts.markSent(login, pull, place, text);
     this.#sending.set(key, 'checking');
     this.#changed(target);
     const mark = poller.readAfresh(pull, REVIEW_THREADS);
     const settleAfter = this.#options.settleAfter ?? SETTLE_AFTER;
     const readWait = this.#options.readWait ?? READ_WAIT;
+    // Discarded, or sent again, meanwhile: what's found says nothing of it.
+    const still = () => this.#options.drafts.get(target.login, pull, place)?.sentAt === sentAt;
     void (async () => {
       await new Promise((resolve) => setTimeout(resolve, settleAfter));
+      if (!still()) return undefined;
       if (!mark) return this.#settled(target, key, 'unknown');
       const deadline = failedAt + settleAfter + readWait;
-      for (;;) {
-        if (this.#stopped) return undefined;
-        const since = poller.readSince<ReviewThreadList>(pull, REVIEW_THREADS, mark);
-        if (since.kind === 'read') {
-          return this.#look(target, key, place, text, threadRows(since.read.value));
-        }
-        if (since.kind === 'stale') return this.#settled(target, key, 'unknown');
-        const heard = await this.#nextRead(poller, pull, deadline - this.#now());
-        if (heard !== 'read') return this.#settled(target, key, 'unknown');
-      }
+      const read = await this.#readAfter(poller, pull, REVIEW_THREADS, mark, deadline);
+      if (read === 'stopped' || !still()) return undefined;
+      if (typeof read !== 'object') return this.#settled(target, key, 'unknown');
+      return this.#look(target, key, place, text, sentAt, threadRows(read.value));
     })().catch((error: unknown) => {
       this.#options.log(`looking whether a comment posted: ${describe(error)}`);
-      this.#settled(target, key, 'unknown');
+      if (still()) this.#settled(target, key, 'unknown');
     });
   }
 
-  /** Waits for the poller to read `pull`'s threads, or fail to, for `wait` milliseconds at most. */
+  /**
+   * Waits for the poller to read `pull`'s read named `name`, or fail to, for `wait` milliseconds at
+   * most.
+   */
   #nextRead(
     poller: WriterPoller,
     pull: PullRef,
+    name: string,
     wait: number,
   ): Promise<'read' | 'failed' | 'late'> {
     return new Promise((resolve) => {
@@ -467,28 +590,41 @@ export class Writer {
         if (event.kind !== 'read' && event.kind !== 'confirmed' && event.kind !== 'readFailed') {
           return;
         }
-        if (!event.pull.equals(pull) || event.name !== REVIEW_THREADS.name) return;
+        if (!event.pull.equals(pull) || event.name !== name) return;
         done(event.kind === 'readFailed' ? 'failed' : 'read');
       });
     });
   }
 
-  /** Looks among `threads` for the comment sent as `sent` at `place`, and settles it. */
+  /**
+   * Looks among `threads` for the comment sent as `sent` at `place`, at `sentAt`, and settles it:
+   * found, as {@link Writer.#posted}; otherwise it didn't post.
+   */
   #look(
     target: Target,
     key: string,
     place: DraftPlaceRow,
     sent: string,
+    sentAt: number | null,
     threads: readonly ThreadRow[],
   ): void {
     const { login, pull } = target;
-    if (holdsComment(threads, login, place, sent)) {
-      this.#options.drafts.take(login, pull, place);
-      this.#settled(target, key, null);
+    const kept = this.#options.drafts.get(login, pull, place);
+    if (!kept) return;
+    if (holdsComment(threads, login, place, sent, sentAt ?? kept.savedAt)) {
+      this.#posted(target, key, place, sent);
       return;
     }
     this.#options.drafts.markSent(login, pull, place, null);
     this.#settled(target, key, 'notPosted');
+  }
+
+  /**
+   * How sending the draft at `key`, `kept`, stands: as Lo is sending it, or, for one marked sent
+   * before Lo started, `checking` until a read settles it.
+   */
+  #standing(key: string, kept: Kept | undefined): Sending | undefined {
+    return this.#sending.get(key) ?? (kept?.sent == null ? undefined : 'checking');
   }
 
   /** Sending the draft at `key` stands as `now`, or not at all. */
@@ -525,7 +661,7 @@ export class Writer {
       text: kept.text,
       savedAt: Math.max(0, Math.round(kept.savedAt)),
       restored: kept.restored,
-      sending: this.#sending.get(this.#key(target, kept.place)) ?? null,
+      sending: this.#standing(this.#key(target, kept.place), kept) ?? null,
       sent: kept.sent,
     };
   }

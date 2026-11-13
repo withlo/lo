@@ -604,10 +604,11 @@ a fork is someone else's code, even in a repo you trust.
 - **Threads.** You can reply, resolve and unresolve, and edit or delete your own comments.
 - **Writing.** The comment box is a CodeMirror editor with Markdown highlighting, Vim keys and a
   preview toggle. Its head says where the comment goes and which account it's from, and its foot has
-  Vim's mode and the buttons that send. One write to a PR goes at a time, so a second comment waits
-  for the first's answer. When GitHub's answer is lost, Lo reads your comments to find out whether
-  it posted, and never sends it again by itself. A comment that GitHub puts on a newer push than the
-  one it was written on is labeled "On a newer push".
+  Vim's mode and the buttons that send. While a comment is sent, its text can't be changed. One
+  write to a PR goes at a time, so a second comment waits for the first's answer. When GitHub's
+  answer is lost, Lo reads your comments to find out whether it posted, after a restart too, and
+  until it knows, the comment can't be sent again. Lo never sends it again by itself. A comment that
+  GitHub puts on a newer push than the one it was written on is labeled "On a newer push".
 - **Suggestions.** `s` opens the comment box with the selected lines in a `suggestion` block, ready
   to edit. It works on the new side only, because GitHub can only apply suggestions there. Applying
   them happens on GitHub.
@@ -722,7 +723,7 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | Timeline        | `j`/`k` move between events, `Tab` through its links and buttons, `Esc` back to the list, `gx` open the one you're on on GitHub                                                                                                                                              |
 | Panels          | `⌘\` left panel, `⌘⇧\` threads panel. In the threads panel: `f` unresolved, all or yours. In the stack tree: `j`/`k` move, `⏎` show the layer, `gx` open it on GitHub, `Esc` back, `v` choose a run of layers, `j`/`k` to grow it, `⏎` to view it as one diff                |
 | Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file or the thread at the cursor                                                                                |
-| Comment box     | `⌘⏎` add to review, `⌥⏎` comment now, `⌘⇧V` write or preview, `⌘⇧A` attach files, `Esc` leave insert mode, `Esc Esc` close and keep the draft                                                                                                                                |
+| Comment box     | `⌘⏎` add to review, `⌥⏎` comment now, `⌘⇧V` write or preview, `Esc` leave insert mode, `Esc Esc` close and keep the draft                                                                                                                                                    |
 | Merge queue     | `x` remove, `J` jump to the front, `a` auto-merge, `⏎` open the PR                                                                                                                                                                                                           |
 | Revision picker | `j`/`k` move, `Space` set an end, `⏎` compare                                                                                                                                                                                                                                |
 | Palettes        | `⏎` open, `⌘⏎` the other way (a new window, the whole file), `Tab` changed files only in the file finder, `⌥⏎` show an action's key                                                                                                                                          |
@@ -804,8 +805,8 @@ repos and PRs, the theme, the cache, and whether a PR opens on its overview or i
   comments: they're kept on this computer as drafts, and you post them yourself once you're back
   online. Nothing posts by itself. Reviewing and merging are off until then.
 - **Unsent text.** Text in comment boxes is saved on this computer until it's posted, so a crash or
-  restart doesn't lose it. After a restart its box opens again where it was, unfocused, saying when
-  the draft was saved, with a button to discard it.
+  restart doesn't lose it. After a restart, or a reload of the window, its box opens again where it
+  was, unfocused, saying when the draft was saved, with a button to discard it.
 - **Rate limit used up.** A banner shows when it resets. Polling pauses until then, and so does
   writing, as it does for a minute when GitHub turns a comment away as sent too fast. A comment,
   review or merge asked for meanwhile isn't sent, and says when it can be. A change to a stack's

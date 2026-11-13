@@ -1,10 +1,10 @@
 // The comments' keys: writing a comment in the diff. `c` opens a comment box under the cursor's
-// line, or the lines `v` selected, on either side, or on the file with the cursor on its header; `C`
-// opens the same box to post right away; `s` opens it with the lines in a `suggestion` block. In
-// the file tree `c` comments on the file. Each replaces Vim's key, since the diff is read-only. A
-// line GitHub takes no comment on says so, and then `⏎` comments on its file instead; anywhere else
-// `⏎` is Vim's. The box's own keys are the code view's (`⌘⏎`, `⌥⏎`, `⌘⇧V`, `Esc Esc`). What the
-// buttons in a box's notes do is also on its frame's right-click menu, and in the palette while
+// line, or the lines `v` selected, on either side, or on the file with the cursor on its header;
+// `C` opens the same box to post right away; `s` opens it with the lines in a `suggestion` block.
+// In the file tree `c` comments on the file. Each replaces Vim's key, since the diff is read-only.
+// A line GitHub takes no comment on says so, and then `⏎` comments on its file instead; anywhere
+// else `⏎` is Vim's. The box's own keys are the code view's (`⌘⏎`, `⌥⏎`, `⌘⇧V`, `Esc Esc`). What
+// the buttons in a box's notes do is also on its frame's right-click menu, and in the palette while
 // focus is in the box, each only where the box offers it, without a key of its own.
 
 import { defineCommands, type When } from '@lo/ui/commands';
@@ -49,7 +49,10 @@ export default defineCommands('comments', {
     when: diff,
     menu: { on: 'line', order: 3 },
   },
-  /** A comment box on the file, under its header in the diff: from its header, or its row in the tree. */
+  /**
+   * A comment box on the file, under its header in the diff: from its header, or its row in the
+   * tree.
+   */
   commentOnFile: {
     label: 'Comment on the file',
     group: 'Act',

@@ -18,8 +18,13 @@ export interface Kept {
   readonly savedAt: number;
   /** Whether it was saved before Lo started. */
   readonly restored: boolean;
-  /** The text sent, when GitHub's answer to sending it was lost and Lo hasn't settled it. */
+  /**
+   * The text sent, from when Lo sends it until GitHub answers, or, when the answer was lost, until
+   * Lo has looked whether it posted: it may be on GitHub.
+   */
   readonly sent: string | null;
+  /** When it was sent, while it's marked sent. */
+  readonly sentAt: number | null;
 }
 
 function integer(value: unknown): number {
@@ -97,7 +102,7 @@ export class DraftStore {
     this.#now = now;
     const rows = database
       .prepare(
-        'SELECT account, owner, repo, number, place, body, sent, saved_at FROM comments_drafts',
+        'SELECT account, owner, repo, number, place, body, sent, sent_at, saved_at FROM comments_drafts',
       )
       .all();
     for (const row of rows) {
@@ -110,6 +115,7 @@ export class DraftStore {
         savedAt: integer(row.saved_at),
         restored: true,
         sent: row.sent === null ? null : String(row.sent),
+        sentAt: row.sent === null || row.sent_at === null ? null : integer(row.sent_at),
       });
     }
   }
@@ -144,16 +150,26 @@ export class DraftStore {
       savedAt: this.#now(),
       restored: false,
       sent: was?.sent ?? null,
+      sentAt: was?.sentAt ?? null,
     });
     return true;
   }
 
-  /** Marks the draft at `place` sent with its answer lost (`sent` the text sent), or settled. */
-  markSent(account: string, pull: PullRef, place: DraftPlaceRow, sent: string | null): void {
+  /**
+   * Marks the draft at `place` sent, `sent` the text sent, now or at `at`: it may be on GitHub
+   * until Lo knows. `null` settles it.
+   */
+  markSent(
+    account: string,
+    pull: PullRef,
+    place: DraftPlaceRow,
+    sent: string | null,
+    at: number = this.#now(),
+  ): void {
     const json = placeJson(place);
     const was = this.#kept.get(keyOf(account, pull))?.get(json);
-    if (!was || was.sent === sent) return;
-    this.#put(account, pull, json, { ...was, sent });
+    if (!was || (was.sent === null && sent === null)) return;
+    this.#put(account, pull, json, { ...was, sent, sentAt: sent === null ? null : at });
   }
 
   /** Removes the draft at `place` and returns it: once it's posted, or discarded. */
@@ -231,10 +247,12 @@ export class DraftStore {
     this.#own(account, pull).set(json, kept);
     this.#database
       .prepare(
-        `INSERT INTO comments_drafts (account, owner, repo, number, place, body, sent, saved_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO comments_drafts
+           (account, owner, repo, number, place, body, sent, sent_at, saved_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (account, owner, repo, number, place) DO UPDATE SET
-           body = excluded.body, sent = excluded.sent, saved_at = excluded.saved_at`,
+           body = excluded.body, sent = excluded.sent, sent_at = excluded.sent_at,
+           saved_at = excluded.saved_at`,
       )
       .run(
         account,
@@ -244,6 +262,7 @@ export class DraftStore {
         json,
         kept.text,
         kept.sent,
+        kept.sentAt === null ? null : Math.round(kept.sentAt),
         Math.round(kept.savedAt),
       );
   }

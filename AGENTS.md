@@ -790,14 +790,18 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   copy's from where the revision branched off.
 - Main keeps every box's text as a draft (`comments_drafts`), saved 300 ms after typing stops and at
   once as the box closes or the window goes, by account, pull request and place, until GitHub takes
-  it. Drafts saved before Lo started reopen, unfocused, once their view's diff draws their line. A
-  push moves a draft to the newer revision when its file didn't change.
+  it. Drafts saved before Lo started, or before the window was loaded again, reopen, unfocused, once
+  their view's diff draws their line. A push moves a draft to the newer revision when its file
+  didn't change.
 - `comments.send` plans each write with `@lo/review`'s `YourReview` and sends it with the poller's
-  `sendReview`, one write to a pull request at a time. A refusal keeps the draft and says why in the
-  box. When GitHub's answer is lost, the draft is marked sent, and once the threads are read again,
-  no sooner than 10 s later, main looks for the comment among the threads: found, the box closes;
-  not found, or not read, the box says so. Nothing is sent again by itself, and nothing is sent
-  while GitHub can't be reached.
+  `sendReview`, one write to a pull request at a time, each planned from your pending review as read
+  after the last one's answer. The box's text is held, read-only, while it's sent. A refusal keeps
+  the draft and says why in the box. From the send until GitHub's answer, the draft is marked sent,
+  with when, in the database. When the answer is lost, the mark stays, a restart included, and the
+  draft can't be sent again until the threads, fetched no sooner than 10 s after it was sent, settle
+  it: found among your comments made since, the box closes; not found, or not read, the box says so.
+  Text changed since it was sent stays as the draft. Nothing is sent again by itself, and nothing is
+  sent while GitHub can't be reached.
 
 ### Images from GitHub
 
