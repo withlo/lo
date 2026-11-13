@@ -46,6 +46,7 @@ describe('asking main for folders', () => {
       problem: null,
       omitted: 0,
       compared: null,
+      start: null,
     });
     const paths: TreePath[] = Array.from({ length: 600 }, (_, index) => ({ text: `d${index}` }));
     askFolders('t1', AT, paths);

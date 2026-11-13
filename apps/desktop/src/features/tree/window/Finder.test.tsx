@@ -62,6 +62,7 @@ const TREE: TreeState = {
   problem: null,
   omitted: 0,
   compared: null,
+  start: null,
 };
 
 const found = (text: string, changed: boolean, matched: number[] = []): Found => ({

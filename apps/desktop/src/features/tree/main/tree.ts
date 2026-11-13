@@ -176,6 +176,7 @@ export class TreeTab {
       problem: at?.problem ?? null,
       omitted: at === undefined ? 0 : omittedOf(at),
       compared: at?.compared ?? null,
+      start: at?.compareFrom ?? null,
     };
   }
 
