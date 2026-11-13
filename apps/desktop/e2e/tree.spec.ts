@@ -183,8 +183,13 @@ test('answers its keys: moving, opening and closing folders, review order and ch
     await row(page, 'src/format.ts').click();
     await expect(tree(page)).toBeFocused();
     expect(await focused(page)).toBe('src/format.ts');
+    // `j` moves the tree's focus alone: the diff stays on the file the click showed until ⏎.
+    await page.keyboard.press('j');
+    const next = await focused(page);
+    expect(next).toBe('src/legacy.ts');
+    expect(await cursorPath(page)).toBe('src/format.ts');
     await page.keyboard.press('Enter');
-    await expect.poll(() => cursorPath(page)).toBe('src/format.ts');
+    await expect.poll(() => cursorPath(page)).toBe(next);
     await expect(tree(page)).toBeFocused();
     // On a folder, ⏎ opens and closes it.
     await row(page, 'data').click();
@@ -232,16 +237,6 @@ test('a click puts the file’s start at the top of the diff, wherever it was, a
     await expect.poll(() => cursorPath(page)).toBe('data/numbers.txt');
   });
 
-  await test.step('inline too', async () => {
-    // Inline too.
-    await page.keyboard.press('g');
-    await page.keyboard.press('i');
-    await expect.poll(() => page.evaluate(() => window.loDiff?.probe.layout)).toBe('inline');
-    await row(page, 'src/parser.ts').click();
-    await expect.poll(() => headerBelow(page, 'src/parser.ts')).toBe(0);
-    await expect(row(page, 'src/parser.ts')).toHaveClass(/tree-current/);
-  });
-
   await test.step('a banner coming over the diff after a click takes the file’s header down with it, never over it', async () => {
     await row(page, 'src/parser.ts').click();
     await expect.poll(() => headerBelow(page, 'src/parser.ts')).toBe(0);
@@ -254,6 +249,17 @@ test('a click puts the file’s start at the top of the diff, wherever it was, a
     // As it goes, nothing moves: the header stays where the banner left it.
     await page.waitForTimeout(300);
     expect(await headerBelow(page, 'src/parser.ts'), 'as it goes').toBe(30);
+  });
+
+  await test.step('inline too', async () => {
+    // Inline too, from the code, where the diff's keys are.
+    await focusCode(page);
+    await page.keyboard.press('g');
+    await page.keyboard.press('i');
+    await expect.poll(() => page.evaluate(() => window.loDiff?.probe.layout)).toBe('inline');
+    await row(page, 'src/parser.ts').click();
+    await expect.poll(() => headerBelow(page, 'src/parser.ts')).toBe(0);
+    await expect(row(page, 'src/parser.ts')).toHaveClass(/tree-current/);
   });
 });
 

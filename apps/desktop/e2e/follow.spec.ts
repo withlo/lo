@@ -637,6 +637,16 @@ test('⌃o puts the block back where it was: cut by the top of the screen, the w
       .toMatchObject({ path: 'src/format.ts' });
   };
 
+  // From the top, so the block comes on screen from below as `]b` leaves it in a fresh Lo, whatever
+  // the step before left: with room above it to put it where a step wants it.
+  const fromAbove = async () => {
+    await scroller.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await toBlock(page, BLOCK.tldr);
+    await toBlock(page, BLOCK.format);
+  };
+
   await test.step('cut by the top of the screen', async () => {
     await toBlock(page, BLOCK.format);
     // Just below the screen's top edge, nearer it than `]b` would leave a block it brings on screen.
@@ -651,7 +661,7 @@ test('⌃o puts the block back where it was: cut by the top of the screen, the w
   });
 
   await test.step('the window narrower while away', async () => {
-    await toBlock(page, BLOCK.format);
+    await fromAbove();
     const top = await topOf(page, BLOCK.format);
     await away();
     await sizeWindow(app, 900, 900);
@@ -660,13 +670,7 @@ test('⌃o puts the block back where it was: cut by the top of the screen, the w
 
   await test.step('the window shorter while away', async () => {
     await sizeWindow(app, 1200, 900);
-    // From the top, so the block comes on screen from below as it does in a fresh Lo, with room
-    // above it to put it low on the screen.
-    await scroller.evaluate((element) => {
-      element.scrollTop = 0;
-    });
-    await toBlock(page, BLOCK.tldr);
-    await toBlock(page, BLOCK.format);
+    await fromAbove();
     // Low on the screen, below where the shorter window ends.
     await scroller.evaluate((element, number) => {
       const at = element.querySelector(`.lo-ov__article > [data-lo-block="${number}"]`);
@@ -696,32 +700,6 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
   await open(page);
   const toc = shown(page).locator('.lo-ov__toc');
   await expect(toc).toBeVisible();
-
-  await test.step('the palette offers Close code beside only while code is beside', async () => {
-    const palette = page.getByRole('dialog', { name: 'Command palette' });
-    const input = palette.getByRole('combobox', { name: 'Command palette' });
-    const offered = palette.getByRole('option', { name: /^Close code beside/ });
-    const openPalette = async () => {
-      await press(page, process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
-      await expect(input).toBeFocused();
-      await input.fill('Close code beside');
-    };
-
-    await toBlock(page, BLOCK.parser);
-    await openPalette();
-    await expect(palette.getByRole('option').first()).toBeVisible();
-    await expect(offered).toHaveCount(0);
-    await press(page, 'Escape');
-    await expect(palette).toBeHidden();
-
-    await press(page, 'o');
-    await expect(beside(page)).toBeVisible();
-    await openPalette();
-    await expect(offered).toHaveCount(1);
-    await press(page, 'Enter');
-    await expect(beside(page)).toHaveCount(0);
-    expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
-  });
 
   await test.step('o puts a block’s code beside the overview, which follows the blocks', async () => {
     await toBlock(page, BLOCK.parser);
@@ -814,5 +792,34 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
     await toBlock(page, BLOCK.readme);
     await press(page, 'o');
     await expect(beside(page)).toContainText('This pull request doesn’t change README.md.');
+  });
+
+  await test.step('the palette offers Close code beside only while code is beside', async () => {
+    const palette = page.getByRole('dialog', { name: 'Command palette' });
+    const input = palette.getByRole('combobox', { name: 'Command palette' });
+    const offered = palette.getByRole('option', { name: /^Close code beside/ });
+    const openPalette = async () => {
+      await press(page, process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+      await expect(input).toBeFocused();
+      await input.fill('Close code beside');
+    };
+
+    // The README's block, where the step before left code beside, is closed first.
+    await press(page, 'o');
+    await expect(beside(page)).toHaveCount(0);
+    await toBlock(page, BLOCK.parser);
+    await openPalette();
+    await expect(palette.getByRole('option').first()).toBeVisible();
+    await expect(offered).toHaveCount(0);
+    await press(page, 'Escape');
+    await expect(palette).toBeHidden();
+
+    await press(page, 'o');
+    await expect(beside(page)).toBeVisible();
+    await openPalette();
+    await expect(offered).toHaveCount(1);
+    await press(page, 'Enter');
+    await expect(beside(page)).toHaveCount(0);
+    expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
   });
 });
