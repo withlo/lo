@@ -16,13 +16,13 @@ import {
   type Mark,
   type Place,
   type Span,
-  type ThreadView,
 } from '@lo/ui/code';
 import { type Entry, listen, Registry } from '@lo/ui/commands';
 
 import type { Loaded, PullFile, PullReply, Result } from '../shared/protocol.ts';
 import { commandsFor } from './commands.ts';
 import { fillerText } from './filler.ts';
+import { type Comment, PlainThreads } from './threads.ts';
 
 declare global {
   interface Window {
@@ -56,7 +56,8 @@ const ids = pull.files.map((file) => file.path);
 const indexOf = new Map(ids.map((id, index) => [id, index]));
 
 /** The threads drawn, with the comments written here, which go nowhere. */
-let threads = threadsOf(pull);
+const threads = new PlainThreads();
+threadsOf(pull);
 /** Drafts kept when a box closed, by where they were written. */
 const drafts = new Map<string, string>();
 const tab = 'pull';
@@ -101,7 +102,7 @@ view = createDiffView(
     menu() {},
   },
 );
-view.setThreads(threads);
+threads.show(view);
 marks.view = now();
 /** The file at the top: the first with lines to show. */
 const first = pull.files.findIndex((file) => !file.skipped);
@@ -170,21 +171,18 @@ function lines(text: string | undefined): string[] {
 }
 
 /**
- * The pull request's threads as the view draws them, one under a line: the line's last. Their
- * comments are made up to their recorded lengths.
+ * The pull request's threads, one under a line: the line's last. Their comments are made up to
+ * their recorded lengths.
  */
-function threadsOf(shown: PullReply['pull']): ThreadView[] {
-  const byPlace = new Map<string, ThreadView>();
-  shown.threads.forEach((thread, index) => {
+function threadsOf(shown: PullReply['pull']): void {
+  shown.threads.forEach((thread) => {
     const at: Place = { file: ids[thread.file]!, side: thread.side, line: thread.line };
-    const comments = thread.comments.map((length, number) => ({
+    const comments: Comment[] = thread.comments.map((length, number) => ({
       author: number === 0 ? 'reviewer' : 'author',
       body: fillerText(length, number),
     }));
-    const key = placeKey(at);
-    byPlace.set(key, { id: byPlace.get(key)?.id ?? `thread-${index}`, at, comments });
+    threads.put(at, comments);
   });
-  return [...byPlace.values()];
 }
 
 function placeKey(place: Place): string {
@@ -199,15 +197,9 @@ function compose(at: Place | Span): Composer {
     change() {},
     submit() {
       // The comment joins the line's thread, or starts one, and goes nowhere else.
-      const comment = { author: 'you', body: box.text.trim() };
-      const there = threads.find((thread) => placeKey(thread.at) === key);
-      threads = there
-        ? threads.map((thread) =>
-            thread === there ? { ...thread, comments: [...thread.comments, comment] } : thread,
-          )
-        : [...threads, { id: `thread-${threads.length}`, at: place, comments: [comment] }];
+      threads.add(place, { author: 'you', body: box.text.trim() });
       drafts.delete(key);
-      opened().setThreads(threads);
+      threads.show(opened());
       box.close();
     },
     close(keep) {
@@ -241,6 +233,10 @@ Object.assign(window, {
     return waiting.length;
   },
   perfOverview: (given: readonly Mark[]) => opened().setMarks(given),
+  perfThread: (at: Place, comments: readonly Comment[]) => {
+    threads.put(at, comments);
+    threads.show(opened());
+  },
   perfOpenNote: (at: Place) => opened().openNote(at),
   perfCloseNote: () => opened().closeNote(),
 });

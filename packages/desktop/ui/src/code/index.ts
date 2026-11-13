@@ -2,8 +2,11 @@
 // own terms (`api.ts`).
 
 export type {
+  BoxFrame,
+  BoxParts,
   Composer,
   ComposerEvents,
+  ComposerInit,
   CursorReading,
   DiffEvents,
   DiffFile,
@@ -38,18 +41,20 @@ export type {
   PeekView,
   Place,
   Probe,
+  RenderThread,
   Send,
   Side,
   Span,
   Spot,
   Target,
-  ThreadComment,
+  ThreadContent,
   ThreadView,
   Viewport,
   VimKey,
   WordRange,
 } from './api.ts';
 export { diffMotions } from './api.ts';
+export { createComposer } from './composer.ts';
 export { createExcerptView } from './excerpt.ts';
 export { createFileView } from './file.ts';
 export { createDiffView } from './view.ts';

@@ -12,3 +12,25 @@ body,
 body {
   background: var(--lo-bg);
 }
+
+/* A thread, as plain text: each comment's author and body, in a card. */
+.perf-thread {
+  border-radius: var(--lo-r-md);
+  background: var(--lo-bg-raised);
+  box-shadow: inset 0 0 0 1px var(--lo-border);
+}
+.perf-thread__comment {
+  padding: 8px 12px;
+}
+.perf-thread__comment + .perf-thread__comment {
+  box-shadow: inset 0 1px 0 var(--lo-border-subtle);
+}
+.perf-thread__author {
+  margin-bottom: 4px;
+  font: var(--lo-text-small);
+  color: var(--lo-fg-muted);
+}
+.perf-thread__body {
+  margin: 0;
+  font: var(--lo-text-ui);
+}

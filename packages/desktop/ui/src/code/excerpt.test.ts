@@ -6,7 +6,17 @@ import { getCM, Vim } from '@replit/codemirror-vim';
 import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vitest';
 
 import { findScope, isKeySource } from '../commands/index.ts';
-import type { ExcerptEvents, ExcerptInit, ExcerptView, Place, Spot, VimKey } from './api.ts';
+import type {
+  ComposerEvents,
+  ExcerptEvents,
+  ExcerptInit,
+  ExcerptView,
+  Place,
+  RenderThread,
+  Spot,
+  ThreadView,
+  VimKey,
+} from './api.ts';
 import { createExcerptView, excerptLines } from './excerpt.ts';
 
 const noRects = (): DOMRectList => Object.assign([], { item: () => null });
@@ -526,4 +536,84 @@ describe('keys', () => {
       expect(keyed.text).toBe(before);
     },
   );
+});
+
+/** A thread under line `line` of `a`'s new side. */
+function thread(id: string, line: number, file = 'a'): ThreadView {
+  return { id, at: { file, side: 'new', line }, open: true, version: 1 };
+}
+
+/** A caller's threads, drawn as their ids, with what it was asked to do in turn. */
+function plain() {
+  const asked: string[] = [];
+  const render: RenderThread = (host, shown) => {
+    asked.push(`draw ${shown.id}`);
+    host.textContent = shown.id;
+    return {
+      update: (next) => asked.push(`update ${next.id} ${next.open ? 'open' : 'collapsed'}`),
+      destroy: () => asked.push(`destroy ${shown.id}`),
+    };
+  };
+  return { render, asked };
+}
+
+/** The threads drawn, in the page's order. */
+function drawnThreads(): (string | undefined)[] {
+  return [...parent!.querySelectorAll<HTMLElement>('[data-thread-id]')].map(
+    (each) => each.dataset.threadId,
+  );
+}
+
+describe('threads and comment boxes', () => {
+  test('a thread draws under its line, is the line’s target and its menu, and opens and closes', () => {
+    const on = events();
+    const shown = open(on);
+    const { render, asked } = plain();
+    shown.setThreads([thread('here', 6), thread('elsewhere', 6, 'b'), thread('out', 19)], render);
+    expect(drawnThreads()).toEqual(['here']);
+    shown.reveal({ kind: 'line', at: at(6) });
+    expect(shown.keyState().target).toEqual({
+      kind: 'line',
+      at: { ...at(6), column: 0 },
+      thread: 'here',
+    });
+    const click = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    parent!.querySelector('[data-thread-id="here"]')!.dispatchEvent(click);
+    expect(on.menu).toHaveBeenLastCalledWith({ kind: 'thread', thread: 'here' }, 0, 0);
+    expect(shown.openThread('here', 'toggle')).toBe(true);
+    expect(shown.openThread('out', true)).toBe(false);
+    shown.setThreads([], render);
+    expect(drawnThreads()).toEqual([]);
+    expect(asked).toEqual(['draw here', 'update here collapsed', 'destroy here']);
+  });
+
+  test('a box under a thread acts on it, and Esc Esc closes it, keeping the draft', () => {
+    const shown = open();
+    shown.setThreads([thread('here', 6)], plain().render);
+    const on = {
+      change: vi.fn<ComposerEvents['change']>(),
+      submit: vi.fn<ComposerEvents['submit']>(),
+      close: vi.fn<ComposerEvents['close']>(),
+    };
+    const box = shown.compose({ thread: 'here' }, 'Reply', on);
+    expect(shown.compose(at(6), 'Again', on)).toBe(box);
+    expect(parent!.querySelector('.lo-diffthread__thread + .lo-diffcomposer')).not.toBeNull();
+    const content = parent!.querySelector<HTMLElement>('.cm-content[aria-label="Comment"]')!;
+    const scope = findScope(content);
+    expect(scope.name).toBe('box');
+    expect(isKeySource(scope.source) && scope.source.keyState()).toMatchObject({
+      mode: 'insert',
+      target: { kind: 'line', at: at(6), thread: 'here' },
+    });
+    const escape = () =>
+      content.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+    escape();
+    expect(on.close).not.toHaveBeenCalled();
+    escape();
+    expect(on.close).toHaveBeenCalledWith(true);
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+    expect(() => shown.compose(at(19), '', on)).toThrow('A comment box goes under a line');
+  });
 });
