@@ -23,7 +23,7 @@ import {
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { DiffBeside, showDiff } from '../../diff/window/shared.ts';
-import { holdLimit } from '../../revisions/window/shared.ts';
+import { afterHold } from '../../revisions/window/shared.ts';
 import { useKnownSetting } from '../../settings/window/shared.ts';
 import { MiddlePlaceholder, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { open } from '../settings.ts';
@@ -93,11 +93,7 @@ export function useOpening(tab: string, known: Known, shown: boolean): Opening {
   // The bound: past it, the tab opens on the diff, whatever is still to come.
   useEffect(() => {
     if (decided !== 'waiting') return undefined;
-    const timer = setTimeout(
-      () => setNow(Date.now()),
-      Math.max(0, since + holdLimit() - Date.now()),
-    );
-    return () => clearTimeout(timer);
+    return afterHold(since, () => setNow(Date.now()));
   }, [decided, since]);
 
   return decided;

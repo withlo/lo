@@ -448,11 +448,12 @@ test('macOS’s File, View and Window menus list closing a tab, the left panel a
     ]);
 });
 
-// One tab, many that fold away at 1440 px, and some at the screen's width: the strip's edges are the
-// same in the counts between.
+// One tab; eight at 1440 px, the most that fit before "more" appears; and sixteen at the screen's
+// width. More tabs than fit at 1440 px are the "N more" test's below, and the counts between only
+// move where the strip's edges are.
 const strips = [
   [1440, 1],
-  [1440, 40],
+  [1440, 8],
   ['screen', 16],
 ] as const;
 for (const [width, count] of strips) {

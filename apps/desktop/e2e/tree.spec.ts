@@ -247,31 +247,43 @@ async function focusCode(page: Page): Promise<void> {
     .evaluate((content: HTMLElement) => content.focus({ preventScroll: true }));
 }
 
-/**
- * Waits until the diff has stopped changing: nothing in it added, removed or restyled, and it
- * hasn't scrolled, for `quiet` ms. What a fold does to the layout settles over a frame or two after
- * its key, which is how long this waits for the first change, too.
- */
-async function settled(page: Page, quiet = 150): Promise<void> {
-  await page.locator('.lo-diffview').evaluate(
-    (box, wait) =>
-      new Promise<void>((resolve) => {
-        const finish = () => {
-          observer.disconnect();
-          box.removeEventListener('scroll', again);
-          resolve();
-        };
-        let timer = setTimeout(finish, wait);
-        const again = () => {
-          clearTimeout(timer);
-          timer = setTimeout(finish, wait);
-        };
-        const observer = new MutationObserver(again);
-        observer.observe(box, { subtree: true, childList: true, attributes: true });
-        box.addEventListener('scroll', again);
-      }),
-    quiet,
+/** What a fold changes in the diff: the lines drawn, its closed runs, its height and layout passes. */
+function shape(page: Page) {
+  return page.locator('.lo-diffview').evaluate(
+    (box) =>
+      new Promise<{ lines: number; closed: number; height: number; passes: number | undefined }>(
+        (resolve) => {
+          requestAnimationFrame(() =>
+            resolve({
+              lines: box.querySelectorAll('.cm-line').length,
+              closed: box.querySelectorAll('.lo-collapsed').length,
+              height: box.scrollHeight,
+              passes: window.loDiff?.probe.passStats.passes,
+            }),
+          );
+        },
+      ),
   );
+}
+
+/**
+ * Waits until the diff's layout has taken what a fold did to it: its shape the same for ten frames
+ * running, after the fold's own result, which the caller has waited for first.
+ */
+async function laidOut(page: Page): Promise<void> {
+  let last = '';
+  let frames = 0;
+  await expect
+    .poll(
+      async () => {
+        const now = JSON.stringify(await shape(page));
+        frames = now === last ? frames + 1 : 0;
+        last = now;
+        return frames;
+      },
+      { intervals: [0], timeout: 10_000 },
+    )
+    .toBeGreaterThanOrEqual(10);
 }
 
 for (const layout of ['split', 'inline'] as const) {
@@ -289,11 +301,30 @@ for (const layout of ['split', 'inline'] as const) {
     for (const path of ['src/parser.ts', 'src/legacy.ts', 'src/format.ts']) {
       await row(page, path).click();
       await expect.poll(() => headerBelow(page, path)).toBe(0);
+      // The cursor is on the header before `za` asks it to fold: a file, not a run of its lines.
+      await expect.poll(() => cursorPath(page)).toBe(path);
       await focusCode(page);
-      for (const keys of ['za', 'za', 'zR', 'zc', 'zo']) {
+      await laidOut(page);
+      let before = await shape(page);
+      for (const [turn, keys] of ['za', 'za', 'zR', 'zc', 'zo'].entries()) {
         await page.keyboard.press(keys[0]!);
         await page.keyboard.press(keys[1]!);
-        await settled(page);
+        // The fold's result first: each `za` changes what's drawn, closing the file or opening it
+        // again. Then the layout that set off.
+        if (turn < 2) {
+          const was = JSON.stringify([before.lines, before.closed]);
+          await expect
+            .poll(
+              async () => {
+                const now = await shape(page);
+                return JSON.stringify([now.lines, now.closed]);
+              },
+              { message: `${path} after ${keys}` },
+            )
+            .not.toBe(was);
+        }
+        await laidOut(page);
+        before = await shape(page);
         expect(await headerBelow(page, path), `${path} after ${keys}`).toBe(0);
         await expect(row(page, path)).toHaveClass(/tree-current/);
         // Only the room after the last file that's on screen is left.
