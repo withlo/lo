@@ -1,0 +1,1 @@
+temporary: makes ui, desktop and perf affected so the app job's shards run
