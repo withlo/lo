@@ -5,7 +5,7 @@ import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import type { CursorReading, Mark, Place, Probe, Spot } from '@lo/ui/code';
-import { _electron as electron, test as base, type Page } from '@playwright/test';
+import { _electron as electron, test as base, expect, type Page } from '@playwright/test';
 // Imported from Node, the electron package is the path to its binary, whatever its types say.
 import electronPackage from 'electron';
 
@@ -96,6 +96,12 @@ declare global {
     perfOpenNote(at: Place): boolean;
     /** Closes the note opened last, and says whether there was one. */
     perfCloseNote(): boolean;
+    /** Puts a thread of `comments` under the line at `at`, in place of the one there. */
+    perfThread(at: Place, comments: readonly { author: string; body: string }[]): void;
+    /** What moved on screen while a test watched, on a frame with no input. */
+    perfMoved?: string[];
+    /** Stops watching. */
+    perfStill?: boolean;
   }
 }
 
@@ -107,8 +113,8 @@ export const test = base.extend<{ pull: Fixture; page: Page }>({
     writeFileSync(fixture, JSON.stringify(pull));
     if (typeof electronBinary !== 'string') throw new Error('The electron package gave no path.');
     const env: Record<string, string> = {};
-    for (const [name, value] of Object.entries(process.env)) {
-      if (value !== undefined) env[name] = value;
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value !== undefined) env[key] = value;
     }
     delete env.ELECTRON_RUN_AS_NODE;
     env.LO_PERF_PULL = fixture;
@@ -126,7 +132,7 @@ export const test = base.extend<{ pull: Fixture; page: Page }>({
   },
 });
 
-export { expect } from '@playwright/test';
+export { expect };
 
 /** The cursor, as the probe reads it. */
 export function cursor(page: Page): Promise<CursorReading | undefined> {
@@ -168,4 +174,120 @@ export function boxText(page: Page): Promise<string[]> {
 /** Whether focus is in the comment box. */
 export function inBox(page: Page): Promise<boolean> {
   return page.evaluate(() => Boolean(document.activeElement?.closest('.lo-diffcomposer')));
+}
+
+/** The layout's name, as a test's title says it. */
+export function name(layout: 'split' | 'inline'): string {
+  return layout === 'split' ? 'side by side' : 'inline';
+}
+
+/** Scrolls part way down `src/app.ts`, in `layout`, and waits for the scroll to settle. */
+export async function partWay(page: Page, layout: 'split' | 'inline'): Promise<void> {
+  if (layout === 'inline') {
+    await focusSide(page, 'new');
+    await press(page, 'g', 'i');
+    await expect.poll(() => page.evaluate(() => window.diffView.layout)).toBe('inline');
+  }
+  await page.evaluate(() => {
+    document.querySelector('.lo-diffview')!.scrollTop = 1600;
+  });
+  await frames(page, 10);
+}
+
+/** Scrolls by `by` pixels, as the wheel does, and waits for the scroll to settle. */
+export async function scrollBy(page: Page, by: number): Promise<void> {
+  await page.evaluate((distance) => {
+    const box = document.querySelector('.lo-diffview')!;
+    box.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
+    box.scrollTop += distance;
+  }, by);
+  await frames(page, 15);
+}
+
+/** The first line of a file drawn `share` of the way down the screen, or below it. */
+export async function lineAt(page: Page, share: number): Promise<Place> {
+  const spot = await page.evaluate((down) => {
+    const box = document.querySelector('.lo-diffview')!.getBoundingClientRect();
+    for (let y = box.top + 1 + (box.height - 2) * down; y < box.bottom; y += 4) {
+      const found = window.diffView.spotAt(y);
+      if (found?.kind === 'line') return found;
+    }
+    return undefined;
+  }, share);
+  const file = fileOf(spot);
+  const line = lineOf(spot);
+  if (!file || !line || line < 7) throw new Error('No line is on the screen there.');
+  return { file, side: 'new', line };
+}
+
+/**
+ * Watches the lines at the top of the screen and in its middle every frame, until `stopWatching`:
+ * one that moves on a frame with no wheel, key or pointer, and is still moved on the next frame,
+ * is noted.
+ */
+export async function watch(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const probe = window.diffView;
+    const box = document.querySelector('.lo-diffview')!.getBoundingClientRect();
+    const find = (from: number) => {
+      for (let y = from; y < box.bottom; y += 2) {
+        const spot = probe.spotAt(y);
+        const top = spot && probe.spotTop(spot);
+        if (spot && top !== undefined && top >= box.top) return { spot, y: top };
+      }
+      throw new Error('Nothing is drawn on screen.');
+    };
+    const watched = [
+      { name: 'top', ...find(box.top + 1), away: 0 },
+      { name: 'middle', ...find((box.top + box.bottom) / 2), away: 0 },
+    ];
+    const noted: string[] = [];
+    window.perfMoved = noted;
+    window.perfStill = false;
+    let input = false;
+    const noteInput = () => {
+      input = true;
+    };
+    const types = ['wheel', 'keydown', 'pointerdown'];
+    for (const type of types) window.addEventListener(type, noteInput, { capture: true });
+    const tick = () => {
+      for (const each of watched) {
+        const y = probe.spotTop(each.spot);
+        if (input) {
+          if (y !== undefined) each.y = y;
+          each.away = 0;
+          continue;
+        }
+        const off = y === undefined || Math.abs(y - each.y) > 0.5;
+        each.away = off ? each.away + 1 : 0;
+        if (each.away === 2) {
+          noted.push(`${each.name} ${JSON.stringify(each.spot)} ${each.y} → ${y}`);
+        }
+      }
+      input = false;
+      if (!window.perfStill) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      for (const type of types) {
+        window.removeEventListener(type, noteInput, { capture: true });
+      }
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+/** Stops watching, and says what moved. */
+export function stopWatching(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    window.perfStill = true;
+    return window.perfMoved ?? [];
+  });
+}
+
+/** Waits for `count` frames. */
+export function frames(page: Page, count: number): Promise<void> {
+  return page.evaluate(async (left) => {
+    for (let frame = 0; frame < left; frame++) await new Promise(requestAnimationFrame);
+  }, count);
 }

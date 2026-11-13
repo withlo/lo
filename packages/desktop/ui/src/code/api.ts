@@ -121,19 +121,39 @@ export interface DiffInit {
   nonce: string;
 }
 
-/** A comment in a thread, as plain text. */
-export interface ThreadComment {
-  author: string;
-  body: string;
-}
-
-/** A review thread under a line. */
+/**
+ * A review thread under a line, as a code view places and sizes it. What it says is the caller's:
+ * the view makes an element for it, under its line, and has the caller draw it there
+ * (`RenderThread`).
+ */
 export interface ThreadView {
   id: string;
   /** The line it's under. */
   at: Place;
-  comments: readonly ThreadComment[];
+  /**
+   * Whether it shows open, or collapsed to one line: how it starts, and what it becomes whenever
+   * the caller says something other than it said last. `openThread` changes it in between.
+   */
+  open: boolean;
+  /** Changes whenever what the thread shows changes, so the view has the caller draw it again. */
+  version: number;
 }
+
+/** What the caller drew for a thread, which the view keeps up to date and takes down. */
+export interface ThreadContent {
+  /** The thread changed: its version, whether it's open, or its line. Draw it again. */
+  update(thread: ThreadView): void;
+  /** The view doesn't show the thread anymore: take down what was drawn. */
+  destroy(): void;
+}
+
+/**
+ * Draws a thread in `host`, an element the view made for it, the first time the view draws the
+ * thread. What's in `host` is the caller's. Its height counts as the thread's from the first time
+ * it has any. A change after that shows a frame later, cut off until then; one no input asked for,
+ * such as an image loading, waits while the thread is on screen. So draw what's known at once.
+ */
+export type RenderThread = (host: HTMLElement, thread: ThreadView) => ThreadContent;
 
 /** Where a jump goes: the next change, file or thread, counted from the cursor. */
 export type JumpTo = 'change' | 'file' | 'thread';
@@ -156,22 +176,92 @@ export interface ComposerEvents {
   /** `⌘⏎` adds the comment to the review; `⌥⏎` posts it now. The box stays until it's closed. */
   submit(how: Send): void;
   /**
-   * `Esc` in normal mode closed the box: `keep` when it held text, which the caller keeps as the
-   * draft for the next box there.
+   * `Esc` in normal mode, or in the preview, closed the box: `keep` when it held text, which the
+   * caller keeps as the draft for the next box there. A box `createComposer` made stays: closing
+   * it is the caller's.
    */
   close(keep: boolean): void;
+  /** Vim's mode in the box changed: for the frame's foot. */
+  mode?(mode: Mode): void;
+  /** `⌘⇧V` showed the preview in the editor's place, or the editor again. */
+  preview?(on: boolean): void;
+  /** `⌘⇧A`: the reader asks to attach files. */
+  attach?(): void;
+  /** Files dropped on the box or pasted into it. The box inserts nothing for them itself. */
+  files?(files: readonly File[]): void;
+  /**
+   * Files are dragged over the box: how many, or 0 once they're dropped or leave it. The frame's
+   * dropzone shows meanwhile.
+   */
+  dragging?(count: number): void;
 }
 
 /** A comment box's handle. */
 export interface Composer {
   /** The text so far. */
   readonly text: string;
-  /** Focuses the box in insert mode, at the end of its text. */
+  /** Vim's mode in the box. */
+  readonly mode: Mode;
+  /** Whether it shows the preview, in the editor's place. */
+  readonly previewing: boolean;
+  /** Focuses the box: in insert mode at the end of its text, or its preview while that shows. */
   focus(): void;
-  /** Types `text` at the cursor. */
+  /**
+   * Types `text` at the cursor as the reader sees it: where it is in insert mode, and after the
+   * character it's on otherwise.
+   */
   insert(text: string): void;
-  /** Closes the box, as after it was sent, and gives focus back to the line it was on. */
+  /**
+   * Puts `text` in place of the text from offset `from` to offset `to`, as an upload's link takes
+   * its placeholder's place, wherever the cursor is.
+   */
+  replace(from: number, to: number, text: string): void;
+  /**
+   * Shows the preview in the editor's place, leaving insert mode, or the editor again, back in
+   * insert mode if it was. Focus in the box goes with it.
+   */
+  preview(on: boolean): void;
+  /**
+   * Closes the box, as after it was sent: in a code view, giving focus back to the line it was on,
+   * and taking what comes under that line next as what was sent, at once. A box `createComposer`
+   * made is taken away.
+   */
   close(): void;
+}
+
+/**
+ * The parts of a comment box the caller draws, around its editor: each an element the box makes,
+ * which takes no room while it's empty.
+ */
+export interface BoxParts {
+  /** Above the rest: Write and Preview, where the comment goes, and the account. */
+  head: HTMLElement;
+  /** Under the head: a restored draft, a refusal, a warning. */
+  note: HTMLElement;
+  /** In the editor's place while the box previews: the text rendered. */
+  preview: HTMLElement;
+  /** Over the editor, shown while files are dragged over the box. */
+  dropzone: HTMLElement;
+  /** Under the editor: the files being attached. */
+  uploads: HTMLElement;
+  /** Last: Vim's mode, attaching, and the buttons that send. */
+  foot: HTMLElement;
+}
+
+/**
+ * Draws a comment box's frame in its parts, as the box opens: the box's handle is `box`. What it
+ * returns takes the frame down as the box goes.
+ */
+export type BoxFrame = (parts: BoxParts, box: Composer) => { destroy(): void };
+
+/** A comment box outside a code view, as the timeline's and a review's summary are. */
+export interface ComposerInit {
+  /** The text it starts with. */
+  draft: string;
+  /** The nonce the window's content security policy lets the box's style elements carry. */
+  nonce: string;
+  /** What the editor is called, for screen readers: "Comment" unless given. */
+  label?: string;
 }
 
 /** How level the rows on screen are, as drawn. */
@@ -279,8 +369,21 @@ export interface DiffView extends KeySource {
   setHeader(file: string, header: FileHeader): void;
   /** Lays the diff out again, keeping the cursor's line on screen. */
   setLayout(layout: DiffLayout): void;
-  /** Replaces the threads drawn under lines. */
-  setThreads(threads: readonly ThreadView[]): void;
+  /**
+   * Replaces the threads drawn under lines, each drawn by `render` in an element of its own the
+   * first time it's drawn, and kept up to date through what that returns. A line on screen whose
+   * threads change keeps those it shows until it's off screen, or in a diff too short to scroll,
+   * until the reader's next wheel, key or click, so no line on screen moves; the rest change now,
+   * and what's at the top of the screen stays where it is. A thread drawn on screen that changes
+   * size with no input asking, as when an image in it loads, is held at the height it was drawn at
+   * the same way. What the reader does to a thread, such as opening it, keeps its line where it is.
+   */
+  setThreads(threads: readonly ThreadView[], render: RenderThread): void;
+  /**
+   * Opens a thread, collapses it, or the other of the two, as the reader asked: the caller draws it
+   * again, its line staying where it is. Says whether the view has the thread.
+   */
+  openThread(id: string, open: boolean | 'toggle'): boolean;
   /**
    * Replaces the marks on lines: overview markers, in a gutter that's there from the start, so
    * marks change no line's width or height, and what's on screen stays where it is. Kinds the diff
@@ -359,9 +462,15 @@ export interface DiffView extends KeySource {
   lines(span: Span): readonly string[];
   /**
    * Opens a comment box with `draft` in it, under a line, the last line of a span, or a thread,
-   * and focuses it. A box already open there is focused instead, as it is.
+   * with `frame` drawn around its editor, and focuses it. A box already open there is focused
+   * instead, as it is. The box's line stays where it is as it opens, grows and closes.
    */
-  compose(at: Place | Span | { thread: string }, draft: string, on: ComposerEvents): Composer;
+  compose(
+    at: Place | Span | { thread: string },
+    draft: string,
+    on: ComposerEvents,
+    frame?: BoxFrame,
+  ): Composer;
   focus(): void;
   destroy(): void;
   readonly probe: Probe;
@@ -551,6 +660,24 @@ export interface ExcerptView extends KeySource {
   setTokens(side: Side, triples: Uint32Array): void;
   /** Replaces the lines on the range's side marked as changed since. */
   setStale(lines: readonly number[]): void;
+  /**
+   * Replaces the threads drawn under the lines the excerpt shows, each drawn by `render` as the
+   * diff view's are. Threads on lines it doesn't show are left out.
+   */
+  setThreads(threads: readonly ThreadView[], render: RenderThread): void;
+  /** Opens a thread, collapses it, or the other of the two. Says whether the excerpt has it. */
+  openThread(id: string, open: boolean | 'toggle'): boolean;
+  /**
+   * Opens a comment box with `draft` in it, under a line the excerpt shows, the last line of a
+   * span, or a thread, with `frame` drawn around its editor, and focuses it. A box already open
+   * there is focused instead, as it is. Throws for a line the excerpt doesn't show.
+   */
+  compose(
+    at: Place | Span | { thread: string },
+    draft: string,
+    on: ComposerEvents,
+    frame?: BoxFrame,
+  ): Composer;
   /**
    * Moves the cursor to what `at` names, and brings it on screen: a line the excerpt shows, the
    * last line `v` selected, or its file, which is its first line. Says whether it could. Not a

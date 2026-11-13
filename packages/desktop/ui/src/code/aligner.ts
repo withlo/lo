@@ -256,6 +256,11 @@ export class Aligner {
   #anchor: Anchor | undefined;
   /** Whether `anchorTop` has taken the anchor the coming pass restores. */
   #topTaken = false;
+  /**
+   * Whether `anchorAt` chose the anchor the coming pass restores, which stands though focus moves
+   * before the pass, as it does into a comment box as it opens.
+   */
+  #chosen = false;
   /** Which way the scroll last went: down (1) or up (-1). */
   #direction: 1 | -1 = 1;
   /**
@@ -386,11 +391,33 @@ export class Aligner {
     if (found) this.#anchor = { for: side, ...found };
   }
 
+  /**
+   * Takes line `pos` of `side`'s editor, where it's drawn now, as where things belong, not the line
+   * the pass would take: the view is about to change heights below it, at the reader's asking, as
+   * when a comment box under it grows, and what's above it stays where it is. It stands, as
+   * `anchorTop`'s does, until the pass runs. A line that isn't drawn leaves the anchor as it is.
+   */
+  anchorAt(side: Side, pos: number): void {
+    if (this.#paused) return;
+    const top = drawnTop(this.#views[side], pos);
+    if (top === undefined) return;
+    this.#topTaken = true;
+    this.#chosen = true;
+    this.#anchor = {
+      for: this.#anchorSide(),
+      side,
+      pos,
+      offset: top - this.#scroller.getBoundingClientRect().top,
+      scrollTop: this.#scroller.scrollTop,
+    };
+  }
+
   /** Stops the pass, or starts it again. */
   set paused(paused: boolean) {
     this.#paused = paused;
     this.#anchor = undefined;
     this.#topTaken = false;
+    this.#chosen = false;
     if (!paused) this.schedule();
   }
 
@@ -453,7 +480,7 @@ export class Aligner {
       let anchor = this.#anchor;
       if (
         !anchor ||
-        anchor.for !== side ||
+        (anchor.for !== side && !this.#chosen) ||
         (!this.#scrolled && Math.abs(anchor.scrollTop - this.#scroller.scrollTop) > 0.5)
       ) {
         anchor = this.#anchorNow();
@@ -519,6 +546,7 @@ export class Aligner {
       this.#running = false;
       this.#selected = false;
       this.#topTaken = false;
+      this.#chosen = false;
       const ms = performance.now() - started;
       this.stats.passes++;
       if (changed) this.stats.changed++;

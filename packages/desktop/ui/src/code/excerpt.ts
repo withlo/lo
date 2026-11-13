@@ -4,15 +4,17 @@
 // file, so the first is numbered as the range starts. It's a code view's own editor, as the diff's
 // and the whole file's are (`editor.ts`, `keys.ts`): no key changes its text or enters insert or
 // replace mode, its jumps go to the caller as places, its style elements carry the window's nonce,
-// and its cursor doesn't blink. The cursor shows only while the excerpt has focus.
+// and its cursor doesn't blink. The cursor shows only while the excerpt has focus. Under its lines
+// it draws review threads, each in an element the caller draws it in, and comment boxes, as the
+// diff view does; it doesn't hold what changes size, which is for whatever scrolls around it.
 //
 // Callers see none of this: they name the file by their own id, places by that id, a side and a
 // line, and reach the excerpt only through `ExcerptView` (`api.ts`). Keys reach it through the
 // registry, which runs Lo's commands and hands the rest to Vim, as for a whole file: the excerpt is
 // the `file` scope's `KeySource`.
 
-import { EditorState, type Range, StateEffect, type Text } from '@codemirror/state';
-import { Decoration, EditorView, gutter, GutterMarker } from '@codemirror/view';
+import { EditorState, type Range, StateEffect, StateField, type Text } from '@codemirror/state';
+import { Decoration, type DecorationSet, EditorView, gutter, GutterMarker } from '@codemirror/view';
 import type { FileDiff } from '@lo/diff';
 
 import {
@@ -23,15 +25,22 @@ import {
   type Target,
 } from '../commands/index.ts';
 import type {
+  BoxFrame,
+  Composer,
+  ComposerEvents,
   ExcerptEvents,
   ExcerptInit,
   ExcerptView,
   Mode,
   Place,
+  RenderThread,
   Side,
+  Span,
   Spot,
+  ThreadView,
   VimKey,
 } from './api.ts';
+import { CommentBox } from './comments.ts';
 import { fileMarks } from './decorations.ts';
 import { codeEditor } from './editor.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
@@ -47,7 +56,8 @@ import {
   vimPending,
 } from './keys.ts';
 import { marking } from './marks.ts';
-import { FileNoteWidget } from './widgets.ts';
+import { type ThreadHost, Threads } from './threads.ts';
+import { FileNoteWidget, ThreadSizes, ThreadWidget } from './widgets.ts';
 
 /** Opens an excerpt of `init`'s file in `parent`, which tells `on` what happens in it. */
 export function createExcerptView(
@@ -162,6 +172,21 @@ function rowsOf(
 /** The lines marked as changed since arrived: number them again. */
 const staleChanged = StateEffect.define();
 
+/** Replaces the blocks under lines: threads and comment boxes. */
+const setBlocks = StateEffect.define<readonly Range<Decoration>[]>();
+
+const blockField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(blocks, transaction) {
+    let next = blocks.map(transaction.changes);
+    for (const effect of transaction.effects) {
+      if (effect.is(setBlocks)) next = Decoration.set(effect.value, true);
+    }
+    return next;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
 /** A line's number on one side, marked when the line changed since. */
 class NumberMarker extends GutterMarker {
   readonly number: string;
@@ -201,10 +226,32 @@ class Excerpt implements ExcerptView {
   /** What the events last said, so each says only what changed. */
   readonly #said: { cursor?: string; mode: Mode } = { mode: 'normal' };
   readonly #stops: (() => void)[] = [];
+  readonly #nonce: string;
+  /** Each thread's element, and what the caller drew in it. */
+  readonly #hosts: Threads;
+  /** The threads drawn, by the document line they're under. */
+  #threads = new Map<number, ThreadView[]>();
+  /** The comment boxes open, by the document line they're under. */
+  readonly #boxes = new Map<number, CommentBox>();
+  /** How tall what's drawn under lines is, made as the first thread or box comes. */
+  #sizes: ThreadSizes | undefined;
 
   constructor(parent: HTMLElement, init: ExcerptInit, on: ExcerptEvents) {
     installVim();
     this.#on = on;
+    this.#nonce = init.nonce;
+    // What's drawn under its lines changed size: each thread takes its new height in the next
+    // frame, which the editor measures. A change of size made now, as the page tells its observers
+    // of sizes, would go untold to the editor's.
+    this.#hosts = new Threads((entries) => {
+      const changed = this.#hosts.resized(entries);
+      if (changed.length === 0) return;
+      for (const { host } of changed) host.hold();
+      requestAnimationFrame(() => {
+        for (const { host } of changed) host.letGo();
+        this.#view.requestMeasure();
+      });
+    });
     this.#id = init.id;
     this.#side = init.range.side;
     this.#diff = init.diff;
@@ -237,6 +284,7 @@ class Excerpt implements ExcerptView {
           sides.map((side) => this.#numbers(side)),
           marking((doc, first, last) => this.#marks(doc, first, last)),
           moreRow(this.#shown.more),
+          blockField,
           highlighting({
             lineAt: (line) => {
               const added = this.#shown.new[line - 1] ?? 0;
@@ -333,6 +381,122 @@ class Excerpt implements ExcerptView {
     this.#view.dispatch({ effects: staleChanged.of(null) });
   }
 
+  setThreads(threads: readonly ThreadView[], render: RenderThread): void {
+    this.#hosts.render = render;
+    const next = new Map<number, ThreadView[]>();
+    const given = new Set<string>();
+    for (const thread of threads) {
+      const line = thread.at.file === this.#id && this.#docLine(thread.at.side, thread.at.line);
+      if (!line || given.has(thread.id)) continue;
+      given.add(thread.id);
+      this.#hosts.take(thread);
+      const there = next.get(line);
+      if (there) there.push(thread);
+      else next.set(line, [thread]);
+    }
+    this.#threads = next;
+    this.#hosts.drop((host) => !given.has(host.id));
+    this.#drawBlocks();
+  }
+
+  openThread(id: string, open: boolean | 'toggle'): boolean {
+    const host = this.#hosts.get(id);
+    if (!host) return false;
+    host.setOpen(open === 'toggle' ? !host.open : open);
+    return true;
+  }
+
+  compose(
+    at: Place | Span | { thread: string },
+    draft: string,
+    on: ComposerEvents,
+    frame?: BoxFrame,
+  ): Composer {
+    const line = this.#boxLine(at);
+    if (line === undefined) throw new Error('A comment box goes under a line the excerpt shows.');
+    const open = this.#boxes.get(line);
+    if (open) {
+      open.focus();
+      return open.composer;
+    }
+    const where = 'thread' in at ? this.#spot(line) : { kind: 'line' as const, at };
+    if (where.kind !== 'line')
+      throw new Error('A comment box goes under a line the excerpt shows.');
+    const thread = 'thread' in at ? at.thread : this.#threadOn(line);
+    const box = new CommentBox({
+      target:
+        thread === undefined
+          ? { kind: 'line', at: where.at }
+          : { kind: 'line', at: where.at, thread },
+      draft,
+      on,
+      frame,
+      nonce: this.#nonce,
+      escape: (closed) => {
+        const keep = closed.text.trim() !== '';
+        this.#closeBox(closed);
+        on.close(keep);
+      },
+      close: (closed) => this.#closeBox(closed),
+    });
+    this.#boxes.set(line, box);
+    this.#drawBlocks();
+    box.focus();
+    return box.composer;
+  }
+
+  /** The document line a box for `at` goes under: a line, a span's last line, or a thread's. */
+  #boxLine(at: Place | Span | { thread: string }): number | undefined {
+    if ('thread' in at) {
+      for (const [line, threads] of this.#threads) {
+        if (threads.some((thread) => thread.id === at.thread)) return line;
+      }
+      return undefined;
+    }
+    if (at.file !== this.#id) return undefined;
+    return this.#docLine(at.side, 'line' in at ? at.line : Math.max(at.from, at.to));
+  }
+
+  /** The thread a key on document line `line` acts on: the only one there. */
+  #threadOn(line: number): string | undefined {
+    const threads = this.#threads.get(line);
+    return threads?.length === 1 ? threads[0]!.id : undefined;
+  }
+
+  #closeBox(box: CommentBox): void {
+    const found = [...this.#boxes].find(([, open]) => open === box);
+    if (!found) return;
+    const [line] = found;
+    this.#boxes.delete(line);
+    this.#drawBlocks();
+    this.#view.dispatch({ selection: { anchor: this.#view.state.doc.line(line).from } });
+    this.#view.focus();
+    box.destroy();
+  }
+
+  /** Draws the threads and boxes under their lines, in place of those drawn. */
+  #drawBlocks(): void {
+    const { doc } = this.#view.state;
+    const draw = (host: ThreadHost): void => this.#hosts.draw(host);
+    const lines = [...new Set([...this.#threads.keys(), ...this.#boxes.keys()])].toSorted(
+      (a, b) => a - b,
+    );
+    if (lines.length === 0) {
+      this.#view.dispatch({ effects: setBlocks.of([]) });
+      return;
+    }
+    const sizes = (this.#sizes ??= new ThreadSizes(this.#view.contentDOM));
+    const blocks = lines.map((line) => {
+      const hosts = (this.#threads.get(line) ?? []).flatMap((thread) => {
+        const host = this.#hosts.get(thread.id);
+        return host ? [host] : [];
+      });
+      const widget = new ThreadWidget(`x:${line}`, hosts, sizes, draw, this.#boxes.get(line));
+      return Decoration.widget({ widget, block: true, side: 2 }).range(doc.line(line).to);
+    });
+    this.#view.dispatch({ effects: setBlocks.of(blocks) });
+  }
+
   // Moving -----------------------------------------------------------------------------------
 
   reveal(at: Target): boolean {
@@ -389,6 +553,10 @@ class Excerpt implements ExcerptView {
 
   destroy(): void {
     for (const stop of this.#stops) stop();
+    for (const box of this.#boxes.values()) box.destroy();
+    this.#boxes.clear();
+    this.#hosts.destroy();
+    this.#sizes?.destroy();
     this.#view.destroy();
     this.dom.remove();
   }
@@ -437,10 +605,14 @@ class Excerpt implements ExcerptView {
     return this.#targetAt(line.number, head - line.from);
   }
 
-  /** What a key or a click on document line `line` acts on: its line, or the header. */
+  /** What a key or a click on document line `line` acts on: its line and thread, or the header. */
   #targetAt(line: number, column?: number): LineTarget | HeaderTarget {
     const spot = this.#spot(line, column);
-    return spot.kind === 'line' ? { kind: 'line', at: spot.at } : spot;
+    if (spot.kind !== 'line') return spot;
+    const thread = this.#threadOn(line);
+    return thread === undefined
+      ? { kind: 'line', at: spot.at }
+      : { kind: 'line', at: spot.at, thread };
   }
 
   // Events -----------------------------------------------------------------------------------
@@ -479,11 +651,19 @@ class Excerpt implements ExcerptView {
     this.#on.mode(mode);
   }
 
-  /** A right-click on the code: the menu of the line under the pointer. */
+  /** A right-click on the code: the menu of the thread or the line under the pointer. */
   #contextMenu(event: MouseEvent): void {
     const { target } = event;
-    if (event.defaultPrevented || !(target instanceof Node)) return;
+    if (event.defaultPrevented || !(target instanceof Element)) return;
     if (!this.#view.dom.contains(target)) return;
+    // A comment box is text, which the system's own menu serves.
+    if (target.closest('.lo-diffcomposer')) return;
+    const thread = this.#hosts.around(target);
+    if (thread) {
+      event.preventDefault();
+      this.#on.menu({ kind: 'thread', thread: thread.id }, event.clientX, event.clientY);
+      return;
+    }
     const pos = this.#view.posAtCoords({ x: event.clientX, y: event.clientY });
     if (pos === null) return;
     event.preventDefault();

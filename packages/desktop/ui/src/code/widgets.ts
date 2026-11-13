@@ -6,7 +6,8 @@
 
 import { WidgetType } from '@codemirror/view';
 
-import type { FileHeader, ThreadComment } from './api.ts';
+import type { FileHeader } from './api.ts';
+import type { ThreadHost } from './threads.ts';
 
 /** How each viewed mark is drawn: a ring, a filled ball, or an amber ring with a dot. */
 const BALLS: Record<NonNullable<FileHeader['viewed']>, { className: string; title: string }> = {
@@ -168,21 +169,22 @@ export interface BoxHost {
   attach(parent: HTMLElement): void;
 }
 
-/** The average width of a character of the comments' face, in pixels. */
+/** The average width of a character of the notes' face, in pixels. */
 const charWidth = 6.05;
 
 /**
- * What one editor's threads' heights are worked out from before they're drawn: the heights its
- * threads were drawn at, at the width they were drawn at, and how much narrower than the editor's
- * content a comment's text is, for the characters it wraps at. Estimates that are off move what's
- * drawn when CodeMirror measures, which a far jump to a thread can't settle in one measure.
+ * What one editor's notes' heights are worked out from before they're drawn: the heights blocks of
+ * notes alone were drawn at, at the width they were drawn at, and how much narrower than the
+ * editor's content a note's text is, for the characters it wraps at. Estimates that are off move
+ * what's drawn when CodeMirror measures, which a far jump can't settle in one measure. Threads keep
+ * their own heights (`threads.ts`).
  */
 export class ThreadSizes {
   /** The width of the editor's content, in whole pixels; 0 before it's been seen. */
   #width = 0;
-  /** How much narrower than the content a comment's text is, once one has been drawn. */
+  /** How much narrower than the content a note's text is, once one has been drawn. */
   #inset: number | undefined;
-  /** The heights threads were drawn at, by the width and the thread. */
+  /** The heights blocks were drawn at, by the width and the block. */
   readonly #drawn = new Map<string, number>();
   readonly #observer: ResizeObserver;
 
@@ -197,9 +199,9 @@ export class ThreadSizes {
         const { target } = entry;
         const size = entry.borderBoxSize[0];
         if (!size || target === content || !(target instanceof HTMLElement)) continue;
-        if (target.classList.contains('lo-diffthread__body')) {
-          if (this.#width > 0) this.#inset = this.#width - size.inlineSize;
-        } else if (target.dataset.thread) {
+        if (target.classList.contains('lo-ovnote__text')) {
+          if (this.#width > 0 && size.inlineSize > 0) this.#inset = this.#width - size.inlineSize;
+        } else if (target.dataset.thread && size.blockSize > 0) {
           this.#drawn.set(`${this.#width}:${target.dataset.thread}`, size.blockSize);
         }
       }
@@ -215,12 +217,12 @@ export class ThreadSizes {
     this.#observer.unobserve(target);
   }
 
-  /** The height the thread `key` was drawn at, at the content's width now, if it was. */
+  /** The height the block `key` was drawn at, at the content's width now, if it was. */
   drawn(key: string): number | undefined {
     return this.#drawn.get(`${this.#width}:${key}`);
   }
 
-  /** The characters a comment's text wraps at: 100 until a thread has been drawn. */
+  /** The characters a note's text wraps at: 100 until a note has been drawn. */
   get charsPerLine(): number {
     if (this.#inset === undefined || this.#width === 0) return 100;
     return Math.max(20, Math.floor((this.#width - this.#inset) / charWidth));
@@ -230,12 +232,6 @@ export class ThreadSizes {
     this.#observer.disconnect();
     this.#drawn.clear();
   }
-}
-
-/** A thread as a thread widget draws it. */
-export interface ThreadDraw {
-  readonly id: string;
-  readonly comments: readonly ThreadComment[];
 }
 
 /** An overview marker's note, open under the last line the marker covers. */
@@ -253,27 +249,36 @@ export interface NoteDraw {
 /** The attribute on a note's link that names the overview's block it shows. */
 export const NOTE_BLOCK_ATTRIBUTE = 'data-note-block';
 
+/** The room a block of threads, notes and a box takes around them, and between each. */
+const BLOCK_PADDING = 16;
+const BLOCK_GAP = 8;
+
 /**
  * What goes under a line: the notes of the overview markers that end there, the review threads
- * there, each a card, and the comment box being written there, if there is one, in the last. One
- * block a line, for the same reason as a header's note.
+ * there, each in the element the caller draws it in (`threads.ts`), and the comment box being
+ * written there, if there is one, last. One block a line, for the same reason as a header's note.
+ * Threads and the box are elements that outlive the block, and move into whichever block draws
+ * them last.
  */
 export class ThreadWidget extends WidgetType {
   readonly id: string;
-  readonly threads: readonly ThreadDraw[];
+  readonly threads: readonly ThreadHost[];
   readonly box: BoxHost | undefined;
   readonly drawing: number;
   readonly sizes: ThreadSizes;
   readonly notes: readonly NoteDraw[];
+  readonly #draw: (thread: ThreadHost) => void;
 
   /**
-   * `drawing` changes when the box must be drawn again, to move it into another editor; `sizes`
-   * are the editor's.
+   * `draw` has the caller draw a thread the first time it's drawn. `drawing` changes when the
+   * threads and the box must be drawn again, to move them into another editor; `sizes` are the
+   * editor's.
    */
   constructor(
     id: string,
-    threads: readonly ThreadDraw[],
+    threads: readonly ThreadHost[],
     sizes: ThreadSizes,
+    draw: (thread: ThreadHost) => void,
     box?: BoxHost,
     drawing = 0,
     notes: readonly NoteDraw[] = [],
@@ -282,6 +287,7 @@ export class ThreadWidget extends WidgetType {
     this.id = id;
     this.threads = threads;
     this.sizes = sizes;
+    this.#draw = draw;
     this.box = box;
     this.drawing = drawing;
     this.notes = notes;
@@ -291,10 +297,7 @@ export class ThreadWidget extends WidgetType {
     return (
       other.id === this.id &&
       other.threads.length === this.threads.length &&
-      other.threads.every(
-        (thread, index) =>
-          thread.id === this.threads[index]?.id && thread.comments === this.threads[index].comments,
-      ) &&
+      other.threads.every((thread, index) => thread === this.threads[index]) &&
       other.box === this.box &&
       other.drawing === this.drawing &&
       other.sizes === this.sizes &&
@@ -307,72 +310,59 @@ export class ThreadWidget extends WidgetType {
     // The space around the card is padding, not margin: the editor measures a block by its box,
     // which leaves margins out.
     const block = element('div', 'lo-diffthread');
-    if (!this.box) {
+    if (this.#notesOnly) {
       block.dataset.thread = this.#key;
       this.sizes.observe(block);
     }
-    for (const note of this.notes) block.append(noteElement(note));
-    let card: HTMLElement | undefined;
+    for (const note of this.notes) {
+      const drawn = noteElement(note);
+      block.append(drawn);
+      this.sizes.observe(drawn.querySelector('.lo-ovnote__text')!);
+    }
     for (const thread of this.threads) {
-      card = element('div', 'lo-diffthread__card');
-      card.dataset.threadId = thread.id;
-      for (const comment of thread.comments) {
-        const item = element('div', 'lo-diffthread__comment');
-        item.append(
-          element('div', 'lo-diffthread__author', comment.author),
-          element('p', 'lo-diffthread__body', comment.body),
-        );
-        card.append(item);
-      }
-      block.append(card);
+      this.#draw(thread);
+      block.append(thread.dom);
     }
-    const body = block.querySelector('.lo-diffthread__body');
-    if (body) this.sizes.observe(body);
-    if (this.box) {
-      if (!card) {
-        card = element('div', 'lo-diffthread__card');
-        block.append(card);
-      }
-      this.box.attach(card);
-    }
+    this.box?.attach(block);
     return block;
   }
 
   override destroy(dom: HTMLElement): void {
     this.sizes.unobserve(dom);
-    const body = dom.querySelector('.lo-diffthread__body');
-    if (body) this.sizes.unobserve(body);
+    for (const text of dom.querySelectorAll('.lo-ovnote__text')) this.sizes.unobserve(text);
   }
 
-  /** The threads' and notes' size as drawn, for drawing them again. */
+  /** Whether it holds notes alone, whose size as drawn is kept for drawing them again. */
+  get #notesOnly(): boolean {
+    return this.threads.length === 0 && !this.box;
+  }
+
+  /** The notes' size as drawn, for drawing them again. */
   get #key(): string {
-    const threads = this.threads.map((thread) => thread.comments.length).join(',');
     const notes = this.notes.map((note) => `${note.key}:${note.text.length}`).join(',');
-    return notes === '' ? `${this.id}:${threads}` : `${this.id}:${threads}:${notes}`;
+    return `${this.id}:${notes}`;
   }
 
   /**
-   * As tall as it was last drawn in its editor at this width, if it was. Else its comments' lines
-   * of 18 pixels, at the characters the editor's threads wrap at, under each comment's author line
-   * and padding, and its notes' lines of 21 pixels, between a label and a foot.
+   * Notes alone, as tall as they were last drawn in its editor at this width, if they were. Else
+   * its notes' lines of 21 pixels, at the characters the editor's notes wrap at, between a label
+   * and a foot, its threads as tall as each was drawn, or about as tall, and the box as it is.
    */
   override get estimatedHeight(): number {
-    const drawn = this.box ? undefined : this.sizes.drawn(this.#key);
+    const drawn = this.#notesOnly ? this.sizes.drawn(this.#key) : undefined;
     if (drawn !== undefined) return drawn;
-    let comments = 0;
-    for (const thread of this.threads) {
-      for (const comment of thread.comments) {
-        comments += 36 + Math.max(1, Math.ceil(comment.body.length / this.sizes.charsPerLine)) * 18;
-      }
-    }
-    let notes = 0;
+    let height = BLOCK_PADDING;
+    const parts = this.notes.length + this.threads.length + (this.box ? 1 : 0);
+    height += Math.max(0, parts - 1) * BLOCK_GAP;
     for (const note of this.notes) {
-      notes += 70 + Math.max(1, Math.ceil(note.text.length / this.sizes.charsPerLine)) * 21;
+      height += 70 + Math.max(1, Math.ceil(note.text.length / this.sizes.charsPerLine)) * 21;
     }
-    return 16 + notes + comments + (this.box ? this.box.dom.offsetHeight || 60 : 0);
+    for (const thread of this.threads) height += thread.estimate;
+    if (this.box) height += this.box.dom.offsetHeight || 120;
+    return height;
   }
 
-  /** The box handles its own events. */
+  /** The threads and the box handle their own events. */
   override ignoreEvent(): boolean {
     return true;
   }
