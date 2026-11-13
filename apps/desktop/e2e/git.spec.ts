@@ -22,7 +22,7 @@ import { promisify } from 'node:util';
 import { git, gitProgram, RepoServer, testGitEnvironment } from '@lo/testing/git';
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 
-import { appEnvironment, appFolder, dataFolder, expect, test } from './app.ts';
+import { appEnvironment, appFolder, dataFolder, drawnWindow, expect, test } from './app.ts';
 
 /** Starts Lo on the test's data folder, with `env` added to its environment. */
 async function launch(
@@ -33,8 +33,7 @@ async function launch(
     env: { ...appEnvironment(dataFolder()), ...env },
     chromiumSandbox: true,
   });
-  const page = await app.firstWindow();
-  await page.waitForLoadState('load');
+  const page = await drawnWindow(app);
   return { app, page };
 }
 

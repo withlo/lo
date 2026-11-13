@@ -6,7 +6,15 @@ import {
   type Page,
 } from '@playwright/test';
 
-import { appEnvironment, appFolder, closedPort, dataFolder, expect, test as base } from './app.ts';
+import {
+  appEnvironment,
+  appFolder,
+  closedPort,
+  dataFolder,
+  drawnWindow,
+  expect,
+  test as base,
+} from './app.ts';
 
 /**
  * Lo with a GitHub that can't be reached, so the pull requests these tests open in tabs never
@@ -649,8 +657,7 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page }> {
     env: { ...appEnvironment(dataFolder()), ...(await unreachable()) },
     chromiumSandbox: true,
   });
-  const page = await app.firstWindow();
-  await page.waitForLoadState('load');
+  const page = await drawnWindow(app);
   return { app, page };
 }
 

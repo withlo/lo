@@ -4,7 +4,15 @@ import { dirname } from 'node:path';
 import { gitProgram } from '@lo/testing/git';
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 
-import { appEnvironment, appFolder, dataFolder, expect, settingsPath, test } from './app.ts';
+import {
+  appEnvironment,
+  appFolder,
+  dataFolder,
+  drawnWindow,
+  expect,
+  settingsPath,
+  test,
+} from './app.ts';
 
 const mac = process.platform === 'darwin';
 /** ⌘ on macOS, Ctrl on Linux. */
@@ -67,8 +75,7 @@ async function launch() {
     env: appEnvironment(dataFolder()),
     chromiumSandbox: true,
   });
-  const page = await app.firstWindow();
-  await page.waitForLoadState('load');
+  const page = await drawnWindow(app);
   return { app, page };
 }
 

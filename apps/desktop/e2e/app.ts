@@ -213,25 +213,59 @@ export const test = base.extend<Fixtures>({
     }
     await app.close();
   },
-  page: [
-    async ({ app }, use) => {
-      const page = await app.firstWindow();
-      await page.waitForLoadState('load');
-      // The page loads, runs and takes keys before the window can draw: its frames come once
-      // Electron's GPU process has started, which in CI, with copies of Lo and of the perf suite
-      // starting at once, has taken up to half a minute. Until then nothing that waits on a frame
-      // happens, such as a closed dialog leaving, so a test starts once the window has drawn.
-      await page.evaluate(
-        () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
-      );
-      await use(page);
-    },
-    // Its own time, so a late first frame doesn't use up the test's.
-    { scope: 'test', timeout: 60_000 },
-  ],
+  page: async ({ app }, use) => {
+    await use(await drawnWindow(app));
+  },
 });
 
 export { expect };
+
+/** How long a window has to draw its first frame before the test fails for it. */
+const DRAW_LIMIT = 60_000;
+
+/**
+ * Lo's window, once its page has loaded and the window has drawn. The page loads, runs and takes
+ * keys before the window can draw: its frames come once Electron's GPU process has started, which
+ * in CI, with copies of Lo and of the perf suite starting at once, has taken up to half a minute.
+ * Until then nothing that waits on a frame happens, such as a closed dialog leaving or a click
+ * finding its target still, so a test takes a window only through this. The wait has time of its
+ * own: the test's time grows by however long it took.
+ */
+export async function drawnWindow(app: ElectronApplication): Promise<Page> {
+  const page = await app.firstWindow();
+  await page.waitForLoadState('load');
+  await base.step(
+    "Lo's window draws",
+    async () => {
+      const info = base.info();
+      const timeout = info.timeout;
+      const from = performance.now();
+      if (timeout > 0) info.setTimeout(timeout + DRAW_LIMIT);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          page.evaluate(
+            () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+          ),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new Error(`Lo's window loaded but drew no frame in ${DRAW_LIMIT / 1000} s.`),
+                ),
+              DRAW_LIMIT,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (timeout > 0) info.setTimeout(timeout + Math.ceil(performance.now() - from));
+    },
+    { box: true },
+  );
+  return page;
+}
 
 declare global {
   interface Window {

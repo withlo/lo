@@ -11,7 +11,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 
-import { appEnvironment, appFolder, dataFolder, expect, test as base } from './app.ts';
+import { appEnvironment, appFolder, dataFolder, drawnWindow, expect, test as base } from './app.ts';
 
 /** A stand-in token, never a real one. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
@@ -171,8 +171,7 @@ test('the account stays across a restart, and removing it removes its token', as
     chromiumSandbox: true,
   });
   try {
-    const shown = await again.firstWindow();
-    await shown.waitForLoadState('load');
+    const shown = await drawnWindow(again);
     await listed(shown);
     const opened = await again.evaluate(
       ({ safeStorage }, base64) => safeStorage.decryptStringAsync(Buffer.from(base64, 'base64')),
@@ -266,8 +265,7 @@ test("Lo follows GitHub's redirect itself, sending the token only to GitHub's AP
     chromiumSandbox: true,
   });
   try {
-    const page = await app.firstWindow();
-    await page.waitForLoadState('load');
+    const page = await drawnWindow(app);
     await listed(page);
     expect(asked).toEqual([
       { path: '/api/user', token: true, cookie: false },

@@ -15,7 +15,15 @@ import { _electron as electron, type Page } from '@playwright/test';
 
 import type { CodeReply, OverviewFile, OverviewState } from '../src/features/overview/contract.ts';
 import type { CheckInput, Parsed } from '../src/features/overview/jobs.ts';
-import { appEnvironment, appFolder, dataFolder, expect, KEYCHAIN, test as base } from './app.ts';
+import {
+  appEnvironment,
+  appFolder,
+  dataFolder,
+  drawnWindow,
+  expect,
+  KEYCHAIN,
+  test as base,
+} from './app.ts';
 import { catchPorts } from './ports.ts';
 
 /** A stand-in token, never a real one: the cassette was recorded with the same. */
@@ -324,8 +332,7 @@ test('shows the overview it kept at once the next time, with GitHub out of reach
     chromiumSandbox: true,
   });
   try {
-    const shown = await again.firstWindow();
-    await shown.waitForLoadState('load');
+    const shown = await drawnWindow(again);
     await expect
       .poll(() => current(shown, id), { timeout: 20_000 })
       .toMatchObject({ ...READ, found: 'unknown', saved: true });
