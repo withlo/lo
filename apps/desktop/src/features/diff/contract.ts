@@ -80,21 +80,27 @@ export const sinceKey = z.string().min(1).max(1024);
 
 /**
  * A pull request's tab's diff, each time it changes: the head it's of, which is the head on
- * screen, or the newer revision of the two compared, named by `comparison`; which files show from
- * where they left off, named by `since`, which changes their versions but not the list; where its
- * files came from, and the files, in git's order, none until they're known. `partial` when GitHub
- * listed only some of them. `problem` says what couldn't be read, and `waiting` what the diff waits
- * for before anything is drawn: a comparison of revisions the local copy doesn't have yet.
+ * screen, or the newer revision of the two compared, named by `comparison`; for the whole pull
+ * request of a stack's layer, the commit it's compared with, `compareFrom`, which another starts
+ * anew; which files show from where they left off, named by `since`, which changes their versions
+ * but not the list; where its files came from, and the files, in git's order, none until they're
+ * known. `partial` when GitHub listed only some of them, and `uncompared` when GitHub couldn't
+ * compare a stack's layer with `compareFrom`, so its files from GitHub are the pull request's own,
+ * the layers below included. `problem` says what couldn't be read, and
+ * `waiting` what the diff waits for before anything is drawn: a comparison of revisions the local
+ * copy doesn't have yet.
  */
 export const diffState = z.strictObject({
   id: tabId,
   at: oid.nullable(),
   comparison: comparisonKey.nullable(),
+  compareFrom: oid.nullable(),
   since: sinceKey.nullable(),
   waiting: z.string().nullable(),
   from: source.nullable(),
   files: z.array(fileVersions).nullable(),
   partial: z.boolean(),
+  uncompared: z.boolean(),
   problem: z.string().nullable(),
 });
 export type DiffState = z.output<typeof diffState>;
@@ -133,16 +139,18 @@ export const contract = defineContract('diff', {
     /** What main has of a pull request's tab's diff now, which `state` then keeps up to date. */
     versions: { input: z.strictObject({ id: tabId }), reply: reply<DiffState | undefined>() },
     /**
-     * The texts of files of the diff at `at`, of `comparison`, with `since`'s files from where they
-     * left off, from `from`, by their places in its list, in the order asked: both sides from the
-     * local copy, downloading those it lacks first, or GitHub's patches. Fails as `moved` once the
-     * diff is of another head, comparison, set of such files or source.
+     * The texts of files of the diff at `at`, of `comparison`, compared with `compareFrom`, with
+     * `since`'s files from where they left off, from `from`, by their places in its list, in the
+     * order asked: both sides from the local copy, downloading those it lacks first, or GitHub's
+     * patches. Fails as `moved` once the diff is of another head, comparison, start, set of such
+     * files or source.
      */
     texts: {
       input: z.strictObject({
         id: tabId,
         at: oid,
         comparison: comparisonKey.nullable(),
+        compareFrom: oid.nullable(),
         since: sinceKey.nullable(),
         from: source,
         files: z.array(z.number().int().nonnegative()).min(1).max(TEXTS_LIMIT),
@@ -162,10 +170,14 @@ export const contract = defineContract('diff', {
       reply: reply<WholeText>(),
     },
     /**
-     * The window drew the diff at `at`: from now on that head stays on screen until the reader
-     * loads a newer one, even if Lo took it from what it saved before GitHub answered.
+     * The window drew the diff at `at`, compared with `compareFrom`: from now on that head stays on
+     * screen until the reader loads a newer one, even if Lo took it from what it saved before GitHub
+     * answered, and where it starts until the reader asks for another start.
      */
-    drawn: { input: z.strictObject({ id: tabId, at: oid }), reply: reply<void>() },
+    drawn: {
+      input: z.strictObject({ id: tabId, at: oid, compareFrom: oid.nullable() }),
+      reply: reply<void>(),
+    },
   },
   topics: {
     /** A pull request's tab's diff, each time it changes. */

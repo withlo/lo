@@ -28,6 +28,7 @@ export interface LoaderWork {
   texts(input: {
     at: string;
     comparison: string | null;
+    compareFrom: string | null;
     since: string | null;
     from: Source;
     files: number[];
@@ -98,6 +99,8 @@ export interface Ready {
   readonly at: string;
   /** The two revisions compared, by key, when it isn't the whole pull request. */
   readonly comparison: string | null;
+  /** The commit a stack's layer is compared with, when it's that. */
+  readonly compareFrom: string | null;
   readonly from: Source;
   readonly entries: readonly Entry[];
 }
@@ -135,12 +138,13 @@ export function keyOf(versions: FileVersions): string {
 }
 
 /**
- * What's being loaded: of one head, in one comparison, with one set of files shown from where the
- * reader left off, from one source.
+ * What's being loaded: of one head, in one comparison, from one start, with one set of files shown
+ * from where the reader left off, from one source.
  */
 interface Run {
   readonly at: string;
   readonly comparison: string | null;
+  readonly compareFrom: string | null;
   readonly since: string | null;
   readonly from: Source;
   readonly entries: readonly Entry[];
@@ -164,12 +168,13 @@ interface Run {
 }
 
 /**
- * A run of `entries`, at a head, in a comparison, with `since`'s files from where they left off,
- * from a source, loading `shown`'s lines too, or only `only`'s.
+ * A run of `entries`, at a head, in a comparison, from a start, with `since`'s files from where they
+ * left off, from a source, loading `shown`'s lines too, or only `only`'s.
  */
 function runOf(
   at: string,
   comparison: string | null,
+  compareFrom: string | null,
   since: string | null,
   from: Source,
   entries: readonly Entry[],
@@ -180,6 +185,7 @@ function runOf(
   return {
     at,
     comparison,
+    compareFrom,
     since,
     from,
     entries,
@@ -280,8 +286,16 @@ export class Loader {
   /** Takes what main says of the diff. */
   take(state: DiffState): void {
     this.#state = state;
-    const { at, comparison } = state;
-    if (at === null || this.#run?.at !== at || this.#run.comparison !== comparison) this.#reset();
+    const { at, comparison, compareFrom } = state;
+    const run = this.#run;
+    if (
+      at === null ||
+      run?.at !== at ||
+      run.comparison !== comparison ||
+      run.compareFrom !== compareFrom
+    ) {
+      this.#reset();
+    }
     this.#startIfDue();
     this.#changed();
   }
@@ -290,16 +304,17 @@ export class Loader {
   #startIfDue(): void {
     const state = this.#state;
     if (!state || !this.#whitespaceKnown) return;
-    const { at, comparison, since, from, files } = state;
+    const { at, comparison, compareFrom, since, from, files } = state;
     if (at === null || from === null || files === null) return;
     const run = this.#run;
     if (
       run?.from !== from ||
       run.at !== at ||
       run.comparison !== comparison ||
+      run.compareFrom !== compareFrom ||
       run.since !== since
     ) {
-      this.#start(at, comparison, since, from, files);
+      this.#start(at, comparison, compareFrom, since, from, files);
     }
   }
 
@@ -394,6 +409,7 @@ export class Loader {
   #start(
     at: string,
     comparison: string | null,
+    compareFrom: string | null,
     since: string | null,
     from: Source,
     files: readonly FileVersions[],
@@ -414,6 +430,7 @@ export class Loader {
       ready !== undefined &&
       ready.at === at &&
       ready.comparison === comparison &&
+      ready.compareFrom === compareFrom &&
       ready.entries.length === entries.length &&
       entries.every((entry) => drawn.has(entry.id));
     // A file the view shows lines of gets the local copy's, however it starts out now.
@@ -426,10 +443,10 @@ export class Loader {
       inPlace && previous?.done === true && previous.from === from && previous.at === at
         ? changedEntries(previous.entries, entries)
         : undefined;
-    const run = runOf(at, comparison, since, from, entries, shown, only);
+    const run = runOf(at, comparison, compareFrom, since, from, entries, shown, only);
     this.#run = run;
     this.#failed.clear();
-    if (inPlace) this.#ready = { at, comparison, from, entries };
+    if (inPlace) this.#ready = { at, comparison, compareFrom, from, entries };
     void this.#load(run).catch((error: unknown) => {
       if (!run.stopped) this.#work.log('Lo couldn’t load the diff:', error);
     });
@@ -535,6 +552,7 @@ export class Loader {
     const texts = await this.#work.texts({
       at: run.at,
       comparison: run.comparison,
+      compareFrom: run.compareFrom,
       since: run.since,
       from: run.from,
       files: batch.map((entry) => entry.place),
@@ -627,6 +645,7 @@ export class Loader {
       this.#ready = {
         at: run.at,
         comparison: run.comparison,
+        compareFrom: run.compareFrom,
         from: run.from,
         entries: run.entries,
       };
@@ -718,6 +737,7 @@ export class Loader {
       const texts = await this.#work.texts({
         at: run.at,
         comparison: run.comparison,
+        compareFrom: run.compareFrom,
         since: run.since,
         from: run.from,
         files: batch.map((entry) => entry.place),
@@ -756,10 +776,15 @@ export class Loader {
     if (!run.stopped) await this.#findMoves(run);
   }
 
-  /** Whether what's drawn is `run`'s files: the same head, comparison and source. */
+  /** Whether what's drawn is `run`'s files: the same head, comparison, start and source. */
   #drawing(run: Run): boolean {
     const ready = this.#ready;
-    return ready?.at === run.at && ready.comparison === run.comparison && ready.from === run.from;
+    return (
+      ready?.at === run.at &&
+      ready.comparison === run.comparison &&
+      ready.compareFrom === run.compareFrom &&
+      ready.from === run.from
+    );
   }
 
   #changed(): void {

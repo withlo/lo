@@ -144,10 +144,18 @@ export function quickDiff(texts: { old: string | null; new: string | null }) {
  * Holds the code of `path` at `commit`, in tab `tab`, for a block: read and diffed once for every
  * block that holds it at the same time, or that comes soon after. A small file is diffed here when
  * it's `quick`, as for a block on an overview on screen; one kept behind another view leaves it to
- * the diff's job. Each hold is let go once.
+ * the diff's job. `from` is the commit a stack's layer's diff starts from, as the local copy last
+ * said, which the code's base side starts from too: another reads it again. Each hold is let go
+ * once.
  */
-export function holdFile(tab: string, commit: string, path: string, quick = true): FileHold {
-  const key = `${tab}\n${commit}\n${path}`;
+export function holdFile(
+  tab: string,
+  commit: string,
+  path: string,
+  quick = true,
+  from = '',
+): FileHold {
+  const key = `${tab}\n${commit}\n${path}\n${from}`;
   let entry = entries.get(key);
   if (entry) {
     idle.delete(entry);

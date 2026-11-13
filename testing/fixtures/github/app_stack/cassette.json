@@ -1,5 +1,5 @@
 {
-  "description": "What Lo reads from GitHub for the stacks testing/fixtures/stack.sh makes in rozed-dev/e2e, recorded from the app: #84, in a stack of #82, #83, #84 and #85 found by base branch and shared commits, with the merged pull requests the repository's stacks link through and the layers' state; #87, alone on #86, which was squash-merged; and #89, on #88 in GitHub stack #90, with the layers' state.",
-  "recorded_at": "2026-11-13T01:33:16Z",
+  "description": "What Lo reads from GitHub for the stacks testing/fixtures/stack.sh makes in rozed-dev/e2e, recorded from the app: #84, in a stack of #82, #83, #84 and #85 found by base branch and shared commits, with the merged pull requests the repository's stacks link through, the layers' state, and GitHub's comparison of #84's head with #83's; #82, the stack's bottom; #87, alone on #86, which was squash-merged; and #89, on #88 in GitHub stack #90, with the layers' state.",
+  "recorded_at": "2026-11-13T03:58:37Z",
   "repo": "rozed-dev/e2e"
 }

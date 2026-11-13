@@ -67,11 +67,11 @@ export default defineFeature(contract, {
   uses: [tabs, github, settings, comparisons],
   handlers: {
     versions: ({ id }) => diffs.get(id)?.state(),
-    texts: ({ id, at, comparison, since, from, files }) =>
-      diffOf(id).texts(at, comparison, since, from, files),
+    texts: ({ id, at, comparison, compareFrom, since, from, files }) =>
+      diffOf(id).texts(at, comparison, compareFrom, since, from, files),
     whole: ({ id, at, version, path, large }) => diffOf(id).whole(at, version, path, large),
-    drawn({ id, at }) {
-      diffOf(id).drawn(at);
+    drawn({ id, at, compareFrom }) {
+      diffOf(id).drawn(at, compareFrom);
     },
   },
   start(context) {

@@ -1,0 +1,59 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "StackLayers",
+    "variables": {
+      "ids": [
+        "PR_kwDOVleUfc8AAAABOzOI9A"
+      ]
+    },
+    "query_sha256": "f9c380a8f0858512aa296fa8f436a8ee18a78ee11b5fa3d1112439b166df6cc1"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4971",
+      "x-ratelimit-reset": "1794545331",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "29"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4971,
+          "used": 29,
+          "resetAt": "2026-11-13T04:48:51Z"
+        },
+        "nodes": [
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOVleUfc8AAAABOzOI9A",
+            "number": 87,
+            "state": "OPEN",
+            "headRefOid": "b0e71e0b3274ad2bba7ddd21c6bcf04810d056f2",
+            "reviewDecision": null,
+            "statusCheckRollup": null,
+            "isInMergeQueue": false,
+            "mergeQueueEntry": null,
+            "files": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            },
+            "movedFrom": {
+              "nodes": []
+            }
+          }
+        ]
+      }
+    }
+  }
+}

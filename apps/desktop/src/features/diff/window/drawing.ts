@@ -208,6 +208,8 @@ export interface DrawOptions {
   loader: Loader;
   entries: readonly Entry[];
   at: string;
+  /** The commit a stack's layer is compared with, when it's that. */
+  compareFrom: string | null;
   layout: 'split' | 'inline';
   nonce: string;
   packaged: boolean;
@@ -230,7 +232,7 @@ let draws = 0;
 /** Draws the view of `entries`, fills in what's been worked out, and hooks it up. */
 export function draw(options: DrawOptions): Drawing {
   draws += 1;
-  const { parent, tab, loader, entries, at } = options;
+  const { parent, tab, loader, entries, at, compareFrom } = options;
   const keys = registry();
   let marks = options.marks;
   /** The files as they are now, as `update` last gave them. */
@@ -644,9 +646,10 @@ export function draw(options: DrawOptions): Drawing {
     if (!(before.cursorAt && view.scrollTo(before.cursorAt))) view.scrollTo(before.viewport);
   }
   setShown(options.shown);
-  // The diff at this head is on screen: it stays, until the reader loads a newer push.
+  // The diff at this head is on screen: it stays, until the reader loads a newer push, and so does
+  // where it starts, until the reader asks for another start.
   main()
-    .drawn({ id: tab.id, at })
+    .drawn({ id: tab.id, at, compareFrom })
     .catch((error: unknown) => console.error("Lo couldn't say the diff was drawn:", error));
   const headers = new Map(files.map((file) => [file.id, JSON.stringify(file.header)]));
   /** Takes the files as they are now, with their marks: headers, and how each starts out. */

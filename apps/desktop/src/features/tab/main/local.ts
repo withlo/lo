@@ -1,6 +1,8 @@
 // A pull request's local copy, as its tab keeps it: the clone opened with the tab's account's token,
 // the pull request fetched into it with what git is doing, failures said and tried again, and the
-// head on screen with the base branch's tip it was fetched with. Nothing here calls Electron.
+// head on screen with the base branch's tip it was fetched with, and where its changes start: where
+// it branched off the base branch, or, for a stack's layer, where it meets the commit it's compared
+// with. Nothing here calls Electron.
 
 import {
   type Activity,
@@ -15,7 +17,7 @@ import {
   type TokenSource,
 } from '@lo/git';
 
-import type { FetchFailure, LocalState } from '../contract.ts';
+import type { Compared, FetchFailure, LocalState } from '../contract.ts';
 
 /** The first wait before trying a failed fetch again, in milliseconds. */
 export const FIRST_RETRY = 5_000;
@@ -144,6 +146,7 @@ export type Clone = Pick<
   | 'branchBase'
   | 'hasCommit'
   | 'mergeBase'
+  | 'isAncestor'
   | 'offline'
   | 'close'
 >;
@@ -166,6 +169,8 @@ export interface LocalCopyOptions<R extends Clone = Repo> {
   readonly number: number;
   /** The tab's account's token, read as each fetch starts, or none for a public repository. */
   readonly token?: TokenSource | undefined;
+  /** The commit a stack's layer is compared with, as {@link LocalCopy.compareFrom} sets it. */
+  readonly from?: string | undefined;
   /**
    * Hears the state each time it changes, but for what git is doing, which it hears at most every
    * {@link PROGRESS_EVERY} milliseconds, with the latest.
@@ -174,11 +179,15 @@ export interface LocalCopyOptions<R extends Clone = Repo> {
   readonly log: (line: string) => void;
 }
 
-/** The head on screen, ready to read: with the base branch's tip it was fetched with. */
+/**
+ * The head on screen, ready to read: with the base branch's tip it was fetched with, and where its
+ * changes start, worked out with the commit it's compared with, if any.
+ */
 interface Ready {
   readonly head: Oid;
   readonly base: Oid;
   readonly mergeBase: Oid | undefined;
+  readonly from: Compared | undefined;
 }
 
 /** What fetching is doing, while the head on screen isn't ready. */
@@ -202,6 +211,8 @@ export class LocalCopy<R extends Clone = Repo> {
   #fetched: PullRequestRefs | undefined;
   /** The head on screen. */
   #shown: Oid | undefined;
+  /** The commit a stack's layer is compared with, if it isn't compared with its base branch. */
+  #from: Oid | undefined;
   /** The base branch's tip each head was fetched with, while Lo runs. */
   readonly #bases = new Map<Oid, Oid>();
   #ready: Ready | undefined;
@@ -231,6 +242,7 @@ export class LocalCopy<R extends Clone = Repo> {
 
   constructor(options: LocalCopyOptions<R>) {
     this.#options = options;
+    if (options.from !== undefined) this.#from = parseOid(options.from);
     this.#state = this.#current();
   }
 
@@ -251,6 +263,7 @@ export class LocalCopy<R extends Clone = Repo> {
         head: ready.head,
         base: ready.base,
         mergeBase: ready.mergeBase ?? null,
+        ...(ready.from === undefined ? {} : { from: ready.from }),
         // What an earlier fetch brought, since the last fetch failed.
         offline: this.#failures > 0,
       };
@@ -309,6 +322,19 @@ export class LocalCopy<R extends Clone = Repo> {
     this.#shown = oid;
     this.#ready = undefined;
     this.#changed();
+    void this.#settle();
+  }
+
+  /**
+   * Compares the head on screen with `commit`, a stack's layer's start, or with its base branch for
+   * nothing: its changes start where the head and the commit meet, never before where it branched
+   * off its base branch. The commit is fetched by its ID if the copy lacks it. The head stays ready
+   * meanwhile, said with what it was compared with until then.
+   */
+  compareFrom(commit: string | undefined): void {
+    const oid = commit === undefined ? undefined : parseOid(commit);
+    if (this.#closed || this.#from === oid) return;
+    this.#from = oid;
     void this.#settle();
   }
 
@@ -477,12 +503,57 @@ export class LocalCopy<R extends Clone = Repo> {
           mergeBase = await opened.mergeBase(head, githubBase);
         }
       }
-      if (this.#closed || this.#shown !== head) return;
-      this.#ready = { head, base, mergeBase };
+      const from = this.#from;
+      let compared: Compared | undefined;
+      if (from !== undefined) {
+        const branched = mergeBase;
+        try {
+          const has = await this.#have(opened, from);
+          compared = { commit: from, missing: !has };
+          if (has) mergeBase = await this.#meet(opened, head, from, branched);
+        } catch (error) {
+          // Ready all the same, from where the head branched, so what waits for it doesn't wait on.
+          this.#options.log(`comparing ${this.#name()} with ${from}: ${failureOf(error).message}`);
+          compared = { commit: from, missing: true };
+          mergeBase = branched;
+        }
+      }
+      if (this.#closed || this.#shown !== head || this.#from !== from) return;
+      this.#ready = { head, base, mergeBase, from: compared };
     } catch (error) {
       this.#options.log(`reading ${this.#name()}: ${failureOf(error).message}`);
     }
     this.#changed();
+  }
+
+  /** Whether the clone has commit `oid`, fetched by its ID if it lacked it. */
+  async #have(opened: R, oid: Oid): Promise<boolean> {
+    if (await opened.hasCommit(oid)) return true;
+    if (opened.offline) return false;
+    try {
+      await opened.fetchCommit(oid);
+    } catch (error) {
+      this.#options.log(`fetching ${oid}, which it's compared with: ${failureOf(error).message}`);
+    }
+    return opened.hasCommit(oid);
+  }
+
+  /**
+   * Where `head` meets `from`, the commit its stack's layer is compared with: `from` itself when the
+   * head holds it. A meeting before `branched`, where the head branched off its base branch, would
+   * show what the base branch had then as the layer's own, so the changes start at `branched`
+   * instead.
+   */
+  async #meet(
+    opened: R,
+    head: Oid,
+    from: Oid,
+    branched: Oid | undefined,
+  ): Promise<Oid | undefined> {
+    const met = await opened.mergeBase(head, from);
+    if (met === undefined) return branched;
+    if (branched === undefined || met === branched) return met;
+    return (await opened.isAncestor(met, branched)) ? branched : met;
   }
 
   #name(): string {

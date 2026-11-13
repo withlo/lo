@@ -1,0 +1,118 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequestRevisions",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 84,
+      "login": "rozed-bot",
+      "first": 100,
+      "timelineAfter": null,
+      "reviewsAfter": null
+    },
+    "query_sha256": "065c99fee8328c49a803d6cddb6df548ac41ab8bf293abd452d6644e04e9e1da"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4867",
+      "x-ratelimit-reset": "1794545327",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "133"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4867,
+          "used": 133,
+          "resetAt": "2026-11-13T04:48:47Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "createdAt": "2026-11-13T01:17:35Z",
+            "closed": false,
+            "closedAt": null,
+            "merged": false,
+            "headRefName": "stack/c",
+            "headRefOid": "f9db1743681826e72f3b31e3d9967d28a55af20d",
+            "baseRefName": "stack/root",
+            "headRepository": {
+              "name": "e2e",
+              "owner": {
+                "__typename": "Organization",
+                "login": "rozed-dev"
+              }
+            },
+            "mergeCommit": null,
+            "timelineItems": {
+              "filteredCount": 2,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "Y3Vyc29yOnYyOpPPAAABodLKLqABqzM1OTg2NTQ3ODcw"
+              },
+              "nodes": [
+                {
+                  "__typename": "BaseRefChangedEvent",
+                  "createdAt": "2026-11-13T02:42:19Z",
+                  "previousRefName": "stack/root",
+                  "currentRefName": "stack/b"
+                },
+                {
+                  "__typename": "BaseRefChangedEvent",
+                  "createdAt": "2026-11-13T02:43:48Z",
+                  "previousRefName": "stack/b",
+                  "currentRefName": "stack/root"
+                }
+              ]
+            },
+            "reviews": {
+              "totalCount": 0,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": null
+              },
+              "nodes": []
+            },
+            "viewerLastReview": {
+              "nodes": []
+            },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "oid": "59b27c734c12089f5a795fe1f30bb1b5cad89650",
+                    "checkSuites": {
+                      "nodes": []
+                    }
+                  }
+                },
+                {
+                  "commit": {
+                    "oid": "57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1",
+                    "checkSuites": {
+                      "nodes": []
+                    }
+                  }
+                },
+                {
+                  "commit": {
+                    "oid": "f9db1743681826e72f3b31e3d9967d28a55af20d",
+                    "checkSuites": {
+                      "nodes": []
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

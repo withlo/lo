@@ -315,13 +315,23 @@ export const fetchFailure = z.enum([
 export type FetchFailure = z.output<typeof fetchFailure>;
 
 /**
+ * The commit a stack's layer is compared from, as the local copy worked out where its changes start:
+ * `missing` when the copy couldn't get it, as when GitHub no longer has it, so they start where the
+ * head branched off its base branch, as GitHub's own diff of the pull request does.
+ */
+export const compared = z.strictObject({ commit: oid, missing: z.boolean() });
+export type Compared = z.output<typeof compared>;
+
+/**
  * A tab's local copy of its pull request, sent each time it changes:
  *
  * - `waiting` until Lo knows what to fetch and has git;
  * - `noGit` when Lo has no git new enough, with what it found and how to install one;
  * - `fetching`, with what git is doing, on the `attempt`th try;
  * - `ready`, with the head on screen, the base branch's tip it was fetched with, and where the
- *   two branched; `offline` when GitHub couldn't be reached, so it's what was fetched before;
+ *   pull request's changes start: where the two branched, or, for a stack's layer the stacks
+ *   feature compares with another commit, `from`, where the head and that commit meet;
+ *   `offline` when GitHub couldn't be reached, so it's what was fetched before;
  * - `retrying` after a failure Lo tries again after by itself, at `retryAt`;
  * - `failed` after one it doesn't, until asked to try again.
  */
@@ -338,6 +348,7 @@ export const localState = z.discriminatedUnion('kind', [
     head: oid,
     base: oid,
     mergeBase: oid.nullable(),
+    from: compared.optional(),
     offline: z.boolean(),
   }),
   z.strictObject({

@@ -39,7 +39,7 @@ function input(found: Recorded, number: number, more: Partial<ViewInput> = {}): 
 
 /** A stack's rows, checked as the window would take them. */
 function rowsOf(view: StackView): Row[] {
-  stackSchema.parse({ id: 't1', stack: view });
+  stackSchema.parse({ id: 't1', stack: view, offer: null });
   if (view.kind !== 'stack') throw new Error(`no stack: ${view.kind}`);
   return view.rows;
 }
@@ -104,8 +104,8 @@ describe("a tab's stack", () => {
 
   it('shows none for a pull request on its own, which reads no layers', async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
-    // #11 sits alone on the branch its squash-merged layer went into.
-    expect(viewOf(input(found, 11))).toEqual({ view: { kind: 'none' }, shown: undefined, ids: [] });
+    // #19 sits alone on its base branch.
+    expect(viewOf(input(found, 19))).toEqual({ view: { kind: 'none' }, shown: undefined, ids: [] });
     const gh = await recorded('stacks_gh_stack', new RepoRef('github', 'gh-stack'));
     const [first] = gh.list.pullRequests;
     if (!first) throw new Error('no pull requests');
@@ -209,10 +209,22 @@ describe("the app's stacks", () => {
     expect(ids).toEqual(idsOf(found.list, [82, 83, 84, 85]));
   });
 
-  it('show none for #E, alone on #M, which was squash-merged', async () => {
+  it('show #E alone, on #M, which was squash-merged, with why its diff hides #M’s changes', async () => {
     const found = await recorded('app_stack', E2E);
     expect(forestOf(found).layers[87]?.needsRebase).toMatchObject({ merged: 86 });
-    expect(viewOf(input(found, 87)).view).toEqual({ kind: 'none' });
+    const { view, ids } = viewOf(input(found, 87));
+    expect(brief(view)).toEqual(['#87 current needs rebase']);
+    expect(view).toMatchObject({
+      root: 'stack/mroot',
+      head: '1 layer',
+      notes: [
+        {
+          kind: 'needsRebase',
+          text: "#87 needs a rebase. #86 was squash-merged, so its changes are hidden here, and #87 is compared with #86's last commit.",
+        },
+      ],
+    });
+    expect(ids).toEqual(idsOf(found.list, [87]));
   });
 
   it('say #G1 and #G2 are a GitHub stack', async () => {

@@ -1,6 +1,8 @@
 // A pull request's tab's tree in main: the repository's files at the head on screen, and the files
 // the pull request changes. Both come from the local copy once it's ready, and from GitHub's API
-// until then; what the copy says replaces what GitHub said. Nothing here calls Electron.
+// until then; what the copy says replaces what GitHub said. A stack's layer compared with the layer
+// below it marks the files GitHub's comparison with that layer lists, until then. Nothing here calls
+// Electron.
 
 import {
   changedPath,
@@ -16,7 +18,9 @@ import {
   type GithubClient,
   MAX_FILES,
   MAX_PAGES,
+  type PullFile,
   PullRef,
+  readComparison,
   readPullFiles,
   RepoRef,
   repoTree,
@@ -82,6 +86,10 @@ interface At {
   readonly head: Oid;
   /** The two revisions compared, when it isn't the whole pull request: `head` is the newer's. */
   readonly comparing: Comparing | undefined;
+  /** The commit the whole pull request is compared with, for a stack's layer. */
+  readonly compareFrom: Oid | undefined;
+  /** Whether GitHub couldn't compare the head with `compareFrom`, so it isn't asked again. */
+  uncompared: boolean;
   /** The files that changed between them, once they're known. */
   compared: Changed[] | undefined;
   files: Files | undefined;
@@ -175,7 +183,8 @@ export class TreeTab {
    * Follows the tab as it is now, and what it compares: a new head on screen starts the tree again,
    * a local copy ready at it reads the tree from there, and until then GitHub's API does. Two
    * revisions compared are read from the local copy, at the newer, with the files that changed
-   * between them; the tree already listed at that commit stays.
+   * between them; the tree already listed at that commit stays. So it does when a stack's layer is
+   * compared with another commit, which marks the files changed since then.
    */
   update(info: PullTabInfo, screen: OnScreen = this.#screen): void {
     if (this.#closed) return;
@@ -183,21 +192,35 @@ export class TreeTab {
     this.#screen = screen;
     const comparing = screen.kind === 'revisions' ? screen.comparing : undefined;
     let head: Oid;
+    let compareFrom: Oid | undefined;
     try {
       if (comparing) head = comparing.new.head;
       else if (info.shown === undefined) return;
       else head = parseOid(info.shown);
+      if (!comparing && info.compareFrom !== undefined) compareFrom = parseOid(info.compareFrom);
     } catch {
       return;
     }
     const before = this.#at;
-    if (before?.head !== head || before.comparing?.key !== comparing?.key) {
+    if (
+      before?.head !== head ||
+      before.comparing?.key !== comparing?.key ||
+      before.compareFrom !== compareFrom
+    ) {
       if (before) this.#stopRetries(before);
-      // The same commit's files, listed from the local copy, stay.
-      const kept = before?.head === head && before.from === 'local' ? before : undefined;
+      // The same commit's files, listed from the local copy, stay, and so do GitHub's when only
+      // what the layer is compared with changed.
+      const kept =
+        before?.head === head &&
+        (before.from === 'local' ||
+          (before.from !== undefined && before.comparing?.key === comparing?.key))
+          ? before
+          : undefined;
       this.#at = {
         head,
         comparing,
+        compareFrom,
+        uncompared: false,
         compared: undefined,
         files: kept?.files,
         listing: kept?.listing ?? { kind: 'loading' },
@@ -225,7 +248,9 @@ export class TreeTab {
     }
     const { local } = info;
     if (local.kind === 'ready' && local.head === head) {
-      if (!at.started.has('local')) {
+      // Until the copy has worked out where the head meets the commit it's compared with now, it
+      // will soon: GitHub isn't asked meanwhile.
+      if (local.from?.commit === compareFrom && !at.started.has('local')) {
         at.started.add('local');
         void this.#fromLocal(at, local.mergeBase === null ? undefined : parseOid(local.mergeBase));
       }
@@ -467,15 +492,7 @@ export class TreeTab {
       at.from === undefined
         ? reads.github(acting, (client) => repoTree(client, repository, at.head))
         : Promise.resolve(undefined),
-      at.changesFrom === undefined
-        ? reads.github(acting, (client) =>
-            readPullFiles(client, pull, {
-              maxPages: MAX_PAGES,
-              // Without an account, GitHub allows 60 requests an hour, and nothing else polls.
-              keepRequests: acting.kind === 'anonymous' ? KEEP_ANONYMOUS : KEEP_REQUESTS,
-            }),
-          )
-        : Promise.resolve(undefined),
+      at.changesFrom === undefined ? this.#changedOnGithub(at, acting, pull) : undefined,
     ]);
     if (!this.#current(at)) return;
     let failed = false;
@@ -517,7 +534,7 @@ export class TreeTab {
         if (listedAt(listed.files, at.head)) {
           at.changes = listed.files.map(githubChanged);
           at.changesFrom = 'github';
-          at.partial = listed.cutShort !== undefined || listed.files.length >= MAX_FILES;
+          at.partial = listed.partial;
           if (
             at.problem?.startsWith('Lo couldn’t read the changed files from GitHub') ||
             at.problem?.startsWith(SIGNED_OUT)
@@ -537,6 +554,51 @@ export class TreeTab {
     if (failed) this.#retry(at, 'github');
     else at.failures.github = 0;
     this.#publish();
+  }
+
+  /**
+   * The files `at`'s pull request changes, as GitHub lists them: for a stack's layer compared with
+   * another commit, those GitHub's comparison with it lists, or the pull request's own once GitHub
+   * couldn't compare them, as when it no longer has the commit, as the local copy does then.
+   * Nothing once `at` is no longer the tree on screen when the request's turn comes.
+   */
+  async #changedOnGithub(
+    at: At,
+    acting: Acting,
+    pull: PullRef,
+  ): Promise<{ files: readonly PullFile[]; partial: boolean } | undefined> {
+    const { reads } = this.#options;
+    const { compareFrom } = at;
+    if (compareFrom !== undefined && !at.uncompared) {
+      try {
+        const compared = await reads.github(acting, (client) =>
+          this.#current(at)
+            ? readComparison(client, pull.repo, compareFrom, at.head, undefined)
+            : Promise.resolve(undefined),
+        );
+        return compared && { files: compared.files, partial: compared.capped };
+      } catch (error) {
+        this.#options.log(
+          `GitHub couldn't compare ${compareFrom} with the head: ${describe(error)}`,
+        );
+        at.uncompared = true;
+      }
+    }
+    const listed = await reads.github(acting, (client) =>
+      this.#current(at)
+        ? readPullFiles(client, pull, {
+            maxPages: MAX_PAGES,
+            // Without an account, GitHub allows 60 requests an hour, and nothing else polls.
+            keepRequests: acting.kind === 'anonymous' ? KEEP_ANONYMOUS : KEEP_REQUESTS,
+          })
+        : Promise.resolve(undefined),
+    );
+    return (
+      listed && {
+        files: listed.files,
+        partial: listed.cutShort !== undefined || listed.files.length >= MAX_FILES,
+      }
+    );
   }
 
   #publish(): void {

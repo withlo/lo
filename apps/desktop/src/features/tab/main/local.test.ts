@@ -11,7 +11,7 @@ import {
   parseOid,
   type PullRequestRefs,
 } from '@lo/git';
-import { APP_PULL, git, writeAppRemote } from '@lo/testing/git';
+import { APP_PULL, git, STACK_PULLS, writeAppRemote, writeStackRemote } from '@lo/testing/git';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { LocalGit } from '../../../main/git.ts';
@@ -35,14 +35,21 @@ const REFS: PullRequestRefs = {
   base: parseOid(APP_PULL.base),
 };
 
-/** A local copy of the e2e pull request in `git`'s cache, with what it says collected. */
-function copyIn<R extends Clone>(localGit: CopyGit<R>, token?: () => Promise<string | undefined>) {
+/**
+ * A local copy of the e2e pull request, or the pull request numbered `number`, in `git`'s cache,
+ * with what it says collected.
+ */
+function copyIn<R extends Clone>(
+  localGit: CopyGit<R>,
+  token?: () => Promise<string | undefined>,
+  number: number = APP_PULL.number,
+) {
   const states: LocalState[] = [];
   const lines: string[] = [];
   const local = new LocalCopy({
     git: localGit,
     repository: { owner: 'rozed-dev', name: 'e2e' },
-    number: APP_PULL.number,
+    number,
     token,
     changed: (state) => states.push(state),
     log: (line) => lines.push(line),
@@ -66,6 +73,7 @@ function fakeGit() {
     branchBase: () => Promise.resolve(undefined),
     hasCommit: () => Promise.resolve(true),
     mergeBase: () => branched.promise,
+    isAncestor: () => Promise.resolve(false),
     close: () => undefined,
   };
   const localGit: CopyGit<Clone> = {
@@ -476,5 +484,97 @@ describe('a local copy', { timeout: 60_000 }, () => {
     local.show(APP_PULL.head);
     local.retry();
     expect(states).toEqual([]);
+  });
+});
+
+describe("a stack's layer's local copy", { timeout: 60_000 }, () => {
+  /** #C, on #B by the commits they share, into `stack/root`. */
+  const C: PullRequestRefs = {
+    number: STACK_PULLS.c.number,
+    head: parseOid(STACK_PULLS.c.head),
+    baseBranch: 'stack/root',
+    base: parseOid(STACK_PULLS.root),
+  };
+
+  /** A local copy of #C fetched from the stacks' remote, `remote`, ready at its head. */
+  async function readyC(remote = writeStackRemote(folder())) {
+    const made = copyIn(await testGit(remote), undefined, C.number);
+    made.local.want(C);
+    made.local.show(STACK_PULLS.c.head);
+    await expect.poll(made.last, { timeout: 40_000 }).toMatchObject({
+      kind: 'ready',
+      mergeBase: STACK_PULLS.root,
+    });
+    return made;
+  }
+
+  it('starts at the commit it’s compared with, which its head holds, and back at its base branch', async () => {
+    const { local, last } = await readyC();
+    local.compareFrom(STACK_PULLS.b.head);
+    await expect.poll(last).toEqual({
+      kind: 'ready',
+      head: STACK_PULLS.c.head,
+      base: STACK_PULLS.root,
+      mergeBase: STACK_PULLS.b.head,
+      from: { commit: STACK_PULLS.b.head, missing: false },
+      offline: false,
+    });
+    local.compareFrom(undefined);
+    await expect.poll(last).toEqual({
+      kind: 'ready',
+      head: STACK_PULLS.c.head,
+      base: STACK_PULLS.root,
+      mergeBase: STACK_PULLS.root,
+      offline: false,
+    });
+    local.close();
+  });
+
+  it('fetches the commit by its ID when the copy lacks it, and starts where the head meets it', async () => {
+    // A commit on #A's head that no branch or pull request holds, which no fetch of #C brings.
+    const remote = writeStackRemote(folder());
+    const bare = join(new URL(remote).pathname, 'rozed-dev', 'e2e.git');
+    const tree = git(bare, 'rev-parse', `${STACK_PULLS.a.head}^{tree}`);
+    const later = git(bare, 'commit-tree', tree, '-p', STACK_PULLS.a.head, '-m', 'later on #A');
+    git(bare, 'update-ref', 'refs/kept/a', later);
+    const { local, last } = await readyC(remote);
+    local.compareFrom(later);
+    await expect.poll(last, { timeout: 40_000 }).toMatchObject({
+      mergeBase: STACK_PULLS.a.head,
+      from: { commit: later, missing: false },
+    });
+    local.close();
+  });
+
+  it('starts at its base branch when GitHub no longer has the commit, and says so', async () => {
+    const { local, last, lines } = await readyC();
+    const gone = 'f'.repeat(40);
+    local.compareFrom(gone);
+    await expect.poll(last, { timeout: 40_000 }).toMatchObject({
+      mergeBase: STACK_PULLS.root,
+      from: { commit: gone, missing: true },
+    });
+    expect(lines.join('\n')).toContain(gone);
+    local.close();
+  });
+
+  it('is compared with the commit it was made with from its first ready', async () => {
+    const localGit = await testGit(writeStackRemote(folder()));
+    const states: LocalState[] = [];
+    const local = new LocalCopy({
+      git: localGit,
+      repository: { owner: 'rozed-dev', name: 'e2e' },
+      number: C.number,
+      from: STACK_PULLS.b.head,
+      changed: (state) => states.push(state),
+      log: () => undefined,
+    });
+    local.want(C);
+    local.show(STACK_PULLS.c.head);
+    await expect.poll(() => states.at(-1)?.kind, { timeout: 40_000 }).toBe('ready');
+    expect(states.filter((state) => state.kind === 'ready')).toEqual([
+      expect.objectContaining({ mergeBase: STACK_PULLS.b.head }),
+    ]);
+    local.close();
   });
 });

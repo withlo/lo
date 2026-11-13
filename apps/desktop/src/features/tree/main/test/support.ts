@@ -122,6 +122,8 @@ export function e2eInfo(
     latest: APP_PULL.head,
     provisional: false,
     local,
+    compareFrom: undefined,
+    drawn: false,
   };
 }
 

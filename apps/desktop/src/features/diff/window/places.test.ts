@@ -75,11 +75,13 @@ function state(files: FileVersions[] | null): DiffState {
     id: 't1',
     at: HEAD,
     comparison: null,
+    compareFrom: null,
     since: null,
     waiting: null,
     from: 'github',
     files,
     partial: false,
+    uncompared: false,
     problem: null,
   };
 }

@@ -1,8 +1,8 @@
 // The stacks pull requests' tabs show, as main follows them: for each repository a tab is in, the
 // stacks among its open pull requests, worked out again when its account's poller lists them anew,
 // reads its rulesets, or reads the merged pull requests below layers GitHub moved; each tab's stack
-// in it; and the state of the layers of the stack on screen, which only its tab reads. Nothing here
-// calls Electron.
+// in it, and where its layer's diff starts; and the state of the layers of the stack on screen,
+// which only its tab reads. Nothing here calls Electron.
 
 import {
   openPullRequest,
@@ -14,11 +14,18 @@ import {
   type StackLayerList,
   type TrunkRuleList,
 } from '@lo/github';
-import { stacksOf, type Stacks } from '@lo/stacks';
+import {
+  stackPullRequests,
+  stacksOf,
+  type LayerStart,
+  type PullRequest,
+  type Stacks,
+} from '@lo/stacks';
 
 import type { PullState } from '../../tab/contract.ts';
-import type { StackState } from '../contract.ts';
+import type { Offer, StackState } from '../contract.ts';
 import type { Found } from './conversion.ts';
+import { planStart, type StartForest } from './starts.ts';
 import { viewOf, type Shown } from './view.ts';
 
 /** A pull request's tab, as the finder follows it. */
@@ -34,6 +41,14 @@ export interface FinderTab {
   readonly state: PullState | undefined;
   /** Whether it's the tab on screen. */
   readonly onScreen: boolean;
+  /** The head on screen, once known. */
+  readonly head: string | undefined;
+  /** The commit its diff starts from now, unless it starts at its base branch. */
+  readonly compareFrom: string | undefined;
+  /** Whether its diff has been drawn since it was last told where to start. */
+  readonly drawn: boolean;
+  /** Whether its local copy couldn't get `compareFrom`, so its diff starts at its base branch. */
+  readonly missing: boolean;
 }
 
 /** What the finder uses of an account's poller. */
@@ -54,6 +69,11 @@ export interface FinderOptions {
   poller(login: string): Promise<FinderPoller>;
   /** Sends a tab's stack to the window. */
   publish(state: StackState): void;
+  /**
+   * Has tab `id`'s diff start from `commit`, or its base branch for nothing, and start again: before
+   * it's drawn, or when the reader asks.
+   */
+  compareFrom(id: string, commit: string | undefined): void;
   log(line: string): void;
 }
 
@@ -69,6 +89,10 @@ interface Followed {
   asked: Asked | undefined;
   /** The layers at newer heads than their state, as `<number>:<head>`, read again for. */
   newer: ReadonlySet<string>;
+  /** The start it set last, which names the layer the diff was compared with. */
+  start: LayerStart | undefined;
+  /** The start its banner offers, if any, and the start the stack says it is. */
+  offered: { readonly offer: Offer; readonly start: LayerStart | undefined } | undefined;
 }
 
 /** The layers a tab asked a poller to read the state of. */
@@ -86,6 +110,8 @@ interface Forest {
   readonly rules: TrunkRuleList;
   readonly more: readonly StackLayerList[];
   readonly stacks: Stacks;
+  /** The pull requests they were found among, as `@lo/stacks` takes them. */
+  readonly prs: readonly PullRequest[];
 }
 
 /** An account's poller, once it's been got, or that it couldn't be. */
@@ -132,6 +158,8 @@ export class StackFinder {
           shown: undefined,
           asked: undefined,
           newer: new Set(),
+          start: undefined,
+          offered: undefined,
         });
         continue;
       }
@@ -154,6 +182,21 @@ export class StackFinder {
   }
 
   /**
+   * Has tab `id`'s layer compared with `commit`, `null` for its base branch, as its banner offers.
+   * Returns false, and does nothing, when that's no longer what's offered.
+   */
+  useStart(id: string, commit: string | null): boolean {
+    const followed = this.#followed.get(id);
+    const offered = followed?.offered;
+    if (!followed || offered?.offer.commit !== commit) return false;
+    followed.offered = undefined;
+    followed.start = commit === null ? undefined : offered.start;
+    // The tab changes, and the stacks are worked out again.
+    this.#options.compareFrom(id, commit ?? undefined);
+    return true;
+  }
+
+  /**
    * What tab `id`'s stack is worked out from now, for making it a GitHub stack: its repository's
    * stacks, the open pull requests they were found among, and its layers' state as last read.
    * Nothing until they're known, and for a tab that acts as nobody.
@@ -165,7 +208,7 @@ export class StackFinder {
     if (entry?.kind !== 'ready') return undefined;
     const { poller } = entry;
     const repo = tab.pull.repo;
-    const forest = this.#forest(poller, repo);
+    const forest = this.#forest(poller, repo)?.stacks;
     const list = poller.openPullRequests(repo)?.value;
     if (!forest || !list) return undefined;
     const layers = poller.cachedRead(tab.pull, STACK_LAYERS)?.value;
@@ -208,43 +251,63 @@ export class StackFinder {
     });
   }
 
-  /** Works every tab's stack out again, sends those that changed, and reads the one on screen's. */
+  /**
+   * Works every tab's stack out again, sends those that changed, and reads the one on screen's.
+   * Where each tab's layer starts is set once every stack is worked out: setting it changes the
+   * tab, which works them out again.
+   */
   #refresh(): void {
     if (this.#stopped) return;
     const used = new Set<string>();
+    const starts: [string, string | undefined][] = [];
     for (const followed of this.#followed.values()) {
       const { tab } = followed;
       const poller = tab.login === undefined ? undefined : this.#poller(tab.login);
       const repo = tab.pull.repo;
       if (poller) used.add(forestKey(poller, repo));
-      const list = poller?.openPullRequests(repo)?.value;
-      const layers = poller?.cachedRead(tab.pull, STACK_LAYERS)?.value;
+      const listed = poller?.openPullRequests(repo);
+      const list = listed?.value;
+      const read = poller?.cachedRead(tab.pull, STACK_LAYERS);
+      const layers = read?.value;
+      const forest = poller ? this.#forest(poller, repo) : undefined;
       const out = viewOf({
         number: tab.pull.number,
         repository: tab.repository,
-        forest: poller ? this.#forest(poller, repo) : undefined,
+        forest: forest?.stacks,
         list,
         layers,
         state: tab.state,
         shown: followed.shown,
       });
       followed.shown = out.shown;
-      const state: StackState = { id: tab.id, stack: out.view };
+      const plan = planStart({ ...tab, number: tab.pull.number }, forest, followed.start);
+      if (plan.set !== undefined) {
+        followed.start = plan.set === null ? undefined : plan.start;
+        starts.push([tab.id, plan.set ?? undefined]);
+      }
+      followed.offered = plan.offer && { offer: plan.offer, start: plan.start };
+      const view =
+        plan.note && out.view.kind === 'stack'
+          ? { ...out.view, notes: [...out.view.notes, plan.note] }
+          : out.view;
+      const state: StackState = { id: tab.id, stack: view, offer: plan.offer ?? null };
       const sent = JSON.stringify(state);
       followed.state = state;
       if (sent !== followed.sent) {
         followed.sent = sent;
         this.#options.publish(state);
       }
-      this.#read(followed, poller, out.ids, list, layers);
+      this.#read(followed, poller, out.ids, list, layers, listed?.fetchedAt, read?.fetchedAt);
     }
     for (const key of this.#forests.keys()) if (!used.has(key)) this.#forests.delete(key);
+    for (const [id, commit] of starts) this.#options.compareFrom(id, commit);
   }
 
   /**
    * Has tab `followed`'s poller read the state of the layers whose node IDs are `ids` while it's on
-   * screen, and again when the list shows a layer at a newer head than its state. A tab whose pull
-   * request is no longer in a stack stops reading them.
+   * screen, and again when a list fetched after it, at `listedAt`, shows a layer at another head
+   * than the state, read at `readAt`. A tab whose pull request is no longer in a stack stops reading
+   * them.
    */
   #read(
     followed: Followed,
@@ -252,6 +315,8 @@ export class StackFinder {
     ids: readonly string[],
     list: OpenPullRequestList | undefined,
     layers: StackLayerList | undefined,
+    listedAt: number | undefined,
+    readAt: number | undefined,
   ): void {
     const { tab } = followed;
     if (ids.length === 0) {
@@ -272,7 +337,9 @@ export class StackFinder {
         this.#options.log(`reading ${tab.pull.toString()}'s layers: ${String(error)}`);
       });
     }
-    if (!list || !layers) return;
+    if (!list || !layers || listedAt === undefined || readAt === undefined) return;
+    // A list from before the state may show a head the state has moved on from.
+    if (listedAt <= readAt) return;
     const newer = new Set<string>();
     for (const layer of layers.layers) {
       const pr = openPullRequest(list, layer.number);
@@ -324,7 +391,7 @@ export class StackFinder {
    * GitHub moved that its tabs' reads of their layers found: worked out again only when any of them
    * changes, and nothing until its rulesets have been read once.
    */
-  #forest(poller: FinderPoller, repo: RepoRef): Stacks | undefined {
+  #forest(poller: FinderPoller, repo: RepoRef): (StartForest & Forest) | undefined {
     const list = poller.openPullRequests(repo)?.value;
     const rules = poller.trunkRules(repo)?.value;
     if (!list || !rules) return undefined;
@@ -342,15 +409,18 @@ export class StackFinder {
       kept.more.length === more.length &&
       kept.more.every((read, index) => read === more[index])
     ) {
-      return kept.stacks;
+      return kept;
     }
-    const stacks = stacksOf(
+    const merged = more.flatMap((read) => read.merged);
+    const forest = {
       list,
       rules,
-      more.flatMap((read) => read.merged),
-    );
-    this.#forests.set(key, { list, rules, more, stacks });
-    return stacks;
+      more,
+      stacks: stacksOf(list, rules, merged),
+      prs: stackPullRequests(list, merged),
+    };
+    this.#forests.set(key, forest);
+    return forest;
   }
 }
 
