@@ -16,7 +16,7 @@ import {
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
 
-import type { StackState } from '../src/features/stacks/contract.ts';
+import type { Found, StackState } from '../src/features/stacks/contract.ts';
 import { expect, onStacks, STACK } from './app.ts';
 
 /** How GitHub answers, from `app_stack_convert`. */
@@ -161,7 +161,7 @@ async function open(page: Page, number: number): Promise<string> {
 }
 
 /** How the stack tab `id` shows was found, once main has read the state of its layers. */
-async function foundOf(page: Page, id: string): Promise<string | null> {
+async function foundOf(page: Page, id: string): Promise<Found | null | 'unread'> {
   const reply = await page.evaluate((tab) => window.lo.invoke('stacks.state', { id: tab }), id);
   if (!reply.ok) return 'unread';
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what the contract says.
@@ -207,7 +207,7 @@ test('makes a chain a GitHub stack once the reader confirms it, and only then', 
   await expect(said(page, `#${STACK.a} has 2 layers on it.`)).toHaveCount(1, { timeout: 20_000 });
 
   const c = await open(page, STACK.c);
-  expect(await foundOf(page, c)).toBe('both');
+  expect(await foundOf(page, c)).toEqual(['baseBranch', 'sharedCommits']);
   await makeStack(page);
   const dialog = page.getByTestId('make-stack');
   await expect(dialog).toContainText('Make these 3 PRs a GitHub stack?', { timeout: 20_000 });
@@ -236,8 +236,14 @@ test('makes a chain a GitHub stack once the reader confirms it, and only then', 
   ).toHaveCount(1, { timeout: 30_000 });
   await expect(dialog).toBeHidden();
   expect(writes(github)).toEqual(MADE);
-  // #C's base branch is now #B's head, so #A, #B and #C sit on each other by base branch alone.
-  await expect.poll(() => foundOf(page, c), { timeout: 30_000 }).toBe('baseBranch');
+  // #A, #B and #C are a GitHub stack now. One can't branch, so #D still sits on #A by its base
+  // branch, and the tree says which layers are the GitHub stack.
+  await expect.poll(() => foundOf(page, c), { timeout: 30_000 }).toEqual(['github', 'baseBranch']);
+  const stack = page.getByRole('region', { name: 'Stack' });
+  await expect(stack).toContainText('4 layers · by GitHub stack and base branch');
+  await expect(stack.getByRole('note')).toContainText([
+    `#${STACK.a}, #${STACK.b} and #${STACK.c} are a GitHub stack.`,
+  ]);
   expect(writes(github)).toEqual(MADE);
 });
 

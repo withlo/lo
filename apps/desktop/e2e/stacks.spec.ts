@@ -143,7 +143,7 @@ test('finds the stack each tab is in, and reads the state of its layers on scree
   await expect
     .poll(() => stackOf(page, c), { timeout: 20_000 })
     .toEqual({
-      found: 'both',
+      found: ['baseBranch', 'sharedCommits'],
       root: 'stack/root',
       rows: [
         [STACK.a, '', '', 'layers'],
@@ -163,7 +163,7 @@ test('finds the stack each tab is in, and reads the state of its layers on scree
   await expect
     .poll(() => stackOf(page, g2), { timeout: 20_000 })
     .toEqual({
-      found: 'github',
+      found: ['github'],
       root: 'stack/root',
       rows: [
         [STACK.g1, '', '', 'layers'],

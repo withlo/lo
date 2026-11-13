@@ -4,13 +4,20 @@
 // GitHub can't be made to show on demand is changed from what it said.
 
 import { RepoRef } from '@lo/github';
-import { stacksOf } from '@lo/stacks';
+import {
+  findStacks,
+  stacksOf,
+  type NativeStackEntry,
+  type PullRequest,
+  type Rule,
+} from '@lo/stacks';
 import { describe, expect, it } from 'vitest';
 
 import { stack as stackSchema, type Row, type StackView } from '../contract.ts';
 import {
   changeLayer,
   changePull,
+  convertedAppStack,
   E2E,
   forestOf,
   idsOf,
@@ -18,7 +25,15 @@ import {
   recorded,
   type Recorded,
 } from './test/support.ts';
-import { checksOf, foundOf, reviewOf, viewOf, type ViewInput } from './view.ts';
+import {
+  checksOf,
+  foundOf,
+  githubNotes,
+  oneGithubStack,
+  reviewOf,
+  viewOf,
+  type ViewInput,
+} from './view.ts';
 
 /** The tree and the GitHub stack, in the order `]s` walks them, and #11, with their state. */
 const LAYERS = [2, 3, 4, 6, 5, 7, 8, 11, 19];
@@ -60,6 +75,25 @@ function brief(view: StackView): string[] {
   );
 }
 
+/** A merged pull request's state, its head in its base branch. */
+const MERGED: PullRequest['state'] = { kind: 'merged', headInBase: true };
+
+/** Open pull request `number` from `head` into `base`, as `@lo/stacks` takes it. */
+function pull(number: number, base: string, head: string, stack?: NativeStackEntry): PullRequest {
+  return {
+    number,
+    state: { kind: 'open' },
+    baseRef: base,
+    baseTip: undefined,
+    headRef: head,
+    headInBaseRepo: true,
+    headOid: `${head}-head`,
+    commits: [`${head}-head`],
+    createdAt: number,
+    nativeStack: stack,
+  };
+}
+
 describe("a tab's stack", () => {
   it('is its tree, in the order ]s walks it, saying how each layer sits', async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
@@ -68,7 +102,7 @@ describe("a tab's stack", () => {
     expect(view.root).toBe('main');
     // c and e on b in the order they were opened, d on c: e is a branch, on b, not the row above.
     expect(brief(view)).toEqual(['#2', '#3', '#4 current', '#6', '#5 branch on #3']);
-    expect(view.found).toBe('both');
+    expect(view.found).toEqual(['baseBranch', 'sharedCommits']);
     expect(view.notes).toEqual([]);
     expect(view.rows[0]).toEqual({
       number: 2,
@@ -112,7 +146,7 @@ describe("a tab's stack", () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
     const { view } = viewOf(input(found, 8));
     expect(brief(view)).toEqual(['#7', '#8 current']);
-    expect(view).toMatchObject({ found: 'github', root: 'main' });
+    expect(view).toMatchObject({ githubStack: true, found: ['github'], root: 'main', notes: [] });
   });
 
   it('shows a layer alone that needs a rebase, with why', async () => {
@@ -262,7 +296,16 @@ describe('the offer to make the chain a GitHub stack', () => {
 
   it("isn't made for what's a GitHub stack already", async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
-    expect(viewOf(input(found, 8)).view).toMatchObject({ found: 'github', callout: null });
+    expect(viewOf(input(found, 8)).view).toMatchObject({ found: ['github'], callout: null });
+  });
+
+  it("isn't made on a GitHub stack's path, nor on a branch off its bottom, which it can't take", async () => {
+    const found = await recorded('app_stack', E2E, [82, 83, 84, 85]);
+    const list = convertedAppStack(found.list);
+    const forest = stacksOf(list, found.rules);
+    for (const number of [82, 83, 84, 85]) {
+      expect(viewOf(input(found, number, { forest, list })).view).toMatchObject({ callout: null });
+    }
   });
 });
 
@@ -272,7 +315,11 @@ describe("the app's stacks", () => {
     const { view, ids } = viewOf(input(found, 84));
     // #D, opened after #B, is a second layer on #A.
     expect(brief(view)).toEqual(['#82', '#83', '#84 current', '#85 branch on #82']);
-    expect(view).toMatchObject({ root: 'stack/root', found: 'both', notes: [] });
+    expect(view).toMatchObject({
+      root: 'stack/root',
+      found: ['baseBranch', 'sharedCommits'],
+      notes: [],
+    });
     expect(rowsOf(view).map(({ title }) => title)).toEqual([
       'Stack A: load per-plan limits',
       'Stack B: rate limit GraphQL queries by cost',
@@ -300,11 +347,55 @@ describe("the app's stacks", () => {
     expect(ids).toEqual(idsOf(found.list, [87]));
   });
 
+  it('say which layers are a GitHub stack once #A, #B and #C are one, with #D on #A', async () => {
+    const found = await recorded('app_stack', E2E, [82, 83, 84, 85]);
+    const list = convertedAppStack(found.list);
+    const forest = stacksOf(list, found.rules);
+    const { view, ids } = viewOf(input(found, 84, { forest, list }));
+    // A GitHub stack can't branch: #D still sits on #A, by its base branch.
+    expect(brief(view)).toEqual(['#82', '#83', '#84 current', '#85 branch on #82']);
+    expect(view).toMatchObject({
+      root: 'stack/root',
+      githubStack: false,
+      found: ['github', 'baseBranch'],
+      notes: [{ kind: 'github', text: '#82, #83 and #84 are a GitHub stack.' }],
+    });
+    expect(ids).toEqual(idsOf(list, [82, 83, 84, 85]));
+    // The walk is the same from each layer.
+    expect(rowsOf(viewOf(input(found, 85, { forest, list })).view).map((row) => row.path)).toEqual([
+      [82],
+      [82, 83],
+      [82, 83, 84],
+      [82, 85],
+    ]);
+  });
+
   it('say #G1 and #G2 are a GitHub stack', async () => {
     const found = await recorded('app_stack', E2E, [88, 89]);
     const { view } = viewOf(input(found, 89));
     expect(brief(view)).toEqual(['#88', '#89 current']);
-    expect(view).toMatchObject({ root: 'stack/root', found: 'github' });
+    expect(view).toMatchObject({ root: 'stack/root', githubStack: true, found: ['github'] });
+  });
+
+  it('say a layer linked through a merged layer of a GitHub stack is in it, and no more', async () => {
+    // #1 on main, in no GitHub stack. #2, the bottom of GitHub stack #100, merged into #1's branch,
+    // and #3, its next layer, still open: #3 sits on #1, linked by the GitHub stack alone.
+    const forest = findStacks(
+      [
+        pull(1, 'main', 'one'),
+        { ...pull(2, 'one', 'two', { stack: 100, position: 1 }), state: MERGED },
+        pull(3, 'two', 'three', { stack: 100, position: 2 }),
+      ],
+      ['main'],
+    );
+    const found = await recorded('stacks_e2e', E2E);
+    const { view } = viewOf(input(found, 3, { forest, layers: undefined }));
+    expect(brief(view)).toEqual(['#1', '#3 current']);
+    expect(view).toMatchObject({
+      githubStack: false,
+      found: ['github'],
+      notes: [{ kind: 'github', text: '#3 is in a GitHub stack.' }],
+    });
   });
 });
 
@@ -371,7 +462,7 @@ describe('the notes', () => {
     const { view } = viewOf(input(found, 5, { forest: stacksOf(list, found.rules), list }));
     expect(brief(view)).toEqual(['#11 needs rebase', '#5 current']);
     expect(view).toMatchObject({
-      found: 'baseBranch',
+      found: ['baseBranch'],
       notes: [
         {
           kind: 'needsRebase',
@@ -413,7 +504,7 @@ describe('the layer on screen leaving', () => {
     });
     // No run holds it: the layers that sat on it go up through a now.
     expect(rowsOf(after.view).map((row) => row.path)).toEqual([[2], [], [2, 4], [2, 4, 6], [2, 5]]);
-    expect(after.view).toMatchObject({ found: 'both', callout: null });
+    expect(after.view).toMatchObject({ found: ['baseBranch', 'sharedCommits'], callout: null });
     // Its state is still read with the others'.
     expect(after.ids).toEqual(idsOf(found.list, [2, 3, 4, 6, 5]));
     // And stays as it is the next time.
@@ -458,19 +549,57 @@ describe('the layer on screen leaving', () => {
   });
 });
 
+/** Rows linked by `links`, over a bottom layer that sits on a branch. */
+function linkedBy(...links: Rule[]): { rule: Rule | undefined }[] {
+  return [{ rule: undefined }, ...links.map((rule) => ({ rule }))];
+}
+
+/** Layer `number`, at `position` in GitHub stack `stack` if it's given one. */
+function inStack(number: number, stack?: number, position = 0) {
+  return { number, nativeStack: stack === undefined ? undefined : { stack, position } };
+}
+
 describe('the wording', () => {
-  it('names how the layers were found', () => {
-    const open = { nativeStack: undefined };
-    expect(foundOf([open, open], [{ rule: undefined }, { rule: 'sharedCommits' }])).toBe(
-      'sharedCommits',
-    );
-    // A GitHub stack's layers go into the branch below, as a chain by base branch does.
-    expect(foundOf([open, open], [{ rule: undefined }, { rule: 'nativeStack' }])).toBe(
+  it('names how the layers were found, each kind of link once, in the order the design lists them', () => {
+    expect(foundOf(linkedBy())).toBeNull();
+    expect(foundOf(linkedBy('sharedCommits'))).toEqual(['sharedCommits']);
+    expect(foundOf(linkedBy('sharedCommits', 'baseBranch'))).toEqual([
       'baseBranch',
-    );
-    const native = { nativeStack: { stack: 9 } };
-    expect(foundOf([native], [{ rule: undefined }])).toBe('github');
-    expect(foundOf([native, { nativeStack: { stack: 10 } }], [{ rule: undefined }])).toBeNull();
+      'sharedCommits',
+    ]);
+    expect(foundOf(linkedBy('nativeStack'))).toEqual(['github']);
+    // A GitHub stack along one path, and layers off it by the other links.
+    expect(foundOf(linkedBy('nativeStack', 'sharedCommits', 'baseBranch'))).toEqual([
+      'github',
+      'baseBranch',
+      'sharedCommits',
+    ]);
+  });
+
+  it('says every layer is in one GitHub stack only when each is in the same one', () => {
+    expect(oneGithubStack([inStack(7, 9, 1)])).toBe(true);
+    expect(oneGithubStack([inStack(7, 9, 1), inStack(8, 9, 2)])).toBe(true);
+    expect(oneGithubStack([inStack(7, 9, 1), inStack(8, 10, 1)])).toBe(false);
+    expect(oneGithubStack([inStack(7, 9, 1), inStack(8)])).toBe(false);
+    // Linked by a GitHub stack through a merged layer, from a layer that isn't in it.
+    expect(oneGithubStack([inStack(1), inStack(3, 100, 2)])).toBe(false);
+    expect(oneGithubStack([])).toBe(false);
+  });
+
+  it('names the layers of each GitHub stack in a stack that is more than one, bottom first', () => {
+    // None when every layer is in one GitHub stack, which the head says, nor when none is.
+    expect(githubNotes([inStack(7, 9, 1), inStack(8, 9, 2)])).toEqual([]);
+    expect(githubNotes([inStack(1), inStack(2)])).toEqual([]);
+    expect(
+      githubNotes([inStack(2, 9, 1), inStack(3, 9, 2), inStack(5, 12, 2), inStack(4, 12, 1)]),
+    ).toEqual([
+      { kind: 'github', text: '#2 and #3 are a GitHub stack.' },
+      { kind: 'github', text: '#4 and #5 are a GitHub stack.' },
+    ]);
+    // One layer isn't a stack: it's in one, whose other layers aren't here.
+    expect(githubNotes([inStack(1), inStack(3, 100, 2)])).toEqual([
+      { kind: 'github', text: '#3 is in a GitHub stack.' },
+    ]);
   });
 
   it("takes a review or checks state Lo doesn't know as none", () => {

@@ -14,8 +14,8 @@ import {
   type StackOverview,
   type StackReview,
   type StackRun,
-  type StackTreeFound,
   type StackTreeLayer,
+  type StackTreeLink,
 } from '@lo/ui';
 import { keyLabels, setScopeSource } from '@lo/ui/commands';
 import { useCallback, useEffect, useRef, type MouseEvent } from 'react';
@@ -25,7 +25,7 @@ import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { useOverviewMark, type OverviewMark } from '../../overview/window/shared.ts';
 import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import { useViewedCount } from '../../tree/window/shared.ts';
-import type { Checks, Found, Review, Row } from '../contract.ts';
+import type { Checks, Link, Review, Row } from '../contract.ts';
 import { makeStack } from './actions.ts';
 import { catchUp, choosing, focused, keyboardLayer, stacks } from './layers.ts';
 import { chainIn, choiceNote, type NoteKeys } from './runs.ts';
@@ -43,11 +43,10 @@ const CHECKS: Readonly<Record<Checks, StackChecks>> = {
   failing: 'failing',
 };
 
-const FOUND: Readonly<Record<Found, StackTreeFound>> = {
+const LINKS: Readonly<Record<Link, StackTreeLink>> = {
   github: 'github',
   baseBranch: 'base',
   sharedCommits: 'commits',
-  both: 'both',
 };
 
 /** The first key `id` has now, as this system shows it, if it has one. */
@@ -201,7 +200,8 @@ export function Stack({ tab }: { tab: PullTab }) {
           return run === undefined ? layer : { ...layer, run };
         })}
         root={withoutBidi(view.root)}
-        found={view.found === null ? undefined : FOUND[view.found]}
+        githubStack={view.githubStack}
+        found={view.found?.map((link) => LINKS[link])}
         focused={on === undefined ? undefined : String(on)}
         current={current === undefined ? undefined : String(current.number)}
         choosing={choice !== undefined}
