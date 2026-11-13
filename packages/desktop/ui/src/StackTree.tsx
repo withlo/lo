@@ -31,8 +31,11 @@ export type StackOverview = 'current' | 'stale' | 'error' | 'none';
  */
 export type StackRun = 'start' | 'middle' | 'end' | 'only';
 
-/** How Lo found the stack, which the head says. */
-export type StackTreeFound = 'base' | 'commits' | 'both' | 'github';
+/**
+ * How Lo found a layer to sit on the one below, which the head says: as the next layer up in a
+ * GitHub stack, by base branch, or by shared commits.
+ */
+export type StackTreeLink = 'github' | 'base' | 'commits';
 
 /** One layer of the stack: a pull request, as its row shows it. */
 export interface StackTreeLayer {
@@ -84,8 +87,16 @@ export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   layers: readonly StackTreeLayer[];
   /** The branch the bottom layer sits on. */
   root: string;
-  /** How Lo found the layers to sit on each other: nothing for a layer alone, which none sits on. */
-  found?: StackTreeFound | undefined;
+  /**
+   * Every layer is in one GitHub stack, which the head says in place of how Lo found them to sit on
+   * each other.
+   */
+  githubStack?: boolean | undefined;
+  /**
+   * How Lo found the layers to sit on each other, each kind of link once. Nothing for a layer alone,
+   * which none sits on.
+   */
+  found?: readonly StackTreeLink[] | undefined;
   /** The layer the keyboard is on, by key. */
   focused?: string | undefined;
   /** The layer on screen, by key. */
@@ -139,23 +150,31 @@ function ordinal(position: number): string {
   return `${position}${SUFFIXES[ORDINALS.select(position)]}`;
 }
 
-function headText(count: number, found: StackTreeFound | undefined): string {
+/** Each kind of link, as the head names it. */
+const LINK_WORDS: Readonly<Record<StackTreeLink, string>> = {
+  github: 'GitHub stack',
+  base: 'base branch',
+  commits: 'shared commits',
+};
+
+/** The kinds of link, in the order the head names them. */
+const LINK_ORDER: readonly StackTreeLink[] = ['github', 'base', 'commits'];
+
+/**
+ * "GitHub stack · 4 layers" when every layer is in one GitHub stack, else each kind of link, in
+ * order: "4 layers · by GitHub stack and base branch".
+ */
+function headText(
+  count: number,
+  githubStack: boolean,
+  found: readonly StackTreeLink[] | undefined,
+): string {
   const layers = `${count} ${count === 1 ? 'layer' : 'layers'}`;
-  switch (found) {
-    case undefined:
-      return layers;
-    case 'github':
-      return `GitHub stack · ${layers}`;
-    case 'base':
-      return `${layers} · by base branch`;
-    case 'commits':
-      return `${layers} · by shared commits`;
-    case 'both':
-      return `${layers} · by base branch and shared commits`;
-    default:
-      found satisfies never;
-      throw new Error(`A way of finding a stack Lo doesn't know: ${String(found)}.`);
-  }
+  if (githubStack) return `GitHub stack · ${layers}`;
+  const words = LINK_ORDER.filter((link) => found?.includes(link)).map((link) => LINK_WORDS[link]);
+  const last = words.pop();
+  if (last === undefined) return layers;
+  return `${layers} · by ${words.length === 0 ? last : `${words.join(', ')} and ${last}`}`;
 }
 
 /** Whether a layer is on a branch's own rail: one that starts a branch, or sits above one. */
@@ -389,6 +408,7 @@ function reveal(tree: HTMLElement | null, key: string | undefined): void {
 export function StackTree({
   layers,
   root,
+  githubStack = false,
   found,
   focused,
   current,
@@ -434,7 +454,7 @@ export function StackTree({
           {choosing ? (
             <span className="mode-chip">V-LINE</span>
           ) : (
-            <span className="lo-num">{headText(layers.length, found)}</span>
+            <span className="lo-num">{headText(layers.length, githubStack, found)}</span>
           )}
         </span>
       </div>

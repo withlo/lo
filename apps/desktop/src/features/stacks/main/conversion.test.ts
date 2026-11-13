@@ -32,7 +32,14 @@ import {
   type ConversionTab,
   type Found,
 } from './conversion.ts';
-import { changePull, E2E, forestOf, recorded, type Recorded } from './test/support.ts';
+import {
+  changePull,
+  convertedAppStack,
+  E2E,
+  forestOf,
+  recorded,
+  type Recorded,
+} from './test/support.ts';
 
 const LOGIN = 'rozed-bot';
 const LAYERS = [2, 3, 4, 6, 5, 7, 8, 11, 19];
@@ -314,6 +321,22 @@ describe('planning', () => {
       "GitHub's Stacks API isn't available for e2e.",
       'A GitHub stack needs two PRs.',
     ]);
+  });
+
+  it('refuses a GitHub stack’s path, and a layer off its bottom, which GitHub would refuse', async () => {
+    const found = await recorded('app_stack', E2E, [82, 83, 84, 85]);
+    const poller = new FakePoller();
+    // #82, #83 and #84 are GitHub stack #92, and #85 sits on #82 by its base branch.
+    const { conversions } = started(poller, found, { list: convertedAppStack(found.list) });
+    poller.holding = [githubStack(92, [82, 83, 84])];
+    expect(reasonsOf(await conversions.plan(tab(84)))).toEqual([
+      'This is GitHub stack #92 already.',
+    ]);
+    poller.holding = [];
+    expect(reasonsOf(await conversions.plan(tab(85)))).toEqual([
+      'GitHub stack #92 goes on above #82 with other PRs, and a stack takes new PRs only at its top.',
+    ]);
+    expect(poller.sent).toEqual([]);
   });
 
   it('names the layers on a bottom layer with two', async () => {

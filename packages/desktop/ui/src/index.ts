@@ -73,8 +73,8 @@ export {
   type StackOverview,
   type StackReview,
   type StackRun,
-  type StackTreeFound,
   type StackTreeLayer,
+  type StackTreeLink,
   type StackTreeNote,
   type StackTreeProps,
 } from './StackTree.tsx';
