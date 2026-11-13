@@ -13,7 +13,10 @@ export function postImage(view: string, address: string): string | undefined {
   return postImageAddress(view, address);
 }
 
-/** An account, as GitHub names it: its login, and the type of account it is (`__typename`). */
+/**
+ * An account, as GitHub names it: its login, and the type of account it is (`__typename`, as
+ * `@lo/github`'s `ActorType` gives it).
+ */
 export interface Account {
   readonly login: string;
   readonly type: string;

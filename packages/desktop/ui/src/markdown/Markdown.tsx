@@ -31,7 +31,7 @@ export interface MarkdownProps<X extends Extension = Plain> {
   className?: string | undefined;
 }
 
-/** The most images a text shows: as many as GitHub's text gives Lo at most. */
+/** The most images a text shows: as many as `@lo/markdown` keeps in a post. */
 export const MAX_IMAGES = DEFAULT_LIMITS.images;
 
 const NONE: MarkdownExtension<Extension> = {};
