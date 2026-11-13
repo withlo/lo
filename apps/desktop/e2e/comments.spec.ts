@@ -140,9 +140,21 @@ function inPanel(page: Page): Promise<boolean> {
   return page.evaluate(() => document.activeElement?.closest('[data-lo-scope="threads"]') !== null);
 }
 
-/** What's at the top of the diff: the line or header there. */
-function top(page: Page): Promise<unknown> {
-  return page.evaluate(() => window.loDiff?.viewport().at);
+/** How far below the top of the diff's box src/backoff.ts's new line 10 is drawn, to the pixel. */
+function lineTop(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const diff = window.loDiff;
+    const file = diff?.files.find((each) => each.path === 'src/backoff.ts')?.id;
+    const box = document.querySelector('.lo-diffview')?.getBoundingClientRect().top;
+    if (!diff || file === undefined || box === undefined) return Number.NaN;
+    const at = diff.probe.spotTop({ kind: 'line', at: { file, side: 'new', line: 10 } });
+    return at === undefined ? Number.NaN : Math.round(at - box);
+  });
+}
+
+/** How far src/backoff.ts's new line 10 has moved since it was `before` below the diff's top. */
+async function moved(page: Page, before: number): Promise<number> {
+  return Math.abs((await lineTop(page)) - before);
 }
 
 /** `⌘⇧\`, which opens and closes the threads panel. */
@@ -330,7 +342,8 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
   await open(page, COMMENTS_PULL.number);
   await expect.poll(() => placed(page), { timeout: 20_000 }).toHaveLength(9);
   await settled(page);
-  // Down the diff a way, so the line at the top is one a change of width could move.
+  // Down the diff a way, so the line at the top is one a change of width could move. It stays
+  // where it is as the panel opens and closes, as it does for the left panel.
   await page.evaluate(() => {
     const file = window.loDiff?.files.find((each) => each.path === 'src/backoff.ts')?.id;
     if (file) {
@@ -340,17 +353,32 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
       });
     }
   });
-  await expect.poll(() => top(page)).toMatchObject({ kind: 'line', at: { side: 'new', line: 10 } });
-  const before = await top(page);
+  // Once it's scrolled there: at the top, give or take a thread's room above it.
+  await expect
+    .poll(async () => {
+      const y = await lineTop(page);
+      return y >= 0 && y < 100;
+    })
+    .toBe(true);
+  const before = await lineTop(page);
 
-  await test.step('opens with focus on its list, leaving the diff’s lines where they were', async () => {
+  await test.step('opens and closes, leaving the diff’s lines where they were', async () => {
     const toggle = page.locator('[data-lo-right-toggle]');
     await expect(toggle).toHaveAttribute('aria-pressed', 'false');
     await page.keyboard.press(PANEL);
     await expect(panel(page)).toBeVisible();
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => inPanel(page)).toBe(true);
-    await expect.poll(() => top(page)).toEqual(before);
+    await expect.poll(() => moved(page, before)).toBeLessThanOrEqual(1);
+    // Closed, focus goes back to the diff.
+    await page.keyboard.press(PANEL);
+    await expect(panel(page)).toHaveCount(0);
+    await settled(page);
+    await expect.poll(() => moved(page, before)).toBeLessThanOrEqual(1);
+    // Open again, with focus on its list.
+    await page.keyboard.press(PANEL);
+    await expect.poll(() => inPanel(page)).toBe(true);
+    await expect.poll(() => moved(page, before)).toBeLessThanOrEqual(1);
   });
 
   await test.step('lists the unresolved threads by file, the outdated one by where it was written', async () => {
@@ -409,15 +437,13 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
     await panel(page).locator('[data-lo-scope="threads"]').focus();
   });
 
-  await test.step('lists every thread with f, and closes, leaving the lines where they were', async () => {
+  await test.step('lists every thread with f, and closes', async () => {
     await page.keyboard.press('f');
     await expect(filter(page, 'All 11')).toHaveAttribute('aria-selected', 'true');
     await expect.poll(async () => (await rows(page)).length).toBe(11);
-    const shown = await top(page);
     await page.keyboard.press(PANEL);
     await expect(panel(page)).toHaveCount(0);
     await settled(page);
-    await expect.poll(() => top(page)).toEqual(shown);
   });
 });
 
