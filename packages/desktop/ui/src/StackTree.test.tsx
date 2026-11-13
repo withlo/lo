@@ -138,6 +138,49 @@ function shape(host: HTMLElement): Record<string, string> {
   );
 }
 
+/**
+ * A tree drawn with the layout jsdom lacks: each row is 40 tall, the first 24 below the top of the
+ * tree, which is 238 tall, and a ResizeObserver that tells when its size changes.
+ */
+function setup(over: Partial<StackTreeProps>) {
+  const resized: (() => void)[] = [];
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: () => void) {
+        resized.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const host = render(<StackTree {...props(over)} />);
+  const scroller = tree(host);
+  const size = { height: 238 };
+  Object.defineProperty(scroller, 'clientHeight', { get: () => size.height });
+  Object.defineProperty(scroller, 'scrollTop', { value: 0, writable: true });
+  for (const [key, element] of rows(host)) {
+    Object.defineProperty(element, 'offsetTop', {
+      value: 24 + LAYERS.findIndex((each) => each.key === key) * 40,
+    });
+    Object.defineProperty(element, 'offsetHeight', { value: 40 });
+  }
+  return {
+    host,
+    scroller,
+    size,
+    resize: (height: number) => {
+      size.height = height;
+      for (const resize of resized) resize();
+    },
+    // The person scrolls the tree.
+    scrollTo: (top: number) => {
+      scroller.scrollTop = top;
+      scroller.dispatchEvent(new Event('scroll'));
+    },
+  };
+}
+
 describe('StackTree', () => {
   it('is a labelled panel holding one tree, with a treeitem for each layer', () => {
     const host = render(<StackTree {...props()} data-lo-scope="stack" />);
@@ -415,47 +458,6 @@ describe('StackTree', () => {
     });
 
     describe('as its height changes', () => {
-      // jsdom has no layout, and no ResizeObserver: one that tells when the tree's size changes.
-      // Each row is 40 tall, 24 below the top of the tree, which shows `height` of them.
-      function setup(over: Partial<StackTreeProps>) {
-        const resized: (() => void)[] = [];
-        vi.stubGlobal(
-          'ResizeObserver',
-          class {
-            constructor(callback: () => void) {
-              resized.push(callback);
-            }
-            observe() {}
-            disconnect() {}
-          },
-        );
-        const host = render(<StackTree {...props(over)} />);
-        const scroller = tree(host);
-        const size = { height: 238 };
-        Object.defineProperty(scroller, 'clientHeight', { get: () => size.height });
-        Object.defineProperty(scroller, 'scrollTop', { value: 0, writable: true });
-        for (const [key, element] of rows(host)) {
-          Object.defineProperty(element, 'offsetTop', {
-            value: 24 + LAYERS.findIndex((each) => each.key === key) * 40,
-          });
-          Object.defineProperty(element, 'offsetHeight', { value: 40 });
-        }
-        return {
-          host,
-          scroller,
-          size,
-          resize: (height: number) => {
-            size.height = height;
-            for (const resize of resized) resize();
-          },
-          // The person scrolls the tree.
-          scrollTo: (top: number) => {
-            scroller.scrollTop = top;
-            scroller.dispatchEvent(new Event('scroll'));
-          },
-        };
-      }
-
       it('keeps the layer on screen in view when the tree gets shorter, as an offer above it does', () => {
         const { host, scroller, resize } = setup({ current: 'c' });
         // The tree shows every row, so nothing scrolls. Then an offer arrives above it, and it has
