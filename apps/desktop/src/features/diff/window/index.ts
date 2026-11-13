@@ -3,7 +3,7 @@
 // as main says what changed, and is drawn while it's on screen; a file opens whole from the diff,
 // the tree and the file finder.
 
-import type { HeaderTarget, LineTarget, Place, Span, Target } from '@lo/ui/commands';
+import type { HeaderTarget, LineTarget, Place, Span, Target, ThreadTarget } from '@lo/ui/commands';
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
 
@@ -178,6 +178,21 @@ function fold(how: 'open' | 'close' | 'file' | 'toggle') {
   };
 }
 
+/**
+ * `za`: opens or collapses the review thread a target names, the one `]t` landed on or the only
+ * one on the cursor's line; on anything else, loads, closes or opens the file.
+ */
+function toggle(drawn: Drawn, target: LineTarget | HeaderTarget | ThreadTarget): void {
+  if (target.kind === 'thread') {
+    drawn.view.openThread(target.thread, 'toggle');
+    return;
+  }
+  if (target.kind === 'line' && target.thread !== undefined) {
+    if (drawn.view.openThread(target.thread, 'toggle')) return;
+  }
+  fold('toggle')(drawn, target);
+}
+
 async function copy(text: string): Promise<void> {
   await tabs().copy({ text });
 }
@@ -188,6 +203,8 @@ export default {
     previousChange: { run: withDiff(({ view }) => view.jump('change', -1)), enabled: drawnNow },
     nextFile: { run: withDiff(({ view }) => view.jump('file', 1)), enabled: drawnNow },
     previousFile: { run: withDiff(({ view }) => view.jump('file', -1)), enabled: drawnNow },
+    nextThread: { run: withDiff(({ view }) => view.jump('thread', 1)), enabled: drawnNow },
+    previousThread: { run: withDiff(({ view }) => view.jump('thread', -1)), enabled: drawnNow },
     markViewed: { run: withDiff(markViewed), enabled: drawnNow },
     otherSide: { run: withDiff(({ view }) => view.otherSide()), enabled: drawnNow },
     inline: {
@@ -212,7 +229,7 @@ export default {
     openRun: { run: withDiff(fold('open')), enabled: drawnNow },
     closeRun: { run: withDiff(fold('close')), enabled: drawnNow },
     openFile: { run: withDiff(fold('file')), enabled: drawnNow },
-    toggleFile: { run: withDiff(fold('toggle')), enabled: drawnNow },
+    toggleFile: { run: withDiff(toggle), enabled: drawnNow },
     wholeFile: {
       run: withDiff((drawn, target) => {
         const tab = activeTab();

@@ -14,19 +14,21 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { Kind, OperationTypeNode, parse } from 'graphql';
 
 import {
+  canonicalJson,
   isObject,
   readCassette,
+  recordedKey,
   type CassetteInfo,
   type Interaction,
   type Json,
   type RecordedResponse,
 } from './cassette.ts';
-import { recordedRequest, recordedResponse } from './record.ts';
+import { fileName, recordedRequest, recordedResponse } from './record.ts';
 import { findSecret } from './secrets.ts';
 
 /** The one place a request recorded again goes: GitHub's GraphQL API. */
@@ -113,6 +115,129 @@ export async function rerecord(options: RerecordOptions): Promise<Map<string, nu
   }
   for (const { path, text } of writes) writeFileSync(path, text);
   return counts;
+}
+
+export interface AddOptions {
+  /** The `fetch` that reaches GitHub. */
+  fetch: typeof globalThis.fetch;
+  /** The bot's token, which signs each request and must never be written. */
+  token: string;
+  /** The query: one query operation, as a `.graphql` file holds it. */
+  query: string;
+  /** The variables of each request to add, in order. */
+  variables: readonly Json[];
+  /** The cassettes' folders. */
+  dirs: readonly string[];
+  /** When, for `cassette.json`, as an ISO time to the second. */
+  at: string;
+}
+
+/**
+ * Records `query`'s answers to requests with `variables`, which `dirs`' cassettes don't hold yet,
+ * and adds each as a file after the cassette's others: for a read that what replays a cassette
+ * began to send after it was recorded, so the rest of it stays as it was. Each cassette gets its
+ * own request to GitHub. Nothing else changes but `cassette.json`, which notes when the operation
+ * was added. As {@link rerecord} does, it sends only queries and keeps only what the recorder
+ * keeps; it writes nothing unless every answer came back `200` without errors and without a
+ * secret, and refuses a cassette that already holds the operation with the same variables.
+ * Returns how many it added in each folder.
+ */
+export async function addAnswers(options: AddOptions): Promise<Map<string, number>> {
+  const { fetch, token, query, variables, dirs, at } = options;
+  const operation = queryOperation(query);
+  const writes: { path: string; text: string }[] = [];
+  const counts = new Map<string, number>();
+  for (const dir of dirs) {
+    const cassette = readCassette(dir);
+    const held = new Set(
+      cassette.interactions
+        .filter(({ interaction }) => interaction.request.operation === operation)
+        .map(({ interaction }) => canonicalJson(interaction.request.variables ?? null)),
+    );
+    let index = Math.max(
+      0,
+      ...cassette.interactions.map(({ file }) => Number.parseInt(file, 10) || 0),
+    );
+    for (const asked of variables) {
+      if (held.has(canonicalJson(asked))) {
+        throw new Error(`${dir} holds ${operation} with ${JSON.stringify(asked)} already`);
+      }
+      const request: Interaction = {
+        request: { method: 'POST', url: GRAPHQL_URL, operation, variables: asked },
+        response: { status: 200, headers: {} },
+      };
+      const answer = await ask(fetch, token, query, operation, request);
+      if (answer.response.status !== 200 || hasErrors(answer.response)) {
+        throw new Error(
+          `${dir}: GitHub answered ${operation} with ${JSON.stringify(asked)} ${answer.response.status}${hasErrors(answer.response) ? ' with errors' : ''}`,
+        );
+      }
+      index += 1;
+      writes.push({
+        path: join(dir, fileName(index, answer.request)),
+        text: `${JSON.stringify(answer, null, 2)}\n`,
+      });
+    }
+    const info: CassetteInfo = {
+      ...cassette.info,
+      added: { ...cassette.info.added, [operation]: at },
+    };
+    writes.push({ path: join(dir, 'cassette.json'), text: `${JSON.stringify(info, null, 2)}\n` });
+    counts.set(dir, variables.length);
+  }
+  for (const { path, text } of writes) {
+    const found = findSecret(text, [token]);
+    if (found) throw new Error(`${path} would contain ${found}, so nothing was written`);
+  }
+  for (const { path, text } of writes) writeFileSync(path, text);
+  return counts;
+}
+
+export interface CopyOptions {
+  /** The file of the recorded interaction to copy, in another cassette. */
+  from: string;
+  /** The cassettes' folders. */
+  dirs: readonly string[];
+  /** When, for `cassette.json`, as an ISO time to the second. */
+  at: string;
+}
+
+/**
+ * Adds the interaction recorded in `from` to `dirs`' cassettes, each in a file after its others,
+ * as {@link addAnswers} adds a query's: for a request that what replays them began to send after
+ * they were recorded, which another cassette holds as GitHub answers it, such as an avatar. Refuses
+ * a cassette that holds the same request already, and writes nothing that holds a secret.
+ */
+export function copyAnswer({ from, dirs, at }: CopyOptions): void {
+  const copied = readCassette(dirname(from)).interactions.find(
+    ({ file }) => file === basename(from),
+  )?.interaction;
+  if (!copied) throw new Error(`${from} holds no recorded request`);
+  const { request } = copied;
+  const what = request.operation ?? `${request.method} ${request.url}`;
+  const writes: { path: string; text: string }[] = [];
+  for (const dir of dirs) {
+    const cassette = readCassette(dir);
+    const key = recordedKey(request);
+    if (cassette.interactions.some(({ interaction }) => recordedKey(interaction.request) === key)) {
+      throw new Error(`${dir} holds ${what} already`);
+    }
+    const index = Math.max(
+      0,
+      ...cassette.interactions.map(({ file }) => Number.parseInt(file, 10) || 0),
+    );
+    writes.push({
+      path: join(dir, fileName(index + 1, request)),
+      text: `${JSON.stringify(copied, null, 2)}\n`,
+    });
+    const info: CassetteInfo = { ...cassette.info, added: { ...cassette.info.added, [what]: at } };
+    writes.push({ path: join(dir, 'cassette.json'), text: `${JSON.stringify(info, null, 2)}\n` });
+  }
+  for (const { path, text: written } of writes) {
+    const found = findSecret(written, []);
+    if (found) throw new Error(`${path} would contain ${found}, so nothing was written`);
+  }
+  for (const { path, text: written } of writes) writeFileSync(path, written);
 }
 
 /** Whether a GraphQL answer holds errors. */

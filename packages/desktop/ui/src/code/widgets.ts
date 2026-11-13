@@ -6,6 +6,7 @@
 
 import { WidgetType } from '@codemirror/view';
 
+import { COMMENT_PATH, threadWords } from '../counts.ts';
 import type { FileHeader } from './api.ts';
 import type { ThreadHost } from './threads.ts';
 
@@ -74,12 +75,11 @@ export class HeaderWidget extends WidgetType {
       element('span', 'del', `−${header.deletions}`),
     );
     head.append(path, stat);
-    const end = [
-      ...(header.tags ?? []),
-      ...(header.comments ? [`${header.comments} comment${header.comments === 1 ? '' : 's'}`] : []),
-    ];
-    if (end.length > 0 || header.viewed) {
+    const end = header.tags ?? [];
+    const threads = header.threads && header.threads.total > 0 ? header.threads : undefined;
+    if (end.length > 0 || threads || header.viewed) {
       const after = element('span', 'lo-filehead__end', end.join(' · '));
+      if (threads) after.append(threadCount(threads.total, threads.unresolved));
       if (header.viewed) {
         const { className, title } = BALLS[header.viewed];
         const ball = element('span', `lo-diffhead__ball${className}`);
@@ -460,6 +460,24 @@ export class SpacerWidget extends WidgetType {
   override get estimatedHeight(): number {
     return this.height;
   }
+}
+
+/** A file's threads as the file tree counts them: a comment mark and their number. */
+function threadCount(total: number, unresolved: number): HTMLElement {
+  const said = threadWords(total, unresolved);
+  const count = element('span', `lo-count lo-num${unresolved > 0 ? ' is-open' : ''}`);
+  count.title = said;
+  count.setAttribute('role', 'img');
+  count.setAttribute('aria-label', said);
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('class', 'lo-i lo-i--xs');
+  icon.setAttribute('viewBox', '0 0 16 16');
+  icon.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', COMMENT_PATH);
+  icon.append(path);
+  count.append(icon, String(total));
+  return count;
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(

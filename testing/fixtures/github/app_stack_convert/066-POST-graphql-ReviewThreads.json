@@ -1,0 +1,96 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "ReviewThreads",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 83,
+      "first": 100,
+      "after": null
+    },
+    "query_sha256": "89476c194892866c84d28316d05a62244432d190b6b0fce18fc3df748b08fb5d"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4995",
+      "x-ratelimit-reset": "1794600600",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "5"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4995,
+          "used": 5,
+          "resetAt": "2026-11-13T20:10:00Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "reviewThreads": {
+              "totalCount": 1,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODo1OVrOtz1GVQ=="
+              },
+              "nodes": [
+                {
+                  "id": "PRRT_kwDOVleUfc63PUZV",
+                  "path": "src/cost.ts",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 5,
+                  "startLine": 5,
+                  "originalLine": 5,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODo1OVrPAAAAARA82IQ="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDzYhA",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: GitHub rounds each 100 nodes up, so this matches what it charges.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:59Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/83#discussion_r4567390340",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1"
+                        },
+                        "originalCommit": {
+                          "oid": "57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -155,11 +155,19 @@ test('the packed package runs with Node alone, from an empty folder', () => {
   const files = execFileSync('find', ['.', '-type', 'f'], { cwd: empty, encoding: 'utf8' });
   expect(files.trim().split('\n').toSorted()).toEqual([
     './package/LICENSE',
+    './package/README.md',
     './package/dist/THIRD_PARTY_NOTICES',
     './package/dist/checker.js',
     './package/dist/install.js',
     './package/package.json',
   ]);
+  // npmjs.com shows the README, where a relative link or image leads nowhere.
+  const readme = readFileSync(join(empty, 'package/README.md'), 'utf8');
+  const targets = [...readme.matchAll(/\]\(([^)\s]+)\)|\b(?:src|srcset|href)="([^"]*)"/g)].map(
+    (match) => match[1] ?? match[2]!,
+  );
+  expect(targets.length).toBeGreaterThan(0);
+  for (const target of targets) expect(target).toMatch(/^https:\/\//);
   const manifest = JSON.parse(readFileSync(join(empty, 'package/package.json'), 'utf8'));
   expect(manifest.name).toBe('@withlo/overview');
   expect(manifest.dependencies).toBeUndefined();

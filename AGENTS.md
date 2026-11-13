@@ -840,28 +840,35 @@ the skill it carries, bump `version` in `skill/checker/package.json` and merge: 
 builds and packs the checker, and publishes that version with npm's trusted publishing, which needs
 no token and signs provenance. The skill runs the checker by that exact version, so CI's `overview`
 job fails a pull request whose package differs from npm's copy of its version, its manifest's
-`devDependencies`, `scripts` and `nx` aside. `scripts/overview-npm.sh` packs the package the same
-way for both.
+`devDependencies`, `nx` and build scripts aside (the scripts an install runs count).
+`scripts/overview-npm.sh` packs the package the same way for both. Every bumped version is
+published: one that isn't above every release npm has, as when bumps merged close together publish
+out of order, goes out under the `previous` tag, so `latest` only moves forward.
 
-Only main can publish. The publish job runs in the `npm` environment, which the repository's
-settings limit to deployments from `main`, and npm's trusted publisher for the package names that
-environment, so a branch's edited copy of the workflow can't publish. GitHub creates a missing
-environment, without protection, the first time a job uses it, so the `npm` environment must exist,
-limited to `main`, before the trusted publisher is added.
+Only main can publish. The publish job runs in the `npm` environment, and npm's trusted publisher
+for the package names that environment, so a branch's edited copy of the workflow can't publish as
+long as the environment takes deployments from `main` alone. In the repository's settings, the `npm`
+environment is set to Deployment branches and tags → Selected branches and tags → `main`. Protected
+branches only won't do: while no branch is protected, it lets every branch deploy. GitHub creates a
+missing environment, without protection, the first time a job uses it, so the `npm` environment must
+exist, limited to `main`, before the trusted publisher is added.
 
 npm adds a trusted publisher only to a package it already has, so the first version is published by
 hand. Build the tarball fresh from main when publishing it: start the workflow, which builds and
-uploads it and, with no package on npm, publishes nothing, then download it and publish it.
+uploads it and, with no package on npm, publishes nothing, then download it, log in to npm, and
+publish it.
 
 ```sh
 gh workflow run publish.yml --repo withlo/lo --ref main
 gh run download <run id> --repo withlo/lo -n withlo-overview-<version> -D <folder>
+npm login
 npm publish <folder>/withlo-overview-<version>.tgz --access public
 ```
 
 Then add the trusted publisher in the package's settings on npmjs.com, under Trusted publishing:
-GitHub Actions, `withlo`, `lo`, `publish.yml`, environment `npm`, allowing `npm publish`. npm drops
-one that hasn't published within two days, so add it just before the next version merges.
+GitHub Actions, `withlo`, `lo`, `publish.yml`, environment `npm`, allowing `npm publish`. A trusted
+publisher expires unless it publishes within two days of being added, and an expired one can't be
+used or edited, only deleted and added again. So add it just before the next version merges.
 
 ## Design
 

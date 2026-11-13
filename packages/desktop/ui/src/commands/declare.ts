@@ -60,6 +60,21 @@ export interface When {
   readonly system?: System;
 }
 
+/** Where a command is in right-click menus: the kind of target's menu, and its place there. */
+export interface MenuPlace {
+  readonly on: TargetKind;
+  readonly order: number;
+  /** What that menu calls it, for a command that does something else to other targets. */
+  readonly label?: string;
+}
+
+/** Each right-click menu `command` is in. */
+export function menuPlaces(command: Pick<Declaration, 'menu'>): readonly MenuPlace[] {
+  const { menu } = command;
+  if (menu === undefined) return [];
+  return 'on' in menu ? [menu] : menu;
+}
+
 export interface Declaration {
   readonly label: string;
   readonly group: Group;
@@ -87,11 +102,11 @@ export interface Declaration {
    */
   readonly count?: string;
   /**
-   * It's in the right-click menu of targets of this kind, after the commands with a lower `order`.
-   * A menu draws a separator wherever the key table's `group` changes between neighbours, so
-   * commands of one group sit together.
+   * It's in the right-click menu of targets of this kind, or of each of these kinds, after the
+   * commands with a lower `order`. A menu draws a separator wherever the key table's `group`
+   * changes between neighbours, so commands of one group sit together.
    */
-  readonly menu?: { readonly on: TargetKind; readonly order: number };
+  readonly menu?: MenuPlace | readonly MenuPlace[];
   /** It's in this menu of the macOS app menu. */
   readonly bar?: { readonly menu: BarMenu; readonly order: number };
 }

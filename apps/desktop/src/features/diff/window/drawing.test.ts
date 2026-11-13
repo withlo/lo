@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { diffText, type FileDiff } from '@lo/diff';
-import type { DiffView, Probe } from '@lo/ui/code';
+import type { DiffView, Probe, ThreadView } from '@lo/ui/code';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { DiffState, FileVersions, Source, Start } from '../contract.ts';
 import { draw, type Drawing, Pacer, samePlace } from './drawing.ts';
+import { setThreader, threadsChanged } from './shared.ts';
+import type { DrawnDiff, ThreadCounts } from './threads.ts';
 import { Loader, type LoaderWork } from './loader.ts';
 import { drawnFor, revealWhenDrawn } from './tabs.ts';
 
@@ -15,6 +17,9 @@ let onScreen: string[] = [];
 /** Where the stand-in view's cursor went and what it scrolled to, and its headers, in order. */
 const moved: string[] = [];
 const headers: string[] = [];
+/** The threads the stand-in view was given, and what each header counts of them, in order. */
+const threadsTold: string[] = [];
+const counted: string[] = [];
 /** How far down the page each file's header is drawn, by its id. */
 const tops = new Map<string, number>();
 /** How tall the stand-in's headers are, in pixels. */
@@ -57,7 +62,15 @@ vi.mock('@lo/ui/code', () => ({
     setDiff: (id, diff) => void told.push(`diff ${id} ${names.get(diff) ?? ''}`),
     setTokens: (id, side) => void told.push(`tokens ${id} ${side}`),
     setCollapsed: (id, collapsed) => void told.push(`collapsed ${id} ${String(collapsed)}`),
-    setHeader: (id, header) => void headers.push(`${id} ${header.viewed ?? 'none'}`),
+    setHeader: (id, header) => {
+      headers.push(`${id} ${header.viewed ?? 'none'}`);
+      const threads = header.threads;
+      counted.push(`${id} ${threads ? `${threads.unresolved} of ${threads.total}` : 'none'}`);
+    },
+    setThreads: (threads, _render, options) => {
+      const at = threads.map(({ id, at: { file, side, line } }) => `${id} ${file} ${side} ${line}`);
+      threadsTold.push(`${at.join(', ')}${options?.now ? ' now' : ''}`);
+    },
     setMoves: () => undefined,
     loadFailed: (id) => void told.push(`failed ${id}`),
     focus: () => undefined,
@@ -208,6 +221,7 @@ async function drawnGithub(given: LoaderWork, paths: readonly string[]): Promise
     loader,
     entries: ready.entries,
     at: HEAD,
+    comparison: null,
     compareFrom: null,
     layout: 'split',
     nonce: '',
@@ -518,6 +532,7 @@ async function drawTwo(swapped = false): Promise<Drawing> {
     loader,
     entries: ready.entries,
     at: HEAD,
+    comparison: null,
     compareFrom: null,
     layout: 'split',
     nonce: '',
@@ -637,5 +652,58 @@ describe('viewed files', () => {
     drawnFor(TAB.id)?.viewedHere('d0', false, undefined);
     expect(told).toEqual(['collapsed d0 false']);
     expect(moved.filter((each) => each.startsWith('reveal'))).toEqual([]);
+  });
+});
+
+describe('review threads', () => {
+  it('are placed as the threader says, those of a new view at once, and counted on headers', async () => {
+    const asked: DrawnDiff[] = [];
+    let placed: ThreadView[] = [
+      { id: 'T1', at: { file: 'd0', side: 'new', line: 2 }, open: true, version: 1 },
+    ];
+    let counts = new Map<string, ThreadCounts>([
+      ['d0', { threads: 1, unresolved: 1, comments: 2 }],
+    ]);
+    const stop = setThreader({
+      threadsIn(tab, drawn) {
+        expect(tab).toBe(TAB.id);
+        asked.push(drawn);
+        return { threads: placed, counts };
+      },
+      render: () => () => ({ update: () => undefined, destroy: () => undefined }),
+      settled: () => true,
+    });
+    try {
+      await drawnGithub(work, ['src/a.ts']);
+      expect(asked[0]).toEqual({
+        at: HEAD,
+        comparison: null,
+        compareFrom: null,
+        files: [
+          { id: 'd0', key: expect.any(String), path: 'src/a.ts', old: 'src/a.ts', since: false },
+        ],
+      });
+      expect(threadsTold).toEqual(['T1 d0 new 2 now']);
+      await frames();
+      expect(counted.at(-1)).toBe('d0 1 of 1');
+
+      // Threads that change after it's drawn wait, as the view decides, for their lines to leave.
+      placed = [
+        ...placed,
+        { id: 'T2', at: { file: 'd0', side: 'old', line: 1 }, open: false, version: 1 },
+      ];
+      counts = new Map([['d0', { threads: 2, unresolved: 1, comments: 3 }]]);
+      threadsChanged(TAB.id);
+      expect(threadsTold.at(-1)).toBe('T1 d0 new 2, T2 d0 old 1');
+      await frames();
+      expect(counted.at(-1)).toBe('d0 1 of 2');
+      // Asked again with nothing new, the view is told nothing.
+      threadsChanged(TAB.id);
+      expect(threadsTold).toHaveLength(2);
+    } finally {
+      stop();
+      threadsTold.length = 0;
+      counted.length = 0;
+    }
   });
 });

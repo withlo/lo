@@ -40,6 +40,8 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Previous change              | `[ c` | In `diff`; in code views, Vim's motion                                                 | `diff.previousChange`  |
 | Next file                    | `] f` | In `diff`; in code views, Vim's motion                                                 | `diff.nextFile`        |
 | Previous file                | `[ f` | In `diff`; in code views, Vim's motion                                                 | `diff.previousFile`    |
+| Next thread                  | `] t` | In `diff`; in code views, Vim's motion                                                 | `diff.nextThread`      |
+| Previous thread              | `[ t` | In `diff`; in code views, Vim's motion                                                 | `diff.previousThread`  |
 | Next layer                   | `] s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.nextLayer`     |
 | Previous layer               | `[ s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.previousLayer` |
 | Back from a run to its layer | `Esc` | In `diff`; in code views, only in normal mode                                          | `stacks.back`          |
@@ -168,7 +170,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Open unchanged lines                  | `z o` | In `diff`; in code views, only in normal mode | `diff.openRun`    |
 | Close unchanged lines                 | `z c` | In `diff`; in code views, only in normal mode | `diff.closeRun`   |
 | Open every unchanged line in the file | `z R` | In `diff`; in code views, only in normal mode | `diff.openFile`   |
-| Load, close or open the file          | `z a` | In `diff`; in code views, only in normal mode | `diff.toggleFile` |
+| Open or close the thread, or the file | `z a` | In `diff`; in code views, only in normal mode | `diff.toggleFile` |
 | Load a large file anyway              | `z a` | In `file`; in code views, only in normal mode | `diff.loadWhole`  |
 
 ## Revision picker
@@ -324,8 +326,9 @@ these, which run Lo's command in place of Vim's key:
 | `Ctrl+W` (Linux) | Close tab                       | `Ctrl+W`  | `diff` (normal), `file` (normal), `peek` (normal) and `box` (normal) | `tab.close`           |
 | `Ctrl+P` (Linux) | Go to a file                    | `Ctrl+P`  | `diff`, `file`, `peek` and `box` (normal and visual)                 | `tree.find`           |
 
-In code views, Vim runs Lo's motions (next change, previous change, next file and previous file)
-under Lo's keys, so a count repeats them and they extend a selection in visual mode.
+In code views, Vim runs Lo's motions (next change, previous change, next file, previous file, next
+thread and previous thread) under Lo's keys, so a count repeats them and they extend a selection in
+visual mode.
 
 ## The keymap file
 

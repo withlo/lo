@@ -1,8 +1,8 @@
 // The diff view's keys, and the whole-file view's. Lo's jumps run in Vim, under the keys the
 // registry gives it, so counts and visual mode work; the rest act on the cursor's line, or the
-// lines `v` selected, or the header the cursor is on, and `e` on the file, or in the whole-file view
-// on the file while it shows a note. Vim's own moves and search are listed too, for key help:
-// they're never taken.
+// lines `v` selected, or the header the cursor is on, or the thread under the line, and `e` on the
+// file, or in the whole-file view on the file while it shows a note. Vim's own moves and search
+// are listed too, for key help: they're never taken.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -41,6 +41,23 @@ export default defineCommands('diff', {
     label: 'Previous file',
     group: 'Jump',
     keys: ['[ f'],
+    targets: ['line'],
+    vim: 'motion',
+    when: diff,
+  },
+  /** The next review thread under a line, in the files' order. */
+  nextThread: {
+    label: 'Next thread',
+    group: 'Jump',
+    keys: ['] t'],
+    targets: ['line'],
+    vim: 'motion',
+    when: diff,
+  },
+  previousThread: {
+    label: 'Previous thread',
+    group: 'Jump',
+    keys: ['[ t'],
     targets: ['line'],
     vim: 'motion',
     when: diff,
@@ -99,14 +116,21 @@ export default defineCommands('diff', {
     targets: ['line', 'header'],
     when: normal,
   },
-  /** Loads a large file, or closes the file into one block, or opens it again. */
+  /**
+   * On a review thread, the one `]t` landed on or the only one on the cursor's line, opens it or
+   * collapses it. Anywhere else, loads a large file, or closes the file into one block, or opens it
+   * again. Each menu names what it does there.
+   */
   toggleFile: {
-    label: 'Load, close or open the file',
+    label: 'Open or close the thread, or the file',
     group: 'Diff view',
     keys: ['z a'],
-    targets: ['line', 'header'],
+    targets: ['line', 'header', 'thread'],
     when: normal,
-    menu: { on: 'header', order: 10 },
+    menu: [
+      { on: 'header', order: 10, label: 'Load, close or open the file' },
+      { on: 'thread', order: 30, label: 'Collapse or open' },
+    ],
   },
   /**
    * The file the cursor is in, whole and read-only, at the cursor's line, in the version on the

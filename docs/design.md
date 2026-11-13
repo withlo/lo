@@ -598,7 +598,8 @@ a fork is someone else's code, even in a repo you trust.
   of the diff. A key on a file's header leaves a file-level comment. Comments can also be written on
   an overview's code blocks (section 8).
 - **In the diff.** Threads appear under their line. Unresolved threads start open, and resolved ones
-  start collapsed.
+  start collapsed. `za` on a thread opens or collapses it. A file's header and its row in the file
+  tree count its threads.
 - **Threads.** You can reply, resolve and unresolve, and edit or delete your own comments.
 - **Writing.** The comment box is a CodeMirror editor with Markdown highlighting, Vim keys and a
   preview toggle.
@@ -715,7 +716,7 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | Overview        | `]b`/`[b` next and previous block, `⏎` follow a block to its code, `o` open its code beside the overview (`o` again or `Esc` to close), `Tab` next part of a figure, `←`/`→` walkthrough step or tab, `ya` copy a prompt for an agent                                        |
 | Timeline        | `j`/`k` move between events, `Tab` through its links and buttons, `Esc` back to the list, `gx` open the one you're on on GitHub                                                                                                                                              |
 | Panels          | `⌘\` left panel, `⌘⇧\` threads panel. In the threads panel: `f` unresolved, all or yours. In the stack tree: `j`/`k` move, `⏎` show the layer, `gx` open it on GitHub, `Esc` back, `v` choose a run of layers, `j`/`k` to grow it, `⏎` to view it as one diff                |
-| Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file                                                                                                            |
+| Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file or the thread at the cursor                                                                                |
 | Comment box     | `⌘⏎` add to review, `⌥⏎` comment now, `⌘⇧V` write or preview, `Esc` leave insert mode, `Esc Esc` close and keep the draft                                                                                                                                                    |
 | Merge queue     | `x` remove, `J` jump to the front, `a` auto-merge, `⏎` open the PR                                                                                                                                                                                                           |
 | Revision picker | `j`/`k` move, `Space` set an end, `⏎` compare                                                                                                                                                                                                                                |

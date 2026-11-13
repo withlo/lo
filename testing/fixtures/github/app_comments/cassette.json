@@ -1,0 +1,5 @@
+{
+  "description": "What the app's review-thread tests read from GitHub, recorded from the app with the comments fixture's git: rozed-dev/e2e#94, a pull request with two pushes and eleven review threads, opened on its diff, its threads walked; its threads and rozed-bot's pending review, read as the diff was shown; its posts' HTML, read as each thread came near the screen, with rozed-bot's avatar and the images in the posts; then #95, which renames a file, with a thread on its base's side; and their polls, repeated while each stayed open.",
+  "recorded_at": "2026-11-13T20:33:37Z",
+  "repo": "rozed-dev/e2e"
+}

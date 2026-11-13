@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { expect, onTestFinished, test } from 'vitest';
 
 import { queryHash, readCassette, type Interaction } from './cassette.ts';
-import { queryOperation, rerecord } from './rerecord.ts';
+import { addAnswers, copyAnswer, queryOperation, rerecord } from './rerecord.ts';
 
 const FAKE_TOKEN = 'fake-token-for-the-rerecord-test';
 const OLD = 'query Layers($ids: [ID!]!) { nodes(ids: $ids) { id } }';
@@ -128,4 +128,91 @@ test('only a named query is recorded again', () => {
   expect(queryOperation(NEW)).toBe('Layers');
   expect(() => queryOperation('mutation M { a }')).toThrow('only a named query');
   expect(() => queryOperation(`${NEW} query Other { a }`)).toThrow('exactly one operation');
+});
+
+test('adds a query’s answers after the rest, each with its variables, and leaves the rest', async () => {
+  const dir = cassette();
+  const user = readFileSync(join(dir, '001-GET-user.json'), 'utf8');
+  const { fetch, sent } = answering('{"data":{"nodes":[{"id":"PR_2","number":2}]}}');
+  const counts = await addAnswers({
+    fetch,
+    token: FAKE_TOKEN,
+    query: NEW,
+    variables: [{ ids: ['PR_2'] }],
+    dirs: [dir],
+    at: 'now',
+  });
+  expect(counts.get(dir)).toBe(1);
+  expect(await sent[0]?.json()).toEqual({
+    query: NEW,
+    operationName: 'Layers',
+    variables: { ids: ['PR_2'] },
+  });
+
+  const { info, interactions } = readCassette(dir);
+  expect(info.added).toEqual({ Layers: 'now' });
+  expect(interactions.map(({ file }) => file)).toEqual([
+    '001-GET-user.json',
+    '002-POST-graphql-Layers.json',
+    '003-POST-graphql-Layers.json',
+  ]);
+  expect(readFileSync(join(dir, '001-GET-user.json'), 'utf8')).toBe(user);
+  const added = interactions[2]?.interaction;
+  expect(added?.request).toMatchObject({
+    operation: 'Layers',
+    variables: { ids: ['PR_2'] },
+    query_sha256: queryHash(NEW),
+  });
+  expect(added?.response.body).toEqual({ data: { nodes: [{ id: 'PR_2', number: 2 }] } });
+});
+
+test('adds nothing the cassette holds already, nor an answer with errors', async () => {
+  const dir = cassette();
+  const { fetch } = answering('{"data":{"nodes":[]}}');
+  await expect(
+    addAnswers({
+      fetch,
+      token: FAKE_TOKEN,
+      query: NEW,
+      variables: [{ ids: ['PR_1'] }],
+      dirs: [dir],
+      at: 'now',
+    }),
+  ).rejects.toThrow('holds Layers with {"ids":["PR_1"]} already');
+  const failing = answering('{"data":null,"errors":[{"message":"gone"}]}');
+  await expect(
+    addAnswers({
+      fetch: failing.fetch,
+      token: FAKE_TOKEN,
+      query: NEW,
+      variables: [{ ids: ['PR_2'] }],
+      dirs: [dir],
+      at: 'now',
+    }),
+  ).rejects.toThrow('with errors');
+  expect(readCassette(dir).interactions).toHaveLength(2);
+  expect(readCassette(dir).info.added).toBeUndefined();
+});
+
+test('copies an answer another cassette recorded after the rest, once', () => {
+  const dir = cassette();
+  const other = cassette();
+  const avatar: Interaction = {
+    request: { method: 'GET', url: 'https://avatars.githubusercontent.com/rozed-bot?s=40' },
+    response: { status: 200, headers: { 'content-type': 'image/png' }, body_base64: 'iVBORw==' },
+  };
+  const from = join(other, '003-GET-rozed-bot.json');
+  writeFileSync(from, JSON.stringify(avatar));
+  copyAnswer({ from, dirs: [dir], at: 'now' });
+
+  const { info, interactions } = readCassette(dir);
+  expect(info.added).toEqual({ 'GET https://avatars.githubusercontent.com/rozed-bot?s=40': 'now' });
+  expect(interactions.map(({ file }) => file)).toEqual([
+    '001-GET-user.json',
+    '002-POST-graphql-Layers.json',
+    '003-GET-rozed-bot.json',
+  ]);
+  expect(interactions[2]?.interaction).toEqual(avatar);
+  expect(() => copyAnswer({ from, dirs: [dir], at: 'later' })).toThrow('holds GET');
+  expect(readCassette(dir).interactions).toHaveLength(3);
 });

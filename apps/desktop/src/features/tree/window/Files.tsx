@@ -11,6 +11,7 @@ import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { useViewedMarks } from '../../revisions/window/shared.ts';
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { fileKey, PATH_LIMIT, type TreeState } from '../contract.ts';
+import { type FileThreads, useCounts } from './counts.ts';
 import { model as modelOf, type Row } from './model.ts';
 import { useViewedCount } from './shared.ts';
 import {
@@ -33,9 +34,13 @@ function keyOf(id: string): string[] | undefined {
 
 /**
  * The row as the tree draws it. `hits` are the files that changed between two revisions compared,
- * by key, while two are.
+ * by key, while two are; `threads`, each file's review threads on screen, by key.
  */
-function drawn(row: Row, hits: ReadonlySet<string> | undefined): FileTreeRow {
+function drawn(
+  row: Row,
+  hits: ReadonlySet<string> | undefined,
+  threads: ReadonlyMap<string, FileThreads>,
+): FileTreeRow {
   switch (row.kind) {
     case 'group':
       return row;
@@ -63,6 +68,7 @@ function drawn(row: Row, hits: ReadonlySet<string> | undefined): FileTreeRow {
         folder: row.folder,
         title: row.title,
         hit: hits?.has(row.key),
+        threads: threads.get(row.key),
       };
     default:
       row satisfies never;
@@ -169,7 +175,11 @@ export function Files({
       state?.compared ? new Set(state.compared.map((change) => fileKey(change.path))) : undefined,
     [state],
   );
-  const rows = useMemo(() => model?.rows.map((row) => drawn(row, hits)) ?? [], [model, hits]);
+  const counts = useCounts(tab.id);
+  const rows = useMemo(
+    () => model?.rows.map((row) => drawn(row, hits, counts)) ?? [],
+    [model, hits, counts],
+  );
   const viewedCount = useViewedCount(tab.id);
   const loading = !state || (state.listing.kind === 'loading' && state.changes === null);
 

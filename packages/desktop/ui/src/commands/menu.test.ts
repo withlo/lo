@@ -193,6 +193,33 @@ describe('a right-click menu', () => {
     expect(flat(file)).toContain('Show in the diff');
   });
 
+  it('names a command in several menus as each one says', () => {
+    const fold = defineCommands('diff', {
+      toggle: {
+        label: 'Open or close the thread, or the file',
+        group: 'Diff view',
+        keys: ['z a'],
+        targets: ['header', 'thread'],
+        menu: [
+          { on: 'header', order: 10, label: 'Open or close the file' },
+          { on: 'thread', order: 30 },
+        ],
+      },
+    });
+    const folding = new Registry({ system: 'mac', commands: handlers(fold, { toggle: run }) });
+    const named = (target: Target) =>
+      menuSections(folding, target)
+        .flat()
+        .map((item) => `${item.label} ${item.keys?.join(' ') ?? ''}`);
+    expect(named({ kind: 'header', file: 'f', side: 'new' })).toEqual([
+      'Open or close the file z a',
+    ]);
+    expect(named({ kind: 'thread', thread: 't1' })).toEqual([
+      'Open or close the thread, or the file z a',
+    ]);
+    expect(named(file)).toEqual([]);
+  });
+
   it('lists the commands for the system it is on only', () => {
     expect(labels(file, 'mac')).not.toContain('Quit Lo');
     expect(labels(file, 'linux')).toContain('Quit Lo');

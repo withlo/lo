@@ -8,7 +8,7 @@
 #   compare     Passes when npm hasn't got this version. Otherwise packs the checker and fails when
 #               the package differs from npm's copy of the version: Lo's skill runs the checker by
 #               its version, so any change to the package needs a new one. The manifests are
-#               compared without devDependencies, scripts and nx, which only build the package.
+#               compared without devDependencies, nx and the scripts that only build the package.
 #
 # Usage: sh scripts/overview-npm.sh lookup | pack <dir> | compare
 set -eu
@@ -57,12 +57,15 @@ pack() {
 }
 
 # Unpacks <tarball> into <dir>, leaving out the one folder it holds (usually package/), with its
-# manifest cut to what the package is: without devDependencies, scripts and nx, which only build
-# it, so bumping a build tool alone needs no new version. Every other file stays as it is.
+# manifest cut to what the package is: without devDependencies, nx and the scripts that only build
+# it, so bumping a build tool alone needs no new version. The scripts an install runs (preinstall,
+# install, postinstall and prepare) stay. Every other file stays as it is.
 unpack() {
   mkdir -p "$2"
   tar -xzf "$1" -C "$2" --strip-components=1
-  jq -S 'del(.devDependencies, .scripts, .nx)' "$2/package.json" > "$work/manifest.json"
+  jq -S 'del(.devDependencies, .nx) | .scripts //= {}
+    | .scripts |= with_entries(select(.key | test("^((pre|post)?install|prepare)$")))
+    | if .scripts == {} then del(.scripts) else . end' "$2/package.json" > "$work/manifest.json"
   mv "$work/manifest.json" "$2/package.json"
 }
 
