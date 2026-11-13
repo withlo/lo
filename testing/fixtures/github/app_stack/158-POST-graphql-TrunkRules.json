@@ -1,0 +1,82 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "TrunkRules",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e"
+    },
+    "query_sha256": "e77162dc0cafdf28d13ee51470c023490cbf0327322caa0f38d69e11401807c4"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4808",
+      "x-ratelimit-reset": "1794545327",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "192"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4808,
+          "used": 192,
+          "resetAt": "2026-11-13T04:48:47Z"
+        },
+        "repository": {
+          "rulesets": {
+            "nodes": [
+              {
+                "enforcement": "ACTIVE",
+                "conditions": {
+                  "refName": {
+                    "include": [
+                      "refs/heads/e4/gated"
+                    ],
+                    "exclude": []
+                  }
+                },
+                "rules": {
+                  "nodes": [
+                    {
+                      "type": "PULL_REQUEST"
+                    },
+                    {
+                      "type": "REQUIRED_STATUS_CHECKS"
+                    }
+                  ]
+                }
+              },
+              {
+                "enforcement": "ACTIVE",
+                "conditions": {
+                  "refName": {
+                    "include": [
+                      "refs/heads/e4/queued"
+                    ],
+                    "exclude": []
+                  }
+                },
+                "rules": {
+                  "nodes": [
+                    {
+                      "type": "MERGE_QUEUE"
+                    },
+                    {
+                      "type": "REQUIRED_STATUS_CHECKS"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

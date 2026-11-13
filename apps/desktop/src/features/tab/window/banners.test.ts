@@ -59,6 +59,23 @@ describe('a pull request’s banners', () => {
     });
   });
 
+  it("offer a layer that can't be opened a way back to the pull request its tab opened on", () => {
+    // As for a tab that comes back at a layer whose pull request was deleted since.
+    const [banner] = bannersFor(
+      view({
+        problem: { kind: 'notFound', message: 'GitHub has no pull request rozed-dev/e2e#9.' },
+      }),
+      { kind: 'waiting' },
+      'rozed-dev/e2e',
+      clock,
+      84,
+    );
+    expect(banner?.actions).toEqual([
+      { label: 'Show #84', do: { kind: 'layer', number: 84 } },
+      { label: 'Try again', do: { kind: 'retry' } },
+    ]);
+  });
+
   it("offer GitHub's link to fix single sign-on, and each account that can see it", () => {
     const blocked = bannersFor(
       view({

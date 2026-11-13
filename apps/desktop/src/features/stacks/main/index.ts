@@ -1,7 +1,8 @@
 // The stacks feature in main: for each pull request's tab, the stack its pull request is in, found
 // among its repository's open pull requests as its account's poller lists them, and sent to the
-// window each time it changes. Only the tab on screen reads its layers' state. And making a chain a
-// GitHub stack: planned here from what GitHub says, and run here once the reader confirms the plan.
+// window each time it changes, and kept with the tab, so a link to any of its layers shows that tab.
+// Only the tab on screen reads its layers' state. And making a chain a GitHub stack: planned here
+// from what GitHub says, and run here once the reader confirms the plan.
 
 import { PullRef } from '@lo/github';
 
@@ -9,7 +10,7 @@ import { defineFeature } from '../../../main/features.ts';
 import { IpcError } from '../../../ipc/contract.ts';
 import { github } from '../../accounts/service.ts';
 import { tabs, type TabService } from '../../tab/service.ts';
-import { contract } from '../contract.ts';
+import { contract, type StackState } from '../contract.ts';
 import { Conversions } from './conversion.ts';
 import { StackFinder, type FinderTab } from './finder.ts';
 
@@ -38,6 +39,26 @@ function tabsOf(service: TabService): FinderTab[] {
       },
     ];
   });
+}
+
+/**
+ * Keeps the stack `state` says a tab's layer on screen is in with the tab, so a link to any of its
+ * layers shows the tab, at that layer, or that it's in none. A stack not known yet keeps the last.
+ */
+function keepLayers(service: TabService, { id, stack }: StackState): void {
+  switch (stack.kind) {
+    case 'stack':
+      service.setLayers(id, { layers: stack.rows.map((row) => row.number), root: stack.root });
+      return;
+    case 'none':
+      service.setLayers(id, undefined);
+      return;
+    case 'unknown':
+      return;
+    default:
+      stack satisfies never;
+      throw new Error(`A stack of a kind Lo doesn't know: ${JSON.stringify(stack)}.`);
+  }
 }
 
 /** The conversions, once the feature has started. */
@@ -72,7 +93,13 @@ export default defineFeature(contract, {
     const access = context.use(github);
     const found = new StackFinder({
       poller: (login) => access.poller(login),
-      publish: (state) => context.publish('stack', state),
+      publish: (state) => {
+        context.publish('stack', state);
+        // Once the finder is done: telling the tab changes the tabs, which the finder follows.
+        queueMicrotask(() => {
+          if (finder === found) keepLayers(service, state);
+        });
+      },
       log,
     });
     const making = new Conversions({

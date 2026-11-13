@@ -8,7 +8,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { client } from '../../../window/ipc.ts';
 import { Slot, useViews } from '../../../window/slots.tsx';
 import { contract as settings } from '../../settings/contract.ts';
-import type { Connection, LocalState, PullView } from '../contract.ts';
+import { viewIds, type Connection, type LocalState, type PullView } from '../contract.ts';
 import {
   bannersFor,
   MOST_BANNERS,
@@ -27,6 +27,7 @@ import {
   status,
   useLocalCopy,
   usePull,
+  useTabs,
   type PullTab,
 } from './shared.ts';
 import { middleIds, panels, useTabPanels, viewCounts } from './panels.ts';
@@ -88,6 +89,10 @@ function run(id: string, action: BannerDo): void {
         return client(settings)
           .clearCache()
           .then(() => main().retry({ id }));
+      case 'layer':
+        return main()
+          .layer({ id, number: action.number })
+          .then(() => undefined);
       default:
         action satisfies never;
         return Promise.resolve();
@@ -96,7 +101,10 @@ function run(id: string, action: BannerDo): void {
   done.catch((error: unknown) => console.error("Lo couldn't do what the banner offered:", error));
 }
 
-/** Lo's own banners for a tab, most urgent first, counting down while something does. */
+/**
+ * Lo's own banners for a tab, most urgent first, counting down while something does. A view of
+ * another layer than the pull request its tab opened on can go back to that one.
+ */
 function useBanners(
   tab: PullTab,
   view: PullView | undefined,
@@ -108,7 +116,9 @@ function useBanners(
     view?.connection.kind === 'rateLimited' ||
     local?.kind === 'retrying';
   const now = useNow(counting);
-  return bannersFor(view, local, `${tab.owner}/${tab.repo}`, systemClock(now));
+  const held = useTabs().tabs.find((each) => viewIds([each]).includes(tab.id));
+  const own = held?.kind === 'pull' && held.number !== tab.number ? held.number : undefined;
+  return bannersFor(view, local, `${tab.owner}/${tab.repo}`, systemClock(now), own);
 }
 
 /** The banners: Lo's own, then other features', two at most, the most urgent first. */

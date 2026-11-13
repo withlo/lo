@@ -1,0 +1,34 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/82/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"e67f84f1ec131ef45f624698a2fabc514a9f873195978c35ce2c81e7d1795128\"",
+      "last-modified": "Fri, 13 Nov 2026 01:17:33 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4668",
+      "x-ratelimit-reset": "1794545595",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "332"
+    },
+    "body": [
+      {
+        "sha": "fe7a2a9edc8a1b774021f294e1170aa894a53ffd",
+        "filename": "src/plans.ts",
+        "status": "added",
+        "additions": 12,
+        "deletions": 0,
+        "changes": 12,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/59b27c734c12089f5a795fe1f30bb1b5cad89650/src%2Fplans.ts",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/59b27c734c12089f5a795fe1f30bb1b5cad89650/src%2Fplans.ts",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/src%2Fplans.ts?ref=59b27c734c12089f5a795fe1f30bb1b5cad89650",
+        "patch": "@@ -0,0 +1,12 @@\n+import { DEFAULT_LIMIT, type Limit } from './limits.ts';\n+\n+/** Each plan's limit, by the plan's name. */\n+const PLANS: Readonly<Record<string, Limit>> = {\n+  free: DEFAULT_LIMIT,\n+  team: { points: 15000 },\n+};\n+\n+/** The limit of the plan named `name`, or the default for a plan Lo doesn't know. */\n+export function limitOf(name: string): Limit {\n+  return Object.hasOwn(PLANS, name) ? (PLANS[name] ?? DEFAULT_LIMIT) : DEFAULT_LIMIT;\n+}"
+      }
+    ]
+  }
+}

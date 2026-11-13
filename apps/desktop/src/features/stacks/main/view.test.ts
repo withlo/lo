@@ -18,7 +18,7 @@ import {
   recorded,
   type Recorded,
 } from './test/support.ts';
-import { checksOf, headOf, reviewOf, viewOf, type ViewInput } from './view.ts';
+import { checksOf, foundOf, reviewOf, viewOf, type ViewInput } from './view.ts';
 
 /** The tree and the GitHub stack, in the order `]s` walks them, and #11, with their state. */
 const LAYERS = [2, 3, 4, 6, 5, 7, 8, 11, 19];
@@ -31,6 +31,7 @@ function input(found: Recorded, number: number, more: Partial<ViewInput> = {}): 
     forest: forestOf(found),
     list: found.list,
     layers: found.layers,
+    overviews: undefined,
     state: 'open',
     shown: undefined,
     ...more,
@@ -67,7 +68,7 @@ describe("a tab's stack", () => {
     expect(view.root).toBe('main');
     // c and e on b in the order they were opened, d on c: e is a branch, on b, not the row above.
     expect(brief(view)).toEqual(['#2', '#3', '#4 current', '#6', '#5 branch on #3']);
-    expect(view.head).toBe('5 layers · by base branch and shared commits');
+    expect(view.found).toBe('both');
     expect(view.notes).toEqual([]);
     expect(view.rows[0]).toEqual({
       number: 2,
@@ -81,6 +82,7 @@ describe("a tab's stack", () => {
       checks: null,
       queue: null,
       needsRebase: false,
+      overview: null,
       viewed: { source: 'layers', viewed: 0, files: 1, complete: true },
     });
     // The layer on screen counts from its tab's files; d changes a's, b's and c's files, and its own.
@@ -99,13 +101,22 @@ describe("a tab's stack", () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
     const { view } = viewOf(input(found, 8));
     expect(brief(view)).toEqual(['#7', '#8 current']);
-    expect(view).toMatchObject({ head: 'GitHub stack · 2 layers', root: 'main' });
+    expect(view).toMatchObject({ found: 'github', root: 'main' });
+  });
+
+  it('shows a layer alone that needs a rebase, with why', async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    // #11 sits alone on the branch of #10, which was squash-merged.
+    const { view, ids } = viewOf(input(found, 11));
+    expect(brief(view)).toEqual(['#11 current needs rebase']);
+    expect(view).toMatchObject({
+      found: null,
+      notes: [{ kind: 'needsRebase', text: expect.stringContaining('#10 was squash-merged') }],
+    });
+    expect(ids).toEqual(idsOf(found.list, [11]));
   });
 
   it('shows none for a pull request on its own, which reads no layers', async () => {
-    const found = await recorded('stacks_e2e', E2E, LAYERS);
-    // #11 sits alone on the branch its squash-merged layer went into.
-    expect(viewOf(input(found, 11))).toEqual({ view: { kind: 'none' }, shown: undefined, ids: [] });
     const gh = await recorded('stacks_gh_stack', new RepoRef('github', 'gh-stack'));
     const [first] = gh.list.pullRequests;
     if (!first) throw new Error('no pull requests');
@@ -189,17 +200,65 @@ describe("a tab's stack", () => {
   });
 });
 
+describe('the overviews', () => {
+  it("mark each layer that has one, and none from a fork, whose overview Lo can't see", async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    const list = changePull(found.list, 5, (pr) => ({ ...pr, isCrossRepository: true }));
+    const forest = stacksOf(list, found.rules);
+    const marks = (overviews: readonly number[] | undefined) =>
+      rowsOf(viewOf(input(found, 4, { forest, list, overviews })).view).map((row) => [
+        row.number,
+        row.overview,
+      ]);
+    expect(marks([3, 4])).toEqual([
+      [2, false],
+      [3, true],
+      [4, true],
+      [6, false],
+      [5, null],
+    ]);
+    // Until the repository's overviews are read, no layer says.
+    expect(marks(undefined).map(([, overview]) => overview)).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+});
+
+describe('the offer to make the chain a GitHub stack', () => {
+  it('says how the chain through the layer on screen was found, while Lo could plan it', async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    // a, b, c, and d, which sits on c by its commits.
+    expect(viewOf(input(found, 4)).view).toMatchObject({
+      callout:
+        "These PRs sit on each other's branches and share commits but aren't a GitHub stack. As one, they'd merge together.",
+    });
+  });
+
+  it("isn't made until the layers' state says none is in a merge queue, nor while one is", async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    expect(viewOf(input(found, 4, { layers: undefined })).view).toMatchObject({ callout: null });
+    const layers =
+      found.layers && changeLayer(found.layers, 3, (layer) => ({ ...layer, isInMergeQueue: true }));
+    expect(viewOf(input(found, 4, { layers })).view).toMatchObject({ callout: null });
+  });
+
+  it("isn't made for what's a GitHub stack already", async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    expect(viewOf(input(found, 8)).view).toMatchObject({ found: 'github', callout: null });
+  });
+});
+
 describe("the app's stacks", () => {
   it("are #C's, branching at #A, found by base branch and shared commits", async () => {
     const found = await recorded('app_stack', E2E, [82, 83, 84, 85]);
     const { view, ids } = viewOf(input(found, 84));
     // #D, opened after #B, is a second layer on #A.
     expect(brief(view)).toEqual(['#82', '#83', '#84 current', '#85 branch on #82']);
-    expect(view).toMatchObject({
-      root: 'stack/root',
-      head: '4 layers · by base branch and shared commits',
-      notes: [],
-    });
+    expect(view).toMatchObject({ root: 'stack/root', found: 'both', notes: [] });
     expect(rowsOf(view).map(({ title }) => title)).toEqual([
       'Stack A: load per-plan limits',
       'Stack B: rate limit GraphQL queries by cost',
@@ -209,17 +268,19 @@ describe("the app's stacks", () => {
     expect(ids).toEqual(idsOf(found.list, [82, 83, 84, 85]));
   });
 
-  it('show none for #E, alone on #M, which was squash-merged', async () => {
+  it('show #E alone on #M, which was squash-merged, so it needs a rebase', async () => {
     const found = await recorded('app_stack', E2E);
     expect(forestOf(found).layers[87]?.needsRebase).toMatchObject({ merged: 86 });
-    expect(viewOf(input(found, 87)).view).toEqual({ kind: 'none' });
+    const { view } = viewOf(input(found, 87));
+    expect(brief(view)).toEqual(['#87 current needs rebase']);
+    expect(view).toMatchObject({ notes: [{ kind: 'needsRebase' }] });
   });
 
   it('say #G1 and #G2 are a GitHub stack', async () => {
     const found = await recorded('app_stack', E2E, [88, 89]);
     const { view } = viewOf(input(found, 89));
     expect(brief(view)).toEqual(['#88', '#89 current']);
-    expect(view).toMatchObject({ root: 'stack/root', head: 'GitHub stack · 2 layers' });
+    expect(view).toMatchObject({ root: 'stack/root', found: 'github' });
   });
 });
 
@@ -286,7 +347,7 @@ describe('the notes', () => {
     const { view } = viewOf(input(found, 5, { forest: stacksOf(list, found.rules), list }));
     expect(brief(view)).toEqual(['#11 needs rebase', '#5 current']);
     expect(view).toMatchObject({
-      head: '2 layers · by base branch',
+      found: 'baseBranch',
       notes: [
         {
           kind: 'needsRebase',
@@ -325,7 +386,7 @@ describe('the layer on screen leaving', () => {
       state: 'merged',
       viewed: { source: 'tab' },
     });
-    expect(after.view).toMatchObject({ head: '5 layers · by base branch and shared commits' });
+    expect(after.view).toMatchObject({ found: 'both', callout: null });
     // Its state is still read with the others'.
     expect(after.ids).toEqual(idsOf(found.list, [2, 3, 4, 6, 5]));
     // And stays as it is the next time.
@@ -371,18 +432,18 @@ describe('the layer on screen leaving', () => {
 });
 
 describe('the wording', () => {
-  it('names how the layers were found, and counts them', () => {
+  it('names how the layers were found', () => {
     const open = { nativeStack: undefined };
-    expect(headOf([open, open], [{ rule: undefined }, { rule: 'sharedCommits' }])).toBe(
-      '2 layers · by shared commits',
+    expect(foundOf([open, open], [{ rule: undefined }, { rule: 'sharedCommits' }])).toBe(
+      'sharedCommits',
     );
     // A GitHub stack's layers go into the branch below, as a chain by base branch does.
-    expect(headOf([open, open], [{ rule: undefined }, { rule: 'nativeStack' }])).toBe(
-      '2 layers · by base branch',
+    expect(foundOf([open, open], [{ rule: undefined }, { rule: 'nativeStack' }])).toBe(
+      'baseBranch',
     );
     const native = { nativeStack: { stack: 9 } };
-    expect(headOf([native], [{ rule: undefined }])).toBe('GitHub stack · 1 layer');
-    expect(headOf([native, { nativeStack: { stack: 10 } }], [{ rule: undefined }])).toBe('1 layer');
+    expect(foundOf([native], [{ rule: undefined }])).toBe('github');
+    expect(foundOf([native, { nativeStack: { stack: 10 } }], [{ rule: undefined }])).toBeNull();
   });
 
   it("takes a review or checks state Lo doesn't know as none", () => {

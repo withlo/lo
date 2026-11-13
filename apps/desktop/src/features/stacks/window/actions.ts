@@ -5,7 +5,7 @@
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { announce, notify } from '../../../window/commands/notices.tsx';
-import { activeTab, withoutBidi } from '../../tab/window/shared.ts';
+import { withoutBidi } from '../../tab/window/shared.ts';
 import type { ConversionView } from '../contract.ts';
 import { main } from './main.ts';
 import { stacksStore, type Dialog } from './store.ts';
@@ -36,17 +36,6 @@ function whyNot(error: unknown): string {
   return error instanceof IpcError
     ? withoutBidi(error.message)
     : 'Lo couldn’t ask for it. Try again.';
-}
-
-/** Whether `gS` can run now, or why not: it needs a pull request on screen. */
-export function canMakeStack(): true | string {
-  return activeTab()?.kind === 'pull' ? true : 'There’s no pull request on screen.';
-}
-
-/** `gS`: makes the chain the pull request on screen is in a GitHub stack. */
-export function makeStackOnScreen(): void {
-  const tab = activeTab();
-  if (tab?.kind === 'pull') makeStack(tab.id, tab.number);
 }
 
 /**

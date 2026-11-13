@@ -127,7 +127,7 @@ The stacks the app's tests open come from `fixtures/stack.sh`, built the same wa
 and `STACK_PULLS` names the pull requests and their heads. Their cassette is `app_stack`.
 
 `app_stack_convert` was recorded with writes, as Lo made #82, #83 and #84 a GitHub stack: it changed
-#84's base branch to `stack/b`, then made GitHub stack #91. `fixtures/stack-reset.sh`, run with
+#84's base branch to `stack/b`, then made GitHub stack #92. `fixtures/stack-reset.sh`, run with
 `LO_FIXTURE_TOKEN_FILE` as `record.ts` is, unstacks them and changes #84's base back, as `stack.sh`
 made them, so that can be recorded again. What GitHub can't be made to do on demand, a lost answer,
 a refusal or a base branch changed elsewhere meanwhile, the app's tests answer from the same

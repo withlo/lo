@@ -30,12 +30,14 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Jump
 
-| Action          | Keys  | Where                                  | Command               |
-| --------------- | ----- | -------------------------------------- | --------------------- |
-| Next change     | `] c` | In `diff`; in code views, Vim's motion | `diff.nextChange`     |
-| Previous change | `[ c` | In `diff`; in code views, Vim's motion | `diff.previousChange` |
-| Next file       | `] f` | In `diff`; in code views, Vim's motion | `diff.nextFile`       |
-| Previous file   | `[ f` | In `diff`; in code views, Vim's motion | `diff.previousFile`   |
+| Action          | Keys  | Where                                                                                  | Command                |
+| --------------- | ----- | -------------------------------------------------------------------------------------- | ---------------------- |
+| Next change     | `] c` | In `diff`; in code views, Vim's motion                                                 | `diff.nextChange`      |
+| Previous change | `[ c` | In `diff`; in code views, Vim's motion                                                 | `diff.previousChange`  |
+| Next file       | `] f` | In `diff`; in code views, Vim's motion                                                 | `diff.nextFile`        |
+| Previous file   | `[ f` | In `diff`; in code views, Vim's motion                                                 | `diff.previousFile`    |
+| Next layer      | `] s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.nextLayer`     |
+| Previous layer  | `[ s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.previousLayer` |
 
 ## Act
 
@@ -54,18 +56,19 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Copy and open
 
-| Action                   | Keys                              | Where                                                               | Command             |
-| ------------------------ | --------------------------------- | ------------------------------------------------------------------- | ------------------- |
-| Copy the sign-in code    | `y y`                             | In `dialog`                                                         | `accounts.copyCode` |
-| Whole file at the cursor | `g f`                             | In `diff`; in code views, only in normal mode                       | `diff.wholeFile`    |
-| Copy the lines           | `y y`                             | In `diff` and `file`; in code views, only in normal and visual mode | `diff.copyLines`    |
-| Copy the line's link     | `y l`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyLink`     |
-| Copy path                | `y p`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyPath`     |
-| Open on GitHub           | `g x`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.openOnGithub` |
-| Overview note            | None: in its menu and the palette | In `diff`; in code views, only in normal mode                       | `diff.overviewNote` |
-| Whole file               | `g f`                             | In `tree`                                                           | `tree.wholeFile`    |
-| Copy path                | `y p`                             | In `tree`                                                           | `tree.copyPath`     |
-| Open on GitHub           | `g x`                             | In `tree`                                                           | `tree.openOnGithub` |
+| Action                   | Keys                              | Where                                                               | Command               |
+| ------------------------ | --------------------------------- | ------------------------------------------------------------------- | --------------------- |
+| Copy the sign-in code    | `y y`                             | In `dialog`                                                         | `accounts.copyCode`   |
+| Whole file at the cursor | `g f`                             | In `diff`; in code views, only in normal mode                       | `diff.wholeFile`      |
+| Copy the lines           | `y y`                             | In `diff` and `file`; in code views, only in normal and visual mode | `diff.copyLines`      |
+| Copy the line's link     | `y l`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyLink`       |
+| Copy path                | `y p`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyPath`       |
+| Open on GitHub           | `g x`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.openOnGithub`   |
+| Overview note            | None: in its menu and the palette | In `diff`; in code views, only in normal mode                       | `diff.overviewNote`   |
+| Open on GitHub           | `g x`                             | In `stack`                                                          | `stacks.openOnGithub` |
+| Whole file               | `g f`                             | In `tree`                                                           | `tree.wholeFile`      |
+| Copy path                | `y p`                             | In `tree`                                                           | `tree.copyPath`       |
+| Open on GitHub           | `g x`                             | In `tree`                                                           | `tree.openOnGithub`   |
 
 ## Review
 
@@ -97,18 +100,19 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Files
 
-| Action                   | Keys     | Where                                                                                  | Command            |
-| ------------------------ | -------- | -------------------------------------------------------------------------------------- | ------------------ |
-| Go to the file tree      | `-`      | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `tree.focus`       |
-| Tree or review order     | `t`      | In `tree`                                                                              | `tree.mode`        |
-| Changed files only       | `f`      | In `tree`                                                                              | `tree.changedOnly` |
-| Next row of the tree     | `j`, `↓` | In `tree`                                                                              | `tree.down`        |
-| Previous row of the tree | `k`, `↑` | In `tree`                                                                              | `tree.up`          |
-| Open the folder          | `l`, `→` | In `tree`                                                                              | `tree.open`        |
-| Close the folder         | `h`, `←` | In `tree`                                                                              | `tree.close`       |
-| Open every folder        | `z R`    | In `tree`                                                                              | `tree.openAll`     |
-| Close every folder       | `z M`    | In `tree`                                                                              | `tree.closeAll`    |
-| Show the file            | `⏎`      | In `tree`                                                                              | `tree.show`        |
+| Action                   | Keys     | Where                                                                                                   | Command            |
+| ------------------------ | -------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
+| Go to the stack          | `-`      | In `tree`                                                                                               | `stacks.focus`     |
+| Go to the file tree      | `-`      | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
+| Tree or review order     | `t`      | In `tree`                                                                                               | `tree.mode`        |
+| Changed files only       | `f`      | In `tree`                                                                                               | `tree.changedOnly` |
+| Next row of the tree     | `j`, `↓` | In `tree`                                                                                               | `tree.down`        |
+| Previous row of the tree | `k`, `↑` | In `tree`                                                                                               | `tree.up`          |
+| Open the folder          | `l`, `→` | In `tree`                                                                                               | `tree.open`        |
+| Close the folder         | `h`, `←` | In `tree`                                                                                               | `tree.close`       |
+| Open every folder        | `z R`    | In `tree`                                                                                               | `tree.openAll`     |
+| Close every folder       | `z M`    | In `tree`                                                                                               | `tree.closeAll`    |
+| Show the file            | `⏎`      | In `tree`                                                                                               | `tree.show`        |
 
 ## Overview
 
@@ -129,9 +133,12 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Panels
 
-| Action     | Keys | Where                               | Command         |
-| ---------- | ---- | ----------------------------------- | --------------- |
-| Left panel | `⌘\` | Anywhere but `dialog` and `palette` | `tab.leftPanel` |
+| Action                      | Keys     | Where                               | Command         |
+| --------------------------- | -------- | ----------------------------------- | --------------- |
+| Next layer in the stack     | `j`, `↓` | In `stack`                          | `stacks.down`   |
+| Previous layer in the stack | `k`, `↑` | In `stack`                          | `stacks.up`     |
+| Show this layer             | `⏎`      | In `stack`                          | `stacks.show`   |
+| Left panel                  | `⌘\`     | Anywhere but `dialog` and `palette` | `tab.leftPanel` |
 
 ## Diff view
 
@@ -219,6 +226,7 @@ comment box and another elsewhere.
 | `overview`  | Named by `overview`.                                                                  |
 | `revisions` | Named by `revisions`.                                                                 |
 | `settings`  | Named by `settings`.                                                                  |
+| `stack`     | Named by `stacks`.                                                                    |
 | `tree`      | Named by `tree`.                                                                      |
 | `welcome`   | Named by `welcome`.                                                                   |
 

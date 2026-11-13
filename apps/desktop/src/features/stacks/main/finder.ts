@@ -1,15 +1,19 @@
 // The stacks pull requests' tabs show, as main follows them: for each repository a tab is in, the
 // stacks among its open pull requests, worked out again when its account's poller lists them anew,
 // reads its rulesets, or reads the merged pull requests below layers GitHub moved; each tab's stack
-// in it; and the state of the layers of the stack on screen, which only its tab reads. Nothing here
-// calls Electron.
+// in it; and the state of the layers of the stack on screen, and which of them have an overview,
+// which only its tab reads. Nothing here calls Electron.
 
 import {
   openPullRequest,
+  overviewRefNumbers,
   STACK_LAYERS,
+  type Cached,
   type OpenPullRequestList,
+  type OverviewRefNumbers,
   type Poller,
   type PullRef,
+  type ReadKind,
   type RepoRef,
   type StackLayerList,
   type TrunkRuleList,
@@ -43,11 +47,20 @@ export type FinderPoller = Pick<
   | 'openPullRequests'
   | 'trunkRules'
   | 'stackLayers'
+  | 'readCached'
   | 'cachedRead'
   | 'readStackLayersAgain'
   | 'forgetStackLayers'
   | 'onChange'
 >;
+
+/**
+ * The pull requests in a repository that have an overview, from one read of every overview's ref
+ * there, which the poller keeps with its ETag for the pull request on screen: read once its stack
+ * shows, and again on the 5-minute refresh, when an unchanged answer costs nothing. Nothing in the
+ * pull request's check says when it's out of date.
+ */
+export const OVERVIEW_REFS: ReadKind<OverviewRefNumbers> = { name: 'OverviewRefs', watched: [] };
 
 export interface FinderOptions {
   /** An account's poller. Throws for an account Lo doesn't have. */
@@ -69,6 +82,8 @@ interface Followed {
   asked: Asked | undefined;
   /** The layers at newer heads than their state, as `<number>:<head>`, read again for. */
   newer: ReadonlySet<string>;
+  /** The poller it asked to read its repository's overviews with, once it has. */
+  overviews: FinderPoller | undefined;
 }
 
 /** The layers a tab asked a poller to read the state of. */
@@ -101,6 +116,11 @@ export class StackFinder {
   readonly #pollers = new Map<string, PollerEntry>();
   /** Each repository's stacks, by lowercased login and repository. */
   readonly #forests = new Map<string, Forest>();
+  /**
+   * The newest read of each repository's overviews, by lowercased login and repository, whichever
+   * of its tabs' layers it was read for, so a layer shown for the first time has them at once.
+   */
+  readonly #overviews = new Map<string, Cached<OverviewRefNumbers>>();
   /** The accounts whose poller couldn't be got, by lowercased login, so each is logged once. */
   readonly #unavailable = new Set<string>();
   #scheduled = false;
@@ -132,6 +152,7 @@ export class StackFinder {
           shown: undefined,
           asked: undefined,
           newer: new Set(),
+          overviews: undefined,
         });
         continue;
       }
@@ -178,12 +199,15 @@ export class StackFinder {
     const entry = this.#pollers.get(lower);
     if (entry?.kind === 'ready') entry.unsubscribe();
     this.#pollers.delete(lower);
-    for (const key of this.#forests.keys()) {
-      if (key.startsWith(`${lower}\n`)) this.#forests.delete(key);
+    for (const kept of [this.#forests, this.#overviews]) {
+      for (const key of kept.keys()) if (key.startsWith(`${lower}\n`)) kept.delete(key);
     }
     for (const followed of this.#followed.values()) {
       if (followed.asked && sameLogin(followed.asked.poller.login, login)) {
         followed.asked = undefined;
+      }
+      if (followed.overviews && sameLogin(followed.overviews.login, login)) {
+        followed.overviews = undefined;
       }
     }
     this.#refresh();
@@ -196,6 +220,7 @@ export class StackFinder {
     this.#pollers.clear();
     this.#followed.clear();
     this.#forests.clear();
+    this.#overviews.clear();
   }
 
   /** Works every tab's stack out again soon, once for everything that changes meanwhile. */
@@ -212,11 +237,22 @@ export class StackFinder {
   #refresh(): void {
     if (this.#stopped) return;
     const used = new Set<string>();
+    const pollers = new Map<Followed, FinderPoller | undefined>();
     for (const followed of this.#followed.values()) {
       const { tab } = followed;
       const poller = tab.login === undefined ? undefined : this.#poller(tab.login);
+      pollers.set(followed, poller);
+      if (!poller) continue;
+      const key = forestKey(poller, tab.pull.repo);
+      used.add(key);
+      const read = poller.cachedRead(tab.pull, OVERVIEW_REFS);
+      const kept = this.#overviews.get(key);
+      if (read && (!kept || read.fetchedAt >= kept.fetchedAt)) this.#overviews.set(key, read);
+    }
+    for (const followed of this.#followed.values()) {
+      const { tab } = followed;
+      const poller = pollers.get(followed);
       const repo = tab.pull.repo;
-      if (poller) used.add(forestKey(poller, repo));
       const list = poller?.openPullRequests(repo)?.value;
       const layers = poller?.cachedRead(tab.pull, STACK_LAYERS)?.value;
       const out = viewOf({
@@ -225,6 +261,7 @@ export class StackFinder {
         forest: poller ? this.#forest(poller, repo) : undefined,
         list,
         layers,
+        overviews: poller && this.#overviews.get(forestKey(poller, repo))?.value.numbers,
         state: tab.state,
         shown: followed.shown,
       });
@@ -238,13 +275,16 @@ export class StackFinder {
       }
       this.#read(followed, poller, out.ids, list, layers);
     }
-    for (const key of this.#forests.keys()) if (!used.has(key)) this.#forests.delete(key);
+    for (const kept of [this.#forests, this.#overviews]) {
+      for (const key of kept.keys()) if (!used.has(key)) kept.delete(key);
+    }
   }
 
   /**
    * Has tab `followed`'s poller read the state of the layers whose node IDs are `ids` while it's on
-   * screen, and again when the list shows a layer at a newer head than its state. A tab whose pull
-   * request is no longer in a stack stops reading them.
+   * screen, and again when the list shows a layer at a newer head than its state, and which pull
+   * requests in its repository have an overview. A tab whose pull request is no longer in a stack
+   * stops reading its layers.
    */
   #read(
     followed: Followed,
@@ -262,6 +302,17 @@ export class StackFinder {
       // Nothing reads them off screen; coming back asks again, to start from a newer read.
       if (followed.asked) followed.asked.again = true;
       return;
+    }
+    if (followed.overviews !== poller) {
+      followed.overviews = poller;
+      const repo = tab.pull.repo;
+      poller
+        .readCached(tab.pull, OVERVIEW_REFS, (client, known) =>
+          overviewRefNumbers(client, repo, known),
+        )
+        .catch((error: unknown) => {
+          this.#options.log(`reading ${repo.toString()}'s overviews: ${String(error)}`);
+        });
     }
     const key = ids.join('\n');
     const asked = followed.asked;

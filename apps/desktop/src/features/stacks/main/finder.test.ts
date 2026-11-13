@@ -1,12 +1,15 @@
 // The stacks pull requests' tabs show, followed with an account's poller that holds what the
 // recorded cassettes say of rozed-dev/e2e: its tree (#2 a → main, #3 b → a, #4 c → b, #5 e → b and
-// #6 d → main holding c), its GitHub stack (#7, #8), and #11, alone.
+// #6 d → main holding c), its GitHub stack (#7, #8), #11, alone on #10, which was squash-merged, and
+// #19, alone.
 
 import {
   PullRef,
   STACK_LAYERS,
   type Cached,
+  type GithubClient,
   type OpenPullRequestList,
+  type OverviewRefNumbers,
   type ReadKind,
   type RepoRef,
   type StackLayerList,
@@ -15,7 +18,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { stack as stackSchema, type StackState } from '../contract.ts';
-import { StackFinder, type FinderPoller, type FinderTab } from './finder.ts';
+import { OVERVIEW_REFS, StackFinder, type FinderPoller, type FinderTab } from './finder.ts';
 import { changePull, E2E, idsOf, leaving, recorded } from './test/support.ts';
 
 const LOGIN = 'rozed-bot';
@@ -27,6 +30,9 @@ class FakePoller implements FinderPoller {
   readonly lists = new Map<string, Cached<OpenPullRequestList>>();
   readonly rules = new Map<string, Cached<TrunkRuleList>>();
   readonly reads = new Map<string, Cached<StackLayerList>>();
+  readonly overviews = new Map<string, Cached<OverviewRefNumbers>>();
+  /** The pull requests the repository's overviews were asked to be read for. */
+  readonly overviewsAsked: string[] = [];
   /** Each read of layers asked for: the pull request it's for, and the layers' node IDs. */
   readonly asked: [string, string[]][] = [];
   /** The pull requests whose layers were to be read again at once. */
@@ -48,10 +54,24 @@ class FakePoller implements FinderPoller {
     return Promise.resolve(this.reads.get(pull.key));
   }
 
+  readCached<T>(
+    pull: PullRef,
+    kind: ReadKind<T>,
+    _request: (client: GithubClient, known: T | undefined) => Promise<T>,
+  ): Promise<Cached<T> | undefined> {
+    if (kind.name !== OVERVIEW_REFS.name) throw new Error(`The finder read ${kind.name}`);
+    this.overviewsAsked.push(pull.toString());
+    return Promise.resolve(this.cachedRead(pull, kind));
+  }
+
   cachedRead<T>(pull: PullRef, kind: ReadKind<T>): Cached<T> | undefined {
-    if (kind.name !== STACK_LAYERS.name) throw new Error(`The finder read ${kind.name}`);
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the layers' read, as asked.
-    return this.reads.get(pull.key) as Cached<T> | undefined;
+    const reads = new Map<string, Map<string, Cached<unknown>>>([
+      [STACK_LAYERS.name, this.reads],
+      [OVERVIEW_REFS.name, this.overviews],
+    ]).get(kind.name);
+    if (!reads) throw new Error(`The finder read ${kind.name}`);
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the read of the kind asked.
+    return reads.get(pull.key) as Cached<T> | undefined;
   }
 
   readStackLayersAgain(pull: PullRef): void {
@@ -71,6 +91,12 @@ class FakePoller implements FinderPoller {
   set(repo: RepoRef, change: { list?: OpenPullRequestList; rules?: TrunkRuleList }): void {
     if (change.list) this.lists.set(repo.key, { value: change.list, fetchedAt: 0 });
     if (change.rules) this.rules.set(repo.key, { value: change.rules, fetchedAt: 0 });
+    this.changed();
+  }
+
+  /** Reads which pull requests have an overview for `pull`, as the poller does once it's open. */
+  readOverviews(pull: PullRef, numbers: number[], fetchedAt = 0): void {
+    this.overviews.set(pull.key, { value: { numbers, etag: undefined }, fetchedAt });
     this.changed();
   }
 
@@ -162,21 +188,51 @@ describe('the stacks tabs show', () => {
     const poller = new FakePoller();
     poller.set(E2E, { list: found.list, rules: found.rules });
     const { finder } = started(poller);
-    finder.follow([tab(4, { onScreen: true }), tab(8), tab(11)]);
+    finder.follow([tab(4, { onScreen: true }), tab(8), tab(19)]);
     await settle();
     expect(rows(finder, 't8')).toEqual([7, 8]);
-    expect(rows(finder, 't11')).toBe('none');
+    expect(rows(finder, 't19')).toBe('none');
     expect(poller.asked).toEqual([['rozed-dev/e2e#4', idsOf(found.list, [2, 3, 4, 6, 5])]]);
     // The GitHub stack comes on screen: its layers are read for its tab.
-    finder.follow([tab(4), tab(8, { onScreen: true }), tab(11)]);
+    finder.follow([tab(4), tab(8, { onScreen: true }), tab(19)]);
     expect(poller.asked.at(-1)).toEqual(['rozed-dev/e2e#8', idsOf(found.list, [7, 8])]);
-    // A pull request on its own reads none.
-    finder.follow([tab(4), tab(8), tab(11, { onScreen: true })]);
+    // A pull request on its own reads none, nor which pull requests have an overview.
+    finder.follow([tab(4), tab(8), tab(19, { onScreen: true })]);
     expect(poller.asked).toHaveLength(2);
+    expect(poller.overviewsAsked).toEqual(['rozed-dev/e2e#4', 'rozed-dev/e2e#8']);
     // Coming back asks again, to start from the newest read.
-    finder.follow([tab(4, { onScreen: true }), tab(8), tab(11)]);
+    finder.follow([tab(4, { onScreen: true }), tab(8), tab(19)]);
     expect(poller.asked).toHaveLength(3);
     expect(poller.again).toEqual([]);
+  });
+
+  it("read which of the repository's pull requests have an overview, for the stack on screen", async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    const poller = new FakePoller();
+    poller.set(E2E, { list: found.list, rules: found.rules });
+    const { finder } = started(poller);
+    const marks = (id: string) => {
+      const stack = finder.state(id)?.stack;
+      return stack?.kind === 'stack' && stack.rows.map((row) => row.overview);
+    };
+    finder.follow([tab(4, { onScreen: true }), tab(8)]);
+    await settle();
+    expect(poller.overviewsAsked).toEqual(['rozed-dev/e2e#4']);
+    expect(marks('t4')).toEqual([null, null, null, null, null]);
+    poller.readOverviews(PullRef.of(E2E, 4), [3]);
+    await settle();
+    expect(marks('t4')).toEqual([false, true, false, false, false]);
+    // One read serves every tab in the repository, and a layer shown since asks once for its own.
+    expect(marks('t8')).toEqual([false, false]);
+    finder.follow([tab(4), tab(8, { onScreen: true })]);
+    finder.follow([tab(4, { onScreen: true }), tab(8)]);
+    finder.follow([tab(4), tab(8, { onScreen: true })]);
+    expect(poller.overviewsAsked).toEqual(['rozed-dev/e2e#4', 'rozed-dev/e2e#8']);
+    // The newest read wins.
+    poller.readOverviews(PullRef.of(E2E, 8), [7], 1);
+    await settle();
+    expect(marks('t4')).toEqual([false, false, false, false, false]);
+    expect(marks('t8')).toEqual([true, false]);
   });
 
   it('read the layers again when the list shows one at a newer head than its state', async () => {

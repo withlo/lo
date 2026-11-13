@@ -84,7 +84,8 @@ export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   layers: readonly StackTreeLayer[];
   /** The branch the bottom layer sits on. */
   root: string;
-  found: StackTreeFound;
+  /** How Lo found the layers to sit on each other: nothing for a layer alone, which none sits on. */
+  found?: StackTreeFound | undefined;
   /** The layer the keyboard is on, by key. */
   focused?: string | undefined;
   /** The layer on screen, by key. */
@@ -133,9 +134,11 @@ function ordinal(position: number): string {
   return `${position}${SUFFIXES[ORDINALS.select(position)]}`;
 }
 
-function headText(count: number, found: StackTreeFound): string {
+function headText(count: number, found: StackTreeFound | undefined): string {
   const layers = `${count} ${count === 1 ? 'layer' : 'layers'}`;
   switch (found) {
+    case undefined:
+      return layers;
     case 'github':
       return `GitHub stack · ${layers}`;
     case 'base':

@@ -1,6 +1,6 @@
 // Making a chain a GitHub stack in the app: `g S` on a pull request's tab plans it in main, the
 // dialog shows the plan to confirm, and main sends each change once, in order. It replays
-// `app_stack_convert`, recorded from the app as it made #A, #B and #C GitHub stack #91 in
+// `app_stack_convert`, recorded from the app as it made #A, #B and #C GitHub stack #92 in
 // rozed-dev/e2e, and, for what GitHub can't be made to do on demand, the same with an answer
 // changed: a lost answer, a refusal, and a base branch changed elsewhere.
 
@@ -143,18 +143,18 @@ async function open(page: Page, number: number): Promise<string> {
   );
   if (!reply.ok || typeof reply.value !== 'string') throw new Error(JSON.stringify(reply));
   const id = reply.value;
-  await expect.poll(() => headOf(page, id), { timeout: 30_000 }).not.toBe('unread');
+  await expect.poll(() => foundOf(page, id), { timeout: 30_000 }).not.toBe('unread');
   return id;
 }
 
-/** The head of the stack tab `id` shows, once main has read the state of its layers. */
-async function headOf(page: Page, id: string): Promise<string> {
+/** How the stack tab `id` shows was found, once main has read the state of its layers. */
+async function foundOf(page: Page, id: string): Promise<string | null> {
   const reply = await page.evaluate((tab) => window.lo.invoke('stacks.state', { id: tab }), id);
   if (!reply.ok) return 'unread';
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what the contract says.
   const stack = (reply.value as StackState | undefined)?.stack;
   if (stack?.kind !== 'stack') return 'unread';
-  return stack.rows.every((row) => row.viewed) ? stack.head : 'unread';
+  return stack.rows.every((row) => row.viewed) ? stack.found : 'unread';
 }
 
 /** Presses `g S`, "Make this a GitHub stack", in the diff on screen, once it shows. */
@@ -194,7 +194,7 @@ test('makes a chain a GitHub stack once the reader confirms it, and only then', 
   await expect(said(page, `#${STACK.a} has 2 layers on it.`)).toHaveCount(1, { timeout: 20_000 });
 
   const c = await open(page, STACK.c);
-  expect(await headOf(page, c)).toBe('4 layers · by base branch and shared commits');
+  expect(await foundOf(page, c)).toBe('both');
   await makeStack(page);
   const dialog = page.getByTestId('make-stack');
   await expect(dialog).toContainText('Make these 3 PRs a GitHub stack?', { timeout: 20_000 });
@@ -224,7 +224,7 @@ test('makes a chain a GitHub stack once the reader confirms it, and only then', 
   await expect(dialog).toBeHidden();
   expect(writes(github)).toEqual(MADE);
   // #C's base branch is now #B's head, so #A, #B and #C sit on each other by base branch alone.
-  await expect.poll(() => headOf(page, c), { timeout: 30_000 }).toBe('4 layers · by base branch');
+  await expect.poll(() => foundOf(page, c), { timeout: 30_000 }).toBe('baseBranch');
   expect(writes(github)).toEqual(MADE);
 });
 
