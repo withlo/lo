@@ -190,10 +190,32 @@ describe('the viewed count', () => {
     });
   });
 
-  it('keeps no list GitHub gave only part of, or gave of the pull request', () => {
+  it('is of the layer’s own files from GitHub’s comparison, when the local copy can’t say what changed', () => {
+    // The copy is ready at the head but refuses the comparison, or has no merge base, so the tree
+    // lists what GitHub's comparison with where the layer starts holds, which is the layer's own.
+    showState(treeOf('fallback', own, { start: START, changesFrom: 'github' }));
+    expect(held.get('fallback')).toEqual(OWN);
+    expect(viewedCountOf(marks, listedOf(3, 3), LAYER, held.get('fallback'))).toEqual({
+      viewed: 0,
+      total: 1,
+      partial: false,
+    });
+    // It counts from the moment the copy is ready at the head, before the tree lists from the
+    // copy, and a push or a new start leaves it behind as the copy's own list does.
+    const pushed: LocalState = { ...LAYER, head: 'c'.repeat(40) };
+    expect(viewedCountOf(marks, listedOf(3, 3), pushed, held.get('fallback'))).toEqual({
+      viewed: 1,
+      total: 3,
+      partial: false,
+    });
+  });
+
+  it('keeps no list GitHub gave only part of, or of a pull request that is no layer', () => {
     showState(treeOf('partial', own, { partial: true }));
     expect(held.get('partial')).toBeUndefined();
-    // Before the local copy is ready, GitHub's changes are of the whole pull request.
+    showState(treeOf('partial layer', own, { start: START, partial: true, changesFrom: 'github' }));
+    expect(held.get('partial layer')).toBeUndefined();
+    // GitHub's files of a pull request that starts nowhere are of every file it changes.
     showState(treeOf('github', own, { changesFrom: 'github' }));
     expect(held.get('github')).toBeUndefined();
   });

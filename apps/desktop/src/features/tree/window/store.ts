@@ -20,7 +20,7 @@ export const states = tabState<TreeState | undefined>(() => undefined);
 
 /**
  * The files a tab's diff holds, with the head they're of and the commit they start from, as the tree
- * last listed them from the local copy while no revisions were compared.
+ * last listed them while no revisions were compared.
  */
 export interface Held {
   readonly at: string;
@@ -33,8 +33,11 @@ export interface Held {
  * for a stack's layer compared with the layer below it, its own files, which a comparison of
  * revisions doesn't list. A comparison lists the files that changed between two revisions too,
  * which the pull request may not change at all, so it never counts as what the diff holds. Only a
- * list that's whole is kept, and it's good only for the head and start it's of: a push loaded, or
- * a new start, while revisions are compared, leaves it behind.
+ * list that's whole is kept: the local copy's, or for a layer GitHub's comparison with what it
+ * starts from, which the tree lists until the copy can, or when it can't say. GitHub's list for a
+ * pull request that's no layer is of every file it changes, which the count already is. It's good
+ * only for the head and start it's of: a push loaded, or a new start, while revisions are
+ * compared, leaves it behind.
  */
 export const held = tabState<Held | undefined>(() => undefined);
 
@@ -76,7 +79,7 @@ export function showState(state: TreeState): void {
     state.compared === null &&
     state.at !== null &&
     state.changes !== null &&
-    state.changesFrom === 'local' &&
+    (state.changesFrom === 'local' || state.start !== null) &&
     !state.partial
   ) {
     held.set(state.id, { at: state.at, start: state.start, changes: state.changes });
