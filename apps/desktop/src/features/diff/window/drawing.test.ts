@@ -122,6 +122,7 @@ function state(start: Start, from: Source, paths = ['src/a.ts']): DiffState {
     waiting: null,
     from,
     files: paths.map((path) => versions(start, path)),
+    start: null,
     partial: false,
     uncompared: false,
     problem: null,

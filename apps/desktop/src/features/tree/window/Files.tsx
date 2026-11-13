@@ -12,6 +12,7 @@ import { useViewedMarks } from '../../revisions/window/shared.ts';
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { fileKey, PATH_LIMIT, type TreeState } from '../contract.ts';
 import { model as modelOf, type Row } from './model.ts';
+import { useViewedCount } from './shared.ts';
 import {
   askFolders,
   catchUp,
@@ -169,7 +170,7 @@ export function Files({
     [state],
   );
   const rows = useMemo(() => model?.rows.map((row) => drawn(row, hits)) ?? [], [model, hits]);
-  const viewedCount = marks.count;
+  const viewedCount = useViewedCount(tab.id);
   const loading = !state || (state.listing.kind === 'loading' && state.changes === null);
 
   return (

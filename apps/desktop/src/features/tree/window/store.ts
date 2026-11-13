@@ -4,6 +4,7 @@
 
 import { tabState } from '../../tab/window/shared.ts';
 import {
+  type Changed,
   type Entry,
   type Folder,
   FOLDERS_LIMIT,
@@ -16,6 +17,15 @@ import { keyOf } from './paths.ts';
 
 /** What main last sent of each tab's tree. */
 export const states = tabState<TreeState | undefined>(() => undefined);
+
+/**
+ * The files each tab's diff holds, as the tree last listed them while no revisions were compared:
+ * for a stack's layer compared with the layer below it, its own files, which a comparison of
+ * revisions doesn't list. A comparison lists the files that changed between two revisions too,
+ * which the pull request may not change at all, so it never counts as what the diff holds. Only a
+ * list that's whole is kept.
+ */
+export const held = tabState<readonly Changed[] | undefined>(() => undefined);
 
 /** The folders main sent of a tab's tree, by key, for the commit they're of. */
 export interface Folders {
@@ -51,6 +61,9 @@ export const shown = new Map<string, Model>();
 /** Takes what main sent. A tree of another commit forgets the folders of the last. */
 export function showState(state: TreeState): void {
   states.set(state.id, state);
+  if (state.compared === null && state.changes !== null && !state.partial) {
+    held.set(state.id, state.changes);
+  }
   if (folders.get(state.id).at !== state.at)
     folders.set(state.id, { at: state.at, entries: new Map() });
 }

@@ -1,6 +1,8 @@
 // Where each layer's diff could start, as main last offered it in the layer's stack: kept with the
 // layer's view of its tab, and gone when the tab closes.
 
+import type { DiffState } from '../../diff/contract.ts';
+import { diffStateOf, onDiffState } from '../../diff/window/shared.ts';
 import { tabState, type BannerSwitch } from '../../tab/window/shared.ts';
 import type { Offer, StackState } from '../contract.ts';
 import { main } from './main.ts';
@@ -38,13 +40,44 @@ export function applyOffer(id: string, offer: Offer): void {
 }
 
 /**
- * Whether a tab's banner shows: while it's offered a start. A tab drawn before main said anything
- * of its stack asks for it as it comes on screen.
+ * Whether the diff on screen, as main says it (`state`), already starts where `offer` says: it's
+ * compared with that commit, or the local copy worked out that its changes start there, as when the
+ * layer's base branch was the layer below's until it was changed elsewhere. A start at the base
+ * branch (no commit) is the whole pull request drawn with no start of its own: not two revisions
+ * compared, nor a diff still waiting for the local copy, which don't start there though they're
+ * compared with no commit either. A diff main hasn't worked out the start of, as GitHub's, doesn't
+ * start where a commit says.
+ */
+export function startedAt(offer: Offer, state: DiffState | undefined): boolean {
+  if (state === undefined) return false;
+  if (offer.commit === null) {
+    return (
+      state.compareFrom === null &&
+      state.comparison === null &&
+      state.waiting === null &&
+      state.from !== null
+    );
+  }
+  return state.compareFrom === offer.commit || state.start === offer.commit;
+}
+
+/** The start tab `id` is offered, if it's one its diff on screen doesn't start at already. */
+export function offerFor(id: string): Offer | null {
+  const offer = offers.get(id);
+  return offer === null || startedAt(offer, diffStateOf(id)) ? null : offer;
+}
+
+/**
+ * Whether a tab's banner shows: while it's offered a start its diff on screen doesn't have
+ * already. A tab drawn before main said anything of its stack asks for it as it comes on screen.
  */
 export const startSwitch: BannerSwitch = {
-  shows: (tab) => offers.get(tab.id) !== null,
+  shows: (tab) => offerFor(tab.id) !== null,
   subscribe(tab, listener) {
     if (offers.get(tab.id) === null) catchUp(tab.id);
-    return offers.subscribe(listener);
+    const stops = [offers.subscribe(listener), onDiffState(tab.id, listener)];
+    return () => {
+      for (const stop of stops) stop();
+    };
   },
 };

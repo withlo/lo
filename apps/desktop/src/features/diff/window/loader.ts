@@ -103,6 +103,14 @@ export interface Ready {
   readonly compareFrom: string | null;
   readonly from: Source;
   readonly entries: readonly Entry[];
+  /** Whether GitHub listed only some of the files, as main said when they started loading. */
+  readonly partial: boolean;
+  /**
+   * Whether the files are GitHub's, and GitHub couldn't compare the head with where a stack's layer,
+   * or a run of its layers, starts, so they're the pull request's own, as main said when they
+   * started loading.
+   */
+  readonly uncompared: boolean;
 }
 
 /** How the files to draw stand, for whoever draws them. */
@@ -148,6 +156,8 @@ interface Run {
   readonly since: string | null;
   readonly from: Source;
   readonly entries: readonly Entry[];
+  readonly partial: boolean;
+  readonly uncompared: boolean;
   /** Files the view shows the lines of, which it loads whether or not they start out shown. */
   readonly shown: ReadonlySet<string>;
   /**
@@ -178,6 +188,7 @@ function runOf(
   since: string | null,
   from: Source,
   entries: readonly Entry[],
+  listing: Pick<Ready, 'partial' | 'uncompared'>,
   shown: ReadonlySet<string>,
   only?: ReadonlySet<string>,
 ): Run {
@@ -189,6 +200,8 @@ function runOf(
     since,
     from,
     entries,
+    partial: listing.partial,
+    uncompared: listing.uncompared,
     shown,
     only,
     done: false,
@@ -304,7 +317,7 @@ export class Loader {
   #startIfDue(): void {
     const state = this.#state;
     if (!state || !this.#whitespaceKnown) return;
-    const { at, comparison, compareFrom, since, from, files } = state;
+    const { at, comparison, compareFrom, since, from, files, partial, uncompared } = state;
     if (at === null || from === null || files === null) return;
     const run = this.#run;
     if (
@@ -314,7 +327,11 @@ export class Loader {
       run.compareFrom !== compareFrom ||
       run.since !== since
     ) {
-      this.#start(at, comparison, compareFrom, since, from, files);
+      this.#start(at, comparison, compareFrom, since, from, files, {
+        partial,
+        // Main keeps saying GitHub couldn't compare it once the local copy's files replace GitHub's.
+        uncompared: uncompared && from === 'github',
+      });
     }
   }
 
@@ -413,6 +430,7 @@ export class Loader {
     since: string | null,
     from: Source,
     files: readonly FileVersions[],
+    listing: Pick<Ready, 'partial' | 'uncompared'>,
   ): void {
     const previous = this.#run;
     previous?.controller.abort();
@@ -443,10 +461,10 @@ export class Loader {
       inPlace && previous?.done === true && previous.from === from && previous.at === at
         ? changedEntries(previous.entries, entries)
         : undefined;
-    const run = runOf(at, comparison, compareFrom, since, from, entries, shown, only);
+    const run = runOf(at, comparison, compareFrom, since, from, entries, listing, shown, only);
     this.#run = run;
     this.#failed.clear();
-    if (inPlace) this.#ready = { at, comparison, compareFrom, from, entries };
+    if (inPlace) this.#ready = { at, comparison, compareFrom, from, entries, ...listing };
     void this.#load(run).catch((error: unknown) => {
       if (!run.stopped) this.#work.log('Lo couldn’t load the diff:', error);
     });
@@ -648,6 +666,8 @@ export class Loader {
         compareFrom: run.compareFrom,
         from: run.from,
         entries: run.entries,
+        partial: run.partial,
+        uncompared: run.uncompared,
       };
     }
   }

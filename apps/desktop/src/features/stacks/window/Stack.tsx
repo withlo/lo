@@ -23,14 +23,8 @@ import { useCallback, useEffect, useRef, type MouseEvent } from 'react';
 import { currentMenu, openMenu } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { useOverviewMark, type OverviewMark } from '../../overview/window/shared.ts';
-import { useViewedMarks } from '../../revisions/window/shared.ts';
-import {
-  useChangedFiles,
-  useTabState,
-  withoutBidi,
-  type Files,
-  type PullTab,
-} from '../../tab/window/shared.ts';
+import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
+import { useViewedCount } from '../../tree/window/shared.ts';
 import type { Checks, Link, Review, Row } from '../contract.ts';
 import { makeStack } from './actions.ts';
 import { catchUp, choosing, focused, keyboardLayer, stacks } from './layers.ts';
@@ -87,11 +81,13 @@ function noteKeys(): NoteKeys {
   };
 }
 
-/** What the layer on screen's viewed count says: from its tab's files, as `e` marks them. */
+/**
+ * What the layer on screen's viewed count says: of the files its diff shows, as `e` marks them, with
+ * whether there may be more than GitHub has listed.
+ */
 export interface OnScreen {
-  readonly count: { readonly viewed: number; readonly total: number } | undefined;
-  /** Its files as GitHub listed them, which may be fewer than it changes. */
-  readonly files: Files | undefined;
+  readonly count:
+    { readonly viewed: number; readonly total: number; readonly partial: boolean } | undefined;
   readonly overview: OverviewMark | undefined;
 }
 
@@ -116,7 +112,7 @@ export function layerOf(row: Row, onScreen: OnScreen): StackTreeLayer {
       ? onScreen.count && {
           viewed: onScreen.count.viewed,
           total: onScreen.count.total,
-          partial: (onScreen.files?.files.length ?? 0) < onScreen.count.total,
+          partial: onScreen.count.partial,
         }
       : viewed?.source === 'layers'
         ? { viewed: viewed.viewed, total: viewed.files, partial: !viewed.complete }
@@ -140,8 +136,7 @@ export function Stack({ tab }: { tab: PullTab }) {
   const keyboard = useTabState(focused, tab.id);
   const choice = useTabState(choosing, tab.id);
   const overview = useOverviewMark(tab.id);
-  const count = useViewedMarks(tab.id).count;
-  const files = useChangedFiles(tab.id);
+  const count = useViewedCount(tab.id);
 
   useEffect(() => {
     if (stacks.get(tab.id) === undefined) catchUp(tab.id);
@@ -177,7 +172,7 @@ export function Stack({ tab }: { tab: PullTab }) {
   }, [take]);
 
   if (view?.kind !== 'stack') return null;
-  const onScreen = { count, files, overview };
+  const onScreen = { count, overview };
   // A run on screen, or being chosen, is a band; it has no one layer on screen.
   const band = choice
     ? (chainIn(view.rows, choice.anchor, choice.end) ?? [choice.anchor])

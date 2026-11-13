@@ -7,8 +7,9 @@ import { keyLabels } from '@lo/ui/commands';
 import { useEffect } from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
+import { useDiffFiles } from '../../diff/window/shared.ts';
 import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { noteOf } from './model.ts';
+import { noteOf, runNoteOf } from './model.ts';
 import { catchUp, views } from './store.ts';
 
 const tones = {
@@ -21,12 +22,16 @@ export function Note({ tab }: { tab: PullTab }) {
   useKeys();
   const view = useTabState(views, tab.id);
   const pull = usePull(tab.id);
+  const files = useDiffFiles(tab.id);
   useEffect(() => {
-    if (views.get(tab.id) === undefined) catchUp(tab.id);
-  }, [tab.id]);
+    // A run of layers compares no revisions, so it has no comparison to ask for.
+    if (tab.run === undefined && views.get(tab.id) === undefined) catchUp(tab.id);
+  }, [tab.id, tab.run]);
   const [first] = registry().keysOf('revisions.picker');
   const keys = first && keyLabels(first, registry().system);
-  const note = noteOf(pull?.acting?.kind === 'anonymous' ? undefined : view, keys?.join(''));
+  const note = tab.run
+    ? runNoteOf(tab.run.layers, files?.uncompared === true)
+    : noteOf(pull?.acting?.kind === 'anonymous' ? undefined : view, keys?.join(''));
   return (
     <div
       role="note"
@@ -37,7 +42,7 @@ export function Note({ tab }: { tab: PullTab }) {
       <span className="min-w-0 flex-1 truncate" title={note.text}>
         {note.text}
       </span>
-      {keys && pull?.acting?.kind !== 'anonymous' && (
+      {keys && !tab.run && pull?.acting?.kind !== 'anonymous' && (
         <span className="flex flex-none items-center gap-6 text-fg-muted">
           <Key keys={keys} quiet decorative /> Compare revisions
         </span>

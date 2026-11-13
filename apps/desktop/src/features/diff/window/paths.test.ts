@@ -100,6 +100,7 @@ describe('files with long paths', () => {
       waiting: null,
       from: 'local',
       files,
+      start: null,
       partial: false,
       uncompared: false,
       problem: null,

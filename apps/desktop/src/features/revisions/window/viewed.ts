@@ -114,6 +114,20 @@ export function markIn(
 }
 
 /**
+ * How many of `files` are viewed in `marks`, of how many there are: for a count of the files a diff
+ * shows. GitHub's own count is of the pull request's files, which include another layer's when a
+ * stack's layer is compared with the one below it, and the diff shows fewer.
+ */
+export function countIn(
+  marks: ShownMarks,
+  files: readonly { readonly path: TreePath; readonly previous: TreePath | null }[],
+): { readonly viewed: number; readonly total: number } {
+  let viewed = 0;
+  for (const file of files) if (markIn(marks, file.path, file.previous) === 'viewed') viewed += 1;
+  return { viewed, total: files.length };
+}
+
+/**
  * Whether `e` can mark the file at `path` viewed: GitHub can name it, as UTF-8, and its path is short
  * enough to key a map by. Lo keeps no mark of any other.
  */

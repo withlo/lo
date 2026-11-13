@@ -17,6 +17,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanUp();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const LAYERS: StackTreeLayer[] = [
@@ -135,6 +136,49 @@ function shape(host: HTMLElement): Record<string, string> {
         .join(' '),
     ]),
   );
+}
+
+/**
+ * A tree drawn with the layout jsdom lacks: each row is 40 tall, the first 24 below the top of the
+ * tree, which is 238 tall, and a ResizeObserver that tells when its size changes.
+ */
+function setup(over: Partial<StackTreeProps>) {
+  const resized: (() => void)[] = [];
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: () => void) {
+        resized.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const host = render(<StackTree {...props(over)} />);
+  const scroller = tree(host);
+  const size = { height: 238 };
+  Object.defineProperty(scroller, 'clientHeight', { get: () => size.height });
+  Object.defineProperty(scroller, 'scrollTop', { value: 0, writable: true });
+  for (const [key, element] of rows(host)) {
+    Object.defineProperty(element, 'offsetTop', {
+      value: 24 + LAYERS.findIndex((each) => each.key === key) * 40,
+    });
+    Object.defineProperty(element, 'offsetHeight', { value: 40 });
+  }
+  return {
+    host,
+    scroller,
+    size,
+    resize: (height: number) => {
+      size.height = height;
+      for (const resize of resized) resize();
+    },
+    // The person scrolls the tree.
+    scrollTo: (top: number) => {
+      scroller.scrollTop = top;
+      scroller.dispatchEvent(new Event('scroll'));
+    },
+  };
 }
 
 describe('StackTree', () => {
@@ -411,6 +455,50 @@ describe('StackTree', () => {
       expect(scroller.scrollTop).toBe(0);
       rerender(host, <StackTree {...props({ focused: 'a', current: 'e' })} />);
       expect(scroller.scrollTop).toBe(24 + 4 * 40 + 40 - 100);
+    });
+
+    describe('as its height changes', () => {
+      it('keeps the layer on screen in view when the tree gets shorter, as an offer above it does', () => {
+        const { host, scroller, resize } = setup({ current: 'c' });
+        // The tree shows every row, so nothing scrolls. Then an offer arrives above it, and it has
+        // 100 of its height left: the layer on screen is below it, so the tree scrolls to it.
+        resize(238);
+        expect(scroller.scrollTop).toBe(0);
+        resize(100);
+        expect(scroller.scrollTop).toBe(24 + 2 * 40 + 40 - 100);
+        // The keyboard moved on to another layer since: that's the one it keeps in view now.
+        rerender(host, <StackTree {...props({ current: 'c', focused: 'e' })} />);
+        resize(80);
+        expect(scroller.scrollTop).toBe(24 + 4 * 40 + 40 - 80);
+      });
+
+      it('leaves the tree where it was scrolled to by hand, until the layer changes', () => {
+        const { host, scroller, resize, scrollTo } = setup({ current: 'c' });
+        resize(100);
+        expect(scroller.scrollTop).toBe(24 + 2 * 40 + 40 - 100);
+        // Scrolled up to the top by hand: a resize doesn't yank it back down to the layer.
+        scrollTo(0);
+        resize(90);
+        expect(scroller.scrollTop).toBe(0);
+        resize(120);
+        expect(scroller.scrollTop).toBe(0);
+        // Moving to a layer brings it into view, and the layer is kept in view again from there.
+        rerender(host, <StackTree {...props({ current: 'c', focused: 'e' })} />);
+        expect(scroller.scrollTop).toBe(24 + 4 * 40 + 40 - 120);
+        resize(60);
+        expect(scroller.scrollTop).toBe(24 + 4 * 40 + 40 - 60);
+      });
+
+      it('does not bring back the layer a run was chosen from when a run comes on screen', () => {
+        const { host, scroller, resize } = setup({ current: 'e' });
+        resize(100);
+        expect(scroller.scrollTop).toBe(24 + 4 * 40 + 40 - 100);
+        // The run on screen has no one layer, and the tree is scrolled away from the layer.
+        rerender(host, <StackTree {...props({ focused: 'e' })} />);
+        scroller.scrollTop = 0;
+        resize(80);
+        expect(scroller.scrollTop).toBe(0);
+      });
     });
   });
 
