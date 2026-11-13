@@ -1,7 +1,8 @@
-// The window's tabs as main keeps them: opened, closed, shown and moved, in the strip's order, and
-// the layers each pull request's tab has views of. Each change is written to `tab_tabs` before
-// anyone hears of it, so the tabs come back as they were after Lo restarts, each at the layer it
-// showed. Nothing here calls Electron.
+// The window's tabs as main keeps them: opened, closed, shown and moved, in the strip's order, the
+// layers each pull request's tab has views of, and the run of layers it shows as one diff, if any.
+// Each change is written to `tab_tabs` before anyone hears of it, so the tabs come back as they were
+// after Lo restarts, each at the layer it showed: a run isn't kept, so a tab that showed one comes
+// back at the layer it was chosen from. Nothing here calls Electron.
 
 import { randomUUID } from 'node:crypto';
 
@@ -12,6 +13,7 @@ import {
   layersOf,
   opening as openingSchema,
   pullNumber,
+  runViewId,
   tab as tabSchema,
   viewId,
   viewIds,
@@ -19,6 +21,7 @@ import {
   type Moved,
   type Opening,
   type PullState,
+  type Run,
   type Stack,
   type Tab,
   type Tabs,
@@ -84,6 +87,14 @@ export interface TabList {
    * tab that isn't a pull request's.
    */
   layer(id: string, number: number): string | undefined;
+  /**
+   * Shows a run of `run.layers` as one diff in pull request's tab `id`, or the tab of view `id`, in
+   * place of the layer on screen, chosen from the layer view `id` shows: its view of that layer is
+   * made if it has none, and showing any layer leaves the run. Returns the run's view's id. Nothing
+   * for a tab that isn't a pull request's. The run isn't written, so the tab comes back at the
+   * layer after a restart.
+   */
+  openRun(id: string, run: { layers: readonly number[]; start: string }): string | undefined;
   /**
    * Keeps the stack pull request's tab `id`, or the tab of view `id`, holds, or that it holds none:
    * a link to any of its layers shows the tab, and the window's title says where in it the layer on
@@ -176,12 +187,22 @@ export function createTabs(options: TabListOptions): TabList {
     return tab.id;
   };
 
-  /** The pull request's tab `id` names, by its own id or a view's, and that view's layer. */
-  const viewOf = (id: string): { index: number; tab: PullTab; layer: number } | undefined => {
+  /**
+   * The pull request's tab `id` names, by its own id or a view's, and that view's layer: for its view
+   * of a run of layers, `run`, and the layer the run was chosen from.
+   */
+  const viewOf = (
+    id: string,
+  ): { index: number; tab: PullTab; layer: number; run: boolean } | undefined => {
     for (const [index, tab] of state.kept.entries()) {
       if (tab.kind !== 'pull') continue;
+      if (tab.run && runViewId(tab, tab.run.layers) === id) {
+        return { index, tab, layer: tab.run.from, run: true };
+      }
       const layer = layersOf(tab).find((each) => viewId(tab, each) === id);
-      if (layer !== undefined || tab.id === id) return { index, tab, layer: layer ?? tab.number };
+      if (layer !== undefined || tab.id === id) {
+        return { index, tab, layer: layer ?? tab.number, run: false };
+      }
     }
     return undefined;
   };
@@ -191,16 +212,22 @@ export function createTabs(options: TabListOptions): TabList {
 
   /**
    * Shows `tab`, the kept pull request's tab at `index`, at `layer`, making its view of it if it
-   * has none, and returns that view's id.
+   * has none, and leaving the run of layers it shows, if any, and returns that view's id.
    */
   const showAt = (index: number, tab: PullTab, layer: number): string => {
     const id = viewId(tab, layer);
-    if (layerOf(tab) === layer) {
+    const same = layerOf(tab) === layer;
+    if (same && tab.run === undefined) {
       show(tab.id);
       return id;
     }
+    // Leaving a run for the layer it was chosen from, the strip shows what it showed.
+    const kept =
+      same && tab.title !== undefined && tab.state !== undefined
+        ? { title: tab.title, state: tab.state }
+        : undefined;
     commit({
-      kept: state.kept.with(index, atLayer(tab, layer, described.get(id))),
+      kept: state.kept.with(index, atLayer(tab, layer, described.get(id) ?? kept)),
       active: tab.id,
     });
     return id;
@@ -285,6 +312,22 @@ export function createTabs(options: TabListOptions): TabList {
       return found && showAt(found.index, found.tab, number);
     },
 
+    openRun(id, { layers, start }) {
+      const found = viewOf(id);
+      if (!found) return undefined;
+      const { index, tab, layer } = found;
+      const view = runViewId(tab, layers);
+      const run = { layers: [...layers], start, from: layer };
+      if (sameRun(tab.run, run)) {
+        show(tab.id);
+        return view;
+      }
+      const at =
+        layerOf(tab) === layer ? tab : atLayer(tab, layer, described.get(viewId(tab, layer)));
+      commit({ kept: state.kept.with(index, { ...at, run }), active: tab.id });
+      return view;
+    },
+
     setLayers(id, stack) {
       const found = viewOf(id);
       if (!found || sameStack(found.tab.stack, stack)) return;
@@ -308,7 +351,8 @@ export function createTabs(options: TabListOptions): TabList {
 
     describe(id, { title, state: pullState }) {
       const found = viewOf(id);
-      if (!found) return;
+      // A run of layers is a view of its top layer, which the strip doesn't show.
+      if (!found || found.run) return;
       const { index, tab, layer } = found;
       described.set(viewId(tab, layer), { title, state: pullState });
       // The strip shows the layer on screen's.
@@ -338,11 +382,11 @@ export function createTabs(options: TabListOptions): TabList {
 }
 
 /**
- * `tab` at `layer`, which isn't the layer on screen: with a view of it, and the title and state
- * GitHub gave it, `said`, until GitHub says them again.
+ * `tab` at `layer`, which isn't the layer on screen, or with a run of layers on screen: with a view
+ * of it, and the title and state GitHub gave it, `said`, until GitHub says them again, and no run.
  */
 function atLayer(tab: PullTab, layer: number, said: Described | undefined): PullTab {
-  const { layer: _shown, layers: _views, title: _title, state: _state, ...rest } = tab;
+  const { layer: _shown, layers: _views, title: _title, state: _state, run: _run, ...rest } = tab;
   const views = layersOf(tab);
   return {
     ...rest,
@@ -350,6 +394,17 @@ function atLayer(tab: PullTab, layer: number, said: Described | undefined): Pull
     ...(layer === tab.number ? {} : { layer }),
     layers: views.includes(layer) ? [...views] : [...views, layer],
   };
+}
+
+/** Whether `a` and `b` are the same run, from the same start, or both none. */
+function sameRun(a: Run | undefined, b: Run | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return (
+    a.start === b.start &&
+    a.from === b.from &&
+    a.layers.length === b.layers.length &&
+    a.layers.every((layer, at) => layer === b.layers[at])
+  );
 }
 
 /** Whether `a` and `b` are the same stack, or both none. */

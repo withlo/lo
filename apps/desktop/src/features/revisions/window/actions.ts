@@ -20,6 +20,8 @@ import { pickers, views } from './store.ts';
 function onScreen() {
   const tab = activeTab();
   if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
+  if (tab.run)
+    return 'A run of layers is one diff of its layers, so it has no revisions to compare.';
   const view = views.get(tab.id);
   if (!view) return 'Lo hasn’t read the revisions yet.';
   if (view.status === 'signIn') return 'Sign in to see revisions.';

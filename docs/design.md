@@ -238,7 +238,12 @@ GraphQL pages. It builds the stack graph from that and refreshes it as it polls.
   local copy of the repo. Until the copy is ready, the diff is GitHub's comparison of the two
   commits. A layer on its base branch, such as a GitHub stack's, already starts there, so its diff
   is GitHub's own.
-- **Several layers.** The whole stack, or any run of layers, can be viewed as one diff.
+- **Several layers.** Any run of layers, each sitting on the one before, can be viewed as one diff,
+  from where its bottom layer's changes start to its top layer's head, and so can the stack from its
+  bottom up to any layer. A run is chosen in the stack tree, and opens on its diff in a view of its
+  own, with a bar that names its layers and goes back to the layer it was chosen from, as `Esc`
+  does. A run marks no file viewed, compares no revisions and has no overview, since each of those
+  is a layer's own. It isn't restored after a restart.
 - **After a merge.** When a lower layer is squash-merged, the layer above is compared against the
   merged layer's last commit. Changes that already landed stay hidden, and the layer is marked
   "needs rebase." A layer that needs a rebase shows its stack even when it's the only layer left.

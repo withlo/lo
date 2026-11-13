@@ -6,7 +6,7 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { contract as app } from '../../app/contract.ts';
-import { layersOf, viewId, type Choice, type Tab } from '../contract.ts';
+import { viewIds, type Choice, type Tab } from '../contract.ts';
 import keys from '../keys.ts';
 import { follow } from './follow.ts';
 import { main } from './main.ts';
@@ -58,9 +58,7 @@ function catchUp(): void {
   const { views } = pullsStore.getState();
   const unheard = tabsStore
     .getState()
-    .tabs.flatMap((tab) =>
-      tab.kind === 'pull' ? layersOf(tab).map((layer) => viewId(tab, layer)) : [],
-    )
+    .tabs.flatMap((tab) => (tab.kind === 'pull' ? viewIds([tab]) : []))
     .filter((id) => !views.has(id));
   for (const id of unheard) {
     main()

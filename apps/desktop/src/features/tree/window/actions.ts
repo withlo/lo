@@ -4,10 +4,10 @@
 import { notify } from '../../../window/commands/notices.tsx';
 import { passedOver, toggleViewed, viewedMarksOf } from '../../revisions/window/shared.ts';
 import { activeTab, type PullTab } from '../../tab/window/shared.ts';
-import { canShow, pathOf, showFile } from './shared.ts';
-import { foldersOf, parentRow, rowAt, type Row } from './model.ts';
+import { canShow, focusRow, pathOf, revealFile, showFile } from './shared.ts';
+import { parentRow, rowAt, type Row } from './model.ts';
 import { addressPath, keyOf } from './paths.ts';
-import { choices, focus, onScreen, reveal, setOpen, shown, states } from './store.ts';
+import { choices, focus, onScreen, setOpen, shown, states } from './store.ts';
 
 /** The pull request's tab on screen, or why a key for the tree can't run. */
 export function pullOnScreen(): PullTab | string {
@@ -18,12 +18,6 @@ export function pullOnScreen(): PullTab | string {
 /** The rows the tree last showed of `tab`. */
 function rowsOf(tab: string): readonly Row[] {
   return shown.get(tab)?.rows ?? [];
-}
-
-/** Puts the keyboard on `key`'s row, and scrolls to it. */
-export function focusRow(tab: string, key: string): void {
-  focus.set(tab, key);
-  reveal.update(tab, (last) => ({ key, count: (last?.count ?? 0) + 1 }));
 }
 
 /** The row the keyboard is on, its place among the rows, or where to start: the file on screen. */
@@ -168,28 +162,6 @@ export function wholeShowable(): true | string {
 export function focusedFile(tab: string): string | undefined {
   const row = rowsOf(tab)[focusedIndex(tab)];
   return row?.kind === 'file' ? row.key : undefined;
-}
-
-/** Puts the tree's keyboard row on the file `key`, opening the folders it's in and scrolling to it. */
-export function revealFile(tab: string, key: string): void {
-  choices.update(tab, (current) => {
-    const opened = new Set(current.opened);
-    const closed = new Set(current.closed);
-    for (const folder of foldersOf(pathOf(tab, key))) {
-      opened.add(folder);
-      closed.delete(folder);
-    }
-    return { ...current, opened, closed };
-  });
-  focusRow(tab, key);
-}
-
-/** Puts the keyboard on the file on screen, in the tree, opening the folders it's in. */
-export function goToTree(tab: string): void {
-  const key = onScreen.get(tab) ?? focus.get(tab);
-  if (key !== undefined) revealFile(tab, key);
-  const tree = document.querySelector('[data-lo-scope="tree"]');
-  if (tree instanceof HTMLElement) tree.focus();
 }
 
 /** Whether the tree is on screen to go to. */

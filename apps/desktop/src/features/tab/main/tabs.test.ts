@@ -505,3 +505,96 @@ describe('the layers of a stack in a pull request’s tab', () => {
     expect(tabs.layer('t1:2213', 2212)).toBeUndefined();
   });
 });
+
+describe('a run of layers in a pull request’s tab', () => {
+  const start = 'a'.repeat(40);
+
+  it('shows in place of the layer it was chosen from, in a view of its own, and isn’t kept', () => {
+    const on = database();
+    const { tabs, heard } = tabsOn(on);
+    tabs.open(fd);
+    tabs.open(bat);
+    tabs.describe('t1', { title: 'Honor jemalloc requests', state: 'open' });
+    tabs.layer('t1', 2213);
+    tabs.describe('t1:2213', { title: 'Add --jemalloc', state: 'draft' });
+    heard.length = 0;
+    expect(tabs.openRun('t1:2213', { layers: [2212, 2213, 2214], start })).toBe('t1:2212-2214');
+    expect(tabs.list()).toEqual({
+      tabs: [
+        {
+          ...fd,
+          id: 't1',
+          layer: 2213,
+          layers: [2212, 2213],
+          title: 'Add --jemalloc',
+          state: 'draft',
+          run: { layers: [2212, 2213, 2214], start, from: 2213 },
+        },
+        { ...bat, id: 't2' },
+      ],
+      active: 't1',
+    });
+    expect(heard).toHaveLength(1);
+    // The run is a view of the top layer, which the strip doesn't show.
+    tabs.describe('t1:2212-2214', { title: 'Log a plan’s limit', state: 'open' });
+    expect(tabs.list().tabs[0]).toMatchObject({ title: 'Add --jemalloc' });
+    // It shares the tab's account, and names the tab.
+    tabs.remember('t1', { login: 'rozed-bot' });
+    expect(tabs.kept('t1:2212-2214')).toEqual({ login: 'rozed-bot', repository: undefined });
+    tabs.select({ id: 't2' });
+    tabs.select({ id: 't1:2212-2214' });
+    expect(tabs.list().active).toBe('t1');
+    // After a restart, the tab comes back at the layer the run was chosen from.
+    expect(tabsOn(on).tabs.list().tabs[0]).toEqual({
+      ...fd,
+      id: 't1',
+      layer: 2213,
+      layers: [2213],
+      title: 'Add --jemalloc',
+      state: 'draft',
+    });
+  });
+
+  it('is left for any layer shown, or linked to, and goes back to where it was chosen from', () => {
+    const { tabs } = three();
+    tabs.describe('t1', { title: 'Honor jemalloc requests', state: 'open' });
+    expect(tabs.openRun('t1', { layers: [2212, 2213], start })).toBe('t1:2212-2213');
+    expect(tabs.list().tabs[0]).toMatchObject({ run: { from: 2212 } });
+    // Back to the layer it was chosen from, as it was in the strip.
+    expect(tabs.layer('t1:2212-2213', 2212)).toBe('t1');
+    expect(tabs.list().tabs[0]).toEqual({
+      ...fd,
+      id: 't1',
+      layers: [2212],
+      title: 'Honor jemalloc requests',
+      state: 'open',
+    });
+    // Another layer, from the run.
+    tabs.openRun('t1', { layers: [2212, 2213], start });
+    expect(tabs.layer('t1:2212-2213', 2213)).toBe('t1:2213');
+    expect(tabs.list().tabs[0]).not.toHaveProperty('run');
+    // A link to a layer of its stack.
+    tabs.setLayers('t1', { layers: [2212, 2213, 2214], root: 'main' });
+    tabs.openRun('t1:2213', { layers: [2212, 2213, 2214], start });
+    expect(tabs.open(layer(2214))).toBe('t1:2214');
+    expect(tabs.list().tabs[0]).not.toHaveProperty('run');
+  });
+
+  it('is replaced by another run, chosen from the same layer, and closes with its tab', () => {
+    const { tabs, heard } = three();
+    tabs.layer('t1', 2213);
+    tabs.openRun('t1:2213', { layers: [2212, 2213], start });
+    expect(tabs.openRun('t1:2212-2213', { layers: [2213, 2214], start })).toBe('t1:2213-2214');
+    expect(tabs.list().tabs[0]).toMatchObject({
+      layer: 2213,
+      run: { layers: [2213, 2214], from: 2213 },
+    });
+    // The same run again changes nothing.
+    heard.length = 0;
+    expect(tabs.openRun('t1:2213-2214', { layers: [2213, 2214], start })).toBe('t1:2213-2214');
+    expect(heard).toHaveLength(0);
+    tabs.close('t1:2213-2214');
+    expect(names(tabs.list())).toEqual(['*bat#7', 'lo#1']);
+    expect(tabs.openRun('t1', { layers: [2212, 2213], start })).toBeUndefined();
+  });
+});

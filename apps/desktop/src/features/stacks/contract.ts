@@ -2,7 +2,9 @@
 // in main among its repository's open pull requests by base branch, by shared commits, or as a
 // GitHub stack, with each layer's state, how the stack was found, and what Lo couldn't read. Main
 // works the stack out again as the repository's pull requests change, and sends it on `stack`, with
-// where the layer's diff starts when that came after its diff was drawn, which a banner offers.
+// where the layer's diff starts when that came after its diff was drawn, which a banner offers. A
+// run of layers, each sitting on the one before, shows as one diff in a view of its own, which main
+// makes once the window has chosen it.
 //
 // And making a chain a GitHub stack: main plans it and keeps the plan under a key, the window shows
 // it and confirms the key, and main sends the changes, saying how they go on `conversion`.
@@ -46,14 +48,17 @@ export type ViewedCount = z.output<typeof viewedCount>;
  * A layer of the stack, a row of its tree, in the order `]s` walks them: from the bottom up, each
  * branch finished before the next.
  *
- * - `title`, `author`: as GitHub gives them, from whoever opened it: text, never markup. `author`
- *   is `null` for an account GitHub deleted;
+ * - `title`, `author`, `head` (its head branch): as GitHub gives them, from whoever opened it: text,
+ *   never markup. `author` is `null` for an account GitHub deleted;
  * - `state`: `open` or `draft`, or, for the layer on screen once it merged or closed, `merged` or
  *   `closed`, its row kept where it was;
  * - `current`: whether it's the layer on screen;
  * - `branch`: whether it's a later layer on the one it sits on, which a branching stack draws a
  *   step in;
  * - `on`: the layer it sits on, when that isn't the row above;
+ * - `path`: the layers from the stack's bottom up to it, bottom first, ending with it: a run of
+ *   layers that ends at it starts at one of them, and one that starts at it ends at a layer whose
+ *   path holds it. Empty for the layer on screen once it merged or closed, which no run holds;
  * - `review`, `checks`, `queue` (its place in the merge queue, from 1): `null` until the layers'
  *   state is read, or when there's none;
  * - `needsRebase`: whether a layer below it was squash-merged, so it still carries that one's
@@ -66,10 +71,12 @@ export const row = z.strictObject({
   number,
   title: z.string(),
   author: z.string().nullable(),
+  head: z.string(),
   state: pullState,
   current: z.boolean(),
   branch: z.boolean(),
   on: number.nullable(),
+  path: z.array(number),
   review: review.nullable(),
   checks: checks.nullable(),
   queue: z.number().int().positive().nullable(),
@@ -341,6 +348,16 @@ export const contract = defineContract('stacks', {
      * `conversion` says.
      */
     putBack: { input: byKey, reply: reply<ConversionView>() },
+    /**
+     * Shows the run of layers from `bottom` to `top` of the stack in tab `id` as one diff, in a view
+     * of its own in place of the layer on screen, which it goes back to, and replies with the view's
+     * id. It goes from where `bottom`'s own changes start to `top`'s head. Refused as `refused`,
+     * saying why, when they aren't two layers of one chain, or where `bottom` starts isn't known.
+     */
+    run: {
+      input: z.strictObject({ id: tabId, bottom: number, top: number }),
+      reply: reply<string>(),
+    },
   },
   topics: {
     /** A pull request's tab's stack, each time it changes. */

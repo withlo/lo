@@ -33,6 +33,22 @@ export const pullNumber = z
   .min(1)
   .max(2 ** 31 - 1);
 
+/** A commit's ID, as git and GitHub write it: 40 hex digits, or 64 in a SHA-256 repository. */
+export const oid = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
+
+/**
+ * A run of a stack's layers that a pull request's tab shows as one diff, in place of the layer on
+ * screen: `layers`, bottom first, two or more, each sitting on the one before it; `start`, the
+ * commit its diff starts from, where its bottom layer's own changes start; and `from`, the layer it
+ * was chosen from, which leaving it shows again.
+ */
+export const run = z.strictObject({
+  layers: z.array(pullNumber).min(2),
+  start: oid,
+  from: pullNumber,
+});
+export type Run = z.output<typeof run>;
+
 /**
  * A stack, as a pull request's tab names it: its layers by number, in the order `]s` walks them,
  * bottom first, and the branch the bottom layer sits on.
@@ -58,7 +74,9 @@ function isPullRequest({ owner, repo, number }: { owner: string; repo: string; n
  *   own, and `layers` every layer it has a view of, when that's more than its own. Its title and
  *   state are the layer on screen's, once GitHub has given them, and `stack` the stack that layer
  *   is in, once that's known. The title and state are kept, so a tab that hasn't been shown since
- *   Lo started still says what it holds.
+ *   Lo started still says what it holds. `run` is a run of the stack's layers on screen as one
+ *   diff, in a view of its own, in place of the layer on screen, which leaving it shows again; it
+ *   isn't kept after Lo quits.
  * - `recent`, the pull requests opened recently. It stands in for an empty strip: it's there only
  *   while no other tab is, and it can't be closed.
  * - `settings`, Lo's settings, open in one tab at most.
@@ -73,6 +91,7 @@ export const tab = z.discriminatedUnion('kind', [
     layer: pullNumber.optional(),
     layers: z.array(pullNumber).optional(),
     stack: stack.optional(),
+    run: run.optional(),
   }),
   z.strictObject({ id: tabId, kind: z.literal('recent') }),
   z.strictObject({ id: tabId, kind: z.literal('settings') }),
@@ -114,8 +133,22 @@ export function viewId(named: PullTabName, layer: number): string {
 }
 
 /**
- * The id of every view of `open`: each tab's own, and each other layer a pull request's tab has a
- * view of. What a feature keeps for a view goes once its id is no longer among them.
+ * The id of a pull request's tab's view of a run of `layers`, bottom first: `<tab id>:<bottom>-<top>`.
+ * It's a view of the top layer, compared with where the bottom one's own changes start.
+ */
+export function runViewId(named: { readonly id: string }, layers: readonly number[]): string {
+  return `${named.id}:${layers[0] ?? ''}-${layers.at(-1) ?? ''}`;
+}
+
+/** The top layer of a run, whose head its diff goes up to. */
+export function topOf({ layers, from }: Pick<Run, 'layers' | 'from'>): number {
+  return layers.at(-1) ?? from;
+}
+
+/**
+ * The id of every view of `open`: each tab's own, each other layer a pull request's tab has a view
+ * of, and the run of layers it shows, if any. What a feature keeps for a view goes once its id is
+ * no longer among them.
  */
 export function viewIds(open: readonly Tab[]): string[] {
   return open.flatMap((each) =>
@@ -125,6 +158,7 @@ export function viewIds(open: readonly Tab[]): string[] {
           ...layersOf(each)
             .filter((layer) => layer !== each.number)
             .map((layer) => viewId(each, layer)),
+          ...(each.run ? [runViewId(each, each.run.layers)] : []),
         ]
       : [each.id],
   );
@@ -132,12 +166,14 @@ export function viewIds(open: readonly Tab[]): string[] {
 
 /**
  * `shown` as features that follow the tab on screen see it: a pull request's tab as its view on
- * screen, by that view's id and its layer's number, without what only the strip shows. Any other
- * tab, and a pull request's tab with one view, as it is.
+ * screen, by that view's id and its layer's number, without what only the strip shows. A run of
+ * layers on screen is a view of its top layer that keeps `run`, so features can tell it from the
+ * layer's own view. Any other tab, and a pull request's tab with one view, as it is.
  */
 export function onScreen(shown: Tab): Tab {
   if (shown.kind !== 'pull') return shown;
   const { layer, layers, stack: held, ...view } = shown;
+  if (view.run) return { ...view, id: runViewId(shown, view.run.layers), number: topOf(view.run) };
   if (layer === undefined && layers === undefined && held === undefined) return shown;
   return layer === undefined ? view : { ...view, id: viewId(shown, layer), number: layer };
 }
@@ -194,9 +230,6 @@ export interface Moved {
   readonly id: string;
   readonly place: number;
 }
-
-/** A commit's ID, as git and GitHub write it: 40 hex digits, or 64 in a SHA-256 repository. */
-export const oid = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
 
 /** A moment, in milliseconds since the Unix epoch. */
 const time = z.number().int().nonnegative();
@@ -412,8 +445,8 @@ export const contract = defineContract('tab', {
     /**
      * Shows a pull request's tab, named by its id or one of its views', at layer `number`: its view
      * of that pull request, made the first time, which lives until the tab closes. The pull request
-     * the tab opened on is its own layer. Replies with the view's id: nothing when there's no such
-     * tab.
+     * the tab opened on is its own layer. A run of layers on screen is left for it. Replies with
+     * the view's id: nothing when there's no such tab.
      */
     layer: {
       input: z.strictObject({ id: tabId, number: pullNumber }),

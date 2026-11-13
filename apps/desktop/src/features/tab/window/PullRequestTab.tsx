@@ -1,5 +1,5 @@
-// A pull request's tab: its header, its banners, the left panel, the middle sheet and the right
-// panel other features fill, and its status bar. Until the diff and the threads arrive,
+// A pull request's tab: its header, its banners, the left panel, the middle sheet, with what goes
+// across its top, and the right panel other features fill, and its status bar. Until the diff and the threads arrive,
 // the middle says what's coming.
 
 import { Banner, PRHeader, Spinner, StatusBar, StatusItem, type HeaderConnection } from '@lo/ui';
@@ -23,6 +23,7 @@ import {
   header,
   left,
   middle,
+  over,
   right,
   status,
   useLocalCopy,
@@ -270,28 +271,31 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
           </aside>
         )}
         <section
-          className="relative min-h-0 min-w-0 flex-1 overflow-hidden sheet"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden sheet"
           aria-label="Pull request"
         >
-          {shownMiddle ? (
-            middles
-              .filter((each) => each === shownMiddle || kept.includes(each.id))
-              .map((each) => {
-                const shown = each === shownMiddle;
-                return (
-                  <div
-                    key={each.id}
-                    className={shown ? 'absolute inset-0' : 'invisible absolute inset-0'}
-                    inert={!shown}
-                    data-lo-middle-view={each.id}
-                  >
-                    <each.render tab={tab} shown={shown} />
-                  </div>
-                );
-              })
-          ) : (
-            <Placeholder tab={tab.id} />
-          )}
+          <Slot slot={over} props={{ tab }} />
+          <div className="relative min-h-0 flex-1">
+            {shownMiddle ? (
+              middles
+                .filter((each) => each === shownMiddle || kept.includes(each.id))
+                .map((each) => {
+                  const shown = each === shownMiddle;
+                  return (
+                    <div
+                      key={each.id}
+                      className={shown ? 'absolute inset-0' : 'invisible absolute inset-0'}
+                      inert={!shown}
+                      data-lo-middle-view={each.id}
+                    >
+                      <each.render tab={tab} shown={shown} />
+                    </div>
+                  );
+                })
+            ) : (
+              <Placeholder tab={tab.id} />
+            )}
+          </div>
         </section>
         {showRight && (
           <aside

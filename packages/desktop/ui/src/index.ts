@@ -66,6 +66,7 @@ export {
   type FileTreeRow,
   type FileTreeViewed,
 } from './FileTree.tsx';
+export { RunBar, type RunBarLayer, type RunBarProps } from './RunBar.tsx';
 export {
   StackTree,
   type StackChecks,

@@ -43,6 +43,24 @@ describe("the window's title", () => {
     );
   });
 
+  it('a run of a stack’s layers on screen names its ends and how many layers it shows', () => {
+    const tab: Tab = {
+      id: 'a',
+      kind: 'pull',
+      owner: 'rozed-dev',
+      repo: 'e2e',
+      number: 82,
+      title: 'feat: a',
+      layer: 84,
+      layers: [82, 84],
+      run: { layers: [82, 83, 84], start: 'a'.repeat(40), from: 84 },
+    };
+    expect(windowTitle(tab)).toBe('rozed-dev/e2e#82 to #84 — 3 layers as one diff');
+    expect(
+      windowTitle({ ...tab, stack: { layers: [82, 83, 84, 85], root: 'stack/root\u202E' } }),
+    ).toBe('rozed-dev/e2e#82 to #84 — 3 layers as one diff, stack on stack/root');
+  });
+
   it('titles lose the characters that turn text around', () => {
     // U+202E turns what follows right to left, so "Fix gpj.exe" would read "Fix exe.jpg".
     expect(forPullRequest('a/b', 1, 'Fix \u202Egpj.exe\u202C \u2067x\u2069')).toBe(

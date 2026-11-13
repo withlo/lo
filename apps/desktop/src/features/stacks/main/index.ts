@@ -2,8 +2,9 @@
 // among its repository's open pull requests as its account's poller lists them, and sent to the
 // window each time it changes, and kept with the tab, so a link to any of its layers shows that tab;
 // and where the layer on screen's diff starts: with the layer below it, set before the diff is
-// drawn, or offered once it is. Only the tab on screen reads its layers' state. And making a chain a
-// GitHub stack: planned here from what GitHub says, and run here once the reader confirms the plan.
+// drawn, or offered once it is. Only the tab on screen reads its layers' state. A run of layers the
+// window chose shows as one diff, in a view the tab makes of it. And making a chain a GitHub stack:
+// planned here from what GitHub says, and run here once the reader confirms the plan.
 
 import { PullRef } from '@lo/github';
 
@@ -45,6 +46,7 @@ function tabsOf(service: TabService): FinderTab[] {
           local.kind === 'ready' &&
           local.from?.commit === compareFrom &&
           local.from?.missing === true,
+        run: info.run !== undefined,
       },
     ];
   });
@@ -101,6 +103,15 @@ export default defineFeature(contract, {
       conversions?.stop(key);
     },
     putBack: ({ key }) => converting().putBack(key),
+    run({ id, bottom, top }, context) {
+      if (!finder) throw new IpcError('stopped', 'Lo is quitting.');
+      const made = finder.run(id, bottom, top);
+      if ('why' in made) throw new IpcError('refused', made.why);
+      const view = context.use(tabs).openRun(id, made);
+      if (view === undefined)
+        throw new IpcError('notFound', 'There’s no pull request in that tab.');
+      return view;
+    },
   },
   start(context) {
     const service = context.use(tabs);

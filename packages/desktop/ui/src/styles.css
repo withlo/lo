@@ -389,6 +389,18 @@
   font-weight: 600;
 }
 
+/* A mode of the keys, named as Vim names its own: `V-LINE` while a run of stack layers is chosen. */
+@utility mode-chip {
+  padding-inline: var(--lo-sp-6);
+  border-radius: var(--lo-r-xs);
+  background: var(--lo-accent);
+  color: var(--lo-on-accent);
+  font: var(--lo-code-key);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: var(--lo-sp-16);
+}
+
 /* A closed folder's count of the changed files it holds. */
 @utility tree-badge {
   min-width: calc(var(--lo-sp-16) + var(--lo-sp-2));

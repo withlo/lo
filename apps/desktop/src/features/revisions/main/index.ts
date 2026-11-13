@@ -52,11 +52,14 @@ function marksOf(context: FeatureContext<typeof contract>): Marks {
   return marks;
 }
 
-/** Follows pull request `id`'s tab: its revisions made the first time, closed as the tab closes. */
+/**
+ * Follows pull request `id`'s tab: its revisions made the first time, closed as the tab closes. A
+ * view of a run of a stack's layers has none: it compares nothing and marks nothing.
+ */
 function follow(context: FeatureContext<typeof contract>, id: string): void {
   const service = context.use(tabs);
   const info = service.pull(id);
-  if (!info) {
+  if (!info || info.run) {
     const gone = followed.get(id);
     if (gone) {
       gone.left();

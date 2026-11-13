@@ -10,6 +10,7 @@ import { notify } from '../../../window/commands/notices.tsx';
 import {
   changedFiles,
   pullOf,
+  runOf,
   tabState,
   type Files,
   type PullView,
@@ -181,6 +182,10 @@ export function toggle(
   tab: string,
   file: { readonly path: TreePath; readonly previous: TreePath | null },
 ): Toggled {
+  // A run shows its layers' changes combined, and a mark says which layer's version was seen.
+  if (runOf(tab)) {
+    return refused('A run of layers has no viewed marks. Mark files viewed in a layer.');
+  }
   const pull = pullOf(tab);
   if (pull?.acting?.kind !== 'account') {
     return refused('Sign in to mark files viewed: this pull request opened without an account.');

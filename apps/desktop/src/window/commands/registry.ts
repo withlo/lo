@@ -78,8 +78,17 @@ export function setMiddle(view: Middle): () => void {
  * back to it.
  */
 export function escapeToMiddle(): void {
-  if (middle()?.escape?.()) return;
+  if (escapeInMiddle()) return;
   focusMiddle();
+}
+
+/**
+ * `Esc` in the middle view, for a command that does something of its own with `Esc` there once
+ * nothing nearer takes it: the middle view closes something of its own it has open, if it has, and
+ * says whether it did.
+ */
+export function escapeInMiddle(): boolean {
+  return middle()?.escape?.() ?? false;
 }
 
 /** Gives focus back to the middle view, or the middle of the window while there's none. */

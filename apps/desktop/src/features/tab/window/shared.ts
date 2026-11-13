@@ -7,7 +7,15 @@ import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { defineSlot } from '../../../window/slots.tsx';
-import type { Files, LocalState, PullView, Tab } from '../contract.ts';
+import {
+  runViewId,
+  viewIds,
+  type Files,
+  type LocalState,
+  type PullView,
+  type Run,
+  type Tab,
+} from '../contract.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
 import { middleIds, panels, type Panels } from './panels.ts';
 import { Placeholder } from './Placeholder.tsx';
@@ -22,6 +30,7 @@ export type {
   LocalState,
   Problem,
   PullView,
+  Run,
   Tab,
 } from '../contract.ts';
 export type { TabsState } from './store.ts';
@@ -128,6 +137,13 @@ export function useMiddle(tab: string): { shown: string | undefined; ids: readon
   return { shown: ids[at % Math.max(1, ids.length)], ids };
 }
 
+/**
+ * Across the top of a pull request's tab's middle, over whichever of its views is on screen: what
+ * says the middle shows something other than the pull request's own diff, as the bar over a run of
+ * a stack's layers does. A view here draws nothing when it doesn't apply.
+ */
+export const over = defineSlot<{ tab: PullTab }>('tab.over');
+
 /** The right panel of a pull request's tab: its threads. */
 export const right = defineSlot<{ tab: PullTab }>('tab.right');
 
@@ -198,6 +214,36 @@ export function onChangedFiles(listener: (tab: string, files: Files) => void): (
       if (previous.files.get(tab) !== files) listener(tab, files);
     }
   });
+}
+
+/** The run of a stack's layers that view `id` of a pull request's tab shows as one diff, if any. */
+function runIn(tabs: readonly Tab[], id: string): Run | undefined {
+  for (const tab of tabs) {
+    if (tab.kind === 'pull' && tab.run && runViewId(tab, tab.run.layers) === id) return tab.run;
+  }
+  return undefined;
+}
+
+/**
+ * The run of a stack's layers view `id` shows as one diff, read once: nothing for a view of one
+ * layer. A view of a run marks no file viewed and compares no revisions, and has no overview.
+ */
+export function runOf(id: string): Run | undefined {
+  return runIn(tabsStore.getState().tabs, id);
+}
+
+/** The run of a stack's layers view `id` shows as one diff, re-rendering when that changes. */
+export function useRun(id: string): Run | undefined {
+  return useStore(tabsStore, (state) => runIn(state.tabs, id));
+}
+
+/**
+ * The id the view of a run of `layers`, bottom first, would have in the pull request's tab that
+ * holds view `id`, before main has made it: nothing when no tab holds that view.
+ */
+export function runViewOf(id: string, layers: readonly number[]): string | undefined {
+  const held = tabsStore.getState().tabs.find((tab) => viewIds([tab]).includes(id));
+  return held && runViewId(held, layers);
 }
 
 /**

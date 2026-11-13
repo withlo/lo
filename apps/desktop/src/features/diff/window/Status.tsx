@@ -1,6 +1,6 @@
 // What the status bar says of a pull request's tab's diff: that it's GitHub's until the local copy
-// replaces it, that GitHub listed only some files, that it couldn't compare a stack's layer with
-// the layer below, how far diffing has got, and that changes to whitespace alone are hidden.
+// replaces it, that GitHub listed only some files, that it couldn't compare a stack's layer, or a
+// run of its layers, with the layer below, how far diffing has got, and that changes to whitespace alone are hidden.
 
 import { StatusItem } from '@lo/ui';
 import { useCallback, useSyncExternalStore } from 'react';
@@ -29,7 +29,7 @@ export function DiffStatus({ tab }: { tab: PullTab }) {
           title={
             state.compareFrom === null
               ? 'GitHub lists 3,000 changed files at most.'
-              : `GitHub’s comparison with the layer below lists 300 changed files at most, so the rest are left out${later}.`
+              : `GitHub’s comparison with the layer below ${tab.run ? 'the run ' : ''}lists 300 changed files at most, so the rest are left out${later}.`
           }
         >
           Some files left out
@@ -38,7 +38,7 @@ export function DiffStatus({ tab }: { tab: PullTab }) {
       {state?.uncompared && ready?.from === 'github' && (
         <StatusItem
           dot="warn"
-          title={`GitHub couldn’t compare this layer with the layer below, so its diff includes the layers below${later}.`}
+          title={`GitHub couldn’t compare ${tab.run ? 'this run' : 'this layer'} with the layer below it, so its diff includes the layers below${later}.`}
         >
           Layers below included
         </StatusItem>

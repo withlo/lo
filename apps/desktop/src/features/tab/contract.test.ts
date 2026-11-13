@@ -5,8 +5,10 @@ import {
   COPY_LIMIT,
   contract,
   isGithubPage,
+  onScreen,
   opening,
   pull,
+  tab,
   viewIds,
   viewsOnScreen,
   type Tab,
@@ -144,6 +146,35 @@ describe("the tab feature's contract", () => {
     // Every view, which what's kept for each lasts as long as.
     expect(viewIds(tabs.tabs)).toEqual(['t1', 't1:2213', 't1:2214', 't2', 't3']);
     expect(viewIds([{ ...fd, layer: 2214, layers: [2214] }])).toEqual(['t1', 't1:2214']);
+  });
+
+  it('names a run of layers on screen by its own view, of its top layer, which keeps the run', () => {
+    const start = 'a'.repeat(40);
+    const fd: Tab = {
+      id: 't1',
+      kind: 'pull',
+      owner: 'sharkdp',
+      repo: 'fd',
+      number: 2212,
+      layer: 2213,
+      layers: [2212, 2213],
+      run: { layers: [2212, 2213, 2214], start, from: 2213 },
+    };
+    expect(onScreen(fd)).toEqual({
+      id: 't1:2212-2214',
+      kind: 'pull',
+      owner: 'sharkdp',
+      repo: 'fd',
+      number: 2214,
+      run: { layers: [2212, 2213, 2214], start, from: 2213 },
+    });
+    // The run's view lasts while the tab shows it; the layers' views stay.
+    expect(viewIds([fd])).toEqual(['t1', 't1:2213', 't1:2212-2214']);
+    // A run is two layers or more, from a commit.
+    expect(tab.safeParse({ ...fd, run: { layers: [2212], start, from: 2212 } }).success).toBe(
+      false,
+    );
+    expect(tab.safeParse({ ...fd, run: { ...fd.run, start: 'main' } }).success).toBe(false);
   });
 
   it('opens only pages on github.com, over HTTPS, in the browser', () => {

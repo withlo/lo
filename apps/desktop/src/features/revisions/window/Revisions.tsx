@@ -39,13 +39,14 @@ export function Revisions({ tab }: { tab: PullTab }) {
   const pull = usePull(tab.id);
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
   useEffect(() => {
-    if (views.get(tab.id) === undefined) catchUp(tab.id);
+    if (tab.run === undefined && views.get(tab.id) === undefined) catchUp(tab.id);
     // The picker closes as its tab leaves the screen.
     return () => {
       if (pickers.get(tab.id).open) pickers.set(tab.id, { open: false });
     };
-  }, [tab.id]);
-  if (pull?.acting?.kind !== 'account' || !view || view.status === 'signIn') return null;
+  }, [tab.id, tab.run]);
+  // A run of layers compares no revisions.
+  if (tab.run || pull?.acting?.kind !== 'account' || !view || view.status === 'signIn') return null;
   const compared = view.comparison ?? view.pending;
   const reason = compared ? reasonOf(view, compared) : undefined;
   const rows = picker.open ? rowsOf(view, Date.now(), marks) : [];

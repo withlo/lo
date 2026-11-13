@@ -324,6 +324,25 @@ export function ReadFailed({ tab, problem }: { tab: PullTab; problem: Problem })
   );
 }
 
+/**
+ * What the view says of a run of a stack's layers on screen as one diff: a run has no overview,
+ * since each layer's describes that layer alone, and the way to its diff.
+ */
+export function NoneInRun({ tab }: { tab: PullTab }) {
+  return (
+    <StateColumn
+      icon={<StateIcon tone="quiet" />}
+      title="A run of layers has no overview"
+      actions={<ToDiff tab={tab} primary />}
+    >
+      <p>
+        Each layer’s overview describes that layer alone, so a run of them has none, and its diff
+        shows no markers. Go back to a layer to read its overview.
+      </p>
+    </StateColumn>
+  );
+}
+
 /** An overview that can't be shown: why, as its check found, and the way to the diff. */
 export function CantShow({
   tab,

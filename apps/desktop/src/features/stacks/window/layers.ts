@@ -1,16 +1,21 @@
-// The stack each view of a pull request's tab is in, as main last said, and the layer the keyboard
-// is on in its tree: kept with the view, and gone when its tab closes. And where `]s` and `[s` go
+// The stack each view of a pull request's tab is in, as main last said, the layer the keyboard is
+// on in its tree, and the run of layers being chosen there: kept with the view, and gone when its
+// tab closes. And where `]s` and `[s` go
 // from a layer: main sends the rows in the core's walk, so the next row is the next layer.
 
 import { tabState } from '../../tab/window/shared.ts';
 import type { StackState, StackView } from '../contract.ts';
 import { main } from './main.ts';
+import type { Choice } from './runs.ts';
 
 /** Each view's stack, as main last said: nothing until it has. */
 export const stacks = tabState<StackView | undefined>(() => undefined);
 
 /** The layer the keyboard is on in each view's stack tree, by number, once it's been on one. */
 export const focused = tabState<number | undefined>(() => undefined);
+
+/** The run of layers being chosen in each view's stack tree, while one is. */
+export const choosing = tabState<Choice | undefined>(() => undefined);
 
 /** Takes what main sent of a view's stack. */
 export function takeStack({ id, stack }: StackState): void {

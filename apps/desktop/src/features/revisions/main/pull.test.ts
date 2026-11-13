@@ -120,6 +120,7 @@ function e2eInfo(local: LocalState = READY): PullTabInfo {
     local,
     compareFrom: undefined,
     drawn: false,
+    run: undefined,
   };
 }
 

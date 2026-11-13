@@ -74,10 +74,12 @@ describe("a tab's stack", () => {
       number: 2,
       title: 'E2: layer a',
       author: 'rozed-bot',
+      head: 'e2/a',
       state: 'open',
       current: false,
       branch: false,
       on: null,
+      path: [2],
       review: null,
       checks: null,
       queue: null,
@@ -95,6 +97,15 @@ describe("a tab's stack", () => {
     ]);
     // The layers' state is read for each row, bottom first.
     expect(ids).toEqual(idsOf(found.list, [2, 3, 4, 6, 5]));
+    // Each layer's path up from the bottom, which a run of layers that ends at it follows: e is
+    // on b, a branch apart from c and d.
+    expect(view.rows.map((row) => row.path)).toEqual([
+      [2],
+      [2, 3],
+      [2, 3, 4],
+      [2, 3, 4, 6],
+      [2, 3, 5],
+    ]);
   });
 
   it('says a GitHub stack is one', async () => {
@@ -398,7 +409,10 @@ describe('the layer on screen leaving', () => {
       title: 'E2: layer b',
       state: 'merged',
       viewed: { source: 'tab' },
+      path: [],
     });
+    // No run holds it: the layers that sat on it go up through a now.
+    expect(rowsOf(after.view).map((row) => row.path)).toEqual([[2], [], [2, 4], [2, 4, 6], [2, 5]]);
     expect(after.view).toMatchObject({ found: 'both', callout: null });
     // Its state is still read with the others'.
     expect(after.ids).toEqual(idsOf(found.list, [2, 3, 4, 6, 5]));

@@ -6,16 +6,18 @@ import { describe, expect, it } from 'vitest';
 import type { Row, StackView } from '../contract.ts';
 import { keyboardLayer, stepFrom } from './layers.ts';
 
-/** A row of layer `number`, open, with nothing read of it. */
-function row(number: number, current = false): Row {
+/** A row of layer `number`, sitting on the layers before it in `path`, open, with nothing read. */
+function row(number: number, path: number[], current = false): Row {
   return {
     number,
     title: `#${number}`,
     author: 'rozed-bot',
+    head: `stack/${number}`,
     state: 'open',
     current,
     branch: false,
     on: null,
+    path: [...path, number],
     review: null,
     checks: null,
     queue: null,
@@ -30,7 +32,12 @@ const STACK: StackView = {
   kind: 'stack',
   root: 'stack/root',
   found: 'both',
-  rows: [row(82), row(83), row(84, true), { ...row(85), branch: true, on: 82 }],
+  rows: [
+    row(82, []),
+    row(83, [82]),
+    row(84, [82, 83], true),
+    { ...row(85, [82]), branch: true, on: 82 },
+  ],
   notes: [],
   callout: null,
 };

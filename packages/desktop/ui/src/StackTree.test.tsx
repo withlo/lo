@@ -192,6 +192,13 @@ describe('StackTree', () => {
     expect(heads(undefined, LAYERS.slice(0, 1))).toBe('1 layer');
   });
 
+  it('says V-LINE in its head, in place of how many layers, while a run is chosen', () => {
+    const host = render(<StackTree {...props({ choosing: true })} />);
+    expect(host.querySelector('section > div')?.textContent).toBe('StackV-LINE');
+    rerender(host, <StackTree {...props({ choosing: false })} />);
+    expect(host.querySelector('section > div')?.textContent).toContain('5 layers');
+  });
+
   describe('a row', () => {
     it('shows the title and number, then who opened it with their initials', () => {
       const host = render(<StackTree {...props()} />);
@@ -784,6 +791,7 @@ describe('StackTree', () => {
           layers: everything,
           current: 'm',
           focused: 'b',
+          choosing: true,
           callout: <p>Offer</p>,
           notes: [{ key: 'n', text: 'A note.' }],
         })}

@@ -19,11 +19,16 @@ const OLDER = 'b'.repeat(40);
 const NEWER = 'c'.repeat(40);
 
 // What main last said of the tab's pull request and its files; the tab feature isn't loaded.
-const said = vi.hoisted(() => ({ pull: undefined as unknown, files: undefined as unknown }));
+const said = vi.hoisted(() => ({
+  pull: undefined as unknown,
+  files: undefined as unknown,
+  run: undefined as unknown,
+}));
 vi.mock('../../tab/window/shared.ts', async (original) => ({
   ...(await original<typeof TabShared>()),
   pullOf: () => said.pull,
   changedFiles: () => said.files,
+  runOf: () => said.run,
 }));
 
 const answers: Record<string, (input: unknown) => unknown> = {};
@@ -89,6 +94,7 @@ beforeEach(() => {
   TAB = `t${tabs}`;
   bridge.calls.length = 0;
   said.pull = pull();
+  said.run = undefined;
   showView(comparing(null));
   answers['revisions.markViewed'] = () => ({ kind: 'done' });
   listed(
@@ -208,6 +214,16 @@ describe('what e refuses before anything is sent', () => {
       connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'offline' },
     });
     expect(await refused('src/a.ts')).toContain('Lo can’t reach GitHub');
+  });
+
+  it('a run of a stack’s layers on screen as one diff, which has no marks to set or clear', async () => {
+    said.run = { layers: [83, 84], start: OLDER, from: 84 };
+    expect(await refused('src/a.ts')).toBe(
+      'A run of layers has no viewed marks. Mark files viewed in a layer.',
+    );
+    expect(await refused('src/b.ts')).toBe(
+      'A run of layers has no viewed marks. Mark files viewed in a layer.',
+    );
   });
 
   it('a tab that acts as nobody, a file GitHub doesn’t list, and a path too long', async () => {
