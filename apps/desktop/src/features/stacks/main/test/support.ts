@@ -69,6 +69,34 @@ export function changePull(
   };
 }
 
+/**
+ * `app_stack`'s list as GitHub gave it once `g S` on #84 made #82, #83 and #84 GitHub stack #92, as
+ * `app_stack_convert` recorded it: #84's base is #83's head branch now, and #85 still sits on #82,
+ * where a GitHub stack can't branch.
+ */
+export function convertedAppStack(list: OpenPullRequestList): OpenPullRequestList {
+  const below = openPullRequest(list, 83);
+  if (!below) throw new Error("#83 isn't open");
+  const layers = [82, 83, 84];
+  const stacked = layers.reduce(
+    (changed, number, index) =>
+      changePull(changed, number, (pr) => ({
+        ...pr,
+        stackEntry: {
+          position: index + 1,
+          stack: { number: 92, size: layers.length, baseRefName: 'stack/root' },
+        },
+      })),
+    list,
+  );
+  return changePull(stacked, 84, (pr) => ({
+    ...pr,
+    baseRefName: below.headRefName,
+    baseRefOid: below.headRefOid,
+    baseRef: { target: { __typename: 'Commit', oid: below.headRefOid }, refUpdateRule: null },
+  }));
+}
+
 /** `layers`, with `change` made to the state of the layer numbered `number`. */
 export function changeLayer(
   layers: StackLayerList,

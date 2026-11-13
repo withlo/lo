@@ -26,8 +26,17 @@ import {
 } from '@lo/stacks';
 
 import type { PullState } from '../../tab/contract.ts';
-import type { Checks, Found, Note, Review, Row, StackView } from '../contract.ts';
-import { calloutText } from './words.ts';
+import {
+  link,
+  type Checks,
+  type Found,
+  type Link,
+  type Note,
+  type Review,
+  type Row,
+  type StackView,
+} from '../contract.ts';
+import { calloutText, numbers } from './words.ts';
 
 /** What a tab's stack is worked out from. */
 export interface ViewInput {
@@ -200,9 +209,10 @@ function drawn(
     view: {
       kind: 'stack',
       root: stack.root,
-      found: foundOf(layers, placed),
+      githubStack: oneGithubStack(layers),
+      found: foundOf(placed),
       rows: placed.map(({ row }) => row),
-      notes: notesOf(input, forest, list, stack),
+      notes: [...githubNotes(layers), ...notesOf(input, forest, list, stack)],
       callout: left ? null : calloutOf(input, forest),
     },
     shown: { rows: placed },
@@ -272,24 +282,50 @@ function viewedOf(layer: StackLayer | undefined, current: boolean): Row['viewed'
   return { source: 'layers', ...viewedFiles(layer) };
 }
 
-/**
- * How the stack's layers were found, as its head says it: a GitHub stack when every layer is in one,
- * else by the rules that linked its rows, or nothing for a layer no rule linked.
- */
-export function foundOf(
-  layers: readonly { readonly nativeStack: { readonly stack: number } | undefined }[],
-  rows: readonly Pick<ShownRow, 'rule'>[],
-): Found | null {
+/** Whether every one of `layers` is in one GitHub stack, as the head says in place of the links. */
+export function oneGithubStack(layers: readonly Pick<Layer, 'nativeStack'>[]): boolean {
   const github = new Set(layers.map((layer) => layer.nativeStack?.stack));
-  if (layers.length > 0 && github.size === 1 && !github.has(undefined)) return 'github';
-  // A GitHub stack's layers go into the branch of the layer below, as a chain by base branch does.
-  const found = new Set(
-    rows.flatMap(({ rule }) => (rule === 'nativeStack' ? 'baseBranch' : (rule ?? []))),
+  return layers.length > 0 && github.size === 1 && !github.has(undefined);
+}
+
+/** The kind of link each rule makes, as the head names it. */
+const LINKS: Readonly<Record<Rule, Link>> = {
+  nativeStack: 'github',
+  baseBranch: 'baseBranch',
+  sharedCommits: 'sharedCommits',
+};
+
+/**
+ * How the stack's layers were found: each kind of link that placed its rows, or nothing for a layer
+ * no rule linked. A GitHub stack can't branch, so a stack that does may hold one along a path, with
+ * layers off it linked by base branch or shared commits.
+ */
+export function foundOf(rows: readonly Pick<ShownRow, 'rule'>[]): Found | null {
+  const used = new Set(rows.flatMap(({ rule }) => (rule === undefined ? [] : [LINKS[rule]])));
+  const found = link.options.filter((each) => used.has(each));
+  return found.length > 0 ? found : null;
+}
+
+/**
+ * Which layers are a GitHub stack, a note for each GitHub stack in a stack that isn't one, bottom
+ * first: "#82, #83 and #84 are a GitHub stack.", or "#2 is in a GitHub stack." for its one layer
+ * here. The head says so when every layer is in one.
+ */
+export function githubNotes(layers: readonly Pick<Layer, 'number' | 'nativeStack'>[]): Note[] {
+  if (oneGithubStack(layers)) return [];
+  const stacks = Map.groupBy(
+    layers.filter((layer) => layer.nativeStack !== undefined),
+    (layer) => layer.nativeStack?.stack,
   );
-  if (found.has('baseBranch') && found.has('sharedCommits')) return 'both';
-  if (found.has('baseBranch')) return 'baseBranch';
-  if (found.has('sharedCommits')) return 'sharedCommits';
-  return null;
+  return [...stacks.values()].map((held) => {
+    const prs = held
+      .toSorted((a, b) => (a.nativeStack?.position ?? 0) - (b.nativeStack?.position ?? 0))
+      .map(({ number }) => number);
+    return {
+      kind: 'github',
+      text: `${numbers(prs)} ${prs.length === 1 ? 'is in' : 'are'} a GitHub stack.`,
+    };
+  });
 }
 
 /**
