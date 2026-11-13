@@ -30,14 +30,15 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Jump
 
-| Action          | Keys  | Where                                                                                  | Command                |
-| --------------- | ----- | -------------------------------------------------------------------------------------- | ---------------------- |
-| Next change     | `] c` | In `diff`; in code views, Vim's motion                                                 | `diff.nextChange`      |
-| Previous change | `[ c` | In `diff`; in code views, Vim's motion                                                 | `diff.previousChange`  |
-| Next file       | `] f` | In `diff`; in code views, Vim's motion                                                 | `diff.nextFile`        |
-| Previous file   | `[ f` | In `diff`; in code views, Vim's motion                                                 | `diff.previousFile`    |
-| Next layer      | `] s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.nextLayer`     |
-| Previous layer  | `[ s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.previousLayer` |
+| Action                       | Keys  | Where                                                                                  | Command                |
+| ---------------------------- | ----- | -------------------------------------------------------------------------------------- | ---------------------- |
+| Next change                  | `] c` | In `diff`; in code views, Vim's motion                                                 | `diff.nextChange`      |
+| Previous change              | `[ c` | In `diff`; in code views, Vim's motion                                                 | `diff.previousChange`  |
+| Next file                    | `] f` | In `diff`; in code views, Vim's motion                                                 | `diff.nextFile`        |
+| Previous file                | `[ f` | In `diff`; in code views, Vim's motion                                                 | `diff.previousFile`    |
+| Next layer                   | `] s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.nextLayer`     |
+| Previous layer               | `[ s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.previousLayer` |
+| Back from a run to its layer | `Esc` | In `diff`; in code views, only in normal mode                                          | `stacks.back`          |
 
 ## Act
 
@@ -100,19 +101,19 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Files
 
-| Action                   | Keys     | Where                                                                                                   | Command            |
-| ------------------------ | -------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
-| Go to the stack          | `-`      | In `tree`                                                                                               | `stacks.focus`     |
-| Go to the file tree      | `-`      | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
-| Tree or review order     | `t`      | In `tree`                                                                                               | `tree.mode`        |
-| Changed files only       | `f`      | In `tree`                                                                                               | `tree.changedOnly` |
-| Next row of the tree     | `j`, `↓` | In `tree`                                                                                               | `tree.down`        |
-| Previous row of the tree | `k`, `↑` | In `tree`                                                                                               | `tree.up`          |
-| Open the folder          | `l`, `→` | In `tree`                                                                                               | `tree.open`        |
-| Close the folder         | `h`, `←` | In `tree`                                                                                               | `tree.close`       |
-| Open every folder        | `z R`    | In `tree`                                                                                               | `tree.openAll`     |
-| Close every folder       | `z M`    | In `tree`                                                                                               | `tree.closeAll`    |
-| Show the file            | `⏎`      | In `tree`                                                                                               | `tree.show`        |
+| Action                                 | Keys     | Where                                                                                                   | Command            |
+| -------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
+| Go to the stack, or the file on screen | `-`      | In `tree`                                                                                               | `stacks.focus`     |
+| Go to the file tree                    | `-`      | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
+| Tree or review order                   | `t`      | In `tree`                                                                                               | `tree.mode`        |
+| Changed files only                     | `f`      | In `tree`                                                                                               | `tree.changedOnly` |
+| Next row of the tree                   | `j`, `↓` | In `tree`                                                                                               | `tree.down`        |
+| Previous row of the tree               | `k`, `↑` | In `tree`                                                                                               | `tree.up`          |
+| Open the folder                        | `l`, `→` | In `tree`                                                                                               | `tree.open`        |
+| Close the folder                       | `h`, `←` | In `tree`                                                                                               | `tree.close`       |
+| Open every folder                      | `z R`    | In `tree`                                                                                               | `tree.openAll`     |
+| Close every folder                     | `z M`    | In `tree`                                                                                               | `tree.closeAll`    |
+| Show the file                          | `⏎`      | In `tree`                                                                                               | `tree.show`        |
 
 ## Overview
 
@@ -133,12 +134,15 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Panels
 
-| Action                      | Keys     | Where                               | Command         |
-| --------------------------- | -------- | ----------------------------------- | --------------- |
-| Next layer in the stack     | `j`, `↓` | In `stack`                          | `stacks.down`   |
-| Previous layer in the stack | `k`, `↑` | In `stack`                          | `stacks.up`     |
-| Show this layer             | `⏎`      | In `stack`                          | `stacks.show`   |
-| Left panel                  | `⌘\`     | Anywhere but `dialog` and `palette` | `tab.leftPanel` |
+| Action                                          | Keys                              | Where                               | Command         |
+| ----------------------------------------------- | --------------------------------- | ----------------------------------- | --------------- |
+| Next layer in the stack                         | `j`, `↓`                          | In `stack`                          | `stacks.down`   |
+| Previous layer in the stack                     | `k`, `↑`                          | In `stack`                          | `stacks.up`     |
+| Show this layer                                 | `⏎`                               | In `stack`                          | `stacks.show`   |
+| Choose a run from here                          | `v`                               | In `stack`                          | `stacks.choose` |
+| View the stack up to here as one diff           | None: in its menu and the palette | Anywhere                            | `stacks.upTo`   |
+| Stop choosing a run, or back to the middle view | `Esc`                             | In `stack`                          | `stacks.cancel` |
+| Left panel                                      | `⌘\`                              | Anywhere but `dialog` and `palette` | `tab.leftPanel` |
 
 ## Diff view
 

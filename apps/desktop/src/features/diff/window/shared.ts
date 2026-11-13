@@ -1,5 +1,5 @@
 // What the diff shares with other features' window code: the slot over the diff, where what it
-// compares is said; showing the diff, and a place in it or the file whole; one file of it beside
+// compares is said; showing the diff, and a place in it or the file whole; how many files it shows; one file of it beside
 // another view; the lines another feature explains, which the diff marks; and diffing texts another
 // feature has, as the diff's own files are diffed.
 
@@ -12,6 +12,7 @@ import { Beside } from './Beside.tsx';
 import { changed, explainWith, type Explainer } from './explained.ts';
 import { diffJobs } from './main.ts';
 import { showPlace as showCode } from './places.ts';
+import { loaderOf, useSnapshot } from './tabs.ts';
 import { DIFF_VIEW } from './whole.ts';
 
 export type { ExplainedLines, Explainer } from './explained.ts';
@@ -29,6 +30,17 @@ export const notes = defineSlot<{ tab: PullTab }>('diff.notes');
  */
 export function showDiff(tab: string): boolean {
   return showMiddle(tab, DIFF_VIEW);
+}
+
+/**
+ * How many files pull request's tab `tab`'s diff shows, once main has said, with whether GitHub
+ * listed only some of them; re-rendering as that changes.
+ */
+export function useDiffFiles(
+  tab: string,
+): { readonly count: number; readonly partial: boolean } | undefined {
+  const { state } = useSnapshot(loaderOf(tab));
+  return state?.files ? { count: state.files.length, partial: state.partial } : undefined;
 }
 
 /**

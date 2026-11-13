@@ -373,6 +373,18 @@ describe('as the tab opens', () => {
   });
 });
 
+describe('a run of a stack’s layers on screen as one diff', () => {
+  it('says it has no overview, with the way to its diff, and leaves the tab to open on the diff', () => {
+    const tab = { ...tabOf(), run: { layers: [6, 7], start: 'a'.repeat(40), from: 7 } };
+    const view = render(tab);
+    expect(view.querySelector('[data-lo-overview="run"] h2')?.textContent).toBe(
+      'A run of layers has no overview',
+    );
+    expect(view.textContent).toContain('Go to the diff');
+    expect(openings.get(tab.id).on).toBeUndefined();
+  });
+});
+
 describe('with no overview', () => {
   it('offers the prompt to write one, the skill for each agent and the way to the diff', async () => {
     const tab = tabOf();

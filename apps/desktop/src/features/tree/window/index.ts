@@ -11,7 +11,6 @@ import {
   closeRow,
   focusedFile,
   githubPage,
-  goToTree,
   markable,
   markViewed,
   move,
@@ -29,7 +28,7 @@ import { findFile, openFinder, openWhole, toggleChangedOnly, wholeReady } from '
 import { main } from './main.ts';
 import { pathOfKey } from './paths.ts';
 import { choices, showState } from './store.ts';
-import { onFindFile, pathOf, showFile } from './shared.ts';
+import { goToTree, onFindFile, pathOf, showFile } from './shared.ts';
 
 /** Runs `act` on the pull request's tab on screen. */
 function onTab(act: (tab: string) => void): () => void {

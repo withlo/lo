@@ -14,6 +14,7 @@ import {
   type StatusState,
 } from '@lo/github';
 import {
+  chain,
   layerOf,
   planConversion,
   stackOf,
@@ -130,6 +131,7 @@ function drawn(
   left: Left | undefined,
 ): ViewOutput {
   const read = (number: number) => input.layers?.layers.find((layer) => layer.number === number);
+  const [bottom = input.number] = stack.layers;
   const rows: ShownRow[] = stack.layers.map((number) => {
     const layer = layerOf(forest, number);
     const pr = openPullRequest(list, number);
@@ -144,10 +146,12 @@ function drawn(
         number,
         title: pr?.title ?? '',
         author: pr?.author?.login ?? null,
+        head: pr?.headRefName ?? '',
         state: pr?.isDraft ? 'draft' : 'open',
         current: number === input.number,
         branch: false,
         on: null,
+        path: chain(forest, bottom, number) ?? [number],
         ...stateOf(read(number)),
         needsRebase: layer?.needsRebase !== undefined,
         overview: overviewOf(input.overviews, layer),
@@ -166,6 +170,8 @@ function drawn(
         ...left.kept.row,
         state: left.state,
         current: true,
+        // It's no longer a layer, so no run holds it.
+        path: [],
         queue: null,
         needsRebase: false,
         viewed: { source: 'tab' },

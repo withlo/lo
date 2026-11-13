@@ -46,6 +46,20 @@ export interface PullTabInfo {
    * from then on, a new start would move what the reader is reading.
    */
   readonly drawn: boolean;
+  /**
+   * For a run of a stack's layers shown as one diff, its layers, bottom first: the view is of the
+   * top one, compared with where the bottom one's own changes start. It has no viewed marks,
+   * revisions or overview of its own. Nothing for a view of a pull request.
+   */
+  readonly run: readonly number[] | undefined;
+}
+
+/** A run of a stack's layers, to show as one diff. */
+export interface RunOpening {
+  /** Its layers, bottom first, two or more, each sitting on the one before it. */
+  readonly layers: readonly number[];
+  /** The commit its diff starts from: where its bottom layer's own changes start. */
+  readonly start: string;
 }
 
 /**
@@ -74,6 +88,14 @@ export interface TabService {
    * the stack the layer on screen is. Two tabs that turn out to hold one stack stay two.
    */
   setLayers(id: string, stack: Stack | undefined): void;
+  /**
+   * Shows a run of a stack's layers as one diff in the pull request's tab of view `id`, in place of
+   * the layer on screen, chosen from the layer view `id` shows: a view of its own, of the top layer
+   * compared with `run.start`, so it goes from there to the top layer's head. The layer's own view
+   * keeps its place, and showing any layer leaves the run. It isn't kept after Lo quits. Returns
+   * the run's view's id, or nothing for no such view.
+   */
+  openRun(id: string, run: RunOpening): string | undefined;
   /** What main has of a view of a pull request's tab now, or nothing for no such view. */
   pull(id: string): PullTabInfo | undefined;
   /**
@@ -81,7 +103,7 @@ export interface TabService {
    * with its base branch for nothing: its local copy's merge base becomes where the head meets the
    * commit, fetched by its ID if the copy lacks it, so its diff, tree, whole files and overview
    * start there. Its diff starts again, so call it before the view is drawn, or when the reader
-   * asks. Nothing for no such view.
+   * asks. Nothing for no such view, or for a run of layers, which starts where it was made to.
    */
   compareFrom(id: string, commit: string | undefined): void;
   /**

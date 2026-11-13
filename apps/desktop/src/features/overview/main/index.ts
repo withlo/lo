@@ -51,11 +51,15 @@ function keptIn(context: FeatureContext<typeof contract>): { blobs: Blobs; saved
   return kept;
 }
 
-/** Follows pull request `id`'s tab: its overview made the first time, closed as the tab closes. */
+/**
+ * Follows pull request `id`'s tab: its overview made the first time, closed as the tab closes. A
+ * view of a run of a stack's layers has none, and no markers: each layer's overview describes that
+ * layer alone.
+ */
 function follow(context: FeatureContext<typeof contract>, id: string): void {
   const service = context.use(tabs);
   const info = service.pull(id);
-  if (!info) {
+  if (!info || info.run) {
     followed.get(id)?.close();
     followed.delete(id);
     return;

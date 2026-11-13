@@ -180,4 +180,31 @@ describe('the watcher', { timeout: 60_000 }, () => {
     expect(poller?.watches(E2E)).toBe(false);
     watching.stop();
   });
+
+  it('makes a view of a run of layers, of its top layer from the run’s start, while it’s shown', async () => {
+    const { watching, sent } = await watcher();
+    const start = APP_PULL.base;
+    const run = { layers: [79, 80], start, from: 80 };
+    watching.follow({ tabs: [{ ...e2e, run }], active: 'p1' });
+    expect(watching.has('p1')).toBe(true);
+    expect(watching.info('p1:79-80')).toMatchObject({
+      number: 80,
+      compareFrom: start,
+      run: [79, 80],
+    });
+    await expect
+      .poll(() => watching.snapshot('p1:79-80')?.pull.header?.title, { timeout: 20_000 })
+      .toBeDefined();
+    // It starts where the run does, whatever else asks, and has no viewed marks of its own.
+    watching.compareFrom('p1:79-80', undefined);
+    expect(watching.info('p1:79-80')?.compareFrom).toBe(start);
+    expect(watching.snapshot('p1:79-80')?.files).toBeUndefined();
+    expect(sent.files.some(({ id }) => id === 'p1:79-80')).toBe(false);
+
+    // Leaving it for the layer closes it.
+    watching.follow({ tabs: [e2e], active: 'p1' });
+    expect(watching.has('p1:79-80')).toBe(false);
+    expect(watching.has('p1')).toBe(true);
+    watching.stop();
+  });
 });

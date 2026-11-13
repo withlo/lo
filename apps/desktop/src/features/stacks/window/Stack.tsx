@@ -1,7 +1,9 @@
 // The stack, at the top of a pull request's tab's left panel, above the files: its tree, a row a
 // layer, with each layer's review, checks, place in the merge queue, overview and viewed count, the
-// offer to make the chain a GitHub stack while Lo could, and what Lo couldn't read. Nothing shows
-// while there's no stack, and nothing holds its place while Lo looks for one.
+// offer to make the chain a GitHub stack while Lo could, and what Lo couldn't read. A run of layers
+// being chosen, or on screen as one diff, shares a band, and while it's chosen the tree says which
+// layers and what the keys do. Nothing shows while there's no stack, and nothing holds its place
+// while Lo looks for one.
 
 import {
   Button,
@@ -11,6 +13,7 @@ import {
   type StackChecks,
   type StackOverview,
   type StackReview,
+  type StackRun,
   type StackTreeFound,
   type StackTreeLayer,
 } from '@lo/ui';
@@ -30,8 +33,9 @@ import {
 } from '../../tab/window/shared.ts';
 import type { Checks, Found, Review, Row } from '../contract.ts';
 import { makeStack } from './actions.ts';
-import { catchUp, focused, keyboardLayer, stacks } from './layers.ts';
-import { showTarget, stackTarget, takeRefocus } from './walk.ts';
+import { catchUp, choosing, focused, keyboardLayer, stacks } from './layers.ts';
+import { chainIn, choiceNote, type NoteKeys } from './runs.ts';
+import { showTarget, stackTarget, stopChoosing, takeRefocus } from './walk.ts';
 
 const REVIEWS: Readonly<Record<Review, StackReview>> = {
   approved: 'approved',
@@ -56,6 +60,32 @@ const FOUND: Readonly<Record<Found, StackTreeFound>> = {
 function keyOf(id: string): string[] | undefined {
   const [first] = registry().keysOf(id);
   return first && keyLabels(first, registry().system);
+}
+
+/** Where each layer of `band`, bottom first, sits in it, for its row: its ends, or between. */
+export function bandOf(band: readonly number[]): ReadonlyMap<number, StackRun> {
+  if (band.length === 1) return new Map(band.map((number) => [number, 'only']));
+  return new Map(
+    band.map((number, index) => [
+      number,
+      index === 0 ? 'start' : index === band.length - 1 ? 'end' : 'middle',
+    ]),
+  );
+}
+
+/** The first key of command `id`, as one string, or `fallback` while it has none. */
+function firstKey(id: string, fallback: string): string {
+  return keyOf(id)?.join(' ') ?? fallback;
+}
+
+/** The keys the note while choosing names, as they are now. */
+function noteKeys(): NoteKeys {
+  return {
+    show: firstKey('stacks.show', '⏎'),
+    cancel: firstKey('stacks.cancel', 'Esc'),
+    down: firstKey('stacks.down', 'j'),
+    up: firstKey('stacks.up', 'k'),
+  };
 }
 
 /** What the layer on screen's viewed count says: from its tab's files, as `e` marks them. */
@@ -109,6 +139,7 @@ export function Stack({ tab }: { tab: PullTab }) {
   useKeys();
   const view = useTabState(stacks, tab.id);
   const keyboard = useTabState(focused, tab.id);
+  const choice = useTabState(choosing, tab.id);
   const overview = useOverviewMark(tab.id);
   const count = useViewedMarks(tab.id).count;
   const files = useChangedFiles(tab.id);
@@ -148,18 +179,42 @@ export function Stack({ tab }: { tab: PullTab }) {
 
   if (view?.kind !== 'stack') return null;
   const onScreen = { count, files, overview };
-  const current = view.rows.find((row) => row.current);
+  // A run on screen, or being chosen, is a band; it has no one layer on screen.
+  const band = choice
+    ? (chainIn(view.rows, choice.anchor, choice.end) ?? [choice.anchor])
+    : (tab.run?.layers ?? []);
+  const runs = bandOf(band);
+  const current = tab.run ? undefined : view.rows.find((row) => row.current);
   const on = keyboardLayer(view, keyboard, tab.number);
   const convert = keyOf('stacks.convert');
+  const notes = view.notes.map((note, index) => ({
+    key: `${note.kind}-${index}`,
+    text: withoutBidi(note.text),
+  }));
+  if (choice) {
+    notes.unshift({
+      key: 'choosing',
+      text: choiceNote(view.rows, withoutBidi(view.root), choice, noteKeys()),
+    });
+  }
   return (
     <div className="flex max-h-1/2 min-h-0 flex-none flex-col" data-lo-stack={tab.id}>
       <StackTree
-        layers={view.rows.map((row) => layerOf(row, onScreen))}
+        layers={view.rows.map((row) => {
+          const layer = layerOf(row, onScreen);
+          const run = runs.get(row.number);
+          return run === undefined ? layer : { ...layer, run };
+        })}
         root={withoutBidi(view.root)}
         found={view.found === null ? undefined : FOUND[view.found]}
         focused={on === undefined ? undefined : String(on)}
         current={current === undefined ? undefined : String(current.number)}
-        onShow={(key) => showTarget({ kind: 'layer', layer: Number(key) })}
+        choosing={choice !== undefined}
+        onShow={(key) => {
+          // A click shows the layer clicked, whatever was being chosen.
+          stopChoosing(tab.id);
+          showTarget({ kind: 'layer', layer: Number(key) });
+        }}
         onMenu={(key, event: MouseEvent<HTMLElement>) => {
           // The browser's own event for the key that opened a menu, which is open.
           if (currentMenu() !== undefined) {
@@ -167,6 +222,7 @@ export function Stack({ tab }: { tab: PullTab }) {
             return;
           }
           const layer = Number(key);
+          stopChoosing(tab.id);
           focused.set(tab.id, layer);
           if (openMenu({ kind: 'layer', layer }, { x: event.clientX, y: event.clientY })) {
             event.preventDefault();
@@ -185,11 +241,12 @@ export function Stack({ tab }: { tab: PullTab }) {
             </Callout>
           )
         }
-        notes={view.notes.map((note, index) => ({
-          key: `${note.kind}-${index}`,
-          text: withoutBidi(note.text),
-        }))}
+        notes={notes}
         treeRef={treeRef}
+        onBlur={() => {
+          // Leaving the tree stops choosing, though leaving the window doesn't.
+          if (document.hasFocus()) stopChoosing(tab.id);
+        }}
         data-lo-scope="stack"
       />
     </div>

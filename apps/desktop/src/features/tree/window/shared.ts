@@ -1,13 +1,13 @@
 // What the file tree shares with other features' window code: the order it lists the changed files
 // in, which the diff shows them in; the file on screen, which the diff says as it scrolls and the
-// tree follows; the views that show a file the tree asks for; the path a file's key names; and the
-// file finder, opened on a name.
+// tree follows; going to the tree, at the file on screen; the views that show a file the tree asks
+// for; the path a file's key names; and the file finder, opened on a name.
 
 import { useTabState } from '../../tab/window/shared.ts';
 import type { Changed, TreePath, TreeState } from '../contract.ts';
-import { panelOrder, type Mode } from './model.ts';
+import { foldersOf, panelOrder, type Mode } from './model.ts';
 import { keyOf, pathOfKey } from './paths.ts';
-import { choices, onScreen, picked, reveal, shown, states } from './store.ts';
+import { choices, focus, onScreen, picked, reveal, shown, states } from './store.ts';
 
 /** The order of each tab's changed files, kept until its changes or its mode change. */
 const orders = new Map<
@@ -87,6 +87,37 @@ export function followFile(tab: string, file: string | undefined): void {
   if (file !== undefined && !inTree) {
     reveal.update(tab, (last) => ({ key: file, count: (last?.count ?? 0) + 1 }));
   }
+}
+
+/** Puts the keyboard on `key`'s row in `tab`'s tree, and scrolls to it. */
+export function focusRow(tab: string, key: string): void {
+  focus.set(tab, key);
+  reveal.update(tab, (last) => ({ key, count: (last?.count ?? 0) + 1 }));
+}
+
+/** Puts the tree's keyboard row on the file `key`, opening the folders it's in and scrolling to it. */
+export function revealFile(tab: string, key: string): void {
+  choices.update(tab, (current) => {
+    const opened = new Set(current.opened);
+    const closed = new Set(current.closed);
+    for (const folder of foldersOf(pathOf(tab, key))) {
+      opened.add(folder);
+      closed.delete(folder);
+    }
+    return { ...current, opened, closed };
+  });
+  focusRow(tab, key);
+}
+
+/**
+ * Gives the file tree focus, its keyboard on the file on screen in `tab`, with the folders it's in
+ * open, as `-` does from a code view and, in the tree, when there's no stack above it to go up to.
+ */
+export function goToTree(tab: string): void {
+  const key = onScreen.get(tab) ?? focus.get(tab);
+  if (key !== undefined) revealFile(tab, key);
+  const tree = document.querySelector('[data-lo-scope="tree"]');
+  if (tree instanceof HTMLElement) tree.focus();
 }
 
 /**

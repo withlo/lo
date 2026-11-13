@@ -1,8 +1,9 @@
 // The stacks pull requests' tabs show, as main follows them: for each repository a tab is in, the
 // stacks among its open pull requests, worked out again when its account's poller lists them anew,
 // reads its rulesets, or reads the merged pull requests below layers GitHub moved; each tab's stack
-// in it, and where its layer's diff starts; and the state of the layers of the stack on screen, and
-// which of them have an overview, which only its tab reads. Nothing here calls Electron.
+// in it, and where its layer's diff starts; the runs of layers one diff shows; and the state of the
+// layers of the stack on screen, which only its tab reads, and which of the repository's pull
+// requests have an overview, read once for the repository. Nothing here calls Electron.
 
 import {
   openPullRequest,
@@ -29,6 +30,7 @@ import {
 import type { PullState } from '../../tab/contract.ts';
 import type { Offer, StackState } from '../contract.ts';
 import type { Found } from './conversion.ts';
+import { runOf, type Run } from './runs.ts';
 import { planStart, type StartForest } from './starts.ts';
 import { viewOf, type Shown } from './view.ts';
 
@@ -53,6 +55,11 @@ export interface FinderTab {
   readonly drawn: boolean;
   /** Whether its local copy couldn't get `compareFrom`, so its diff starts at its base branch. */
   readonly missing: boolean;
+  /**
+   * Whether it's a run of layers shown as one diff, of its top layer: it starts where the run was
+   * made to, so nothing sets or offers it a start.
+   */
+  readonly run: boolean;
 }
 
 /** What the finder uses of an account's poller. */
@@ -77,6 +84,12 @@ export type FinderPoller = Pick<
  */
 export const OVERVIEW_REFS: ReadKind<OverviewRefNumbers> = { name: 'OverviewRefs', watched: [] };
 
+/**
+ * How long a read of a repository's overviews serves every layer shown, as the poller's 5-minute
+ * refresh keeps the read of the layer it was made for: a layer shown since reads them only after.
+ */
+export const OVERVIEW_REFRESH = 5 * 60_000;
+
 export interface FinderOptions {
   /** An account's poller. Throws for an account Lo doesn't have. */
   poller(login: string): Promise<FinderPoller>;
@@ -88,6 +101,8 @@ export interface FinderOptions {
    */
   compareFrom(id: string, commit: string | undefined): void;
   log(line: string): void;
+  /** The time, in milliseconds since the Unix epoch, as the pollers' reads say when they were made. */
+  now?: (() => number) | undefined;
 }
 
 /** A tab the finder follows, and what it showed and asked for. */
@@ -102,7 +117,7 @@ interface Followed {
   asked: Asked | undefined;
   /** The layers at newer heads than their state, as `<number>:<head>`, read again for. */
   newer: ReadonlySet<string>;
-  /** The poller it asked to read its repository's overviews with, once it has. */
+  /** The poller it asked to read its repository's overviews with, once it has, for its layer. */
   overviews: FinderPoller | undefined;
   /** The start it set last, which names the layer the diff was compared with. */
   start: LayerStart | undefined;
@@ -147,6 +162,8 @@ export class StackFinder {
    * of its tabs' layers it was read for, so a layer shown for the first time has them at once.
    */
   readonly #overviews = new Map<string, Cached<OverviewRefNumbers>>();
+  /** When each repository's overviews were last asked to be read, by the same key. */
+  readonly #overviewsAsked = new Map<string, number>();
   /** The accounts whose poller couldn't be got, by lowercased login, so each is logged once. */
   readonly #unavailable = new Set<string>();
   #scheduled = false;
@@ -236,13 +253,26 @@ export class StackFinder {
     return { login: poller.login, forest, list, layers };
   }
 
+  /**
+   * The run of layers from `a` to `b` of tab `id`'s stack, as one diff shows it, from its
+   * repository's stacks as they're known now, or why there's none.
+   */
+  run(id: string, a: number, b: number): Run | { readonly why: string } {
+    const tab = this.#followed.get(id)?.tab;
+    const entry = tab?.login === undefined ? undefined : this.#pollers.get(tab.login.toLowerCase());
+    const forest =
+      tab && entry?.kind === 'ready' ? this.#forest(entry.poller, tab.pull.repo) : undefined;
+    if (!forest) return { why: 'Lo doesn’t know this pull request’s stack yet.' };
+    return runOf(forest.stacks, forest.prs, a, b);
+  }
+
   /** Forgets what was kept for an account that was removed, whose poller stopped. */
   forgetAccount(login: string): void {
     const lower = login.toLowerCase();
     const entry = this.#pollers.get(lower);
     if (entry?.kind === 'ready') entry.unsubscribe();
     this.#pollers.delete(lower);
-    for (const kept of [this.#forests, this.#overviews]) {
+    for (const kept of [this.#forests, this.#overviews, this.#overviewsAsked]) {
       for (const key of kept.keys()) if (key.startsWith(`${lower}\n`)) kept.delete(key);
     }
     for (const followed of this.#followed.values()) {
@@ -264,6 +294,7 @@ export class StackFinder {
     this.#followed.clear();
     this.#forests.clear();
     this.#overviews.clear();
+    this.#overviewsAsked.clear();
   }
 
   /** Works every tab's stack out again soon, once for everything that changes meanwhile. */
@@ -317,17 +348,21 @@ export class StackFinder {
         shown: followed.shown,
       });
       followed.shown = out.shown;
-      const plan = planStart({ ...tab, number: tab.pull.number }, forest, followed.start);
-      if (plan.set !== undefined) {
+      // A run of layers starts where its bottom layer does, as it was made: nothing is set or
+      // offered.
+      const plan = tab.run
+        ? undefined
+        : planStart({ ...tab, number: tab.pull.number }, forest, followed.start);
+      if (plan?.set !== undefined) {
         followed.start = plan.set === null ? undefined : plan.start;
         starts.push([tab.id, plan.set ?? undefined]);
       }
-      followed.offered = plan.offer && { offer: plan.offer, start: plan.start };
+      followed.offered = plan?.offer && { offer: plan.offer, start: plan.start };
       const view =
-        plan.note && out.view.kind === 'stack'
+        plan?.note && out.view.kind === 'stack'
           ? { ...out.view, notes: [...out.view.notes, plan.note] }
           : out.view;
-      const state: StackState = { id: tab.id, stack: view, offer: plan.offer ?? null };
+      const state: StackState = { id: tab.id, stack: view, offer: plan?.offer ?? null };
       const sent = JSON.stringify(state);
       followed.state = state;
       if (sent !== followed.sent) {
@@ -336,7 +371,7 @@ export class StackFinder {
       }
       this.#read(followed, poller, out.ids, list, layers, listed?.fetchedAt, read?.fetchedAt);
     }
-    for (const kept of [this.#forests, this.#overviews]) {
+    for (const kept of [this.#forests, this.#overviews, this.#overviewsAsked]) {
       for (const key of kept.keys()) if (!used.has(key)) kept.delete(key);
     }
     for (const [id, commit] of starts) this.#options.compareFrom(id, commit);
@@ -345,8 +380,9 @@ export class StackFinder {
   /**
    * Has tab `followed`'s poller read the state of the layers whose node IDs are `ids` while it's on
    * screen, and again when a list fetched after it, at `listedAt`, shows a layer at another head
-   * than the state, read at `readAt`, and which pull requests in its repository have an overview. A
-   * tab whose pull request is no longer in a stack stops reading its layers.
+   * than the state, read at `readAt`, and which pull requests in its repository have an overview,
+   * unless that was read for another layer lately. A tab whose pull request is no longer in a stack
+   * stops reading its layers.
    */
   #read(
     followed: Followed,
@@ -367,12 +403,16 @@ export class StackFinder {
       if (followed.asked) followed.asked.again = true;
       return;
     }
-    if (followed.overviews !== poller) {
+    const repo = tab.pull.repo;
+    const repoKey = forestKey(poller, repo);
+    if (followed.overviews !== poller && this.#overviewsDue(repoKey)) {
       followed.overviews = poller;
-      const repo = tab.pull.repo;
+      this.#overviewsAsked.set(repoKey, this.#now());
       poller
         .readCached(tab.pull, OVERVIEW_REFS, (client, known) =>
-          overviewRefNumbers(client, repo, known),
+          // With the repository's newest read, whichever layer it was made for, so a layer that
+          // reads them for the first time asks GitHub only whether they changed.
+          overviewRefNumbers(client, repo, known ?? this.#overviews.get(repoKey)?.value),
         )
         .catch((error: unknown) => {
           this.#options.log(`reading ${repo.toString()}'s overviews: ${String(error)}`);
@@ -401,6 +441,22 @@ export class StackFinder {
       poller.readStackLayersAgain(tab.pull);
     }
     followed.newer = newer;
+  }
+
+  /**
+   * Whether a layer on screen should read the overviews of the repository kept under `key`: unless
+   * they were read, or asked for, within {@link OVERVIEW_REFRESH}, for a layer whose own read the
+   * poller refreshes.
+   */
+  #overviewsDue(key: string): boolean {
+    const read = this.#overviews.get(key)?.fetchedAt;
+    const asked = this.#overviewsAsked.get(key);
+    const last = Math.max(read ?? -Infinity, asked ?? -Infinity);
+    return this.#now() - last >= OVERVIEW_REFRESH;
+  }
+
+  #now(): number {
+    return (this.#options.now ?? Date.now)();
   }
 
   /** Stops tab `followed`'s poller reading its layers' state. */

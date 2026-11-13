@@ -18,6 +18,7 @@ import {
   isGithubPage,
   oid,
   opening as openingSchema,
+  run as runSchema,
   stack as stackSchema,
   viewsOnScreen,
   type Tabs,
@@ -25,6 +26,9 @@ import {
 import { tabs } from '../service.ts';
 import { createTabs, type TabList } from './tabs.ts';
 import { Watcher } from './watcher.ts';
+
+/** A run's layers, as the tab keeps them. */
+const runLayers = runSchema.shape.layers;
 
 let kept: TabList | undefined;
 let watcher: Watcher | undefined;
@@ -87,6 +91,12 @@ export default defineFeature(contract, {
       // Checked too: the stack's numbers and branch come from GitHub.
       setLayers: (id, stack) =>
         tabsOf(context).setLayers(id, stack === undefined ? undefined : stackSchema.parse(stack)),
+      // Checked too: the layers and the start come from GitHub.
+      openRun: (id, run) =>
+        tabsOf(context).openRun(id, {
+          layers: runLayers.parse(run.layers),
+          start: oid.parse(run.start),
+        }),
       pull: (id) => watcher?.info(id),
       onPull(listener) {
         following.add(listener);

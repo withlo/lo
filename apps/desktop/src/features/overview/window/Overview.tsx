@@ -1,7 +1,8 @@
 // The overview, the first of a pull request's tab's middle views. As the tab opens it draws the
 // tab's placeholder until it knows whether the overview shows, for `HOLD_LIMIT` at most, then
 // stays, or hands the middle to the diff before either has drawn anything. After that it shows the
-// overview, or why there's none to show; one that comes later is offered, never switched to. While
+// overview, or why there's none to show; one that comes later is offered, never switched to. A run
+// of a stack's layers on screen as one diff has none, which it says. While
 // it's on screen the overview's keys act on it (`follow.ts`), and the code of one of its blocks can
 // sit beside it, which `o` and `Esc` take away again, the block the reader is at staying put.
 
@@ -51,7 +52,7 @@ import { keyOf } from './labels.ts';
 import { openingOf, openings, type Opening } from './opening.ts';
 import { placeOnHead, placing } from './since.ts';
 import { Shown } from './Shown.tsx';
-import { CantShow, NoOverview, Quiet, ReadFailed } from './States.tsx';
+import { CantShow, NoneInRun, NoOverview, Quiet, ReadFailed } from './States.tsx';
 
 /**
  * What tab `tab` opens on, chosen once, once Settings is known: until then, `waiting`, which wakes
@@ -166,8 +167,33 @@ function focusIsFree(own: HTMLElement): boolean {
   );
 }
 
-/** A pull request's tab's overview, in its middle, with the code of one of its blocks beside it. */
+/**
+ * A pull request's tab's overview, in its middle, with the code of one of its blocks beside it; or,
+ * for a run of a stack's layers, that it has none.
+ */
 export function OverviewView({ tab, shown }: { tab: PullTab; shown: boolean }) {
+  return tab.run ? <InRun tab={tab} shown={shown} /> : <Overview tab={tab} shown={shown} />;
+}
+
+/** The view in a run of layers: no overview, and the way to the diff. */
+function InRun({ tab, shown }: { tab: PullTab; shown: boolean }) {
+  const root = useRef<HTMLDivElement>(null);
+  // While it's on screen, it's the middle view `Esc` gives focus back to.
+  useEffect(() => {
+    if (!shown) return undefined;
+    const take = () => root.current?.focus({ preventScroll: true });
+    take();
+    return setMiddle({ focus: take, here: () => undefined });
+  }, [shown]);
+  return (
+    <div ref={root} className="h-full outline-none" tabIndex={-1} data-lo-overview="run">
+      <NoneInRun tab={tab} />
+    </div>
+  );
+}
+
+/** A pull request's tab's overview, in its middle, with the code of one of its blocks beside it. */
+function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const standing = useStanding(tab.id);
   const known = knownOf(standing);
   const opening = useOpening(tab.id, known, shown);

@@ -1,5 +1,5 @@
-// The window's title: the pull request on screen's, and where it is in its stack, or Lo's name
-// while another kind of tab is.
+// The window's title: the pull request on screen's, and where it is in its stack, or the run of
+// its stack's layers on screen as one diff, or Lo's name while another kind of tab is.
 
 import { layerOf, type Tab } from '../contract.ts';
 import { withoutBidi } from './shared.ts';
@@ -36,12 +36,21 @@ function layerCount(count: number): string {
   return count === 1 ? '1 layer' : `${count} layers`;
 }
 
+/** `owner/repo#83 to #84 — 2 layers as one diff`, for a run of a stack's layers, bottom first. */
+export function forRun(repository: string, layers: readonly number[]): string {
+  return `${repository}#${layers[0] ?? ''} to #${layers.at(-1) ?? ''} — ${layerCount(layers.length)} as one diff`;
+}
+
 /**
  * The window's title while `tab` is on screen: its layer on screen's, and, once the stack it's in
- * is known, where in the stack it is.
+ * is known, where in the stack it is; or the run of the stack's layers it shows as one diff.
  */
 export function windowTitle(tab: Tab | undefined): string {
   if (tab?.kind !== 'pull') return NO_PULL_REQUEST;
+  if (tab.run) {
+    const run = forRun(`${tab.owner}/${tab.repo}`, tab.run.layers);
+    return tab.stack ? `${run}, stack on ${withoutBidi(tab.stack.root)}` : run;
+  }
   const layer = layerOf(tab);
   const title = forPullRequest(`${tab.owner}/${tab.repo}`, layer, tab.title);
   const { stack } = tab;

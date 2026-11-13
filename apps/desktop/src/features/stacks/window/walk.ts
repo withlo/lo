@@ -2,14 +2,31 @@
 // file tree goes up to the stack's tree, and there the keyboard moves from layer to layer, shows
 // one, opens one on GitHub, or makes the chain through one a GitHub stack. A layer shows in its
 // tab, which keeps a view of each layer shown, so each keeps its place; showing one isn't a jump.
+//
+// And runs of layers: `v` starts choosing one, `j` and `k` move its end along its branch, and `⏎`
+// asks main for a view of it, which opens on its diff. `Esc`, or the bar over it, goes back to the
+// layer it was chosen from, and `]s` and `[s` go on from that layer.
 
 import type { Target } from '@lo/ui/commands';
 
+import { IpcError } from '../../../ipc/contract.ts';
+import { notify } from '../../../window/commands/notices.tsx';
+import { escapeInMiddle, escapeToMiddle, focusMiddle } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
+import { showDiff } from '../../diff/window/shared.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
-import { activeTab, pullOf, type PullTab } from '../../tab/window/shared.ts';
+import {
+  activeTab,
+  pullOf,
+  runViewOf,
+  withoutBidi,
+  type PullTab,
+} from '../../tab/window/shared.ts';
+import { goToTree } from '../../tree/window/shared.ts';
 import { makeStack } from './actions.ts';
-import { focused, keyboardLayer, layersOf, stacks, stepFrom } from './layers.ts';
+import { choosing, focused, keyboardLayer, layersOf, stacks, stepFrom } from './layers.ts';
+import { main } from './main.ts';
+import { chainIn, stepChoice, type Choice } from './runs.ts';
 
 const tabs = () => client(tabContract);
 
@@ -46,7 +63,8 @@ export function takeRefocus(): boolean {
  * layer, made the first time. Focus in the stack's tree stays there, on the layer shown.
  */
 export function showLayer(tab: PullTab, number: number): Promise<string | undefined> {
-  if (number === tab.number) return Promise.resolve(tab.id);
+  // A run on screen is left for any of its layers, its top one too.
+  if (number === tab.number && !tab.run) return Promise.resolve(tab.id);
   const tree = treeOnScreen();
   refocus = tree !== undefined && tree.contains(document.activeElement);
   return tabs()
@@ -58,7 +76,10 @@ export function showLayer(tab: PullTab, number: number): Promise<string | undefi
     });
 }
 
-/** Where `]s` (`by` 1) or `[s` (-1) goes from the layer on screen, or why it can't. */
+/**
+ * Where `]s` (`by` 1) or `[s` (-1) goes from the layer on screen, or from a run's, the layer it was
+ * chosen from, or why it can't.
+ */
 function stepOnScreen(by: 1 | -1): { tab: PullTab; layer: number } | string {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return tab;
@@ -66,7 +87,7 @@ function stepOnScreen(by: 1 | -1): { tab: PullTab; layer: number } | string {
   if (view?.kind !== 'stack' && pullOf(tab.id)?.acting?.kind === 'anonymous') {
     return `Sign in to see the stack #${tab.number} is in.`;
   }
-  const step = stepFrom(view, tab.number, by);
+  const step = stepFrom(view, tab.run?.from ?? tab.number, by);
   return 'why' in step ? step.why : { tab, layer: step.layer };
 }
 
@@ -95,30 +116,38 @@ export function stackTarget(tab: PullTab): Target {
   return layer === undefined ? { kind: 'none' } : { kind: 'layer', layer };
 }
 
-/** `-` in the file tree: goes up to the stack's tree, at the layer on screen. */
-export function goToStack(): void {
+/**
+ * `-` in the file tree: goes up to the stack's tree, at the layer on screen, when the view on screen
+ * has one; otherwise it's `-` as in the code, back to the file on screen in the file tree.
+ */
+export function goUp(): void {
   const tab = pullOnScreen();
+  if (typeof tab === 'string') return;
   const tree = treeOnScreen();
-  if (typeof tab === 'string' || !tree) return;
+  if (!tree) {
+    goToTree(tab.id);
+    return;
+  }
   focused.set(tab.id, tab.number);
   tree.focus();
 }
 
-/** Whether the stack's tree is on screen to go to, or why not. */
-export function stackShown(): true | string {
-  const tab = pullOnScreen();
-  if (typeof tab === 'string') return tab;
-  if (treeOnScreen()) return true;
-  return stacks.get(tab.id)?.kind === 'stack'
-    ? 'The left panel is closed.'
-    : `#${tab.number} isn't in a stack.`;
-}
-
-/** `j` and `k` in the stack's tree: moves the keyboard a layer, stopping at the ends. */
+/**
+ * `j` and `k` in the stack's tree: moves the keyboard a layer, stopping at the ends. While a run is
+ * being chosen, they move its end along its branch, and the keyboard with it.
+ */
 export function moveFocus(by: 1 | -1): void {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return;
-  const layers = layersOf(stacks.get(tab.id));
+  const view = stacks.get(tab.id);
+  const choice = choosing.get(tab.id);
+  if (choice && view?.kind === 'stack') {
+    const next = stepChoice(view.rows, choice, by);
+    choosing.set(tab.id, next);
+    focused.set(tab.id, next.end);
+    return;
+  }
+  const layers = layersOf(view);
   const from = focusedLayer(tab);
   const at = from === undefined ? -1 : layers.indexOf(from);
   const next = layers[Math.min(Math.max(at + by, 0), layers.length - 1)];
@@ -135,12 +164,151 @@ export function onLayer(target: Target): true | string {
     : `#${target.layer} isn't in the stack on screen.`;
 }
 
-/** `⏎` in the stack's tree, a click, or Show on a layer's menu: shows the layer. */
+/**
+ * `⏎` in the stack's tree, a click, or Show on a layer's menu: shows the layer. While a run is
+ * being chosen, `⏎` shows it instead.
+ */
 export function showTarget(target: Target): void {
   const tab = pullOnScreen();
   if (typeof tab === 'string' || target.kind !== 'layer') return;
+  const choice = choosing.get(tab.id);
+  if (choice) {
+    choosing.set(tab.id, undefined);
+    showChoice(tab, choice);
+    return;
+  }
   focused.set(tab.id, target.layer);
   void showLayer(tab, target.layer);
+}
+
+/** What notes about showing a run say they're about. */
+export const RUN = 'View as one diff';
+
+/** What went wrong asking main, in words to show: a branch's name may carry bidi controls. */
+function whyNot(error: unknown): string {
+  return error instanceof IpcError
+    ? withoutBidi(error.message)
+    : 'Lo couldn’t ask for it. Try again.';
+}
+
+/** Shows the run `choice` chose: as one diff, or, while it's one layer, that layer. */
+function showChoice(tab: PullTab, choice: Choice): void {
+  const view = stacks.get(tab.id);
+  const layers = view?.kind === 'stack' ? chainIn(view.rows, choice.anchor, choice.end) : undefined;
+  if (!layers || layers.length < 2) {
+    focused.set(tab.id, choice.anchor);
+    void showLayer(tab, choice.anchor);
+    return;
+  }
+  openRun(tab, layers);
+}
+
+/**
+ * Asks main for a view of the run of `layers`, bottom first, in `tab`, which opens on its diff, or
+ * says why there's none.
+ */
+export function openRun(tab: PullTab, layers: readonly number[]): void {
+  const [bottom] = layers;
+  const top = layers.at(-1);
+  if (bottom === undefined || top === undefined) return;
+  // The view opens on its diff: it has no overview, and the diff is what it's for.
+  const view = runViewOf(tab.id, layers);
+  if (view !== undefined) showDiff(view);
+  main()
+    .run({ id: tab.id, bottom, top })
+    .catch((error: unknown) => notify(RUN, whyNot(error)));
+}
+
+/** The row of layer `number` in the stack of `tab`, if it has one. */
+function rowOf(tab: PullTab, number: number) {
+  const view = stacks.get(tab.id);
+  return view?.kind === 'stack' ? view.rows.find((row) => row.number === number) : undefined;
+}
+
+/** Whether a run can start at `target`, a layer of the stack on screen, or why not. */
+export function choosable(target: Target): true | string {
+  const on = onLayer(target);
+  if (on !== true || target.kind !== 'layer') return on;
+  const tab = pullOnScreen();
+  if (typeof tab === 'string') return tab;
+  return (rowOf(tab, target.layer)?.path.length ?? 0) > 0
+    ? true
+    : `#${target.layer} isn't a layer of the stack now, so no run can hold it.`;
+}
+
+/**
+ * `v` on a layer, or Choose a run from here on its menu: starts choosing a run there, in the
+ * stack's tree, which has the keys.
+ */
+export function choose(target: Target): void {
+  const tab = pullOnScreen();
+  if (typeof tab === 'string' || target.kind !== 'layer') return;
+  choosing.set(tab.id, { anchor: target.layer, end: target.layer });
+  focused.set(tab.id, target.layer);
+  treeOnScreen()?.focus();
+}
+
+/** `Esc` in the stack's tree: stops choosing a run, or else goes back to the middle view. */
+export function cancel(): void {
+  const tab = pullOnScreen();
+  if (typeof tab !== 'string' && choosing.get(tab.id) !== undefined) {
+    choosing.set(tab.id, undefined);
+    return;
+  }
+  escapeToMiddle();
+}
+
+/** Stops choosing a run in view `id`'s stack tree, as leaving the tree does. */
+export function stopChoosing(id: string): void {
+  if (choosing.get(id) !== undefined) choosing.set(id, undefined);
+}
+
+/** The layers from the stack's bottom up to `target`, in the tab on screen, or why there's no run. */
+function stackUpTo(target: Target): { tab: PullTab; layers: readonly number[] } | string {
+  const tab = pullOnScreen();
+  if (typeof tab === 'string') return tab;
+  if (target.kind !== 'layer') return 'No layer has focus.';
+  const row = rowOf(tab, target.layer);
+  if (!row) return `#${target.layer} isn't in the stack on screen.`;
+  if (row.path.length === 0) return `#${target.layer} isn't a layer of the stack now.`;
+  if (row.path.length < 2) {
+    return `#${target.layer} is the stack's bottom layer, so the stack up to it is that layer alone.`;
+  }
+  return { tab, layers: row.path };
+}
+
+/** View the stack up to here as one diff, on a layer's menu. */
+export function upTo(target: Target): void {
+  const found = stackUpTo(target);
+  if (typeof found === 'string') return;
+  stopChoosing(found.tab.id);
+  openRun(found.tab, found.layers);
+}
+
+/** Whether the stack up to `target` can show as one diff, or why not. */
+export function upToReady(target: Target): true | string {
+  const found = stackUpTo(target);
+  return typeof found === 'string' ? found : true;
+}
+
+/** Goes back from the run on screen to the layer it was chosen from, as the bar's button does. */
+export function leaveRun(): void {
+  const tab = pullOnScreen();
+  if (typeof tab === 'string' || !tab.run) return;
+  tabs()
+    .layer({ id: tab.id, number: tab.run.from })
+    .catch((error: unknown) => console.error("Lo couldn't go back to the layer:", error));
+}
+
+/**
+ * `Esc` in the diff: what the diff has open closes first; then, in a run on screen, back to the
+ * layer it was chosen from, and anywhere else, focus to the middle view, as `Esc` gives it anywhere.
+ */
+export function back(): void {
+  if (escapeInMiddle()) return;
+  const tab = pullOnScreen();
+  if (typeof tab !== 'string' && tab.run) leaveRun();
+  else focusMiddle();
 }
 
 /** `gx` on a layer: opens its pull request on github.com. */

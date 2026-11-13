@@ -1,14 +1,24 @@
 // The pull requests in the window's tabs, as main follows them: a PullTab for each view of a pull
 // request's tab, one for each layer it has shown, made as the tab opens, comes back after a
-// restart, or shows another layer; the view on screen shown, and the rest hidden; and all of them
-// closed with their tab. Nothing here calls Electron.
+// restart, or shows another layer, and one for the run of layers it shows as one diff, while it
+// does; the view on screen shown, and the rest hidden; and all of them closed with their tab.
+// Nothing here calls Electron.
 
 import type { Repo } from '@lo/git';
 import type { Poller, PullRef } from '@lo/github';
 
 import type { LocalGit } from '../../../main/git.ts';
 import type { GithubEvent } from '../../accounts/service.ts';
-import { layerOf, layersOf, viewId, type Tab, type Tabs } from '../contract.ts';
+import {
+  layerOf,
+  layersOf,
+  runViewId,
+  topOf,
+  viewId,
+  type Run,
+  type Tab,
+  type Tabs,
+} from '../contract.ts';
 import type { PullTabInfo } from '../service.ts';
 import { PullTab, type Kept, type Snapshot, type TabGithub, type TabPublish } from './pull.ts';
 
@@ -57,8 +67,9 @@ export class Watcher {
 
   /**
    * Follows the tabs as they are now: a PullTab for each new view of a pull request's tab, which
-   * starts watching with the account its tab last acted as; the view on screen shown, and the one
-   * before it hidden; and the views of tabs closed, closed.
+   * starts watching with the account its tab last acted as, a run of layers' of its top layer, from
+   * the run's start; the view on screen shown, and the one before it hidden; and the views of tabs
+   * closed, and of runs left, closed.
    */
   follow({ tabs, active }: Tabs): void {
     if (this.#stopped) return;
@@ -74,7 +85,16 @@ export class Watcher {
         open.add(id);
         if (!this.#tabs.has(id)) this.#make(tab, id, layer);
       }
-      if (tab.id === active) onScreen = viewId(tab, layerOf(tab));
+      const { run } = tab;
+      const runView = run && runViewId(tab, run.layers);
+      if (run && runView !== undefined) {
+        open.add(runView);
+        const made = this.#tabs.get(runView);
+        // The same run, chosen again from a start worked out since.
+        if (made) made.compareFrom(run.start);
+        else this.#make(tab, runView, topOf(run), run);
+      }
+      if (tab.id === active) onScreen = runView ?? viewId(tab, layerOf(tab));
     }
     for (const [id, pull] of this.#tabs) {
       if (open.has(id)) continue;
@@ -90,8 +110,11 @@ export class Watcher {
     }
   }
 
-  /** Makes `tab`'s view `id` of `layer`, which starts watching it. */
-  #make(tab: Extract<Tab, { kind: 'pull' }>, id: string, layer: number): void {
+  /**
+   * Makes `tab`'s view `id` of `layer`, which starts watching it: for a run of layers, its top layer,
+   * compared with the run's start.
+   */
+  #make(tab: Extract<Tab, { kind: 'pull' }>, id: string, layer: number, run?: Run): void {
     const kept = this.#options.store.kept(id);
     const name = `${tab.owner}/${tab.repo}#${layer}`;
     const pull = new PullTab({
@@ -107,6 +130,7 @@ export class Watcher {
       sharing: (ref, poller) => this.#sharing(id, ref, poller),
       log: (line) => this.#options.log(`${name}: ${line}`),
       offlineAfter: this.#options.offlineAfter,
+      run: run && { layers: run.layers, start: run.start },
     });
     this.#tabs.set(id, pull);
     void pull.watch();
@@ -158,9 +182,13 @@ export class Watcher {
     this.#tabs.get(id)?.drawn(head);
   }
 
-  /** Compares view `id` with `commit`, a stack's layer's start, or with its base branch. */
+  /**
+   * Compares view `id` with `commit`, a stack's layer's start, or with its base branch. A run of
+   * layers starts where its tab says.
+   */
   compareFrom(id: string, commit: string | undefined): void {
-    this.#tabs.get(id)?.compareFrom(commit);
+    const pull = this.#tabs.get(id);
+    if (pull?.info().run === undefined) pull?.compareFrom(commit);
   }
 
   reload(id: string): void {

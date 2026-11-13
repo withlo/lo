@@ -97,6 +97,12 @@ export interface PullTabOptions {
   readonly log: (line: string) => void;
   /** How long GitHub must be out of reach before the tab says so: {@link OFFLINE_AFTER}. */
   readonly offlineAfter?: number | undefined;
+  /**
+   * For a view of a run of a stack's layers as one diff, its layers, bottom first, of which the pull
+   * request is the top, and where its diff starts: where the bottom layer's own changes start. It
+   * has no viewed marks, so its files aren't sent.
+   */
+  readonly run?: { readonly layers: readonly number[]; readonly start: string } | undefined;
 }
 
 /**
@@ -186,6 +192,7 @@ export class PullTab {
     this.pull = new PullRef(owner, repo, number);
     if (options.login !== undefined) this.#acting = { kind: 'account', login: options.login };
     if (options.repository !== undefined) this.#repository = RepoRef.parse(options.repository);
+    this.#compareFrom = options.run?.start;
   }
 
   /**
@@ -357,6 +364,7 @@ export class PullTab {
       local: this.#localState(),
       compareFrom: this.#compareFrom,
       drawn: this.#started && this.#drawnAt !== undefined && this.#drawnAt === this.#shown,
+      run: this.#options.run?.layers,
     };
   }
 
@@ -748,7 +756,8 @@ export class PullTab {
     } else {
       this.#saved = { head: details.headRefOid, base };
     }
-    const files = filesFromDetails(this.id, details);
+    // A run of layers has no viewed marks: the top layer's files, with its marks, aren't the run's.
+    const files = this.#options.run ? undefined : filesFromDetails(this.id, details);
     if (files) {
       this.#files = files;
       const said = JSON.stringify(files);

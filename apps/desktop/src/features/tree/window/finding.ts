@@ -6,7 +6,8 @@ import { createStore } from 'zustand/vanilla';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { focusMiddle, registry } from '../../../window/commands/registry.ts';
-import { pullOnScreen, revealFile } from './actions.ts';
+import { pullOnScreen } from './actions.ts';
+import { revealFile } from './shared.ts';
 import type { Answer, Item } from './found.ts';
 import { main } from './main.ts';
 import { picked, states } from './store.ts';

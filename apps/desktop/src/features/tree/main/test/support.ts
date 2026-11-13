@@ -124,6 +124,7 @@ export function e2eInfo(
     local,
     compareFrom: undefined,
     drawn: false,
+    run: undefined,
   };
 }
 
