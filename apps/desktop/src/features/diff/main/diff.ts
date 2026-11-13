@@ -20,7 +20,6 @@ import {
   type Repo,
 } from '@lo/git';
 import {
-  GithubError,
   type GithubClient,
   MAX_FILES,
   MAX_PAGES,
@@ -89,6 +88,11 @@ interface At {
   /** GitHub's patches, by the files' places, while the files are GitHub's. */
   patches: (string | undefined)[];
   partial: boolean;
+  /**
+   * Whether GitHub couldn't compare the head with `compareFrom`, so its files are the pull
+   * request's own.
+   */
+  uncompared: boolean;
   problem: string | undefined;
   /** What's been started for it, so nothing starts twice. */
   readonly started: Set<Source>;
@@ -169,6 +173,7 @@ export class DiffTab {
       from: at?.from ?? null,
       files: at?.files ?? null,
       partial: at?.partial ?? false,
+      uncompared: at?.uncompared ?? false,
       problem: at?.problem ?? null,
     };
   }
@@ -260,6 +265,7 @@ export class DiffTab {
       files: undefined,
       patches: [],
       partial: false,
+      uncompared: false,
       problem: undefined,
       started: new Set(),
       listed: undefined,
@@ -674,11 +680,13 @@ export class DiffTab {
     const repository = new RepoRef(info.repository.owner, info.repository.name);
     const pull = PullRef.of(repository, info.number);
     try {
-      const listed =
-        (at.compareFrom === undefined
+      const compared =
+        at.compareFrom === undefined
           ? undefined
-          : await this.#compared(at, acting, repository, at.compareFrom)) ??
-        (await this.#pullFiles(at, acting, pull));
+          : await this.#compared(at, acting, repository, at.compareFrom);
+      const uncompared = compared === 'failed';
+      const listed =
+        (compared === 'failed' ? undefined : compared) ?? (await this.#pullFiles(at, acting, pull));
       // The local copy's say wins, and a list of a newer head than the one on screen isn't its.
       if (!listed || !this.#current(at) || at.from !== undefined) return;
       if (!listedAt(listed.files, at.head)) {
@@ -689,6 +697,7 @@ export class DiffTab {
       at.patches = listed.files.map((file) => file.patch);
       at.from = 'github';
       at.partial = listed.partial;
+      at.uncompared = uncompared;
     } catch (error) {
       if (!this.#current(at)) return;
       this.#options.log(`reading the changed files from GitHub: ${describe(error)}`);
@@ -722,15 +731,15 @@ export class DiffTab {
   /**
    * The files that changed from where `at`'s head meets `compareFrom`, a stack's layer's start, as
    * GitHub compares them, while `at` is still the diff on screen when its turn comes: nothing once
-   * it isn't, and nothing when GitHub no longer has the commit, so the pull request's own files
-   * stand in, as they do in the local copy.
+   * it isn't, and `failed` when GitHub couldn't compare them, as when it no longer has the commit,
+   * so the pull request's own files stand in, as they do in the local copy.
    */
   async #compared(
     at: At,
     acting: Acting,
     repository: RepoRef,
     compareFrom: Oid,
-  ): Promise<GithubFiles | undefined> {
+  ): Promise<GithubFiles | 'failed' | undefined> {
     try {
       const compared = await this.#options.reads.github(acting, (client) =>
         this.#current(at)
@@ -739,9 +748,8 @@ export class DiffTab {
       );
       return compared && { files: compared.files, partial: compared.capped };
     } catch (error) {
-      if (!(error instanceof GithubError && error.detail.kind === 'notFound')) throw error;
-      this.#options.log(`GitHub can't compare ${compareFrom} with the head: ${describe(error)}`);
-      return undefined;
+      this.#options.log(`GitHub couldn't compare ${compareFrom} with the head: ${describe(error)}`);
+      return 'failed';
     }
   }
 

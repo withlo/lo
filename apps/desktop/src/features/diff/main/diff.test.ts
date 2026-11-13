@@ -730,12 +730,17 @@ describe('a stack’s layer’s diff', { timeout: 60_000 }, () => {
    * A client answered from the comparisons' cassette, which lists #4's own files when asked for
    * them, and notes each address it's asked for.
    */
-  function layerClient(asked: string[]): GithubClient {
+  function layerClient(asked: string[], compareStatus?: number): GithubClient {
     const replay = replayFetch('rest_comparison_e2e');
     return new GithubClient({
       fetch: (input, init) => {
         const url = input instanceof Request ? input.url : String(input);
         asked.push(new URL(url).pathname);
+        if (url.includes('/compare/') && compareStatus !== undefined) {
+          return Promise.resolve(
+            new Response('{"message":"Server Error"}', { status: compareStatus }),
+          );
+        }
         if (url.includes('/compare/')) return replay(input, init);
         const file = {
           filename: 'e2/b.txt',
@@ -769,7 +774,7 @@ describe('a stack’s layer’s diff', { timeout: 60_000 }, () => {
     diff.update(layerInfo());
     const state = await settled((each) => each.from === 'github');
 
-    expect(state).toMatchObject({ at: C, compareFrom: B, partial: false });
+    expect(state).toMatchObject({ at: C, compareFrom: B, partial: false, uncompared: false });
     expect(state.files?.map((file) => file.path.text)).toEqual(['e2/c.txt']);
     expect(asked).toEqual([`/repos/rozed-dev/e2e/compare/${B}...${C}`]);
     const [patch] = await diff.texts(C, null, B, null, 'github', [0]);
@@ -787,12 +792,22 @@ describe('a stack’s layer’s diff', { timeout: 60_000 }, () => {
     diff.update(layerInfo(GONE));
     const state = await settled((each) => each.from === 'github');
 
-    expect(state).toMatchObject({ compareFrom: GONE });
+    expect(state).toMatchObject({ compareFrom: GONE, uncompared: true });
     expect(state.files?.map((file) => file.path.text)).toEqual(['e2/b.txt']);
     expect(asked).toEqual([
       `/repos/rozed-dev/e2e/compare/${GONE}...${C}`,
       '/repos/rozed-dev/e2e/pulls/4/files',
     ]);
+  });
+
+  it('reads the pull request’s own files, and says so, whatever stopped GitHub comparing', async () => {
+    const asked: string[] = [];
+    const client = layerClient(asked, 500);
+    const { diff, settled } = diffTab({ github: (_acting, request) => request(client) });
+    diff.update(layerInfo());
+    const state = await settled((each) => each.from === 'github');
+    expect(state).toMatchObject({ compareFrom: B, uncompared: true, problem: null });
+    expect(state.files?.map((file) => file.path.text)).toEqual(['e2/b.txt']);
   });
 
   it('starts again for another start, and waits for the local copy compared with it', async () => {

@@ -544,13 +544,18 @@ describe('a stack’s layer’s tree', () => {
    * GitHub answering comparisons from their cassette, #4's own files and e2/c's tree in place of
    * the real ones, and noting each address it's asked for.
    */
-  function layerGithub() {
+  function layerGithub(compareStatus?: number) {
     const replay = replayFetch('rest_comparison_e2e');
     const asked: string[] = [];
     const client = new GithubClient({
       fetch: (input, init) => {
         const url = new URL(input instanceof Request ? input.url : String(input));
         asked.push(url.pathname);
+        if (url.pathname.includes('/compare/') && compareStatus !== undefined) {
+          return Promise.resolve(
+            new Response('{"message":"Server Error"}', { status: compareStatus }),
+          );
+        }
         if (url.pathname.includes('/compare/')) return replay(input, init);
         if (url.pathname.includes('/git/trees/')) {
           const file = { path: 'e2/c.txt', type: 'blob', mode: '100644', sha: 'c'.repeat(40) };
@@ -600,6 +605,16 @@ describe('a stack’s layer’s tree', () => {
     const state = await settled((sent) => sent.changes !== null);
     expect(changes(state)).toEqual(['added e2/b.txt']);
     expect(asked).toContain('/repos/rozed-dev/e2e/pulls/4/files');
+  });
+
+  it('lists the pull request’s own files, without asking again, whatever stopped GitHub comparing', async () => {
+    const { asked, github } = layerGithub(500);
+    const { tree, settled } = treeTab({ github });
+    tree.update(layerInfo(B));
+    const state = await settled((sent) => sent.changes !== null);
+    expect(state).toMatchObject({ changesFrom: 'github', problem: null });
+    expect(changes(state)).toEqual(['added e2/b.txt']);
+    expect(asked.filter((path) => path.includes('/compare/'))).toHaveLength(1);
   });
 
   it('keeps the head’s files for another start, and reads what changed again', async () => {

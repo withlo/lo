@@ -88,6 +88,8 @@ interface At {
   readonly comparing: Comparing | undefined;
   /** The commit the whole pull request is compared with, for a stack's layer. */
   readonly compareFrom: Oid | undefined;
+  /** Whether GitHub couldn't compare the head with `compareFrom`, so it isn't asked again. */
+  uncompared: boolean;
   /** The files that changed between them, once they're known. */
   compared: Changed[] | undefined;
   files: Files | undefined;
@@ -218,6 +220,7 @@ export class TreeTab {
         head,
         comparing,
         compareFrom,
+        uncompared: false,
         compared: undefined,
         files: kept?.files,
         listing: kept?.listing ?? { kind: 'loading' },
@@ -555,9 +558,9 @@ export class TreeTab {
 
   /**
    * The files `at`'s pull request changes, as GitHub lists them: for a stack's layer compared with
-   * another commit, those GitHub's comparison with it lists, or the pull request's own when GitHub
-   * no longer has the commit, as the local copy does then. Nothing once `at` is no longer the tree
-   * on screen when the request's turn comes.
+   * another commit, those GitHub's comparison with it lists, or the pull request's own once GitHub
+   * couldn't compare them, as when it no longer has the commit, as the local copy does then.
+   * Nothing once `at` is no longer the tree on screen when the request's turn comes.
    */
   async #changedOnGithub(
     at: At,
@@ -566,7 +569,7 @@ export class TreeTab {
   ): Promise<{ files: readonly PullFile[]; partial: boolean } | undefined> {
     const { reads } = this.#options;
     const { compareFrom } = at;
-    if (compareFrom !== undefined) {
+    if (compareFrom !== undefined && !at.uncompared) {
       try {
         const compared = await reads.github(acting, (client) =>
           this.#current(at)
@@ -575,8 +578,10 @@ export class TreeTab {
         );
         return compared && { files: compared.files, partial: compared.capped };
       } catch (error) {
-        if (!(error instanceof GithubError && error.detail.kind === 'notFound')) throw error;
-        this.#options.log(`GitHub can't compare ${compareFrom} with the head: ${describe(error)}`);
+        this.#options.log(
+          `GitHub couldn't compare ${compareFrom} with the head: ${describe(error)}`,
+        );
+        at.uncompared = true;
       }
     }
     const listed = await reads.github(acting, (client) =>

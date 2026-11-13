@@ -488,9 +488,9 @@ Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `c
   GitHub said, and a new head on screen starts again. A stack's layer compared with the layer below
   lists what changed from GitHub's comparison of the two commits (`readComparison`), 300 files at
   most, until the copy has worked out where the head meets that commit, and the pull request's own
-  files when GitHub no longer has it. A new start reads what changed again, and keeps the files.
-  GitHub is asked only about a head it gave, never one restored from what Lo saved, and a read that
-  fails is tried again after 5 s, doubling to 5 minutes.
+  files when GitHub can't compare them, without asking again. A new start reads what changed again,
+  and keeps the files. GitHub is asked only about a head it gave, never one restored from what Lo
+  saved, and a read that fails is tried again after 5 s, doubling to 5 minutes.
 - Up to 20,000 files go to the window whole, on `tree.state`. Past that, main sends the root's
   entries, and the window asks for each folder's (`tree.folder`) as it opens one, 500 folders a
   request at most. Past 500,000, the tree shows only the changed files.
@@ -531,9 +531,11 @@ changing, as when the local copy marks one generated, doesn't reorder a drawn vi
   the local copy, which a new comparison starts again. A stack's layer's view starts where the
   stacks feature says (`compareFrom`): from GitHub's comparison with that commit, 300 files at most,
   until the local copy is ready compared with the same commit, which the diff waits for once the
-  copy is ready at the head. A new start is a new view, never swapped in place. Each says how the
-  file starts out: shown, closed as generated, kept out as large until `za`, binary, or unchanged.
-  Files are named by their place in the list, never by their paths.
+  copy is ready at the head. When GitHub can't compare them, for any reason, the pull request's own
+  files stand in, and `uncompared` says so. A new start is a new view, never swapped in place, and
+  the whole-file view and an overview's code read their base side again. Each says how the file
+  starts out: shown, closed as generated, kept out as large until `za`, binary, or unchanged. Files
+  are named by their place in the list, never by their paths.
 - The window asks for files' texts in batches (`diff.texts`), first files first, and the background
   process diffs them (`diff.files`), finds moved code (`diff.moves`) and highlights them
   (`diff.highlight`). The view is drawn once every file that shows its lines has its diff, and the

@@ -200,8 +200,9 @@ and the whole-file view.
   read straight from git.
 - **Before the copy is ready.** Lo shows GitHub's own diff, builds the file tree from GitHub's API
   and shows the overview. A stack's layer shows GitHub's comparison with the layer below instead,
-  which lists 300 files at most. Whole-file context, navigation and rebase-aware comparison turn on
-  when the copy arrives, with progress shown.
+  which lists 300 files at most. When GitHub can't compare them, the layer shows its own pull
+  request's files, and the status bar says the layers below are included. Whole-file context,
+  navigation and rebase-aware comparison turn on when the copy arrives, with progress shown.
 - **Cleanup.** Settings shows how much space the cache uses and can clear it. Repos unused for 30
   days are removed. The cache also has a size cap, 10 GB by default and changeable in Settings, and
   past it the least recently used copies are removed.

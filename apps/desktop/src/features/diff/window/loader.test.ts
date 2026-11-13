@@ -45,6 +45,7 @@ function state(
     from,
     files,
     partial: false,
+    uncompared: false,
     problem: null,
   };
 }

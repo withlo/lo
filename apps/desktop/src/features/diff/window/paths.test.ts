@@ -101,6 +101,7 @@ describe('files with long paths', () => {
       from: 'local',
       files,
       partial: false,
+      uncompared: false,
       problem: null,
     };
     loader.take(state);
