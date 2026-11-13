@@ -2,25 +2,33 @@
 // the thread the keyboard is on and the one last shown; and what its keys and clicks do. `j` and
 // `k` move, `f` steps through the filters, and `⏎` or a click shows a thread in the diff: opened,
 // at the top of the screen, as a jump. A thread the diff on screen doesn't show, as an outdated
-// one, shows in the whole diff of the revision it's on, which Lo compares first. A file's own
-// thread shows its file's header.
+// one, shows in the whole diff of the revision it's on, which Lo compares first, saying so. The
+// last thread asked for is the one shown: a comparison an earlier one asked for that hasn't come
+// yet is called off. A file's own thread shows its file's header.
 
 import { DEFAULT_PANEL_FILTER, place, type PanelFilter } from '@lo/review';
 import type { ThreadListGroup } from '@lo/ui';
-import type { Target } from '@lo/ui/commands';
+import { keyLabels, type Target } from '@lo/ui/commands';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
-import { IpcError } from '../../../ipc/contract.ts';
-import { notify } from '../../../window/commands/notices.tsx';
-import { diffStateOf, showThread as showInDiff } from '../../diff/window/shared.ts';
+import { announce, notify } from '../../../window/commands/notices.tsx';
+import { registry } from '../../../window/commands/registry.ts';
+import { diffStateOf, showThread as showInDiff, type ShowWhen } from '../../diff/window/shared.ts';
+import {
+  comparedIn,
+  compareTo,
+  revisionLabel,
+  revisionsOf,
+  sameCompared,
+  type Compared,
+  type ComparisonView,
+} from '../../revisions/window/shared.ts';
 import { activeTab, pullOf, tabState, type PullTab } from '../../tab/window/shared.ts';
 import { fileOrder, showFile } from '../../tree/window/shared.ts';
-import type { ComparisonView } from '../../revisions/contract.ts';
 import type { ThreadRow, ThreadsView } from '../contract.ts';
 import { focusedIn, nextFilter, rowKeys, stepRow, threadGroups } from './list.ts';
 import { screenOf, threadOf } from './placing.ts';
-import { labelIn, revisions, revisionViews } from './revisions.ts';
 import { held } from './threads.ts';
 
 /** What the panel lists, the same in every tab: the unresolved threads until the reader asks. */
@@ -48,6 +56,12 @@ export const focusedRows = tabState<string | undefined>(() => undefined);
 
 /** The thread each view's panel last showed in the diff: the one on screen. */
 export const shownRows = tabState<string | undefined>(() => undefined);
+
+/**
+ * How many times the keyboard moved in each view's panel: the list scrolls the thread it's on
+ * into view only as it moves, never by itself.
+ */
+export const moves = tabState<number>(() => 0);
 
 /** What the panel says when it lists nothing, for what main last sent of a view's threads. */
 export function emptyText(threads: ThreadsView | undefined, filter: PanelFilter): string {
@@ -93,12 +107,12 @@ export function listable(threads: ThreadsView | undefined): readonly ThreadRow[]
 
 /** The groups view `view`'s panel lists now, as `filter` says. */
 export function groupsIn(view: string, filter: PanelFilter): ThreadListGroup[] {
-  const known = revisionViews.get(view);
+  const known = revisionsOf(view);
   return threadGroups(listable(held.get(view).threads), {
     filter,
     viewer: viewerOf(view),
     order: fileOrder(view),
-    label: (head) => labelIn(known, head),
+    label: (head) => revisionLabel(known, head),
   });
 }
 
@@ -120,7 +134,9 @@ export function moveRow(step: 1 | -1): void {
   if (typeof tab === 'string') return;
   const keys = rowKeys(groupsIn(tab.id, filterStore.getState().filter));
   const next = stepRow(keys, focusedIn(keys, focusedRows.get(tab.id)), step);
-  if (next !== undefined) focusedRows.set(tab.id, next);
+  if (next === undefined) return;
+  focusedRows.set(tab.id, next);
+  moves.update(tab.id, (count) => count + 1);
 }
 
 /** What a key in view `view`'s panel acts on: the thread the keyboard is on, if it's listed. */
@@ -150,69 +166,125 @@ export function showTarget(target: Target): void {
   showThread(tab, target.thread);
 }
 
+/** The keys command `id` has first, as this system shows them, if it has any. */
+function keyOf(id: string): string | undefined {
+  const [first] = registry().keysOf(id);
+  return first && keyLabels(first, registry().system).join(' ');
+}
+
 /**
  * Shows thread `id` of `tab`'s in the diff, and makes it the panel's thread on screen and the one
- * the keyboard is on: where the diff on screen shows it, there; otherwise in the whole diff of the
- * revision it's on, which is compared first; or says why it can't.
+ * the keyboard is on, as {@link planShow} decides.
  */
 export function showThread(tab: PullTab, id: string): void {
   const row = held.get(tab.id).threads?.threads.find((each) => each.id === id);
   if (!row) return;
   focusedRows.set(tab.id, id);
   shownRows.set(tab.id, id);
-  if (shownWhereItIs(tab.id, row)) return;
-  const elsewhere = comparisonFor(row, revisionViews.get(tab.id));
-  if ('why' in elsewhere) {
-    notify(SHOW, elsewhere.why);
-    return;
-  }
-  show(tab.id, row, true);
-  revisions()
-    .compare({ id: tab.id, from: null, to: elsewhere.head })
-    .catch((error: unknown) => {
-      notify(
-        SHOW,
-        error instanceof IpcError ? error.message : 'Lo couldn’t compare it. Try again.',
+  const here = onScreenNow(tab.id, row);
+  // Before the diff is drawn, it shows the thread once it is, if it has it.
+  const plan = here === undefined ? HERE : planShow(row, here, revisionsOf(tab.id));
+  switch (plan.kind) {
+    case 'here':
+      show(tab.id, row, 'now');
+      return;
+    case 'callOff':
+      compareTo(tab.id, plan.compared, SHOW);
+      show(tab.id, row, 'both');
+      return;
+    case 'coming':
+      show(tab.id, row, 'drawn');
+      return;
+    case 'compare': {
+      // The place it leaves goes in the history first, with what's compared now.
+      show(tab.id, row, 'drawn');
+      const asked = compareTo(tab.id, plan.compared, SHOW);
+      if (typeof asked !== 'string') {
+        notify(SHOW, asked.why);
+        return;
+      }
+      const back = keyOf('keys.back');
+      announce(
+        `Comparing base → ${plan.label}`,
+        `This thread is on ${plan.label}.${back === undefined ? '' : ` ${back} goes back.`}`,
       );
-    });
+      return;
+    }
+    case 'why':
+      notify(SHOW, plan.why);
+      return;
+    default:
+      plan satisfies never;
+  }
 }
 
-/** Shows `row` in view `view`'s diff, its file's header for a file's own. Says whether it could. */
-function show(view: string, row: ThreadRow, wait: boolean): boolean {
+/** Shows `row` in view `view`'s diff as `when` says, its file's header for a file's own. */
+function show(view: string, row: ThreadRow, when: ShowWhen): boolean {
   if (row.subject === 'FILE') return showFile('diff', view, row.path);
-  return showInDiff(view, row.id, { wait });
+  return showInDiff(view, row.id, when);
 }
 
 /**
- * Shows `row` where view `view`'s diff on screen has it, if it does, saying whether it did. Before
- * the diff is drawn, a thread that goes on what it compares shows once it is.
+ * Whether the diff view `view` has on screen, or is drawing, shows `row`: none before it's drawn.
  */
-function shownWhereItIs(view: string, row: ThreadRow): boolean {
+function onScreenNow(view: string, row: ThreadRow): boolean | undefined {
   const state = diffStateOf(view);
-  if (state?.at === null || state?.at === undefined) return show(view, row, false);
+  if (state?.at === null || state?.at === undefined) return undefined;
   const screen = screenOf(
-    {
-      at: state.at,
-      comparison: state.comparison,
-      compareFrom: state.compareFrom,
-      files: [],
-    },
+    { at: state.at, comparison: state.comparison, compareFrom: state.compareFrom, files: [] },
     held.get(view).threads?.compared ?? null,
   );
   const placed = place(threadOf(row), screen);
-  if (placed.kind !== 'lines' && placed.kind !== 'file') return false;
-  return show(view, row, false);
+  return placed.kind === 'lines' || placed.kind === 'file';
 }
 
 /**
- * The revision whose whole diff shows `row`, by its head, for a thread the diff on screen doesn't
- * show: the one it was written on, for an outdated thread, and otherwise the one it's on now. Or
- * why there’s none to compare, as `known`, the view’s revisions, say.
+ * How `⏎` shows a thread: `here`, in the diff on screen; `callOff`, there too, calling off a
+ * comparison that's coming by comparing what's on screen, `compared`, again; `coming`, in the
+ * comparison that's coming, once it's drawn; `compare`, in the whole diff of the revision
+ * `label`, which `compared` compares, once it's drawn; or `why` not.
+ */
+export type ShowPlan =
+  | { readonly kind: 'here' }
+  | { readonly kind: 'callOff'; readonly compared: Compared }
+  | { readonly kind: 'coming' }
+  | { readonly kind: 'compare'; readonly compared: Compared; readonly label: string }
+  | { readonly kind: 'why'; readonly why: string };
+
+const HERE: ShowPlan = { kind: 'here' };
+
+/**
+ * How `⏎` shows `row`, which the diff on screen shows or not, `here`, as `known`, the view's
+ * revisions, say what's compared and what's coming. The last thread asked for wins: a comparison
+ * that's coming for an earlier one is called off, or replaced.
+ */
+export function planShow(
+  row: ThreadRow,
+  here: boolean,
+  known: ComparisonView | undefined,
+): ShowPlan {
+  const coming = known?.pending ?? undefined;
+  const now = comparedIn(known);
+  if (here) return coming && now ? { kind: 'callOff', compared: now } : HERE;
+  const elsewhere = comparisonFor(row, known);
+  if ('why' in elsewhere) return { kind: 'why', why: elsewhere.why };
+  const compared: Compared = { from: null, to: elsewhere.head };
+  if (sameCompared(coming, compared)) return { kind: 'coming' };
+  if (!coming && sameCompared(now, compared)) {
+    return { kind: 'why', why: 'This thread’s lines aren’t in the diff on screen.' };
+  }
+  return { kind: 'compare', compared, label: elsewhere.label };
+}
+
+/**
+ * The revision whose whole diff shows `row`, by its head and label, for a thread the diff on
+ * screen doesn't show: the one it was written on, for an outdated thread, and otherwise the one
+ * it's on now. Or why there’s none to compare, as `known`, the view’s revisions, say.
  */
 export function comparisonFor(
   row: ThreadRow,
   known: ComparisonView | undefined,
-): { readonly head: string } | { readonly why: string } {
+): { readonly head: string; readonly label: string } | { readonly why: string } {
   const head = row.outdated ? row.writtenOn : (row.currentOn ?? row.writtenOn);
   if (head === null) return { why: 'GitHub no longer has the commit this thread is on.' };
   if (known?.status !== 'ready') {
@@ -222,14 +294,7 @@ export function comparisonFor(
   if (!revision) {
     return { why: 'This thread is on a commit that isn’t one of the pull request’s pushes.' };
   }
-  const label = labelIn(known, head) ?? head.slice(0, 7);
+  const label = revisionLabel(known, head) ?? head.slice(0, 7);
   if (!revision.available) return { why: `GitHub no longer has ${label}, so Lo can’t show it.` };
-  const now =
-    known.pending ??
-    known.comparison ??
-    (known.shown === null ? null : { from: null, to: known.shown });
-  if (now?.from === null && now.to === head) {
-    return { why: 'This thread’s lines aren’t in the diff on screen.' };
-  }
-  return { head };
+  return { head, label };
 }

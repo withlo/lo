@@ -6,8 +6,9 @@
 // or collapses the one the cursor is on. Comments are drawn as GitHub renders them, images and all.
 // A renamed file's thread under one of its old lines shows there. A stack's layer shows its own
 // threads. The threads panel, `⌘⇧\`, lists them, without moving the diff's lines, and shows one in
-// the diff, an outdated one in the whole diff of the revision it was written on. The stack's row of
-// the layer on screen counts its unresolved threads.
+// the diff, an outdated one in the whole diff of the revision it was written on, which `⌃o` and
+// `⌃i` compare again; the last thread asked for wins. The stack's rows count each layer's unresolved
+// threads.
 
 import { writeFileSync } from 'node:fs';
 
@@ -81,6 +82,19 @@ function placed(page: Page): Promise<string[]> {
   });
 }
 
+/** The threads the whole pull request's diff, at its latest push, draws under their lines. */
+const AT_HEAD = [
+  'src/backoff.ts new 15',
+  'src/backoff.ts new 17',
+  'src/backoff.ts new 2',
+  'src/backoff.ts new 5',
+  'src/backoff.ts new 8',
+  'src/queue.ts new 10',
+  'src/queue.ts new 35',
+  'src/retry.ts new 16',
+  'src/retry.ts old 2',
+];
+
 /** Where the diff's cursor is: its file's path, its side and its line. */
 function cursor(page: Page): Promise<string | undefined> {
   return page.evaluate(() => {
@@ -134,6 +148,24 @@ function top(page: Page): Promise<unknown> {
 /** `⌘⇧\`, which opens and closes the threads panel. */
 const PANEL = `${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+Backslash`;
 
+/**
+ * What tab `id` compares, as main says: `whole` for the whole pull request, `coming` while another
+ * comparison is on its way, or `other`.
+ */
+function compared(page: Page, id: string): Promise<string> {
+  return page.evaluate(async (tab) => {
+    const reply = await window.lo.invoke('revisions.list', { id: tab });
+    const view: unknown = reply.ok ? reply.value : undefined;
+    if (typeof view !== 'object' || view === null) return 'other';
+    if (!('pending' in view) || !('comparison' in view) || !('shown' in view)) return 'other';
+    if (view.pending !== null) return 'coming';
+    const { comparison } = view;
+    if (typeof comparison !== 'object' || comparison === null) return 'other';
+    if (!('from' in comparison) || !('to' in comparison)) return 'other';
+    return comparison.from === null && comparison.to === view.shown ? 'whole' : 'other';
+  }, id);
+}
+
 /** Waits for the middle view to take focus, as it does once it's drawn, so keys reach it. */
 async function settled(page: Page): Promise<void> {
   await expect
@@ -150,19 +182,7 @@ test('draws threads under their lines, resolved ones collapsed, and counts them'
   await open(page, COMMENTS_PULL.number);
   // Every thread on a line the diff of the latest push shows: the outdated one isn't, and the
   // one on docs/usage.md is on the file.
-  await expect
-    .poll(() => placed(page), { timeout: 20_000 })
-    .toEqual([
-      'src/backoff.ts new 15',
-      'src/backoff.ts new 17',
-      'src/backoff.ts new 2',
-      'src/backoff.ts new 5',
-      'src/backoff.ts new 8',
-      'src/queue.ts new 10',
-      'src/queue.ts new 35',
-      'src/retry.ts new 16',
-      'src/retry.ts old 2',
-    ]);
+  await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
   // The threads on the first screen come with it. An unresolved thread is open, its text drawn as
   // GitHub renders it, a suggestion as the change it suggests; the resolved one is collapsed to one
   // line.
@@ -265,7 +285,7 @@ onStacks('a layer of a stack shows its own threads', async ({ page }) => {
 });
 
 onStacks(
-  'the threads panel shows the layer on screen’s threads, and its row counts them',
+  'the threads panel shows the layer on screen’s threads, and the stack counts each layer’s',
   async ({ page }) => {
     test.setTimeout(60_000);
     await open(page, STACK.b);
@@ -279,7 +299,6 @@ onStacks(
       stack.locator('[aria-current="true"]').getByRole('img', { name: '1 unresolved thread' }),
     ).toBeVisible();
 
-    // The layer below has none of its own.
     // Esc goes back to the diff, whose keys walk the stack.
     await page.keyboard.press('Escape');
     await settled(page);
@@ -290,7 +309,19 @@ onStacks(
         timeout: 20_000,
       })
       .toEqual(['src/plans.ts']);
+    // #A, the layer below, has none of its own, and #B's row, off screen now, still counts its one,
+    // as read with the layers.
     await expect(panel(page)).toContainText('No unresolved threads.');
+    await expect(stack.locator('[aria-current="true"]')).toHaveAttribute(
+      'data-key',
+      String(STACK.a),
+    );
+    await expect(
+      stack
+        .locator(`[role="treeitem"][data-key="${STACK.b}"]`)
+        .getByRole('img', { name: '1 unresolved thread' }),
+    ).toBeVisible();
+    await expect(stack.getByRole('img', { name: /unresolved/ })).toHaveCount(1);
   },
 );
 
@@ -362,6 +393,20 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
     await expect.poll(() => cursor(page), { timeout: 20_000 }).toBe('src/backoff.ts new 9');
     expect(await placed(page)).toContain('src/backoff.ts new 9');
     await expect(card(page, 'This grows without bound')).toBeVisible();
+    // It says what it compared, and how to go back.
+    const note = page.getByRole('status').filter({ hasText: 'Comparing base → r1' });
+    await expect(note).toContainText(/This thread is on r1\. \S+ goes back\./);
+  });
+
+  await test.step('goes back to the comparison and the place it left with ⌃o, and on with ⌃i', async () => {
+    await page.keyboard.press('Control+o');
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
+    await page.keyboard.press('Control+i');
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toContain('src/backoff.ts new 9');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 9');
+    // Back to the panel's list, where its keys work.
+    await panel(page).locator('[data-lo-scope="threads"]').focus();
   });
 
   await test.step('lists every thread with f, and closes, leaving the lines where they were', async () => {
@@ -374,4 +419,25 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
     await settled(page);
     await expect.poll(() => top(page)).toEqual(shown);
   });
+});
+
+test('the last thread asked for is the one the diff shows', async ({ page }) => {
+  test.setTimeout(60_000);
+  const id = await open(page, COMMENTS_PULL.number);
+  await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
+  await settled(page);
+  await page.keyboard.press(PANEL);
+  await expect.poll(() => rows(page)).toHaveLength(10);
+  for (let step = 0; step < 3; step++) await page.keyboard.press('j');
+  await expect(focusedRow(page)).toContainText('r1 · line 9');
+  // The outdated thread asks for r1's whole diff; before it comes, a thread the diff on screen
+  // shows is asked for, and stays.
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('j');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => cursor(page), { timeout: 20_000 }).toBe('src/backoff.ts new 15');
+  // r1 was called off: nothing is coming, and the whole pull request is what's compared.
+  await expect.poll(() => compared(page, id), { timeout: 20_000 }).toBe('whole');
+  await expect.poll(() => placed(page)).toEqual(AT_HEAD);
+  await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 15');
 });

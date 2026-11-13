@@ -20,7 +20,6 @@ import { main, tabs } from './main.ts';
 import { inPanel, moveRow, onThread, showTarget, stepFilter } from './panel.ts';
 import { ThreadsPanel, UnresolvedCount, unresolvedOf } from './ThreadsPanel.tsx';
 import { renderThreads } from './render.ts';
-import { revisions, takeRevisions } from './revisions.ts';
 import { keepOnly } from './store.ts';
 import {
   catchUp,
@@ -53,7 +52,6 @@ export default {
       if (takeThreads(view)) threadsChanged(view.id);
     });
     main().subscribe('review', takeReview);
-    revisions().subscribe('comparison', takeRevisions);
     setThreader({
       threadsIn(view, drawn) {
         // A view drawn before main said anything of it asks main once.

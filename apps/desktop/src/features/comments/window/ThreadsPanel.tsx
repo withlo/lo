@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { threadsChanged } from '../../diff/window/shared.ts';
+import { catchUpRevisions, useRevisions } from '../../revisions/window/shared.ts';
 import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { useFileOrder } from '../../tree/window/shared.ts';
 import type { ThreadsView } from '../contract.ts';
@@ -19,13 +20,13 @@ import {
   focusedRows,
   groupsIn,
   listable,
+  moves,
   panelTarget,
   setFilter,
   showThread,
   shownRows,
   useFilter,
 } from './panel.ts';
-import { catchUpRevisions, revisionViews } from './revisions.ts';
 import { catchUp, held } from './threads.ts';
 
 /** The first keys `id` has now, as this system shows them, if it has any. */
@@ -61,10 +62,11 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   const filter = useFilter();
   // What the list reads, so it's drawn again when any of them changes.
   useFileOrder(view);
-  useTabState(revisionViews, view);
+  useRevisions(view);
   const acting = usePull(view)?.acting;
   const focused = useTabState(focusedRows, view);
   const current = useTabState(shownRows, view);
+  const moved = useTabState(moves, view);
 
   useEffect(() => {
     // A view shown before main said anything of its threads asks main once.
@@ -94,16 +96,22 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
     [view],
   );
 
-  // The thread the keyboard is on stays in view as it moves.
+  // The thread the keyboard is on stays in view as the keyboard moves it, and only then: the list
+  // never scrolls by itself, as when the thread it was on leaves it.
+  const scrolled = useRef({ view, moved });
   useEffect(() => {
+    const last = scrolled.current;
+    scrolled.current = { view, moved };
+    if (last.view !== view || last.moved === moved) return;
     const rows = list.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? [];
     const row = [...rows].find((each) => each.dataset['key'] === on);
     // Not in jsdom, which lays nothing out.
     if (typeof row?.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
-  }, [on]);
+  }, [view, moved, on]);
 
   const show = keysOf('comments.showThread');
-  const next = keysOf('diff.nextThread');
+  const next = keysOf('comments.nextThread');
+  const previous = keysOf('comments.previousThread');
   const filters = keysOf('comments.filterThreads');
   const panelKey = keysOf('tab.rightPanel');
   return (
@@ -132,7 +140,8 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
         />
       </div>
       <div className="flex flex-none flex-wrap items-center gap-12 border-t border-border-subtle px-16 py-8 text-fg-muted text-small">
-        {next && <PaletteHint keys={next}>Next thread</PaletteHint>}
+        {next && <PaletteHint keys={next}>Next</PaletteHint>}
+        {previous && <PaletteHint keys={previous}>Previous</PaletteHint>}
         {show && <PaletteHint keys={show}>Show</PaletteHint>}
         {filters && <PaletteHint keys={filters}>Filter</PaletteHint>}
       </div>

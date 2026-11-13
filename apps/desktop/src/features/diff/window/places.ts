@@ -1,20 +1,21 @@
 // Where the keys and the tree take a pull request's tab's diff and its whole-file view: a place in
-// the tab's history, shown in the view it's in, which comes on screen to show it; a changed file
-// the tree shows in the diff; and any file opened whole. Only one middle view is drawn at a time,
-// so a place in the other waits for it to be drawn.
+// the tab's history, shown in the view it's in, which comes on screen to show it, and in the diff
+// in the comparison it was in, which is compared again first; a changed file the tree shows in the
+// diff; a review thread another feature shows in the diff; and any file opened whole. Only one
+// middle view is drawn at a time, so a place in the other waits for it to be drawn.
 
 import type { Side, Target } from '@lo/ui/commands';
 
 import { notify, withdraw } from '../../../window/commands/notices.tsx';
 import { here, registry } from '../../../window/commands/registry.ts';
-import { holdLimit } from '../../revisions/window/shared.ts';
+import { compareAgain, comparisonHere, holdLimit } from '../../revisions/window/shared.ts';
 import { showMiddle } from '../../tab/window/shared.ts';
 import { fileKey, type TreePath } from '../../tree/contract.ts';
 import { onShowFile, pathOf } from '../../tree/window/shared.ts';
 import type { Version } from '../contract.ts';
 import { keyOf } from './loader.ts';
 import { drawnFor, loaderOf, revealWhenDrawn } from './tabs.ts';
-import { keepWanted, shown, want } from './wanted.ts';
+import { drawnName, keepWanted, shown, wantPlace, wantThread } from './wanted.ts';
 import { changeAt, changedIn, DIFF_VIEW, known, opened, versionOf, WHOLE_VIEW } from './whole.ts';
 
 /** How many files have been asked to open whole, so each ask is told from the last. */
@@ -64,22 +65,31 @@ export function openWhole(
 }
 
 /**
- * Shows review thread `thread` in tab `tab`'s diff: opens it and puts its line at the top of the
- * screen, a jump. With the diff on screen, at once, saying whether it has the thread; otherwise, or
- * with `wait`, as when another comparison is coming, the diff comes on screen and shows it once
- * it's drawn with it, unless the reader does anything else first. Focus stays where it is.
+ * When a thread shows: `now`, in the diff on screen, or once it's drawn; `drawn`, once the diff is
+ * drawn anew, as for another comparison that's coming; `both`, now, and again if the diff is drawn
+ * anew before the reader does anything else, as when a comparison that was coming is called off.
  */
-export function showThread(tab: string, thread: string, wait: boolean): boolean {
+export type ShowWhen = 'now' | 'drawn' | 'both';
+
+/**
+ * Shows review thread `thread` in tab `tab`'s diff, as `when` says: opens it and puts its line at
+ * the top of the screen, a jump. With the diff on screen, `now` says whether it has the thread; a
+ * diff not on screen comes on screen, and shows it once it's drawn with it, unless the reader does
+ * anything else first. Focus stays where it is.
+ */
+export function showThread(tab: string, thread: string, when: ShowWhen): boolean {
   const drawn = drawnFor(tab);
-  if (drawn && !wait) {
-    if (!drawn.view.openThread(thread, true)) return false;
+  if (drawn && when !== 'drawn') {
+    const has = drawn.view.openThread(thread, true);
+    if (!has && when === 'now') return false;
     leave();
     shown(tab);
-    drawn.view.revealAtTop({ kind: 'thread', thread });
+    if (has) drawn.view.revealAtTop({ kind: 'thread', thread });
+    if (when === 'both') wantThread(tab, thread);
     return true;
   }
   leave();
-  want(tab, thread);
+  wantThread(tab, thread);
   if (!drawn) showMiddle(tab, DIFF_VIEW);
   return true;
 }
@@ -208,9 +218,21 @@ function placeOf(target: Target): { file: string; side: Side } | undefined {
 
 /**
  * Shows `target` in tab `tab`'s diff and focuses it: at once if the diff is drawn; otherwise once
- * it's drawn again, if it has the file, bringing it on screen. Says whether it could.
+ * it's drawn again, if it has the file, bringing it on screen. In another comparison than the one
+ * on screen, `within`, it's compared again first, and shown once its diff is drawn. Says whether
+ * it could.
  */
-function revealInDiff(tab: string, target: Target): boolean {
+function revealInDiff(tab: string, target: Target, within: string | undefined): boolean {
+  if (within !== undefined && within !== comparisonHere(tab)) {
+    const asked = compareAgain(tab, within);
+    if (typeof asked !== 'string') return false;
+    if (asked === 'coming') {
+      const state = loaderOf(tab).snapshot().ready;
+      wantPlace(tab, target, drawnName(state?.at, state?.comparison));
+      if (!drawnFor(tab)) showMiddle(tab, DIFF_VIEW);
+      return true;
+    }
+  }
   const drawn = drawnFor(tab);
   if (drawn) {
     if (!drawn.view.reveal(target)) return false;
@@ -245,7 +267,7 @@ export function placesFor(tab: string): void {
   if (registered.has(tab)) return;
   registered.add(tab);
   const { history } = registry();
-  history.register(tab, 'diff', (target) => revealInDiff(tab, target));
+  history.register(tab, 'diff', (target, within) => revealInDiff(tab, target, within));
   history.register(tab, 'file', (target) => revealWhole(tab, target));
 }
 

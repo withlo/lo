@@ -14,10 +14,12 @@ import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
 import { Beside } from './Beside.tsx';
 import { changed, explainWith, type Explainer } from './explained.ts';
 import { diffJobs } from './main.ts';
-import { showPlace as showCode, showThread as showThreadAt } from './places.ts';
+import { showPlace as showCode, showThread as showThreadAt, type ShowWhen } from './places.ts';
 import { loaderOf, useSnapshot } from './tabs.ts';
 import { changed as changedThreads, threadWith, type Threader } from './threads.ts';
 import { DIFF_VIEW } from './whole.ts';
+
+export type { ShowWhen } from './places.ts';
 
 export type { ExplainedLines, Explainer } from './explained.ts';
 export type { DiffThreads, DrawnDiff, ThreadCounts, ThreadedFile, Threader } from './threads.ts';
@@ -147,12 +149,14 @@ export function threadsChanged(tab: string): void {
 /**
  * Shows review thread `thread` in pull request's tab `tab`'s diff, as the threads panel does: opens
  * it and puts its line at the top of the screen, a jump `⌃o` comes back from. Focus stays where it
- * is. With the diff on screen, it's shown at once, and this says whether the diff has it.
- * Otherwise, or with `wait`, as when another comparison that shows it is coming, the diff comes on
- * screen and shows it once it's drawn with it, unless the reader does anything else first.
+ * is. `when` says when: `now`, in the diff on screen, saying whether it has the thread; `drawn`,
+ * once the diff is drawn anew, as when another comparison that shows it is coming; or `both`, now
+ * and again if the diff is drawn anew, as when a comparison that was coming is called off. A diff
+ * not on screen comes on screen and shows it once it's drawn with it. What waits is dropped once
+ * the reader does anything else.
  */
-export function showThread(tab: string, thread: string, { wait = false } = {}): boolean {
-  return showThreadAt(tab, thread, wait);
+export function showThread(tab: string, thread: string, when: ShowWhen = 'now'): boolean {
+  return showThreadAt(tab, thread, when);
 }
 
 /**

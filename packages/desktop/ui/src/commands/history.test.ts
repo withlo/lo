@@ -134,6 +134,29 @@ describe('history', () => {
     expect(history.entries()).toHaveLength(1);
   });
 
+  test('goes back to what the view showed, as the diff’s comparison, and forward again', () => {
+    const history = new History();
+    const revealed: [Target, string | undefined][] = [];
+    history.register('', 'diff', (at, within) => {
+      revealed.push([at, within]);
+      return true;
+    });
+    const left = { ...line('a.ts', 'new', 8), within: 'whole' };
+    history.record(left);
+    // The same line in another comparison is another place.
+    const here = { ...line('a.ts', 'new', 8), within: 'base..r1' };
+    expect(history.back(here)).toEqual(left);
+    expect(history.forward()).toEqual(here);
+    expect(revealed).toEqual([
+      [left.at, 'whole'],
+      [here.at, 'base..r1'],
+    ]);
+    // An entry without one is revealed without one.
+    history.record(line('b.ts', 'new', 1));
+    history.back();
+    expect(revealed.at(-1)).toEqual([line('b.ts', 'new', 1).at, undefined]);
+  });
+
   test('keeps one history per tab', () => {
     const history = new History();
     const one = viewer(history, 'one', 'diff');
