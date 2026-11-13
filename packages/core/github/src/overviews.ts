@@ -1,7 +1,8 @@
 /**
  * A pull request's overview, as GitHub's REST API serves it: the ref `refs/lo/pr/<n>` it's pushed
  * to, watched with an ETag; the commit the ref holds, with who wrote it and when; and that commit's
- * files, as they are, by their IDs. The commit's tree is {@link repoTree}'s.
+ * files, as they are, by their IDs. The commit's tree is {@link repoTree}'s. With them, which pull
+ * requests in a repository have an overview, as a stack's tree marks its layers.
  */
 
 import type { Conditional, GithubClient } from './client.ts';
@@ -91,6 +92,77 @@ export function watchOverviewRef(
       pollInterval: asked,
     };
   });
+}
+
+/**
+ * The REST path of every overview's ref in `repo`: the refs under `refs/lo/pr/`. GitHub lists them
+ * all in one answer, with an ETag.
+ */
+export function repoOverviewRefsPath(repo: RepoRef): string {
+  return `/repos/${repo.owner}/${repo.name}/git/matching-refs/lo/pr/`;
+}
+
+/** The pull requests in a repository that have an overview. */
+export interface OverviewRefNumbers {
+  /** Their numbers, lowest first. */
+  numbers: number[];
+  /** The answer's ETag, which the next read sends. */
+  etag: string | undefined;
+}
+
+/**
+ * GitHub's list of the refs under `refs/lo/pr/`, read: the numbers of the pull requests whose own
+ * overview's ref, named exactly as {@link overviewRef} names it, holds a commit. Any other ref
+ * there, such as `refs/lo/pr/80/old` or `refs/lo/pr/080`, is no pull request's, and a ref that
+ * holds a tag, a tree or a blob holds no overview.
+ */
+export function readOverviewRefNumbers(json: unknown): number[] {
+  if (!Array.isArray(json)) throw unexpected("the refs aren't a list");
+  const numbers = new Set<number>();
+  for (const [index, item] of json.entries()) {
+    const ref = new Fields(item, `refs[${index}]`);
+    const number = overviewNumber(ref.text('ref'));
+    if (number === undefined) continue;
+    const object = ref.fields('object');
+    objectId(object.text('sha'));
+    if (object.text('type') === 'commit') numbers.add(number);
+  }
+  return [...numbers].toSorted((a, b) => a - b);
+}
+
+/** The pull request whose overview's ref is `ref`, if it's exactly one's. */
+function overviewNumber(ref: string): number | undefined {
+  const digits = /^refs\/lo\/pr\/([1-9]\d*)$/.exec(ref)?.[1];
+  if (digits === undefined) return undefined;
+  const number = Number(digits);
+  return Number.isSafeInteger(number) && overviewRef(number) === ref ? number : undefined;
+}
+
+/**
+ * The pull requests in `repo` that have an overview, from one read of every overview's ref there,
+ * sending the ETag of `known`, the list read before, if there's one: an unchanged answer is `known`
+ * again, for free. A repository without overviews lists none; one the account can't see is
+ * GitHub's `404`, thrown as `notFound`.
+ */
+export async function overviewRefNumbers(
+  client: GithubClient,
+  repo: RepoRef,
+  known: OverviewRefNumbers | undefined,
+): Promise<OverviewRefNumbers> {
+  const etag = known?.etag;
+  const response = await client.send('GET', repoOverviewRefsPath(repo), {
+    condition: etag === undefined ? undefined : { ifNoneMatch: etag },
+  });
+  if (response.status === 304) {
+    if (known?.etag === undefined) {
+      throw new GithubError({
+        kind: 'inconsistent',
+        message: `GitHub said ${repo.toString()}'s overviews hadn't changed, but Lo never read them`,
+      });
+    }
+    return structuredClone(known);
+  }
+  return { numbers: response.json(readOverviewRefNumbers), etag: response.etag };
 }
 
 /** A commit, as an overview's byline and its files need it. */

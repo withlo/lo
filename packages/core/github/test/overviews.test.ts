@@ -1,9 +1,10 @@
 // A pull request's overview from GitHub's REST API: its ref watched with an ETag, the commit it
-// holds and that commit's files, raw, recorded from rozed-dev/e2e#80's.
+// holds and that commit's files, raw, recorded from rozed-dev/e2e#80's; and which pull requests in
+// rozed-dev/e2e have one.
 
 import { createHash } from 'node:crypto';
 
-import { replayFetch } from '@lo/testing';
+import { Replay, replayFetch } from '@lo/testing';
 import { describe, expect, test } from 'vitest';
 
 import { GithubClient } from '../src/client.ts';
@@ -13,8 +14,10 @@ import {
   commitSummary,
   MAX_POLL_INTERVAL,
   overviewRef,
+  overviewRefNumbers,
   pollInterval,
   readOverviewRef,
+  readOverviewRefNumbers,
   watchOverviewRef,
 } from '../src/overviews.ts';
 import { RepoRef } from '../src/refs.ts';
@@ -106,6 +109,103 @@ describe('the ref', () => {
   test("refuses a number that isn't a pull request's", () => {
     expect(() => watchOverviewRef(signedIn(fetch), E2E, 0, undefined)).toThrow(RangeError);
     expect(() => watchOverviewRef(signedIn(fetch), E2E, 1.5, undefined)).toThrow(RangeError);
+  });
+});
+
+describe("a repository's overviews", () => {
+  test('are the pull requests with a ref, and cost nothing to ask about again while the same', async () => {
+    const fetch = replayFetch('rest_overview_ref_numbers_e2e');
+    const client = signedIn(fetch);
+    const first = await overviewRefNumbers(client, E2E, undefined);
+    expect(first).toEqual({
+      numbers: [79, 80, 81, 83],
+      etag: expect.stringMatching(/^W\/"[0-9a-f]{64}"$/),
+    });
+    const again = await overviewRefNumbers(client, E2E, first);
+    expect(again).toEqual(first);
+    // A copy, so changing one leaves the other.
+    expect(again).not.toBe(first);
+    expect(fetch.seen.map(({ url }) => url)).toEqual([
+      'https://api.github.com/repos/rozed-dev/e2e/git/matching-refs/lo/pr/',
+      'https://api.github.com/repos/rozed-dev/e2e/git/matching-refs/lo/pr/',
+    ]);
+    expect(fetch.seen.map(({ headers }) => headers.get('if-none-match'))).toEqual([
+      null,
+      first.etag,
+    ]);
+  });
+
+  test("of a repository that doesn't exist aren't found", async () => {
+    const client = signedIn(replayFetch('rest_overview_ref_numbers_e2e'));
+    await expect(
+      overviewRefNumbers(client, new RepoRef('rozed-dev', 'gone'), undefined),
+    ).rejects.toMatchObject({ detail: { kind: 'notFound' } });
+  });
+
+  test("count only refs named exactly as a pull request's overview is", () => {
+    const sha = 'a'.repeat(40);
+    const refs = [
+      'refs/lo/pr/12',
+      'refs/lo/pr/7',
+      // Another ref under a pull request's, a number written another way, and no number.
+      'refs/lo/pr/80/old',
+      'refs/lo/pr/080',
+      'refs/lo/pr/0',
+      'refs/lo/pr/-3',
+      'refs/lo/pr/1e3',
+      'refs/lo/pr/ 5',
+      'refs/lo/pr/',
+      'refs/lo/pr/x',
+      // More than a number can be.
+      'refs/lo/pr/9007199254740993',
+      // Refs that only look like one.
+      'refs/lo/prs/4',
+      'refs/heads/lo/pr/6',
+      'lo/pr/9',
+    ];
+    const answer = refs.map((ref) => ({ ref, object: { sha, type: 'commit' } }));
+    expect(readOverviewRefNumbers(answer)).toEqual([7, 12]);
+    expect(readOverviewRefNumbers([])).toEqual([]);
+  });
+
+  test('leave out a ref that holds a tag, a tree or a blob', () => {
+    const sha = 'b'.repeat(40);
+    const answer = [
+      { ref: overviewRef(1), object: { sha, type: 'commit' } },
+      ...['tag', 'tree', 'blob'].map((type, index) => ({
+        ref: overviewRef(index + 2),
+        object: { sha, type },
+      })),
+    ];
+    expect(readOverviewRefNumbers(answer)).toEqual([1]);
+  });
+
+  test("refuse an answer that isn't GitHub's", () => {
+    expect(() => readOverviewRefNumbers({})).toThrow(GithubError);
+    expect(() => readOverviewRefNumbers([{ object: {} }])).toThrow(GithubError);
+    expect(() =>
+      readOverviewRefNumbers([
+        { ref: 'refs/lo/pr/5', object: { sha: '../../user', type: 'commit' } },
+      ]),
+    ).toThrow("isn't an object's ID");
+    expect(() => readOverviewRefNumbers([{ ref: 'refs/lo/pr/5' }])).toThrow(GithubError);
+  });
+
+  test('a 304 to a list never read is an error, not a list', async () => {
+    const fetch = replayFetch(
+      new Replay('unasked', [
+        {
+          request: {
+            method: 'GET',
+            url: 'https://api.github.com/repos/rozed-dev/e2e/git/matching-refs/lo/pr/',
+          },
+          response: { status: 304, headers: { etag: 'W/"x"' } },
+        },
+      ]),
+    );
+    await expect(overviewRefNumbers(signedIn(fetch), E2E, undefined)).rejects.toMatchObject({
+      detail: { kind: 'inconsistent' },
+    });
   });
 });
 

@@ -10,13 +10,21 @@
  * - `rest_overview_refs_missing_e2e`: the refs of a pull request rozed-dev/e2e doesn't have, #9999,
  *   then again with its ETag, and of one in a repository that doesn't exist, rozed-dev/gone#1. A
  *   tab reads its overview's ref as it opens, before it knows whether its pull request exists.
+ * - `rest_overview_ref_numbers_e2e`: every overview's ref in rozed-dev/e2e, the refs under
+ *   `refs/lo/pr/`, then again with the ETag GitHub gave, which it answers with a `304`, and those
+ *   of a repository that doesn't exist, rozed-dev/gone. A stack's tree marks the layers they name.
  */
 
 import type { Scenario } from '@lo/testing';
 
 import { GithubClient } from '../../src/client.ts';
 import { GithubError } from '../../src/errors.ts';
-import { blobBytes, commitSummary, watchOverviewRef } from '../../src/overviews.ts';
+import {
+  blobBytes,
+  commitSummary,
+  overviewRefNumbers,
+  watchOverviewRef,
+} from '../../src/overviews.ts';
 import { RepoRef } from '../../src/refs.ts';
 import { Token } from '../../src/token.ts';
 import { repoTree } from '../../src/trees.ts';
@@ -73,6 +81,25 @@ export const scenarios: Scenario[] = [
       if (none.notModified || none.etag === undefined) throw new Error("#9999's refs have no ETag");
       await watchOverviewRef(client, E2E, 9999, none.etag);
       const gone = await watchOverviewRef(client, new RepoRef('rozed-dev', 'gone'), 1, undefined)
+        .then(() => undefined)
+        .catch((error: unknown) => error);
+      if (!(gone instanceof GithubError) || gone.detail.kind !== 'notFound') {
+        throw new Error('rozed-dev/gone answered with something other than a 404', { cause: gone });
+      }
+      return undefined;
+    },
+  },
+  {
+    name: 'rest_overview_ref_numbers_e2e',
+    description:
+      "Every overview's ref in rozed-dev/e2e, under refs/lo/pr/, read again with its ETag, and those of a repository that doesn't exist, rozed-dev/gone, as rozed-bot",
+    repo: 'rozed-dev/e2e',
+    async run(fetch, token) {
+      const client = new GithubClient({ fetch, token: new Token(token) });
+      const first = await overviewRefNumbers(client, E2E, undefined);
+      if (first.etag === undefined) throw new Error("the overviews' refs came without an ETag");
+      await overviewRefNumbers(client, E2E, first);
+      const gone = await overviewRefNumbers(client, new RepoRef('rozed-dev', 'gone'), undefined)
         .then(() => undefined)
         .catch((error: unknown) => error);
       if (!(gone instanceof GithubError) || gone.detail.kind !== 'notFound') {
