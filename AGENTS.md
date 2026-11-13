@@ -619,7 +619,9 @@ them.
   or when it needs a rebase on a merged layer. Only the tab on screen reads its layers' state
   (`poller.stackLayers`, by the layers' node IDs): their reviews, checks, places in the merge queue
   and viewed counts. It reads them again when a list fetched after the state shows a layer at
-  another head, and stops once the tab closes or its pull request leaves the stack.
+  another head, and stops once the tab closes or its pull request leaves the stack. It also reads
+  which pull requests have an overview, once for the repository (`overviewRefNumbers`, through
+  `poller.readCached`, kept with its ETag and read again on the 5-minute refresh).
 - Where the layer on screen's diff starts is `@lo/stacks`' `layerStart` for its head, once the list
   the stack was found in has the head on screen (`planStart`). Before the diff is drawn, main sets
   it on the tab (`compareFrom`). Once it's drawn, a different start is only offered: `stacks.stack`
@@ -630,9 +632,24 @@ them.
 - When the pull request on screen merges or closes, its row stays where it was, among the other
   layers as the stack now has them, while they're still one stack.
 - The window gets each tab's stack on `stacks.stack`, and asks for it with `stacks.state`: its rows
-  in the order `]s` walks them, how it was found ("4 layers · by base branch"), and notes on what Lo
+  in the order `]s` walks them, how it was found (`found`, which the tree words), the offer to make
+  it a GitHub stack while `planConversion` has a plan for the layer on screen, and notes on what Lo
   couldn't read, cycles it broke and layers that need a rebase. Titles, logins and branch names are
-  GitHub's, as text.
+  GitHub's, as text, and go through `withoutBidi` before they're drawn.
+- As a tab's stack changes, main tells the tab its layers (`TabService.setLayers`), so a link to any
+  layer shows the stack's tab.
+
+The window draws the stack's tree at the top of the left panel (`features/stacks/window/Stack.tsx`),
+and nothing while there's no stack.
+
+- A layer shows in its tab through `tab.layer`, never `select`: the tab keeps a view of each layer
+  shown, each with its own place. Showing one isn't a jump, so it's not in `⌃o`'s history.
+- `]s` and `[s` walk the rows in order, anywhere in a pull request's tab, and refuse at either end.
+  `-` in the file tree goes up to the tree, where `j` and `k` move, `⏎` and a click show a layer,
+  `gx` opens it on GitHub and `Esc` goes back to the middle. A layer's menu has the same, and `gS`.
+- The layer on screen's overview mark and viewed count come from its tab, as they change; the other
+  layers' from main.
+- A tab restored at a layer whose pull request is gone offers to show the layer it was opened at.
 
 `gS` makes the chain the pull request on screen is in a GitHub stack
 (`features/stacks/main/conversion.ts`), and the confirmation is the only way anything is sent.

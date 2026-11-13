@@ -404,6 +404,7 @@ describe('keys', () => {
   test('passKeys hands keys to Vim, as if typed', () => {
     const shown = open();
     shown.reveal(onLine(10));
+    shown.focus();
     shown.passKeys(['y', 'w']);
     expect(cursorAt(shown)).toMatchObject({ at: at(10) });
     shown.passKeys(['G']);

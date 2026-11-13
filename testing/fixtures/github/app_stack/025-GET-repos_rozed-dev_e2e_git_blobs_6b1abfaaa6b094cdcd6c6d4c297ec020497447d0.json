@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/git/blobs/6b1abfaaa6b094cdcd6c6d4c297ec020497447d0"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/plain; charset=utf-8",
+      "etag": "W/\"101b6fb7b2cab0f55d938605aba2ada3b830c18a60332c550d9ad760fa5589d8\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4984",
+      "x-ratelimit-reset": "1794549210",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "16"
+    },
+    "body_text": "---\nformat: 1\npr: 83\ncommit: 57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1\n---\n\n## tl;dr\n\nEach GraphQL query is charged what GitHub charges for it, so a client stays within its plan's limit\nby the points its queries cost rather than by how many it sends.\n\n## How it works\n\n[`costOf`](code:src/cost.ts#L4-L6) charges a point for each 100 nodes a query may read:\n\n:::code src/cost.ts#L3-L6\n:::\n\n[`fits`](code:src/cost.ts#L9-L11) says whether a query fits in what's left of the limit.\n\n## How it was checked\n\nA query of 250 nodes costs 3 points, and one of no nodes costs 1.\n"
+  }
+}

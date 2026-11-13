@@ -7,13 +7,13 @@
     "status": 200,
     "headers": {
       "content-type": "application/json; charset=utf-8",
-      "etag": "W/\"d07a459ef656bf5856cb8de643041cd4f71081cb3a215f96421f4ce1759624be\"",
+      "etag": "W/\"aa7a39a5f85e328f357d037c651e91137928b834c74b1e48d3b2c936b6641da1\"",
       "x-github-api-version-selected": "2022-11-28",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4960",
-      "x-ratelimit-reset": "1794545595",
+      "x-ratelimit-remaining": "4990",
+      "x-ratelimit-reset": "1794549210",
       "x-ratelimit-resource": "core",
-      "x-ratelimit-used": "40"
+      "x-ratelimit-used": "10"
     },
     "body": [
       {
@@ -1427,10 +1427,10 @@
         },
         "body": "A pull request of the stacks Lo's end-to-end tests open, made by `testing/fixtures/stack.sh` in withlo/lo.",
         "created_at": "2026-11-13T01:17:35Z",
-        "updated_at": "2026-11-13T02:43:48Z",
+        "updated_at": "2026-11-13T04:18:46Z",
         "closed_at": null,
         "merged_at": null,
-        "merge_commit_sha": "8660717ab32369bde56ab29aba5c5f6f35077416",
+        "merge_commit_sha": "c3405419a7c25696ab9b06ac8877a71938a27873",
         "assignees": [],
         "requested_reviewers": [],
         "requested_teams": [],

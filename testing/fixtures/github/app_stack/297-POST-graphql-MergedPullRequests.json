@@ -1,0 +1,118 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "MergedPullRequests",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "b0": "stack/root",
+      "b1": "app/base",
+      "b2": "e9b/base",
+      "b3": "acc2/base",
+      "b4": "e10/base",
+      "b5": "e11/base",
+      "b6": "e12/base",
+      "b7": "e3/x",
+      "b8": "e6/base",
+      "b9": "e8/base",
+      "first": 5
+    },
+    "query_sha256": "8b17e59a6697df65d96fef132e12626f70283bebeb7f4aaec98a3c753c4a8794"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4928",
+      "x-ratelimit-reset": "1794549217",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "72"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4928,
+          "used": 72,
+          "resetAt": "2026-11-13T05:53:37Z"
+        },
+        "repository": {
+          "b0": {
+            "nodes": []
+          },
+          "b1": {
+            "nodes": []
+          },
+          "b2": {
+            "nodes": []
+          },
+          "b3": {
+            "nodes": []
+          },
+          "b4": {
+            "nodes": []
+          },
+          "b5": {
+            "nodes": []
+          },
+          "b6": {
+            "nodes": []
+          },
+          "b7": {
+            "nodes": [
+              {
+                "number": 10,
+                "createdAt": "2026-11-06T18:44:54Z",
+                "baseRefName": "main",
+                "baseRef": {
+                  "target": {
+                    "__typename": "Commit",
+                    "oid": "4bc87281f47234fc959197ed593116d7ddcdb4e8"
+                  },
+                  "refUpdateRule": null
+                },
+                "headRefName": "e3/x",
+                "headRefOid": "e86aa486704016ee033d555bcca81e33898c5608",
+                "isCrossRepository": false,
+                "commits": {
+                  "nodes": [
+                    {
+                      "commit": {
+                        "oid": "161664c5ee326b4f6e5d90315063412a88126b90"
+                      }
+                    },
+                    {
+                      "commit": {
+                        "oid": "e86aa486704016ee033d555bcca81e33898c5608"
+                      }
+                    }
+                  ]
+                },
+                "mergeCommit": {
+                  "oid": "04bdf22ddc81532f6d7d70108a0bc83bba486c9e",
+                  "parents": {
+                    "nodes": [
+                      {
+                        "oid": "03fa28bc03ef0b1e44cefb32af67134cd37ddc8b"
+                      }
+                    ]
+                  }
+                },
+                "stackEntry": null
+              }
+            ]
+          },
+          "b8": {
+            "nodes": []
+          },
+          "b9": {
+            "nodes": []
+          }
+        }
+      }
+    }
+  }
+}

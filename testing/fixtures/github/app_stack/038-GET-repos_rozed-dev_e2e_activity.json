@@ -1,0 +1,51 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/activity?ref=refs%2Fheads%2Fstack%2Fa&direction=desc&per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"ad1e6e1bea8f1fbdcfa75dc5a792e06b1c8af2085c087e78d6e90983d96150f5\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4975",
+      "x-ratelimit-reset": "1794549210",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "25"
+    },
+    "body": [
+      {
+        "id": 50093234678,
+        "node_id": "PSH_kwLOVleUfc8AAAALqcoZ9g",
+        "before": "0000000000000000000000000000000000000000",
+        "after": "59b27c734c12089f5a795fe1f30bb1b5cad89650",
+        "ref": "refs/heads/stack/a",
+        "timestamp": "2026-11-13T01:17:24Z",
+        "activity_type": "branch_creation",
+        "actor": {
+          "login": "rozed-bot",
+          "id": 353226052,
+          "node_id": "U_kgDOFQ3NRA",
+          "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/rozed-bot",
+          "html_url": "https://github.com/rozed-bot",
+          "followers_url": "https://api.github.com/users/rozed-bot/followers",
+          "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+          "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+          "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+          "repos_url": "https://api.github.com/users/rozed-bot/repos",
+          "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        }
+      }
+    ]
+  }
+}

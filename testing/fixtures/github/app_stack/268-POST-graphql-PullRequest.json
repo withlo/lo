@@ -1,0 +1,76 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequest",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 84,
+      "filesFirst": 100,
+      "filesAfter": null
+    },
+    "query_sha256": "faebcf58d69c5e012ebe96425bca46ad442d8bf907b11b029049c26d755fc48b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4935",
+      "x-ratelimit-reset": "1794549217",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "65"
+    },
+    "body": {
+      "data": {
+        "repository": {
+          "pullRequest": {
+            "id": "PR_kwDOVleUfc8AAAABOzOGjw",
+            "number": 84,
+            "title": "Stack C: count a query's nodes",
+            "url": "https://github.com/rozed-dev/e2e/pull/84",
+            "state": "OPEN",
+            "isDraft": false,
+            "updatedAt": "2026-11-13T04:18:46Z",
+            "author": {
+              "__typename": "User",
+              "login": "rozed-bot",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/353226052?v=4"
+            },
+            "baseRefName": "stack/root",
+            "baseRefOid": "28c4eeff168c2baf91d2b902b85d06e94f8a90c9",
+            "headRefName": "stack/c",
+            "headRefOid": "f9db1743681826e72f3b31e3d9967d28a55af20d",
+            "isCrossRepository": false,
+            "headRepository": {
+              "nameWithOwner": "rozed-dev/e2e",
+              "isFork": false
+            },
+            "files": {
+              "totalCount": 3,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "Mw"
+              },
+              "nodes": [
+                {
+                  "path": "src/cost.ts",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "src/nodes.ts",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "src/plans.ts",
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

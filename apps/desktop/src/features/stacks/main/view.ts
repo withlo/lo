@@ -1,6 +1,7 @@
 // The stack a pull request's tab shows, worked out from its repository's stacks, the open pull
-// request list they were found in, and the state of the layers, as read for the tab on screen:
-// each row, the head and the notes. Nothing here calls Electron or GitHub.
+// request list they were found in, the state of the layers and the repository's overviews, as read
+// for the tab on screen: each row, how the layers were found, the notes, and the offer to make the
+// chain a GitHub stack. Nothing here calls Electron or GitHub.
 
 import {
   MAX_OPEN_PULL_REQUESTS,
@@ -12,10 +13,20 @@ import {
   type StackLayerList,
   type StatusState,
 } from '@lo/github';
-import { layerOf, stackOf, type Cycle, type Rule, type Stack, type Stacks } from '@lo/stacks';
+import {
+  layerOf,
+  planConversion,
+  stackOf,
+  type Cycle,
+  type Layer,
+  type Rule,
+  type Stack,
+  type Stacks,
+} from '@lo/stacks';
 
 import type { PullState } from '../../tab/contract.ts';
-import type { Checks, Note, Review, Row, StackView } from '../contract.ts';
+import type { Checks, Found, Note, Review, Row, StackView } from '../contract.ts';
+import { calloutText } from './words.ts';
 
 /** What a tab's stack is worked out from. */
 export interface ViewInput {
@@ -29,6 +40,8 @@ export interface ViewInput {
   readonly list: OpenPullRequestList | undefined;
   /** The layers' state, as last read for the tab, if it was. */
   readonly layers: StackLayerList | undefined;
+  /** The pull requests in the repository that have an overview, once that's been read. */
+  readonly overviews: readonly number[] | undefined;
   /** The pull request's state, as its tab has it. */
   readonly state: PullState | undefined;
   /** The stack the tab showed last, if it showed one. */
@@ -137,6 +150,7 @@ function drawn(
         on: null,
         ...stateOf(read(number)),
         needsRebase: layer?.needsRebase !== undefined,
+        overview: overviewOf(input.overviews, layer),
         viewed: viewedOf(read(number), number === input.number),
       },
     };
@@ -180,9 +194,10 @@ function drawn(
     view: {
       kind: 'stack',
       root: stack.root,
-      head: headOf(layers, placed),
+      found: foundOf(layers, placed),
       rows: placed.map(({ row }) => row),
       notes: notesOf(input, forest, list, stack),
+      callout: left ? null : calloutOf(input, forest),
     },
     shown: { rows: placed },
     ids: placed.map(({ id }) => id).filter((id) => id !== ''),
@@ -251,29 +266,52 @@ function viewedOf(layer: StackLayer | undefined, current: boolean): Row['viewed'
   return { source: 'layers', ...viewedFiles(layer) };
 }
 
-/** "4 layers · by base branch", or "GitHub stack · 4 layers" when every layer is in one. */
-export function headOf(
+/**
+ * How the stack's layers were found, as its head says it: a GitHub stack when every layer is in one,
+ * else by the rules that linked its rows, or nothing for a layer no rule linked.
+ */
+export function foundOf(
   layers: readonly { readonly nativeStack: { readonly stack: number } | undefined }[],
   rows: readonly Pick<ShownRow, 'rule'>[],
-): string {
-  const count = `${rows.length} ${rows.length === 1 ? 'layer' : 'layers'}`;
+): Found | null {
   const github = new Set(layers.map((layer) => layer.nativeStack?.stack));
-  if (layers.length > 0 && github.size === 1 && !github.has(undefined)) {
-    return `GitHub stack · ${count}`;
-  }
+  if (layers.length > 0 && github.size === 1 && !github.has(undefined)) return 'github';
   // A GitHub stack's layers go into the branch of the layer below, as a chain by base branch does.
   const found = new Set(
     rows.flatMap(({ rule }) => (rule === 'nativeStack' ? 'baseBranch' : (rule ?? []))),
   );
-  const by =
-    found.has('baseBranch') && found.has('sharedCommits')
-      ? 'by base branch and shared commits'
-      : found.has('baseBranch')
-        ? 'by base branch'
-        : found.has('sharedCommits')
-          ? 'by shared commits'
-          : undefined;
-  return by === undefined ? count : `${count} · ${by}`;
+  if (found.has('baseBranch') && found.has('sharedCommits')) return 'both';
+  if (found.has('baseBranch')) return 'baseBranch';
+  if (found.has('sharedCommits')) return 'sharedCommits';
+  return null;
+}
+
+/**
+ * Whether `layer` has an overview, of those `overviews` lists: nothing until they're read, and for
+ * a layer from a fork, whose overview's ref would be in the fork, where Lo doesn't look.
+ */
+function overviewOf(
+  overviews: readonly number[] | undefined,
+  layer: Layer | undefined,
+): boolean | null {
+  if (overviews === undefined || !layer?.headInBaseRepo) return null;
+  return overviews.includes(layer.number);
+}
+
+/**
+ * What the offer to make the chain through the layer on screen a GitHub stack says, while the core
+ * would plan it. The Stacks API is taken to be there until `gS` finds otherwise, and the layers'
+ * state must have been read, to know none of the chain is in a merge queue.
+ */
+function calloutOf(input: ViewInput, forest: Stacks): string | null {
+  const { layers } = input;
+  if (!layers) return null;
+  const queued = layers.layers.flatMap((read) => (read.isInMergeQueue ? [read.number] : []));
+  const conversion = planConversion(forest, input.number, { stacksApi: true, queued });
+  if (conversion.kind !== 'plan') return null;
+  const read = new Set(layers.layers.map((layer) => layer.number));
+  if (!conversion.plan.path.every((number) => read.has(number))) return null;
+  return calloutText(conversion.plan, forest);
 }
 
 /** What the tree says under the rows of `stack`: what Lo couldn't read, cycles and rebases. */

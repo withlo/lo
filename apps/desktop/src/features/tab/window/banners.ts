@@ -12,7 +12,9 @@ export type BannerDo =
   | { kind: 'clearCache' }
   | { kind: 'choose'; login: string }
   /** Opens a page on github.com: GitHub's own link to fix a problem. */
-  | { kind: 'link'; url: string };
+  | { kind: 'link'; url: string }
+  /** Shows another layer of the tab's stack: the pull request the tab opened on. */
+  | { kind: 'layer'; number: number };
 
 export interface BannerSpec {
   /** Which banner it is, so it keeps its place as it changes. */
@@ -85,13 +87,16 @@ export function short(oid: string): string {
 
 /**
  * Every banner a pull request's tab could show now, most urgent first: why it can't show its pull
- * request, then how it stands with GitHub, then its local copy, then a newer push.
+ * request, then how it stands with GitHub, then its local copy, then a newer push. `own` is the
+ * pull request the tab opened on, when the view on screen is another layer of its stack, which a
+ * layer that can't be opened, such as one deleted since the tab showed it, offers to go back to.
  */
 export function bannersFor(
   view: PullView | undefined,
   local: LocalState | undefined,
   repository: string,
   clock: Clock,
+  own?: number,
 ): BannerSpec[] {
   const banners: BannerSpec[] = [];
   const retry = { label: 'Try again', do: { kind: 'retry' } } as const;
@@ -104,7 +109,10 @@ export function bannersFor(
           tone: 'danger',
           title: "Lo can't open this pull request.",
           detail: problem.message,
-          actions: [retry],
+          actions:
+            own === undefined
+              ? [retry]
+              : [{ label: `Show #${own}`, do: { kind: 'layer', number: own } }, retry],
         });
         break;
       case 'blocked':

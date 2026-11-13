@@ -1,0 +1,68 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequest",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 85,
+      "filesFirst": 100,
+      "filesAfter": null
+    },
+    "query_sha256": "faebcf58d69c5e012ebe96425bca46ad442d8bf907b11b029049c26d755fc48b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4866",
+      "x-ratelimit-reset": "1794549217",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "134"
+    },
+    "body": {
+      "data": {
+        "repository": {
+          "pullRequest": {
+            "id": "PR_kwDOVleUfc8AAAABOzOHXA",
+            "number": 85,
+            "title": "Stack D: log when a plan's limit is reached",
+            "url": "https://github.com/rozed-dev/e2e/pull/85",
+            "state": "OPEN",
+            "isDraft": false,
+            "updatedAt": "2026-11-13T01:17:37Z",
+            "author": {
+              "__typename": "User",
+              "login": "rozed-bot",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/353226052?v=4"
+            },
+            "baseRefName": "stack/a",
+            "baseRefOid": "59b27c734c12089f5a795fe1f30bb1b5cad89650",
+            "headRefName": "stack/d",
+            "headRefOid": "00003e523dc4a621fc94e0af286f9212ed4e30c0",
+            "isCrossRepository": false,
+            "headRepository": {
+              "nameWithOwner": "rozed-dev/e2e",
+              "isFork": false
+            },
+            "files": {
+              "totalCount": 1,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "MQ"
+              },
+              "nodes": [
+                {
+                  "path": "src/log.ts",
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

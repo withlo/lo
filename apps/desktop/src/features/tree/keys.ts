@@ -46,14 +46,15 @@ export default defineCommands(
     },
     /**
      * Focuses the tree at the file on screen. In a code view `-` is Vim's line up, which `k` and
-     * `↑` do as well.
+     * `↑` do as well. In the tree, `-` goes on up, to the stack above it; in the stack, there's
+     * nothing further up.
      */
     focus: {
       label: 'Go to the file tree',
       group: 'Files',
       keys: ['-'],
       overVim: true,
-      when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
+      when: { except: ['menu', 'dialog', 'palette', 'box', 'tree', 'stack'], mode: 'normal' },
     },
     /** Switches between the tree and the changed files in review order. */
     mode: { label: 'Tree or review order', group: 'Files', keys: ['t'], when: tree },

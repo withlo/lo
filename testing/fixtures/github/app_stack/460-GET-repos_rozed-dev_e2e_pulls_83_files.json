@@ -1,0 +1,34 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/83/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"c397ef7abd44f9c217cfa667bd3ee5a978a97748c062c28b2afa53b58ecde1e7\"",
+      "last-modified": "Fri, 13 Nov 2026 01:17:34 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4734",
+      "x-ratelimit-reset": "1794549210",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "266"
+    },
+    "body": [
+      {
+        "sha": "653061cf96e8207374bde16297807734da8cd603",
+        "filename": "src/cost.ts",
+        "status": "added",
+        "additions": 11,
+        "deletions": 0,
+        "changes": 11,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1/src%2Fcost.ts",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1/src%2Fcost.ts",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/src%2Fcost.ts?ref=57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1",
+        "patch": "@@ -0,0 +1,11 @@\n+import type { Limit } from './limits.ts';\n+\n+/** What GitHub charges for a query: one point for each 100 nodes it may read, at least one. */\n+export function costOf(nodes: number): number {\n+  return Math.max(1, Math.ceil(nodes / 100));\n+}\n+\n+/** Whether a query of `nodes` fits in what's left of `limit` after `spent` points. */\n+export function fits(limit: Limit, spent: number, nodes: number): boolean {\n+  return spent + costOf(nodes) <= limit.points;\n+}"
+      }
+    ]
+  }
+}

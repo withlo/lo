@@ -188,6 +188,8 @@ describe('StackTree', () => {
     expect(heads('both')).toBe('5 layers · by base branch and shared commits');
     expect(heads('github', LAYERS.slice(0, 4))).toBe('GitHub stack · 4 layers');
     expect(heads('github', LAYERS.slice(0, 1))).toBe('GitHub stack · 1 layer');
+    // A layer alone, such as one that needs a rebase, was found by nothing.
+    expect(heads(undefined, LAYERS.slice(0, 1))).toBe('1 layer');
   });
 
   describe('a row', () => {

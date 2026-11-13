@@ -58,6 +58,8 @@ export type ViewedCount = z.output<typeof viewedCount>;
  *   state is read, or when there's none;
  * - `needsRebase`: whether a layer below it was squash-merged, so it still carries that one's
  *   commits;
+ * - `overview`: whether it has an overview, from one read of the repository's overviews' refs:
+ *   `null` until that's read, and for a layer from a fork, whose overview Lo can't see;
  * - `viewed`: where its viewed count comes from, `null` until the layers' state is read.
  */
 export const row = z.strictObject({
@@ -72,6 +74,7 @@ export const row = z.strictObject({
   checks: checks.nullable(),
   queue: z.number().int().positive().nullable(),
   needsRebase: z.boolean(),
+  overview: z.boolean().nullable(),
   viewed: viewedCount.nullable(),
 });
 export type Row = z.output<typeof row>;
@@ -93,14 +96,23 @@ export const note = z.strictObject({ kind: noteKind, text: z.string() });
 export type Note = z.output<typeof note>;
 
 /**
+ * How a stack's layers were found to sit on each other, as its head says: every layer in one
+ * GitHub stack, or by base branch, by shared commits, or both. A GitHub stack's layers sit on each
+ * other's branches, so in a stack that's more than one they count as found by base branch.
+ */
+export const found = z.enum(['github', 'baseBranch', 'sharedCommits', 'both']);
+export type Found = z.output<typeof found>;
+
+/**
  * The stack a pull request's tab shows:
  *
  * - `unknown` until its repository's open pull requests and rulesets have been read, and for a
  *   tab that acts as nobody, which no poller reads them for;
  * - `none` when its pull request isn't in a stack: a stack shows when it has two layers or more,
  *   when the pull request is in a GitHub stack, or when it needs a rebase;
- * - `stack`: the root branch its bottom layer sits on, its head ("4 layers · by base branch"), its
- *   rows and its notes.
+ * - `stack`: the root branch its bottom layer sits on, how its layers were found (`null` for a
+ *   layer alone), its rows and its notes; and `callout`, what the offer to make it a GitHub stack
+ *   says, while Lo could make the chain through the layer on screen one.
  */
 export const stackView = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('unknown') }),
@@ -108,9 +120,10 @@ export const stackView = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('stack'),
     root: z.string(),
-    head: z.string(),
+    found: found.nullable(),
     rows: z.array(row).min(1),
     notes: z.array(note),
+    callout: z.string().nullable(),
   }),
 ]);
 export type StackView = z.output<typeof stackView>;

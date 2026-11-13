@@ -1,0 +1,115 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/commits/24494ed9f4e2ea84482416e4cfa08d5baf021acb"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"05128d8f3a34fbe55d9ccb87a6051dd18ba6125572dfbc0c2be0e2a2cd81efb4\"",
+      "last-modified": "Fri, 13 Nov 2026 10:30:00 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4872",
+      "x-ratelimit-reset": "1794549210",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "128"
+    },
+    "body": {
+      "sha": "24494ed9f4e2ea84482416e4cfa08d5baf021acb",
+      "node_id": "C_kwDOVleUfdoAKDI0NDk0ZWQ5ZjRlMmVhODQ0ODI0MTZlNGNmYTA4ZDViYWYwMjFhY2I",
+      "commit": {
+        "author": {
+          "name": "rozed-bot",
+          "email": "353226052+rozed-bot@users.noreply.github.com",
+          "date": "2026-11-13T10:30:00Z"
+        },
+        "committer": {
+          "name": "rozed-bot",
+          "email": "353226052+rozed-bot@users.noreply.github.com",
+          "date": "2026-11-13T10:30:00Z"
+        },
+        "message": "Overview of pull request #83",
+        "tree": {
+          "sha": "06a28e6a101707c807e2826bc59765585090893a",
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/06a28e6a101707c807e2826bc59765585090893a"
+        },
+        "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/24494ed9f4e2ea84482416e4cfa08d5baf021acb",
+        "comment_count": 0,
+        "verification": {
+          "verified": false,
+          "reason": "unsigned",
+          "signature": null,
+          "payload": null,
+          "verified_at": null
+        }
+      },
+      "url": "https://api.github.com/repos/rozed-dev/e2e/commits/24494ed9f4e2ea84482416e4cfa08d5baf021acb",
+      "html_url": "https://github.com/rozed-dev/e2e/commit/24494ed9f4e2ea84482416e4cfa08d5baf021acb",
+      "comments_url": "https://api.github.com/repos/rozed-dev/e2e/commits/24494ed9f4e2ea84482416e4cfa08d5baf021acb/comments",
+      "author": {
+        "login": "rozed-bot",
+        "id": 353226052,
+        "node_id": "U_kgDOFQ3NRA",
+        "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/rozed-bot",
+        "html_url": "https://github.com/rozed-bot",
+        "followers_url": "https://api.github.com/users/rozed-bot/followers",
+        "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+        "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+        "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+        "repos_url": "https://api.github.com/users/rozed-bot/repos",
+        "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "committer": {
+        "login": "rozed-bot",
+        "id": 353226052,
+        "node_id": "U_kgDOFQ3NRA",
+        "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/rozed-bot",
+        "html_url": "https://github.com/rozed-bot",
+        "followers_url": "https://api.github.com/users/rozed-bot/followers",
+        "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+        "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+        "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+        "repos_url": "https://api.github.com/users/rozed-bot/repos",
+        "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "parents": [],
+      "stats": {
+        "total": 23,
+        "additions": 23,
+        "deletions": 0
+      },
+      "files": [
+        {
+          "sha": "6b1abfaaa6b094cdcd6c6d4c297ec020497447d0",
+          "filename": "artifact.md",
+          "status": "added",
+          "additions": 23,
+          "deletions": 0,
+          "changes": 23,
+          "blob_url": "https://github.com/rozed-dev/e2e/blob/24494ed9f4e2ea84482416e4cfa08d5baf021acb/artifact.md",
+          "raw_url": "https://github.com/rozed-dev/e2e/raw/24494ed9f4e2ea84482416e4cfa08d5baf021acb/artifact.md",
+          "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/artifact.md?ref=24494ed9f4e2ea84482416e4cfa08d5baf021acb",
+          "patch": "@@ -0,0 +1,23 @@\n+---\n+format: 1\n+pr: 83\n+commit: 57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1\n+---\n+\n+## tl;dr\n+\n+Each GraphQL query is charged what GitHub charges for it, so a client stays within its plan's limit\n+by the points its queries cost rather than by how many it sends.\n+\n+## How it works\n+\n+[`costOf`](code:src/cost.ts#L4-L6) charges a point for each 100 nodes a query may read:\n+\n+:::code src/cost.ts#L3-L6\n+:::\n+\n+[`fits`](code:src/cost.ts#L9-L11) says whether a query fits in what's left of the limit.\n+\n+## How it was checked\n+\n+A query of 250 nodes costs 3 points, and one of no nodes costs 1."
+        }
+      ]
+    }
+  }
+}

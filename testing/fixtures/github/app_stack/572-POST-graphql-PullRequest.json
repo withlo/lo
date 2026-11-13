@@ -1,0 +1,68 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequest",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 87,
+      "filesFirst": 100,
+      "filesAfter": null
+    },
+    "query_sha256": "faebcf58d69c5e012ebe96425bca46ad442d8bf907b11b029049c26d755fc48b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4859",
+      "x-ratelimit-reset": "1794549217",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "141"
+    },
+    "body": {
+      "data": {
+        "repository": {
+          "pullRequest": {
+            "id": "PR_kwDOVleUfc8AAAABOzOI9A",
+            "number": 87,
+            "title": "Stack E: expire cached plans",
+            "url": "https://github.com/rozed-dev/e2e/pull/87",
+            "state": "OPEN",
+            "isDraft": false,
+            "updatedAt": "2026-11-13T01:17:39Z",
+            "author": {
+              "__typename": "User",
+              "login": "rozed-bot",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/353226052?v=4"
+            },
+            "baseRefName": "stack/m",
+            "baseRefOid": "a5f519461fbac8b315f978b48deb5cf66ca22a22",
+            "headRefName": "stack/e",
+            "headRefOid": "b0e71e0b3274ad2bba7ddd21c6bcf04810d056f2",
+            "isCrossRepository": false,
+            "headRepository": {
+              "nameWithOwner": "rozed-dev/e2e",
+              "isFork": false
+            },
+            "files": {
+              "totalCount": 1,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "MQ"
+              },
+              "nodes": [
+                {
+                  "path": "src/cache.ts",
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

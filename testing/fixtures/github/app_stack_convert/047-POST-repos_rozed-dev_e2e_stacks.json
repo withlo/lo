@@ -1,0 +1,184 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/stacks",
+    "body_sha256": "127927758f9faacb284a6ca863d1d8cab7d00848d198e9307ff6ea0f28b361e6"
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"7c23215b3e7fb9243d16a971d844e3c77a47b5fe6c8a7e1d685b470d45c7a0f8\"",
+      "location": "https://api.github.com/repos/rozed-dev/e2e/stacks/92",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4994",
+      "x-ratelimit-reset": "1794547067",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "6"
+    },
+    "body": {
+      "id": 3486072,
+      "number": 92,
+      "node_id": "PRS_kwDOVleUfc4ANTF4",
+      "url": "https://api.github.com/repos/rozed-dev/e2e/stacks/92",
+      "base": {
+        "ref": "stack/root"
+      },
+      "open": true,
+      "created_at": "2026-11-13T04:17:55Z",
+      "pull_requests": [
+        {
+          "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/82",
+          "id": 5288199455,
+          "number": 82,
+          "head": {
+            "ref": "stack/a",
+            "sha": "59b27c734c12089f5a795fe1f30bb1b5cad89650",
+            "repo": {
+              "id": 1448580221,
+              "url": "https://api.github.com/repos/rozed-dev/e2e",
+              "name": "e2e"
+            }
+          },
+          "base": {
+            "ref": "stack/root",
+            "sha": "28c4eeff168c2baf91d2b902b85d06e94f8a90c9",
+            "repo": {
+              "id": 1448580221,
+              "url": "https://api.github.com/repos/rozed-dev/e2e",
+              "name": "e2e"
+            }
+          },
+          "node_id": "PR_kwDOVleUfc8AAAABOzOFHw",
+          "title": "Stack A: load per-plan limits",
+          "state": "open",
+          "merged_at": null,
+          "draft": false,
+          "html_url": "https://github.com/rozed-dev/e2e/pull/82",
+          "user": {
+            "login": "rozed-bot",
+            "id": 353226052,
+            "node_id": "U_kgDOFQ3NRA",
+            "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/rozed-bot",
+            "html_url": "https://github.com/rozed-bot",
+            "followers_url": "https://api.github.com/users/rozed-bot/followers",
+            "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+            "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+            "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+            "repos_url": "https://api.github.com/users/rozed-bot/repos",
+            "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+            "type": "User",
+            "user_view_type": "public",
+            "site_admin": false
+          }
+        },
+        {
+          "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/83",
+          "id": 5288199649,
+          "number": 83,
+          "head": {
+            "ref": "stack/b",
+            "sha": "57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1",
+            "repo": {
+              "id": 1448580221,
+              "url": "https://api.github.com/repos/rozed-dev/e2e",
+              "name": "e2e"
+            }
+          },
+          "base": {
+            "ref": "stack/a",
+            "sha": "59b27c734c12089f5a795fe1f30bb1b5cad89650",
+            "repo": {
+              "id": 1448580221,
+              "url": "https://api.github.com/repos/rozed-dev/e2e",
+              "name": "e2e"
+            }
+          },
+          "node_id": "PR_kwDOVleUfc8AAAABOzOF4Q",
+          "title": "Stack B: rate limit GraphQL queries by cost",
+          "state": "open",
+          "merged_at": null,
+          "draft": false,
+          "html_url": "https://github.com/rozed-dev/e2e/pull/83",
+          "user": {
+            "login": "rozed-bot",
+            "id": 353226052,
+            "node_id": "U_kgDOFQ3NRA",
+            "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/rozed-bot",
+            "html_url": "https://github.com/rozed-bot",
+            "followers_url": "https://api.github.com/users/rozed-bot/followers",
+            "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+            "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+            "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+            "repos_url": "https://api.github.com/users/rozed-bot/repos",
+            "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+            "type": "User",
+            "user_view_type": "public",
+            "site_admin": false
+          }
+        },
+        {
+          "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/84",
+          "id": 5288199823,
+          "number": 84,
+          "head": {
+            "ref": "stack/c",
+            "sha": "f9db1743681826e72f3b31e3d9967d28a55af20d",
+            "repo": {
+              "id": 1448580221,
+              "url": "https://api.github.com/repos/rozed-dev/e2e",
+              "name": "e2e"
+            }
+          },
+          "base": {
+            "ref": "stack/b",
+            "sha": "57dbd43bc2ea7a521b1f9218a22cdd96b4c4f5d1",
+            "repo": {
+              "id": 1448580221,
+              "url": "https://api.github.com/repos/rozed-dev/e2e",
+              "name": "e2e"
+            }
+          },
+          "node_id": "PR_kwDOVleUfc8AAAABOzOGjw",
+          "title": "Stack C: count a query's nodes",
+          "state": "open",
+          "merged_at": null,
+          "draft": false,
+          "html_url": "https://github.com/rozed-dev/e2e/pull/84",
+          "user": {
+            "login": "rozed-bot",
+            "id": 353226052,
+            "node_id": "U_kgDOFQ3NRA",
+            "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/rozed-bot",
+            "html_url": "https://github.com/rozed-bot",
+            "followers_url": "https://api.github.com/users/rozed-bot/followers",
+            "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+            "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+            "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+            "repos_url": "https://api.github.com/users/rozed-bot/repos",
+            "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+            "type": "User",
+            "user_view_type": "public",
+            "site_admin": false
+          }
+        }
+      ]
+    }
+  }
+}

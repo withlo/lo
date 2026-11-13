@@ -720,10 +720,23 @@ describe('keys', () => {
   test('passKeys hands keys to Vim, as if typed', () => {
     const shown = open();
     shown.reveal(onLine('a', 'new', 10));
+    shown.focus();
     shown.passKeys(['y', 'w']);
     expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 10));
     shown.passKeys(['g', 'g']);
     expect(shown.probe.cursor()?.at).toEqual(onHeader('a', 'new'));
+  });
+
+  test('passKeys hands Vim nothing while focus is elsewhere in the view, where typed keys never reach it', () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 10));
+    const outside = parent!.querySelector<HTMLElement>('.cm-scroller')!;
+    outside.tabIndex = -1;
+    outside.focus();
+    shown.passKeys([']']);
+    expect(shown.keyState().pending).toBe(false);
+    shown.passKeys(['g', 'g']);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 10));
   });
 
   test('cursor and mode events follow the focused editor', () => {

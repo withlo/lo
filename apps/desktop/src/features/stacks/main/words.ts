@@ -189,19 +189,47 @@ export function planWords(
   };
 }
 
-/** How the path's layers were found to sit on each other: "found by base branch". */
-function foundBy(plan: Plan, forest: Stacks): string {
-  const rules = new Set<Rule>(
+/**
+ * The rules that linked the path's layers to each other, a GitHub stack's as a base branch's, since
+ * its layers sit on each other's branches.
+ */
+function rulesOf(plan: Plan, forest: Stacks): ReadonlySet<Rule> {
+  return new Set<Rule>(
     plan.path.flatMap((number) => {
       const rule = layerOf(forest, number)?.rule;
       return rule === undefined ? [] : [rule === 'nativeStack' ? 'baseBranch' : rule];
     }),
   );
+}
+
+/** How the path's layers were found to sit on each other: "found by base branch". */
+function foundBy(plan: Plan, forest: Stacks): string {
+  const rules = rulesOf(plan, forest);
   if (rules.has('baseBranch') && rules.has('sharedCommits')) {
     return 'found by base branch and shared commits';
   }
   if (rules.has('sharedCommits')) return 'found by shared commits';
   return 'found by base branch';
+}
+
+/**
+ * What the offer over the stack's tree says of `plan`, before anyone asks for it: what the chain is
+ * now, worded for how it was found, and what being a GitHub stack would change.
+ */
+export function calloutText(plan: Plan, forest: Stacks): string {
+  const last = plan.steps.at(-1);
+  if (last?.kind === 'addToStack') {
+    const one = last.prs.length === 1;
+    return `${numbers(last.prs)} ${one ? 'sits' : 'sit'} on GitHub stack #${last.stack} but ${one ? "isn't" : "aren't"} in it. In it, ${one ? 'it' : 'they'}'d merge with the layers below.`;
+  }
+  const rules = rulesOf(plan, forest);
+  const now =
+    rules.has('baseBranch') && rules.has('sharedCommits')
+      ? "sit on each other's branches and share commits"
+      : rules.has('sharedCommits')
+        ? 'share commits'
+        : "sit on each other's branches";
+  return `These PRs ${now} but aren't a GitHub stack. As one, they'd merge together.`;
 }
 
 /** What a conversion made, once it's done, for the toast: "Made #1, #2 and #3 a GitHub stack". */
