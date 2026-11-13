@@ -4,6 +4,8 @@ import { replayFetch } from '@lo/testing';
 import { APP_PULL, RepoServer } from '@lo/testing/git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import type { LocalState } from '../../tab/contract.ts';
+import type { PullTabInfo } from '../../tab/service.ts';
 import type { Changed, TreeState } from '../contract.ts';
 import { cloneOf, e2eClone, e2eInfo, READY, replayClient, treeTab } from './test/support.ts';
 
@@ -510,5 +512,133 @@ describe('TreeTab', () => {
     expect(found.found.find((file) => file.path.text.length === 20_480)?.matched).toEqual([
       20_473, 20_474, 20_475, 20_476,
     ]);
+  });
+});
+
+/** A JSON answer. */
+const json = (body: unknown) =>
+  Promise.resolve(
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }),
+  );
+
+describe('a stack’s layer’s tree', () => {
+  /** rozed-dev/e2e's e2/b and e2/c heads: #4, e2/c, holds e2/b's head. */
+  const B = 'fd3d9a4102c1371a42100297822828c8cd12255c';
+  const C = '4b18a1a61f29869e0665318e518ed79a9957fcc8';
+  /** A commit the repository doesn't have. */
+  const GONE = '0000000000000000000000000000000000000001';
+
+  /** #4's tab, shown at e2/c's head, compared with `compareFrom`. */
+  const layerInfo = (compareFrom: string | undefined, local?: LocalState): PullTabInfo => ({
+    ...e2eInfo(local),
+    number: 4,
+    shown: C,
+    latest: C,
+    compareFrom,
+  });
+
+  /**
+   * GitHub answering comparisons from their cassette, #4's own files and e2/c's tree in place of
+   * the real ones, and noting each address it's asked for.
+   */
+  function layerGithub(compareStatus?: number) {
+    const replay = replayFetch('rest_comparison_e2e');
+    const asked: string[] = [];
+    const client = new GithubClient({
+      fetch: (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        asked.push(url.pathname);
+        if (url.pathname.includes('/compare/') && compareStatus !== undefined) {
+          return Promise.resolve(
+            new Response('{"message":"Server Error"}', { status: compareStatus }),
+          );
+        }
+        if (url.pathname.includes('/compare/')) return replay(input, init);
+        if (url.pathname.includes('/git/trees/')) {
+          const file = { path: 'e2/c.txt', type: 'blob', mode: '100644', sha: 'c'.repeat(40) };
+          return json({ sha: C, tree: [{ ...file, size: 2 }], truncated: false });
+        }
+        return json([
+          {
+            filename: 'e2/b.txt',
+            status: 'added',
+            additions: 1,
+            deletions: 0,
+            changes: 1,
+            patch: '@@ -0,0 +1 @@\n+b',
+            contents_url: `https://api.github.com/repos/rozed-dev/e2e/contents/e2%2Fb.txt?ref=${C}`,
+          },
+        ]);
+      },
+      urls: {
+        api: 'https://api.github.com',
+        web: 'https://github.com',
+        uploads: 'https://uploads.github.com',
+      },
+      token: new Token('gho_FAKE'),
+    });
+    return {
+      asked,
+      github: <T>(_acting: unknown, request: (client: GithubClient) => Promise<T>) =>
+        request(client),
+    };
+  }
+
+  it('lists what GitHub’s comparison with the layer below changes', async () => {
+    const { asked, github } = layerGithub();
+    const { tree, settled } = treeTab({ github });
+    tree.update(layerInfo(B));
+    const state = await settled((sent) => sent.changes !== null && sent.from !== null);
+    expect(state).toMatchObject({ at: C, changesFrom: 'github', partial: false });
+    expect(changes(state)).toEqual(['added e2/c.txt']);
+    expect(asked).toContain(`/repos/rozed-dev/e2e/compare/${B}...${C}`);
+    expect(asked).not.toContain('/repos/rozed-dev/e2e/pulls/4/files');
+  });
+
+  it('lists the pull request’s own files when GitHub no longer has the commit', async () => {
+    const { asked, github } = layerGithub();
+    const { tree, settled } = treeTab({ github });
+    tree.update(layerInfo(GONE));
+    const state = await settled((sent) => sent.changes !== null);
+    expect(changes(state)).toEqual(['added e2/b.txt']);
+    expect(asked).toContain('/repos/rozed-dev/e2e/pulls/4/files');
+  });
+
+  it('lists the pull request’s own files, without asking again, whatever stopped GitHub comparing', async () => {
+    const { asked, github } = layerGithub(500);
+    const { tree, settled } = treeTab({ github });
+    tree.update(layerInfo(B));
+    const state = await settled((sent) => sent.changes !== null);
+    expect(state).toMatchObject({ changesFrom: 'github', problem: null });
+    expect(changes(state)).toEqual(['added e2/b.txt']);
+    expect(asked.filter((path) => path.includes('/compare/'))).toHaveLength(1);
+  });
+
+  it('keeps the head’s files for another start, and reads what changed again', async () => {
+    const { asked, github } = layerGithub();
+    const { tree, sent, settled } = treeTab({ github });
+    tree.update(layerInfo(undefined));
+    const own = await settled((state) => state.changes !== null && state.from !== null);
+    expect(changes(own)).toEqual(['added e2/b.txt']);
+    const trees = asked.filter((path) => path.includes('/git/trees/')).length;
+    tree.update(layerInfo(B));
+    // What the head holds stays while what changed is read again.
+    expect(sent.at(-1)).toMatchObject({ from: 'github', changes: null });
+    const compared = await settled((state) => state.changes !== null);
+    expect(changes(compared)).toEqual(['added e2/c.txt']);
+    expect(asked.filter((path) => path.includes('/git/trees/'))).toHaveLength(trees);
+  });
+
+  it('waits for the local copy compared with the same commit', async () => {
+    const { asked, github } = layerGithub();
+    const { tree, sent } = treeTab({ github });
+    // Ready at the head, but still settling where it meets B: nothing is read, from either.
+    tree.update(layerInfo(B, { kind: 'ready', head: C, base: C, mergeBase: C, offline: false }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(sent.at(-1)).toMatchObject({ at: C, changes: null });
+    expect(asked).toEqual([]);
   });
 });

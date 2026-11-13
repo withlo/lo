@@ -11,10 +11,10 @@
       "last-modified": "Fri, 13 Nov 2026 01:17:37 GMT",
       "x-github-api-version-selected": "2022-11-28",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4710",
-      "x-ratelimit-reset": "1794545595",
+      "x-ratelimit-remaining": "4850",
+      "x-ratelimit-reset": "1794549210",
       "x-ratelimit-resource": "core",
-      "x-ratelimit-used": "290"
+      "x-ratelimit-used": "150"
     },
     "body": {
       "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/85",

@@ -32,14 +32,18 @@ const orders = tabState<KeptOrder | undefined>(() => undefined);
 
 /**
  * What each tab's last view compared: two revisions by their comparison's key, or the whole pull
- * request at a head. Another comparison is the reader's own doing, and draws with the cursor's file
- * at the top.
+ * request at a head, from where it starts. Another comparison is the reader's own doing, and draws
+ * with the cursor's file at the top.
  */
 const compared = tabState<string | undefined>(() => undefined);
 
 /** What `ready` compares, as {@link compared} keeps it. */
-function comparisonOf(ready: { at: string; comparison: string | null }): string {
-  return ready.comparison ?? `head:${ready.at}`;
+function comparisonOf(ready: {
+  at: string;
+  comparison: string | null;
+  compareFrom: string | null;
+}): string {
+  return ready.comparison ?? `head:${ready.at}:${ready.compareFrom ?? ''}`;
 }
 
 /** The file a view's cursor was in, when it was in one. */
@@ -92,11 +96,14 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     [ready, order, loader],
   );
   const key =
-    ready && entries ? viewKey(`${ready.at}|${ready.comparison ?? ''}`, entries) : undefined;
+    ready && entries
+      ? viewKey(`${ready.at}|${ready.comparison ?? ''}|${ready.compareFrom ?? ''}`, entries)
+      : undefined;
   // What a new view is drawn with, read as it's drawn: a change of layout alone needs no new view.
   const comparison = ready && comparisonOf(ready);
-  const latest = useRef({ entries, layout, packaged, shown, marks, comparison });
-  latest.current = { entries, layout, packaged, shown, marks, comparison };
+  const compareFrom = ready?.compareFrom ?? null;
+  const latest = useRef({ entries, layout, packaged, shown, marks, comparison, compareFrom });
+  latest.current = { entries, layout, packaged, shown, marks, comparison, compareFrom };
 
   useEffect(() => {
     const parent = box.current;
@@ -116,6 +123,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
       loader,
       entries: drawn.entries,
       at,
+      compareFrom: drawn.compareFrom,
       layout: drawn.layout,
       nonce: nonceValue,
       packaged: drawn.packaged,

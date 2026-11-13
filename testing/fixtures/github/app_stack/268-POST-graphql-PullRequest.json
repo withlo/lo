@@ -18,7 +18,7 @@
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
       "x-ratelimit-remaining": "4935",
-      "x-ratelimit-reset": "1794545331",
+      "x-ratelimit-reset": "1794549217",
       "x-ratelimit-resource": "graphql",
       "x-ratelimit-used": "65"
     },
@@ -32,7 +32,7 @@
             "url": "https://github.com/rozed-dev/e2e/pull/84",
             "state": "OPEN",
             "isDraft": false,
-            "updatedAt": "2026-11-13T02:43:48Z",
+            "updatedAt": "2026-11-13T04:18:46Z",
             "author": {
               "__typename": "User",
               "login": "rozed-bot",

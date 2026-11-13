@@ -108,10 +108,13 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const local = useLocalCopy(tab.id);
   const page = usePage();
   const head = state?.at ?? undefined;
+  // A stack's layer's base side starts where its diff does.
+  const from = state?.compareFrom ?? null;
   const copyReady = local?.kind === 'ready' && local.head === head;
   const change = open && changedIn(state?.files, open.key);
   const path = open && pathIn(change, open.version, () => open.path);
-  const content = open && head !== undefined && readOf(read, open, head) ? read.content : undefined;
+  const content =
+    open && head !== undefined && readOf(read, open, head, from) ? read.content : undefined;
   const lines = content?.kind === 'text' ? content.lines : undefined;
   const tokens = content?.kind === 'text' ? content.tokens : undefined;
 
@@ -131,19 +134,19 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
     if (shown && key !== undefined) followFile(tab.id, key);
   }, [tab.id, key, shown]);
 
-  // Read anew for another file, version or head; again once the local copy has the head, and
-  // after a failure when the file is asked for again.
+  // Read anew for another file, version, head or start; again once the local copy has the head,
+  // and after a failure when the file is asked for again.
   useEffect(() => {
     const filePath = latest.current.path;
     if (!open || head === undefined || !filePath) return;
     const now = reads.get(tab.id);
-    if (readOf(now, open, head)) {
+    if (readOf(now, open, head, from)) {
       const again = (now.content.kind === 'waiting' && copyReady) || now.content.kind === 'failed';
       if (!again) return;
     }
-    const large = readOf(now, open, head) && now.large;
-    readWhole(tab.id, { ...open, path: filePath }, head, large, wholeWork(tab.id));
-  }, [tab.id, open, head, copyReady]);
+    const large = readOf(now, open, head, from) && now.large;
+    readWhole(tab.id, { ...open, path: filePath }, head, from, large, wholeWork(tab.id));
+  }, [tab.id, open, head, from, copyReady]);
 
   // What keys act on while there's no code to act on.
   useEffect(() => {
@@ -211,7 +214,7 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
       {
         cursor() {},
         mode() {},
-        jumped: (from) => keys.history.record({ view: 'file', at: from }),
+        jumped: (left) => keys.history.record({ view: 'file', at: left }),
         menu: (target, x, y) => {
           openMenu(target, { x, y });
         },

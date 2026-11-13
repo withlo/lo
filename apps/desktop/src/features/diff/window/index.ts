@@ -73,6 +73,8 @@ interface WholeOn {
   readonly path: TreePath;
   /** The head on screen. */
   readonly head: string | undefined;
+  /** The commit a stack's layer's diff starts from, if any. */
+  readonly from: string | null;
   readonly read: Read | undefined;
 }
 
@@ -85,7 +87,15 @@ function wholeOnScreen(): WholeOn | undefined {
   const state = loaderOf(tab.id).snapshot().state;
   const change = changedIn(state?.files, open.key);
   const path = pathIn(change, open.version, () => open.path);
-  return { tab, open, change, path, head: state?.at ?? undefined, read: reads.get(tab.id) };
+  return {
+    tab,
+    open,
+    change,
+    path,
+    head: state?.at ?? undefined,
+    from: state?.compareFrom ?? null,
+    read: reads.get(tab.id),
+  };
 }
 
 /** The lines of the whole file on screen, if it shows them. */
@@ -226,7 +236,7 @@ export default {
         const whole = wholeOnScreen();
         if (whole?.head === undefined || whole.read?.content.kind !== 'large') return;
         const file = { key: whole.open.key, version: whole.open.version, path: whole.path };
-        readWhole(whole.tab.id, file, whole.head, true, wholeWork(whole.tab.id));
+        readWhole(whole.tab.id, file, whole.head, whole.from, true, wholeWork(whole.tab.id));
       },
       enabled: () => {
         const whole = wholeOnScreen();

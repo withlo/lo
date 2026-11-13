@@ -12,10 +12,10 @@
       "x-github-api-version-selected": "2022-11-28",
       "x-poll-interval": "300",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4636",
-      "x-ratelimit-reset": "1794545595",
+      "x-ratelimit-remaining": "4757",
+      "x-ratelimit-reset": "1794549210",
       "x-ratelimit-resource": "core",
-      "x-ratelimit-used": "364"
+      "x-ratelimit-used": "243"
     },
     "body": [
       {

@@ -4,6 +4,7 @@
 // #19, alone.
 
 import {
+  openPullRequest,
   PullRef,
   STACK_LAYERS,
   type Cached,
@@ -19,7 +20,7 @@ import { describe, expect, it } from 'vitest';
 
 import { stack as stackSchema, type StackState } from '../contract.ts';
 import { OVERVIEW_REFS, StackFinder, type FinderPoller, type FinderTab } from './finder.ts';
-import { changePull, E2E, idsOf, leaving, recorded } from './test/support.ts';
+import { changeLayer, changePull, E2E, idsOf, leaving, recorded } from './test/support.ts';
 
 const LOGIN = 'rozed-bot';
 const LAYERS = [2, 3, 4, 6, 5, 7, 8, 11, 19];
@@ -40,6 +41,8 @@ class FakePoller implements FinderPoller {
   /** The pull requests whose layers were no longer to be read. */
   readonly forgotten: string[] = [];
   readonly #listeners = new Set<() => void>();
+  /** When each read was fetched, by a clock that moves on with each. */
+  #clock = 0;
 
   openPullRequests(repo: RepoRef): Cached<OpenPullRequestList> | undefined {
     return this.lists.get(repo.key);
@@ -89,8 +92,8 @@ class FakePoller implements FinderPoller {
 
   /** Lists `repo`'s open pull requests anew, or reads its rulesets, as a poll would. */
   set(repo: RepoRef, change: { list?: OpenPullRequestList; rules?: TrunkRuleList }): void {
-    if (change.list) this.lists.set(repo.key, { value: change.list, fetchedAt: 0 });
-    if (change.rules) this.rules.set(repo.key, { value: change.rules, fetchedAt: 0 });
+    if (change.list) this.lists.set(repo.key, { value: change.list, fetchedAt: ++this.#clock });
+    if (change.rules) this.rules.set(repo.key, { value: change.rules, fetchedAt: ++this.#clock });
     this.changed();
   }
 
@@ -102,7 +105,7 @@ class FakePoller implements FinderPoller {
 
   /** Reads the layers for `pull`, as the poller does once it's open. */
   read(pull: PullRef, layers: StackLayerList): void {
-    this.reads.set(pull.key, { value: layers, fetchedAt: 0 });
+    this.reads.set(pull.key, { value: layers, fetchedAt: ++this.#clock });
     this.changed();
   }
 
@@ -115,15 +118,18 @@ class FakePoller implements FinderPoller {
 function started(poller: FakePoller | undefined) {
   const sent: StackState[] = [];
   const logged: string[] = [];
+  /** Each start set, by the tab it's set for: a commit, or nothing for the base branch. */
+  const starts: [string, string | undefined][] = [];
   const finder = new StackFinder({
     poller: (login) =>
       poller && login === LOGIN
         ? Promise.resolve(poller)
         : Promise.reject(new Error(`Lo isn't signed in to ${login}`)),
     publish: (state) => sent.push(stackSchema.parse(state)),
+    compareFrom: (id, commit) => starts.push([id, commit]),
     log: (line) => logged.push(line),
   });
-  return { finder, sent, logged };
+  return { finder, sent, logged, starts };
 }
 
 /** The tab of pull request `number` in rozed-dev/e2e, acting as rozed-bot. */
@@ -135,6 +141,10 @@ function tab(number: number, more: Partial<FinderTab> = {}): FinderTab {
     login: LOGIN,
     state: 'open',
     onScreen: false,
+    head: undefined,
+    compareFrom: undefined,
+    drawn: false,
+    missing: false,
     ...more,
   };
 }
@@ -261,6 +271,32 @@ describe('the stacks tabs show', () => {
     expect(poller.again).toHaveLength(2);
   });
 
+  it('read the layers again only for a list fetched after their state', async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    if (!found.layers) throw new Error('no layers');
+    const poller = new FakePoller();
+    poller.set(E2E, { list: found.list, rules: found.rules });
+    const pull = PullRef.of(E2E, 4);
+    // #6 was pushed to: the layers' state, read since, has its new head before the list does.
+    const pushed = 'c'.repeat(40);
+    poller.read(
+      pull,
+      changeLayer(found.layers, 6, (layer) => ({ ...layer, headRefOid: pushed })),
+    );
+    const { finder } = started(poller);
+    finder.follow([tab(4, { onScreen: true })]);
+    await settle();
+    poller.changed();
+    await settle();
+    expect(poller.again).toEqual([]);
+    // The list, fetched again, has it too.
+    poller.set(E2E, {
+      list: changePull(found.list, 6, (pr) => ({ ...pr, headRefOid: pushed })),
+    });
+    await settle();
+    expect(poller.again).toEqual([]);
+  });
+
   it('stop reading the layers once the tab closes, or its pull request leaves the stack', async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
     const poller = new FakePoller();
@@ -344,5 +380,69 @@ describe('the stacks tabs show', () => {
     expect(rows(finder, 't4')).toBe('unknown');
     await settle();
     expect(rows(finder, 't4')).toEqual([2, 3, 4, 6, 5]);
+  });
+});
+
+/** The head pull request `number` is at, as recorded. */
+const headIn = (list: OpenPullRequestList, number: number) =>
+  openPullRequest(list, number)?.headRefOid ?? '';
+
+describe('where the layer on screen starts', () => {
+  it('is set before its diff is drawn, offered after, and set on the banner’s button', async () => {
+    const found = await recorded('app_stack', E2E);
+    const { list, rules } = found;
+    const poller = new FakePoller();
+    const { finder, starts } = started(poller);
+    const c = { onScreen: true, head: headIn(list, 84) };
+    // #84's diff was drawn before its stack was known.
+    finder.follow([tab(84, { ...c, drawn: true })]);
+    await settle();
+    poller.set(E2E, { list, rules });
+    await settle();
+    expect(starts).toEqual([]);
+    const b = headIn(list, 83);
+    expect(finder.state('t84')?.offer).toEqual({
+      title: "#84's diff includes #83's changes.",
+      action: "Show only #84's",
+      commit: b,
+    });
+    // Only what's offered is taken.
+    expect(finder.useStart('t84', null)).toBe(false);
+    expect(finder.useStart('t84', b)).toBe(true);
+    expect(starts).toEqual([['t84', b]]);
+    expect(finder.useStart('t84', b)).toBe(false);
+    // The tab starts there now, and its diff starts again: nothing is offered.
+    finder.follow([tab(84, { ...c, compareFrom: b })]);
+    expect(finder.state('t84')?.offer).toBeNull();
+    // #87 needs a rebase, but its base branch still sits at #86's head, where GitHub's diff of it
+    // already starts: its stack shows, with the note, and nothing is set or offered.
+    for (const drawn of [false, true]) {
+      finder.follow([
+        tab(84, { ...c, compareFrom: b }),
+        tab(87, { head: headIn(list, 87), drawn }),
+      ]);
+      expect(starts).toEqual([['t84', b]]);
+      expect(finder.state('t87')).toMatchObject({
+        stack: { kind: 'stack', rows: [{ number: 87 }], notes: [{ kind: 'needsRebase' }] },
+        offer: null,
+      });
+    }
+  });
+
+  it("says when the local copy couldn't get the commit, under the stack's notes", async () => {
+    const found = await recorded('app_stack', E2E);
+    const poller = new FakePoller();
+    poller.set(E2E, { list: found.list, rules: found.rules });
+    const { finder } = started(poller);
+    const b = headIn(found.list, 83);
+    finder.follow([
+      tab(84, { onScreen: true, head: headIn(found.list, 84), compareFrom: b, missing: true }),
+    ]);
+    await settle();
+    const stack = finder.state('t84')?.stack;
+    expect(stack?.kind === 'stack' && stack.notes.at(-1)).toEqual({
+      kind: 'start',
+      text: "Lo couldn't fetch #83's head, so #84's diff includes #83's changes.",
+    });
   });
 });

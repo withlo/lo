@@ -1,11 +1,11 @@
 // What the status bar says of a pull request's tab's diff: that it's GitHub's until the local copy
-// replaces it, that GitHub listed only some files, how far diffing has got, and that changes to
-// whitespace alone are hidden.
+// replaces it, that GitHub listed only some files, that it couldn't compare a stack's layer with
+// the layer below, how far diffing has got, and that changes to whitespace alone are hidden.
 
 import { StatusItem } from '@lo/ui';
 import { useCallback, useSyncExternalStore } from 'react';
 
-import type { PullTab } from '../../tab/window/shared.ts';
+import { useLocalCopy, type PullTab } from '../../tab/window/shared.ts';
 import { loaderOf } from './tabs.ts';
 
 export function DiffStatus({ tab }: { tab: PullTab }) {
@@ -14,6 +14,8 @@ export function DiffStatus({ tab }: { tab: PullTab }) {
   const { ready, progress, state, whitespace } = useSyncExternalStore(subscribe, () =>
     loader.snapshot(),
   );
+  // Without git, what GitHub says is all there is.
+  const later = useLocalCopy(tab.id)?.kind === 'noGit' ? '' : ' until the local copy is ready';
   return (
     <>
       {ready?.from === 'github' && (
@@ -22,8 +24,23 @@ export function DiffStatus({ tab }: { tab: PullTab }) {
         </StatusItem>
       )}
       {state?.partial && (
-        <StatusItem dot="warn" title="GitHub lists 3,000 changed files at most.">
+        <StatusItem
+          dot="warn"
+          title={
+            state.compareFrom === null
+              ? 'GitHub lists 3,000 changed files at most.'
+              : `GitHub’s comparison with the layer below lists 300 changed files at most, so the rest are left out${later}.`
+          }
+        >
           Some files left out
+        </StatusItem>
+      )}
+      {state?.uncompared && ready?.from === 'github' && (
+        <StatusItem
+          dot="warn"
+          title={`GitHub couldn’t compare this layer with the layer below, so its diff includes the layers below${later}.`}
+        >
+          Layers below included
         </StatusItem>
       )}
       {ready && progress.done < progress.of && (

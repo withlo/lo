@@ -1,0 +1,33 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/git/matching-refs/lo/pr/83"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"7e09507da05f5302a42b0fec15c8287cdeea4df72d964442dc8e5f46ee59a3ff\"",
+      "last-modified": "Sun, 08 Nov 2026 13:03:37 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-poll-interval": "300",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4808",
+      "x-ratelimit-reset": "1794549210",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "192"
+    },
+    "body": [
+      {
+        "ref": "refs/lo/pr/83",
+        "node_id": "REF_kwDOVleUfa1yZWZzL2xvL3ByLzgz",
+        "url": "https://api.github.com/repos/rozed-dev/e2e/git/refs/lo/pr/83",
+        "object": {
+          "sha": "24494ed9f4e2ea84482416e4cfa08d5baf021acb",
+          "type": "commit",
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/24494ed9f4e2ea84482416e4cfa08d5baf021acb"
+        }
+      }
+    ]
+  }
+}

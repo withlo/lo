@@ -141,6 +141,10 @@ export class PullTab {
   #saved: { head: string; base: { branch: string; sha: string } } | undefined;
   /** The head on screen: GitHub's when the tab opened, until the newer push is loaded. */
   #shown: string | undefined;
+  /** The commit its diff starts from, for a stack's layer the stacks feature compares with another. */
+  #compareFrom: string | undefined;
+  /** The head on screen the diff was drawn at, since what it starts from last changed. */
+  #drawnAt: string | undefined;
   /**
    * Whether the head on screen came only from the cache, while GitHub couldn't be asked: the first
    * head GitHub gives replaces it, without saying there's a newer push.
@@ -262,9 +266,27 @@ export class PullTab {
    * cache is no longer replaced by GitHub's first answer, which shows as a newer push instead.
    */
   drawn(head: string): void {
-    if (this.#closed || head !== this.#shown || !this.#provisional) return;
+    if (this.#closed || head !== this.#shown) return;
+    this.#drawnAt = head;
+    if (!this.#provisional) {
+      this.#tellInfo();
+      return;
+    }
     this.#provisional = false;
     this.#publish();
+  }
+
+  /**
+   * Compares the pull request with `commit`, where a stack's layer's own changes start, or, for
+   * nothing, with its base branch, as GitHub does: the local copy's merge base is then where the
+   * head meets the commit. The diff starts again from there, and is drawn anew.
+   */
+  compareFrom(commit: string | undefined): void {
+    if (this.#closed || commit === this.#compareFrom) return;
+    this.#compareFrom = commit;
+    this.#drawnAt = undefined;
+    this.#local?.compareFrom(commit);
+    this.#tellInfo();
   }
 
   /**
@@ -333,6 +355,8 @@ export class PullTab {
       latest: this.#started ? this.#latest : undefined,
       provisional: this.#provisional,
       local: this.#localState(),
+      compareFrom: this.#compareFrom,
+      drawn: this.#started && this.#drawnAt !== undefined && this.#drawnAt === this.#shown,
     };
   }
 
@@ -806,6 +830,7 @@ export class PullTab {
         git,
         repository: { owner: repository.owner, name: repository.name },
         number: this.pull.number,
+        from: this.#compareFrom,
         // Read as each fetch starts, so a renewed token is the one git signs in with.
         token:
           login === undefined

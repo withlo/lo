@@ -6,7 +6,7 @@
     "variables": {
       "owner": "rozed-dev",
       "name": "e2e",
-      "number": 89,
+      "number": 82,
       "login": "rozed-bot",
       "first": 100,
       "timelineAfter": null,
@@ -19,29 +19,29 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4735",
-      "x-ratelimit-reset": "1794545327",
+      "x-ratelimit-remaining": "4891",
+      "x-ratelimit-reset": "1794549217",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "265"
+      "x-ratelimit-used": "109"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4735,
-          "used": 265,
-          "resetAt": "2026-11-13T04:48:47Z"
+          "remaining": 4891,
+          "used": 109,
+          "resetAt": "2026-11-13T05:53:37Z"
         },
         "repository": {
           "pullRequest": {
-            "createdAt": "2026-11-13T01:17:42Z",
+            "createdAt": "2026-11-13T01:17:33Z",
             "closed": false,
             "closedAt": null,
             "merged": false,
-            "headRefName": "stack/g2",
-            "headRefOid": "973eab4d84b2a6f6f8660d10ebdcc4c852810627",
-            "baseRefName": "stack/g1",
+            "headRefName": "stack/a",
+            "headRefOid": "59b27c734c12089f5a795fe1f30bb1b5cad89650",
+            "baseRefName": "stack/root",
             "headRepository": {
               "name": "e2e",
               "owner": {
@@ -73,7 +73,7 @@
               "nodes": [
                 {
                   "commit": {
-                    "oid": "973eab4d84b2a6f6f8660d10ebdcc4c852810627",
+                    "oid": "59b27c734c12089f5a795fe1f30bb1b5cad89650",
                     "checkSuites": {
                       "nodes": []
                     }

@@ -118,6 +118,8 @@ function e2eInfo(local: LocalState = READY): PullTabInfo {
     latest: APP_PULL.head,
     provisional: false,
     local,
+    compareFrom: undefined,
+    drawn: false,
   };
 }
 

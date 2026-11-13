@@ -1,0 +1,63 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/git/matching-refs/lo/pr/"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"dd8c0c788b18278a51557892ca09a20f175eb8a9e57ae885f1cf3cb919a479e2\"",
+      "last-modified": "Sun, 08 Nov 2026 13:03:37 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-poll-interval": "300",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4968",
+      "x-ratelimit-reset": "1794549210",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "32"
+    },
+    "body": [
+      {
+        "ref": "refs/lo/pr/79",
+        "node_id": "REF_kwDOVleUfa1yZWZzL2xvL3ByLzc5",
+        "url": "https://api.github.com/repos/rozed-dev/e2e/git/refs/lo/pr/79",
+        "object": {
+          "sha": "d6241eb9d1bd6725c46dd955ccb543054400f68b",
+          "type": "commit",
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/d6241eb9d1bd6725c46dd955ccb543054400f68b"
+        }
+      },
+      {
+        "ref": "refs/lo/pr/80",
+        "node_id": "REF_kwDOVleUfa1yZWZzL2xvL3ByLzgw",
+        "url": "https://api.github.com/repos/rozed-dev/e2e/git/refs/lo/pr/80",
+        "object": {
+          "sha": "ad1cfa3d053a10b8fc8e46ad786f284509e4b8a9",
+          "type": "commit",
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/ad1cfa3d053a10b8fc8e46ad786f284509e4b8a9"
+        }
+      },
+      {
+        "ref": "refs/lo/pr/81",
+        "node_id": "REF_kwDOVleUfa1yZWZzL2xvL3ByLzgx",
+        "url": "https://api.github.com/repos/rozed-dev/e2e/git/refs/lo/pr/81",
+        "object": {
+          "sha": "0db68fea270da9b5d7c9707565cc0aa554db4e69",
+          "type": "commit",
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/0db68fea270da9b5d7c9707565cc0aa554db4e69"
+        }
+      },
+      {
+        "ref": "refs/lo/pr/83",
+        "node_id": "REF_kwDOVleUfa1yZWZzL2xvL3ByLzgz",
+        "url": "https://api.github.com/repos/rozed-dev/e2e/git/refs/lo/pr/83",
+        "object": {
+          "sha": "24494ed9f4e2ea84482416e4cfa08d5baf021acb",
+          "type": "commit",
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/commits/24494ed9f4e2ea84482416e4cfa08d5baf021acb"
+        }
+      }
+    ]
+  }
+}

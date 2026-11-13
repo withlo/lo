@@ -38,7 +38,7 @@ import {
 } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
-import { usePull, useTabState } from '../../tab/window/shared.ts';
+import { useLocalCopy, usePull, useTabState } from '../../tab/window/shared.ts';
 import { findFile, showFile } from '../../tree/window/shared.ts';
 import { onStep, setStep, stepOf } from './blocks.ts';
 import type { CodeRead } from './checking.ts';
@@ -54,6 +54,15 @@ import { fileSince } from './since.ts';
 import { flagWords, labelOf } from './stale.ts';
 import { revisions } from './store.ts';
 import { nameOf, showsOf, type Shows, type Target, type Words } from './targets.ts';
+
+/**
+ * The commit tab `tab`'s diff starts from, for a stack's layer, as its local copy last said: a
+ * block's base side starts there too. Empty for one that starts at its base branch.
+ */
+function useStartOf(tab: string): string {
+  const local = useLocalCopy(tab);
+  return (local?.kind === 'ready' ? local.from?.commit : undefined) ?? '';
+}
 
 /**
  * What the overview's blocks read their code with: the pull request's tab, the commit the overview
@@ -209,6 +218,7 @@ function ExcerptCode({
   const [measured, setMeasured] = useState(false);
   const drawnView = useRef<ExcerptView>(undefined);
   const want = near || (nearness === 'far' && !measured);
+  const from = useStartOf(tab);
   const { path } = target;
   const { start, end } = target.lines;
   // Who's told the code couldn't be read, which changes without asking for it again.
@@ -243,7 +253,7 @@ function ExcerptCode({
     void (async () => {
       await wait?.ready;
       if (!live) return;
-      hold = holdFile(tab, commit, path, first?.onScreen() ?? true);
+      hold = holdFile(tab, commit, path, first?.onScreen() ?? true, from);
       const found = await hold.code;
       // What changed by the head on screen, so the code is drawn once, with its flag.
       const since =
@@ -271,7 +281,7 @@ function ExcerptCode({
       wait?.done();
       hold?.release();
     };
-  }, [want, near, first, tab, commit, head, path, start, end]);
+  }, [want, near, first, tab, commit, head, path, start, end, from]);
 
   // Its lines that changed, marked on the view it has, which isn't drawn again for them, so it
   // keeps its highlighting; and on the next one it's drawn with.
@@ -416,6 +426,7 @@ function StepCode({ tab, commit, target }: { tab: string; commit: string; target
   const id = `overview-step${useId()}`;
   const view = useRef<FileView>(undefined);
   const [file, setFile] = useState<StepFile | undefined>(undefined);
+  const from = useStartOf(tab);
   const { path } = target;
   const { start, end } = target.lines;
 
@@ -423,7 +434,7 @@ function StepCode({ tab, commit, target }: { tab: string; commit: string; target
     setFile(undefined);
     if (!near) return undefined;
     let live = true;
-    const hold = holdFile(tab, commit, path, first?.onScreen() ?? true);
+    const hold = holdFile(tab, commit, path, first?.onScreen() ?? true, from);
     void hold.code.then((found) => {
       if (!live) return;
       setFile(
@@ -440,7 +451,7 @@ function StepCode({ tab, commit, target }: { tab: string; commit: string; target
       live = false;
       hold.release();
     };
-  }, [near, first, tab, commit, path]);
+  }, [near, first, tab, commit, path, from]);
 
   const lines = file && 'lines' in file ? file : undefined;
   useLayoutEffect(() => {

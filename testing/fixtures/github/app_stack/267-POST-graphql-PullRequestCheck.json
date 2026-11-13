@@ -15,23 +15,23 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4784",
-      "x-ratelimit-reset": "1794545327",
+      "x-ratelimit-remaining": "4982",
+      "x-ratelimit-reset": "1794549221",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "216"
+      "x-ratelimit-used": "18"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4784,
-          "used": 216,
-          "resetAt": "2026-11-13T04:48:47Z"
+          "remaining": 4982,
+          "used": 18,
+          "resetAt": "2026-11-13T05:53:41Z"
         },
         "repository": {
           "pullRequest": {
-            "updatedAt": "2026-11-13T02:43:48Z",
+            "updatedAt": "2026-11-13T04:18:46Z",
             "state": "OPEN",
             "isDraft": false,
             "baseRefName": "stack/root",
@@ -44,10 +44,10 @@
             "mergeQueueEntry": null,
             "timelineItems": {
               "updatedAt": "2026-11-13T09:30:00Z",
-              "totalCount": 7
+              "totalCount": 11
             },
             "revisionEvents": {
-              "filteredCount": 2
+              "filteredCount": 4
             },
             "commits": {
               "totalCount": 3
@@ -71,7 +71,7 @@
             "changedFiles": 3,
             "lastEditedAt": null,
             "timelineEvents": {
-              "filteredCount": 7,
+              "filteredCount": 11,
               "updatedAt": "2026-11-13T09:30:00Z"
             }
           }

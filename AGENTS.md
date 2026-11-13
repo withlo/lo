@@ -442,6 +442,9 @@ status bar.
   earlier fetch brought while GitHub can't be reached.
 - The head on screen is GitHub's when the tab opened. A newer push says so in a banner, and moves
   nothing until it's loaded.
+- Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
+  banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
+  the banners it has.
 - A tab holds a whole stack: a view of each layer the reader has shown (`tab.layer`), each a pull
   request's tab as described here, with an id of its own: the tab's for the pull request it opened
   on, and `<tab id>:<number>` for another layer. What main and the other features keep of a pull
@@ -453,6 +456,12 @@ status bar.
   title where it is in its stack. The stacks feature tells the tab which stack each holds
   (`setLayers`), so a link to a layer shows the tab opened on it, or else the first whose stack
   holds it, at that layer. Two tabs that turn out to hold one stack stay two.
+- The stacks feature tells a view where its layer's diff starts (`compareFrom`): the commit the
+  layer below ends at, or none for its base branch. The local copy fetches that commit by its ID if
+  it lacks it, and reports where the head meets it as the merge base, the commit itself when the
+  head holds it, never earlier than where the head left its base branch. A commit it can't get
+  leaves the merge base on the base branch, and `from.missing` says so. The tab says whether the
+  diff was drawn at the head on screen from that start (`drawn`); a new start clears it.
 - A tab says it's offline once GitHub has been out of reach for 25 s, so a blip says nothing. A
   build run from source takes another wait from `LO_OFFLINE_AFTER_MS`, for its tests; a packaged
   build ignores it.
@@ -476,9 +485,12 @@ Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `c
   `.gitattributes` and the lockfiles `@lo/review` names. Until then it reads GitHub's tree of the
   head and the pull request's files from the REST API. A tree GitHub lists only in part, or one that
   couldn't be read, leaves the changed files alone, saying why. What the copy says replaces what
-  GitHub said, and a new head on screen starts again. GitHub is asked only about a head it gave,
-  never one restored from what Lo saved, and a read that fails is tried again after 5 s, doubling to
-  5 minutes.
+  GitHub said, and a new head on screen starts again. A stack's layer compared with the layer below
+  lists what changed from GitHub's comparison of the two commits (`readComparison`), 300 files at
+  most, until the copy has worked out where the head meets that commit, and the pull request's own
+  files when GitHub can't compare them, without asking again. A new start reads what changed again,
+  and keeps the files. GitHub is asked only about a head it gave, never one restored from what Lo
+  saved, and a read that fails is tried again after 5 s, doubling to 5 minutes.
 - Up to 20,000 files go to the window whole, on `tree.state`. Past that, main sends the root's
   entries, and the window asks for each folder's (`tree.folder`) as it opens one, 500 folders a
   request at most. Past 500,000, the tree shows only the changed files.
@@ -516,9 +528,14 @@ changing, as when the local copy marks one generated, doesn't reorder a drawn vi
 - Main lists each changed file's versions at the head on screen (`diff.state`): from the local
   copy's comparison once it's ready, with each side's blob and size, and from GitHub's list of the
   pull request's files until then; or, while two revisions are compared, from their comparison in
-  the local copy, which a new comparison starts again. Each says how the file starts out: shown,
-  closed as generated, kept out as large until `za`, binary, or unchanged. Files are named by their
-  place in the list, never by their paths.
+  the local copy, which a new comparison starts again. A stack's layer's view starts where the
+  stacks feature says (`compareFrom`): from GitHub's comparison with that commit, 300 files at most,
+  until the local copy is ready compared with the same commit, which the diff waits for once the
+  copy is ready at the head. When GitHub can't compare them, for any reason, the pull request's own
+  files stand in, and `uncompared` says so. A new start is a new view, never swapped in place, and
+  the whole-file view and an overview's code read their base side again. Each says how the file
+  starts out: shown, closed as generated, kept out as large until `za`, binary, or unchanged. Files
+  are named by their place in the list, never by their paths.
 - The window asks for files' texts in batches (`diff.texts`), first files first, and the background
   process diffs them (`diff.files`), finds moved code (`diff.moves`) and highlights them
   (`diff.highlight`). The view is drawn once every file that shows its lines has its diff, and the
@@ -538,8 +555,9 @@ changing, as when the local copy marks one generated, doesn't reorder a drawn vi
   labels, until it's off screen once the reader stops scrolling, moves the cursor, or opens or
   closes it, and then takes the loader's latest; a file off screen changes at once, how it starts
   out included (generated, large, or no longer either).
-- Once the view is drawn, the window says so (`diff.drawn`), and the tab keeps that head on screen,
-  even one it took from what it saved: a newer one from GitHub is offered as a newer push.
+- Once the view is drawn, the window says so (`diff.drawn`, with where it starts), and the tab keeps
+  that head on screen, even one it took from what it saved: a newer one from GitHub is offered as a
+  newer push.
 - `diff.layout` and `diff.whitespace` are settings; `gi` and `gw` change them.
 
 ### Revisions
@@ -598,12 +616,19 @@ them.
   repository's tabs, when any of those changes. Until the rulesets have been read once, a tab's
   stack is unknown, and a tab that acts as nobody has none to show.
 - A tab shows its stack when it has two layers or more, when its pull request is in a GitHub stack,
-  or when it needs a rebase. Only the tab on screen reads its layers' state (`poller.stackLayers`,
-  by the layers' node IDs): their reviews, checks, places in the merge queue and viewed counts. It
-  reads them again when the list shows a layer at a newer head than its state, and stops once the
-  tab closes or its pull request leaves the stack. It also reads which pull requests have an
-  overview, once for the repository (`overviewRefNumbers`, through `poller.readCached`, kept with
-  its ETag and read again on the 5-minute refresh).
+  or when it needs a rebase on a merged layer. Only the tab on screen reads its layers' state
+  (`poller.stackLayers`, by the layers' node IDs): their reviews, checks, places in the merge queue
+  and viewed counts. It reads them again when a list fetched after the state shows a layer at
+  another head, and stops once the tab closes or its pull request leaves the stack. It also reads
+  which pull requests have an overview, once for the repository (`overviewRefNumbers`, through
+  `poller.readCached`, kept with its ETag and read again on the 5-minute refresh).
+- Where the layer on screen's diff starts is `@lo/stacks`' `layerStart` for its head, once the list
+  the stack was found in has the head on screen (`planStart`). Before the diff is drawn, main sets
+  it on the tab (`compareFrom`). Once it's drawn, a different start is only offered: `stacks.stack`
+  carries the offer, a banner in the tab's `tab.banners` slot shows it, and its button calls
+  `stacks.useStart`, which starts the diff again from there. A start that isn't known for the head
+  on screen goes back to the base branch while nothing is drawn. When the local copy can't get the
+  commit, the stack's notes say so.
 - When the pull request on screen merges or closes, its row stays where it was, among the other
   layers as the stack now has them, while they're still one stack.
 - The window gets each tab's stack on `stacks.stack`, and asks for it with `stacks.state`: its rows

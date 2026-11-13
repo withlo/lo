@@ -1,27 +1,27 @@
 {
   "request": {
     "method": "GET",
-    "url": "https://api.github.com/repos/rozed-dev/e2e/activity?ref=refs%2Fheads%2Fstack%2Fa&direction=desc&per_page=100"
+    "url": "https://api.github.com/repos/rozed-dev/e2e/activity?ref=refs%2Fheads%2Fstack%2Froot&direction=desc&per_page=100"
   },
   "response": {
     "status": 200,
     "headers": {
       "content-type": "application/json; charset=utf-8",
-      "etag": "W/\"ad1e6e1bea8f1fbdcfa75dc5a792e06b1c8af2085c087e78d6e90983d96150f5\"",
+      "etag": "W/\"270975609e898a6ce66d482562f0e6bc74546cc0fbe26b5646047920cea28a22\"",
       "x-github-api-version-selected": "2022-11-28",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4827",
-      "x-ratelimit-reset": "1794545595",
+      "x-ratelimit-remaining": "4966",
+      "x-ratelimit-reset": "1794549210",
       "x-ratelimit-resource": "core",
-      "x-ratelimit-used": "173"
+      "x-ratelimit-used": "34"
     },
     "body": [
       {
-        "id": 50093234678,
-        "node_id": "PSH_kwLOVleUfc8AAAALqcoZ9g",
+        "id": 50093235357,
+        "node_id": "PSH_kwLOVleUfc8AAAALqcocnQ",
         "before": "0000000000000000000000000000000000000000",
-        "after": "59b27c734c12089f5a795fe1f30bb1b5cad89650",
-        "ref": "refs/heads/stack/a",
+        "after": "28c4eeff168c2baf91d2b902b85d06e94f8a90c9",
+        "ref": "refs/heads/stack/root",
         "timestamp": "2026-11-13T01:17:24Z",
         "activity_type": "branch_creation",
         "actor": {

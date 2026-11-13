@@ -33,16 +33,19 @@ function state(
   at = HEAD,
   comparison: string | null = null,
   since: string | null = null,
+  compareFrom: string | null = null,
 ): DiffState {
   return {
     id: 't1',
     at,
     comparison,
+    compareFrom,
     since,
     waiting: null,
     from,
     files,
     partial: false,
+    uncompared: false,
     problem: null,
   };
 }
@@ -363,7 +366,14 @@ describe('a tab’s diff in the window', () => {
       texts: ({ from, files: places }) =>
         from === 'github'
           ? Promise.resolve(places.map(() => ({ kind: 'texts' as const, old: 'x\n', new: 'y\n' })))
-          : done.texts({ at: HEAD, comparison: null, since: null, from, files: places }),
+          : done.texts({
+              at: HEAD,
+              comparison: null,
+              compareFrom: null,
+              since: null,
+              from,
+              files: places,
+            }),
     });
     loader.setWhitespace(true);
     loader.take(state(files, 'github'));
@@ -500,6 +510,30 @@ describe('a tab’s diff in the window', () => {
 
     expect(loader.snapshot().ready).toBe(undefined);
     expect(loader.shown('d0')).toBe(undefined);
+  });
+
+  it('starts again, never in place, when a stack’s layer is compared with another commit', async () => {
+    const files = [versions('a.ts')];
+    const { done, list, asked } = work();
+    list(files);
+    const loader = new Loader(done);
+    loader.setWhitespace(true);
+    loader.take(state(files));
+    await settle(loader);
+    const { made, heard } = sink();
+    loader.attach(made);
+    asked.texts.length = 0;
+
+    // The same file at the same head, from where it meets the layer below.
+    const from = 'e'.repeat(40);
+    loader.take(state(files, 'local', HEAD, null, null, from));
+    expect(loader.snapshot().ready).toBe(undefined);
+    await settle(loader);
+
+    expect(asked.texts).toEqual([[0]]);
+    expect(loader.snapshot().ready?.compareFrom).toBe(from);
+    // No file's lines went into the view drawn before.
+    expect(heard.filter((line) => line.startsWith('lines'))).toEqual([]);
   });
 
   it('loads a large file when it’s asked for, and says when it can’t', async () => {

@@ -33,6 +33,19 @@ type Answers =
 const RETARGET = 'PATCH /repos/rozed-dev/e2e/pulls/';
 
 /**
+ * `app_stack_convert`'s answers, and GitHub's comparison of #C's head with #B's, from `app_stack`:
+ * #C's diff starts at #B's head, and until the local copy is ready it's that comparison, which this
+ * cassette was recorded before Lo read. A comparison of two commits doesn't change.
+ */
+function convertAnswers(): Interaction[] {
+  const recorded = cassette('app_stack_convert').interactions.map(({ interaction }) => interaction);
+  const compared = cassette('app_stack')
+    .interactions.map(({ interaction }) => interaction)
+    .filter(({ request }) => new URL(request.url).pathname.includes('/compare/'));
+  return [...recorded, ...compared];
+}
+
+/**
  * `app_stack_convert`, but #C as GitHub would have it: each read of it finds the base branch the
  * last change GitHub took gave it, however many reads came first, and making the stack, or
  * changing #C's base, answers as `answers` says. Everything else answers as recorded.
@@ -44,9 +57,7 @@ class Answering extends Replay {
   #base = 'stack/root';
 
   constructor(answers: Answers) {
-    const recorded = cassette('app_stack_convert').interactions.map(
-      ({ interaction }) => interaction,
-    );
+    const recorded = convertAnswers();
     super(`app_stack_convert, ${answers}`, recorded);
     const pull = recorded.find(({ request }) => request.method === 'PATCH');
     if (!pull) throw new Error('app_stack_convert changes no base branch');
@@ -115,7 +126,9 @@ const test = onStacks.extend<{ answers: Answers }>({
   answers: ['recorded', { option: true }],
   github: async ({ answers }, use) => {
     const server = await serveReplay(
-      answers === 'recorded' ? Replay.cassette('app_stack_convert') : new Answering(answers),
+      answers === 'recorded'
+        ? new Replay('app_stack_convert', convertAnswers())
+        : new Answering(answers),
     );
     await use(server);
     await server.close();

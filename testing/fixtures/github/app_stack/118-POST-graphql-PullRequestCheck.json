@@ -6,7 +6,7 @@
     "variables": {
       "owner": "rozed-dev",
       "name": "e2e",
-      "number": 87
+      "number": 84
     },
     "query_sha256": "ca008209e496ac84a5c7317d266f8c0073cbcf8760c30f5896796e361b06bad0"
   },
@@ -15,42 +15,42 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4813",
-      "x-ratelimit-reset": "1794545327",
+      "x-ratelimit-remaining": "4971",
+      "x-ratelimit-reset": "1794549217",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "187"
+      "x-ratelimit-used": "29"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4813,
-          "used": 187,
-          "resetAt": "2026-11-13T04:48:47Z"
+          "remaining": 4971,
+          "used": 29,
+          "resetAt": "2026-11-13T05:53:37Z"
         },
         "repository": {
           "pullRequest": {
-            "updatedAt": "2026-11-13T01:17:39Z",
+            "updatedAt": "2026-11-13T04:18:46Z",
             "state": "OPEN",
             "isDraft": false,
-            "baseRefName": "stack/m",
-            "baseRefOid": "a5f519461fbac8b315f978b48deb5cf66ca22a22",
-            "headRefOid": "b0e71e0b3274ad2bba7ddd21c6bcf04810d056f2",
+            "baseRefName": "stack/root",
+            "baseRefOid": "28c4eeff168c2baf91d2b902b85d06e94f8a90c9",
+            "headRefOid": "f9db1743681826e72f3b31e3d9967d28a55af20d",
             "reviewDecision": null,
             "mergeStateStatus": "CLEAN",
             "statusCheckRollup": null,
             "checkCounts": null,
             "mergeQueueEntry": null,
             "timelineItems": {
-              "updatedAt": "2026-11-13T10:00:00Z",
-              "totalCount": 1
+              "updatedAt": "2026-11-13T09:30:00Z",
+              "totalCount": 11
             },
             "revisionEvents": {
-              "filteredCount": 0
+              "filteredCount": 4
             },
             "commits": {
-              "totalCount": 1
+              "totalCount": 3
             },
             "reviews": {
               "totalCount": 0
@@ -68,11 +68,11 @@
             "comments": {
               "totalCount": 0
             },
-            "changedFiles": 1,
+            "changedFiles": 3,
             "lastEditedAt": null,
             "timelineEvents": {
-              "filteredCount": 1,
-              "updatedAt": "2026-11-13T10:00:00Z"
+              "filteredCount": 11,
+              "updatedAt": "2026-11-13T09:30:00Z"
             }
           }
         }
