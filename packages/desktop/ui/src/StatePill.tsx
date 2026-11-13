@@ -36,7 +36,8 @@ export function StatePill({ state }: { state: PullRequestState }) {
   );
 }
 
-function StateIcon({ state }: { state: PullRequestState }) {
+/** The shapes of a state's icon, for an `svg` the caller draws: `lo-i` on a 16 grid. */
+export function StateIcon({ state }: { state: PullRequestState }) {
   switch (state) {
     case 'open':
       return (
