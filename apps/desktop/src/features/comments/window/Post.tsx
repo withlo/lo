@@ -32,13 +32,16 @@ export interface PostProps {
   readonly pull: PostPull;
 }
 
-/** The HTML the window holds of `post`, re-rendering as it changes. */
-function useHeld(view: string, post: PostRef) {
+/**
+ * The HTML the window holds of `post` at `version`, its Markdown now, re-rendering as it changes:
+ * none once the post is edited, until it's read again.
+ */
+function useHeld(view: string, post: PostRef, version: string) {
   const subscribe = useCallback(
     (listener: () => void) => bodies.subscribe(view, post, listener),
     [view, post],
   );
-  return useSyncExternalStore(subscribe, () => bodies.held(view, post));
+  return useSyncExternalStore(subscribe, () => bodies.held(view, post, version));
 }
 
 /** Opens a link followed in a post: an `https` page through main, a pull request in its tab. */
@@ -59,16 +62,17 @@ export function Post({ view, post: given, markdown, pull }: PostProps) {
     () => (key === '#description' ? { kind: 'description' } : { kind: 'post', id: key }),
     [key],
   );
-  const held = useHeld(view, post);
-  const html = held !== undefined && held.html.length <= HTML_LIMIT ? held.html : null;
   const text = markdown.slice(0, MARKDOWN_LIMIT);
+  const held = useHeld(view, post, text);
+  const html = held !== undefined && held.html.length <= HTML_LIMIT ? held.html : null;
   const { owner, repo, number } = pull;
   const [made, setMade] = useState(() => drawnOf(view, post));
   const [near, setNear] = useState(false);
   const image = useCallback((url: string) => postImage(view, url), [view]);
 
   // Its tree, made anew from its HTML once that's there, or from its Markdown; the one before
-  // stays until the new one is made.
+  // stays until the new one is made, unless the post was edited since: then its new Markdown shows
+  // at once, as text.
   useEffect(() => {
     const kept = drawnOf(view, post);
     if (kept && kept.html === html && kept.markdown === text) {
@@ -92,35 +96,37 @@ export function Post({ view, post: given, markdown, pull }: PostProps) {
     return () => stop.abort();
   }, [view, post, html, text, owner, repo, number]);
 
+  const shown = made?.markdown === text ? made : undefined;
+
   // Whether it's on screen or near it, which asks for its HTML.
   useEffect(() => {
     const own = element.current;
     return own ? watchNear(own, setNear) : undefined;
   }, []);
   useEffect(() => {
-    if (near) bodies.want(view, post);
-  }, [near, view, post]);
+    if (near) bodies.want(view, post, text);
+  }, [near, view, post, text]);
 
   // While its images are on screen, its HTML is read again before their addresses lapse: once
   // it's seen again, if it's hidden then, as in a middle view another has replaced.
-  const images = made !== undefined && made.html !== null && made.rendered.images;
+  const images = shown !== undefined && shown.html !== null && shown.rendered.images;
   const readAt = held?.at;
   useEffect(() => {
     if (!near || !images || readAt === undefined) return undefined;
     let timer: ReturnType<typeof setTimeout>;
     const check = () => {
-      if (seen(element.current)) bodies.again(view, post);
+      if (seen(element.current)) bodies.again(view, post, text);
       else timer = setTimeout(check, HIDDEN_RECHECK);
     };
     timer = setTimeout(check, Math.max(0, readAt + STALE_AFTER - Date.now()));
     return () => clearTimeout(timer);
-  }, [near, images, readAt, view, post]);
+  }, [near, images, readAt, view, post, text]);
 
   return (
     <div ref={element} data-lo-post={key}>
-      {made ? (
+      {shown ? (
         <Markdown
-          tree={made.rendered.tree}
+          tree={shown.rendered.tree}
           onFollow={follow}
           images={image}
           className="lo-prose read-comment"

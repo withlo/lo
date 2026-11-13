@@ -146,6 +146,7 @@ export {
   type Place,
   type Side,
   type Span,
+  type RowTarget,
   type TabTarget,
   type Target,
   type TargetKind,

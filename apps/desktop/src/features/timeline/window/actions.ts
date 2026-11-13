@@ -1,5 +1,8 @@
-// What the timeline's keys do on the timeline on screen: move between its rows, open the row the
-// keyboard is on on GitHub, and the actions a row's buttons take, which the palette offers too.
+// What the timeline's keys do on the timeline on screen: move between its rows and through the
+// links and buttons of the row the keyboard is on, and what a row's buttons do, which its menu and
+// the palette offer too, for the row right-clicked or the one the keyboard is on.
+
+import type { RowTarget, Target } from '@lo/ui/commands';
 
 import { notify } from '../../../window/commands/notices.tsx';
 import { showDiff } from '../../diff/window/shared.ts';
@@ -52,6 +55,47 @@ export function rowElement(list: HTMLOListElement | null, key: string): HTMLElem
   return undefined;
 }
 
+/** What a key in the timeline acts on: the row the keyboard is on. */
+export function rowTarget(timeline: DrawnTimeline | undefined): Target {
+  const row = timeline && focusedRow(timeline);
+  return row === undefined ? { kind: 'none' } : { kind: 'row', row: row.key };
+}
+
+/** The row `target` names in the timeline on screen, or why there's none. */
+function rowAt(target: RowTarget): { timeline: DrawnTimeline; row: Row } | string {
+  const timeline = onScreen();
+  if (typeof timeline === 'string') return timeline;
+  const row = timeline.rows.find((each) => each.key === target.row);
+  return row ? { timeline, row } : 'That event isn’t in the timeline any more.';
+}
+
+/**
+ * A command on a row that only some rows have: it runs `act` on the row `target` names, which it's
+ * listed for and enabled on when `has` says why not of it, or nothing.
+ */
+export function onRow(
+  has: (row: Row, timeline: DrawnTimeline) => string | undefined,
+  act: (row: Row, timeline: DrawnTimeline) => void | Promise<void>,
+) {
+  return {
+    run: async (target: RowTarget) => {
+      const at = rowAt(target);
+      if (typeof at !== 'string' && has(at.row, at.timeline) === undefined) {
+        await act(at.row, at.timeline);
+      }
+    },
+    enabled: (target: RowTarget): true | string => {
+      const at = rowAt(target);
+      if (typeof at === 'string') return at;
+      return has(at.row, at.timeline) ?? true;
+    },
+    listed: (target: RowTarget): boolean => {
+      const at = rowAt(target);
+      return typeof at !== 'string' && has(at.row, at.timeline) === undefined;
+    },
+  };
+}
+
 /** Puts the keyboard on row `key` of `timeline`, and brings it on screen. */
 export function focusRow(timeline: DrawnTimeline, key: string): void {
   focusedRows.set(timeline.tab.id, key);
@@ -60,23 +104,59 @@ export function focusRow(timeline: DrawnTimeline, key: string): void {
   });
 }
 
-/** `j` and `k`: the next or previous row, stopping at the ends. */
+/**
+ * `j` and `k`: the next or previous row, staying put at the ends, as the app's other lists do. The
+ * list takes focus back from a link or button in the row it leaves.
+ */
 export function move(by: 1 | -1): void {
   const timeline = onScreen();
   if (typeof timeline === 'string') return;
   const at = indexOfFocused(timeline);
   const next = timeline.rows[Math.min(Math.max(at + by, 0), timeline.rows.length - 1)];
   if (next) focusRow(timeline, next.key);
+  const list = timeline.list();
+  if (list && document.activeElement !== list) list.focus({ preventScroll: true });
 }
 
-/** Whether there's a row to move to, or why not. */
-export function movable(by: 1 | -1): true | string {
+/** What `Tab` stops at in a row: its links and buttons, as drawn now. */
+const STOPS = 'a[href], button, input, select, textarea, [tabindex]';
+
+/** Whether `target`, what a click landed on, is in a link or button of a row. */
+export function inStop(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  // The list takes focus itself; a stop is inside one of its rows.
+  const stop = target.closest(STOPS);
+  return stop !== null && stop.closest('li[data-key]') !== null;
+}
+
+/** The links and buttons in `row`, in order, that can take focus now. */
+function stopsIn(row: HTMLElement): HTMLElement[] {
+  return [...row.querySelectorAll<HTMLElement>(STOPS)].filter(
+    (element) =>
+      element.tabIndex >= 0 &&
+      !(element instanceof HTMLButtonElement && element.disabled) &&
+      element.closest('[hidden], [inert]') === null &&
+      element.getClientRects().length > 0,
+  );
+}
+
+/**
+ * `Tab` and `⇧Tab`: the next or previous link or button in the row the keyboard is on, round
+ * through the list itself, so focus never leaves the row. `Esc`, as in any middle view, gives focus
+ * back to the list.
+ */
+export function nextLink(by: 1 | -1): void {
   const timeline = onScreen();
-  if (typeof timeline === 'string') return timeline;
-  const at = indexOfFocused(timeline);
-  if (by > 0 && at >= timeline.rows.length - 1) return 'This is the newest event.';
-  if (by < 0 && at <= 0) return 'This is the description, the first.';
-  return true;
+  if (typeof timeline === 'string') return;
+  const list = timeline.list();
+  const row = focusedRow(timeline);
+  const element = row && rowElement(list, row.key);
+  if (!list || !element) return;
+  const order = [list, ...stopsIn(element)];
+  const at = order.findIndex((each) => each === document.activeElement);
+  const next = order[(Math.max(0, at) + by + order.length) % order.length] ?? list;
+  next.focus({ preventScroll: true });
+  (next === list ? element : next).scrollIntoView({ block: 'nearest' });
 }
 
 /** The pull request's page on GitHub, and the path under it. */
@@ -109,12 +189,16 @@ export function linkOf(tab: PullTab, row: Row): string {
   }
 }
 
-/** `gx`: opens the row the keyboard is on on GitHub. */
-export async function openOnGithub(): Promise<void> {
-  const timeline = onScreen();
-  if (typeof timeline === 'string') return;
-  const row = focusedRow(timeline);
-  if (row) await tabs().openExternal({ url: linkOf(timeline.tab, row) });
+/** Opens `row` of `tab` on GitHub, as `gx` does. */
+export async function openOnGithub(tab: PullTab, row: Row): Promise<void> {
+  await tabs().openExternal({ url: linkOf(tab, row) });
+}
+
+/** Opens `tab`'s pull request on GitHub, for the older events Lo didn't read. */
+export function seeOlder(tab: PullTab): void {
+  tabs()
+    .openExternal({ url: pullPage(tab) })
+    .catch((error: unknown) => console.error("Lo couldn't open GitHub:", error));
 }
 
 /** Shows the hidden comment or review `key` in tab `tab`, and its images with it. */

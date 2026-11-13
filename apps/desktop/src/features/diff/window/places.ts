@@ -176,6 +176,7 @@ function placeOf(target: Target): { file: string; side: Side } | undefined {
     case 'layer':
     case 'block':
     case 'tab':
+    case 'row':
     case 'none':
       return undefined;
     default:

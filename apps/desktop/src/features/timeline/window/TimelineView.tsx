@@ -19,15 +19,33 @@ import {
   TimelineReview,
   type TimelineHidden,
 } from '@lo/ui';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { setScopeSource } from '@lo/ui/commands';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
 
+import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { setMiddle } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
 import { signIn } from '../../accounts/window/shared.ts';
 import { Post, type PostPull } from '../../comments/window/shared.ts';
 import { showDiff } from '../../diff/window/shared.ts';
 import { usePull, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
-import { compare, focusRow, setDrawn, showHidden, stillHidden } from './actions.ts';
+import {
+  compare,
+  focusRow,
+  inStop,
+  rowTarget,
+  setDrawn,
+  showHidden,
+  stillHidden,
+} from './actions.ts';
 import { tabs } from './main.ts';
 import { rowsOf, type Part, type Person, type Row } from './rows.ts';
 import {
@@ -167,16 +185,27 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
     () => root.current,
     () => list.current?.focus({ preventScroll: true }),
   );
-  // While it's on screen, the keys act on it.
   const tabId = tab.id;
   const { owner, repo, number } = tab;
   const pull = useMemo<PostPull>(() => ({ owner, repo, number }), [owner, repo, number]);
-  useLayoutEffect(() => {
-    if (!shown) return undefined;
-    return setDrawn({ tab, rows, list: () => list.current });
-  }, [shown, tab, rows]);
+  const drawn = useMemo(() => ({ tab, rows, list: () => list.current }), [tab, rows]);
+  // While it's on screen, the keys act on it, on the row the keyboard is on.
+  useLayoutEffect(() => (shown ? setDrawn(drawn) : undefined), [shown, drawn]);
+  useEffect(() => {
+    const own = root.current;
+    return own ? setScopeSource(own, { target: () => rowTarget(drawn) }) : undefined;
+  }, [drawn]);
+  // A right-click on a row: the row's menu, the keyboard moving to it.
+  const menu = useMenuTarget((event) => {
+    const element = event.target instanceof Element ? event.target.closest('li[data-key]') : null;
+    const key = element instanceof HTMLElement ? element.dataset['key'] : undefined;
+    if (key === undefined || !rows.some((row) => row.key === key)) return undefined;
+    focusRow(drawn, key);
+    list.current?.focus({ preventScroll: true });
+    return { kind: 'row', row: key };
+  });
   return (
-    <div ref={root} className="h-full overflow-y-auto" data-lo-scope="timeline">
+    <div ref={root} className="h-full overflow-y-auto" data-lo-scope="timeline" {...menu}>
       <Timeline listRef={list} tabIndex={0} focused={focused} aria-label="Timeline">
         {rows.map((row) => (
           <RowOf
@@ -185,9 +214,10 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
             pull={pull}
             row={row}
             now={now}
-            onFocus={() => {
-              focusRow({ tab, rows, list: () => list.current }, row.key);
-              list.current?.focus({ preventScroll: true });
+            onFocus={(event) => {
+              focusRow(drawn, row.key);
+              // A link or button clicked in the row keeps focus, for what it does.
+              if (!inStop(event.target)) list.current?.focus({ preventScroll: true });
             }}
           />
         ))}
@@ -263,7 +293,7 @@ function RowOf({
   pull: PostPull;
   row: Row;
   now: number;
-  onFocus: () => void;
+  onFocus: (event: MouseEvent<HTMLElement>) => void;
 }) {
   const attributes = { item: row.key, 'data-key': row.key, onClick: onFocus };
   const hidden = (): TimelineHidden | undefined => {

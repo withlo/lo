@@ -307,10 +307,14 @@ function eventOf(key: string, item: Item, repository: string): Row | undefined {
       return eventRow(key, 'person', item.event.at, parts);
     }
     case 'reviewRequest': {
-      const asked: Part =
-        item.reviewer === undefined
-          ? name(undefined)
-          : { kind: 'name', name: reviewerOf(item.reviewer).login };
+      // GitHub names no reviewer it hides from the account, such as a team it can't see.
+      if (item.reviewer === undefined) {
+        return eventRow(key, 'eye', item.event.at, [
+          name(item.event.actor),
+          text(item.added ? ' asked for a review' : ' removed a review request'),
+        ]);
+      }
+      const asked: Part = { kind: 'name', name: reviewerOf(item.reviewer).login };
       const parts = item.added
         ? [name(item.event.actor), text(' asked '), asked, text(' for a review')]
         : [name(item.event.actor), text(' removed the review request for '), asked];

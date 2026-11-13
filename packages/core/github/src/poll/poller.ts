@@ -1093,8 +1093,9 @@ export class Poller {
 
   /**
    * `pull`'s labels, reviewers, assignees and draft state, as {@link Poller.readCached} keeps them,
-   * read as this account. They're read again when the pull request is updated or a review is
-   * submitted, and on the 5-minute refresh.
+   * read as this account. They're read again when the pull request is updated, its timeline gains
+   * or loses an item (a label, a review request, an assignee, a draft marked or made ready, a review
+   * dismissed), or a review is submitted, and on the 5-minute refresh.
    */
   pullRequestSidebar(pull: PullRef): Promise<Cached<PullRequestSidebar> | undefined> {
     return this.readCached(pull, PULL_REQUEST_SIDEBAR, (client) =>

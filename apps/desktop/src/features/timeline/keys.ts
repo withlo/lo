@@ -1,5 +1,7 @@
-// The timeline's keys, in its own view, the `timeline` scope: moving between its rows, and opening
-// the row the keyboard is on on GitHub. The actions a row's buttons take have no key of their own.
+// The timeline's keys, in its own view, the `timeline` scope: moving between its rows, opening the
+// row the keyboard is on on GitHub, and going through its links and buttons with `Tab`, `Esc` going
+// back to the list. What a row's buttons do is also on the row's right-click menu, and in the
+// palette for the row the keyboard is on, without a key of its own.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -24,14 +26,71 @@ export default defineCommands(
       repeat: true,
     },
     /**
-     * Opens the row the keyboard is on on GitHub: a comment or review where it is, a push's commit,
-     * a force-push's comparison, a mention's source, and anything else the pull request.
+     * In the row the keyboard is on, its next link or button, round through the list itself: it
+     * never leaves the row. `Esc` goes back to the list, as in any middle view.
+     */
+    nextLink: {
+      label: 'Next link or button in the event',
+      group: 'Move',
+      keys: ['tab'],
+      when: timeline,
+    },
+    previousLink: {
+      label: 'Previous link or button in the event',
+      group: 'Move',
+      keys: ['shift+tab'],
+      when: timeline,
+    },
+    /** Shows the hidden comment or review, as its "Show comment" does. */
+    showComment: {
+      label: 'Show the hidden comment',
+      group: 'Act',
+      keys: [],
+      targets: ['row'],
+      when: timeline,
+      menu: { on: 'row', order: 0 },
+    },
+    /** Shows the diff, where a review's comments are, as its "Show in the diff" does. */
+    showInDiff: {
+      label: 'Show the review’s comments in the diff',
+      group: 'View',
+      keys: [],
+      targets: ['row'],
+      when: timeline,
+      menu: { on: 'row', order: 10 },
+    },
+    /**
+     * Compares the revisions before and after a force-push, and shows the diff, as its "Compare"
+     * does.
+     */
+    compare: {
+      label: 'Compare the force-push’s revisions',
+      group: 'View',
+      keys: [],
+      targets: ['row'],
+      when: timeline,
+      menu: { on: 'row', order: 20 },
+    },
+    /** Opens the pull request on GitHub, for the events Lo didn't read, as "See them on GitHub" does. */
+    seeOlder: {
+      label: 'See the older events on GitHub',
+      group: 'Copy and open',
+      keys: [],
+      targets: ['row'],
+      when: timeline,
+      menu: { on: 'row', order: 30 },
+    },
+    /**
+     * Opens the row on GitHub: a comment or review where it is, a push's commit, a force-push's
+     * comparison, a mention's source, and anything else the pull request.
      */
     openOnGithub: {
       label: 'Open on GitHub',
       group: 'Copy and open',
       keys: ['g x'],
+      targets: ['row'],
       when: timeline,
+      menu: { on: 'row', order: 40 },
     },
   },
   { scopes: ['timeline'] },

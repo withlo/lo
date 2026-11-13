@@ -1,10 +1,12 @@
 // Posts' HTML in the window, as main read it from GitHub for each view of a pull request's tab: in
 // the window's memory only, never kept anywhere else, since its images' addresses are signed for a
 // few minutes. Posts are asked for as they come on screen or near it, a hundred at most an ask, one
-// ask at a time for each view, so posts that come on screen together go in one read. A post whose
-// images are on screen is asked for again once its HTML is `STALE_AFTER` old, before their
-// addresses lapse. An ask that fails is tried again after a wait that doubles each time, as long
-// as the posts are still wanted.
+// ask at a time for each view, so posts that come on screen together go in one read. HTML is held
+// for the version of the post it was asked for, its Markdown as the window has it: once the post is
+// edited, its HTML is no longer the post's, so it shows from its new Markdown, and is asked for
+// again. A post whose images are on screen is asked for again once its HTML is `STALE_AFTER` old,
+// before their addresses lapse. An ask that fails is tried again after a wait that doubles each
+// time, as long as the posts are still wanted.
 
 import { POSTS_AN_ASK, type Bodies } from '../contract.ts';
 
@@ -12,10 +14,14 @@ import { POSTS_AN_ASK, type Bodies } from '../contract.ts';
 export type PostRef =
   { readonly kind: 'description' } | { readonly kind: 'post'; readonly id: string };
 
-/** A post's HTML as main read it, and when, in milliseconds since the Unix epoch. */
+/**
+ * A post's HTML as main read it, when, in milliseconds since the Unix epoch, and the version of the
+ * post it was asked for: its Markdown, as the window had it then.
+ */
 export interface Held {
   readonly html: string;
   readonly at: number;
+  readonly version: string;
 }
 
 /** How old a post's HTML is when its images on screen ask for it again: GitHub signs them for 5. */
@@ -44,10 +50,13 @@ export interface BodyStoreOptions {
 /** What the window has of one view's posts. */
 interface ViewBodies {
   readonly held: Map<string, Held>;
-  /** Posts GitHub gave nothing for: deleted since, or not ones the account can see. */
-  readonly gone: Set<string>;
-  /** Posts to ask for at the next ask. */
-  readonly wanted: Set<string>;
+  /**
+   * Posts GitHub gave nothing for, deleted since or not ones the account can see, with the version
+   * each was asked for.
+   */
+  readonly gone: Map<string, string>;
+  /** Posts to ask for at the next ask, with the version of each. */
+  readonly wanted: Map<string, string>;
   readonly listeners: Map<string, Set<() => void>>;
   /** Whether an ask is under way. */
   asking: boolean;
@@ -76,27 +85,34 @@ export class BodyStore {
     this.#log = log ?? ((line) => console.error(line));
   }
 
-  /** The HTML the window holds of `post` on view `view`, if any. */
-  held(view: string, post: PostRef): Held | undefined {
-    return this.#views.get(view)?.held.get(keyOf(post));
+  /**
+   * The HTML the window holds of `post` on view `view` at `version`, its Markdown as the window has
+   * it now, if any: HTML read for another version is of a post since edited, and isn't its own.
+   */
+  held(view: string, post: PostRef, version: string): Held | undefined {
+    const held = this.#views.get(view)?.held.get(keyOf(post));
+    return held?.version === version ? held : undefined;
   }
 
-  /** Whether GitHub gave nothing for `post`, so it shows from its Markdown. */
-  gone(view: string, post: PostRef): boolean {
-    return this.#views.get(view)?.gone.has(keyOf(post)) ?? false;
+  /** Whether GitHub gave nothing for `post` at `version`, so it shows from its Markdown. */
+  gone(view: string, post: PostRef, version: string): boolean {
+    return this.#views.get(view)?.gone.get(keyOf(post)) === version;
   }
 
-  /** Asks for `post`'s HTML soon, unless the window holds it or GitHub gave none for it. */
-  want(view: string, post: PostRef): void {
+  /**
+   * Asks for `post`'s HTML at `version` soon, unless the window holds it for that version, or GitHub
+   * gave none for it.
+   */
+  want(view: string, post: PostRef, version: string): void {
     const bodies = this.#viewOf(view);
     const key = keyOf(post);
-    if (bodies.held.has(key) || bodies.gone.has(key)) return;
-    this.#queue(view, bodies, key);
+    if (bodies.held.get(key)?.version === version || bodies.gone.get(key) === version) return;
+    this.#queue(view, bodies, key, version);
   }
 
   /** Asks for `post`'s HTML again soon, though the window holds it, for new image addresses. */
-  again(view: string, post: PostRef): void {
-    this.#queue(view, this.#viewOf(view), keyOf(post));
+  again(view: string, post: PostRef, version: string): void {
+    this.#queue(view, this.#viewOf(view), keyOf(post), version);
   }
 
   /** Calls `listener` each time what the window has of `post` changes, until the returned function. */
@@ -126,8 +142,8 @@ export class BodyStore {
     if (!bodies) {
       bodies = {
         held: new Map(),
-        gone: new Set(),
-        wanted: new Set(),
+        gone: new Map(),
+        wanted: new Map(),
         listeners: new Map(),
         asking: false,
         waiting: undefined,
@@ -138,11 +154,14 @@ export class BodyStore {
     return bodies;
   }
 
-  /** Wants `key` at the next ask, which waits a moment so posts shown together go together. */
-  #queue(view: string, bodies: ViewBodies, key: string): void {
-    if (bodies.wanted.has(key)) return;
-    bodies.wanted.add(key);
-    if (bodies.asking || bodies.waiting) return;
+  /**
+   * Wants `key` at `version` at the next ask, which waits a moment so posts shown together go
+   * together.
+   */
+  #queue(view: string, bodies: ViewBodies, key: string, version: string): void {
+    const queued = bodies.wanted.has(key);
+    bodies.wanted.set(key, version);
+    if (queued || bodies.asking || bodies.waiting) return;
     bodies.waiting = this.#later(() => {
       bodies.waiting = undefined;
       this.#send(view, bodies);
@@ -152,13 +171,24 @@ export class BodyStore {
   /** Asks for what's wanted, a hundred posts at most, and then for the rest. */
   #send(view: string, bodies: ViewBodies): void {
     if (bodies.asking || this.#views.get(view) !== bodies) return;
-    const description = bodies.wanted.delete('#description');
-    const posts = [...bodies.wanted].slice(0, POSTS_AN_ASK);
-    if (posts.length === 0 && !description) return;
-    for (const post of posts) bodies.wanted.delete(post);
+    const asked = new Map<string, string>();
+    let posts = 0;
+    for (const [key, version] of bodies.wanted) {
+      if (key !== '#description') {
+        if (posts >= POSTS_AN_ASK) continue;
+        posts += 1;
+      }
+      asked.set(key, version);
+    }
+    if (asked.size === 0) return;
+    for (const key of asked.keys()) bodies.wanted.delete(key);
+    const description = asked.has('#description');
     bodies.asking = true;
-    const asked = description ? [...posts, '#description'] : posts;
-    this.#ask(view, posts, description).then(
+    this.#ask(
+      view,
+      [...asked.keys()].filter((key) => key !== '#description'),
+      description,
+    ).then(
       (answer) => {
         bodies.asking = false;
         bodies.failures = 0;
@@ -168,8 +198,10 @@ export class BodyStore {
       (error: unknown) => {
         bodies.asking = false;
         bodies.failures += 1;
-        // What was asked is wanted still, unless the window has since had it.
-        for (const key of asked) bodies.wanted.add(key);
+        // What was asked is wanted still, unless a newer version of it is wanted since.
+        for (const [key, version] of asked) {
+          if (!bodies.wanted.has(key)) bodies.wanted.set(key, version);
+        }
         const wait = Math.min(LONGEST_WAIT, FIRST_WAIT * 2 ** (bodies.failures - 1));
         this.#log(
           `Lo couldn't read posts' HTML, and tries again in ${wait / 1000} s: ${error instanceof Error ? error.message : String(error)}`,
@@ -183,28 +215,25 @@ export class BodyStore {
     );
   }
 
-  /** Takes main's answer to an ask for `asked`. */
-  #took(bodies: ViewBodies, asked: readonly string[], answer: Bodies): void {
+  /** Takes main's answer to an ask for `asked`, each post at the version it was asked for. */
+  #took(bodies: ViewBodies, asked: ReadonlyMap<string, string>, answer: Bodies): void {
     const at = this.#now();
     const changed = new Set<string>();
-    if (asked.includes('#description')) {
-      if (answer.description === null) bodies.gone.add('#description');
-      else bodies.held.set('#description', { html: answer.description, at });
-      changed.add('#description');
-    }
-    const askedPosts = new Set(asked);
-    for (const { id, html } of answer.posts) {
-      if (!askedPosts.has(id)) continue;
-      bodies.held.set(id, { html, at });
-      bodies.gone.delete(id);
-      changed.add(id);
-    }
-    for (const id of answer.gone) {
-      if (!askedPosts.has(id)) continue;
-      bodies.held.delete(id);
-      bodies.gone.add(id);
-      changed.add(id);
-    }
+    const hold = (key: string, html: string | null) => {
+      const version = asked.get(key);
+      if (version === undefined) return;
+      if (html === null) {
+        bodies.held.delete(key);
+        bodies.gone.set(key, version);
+      } else {
+        bodies.held.set(key, { html, at, version });
+        bodies.gone.delete(key);
+      }
+      changed.add(key);
+    };
+    if (asked.has('#description')) hold('#description', answer.description);
+    for (const { id, html } of answer.posts) if (id !== '#description') hold(id, html);
+    for (const id of answer.gone) if (id !== '#description') hold(id, null);
     for (const key of changed) {
       for (const listener of bodies.listeners.get(key) ?? []) {
         try {

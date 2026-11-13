@@ -751,7 +751,11 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
   with its last commit's checks, comments and submitted reviews as cards, a force-push that can
   compare its revisions, and every other item as a one-line event in Lo's words.
 - The rows are one listbox, the focusable element, with the row the keyboard is on as its active
-  descendant: `j` and `k` move, and `gx` opens the row on GitHub.
+  descendant: `j` and `k` move, staying put at the ends, and `gx` opens the row on GitHub. `Tab` and
+  `⇧Tab` go through the links and buttons of that row, round through the list, and `Esc` gives focus
+  back to the list. A row is a `row` target, the keys' from the scope and a right-click's from the
+  row clicked: its menu, and the palette for the row the keyboard is on, offer what its buttons do,
+  each listed only for rows that have it.
 
 ### Posts
 
@@ -765,7 +769,9 @@ description's, for the timeline and the diff's threads alike, with its `Post` co
   they come on screen or near it, a hundred at most an ask, one ask at a time for each view. The
   HTML stays in the window's memory, never in main's or the poll cache, since its images' addresses
   are signed for a few minutes; a post whose images are on screen is asked for again once its HTML
-  is 4 minutes old. Main offers the same read to other features as `comments.bodies`.
+  is 4 minutes old. The HTML is held for the Markdown it was asked for: an edited post shows its new
+  Markdown at once, and is asked for again. Main offers the same read to other features as
+  `comments.bodies`.
 
 ### Images from GitHub
 

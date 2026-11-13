@@ -149,7 +149,7 @@ async function focusedOn(page: Page, id: string): Promise<void> {
     .toBe(id);
 }
 
-test('` steps from the diff to the timeline, read as it’s first shown, and j and k move through its rows', async ({
+test('` steps from the diff to the timeline, read as it’s first shown; j, k and Tab move through it, and a row’s menu acts on the row', async ({
   page,
 }) => {
   await open(page);
@@ -187,4 +187,48 @@ test('` steps from the diff to the timeline, read as it’s first shown, and j a
   await page.keyboard.press('k');
   await expect.poll(on).toContain('pushed 1 commit');
   await expect(rows.nth(1)).toHaveAttribute('aria-selected', 'true');
+  // k on the first row stays there, as in the app's other lists.
+  await page.keyboard.press('k');
+  await page.keyboard.press('k');
+  await expect.poll(on).toContain('opened this');
+
+  await test.step('Tab goes through the links and buttons of the row the keyboard is on, and Esc back to the list', async () => {
+    // The fifth review left a comment in the diff.
+    const review = rows.nth(6);
+    await review.click();
+    await expect(timeline).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(review.getByRole('button', { name: 'Show in the diff' })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(timeline).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(review.getByRole('button', { name: 'Show in the diff' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(timeline).toBeFocused();
+    await expect.poll(on).toContain('1 comment');
+  });
+
+  await test.step('` goes round from the timeline, the last middle view, to the overview, the first', async () => {
+    await page.keyboard.press('`');
+    await focusedOn(page, 'overview.view');
+    await page.keyboard.press('~');
+    await expect(timeline).toBeFocused();
+  });
+
+  await test.step('a row’s menu offers what its buttons do, and the keyboard’s row is the palette’s', async () => {
+    const menu = page.getByRole('menu', { name: 'Row actions' });
+    // A right-click on the push: the keyboard moves to it, and its menu has no review's actions.
+    await rows.nth(1).click({ button: 'right' });
+    await expect(menu.getByRole('menuitem', { name: /Open on GitHub/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /comments in the diff/ })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect.poll(on).toContain('pushed 1 commit');
+    // ⇧F10 on the review that left a comment: its menu shows it in the diff.
+    for (let step = 0; step < 5; step += 1) await page.keyboard.press('j');
+    await expect.poll(on).toContain('1 comment');
+    await page.keyboard.press('Shift+F10');
+    await menu.getByRole('menuitem', { name: /Show the review’s comments in the diff/ }).click();
+    await focusedOn(page, 'diff.view');
+  });
 });

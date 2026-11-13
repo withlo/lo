@@ -299,8 +299,11 @@ describe('the words of an event', () => {
         added: true,
       }),
     ).toBe('ravi-k asked rozed-dev/core for a review');
+    expect(said({ kind: 'reviewRequest', event: event(), added: true })).toBe(
+      'ravi-k asked for a review',
+    );
     expect(said({ kind: 'reviewRequest', event: event(), added: false })).toBe(
-      'ravi-k removed the review request for ghost',
+      'ravi-k removed a review request',
     );
   });
 
