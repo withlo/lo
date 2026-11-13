@@ -41,9 +41,9 @@ import {
   compare,
   focusRow,
   inStop,
+  revealHidden,
   rowTarget,
   setDrawn,
-  showHidden,
   stillHidden,
 } from './actions.ts';
 import { tabs } from './main.ts';
@@ -219,6 +219,7 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
               // A link or button clicked in the row keeps focus, for what it does.
               if (!inStop(event.target)) list.current?.focus({ preventScroll: true });
             }}
+            onReveal={() => revealHidden(drawn, row.key)}
           />
         ))}
       </Timeline>
@@ -288,18 +289,21 @@ function RowOf({
   row,
   now,
   onFocus,
+  onReveal,
 }: {
   tab: string;
   pull: PostPull;
   row: Row;
   now: number;
   onFocus: (event: MouseEvent<HTMLElement>) => void;
+  /** Shows the row's hidden comment, focus going back to the list as its button goes. */
+  onReveal: () => void;
 }) {
   const attributes = { item: row.key, 'data-key': row.key, onClick: onFocus };
   const hidden = (): TimelineHidden | undefined => {
     if (!stillHidden(tab, row)) return undefined;
     const reason = row.kind === 'comment' ? row.hidden : undefined;
-    return { reason, onShow: () => showHidden(tab, row.key) };
+    return { reason, onShow: onReveal };
   };
   switch (row.kind) {
     case 'description':

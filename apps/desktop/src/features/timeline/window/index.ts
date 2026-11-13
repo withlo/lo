@@ -16,8 +16,8 @@ import {
   onRow,
   onScreen,
   openOnGithub,
+  revealHidden,
   seeOlder,
-  showHidden,
   stillHidden,
 } from './actions.ts';
 import { main, revisions } from './main.ts';
@@ -39,7 +39,7 @@ export default {
     showComment: onRow(
       (row, { tab }) =>
         stillHidden(tab.id, row) ? undefined : 'This event isn’t a hidden comment.',
-      (row, { tab }) => showHidden(tab.id, row.key),
+      (row, timeline) => revealHidden(timeline, row.key),
     ),
     showInDiff: onRow(
       (row) =>

@@ -36,6 +36,11 @@ function keyOf(post: PostRef): string {
   return post.kind === 'description' ? '#description' : post.id;
 }
 
+/** Whether `bodies` has what GitHub gave for post `key` at `version`: its HTML, or nothing. */
+function has(bodies: ViewBodies, key: string, version: string): boolean {
+  return bodies.held.get(key)?.version === version || bodies.gone.get(key) === version;
+}
+
 /** Asks main for posts' HTML on view `view`. */
 export type Ask = (view: string, posts: string[], description: boolean) => Promise<Bodies>;
 
@@ -57,6 +62,11 @@ interface ViewBodies {
   readonly gone: Map<string, string>;
   /** Posts to ask for at the next ask, with the version of each. */
   readonly wanted: Map<string, string>;
+  /**
+   * The version of each post last wanted: what it shows now. An answer that comes for another, as
+   * when the post was edited back while it was read, leaves it wanted at this one.
+   */
+  readonly shown: Map<string, string>;
   readonly listeners: Map<string, Set<() => void>>;
   /** Whether an ask is under way. */
   asking: boolean;
@@ -106,13 +116,17 @@ export class BodyStore {
   want(view: string, post: PostRef, version: string): void {
     const bodies = this.#viewOf(view);
     const key = keyOf(post);
-    if (bodies.held.get(key)?.version === version || bodies.gone.get(key) === version) return;
+    bodies.shown.set(key, version);
+    if (has(bodies, key, version)) return;
     this.#queue(view, bodies, key, version);
   }
 
   /** Asks for `post`'s HTML again soon, though the window holds it, for new image addresses. */
   again(view: string, post: PostRef, version: string): void {
-    this.#queue(view, this.#viewOf(view), keyOf(post), version);
+    const bodies = this.#viewOf(view);
+    const key = keyOf(post);
+    bodies.shown.set(key, version);
+    this.#queue(view, bodies, key, version);
   }
 
   /** Calls `listener` each time what the window has of `post` changes, until the returned function. */
@@ -144,6 +158,7 @@ export class BodyStore {
         held: new Map(),
         gone: new Map(),
         wanted: new Map(),
+        shown: new Map(),
         listeners: new Map(),
         asking: false,
         waiting: undefined,
@@ -234,6 +249,13 @@ export class BodyStore {
     if (asked.has('#description')) hold('#description', answer.description);
     for (const { id, html } of answer.posts) if (id !== '#description') hold(id, html);
     for (const id of answer.gone) if (id !== '#description') hold(id, null);
+    for (const key of changed) {
+      // What came is for a version the post no longer shows: it's wanted again at the one it does.
+      const shown = bodies.shown.get(key);
+      if (shown !== undefined && !has(bodies, key, shown) && !bodies.wanted.has(key)) {
+        bodies.wanted.set(key, shown);
+      }
+    }
     for (const key of changed) {
       for (const listener of bodies.listeners.get(key) ?? []) {
         try {

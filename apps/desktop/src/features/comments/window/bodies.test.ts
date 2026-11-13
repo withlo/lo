@@ -110,6 +110,32 @@ describe('BodyStore', () => {
     );
   });
 
+  it('asks again for the text a post shows when it was edited back while it was read', async () => {
+    let answer: (() => void) | undefined;
+    const { store, asks, tick } = storeOf((posts, description) => {
+      const ready = answered(posts, description);
+      return asks.length === 1
+        ? ready
+        : new Promise((resolve) => {
+            answer = () => resolve(ready);
+          });
+    });
+    store.want('v1', post('a'), 'Old text');
+    await tick();
+    store.want('v1', post('a'), 'Edited text');
+    await tick();
+    // Edited back while the edit's HTML is read: what's held is the old text's still.
+    store.want('v1', post('a'), 'Old text');
+    expect(store.held('v1', post('a'), 'Old text')).toBeDefined();
+    answer?.();
+    await vi.waitFor(() => expect(asks).toHaveLength(3));
+    expect(store.held('v1', post('a'), 'Old text')).toBeUndefined();
+    answer?.();
+    await vi.waitFor(() =>
+      expect(store.held('v1', post('a'), 'Old text')?.version).toBe('Old text'),
+    );
+  });
+
   it('asks a hundred at a time, one ask at a time', async () => {
     const { store, asks, tick } = storeOf(answered);
     for (let at = 0; at < 150; at += 1) store.want('v1', post(`p${at}`), TEXT);

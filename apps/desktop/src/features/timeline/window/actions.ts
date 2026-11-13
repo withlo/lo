@@ -206,6 +206,16 @@ export function showHidden(tab: string, key: string): void {
   shownHidden.update(tab, (shown) => new Set([...shown, key]));
 }
 
+/**
+ * Shows the hidden comment or review `key` of `timeline`, and puts the keyboard on its row in the
+ * list, which takes focus: the "Show comment" that was pressed goes as the comment shows.
+ */
+export function revealHidden(timeline: DrawnTimeline, key: string): void {
+  showHidden(timeline.tab.id, key);
+  focusRow(timeline, key);
+  timeline.list()?.focus({ preventScroll: true });
+}
+
 /** Whether `row` is a comment or review that's hidden, and not shown yet. */
 export function stillHidden(tab: string, row: Row | undefined): boolean {
   if (row?.kind !== 'comment' && row?.kind !== 'review') return false;
