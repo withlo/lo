@@ -38,6 +38,22 @@ printed again by graphql-js, with its operations and fragments sorted by name. C
 and the order of definitions don't change it. Anything else does, and the replay fails with
 "re-record cassette X: the Y query changed since it was recorded". Record the cassette again.
 
+Where the rest of a cassette must stay as it is, as when its tests rely on what it read of other
+pull requests, record only that query's answers again, in place:
+
+```sh
+LO_FIXTURE_TOKEN_FILE=<file holding rozed-bot's token> \
+  node testing/scripts/rerecord.ts <query's .graphql file> <cassette>[/<file>] ...
+```
+
+Each of the query's recorded requests is sent again with its recorded variables, or only the files
+named, and GitHub's answer replaces the one recorded. It checks the token's account, sends only
+queries, and keeps and refuses what `record.ts` does. It writes nothing unless every answer came as
+the recorded one did, with the same status and with errors only where it had them, and it notes the
+operation and when in `cassette.json` (`rerecorded`). Before recording an answer whose state has
+moved on since, such as a pull request's base changed by a recording with writes, put GitHub in that
+state first, and back after.
+
 ## A cassette
 
 ```
@@ -139,9 +155,8 @@ and `STACK_PULLS` names the pull requests and their heads. Their cassette is `ap
 #84's base branch to `stack/b`, then made GitHub stack #92. `fixtures/stack-reset.sh`, run with
 `LO_FIXTURE_TOKEN_FILE` as `record.ts` is, unstacks them and changes #84's base back, as `stack.sh`
 made them, so that can be recorded again. What GitHub can't be made to do on demand, a lost answer,
-a refusal or a base branch changed elsewhere meanwhile, the app's tests answer from the same
-cassette with those answers changed (`apps/desktop/e2e/convert.spec.ts`). `app_stack_nobody` is #84
-opened with no account.
+the app's tests answer from the same cassette with that answer changed
+(`apps/desktop/e2e/convert.spec.ts`).
 
 ## The credential scan
 

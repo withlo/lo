@@ -32,7 +32,7 @@ function nativeMenus(app: ElectronApplication): Promise<string[]> {
   });
 }
 
-test('a right-click lists Back and Forward with their keys in this system’s form', async ({
+test('a right-click lists Back and Forward with their keys in this system’s form, and a screen reader hears an item’s name and key, not its key caps', async ({
   page,
 }) => {
   const middle = middleOf(page);
@@ -48,11 +48,8 @@ test('a right-click lists Back and Forward with their keys in this system’s fo
   await expect(menu.getByRole('separator')).toHaveCount(0);
   // The menu is a scope of its own, which is how j and k move in it.
   await expect(menu).toHaveAttribute('data-lo-scope', 'menu');
-});
 
-test('a screen reader hears an item’s name and key, not its key caps', async ({ page }) => {
-  await middleOf(page).click({ button: 'right' });
-  const menu = menuOf(page);
+  // The same menu, for a screen reader.
   // The name is the label alone, since the key caps are hidden from it.
   const back = menu.getByRole('menuitem', { name: 'Back', exact: true });
   await expect(back).toHaveAttribute('aria-keyshortcuts', 'Control+O');
@@ -63,41 +60,44 @@ test('a screen reader hears an item’s name and key, not its key caps', async (
   );
 });
 
-test('j and k move through the menu, ⏎ runs the highlighted action, and the menu closes', async ({
+test('Esc closes the menu and gives focus back to where it was; and j and k move through the menu, ⏎ runs the highlighted action, and the menu closes', async ({
   page,
 }) => {
   const middle = middleOf(page);
-  await middle.click({ button: 'right' });
-  const menu = menuOf(page);
-  await expect(menu).toBeVisible();
-  // Nothing is highlighted until the keys move it, and j and k move it as ↓ and ↑ do.
-  await expect(highlighted(page)).toHaveCount(0);
-  await page.keyboard.press('j');
-  await expect(highlighted(page)).toContainText('Back');
-  await page.keyboard.press('j');
-  await expect(highlighted(page)).toContainText('Forward');
-  await page.keyboard.press('k');
-  await expect(highlighted(page)).toContainText('Back');
-  await page.keyboard.press('ArrowDown');
-  await expect(highlighted(page)).toContainText('Forward');
-  // ⏎ runs the command through the same handler its key does, and with nowhere to go, says so.
-  await page.keyboard.press('Enter');
-  await expect(menu).toBeHidden();
-  await expect(said(page, "There's nowhere to go forward to.")).toBeVisible();
-  await expect(middle).toBeFocused();
-});
 
-test('Esc closes the menu and gives focus back to where it was', async ({ page }) => {
-  const middle = middleOf(page);
-  await middle.click({ button: 'right' });
-  await expect(menuOf(page)).toBeVisible();
-  await page.keyboard.press('j');
-  await page.keyboard.press('Escape');
-  await expect(menuOf(page)).toBeHidden();
-  await expect(middle).toBeFocused();
-  // Nothing ran: Back would have said it had nowhere to go.
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByRole('status').filter({ hasText: /\w/ })).toHaveCount(0);
+  // First, while Lo has said nothing: the one that closes the menu checks that none ran.
+  await test.step('Esc closes the menu and gives focus back to where it was', async () => {
+    await middle.click({ button: 'right' });
+    await expect(menuOf(page)).toBeVisible();
+    await page.keyboard.press('j');
+    await page.keyboard.press('Escape');
+    await expect(menuOf(page)).toBeHidden();
+    await expect(middle).toBeFocused();
+    // Nothing ran: Back would have said it had nowhere to go.
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('status').filter({ hasText: /\w/ })).toHaveCount(0);
+  });
+
+  await test.step('j and k move through the menu, ⏎ runs the highlighted action, and the menu closes', async () => {
+    await middle.click({ button: 'right' });
+    const menu = menuOf(page);
+    await expect(menu).toBeVisible();
+    // Nothing is highlighted until the keys move it, and j and k move it as ↓ and ↑ do.
+    await expect(highlighted(page)).toHaveCount(0);
+    await page.keyboard.press('j');
+    await expect(highlighted(page)).toContainText('Back');
+    await page.keyboard.press('j');
+    await expect(highlighted(page)).toContainText('Forward');
+    await page.keyboard.press('k');
+    await expect(highlighted(page)).toContainText('Back');
+    await page.keyboard.press('ArrowDown');
+    await expect(highlighted(page)).toContainText('Forward');
+    // ⏎ runs the command through the same handler its key does, and with nowhere to go, says so.
+    await page.keyboard.press('Enter');
+    await expect(menu).toBeHidden();
+    await expect(said(page, "There's nowhere to go forward to.")).toBeVisible();
+    await expect(middle).toBeFocused();
+  });
 });
 
 for (const key of ['Shift+F10', 'ContextMenu']) {
@@ -122,50 +122,50 @@ for (const key of ['Shift+F10', 'ContextMenu']) {
   });
 }
 
-test('a right-click in a text field gets the system’s Edit menu, not Lo’s', async ({
+test('a right-click in a code view’s text gets Lo’s menu, and one in a comment box the Edit menu; and one in a text field gets the system’s Edit menu, not Lo’s', async ({
   app,
   page,
 }) => {
-  await recordNativeMenus(app);
-  await middleOf(page).focus();
-  await page.keyboard.press('?');
-  const search = page
-    .getByRole('dialog', { name: 'Every key' })
-    .getByRole('searchbox', { name: 'Find a key or an action' });
-  await expect(search).toBeFocused();
-  await search.click({ button: 'right' });
-  await expect.poll(() => nativeMenus(app)).toEqual(['cut,copy,paste,separator,selectall']);
-  await expect(page.getByRole('menu')).toHaveCount(0);
-});
+  await test.step('a right-click in a code view’s text gets Lo’s menu, and one in a comment box the Edit menu', async () => {
+    await recordNativeMenus(app);
+    // CodeMirror's text is editable content to the page, in a diff and in a comment box alike.
+    await page.evaluate(() => {
+      const window = document.querySelector('[data-lo-scope="window"]');
+      for (const scope of ['diff', 'box']) {
+        const view = document.createElement('div');
+        view.dataset.loScope = scope;
+        const text = document.createElement('div');
+        text.id = scope;
+        text.className = 'cm-content';
+        text.contentEditable = 'true';
+        text.textContent = 'const a = 1;';
+        view.append(text);
+        window?.append(view);
+      }
+    });
+    await page.locator('#diff').click({ button: 'right' });
+    await expect(menuOf(page)).toBeVisible();
+    await expect(menuOf(page)).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(menuOf(page)).toBeHidden();
+    expect(await nativeMenus(app)).toEqual([]);
 
-test('a right-click in a code view’s text gets Lo’s menu, and one in a comment box the Edit menu', async ({
-  app,
-  page,
-}) => {
-  await recordNativeMenus(app);
-  // CodeMirror's text is editable content to the page, in a diff and in a comment box alike.
-  await page.evaluate(() => {
-    const window = document.querySelector('[data-lo-scope="window"]');
-    for (const scope of ['diff', 'box']) {
-      const view = document.createElement('div');
-      view.dataset.loScope = scope;
-      const text = document.createElement('div');
-      text.id = scope;
-      text.className = 'cm-content';
-      text.contentEditable = 'true';
-      text.textContent = 'const a = 1;';
-      view.append(text);
-      window?.append(view);
-    }
+    await page.locator('#box').click({ button: 'right' });
+    await expect.poll(() => nativeMenus(app)).toEqual(['cut,copy,paste,separator,selectall']);
+    await expect(page.getByRole('menu')).toHaveCount(0);
   });
-  await page.locator('#diff').click({ button: 'right' });
-  await expect(menuOf(page)).toBeVisible();
-  await expect(menuOf(page)).toBeFocused();
-  await page.keyboard.press('Escape');
-  await expect(menuOf(page)).toBeHidden();
-  expect(await nativeMenus(app)).toEqual([]);
 
-  await page.locator('#box').click({ button: 'right' });
-  await expect.poll(() => nativeMenus(app)).toEqual(['cut,copy,paste,separator,selectall']);
-  await expect(page.getByRole('menu')).toHaveCount(0);
+  await test.step('a right-click in a text field gets the system’s Edit menu, not Lo’s', async () => {
+    // Counting the native menus afresh.
+    await recordNativeMenus(app);
+    await middleOf(page).focus();
+    await page.keyboard.press('?');
+    const search = page
+      .getByRole('dialog', { name: 'Every key' })
+      .getByRole('searchbox', { name: 'Find a key or an action' });
+    await expect(search).toBeFocused();
+    await search.click({ button: 'right' });
+    await expect.poll(() => nativeMenus(app)).toEqual(['cut,copy,paste,separator,selectall']);
+    await expect(page.getByRole('menu')).toHaveCount(0);
+  });
 });

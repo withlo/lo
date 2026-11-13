@@ -1,7 +1,7 @@
 import { MemoryStore, Replay, replayFetch, type Interaction, type Json } from '@lo/testing';
 import { expect, test } from 'vitest';
 
-import { GithubClient, USER_AGENT, type OnUnauthorized } from './client.ts';
+import { GithubClient, USER_AGENT, type FetchInit, type OnUnauthorized } from './client.ts';
 import { GithubError } from './errors.ts';
 import { unchecked } from './json.ts';
 import { Token } from './token.ts';
@@ -448,4 +448,61 @@ test('a kept ETag that cannot go in a header is dropped, and the read made in fu
     });
     expect(store.answers.get(url)?.etag).toBe('W/"2"');
   }
+});
+
+test('an upload hands its fetch where to report progress, which plain fetch ignores', async () => {
+  const heard: [number, number][] = [];
+  let given: FetchInit | undefined;
+  const fetch: typeof globalThis.fetch = (_input, init?: FetchInit) => {
+    given = init;
+    init?.uploadProgress?.(3, 4);
+    return Promise.resolve(new Response('{}', { status: 201 }));
+  };
+  await client(fetch).send('POST', 'https://uploads.github.com/user-attachments/assets', {
+    body: new Uint8Array(4),
+    uploadProgress: (sent, total) => heard.push([sent, total]),
+  });
+  expect(heard).toEqual([[3, 4]]);
+  expect(given?.signal).toBeInstanceOf(AbortSignal);
+
+  // A fetch that can't tell, as the replayer's, which makes a `Request` of what it's given.
+  const plain = replayFetch(
+    new Replay('test', [
+      {
+        request: { method: 'POST', url: 'https://uploads.github.com/x', body: 'abcd' },
+        response: { status: 201, headers: {}, body: {} },
+      },
+    ]),
+  );
+  const answered = await client(plain).send('POST', 'https://uploads.github.com/x', {
+    body: 'abcd',
+    uploadProgress: (sent, total) => heard.push([sent, total]),
+  });
+  expect(answered.status).toBe(201);
+  expect(heard).toHaveLength(1);
+});
+
+test('a request given up fails with the reason, and one given up first is never sent', async () => {
+  const sent: string[] = [];
+  const hanging: typeof globalThis.fetch = (input, init) => {
+    sent.push(new Request(input, init).url);
+    return new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    });
+  };
+  const github = client(hanging);
+  const controller = new AbortController();
+  const request = github.send('POST', 'https://uploads.github.com/user-attachments/assets', {
+    body: new Uint8Array(4),
+    signal: controller.signal,
+  });
+  const cancelled = new Error('cancelled');
+  controller.abort(cancelled);
+  // Not the network failing: the reason it was given up.
+  await expect(request).rejects.toBe(cancelled);
+
+  await expect(github.send('GET', '/user', { signal: AbortSignal.abort(cancelled) })).rejects.toBe(
+    cancelled,
+  );
+  expect(sent).toEqual(['https://uploads.github.com/user-attachments/assets']);
 });

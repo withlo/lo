@@ -6,7 +6,7 @@
 
 import { useTabState } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
-import { holdLimit as heldFor } from './hold.ts';
+import { afterHold as heldAfter, holdLimit as heldFor } from './hold.ts';
 import { marked } from './store.ts';
 import {
   countIn,
@@ -27,6 +27,15 @@ export type { Mark, ShownMarks, Toggled } from './viewed.ts';
  */
 export function holdLimit(): number {
   return heldFor();
+}
+
+/**
+ * Runs `run` once the bound has passed since `since`, when a tab started waiting, and returns a
+ * function that cancels it. The bound is read as the wait ends, for one a test asked for after it
+ * began.
+ */
+export function afterHold(since: number, run: () => void): () => void {
+  return heldAfter(since, run);
 }
 
 /** `tab`'s viewed marks as they show, re-rendering as they change. */

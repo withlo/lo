@@ -1,0 +1,5 @@
+{
+  "description": "The HTML GitHub renders for rozed-dev/e2e#23's posts, read as rozed-bot: a review comment, a reply to it, the review they were submitted with, and a review comment that was deleted, which GitHub answers with null and an error; then the review again, with the description",
+  "recorded_at": "2026-11-13T09:42:57Z",
+  "repo": "rozed-dev/e2e"
+}

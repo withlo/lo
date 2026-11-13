@@ -141,10 +141,11 @@ export class RequestQueue {
   /**
    * A gate that waits for a read's turn before each of a client's requests, and holds it until the
    * answer is read ({@link GithubClient.gated}). A read made of many requests through it lets a
-   * waiting write go between them.
+   * waiting write go between them. Each request takes its turn at `priority`; one given up on
+   * through `signal` while it waits is never made.
    */
-  gate(): RequestGate {
-    return () => this.#turn('background');
+  gate(priority: ReadPriorityNow = 'background', signal?: AbortSignal): RequestGate {
+    return () => this.#turn(priority, signal);
   }
 
   /**

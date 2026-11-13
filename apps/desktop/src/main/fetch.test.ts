@@ -1,9 +1,17 @@
 import { EventEmitter } from 'node:events';
 
+import type { FetchInit } from '@lo/github';
 import type { ClientRequestConstructorOptions } from 'electron';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { AnswerTooLarge, netFetch, type NetAnswer, type NetRequest } from './fetch.ts';
+import {
+  AnswerTooLarge,
+  netFetch,
+  UPLOAD_PROGRESS_EVERY,
+  type NetAnswer,
+  type NetRequest,
+  type NetUploadProgress,
+} from './fetch.ts';
 
 /** An answer as Electron's `net.request` gives it. */
 class FakeAnswer extends EventEmitter implements NetAnswer {
@@ -25,6 +33,9 @@ class FakeRequest extends EventEmitter implements NetRequest {
   readonly written: Buffer[] = [];
   ended = false;
   aborted = false;
+  /** What `getUploadProgress` says, and how often it was asked. */
+  progress: NetUploadProgress = { started: false, current: 0, total: 0 };
+  progressAsked = 0;
 
   constructor(options: ClientRequestConstructorOptions) {
     super();
@@ -41,6 +52,11 @@ class FakeRequest extends EventEmitter implements NetRequest {
 
   abort(): void {
     this.aborted = true;
+  }
+
+  getUploadProgress(): NetUploadProgress {
+    this.progressAsked += 1;
+    return this.progress;
   }
 
   /** Answers with `status`, `headers` and `body`, in two chunks. */
@@ -189,5 +205,47 @@ describe('netFetch', () => {
     const answered = fetch('https://api.github.com/user', { signal: AbortSignal.abort() });
     await expect(answered).rejects.toMatchObject({ name: 'AbortError' });
     expect(sent).toEqual([]);
+  });
+
+  it('reports how much of the body has gone while it changes, and asks only when told to', async () => {
+    vi.useFakeTimers();
+    try {
+      const { fetch, sent } = fake();
+      const heard: [number, number][] = [];
+      const init: FetchInit = {
+        method: 'POST',
+        body: 'x'.repeat(1000),
+        uploadProgress: (current, total) => heard.push([current, total]),
+      };
+      const answered = fetch('https://uploads.github.com/user-attachments/assets', init);
+      await vi.advanceTimersByTimeAsync(0);
+      const [request] = sent;
+      if (!request) throw new Error('nothing was sent');
+      // Nothing has gone yet.
+      await vi.advanceTimersByTimeAsync(UPLOAD_PROGRESS_EVERY);
+      expect(heard).toEqual([]);
+      request.progress = { started: true, current: 400, total: 1000 };
+      await vi.advanceTimersByTimeAsync(UPLOAD_PROGRESS_EVERY * 3);
+      expect(heard).toEqual([[400, 1000]]);
+      // The rest went just before GitHub answered: heard at once, then never again.
+      request.progress = { started: true, current: 1000, total: 1000 };
+      request.answer(201, {}, '{}');
+      expect((await answered).status).toBe(201);
+      expect(heard).toEqual([
+        [400, 1000],
+        [1000, 1000],
+      ]);
+      const asked = request.progressAsked;
+      await vi.advanceTimersByTimeAsync(UPLOAD_PROGRESS_EVERY * 4);
+      expect(request.progressAsked).toBe(asked);
+
+      const plain = fetch('https://api.github.com/user');
+      await vi.advanceTimersByTimeAsync(UPLOAD_PROGRESS_EVERY * 4);
+      sent[1]?.answer(200, {}, '{}');
+      await plain;
+      expect(sent[1]?.progressAsked).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

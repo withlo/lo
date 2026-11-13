@@ -9,7 +9,7 @@ import { buffer } from 'node:stream/consumers';
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Mark, Place, Probe, Viewport } from '@lo/ui/code';
-import type { ElectronApplication, Page } from '@playwright/test';
+import type { ElectronApplication, Locator, Page } from '@playwright/test';
 
 import {
   appFolder,
@@ -299,123 +299,125 @@ test('draws every changed file in the left panel’s order, each as it starts ou
   expect(refused).toEqual([]);
 });
 
-test('answers its keys: files, changes, sides, layout, whitespace and folds', async ({ page }) => {
-  await drawn(page);
-  await focusDiff(page);
-
-  await press(page, ']', 'f');
-  await expect.poll(async () => (await cursor(page))?.path).toBe('data/numbers.txt');
-  await press(page, ']', 'f');
-  await expect.poll(async () => (await cursor(page))?.path).toBe('src/text/wrap.ts');
-  await press(page, '[', 'f');
-  await expect.poll(async () => (await cursor(page))?.path).toBe('data/numbers.txt');
-
-  // `za` loads the large file kept out.
-  await press(page, 'z', 'a');
-  await expect(page.locator('.lo-diffview').getByText(/za loads them/)).toHaveCount(0, {
-    timeout: 20_000,
-  });
-
-  // To src/parser.ts's change, then across to the old side and back.
-  await press(page, ']', 'f', ']', 'f', ']', 'f', ']', 'f', ']', 'c');
-  await expect
-    .poll(() => cursor(page))
-    .toMatchObject({
-      path: 'src/parser.ts',
-      header: false,
-      pane: 'new',
-    });
-  await press(page, 'Tab');
-  await expect.poll(async () => (await cursor(page))?.pane).toBe('old');
-  await press(page, 'Tab');
-  await expect.poll(async () => (await cursor(page))?.pane).toBe('new');
-
-  // `zR` opens the file's unchanged lines: src/parser.ts is the sixth file.
-  const collapsed = page.locator('.lo-diffview [data-row^="c:5:"]');
-  await expect(collapsed.first()).toBeVisible();
-  await press(page, 'z', 'Shift+R');
-  await expect(collapsed).toHaveCount(0);
-
-  // `gi` lays it out inline, for every tab, and back.
-  await press(page, 'g', 'i');
-  await expect.poll(() => page.evaluate(() => window.loDiff?.probe.layout)).toBe('inline');
-  await expect.poll(() => readSettings()).toMatchObject({ 'diff.layout': 'inline' });
-  await press(page, 'g', 'i');
-  await expect.poll(() => page.evaluate(() => window.loDiff?.probe.layout)).toBe('split');
-
-  // `gw` hides changes to whitespace alone.
-  await press(page, 'g', 'w');
-  await expect(page.getByText('Whitespace hidden', { exact: true })).toBeVisible();
-  await expect.poll(() => readSettings()).toMatchObject({ 'diff.whitespace': 'hide' });
-  await press(page, 'g', 'w');
-  await expect(page.getByText('Whitespace hidden', { exact: true })).toHaveCount(0);
-
-  // `gx` opens the line in the pull request's changes on GitHub.
-  await press(page, 'g', 'x');
-  await expect
-    .poll(() => browsed())
-    .toEqual([
-      expect.stringMatching(
-        /^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/80\/files#diff-[0-9a-f]{64}R\d+$/,
-      ),
-    ]);
-});
-
-test('Esc in the diff closes an overview’s note, then does what it always does', async ({
+test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc on an overview’s note, and copying', async ({
+  app,
   page,
 }) => {
   await drawn(page);
   await focusDiff(page);
-  await press(page, ']', 'c');
-  const at = await page.evaluate(() => {
-    const reading = window.loDiff?.probe.cursor();
-    return reading?.at.kind === 'line' ? reading.at.at : undefined;
-  });
-  if (!at) throw new Error('The cursor isn’t on a line.');
-  const place = { file: at.file, side: at.side, line: at.line };
-  await page.evaluate((line) => {
-    window.loDiff?.setMarks([
-      {
-        kind: 'overview',
-        at: { file: line.file, side: line.side, from: line.line, to: line.line },
-        block: 'one',
-        note: { label: 'Where to look', text: 'Why this line changed.' },
-      },
-    ]);
-  }, place);
-  await expect(page.locator('.lo-diffview .lo-ov-marker:visible')).toHaveCount(1);
-  expect(await page.evaluate((line) => window.loDiff?.openNote(line), place)).toBe(true);
-  const note = page.locator('.lo-diffview .lo-ovnote:visible');
-  await expect(note).toHaveText(/Why this line changed\./);
-  await press(page, 'Escape');
-  await expect(note).toHaveCount(0);
-  // With no note open, Esc gives focus back to the middle view, which has it: nothing changes.
-  await press(page, 'Escape');
-  await expect(note).toHaveCount(0);
-  expect(await page.evaluate(() => document.activeElement?.closest('.lo-diffview') !== null)).toBe(
-    true,
-  );
-  expect(await cursor(page)).toMatchObject({ line: place.line, side: place.side });
-});
-
-test('copies the lines, the line’s link and the file’s path', async ({ app, page }) => {
-  // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
-  test.skip(process.platform === 'darwin', "The Mac's clipboard is its user's.");
-  await drawn(page);
-  await focusDiff(page);
-  await press(page, ']', 'f', ']', 'f', ']', 'c');
   const clipboard = () => app.evaluate(({ clipboard: board }) => board.readText());
 
-  await press(page, 'y', 'p');
-  await expect.poll(clipboard).toBe('src/text/wrap.ts');
-  await press(page, 'y', 'l');
-  await expect
-    .poll(clipboard)
-    .toMatch(/^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/80\/files#diff-[0-9a-f]{64}R1$/);
-  await press(page, 'y', 'y');
-  await expect
-    .poll(clipboard)
-    .toBe('/** `text` broken into lines of at most `width` characters, at spaces. */');
+  await test.step('files, changes, sides, layout, whitespace and folds', async () => {
+    await press(page, ']', 'f');
+    await expect.poll(async () => (await cursor(page))?.path).toBe('data/numbers.txt');
+    await press(page, ']', 'f');
+    await expect.poll(async () => (await cursor(page))?.path).toBe('src/text/wrap.ts');
+    await press(page, '[', 'f');
+    await expect.poll(async () => (await cursor(page))?.path).toBe('data/numbers.txt');
+
+    // `za` loads the large file kept out.
+    await press(page, 'z', 'a');
+    await expect(page.locator('.lo-diffview').getByText(/za loads them/)).toHaveCount(0, {
+      timeout: 20_000,
+    });
+
+    // To src/parser.ts's change, then across to the old side and back.
+    await press(page, ']', 'f', ']', 'f', ']', 'f', ']', 'f', ']', 'c');
+    await expect
+      .poll(() => cursor(page))
+      .toMatchObject({
+        path: 'src/parser.ts',
+        header: false,
+        pane: 'new',
+      });
+    await press(page, 'Tab');
+    await expect.poll(async () => (await cursor(page))?.pane).toBe('old');
+    await press(page, 'Tab');
+    await expect.poll(async () => (await cursor(page))?.pane).toBe('new');
+
+    // `zR` opens the file's unchanged lines: src/parser.ts is the sixth file.
+    const collapsed = page.locator('.lo-diffview [data-row^="c:5:"]');
+    await expect(collapsed.first()).toBeVisible();
+    await press(page, 'z', 'Shift+R');
+    await expect(collapsed).toHaveCount(0);
+
+    // `gi` lays it out inline, for every tab, and back.
+    await press(page, 'g', 'i');
+    await expect.poll(() => page.evaluate(() => window.loDiff?.probe.layout)).toBe('inline');
+    await expect.poll(() => readSettings()).toMatchObject({ 'diff.layout': 'inline' });
+    await press(page, 'g', 'i');
+    await expect.poll(() => page.evaluate(() => window.loDiff?.probe.layout)).toBe('split');
+
+    // `gw` hides changes to whitespace alone.
+    await press(page, 'g', 'w');
+    await expect(page.getByText('Whitespace hidden', { exact: true })).toBeVisible();
+    await expect.poll(() => readSettings()).toMatchObject({ 'diff.whitespace': 'hide' });
+    await press(page, 'g', 'w');
+    await expect(page.getByText('Whitespace hidden', { exact: true })).toHaveCount(0);
+
+    // `gx` opens the line in the pull request's changes on GitHub.
+    await press(page, 'g', 'x');
+    await expect
+      .poll(() => browsed())
+      .toEqual([
+        expect.stringMatching(
+          /^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/80\/files#diff-[0-9a-f]{64}R\d+$/,
+        ),
+      ]);
+  });
+
+  await test.step('Esc closes an overview’s note, then does what it always does', async () => {
+    await focusDiff(page);
+    await press(page, ']', 'c');
+    const at = await page.evaluate(() => {
+      const reading = window.loDiff?.probe.cursor();
+      return reading?.at.kind === 'line' ? reading.at.at : undefined;
+    });
+    if (!at) throw new Error('The cursor isn’t on a line.');
+    const place = { file: at.file, side: at.side, line: at.line };
+    await page.evaluate((line) => {
+      window.loDiff?.setMarks([
+        {
+          kind: 'overview',
+          at: { file: line.file, side: line.side, from: line.line, to: line.line },
+          block: 'one',
+          note: { label: 'Where to look', text: 'Why this line changed.' },
+        },
+      ]);
+    }, place);
+    await expect(page.locator('.lo-diffview .lo-ov-marker:visible')).toHaveCount(1);
+    expect(await page.evaluate((line) => window.loDiff?.openNote(line), place)).toBe(true);
+    const note = page.locator('.lo-diffview .lo-ovnote:visible');
+    await expect(note).toHaveText(/Why this line changed\./);
+    await press(page, 'Escape');
+    await expect(note).toHaveCount(0);
+    // With no note open, Esc gives focus back to the middle view, which has it: nothing changes.
+    await press(page, 'Escape');
+    await expect(note).toHaveCount(0);
+    expect(
+      await page.evaluate(() => document.activeElement?.closest('.lo-diffview') !== null),
+    ).toBe(true);
+    expect(await cursor(page)).toMatchObject({ line: place.line, side: place.side });
+  });
+
+  // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
+  if (process.platform !== 'darwin') {
+    await test.step('copies the lines, the line’s link and the file’s path', async () => {
+      await focusDiff(page);
+      await press(page, ']', 'f', ']', 'f', ']', 'c');
+
+      await press(page, 'y', 'p');
+      await expect.poll(clipboard).toBe('src/text/wrap.ts');
+      await press(page, 'y', 'l');
+      await expect
+        .poll(clipboard)
+        .toMatch(/^https:\/\/github\.com\/rozed-dev\/e2e\/pull\/80\/files#diff-[0-9a-f]{64}R1$/);
+      await press(page, 'y', 'y');
+      await expect
+        .poll(clipboard)
+        .toBe('/** `text` broken into lines of at most `width` characters, at spaces. */');
+    });
+  }
 });
 
 test('the tree follows the file on screen, and shows the file it’s asked for', async ({ page }) => {
@@ -522,6 +524,10 @@ interface Jump {
 
 const finder = (page: Page) => page.getByRole('dialog', { name: 'Go to a file' });
 
+/**
+ * The jumps, in the order one Lo goes through them. `]f` is last: it opens a file's 5,001 lines,
+ * which would change the screen for each jump after it.
+ */
 const JUMPS: Jump[] = [
   {
     name: 'a click in the tree',
@@ -537,6 +543,18 @@ const JUMPS: Jump[] = [
     go: (page) => press(page, 'Shift+G'),
     heard: { type: 'keydown', key: 'G', on: 'editor' },
     to: { path: 'pnpm-lock.yaml', header: false },
+  },
+  {
+    name: 'the finder',
+    ready: async (page) => {
+      await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+p`);
+      await expect(finder(page).getByRole('combobox')).toBeFocused();
+      await page.keyboard.type('pnpm-lock');
+      await expect(finder(page).getByRole('option').first()).toContainText('pnpm-lock.yaml');
+    },
+    go: (page) => press(page, 'Enter'),
+    heard: { type: 'focusin', on: 'editor' },
+    to: { path: 'pnpm-lock.yaml', header: true },
   },
   {
     // From data/numbers.txt's header, with its 5,001 lines loaded: past them all.
@@ -563,18 +581,6 @@ const JUMPS: Jump[] = [
     go: (page) => press(page, ']', 'f'),
     heard: { type: 'keydown', key: 'f', on: 'editor' },
     to: { path: 'src/text/wrap.ts', header: true },
-  },
-  {
-    name: 'the finder',
-    ready: async (page) => {
-      await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+p`);
-      await expect(finder(page).getByRole('combobox')).toBeFocused();
-      await page.keyboard.type('pnpm-lock');
-      await expect(finder(page).getByRole('option').first()).toContainText('pnpm-lock.yaml');
-    },
-    go: (page) => press(page, 'Enter'),
-    heard: { type: 'focusin', on: 'editor' },
-    to: { path: 'pnpm-lock.yaml', header: true },
   },
 ];
 
@@ -661,44 +667,49 @@ for (const layout of ['inline', 'split'] as const) {
     // On the diff first, as `DIFF_FIRST` has it, in this layout.
     test.use({ settings: JSON.stringify({ 'overview.open': 'diff', 'diff.layout': layout }) });
 
-    for (const jump of JUMPS) {
-      for (const landing of ['in its task', 'just after it', 'all along'] as const) {
-        test(`leaves the screen where ${jump.name} takes it, with the change ${landing}`, async ({
-          page,
-        }) => {
-          await drawn(page);
-          await focusDiff(page);
-          await jump.ready(page);
-          await page.waitForTimeout(300);
-          await watchJumps(page, landing, jump.heard);
-          await jump.go(page);
-          await page.waitForTimeout(1600);
-          const { frames, changes } = await page.evaluate(() => {
-            const watched = window.loJumps;
-            window.loJumps = undefined;
-            return watched ?? { frames: [], changes: [] };
-          });
+    for (const landing of ['in its task', 'just after it', 'all along'] as const) {
+      test(`leaves the screen where each jump takes it, with the change ${landing}`, async ({
+        page,
+      }) => {
+        test.setTimeout(60_000);
+        await drawn(page);
+        // One Lo for all the jumps, each from the first header as a fresh Lo has the cursor.
+        for (const jump of JUMPS) {
+          await test.step(jump.name, async () => {
+            await focusDiff(page);
+            await expect.poll(() => cursor(page)).toMatchObject({ path: 'assets/mark.png' });
+            await jump.ready(page);
+            await page.waitForTimeout(300);
+            await watchJumps(page, landing, jump.heard);
+            await jump.go(page);
+            await page.waitForTimeout(1600);
+            const { frames, changes } = await page.evaluate(() => {
+              const watched = window.loJumps;
+              window.loJumps = undefined;
+              return watched ?? { frames: [], changes: [] };
+            });
 
-          expect(frames.at(-1)?.jumps).toBe(1);
-          const after = changes.filter((change) => change.jumps === 1);
-          expect(after.length).toBeGreaterThan(0);
-          // Inline, the editor scrolls to the cursor a jump moved as it next measures, in the next
-          // frame: a change in the jump's task comes before the screen has moved.
-          if (layout === 'inline' && landing === 'in its task') {
-            expect(after[0]?.scroll).toBe(after[0]?.landed);
-          }
-          // From the first frame that shows where the jump took the cursor, its line stays
-          // drawn and on screen, where it is: with no input, nothing moves.
-          const shown = frames.findIndex((frame) => frame.jumps === 1 && frame.onScreen);
-          expect(shown).toBeGreaterThanOrEqual(0);
-          const top = frames[shown]?.top ?? Number.NaN;
-          const moved = frames
-            .slice(shown)
-            .filter((frame) => !frame.onScreen || Math.abs(frame.top - top) >= 1);
-          expect(moved, `the cursor's line was at ${top}`).toEqual([]);
-          expect(await cursor(page)).toMatchObject(jump.to);
-        });
-      }
+            expect(frames.at(-1)?.jumps).toBe(1);
+            const after = changes.filter((change) => change.jumps === 1);
+            expect(after.length).toBeGreaterThan(0);
+            // Inline, the editor scrolls to the cursor a jump moved as it next measures, in the next
+            // frame: a change in the jump's task comes before the screen has moved.
+            if (layout === 'inline' && landing === 'in its task') {
+              expect(after[0]?.scroll).toBe(after[0]?.landed);
+            }
+            // From the first frame that shows where the jump took the cursor, its line stays
+            // drawn and on screen, where it is: with no input, nothing moves.
+            const shown = frames.findIndex((frame) => frame.jumps === 1 && frame.onScreen);
+            expect(shown).toBeGreaterThanOrEqual(0);
+            const top = frames[shown]?.top ?? Number.NaN;
+            const moved = frames
+              .slice(shown)
+              .filter((frame) => !frame.onScreen || Math.abs(frame.top - top) >= 1);
+            expect(moved, `the cursor's line was at ${top}`).toEqual([]);
+            expect(await cursor(page)).toMatchObject(jump.to);
+          });
+        }
+      });
     }
   });
 }
@@ -1105,20 +1116,17 @@ test.describe('when the local copy comes after GitHub’s diff, on a file the re
 });
 
 /**
- * Opens #80 in a short window, GitHub's diff with the banner over it, wheels down, and returns
- * where the first row below the box's top is on the page now, and how to read it again.
+ * Opens #80 in a short window, GitHub's diff with the banner over it that says the local copy
+ * couldn't be fetched, which can come after GitHub's diff.
  */
-async function scrolled(app: ElectronApplication, page: Page) {
+async function underBanner(app: ElectronApplication, page: Page): Promise<void> {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
   await drawn(page, 'github', { moves: false });
-  // The banner that says the local copy couldn't be fetched, which can come after GitHub's diff.
   await expect(page.locator('[data-lo-banners]')).toBeVisible({ timeout: 20_000 });
-  const view = page.locator('.lo-diffview');
-  const box = await view.boundingBox();
-  await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
-  await page.mouse.wheel(0, 300);
-  await expect.poll(() => view.evaluate((each) => each.scrollTop)).toBeGreaterThan(100);
-  await page.waitForTimeout(300);
+}
+
+/** Where the first row below `view`'s top is on the page now, and how to read it again. */
+async function rowAtTop(view: Locator) {
   const row = await view.evaluate((each) => {
     const top = each.getBoundingClientRect().top;
     return [...each.querySelectorAll<HTMLElement>('.cm-editor:last-of-type [data-row]')].find(
@@ -1133,6 +1141,28 @@ async function scrolled(app: ElectronApplication, page: Page) {
       row,
     )) ?? Number.NaN;
   return { at, before: await at() };
+}
+
+/** Wheels the diff down from its top, and returns where the first row below it is on the page. */
+async function wheeled(page: Page) {
+  const view = page.locator('.lo-diffview');
+  await view.evaluate((each) => {
+    each.scrollTop = 0;
+  });
+  const box = await view.boundingBox();
+  await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
+  await page.mouse.wheel(0, 300);
+  await expect.poll(() => view.evaluate((each) => each.scrollTop)).toBeGreaterThan(100);
+  await page.waitForTimeout(300);
+  return rowAtTop(view);
+}
+
+/** Shows the banner again, once a step has hidden it, and lets the diff settle. */
+async function bannerBack(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    document.querySelector<HTMLElement>('[data-lo-banners]')?.style.removeProperty('display'),
+  );
+  await page.waitForTimeout(300);
 }
 
 test.describe('when a banner over the diff goes', () => {
@@ -1199,129 +1229,94 @@ test.describe('when a banner over the diff goes', () => {
     expect(Math.abs((await at()) - before)).toBeLessThanOrEqual(1);
   });
 
-  test('leaves a line the view is holding where it is on the page', async ({ app, page }) => {
-    const { at, before } = await scrolled(app, page);
-    // The view holds what's at the top as it changes, and the banner goes meanwhile.
-    await page.evaluate(() => {
-      const top = window.loDiff?.viewport();
-      if (top) window.loDiff?.scrollTo(top);
-      document
-        .querySelector<HTMLElement>('[data-lo-banners]')
-        ?.style.setProperty('display', 'none');
-    });
-    await page.waitForTimeout(500);
-
-    expect(Math.abs((await at()) - before)).toBeLessThanOrEqual(1);
-  });
-
-  test('leaves the diff where it is on the page at its end, as less is left to scroll', async ({
+  test('leaves the diff where it is on the page as the banner goes or comes, with a line held, a scroll in the frame, at its end, and files above closed', async ({
     app,
     page,
   }) => {
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
-    await drawn(page, 'github', { moves: false });
-    // The banner that says the local copy couldn't be fetched, which can come after GitHub's diff.
-    await expect(page.locator('[data-lo-banners]')).toBeVisible({ timeout: 20_000 });
-    const view = page.locator('.lo-diffview');
-    // Two pixels short of the end, then at it: the box growing pulls the scroll back to the end.
-    for (const short of [2, 0]) {
-      await view.evaluate((each, by) => {
-        each.scrollTop = each.scrollHeight - each.clientHeight - by;
-      }, short);
-      await page.waitForTimeout(300);
-      const row = await view.evaluate((each) => {
-        const top = each.getBoundingClientRect().top;
-        return [...each.querySelectorAll<HTMLElement>('.cm-editor:last-of-type [data-row]')].find(
-          (one) => one.getBoundingClientRect().top >= top,
-        )?.dataset.row;
-      });
-      const at = async () =>
-        (await view.evaluate(
-          (each, key) =>
-            each
-              .querySelector(`.cm-editor:last-of-type [data-row="${key}"]`)
-              ?.getBoundingClientRect().top,
-          row,
-        )) ?? Number.NaN;
-      const before = await at();
-      await page.evaluate(() =>
+    test.setTimeout(60_000);
+    await underBanner(app, page);
+
+    await test.step('leaves a line the view is holding where it is', async () => {
+      const { at, before } = await wheeled(page);
+      // The view holds what's at the top as it changes, and the banner goes meanwhile.
+      await page.evaluate(() => {
+        const top = window.loDiff?.viewport();
+        if (top) window.loDiff?.scrollTo(top);
         document
           .querySelector<HTMLElement>('[data-lo-banners]')
-          ?.style.setProperty('display', 'none'),
-      );
+          ?.style.setProperty('display', 'none');
+      });
+      await page.waitForTimeout(500);
+
+      expect(Math.abs((await at()) - before)).toBeLessThanOrEqual(1);
+      await bannerBack(page);
+    });
+
+    await test.step('takes a scroll in the frame the banner goes as the reader’s, and the move as the box’s', async () => {
+      const { at, before } = await wheeled(page);
+      // The diff scrolls 2 px, and the banner goes before the scroll is heard of.
+      await page.evaluate(() => {
+        const scroller = document.querySelector<HTMLElement>('.lo-diffview');
+        if (scroller) scroller.scrollTop += 2;
+        document
+          .querySelector<HTMLElement>('[data-lo-banners]')
+          ?.style.setProperty('display', 'none');
+      });
+      await page.waitForTimeout(500);
+
+      expect(Math.abs((await at()) - (before - 2))).toBeLessThanOrEqual(1);
+      await bannerBack(page);
+    });
+
+    await test.step('leaves the diff where it is at its end, as less is left to scroll', async () => {
+      const view = page.locator('.lo-diffview');
+      // Two pixels short of the end, then at it: the box growing pulls the scroll back to the end.
+      for (const short of [2, 0]) {
+        await view.evaluate((each, by) => {
+          each.scrollTop = each.scrollHeight - each.clientHeight - by;
+        }, short);
+        await page.waitForTimeout(300);
+        const { at, before } = await rowAtTop(view);
+        await page.evaluate(() =>
+          document
+            .querySelector<HTMLElement>('[data-lo-banners]')
+            ?.style.setProperty('display', 'none'),
+        );
+        await page.waitForTimeout(300);
+
+        expect(Math.abs((await at()) - before)).toBeLessThanOrEqual(0.5);
+        await bannerBack(page);
+      }
+    });
+
+    await test.step('leaves the diff where it is when a banner comes, after files above closed at its end', async () => {
+      const view = page.locator('.lo-diffview');
+      // At the end, the files above close, as the local copy's say would: the view keeps what's on
+      // screen in place, which takes the scroll back to the new end.
+      await page.evaluate(() => document.querySelector<HTMLElement>('[data-lo-banners]')?.remove());
       await page.waitForTimeout(300);
+      await view.evaluate((each) => {
+        each.scrollTop = each.scrollHeight;
+      });
+      await page.waitForTimeout(300);
+      await page.evaluate(() => {
+        const diff = window.loDiff;
+        const shown = new Set(diff?.filesOnScreen());
+        for (const { id } of diff?.files ?? []) if (!shown.has(id)) diff?.close(id);
+      });
+      await page.waitForTimeout(500);
+      // Wheeled up, away from the end.
+      const box = await view.boundingBox();
+      await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
+      await page.mouse.wheel(0, -120);
+      await page.waitForTimeout(500);
+      const { at, before } = await rowAtTop(view);
+
+      // A banner comes: the box moves down and shrinks.
+      await view.evaluate((each) => each.parentElement?.style.setProperty('padding-top', '30px'));
+      await page.waitForTimeout(500);
 
       expect(Math.abs((await at()) - before)).toBeLessThanOrEqual(0.5);
-      await page.evaluate(() =>
-        document.querySelector<HTMLElement>('[data-lo-banners]')?.style.removeProperty('display'),
-      );
-      await page.waitForTimeout(300);
-    }
-  });
-
-  test('leaves the diff where it is when a banner comes, after files above closed at its end', async ({
-    app,
-    page,
-  }) => {
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
-    await drawn(page, 'github', { moves: false });
-    const view = page.locator('.lo-diffview');
-    // At the end, the files above close, as the local copy's say would: the view keeps what's on
-    // screen in place, which takes the scroll back to the new end.
-    await page.evaluate(() => document.querySelector<HTMLElement>('[data-lo-banners]')?.remove());
-    await page.waitForTimeout(300);
-    await view.evaluate((each) => {
-      each.scrollTop = each.scrollHeight;
     });
-    await page.waitForTimeout(300);
-    await page.evaluate(() => {
-      const diff = window.loDiff;
-      const shown = new Set(diff?.filesOnScreen());
-      for (const { id } of diff?.files ?? []) if (!shown.has(id)) diff?.close(id);
-    });
-    await page.waitForTimeout(500);
-    // Wheeled up, away from the end.
-    const box = await view.boundingBox();
-    await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
-    await page.mouse.wheel(0, -120);
-    await page.waitForTimeout(500);
-    const row = await view.evaluate((each) => {
-      const top = each.getBoundingClientRect().top;
-      return [...each.querySelectorAll<HTMLElement>('.cm-editor:last-of-type [data-row]')].find(
-        (one) => one.getBoundingClientRect().top >= top,
-      )?.dataset.row;
-    });
-    const at = async () =>
-      (await view.evaluate(
-        (each, key) =>
-          each.querySelector(`.cm-editor:last-of-type [data-row="${key}"]`)?.getBoundingClientRect()
-            .top,
-        row,
-      )) ?? Number.NaN;
-    const before = await at();
-
-    // A banner comes: the box moves down and shrinks.
-    await view.evaluate((each) => each.parentElement?.style.setProperty('padding-top', '30px'));
-    await page.waitForTimeout(500);
-
-    expect(Math.abs((await at()) - before)).toBeLessThanOrEqual(0.5);
-  });
-
-  test('takes a scroll in the frame the banner goes as the reader’s, and the move as the box’s', async ({
-    app,
-    page,
-  }) => {
-    const { at, before } = await scrolled(app, page);
-    // The diff scrolls 2 px, and the banner goes before the scroll is heard of.
-    await page.evaluate(() => {
-      const scroller = document.querySelector<HTMLElement>('.lo-diffview');
-      if (scroller) scroller.scrollTop += 2;
-      document
-        .querySelector<HTMLElement>('[data-lo-banners]')
-        ?.style.setProperty('display', 'none');
-    });
-    await page.waitForTimeout(500);
-
-    expect(Math.abs((await at()) - (before - 2))).toBeLessThanOrEqual(1);
   });
 });
