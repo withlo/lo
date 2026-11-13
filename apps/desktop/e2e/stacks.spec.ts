@@ -367,9 +367,10 @@ test.describe('a run of layers', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
       "Stack C: count a query's nodes",
     );
-    // The diff's note and the tab's name agree with the heading on the run's top layer, #C.
+    // The diff's note names the run's ends, and the tab's name agrees with the heading on its top
+    // layer, #C.
     await expect(page.getByRole('note', { name: 'What the diff compares' })).toHaveText(
-      `Every change in #${STACK.b} to #${STACK.c}`,
+      `Every change, #${STACK.b} → #${STACK.c}`,
     );
     await expect(page.locator('[data-tab]').first()).toContainText(`#${STACK.c}`);
     await expect(page.locator('[data-tab]').first()).not.toContainText(`#${STACK.b}`);

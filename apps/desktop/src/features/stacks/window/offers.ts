@@ -42,13 +42,22 @@ export function applyOffer(id: string, offer: Offer): void {
 /**
  * Whether the diff on screen, as main says it (`state`), already starts where `offer` says: it's
  * compared with that commit, or the local copy worked out that its changes start there, as when the
- * layer's base branch was the layer below's until it was changed elsewhere. For a start at the base
- * branch (no commit), it's compared with that. A diff main hasn't worked out the start of, as
- * GitHub's, doesn't.
+ * layer's base branch was the layer below's until it was changed elsewhere. A start at the base
+ * branch (no commit) is the whole pull request drawn with no start of its own: not two revisions
+ * compared, nor a diff still waiting for the local copy, which don't start there though they're
+ * compared with no commit either. A diff main hasn't worked out the start of, as GitHub's, doesn't
+ * start where a commit says.
  */
 export function startedAt(offer: Offer, state: DiffState | undefined): boolean {
   if (state === undefined) return false;
-  if (offer.commit === null) return state.compareFrom === null;
+  if (offer.commit === null) {
+    return (
+      state.compareFrom === null &&
+      state.comparison === null &&
+      state.waiting === null &&
+      state.from !== null
+    );
+  }
   return state.compareFrom === offer.commit || state.start === offer.commit;
 }
 

@@ -57,12 +57,13 @@ function fileCount({ count, partial }: NonNullable<RunBarProps['files']>): strin
  * from. A pull request's text is drawn as text; the key and what the button does belong to the
  * caller.
  *
- * The count of files keeps its room whatever the width. The branches are the first to go: a bar
- * under 1,000 px wide, as the window's default is, leaves them out rather than cutting the layers'
- * names, or the count, short for them.
+ * The count of files is never cut short. The branches are the first to go: a bar under 1,000 px
+ * wide, as the window's default is, leaves them out rather than cutting the layers' names, or the
+ * count, short for them. The line of text may still be cut, so its title says all of it.
  */
 export function RunBar({ layers, branches, files, instead, back, backKeys, onBack }: RunBarProps) {
   const which = listed(layers.map(named));
+  const said = `${instead ?? `${layers.length} layers as one diff`} · ${which}`;
   // What's on screen isn't the run's diff, so neither is where it goes between nor how many files.
   const between = instead === undefined ? branches : undefined;
   const count = instead === undefined ? files : undefined;
@@ -76,14 +77,14 @@ export function RunBar({ layers, branches, files, instead, back, backKeys, onBac
         <path d="M8 2.25 13.75 5 8 7.75 2.25 5Z" />
         <path d="M2.25 8 8 10.75 13.75 8M2.25 11 8 13.75 13.75 11" />
       </svg>
-      <p className="min-w-0 truncate" title={which}>
+      <p className="min-w-0 truncate" title={said}>
         <strong className="font-semibold">
           {instead ?? `${layers.length} layers as one diff`}
         </strong>{' '}
         · {which}
       </p>
       {(between !== undefined || count !== undefined) && (
-        <span className="flex flex-none items-center gap-6 text-fg-muted code-small">
+        <span className="flex items-center gap-6 text-fg-muted code-small">
           {between !== undefined && (
             <span className="run-branches min-w-0 truncate">
               {between.from} → {between.to}

@@ -242,12 +242,12 @@ GraphQL pages. It builds the stack graph from that and refreshes it as it polls.
   from where its bottom layer's changes start to its top layer's head, and so can the stack from its
   bottom up to any layer. A run is chosen in the stack tree, and opens on its diff in a view of its
   own, with a bar that names its layers and goes back to the layer it was chosen from, as `Esc`
-  does. The diff's note and the tab name the run's top layer, as the heading does, since a run's
-  diff ends at its head. A run marks no file viewed, compares no revisions and has no overview,
-  since each of those is a layer's own. It isn't restored after a restart. When GitHub can't compare
-  a run from where its bottom layer starts, the bar says only the top layer's pull request shows,
-  and that the local copy's diff replaces it once it's ready, without the run's branches and file
-  count, which describe the run.
+  does. The diff's note names the run's ends ("Every change, #4819 → #4821"), and the tab names its
+  top layer, as the heading does, since a run's diff ends at its head. A run marks no file viewed,
+  compares no revisions and has no overview, since each of those is a layer's own. It isn't restored
+  after a restart. When GitHub can't compare a run from where its bottom layer starts, the bar says
+  only the top layer's pull request shows, and that the local copy's diff replaces it once it's
+  ready, without the run's branches and file count, which describe the run.
 - **After a merge.** When a lower layer is squash-merged, the layer above is compared against the
   merged layer's last commit. Changes that already landed stay hidden, and the layer is marked
   "needs rebase." A layer that needs a rebase shows its stack even when it's the only layer left.
@@ -265,10 +265,11 @@ layer shows its title, number, author, review state, the state of its checks, it
 queue, any "needs rebase" mark, whether it has an overview, and how many of its files you've viewed:
 for the layer on screen, of the files its diff shows. The tree scrolls when the stack is longer than
 its share of the panel, and keeps the layer on screen, or the one the keyboard moved to, in view as
-they change and as the space around the tree does. `]s` and `[s` walk the tree from top to bottom,
-finishing one branch before starting the next, and stop at either end. Showing a layer isn't a jump,
-so `⌃o` doesn't go back to the one before. A link to any layer opens the whole stack in one tab, at
-that layer, and each layer keeps its own place.
+they change and as the space around the tree does, unless you've scrolled the tree yourself since:
+then it stays where you left it until another layer is shown. `]s` and `[s` walk the tree from top
+to bottom, finishing one branch before starting the next, and stop at either end. Showing a layer
+isn't a jump, so `⌃o` doesn't go back to the one before. A link to any layer opens the whole stack
+in one tab, at that layer, and each layer keeps its own place.
 
 ### Turning chains into GitHub stacks
 
@@ -383,6 +384,9 @@ says so. The same applies to a stacked layer when the layer below it gets a new 
 
 - **GitHub's marks.** Lo reads and sets GitHub's own per-file viewed marks, so they match the web UI
   and other computers. Each PR in a stack has its own marks.
+- **The count.** "Viewed" counts the files of the PR, or of the layer's own diff when it starts
+  above the PR's base, and comparing revisions doesn't change it: files that only changed between
+  two revisions aren't in it.
 - **Changed since viewed.** When a push changes a viewed file, GitHub resets it to "changed since
   viewed." Lo remembers, on this computer, the revision at which you marked each file viewed, and
   opens the file to what changed since then. For a file marked viewed elsewhere, it shows what

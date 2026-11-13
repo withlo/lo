@@ -141,10 +141,15 @@ it('doesn’t offer a start the diff on screen has', () => {
   expect(at({ compareFrom: '6'.repeat(40) })).toBe(false);
   expect(at({ from: 'github' })).toBe(false);
   expect(startedAt(OFFER, undefined)).toBe(false);
-  // A start at the base branch is the diff compared with it.
+  // A start at the base branch is the whole pull request, compared with no commit.
   const base: Offer = { ...OFFER, commit: null };
   expect(startedAt(base, diffOf('t', { compareFrom: null }))).toBe(true);
   expect(startedAt(base, diffOf('t', { compareFrom: BELOW }))).toBe(false);
+  // Not while two revisions are compared, or the diff waits for the local copy: neither is
+  // compared with a commit, and neither starts at the base branch.
+  expect(startedAt(base, diffOf('t', { comparison: 'r4 r5' }))).toBe(false);
+  expect(startedAt(base, diffOf('t', { waiting: 'the local copy', from: null }))).toBe(false);
+  expect(startedAt(base, diffOf('t', { from: null, files: null }))).toBe(false);
 });
 
 it('goes once the diff on screen starts where it offers, and stays while it starts elsewhere', async () => {

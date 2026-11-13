@@ -4,11 +4,12 @@
 // for; the path a file's key names; and the file finder, opened on a name.
 
 import { useViewedMarks, viewedCountIn, type ShownMarks } from '../../revisions/window/shared.ts';
-import { useChangedFiles, useTabState, type Files } from '../../tab/window/shared.ts';
+import type { LocalState } from '../../tab/contract.ts';
+import { useChangedFiles, useLocalCopy, useTabState, type Files } from '../../tab/window/shared.ts';
 import type { Changed, TreePath, TreeState } from '../contract.ts';
 import { foldersOf, panelOrder, type Mode } from './model.ts';
 import { keyOf, pathOfKey } from './paths.ts';
-import { choices, focus, onScreen, picked, reveal, shown, states } from './store.ts';
+import { choices, focus, held, onScreen, picked, reveal, shown, states } from './store.ts';
 
 /** The order of each tab's changed files, kept until its changes or its mode change. */
 const orders = new Map<
@@ -64,31 +65,39 @@ export function orderIn(changes: readonly Changed[], mode: OrderMode): readonly 
 }
 
 /**
- * How many of the files a tab's diff on screen shows are viewed, of how many, from GitHub's `marks`
- * and the tree's `state`: counted among the changed files the tree lists, which a stack's layer
- * compared with the layer below it limits to its own, where GitHub's count is of the pull request's,
- * layers below included. `listed` is the files GitHub listed with their marks: `partial` while that's
- * fewer than the pull request changes, or while the tree's list is, so there may be more viewed, or
- * more files, than it says. Nothing until the marks and the changed files are known.
+ * How many of a tab's files are viewed, of how many, from GitHub's `marks`: GitHub's own count, of
+ * every file its pull request changes, or, when the tab is a stack's layer compared with the layer
+ * below it (its `local` copy says so), which its pull request's files include the layers of, the
+ * count among the files its diff holds, `held`, once they're known. `listed` is the files GitHub
+ * listed with their marks: `partial` while that's fewer than the pull request changes, so there may
+ * be more viewed than it says. Nothing until GitHub's marks are in. Comparing revisions changes
+ * neither count: it lists other files, which the pull request may not change.
  */
 export function viewedCountOf(
   marks: ShownMarks,
-  state: TreeState | undefined,
   listed: Files | undefined,
+  local: LocalState | undefined,
+  kept: readonly Changed[] | undefined,
 ): { readonly viewed: number; readonly total: number; readonly partial: boolean } | undefined {
-  if (marks.count === undefined || !state?.changes) return undefined;
-  const partial = state.partial || (listed?.files.length ?? 0) < marks.count.total;
-  return { ...(state.partial ? marks.count : viewedCountIn(marks, state.changes)), partial };
+  if (marks.count === undefined) return undefined;
+  const partial = (listed?.files.length ?? 0) < marks.count.total;
+  const layered = local?.kind === 'ready' && local.from !== undefined;
+  return { ...(layered && kept ? viewedCountIn(marks, kept) : marks.count), partial };
 }
 
-/** {@link viewedCountOf} for `tab`, re-rendering as it changes. */
+/**
+ * {@link viewedCountOf} for `tab`, re-rendering as it changes. The files its diff holds are those
+ * the tree last listed while no revisions were compared, once the local copy has worked out where
+ * its layer starts; until then, GitHub's count shows.
+ */
 export function useViewedCount(
   tab: string,
 ): { readonly viewed: number; readonly total: number; readonly partial: boolean } | undefined {
   const marks = useViewedMarks(tab);
-  const state = useTabState(states, tab);
   const listed = useChangedFiles(tab);
-  return viewedCountOf(marks, state, listed);
+  const local = useLocalCopy(tab);
+  const kept = useTabState(held, tab);
+  return viewedCountOf(marks, listed, local, kept);
 }
 
 /**

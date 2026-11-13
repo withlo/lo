@@ -176,9 +176,9 @@ describe('the note over the diff', () => {
   it('names the layers of a run, or the pull request when GitHub couldn’t compare it as one diff', () => {
     expect(runNoteOf([83, 84], false)).toEqual({
       tone: 'plain',
-      text: 'Every change in #83 to #84',
+      text: 'Every change, #83 → #84',
     });
-    expect(runNoteOf([82, 83, 84], false).text).toBe('Every change in #82 to #84');
+    expect(runNoteOf([82, 83, 84], false).text).toBe('Every change, #82 → #84');
     // The diff shows only the top layer's pull request then, which is what the note says.
     expect(runNoteOf([83, 84], true).text).toBe('Every change in the pull request');
   });

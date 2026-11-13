@@ -305,7 +305,6 @@
    window's default is: there's no room for them beside the layers' names, which would be cut short
    for them, and the count of files, which is never cut. The bar is the container (`@container`). */
 @utility run-branches {
-  max-width: 20rem;
   @container (width < 1000px) {
     display: none;
   }
