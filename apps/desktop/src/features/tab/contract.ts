@@ -26,6 +26,20 @@ const pullRequest = {
   number: z.number().int().min(1),
 };
 
+/** A pull request's number in its repository, as GitHub can hold one. */
+export const pullNumber = z
+  .number()
+  .int()
+  .min(1)
+  .max(2 ** 31 - 1);
+
+/**
+ * A stack, as a pull request's tab names it: its layers by number, in the order `]s` walks them,
+ * bottom first, and the branch the bottom layer sits on.
+ */
+export const stack = z.strictObject({ layers: z.array(pullNumber).min(1), root: z.string() });
+export type Stack = z.output<typeof stack>;
+
 /** Whether a pull request's owner, repository and number are as a link to it would read them. */
 function isPullRequest({ owner, repo, number }: { owner: string; repo: string; number: number }) {
   try {
@@ -39,8 +53,12 @@ function isPullRequest({ owner, repo, number }: { owner: string; repo: string; n
 /**
  * A tab as the strip shows it. Its kind says what it holds:
  *
- * - `pull`, a pull request (or a whole stack), with its title and state once GitHub has given
- *   them. They're kept, so a tab that hasn't been shown since Lo started still says what it holds.
+ * - `pull`, a pull request, or a whole stack, named by the pull request it opened on. It holds a
+ *   view of each layer the reader has shown: `layer` is the one on screen when it isn't the tab's
+ *   own, and `layers` every layer it has a view of, when that's more than its own. Its title and
+ *   state are the layer on screen's, once GitHub has given them, and `stack` the stack that layer
+ *   is in, once that's known. The title and state are kept, so a tab that hasn't been shown since
+ *   Lo started still says what it holds.
  * - `recent`, the pull requests opened recently. It stands in for an empty strip: it's there only
  *   while no other tab is, and it can't be closed.
  * - `settings`, Lo's settings, open in one tab at most.
@@ -52,6 +70,9 @@ export const tab = z.discriminatedUnion('kind', [
     ...pullRequest,
     title: z.string().optional(),
     state: pullState.optional(),
+    layer: pullNumber.optional(),
+    layers: z.array(pullNumber).optional(),
+    stack: stack.optional(),
   }),
   z.strictObject({ id: tabId, kind: z.literal('recent') }),
   z.strictObject({ id: tabId, kind: z.literal('settings') }),
@@ -64,6 +85,72 @@ export type Kind = Tab['kind'];
 /** The tabs in the strip's order, and the one on screen. There's always at least one. */
 export const tabs = z.strictObject({ tabs: z.array(tab).min(1), active: tabId });
 export type Tabs = z.output<typeof tabs>;
+
+/** What names a pull request's tab's views: its id, and the pull request it opened on. */
+interface PullTabName {
+  readonly id: string;
+  readonly number: number;
+}
+
+/** The layer on screen in a pull request's tab: the pull request it opened on, unless another. */
+export function layerOf(named: PullTabName & { readonly layer?: number | undefined }): number {
+  return named.layer ?? named.number;
+}
+
+/** The layers a pull request's tab has a view of: the pull request it opened on, unless more. */
+export function layersOf(
+  named: PullTabName & { readonly layers?: readonly number[] | undefined },
+): readonly number[] {
+  return named.layers ?? [named.number];
+}
+
+/**
+ * The id of a pull request's tab's view of `layer`: the tab's own id for the pull request it
+ * opened on, and `<tab id>:<number>` for another layer. Main, the diff, the tree, revisions and the
+ * overview key what they keep of a pull request's tab by its view, so each layer keeps its own.
+ */
+export function viewId(named: PullTabName, layer: number): string {
+  return layer === named.number ? named.id : `${named.id}:${layer}`;
+}
+
+/**
+ * The id of every view of `open`: each tab's own, and each other layer a pull request's tab has a
+ * view of. What a feature keeps for a view goes once its id is no longer among them.
+ */
+export function viewIds(open: readonly Tab[]): string[] {
+  return open.flatMap((each) =>
+    each.kind === 'pull'
+      ? [
+          each.id,
+          ...layersOf(each)
+            .filter((layer) => layer !== each.number)
+            .map((layer) => viewId(each, layer)),
+        ]
+      : [each.id],
+  );
+}
+
+/**
+ * `shown` as features that follow the tab on screen see it: a pull request's tab as its view on
+ * screen, by that view's id and its layer's number, without what only the strip shows. Any other
+ * tab, and a pull request's tab with one view, as it is.
+ */
+export function onScreen(shown: Tab): Tab {
+  if (shown.kind !== 'pull') return shown;
+  const { layer, layers, stack: held, ...view } = shown;
+  if (layer === undefined && layers === undefined && held === undefined) return shown;
+  return layer === undefined ? view : { ...view, id: viewId(shown, layer), number: layer };
+}
+
+/**
+ * `listed` as features that follow the tab on screen see them: a pull request's tab as its view on
+ * screen.
+ */
+export function viewsOnScreen({ tabs: listed, active }: Tabs): Tabs {
+  const shown = listed.map(onScreen);
+  const at = listed.findIndex((each) => each.id === active);
+  return { tabs: shown, active: shown[at]?.id ?? active };
+}
 
 /** What a tab opens on: a pull request, or Settings. Recent opens by itself. */
 export const opening = z.discriminatedUnion('kind', [
@@ -291,20 +378,36 @@ export function isGithubPage(address: string): boolean {
   return url.href.startsWith('https://github.com/');
 }
 
-/** A tab, by its id. */
+/**
+ * A tab, by its id. What's asked of a pull request's tab is asked of one of its views, by the
+ * view's id ({@link viewId}): the tab's own id is its view of the pull request it opened on.
+ */
 const byId = z.strictObject({ id: tabId });
 
 export const contract = defineContract('tab', {
   requests: {
     list: { input: z.undefined(), reply: reply<Tabs>() },
     /**
-     * Opens a tab and shows it, and replies with its id. A pull request already open, by any name
-     * it's known by, or Settings when it's open, shows the tab it's in.
+     * Opens a tab and shows it, and replies with the id of the view that shows what was opened:
+     * the tab's own, unless the pull request is another layer of a stack the tab holds. A pull
+     * request already open, by any name it's known by, shows the tab it opened in, at its layer;
+     * else one in the stack a tab holds shows that tab, at its layer. Settings when it's open shows
+     * its tab.
      */
     open: { input: opening, reply: reply<string>() },
     /** Closes a tab, or without an id, the one on screen. Recent can't be closed. */
     close: { input: z.strictObject({ id: tabId.optional() }), reply: reply<void>() },
     select: { input: choice, reply: reply<void>() },
+    /**
+     * Shows a pull request's tab, named by its id or one of its views', at layer `number`: its view
+     * of that pull request, made the first time, which lives until the tab closes. The pull request
+     * the tab opened on is its own layer. Replies with the view's id: nothing when there's no such
+     * tab.
+     */
+    layer: {
+      input: z.strictObject({ id: tabId, number: pullNumber }),
+      reply: reply<string | undefined>(),
+    },
     /**
      * Moves a tab to another place in the strip, or one place along it, and replies with where it
      * is now: nothing when there's no such tab. A step without an id moves the tab on screen as
@@ -344,11 +447,11 @@ export const contract = defineContract('tab', {
   topics: {
     /** The tabs, each time they change. */
     tabs,
-    /** A pull request's tab, each time what it shows changes. */
+    /** A view of a pull request's tab, each time what it shows changes. */
     pull,
-    /** The files a pull request's tab's pull request changes, each time the list changes. */
+    /** The files a view's pull request changes, each time the list changes. */
     files,
-    /** A pull request's tab's local copy, each time it changes. */
+    /** A view's local copy, each time it changes. */
     local,
   },
 });

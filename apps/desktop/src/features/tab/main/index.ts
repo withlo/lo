@@ -1,7 +1,8 @@
 // The tab feature in main: it keeps the window's tabs, tells the window each time they change, and
-// opens them for other features, as links from other apps will. Each pull request's tab watches
-// its pull request with its account's poller, and fetches its local copy once it's shown. It also
-// copies text and opens github.com pages for every feature.
+// opens them for other features, as links from other apps will. Each view of a pull request's tab,
+// one for each layer of a stack it has shown, watches its pull request with its account's poller,
+// and fetches its local copy once it's shown. Other features follow a pull request's tab by its
+// view on screen. It also copies text and opens github.com pages for every feature.
 
 import { app, clipboard } from 'electron';
 
@@ -12,7 +13,14 @@ import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
 import { login as accountLogin } from '../../accounts/contract.ts';
-import { contract, isGithubPage, opening as openingSchema, type Tabs } from '../contract.ts';
+import {
+  contract,
+  isGithubPage,
+  opening as openingSchema,
+  stack as stackSchema,
+  viewsOnScreen,
+  type Tabs,
+} from '../contract.ts';
 import { tabs } from '../service.ts';
 import { createTabs, type TabList } from './tabs.ts';
 import { Watcher } from './watcher.ts';
@@ -21,7 +29,10 @@ let kept: TabList | undefined;
 let watcher: Watcher | undefined;
 /** Other features following pull requests' tabs, which may start listening before the watcher. */
 const following = new Set<(id: string) => void>();
-/** Other features following the tabs themselves: which are open, and which is on screen. */
+/**
+ * Other features following the tabs themselves: which are open, and which is on screen, each pull
+ * request's tab by its view on screen.
+ */
 const watchingTabs = new Set<(value: Tabs) => void>();
 
 const log = (line: string) => console.error(`tab: ${line}`);
@@ -33,9 +44,10 @@ function tabsOf({ database, publish }: FeatureContext<typeof contract>): TabList
     changed: (value) => {
       publish('tabs', value);
       watcher?.follow(value);
+      const views = viewsOnScreen(value);
       for (const listener of watchingTabs) {
         try {
-          listener(value);
+          listener(views);
         } catch (error) {
           log(`a listener failed: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -51,7 +63,7 @@ function watching(): Watcher {
   return watcher;
 }
 
-/** The watcher, once it's checked that `id` is a pull request's tab. */
+/** The watcher, once it's checked that `id` is a view of a pull request's tab. */
 function pullTab(id: string): Watcher {
   const running = watching();
   if (!running.has(id)) {
@@ -64,13 +76,16 @@ export default defineFeature(contract, {
   uses: [github],
   provide: (context) => [
     provides(tabs, {
-      list: () => tabsOf(context).list(),
+      list: () => viewsOnScreen(tabsOf(context).list()),
       // Checked as a request's input is: what another feature hands over may come from a link.
       open: (opening, as) =>
         tabsOf(context).open(
           openingSchema.parse(opening),
           as === undefined ? undefined : { login: accountLogin.parse(as.login) },
         ),
+      // Checked too: the stack's numbers and branch come from GitHub.
+      setLayers: (id, stack) =>
+        tabsOf(context).setLayers(id, stack === undefined ? undefined : stackSchema.parse(stack)),
       pull: (id) => watcher?.info(id),
       onPull(listener) {
         following.add(listener);
@@ -97,6 +112,7 @@ export default defineFeature(contract, {
     select(choice, context) {
       tabsOf(context).select(choice);
     },
+    layer: ({ id, number }, context) => tabsOf(context).layer(id, number),
     move: (input, context) =>
       'to' in input
         ? tabsOf(context).move(input.id, input.to)

@@ -1,6 +1,7 @@
-// The window's title: the pull request on screen's, or Lo's name while another kind of tab is.
+// The window's title: the pull request on screen's, and where it is in its stack, or Lo's name
+// while another kind of tab is.
 
-import type { Tab } from '../contract.ts';
+import { layerOf, type Tab } from '../contract.ts';
 import { withoutBidi } from './shared.ts';
 
 export { withoutBidi };
@@ -27,7 +28,7 @@ export function forPullRequest(repository: string, number: number, title?: strin
 /** `title`, a pull request's, for a layer of a stack: where it is, and what the stack sits on. */
 export function inStack(title: string, { root, layer, layers }: StackPosition): string {
   const where = layer === undefined ? layerCount(layers) : `layer ${layer} of ${layers}`;
-  return `${title} · ${where}, stack on ${root}`;
+  return `${title} · ${where}, stack on ${withoutBidi(root)}`;
 }
 
 /** "1 layer", "5 layers". */
@@ -35,8 +36,20 @@ function layerCount(count: number): string {
   return count === 1 ? '1 layer' : `${count} layers`;
 }
 
-/** The window's title while `tab` is on screen. */
+/**
+ * The window's title while `tab` is on screen: its layer on screen's, and, once the stack it's in
+ * is known, where in the stack it is.
+ */
 export function windowTitle(tab: Tab | undefined): string {
   if (tab?.kind !== 'pull') return NO_PULL_REQUEST;
-  return forPullRequest(`${tab.owner}/${tab.repo}`, tab.number, tab.title);
+  const layer = layerOf(tab);
+  const title = forPullRequest(`${tab.owner}/${tab.repo}`, layer, tab.title);
+  const { stack } = tab;
+  if (!stack) return title;
+  const at = stack.layers.indexOf(layer);
+  return inStack(title, {
+    root: stack.root,
+    layer: at < 0 ? undefined : at + 1,
+    layers: stack.layers.length,
+  });
 }

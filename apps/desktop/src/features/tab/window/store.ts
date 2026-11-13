@@ -1,9 +1,18 @@
-// The tabs as the window knows them, and what main last said of each pull request's tab. Only the
-// tab feature writes here; other features read them through `shared.ts`.
+// The tabs as the window knows them, and what main last said of each view of a pull request's tab.
+// Only the tab feature writes here; other features read them through `shared.ts`.
 
 import { createStore } from 'zustand/vanilla';
 
-import type { Files, Local, LocalState, PullView, Tab, Tabs } from '../contract.ts';
+import {
+  onScreen,
+  viewIds,
+  type Files,
+  type Local,
+  type LocalState,
+  type PullView,
+  type Tab,
+  type Tabs,
+} from '../contract.ts';
 
 export interface TabsState {
   /** The tabs in the strip's order: none only until main first says. */
@@ -19,12 +28,30 @@ export function showTabs({ tabs, active }: Tabs): void {
   tabsStore.setState({ tabs, active }, true);
 }
 
-/** The tab on screen in `state`. */
-export function activeOf({ tabs, active }: TabsState): Tab | undefined {
+/** The tab on screen in `state`, as main sent it. */
+export function tabOnScreen({ tabs, active }: TabsState): Tab | undefined {
   return tabs.find((tab) => tab.id === active);
 }
 
-/** What main last said of each pull request's tab, by the tab's id. */
+/** Each tab main sent as its view on screen, made once, so what compares them sees no change. */
+const onScreenViews = new WeakMap<Tab, Tab>();
+
+/**
+ * The tab on screen in `state`, as features that follow it see it: a pull request's tab as its view
+ * on screen, by that view's id and its layer's number.
+ */
+export function activeOf(state: TabsState): Tab | undefined {
+  const tab = tabOnScreen(state);
+  if (!tab) return undefined;
+  let view = onScreenViews.get(tab);
+  if (!view) {
+    view = onScreen(tab);
+    onScreenViews.set(tab, view);
+  }
+  return view;
+}
+
+/** What main last said of each view of a pull request's tab, by the view's id. */
 export interface PullsState {
   readonly views: ReadonlyMap<string, PullView>;
   readonly files: ReadonlyMap<string, Files>;
@@ -37,7 +64,7 @@ export const pullsStore = createStore<PullsState>()(() => ({
   locals: new Map(),
 }));
 
-/** Keeps what main said of a pull request's tab, while the tab is open. */
+/** Keeps what main said of a view of a pull request's tab, while the tab is open. */
 export function showPull(view: PullView): void {
   if (!isOpen(view.id)) return;
   const { views } = pullsStore.getState();
@@ -56,15 +83,17 @@ export function showLocal({ id, state }: Local): void {
   pullsStore.setState({ locals: new Map(locals).set(id, state) });
 }
 
-/** Whether `id` is an open tab, as far as the window knows: a tab still opening counts. */
+/**
+ * Whether `id` is a view of an open tab, as far as the window knows: a tab still opening counts.
+ */
 function isOpen(id: string): boolean {
   const { tabs } = tabsStore.getState();
-  return tabs.length === 0 || tabs.some((tab) => tab.id === id);
+  return tabs.length === 0 || viewIds(tabs).includes(id);
 }
 
-// A closed tab's pull request goes with it.
+// A closed tab's views go with it.
 tabsStore.subscribe((next) => {
-  const open = new Set(next.tabs.map(({ id }) => id));
+  const open = new Set(viewIds(next.tabs));
   const { views, files, locals } = pullsStore.getState();
   const keep = <T>(map: ReadonlyMap<string, T>) => new Map([...map].filter(([id]) => open.has(id)));
   if ([...views.keys(), ...files.keys(), ...locals.keys()].every((id) => open.has(id))) return;
