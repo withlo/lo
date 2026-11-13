@@ -22,7 +22,14 @@ export function DiffStatus({ tab }: { tab: PullTab }) {
         </StatusItem>
       )}
       {state?.partial && (
-        <StatusItem dot="warn" title="GitHub lists 3,000 changed files at most.">
+        <StatusItem
+          dot="warn"
+          title={
+            state.compareFrom === null
+              ? 'GitHub lists 3,000 changed files at most.'
+              : 'GitHub’s comparison with the layer below lists 300 changed files at most. The rest show once the local copy is ready.'
+          }
+        >
           Some files left out
         </StatusItem>
       )}

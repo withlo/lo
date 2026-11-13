@@ -61,9 +61,10 @@ export interface ViewOutput {
 
 /**
  * The stack the tab of pull request `input.number` shows. It's unknown until the forest is, and
- * shows when it has two layers or more, or when the pull request is in a GitHub stack. Once the
- * pull request merges or closes, its row stays where it was in the stack it showed, among the other
- * layers as the forest now has them, while they're still one stack.
+ * shows when it has two layers or more, when the pull request is in a GitHub stack, or when it needs
+ * a rebase, alone or not, so its note says why its diff starts where it does. Once the pull request
+ * merges or closes, its row stays where it was in the stack it showed, among the other layers as
+ * the forest now has them, while they're still one stack.
  */
 export function viewOf(input: ViewInput): ViewOutput {
   const { forest, list, number, shown } = input;
@@ -71,7 +72,8 @@ export function viewOf(input: ViewInput): ViewOutput {
   const own = layerOf(forest, number);
   if (own) {
     const stack = stackOf(forest, number);
-    if (!stack || (stack.layers.length < 2 && own.nativeStack === undefined)) {
+    const alone = own.nativeStack === undefined && own.needsRebase === undefined;
+    if (!stack || (stack.layers.length < 2 && alone)) {
       return { view: { kind: 'none' }, shown: undefined, ids: [] };
     }
     return drawn(input, forest, list, stack, undefined);

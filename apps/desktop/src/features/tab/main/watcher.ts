@@ -158,6 +158,11 @@ export class Watcher {
     this.#tabs.get(id)?.drawn(head);
   }
 
+  /** Compares view `id` with `commit`, a stack's layer's start, or with its base branch. */
+  compareFrom(id: string, commit: string | undefined): void {
+    this.#tabs.get(id)?.compareFrom(commit);
+  }
+
   reload(id: string): void {
     this.#tabs.get(id)?.reload();
   }

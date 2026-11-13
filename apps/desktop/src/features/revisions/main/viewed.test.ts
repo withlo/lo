@@ -64,6 +64,8 @@ function info(overrides: Partial<PullTabInfo> = {}): PullTabInfo {
     latest: HEAD,
     provisional: false,
     local: { kind: 'waiting' },
+    compareFrom: undefined,
+    drawn: false,
     ...overrides,
   };
 }

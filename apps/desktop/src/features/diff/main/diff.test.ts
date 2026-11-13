@@ -97,6 +97,8 @@ function e2eInfo(
     latest: APP_PULL.head,
     provisional: false,
     local,
+    compareFrom: undefined,
+    drawn: false,
   };
 }
 
@@ -173,7 +175,7 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     const parser = find(state, 'src/parser.ts');
     const legacy = find(state, 'src/legacy.ts');
 
-    const [renamed, deleted] = await diff.texts(APP_PULL.head, null, null, 'local', [
+    const [renamed, deleted] = await diff.texts(APP_PULL.head, null, null, null, 'local', [
       parser.place,
       legacy.place,
     ]);
@@ -184,18 +186,20 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     expect(deleted).toMatchObject({ kind: 'texts', new: null });
 
     await expect(
-      diff.texts(APP_PULL.firstHead, null, null, 'local', [parser.place]),
+      diff.texts(APP_PULL.firstHead, null, null, null, 'local', [parser.place]),
     ).rejects.toMatchObject({
       code: 'moved',
     });
     await expect(
-      diff.texts(APP_PULL.head, null, null, 'github', [parser.place]),
+      diff.texts(APP_PULL.head, null, null, null, 'github', [parser.place]),
     ).rejects.toMatchObject({
       code: 'moved',
     });
-    await expect(diff.texts(APP_PULL.head, null, null, 'local', [999])).rejects.toMatchObject({
-      code: 'invalid',
-    });
+    await expect(diff.texts(APP_PULL.head, null, null, null, 'local', [999])).rejects.toMatchObject(
+      {
+        code: 'invalid',
+      },
+    );
   });
 
   it('refuses a file with a line over a mebibyte, which is as slow to lay out as it is large', async () => {
@@ -212,7 +216,7 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     diff.update(e2eInfo(READY));
     const state = await settled((each) => each.from === 'local');
 
-    const [text] = await diff.texts(APP_PULL.head, null, null, 'local', [
+    const [text] = await diff.texts(APP_PULL.head, null, null, null, 'local', [
       find(state, 'src/parser.ts').place,
     ]);
     expect(text).toEqual({ kind: 'missing', why: expect.stringContaining('a line over 1 MiB') });
@@ -240,13 +244,13 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     });
     const parser = find(github, 'src/parser.ts');
     expect(parser.file.old).toBe(null);
-    const [patch] = await diff.texts(APP_PULL.head, null, null, 'github', [parser.place]);
+    const [patch] = await diff.texts(APP_PULL.head, null, null, null, 'github', [parser.place]);
     expect(patch).toMatchObject({
       kind: 'patch',
       patch: expect.stringContaining('@@ -4,9 +4,10 @@'),
     });
     const numbers = find(github, 'data/numbers.txt');
-    expect(await diff.texts(APP_PULL.head, null, null, 'github', [numbers.place])).toEqual([
+    expect(await diff.texts(APP_PULL.head, null, null, null, 'github', [numbers.place])).toEqual([
       { kind: 'missing', why: expect.any(String) },
     ]);
 
@@ -254,7 +258,7 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     const local = await settled((each) => each.from === 'local');
     expect(local.files).toHaveLength(github.files?.length ?? 0);
     await expect(
-      diff.texts(APP_PULL.head, null, null, 'github', [parser.place]),
+      diff.texts(APP_PULL.head, null, null, null, 'github', [parser.place]),
     ).rejects.toMatchObject({
       code: 'moved',
     });
@@ -287,8 +291,8 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
   it('passes on that the window drew the diff at the head on screen, and only then', () => {
     const { diff, drawn } = diffTab({});
     diff.update(e2eInfo());
-    diff.drawn(APP_PULL.firstHead);
-    diff.drawn(APP_PULL.head);
+    diff.drawn(APP_PULL.firstHead, null);
+    diff.drawn(APP_PULL.head, null);
 
     expect(drawn).toEqual([APP_PULL.head]);
   });
@@ -325,12 +329,12 @@ describe('a comparison of revisions', { timeout: 60_000 }, () => {
       ['src/parser.ts', 'modified', false],
     ]);
     // Its texts are the comparison's, asked for by its key.
-    const [text] = await diff.texts(APP_PULL.head, between.key, null, 'local', [0]);
+    const [text] = await diff.texts(APP_PULL.head, between.key, null, null, 'local', [0]);
     expect(text).toMatchObject({
       kind: 'texts',
       new: expect.stringContaining("if (input === '')"),
     });
-    await expect(diff.texts(APP_PULL.head, null, null, 'local', [0])).rejects.toMatchObject({
+    await expect(diff.texts(APP_PULL.head, null, null, null, 'local', [0])).rejects.toMatchObject({
       code: 'moved',
     });
   });
@@ -640,7 +644,7 @@ describe('files a push changed since they were viewed', { timeout: 60_000 }, () 
       start: 'shown',
       since: { label: 'r1', why: 'viewed' },
     });
-    const [text] = await diff.texts(APP_PULL.head, null, 'since:1', 'local', [parser.place]);
+    const [text] = await diff.texts(APP_PULL.head, null, null, 'since:1', 'local', [parser.place]);
     if (text?.kind !== 'texts') throw new Error('no texts');
     expect(text.old).toContain('Splits `input` into lines');
     expect(text.old).not.toContain('Empty input has no lines');
@@ -648,7 +652,7 @@ describe('files a push changed since they were viewed', { timeout: 60_000 }, () 
     expect(text.new).toContain("if (input === '')");
     // Asked for without the files since, the texts have moved on.
     await expect(
-      diff.texts(APP_PULL.head, null, null, 'local', [parser.place]),
+      diff.texts(APP_PULL.head, null, null, null, 'local', [parser.place]),
     ).rejects.toMatchObject({ code: 'moved' });
 
     // Nothing changed in src/format.ts since r1 once the rebase is set aside: it says so.
@@ -704,5 +708,120 @@ describe('files a push changed since they were viewed', { timeout: 60_000 }, () 
     diff.update(e2eInfo(READY), { kind: 'head', since: conflicted });
     const state = await settled((each) => each.from === 'local');
     expect(find(state, 'src/parser.ts').file).toMatchObject({ change: 'renamed', since: null });
+  });
+});
+
+describe('a stack’s layer’s diff', { timeout: 60_000 }, () => {
+  /** rozed-dev/e2e's e2/b and e2/c heads: #4, e2/c, holds e2/b's head. */
+  const B = 'fd3d9a4102c1371a42100297822828c8cd12255c';
+  const C = '4b18a1a61f29869e0665318e518ed79a9957fcc8';
+  /** A commit the repository doesn't have. */
+  const GONE = '0000000000000000000000000000000000000001';
+
+  /** #4's tab, shown at e2/c's head, compared with `compareFrom`. */
+  function layerInfo(
+    compareFrom: string | undefined = B,
+    local: LocalState = { kind: 'fetching', progress: null, attempt: 1 },
+  ): PullTabInfo {
+    return { ...e2eInfo(local), number: 4, shown: C, latest: C, compareFrom };
+  }
+
+  /**
+   * A client answered from the comparisons' cassette, which lists #4's own files when asked for
+   * them, and notes each address it's asked for.
+   */
+  function layerClient(asked: string[]): GithubClient {
+    const replay = replayFetch('rest_comparison_e2e');
+    return new GithubClient({
+      fetch: (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        asked.push(new URL(url).pathname);
+        if (url.includes('/compare/')) return replay(input, init);
+        const file = {
+          filename: 'e2/b.txt',
+          status: 'added',
+          additions: 1,
+          deletions: 0,
+          changes: 1,
+          patch: '@@ -0,0 +1 @@\n+b',
+          contents_url: `https://api.github.com/repos/rozed-dev/e2e/contents/e2%2Fb.txt?ref=${C}`,
+        };
+        return Promise.resolve(
+          new Response(JSON.stringify([file]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      },
+      urls: {
+        api: 'https://api.github.com',
+        web: 'https://github.com',
+        uploads: 'https://uploads.github.com',
+      },
+      token: new Token('gho_FAKE'),
+    });
+  }
+
+  it('reads GitHub’s comparison with the layer below until the local copy is ready', async () => {
+    const asked: string[] = [];
+    const client = layerClient(asked);
+    const { diff, settled } = diffTab({ github: (_acting, request) => request(client) });
+    diff.update(layerInfo());
+    const state = await settled((each) => each.from === 'github');
+
+    expect(state).toMatchObject({ at: C, compareFrom: B, partial: false });
+    expect(state.files?.map((file) => file.path.text)).toEqual(['e2/c.txt']);
+    expect(asked).toEqual([`/repos/rozed-dev/e2e/compare/${B}...${C}`]);
+    const [patch] = await diff.texts(C, null, B, null, 'github', [0]);
+    expect(patch).toMatchObject({ kind: 'patch' });
+    // Asked for with another start, it's moved on.
+    await expect(diff.texts(C, null, null, null, 'github', [0])).rejects.toMatchObject({
+      code: 'moved',
+    });
+  });
+
+  it('reads the pull request’s own files when GitHub no longer has the commit', async () => {
+    const asked: string[] = [];
+    const client = layerClient(asked);
+    const { diff, settled } = diffTab({ github: (_acting, request) => request(client) });
+    diff.update(layerInfo(GONE));
+    const state = await settled((each) => each.from === 'github');
+
+    expect(state).toMatchObject({ compareFrom: GONE });
+    expect(state.files?.map((file) => file.path.text)).toEqual(['e2/b.txt']);
+    expect(asked).toEqual([
+      `/repos/rozed-dev/e2e/compare/${GONE}...${C}`,
+      '/repos/rozed-dev/e2e/pulls/4/files',
+    ]);
+  });
+
+  it('starts again for another start, and waits for the local copy compared with it', async () => {
+    let asked = 0;
+    const { diff, sent } = diffTab({
+      github: () => {
+        asked += 1;
+        return new Promise(() => undefined);
+      },
+    });
+    diff.update({ ...layerInfo(), compareFrom: undefined });
+    expect(sent.at(-1)).toMatchObject({ at: C, compareFrom: null });
+    expect(asked).toBe(1);
+    // The local copy is ready at the head, but still works out where it meets the new start: GitHub
+    // isn't asked, and nothing is read until it has.
+    const ready: LocalState = { kind: 'ready', head: C, base: C, mergeBase: C, offline: false };
+    diff.update(layerInfo(B, ready));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(sent.at(-1)).toMatchObject({ at: C, compareFrom: B, files: null });
+    expect(asked).toBe(1);
+    expect(await diff.whole(C, 'old', { text: 'e2/c.txt' }, false)).toEqual({ kind: 'waiting' });
+  });
+
+  it('passes on that the window drew the diff only from where it starts now', () => {
+    const { diff, drawn } = diffTab({});
+    diff.update(layerInfo());
+    diff.drawn(C, null);
+    expect(drawn).toEqual([]);
+    diff.drawn(C, B);
+    expect(drawn).toEqual([C]);
   });
 });

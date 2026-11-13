@@ -19,19 +19,19 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4980",
-      "x-ratelimit-reset": "1794536958",
+      "x-ratelimit-remaining": "4842",
+      "x-ratelimit-reset": "1794541048",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "20"
+      "x-ratelimit-used": "158"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4980,
-          "used": 20,
-          "resetAt": "2026-11-13T02:29:18Z"
+          "remaining": 4842,
+          "used": 158,
+          "resetAt": "2026-11-13T03:37:28Z"
         },
         "repository": {
           "pullRequest": {
@@ -51,12 +51,25 @@
             },
             "mergeCommit": null,
             "timelineItems": {
-              "filteredCount": 0,
+              "filteredCount": 2,
               "pageInfo": {
                 "hasNextPage": false,
-                "endCursor": null
+                "endCursor": "Y3Vyc29yOnYyOpPPAAABodLKLqABqzM1OTg2NTQ3ODcw"
               },
-              "nodes": []
+              "nodes": [
+                {
+                  "__typename": "BaseRefChangedEvent",
+                  "createdAt": "2026-11-13T02:42:19Z",
+                  "previousRefName": "stack/root",
+                  "currentRefName": "stack/b"
+                },
+                {
+                  "__typename": "BaseRefChangedEvent",
+                  "createdAt": "2026-11-13T02:43:48Z",
+                  "previousRefName": "stack/b",
+                  "currentRefName": "stack/root"
+                }
+              ]
             },
             "reviews": {
               "totalCount": 0,

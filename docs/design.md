@@ -199,8 +199,9 @@ and the whole-file view.
 - **Checkouts.** Trusted repos get a checkout at the PR head for language servers. The old side is
   read straight from git.
 - **Before the copy is ready.** Lo shows GitHub's own diff, builds the file tree from GitHub's API
-  and shows the overview. Whole-file context, navigation and rebase-aware comparison turn on when
-  the copy arrives, with progress shown.
+  and shows the overview. A stack's layer shows GitHub's comparison with the layer below instead,
+  which lists 300 files at most. Whole-file context, navigation and rebase-aware comparison turn on
+  when the copy arrives, with progress shown.
 - **Cleanup.** Settings shows how much space the cache uses and can clear it. Repos unused for 30
   days are removed. The cache also has a size cap, 10 GB by default and changeable in Settings, and
   past it the least recently used copies are removed.
@@ -233,11 +234,17 @@ GraphQL pages. It builds the stack graph from that and refreshes it as it polls.
 ### Layer diffs
 
 - **One layer.** Each layer is compared against the layer below it, not the stack's root, using the
-  local copy of the repo.
+  local copy of the repo. Until the copy is ready, the diff is GitHub's comparison of the two
+  commits. A layer on its base branch, such as a GitHub stack's, already starts there, so its diff
+  is GitHub's own.
 - **Several layers.** The whole stack, or any run of layers, can be viewed as one diff.
 - **After a merge.** When a lower layer is squash-merged, the layer above is compared against the
   merged layer's last commit. Changes that already landed stay hidden, and the layer is marked
-  "needs rebase."
+  "needs rebase." A layer that needs a rebase shows its stack even when it's the only layer left.
+- **Found late.** When Lo knows the stack before the diff is drawn, the diff starts at the right
+  place. When it learns where a layer starts only after the diff is on screen, the diff stays as it
+  is, and a banner offers the change: "#4821's diff includes #4819's changes" with "Show only
+  #4821's". The button reloads the diff from there, as loading a newer push does.
 
 ### The stack tree
 
@@ -776,6 +783,8 @@ repos and PRs, the theme, the cache, and whether a PR opens on its overview or i
 
 - **Busy repos.** Stacks are found among the 1,000 most recently updated open PRs. A note says so
   when a repo has more.
+- **The layer below is gone.** When GitHub no longer has the commit a layer starts at, the layer is
+  compared with its base branch, and its stack says why.
 - **Conversion fails partway.** Lo lists what it changed and offers to put the base branches back.
 - **Async merge fails.** Branch rules are checked when the merge runs, so a failure can arrive late.
   Lo shows GitHub's reason.

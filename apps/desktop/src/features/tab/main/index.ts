@@ -16,6 +16,7 @@ import { login as accountLogin } from '../../accounts/contract.ts';
 import {
   contract,
   isGithubPage,
+  oid,
   opening as openingSchema,
   stack as stackSchema,
   viewsOnScreen,
@@ -99,6 +100,9 @@ export default defineFeature(contract, {
           watchingTabs.delete(listener);
         };
       },
+      // Checked too: the commit comes from GitHub.
+      compareFrom: (id, commit) =>
+        watcher?.compareFrom(id, commit === undefined ? undefined : oid.parse(commit)),
       clone: (id) => watcher?.clone(id),
       drawn: (id, head) => watcher?.drawn(id, head),
     }),

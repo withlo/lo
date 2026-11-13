@@ -10,10 +10,10 @@
       "etag": "W/\"d70fcdb683f46e2d80f6c949d723c10761cd1125f8c49e5169fdd8e1b32f6506\"",
       "x-github-api-version-selected": "2022-11-28",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4915",
-      "x-ratelimit-reset": "1794534447",
+      "x-ratelimit-remaining": "4816",
+      "x-ratelimit-reset": "1794541990",
       "x-ratelimit-resource": "core",
-      "x-ratelimit-used": "85"
+      "x-ratelimit-used": "184"
     },
     "body": [
       {

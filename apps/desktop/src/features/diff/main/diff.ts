@@ -1,7 +1,9 @@
 // A pull request's tab's diff in main: each changed file's versions at the head on screen, and
 // their texts on request. Both come from the local copy once it's ready at that head, and from
 // GitHub's list of the pull request's files, with their patches, until then; what the copy says
-// replaces what GitHub said, and a new head on screen starts again. A file a push changed since the
+// replaces what GitHub said, and a new head on screen starts again. A stack's layer compared with
+// the layer below it reads GitHub's comparison with that layer instead of the pull request's files,
+// and starts again when it's compared with another. A file a push changed since the
 // reader marked it viewed shows, from the local copy, only what changed since, as the revisions
 // feature says. Files are named by their place in the list, never by their paths, which can be long
 // enough to slow any map keyed by them. A whole file, for the whole-file view, comes from the local
@@ -18,10 +20,13 @@ import {
   type Repo,
 } from '@lo/git';
 import {
+  GithubError,
   type GithubClient,
   MAX_FILES,
   MAX_PAGES,
+  type PullFile,
   PullRef,
+  readComparison,
   readPullFiles,
   RepoRef,
 } from '@lo/github';
@@ -77,6 +82,8 @@ interface At {
   readonly head: Oid;
   /** The two revisions compared, when it isn't the whole pull request. */
   readonly comparing: Comparing | undefined;
+  /** The commit the whole pull request is compared with, for a stack's layer. */
+  readonly compareFrom: Oid | undefined;
   from: Source | undefined;
   files: FileVersions[] | undefined;
   /** GitHub's patches, by the files' places, while the files are GitHub's. */
@@ -156,6 +163,7 @@ export class DiffTab {
       id: this.id,
       at: at?.head ?? null,
       comparison: at?.comparing?.key ?? null,
+      compareFrom: at?.compareFrom ?? null,
       since: at?.since ?? null,
       waiting: this.#waiting ?? null,
       from: at?.from ?? null,
@@ -166,11 +174,12 @@ export class DiffTab {
   }
 
   /**
-   * Follows the tab as it is now, and what it compares: a new head on screen, or another comparison
-   * of revisions, starts the diff again. The whole pull request at the head on screen is read from
-   * the local copy once it's ready at that head, and from GitHub's API until then, once GitHub has
-   * said the head is its own. Two revisions are compared in the local copy; until the revisions
-   * feature has both, if it says to wait, nothing is drawn.
+   * Follows the tab as it is now, and what it compares: a new head on screen, another comparison
+   * of revisions, or another commit a stack's layer is compared with, starts the diff again. The
+   * whole pull request at the head on screen is read from the local copy once it's ready at that
+   * head, compared with that commit, and from GitHub's API until then, once GitHub has said the
+   * head is its own. Two revisions are compared in the local copy; until the revisions feature has
+   * both, if it says to wait, nothing is drawn.
    */
   update(info: PullTabInfo, screen: OnScreen = { kind: 'head' }): void {
     if (this.#closed) return;
@@ -188,7 +197,7 @@ export class DiffTab {
     if (screen.kind === 'revisions') {
       const { comparing } = screen;
       if (this.#at?.comparing?.key !== comparing.key) {
-        const at = this.#newAt(comparing.new.head, comparing);
+        const at = this.#newAt(comparing.new.head, comparing, undefined);
         at.wanted = screen.since;
         at.started.add('local');
         void this.#fromComparing(at, comparing);
@@ -204,19 +213,30 @@ export class DiffTab {
       return;
     }
     let head: Oid;
+    let compareFrom: Oid | undefined;
     try {
       head = parseOid(shown);
+      compareFrom = info.compareFrom === undefined ? undefined : parseOid(info.compareFrom);
     } catch {
       return;
     }
-    if (this.#at?.head !== head || this.#at.comparing !== undefined) this.#newAt(head, undefined);
-    else if (waited) this.#publish();
+    const before = this.#at;
+    if (
+      before?.head !== head ||
+      before.comparing !== undefined ||
+      before.compareFrom !== compareFrom
+    ) {
+      this.#newAt(head, undefined, compareFrom);
+    } else if (waited) this.#publish();
     const at = this.#at;
     if (!at) return;
     this.#want(at, screen.since);
     const { local } = info;
-    if (local.kind === 'ready' && local.head === head) {
-      if (!at.started.has('local')) {
+    const copied = local.kind === 'ready' && local.head === head;
+    if (copied) {
+      // Until the copy has worked out where the head meets the commit it's compared with now, it
+      // will soon: GitHub isn't asked meanwhile.
+      if (local.from?.commit === compareFrom && !at.started.has('local')) {
         at.started.add('local');
         const mergeBase = local.mergeBase === null ? undefined : parseOid(local.mergeBase);
         void this.#fromLocal(at, mergeBase);
@@ -227,11 +247,15 @@ export class DiffTab {
     }
   }
 
-  /** Starts the diff again at `head`, of `comparing`, if it's two revisions. */
-  #newAt(head: Oid, comparing: Comparing | undefined): At {
+  /**
+   * Starts the diff again at `head`, of `comparing`, if it's two revisions, or else compared with
+   * `compareFrom`, if it's a stack's layer's start.
+   */
+  #newAt(head: Oid, comparing: Comparing | undefined, compareFrom: Oid | undefined): At {
     const at: At = {
       head,
       comparing,
+      compareFrom,
       from: undefined,
       files: undefined,
       patches: [],
@@ -323,19 +347,21 @@ export class DiffTab {
     return { files, key: since.key };
   }
 
-  /** The window drew the diff at `head`. */
-  drawn(head: string): void {
-    if (this.#closed || this.#at?.head !== head) return;
+  /** The window drew the diff at `head`, compared with `compareFrom`. */
+  drawn(head: string, compareFrom: string | null): void {
+    const at = this.#at;
+    if (this.#closed || at?.head !== head || (at.compareFrom ?? null) !== compareFrom) return;
     this.#options.drawn(head);
   }
 
   /**
-   * The texts of the files at places `files` of the diff at `head`, of `comparison`, with `since`'s
-   * files from where they left off, from `from`.
+   * The texts of the files at places `files` of the diff at `head`, of `comparison`, compared with
+   * `compareFrom`, with `since`'s files from where they left off, from `from`.
    */
   async texts(
     head: string,
     comparison: string | null,
+    compareFrom: string | null,
     since: string | null,
     from: Source,
     files: readonly number[],
@@ -345,11 +371,12 @@ export class DiffTab {
       !at ||
       at.head !== head ||
       (at.comparing?.key ?? null) !== comparison ||
+      (at.compareFrom ?? null) !== compareFrom ||
       (at.since ?? null) !== since ||
       at.from !== from ||
       !at.files
     ) {
-      throw new IpcError('moved', 'The diff is of another head, comparison or source now.');
+      throw new IpcError('moved', 'The diff is of another head, comparison, start or source now.');
     }
     const list = at.files;
     const asked = files.map((place) => {
@@ -409,9 +436,14 @@ export class DiffTab {
     if (!at || at.head !== head) throw new IpcError('moved', 'The head on screen is another now.');
     const local = this.#info?.local;
     const { comparing } = at;
-    // Two revisions compared are in the local copy already; the whole pull request waits for it.
-    if (!comparing && (local?.kind !== 'ready' || local.head !== at.head))
+    // Two revisions compared are in the local copy already; the whole pull request waits for it,
+    // compared with what the diff is.
+    if (
+      !comparing &&
+      (local?.kind !== 'ready' || local.head !== at.head || local.from?.commit !== at.compareFrom)
+    ) {
       return { kind: 'waiting' };
+    }
     let rev: Oid;
     if (version === 'new') {
       rev = at.head;
@@ -642,15 +674,13 @@ export class DiffTab {
     const repository = new RepoRef(info.repository.owner, info.repository.name);
     const pull = PullRef.of(repository, info.number);
     try {
-      const listed = await this.#options.reads.github(acting, (client) =>
-        readPullFiles(client, pull, {
-          maxPages: MAX_PAGES,
-          // Without an account, GitHub allows 60 requests an hour, and nothing else polls.
-          keepRequests: acting.kind === 'anonymous' ? KEEP_ANONYMOUS : KEEP_REQUESTS,
-        }),
-      );
+      const listed =
+        (at.compareFrom === undefined
+          ? undefined
+          : await this.#compared(at, acting, repository, at.compareFrom)) ??
+        (await this.#pullFiles(at, acting, pull));
       // The local copy's say wins, and a list of a newer head than the one on screen isn't its.
-      if (!this.#current(at) || at.from !== undefined) return;
+      if (!listed || !this.#current(at) || at.from !== undefined) return;
       if (!listedAt(listed.files, at.head)) {
         this.#options.log('GitHub listed the files of a newer head; waiting for the local copy');
         return;
@@ -658,7 +688,7 @@ export class DiffTab {
       at.files = listed.files.map(githubVersions);
       at.patches = listed.files.map((file) => file.patch);
       at.from = 'github';
-      at.partial = listed.cutShort !== undefined || listed.files.length >= MAX_FILES;
+      at.partial = listed.partial;
     } catch (error) {
       if (!this.#current(at)) return;
       this.#options.log(`reading the changed files from GitHub: ${describe(error)}`);
@@ -667,10 +697,64 @@ export class DiffTab {
     this.#publish();
   }
 
+  /**
+   * The pull request's files, as GitHub lists them, while `at` is still the diff on screen when
+   * its turn comes: nothing once it isn't.
+   */
+  async #pullFiles(at: At, acting: Acting, pull: PullRef): Promise<GithubFiles | undefined> {
+    const listed = await this.#options.reads.github(acting, (client) =>
+      this.#current(at)
+        ? readPullFiles(client, pull, {
+            maxPages: MAX_PAGES,
+            // Without an account, GitHub allows 60 requests an hour, and nothing else polls.
+            keepRequests: acting.kind === 'anonymous' ? KEEP_ANONYMOUS : KEEP_REQUESTS,
+          })
+        : Promise.resolve(undefined),
+    );
+    return (
+      listed && {
+        files: listed.files,
+        partial: listed.cutShort !== undefined || listed.files.length >= MAX_FILES,
+      }
+    );
+  }
+
+  /**
+   * The files that changed from where `at`'s head meets `compareFrom`, a stack's layer's start, as
+   * GitHub compares them, while `at` is still the diff on screen when its turn comes: nothing once
+   * it isn't, and nothing when GitHub no longer has the commit, so the pull request's own files
+   * stand in, as they do in the local copy.
+   */
+  async #compared(
+    at: At,
+    acting: Acting,
+    repository: RepoRef,
+    compareFrom: Oid,
+  ): Promise<GithubFiles | undefined> {
+    try {
+      const compared = await this.#options.reads.github(acting, (client) =>
+        this.#current(at)
+          ? readComparison(client, repository, compareFrom, at.head, undefined)
+          : Promise.resolve(undefined),
+      );
+      return compared && { files: compared.files, partial: compared.capped };
+    } catch (error) {
+      if (!(error instanceof GithubError && error.detail.kind === 'notFound')) throw error;
+      this.#options.log(`GitHub can't compare ${compareFrom} with the head: ${describe(error)}`);
+      return undefined;
+    }
+  }
+
   #publish(): void {
     if (this.#closed) return;
     this.#options.publish(this.state());
   }
+}
+
+/** The files GitHub listed, and whether it left some out. */
+interface GithubFiles {
+  readonly files: readonly PullFile[];
+  readonly partial: boolean;
 }
 
 /** A changed file's path as GitHub would list it: its text, if it's UTF-8 and short enough. */

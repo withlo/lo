@@ -1,9 +1,12 @@
 // The stacks feature in main: for each pull request's tab, the stack its pull request is in, found
 // among its repository's open pull requests as its account's poller lists them, and sent to the
-// window each time it changes. Only the tab on screen reads its layers' state.
+// window each time it changes, and where the layer on screen's diff starts: with the layer below
+// it, set before the diff is drawn, or offered once it is. Only the tab on screen reads its layers'
+// state.
 
 import { PullRef } from '@lo/github';
 
+import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { github } from '../../accounts/service.ts';
 import { tabs, type TabService } from '../../tab/service.ts';
@@ -22,6 +25,7 @@ function tabsOf(service: TabService): FinderTab[] {
     if (tab.kind !== 'pull') return [];
     const info = service.pull(tab.id);
     if (!info) return [];
+    const { local, compareFrom } = info;
     return [
       {
         id: tab.id,
@@ -31,6 +35,13 @@ function tabsOf(service: TabService): FinderTab[] {
         login: info.acting?.kind === 'account' ? info.acting.login : undefined,
         state: tab.state,
         onScreen: tab.id === active,
+        head: info.shown,
+        compareFrom,
+        drawn: info.drawn,
+        missing:
+          local.kind === 'ready' &&
+          local.from?.commit === compareFrom &&
+          local.from?.missing === true,
       },
     ];
   });
@@ -40,6 +51,11 @@ export default defineFeature(contract, {
   uses: [tabs, github],
   handlers: {
     state: ({ id }) => finder?.state(id),
+    useStart({ id, commit }) {
+      if (!finder?.useStart(id, commit)) {
+        throw new IpcError('moved', 'That start is no longer what the layer is offered.');
+      }
+    },
   },
   start(context) {
     const service = context.use(tabs);
@@ -47,6 +63,7 @@ export default defineFeature(contract, {
     const running = new StackFinder({
       poller: (login) => access.poller(login),
       publish: (state) => context.publish('stack', state),
+      compareFrom: (id, commit) => service.compareFrom(id, commit),
       log,
     });
     finder = running;

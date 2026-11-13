@@ -1,0 +1,58 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/b0e71e0b3274ad2bba7ddd21c6bcf04810d056f2?recursive=1"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"9541e1ab567ec03128108a964b55bf4b68e1c78a8a6c5d6c162e051cda8d3ab5\"",
+      "last-modified": "Sun, 08 Nov 2026 13:03:37 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4808",
+      "x-ratelimit-reset": "1794541990",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "192"
+    },
+    "body": {
+      "sha": "b0e71e0b3274ad2bba7ddd21c6bcf04810d056f2",
+      "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/b0e71e0b3274ad2bba7ddd21c6bcf04810d056f2",
+      "tree": [
+        {
+          "path": "README.md",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "0c033dfd9c3eabb75aa724cb0ac528b112f8bb59",
+          "size": 273,
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/blobs/0c033dfd9c3eabb75aa724cb0ac528b112f8bb59"
+        },
+        {
+          "path": "src",
+          "mode": "040000",
+          "type": "tree",
+          "sha": "d712d978c6165e8ea4c96faf0d4cd1b8820d51b6",
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/trees/d712d978c6165e8ea4c96faf0d4cd1b8820d51b6"
+        },
+        {
+          "path": "src/cache.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "726d16ab6ceec439f132e8b2adfa6b95c5dfc90f",
+          "size": 666,
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/blobs/726d16ab6ceec439f132e8b2adfa6b95c5dfc90f"
+        },
+        {
+          "path": "src/limits.ts",
+          "mode": "100644",
+          "type": "blob",
+          "sha": "25fab49b9d588977122c03973b8b7892df812ca6",
+          "size": 215,
+          "url": "https://api.github.com/repos/rozed-dev/e2e/git/blobs/25fab49b9d588977122c03973b8b7892df812ca6"
+        }
+      ],
+      "truncated": false
+    }
+  }
+}

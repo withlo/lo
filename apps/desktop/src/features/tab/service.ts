@@ -35,6 +35,17 @@ export interface PullTabInfo {
   readonly provisional: boolean;
   /** Its local copy. */
   readonly local: LocalState;
+  /**
+   * The commit its diff starts from, for a stack's layer compared with the layer below it
+   * ({@link TabService.compareFrom}); nothing while it's compared with its base branch, as GitHub
+   * compares a pull request. The local copy says where the head meets it, once it's worked out.
+   */
+  readonly compareFrom: string | undefined;
+  /**
+   * Whether its diff has been drawn at the head on screen since it was last told where to start:
+   * from then on, a new start would move what the reader is reading.
+   */
+  readonly drawn: boolean;
 }
 
 /**
@@ -65,6 +76,14 @@ export interface TabService {
   setLayers(id: string, stack: Stack | undefined): void;
   /** What main has of a view of a pull request's tab now, or nothing for no such view. */
   pull(id: string): PullTabInfo | undefined;
+  /**
+   * Compares view `id`'s pull request with `commit`, where a stack's layer's own changes start, or
+   * with its base branch for nothing: its local copy's merge base becomes where the head meets the
+   * commit, fetched by its ID if the copy lacks it, so its diff, tree, whole files and overview
+   * start there. Its diff starts again, so call it before the view is drawn, or when the reader
+   * asks. Nothing for no such view.
+   */
+  compareFrom(id: string, commit: string | undefined): void;
   /**
    * Calls `listener` with a view's id each time what {@link TabService.pull} says of it may have
    * changed, and once it's closed, with its tab. Returns a function that stops it.

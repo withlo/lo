@@ -1,7 +1,9 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { buffer } from 'node:stream/consumers';
 import { fileURLToPath } from 'node:url';
 
 import { STACK_PULLS, writeStackRemote } from '@lo/testing/git';
@@ -263,11 +265,38 @@ export const STACK = {
   g2: STACK_PULLS.g2.number,
 } as const;
 
+/** What GitHub holds back in a test of the stacks, until the test lets go. */
+export interface Held {
+  /** Resolves once the test lets go. */
+  released(): Promise<void>;
+  /** Lets go: the requests held back are answered, and those to come aren't held. */
+  release(): void;
+}
+
 /**
  * `test`, with Lo signed in as rozed-bot on a replay server that answers from `app_stack`, recorded
  * from the app on the stacks, and fetching from their repository, built on this machine.
  */
-export const onStacks = test.extend<{ github: ReplayServer; remote: string }>({
+export const onStacks = test.extend<{
+  github: ReplayServer;
+  remote: string;
+  /** Whether Lo starts without git, so it has only what GitHub says. */
+  noGit: boolean;
+  /** Whether the remote is written only once the test says, so the local copy comes late. */
+  lateRemote: boolean;
+  /**
+   * Whether GitHub holds back the repository's rulesets until the test lets go of them, so no
+   * stack is known until then.
+   */
+  holdStacks: boolean;
+  /** Lets go of what GitHub holds back. */
+  held: Held;
+  /** Where Lo finds GitHub: the replay server, or one in front of it that holds requests back. */
+  githubOrigin: string;
+}>({
+  noGit: [false, { option: true }],
+  lateRemote: [false, { option: true }],
+  holdStacks: [false, { option: true }],
   // oxlint-disable-next-line no-empty-pattern
   github: async ({}, use) => {
     const server = await serveReplay('app_stack');
@@ -275,18 +304,80 @@ export const onStacks = test.extend<{ github: ReplayServer; remote: string }>({
     await server.close();
   },
   // oxlint-disable-next-line no-empty-pattern
-  remote: async ({}, use) => {
-    await use(writeStackRemote(base.info().outputPath('remote')));
+  held: async ({}, use) => {
+    const waiting: (() => void)[] = [];
+    let released = false;
+    const held: Held = {
+      released: () =>
+        released ? Promise.resolve() : new Promise<void>((resolve) => waiting.push(resolve)),
+      release() {
+        released = true;
+        for (const resolve of waiting.splice(0)) resolve();
+      },
+    };
+    await use(held);
+    // A request still held as the test ends finds the replay server gone.
+    held.release();
   },
-  launch: async ({ github, remote }, use) => {
+  githubOrigin: async ({ github, holdStacks, held }, use) => {
+    const origin = new URL(github.urls.api).origin;
+    if (!holdStacks) {
+      await use(origin);
+      return;
+    }
+    // Passes each request on to the replay server, holding the repository's rulesets back until the
+    // test lets go of them: until they're read once, no stack is known.
+    const front = createHttpServer((incoming, outgoing) => {
+      void (async () => {
+        const body = await buffer(incoming);
+        if (incoming.url?.endsWith('/graphql') && body.toString('utf8').includes('TrunkRules')) {
+          await held.released();
+        }
+        const headers = new Headers();
+        for (const [name, value] of Object.entries(incoming.headers)) {
+          if (typeof value === 'string' && name !== 'host') headers.set(name, value);
+        }
+        const method = incoming.method ?? 'GET';
+        const response = await fetch(`${origin}${incoming.url ?? '/'}`, {
+          method,
+          headers,
+          body: method === 'GET' || method === 'HEAD' ? undefined : new Uint8Array(body),
+          redirect: 'manual',
+        });
+        const out: Record<string, string> = {};
+        response.headers.forEach((value, name) => {
+          if (!['content-length', 'content-encoding', 'transfer-encoding'].includes(name)) {
+            out[name] = value;
+          }
+        });
+        outgoing.writeHead(response.status, out);
+        outgoing.end(Buffer.from(await response.arrayBuffer()));
+      })().catch(() => {
+        // The test has ended, and the replay server with it: the request goes unanswered.
+        outgoing.destroy();
+      });
+    });
+    await new Promise<void>((resolve) => front.listen(0, '127.0.0.1', resolve));
+    const address = front.address();
+    if (address === null || typeof address === 'string') throw new Error('no port');
+    await use(`http://127.0.0.1:${address.port}`);
+    front.closeAllConnections();
+    await new Promise((resolve) => front.close(resolve));
+  },
+  remote: async ({ lateRemote }, use) => {
+    const folder = base.info().outputPath('remote');
+    await use(lateRemote ? `file://${folder}` : writeStackRemote(folder));
+  },
+  launch: async ({ githubOrigin, remote, noGit }, use) => {
     const tokenFile = base.info().outputPath('token');
     writeFileSync(tokenFile, `${TOKEN}\n`);
     await use({
       args: [appFolder, ...KEYCHAIN],
       env: {
-        LO_GITHUB: new URL(github.urls.api).origin,
+        LO_GITHUB: githubOrigin,
         LO_TEST_TOKEN_FILE: tokenFile,
         LO_GIT_REMOTE: remote,
+        ...(noGit ? { LO_GIT: 'none' } : {}),
       },
     });
   },

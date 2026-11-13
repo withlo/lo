@@ -33,10 +33,12 @@ export type LayerStart =
  * Where the layer `number` starts in `stacks`, which {@link findStacks} built from `prs`. Nothing
  * when `number` isn't a layer.
  *
- * A layer that needs a rebase starts at the merged layer's last commit it lists. One linked by
+ * A layer that needs a rebase starts at the merged layer's last commit it lists, while it still
+ * lists it, or at the merged layer's head while its base branch is still there. One linked by
  * shared commits starts at the head of the open pull request below, while its own commits hold
- * that head. Any other starts at its base branch, and so does a layer whose pull requests in `prs`
- * don't say what its link does, such as ones read after the forest was built.
+ * that head. Any other starts at its base branch, and so does a layer whose
+ * pull requests in `prs` don't say what its link does, such as ones read after the forest was
+ * built.
  */
 export function layerStart(
   stacks: Stacks,
@@ -45,11 +47,17 @@ export function layerStart(
 ): LayerStart | undefined {
   const layer = layerOf(stacks, number);
   if (!layer) return undefined;
+  const own = openPr(prs, number);
   if (layer.needsRebase) {
     const { merged, compareAgainst } = layer.needsRebase;
-    return { kind: 'needsRebase', merged, commit: compareAgainst };
+    // Rebased since the forest was built, the layer no longer holds the merged layer's commit, and
+    // a diff from it would show what its base branch gained since as the layer's own. A layer lists
+    // none of the merged one's commits while its base branch still holds them, at that branch's
+    // tip: GitHub's own diff already starts there.
+    if (own?.commits.includes(compareAgainst) || own?.baseTip === compareAgainst) {
+      return { kind: 'needsRebase', merged, commit: compareAgainst };
+    }
   }
-  const own = openPr(prs, number);
   const { parent } = layer;
   if (layer.rule === 'sharedCommits' && parent.kind === 'pr') {
     const below = openPr(prs, parent.number);

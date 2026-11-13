@@ -1,12 +1,13 @@
 // The stack a pull request's tab shows: the open pull requests that sit on each other with it, found
 // in main among its repository's open pull requests by base branch, by shared commits, or as a
 // GitHub stack, with each layer's state, how the stack was found, and what Lo couldn't read. Main
-// works the stack out again as the repository's pull requests change, and sends it on `stack`.
+// works the stack out again as the repository's pull requests change, and sends it on `stack`, with
+// where the layer's diff starts when that came after its diff was drawn, which a banner offers.
 
 import { z } from 'zod';
 
 import { defineContract, reply } from '../../ipc/contract.ts';
-import { pullState, tabId } from '../tab/contract.ts';
+import { oid, pullState, tabId } from '../tab/contract.ts';
 
 /** A pull request's number. */
 const number = z.number().int().min(1);
@@ -79,9 +80,10 @@ export type Row = z.output<typeof row>;
  * - `merged`: some merged pull requests weren't looked up yet;
  * - `rulesets`: the repository's rulesets couldn't be read;
  * - `cycle`: pull requests sat on each other, and Lo put one on its own base;
- * - `needsRebase`: a layer sits on a squash-merged pull request.
+ * - `needsRebase`: a layer sits on a squash-merged pull request;
+ * - `start`: the layer on screen couldn't be compared with the layer below it.
  */
-export const noteKind = z.enum(['busy', 'merged', 'rulesets', 'cycle', 'needsRebase']);
+export const noteKind = z.enum(['busy', 'merged', 'rulesets', 'cycle', 'needsRebase', 'start']);
 export type NoteKind = z.output<typeof noteKind>;
 
 export const note = z.strictObject({ kind: noteKind, text: z.string() });
@@ -93,7 +95,7 @@ export type Note = z.output<typeof note>;
  * - `unknown` until its repository's open pull requests and rulesets have been read, and for a
  *   tab that acts as nobody, which no poller reads them for;
  * - `none` when its pull request isn't in a stack: a stack shows when it has two layers or more,
- *   or when the pull request is in a GitHub stack;
+ *   when the pull request is in a GitHub stack, or when it needs a rebase;
  * - `stack`: the root branch its bottom layer sits on, its head ("4 layers · by base branch"), its
  *   rows and its notes.
  */
@@ -110,8 +112,21 @@ export const stackView = z.discriminatedUnion('kind', [
 ]);
 export type StackView = z.output<typeof stackView>;
 
-/** A pull request's tab's stack, sent each time it changes. */
-export const stack = z.strictObject({ id: tabId, stack: stackView });
+/**
+ * Where the layer on screen's diff starts, worked out after its diff was drawn, which a banner
+ * offers rather than moving what's on screen: what's so ("#84's diff includes #83's changes"), the
+ * button's words ("Show only #84's"), and the commit the button compares the layer with, `null` for
+ * its base branch.
+ */
+export const offer = z.strictObject({
+  title: z.string(),
+  action: z.string(),
+  commit: oid.nullable(),
+});
+export type Offer = z.output<typeof offer>;
+
+/** A pull request's tab's stack, sent each time it changes, with a start it offers, if any. */
+export const stack = z.strictObject({ id: tabId, stack: stackView, offer: offer.nullable() });
 export type StackState = z.output<typeof stack>;
 
 export const contract = defineContract('stacks', {
@@ -121,6 +136,15 @@ export const contract = defineContract('stacks', {
      * tab that isn't a pull request's.
      */
     state: { input: z.strictObject({ id: tabId }), reply: reply<StackState | undefined>() },
+    /**
+     * Compares the layer on screen in tab `id` with the commit its banner offers, `null` for its
+     * base branch, and starts its diff again from there. Fails as `moved` once that's no longer
+     * what's offered.
+     */
+    useStart: {
+      input: z.strictObject({ id: tabId, commit: oid.nullable() }),
+      reply: reply<void>(),
+    },
   },
   topics: {
     /** A pull request's tab's stack, each time it changes. */
