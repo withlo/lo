@@ -882,6 +882,27 @@ export type PullRequestRevisionsQuery = { rateLimit: { cost: number, limit: numb
             | { __typename: 'User', login: string }
            | null } | null> | null } | null, viewerLastReview: { nodes: Array<{ submittedAt: string | null, commit: { oid: string } | null } | null> | null } | null, commits: { nodes: Array<{ commit: { oid: string, checkSuites: { nodes: Array<{ createdAt: string, branch: { name: string } | null, push: { previousSha: string | null, nextSha: string | null } | null } | null> | null } | null } } | null> | null } } | null } | null };
 
+export type PullRequestSidebarQueryVariables = Exact<{
+  owner: string;
+  name: string;
+  number: number;
+}>;
+
+
+export type PullRequestSidebarQuery = { rateLimit: { cost: number, limit: number, remaining: number, used: number, resetAt: string } | null, repository: { pullRequest: { isDraft: boolean, labels: { nodes: Array<{ name: string, color: string } | null> | null } | null, reviewRequests: { nodes: Array<{ requestedReviewer:
+            | { __typename: 'Bot', login: string }
+            | { __typename: 'EnterpriseTeam', slug: string }
+            | { __typename: 'Mannequin', login: string }
+            | { __typename: 'Team', combinedSlug: string }
+            | { __typename: 'User', login: string }
+           | null } | null> | null } | null, latestReviews: { nodes: Array<{ state: PullRequestReviewState, author:
+            | { __typename: 'Bot', login: string }
+            | { __typename: 'EnterpriseUserAccount', login: string }
+            | { __typename: 'Mannequin', login: string }
+            | { __typename: 'Organization', login: string }
+            | { __typename: 'User', login: string }
+           | null } | null> | null } | null, assignees: { nodes: Array<{ __typename: 'User', login: string } | null> | null } } | null } | null };
+
 export type QueueRemovalQueryVariables = Exact<{
   owner: string;
   name: string;
@@ -1218,7 +1239,7 @@ export type RenderedBodiesQuery = { rateLimit: { cost: number, limit: number, re
     | { __typename: 'PullRequestCommit' }
     | { __typename: 'PullRequestCommitCommentThread' }
     | { __typename: 'PullRequestReview', id: string, bodyHTML: string }
-    | { __typename: 'PullRequestReviewComment' }
+    | { __typename: 'PullRequestReviewComment', id: string, bodyHTML: string }
     | { __typename: 'PullRequestReviewThread' }
     | { __typename: 'PullRequestStack' }
     | { __typename: 'PullRequestStackEntry' }
@@ -2745,7 +2766,7 @@ export type StackLayersQuery = { rateLimit: { cost: number, limit: number, remai
     | { __typename: 'ProjectV2View' }
     | { __typename: 'ProjectV2Workflow' }
     | { __typename: 'PublicKey' }
-    | { __typename: 'PullRequest', id: string, number: number, state: PullRequestState, headRefOid: string, reviewDecision: PullRequestReviewDecision | null, isInMergeQueue: boolean, statusCheckRollup: { state: StatusState } | null, mergeQueueEntry: { position: number, state: MergeQueueEntryState } | null, files: { totalCount: number, nodes: Array<{ viewerViewedState: FileViewedState } | null> | null } | null, movedFrom: { nodes: Array<
+    | { __typename: 'PullRequest', id: string, number: number, state: PullRequestState, headRefOid: string, reviewDecision: PullRequestReviewDecision | null, isInMergeQueue: boolean, statusCheckRollup: { state: StatusState } | null, mergeQueueEntry: { position: number, state: MergeQueueEntryState } | null, files: { totalCount: number, nodes: Array<{ viewerViewedState: FileViewedState } | null> | null } | null, reviewThreads: { totalCount: number, nodes: Array<{ isResolved: boolean } | null> | null }, movedFrom: { nodes: Array<
           | { __typename: 'AddedToMergeQueueEvent' }
           | { __typename: 'AddedToProjectEvent' }
           | { __typename: 'AddedToProjectV2Event' }
@@ -4610,6 +4631,65 @@ export const PullRequestRevisionsDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<PullRequestRevisionsQuery, PullRequestRevisionsQueryVariables>;
+export const PullRequestSidebarDocument = new TypedDocumentString(`
+    query PullRequestSidebar($owner: String!, $name: String!, $number: Int!) {
+  rateLimit {
+    cost
+    limit
+    remaining
+    used
+    resetAt
+  }
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      isDraft
+      labels(first: 100) {
+        nodes {
+          name
+          color
+        }
+      }
+      reviewRequests(first: 100) {
+        nodes {
+          requestedReviewer {
+            __typename
+            ... on User {
+              login
+            }
+            ... on Bot {
+              login
+            }
+            ... on Mannequin {
+              login
+            }
+            ... on Team {
+              combinedSlug
+            }
+            ... on EnterpriseTeam {
+              slug
+            }
+          }
+        }
+      }
+      latestReviews(first: 100) {
+        nodes {
+          author {
+            __typename
+            login
+          }
+          state
+        }
+      }
+      assignees(first: 100) {
+        nodes {
+          __typename
+          login
+        }
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<PullRequestSidebarQuery, PullRequestSidebarQueryVariables>;
 export const QueueRemovalDocument = new TypedDocumentString(`
     query QueueRemoval($owner: String!, $name: String!, $number: Int!) {
   rateLimit {
@@ -4766,6 +4846,10 @@ export const RenderedBodiesDocument = new TypedDocumentString(`
       bodyHTML
     }
     ... on PullRequestReview {
+      id
+      bodyHTML
+    }
+    ... on PullRequestReviewComment {
       id
       bodyHTML
     }
@@ -4982,6 +5066,12 @@ export const StackLayersDocument = new TypedDocumentString(`
         totalCount
         nodes {
           viewerViewedState
+        }
+      }
+      reviewThreads(first: 100) {
+        totalCount
+        nodes {
+          isResolved
         }
       }
       movedFrom: timelineItems(

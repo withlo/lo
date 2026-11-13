@@ -1,5 +1,8 @@
 {
   "description": "Lo on rozed-dev/e2e's stacks as rozed-bot, making a chain a GitHub stack: g S on #82, which has two layers on it, refuses; g S on #84 moves its base from stack/root to stack/b, then makes #82, #83 and #84 a GitHub stack. Recorded with writes.",
   "recorded_at": "2026-11-13T04:18:29Z",
-  "repo": "rozed-dev/e2e"
+  "repo": "rozed-dev/e2e",
+  "rerecorded": {
+    "StackLayers": "2026-11-13T09:27:41Z"
+  }
 }

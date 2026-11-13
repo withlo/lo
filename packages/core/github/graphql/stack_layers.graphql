@@ -1,8 +1,9 @@
 # What a stack's tree shows of its layers (`docs/design.md`, "The stack tree") that the open pull
-# request list doesn't keep current: each layer's review decision, checks and merge queue entry, and
-# how many of its first 100 files the viewer has viewed. Also the branch each layer last moved from,
-# whether GitHub moved it after that branch was deleted or someone changed its base, so the merged
-# layer below can be looked up. Asked for by node ID, at most 100 at a time.
+# request list doesn't keep current: each layer's review decision, checks and merge queue entry, how
+# many of its first 100 files the viewer has viewed, and how many of its first 100 review threads
+# aren't resolved. Also the branch each layer last moved from, whether GitHub moved it after that
+# branch was deleted or someone changed its base, so the merged layer below can be looked up. Asked
+# for by node ID, at most 100 at a time.
 query StackLayers($ids: [ID!]!) {
   rateLimit {
     cost
@@ -31,6 +32,12 @@ query StackLayers($ids: [ID!]!) {
         totalCount
         nodes {
           viewerViewedState
+        }
+      }
+      reviewThreads(first: 100) {
+        totalCount
+        nodes {
+          isResolved
         }
       }
       movedFrom: timelineItems(

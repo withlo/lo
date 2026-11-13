@@ -2,5 +2,8 @@
   "description": "OpenPullRequests and TrunkRules for rozed-dev/e2e: a tree of pull requests (#2 a -> main, #3 b -> a, #4 c -> b, #5 e -> b, #6 d -> main holding c), a native stack #9 (#7, #8), and #11 y -> e3/x, on #10 x, squash-merged, among the merged pull requests updated most recently; then StackLayers for the tree, the native stack, #11, and #19, whose base was changed from main to e8/base",
   "recorded_at": "2026-11-07T03:16:47Z",
   "repo": "rozed-dev/e2e",
-  "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674"
+  "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674",
+  "rerecorded": {
+    "StackLayers": "2026-11-13T09:26:56Z"
+  }
 }

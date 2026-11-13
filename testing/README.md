@@ -37,6 +37,22 @@ printed again by graphql-js, with its operations and fragments sorted by name. C
 and the order of definitions don't change it. Anything else does, and the replay fails with
 "re-record cassette X: the Y query changed since it was recorded". Record the cassette again.
 
+Where the rest of a cassette must stay as it is, as when its tests rely on what it read of other
+pull requests, record only that query's answers again, in place:
+
+```sh
+LO_FIXTURE_TOKEN_FILE=<file holding rozed-bot's token> \
+  node testing/scripts/rerecord.ts <query's .graphql file> <cassette>[/<file>] ...
+```
+
+Each of the query's recorded requests is sent again with its recorded variables, or only the files
+named, and GitHub's answer replaces the one recorded. It checks the token's account, sends only
+queries, and keeps and refuses what `record.ts` does. It writes nothing unless every answer came as
+the recorded one did, with the same status and with errors only where it had them, and it notes the
+operation and when in `cassette.json` (`rerecorded`). Before recording an answer whose state has
+moved on since, such as a pull request's base changed by a recording with writes, put GitHub in that
+state first, and back after.
+
 ## A cassette
 
 ```
