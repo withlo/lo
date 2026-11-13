@@ -24,6 +24,9 @@ import {
  */
 export const HELD_LONG = 3_000;
 
+/** How long Lo's window has to draw its first frame before the test fails for it. */
+const DRAW_LIMIT = 60_000;
+
 /** The app's folder. Electron starts the built main process its `package.json` names. */
 export const appFolder = fileURLToPath(new URL('..', import.meta.url));
 
@@ -215,23 +218,66 @@ export const test = base.extend<Fixtures>({
   },
   page: [
     async ({ app }, use) => {
-      const page = await app.firstWindow();
-      await page.waitForLoadState('load');
-      // The page loads, runs and takes keys before the window can draw: its frames come once
-      // Electron's GPU process has started, which in CI, with copies of Lo and of the perf suite
-      // starting at once, has taken up to half a minute. Until then nothing that waits on a frame
-      // happens, such as a closed dialog leaving, so a test starts once the window has drawn.
-      await page.evaluate(
-        () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
-      );
-      await use(page);
+      await use(await loadedAndDrawn(app));
     },
-    // Its own time, so a late first frame doesn't use up the test's.
-    { scope: 'test', timeout: 60_000 },
+    // Time of its own, so a late first frame never uses up the test's, and more of it than the
+    // first frame has, so a window that never draws fails as that.
+    { scope: 'test', timeout: DRAW_LIMIT + 30_000 },
   ],
 });
 
 export { expect };
+
+/**
+ * Lo's window, from a copy of Lo a test started itself, once its page has loaded and the window
+ * has drawn, as the `page` fixture gives it. The wait has time of its own: the test's time grows by
+ * however long it took. A test that sets its own time with `test.setTimeout` does so before it
+ * starts Lo, as each one does, since a later call would set it afresh and take that back.
+ */
+export async function drawnWindow(app: ElectronApplication): Promise<Page> {
+  const info = base.info();
+  const timeout = info.timeout;
+  const from = performance.now();
+  // Zero is no limit at all, which a wait can't add to.
+  if (timeout > 0) info.setTimeout(timeout + DRAW_LIMIT + 30_000);
+  const page = await loadedAndDrawn(app);
+  if (timeout > 0) info.setTimeout(timeout + Math.ceil(performance.now() - from));
+  return page;
+}
+
+/**
+ * Lo's window, once its page has loaded and the window has drawn. The page loads, runs and takes
+ * keys before the window can draw: its frames come once Electron's GPU process has started, which
+ * in CI, with copies of Lo and of the perf suite starting at once, has taken up to half a minute.
+ * Until then nothing that waits on a frame happens, such as a closed dialog leaving or a click
+ * finding its target still, so a test takes a window only once it has drawn.
+ */
+async function loadedAndDrawn(app: ElectronApplication): Promise<Page> {
+  const page = await app.firstWindow();
+  await page.waitForLoadState('load');
+  await base.step(
+    "Lo's window draws its first frame",
+    async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          page.evaluate(
+            () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+          ),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              reject(new Error(`Lo's window loaded but drew no frame in ${DRAW_LIMIT / 1000} s.`));
+            }, DRAW_LIMIT);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    { box: true },
+  );
+  return page;
+}
 
 declare global {
   interface Window {

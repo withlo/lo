@@ -19,6 +19,7 @@ import {
   appFolder,
   dataFolder,
   DIFF_FIRST,
+  drawnWindow,
   expect,
   KEYCHAIN,
   test as base,
@@ -696,8 +697,7 @@ test('a file that comes to show what changed since after the diff is drawn moves
   try {
     // GitHub's details, with the marks that say src/parser.ts changed since it was viewed, come
     // late: the local copy's diff of the whole pull request is drawn first.
-    const page = await again.firstWindow();
-    await page.waitForLoadState('load');
+    const page = await drawnWindow(again);
     const id = await openE2e(page);
     await expect
       .poll(

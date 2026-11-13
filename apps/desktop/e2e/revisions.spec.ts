@@ -17,6 +17,7 @@ import {
   appFolder,
   dataFolder,
   DIFF_FIRST,
+  drawnWindow,
   expect,
   KEYCHAIN,
   test as base,
@@ -212,8 +213,7 @@ test('opens on what changed since the reader last looked, across the rebase, and
   // Waiting long enough for the comparison, however slow the machine: it's drawn first.
   const again = await leftAtFirstPush(app, { github, tokenFile, remote, wait: 30_000 });
   try {
-    const page = await again.firstWindow();
-    await page.waitForLoadState('load');
+    const page = await drawnWindow(again);
     const id = await openE2e(page);
     // It opens on r1 → r2, and draws nothing of the whole pull request first.
     await expect(page.locator('.lo-diffview')).toBeVisible({ timeout: 30_000 });
@@ -260,8 +260,7 @@ test('draws the whole pull request when the local copy comes late, and only offe
     wait: 1_000,
   });
   try {
-    const page = await again.firstWindow();
-    await page.waitForLoadState('load');
+    const page = await drawnWindow(again);
     const id = await openE2e(page);
     // GitHub's diff of the whole pull request, once the wait is over.
     await expect(page.locator('.lo-diffview')).toBeVisible({ timeout: 30_000 });
