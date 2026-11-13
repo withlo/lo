@@ -138,6 +138,8 @@ function nameOf(kind: TargetKind): string {
       return 'Tab actions';
     case 'row':
       return 'Row actions';
+    case 'box':
+      return 'Comment box actions';
     case 'none':
       return 'Actions';
     default:

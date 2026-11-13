@@ -1156,6 +1156,17 @@ describe('threads', () => {
     expect(drawnThreads()).toEqual(['first', 'sent']);
   });
 
+  test('a key in a box its caller named acts on its line with the box named', () => {
+    const shown = open();
+    shown.compose(at('a', 'new', 10), '', composerEvents(), undefined, { name: 'mine' });
+    const scope = findScope(vimIn('Comment').content);
+    expect(isKeySource(scope.source) && scope.source.keyState().target).toEqual({
+      kind: 'line',
+      at: at('a', 'new', 10),
+      box: 'mine',
+    });
+  });
+
   test('a box opened unfocused leaves focus where it was', () => {
     const shown = open();
     shown.reveal(onLine('a', 'new', 10));

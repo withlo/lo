@@ -532,6 +532,7 @@ class Excerpt implements ExcerptView {
       case 'block':
       case 'tab':
       case 'row':
+      case 'box':
       case 'none':
         return undefined;
       default:

@@ -18,6 +18,7 @@ import {
   comment,
   frameWith,
   keepBoxesOf,
+  offering,
   restore,
   SAVE_AFTER,
   send,
@@ -188,7 +189,7 @@ describe('opening a box', () => {
     await comment(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 5 } }, 'review');
     expect(drawn).toHaveLength(1);
     expect(drawn[0]!.at).toEqual({ file: 'f0', side: 'new', line: 5 });
-    expect(drawn[0]!.options).toEqual({ focus: true });
+    expect(drawn[0]!.options).toEqual({ focus: true, name: expect.any(String) });
     expect(asked('comments.commentable')).toEqual([
       { id: VIEW, commit: HEAD, path: 'src/backoff.ts', previous: null },
     ]);
@@ -302,6 +303,40 @@ describe('drafts', () => {
     act(box, 'discard');
     expect(drawn[0]!.composer.closed).toBe('dismiss');
     expect(asked('comments.discard')).toEqual([{ id: VIEW, place: onLines(null, 5) }]);
+    // Drafts main sent before it heard still hold it; they don't bring it back.
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'Old', { restored: true, savedAt: 1 })],
+    });
+    expect(drawn).toHaveLength(1);
+    // Once main says it's gone, a draft there later is a new one.
+    takeDrafts({ id: VIEW, drafts: [] });
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'New', { restored: true, savedAt: 2 })],
+    });
+    expect(drawn).toHaveLength(2);
+    expect(drawn[1]!.composer.text).toBe('New');
+  });
+
+  test('what a box’s notes offer is a command on the box, there only while it offers it', () => {
+    const { drawn } = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'Old', { restored: true, savedAt: 1 })],
+    });
+    const target = { kind: 'box', box: boxIn(drawn[0]!).id } as const;
+    const discard = offering('discard');
+    const sendAnyway = offering('sendAnyway');
+    expect(discard.listed?.(target)).toBe(true);
+    expect(discard.enabled?.(target)).toBe(true);
+    expect(sendAnyway.listed?.(target)).toBe(false);
+    expect(sendAnyway.enabled?.(target)).toBe('“Send it anyway” isn’t offered in this box now.');
+    void discard.run(target);
+    expect(drawn[0]!.composer.closed).toBe('dismiss');
+    expect(asked('comments.discard')).toEqual([{ id: VIEW, place: onLines(null, 5) }]);
+    // The box is gone, and so is what it offered.
+    expect(discard.listed?.(target)).toBe(false);
   });
 
   test('a box the diff took down as it was drawn again opens again with it', async () => {

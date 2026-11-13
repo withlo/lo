@@ -200,6 +200,7 @@ class WholeFile implements FileView {
       case 'block':
       case 'tab':
       case 'row':
+      case 'box':
       case 'none':
         return undefined;
       default:

@@ -18,6 +18,7 @@ import {
   catchUpDrafts,
   comment,
   commentOnFile,
+  offering,
   frameWith,
   keepBoxesOf,
   knowPull,
@@ -96,6 +97,11 @@ export default {
         writingDiff(tab.id, true)?.vim(['<CR>']);
       },
     },
+    discard: offering('discard'),
+    sendAnyway: offering('sendAnyway'),
+    moveToFile: offering('onFile'),
+    loadNewer: offering('loadNewer'),
+    showLatest: offering('showLatest'),
   }),
   start() {
     tabs().subscribe('tabs', ({ tabs: open }) => {

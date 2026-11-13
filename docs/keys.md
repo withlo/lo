@@ -48,17 +48,20 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Act
 
-| Action                      | Keys                              | Where                                                    | Command                  |
-| --------------------------- | --------------------------------- | -------------------------------------------------------- | ------------------------ |
-| Comment                     | `c`                               | In `diff`; in code views, only in normal and visual mode | `comments.comment`       |
-| Comment right away          | `C`                               | In `diff`; in code views, only in normal and visual mode | `comments.commentNow`    |
-| Suggest a change            | `s`                               | In `diff`; in code views, only in normal and visual mode | `comments.suggest`       |
-| Comment on the file         | `c`                               | In `tree`                                                | `comments.commentOnFile` |
-| Comment on the file instead | `⏎`                               | In `diff`; in code views, only in normal mode            | `comments.onFileInstead` |
-| Mark viewed                 | `e`                               | In `diff`; in code views, only in normal mode            | `diff.markViewed`        |
-| Show the hidden comment     | None: in its menu and the palette | In `timeline`                                            | `timeline.showComment`   |
-| Mark viewed                 | `e`                               | In `tree`                                                | `tree.markViewed`        |
-| Sign in with GitHub         | `⏎`                               | In `welcome`                                             | `welcome.signIn`         |
+| Action                       | Keys                              | Where                                                    | Command                  |
+| ---------------------------- | --------------------------------- | -------------------------------------------------------- | ------------------------ |
+| Comment                      | `c`                               | In `diff`; in code views, only in normal and visual mode | `comments.comment`       |
+| Comment right away           | `C`                               | In `diff`; in code views, only in normal and visual mode | `comments.commentNow`    |
+| Suggest a change             | `s`                               | In `diff`; in code views, only in normal and visual mode | `comments.suggest`       |
+| Comment on the file          | `c`                               | In `tree`                                                | `comments.commentOnFile` |
+| Comment on the file instead  | `⏎`                               | In `diff`; in code views, only in normal mode            | `comments.onFileInstead` |
+| Discard the draft            | None: in its menu and the palette | In `box`                                                 | `comments.discard`       |
+| Send it anyway               | None: in its menu and the palette | In `box`                                                 | `comments.sendAnyway`    |
+| Move the comment to the file | None: in its menu and the palette | In `box`                                                 | `comments.moveToFile`    |
+| Mark viewed                  | `e`                               | In `diff`; in code views, only in normal mode            | `diff.markViewed`        |
+| Show the hidden comment      | None: in its menu and the palette | In `timeline`                                            | `timeline.showComment`   |
+| Mark viewed                  | `e`                               | In `tree`                                                | `tree.markViewed`        |
+| Sign in with GitHub          | `⏎`                               | In `welcome`                                             | `welcome.signIn`         |
 
 ## Code
 
@@ -109,6 +112,8 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 | Action                                 | Keys                              | Where                                                                                               | Command               |
 | -------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
+| Load the newer push                    | None: in its menu and the palette | In `box`                                                                                            | `comments.loadNewer`  |
+| Show the latest push                   | None: in its menu and the palette | In `box`                                                                                            | `comments.showLatest` |
 | Compare revisions                      | `g v`                             | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker`    |
 | Next middle view                       | `` ` ``                           | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`        |
 | Previous middle view                   | `~`                               | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`    |

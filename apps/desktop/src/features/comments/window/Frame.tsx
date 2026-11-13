@@ -18,6 +18,7 @@ import { Markdown, secureLink, type Followed } from '@lo/ui/markdown';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 
+import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { avatarImage, postImage } from '../../../window/images.ts';
 import { followLink } from '../../open/window/shared.ts';
@@ -27,11 +28,9 @@ import { act, type Box, type BoxState, pullIn, send, takenDown } from './boxes.t
 import { commentsJobs } from './main.ts';
 import {
   IN_A_LAYER,
+  notesOf,
   OFFLINE,
   offerLabels,
-  refusalNote,
-  restoredNote,
-  sendingNote,
   SIGN_IN,
   whereText,
   type BoxNote,
@@ -129,11 +128,7 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
 function Notes({ box }: { box: Box }): ReactNode {
   const state = useBox(box);
   const why = useWhyNot(box);
-  const notes = [
-    state.restored === undefined ? undefined : restoredNote(state.restored, Date.now()),
-    state.refusal && refusalNote(state.refusal),
-    sendingNote(state.sending),
-  ].flatMap((note) => (note ? [drawnNote(box, note)] : []));
+  const notes = notesOf(state, Date.now()).map((note) => drawnNote(box, note));
   return <CommentBoxNotes id={box.id} notes={notes} foot={footOf(box, state, why)} />;
 }
 
@@ -191,14 +186,37 @@ function Preview({ box }: { box: Box }): ReactNode {
   );
 }
 
+/**
+ * A part of the frame whose right-click opens the box's menu: what its notes' buttons do. The
+ * editor keeps the system's Edit menu.
+ */
+function OnMenu({ box, children }: { box: Box; children: ReactNode }): ReactNode {
+  return <div {...useMenuTarget({ kind: 'box', box: box.id })}>{children}</div>;
+}
+
 /** What draws `box`'s frame in the parts the code view makes. */
 export function frameOf(box: Box): BoxFrame {
   return (parts, composer) => {
     const roots = [
-      [parts.head, <Head key="head" box={box} composer={composer} />],
-      [parts.note, <Notes key="notes" box={box} />],
+      [
+        parts.head,
+        <OnMenu key="head" box={box}>
+          <Head box={box} composer={composer} />
+        </OnMenu>,
+      ],
+      [
+        parts.note,
+        <OnMenu key="notes" box={box}>
+          <Notes box={box} />
+        </OnMenu>,
+      ],
       [parts.preview, <Preview key="preview" box={box} />],
-      [parts.foot, <Foot key="foot" box={box} />],
+      [
+        parts.foot,
+        <OnMenu key="foot" box={box}>
+          <Foot box={box} />
+        </OnMenu>,
+      ],
     ] as const;
     const made = roots.map(([part, drawn]) => {
       const root = createRoot(part);

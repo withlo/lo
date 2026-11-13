@@ -13,6 +13,7 @@ import {
   linesAt,
   placeKey,
   placeOf,
+  offersOf,
   refusalNote,
   restoredNote,
   savedWhen,
@@ -185,6 +186,15 @@ describe('a box’s notes', () => {
     expect(refusalNote({ kind: 'signIn' }).text).toBe('Sign in to comment');
     expect(refusalNote({ kind: 'run' }).text).toBe('Comment in a layer');
     expect(refusalNote({ kind: 'github', message: 'Nope.' }).text).toBe('Nope.');
+  });
+
+  test('what the notes offer, in their order, is what the box’s menu has', () => {
+    const none = { restored: undefined, refusal: undefined, sending: null };
+    expect(offersOf(none)).toEqual([]);
+    expect(
+      offersOf({ restored: 1, refusal: { kind: 'headMoved', head: null }, sending: 'unknown' }),
+    ).toEqual(['discard', 'loadNewer', 'sendAnyway']);
+    expect(offersOf({ ...none, refusal: { kind: 'paused', until: 0 } })).toEqual([]);
   });
 
   test('sending says it waits, or what came of an answer that was lost', () => {

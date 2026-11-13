@@ -7,7 +7,7 @@
 
 import { Lines, suggestionBlock, takesSuggestion } from '@lo/review';
 import type { Composer, ComposerEvents, Mode, Send } from '@lo/ui/code';
-import type { HeaderTarget, LineTarget } from '@lo/ui/commands';
+import type { BoxTarget, Handler, HeaderTarget, LineTarget } from '@lo/ui/commands';
 
 import { announce, notice, notify, withdraw } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
@@ -35,6 +35,8 @@ import {
   linesAt,
   NEW_SIDE_ONLY,
   NOT_IN_DIFF,
+  offerLabels,
+  offersOf,
   type Offer,
   placeKey,
   placeOf,
@@ -161,6 +163,12 @@ const pulls = new Map<string, PostPull>();
 /** What main said of the comments each file takes, by view, commit and path, with the view. */
 const commentables = new Map<string, { view: string; asked: Promise<Commentable> }>();
 
+/**
+ * Each view's places whose drafts were dropped here, until main says so: drafts it sent before it
+ * heard don't bring their boxes back.
+ */
+const dropped = new Map<string, Set<string>>();
+
 function boxesOf(view: string): Map<string, Box> {
   let own = views.get(view);
   if (!own) {
@@ -174,6 +182,14 @@ function save(view: string, place: DraftPlaceRow, text: string): void {
   main()
     .draft({ id: view, place, text })
     .catch((error: unknown) => console.error("Lo couldn't save a comment's draft:", error));
+}
+
+/** The box named `id`, its frame's name for it, in any view. */
+export function boxNamed(id: string): Box | undefined {
+  for (const own of views.values()) {
+    for (const box of own.values()) if (box.id === id) return box;
+  }
+  return undefined;
 }
 
 /** Notes the pull request `tab` shows, as its diff is drawn. */
@@ -255,6 +271,7 @@ function eventsOf(box: Box): ComposerEvents {
       box.dropSave();
       if (box.sentMark || box.state.busy) return;
       boxesOf(box.view).delete(box.key);
+      holdDropped(box);
       save(box.view, box.state.place, '');
     },
     mode(mode) {
@@ -291,6 +308,7 @@ function show(box: Box, diff: WritingDiff): boolean {
   try {
     box.composer = diff.compose(where.at, box.state.text, eventsOf(box), framer?.(box), {
       focus: box.focusOnOpen,
+      name: box.id,
     });
   } catch {
     // Its line isn't drawn yet, as while its file's diff is worked out.
@@ -361,6 +379,12 @@ export function takeDrafts(given: DraftsView): void {
   const { id: view } = given;
   const own = boxesOf(view);
   const rows = new Map(given.drafts.map((row) => [placeKey(row.place), row]));
+  // A draft dropped here is gone, whatever main sent before it heard; once it says so, it's done.
+  const dropping = dropped.get(view);
+  for (const key of dropping ?? []) {
+    if (rows.has(key)) rows.delete(key);
+    else dropping?.delete(key);
+  }
   const gone: Box[] = [];
   for (const [key, box] of own) {
     if (rows.has(key)) continue;
@@ -377,8 +401,7 @@ export function takeDrafts(given: DraftsView): void {
     own.delete(key);
     gone.push(box);
   }
-  for (const row of given.drafts) {
-    const key = placeKey(row.place);
+  for (const [key, row] of rows) {
     let box = own.get(key);
     if (!box) {
       const moved = gone.find(
@@ -420,6 +443,7 @@ function openAt(
   if (!box) {
     box = new Box(view, place, how, draft);
     own.set(key, box);
+    dropped.get(view)?.delete(key);
   } else if (!box.composer) {
     box.set({ primary: how, ...(box.state.text.trim() === '' ? { text: draft } : {}) });
   }
@@ -607,18 +631,9 @@ export async function send(box: Box, how: Send): Promise<void> {
 export function act(box: Box, offer: Offer): void {
   const { view } = box;
   switch (offer) {
-    case 'discard': {
-      boxesOf(view).delete(box.key);
-      box.dropSave();
-      box.open = false;
-      const { composer } = box;
-      box.composer = undefined;
-      composer?.dismiss();
-      main()
-        .discard({ id: view, place: box.state.place })
-        .catch((error: unknown) => console.error("Lo couldn't discard a draft:", error));
+    case 'discard':
+      drop(box);
       return;
-    }
     case 'sendAnyway':
       void send(box, box.lastHow);
       return;
@@ -647,6 +662,34 @@ export function act(box: Box, offer: Offer): void {
   }
 }
 
+/**
+ * Takes `box` away with its draft, as "Discard" does: its box, if it's drawn, closes with nothing
+ * sent.
+ */
+function drop(box: Box): void {
+  const { view, key } = box;
+  boxesOf(view).delete(key);
+  box.dropSave();
+  box.open = false;
+  const { composer } = box;
+  box.composer = undefined;
+  composer?.dismiss();
+  holdDropped(box);
+  main()
+    .discard({ id: view, place: box.state.place })
+    .catch((error: unknown) => console.error("Lo couldn't discard a draft:", error));
+}
+
+/** Keeps drafts main sent before it heard `box`'s went from bringing it back. */
+function holdDropped(box: Box): void {
+  let own = dropped.get(box.view);
+  if (!own) {
+    own = new Set();
+    dropped.set(box.view, own);
+  }
+  own.add(box.key);
+}
+
 /** Moves a box's text to a box on its file, as GitHub takes no comment on its lines. */
 function toFile(box: Box): void {
   const { view } = box;
@@ -654,16 +697,7 @@ function toFile(box: Box): void {
   if (!diff) return;
   const { place, text, primary } = box.state;
   const onFile: DraftPlaceRow = { ...place, lines: null };
-  const own = boxesOf(view);
-  own.delete(box.key);
-  box.dropSave();
-  box.open = false;
-  const { composer } = box;
-  box.composer = undefined;
-  composer?.dismiss();
-  main()
-    .discard({ id: view, place })
-    .catch((error: unknown) => console.error("Lo couldn't move a draft:", error));
+  drop(box);
   const there = openAt(view, diff, onFile, primary);
   if (!there?.composer) return;
   const kept = there.composer.text.replace(/\s+$/, '');
@@ -684,6 +718,7 @@ export function keepBoxesOf(kept: ReadonlySet<string>): void {
     for (const box of own.values()) box.saveNow();
     views.delete(view);
     pulls.delete(view);
+    dropped.delete(view);
     caught.delete(view);
     clearTimeout(retrying.get(view));
     retrying.delete(view);
@@ -694,4 +729,23 @@ export function keepBoxesOf(kept: ReadonlySet<string>): void {
 /** The box the diff took down as it was drawn again: it opens again once the diff is drawn. */
 export function takenDown(box: Box, composer: Composer): void {
   if (box.composer === composer) box.composer = undefined;
+}
+
+/**
+ * What a box's note offers, as a command on the box: there only while the box offers it, in its
+ * frame's menu and in the palette.
+ */
+export function offering(offer: Offer): Handler<BoxTarget> {
+  const offers = (target: BoxTarget) => {
+    const box = boxNamed(target.box);
+    return box !== undefined && offersOf(box.state).includes(offer);
+  };
+  return {
+    run(target) {
+      const box = boxNamed(target.box);
+      if (box && offers(target)) act(box, offer);
+    },
+    enabled: (target) => offers(target) || `“${offerLabels[offer]}” isn’t offered in this box now.`,
+    listed: offers,
+  };
 }

@@ -3,7 +3,7 @@
 // whose frame says where the comment goes and who it's from, and `⌘⏎` adds it to a pending review
 // it starts, as `app_comments_write` recorded from the app; the thread comes under the line. A box
 // closed with `Esc Esc` keeps its draft on this computer, and after a restart it's back, unfocused,
-// saying so, until it's discarded.
+// saying so, until it's discarded from its frame's right-click menu.
 
 import { writeFileSync } from 'node:fs';
 
@@ -231,7 +231,13 @@ test('a draft kept with `Esc Esc` is back after a restart, unfocused, until it�
         again.page.evaluate(() => document.activeElement?.closest('.lo-diffcomposer') === null),
       )
       .toBe(true);
-    await box.getByRole('button', { name: 'Discard' }).click();
+    // What the note's button does is on the frame's right-click menu too, and only what the box
+    // offers.
+    await box.locator('.lo-diffcomposer__head').click({ button: 'right' });
+    const menu = again.page.getByRole('menu', { name: 'Comment box actions' });
+    await expect(menu.getByRole('menuitem', { name: /^Discard the draft/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /^Send it anyway/ })).toHaveCount(0);
+    await menu.getByRole('menuitem', { name: /^Discard the draft/ }).click();
     await expect(box).toHaveCount(0);
   } finally {
     await again.app.close();

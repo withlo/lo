@@ -1519,6 +1519,7 @@ class View implements DiffView {
       case 'block':
       case 'tab':
       case 'row':
+      case 'box':
       case 'none':
         return undefined;
       default:
@@ -1943,6 +1944,8 @@ class View implements DiffView {
       target =
         thread === undefined ? { kind: 'line', at: where } : { kind: 'line', at: where, thread };
     }
+    // A key in the box names it too, for the caller's commands on the box.
+    if (options.name !== undefined) target.box = options.name;
     const box = new CommentBox({
       target,
       draft,

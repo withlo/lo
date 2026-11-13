@@ -269,6 +269,27 @@ export function sendingNote(sending: Sending | null): BoxNote | undefined {
   }
 }
 
+/** What a box's notes say, in order: a restored draft, a refusal, how sending stands. */
+export function notesOf(
+  state: {
+    readonly restored: number | undefined;
+    readonly refusal: SendRefusal | undefined;
+    readonly sending: Sending | null;
+  },
+  now: number,
+): BoxNote[] {
+  return [
+    state.restored === undefined ? undefined : restoredNote(state.restored, now),
+    state.refusal && refusalNote(state.refusal),
+    sendingNote(state.sending),
+  ].filter((each) => each !== undefined);
+}
+
+/** What a box's notes offer to do now, in their order. */
+export function offersOf(state: Parameters<typeof notesOf>[0]): Offer[] {
+  return notesOf(state, 0).flatMap((each) => each.offers ?? []);
+}
+
 /** What a restored draft's box says. */
 export function restoredNote(savedAt: number, now: number): BoxNote {
   return {

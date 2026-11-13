@@ -274,6 +274,11 @@ export type BoxFrame = (parts: BoxParts, box: Composer) => { destroy(): void };
 export interface ComposeOptions {
   /** Whether it takes focus: yes, unless it's false, as for a draft restored. */
   focus?: boolean;
+  /**
+   * The caller's name for the box: a key in it acts on its line or header with the box named
+   * (`box`), so the caller's commands can act on the box, as from its frame's right-click menu.
+   */
+  name?: string;
 }
 
 /** A comment box outside a code view, as the timeline's and a review's summary are. */
