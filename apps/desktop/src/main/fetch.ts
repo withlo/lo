@@ -41,14 +41,23 @@ export interface NetRequest {
 /** Statuses whose answer has no body. */
 const NO_BODY: ReadonlySet<number> = new Set([101, 103, 204, 205, 304]);
 
+/** Thrown when an answer's body is longer than the `limit` a `netFetch` reads. */
+export class AnswerTooLarge extends Error {
+  override name = 'AnswerTooLarge';
+}
+
 /**
  * A `fetch` that sends each request through `request` (Electron's `net.request`) and reads the
  * whole answer before resolving. A request given up through its signal is cancelled, and fails
- * with the signal's reason.
+ * with the signal's reason. With a `limit`, an answer whose body says it's longer, or turns out to
+ * be, is cancelled as soon as it does, and fails with {@link AnswerTooLarge}, so no more than that
+ * is ever kept.
  */
 export function netFetch(
   request: (options: ClientRequestConstructorOptions) => NetRequest,
+  options: { limit?: number | undefined } = {},
 ): typeof globalThis.fetch {
+  const { limit = Infinity } = options;
   return async (input, init) => {
     const asked = new Request(input, init);
     const { signal } = asked;
@@ -102,9 +111,23 @@ export function netFetch(
         });
         sent.abort();
       });
+      const tooLarge = () => {
+        fail(new AnswerTooLarge(`The answer is longer than ${limit} bytes.`));
+        sent.abort();
+      };
       sent.on('response', (answer) => {
         const chunks: Buffer[] = [];
-        answer.on('data', (chunk) => chunks.push(chunk));
+        let received = 0;
+        if (Number(headersOf(answer.headers).get('content-length') ?? 0) > limit) {
+          tooLarge();
+          return;
+        }
+        answer.on('data', (chunk) => {
+          if (settled) return;
+          received += chunk.length;
+          if (received > limit) tooLarge();
+          else chunks.push(chunk);
+        });
         answer.on('error', fail);
         answer.on('aborted', () => fail(new Error('net::ERR_CONNECTION_CLOSED')));
         answer.on('end', () =>

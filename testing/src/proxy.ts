@@ -10,7 +10,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { buffer } from 'node:stream/consumers';
 
 import { Recorder } from './record.ts';
-import { fromGitHub, PREFIXES, toGitHub, type GitHubUrls } from './server.ts';
+import { fromGitHub, isImagePath, PREFIXES, toGitHub, type GitHubUrls } from './server.ts';
+
+/** The one image address the bot's token goes to: an attachment's, on github.com. */
+const ATTACHMENTS = 'https://github.com/user-attachments/assets/';
 
 /** Request headers never forwarded: the connection's own, and what `fetch` sets itself. */
 const DROPPED_REQUEST = new Set([
@@ -89,12 +92,19 @@ export async function startRecordingProxy(options: RecordingProxyOptions): Promi
       if (value === undefined || DROPPED_REQUEST.has(name)) continue;
       for (const each of Array.isArray(value) ? value : [value]) headers.append(name, each);
     }
-    // Signed in as the bot only when the app signs in at all: an anonymous request stays one.
-    if (incoming.headers.authorization !== undefined) {
+    const path = incoming.url ?? '/';
+    const image = isImagePath(path);
+    const target = toGitHub(path);
+    // Signed in as the bot only when the app signs in at all: an anonymous request stays one. Of
+    // the image hosts, only an attachment's address on github.com ever gets the token.
+    if (
+      incoming.headers.authorization !== undefined &&
+      (!image || target.startsWith(ATTACHMENTS))
+    ) {
       headers.set('authorization', `token ${options.token}`);
     }
     const method = incoming.method ?? 'GET';
-    const response = await recorder.fetch(toGitHub(incoming.url ?? '/'), {
+    const response = await recorder.fetch(target, {
       method,
       headers,
       body: method === 'GET' || method === 'HEAD' ? undefined : new Uint8Array(body),
@@ -103,7 +113,9 @@ export async function startRecordingProxy(options: RecordingProxyOptions): Promi
     const out: Record<string, string> = {};
     response.headers.forEach((value, name) => {
       if (DROPPED_RESPONSE.has(name)) return;
-      out[name] = name === 'link' || name === 'location' ? fromGitHub(value, urls) : value;
+      // An image host's redirects go back as they are, for the app to read against the host.
+      const moved = !image && (name === 'link' || name === 'location');
+      out[name] = moved ? fromGitHub(value, urls) : value;
     });
     outgoing.writeHead(response.status, out);
     outgoing.end(Buffer.from(await response.arrayBuffer()));

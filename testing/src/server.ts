@@ -1,7 +1,8 @@
 /**
  * The replayer behind a local HTTP server, standing in for GitHub where Lo's own `fetch` can't be
  * swapped out, as in the app's end-to-end tests. Lo takes GitHub's addresses as settings; give it
- * {@link ReplayServer.urls}.
+ * {@link ReplayServer.urls}. It stands in for GitHub's image hosts too, each under
+ * `/images/<host>/`.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -30,6 +31,22 @@ export const PREFIXES: Readonly<Record<keyof GitHubUrls, string>> = {
   uploads: '/uploads',
 };
 const NAMES: readonly (keyof GitHubUrls)[] = ['api', 'web', 'uploads'];
+
+/** The path GitHub's image hosts are served under, each as `/images/<host>/`. */
+export const IMAGES_PREFIX = '/images';
+
+/**
+ * The hosts the server stands in for under {@link IMAGES_PREFIX}: GitHub's image hosts, its
+ * avatars, the address of an attachment on github.com, and where that redirects to.
+ */
+export const IMAGE_HOSTS: readonly string[] = [
+  'camo.githubusercontent.com',
+  'private-user-images.githubusercontent.com',
+  'user-images.githubusercontent.com',
+  'avatars.githubusercontent.com',
+  'github.com',
+  'github-production-user-asset-6210df.s3.amazonaws.com',
+];
 
 export interface ReplayServer {
   /** The server's stand-ins for GitHub's addresses, such as `http://127.0.0.1:53124/api`. */
@@ -71,15 +88,19 @@ export async function serveReplay(cassette: string | Replay): Promise<ReplayServ
       if (value === undefined) continue;
       for (const each of Array.isArray(value) ? value : [value]) headers.append(name, each);
     }
+    const path = incoming.url ?? '/';
     const response = replay.answer({
       method: incoming.method ?? 'GET',
-      url: toGitHub(incoming.url ?? '/'),
+      url: toGitHub(path),
       headers,
       body: new Uint8Array(body),
     });
+    // An image host's redirects stay as they were: Lo reads them against the host's own address.
+    const moved = !isImagePath(path);
     const out: Record<string, string> = {};
     response.headers.forEach((value, name) => {
-      out[name] = name === 'link' || name === 'location' ? fromGitHub(value, urls) : value;
+      out[name] =
+        moved && (name === 'link' || name === 'location') ? fromGitHub(value, urls) : value;
     });
     outgoing.writeHead(response.status, out);
     outgoing.end(Buffer.from(await response.arrayBuffer()));
@@ -116,8 +137,24 @@ export async function serveReplay(cassette: string | Replay): Promise<ReplayServ
   };
 }
 
+/** Whether a request to the server is for an image, under {@link IMAGES_PREFIX}. */
+export function isImagePath(path: string): boolean {
+  return path.startsWith(`${IMAGES_PREFIX}/`);
+}
+
 /** The GitHub URL a request to the server stands for, from the prefix its path starts with. */
 export function toGitHub(path: string): string {
+  if (isImagePath(path)) {
+    const rest = path.slice(IMAGES_PREFIX.length + 1);
+    const slash = rest.indexOf('/');
+    const host = slash === -1 ? rest : rest.slice(0, slash);
+    if (slash === -1 || !IMAGE_HOSTS.includes(host)) {
+      throw new ReplayError(
+        `the replay server got ${path}, which isn't on one of GitHub's image hosts`,
+      );
+    }
+    return `https://${host}${rest.slice(slash)}`;
+  }
   for (const name of NAMES) {
     const prefix = PREFIXES[name];
     if (path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`)) {
@@ -125,7 +162,7 @@ export function toGitHub(path: string): string {
     }
   }
   throw new ReplayError(
-    `the replay server got ${path}, which isn't under ${Object.values(PREFIXES).join(', ')}`,
+    `the replay server got ${path}, which isn't under ${[...Object.values(PREFIXES), IMAGES_PREFIX].join(', ')}`,
   );
 }
 

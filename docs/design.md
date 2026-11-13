@@ -122,7 +122,9 @@ Everything a PR contains is untrusted: code, Markdown, images and artifacts.
 - **Scripts.** The window loads only Lo's own files, and a content security policy blocks every
   other script.
 - **Markdown and SVG** are sanitized before they're shown.
-- **Images** load through the main process, which adds the account's token for private repos.
+- **Images** load only through the main process, and only from GitHub's image hosts. Main adds the
+  account's token only for an attachment's address on github.com, which needs it in private repos;
+  the signed and proxied addresses GitHub renders need none.
 - **Links** open only web addresses, in your default browser. The window can't navigate away or open
   new windows.
 

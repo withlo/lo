@@ -223,11 +223,13 @@ The window shows untrusted content, so it's locked down, and the smoke test show
 holding:
 
 - It runs in Chromium's sandbox, with context isolation and without Node.
-- It loads only Lo's own files, from the `lo-app:` scheme, never from `file:`. Its content security
-  policy, sent as a header, allows no inline scripts and nothing from elsewhere, and no inline
-  styles but the style elements that carry the page's nonce, which the code views make. Each load of
-  the page gets a new nonce, which `app.info` hands the page.
-- Its session cancels every request outside `lo-app:`. WebRTC, which sends nothing the session can
+- It loads only Lo's own files, from the `lo-app:` scheme, never from `file:`, and images main
+  serves from GitHub, from the `lo-image:` scheme (see "Images from GitHub"). Its content security
+  policy, sent as a header, allows no inline scripts and nothing from elsewhere but those images,
+  and no inline styles but the style elements that carry the page's nonce, which the code views
+  make. Each load of the page gets a new nonce, which `app.info` hands the page.
+- Its session cancels every request outside `lo-app:`, but an image's at an address `lo-image:`
+  serves, which the page can draw but not `fetch`. WebRTC, which sends nothing the session can
   cancel, may use only the session's proxy, which leads nowhere. Every permission and every download
   is refused. It can't navigate away, follow a redirect, open other windows or attach a webview.
 - Its only way to main is `window.lo`, with `invoke` and `subscribe`. Main answers a request only
@@ -412,12 +414,13 @@ repositories, which account opens a repository, and the pull requests opened lat
   is answering only as long as its own limit for stopping allows.
 - A build run from source talks to a GitHub on this machine when `LO_GITHUB` names its address
   (`http://127.0.0.1:<port>`, serving GitHub's API, website and uploads under `/api`, `/web` and
-  `/uploads`, as the replay server does), which makes it a test run. It adds the account whose token
-  is in the file `LO_TEST_TOKEN_FILE` names as it starts. It runs the gh `LO_GH` names (an absolute
-  path, or `none`) rather than one it finds, and a test run runs none unless `LO_GH` names one, so
-  the gh on `PATH`, which holds the tokens of whoever runs the tests, never sends one to the test's
-  GitHub. It opens web pages with the program `LO_BROWSER` names, rather than the system's browser,
-  so a test opens no browser. A packaged build ignores all four.
+  `/uploads`, and its image hosts under `/images/<host>`, as the replay server does), which makes it
+  a test run. It adds the account whose token is in the file `LO_TEST_TOKEN_FILE` names as it
+  starts. It runs the gh `LO_GH` names (an absolute path, or `none`) rather than one it finds, and a
+  test run runs none unless `LO_GH` names one, so the gh on `PATH`, which holds the tokens of
+  whoever runs the tests, never sends one to the test's GitHub. It opens web pages with the program
+  `LO_BROWSER` names, rather than the system's browser, so a test opens no browser. A packaged build
+  ignores all four.
 
 ### A pull request's tab
 
@@ -731,6 +734,30 @@ without signing in and Settings among them, are drawn as they are.
   like Settings: its scope has `data-lo-tab="browser"`, so `Tab` walks its controls. `⏎` presses the
   control with focus, opens the link in the box, and signs in anywhere else on the screen.
 - Another feature's step goes in the slot as a `SetupItem` from `@lo/ui`, in `order`.
+
+### Images from GitHub
+
+The window shows an image from outside Lo only as `<img src="lo-image://…">`, which main serves.
+`src/ipc/images.ts` holds the two addresses, which the window builds and main reads, and the
+`comments` feature serves them.
+
+- `lo-image://post/<view>/<address>` is an image in a post, at an address on one of GitHub's image
+  hosts (`@lo/markdown`'s `imageAddress`), fetched as the account the view `<view>` acts as.
+  `lo-image://avatar/<login>?s=<px>` is an account's avatar. Features build both with
+  `window/images.ts`; a bot or a team gets no address, and keeps its initials. Given where from
+  (`Markdown`'s `images`), the Markdown renderer loads a text's first 30 images, lazily, and shows
+  the rest, and any that fail, as links.
+- Main fetches each through Chromium's network stack, as it does GitHub's requests: over `https` on
+  the default port with no user name, from GitHub's image hosts or `avatars.githubusercontent.com`,
+  following at most 5 redirects, each to the same hosts, within 30 s and 16 MiB, 6 at once. Only an
+  attachment's address on github.com (`/user-attachments/assets/<id>`) gets the account's token; its
+  redirect to GitHub's attachment store on S3, the only way that host is reached, goes without it.
+- It serves a PNG, JPEG, GIF or WebP, by its first bytes alone, read with `@lo/artifact`'s image
+  reader and held to 16,384 pixels a side and 40 megapixels, as that type with `nosniff`, and
+  nothing else. It keeps the last 64 MiB it served, by address without the signature GitHub adds to
+  a private image's, which changes with every read.
+- A test run fetches the image hosts from the test's GitHub too, each under `/images/<host>/`,
+  through `githubSettings`, so a packaged build never does.
 
 ## The interface
 

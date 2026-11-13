@@ -12,23 +12,30 @@ import {
 const dev = new URL('http://localhost:5173');
 
 describe('contentSecurityPolicy', () => {
-  it("allows only Lo's own files, with no inline code but style elements with the nonce", () => {
+  it("allows only Lo's own files, and images main serves, with no inline code but style elements with the nonce", () => {
     expect(contentSecurityPolicy('bm9uY2U=')).toBe(
-      "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-bm9uY2U='; img-src 'self'; " +
-        "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; " +
-        "form-action 'none'; frame-ancestors 'none'",
+      "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-bm9uY2U='; " +
+        "img-src 'self' lo-image:; font-src 'self'; connect-src 'self'; object-src 'none'; " +
+        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     );
   });
 
-  it('lets nothing load by an address but its own files: no blob:, data: or other scheme', () => {
+  it('lets nothing load by an address but its own files and images from main: no blob:, data: or other scheme', () => {
     // Overviews' figures are drawn from their bytes, on canvases and as SVG elements, so they
     // need no source of their own.
     const policy = contentSecurityPolicy('bm9uY2U=');
-    const sources = policy.split('; ').flatMap((directive) => directive.split(' ').slice(1));
+    const sources = policy.split('; ').flatMap((directive) =>
+      directive
+        .split(' ')
+        .slice(1)
+        .map((source) => [directive, source]),
+    );
     expect(
-      sources.filter((source) => !["'self'", "'none'", "'nonce-bm9uY2U='"].includes(source)),
-    ).toEqual([]);
-    expect(policy).not.toMatch(/blob:|data:|filesystem:|lo-app:|\*/);
+      sources.filter(
+        ([, source]) => !["'self'", "'none'", "'nonce-bm9uY2U='"].includes(source ?? ''),
+      ),
+    ).toEqual([["img-src 'self' lo-image:", 'lo-image:']]);
+    expect(policy).not.toMatch(/blob:|data:|filesystem:|lo-app:|https?:|\*/);
   });
 
   it("loosens only what Vite's dev server needs, with no nonce to turn inline styles off", () => {
@@ -37,7 +44,7 @@ describe('contentSecurityPolicy', () => {
     expect(policy).toContain("style-src 'self' 'unsafe-inline';");
     expect(policy).toContain("connect-src 'self' ws://localhost:5173;");
     expect(policy).toContain("default-src 'none';");
-    expect(policy).toContain("img-src 'self';");
+    expect(policy).toContain("img-src 'self' lo-image:;");
     expect(policy).not.toContain('nonce');
   });
 });
@@ -70,6 +77,34 @@ describe('isAllowedRequest', () => {
     expect(isAllowedRequest(address)).toBe(false);
   });
 
+  it('allows an image main serves, as an image only', () => {
+    const view = '5b2a0f6e-0d4c-4d8e-9f3c-1d2e3f4a5b6c';
+    const attachment = encodeURIComponent('https://github.com/user-attachments/assets/a1');
+    for (const address of [
+      'lo-image://avatar/octocat?s=56',
+      `lo-image://post/${view}/${attachment}`,
+    ]) {
+      expect(isAllowedRequest(address, undefined, 'image')).toBe(true);
+      expect(isAllowedRequest(address, dev, 'image')).toBe(true);
+      for (const kind of ['xhr', 'mainFrame', 'subFrame', 'script', 'media', 'other', undefined]) {
+        expect(isAllowedRequest(address, undefined, kind)).toBe(false);
+      }
+    }
+  });
+
+  it.each([
+    'lo-image://elsewhere/octocat?s=56',
+    'lo-image://avatar/octocat',
+    'lo-image://avatar/dependabot%5Bbot%5D?s=56',
+    `lo-image://post/tab/${encodeURIComponent('https://example.com/a.png')}`,
+    `lo-image://post/tab/${encodeURIComponent('http://camo.githubusercontent.com/a')}`,
+    'lo-image:avatar',
+    'https://avatars.githubusercontent.com/octocat?s=56',
+    'https://camo.githubusercontent.com/a',
+  ])('refuses %s, even as an image', (address) => {
+    expect(isAllowedRequest(address, undefined, 'image')).toBe(false);
+  });
+
   it('allows the dev server and its WebSocket under electron-vite dev only', () => {
     expect(isAllowedRequest('http://localhost:5173/src/index.tsx', dev)).toBe(true);
     expect(isAllowedRequest('ws://localhost:5173/', dev)).toBe(true);
@@ -79,12 +114,14 @@ describe('isAllowedRequest', () => {
 });
 
 describe('isAllowedNavigation', () => {
-  it.each(['https://example.com/', 'lo-app://app/index.html', 'file:///'])(
-    'refuses %s',
-    (address) => {
-      expect(isAllowedNavigation(address)).toBe(false);
-    },
-  );
+  it.each([
+    'https://example.com/',
+    'lo-app://app/index.html',
+    'lo-image://avatar/octocat?s=56',
+    'file:///',
+  ])('refuses %s', (address) => {
+    expect(isAllowedNavigation(address)).toBe(false);
+  });
 
   it("allows the dev server's own pages under electron-vite dev", () => {
     expect(isAllowedNavigation('http://localhost:5173/', dev)).toBe(true);

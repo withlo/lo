@@ -148,8 +148,7 @@ export function toResponse(recorded: RecordedResponse): Response {
   if (NULL_BODY.has(recorded.status))
     return new Response(null, { status: recorded.status, headers });
   // Bytes rather than a string, so `Response` adds no content type the recording didn't have.
-  const body = new TextEncoder().encode(responseBody(recorded));
-  return new Response(body, { status: recorded.status, headers });
+  return new Response(responseBody(recorded), { status: recorded.status, headers });
 }
 
 /**

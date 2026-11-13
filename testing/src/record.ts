@@ -3,7 +3,8 @@
  *
  * Request headers are never stored, only the method, the URL and what identifies the body.
  * Response headers are kept only from {@link KEPT_HEADERS}, query values that grant access, such as
- * signed URLs' signatures, are redacted, and credential fields in JSON are blanked. Before each
+ * signed URLs' signatures, are redacted, in the URLs requested as in what came back, and
+ * credential fields in JSON are blanked. An image's bytes are kept as they are, in base64. Before each
  * file is written, and again over the whole cassette at the end, the recorder checks for the
  * token, as is, percent-encoded or in base64, and for anything shaped like a GitHub token; if it
  * finds one, it deletes the cassette and fails. It sends nothing that writes to GitHub unless told
@@ -216,7 +217,8 @@ export function recordedRequest(
   body: Uint8Array | string,
   conditions: { ifNoneMatch?: string | null; ifModifiedSince?: string | null } = {},
 ): RecordedRequest {
-  const request: RecordedRequest = { method, url: url.href };
+  // A signed address, such as an image's, is recorded as the response that led to it was.
+  const request: RecordedRequest = { method, url: redactSignedUrls(url.href) };
   const graphql = graphqlBody(url, () => (typeof body === 'string' ? body : utf8(body)));
   if (graphql) {
     request.operation = graphql.operationName;
@@ -247,9 +249,13 @@ export function recordedResponse(
     const value = headers.get(name);
     if (value !== null) kept[name] = redactSignedUrls(value);
   }
-  const text = redactSignedUrls(utf8(body));
   const recorded: RecordedResponse = { status, headers: kept };
-  if (text.length === 0) return recorded;
+  if (body.length === 0) return recorded;
+  if (isBytes(headers, body)) {
+    recorded.body_base64 = Buffer.from(body).toString('base64');
+    return recorded;
+  }
+  const text = redactSignedUrls(utf8(body));
   let json: Json;
   try {
     json = parseJson(text);
@@ -262,6 +268,17 @@ export function recordedResponse(
   blankCredentials(json);
   recorded.body = json;
   return recorded;
+}
+
+/** Whether a body is bytes rather than text: an image, or anything that isn't UTF-8. */
+function isBytes(headers: Headers, body: Uint8Array): boolean {
+  if (headers.get('content-type')?.toLowerCase().startsWith('image/')) return true;
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(body);
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 /**

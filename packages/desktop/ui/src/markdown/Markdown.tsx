@@ -1,9 +1,10 @@
 import { useCallback, useId, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
 
-import type { Extension, Plain, Tree } from '@lo/markdown';
+import { DEFAULT_LIMITS, type Extension, type Image, type Plain, type Tree } from '@lo/markdown';
 
 import {
+  firstImages,
   MarkdownBlocks,
   MarkdownNotes,
   MarkdownProvider,
@@ -21,8 +22,17 @@ export interface MarkdownProps<X extends Extension = Plain> {
    */
   onFollow?: ((target: Followed<X>, from: Element) => void) | undefined;
   extension?: MarkdownExtension<X> | undefined;
+  /**
+   * Where to load an image from, by its address on one of GitHub's image hosts: an address on Lo's
+   * image scheme, which main serves, or nothing to show it as a link. Only the first
+   * {@link MAX_IMAGES} images in the text load; without this, none do.
+   */
+  images?: ((url: string) => string | undefined) | undefined;
   className?: string | undefined;
 }
+
+/** The most images a text shows: as many as GitHub's text gives Lo at most. */
+export const MAX_IMAGES = DEFAULT_LIMITS.images;
 
 const NONE: MarkdownExtension<Extension> = {};
 
@@ -31,10 +41,16 @@ export function Markdown<X extends Extension = Plain>({
   tree,
   onFollow,
   extension,
+  images,
   className,
 }: MarkdownProps<X>) {
   const prefix = scopePrefix(useId());
   const anchors = useMemo(() => new Anchors(prefix, tree.blocks), [prefix, tree.blocks]);
+  const image = useMemo(() => {
+    if (!images) return undefined;
+    const first = firstImages(tree.blocks, MAX_IMAGES);
+    return (node: Image) => (first.has(node) ? images(node.url) : undefined);
+  }, [images, tree.blocks]);
   const root = useRef<HTMLDivElement | null>(null);
   const follow = useCallback(
     (target: Followed<X>, from: Element) => {
@@ -46,8 +62,8 @@ export function Markdown<X extends Extension = Plain>({
     [anchors, onFollow],
   );
   const rendering = useMemo<Rendering<X>>(
-    () => ({ anchors, follow, extension: extension ?? NONE, interactive: true }),
-    [anchors, follow, extension],
+    () => ({ anchors, follow, extension: extension ?? NONE, interactive: true, image }),
+    [anchors, follow, extension, image],
   );
   return (
     <MarkdownProvider rendering={rendering}>
