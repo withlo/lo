@@ -1,5 +1,5 @@
 {
-  "description": "What Lo's end-to-end tests read from GitHub, recorded from the app: rozed-dev/e2e#80 (testing/fixtures/app.sh), its files, its tree from the file tree and its push history, its overview (its ref, read again with its ETag, the tree of the ref's commit, by the commit's ID, its artifact.md, raw, the figure it names first, raw, and the commit, from rest_overview_refs_e2e and rest_overview_e2e), a pull request that doesn't exist and a repository that doesn't, and their overviews' refs, read as their tabs open (from rest_overview_refs_missing_e2e).",
-  "recorded_at": "2026-11-12T00:04:17Z",
+  "description": "What Lo's end-to-end tests read from GitHub, recorded from the app: rozed-dev/e2e#80 (testing/fixtures/app.sh), its files, its tree from the file tree and its push history, the repository's open pull requests with the merged pull requests their stacks link through, its overview (its ref, read again with its ETag, the tree of the ref's commit, by the commit's ID, its artifact.md, raw, the figure it names first, raw, and the commit), and a pull request that doesn't exist and a repository that doesn't, with their overviews' refs, read as their tabs open, and the ref of the one that doesn't, read again with its ETag.",
+  "recorded_at": "2026-11-13T01:37:29Z",
   "repo": "rozed-dev/e2e"
 }

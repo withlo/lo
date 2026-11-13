@@ -26,6 +26,7 @@ import {
   type RepoRef,
   type Secrets,
 } from '@lo/github';
+import { lookUpMerged } from '@lo/stacks';
 
 import type { Database } from '../../../main/database.ts';
 import type { AccountState, GithubAccess, GithubEvent } from '../service.ts';
@@ -305,6 +306,8 @@ export class Github implements GithubAccess {
         login,
         cache: this.#cache,
         config: this.#poll,
+        // So a repository's list carries the merged pull requests its stacks link through.
+        lookUpMerged,
         seen: (seenBy, pull, heads, at) => {
           // A poll that ends after its account was removed sees nothing anyone keeps.
           if (accounts.account(seenBy))

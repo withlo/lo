@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { STACK_PULLS, writeStackRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import {
   _electron as electron,
@@ -243,5 +244,50 @@ export const signedIn = test.extend<{ github: ReplayServer }>({
       .toContain('rozed-bot');
     await expect(middleOf(page)).toBeVisible();
     await use(page);
+  },
+});
+
+/**
+ * The pull requests of the stacks `testing/fixtures/stack.sh` makes in rozed-dev/e2e, by their
+ * numbers: #A, #B, #C and #D, a stack that branches, found by base branch and shared commits; #E,
+ * on #M, which was squash-merged; and #G1 and #G2, a GitHub stack.
+ */
+export const STACK = {
+  a: STACK_PULLS.a.number,
+  b: STACK_PULLS.b.number,
+  c: STACK_PULLS.c.number,
+  d: STACK_PULLS.d.number,
+  m: STACK_PULLS.m.number,
+  e: STACK_PULLS.e.number,
+  g1: STACK_PULLS.g1.number,
+  g2: STACK_PULLS.g2.number,
+} as const;
+
+/**
+ * `test`, with Lo signed in as rozed-bot on a replay server that answers from `app_stack`, recorded
+ * from the app on the stacks, and fetching from their repository, built on this machine.
+ */
+export const onStacks = test.extend<{ github: ReplayServer; remote: string }>({
+  // oxlint-disable-next-line no-empty-pattern
+  github: async ({}, use) => {
+    const server = await serveReplay('app_stack');
+    await use(server);
+    await server.close();
+  },
+  // oxlint-disable-next-line no-empty-pattern
+  remote: async ({}, use) => {
+    await use(writeStackRemote(base.info().outputPath('remote')));
+  },
+  launch: async ({ github, remote }, use) => {
+    const tokenFile = base.info().outputPath('token');
+    writeFileSync(tokenFile, `${TOKEN}\n`);
+    await use({
+      args: [appFolder, ...KEYCHAIN],
+      env: {
+        LO_GITHUB: new URL(github.urls.api).origin,
+        LO_TEST_TOKEN_FILE: tokenFile,
+        LO_GIT_REMOTE: remote,
+      },
+    });
   },
 });

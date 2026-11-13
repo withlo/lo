@@ -1,0 +1,82 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "StackLayers",
+    "variables": {
+      "ids": [
+        "PR_kwDOVleUfc8AAAABOzOJqg",
+        "PR_kwDOVleUfc8AAAABOzOKiA"
+      ]
+    },
+    "query_sha256": "f9c380a8f0858512aa296fa8f436a8ee18a78ee11b5fa3d1112439b166df6cc1"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4992",
+      "x-ratelimit-reset": "1794536958",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "8"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4992,
+          "used": 8,
+          "resetAt": "2026-11-13T02:29:18Z"
+        },
+        "nodes": [
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOVleUfc8AAAABOzOJqg",
+            "number": 88,
+            "state": "OPEN",
+            "headRefOid": "1727dc85d2e6e6f24d49b47b1397b69aa16ef1af",
+            "reviewDecision": null,
+            "statusCheckRollup": null,
+            "isInMergeQueue": false,
+            "mergeQueueEntry": null,
+            "files": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            },
+            "movedFrom": {
+              "nodes": []
+            }
+          },
+          {
+            "__typename": "PullRequest",
+            "id": "PR_kwDOVleUfc8AAAABOzOKiA",
+            "number": 89,
+            "state": "OPEN",
+            "headRefOid": "973eab4d84b2a6f6f8660d10ebdcc4c852810627",
+            "reviewDecision": null,
+            "statusCheckRollup": null,
+            "isInMergeQueue": false,
+            "mergeQueueEntry": null,
+            "files": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            },
+            "movedFrom": {
+              "nodes": []
+            }
+          }
+        ]
+      }
+    }
+  }
+}

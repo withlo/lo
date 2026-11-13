@@ -399,6 +399,24 @@ describe('polling', () => {
     expect((await github.poller('other')).foreground).toBe(false);
   });
 
+  it("looks up the merged pull requests a watched repository's stacks link through", async () => {
+    const { github, logged } = start({ fetch: replaying('app_stack') });
+    await github.add(user(), { token: new Token(TOKEN) }, 'deviceFlow');
+    const poller = await github.poller(LOGIN);
+    void poller.setOpen(new PullRef('rozed-dev', 'e2e', 84));
+    await run();
+
+    const list = poller.openPullRequests(new RepoRef('rozed-dev', 'e2e'))?.value;
+    // The branches open pull requests go into that none comes from, such as `stack/root`, which
+    // #84 and the layers below it go into, and `stack/mroot`, which #86 went into, under #87.
+    expect(list?.lookups.map((lookup) => lookup.branch)).toEqual(
+      expect.arrayContaining(['stack/root', 'stack/mroot', 'app/base']),
+    );
+    expect(list?.merged.some((merged) => merged.number === 86)).toBe(true);
+    expect(list?.mergedTruncated).toBe(false);
+    expect(logged).toEqual([]);
+  });
+
   it("checks each account's access to a repository in its poller's queue", async () => {
     const { github } = start({ fetch: seeing });
     await github.add(user(), { token: new Token(TOKEN) }, 'deviceFlow');
