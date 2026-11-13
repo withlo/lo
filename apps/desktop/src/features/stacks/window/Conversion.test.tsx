@@ -203,6 +203,48 @@ it('asks main to put the base branches back once, however many presses', async (
   expect(dialog()?.textContent).not.toContain('nothing to put back');
 });
 
+it('says what GitHub refused in its change’s row, and what Lo left as it was in a put-back one', () => {
+  render();
+  const view = failed(null);
+  showing({
+    ...view,
+    description: 'No base branch had changed.',
+    changes: [
+      {
+        change: { kind: 'retarget', pr: 83, from: 'stack/root', to: 'stack/b' },
+        status: 'failed',
+        detail: "Proposed base branch 'stack/b' was not found",
+      },
+      { change: { kind: 'create', prs: [82, 83, 84] }, status: 'skipped', detail: null },
+    ],
+  });
+  let text = dialog()?.textContent ?? '';
+  expect(text).toContain('The stack wasn’t created');
+  expect(text).toContain('No base branch had changed.');
+  expect(text).toContain("Proposed base branch 'stack/b' was not found");
+  expect(text).toContain('Not sent.');
+  // Nothing changed, so there is nothing to put back: it can be tried again or closed.
+  expect(text).not.toContain('Put the base');
+  expect(button('Try again')).toBeDefined();
+
+  showing({
+    ...view,
+    phase: 'putBack',
+    title: 'Not everything was put back',
+    putBack: [
+      {
+        change: { kind: 'retarget', pr: 84, from: 'stack/b', to: 'stack/root' },
+        status: 'left',
+        detail: 'stack/x',
+      },
+    ],
+  });
+  text = dialog()?.textContent ?? '';
+  expect(text).toContain('Not everything was put back');
+  expect(text).toContain('Its base is now stack/x. Lo left it.');
+  expect(button('Done')).toBeDefined();
+});
+
 it('drops the controls that reorder text from what GitHub said', () => {
   render();
   const view = failed(null);

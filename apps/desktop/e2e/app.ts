@@ -16,6 +16,13 @@ import {
   type Page,
 } from '@playwright/test';
 
+/**
+ * How long the window holds back what a tab shows first, in a test that isn't about that bound:
+ * long enough that a busy machine never races it. A test that is about it asks for the bound
+ * itself, with `test.use({ holdLimit: HOLD_LIMIT })`.
+ */
+const HELD_LONG = 10_000;
+
 /** The app's folder. Electron starts the built main process its `package.json` names. */
 export const appFolder = fileURLToPath(new URL('..', import.meta.url));
 
@@ -134,6 +141,7 @@ export function appEnvironment(data: string): Record<string, string> {
   env.LO_BROWSER = browserPath(data);
   // Never the gh on PATH, which holds the tokens of whoever runs the tests; a test brings its own.
   env.LO_GH = 'none';
+  env.LO_HOLD_LIMIT_MS = String(HELD_LONG);
   return env;
 }
 
@@ -147,6 +155,11 @@ interface Fixtures {
   /** Extra options for starting Lo, for tests that need it started differently. Its `env` adds to Lo's. */
   launch: LaunchOptions;
   /**
+   * How long, in milliseconds, the window holds back what a tab shows first. Long unless a test is
+   * about that bound, which it asks for with `HOLD_LIMIT`.
+   */
+  holdLimit: number;
+  /**
    * Whether CI records a trace of the window, kept when the test fails: not for a test that times
    * the page's frames, which recording slows.
    */
@@ -159,10 +172,11 @@ interface Fixtures {
 
 export const test = base.extend<Fixtures>({
   launch: [{}, { option: true }],
+  holdLimit: [HELD_LONG, { option: true }],
   traced: [true, { option: true }],
   keymap: [undefined, { option: true }],
   settings: [undefined, { option: true }],
-  app: async ({ launch, keymap, settings, traced }, use, testInfo) => {
+  app: async ({ launch, keymap, settings, traced, holdLimit }, use, testInfo) => {
     const { env, ...options } = launch;
     const data = dataFolder();
     writeEditor(data);
@@ -177,7 +191,7 @@ export const test = base.extend<Fixtures>({
     }
     const app = await electron.launch({
       args: [appFolder],
-      env: { ...appEnvironment(data), ...env },
+      env: { ...appEnvironment(data), LO_HOLD_LIMIT_MS: String(holdLimit), ...env },
       // Playwright turns the sandbox off on Linux unless asked; Lo must run with it.
       chromiumSandbox: true,
       ...options,
@@ -206,6 +220,51 @@ export const test = base.extend<Fixtures>({
 });
 
 export { expect };
+
+/**
+ * Sets the window's size, as the reader would, and waits until the page has it, and has drawn two
+ * frames at it. A width the window can't take, such as one under its minimum or past the screen,
+ * is waited for a moment only.
+ */
+export async function sizeWindow(
+  app: ElectronApplication,
+  width: number,
+  height: number,
+): Promise<void> {
+  const across = await app.evaluate(
+    ({ BrowserWindow }, size) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      if (!window) return undefined;
+      window.setSize(size.width, size.height);
+      // The page's width is the window's, as the zoom scales it, and never under the minimum.
+      const [minimum] = window.getMinimumSize();
+      return Math.max(size.width, minimum ?? 0) / window.webContents.getZoomFactor();
+    },
+    { width, height },
+  );
+  if (across === undefined) return;
+  const page = await app.firstWindow();
+  await page.evaluate((wanted) => {
+    const has = () => Math.abs(window.innerWidth - wanted) <= 1;
+    return new Promise<void>((resolve) => {
+      const frames = () => requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      if (has()) {
+        frames();
+        return;
+      }
+      const done = () => {
+        clearTimeout(timer);
+        window.removeEventListener('resize', onResize);
+        frames();
+      };
+      const onResize = () => {
+        if (has()) done();
+      };
+      const timer = setTimeout(done, 2000);
+      window.addEventListener('resize', onResize);
+    });
+  }, across);
+}
 
 /**
  * A settings file that opens a pull request on its diff, overview or not, for tests of the diff and

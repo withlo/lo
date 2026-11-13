@@ -2,7 +2,8 @@
 // dialog shows the plan to confirm, and main sends each change once, in order. It replays
 // `app_stack_convert`, recorded from the app as it made #A, #B and #C GitHub stack #92 in
 // rozed-dev/e2e, and, for what GitHub can't be made to do on demand, the same with an answer
-// changed: a lost answer, a refusal, and a base branch changed elsewhere.
+// changed: a lost answer. What the dialog says of a refusal, and of a base branch changed
+// elsewhere, is `Conversion.test.tsx`'s.
 
 import {
   cassette,
@@ -24,11 +25,7 @@ type Answers =
   /** As recorded. */
   | 'recorded'
   /** Making the stack answers 502, and putting #C's base back goes through. */
-  | 'lost'
-  /** GitHub refuses to change #C's base. */
-  | 'refused'
-  /** Making the stack answers 502, and #C's base is changed elsewhere once Lo changed it. */
-  | 'moved';
+  | 'lost';
 
 const RETARGET = 'PATCH /repos/rozed-dev/e2e/pulls/';
 
@@ -47,38 +44,33 @@ function convertAnswers(): Interaction[] {
 
 /**
  * `app_stack_convert`, but #C as GitHub would have it: each read of it finds the base branch the
- * last change GitHub took gave it, however many reads came first, and making the stack, or
- * changing #C's base, answers as `answers` says. Everything else answers as recorded.
+ * last change GitHub took gave it, however many reads came first, and making the stack answers
+ * 502. Everything else answers as recorded.
  */
 class Answering extends Replay {
-  readonly #answers: Answers;
   /** #C's address, and GitHub's answer to changing its base, as recorded. */
   readonly #pull: Interaction;
   #base = 'stack/root';
 
-  constructor(answers: Answers) {
+  constructor() {
     const recorded = convertAnswers();
-    super(`app_stack_convert, ${answers}`, recorded);
+    super('app_stack_convert, lost', recorded);
     const pull = recorded.find(({ request }) => request.method === 'PATCH');
     if (!pull) throw new Error('app_stack_convert changes no base branch');
-    this.#answers = answers;
     this.#pull = pull;
   }
 
   override answer(request: SeenRequest): Response {
     const { method, url } = request;
     const made = method === 'POST' && new URL(url).pathname.endsWith('/stacks');
-    if (made && this.#answers !== 'refused') return this.#says(request, BAD_GATEWAY);
+    if (made) return this.#says(request, BAD_GATEWAY);
     if (url !== this.#pull.request.url) return super.answer(request);
     if (method === 'GET') return this.#says(request, this.#read());
     if (method !== 'PATCH') return super.answer(request);
-    if (this.#answers === 'refused') return this.#says(request, REFUSED);
     const sent = parseJson(new TextDecoder().decode(request.body));
     if (!isObject(sent) || typeof sent.base !== 'string') return super.answer(request);
     this.#base = sent.base;
-    const answer = this.#read();
-    if (this.#answers === 'moved') this.#base = 'stack/x';
-    return this.#says(request, answer);
+    return this.#says(request, this.#read());
   }
 
   /** #C as a read finds it now: on `#base`, and never a `304`, for a change it can't have seen. */
@@ -105,30 +97,11 @@ const BAD_GATEWAY: Interaction['response'] = {
   body: { message: 'Server Error' },
 };
 
-/** GitHub's refusal to change #C's base branch. */
-const REFUSED: Interaction['response'] = {
-  status: 422,
-  headers: { 'content-type': 'application/json; charset=utf-8' },
-  body: {
-    message: 'Validation Failed',
-    errors: [
-      {
-        resource: 'PullRequest',
-        field: 'base',
-        code: 'invalid',
-        message: "Proposed base branch 'stack/b' was not found",
-      },
-    ],
-  },
-};
-
 const test = onStacks.extend<{ answers: Answers }>({
   answers: ['recorded', { option: true }],
   github: async ({ answers }, use) => {
     const server = await serveReplay(
-      answers === 'recorded'
-        ? new Replay('app_stack_convert', convertAnswers())
-        : new Answering(answers),
+      answers === 'recorded' ? new Replay('app_stack_convert', convertAnswers()) : new Answering(),
     );
     await use(server);
     await server.close();
@@ -241,28 +214,6 @@ test('makes a chain a GitHub stack once the reader confirms it, and only then', 
   expect(writes(github)).toEqual(MADE);
 });
 
-onStacks.describe('as nobody', () => {
-  onStacks.use({ cassette: 'app_stack_nobody', account: false });
-
-  onStacks('refuses before asking GitHub anything', async ({ page, github }) => {
-    const reply = await page.evaluate(
-      (pr) =>
-        window.lo.invoke('tab.open', { kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: pr }),
-      STACK.c,
-    );
-    expect(reply.ok).toBe(true);
-    await expect(page.getByText("Stack C: count a query's nodes").first()).toBeVisible({
-      timeout: 20_000,
-    });
-    await makeStack(page);
-    await expect(said(page, 'Sign in to change base branches.')).toHaveCount(1, {
-      timeout: 20_000,
-    });
-    expect(github.replay.seen.filter(({ url }) => url.includes('/stacks'))).toEqual([]);
-    expect(writes(github)).toEqual([]);
-  });
-});
-
 test.describe('when GitHub’s answer is lost', () => {
   test.use({ answers: 'lost' });
 
@@ -286,36 +237,5 @@ test.describe('when GitHub’s answer is lost', () => {
     await page.keyboard.press('Enter');
     await expect(dialog).toContainText('The base branch is back', { timeout: 30_000 });
     expect(writes(github)).toEqual([...MADE, `${RETARGET}${STACK.c} {"base":"stack/root"}`]);
-  });
-});
-
-test.describe('when GitHub refuses a change', () => {
-  test.use({ answers: 'refused' });
-
-  test('stops there, and sends nothing after it', async ({ page, github }) => {
-    test.setTimeout(120_000);
-    await confirmOnC(page);
-    const dialog = page.getByTestId('make-stack');
-    await expect(dialog).toContainText("The stack wasn't created", { timeout: 30_000 });
-    await expect(dialog).toContainText('No base branch had changed.');
-    await expect(dialog).toContainText("Proposed base branch 'stack/b' was not found");
-    await expect(dialog).toContainText('Not sent.');
-    await expect(dialog.getByRole('button', { name: /Put the base/ })).toHaveCount(0);
-    expect(writes(github)).toEqual([MADE[0]]);
-  });
-});
-
-test.describe('when a base branch changes elsewhere', () => {
-  test.use({ answers: 'moved' });
-
-  test('leaves it as it is while putting back, and says so', async ({ page, github }) => {
-    test.setTimeout(120_000);
-    await confirmOnC(page);
-    const dialog = page.getByTestId('make-stack');
-    await expect(dialog).toContainText("The stack wasn't created", { timeout: 30_000 });
-    await page.keyboard.press('Enter');
-    await expect(dialog).toContainText('Not everything was put back', { timeout: 30_000 });
-    await expect(dialog).toContainText('Its base is now stack/x. Lo left it.');
-    expect(writes(github)).toEqual(MADE);
   });
 });

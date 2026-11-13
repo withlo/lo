@@ -43,6 +43,12 @@ export const appInfo = z.strictObject({
    * the style elements that carry it: the code views hand it to theirs.
    */
   nonce: z.string().min(1),
+  /**
+   * How long the window holds back what a pull request's tab shows first, as it opens, in
+   * milliseconds, when a test asked for another bound than its own, which only a build run from
+   * source takes. Absent otherwise.
+   */
+  holdLimit: z.number().int().nonnegative().optional(),
 });
 export type AppInfo = z.output<typeof appInfo>;
 

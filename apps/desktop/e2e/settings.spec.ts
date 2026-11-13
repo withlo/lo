@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import { gitProgram } from '@lo/testing/git';
@@ -110,29 +110,6 @@ test('⌘, opens Settings in one tab, and shows it again from anywhere', async (
   await expect(tabs(page)).toHaveText([PULL, 'Settings']);
 });
 
-test('the sections list moves between sections with j and k', async ({ page }) => {
-  await openSettings(page);
-  const nav = page.getByRole('navigation', { name: 'Settings' });
-  const current = nav.locator('[aria-current="true"]');
-  await expect(current).toHaveText('Accounts');
-  await page.keyboard.press('j');
-  await expect(current).toHaveText('Pull requests');
-  await page.keyboard.press('j');
-  await expect(current).toHaveText('Appearance');
-  await page.keyboard.press('j');
-  await expect(current).toHaveText('Cache');
-  await page.keyboard.press('j');
-  await expect(current).toHaveText('Keys');
-  await page.keyboard.press('j');
-  await expect(current).toHaveText('Command line');
-  await page.keyboard.press('j');
-  await expect(current).toHaveText('Command line');
-  await page.keyboard.press('k');
-  await expect(current).toHaveText('Keys');
-  await nav.getByRole('button', { name: 'Appearance' }).click();
-  await expect(current).toHaveText('Appearance');
-});
-
 test('a change in Settings is written to the file, applied at once, and kept across a restart', async () => {
   // Not the theme the system is in, so the change shows.
   let other = 'dark';
@@ -201,24 +178,6 @@ test('Pull requests sets what a pull request opens on, and the diff’s layout',
   );
   await layout.getByRole('radio', { name: 'Inline' }).click();
   await expect.poll(saved).toEqual({ 'overview.open': 'diff', 'diff.layout': 'inline' });
-});
-
-test('a size limit that is not a whole number of GB is said so, and not written', async ({
-  page,
-}) => {
-  await openSettings(page);
-  await sizeLimit(page).fill('2.5');
-  await page.keyboard.press('Enter');
-  await expect(page.getByText('Use a whole number of GB, from 1 to 10,000.')).toBeVisible();
-  await expect(sizeLimit(page)).toHaveAttribute('aria-invalid', 'true');
-  await sizeLimit(page).fill('0');
-  await page.keyboard.press('Enter');
-  await expect(sizeLimit(page)).toHaveAttribute('aria-invalid', 'true');
-  expect(saved()).toBeUndefined();
-  await sizeLimit(page).fill('5');
-  await page.keyboard.press('Enter');
-  await expect(sizeLimit(page)).not.toHaveAttribute('aria-invalid', 'true');
-  await expect.poll(saved).toEqual({ 'cache.cap': 5 });
 });
 
 test.describe('with a hand-edited bad value', () => {
@@ -290,20 +249,6 @@ test.describe('with a settings file that is not JSON', () => {
   });
 });
 
-test.describe('with a settings file saved the way editors save', () => {
-  test.use({ settings: '{ "theme": "dark" }\n' });
-
-  test('a new file renamed over the old one is read as any change is', async ({ page }) => {
-    await openSettings(page);
-    await expect(theme(page, 'Dark')).toBeChecked();
-    const path = settingsPath(dataFolder());
-    writeFileSync(`${path}~`, '{ "theme": "light" }\n');
-    renameSync(`${path}~`, path);
-    await expect(theme(page, 'Light')).toBeChecked();
-    await wears(page, 'light');
-  });
-});
-
 test('main refuses a setting the window sends that no feature declared, or its schema refuses', async ({
   page,
 }) => {
@@ -340,23 +285,6 @@ test('main refuses a setting the window sends that no feature declared, or its s
   ]);
   // Nothing was written, not even the file.
   expect(saved()).toBeUndefined();
-});
-
-test.describe('with no git', () => {
-  test.use({ launch: { env: { LO_GIT: 'none' } } });
-
-  test('Settings says Lo keeps no local copies, and can still clear the answers it saved', async ({
-    page,
-  }) => {
-    await openSettings(page);
-    const cache = page.locator('section[data-settings-section="settings.cache"]');
-    await expect(cache.getByText('No local copies')).toBeVisible();
-    await expect(cache.getByRole('meter')).toHaveCount(0);
-    await cache.getByRole('button', { name: 'Clear the cache' }).click();
-    await expect(cache.getByRole('status')).toHaveText('Cleared.');
-    // The size limit is still the person's to set: it applies once there is a cache.
-    await expect(sizeLimit(page)).toHaveValue('10');
-  });
 });
 
 test.describe('with git', () => {

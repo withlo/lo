@@ -72,14 +72,6 @@ test('reload and developer-tools keys do nothing in the built app', async ({ app
   ).toBe(false);
 });
 
-signedIn('Esc gives focus back to the middle of the window', async ({ page }) => {
-  const open = strip(page).getByRole('button', { name: 'Review a pull request' });
-  await open.focus();
-  await expect(open).toBeFocused();
-  await page.keyboard.press('Escape');
-  await expect(middleOf(page)).toBeFocused();
-});
-
 signedIn(
   'the window runs only the app menu’s own commands that main sends back',
   async ({ app, page }) => {

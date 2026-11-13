@@ -130,6 +130,34 @@ test('signs in once the code is entered', async () => {
   );
 });
 
+test('a poll waits as long as it was asked to, in place of the interval', async () => {
+  const fetch = replayFetch('device_flow_success');
+  const codes = await requestCodes({ fetch });
+  const start = Date.now();
+  const grant = waitForToken({ fetch, pollEvery: 250 }, codes);
+  await settle(grant);
+  expect((await grant).token.expose()).toBe('gho_FAKE_SIGNED_IN');
+  // Three polls, 250 ms apart, with no margin and none of GitHub's 5 seconds.
+  const polls = fetch.seen.filter((request) => new URL(request.url).pathname === POLL_PATH);
+  expect(polls.length).toBe(3);
+  expect(Date.now() - start).toBe(750);
+});
+
+test('a sign-in that asked for a quick poll still ends at the deadline', async () => {
+  const fetch = replayFetch('device_flow_deadline');
+  const codes = await requestCodes({ fetch });
+  const settled = waitForToken({ fetch, pollEvery: 4_000 }, codes).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  await settle(settled);
+  expect(await settled).toMatchObject({ detail: { kind: 'expired' } });
+  // The code lasts 20 s: polls at 4, 8, 12 and 16 s, then a last one at 19 s is under an interval
+  // after the fourth, so there is none.
+  const polls = fetch.seen.filter((request) => new URL(request.url).pathname === POLL_PATH);
+  expect(polls.length).toBe(4);
+});
+
 test('slow down adopts githubs interval', async () => {
   const run = await signIn('device_flow_slow_down');
   expect(run.error).toBeUndefined();

@@ -212,19 +212,6 @@ test('a place past the last tab shows nothing new', async ({ page }) => {
   await expect(tabs(page)).toHaveText(['a #1', 'b #2']);
 });
 
-test('⌘⇧] and ⌘⇧[, and ⌃⇥ and ⌃⇧⇥, step through the tabs, round the ends', async ({ page }) => {
-  await open(page, pull('withlo', 'a', 1), pull('withlo', 'b', 2), pull('withlo', 'c', 3));
-  await expect(shown(page)).toHaveText('c #3');
-  await page.keyboard.press(`${cmd}+Shift+BracketRight`);
-  await expect(shown(page)).toHaveText('a #1');
-  await page.keyboard.press('Control+Tab');
-  await expect(shown(page)).toHaveText('b #2');
-  await page.keyboard.press(`${cmd}+Shift+BracketLeft`);
-  await expect(shown(page)).toHaveText('a #1');
-  await page.keyboard.press('Control+Shift+Tab');
-  await expect(shown(page)).toHaveText('c #3');
-});
-
 test('⌘W closes the tab on screen and shows the one after it, until Recent comes back', async ({
   page,
 }) => {
@@ -445,45 +432,50 @@ test('macOS’s File, View and Window menus list closing a tab, the left panel a
     ]);
 });
 
-for (const width of [1440, 'screen'] as const) {
-  for (const count of [1, 8, 16, 40]) {
-    const across = width === 'screen' ? 'the screen’s width' : `${width} px`;
-    test(`${count} tabs at ${across}: the tab on screen and + stay in the window, and the keys reach every tab`, async ({
-      app,
-      page,
-    }) => {
-      await resize(app, page, width);
-      await open(page, ...many(count));
-      await expect(shown(page)).toHaveText(`r${count} #${count}`);
-      await expect.poll(() => openCount(page)).toBe(count);
-      await expectFits(page);
-      if (width === 1440) await expect(more(page)).toHaveCount(count > 8 ? 1 : 0);
+// One tab, many that fold away at 1440 px, and some at the screen's width: the strip's edges are the
+// same in the counts between.
+const strips = [
+  [1440, 1],
+  [1440, 40],
+  ['screen', 16],
+] as const;
+for (const [width, count] of strips) {
+  const across = width === 'screen' ? 'the screen’s width' : `${width} px`;
+  test(`${count} tabs at ${across}: the tab on screen and + stay in the window, and the keys reach every tab`, async ({
+    app,
+    page,
+  }) => {
+    await resize(app, page, width);
+    await open(page, ...many(count));
+    await expect(shown(page)).toHaveText(`r${count} #${count}`);
+    await expect.poll(() => openCount(page)).toBe(count);
+    await expectFits(page);
+    if (width === 1440) await expect(more(page)).toHaveCount(count > 8 ? 1 : 0);
 
-      // ⌘1, and ⌘9 to the last tab, which comes into the strip if it was folded away.
-      await page.keyboard.press(`${cmd}+Digit1`);
-      await expect(shown(page)).toHaveText('r1 #1');
+    // ⌘1, and ⌘9 to the last tab, which comes into the strip if it was folded away.
+    await page.keyboard.press(`${cmd}+Digit1`);
+    await expect(shown(page)).toHaveText('r1 #1');
+    await expectFits(page);
+    const last = (await inOrder(page)).at(-1) ?? '';
+    await page.keyboard.press(`${cmd}+Digit9`);
+    await expect(shown(page)).toHaveText(last);
+    await expectFits(page);
+    await expect(tabs(page).last()).toHaveText(last);
+    // Stepping round both ends of the tabs the strip shows.
+    const before = count === 1 ? last : ((await tabs(page).nth(-2).textContent()) ?? '');
+    const steps: [string, string][] = [
+      [`${cmd}+Shift+BracketRight`, 'r1 #1'],
+      [`${cmd}+Shift+BracketLeft`, last],
+      [`${cmd}+Shift+BracketLeft`, before],
+      ['Control+Tab', last],
+    ];
+    for (const [key, tab] of steps) {
+      await page.keyboard.press(key);
+      await expect(shown(page)).toHaveText(tab);
       await expectFits(page);
-      const last = (await inOrder(page)).at(-1) ?? '';
-      await page.keyboard.press(`${cmd}+Digit9`);
-      await expect(shown(page)).toHaveText(last);
-      await expectFits(page);
-      await expect(tabs(page).last()).toHaveText(last);
-      // Stepping round both ends of the tabs the strip shows.
-      const before = count === 1 ? last : ((await tabs(page).nth(-2).textContent()) ?? '');
-      const steps: [string, string][] = [
-        [`${cmd}+Shift+BracketRight`, 'r1 #1'],
-        [`${cmd}+Shift+BracketLeft`, last],
-        [`${cmd}+Shift+BracketLeft`, before],
-        ['Control+Tab', last],
-      ];
-      for (const [key, tab] of steps) {
-        await page.keyboard.press(key);
-        await expect(shown(page)).toHaveText(tab);
-        await expectFits(page);
-      }
-      await expect.poll(() => openCount(page)).toBe(count);
-    });
-  }
+    }
+    await expect.poll(() => openCount(page)).toBe(count);
+  });
 }
 
 test('the tabs that don’t fit are in the "N more" menu, and choosing one shows it', async ({

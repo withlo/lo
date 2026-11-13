@@ -12,7 +12,7 @@ import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { ElectronApplication, Page } from '@playwright/test';
 
-import { appFolder, expect, KEYCHAIN, test as base } from './app.ts';
+import { appFolder, expect, KEYCHAIN, sizeWindow, test as base } from './app.ts';
 
 declare global {
   interface Window {
@@ -83,15 +83,6 @@ async function open(page: Page): Promise<string> {
 async function current(page: Page, id: string): Promise<unknown> {
   const reply = await page.evaluate((tab) => window.lo.invoke('overview.current', { id: tab }), id);
   return reply.ok ? reply.value : reply;
-}
-
-/** Sets the window's size, as the reader would, and waits past the moment the page takes it. */
-async function sizeWindow(app: ElectronApplication, width: number, height: number): Promise<void> {
-  await app.evaluate(
-    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setSize(size.width, size.height),
-    { width, height },
-  );
-  await new Promise((resolve) => setTimeout(resolve, 1000));
 }
 
 /**
@@ -279,9 +270,9 @@ test('says it was written for r1 from its first frame, and flags the block on li
 test.describe('while the local copy comes late', () => {
   test.use({ cassette: 'app_e2e_late', lateRemote: true });
 
-  // Wide, the actions beside what changed since, which takes both its lines; then narrower, the
-  // actions under it; and narrow, one above the other, under four lines kept for it.
-  for (const width of [1440, 1020, 760]) {
+  // Wide, the actions beside what changed since, which takes both its lines; and narrow, one above
+  // the other, under four lines kept for it. The widths between only move where the actions go.
+  for (const width of [1440, 760]) {
     test(`nothing on screen moves from the first frame as what changed since fills in, at ${width} wide`, async ({
       app,
       page,

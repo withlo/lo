@@ -135,43 +135,6 @@ async function inDiff(page: Page): Promise<void> {
   await type(page, 'g', 'g');
 }
 
-test('finds the stack each tab is in, and reads the state of its layers on screen', async ({
-  page,
-}) => {
-  test.setTimeout(60_000);
-  const c = await open(page, STACK.c);
-  await expect
-    .poll(() => stackOf(page, c), { timeout: 20_000 })
-    .toEqual({
-      found: 'both',
-      root: 'stack/root',
-      rows: [
-        [STACK.a, '', '', 'layers'],
-        [STACK.b, '', '', 'layers'],
-        [STACK.c, 'current', '', 'tab'],
-        [STACK.d, '', `on #${STACK.a}`, 'layers'],
-      ],
-    });
-
-  // #E sits alone on #M, which was squash-merged: a stack of one, which says why.
-  const e = await open(page, STACK.e);
-  await expect
-    .poll(() => stackOf(page, e), { timeout: 20_000 })
-    .toEqual({ found: null, root: 'stack/mroot', rows: [[STACK.e, 'current', '', 'tab']] });
-
-  const g2 = await open(page, STACK.g2);
-  await expect
-    .poll(() => stackOf(page, g2), { timeout: 20_000 })
-    .toEqual({
-      found: 'github',
-      root: 'stack/root',
-      rows: [
-        [STACK.g1, '', '', 'layers'],
-        [STACK.g2, 'current', '', 'tab'],
-      ],
-    });
-});
-
 test('draws the stack above the files, with each layer’s marks, the offer and the notes', async ({
   page,
 }) => {

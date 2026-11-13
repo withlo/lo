@@ -36,18 +36,27 @@ const SIGNED_IN = 'gho_FAKE_SIGNED_IN';
 const REFRESH = 'ghr_FAKE_SIGNED_IN';
 const FROM_GH = 'gho_FAKE_FROM_GH';
 
-const test = base.extend<{ cassette: string; github: ReplayServer }>({
-  /** The cassette the test's GitHub replays. */
-  cassette: ['device_flow_success', { option: true }],
+const test = base.extend<{
+  cassette: string;
+  /** How long a sign-in waits between polls, in milliseconds, in place of GitHub's interval. */
+  pollEvery: number | undefined;
+  github: ReplayServer;
+}>({
+  /** The cassette the test's GitHub replays: the code is entered before the first poll. */
+  cassette: ['device_flow_first_poll', { option: true }],
+  pollEvery: [undefined, { option: true }],
   github: async ({ cassette }, use) => {
     const server = await serveReplay(cassette);
     await use(server);
     await server.close();
   },
-  launch: async ({ github }, use) => {
+  launch: async ({ github, pollEvery }, use) => {
     await use({
       args: [appFolder, ...KEYCHAIN],
-      env: { LO_GITHUB: new URL(github.urls.api).origin },
+      env: {
+        LO_GITHUB: new URL(github.urls.api).origin,
+        ...(pollEvery === undefined ? {} : { LO_DEVICE_POLL_MS: String(pollEvery) }),
+      },
     });
   },
 });
@@ -91,8 +100,6 @@ test('signs in with GitHub: the code, GitHub’s page, and the account, never it
   page,
   github,
 }) => {
-  // Three polls, 6 s apart.
-  test.setTimeout(60_000);
   await openSettings(page);
   await page.getByRole('button', { name: 'Add an account' }).click();
   const dialog = page.getByTestId('sign-in');
@@ -114,8 +121,9 @@ test('signs in with GitHub: the code, GitHub’s page, and the account, never it
   await page.keyboard.press('y');
   await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('FAKE-1234');
 
-  await expect(dialog).toContainText('Signed in as rozed-bot', { timeout: 30_000 });
-  expect(polls(github)).toBe(3);
+  // GitHub's first poll is 6 s in: its interval, 5 s, and a little more.
+  await expect(dialog).toContainText('Signed in as rozed-bot', { timeout: 20_000 });
+  expect(polls(github)).toBe(1);
   await expect(dialog.getByRole('button', { name: /Done/ })).toBeFocused();
   // Coming back to the window with a click on the dialog's text takes focus off Done, and `⏎`
   // still presses it.
@@ -166,22 +174,27 @@ test('signs in with GitHub: the code, GitHub’s page, and the account, never it
   nowhereInTheClear(REFRESH);
 });
 
+/** How often the cancelled sign-in's polls go, in milliseconds. */
+const POLL_MS = 300;
+
 test.describe('a sign-in that is cancelled', () => {
-  // A code that lasts 20 s, never entered.
-  test.use({ cassette: 'device_flow_deadline' });
+  // A code that lasts 20 s, never entered, polled for every few hundred milliseconds.
+  test.use({ cassette: 'device_flow_deadline', pollEvery: POLL_MS });
 
   test('stops polling GitHub once its dialog closes', async ({ page, github }) => {
     await openSettings(page);
     await page.getByRole('button', { name: 'Add an account' }).click();
     const dialog = page.getByTestId('sign-in');
     await expect(dialog).toContainText('Waiting for you to approve.');
-    // The first poll, 6 s in.
-    await expect.poll(() => polls(github), { timeout: 10_000 }).toBe(1);
+    await expect.poll(() => polls(github)).toBeGreaterThan(0);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    // The next would have gone 6 s after the first.
-    await page.waitForTimeout(8_000);
-    expect(polls(github)).toBe(1);
+    // A poll already on its way when the dialog closed still lands; then it stops.
+    await page.waitForTimeout(2 * POLL_MS);
+    const stopped = polls(github);
+    // Five polls' worth of time, in which not one more goes.
+    await page.waitForTimeout(5 * POLL_MS);
+    expect(polls(github)).toBe(stopped);
     expect(rows('SELECT login FROM accounts_accounts')).toEqual([]);
   });
 });

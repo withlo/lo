@@ -16,6 +16,7 @@ import {
   type Toggled,
 } from './viewed.ts';
 
+export { holdLimit } from './hold.ts';
 export type { Mark, ShownMarks, Toggled } from './viewed.ts';
 
 /** `tab`'s viewed marks as they show, re-rendering as they change. */
