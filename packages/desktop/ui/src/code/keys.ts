@@ -303,6 +303,14 @@ export function idle(view: EditorView): boolean {
   return vimMode(view) === 'normal' && !vimPending(view);
 }
 
+/** Leaves insert or visual mode in `view`, as `Esc` would, wherever focus is. */
+export function leaveToNormal(view: EditorView): void {
+  const cm = getCM(view);
+  if (!cm || !hasVim(cm)) return;
+  if (cm.state.vim.insertMode) Vim.exitInsertMode(cm, true);
+  else if (cm.state.vim.visualMode) Vim.exitVisualMode(cm, true);
+}
+
 /** Calls `listener` with Vim's mode in `view` each time it changes. Returns a function that stops. */
 export function onVimMode(view: EditorView, listener: (mode: Mode) => void): () => void {
   const cm = getCM(view);

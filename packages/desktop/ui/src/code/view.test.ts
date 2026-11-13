@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { StateEffect } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { BlockInfo, EditorView } from '@codemirror/view';
 import { diffText } from '@lo/diff';
 import { getCM, Vim } from '@replit/codemirror-vim';
 import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vitest';
 
 import { findScope, isKeySource } from '../commands/index.ts';
 import type {
+  BoxFrame,
   ComposerEvents,
   DiffEvents,
   DiffFile,
@@ -14,9 +15,12 @@ import type {
   DiffView,
   Mark,
   Place,
+  RenderThread,
   Spot,
+  ThreadView,
   VimKey,
 } from './api.ts';
+import { createComposer } from './composer.ts';
 import { editsText } from './keys.ts';
 import { swapping } from './lines.ts';
 import { createDiffView } from './view.ts';
@@ -199,6 +203,38 @@ function at(file: string, side: 'old' | 'new', line: number): Place {
   return { file, side, line };
 }
 
+/** A thread under the line at `place`, open unless it says. */
+function thread(id: string, place: Place, opened = true, version = 1): ThreadView {
+  return { id, at: place, open: opened, version };
+}
+
+/** A thread as `plain` draws it: what it shows. */
+function shownAs(shown: ThreadView): string {
+  return `${shown.id}: ${shown.open ? 'open' : 'collapsed'}, version ${shown.version}`;
+}
+
+/**
+ * A caller's threads, drawn as one line of plain text each, which say what they show, with what it
+ * was asked to do in turn.
+ */
+function plain() {
+  const asked: string[] = [];
+  const render: RenderThread = (host, shown) => {
+    asked.push(`draw ${shown.id}`);
+    host.textContent = shownAs(shown);
+    return {
+      update(next) {
+        asked.push(`update ${next.id}`);
+        host.textContent = shownAs(next);
+      },
+      destroy() {
+        asked.push(`destroy ${shown.id}`);
+      },
+    };
+  };
+  return { render, asked };
+}
+
 /** The cursor on a file's line, as the view reports it and `reveal` takes it. */
 function onLine(file: string, side: 'old' | 'new', line: number, column?: number): Spot {
   return {
@@ -305,7 +341,7 @@ describe('places', () => {
 
   test("reveal takes a thread's line, and says whether it could", () => {
     const shown = open();
-    shown.setThreads([{ id: 'here', at: at('b', 'new', 6), comments: [] }]);
+    shown.setThreads([thread('here', at('b', 'new', 6))], plain().render);
     expect(shown.reveal({ kind: 'thread', thread: 'here' })).toBe(true);
     expect(shown.probe.cursor()?.at).toMatchObject(onLine('b', 'new', 6));
     expect(shown.reveal({ kind: 'thread', thread: 'gone' })).toBe(false);
@@ -355,10 +391,10 @@ describe('places', () => {
 describe('jumps', () => {
   test('a count goes that many changes, files or threads, and back where it is negative', () => {
     const shown = open();
-    shown.setThreads([
-      { id: 't1', at: at('a', 'new', 3), comments: [] },
-      { id: 't2', at: at('b', 'new', 4), comments: [] },
-    ]);
+    shown.setThreads(
+      [thread('t1', at('a', 'new', 3)), thread('t2', at('b', 'new', 4))],
+      plain().render,
+    );
     shown.reveal(onLine('a', 'new', 1));
     shown.jump('change', 2);
     expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 21));
@@ -476,11 +512,14 @@ describe('folds', () => {
 describe('targets', () => {
   test("a key's target is the line's only thread, or the one ]t landed on", () => {
     const shown = open();
-    shown.setThreads([
-      { id: 'alone', at: at('a', 'new', 10), comments: [] },
-      { id: 'first', at: at('a', 'new', 25), comments: [] },
-      { id: 'second', at: at('a', 'new', 25), comments: [] },
-    ]);
+    shown.setThreads(
+      [
+        thread('alone', at('a', 'new', 10)),
+        thread('first', at('a', 'new', 25)),
+        thread('second', at('a', 'new', 25)),
+      ],
+      plain().render,
+    );
     shown.reveal(onLine('a', 'new', 10));
     expect(shown.keyState().target).toMatchObject({ at: at('a', 'new', 10), thread: 'alone' });
     shown.reveal(onLine('a', 'new', 25));
@@ -509,9 +548,7 @@ describe('targets', () => {
   test('a right-click on a thread is its menu', () => {
     const on = events();
     const shown = open(on);
-    shown.setThreads([
-      { id: 'right', at: at('a', 'new', 10), comments: [{ author: 'you', body: 'Hi' }] },
-    ]);
+    shown.setThreads([thread('right', at('a', 'new', 10))], plain().render);
     const card = parent!.querySelector('[data-thread-id="right"]')!;
     card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     expect(on.menu).toHaveBeenCalledWith({ kind: 'thread', thread: 'right' }, 0, 0);
@@ -616,7 +653,7 @@ describe('comment boxes', () => {
 
   test('a box under a thread, or the last line of a span, acts on them', () => {
     const shown = open();
-    shown.setThreads([{ id: 'here', at: at('a', 'new', 10), comments: [] }]);
+    shown.setThreads([thread('here', at('a', 'new', 10))], plain().render);
     shown.compose({ thread: 'here' }, '', composerEvents());
     const scope = findScope(vimIn('Comment').content);
     expect(isKeySource(scope.source) && scope.source.keyState().target).toEqual({
@@ -693,7 +730,444 @@ describe('comment boxes', () => {
     expect(() => shown.compose(at('a', 'new', 0), '', composerEvents())).toThrow(shownLine);
     expect(() => shown.compose(at('d', 'new', 1), '', composerEvents())).toThrow(shownLine);
   });
+
+  test("a frame draws in the box's parts, and is taken down with the box", () => {
+    const shown = open();
+    const destroy = vi.fn<() => void>();
+    const frame = vi.fn<BoxFrame>((parts) => {
+      parts.head.textContent = 'Writing';
+      parts.foot.textContent = 'Add to the review';
+      return { destroy };
+    });
+    const box = shown.compose(at('a', 'new', 10), '', composerEvents(), frame);
+    expect(frame).toHaveBeenCalledWith(expect.anything(), box);
+    const drawn = parent!.querySelector('.lo-diffcomposer')!;
+    expect([...drawn.children].map((part) => part.className)).toEqual([
+      'lo-diffcomposer__head',
+      'lo-diffcomposer__note',
+      'lo-diffcomposer__body',
+      'lo-diffcomposer__uploads',
+      'lo-diffcomposer__foot',
+    ]);
+    expect(drawn.querySelector('.lo-diffcomposer__head')!.textContent).toBe('Writing');
+    box.close();
+    expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  test('⌘⇧V shows the preview in the editor’s place, out of insert mode, where the box’s keys still work', () => {
+    const shown = open();
+    const on = boxEvents();
+    const box = shown.compose(at('a', 'new', 10), 'Hello', on);
+    const comment = vimIn('Comment');
+    press(comment.content, 'v', { ctrlKey: true, shiftKey: true });
+    expect(on.preview).toHaveBeenLastCalledWith(true);
+    expect(box.previewing).toBe(true);
+    expect(comment.mode).toBe('normal');
+    const preview = parent!.querySelector<HTMLElement>('.lo-diffcomposer__preview')!;
+    expect(preview.hidden).toBe(false);
+    expect(parent!.querySelector<HTMLElement>('.lo-diffcomposer .cm-editor')!.hidden).toBe(true);
+    expect(document.activeElement).toBe(preview);
+    press(preview, 'Enter', { ctrlKey: true });
+    expect(on.submit).toHaveBeenLastCalledWith('review');
+    press(preview, 'v', { ctrlKey: true, shiftKey: true });
+    expect(on.preview).toHaveBeenLastCalledWith(false);
+    expect(preview.hidden).toBe(true);
+    box.preview(true);
+    press(preview, 'Escape');
+    expect(on.close).toHaveBeenCalledWith(true);
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+  });
+
+  test('⌘⇧A asks for files, and files dropped or pasted go to the caller, not into the text', () => {
+    const shown = open();
+    const on = boxEvents();
+    const box = shown.compose(at('a', 'new', 10), 'Hello', on);
+    const { content } = vimIn('Comment');
+    press(content, 'a', { ctrlKey: true, shiftKey: true });
+    expect(on.attach).toHaveBeenCalledOnce();
+    const file = new File(['png'], 'shot.png', { type: 'image/png' });
+    const dropzone = parent!.querySelector<HTMLElement>('.lo-diffcomposer__dropzone')!;
+    content.dispatchEvent(carrying('dragenter', file));
+    expect(on.dragging).toHaveBeenLastCalledWith(1);
+    expect(dropzone.hidden).toBe(false);
+    content.dispatchEvent(carrying('drop', file));
+    expect(on.files).toHaveBeenLastCalledWith([file]);
+    expect(on.dragging).toHaveBeenLastCalledWith(0);
+    expect(dropzone.hidden).toBe(true);
+    const paste = new Event('paste', { bubbles: true, cancelable: true });
+    content.dispatchEvent(Object.assign(paste, { clipboardData: { files: [file] } }));
+    expect(on.files).toHaveBeenCalledTimes(2);
+    expect(box.text).toBe('Hello');
+  });
+
+  test('insert types at the cursor as it shows, and the preview gives back the mode it took', () => {
+    const box = open().compose(at('a', 'new', 10), 'Hello', composerEvents());
+    const comment = vimIn('Comment');
+    // In normal mode the cursor is on the `o`: the text goes after it.
+    comment.keys('<Esc>');
+    box.insert('!');
+    expect(box.text).toBe('Hello!');
+    expect(comment.mode).toBe('normal');
+    // Insert mode at the start, through the preview and back.
+    comment.keys('0', 'i');
+    box.preview(true);
+    expect(comment.mode).toBe('normal');
+    box.preview(false);
+    expect(comment.mode).toBe('insert');
+    box.insert('> ');
+    expect(box.text).toBe('> Hello!');
+    comment.keys('<Esc>');
+    box.preview(true);
+    box.preview(false);
+    expect(comment.mode).toBe('normal');
+  });
+
+  test('insert and replace change the draft where they say, inside it', () => {
+    const box = open().compose(at('a', 'new', 10), 'Hello world', composerEvents());
+    box.replace(6, 11, 'there');
+    expect(box.text).toBe('Hello there');
+    box.replace(99, -1, 'Gone');
+    expect(box.text).toBe('Gone');
+  });
+
+  test('a box outside any view tells the caller of Esc Esc, and goes on close()', () => {
+    parent = document.createElement('div');
+    document.body.append(parent);
+    const on = composerEvents();
+    const destroy = vi.fn<() => void>();
+    const box = createComposer(parent, { draft: 'Kept', nonce: 'n', label: 'Reply' }, on, () => ({
+      destroy,
+    }));
+    box.focus();
+    const reply = vimIn('Reply');
+    expect(reply.mode).toBe('insert');
+    press(reply.content, 'Escape');
+    press(reply.content, 'Escape');
+    expect(on.close).toHaveBeenCalledWith(true);
+    expect(parent.querySelector('.lo-diffcomposer')).not.toBeNull();
+    box.close();
+    expect(parent.querySelector('.lo-diffcomposer')).toBeNull();
+    expect(destroy).toHaveBeenCalledOnce();
+  });
 });
+
+/** A box's events, with those a frame hears. */
+function boxEvents() {
+  return {
+    ...composerEvents(),
+    preview: vi.fn<NonNullable<ComposerEvents['preview']>>(),
+    attach: vi.fn<NonNullable<ComposerEvents['attach']>>(),
+    files: vi.fn<NonNullable<ComposerEvents['files']>>(),
+    dragging: vi.fn<NonNullable<ComposerEvents['dragging']>>(),
+  };
+}
+
+/** A drag event of `type` carrying `file`, as jsdom has none. */
+function carrying(type: string, file: File): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  const dataTransfer = { types: ['Files'], items: [{ kind: 'file' }], files: [file] };
+  return Object.assign(event, { dataTransfer });
+}
+
+describe('threads', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const undo of restore.splice(0)) undo();
+  });
+
+  test('the caller draws each thread once, under its line, and again as what it shows changes', () => {
+    const shown = open();
+    const { render, asked } = plain();
+    shown.setThreads([thread('one', at('a', 'new', 4)), thread('two', at('a', 'old', 3))], render);
+    expect(asked.toSorted()).toEqual(['draw one', 'draw two']);
+    expect(said('one')).toBe('one: open, version 1');
+    shown.setThreads([thread('one', at('a', 'new', 4)), thread('two', at('a', 'old', 3))], render);
+    expect(asked).toHaveLength(2);
+    shown.setThreads([thread('one', at('a', 'new', 4), true, 2)], render);
+    expect(asked.slice(2).toSorted()).toEqual(['destroy two', 'update one']);
+    expect(said('one')).toBe('one: open, version 2');
+    expect(drawnThreads()).toEqual(['one']);
+  });
+
+  test('openThread opens, collapses or toggles one, and the caller’s say stands once it changes', () => {
+    const shown = open();
+    const { render, asked } = plain();
+    const here = at('a', 'new', 4);
+    shown.setThreads([thread('one', here)], render);
+    expect(shown.openThread('one', 'toggle')).toBe(true);
+    expect(said('one')).toBe('one: collapsed, version 1');
+    expect(shown.openThread('one', false)).toBe(true);
+    expect(shown.openThread('none', true)).toBe(false);
+    shown.setThreads([thread('one', here, true, 2)], render);
+    expect(said('one')).toBe('one: collapsed, version 2');
+    shown.setThreads([thread('one', here, false, 2)], render);
+    shown.setThreads([thread('one', here, true, 2)], render);
+    expect(said('one')).toBe('one: open, version 2');
+    expect(asked).toEqual(['draw one', 'update one', 'update one', 'update one']);
+  });
+
+  test('a line on screen waits for threads that come or go there until it’s off screen', () => {
+    const shown = open();
+    const screen = onScreen(['line 4']);
+    const { render, asked } = plain();
+    const below = thread('below', at('a', 'new', 22));
+    shown.setThreads([thread('here', at('a', 'new', 4)), below], render);
+    expect(drawnThreads()).toEqual(['below']);
+    screen.lines.clear();
+    scroller().dispatchEvent(new Event('scroll'));
+    expect(drawnThreads()).toEqual(['here', 'below']);
+    // What a thread there says changes at once.
+    screen.lines.add('line 4');
+    shown.setThreads([thread('here', at('a', 'new', 4), true, 2), below], render);
+    expect(asked.at(-1)).toBe('update here');
+    shown.setThreads([below], render);
+    expect(drawnThreads()).toEqual(['here', 'below']);
+    screen.lines.clear();
+    scroller().dispatchEvent(new Event('scroll'));
+    expect(drawnThreads()).toEqual(['below']);
+    expect(asked.at(-1)).toBe('destroy here');
+  });
+
+  test('a line takes its threads at once while the view is hidden, as behind another view', () => {
+    const shown = open();
+    onScreen(['line 4']);
+    Object.assign(scroller(), { checkVisibility: () => false });
+    shown.setThreads([thread('here', at('a', 'new', 4))], plain().render);
+    expect(drawnThreads()).toEqual(['here']);
+  });
+
+  test('a thread on screen that changes size of its own is held as it was until it’s off screen', () => {
+    const sizes = observers();
+    const shown = open();
+    shown.setThreads([thread('grows', at('a', 'new', 4))], plain().render);
+    const screen = onScreen([], ['grows']);
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="grows"]')!;
+    const content = card.querySelector('.lo-diffthread__host')!;
+    sizes.resize(content, 40);
+    sizes.resize(content, 90);
+    expect(card.style.height).toBe('40px');
+    expect(card.classList).toContain('is-held');
+    screen.threads.clear();
+    scroller().dispatchEvent(new Event('scroll'));
+    expect(card.style.height).toBe('90px');
+    expect(card.classList).not.toContain('is-held');
+  });
+
+  test('one the reader acts on, or that wraps again, takes its new size next frame', async () => {
+    const sizes = observers();
+    const shown = open();
+    shown.setThreads([thread('grows', at('a', 'new', 4))], plain().render);
+    onScreen([], ['grows']);
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="grows"]')!;
+    const content = card.querySelector('.lo-diffthread__host')!;
+    sizes.resize(content, 90);
+    shown.openThread('grows', false);
+    sizes.resize(content, 36);
+    // Cut off as it was until then.
+    expect(card.style.height).toBe('90px');
+    await nextFrame();
+    expect(card.style.height).toBe('36px');
+    expect(card.classList).not.toContain('is-held');
+    sizes.resize(content, 50);
+    await nextFrame();
+    expect(card.classList).toContain('is-held');
+    // A click in one held lets it go.
+    content.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(card.style.height).toBe('50px');
+    expect(card.classList).not.toContain('is-held');
+    sizes.resize(content, 70);
+    await nextFrame();
+    expect(card.style.height).toBe('70px');
+    // Its text wrapped again, as the window changed width.
+    sizes.resize(content, 120, 300);
+    await nextFrame();
+    expect(card.style.height).toBe('120px');
+  });
+
+  test('what comes under a comment box’s line, open or closed after it was sent, comes at once', () => {
+    const shown = open();
+    const { render } = plain();
+    const first = shown.compose(at('a', 'new', 4), 'Mine', composerEvents());
+    // New line 22 says `added two`.
+    onScreen(['line 4', 'line 6', 'added two']);
+    // As the reader sends it, the box open.
+    shown.setThreads([thread('mine', at('a', 'new', 4))], render);
+    expect(drawnThreads()).toEqual(['mine']);
+    first.close();
+    // Closed as after it was sent, and then what they sent comes.
+    shown.compose(at('a', 'new', 22), 'Another', composerEvents()).close();
+    const mine = thread('mine', at('a', 'new', 4));
+    shown.setThreads([mine, thread('sent', at('a', 'new', 22))], render);
+    expect(drawnThreads()).toEqual(['mine', 'sent']);
+    // Once it's come, the line is anyone's again.
+    const sent = thread('sent', at('a', 'new', 22));
+    shown.setThreads([mine, sent, thread('late', at('a', 'new', 22))], render);
+    expect(drawnThreads()).toEqual(['mine', 'sent']);
+    // Esc Esc sends nothing: a thread coming there after, with no input, waits as any does.
+    shown.compose(at('a', 'new', 6), 'Not sent', composerEvents());
+    const { content } = vimIn('Comment');
+    press(content, 'Escape');
+    press(content, 'Escape');
+    shown.setThreads([mine, sent, thread('theirs', at('a', 'new', 6))], render);
+    expect(drawnThreads()).toEqual(['mine', 'sent']);
+  });
+
+  test('a reply under a box on a thread on screen grows in full, at once', async () => {
+    const sizes = observers();
+    const shown = open();
+    const { render } = plain();
+    shown.setThreads([thread('one', at('a', 'new', 4))], render);
+    onScreen(['line 4'], ['one']);
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="one"]')!;
+    const content = card.querySelector('.lo-diffthread__host')!;
+    sizes.resize(content, 40);
+    const box = shown.compose({ thread: 'one' }, 'A reply', composerEvents());
+    shown.setThreads([thread('one', at('a', 'new', 4), true, 2)], render);
+    box.close();
+    sizes.resize(content, 90);
+    await nextFrame();
+    expect(card.style.height).toBe('90px');
+    expect(card.classList).not.toContain('is-held');
+    // What the caller changes there of its own accord, after, is held.
+    shown.setThreads([thread('one', at('a', 'new', 4), true, 3)], render);
+    sizes.resize(content, 120);
+    await nextFrame();
+    expect(card.classList).toContain('is-held');
+  });
+
+  test('in a diff that scrolls a little, what no scroll takes off screen changes on input', async () => {
+    const sizes = observers();
+    const shown = open();
+    const { render } = plain();
+    shown.setThreads([thread('one', at('a', 'new', 4))], render);
+    const screen = onScreen(['line 4'], ['one'], 300);
+    Object.defineProperty(scroller(), 'scrollHeight', { configurable: true, value: 750 });
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="one"]')!;
+    const content = card.querySelector('.lo-diffthread__host')!;
+    sizes.resize(content, 40);
+    sizes.resize(content, 90);
+    expect(card.classList).toContain('is-held');
+    shown.setThreads([thread('one', at('a', 'new', 4)), thread('two', at('a', 'new', 4))], render);
+    expect(drawnThreads()).toEqual(['one']);
+    press(scroller(), 'j');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(card.classList).not.toContain('is-held');
+    expect(drawnThreads()).toEqual(['one', 'two']);
+    // Where a scroll can take it off screen, it waits for that.
+    Object.defineProperty(scroller(), 'scrollHeight', { configurable: true, value: 2000 });
+    screen.threads.add('two');
+    shown.setThreads([thread('one', at('a', 'new', 4))], render);
+    press(scroller(), 'j');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(drawnThreads()).toEqual(['one', 'two']);
+  });
+});
+
+/** Waits for the page's next frame. */
+function nextFrame(): Promise<number> {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+/** What's undone after each test of threads. */
+const restore: (() => void)[] = [];
+
+/** The text the caller drew in thread `id`. */
+function said(id: string): string | null {
+  return parent!.querySelector(`[data-thread-id="${id}"]`)?.textContent ?? null;
+}
+
+/** The threads drawn, in the page's order. */
+function drawnThreads(): (string | undefined)[] {
+  return [...parent!.querySelectorAll<HTMLElement>('[data-thread-id]')].map(
+    (each) => each.dataset.threadId,
+  );
+}
+
+/**
+ * jsdom lays nothing out: from now on the view's box is a screen, and on it are the lines that say
+ * one of `lines`, `top` down it, and the threads whose ids are among `threads`. The rest are far
+ * below it.
+ */
+function onScreen(lines: string[], threads: string[] = [], top = 100) {
+  const screen = { lines: new Set(lines), threads: new Set(threads) };
+  Object.defineProperty(scroller(), 'clientHeight', { configurable: true, value: 600 });
+  const lineBlockAt: unknown = Reflect.get(EditorView.prototype, 'lineBlockAt');
+  vi.spyOn(EditorView.prototype, 'lineBlockAt').mockImplementation(function (
+    this: EditorView,
+    pos: number,
+  ) {
+    const block: unknown =
+      typeof lineBlockAt === 'function' ? Reflect.apply(lineBlockAt, this, [pos]) : undefined;
+    if (!(block instanceof BlockInfo)) throw new Error('The editor has no line there.');
+    const drawn = screen.lines.has(this.state.doc.lineAt(pos).text) ? top : 5000;
+    const moved: unknown = Object.create(block, { top: { value: drawn }, height: { value: 20 } });
+    if (!(moved instanceof BlockInfo)) throw new Error('The line could not be moved.');
+    return moved;
+  });
+  vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+    return threadOf(this) === undefined ? noRects() : oneRect(new DOMRect(0, 0, 400, 40));
+  });
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    if (this.classList.contains('lo-diffview')) return new DOMRect(0, 0, 800, 600);
+    const id = threadOf(this);
+    if (id === undefined) return new DOMRect();
+    return new DOMRect(0, screen.threads.has(id) ? top : 5000, 400, 40);
+  });
+  return screen;
+}
+
+/** The thread `element` is in, if it's in one. */
+function threadOf(element: Element): string | undefined {
+  return element.closest<HTMLElement>('.lo-diffthread__thread')?.dataset.threadId;
+}
+
+/** A resize observer the tests make, and what it watches. */
+interface Watch {
+  callback: ResizeObserverCallback;
+  watched: Set<Element>;
+  observer: ResizeObserver;
+}
+
+/** Resize observers made from now on, which the test calls as the page would. */
+function observers() {
+  const made: Watch[] = [];
+  const before = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    readonly #watch: Watch;
+    constructor(callback: ResizeObserverCallback) {
+      this.#watch = { callback, watched: new Set(), observer: this };
+      made.push(this.#watch);
+    }
+    observe(element: Element): void {
+      this.#watch.watched.add(element);
+    }
+    unobserve(element: Element): void {
+      this.#watch.watched.delete(element);
+    }
+    disconnect(): void {
+      this.#watch.watched.clear();
+    }
+  };
+  restore.push(() => {
+    globalThis.ResizeObserver = before;
+  });
+  return {
+    /** Tells the observers watching `element` that it's `height` tall and `width` wide now. */
+    resize(element: Element, height: number, width = 400): void {
+      const size = { blockSize: height, inlineSize: width };
+      const entry: ResizeObserverEntry = {
+        target: element,
+        borderBoxSize: [size],
+        contentBoxSize: [size],
+        devicePixelContentBoxSize: [size],
+        contentRect: new DOMRect(0, 0, width, height),
+      };
+      for (const { callback, watched, observer } of made) {
+        if (watched.has(element)) callback([entry], observer);
+      }
+    },
+  };
+}
 
 describe('keys', () => {
   test("keyState says Vim's mode and whether it's in the middle of a command", () => {
@@ -1438,7 +1912,7 @@ describe('overview marks', () => {
     // The note and the box are under the same line, in one block.
     expect(
       parent!.querySelector(
-        '.cm-content[aria-label="After"] .lo-diffthread .lo-ovnote + .lo-diffthread__card',
+        '.cm-content[aria-label="After"] .lo-diffthread .lo-ovnote + .lo-diffcomposer',
       ),
     ).not.toBeNull();
   });

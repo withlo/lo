@@ -23,10 +23,10 @@ import {
   HeaderWidget,
   MovedLabelWidget,
   type NoteDraw,
-  type ThreadDraw,
   type ThreadSizes,
   ThreadWidget,
 } from './widgets.ts';
+import type { ThreadHost } from './threads.ts';
 
 /** A file as the view shows it. */
 export interface ViewFile extends HeaderInfo {
@@ -42,9 +42,12 @@ export interface ViewThread {
   id: string;
   side: Side;
   line: number;
-  threads: readonly ThreadDraw[];
+  threads: readonly ThreadHost[];
   box?: BoxHost | undefined;
-  /** Changes when the box must be drawn again, to move it into the editor showing. */
+  /**
+   * Changes when the threads and the box must be drawn again, to move them into the editor
+   * showing.
+   */
   drawing?: number | undefined;
   notes?: readonly NoteDraw[] | undefined;
 }
@@ -57,8 +60,10 @@ export interface Common {
   index: number;
   file: ViewFile;
   doc: Text;
-  /** The sizes of threads drawn in the document's editor. */
+  /** The sizes of notes drawn in the document's editor. */
   sizes: ThreadSizes;
+  /** Has the caller draw a thread, the first time it's drawn. */
+  draw: (thread: ThreadHost) => void;
   diff?: FileDiff | undefined;
   /** The moves with an end in this file. */
   moves: readonly MovedBlock[];
@@ -94,7 +99,7 @@ export function fileBlocks(
     otherLines: boolean;
   },
 ): Range<Decoration>[] {
-  const { side, index, file, lines, doc, diff, threads, keep, open, sizes, gaps } = input;
+  const { side, index, file, lines, doc, diff, threads, keep, open, gaps } = input;
   const tag = { file: index };
   const line = (number: number): { from: number; to: number } => doc.line(lines.header + number);
   const headerLine = doc.line(lines.header);
@@ -126,7 +131,7 @@ export function fileBlocks(
   }
   movedLabels(input, side, (number) => line(number).from, out);
   for (const thread of threads) {
-    if (thread.side === side) out.push(threadAt(thread, sizes, tag, line(thread.line).to));
+    if (thread.side === side) out.push(threadAt(thread, input, tag, line(thread.line).to));
   }
   return out;
 }
@@ -135,7 +140,7 @@ export function fileBlocks(
 export function inlineBlocks(
   input: Common & { lines: { header: number; count: number }; inline: InlineLines | undefined },
 ): Range<Decoration>[] {
-  const { index, file, lines, inline, doc, diff, threads, keep, open, sizes, gaps } = input;
+  const { index, file, lines, inline, doc, diff, threads, keep, open, gaps } = input;
   const tag = { file: index };
   const headerLine = doc.line(lines.header);
   const note = input.note ?? (diff && inline ? undefined : 'pending');
@@ -171,7 +176,7 @@ export function inlineBlocks(
     movedLabels(input, side, (number) => at(side, number).from, out);
   }
   for (const thread of threads) {
-    out.push(threadAt(thread, sizes, tag, at(thread.side, thread.line).to));
+    out.push(threadAt(thread, input, tag, at(thread.side, thread.line).to));
   }
   return out;
 }
@@ -232,7 +237,7 @@ function movedLabels(
 
 function threadAt(
   thread: ViewThread,
-  sizes: ThreadSizes,
+  { sizes, draw }: Pick<Common, 'sizes' | 'draw'>,
   tag: { file: number },
   at: number,
 ): Range<Decoration> {
@@ -240,6 +245,7 @@ function threadAt(
     thread.id,
     thread.threads,
     sizes,
+    draw,
     thread.box,
     thread.drawing,
     thread.notes,

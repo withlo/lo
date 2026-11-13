@@ -8,16 +8,18 @@
 import type { OverviewMark, Place, Spot } from '@lo/ui/code';
 import type { Page } from '@playwright/test';
 
-import { expect, fileOf, focusSide, lineOf, press, test } from './suite.ts';
-
-declare global {
-  interface Window {
-    /** What moved on screen while a test watched, on a frame with no input. */
-    perfMoved?: string[];
-    /** Stops watching. */
-    perfStill?: boolean;
-  }
-}
+import {
+  expect,
+  frames,
+  lineAt,
+  name,
+  partWay,
+  press,
+  scrollBy,
+  stopWatching,
+  test,
+  watch,
+} from './suite.ts';
 
 for (const layout of ['split', 'inline'] as const) {
   test(`markers that arrive late, and go, move nothing on screen, ${name(layout)}`, async ({
@@ -253,10 +255,6 @@ function placeOf({ at }: OverviewMark): Place {
   return { file: at.file, side: at.side, line: at.to };
 }
 
-function name(layout: 'split' | 'inline'): string {
-  return layout === 'split' ? 'side by side' : 'inline';
-}
-
 /** The label of the editor that shows the diff in `layout`. */
 function editorLabel(layout: 'split' | 'inline'): string {
   return layout === 'split' ? 'After' : 'Changes';
@@ -283,29 +281,6 @@ function mark(file: string, side: 'old' | 'new', from: number, to: number): Over
       text: 'A query over the plan’s ceiling is refused before it touches the bucket, so one huge query can’t drain a caller’s budget for the minute.',
     },
   };
-}
-
-/** Scrolls part way down `src/app.ts`, in `layout`, and waits for the scroll to settle. */
-async function partWay(page: Page, layout: 'split' | 'inline'): Promise<void> {
-  if (layout === 'inline') {
-    await focusSide(page, 'new');
-    await press(page, 'g', 'i');
-    await expect.poll(() => page.evaluate(() => window.diffView.layout)).toBe('inline');
-  }
-  await page.evaluate(() => {
-    document.querySelector('.lo-diffview')!.scrollTop = 1600;
-  });
-  await frames(page, 10);
-}
-
-/** Scrolls by `by` pixels, as the wheel does, and waits for the scroll to settle. */
-async function scrollBy(page: Page, by: number): Promise<void> {
-  await page.evaluate((distance) => {
-    const box = document.querySelector('.lo-diffview')!;
-    box.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
-    box.scrollTop += distance;
-  }, by);
-  await frames(page, 15);
 }
 
 /**
@@ -338,22 +313,6 @@ function middleOfScreen(page: Page): Promise<Place> {
   return lineAt(page, 0.5);
 }
 
-/** The first line of a file drawn `share` of the way down the screen, or below it. */
-async function lineAt(page: Page, share: number): Promise<Place> {
-  const spot = await page.evaluate((down) => {
-    const box = document.querySelector('.lo-diffview')!.getBoundingClientRect();
-    for (let y = box.top + 1 + (box.height - 2) * down; y < box.bottom; y += 4) {
-      const found = window.diffView.spotAt(y);
-      if (found?.kind === 'line') return found;
-    }
-    return undefined;
-  }, share);
-  const file = fileOf(spot);
-  const line = lineOf(spot);
-  if (!file || !line || line < 7) throw new Error('No line is on the screen there.');
-  return { file, side: 'new', line };
-}
-
 /** The first line or header drawn at the top of the screen, and where its top is. */
 function topOfScreen(page: Page): Promise<{ spot: Spot; top: number }> {
   return page.evaluate(() => {
@@ -372,76 +331,4 @@ async function movedSince(page: Page, before: { spot: Spot; top: number }): Prom
   const top = await page.evaluate((spot) => window.diffView.spotTop(spot), before.spot);
   if (top === undefined) throw new Error('The line at the top of the screen isn’t drawn now.');
   return Math.abs(top - before.top);
-}
-
-/**
- * Watches the lines at the top of the screen and in its middle every frame, until `stopWatching`:
- * one that moves on a frame with no wheel, key or pointer, and is still moved on the next frame,
- * is noted.
- */
-async function watch(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const probe = window.diffView;
-    const box = document.querySelector('.lo-diffview')!.getBoundingClientRect();
-    const find = (from: number) => {
-      for (let y = from; y < box.bottom; y += 2) {
-        const spot = probe.spotAt(y);
-        const top = spot && probe.spotTop(spot);
-        if (spot && top !== undefined && top >= box.top) return { spot, y: top };
-      }
-      throw new Error('Nothing is drawn on screen.');
-    };
-    const watched = [
-      { name: 'top', ...find(box.top + 1), away: 0 },
-      { name: 'middle', ...find((box.top + box.bottom) / 2), away: 0 },
-    ];
-    const moved: string[] = [];
-    window.perfMoved = moved;
-    window.perfStill = false;
-    let input = false;
-    const noteInput = () => {
-      input = true;
-    };
-    const types = ['wheel', 'keydown', 'pointerdown'];
-    for (const type of types) window.addEventListener(type, noteInput, { capture: true });
-    const tick = () => {
-      for (const each of watched) {
-        const y = probe.spotTop(each.spot);
-        if (input) {
-          if (y !== undefined) each.y = y;
-          each.away = 0;
-          continue;
-        }
-        const off = y === undefined || Math.abs(y - each.y) > 0.5;
-        each.away = off ? each.away + 1 : 0;
-        if (each.away === 2) {
-          moved.push(`${each.name} ${JSON.stringify(each.spot)} ${each.y} → ${y}`);
-        }
-      }
-      input = false;
-      if (!window.perfStill) {
-        requestAnimationFrame(tick);
-        return;
-      }
-      for (const type of types) {
-        window.removeEventListener(type, noteInput, { capture: true });
-      }
-    };
-    requestAnimationFrame(tick);
-  });
-}
-
-/** Stops watching, and says what moved. */
-function stopWatching(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
-    window.perfStill = true;
-    return window.perfMoved ?? [];
-  });
-}
-
-/** Waits for `count` frames. */
-function frames(page: Page, count: number): Promise<void> {
-  return page.evaluate(async (left) => {
-    for (let frame = 0; frame < left; frame++) await new Promise(requestAnimationFrame);
-  }, count);
 }

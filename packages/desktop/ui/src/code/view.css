@@ -134,7 +134,8 @@
   margin: 0;
   white-space: normal;
 }
-.lo-diffthread > .lo-ovnote + * {
+/* What's under a line, one after another: notes, threads, and the comment box. */
+.lo-diffthread > * + * {
   margin-top: 8px;
 }
 .lo-ovnote__text {
@@ -166,27 +167,17 @@
 .lo-diffthread {
   padding: 6px 12px 10px 12px;
 }
-.lo-diffthread__card {
-  border-radius: var(--lo-r-md);
-  background: var(--lo-bg-raised);
-  box-shadow: inset 0 0 0 1px var(--lo-border);
+/*
+ * A thread, which its caller draws: in the interface's text, not the code's. Held as it was drawn
+ * on screen, what grew in it since is cut off until it's let go.
+ */
+.lo-diffthread__thread {
+  font: var(--lo-text-ui);
   color: var(--lo-fg);
   white-space: normal;
 }
-.lo-diffthread__comment {
-  padding: 8px 12px;
-}
-.lo-diffthread__comment + .lo-diffthread__comment {
-  box-shadow: inset 0 1px 0 var(--lo-border-subtle);
-}
-.lo-diffthread__author {
-  margin-bottom: 4px;
-  font: var(--lo-text-small);
-  color: var(--lo-fg-muted);
-}
-.lo-diffthread__body {
-  margin: 0;
-  font: var(--lo-text-ui);
+.lo-diffthread__thread.is-held {
+  overflow: clip;
 }
 
 /* CodeMirror shows its editor as a flex box, importantly, over the hidden attribute's own rule. */
@@ -199,26 +190,53 @@
   min-width: 4ch;
 }
 
-/* A comment box: a Markdown editor inside the thread's card. */
+/*
+ * A comment box: a Markdown editor, in a frame its caller draws in the parts around it. A part with
+ * nothing in it takes no room.
+ */
 .lo-diffcomposer {
+  border-radius: var(--lo-r-md);
+  background: var(--lo-bg-raised);
+  box-shadow: inset 0 0 0 1px var(--lo-border);
+  color: var(--lo-fg);
+  font: var(--lo-text-ui);
+  white-space: normal;
+}
+.lo-diffcomposer.is-focused {
+  box-shadow: var(--lo-ring);
+}
+.lo-diffcomposer__head:empty,
+.lo-diffcomposer__note:empty,
+.lo-diffcomposer__uploads:empty,
+.lo-diffcomposer__foot:empty {
+  display: none;
+}
+/* The editor, or the preview in its place, with the dropzone over either while files come. */
+.lo-diffcomposer__body {
+  position: relative;
   padding: 8px 12px;
 }
-.lo-diffthread__comment + .lo-diffcomposer {
-  box-shadow: inset 0 1px 0 var(--lo-border-subtle);
+.lo-diffcomposer__dropzone {
+  position: absolute;
+  inset: 0;
 }
-.lo-diffcomposer .cm-editor {
-  border-radius: var(--lo-r-sm);
-  background: var(--lo-bg);
-  box-shadow: inset 0 0 0 1px var(--lo-border);
-}
-.lo-diffcomposer .cm-editor.cm-focused {
-  box-shadow: var(--lo-ring);
+.lo-diffcomposer__preview {
+  min-height: 60px;
+  outline: none;
 }
 .lo-diffcomposer .cm-content {
   min-height: 60px;
 }
+.lo-diffcomposer .cm-editor.cm-focused {
+  outline: none;
+}
+/* CodeMirror shows its editor as a flex box, importantly, over the hidden attribute's own rule. */
+.lo-diffcomposer .cm-editor[hidden],
+.lo-diffcomposer [hidden] {
+  display: none !important;
+}
 .lo-diffcomposer__hint {
-  margin-top: 6px;
+  padding: 0 12px 8px;
   font: var(--lo-text-small);
   color: var(--lo-fg-muted);
 }

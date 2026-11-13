@@ -111,8 +111,9 @@ moving what's on screen back or more than a screen at a press, and every line pa
 screen. Another shows a file as GitHub's diff leaves it, unchanged lines between hunks left out,
 then fills it in place as the local copy would (`gaps` and `copyAfterMs` in the file): the cursor
 and the scroll stay put. The last hands the view an overview's markers part way down
-(`window.perfOverview`), and opens notes from their balls and closes them above the screen: nothing
-on screen moves, side by side or inline. CI runs them on Linux.
+(`window.perfOverview`), and opens notes from their balls and closes them above the screen, and a
+thread arrives and grows above the screen (`window.perfThread`): nothing on screen moves, side by
+side or inline. CI runs them on Linux.
 
 ## The bench
 
