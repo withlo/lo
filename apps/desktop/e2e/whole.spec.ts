@@ -250,7 +250,7 @@ test('a file the pull request leaves alone opens whole from the tree, and Back r
   expect(refused).toEqual([]);
 });
 
-test('the finder’s ⌘⏎ opens any file whole, and ` steps past it to the views the header lists', async ({
+test('the finder’s ⌘⏎ opens any file whole, and ~ and ` step only through the views the header lists', async ({
   page,
 }) => {
   const refused = refusals(page);
@@ -266,18 +266,17 @@ test('the finder’s ⌘⏎ opens any file whole, and ` steps past it to the vie
   await expect(code(page)).toContainText('export function wrap(text: string, width: number)');
   await expect(code(page).locator('.cm-content')).toBeFocused();
 
-  // ~ and ` step through the views the header's switch lists: back from the file to the diff, on
-  // to the timeline, and back past the diff to the overview, the first. Never the file, which ⌃o
-  // comes back from.
+  // ~ and ` step through the views the header's switch lists: back from the file to the diff, and
+  // past it to the overview, the first; then on to the diff again. The file isn't one of them: a
+  // file opens in it.
   await press(page, '~');
   await expect(page.locator('.lo-diffview')).toBeVisible();
   await expect(code(page)).toBeHidden();
-  await press(page, '`');
-  await expect(page.locator('[data-lo-middle-view="timeline.view"]')).toBeVisible();
-  await expect(page.locator('.lo-diffview')).toBeHidden();
-  await expect(code(page)).toBeHidden();
-  await press(page, '~', '~');
+  await press(page, '~');
   await expect(page.locator('[data-lo-middle-view="overview.view"]')).toBeVisible();
   await expect(page.locator('.lo-diffview')).toBeHidden();
+  await press(page, '`');
+  await expect(page.locator('.lo-diffview')).toBeVisible();
+  await expect(code(page)).toBeHidden();
   expect(refused).toEqual([]);
 });
