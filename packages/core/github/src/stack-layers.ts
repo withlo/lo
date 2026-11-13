@@ -1,8 +1,9 @@
 /**
  * What a stack's tree shows of its layers that the open pull request list doesn't keep current
- * (`docs/design.md`, "The stack tree"): review decision, checks, merge queue entry, and how many
- * files the viewer has viewed (`StackLayers`). With them, the merged pull requests below the
- * layers GitHub moved to another branch after their base branch was deleted.
+ * (`docs/design.md`, "The stack tree"): review decision, checks, merge queue entry, how many files
+ * the viewer has viewed and how many review threads aren't resolved (`StackLayers`). With them, the
+ * merged pull requests below the layers GitHub moved to another branch after their base branch was
+ * deleted.
  */
 
 import type { GithubClient } from './client.ts';
@@ -111,6 +112,31 @@ export function viewedFiles(layer: StackLayer): ViewedFiles {
     viewed: marks.filter((mark) => mark === 'VIEWED').length,
     files,
     complete: marks.length >= files,
+  };
+}
+
+/** How many of a layer's review threads aren't resolved. */
+export interface LayerThreads {
+  unresolved: number;
+  /** How many review threads the layer has. */
+  threads: number;
+  /**
+   * Whether every thread's state was read. Only the first 100 are, so for a layer with more,
+   * `unresolved` counts among those.
+   */
+  complete: boolean;
+}
+
+/** How many of `layer`'s review threads aren't resolved. */
+export function layerThreads(layer: StackLayer): LayerThreads {
+  const states = (layer.reviewThreads?.nodes ?? []).flatMap((thread) =>
+    thread ? [thread.isResolved] : [],
+  );
+  const threads = Math.max(0, layer.reviewThreads?.totalCount ?? 0);
+  return {
+    unresolved: states.filter((resolved) => !resolved).length,
+    threads,
+    complete: states.length >= threads,
   };
 }
 

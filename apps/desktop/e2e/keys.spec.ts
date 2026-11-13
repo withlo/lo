@@ -31,45 +31,57 @@ async function mark(page: Page): Promise<() => Promise<boolean>> {
 /** The tab strip, which holds the button that reviews a pull request, not the ones in Recent. */
 const strip = (page: Page) => page.getByRole('tablist', { name: 'Pull requests' });
 
-test('Electron’s menu is gone: Linux has none, and macOS’s reloads nothing', async ({
+test('Electron’s menu is gone: Linux has none, and macOS’s reloads nothing; and reload and developer-tools keys do nothing in the built app', async ({
   app,
   page,
 }) => {
   await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
-  const contents = await menuContents(app);
-  if (!mac) {
-    expect(contents).toBeNull();
-    return;
-  }
-  for (const missing of ['role:reload', 'role:forcereload', 'role:close', 'role:toggledevtools']) {
-    expect(contents).not.toContain(missing);
-  }
-  expect(
-    contents?.filter((each) => /^key:(?:CommandOrControl|CmdOrCtrl|Command)\+R$/i.test(each)),
-  ).toEqual([]);
-  // The window lists Lo's commands, with their keys.
-  await expect
-    .poll(() => menuContents(app))
-    .toEqual(
-      expect.arrayContaining(['id:keys.back', 'key:Control+O', 'id:keys.forward', 'key:Control+I']),
-    );
-});
 
-test('reload and developer-tools keys do nothing in the built app', async ({ app, page }) => {
-  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
-  const reloaded = await mark(page);
-  const keys = mac
-    ? ['Meta+R', 'Meta+Shift+R', 'Meta+Alt+I', 'Meta+Alt+J']
-    : ['Control+R', 'F5', 'Control+Shift+R', 'Control+Shift+I', 'Control+Alt+I', 'F12'];
-  for (const key of keys) await page.keyboard.press(key);
-  // Long enough for a reload to have started.
-  await page.waitForTimeout(500);
-  expect(await reloaded()).toBe(false);
-  expect(
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows().some((window) => window.webContents.isDevToolsOpened()),
-    ),
-  ).toBe(false);
+  await test.step('Electron’s menu is gone: Linux has none, and macOS’s reloads nothing', async () => {
+    const contents = await menuContents(app);
+    if (!mac) {
+      expect(contents).toBeNull();
+      return;
+    }
+    for (const missing of [
+      'role:reload',
+      'role:forcereload',
+      'role:close',
+      'role:toggledevtools',
+    ]) {
+      expect(contents).not.toContain(missing);
+    }
+    expect(
+      contents?.filter((each) => /^key:(?:CommandOrControl|CmdOrCtrl|Command)\+R$/i.test(each)),
+    ).toEqual([]);
+    // The window lists Lo's commands, with their keys.
+    await expect
+      .poll(() => menuContents(app))
+      .toEqual(
+        expect.arrayContaining([
+          'id:keys.back',
+          'key:Control+O',
+          'id:keys.forward',
+          'key:Control+I',
+        ]),
+      );
+  });
+
+  await test.step('reload and developer-tools keys do nothing in the built app', async () => {
+    const reloaded = await mark(page);
+    const keys = mac
+      ? ['Meta+R', 'Meta+Shift+R', 'Meta+Alt+I', 'Meta+Alt+J']
+      : ['Control+R', 'F5', 'Control+Shift+R', 'Control+Shift+I', 'Control+Alt+I', 'F12'];
+    for (const key of keys) await page.keyboard.press(key);
+    // Long enough for a reload to have started.
+    await page.waitForTimeout(500);
+    expect(await reloaded()).toBe(false);
+    expect(
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().some((window) => window.webContents.isDevToolsOpened()),
+      ),
+    ).toBe(false);
+  });
 });
 
 signedIn(
@@ -179,33 +191,41 @@ function zoom(app: ElectronApplication): Promise<number | undefined> {
   );
 }
 
-test('⌘ or Ctrl with =, - and 0 zooms the window', async ({ app, page }) => {
+test('⌘ or Ctrl with =, - and 0 zooms the window, and macOS’s View menu lists zooming, with its keys', async ({
+  app,
+  page,
+}) => {
   await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
-  const held = mac ? 'Meta' : 'Control';
-  expect(await zoom(app)).toBe(0);
-  await page.keyboard.press(`${held}+Equal`);
-  await expect.poll(() => zoom(app)).toBe(0.5);
-  await page.keyboard.press(`${held}+Minus`);
-  await page.keyboard.press(`${held}+Minus`);
-  await expect.poll(() => zoom(app)).toBe(-0.5);
-  await page.keyboard.press(`${held}+Digit0`);
-  await expect.poll(() => zoom(app)).toBe(0);
-});
 
-test('macOS’s View menu lists zooming, with its keys', async ({ app }) => {
-  test.skip(!mac, 'Linux has no app menu.');
-  await expect
-    .poll(() => menuContents(app))
-    .toEqual(
-      expect.arrayContaining([
-        'id:app.zoomIn',
-        'key:Command+=',
-        'id:app.zoomOut',
-        'key:Command+-',
-        'id:app.actualSize',
-        'key:Command+0',
-      ]),
-    );
+  await test.step('⌘ or Ctrl with =, - and 0 zooms the window', async () => {
+    const held = mac ? 'Meta' : 'Control';
+    expect(await zoom(app)).toBe(0);
+    await page.keyboard.press(`${held}+Equal`);
+    await expect.poll(() => zoom(app)).toBe(0.5);
+    await page.keyboard.press(`${held}+Minus`);
+    await page.keyboard.press(`${held}+Minus`);
+    await expect.poll(() => zoom(app)).toBe(-0.5);
+    await page.keyboard.press(`${held}+Digit0`);
+    await expect.poll(() => zoom(app)).toBe(0);
+  });
+
+  // Linux has no app menu.
+  if (mac) {
+    await test.step('macOS’s View menu lists zooming, with its keys', async () => {
+      await expect
+        .poll(() => menuContents(app))
+        .toEqual(
+          expect.arrayContaining([
+            'id:app.zoomIn',
+            'key:Command+=',
+            'id:app.zoomOut',
+            'key:Command+-',
+            'id:app.actualSize',
+            'key:Command+0',
+          ]),
+        );
+    });
+  }
 });
 
 test.describe('on Linux, with no app menu', () => {

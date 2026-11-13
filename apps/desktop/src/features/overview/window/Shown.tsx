@@ -40,7 +40,7 @@ import {
 } from 'react';
 
 import { followLink } from '../../open/window/shared.ts';
-import { holdLimit } from '../../revisions/window/shared.ts';
+import { afterHold } from '../../revisions/window/shared.ts';
 import { MiddlePlaceholder, usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewFile } from '../contract.ts';
 import { targetsOf } from './targets.ts';
@@ -399,9 +399,7 @@ export function Shown({
     if (onScreen) first.show();
   }, [first, onScreen]);
   useLayoutEffect(() => {
-    const opened = openings.get(tab.id).since ?? Date.now();
-    const bound = setTimeout(() => first.open(), Math.max(0, opened + holdLimit() - Date.now()));
-    return () => clearTimeout(bound);
+    return afterHold(openings.get(tab.id).since ?? Date.now(), () => first.open());
   }, [first, tab.id]);
   return (
     <FirstDrawContext value={first}>

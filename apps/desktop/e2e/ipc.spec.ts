@@ -2,19 +2,57 @@ import { join } from 'node:path';
 
 import { appFolder, expect, HELD_LONG, test } from './app.ts';
 
-test('the page gets invoke and subscribe, and nothing else', async ({ page }) => {
-  expect(
-    await page.evaluate(() => ({
-      keys: Object.keys(window.lo).toSorted(),
-      types: [typeof window.lo.invoke, typeof window.lo.subscribe],
-      ipcRenderer: 'ipcRenderer' in globalThis,
-      require: typeof require,
-    })),
-  ).toEqual({
-    keys: ['invoke', 'subscribe'],
-    types: ['function', 'function'],
-    ipcRenderer: false,
-    require: 'undefined',
+test('the page gets invoke and subscribe, and nothing else, and a malformed request, or a name that is no feature’s, reaches nothing', async ({
+  page,
+}) => {
+  await test.step('the page gets invoke and subscribe, and nothing else', async () => {
+    expect(
+      await page.evaluate(() => ({
+        keys: Object.keys(window.lo).toSorted(),
+        types: [typeof window.lo.invoke, typeof window.lo.subscribe],
+        ipcRenderer: 'ipcRenderer' in globalThis,
+        require: typeof require,
+      })),
+    ).toEqual({
+      keys: ['invoke', 'subscribe'],
+      types: ['function', 'function'],
+      ipcRenderer: false,
+      require: 'undefined',
+    });
+  });
+
+  await test.step('a malformed request is refused before it reaches a handler', async () => {
+    const reply = await page.evaluate(() => window.lo.invoke('app.info', { theme: 'hunter2' }));
+    expect(reply).toEqual({
+      ok: false,
+      error: { code: 'invalid', message: 'app.info got a malformed request (input).' },
+    });
+  });
+
+  await test.step("names that aren't a feature's requests or topics reach nothing", async () => {
+    const replies = await page.evaluate(() => {
+      // The page can pass anything, whatever the bridge's types say.
+      const bridge: { invoke(channel: unknown): Promise<unknown> } = window.lo;
+      return Promise.all([
+        // Not a request, a name Electron uses for itself, and not a name at all.
+        bridge.invoke('app.nothing'),
+        bridge.invoke('ELECTRON_BROWSER_WINDOW_CLOSE'),
+        bridge.invoke('app.info\n'),
+        bridge.invoke(42),
+      ]);
+    });
+    for (const reply of replies) {
+      expect(reply).toMatchObject({ ok: false, error: { code: 'unavailable' } });
+    }
+    const subscribed = await page.evaluate(() => {
+      try {
+        window.lo.subscribe('ELECTRON_RENDERER_EVENT', () => {});
+        return 'subscribed';
+      } catch (error) {
+        return error instanceof Error ? error.message : 'thrown';
+      }
+    });
+    expect(subscribed).toBe("There's no topic named ELECTRON_RENDERER_EVENT.");
   });
 });
 
@@ -35,40 +73,6 @@ test('app.info answers', async ({ page }) => {
       nonce: expect.stringMatching(/^[A-Za-z0-9+/]{24}$/),
     },
   });
-});
-
-test('a malformed request is refused before it reaches a handler', async ({ page }) => {
-  const reply = await page.evaluate(() => window.lo.invoke('app.info', { theme: 'hunter2' }));
-  expect(reply).toEqual({
-    ok: false,
-    error: { code: 'invalid', message: 'app.info got a malformed request (input).' },
-  });
-});
-
-test("names that aren't a feature's requests or topics reach nothing", async ({ page }) => {
-  const replies = await page.evaluate(() => {
-    // The page can pass anything, whatever the bridge's types say.
-    const bridge: { invoke(channel: unknown): Promise<unknown> } = window.lo;
-    return Promise.all([
-      // Not a request, a name Electron uses for itself, and not a name at all.
-      bridge.invoke('app.nothing'),
-      bridge.invoke('ELECTRON_BROWSER_WINDOW_CLOSE'),
-      bridge.invoke('app.info\n'),
-      bridge.invoke(42),
-    ]);
-  });
-  for (const reply of replies) {
-    expect(reply).toMatchObject({ ok: false, error: { code: 'unavailable' } });
-  }
-  const subscribed = await page.evaluate(() => {
-    try {
-      window.lo.subscribe('ELECTRON_RENDERER_EVENT', () => {});
-      return 'subscribed';
-    } catch (error) {
-      return error instanceof Error ? error.message : 'thrown';
-    }
-  });
-  expect(subscribed).toBe("There's no topic named ELECTRON_RENDERER_EVENT.");
 });
 
 test("app.theme arrives, and the window follows the system's appearance", async ({ app, page }) => {

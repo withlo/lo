@@ -5,8 +5,10 @@
 // ("Redirect was cancelled") instead of answering with it, and GitHub's client follows redirects
 // itself, only to where the token may go. So a redirect asked for that way is the answer here.
 // Nothing is kept in Chromium's HTTP cache, where GitHub's answers about private repositories
-// would sit on disk, and no cookie is sent or kept.
+// would sit on disk, and no cookie is sent or kept. A request given an `uploadProgress` hears how
+// much of its body has gone, as an attachment's progress bar needs.
 
+import type { FetchInit, UploadProgress } from '@lo/github';
 import type { ClientRequestConstructorOptions } from 'electron';
 
 /** What Lo uses of an answer Electron's `net.request` gets: its `IncomingMessage`. */
@@ -36,21 +38,37 @@ export interface NetRequest {
   write(chunk: Buffer): unknown;
   end(): unknown;
   abort(): void;
+  /** How much of the body has been sent, as Electron's `getUploadProgress` says. */
+  getUploadProgress(): NetUploadProgress;
+}
+
+/** What Electron's `getUploadProgress` says. */
+export interface NetUploadProgress {
+  /** Whether the body has started to go: until it has, the counts are 0. */
+  readonly started: boolean;
+  readonly current: number;
+  readonly total: number;
 }
 
 /** Statuses whose answer has no body. */
 const NO_BODY: ReadonlySet<number> = new Set([101, 103, 204, 205, 304]);
 
+/** How often a request given an `uploadProgress` asks how much of its body has gone, in milliseconds. */
+export const UPLOAD_PROGRESS_EVERY = 250;
+
 /**
  * A `fetch` that sends each request through `request` (Electron's `net.request`) and reads the
  * whole answer before resolving. A request given up through its signal is cancelled, and fails
- * with the signal's reason.
+ * with the signal's reason. One whose `init` is a {@link FetchInit} with an `uploadProgress` reports
+ * how much of its body has gone every {@link UPLOAD_PROGRESS_EVERY} ms while that changes, and once
+ * more as the answer starts.
  */
 export function netFetch(
   request: (options: ClientRequestConstructorOptions) => NetRequest,
 ): typeof globalThis.fetch {
-  return async (input, init) => {
+  return async (input, init?: FetchInit) => {
     const asked = new Request(input, init);
+    const uploadProgress = init?.uploadProgress;
     const { signal } = asked;
     signal.throwIfAborted();
     const body = asked.body === null ? undefined : Buffer.from(await asked.arrayBuffer());
@@ -69,10 +87,12 @@ export function netFetch(
         credentials: 'omit',
         useSessionCookies: false,
       });
+      const progress = uploadProgress && reportProgress(sent, uploadProgress);
       const settle = (answer: () => Response) => {
         if (settled) return;
         settled = true;
         signal.removeEventListener('abort', cancel);
+        progress?.stop();
         try {
           resolve(answer());
         } catch (error) {
@@ -83,6 +103,7 @@ export function netFetch(
         if (settled) return;
         settled = true;
         signal.removeEventListener('abort', cancel);
+        progress?.stop();
         reject(asError(error));
       };
       const cancel = () => {
@@ -103,6 +124,9 @@ export function netFetch(
         sent.abort();
       });
       sent.on('response', (answer) => {
+        // The body has gone: what's left to hear of it, once.
+        progress?.report();
+        progress?.stop();
         const chunks: Buffer[] = [];
         answer.on('data', (chunk) => chunks.push(chunk));
         answer.on('error', fail);
@@ -123,6 +147,29 @@ export function netFetch(
       sent.end();
     });
   };
+}
+
+/**
+ * Reports to `listener` how much of `sent`'s body has gone, every {@link UPLOAD_PROGRESS_EVERY} ms
+ * while that changes, until stopped. `report` reports it now.
+ */
+function reportProgress(
+  sent: NetRequest,
+  listener: UploadProgress,
+): { report(): void; stop(): void } {
+  let last: { current: number; total: number } | undefined;
+  const report = () => {
+    const { started, current, total } = sent.getUploadProgress();
+    if (!started || (last?.current === current && last.total === total)) return;
+    last = { current, total };
+    try {
+      listener(current, total);
+    } catch {
+      // Whoever listens can't stop the request.
+    }
+  };
+  const timer = setInterval(report, UPLOAD_PROGRESS_EVERY);
+  return { report, stop: () => clearInterval(timer) };
 }
 
 /** What was thrown, as an `Error`: a signal's reason, such as a `TimeoutError`, already is one. */

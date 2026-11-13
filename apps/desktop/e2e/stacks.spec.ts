@@ -184,53 +184,56 @@ test('draws the stack above the files, with each layer’s marks, the offer and 
   await expect(stack.getByRole('button', { name: /Make this a GitHub stack/ })).toHaveCount(0);
 });
 
-test(']s and [s walk the layers in the tree’s order, in one tab, and stop at the ends', async ({
+test(']s and [s walk the layers in the tree’s order, in one tab, and stop at the ends; and a link to any layer shows it in the tab its stack is in', async ({
   page,
 }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const a = await open(page, STACK.a);
-  await expect(current(page)).toHaveAttribute('data-key', String(STACK.a), { timeout: 20_000 });
-  await settled(page);
-  // Each layer shown starts at the layer below it, set before it's first drawn: #C, into
-  // `stack/root`, at #B's head, and the others at their base branches, the heads below them.
-  const below = [null, STACK_PULLS.b.head, null];
-  for (const [at, layer] of [STACK.b, STACK.c, STACK.d].entries()) {
+
+  await test.step(']s and [s walk the layers in the tree’s order, in one tab, and stop at the ends', async () => {
+    await expect(current(page)).toHaveAttribute('data-key', String(STACK.a), { timeout: 20_000 });
+    await settled(page);
+    // Each layer shown starts at the layer below it, set before it's first drawn: #C, into
+    // `stack/root`, at #B's head, and the others at their base branches, the heads below them.
+    const below = [null, STACK_PULLS.b.head, null];
+    for (const [at, layer] of [STACK.b, STACK.c, STACK.d].entries()) {
+      await type(page, ']', 's');
+      await expect(current(page)).toHaveAttribute('data-key', String(layer), { timeout: 20_000 });
+      await expect
+        .poll(() => diffOf(page, `${a}:${layer}`), { timeout: 20_000 })
+        .toMatchObject({ compareFrom: below[at] });
+      await settled(page);
+    }
+    await expect(page.locator('[data-lo-banners]')).toHaveCount(0);
     await type(page, ']', 's');
-    await expect(current(page)).toHaveAttribute('data-key', String(layer), { timeout: 20_000 });
-    await expect
-      .poll(() => diffOf(page, `${a}:${layer}`), { timeout: 20_000 })
-      .toMatchObject({ compareFrom: below[at] });
-    await settled(page);
-  }
-  await expect(page.locator('[data-lo-banners]')).toHaveCount(0);
-  await type(page, ']', 's');
-  await expect(said(page, `#${STACK.d} is the last layer.`)).toHaveCount(1);
-  await expect(current(page)).toHaveAttribute('data-key', String(STACK.d));
+    await expect(said(page, `#${STACK.d} is the last layer.`)).toHaveCount(1);
+    await expect(current(page)).toHaveAttribute('data-key', String(STACK.d));
 
-  // Showing a layer isn't a jump: `⌃o` doesn't go back to the one before.
-  await type(page, 'Control+o');
-  await expect(current(page)).toHaveAttribute('data-key', String(STACK.d));
+    // Showing a layer isn't a jump: `⌃o` doesn't go back to the one before.
+    await type(page, 'Control+o');
+    await expect(current(page)).toHaveAttribute('data-key', String(STACK.d));
 
-  for (const layer of [STACK.c, STACK.b, STACK.a]) {
+    for (const layer of [STACK.c, STACK.b, STACK.a]) {
+      await type(page, '[', 's');
+      await expect(current(page)).toHaveAttribute('data-key', String(layer), { timeout: 20_000 });
+      await settled(page);
+    }
     await type(page, '[', 's');
-    await expect(current(page)).toHaveAttribute('data-key', String(layer), { timeout: 20_000 });
-    await settled(page);
-  }
-  await type(page, '[', 's');
-  await expect(said(page, `#${STACK.a} is the first layer.`)).toHaveCount(1);
-  expect(await pullTabs(page)).toBe(1);
-});
+    await expect(said(page, `#${STACK.a} is the first layer.`)).toHaveCount(1);
+    expect(await pullTabs(page)).toBe(1);
+  });
 
-test('a link to any layer shows it in the tab its stack is in', async ({ page }) => {
-  test.setTimeout(60_000);
-  const c = await open(page, STACK.c);
-  await expect(current(page)).toHaveAttribute('data-key', String(STACK.c), { timeout: 20_000 });
-  expect(await open(page, STACK.d)).toBe(`${c}:${STACK.d}`);
-  await expect(current(page)).toHaveAttribute('data-key', String(STACK.d), { timeout: 20_000 });
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-    "Stack D: log when a plan's limit is reached",
-  );
-  expect(await pullTabs(page)).toBe(1);
+  // The stack's tab is where it was: a link to a layer shows it there.
+  await test.step('a link to any layer shows it in the tab its stack is in', async () => {
+    await open(page, STACK.c);
+    await expect(current(page)).toHaveAttribute('data-key', String(STACK.c), { timeout: 20_000 });
+    expect(await open(page, STACK.d)).toBe(`${a}:${STACK.d}`);
+    await expect(current(page)).toHaveAttribute('data-key', String(STACK.d), { timeout: 20_000 });
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      "Stack D: log when a plan's limit is reached",
+    );
+    expect(await pullTabs(page)).toBe(1);
+  });
 });
 
 test('- twice goes up to the stack, where keys, a click and a menu show a layer', async ({
@@ -282,104 +285,105 @@ test('- twice goes up to the stack, where keys, a click and a menu show a layer'
 const bar = (page: Page) => page.getByRole('region', { name: 'Run of layers' });
 
 test.describe('a run of layers', () => {
-  test('v, j and ⏎ show #B and #C as one diff, with no marks, and Esc comes back to #C’s place', async ({
+  test('v, j and ⏎ show #B and #C as one diff, with no marks, and Esc comes back to #C’s place; and shows the stack up to a layer from its menu, and its bar goes back', async ({
     page,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(120_000);
     const c = await open(page, STACK.c);
-    await expect(current(page)).toHaveAttribute('data-key', String(STACK.c), { timeout: 20_000 });
-    await inDiff(page);
-    /** Where the diff's cursor is, as its probe says. */
-    const cursor = () => page.evaluate(() => JSON.stringify(window.loDiff?.probe.cursor()?.at));
-    await type(page, 'j', 'j');
-    const before = await cursor();
 
-    await type(page, '-', '-');
-    await expect.poll(() => scopeOf(page)).toBe('stack');
-    await type(page, 'k', 'v');
-    const stack = page.getByRole('region', { name: 'Stack' });
-    await expect(stack).toContainText('V-LINE');
-    // #D sits on #A, on another branch: `j` from #B goes to #C, and no further.
-    await type(page, 'j', 'j');
-    // `⏎` is Enter on Linux.
-    await expect(stack.getByRole('note').first()).toHaveText(
-      new RegExp(
-        `^#${STACK.b} and #${STACK.c}, compared with the top of #${STACK.a}\\. (⏎|Enter) shows them as one diff; Esc goes back to one layer\\.$`,
-      ),
-    );
-    await expect(rowOf(page, STACK.d)).toHaveAttribute('data-dim', '');
-    await type(page, 'Enter');
+    await test.step('v, j and ⏎ show #B and #C as one diff, with no marks, and Esc comes back to #C’s place', async () => {
+      await expect(current(page)).toHaveAttribute('data-key', String(STACK.c), { timeout: 20_000 });
+      await inDiff(page);
+      /** Where the diff's cursor is, as its probe says. */
+      const cursor = () => page.evaluate(() => JSON.stringify(window.loDiff?.probe.cursor()?.at));
+      await type(page, 'j', 'j');
+      const before = await cursor();
 
-    await expect(bar(page)).toContainText(
-      `2 layers as one diff · #${STACK.b} Stack B: rate limit GraphQL queries by cost and #${STACK.c} Stack C: count a query's nodes`,
-      { timeout: 20_000 },
-    );
-    // The window's default width has no room for the branches beside the layers' names, so the bar
-    // leaves them out and keeps the count of files whole.
-    await expect(bar(page).getByText('2 files')).toBeVisible({ timeout: 20_000 });
-    await expect(bar(page).getByText('stack/a → stack/c')).toBeHidden();
-    await expect(bar(page).getByRole('button')).toHaveText(new RegExp(`^Back to #${STACK.c}`));
-    const run = `${c}:${STACK.b}-${STACK.c}`;
-    await expect
-      .poll(() => diffOf(page, run), { timeout: 20_000 })
-      .toMatchObject({
-        at: STACK_PULLS.c.head,
-        compareFrom: STACK_PULLS.a.head,
-        files: ['src/cost.ts', 'src/nodes.ts'],
-      });
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      "Stack C: count a query's nodes",
-    );
-    // The diff's note names the run's ends, and the tab's name agrees with the heading on its top
-    // layer, #C.
-    await expect(page.getByRole('note', { name: 'What the diff compares' })).toHaveText(
-      `Every change, #${STACK.b} → #${STACK.c}`,
-    );
-    await expect(page.locator('[data-tab]').first()).toContainText(`#${STACK.c}`);
-    await expect(page.locator('[data-tab]').first()).not.toContainText(`#${STACK.b}`);
-    // It opens on its diff, which marks no file viewed, and `e` says why; it compares no
-    // revisions.
-    await settled(page);
-    await expect(header(page, 'src/cost.ts')).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('.lo-diffview .lo-diffhead__ball')).toHaveCount(0);
-    await expect(page.locator('button[title="Compare revisions"]')).toHaveCount(0);
-    await inDiff(page);
-    await type(page, 'e');
-    await expect(
-      said(page, 'A run of layers has no viewed marks. Mark files viewed in a layer.'),
-    ).toHaveCount(1);
+      await type(page, '-', '-');
+      await expect.poll(() => scopeOf(page)).toBe('stack');
+      await type(page, 'k', 'v');
+      const stack = page.getByRole('region', { name: 'Stack' });
+      await expect(stack).toContainText('V-LINE');
+      // #D sits on #A, on another branch: `j` from #B goes to #C, and no further.
+      await type(page, 'j', 'j');
+      // `⏎` is Enter on Linux.
+      await expect(stack.getByRole('note').first()).toHaveText(
+        new RegExp(
+          `^#${STACK.b} and #${STACK.c}, compared with the top of #${STACK.a}\\. (⏎|Enter) shows them as one diff; Esc goes back to one layer\\.$`,
+        ),
+      );
+      await expect(rowOf(page, STACK.d)).toHaveAttribute('data-dim', '');
+      await type(page, 'Enter');
 
-    await type(page, 'Escape');
-    await expect(bar(page)).toHaveCount(0, { timeout: 20_000 });
-    await expect(current(page)).toHaveAttribute('data-key', String(STACK.c));
-    await expect.poll(cursor, { timeout: 20_000 }).toBe(before);
-    expect(await pullTabs(page)).toBe(1);
-  });
+      await expect(bar(page)).toContainText(
+        `2 layers as one diff · #${STACK.b} Stack B: rate limit GraphQL queries by cost and #${STACK.c} Stack C: count a query's nodes`,
+        { timeout: 20_000 },
+      );
+      // The window's default width has no room for the branches beside the layers' names, so the bar
+      // leaves them out and keeps the count of files whole.
+      await expect(bar(page).getByText('2 files')).toBeVisible({ timeout: 20_000 });
+      await expect(bar(page).getByText('stack/a → stack/c')).toBeHidden();
+      await expect(bar(page).getByRole('button')).toHaveText(new RegExp(`^Back to #${STACK.c}`));
+      const run = `${c}:${STACK.b}-${STACK.c}`;
+      await expect
+        .poll(() => diffOf(page, run), { timeout: 20_000 })
+        .toMatchObject({
+          at: STACK_PULLS.c.head,
+          compareFrom: STACK_PULLS.a.head,
+          files: ['src/cost.ts', 'src/nodes.ts'],
+        });
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+        "Stack C: count a query's nodes",
+      );
+      // The diff's note names the run's ends, and the tab's name agrees with the heading on its top
+      // layer, #C.
+      await expect(page.getByRole('note', { name: 'What the diff compares' })).toHaveText(
+        `Every change, #${STACK.b} → #${STACK.c}`,
+      );
+      await expect(page.locator('[data-tab]').first()).toContainText(`#${STACK.c}`);
+      await expect(page.locator('[data-tab]').first()).not.toContainText(`#${STACK.b}`);
+      // It opens on its diff, which marks no file viewed, and `e` says why; it compares no
+      // revisions.
+      await settled(page);
+      await expect(header(page, 'src/cost.ts')).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator('.lo-diffview .lo-diffhead__ball')).toHaveCount(0);
+      await expect(page.locator('button[title="Compare revisions"]')).toHaveCount(0);
+      await inDiff(page);
+      await type(page, 'e');
+      await expect(
+        said(page, 'A run of layers has no viewed marks. Mark files viewed in a layer.'),
+      ).toHaveCount(1);
 
-  test('shows the stack up to a layer from its menu, and its bar goes back', async ({ page }) => {
-    test.setTimeout(60_000);
-    const c = await open(page, STACK.c);
-    await expect(current(page)).toHaveAttribute('data-key', String(STACK.c), { timeout: 20_000 });
-    await rowOf(page, STACK.c).click({ button: 'right' });
-    await page
-      .getByRole('menu', { name: 'Layer actions' })
-      .getByRole('menuitem', { name: /^View the stack up to here as one diff/ })
-      .click();
-    await expect(bar(page)).toContainText(
-      `3 layers as one diff · #${STACK.a} Stack A: load per-plan limits, #${STACK.b}`,
-      { timeout: 20_000 },
-    );
-    await expect
-      .poll(() => diffOf(page, `${c}:${STACK.a}-${STACK.c}`), { timeout: 20_000 })
-      .toMatchObject({
-        compareFrom: STACK_PULLS.root,
-        files: ['src/cost.ts', 'src/nodes.ts', 'src/plans.ts'],
-      });
-    await bar(page)
-      .getByRole('button', { name: /^Back to #/ })
-      .click();
-    await expect(bar(page)).toHaveCount(0, { timeout: 20_000 });
-    await expect(current(page)).toHaveAttribute('data-key', String(STACK.c));
+      await type(page, 'Escape');
+      await expect(bar(page)).toHaveCount(0, { timeout: 20_000 });
+      await expect(current(page)).toHaveAttribute('data-key', String(STACK.c));
+      await expect.poll(cursor, { timeout: 20_000 }).toBe(before);
+      expect(await pullTabs(page)).toBe(1);
+    });
+
+    // Back on #C, as the run left it.
+    await test.step('shows the stack up to a layer from its menu, and its bar goes back', async () => {
+      await rowOf(page, STACK.c).click({ button: 'right' });
+      await page
+        .getByRole('menu', { name: 'Layer actions' })
+        .getByRole('menuitem', { name: /^View the stack up to here as one diff/ })
+        .click();
+      await expect(bar(page)).toContainText(
+        `3 layers as one diff · #${STACK.a} Stack A: load per-plan limits, #${STACK.b}`,
+        { timeout: 20_000 },
+      );
+      await expect
+        .poll(() => diffOf(page, `${c}:${STACK.a}-${STACK.c}`), { timeout: 20_000 })
+        .toMatchObject({
+          compareFrom: STACK_PULLS.root,
+          files: ['src/cost.ts', 'src/nodes.ts', 'src/plans.ts'],
+        });
+      await bar(page)
+        .getByRole('button', { name: /^Back to #/ })
+        .click();
+      await expect(bar(page)).toHaveCount(0, { timeout: 20_000 });
+      await expect(current(page)).toHaveAttribute('data-key', String(STACK.c));
+    });
   });
 });
 
