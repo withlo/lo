@@ -51,10 +51,24 @@ export const cover = defineSlot<{ tab: Tab }>('tab.cover');
 export const header = defineSlot<{ tab: PullTab }>('tab.header');
 
 /**
- * Banners of other features' about a pull request's tab, under Lo's own: a view draws one banner
- * or nothing. Two show at most, the most urgent first.
+ * What a view in {@link banners} says of itself, so a tab makes room only for the banners it has:
+ * whether it draws one for a tab now, and when that may change.
  */
-export const banners = defineSlot<{ tab: PullTab }>('tab.banners');
+export interface BannerSwitch {
+  /** Whether the view draws a banner for `tab` now. */
+  readonly shows: (tab: PullTab) => boolean;
+  /**
+   * Calls `listener` when `shows` may say otherwise for `tab`, which is on screen until it stops.
+   * Returns a function that stops it.
+   */
+  readonly subscribe: (tab: PullTab, listener: () => void) => () => void;
+}
+
+/**
+ * Banners of other features' about a pull request's tab, under Lo's own: a view draws one banner
+ * while it `shows` one, and nothing otherwise. Two show at most, the most urgent first.
+ */
+export const banners = defineSlot<{ tab: PullTab }, BannerSwitch>('tab.banners');
 
 /** The left panel of a pull request's tab: the stack, then the files. */
 export const left = defineSlot<{ tab: PullTab }>('tab.left');

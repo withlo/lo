@@ -3,7 +3,7 @@
 // the middle says what's coming.
 
 import { Banner, PRHeader, Spinner, StatusBar, StatusItem, type HeaderConnection } from '@lo/ui';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { client } from '../../../window/ipc.ts';
 import { Slot, useViews } from '../../../window/slots.tsx';
@@ -114,7 +114,25 @@ function useBanners(
 /** The banners: Lo's own, then other features', two at most, the most urgent first. */
 function Banners({ tab, own: all }: { tab: PullTab; own: readonly BannerSpec[] }) {
   const own = all.slice(0, MOST_BANNERS);
-  const others = useViews(bannerSlot).slice(0, MOST_BANNERS - own.length);
+  const views = useViews(bannerSlot);
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const stops = views.map((view) => view.subscribe(tab, listener));
+      return () => {
+        for (const stop of stops) stop();
+      };
+    },
+    [views, tab],
+  );
+  // The ids of the views that show a banner for the tab now, as one string, so it compares.
+  const showing = useSyncExternalStore(subscribe, () =>
+    views
+      .filter((view) => view.shows(tab))
+      .map((view) => view.id)
+      .join('\n'),
+  );
+  const shown = new Set(showing.split('\n'));
+  const others = views.filter((view) => shown.has(view.id)).slice(0, MOST_BANNERS - own.length);
   if (own.length === 0 && others.length === 0) return null;
   return (
     <div className="flex flex-none flex-col" data-lo-banners>

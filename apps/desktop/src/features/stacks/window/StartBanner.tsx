@@ -4,16 +4,12 @@
 // until they ask.
 
 import { Banner } from '@lo/ui';
-import { useEffect } from 'react';
 
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { catchUp, offers, applyOffer } from './store.ts';
+import { applyOffer, offers } from './store.ts';
 
 export function StartBanner({ tab }: { tab: PullTab }) {
   const offer = useTabState(offers, tab.id);
-  useEffect(() => {
-    if (offers.get(tab.id) === null) catchUp(tab.id);
-  }, [tab.id]);
   if (!offer) return null;
   return (
     <Banner

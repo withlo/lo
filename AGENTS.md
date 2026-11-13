@@ -442,6 +442,9 @@ status bar.
   earlier fetch brought while GitHub can't be reached.
 - The head on screen is GitHub's when the tab opened. A newer push says so in a banner, and moves
   nothing until it's loaded.
+- Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
+  banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
+  the banners it has.
 - A tab holds a whole stack: a view of each layer the reader has shown (`tab.layer`), each a pull
   request's tab as described here, with an id of its own: the tab's for the pull request it opened
   on, and `<tab id>:<number>` for another layer. What main and the other features keep of a pull

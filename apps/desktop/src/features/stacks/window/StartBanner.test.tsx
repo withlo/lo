@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // The banner that offers where a layer's diff starts, with main answered by a stand-in bridge: it
-// shows what main offers, for a tab drawn before main said anything too, its button asks main to
-// start the diff there and goes, and it goes once main offers nothing.
+// shows what main offers, its button asks main to start the diff there and goes, and it shows only
+// while a start is offered, asking main for a tab drawn before main said anything.
 
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -12,6 +12,7 @@ import type { PullTab } from '../../tab/window/shared.ts';
 import type { Offer, StackState } from '../contract.ts';
 import feature from './index.ts';
 import { StartBanner } from './StartBanner.tsx';
+import { startSwitch } from './store.ts';
 
 const BELOW = '5'.repeat(40);
 
@@ -87,10 +88,20 @@ it('offers the start main offers, and asks main to use it', async () => {
   expect(page.textContent).toBe('');
 });
 
-it('asks main for the offer of a tab drawn before main said anything, and goes when it’s gone', async () => {
+it('shows only while a start is offered, asking main for it as a tab drawn before main said anything comes on screen', async () => {
   states.set('t2:84', { id: 't2:84', stack: { kind: 'none' }, offer: OFFER });
-  const page = draw(<StartBanner tab={tabOf('t2:84')} />);
-  await until(() => (page.textContent ?? '').includes(OFFER.title));
+  const tab = tabOf('t2:84');
+  expect(startSwitch.shows(tab)).toBe(false);
+  let changes = 0;
+  const stop = startSwitch.subscribe(tab, () => {
+    changes += 1;
+  });
+  onTestFinished(stop);
+  await until(() => startSwitch.shows(tab));
+  expect(changes).toBeGreaterThan(0);
+  const page = draw(<StartBanner tab={tab} />);
+  expect(page.textContent).toContain(OFFER.title);
   act(() => bridge.push('stacks.stack', { id: 't2:84', stack: { kind: 'none' }, offer: null }));
+  expect(startSwitch.shows(tab)).toBe(false);
   expect(page.textContent).toBe('');
 });

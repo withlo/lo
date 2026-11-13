@@ -1,7 +1,7 @@
 // Where each layer's diff could start, as main last offered it in the layer's stack: kept with the
 // layer's view of its tab, and gone when the tab closes.
 
-import { tabState } from '../../tab/window/shared.ts';
+import { tabState, type BannerSwitch } from '../../tab/window/shared.ts';
 import type { Offer, StackState } from '../contract.ts';
 import { main } from './main.ts';
 
@@ -36,3 +36,15 @@ export function applyOffer(id: string, offer: Offer): void {
     .useStart({ id, commit: offer.commit })
     .catch((error: unknown) => console.error("Lo couldn't start the layer's diff there:", error));
 }
+
+/**
+ * Whether a tab's banner shows: while it's offered a start. A tab drawn before main said anything
+ * of its stack asks for it as it comes on screen.
+ */
+export const startSwitch: BannerSwitch = {
+  shows: (tab) => offers.get(tab.id) !== null,
+  subscribe(tab, listener) {
+    if (offers.get(tab.id) === null) catchUp(tab.id);
+    return offers.subscribe(listener);
+  },
+};

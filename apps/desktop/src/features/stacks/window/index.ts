@@ -6,9 +6,9 @@ import { createElement } from 'react';
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { banners } from '../../tab/window/shared.ts';
-import { StartBanner } from './StartBanner.tsx';
 import { main } from './main.ts';
-import { takeStack } from './store.ts';
+import { StartBanner } from './StartBanner.tsx';
+import { startSwitch, takeStack } from './store.ts';
 
 export default {
   views: [
@@ -16,6 +16,7 @@ export default {
       id: 'stacks.start',
       order: 10,
       render: ({ tab }) => createElement(StartBanner, { tab }),
+      ...startSwitch,
     }),
   ],
   start() {
