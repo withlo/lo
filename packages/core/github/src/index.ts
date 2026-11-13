@@ -3,6 +3,7 @@ export * from './activity.ts';
 export * from './attachments.ts';
 export * from './choice.ts';
 export * from './client.ts';
+export * from './comparisons.ts';
 export {
   checkToken,
   DeviceCodes,
