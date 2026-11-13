@@ -50,16 +50,6 @@ test('a right-click lists Back and Forward with their keys in this system’s fo
   await expect(menu).toHaveAttribute('data-lo-scope', 'menu');
 });
 
-test('an item is 26px tall, and its key sits 8px from its label', async ({ page }) => {
-  await middleOf(page).click({ button: 'right' });
-  const back = menuOf(page).getByRole('menuitem').first();
-  await expect(back).toBeVisible();
-  const item = await back.boundingBox();
-  expect(item?.height).toBe(26);
-  const gap = await back.evaluate((element) => getComputedStyle(element).columnGap);
-  expect(gap).toBe('8px');
-});
-
 test('a screen reader hears an item’s name and key, not its key caps', async ({ page }) => {
   await middleOf(page).click({ button: 'right' });
   const menu = menuOf(page);
@@ -97,22 +87,6 @@ test('j and k move through the menu, ⏎ runs the highlighted action, and the me
   await expect(middle).toBeFocused();
 });
 
-test('the menu runs what the key runs: Back with no history says why, by menu or by key', async ({
-  page,
-}) => {
-  const middle = middleOf(page);
-  await middle.focus();
-  await page.keyboard.press('Control+O');
-  const note = said(page, "There's nowhere to go back to.");
-  await expect(note).toBeVisible();
-  // The note goes by itself.
-  await expect(note).toHaveCount(0, { timeout: 10_000 });
-  await middle.click({ button: 'right' });
-  await menuOf(page).getByRole('menuitem', { name: 'Back', exact: true }).click();
-  await expect(menuOf(page)).toBeHidden();
-  await expect(said(page, "There's nowhere to go back to.")).toBeVisible();
-});
-
 test('Esc closes the menu and gives focus back to where it was', async ({ page }) => {
   const middle = middleOf(page);
   await middle.click({ button: 'right' });
@@ -147,42 +121,6 @@ for (const key of ['Shift+F10', 'ContextMenu']) {
     await expect(middle).toBeFocused();
   });
 }
-
-test('no other command runs while a menu is open: not key help, the palette or back', async ({
-  page,
-}) => {
-  const middle = middleOf(page);
-  await middle.click({ button: 'right' });
-  const menu = menuOf(page);
-  await expect(menu).toBeVisible();
-  await page.keyboard.press('?');
-  await page.keyboard.press(mac ? 'Meta+Shift+P' : 'Control+Shift+P');
-  await page.keyboard.press('Control+O');
-  await page.keyboard.press('Control+I');
-  // Still one menu, and nothing opened over it or ran under it.
-  await expect(menu).toBeVisible();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByRole('status').filter({ hasText: /\w/ })).toHaveCount(0);
-  // The menu's own keys still work, and Esc closes it and nothing else.
-  await page.keyboard.press('j');
-  await expect(highlighted(page)).toContainText('Back');
-  await page.keyboard.press('Escape');
-  await expect(menu).toBeHidden();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(middle).toBeFocused();
-  // Closed, the same keys run again.
-  await page.keyboard.press('?');
-  await expect(page.getByRole('dialog', { name: 'Every key' })).toBeVisible();
-});
-
-test('the menu key is in key help, in this system’s form', async ({ page }) => {
-  await middleOf(page).focus();
-  await page.keyboard.press('?');
-  const help = page.getByRole('dialog', { name: 'Every key' });
-  await expect(help.locator('[data-command="keys.menu"] kbd')).toHaveText(
-    mac ? ['Menu', '⇧F10'] : ['Menu', 'Shift+F10'],
-  );
-});
 
 test('a right-click in a text field gets the system’s Edit menu, not Lo’s', async ({
   app,

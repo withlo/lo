@@ -6,7 +6,9 @@ import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
 
 import type { WindowFeature } from '../../../window/features.ts';
+import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
+import { contract as app } from '../../app/contract.ts';
 import { notes } from '../../diff/window/shared.ts';
 import { header, onChangedFiles } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
@@ -21,6 +23,7 @@ import {
   openPicker,
   setEnd,
 } from './actions.ts';
+import { takeHoldLimit } from './hold.ts';
 import { main } from './main.ts';
 import { Note } from './Note.tsx';
 import { Revisions } from './Revisions.tsx';
@@ -55,5 +58,10 @@ export default {
   start() {
     main().subscribe('comparison', showView);
     onChangedFiles(takeFiles);
+    // A test may have asked for another bound on what a tab holds back as it opens.
+    client(app)
+      .info()
+      .then(({ holdLimit }) => takeHoldLimit(holdLimit))
+      .catch((error: unknown) => console.error("Lo couldn't ask how long to hold a tab:", error));
   },
 } satisfies WindowFeature;

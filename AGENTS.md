@@ -400,7 +400,8 @@ repositories, which account opens a repository, and the pull requests opened lat
   keyring is refused before anyone goes to GitHub. The window shows the code; main copies it and
   opens GitHub's own page for codes, never one GitHub's answer names. Polls follow GitHub's
   `interval` and `slow_down`, and stop once the dialog closes, another sign-in starts, the window
-  goes or Lo quits.
+  goes or Lo quits. A build run from source takes another wait between polls from
+  `LO_DEVICE_POLL_MS`, for its tests; a packaged build ignores it.
 - Accounts can be imported from `gh`, found as git is: on `PATH`, then the system's usual folders,
   passing over one that someone besides this user or root could change. gh runs with an argument
   list, never a shell, under a time limit, with an environment of Lo's making that holds no token
@@ -587,6 +588,10 @@ The diff and the tree follow it through the feature's `revisions.comparisons` se
   for, as one since the reader's last review, is offered in the note over the diff instead, and `gv`
   opens the picker at it. A build run from source takes another wait from `LO_COMPARE_WAIT_MS`, for
   its tests; a packaged build ignores it.
+- The window holds back what a tab shows first, the overview or a place in the diff, for
+  `HOLD_LIMIT`, and past it shows the diff, or the file whole. A build run from source takes another
+  bound from `LO_HOLD_LIMIT_MS`, which main hands the window in `app.info`, so a test that isn't
+  about the bound doesn't race it on a busy machine; a packaged build ignores it.
 - Two revisions are compared in the local copy with `compareRevisions`, across a rebase when the
   base moved, once it has both: until then the comparison on screen stays, and the note over the
   diff says what waits. The comparison is made once, for the diff and the tree, and says how it

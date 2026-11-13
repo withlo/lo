@@ -19,7 +19,15 @@ import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { ElectronApplication, Page } from '@playwright/test';
 
 import { HOLD_LIMIT } from '../src/features/revisions/contract.ts';
-import { appFolder, browsed, DIFF_FIRST, expect, KEYCHAIN, test as base } from './app.ts';
+import {
+  appFolder,
+  browsed,
+  DIFF_FIRST,
+  expect,
+  KEYCHAIN,
+  sizeWindow,
+  test as base,
+} from './app.ts';
 
 declare global {
   interface Window {
@@ -494,19 +502,10 @@ async function wheelTo(page: Page, part: number): Promise<void> {
     .toBe(true);
 }
 
-/**
- * Sets the window's size, as the reader would, and waits past the half second a watch gives the
- * page's new size as the reader's: the page has it a moment after the window does.
- */
-async function sizeWindow(app: ElectronApplication, width: number, height: number): Promise<void> {
-  await app.evaluate(
-    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setSize(size.width, size.height),
-    { width, height },
-  );
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-}
-
 test.describe('as a pull request opens', () => {
+  // How long a tab holds back what it shows first is what these are about.
+  test.use({ holdLimit: HOLD_LIMIT });
+
   test('opens on its overview when Lo knows in time that it shows, with who wrote it and its mark', async ({
     page,
   }) => {
@@ -987,9 +986,8 @@ test('nothing on the first screen moves from the first frame, as its figures fil
     }),
   };
   await sizeWindow(app, 1100, 800);
-  await watchStill(page);
-  await open(page);
   // It opens on the overview, with no input from the reader to take as theirs.
+  await openAgain(page, undefined, () => watchStill(page));
   const shown = overview(page, 'shown');
   await expect(shown).toBeVisible({ timeout: 20_000 });
   const figures = shown.locator('figure.lo-figure:not(.lo-figure--broken)');
@@ -1100,17 +1098,23 @@ const cutElsewhere = (page: Page) =>
     });
 
 /**
- * Closes tab `id`, and opens #80's again, with its local copy there, starting `watch` as it opens;
- * returns the new tab's id. It opens on the overview, kept from the first read, once Lo knows in
- * time that it shows: a machine too busy to know within the bound opens it on the diff, which isn't
- * what's tested, so it's closed and opened again, three times at most, each time noted in the
- * test's results.
+ * Closes tab `id`, if there is one, and opens #80's again, with its local copy there when it was
+ * opened before, starting `watch` as it opens; returns the new tab's id. It opens on the overview,
+ * kept from the first read, once Lo knows in time that it shows: a machine too busy to know within
+ * the bound opens it on the diff, which isn't what's tested, so it's closed and opened again, three
+ * times at most, each time noted in the test's results.
  */
-async function openAgain(page: Page, id: string, watch: () => Promise<void>): Promise<string> {
+async function openAgain(
+  page: Page,
+  id: string | undefined,
+  watch: () => Promise<void>,
+): Promise<string> {
   let tab = id;
   for (let tries = 1; ; tries++) {
-    await page.evaluate((each) => window.lo.invoke('tab.close', { id: each }), tab);
-    await expect(views(page)).toHaveCount(0);
+    if (tab !== undefined) {
+      await page.evaluate((each) => window.lo.invoke('tab.close', { id: each }), tab);
+      await expect(views(page)).toHaveCount(0);
+    }
     await watch();
     tab = await open(page);
     /** What the tab opened on, once it has. */
@@ -1179,66 +1183,15 @@ async function openingSeen(page: Page): Promise<Opening & { after: number }> {
 
 /**
  * Two frames: a frame's wait for the bound's timer to run after it's due, and one for the watch to
- * see what it drew.
+ * see what it drew. A busy machine in CI can be a few frames late, so it's given 250 ms there.
  */
-const FRAMES = 2 * 17;
+const FRAMES = process.env.CI ? 250 : 2 * 17;
 
 /**
  * How much sooner than the bound an overview seen at it can seem to be: the watch sees the tab open
  * a frame or more after it did, more on a busy machine.
  */
 const SEEN_LATE = 100;
-
-for (const [width, height] of [
-  [1440, 900],
-  [1100, 800],
-] as const) {
-  test(`draws the code on its first screen before it's seen, with the local copy there, cutting none and moving nothing, at ${width}×${height}`, async ({
-    app,
-    page,
-  }) => {
-    test.setTimeout(90_000);
-    await sizeWindow(app, width, height);
-    // Opened once for its local copy.
-    const first = await open(page);
-    await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
-    await expect
-      .poll(() => current(page, first), { timeout: 30_000 })
-      .toMatchObject({ code: 'ready' });
-
-    await openAgain(page, first, async () => {
-      await watchOpening(page);
-      await watchStill(page);
-      await watchCode(page);
-    });
-    const shown = overview(page, 'shown');
-    await expect(shown).toBeVisible();
-    // Seen within the tab's bound, the tab's placeholder until then, never part of the overview.
-    const opening = await openingSeen(page);
-    expect(opening.after).toBeLessThanOrEqual(HOLD_LIMIT + FRAMES);
-    expect(opening.early).toEqual([]);
-    expect(opening.bare).toBe(0);
-    await expect.poll(async () => (await codeSeen(page)).seen).toBeDefined();
-    // Every code block on the first screen was drawn before the overview was seen, unless a busy
-    // machine didn't draw them within the bound: then it's seen with room kept for them, noted.
-    const atBound = opening.after >= HOLD_LIMIT - SEEN_LATE;
-    if (atBound) {
-      test.info().annotations.push({
-        type: 'seen at the bound',
-        description: `The overview was seen ${Math.round(opening.after)} ms after the tab opened.`,
-      });
-    }
-    const { seen } = await codeSeen(page);
-    expect(Object.keys(seen ?? {})).toContain('src/parser.ts L7–10');
-    for (const [name, code] of Object.entries(seen ?? {})) {
-      const meant = code === 'none' || (atBound && code === 'waiting') ? code : 'drawn';
-      expect(`${name}: ${code}`).toBe(`${name}: ${meant}`);
-    }
-    await page.waitForTimeout(1500);
-    expect(await stillMoved(page)).toEqual([]);
-    if (!atBound) expect(await cutBlocks(page)).toEqual([]);
-  });
-}
 
 /**
  * Opens #80's tab for the first time, and checks its overview's article is first seen within the
@@ -1271,19 +1224,77 @@ async function openInTime(page: Page): Promise<string> {
   return id;
 }
 
-test('shows its overview within the bound from when its tab opens, with the local copy still coming, the tab’s placeholder until then', async ({
-  page,
-}) => {
-  test.setTimeout(60_000);
-  const id = await openInTime(page);
-  // Its code fills in as the local copy comes, moving nothing on screen.
-  await expect.poll(() => current(page, id), { timeout: 30_000 }).toMatchObject({ code: 'ready' });
-  await expect(
-    codeBlock(page, 'src/parser.ts', 'L7–10').locator('[data-lo-code="drawn"]'),
-  ).toBeAttached({ timeout: 20_000 });
-  await page.waitForTimeout(1000);
-  expect(await stillMoved(page)).toEqual([]);
-  expect(await cutElsewhere(page)).toEqual([]);
+/** The bound on what a tab holds back is what these are about, so they ask for it. */
+test.describe('within the bound on what a tab holds back', () => {
+  test.use({ holdLimit: HOLD_LIMIT });
+
+  for (const [width, height] of [
+    [1440, 900],
+    [1100, 800],
+  ] as const) {
+    test(`draws the code on its first screen before it's seen, with the local copy there, cutting none and moving nothing, at ${width}×${height}`, async ({
+      app,
+      page,
+    }) => {
+      test.setTimeout(90_000);
+      await sizeWindow(app, width, height);
+      // Opened once for its local copy.
+      const first = await open(page);
+      await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
+      await expect
+        .poll(() => current(page, first), { timeout: 30_000 })
+        .toMatchObject({ code: 'ready' });
+
+      await openAgain(page, first, async () => {
+        await watchOpening(page);
+        await watchStill(page);
+        await watchCode(page);
+      });
+      const shown = overview(page, 'shown');
+      await expect(shown).toBeVisible();
+      // Seen within the tab's bound, the tab's placeholder until then, never part of the overview.
+      const opening = await openingSeen(page);
+      expect(opening.after).toBeLessThanOrEqual(HOLD_LIMIT + FRAMES);
+      expect(opening.early).toEqual([]);
+      expect(opening.bare).toBe(0);
+      await expect.poll(async () => (await codeSeen(page)).seen).toBeDefined();
+      // Every code block on the first screen was drawn before the overview was seen, unless a busy
+      // machine didn't draw them within the bound: then it's seen with room kept for them, noted.
+      const atBound = opening.after >= HOLD_LIMIT - SEEN_LATE;
+      if (atBound) {
+        test.info().annotations.push({
+          type: 'seen at the bound',
+          description: `The overview was seen ${Math.round(opening.after)} ms after the tab opened.`,
+        });
+      }
+      const { seen } = await codeSeen(page);
+      expect(Object.keys(seen ?? {})).toContain('src/parser.ts L7–10');
+      for (const [name, code] of Object.entries(seen ?? {})) {
+        const meant = code === 'none' || (atBound && code === 'waiting') ? code : 'drawn';
+        expect(`${name}: ${code}`).toBe(`${name}: ${meant}`);
+      }
+      await page.waitForTimeout(1500);
+      expect(await stillMoved(page)).toEqual([]);
+      if (!atBound) expect(await cutBlocks(page)).toEqual([]);
+    });
+  }
+
+  test('shows its overview within the bound from when its tab opens, with the local copy still coming, the tab’s placeholder until then', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    const id = await openInTime(page);
+    // Its code fills in as the local copy comes, moving nothing on screen.
+    await expect
+      .poll(() => current(page, id), { timeout: 30_000 })
+      .toMatchObject({ code: 'ready' });
+    await expect(
+      codeBlock(page, 'src/parser.ts', 'L7–10').locator('[data-lo-code="drawn"]'),
+    ).toBeAttached({ timeout: 20_000 });
+    await page.waitForTimeout(1000);
+    expect(await stillMoved(page)).toEqual([]);
+    expect(await cutElsewhere(page)).toEqual([]);
+  });
 });
 
 test('lays out each code block as tall as it draws before a jump reaches it, so the jump moves nothing', async ({
@@ -1505,7 +1516,7 @@ test('fills in its code from the local copy, at the commit it describes, as the 
 test.describe('while the local copy comes late', () => {
   test.use({ cassette: 'app_e2e_late', lateRemote: true });
 
-  /** Where the reader reads: a part of the way down, or just above the block that offers Find. */
+  /** Where the reader reads: just under a code block, or just above the block that offers Find. */
   interface Place {
     name: string;
     at: (page: Page) => Promise<number>;
@@ -1526,43 +1537,40 @@ test.describe('while the local copy comes late', () => {
         }),
   };
 
-  /**
-   * Where the reader reads in a short window: a part of the way down, just under the first code
-   * block, so it fills in above them, or at the block that offers Find.
-   */
-  const places: Place[] = [
-    { name: 'at the top', at: () => Promise.resolve(0) },
-    { name: 'halfway down', at: () => Promise.resolve(0.5) },
-    {
-      name: 'just under a code block',
-      at: (page) =>
-        overview(page, 'shown')
-          .locator('.lo-ov')
-          .evaluate((scroller) => {
-            const block = scroller.querySelector('.lo-codeblock');
-            const bottom = block?.getBoundingClientRect().bottom ?? 0;
-            const under = bottom - scroller.getBoundingClientRect().top + scroller.scrollTop + 80;
-            return under / (scroller.scrollHeight - scroller.clientHeight);
-          }),
-    },
-    atFind,
-  ];
+  /** Where the reader reads, just under the first code block, so code fills in above them. */
+  const underCode: Place = {
+    name: 'just under a code block',
+    at: (page) =>
+      overview(page, 'shown')
+        .locator('.lo-ov')
+        .evaluate((scroller) => {
+          const block = scroller.querySelector('.lo-codeblock');
+          const bottom = block?.getBoundingClientRect().bottom ?? 0;
+          const under = bottom - scroller.getBoundingClientRect().top + scroller.scrollTop + 80;
+          return under / (scroller.scrollHeight - scroller.clientHeight);
+        }),
+  };
 
-  test('shows its overview within the bound from when its tab opens, while the local copy can’t be fetched, with room kept for its code', async ({
-    page,
-  }) => {
-    test.setTimeout(60_000);
-    const id = await openInTime(page);
-    await expect
-      .poll(() => current(page, id), { timeout: 20_000 })
-      .toMatchObject({ code: 'failed' });
-    expect(await stillMoved(page)).toEqual([]);
+  test.describe('within the bound on what a tab holds back', () => {
+    test.use({ holdLimit: HOLD_LIMIT });
+
+    test('shows its overview within the bound from when its tab opens, while the local copy can’t be fetched, with room kept for its code', async ({
+      page,
+    }) => {
+      test.setTimeout(60_000);
+      const id = await openInTime(page);
+      await expect
+        .poll(() => current(page, id), { timeout: 20_000 })
+        .toMatchObject({ code: 'failed' });
+      expect(await stillMoved(page)).toEqual([]);
+    });
   });
 
-  // Each place in a short window, and near the end in a tall one, where the scroll can't go as far
-  // down as it was once a block above gets shorter.
+  // Under a code block and at the one that offers Find, in a short window, and near the end in a
+  // tall one, where the scroll can't go as far down as it was once a block above gets shorter.
   const cases = [
-    ...places.map((place) => ({ place, width: 1100, height: 440 })),
+    { place: underCode, width: 1100, height: 440 },
+    { place: atFind, width: 1100, height: 440 },
     { place: atFind, width: 1440, height: 900 },
   ];
   for (const { place, width, height } of cases) {

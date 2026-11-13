@@ -15,6 +15,8 @@ import {
   githubSettings,
   keymapEditor,
   compareWait,
+  devicePoll,
+  holdLimit,
   offlineAfter,
 } from './environment.ts';
 
@@ -122,6 +124,30 @@ describe('compareWait', () => {
     expect(() => compareWait({ packaged: false, env: { LO_COMPARE_WAIT_MS: 'soon' } })).toThrow(
       'LO_COMPARE_WAIT_MS',
     );
+  });
+});
+
+describe('holdLimit', () => {
+  it('takes another bound on what the window holds back as a tab opens in a build run from source, for tests', () => {
+    expect(holdLimit({ packaged: false, env: { LO_HOLD_LIMIT_MS: '20000' } })).toBe(20_000);
+    expect(holdLimit({ packaged: false, env: {} })).toBe(undefined);
+    expect(holdLimit({ packaged: true, env: { LO_HOLD_LIMIT_MS: '20000' } })).toBe(undefined);
+    expect(() => holdLimit({ packaged: false, env: { LO_HOLD_LIMIT_MS: 'soon' } })).toThrow(
+      'LO_HOLD_LIMIT_MS',
+    );
+  });
+});
+
+describe('devicePoll', () => {
+  it('takes another gap between a sign-in’s polls in a build run from source, for tests', () => {
+    expect(devicePoll({ packaged: false, env: { LO_DEVICE_POLL_MS: '100' } })).toBe(100);
+    expect(devicePoll({ packaged: false, env: {} })).toBe(undefined);
+    expect(devicePoll({ packaged: true, env: { LO_DEVICE_POLL_MS: '100' } })).toBe(undefined);
+    for (const wait of ['', '1.5', '-1', 'soon']) {
+      expect(() => devicePoll({ packaged: false, env: { LO_DEVICE_POLL_MS: wait } })).toThrow(
+        'LO_DEVICE_POLL_MS',
+      );
+    }
   });
 });
 

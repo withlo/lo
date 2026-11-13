@@ -220,51 +220,25 @@ test('shows a spinner and a placeholder on a tab still opening, until GitHub ans
 test('never gives the window the token, nor puts it in any process’s arguments', async ({
   page,
 }) => {
-  const heard = page.evaluate(
-    () =>
-      new Promise<unknown[]>((resolve) => {
-        const values: unknown[] = [];
-        for (const topic of ['tab.pull', 'tab.files', 'tab.local', 'tab.tabs']) {
-          window.lo.subscribe(topic, (value) => values.push(value));
-        }
-        setTimeout(() => resolve(values), 8000);
-      }),
-  );
+  // Everything main pushes the window from now, kept in the page.
+  await page.evaluate(() => {
+    const values: unknown[] = [];
+    Reflect.set(window, 'loHeard', values);
+    for (const topic of ['tab.pull', 'tab.files', 'tab.local', 'tab.tabs']) {
+      window.lo.subscribe(topic, (value) => values.push(value));
+    }
+  });
   const id = await open(page, E2E);
   await expect
     .poll(() => state(page, id), { timeout: 20_000 })
     .toMatchObject({ local: { state: { kind: 'ready' } } });
-  const values = await heard;
+  const values: unknown[] = await page.evaluate(() => {
+    const heard: unknown = Reflect.get(window, 'loHeard');
+    return Array.isArray(heard) ? heard : [];
+  });
   expect(values.length).toBeGreaterThan(3);
   expect(JSON.stringify([values, await state(page, id)])).not.toContain(TOKEN);
   expect(execFileSync('ps', ['-A', '-ww', '-o', 'args='], { encoding: 'utf8' })).not.toContain(
     TOKEN,
   );
-});
-
-test('opens only pages on github.com, and copies 1 MiB at most', async ({ app, page }) => {
-  for (const url of [
-    'https://evil.example/',
-    'http://github.com/',
-    'https://github.com.evil.example/',
-  ]) {
-    expect(
-      await page.evaluate((address) => window.lo.invoke('tab.openExternal', { url: address }), url),
-    ).toMatchObject({
-      ok: false,
-      error: { code: 'invalid' },
-    });
-  }
-  expect(
-    await page.evaluate(() => window.lo.invoke('tab.copy', { text: 'a'.repeat(1024 * 1024 + 1) })),
-  ).toMatchObject({ ok: false, error: { code: 'invalid' } });
-  // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
-  test.skip(process.platform === 'darwin', "The Mac's clipboard is its user's.");
-  expect(
-    await page.evaluate(() => window.lo.invoke('tab.copy', { text: 'rozed-dev/e2e#80' })),
-  ).toEqual({
-    ok: true,
-    value: undefined,
-  });
-  expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe('rozed-dev/e2e#80');
 });

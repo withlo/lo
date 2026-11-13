@@ -29,6 +29,13 @@ describe('appInfo', () => {
     }
   });
 
+  it('carries the bound on what the window holds back, when a test asked for another', () => {
+    expect(appInfo.parse({ ...info, holdLimit: 20_000 })).toEqual({ ...info, holdLimit: 20_000 });
+    for (const holdLimit of [-1, 1.5, '1000']) {
+      expect(appInfo.safeParse({ ...info, holdLimit }).success).toBe(false);
+    }
+  });
+
   it('refuses anything the contract doesn’t name', () => {
     for (const wrong of [
       { ...info, token: 'hunter2' },

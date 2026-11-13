@@ -80,14 +80,21 @@ class ViewedGithub extends Replay {
   readonly writes: string[] = [];
   /** How the next write is answered: `take` from then on. */
   next: Answer = 'take';
-  /** Until when the pull request's details are held back, in milliseconds since the epoch. */
-  holdDetailsUntil = 0;
+  /** What holds the pull request's details back: settled when they may go, or from the start. */
+  #details: Promise<void> = Promise.resolve();
 
   constructor() {
     super(
       'app_e2e',
       cassette('app_e2e').interactions.map(({ interaction }) => interaction),
     );
+  }
+
+  /** Holds the pull request's details back from now, until the function it gives is called. */
+  holdDetails(): () => void {
+    const gate = Promise.withResolvers<void>();
+    this.#details = gate.promise;
+    return gate.resolve;
   }
 
   override answer(request: SeenRequest): Response {
@@ -142,10 +149,10 @@ class ViewedGithub extends Replay {
   /** The recorded details, with the marks as they are now. */
   #withMarks(recorded: Response): Response {
     const marks = this.marks;
-    const until = this.holdDetailsUntil;
+    const details = this.#details;
     const body = new ReadableStream<Uint8Array>({
       async start(controller) {
-        await new Promise((resolve) => setTimeout(resolve, Math.max(0, until - Date.now())));
+        await details;
         const read: unknown = JSON.parse(await recorded.text());
         const nodes = dig(read, 'data', 'repository', 'pullRequest', 'files', 'nodes');
         for (const node of Array.isArray(nodes) ? nodes : []) {
@@ -501,19 +508,19 @@ test('`e` goes on to the next file not viewed, its header staying put or coming 
     .toEqual(rest.map((file) => `MarkFileAsViewed ${file.path}`));
 });
 
-for (const showing of [4, 12, 24]) {
-  test(`\`e\` brings up the next file’s header, ${showing} px of it on screen, just far enough to show whole`, async ({
-    page,
-  }) => {
-    const order = await shown(page);
-    const parser = order.find((file) => file.path === 'src/parser.ts');
-    if (!parser) throw new Error('the diff has no src/parser.ts');
-    await cursorTo(page, 'src/legacy.ts');
-    const { height } = await box(page);
-    await headerAt(page, 'src/parser.ts', height - showing);
-    await viewAndWatch(page, 'src/legacy.ts', parser);
-  });
-}
+// 12 px of the next header on screen, between a sliver and most of it: the arithmetic for the rest
+// is `drawing.test.ts`'s.
+test('`e` brings up the next file’s header, 12 px of it on screen, just far enough to show whole', async ({
+  page,
+}) => {
+  const order = await shown(page);
+  const parser = order.find((file) => file.path === 'src/parser.ts');
+  if (!parser) throw new Error('the diff has no src/parser.ts');
+  await cursorTo(page, 'src/legacy.ts');
+  const { height } = await box(page);
+  await headerAt(page, 'src/parser.ts', height - 12);
+  await viewAndWatch(page, 'src/legacy.ts', parser);
+});
 
 /** The key of the tree's row the keyboard is on. */
 function treeFocus(page: Page): Promise<string | null> {
@@ -626,57 +633,6 @@ test('clearing a viewed file’s mark opens it again, and the cursor stays', asy
   expect(await cursorPath(page)).toBe('src/format.ts');
 });
 
-test('a viewed file a later push changed opens to what changed since it was viewed', async ({
-  app,
-  fake,
-  github,
-  remote,
-  tokenFile,
-}) => {
-  test.setTimeout(90_000);
-  // GitHub says the second push changed src/parser.ts since the reader viewed it at the first.
-  fake.marks.set('src/parser.ts', 'DISMISSED');
-  const again = await relaunchViewedAtFirstPush(app, github, remote, tokenFile);
-  try {
-    const page = await again.firstWindow();
-    await page.waitForLoadState('load');
-    const id = await openE2e(page);
-    await expect(page.locator('.lo-diffview')).toBeVisible({ timeout: 30_000 });
-    await expect(ball(page, 'src/parser.ts')).toHaveAttribute(
-      'title',
-      'Changed since you viewed it',
-      { timeout: 20_000 },
-    );
-    // Only the second push's change to it: two lines added and one deleted since r1, not the
-    // rename the first push made.
-    await expect
-      .poll(
-        async () => {
-          const reply = await page.evaluate(
-            (tab) => window.lo.invoke('diff.versions', { id: tab }),
-            id,
-          );
-          const list = reply.ok ? field(reply.value, 'files') : undefined;
-          return JSON.stringify(
-            (Array.isArray(list) ? list : []).find(
-              (file) => dig(file, 'path', 'text') === 'src/parser.ts',
-            ),
-          );
-        },
-        { timeout: 30_000 },
-      )
-      .toMatch(/"additions":2,"deletions":1.*"since":\{"label":"r1","why":"viewed"\}/);
-    // Its header, brought on screen from the tree.
-    await tree(page).locator('[data-key="src/parser.ts"]').click();
-    const header = page.locator('.lo-diffview .lo-diffhead', { hasText: 'src/parser.ts' }).first();
-    await expect(header).toContainText('since r1');
-    await expect(header).toContainText('+2');
-    await expect(header.locator('.lo-diffhead__ball')).toHaveClass(/is-stale/);
-  } finally {
-    await again.close();
-  }
-});
-
 /**
  * Lo started again on the test's data folder, the first run's database holding that the reader
  * marked src/parser.ts viewed at the first push.
@@ -733,10 +689,10 @@ test('a file that comes to show what changed since after the diff is drawn moves
   test.setTimeout(90_000);
   fake.marks.set('src/parser.ts', 'DISMISSED');
   const again = await relaunchViewedAtFirstPush(app, github, remote, tokenFile);
+  const release = fake.holdDetails();
   try {
     // GitHub's details, with the marks that say src/parser.ts changed since it was viewed, come
     // late: the local copy's diff of the whole pull request is drawn first.
-    fake.holdDetailsUntil = Date.now() + 10_000;
     const page = await again.firstWindow();
     await page.waitForLoadState('load');
     const id = await openE2e(page);
@@ -777,10 +733,12 @@ test('a file that comes to show what changed since after the diff is drawn moves
     expect(before.onScreen).toContain(parser.id);
     expect((await narrowing(page, id)).since).toBeNull();
 
-    // The marks come, and with them src/parser.ts shows from the first push.
+    // The marks come, and with them src/parser.ts shows from the first push: only the second
+    // push's change to it, two lines added and one deleted since r1, not the rename the first made.
+    release();
     await expect
       .poll(async () => JSON.stringify((await narrowing(page, id)).parser), { timeout: 30_000 })
-      .toContain('"since":{"label":"r1","why":"viewed"}');
+      .toMatch(/"additions":2,"deletions":1.*"since":\{"label":"r1","why":"viewed"\}/);
     await page.waitForTimeout(1000);
 
     // Nothing on screen moved: src/parser.ts keeps the lines it had while the reader looks at it,
@@ -794,6 +752,7 @@ test('a file that comes to show what changed since after the diff is drawn moves
     await expect(header).toContainText('since r1');
     await expect(header.locator('.lo-diffhead__ball')).toHaveClass(/is-stale/);
   } finally {
+    release();
     await again.close();
   }
 });

@@ -13,9 +13,9 @@ import { writeFileSync } from 'node:fs';
 
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import type { ElectronApplication, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { appFolder, expect, KEYCHAIN, test as base } from './app.ts';
+import { appFolder, expect, KEYCHAIN, sizeWindow, test as base } from './app.ts';
 
 /** A stand-in token, never a real one: the cassette was recorded with the same. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
@@ -70,15 +70,6 @@ const BLOCK = {
   cache: 18,
   fold: 19,
 } as const;
-
-/** Sets the window's size, and waits for the page to have it. */
-async function sizeWindow(app: ElectronApplication, width: number, height: number): Promise<void> {
-  await app.evaluate(
-    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setSize(size.width, size.height),
-    { width, height },
-  );
-  await new Promise((resolve) => setTimeout(resolve, 500));
-}
 
 /** Opens #80 on its overview, waits for its code from the local copy, and returns the tab's id. */
 async function open(page: Page): Promise<string> {
@@ -437,7 +428,10 @@ test('a block’s menu gives focus back to what had it: the block, not what’s 
   expect(await focused(page)).toMatchObject({ block: BLOCK.walk, own: true });
 });
 
-test('j, k, gg, G and the page keys scroll the overview', async ({ app, page }) => {
+test('j and G scroll the overview, and ⏎ on a section in the outline goes to it', async ({
+  app,
+  page,
+}) => {
   await sizeWindow(app, 1200, 900);
   await open(page);
   const scroller = shown(page).locator('.lo-ov');
@@ -450,12 +444,11 @@ test('j, k, gg, G and the page keys scroll the overview', async ({ app, page }) 
   /**
    * Presses `keys`, and says where the overview was scrolled from and where the keys put it: as
    * the first scroll after them has it, before a block that left the screen takes its code's
-   * height and the scroll makes up for it, which keeps what's on screen where it is. A page is
-   * the screen's height then, less a line.
+   * height and the scroll makes up for it, which keeps what's on screen where it is.
    */
   const scrollBy = async (...keys: string[]) => {
     const from = await scroller.evaluate((element) => {
-      const reading = { top: element.scrollTop, page: element.clientHeight - 40 };
+      const reading = { top: element.scrollTop };
       const watched: { top?: number; end?: number } = {};
       Reflect.set(window, 'loFirstScroll', watched);
       element.addEventListener(
@@ -478,27 +471,15 @@ test('j, k, gg, G and the page keys scroll the overview', async ({ app, page }) 
       });
     await expect.poll(async () => (await first()).top).toBeDefined();
     const { top, end } = await first();
-    return { from: Math.round(from.top), page: from.page, top, end };
+    return { from: Math.round(from.top), top, end };
   };
 
+  // The other keys, and how far each goes, are `scroll()`'s and the keymap's, in unit tests: here,
+  // a line down and the end, through the real keys and the real overview.
   await press(page, ']', 'b');
-  for (const [key, by] of [
-    ['j', 40],
-    ['ArrowDown', 40],
-    ['k', -40],
-    ['ArrowUp', -40],
-  ] as const) {
-    const moved = await scrollBy(key);
-    expect(moved.top).toBe(Math.max(0, moved.from + by));
-  }
+  const down = await scrollBy('j');
+  expect(down.top).toBe(down.from + 40);
   expect((await scrollBy('Shift+G')).end).toBe(0);
-  expect((await scrollBy('g', 'g')).top).toBe(0);
-  const down = await scrollBy('PageDown');
-  expect(down.top).toBe(down.from + down.page);
-  const up = await scrollBy('PageUp');
-  expect(up.top).toBe(Math.max(0, up.from - up.page));
-  expect((await scrollBy('End')).end).toBe(0);
-  expect((await scrollBy('Home')).top).toBe(0);
 
   // ⏎ on a section in the outline goes to it, as a click does.
   const section = shown(page).locator('.lo-toc__item', { hasText: 'Where to look' });
@@ -567,7 +548,9 @@ test('⏎ goes where the block’s lines are in r2, on an overview written for r
   );
   // Once Lo knows what changed since r1, which it fetches into the local copy first: the overview
   // shows from its text alone, and a ⏎ before then waits only up to the bound to place its lines.
-  await expect(shown(page).locator('.lo-ov-stale__sub')).toContainText('touching', {
+  // The parser block's flag says it knows, which the banner's "touching" doesn't: that comes first,
+  // and r1's lines may not be mapped to r2's by then.
+  await expect(block(page, BLOCK.parser).locator('.lo-codeblock__flag')).toBeVisible({
     timeout: 20_000,
   });
 

@@ -20,7 +20,7 @@ import {
 import { notify } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { showPlace } from '../../diff/window/shared.ts';
-import { HOLD_LIMIT } from '../../revisions/contract.ts';
+import { holdLimit } from '../../revisions/window/shared.ts';
 import { showMiddle, tabState } from '../../tab/window/shared.ts';
 import { blockId, blockIn, codeOf, type CodeAt } from './blocks.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
@@ -400,7 +400,7 @@ const placings = new Map<string, () => void>();
  * Shows `code`, at the overview's commit, where it is at the head on screen: in the tab's diff, at
  * the line its first line maps to, or whole where the diff doesn't have it, its lines marked; the
  * place the tab is at recorded first. Until Lo knows how the file changed since the commit, it
- * waits, for up to `HOLD_LIMIT`, then goes where the lines were; the reader moving on first stops
+ * waits, for up to `holdLimit()`, then goes where the lines were; the reader moving on first stops
  * it. For a file gone from the head on screen, or lines Lo can't place there, a note says why it
  * can't.
  */
@@ -421,7 +421,7 @@ export function goToCode(tab: string, code: CodeAt): void {
     stop();
     goOnHead(tab, code);
   };
-  const bound = setTimeout(go, HOLD_LIMIT);
+  const bound = setTimeout(go, holdLimit());
   void working.then(go, go);
   // Not the key or click that asked for the code: the window has heard it already.
   for (const type of MOVED) window.addEventListener(type, stop, true);

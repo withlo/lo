@@ -16,6 +16,14 @@ import {
   type Page,
 } from '@playwright/test';
 
+/**
+ * How long the window holds back what a tab shows first, in a test that isn't about that bound:
+ * three times the real one, so a busy machine is never late enough to race it, and no longer, since
+ * a test that leaves the overview before it's drawn is waiting on the bound to let it go. A test
+ * that is about the bound asks for it itself, with `test.use({ holdLimit: HOLD_LIMIT })`.
+ */
+export const HELD_LONG = 3_000;
+
 /** The app's folder. Electron starts the built main process its `package.json` names. */
 export const appFolder = fileURLToPath(new URL('..', import.meta.url));
 
@@ -134,6 +142,7 @@ export function appEnvironment(data: string): Record<string, string> {
   env.LO_BROWSER = browserPath(data);
   // Never the gh on PATH, which holds the tokens of whoever runs the tests; a test brings its own.
   env.LO_GH = 'none';
+  env.LO_HOLD_LIMIT_MS = String(HELD_LONG);
   return env;
 }
 
@@ -147,6 +156,11 @@ interface Fixtures {
   /** Extra options for starting Lo, for tests that need it started differently. Its `env` adds to Lo's. */
   launch: LaunchOptions;
   /**
+   * How long, in milliseconds, the window holds back what a tab shows first. Long unless a test is
+   * about that bound, which it asks for with `HOLD_LIMIT`.
+   */
+  holdLimit: number;
+  /**
    * Whether CI records a trace of the window, kept when the test fails: not for a test that times
    * the page's frames, which recording slows.
    */
@@ -159,10 +173,11 @@ interface Fixtures {
 
 export const test = base.extend<Fixtures>({
   launch: [{}, { option: true }],
+  holdLimit: [HELD_LONG, { option: true }],
   traced: [true, { option: true }],
   keymap: [undefined, { option: true }],
   settings: [undefined, { option: true }],
-  app: async ({ launch, keymap, settings, traced }, use, testInfo) => {
+  app: async ({ launch, keymap, settings, traced, holdLimit }, use, testInfo) => {
     const { env, ...options } = launch;
     const data = dataFolder();
     writeEditor(data);
@@ -177,7 +192,7 @@ export const test = base.extend<Fixtures>({
     }
     const app = await electron.launch({
       args: [appFolder],
-      env: { ...appEnvironment(data), ...env },
+      env: { ...appEnvironment(data), LO_HOLD_LIMIT_MS: String(holdLimit), ...env },
       // Playwright turns the sandbox off on Linux unless asked; Lo must run with it.
       chromiumSandbox: true,
       ...options,
@@ -206,6 +221,59 @@ export const test = base.extend<Fixtures>({
 });
 
 export { expect };
+
+declare global {
+  interface Window {
+    /** How many times the page has been resized since `sizeWindow` last asked, and when last. */
+    loSized?: { resizes: number; last: number };
+  }
+}
+
+/**
+ * Sets the window's size, as the reader would, and waits until the page has taken it: its last
+ * resize was 100 ms ago, and two frames have drawn since. A window that was that size already sends
+ * no resize, which is waited for half a second.
+ */
+export async function sizeWindow(
+  app: ElectronApplication,
+  width: number,
+  height: number,
+): Promise<void> {
+  const page = await app.firstWindow();
+  // Listening before the window moves, so no resize is missed.
+  await page.evaluate(() => {
+    const sized = window.loSized ?? { resizes: 0, last: 0 };
+    sized.resizes = 0;
+    if (!window.loSized) {
+      window.addEventListener('resize', () => {
+        sized.resizes += 1;
+        sized.last = performance.now();
+      });
+    }
+    window.loSized = sized;
+  });
+  await app.evaluate(
+    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setSize(size.width, size.height),
+    { width, height },
+  );
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const from = performance.now();
+        const check = () => {
+          const now = performance.now();
+          const sized = window.loSized;
+          const still = sized && sized.resizes > 0 ? now - sized.last >= 100 : now - from >= 500;
+          if (!still) {
+            setTimeout(check, 25);
+            return;
+          }
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        };
+        check();
+      }),
+  );
+}
 
 /**
  * A settings file that opens a pull request on its diff, overview or not, for tests of the diff and

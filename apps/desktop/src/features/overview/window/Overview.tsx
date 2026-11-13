@@ -1,5 +1,5 @@
 // The overview, the first of a pull request's tab's middle views. As the tab opens it draws the
-// tab's placeholder until it knows whether the overview shows, for `HOLD_LIMIT` at most, then
+// tab's placeholder until it knows whether the overview shows, for `holdLimit()` at most, then
 // stays, or hands the middle to the diff before either has drawn anything. After that it shows the
 // overview, or why there's none to show; one that comes later is offered, never switched to. A run
 // of a stack's layers on screen as one diff has none, which it says. While
@@ -23,7 +23,7 @@ import {
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { DiffBeside, showDiff } from '../../diff/window/shared.ts';
-import { HOLD_LIMIT } from '../../revisions/contract.ts';
+import { holdLimit } from '../../revisions/window/shared.ts';
 import { useKnownSetting } from '../../settings/window/shared.ts';
 import { MiddlePlaceholder, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { open } from '../settings.ts';
@@ -95,7 +95,7 @@ export function useOpening(tab: string, known: Known, shown: boolean): Opening {
     if (decided !== 'waiting') return undefined;
     const timer = setTimeout(
       () => setNow(Date.now()),
-      Math.max(0, since + HOLD_LIMIT - Date.now()),
+      Math.max(0, since + holdLimit() - Date.now()),
     );
     return () => clearTimeout(timer);
   }, [decided, since]);

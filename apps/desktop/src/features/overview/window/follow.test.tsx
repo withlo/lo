@@ -19,8 +19,10 @@ import {
   looseControl,
   nextBlock,
   nextLink,
+  scroll,
   targetOf,
   type DrawnOverview,
+  type Scroll,
 } from './follow.ts';
 
 beforeAll(() => {
@@ -236,5 +238,57 @@ describe('following a block', () => {
     expect(besideFor(overview, tabs)).toBe('This block shows no code.');
     const code = stops.find((stop) => kindOf(tree, stop) === 'excerpt')!;
     expect(besideFor(overview, code)).toBe(blockNumber(code));
+  });
+});
+
+/** An overview whose scroller is `height` px tall over 5,000 px of article, scrolled to `at`. */
+function scrolledTo(at: number, height = 600): { overview: DrawnOverview; scroller: HTMLElement } {
+  const { overview } = drawn();
+  const scroller = document.createElement('div');
+  Object.defineProperty(scroller, 'clientHeight', { value: height });
+  Object.defineProperty(scroller, 'scrollHeight', { value: 5_000 });
+  // jsdom has no layout, so the position is a plain number the keys move.
+  let top = at;
+  Object.defineProperty(scroller, 'scrollTop', {
+    get: () => top,
+    set: (value: number) => {
+      top = value;
+    },
+  });
+  return { overview: { ...overview, scroller: () => scroller }, scroller };
+}
+
+/** Where scrolling `how` from `at` leaves the overview. */
+function after(how: Scroll, at: number): number {
+  const { overview, scroller } = scrolledTo(at);
+  scroll(overview, how);
+  return scroller.scrollTop;
+}
+
+describe('scrolling', () => {
+  it('goes a line at a time with the arrows, j and k', () => {
+    expect(after('down', 1_000)).toBe(1_040);
+    expect(after('up', 1_000)).toBe(960);
+  });
+
+  it('goes a screen, less a line of the last, with the page keys', () => {
+    expect(after('pageDown', 1_000)).toBe(1_560);
+    expect(after('pageUp', 1_000)).toBe(440);
+  });
+
+  it('goes to the top and to the end', () => {
+    expect(after('top', 1_000)).toBe(0);
+    expect(after('bottom', 1_000)).toBe(5_000);
+  });
+
+  it('goes a line, at least, for a page of a window as short as a line', () => {
+    const { overview, scroller } = scrolledTo(1_000, 20);
+    scroll(overview, 'pageDown');
+    expect(scroller.scrollTop).toBe(1_040);
+  });
+
+  it('does nothing before the overview has drawn its scroller', () => {
+    const { overview } = drawn();
+    expect(() => scroll({ ...overview, scroller: () => null }, 'pageUp')).not.toThrow();
   });
 });

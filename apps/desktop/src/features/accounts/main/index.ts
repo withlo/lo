@@ -10,7 +10,12 @@ import { app, clipboard, net, safeStorage } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { openPage } from '../../../main/browser.ts';
-import { ghProgram, githubSettings, type GithubSettings } from '../../../main/environment.ts';
+import {
+  devicePoll,
+  ghProgram,
+  githubSettings,
+  type GithubSettings,
+} from '../../../main/environment.ts';
 import { defineFeature, STOP_LIMITS } from '../../../main/features.ts';
 import { netFetch } from '../../../main/fetch.ts';
 import { provides } from '../../../main/services.ts';
@@ -143,6 +148,7 @@ export default defineFeature(contract, {
       add: (user, grant) => service.add(user, grant, 'deviceFlow'),
       publish: (state) => publish('signingIn', state),
       log,
+      pollEvery: devicePoll({ packaged: app.isPackaged, env: process.env }),
     });
     running = { settings, github: service, grants, gh, signIns };
     return [provides(github, service)];

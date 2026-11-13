@@ -31,6 +31,7 @@ function signIns(
   options: {
     keyring?: () => Promise<string | undefined>;
     add?: (user: AuthenticatedUser, grant: Grant) => Promise<void>;
+    pollEvery?: number;
   } = {},
 ) {
   const published: SignInState[] = [];
@@ -48,6 +49,7 @@ function signIns(
       }),
     publish: (state) => published.push(state),
     log: (message) => logged.push(message),
+    pollEvery: options.pollEvery,
   });
   return { running, published, kept, logged };
 }
@@ -121,6 +123,19 @@ describe('signing in with GitHub', () => {
     for (const secret of ['gho_FAKE', 'ghr_FAKE', 'FAKE-DEVICE-CODE']) {
       expect(told).not.toContain(secret);
     }
+  });
+
+  it('polls as often as a test asked, in place of GitHub’s interval', async () => {
+    const { fetch, sent } = timed('device_flow_success');
+    const { running, published, kept } = signIns(fetch, { pollEvery: 300 });
+    await running.start();
+    expect(await untilEnded(published)).toMatchObject({ kind: 'signedIn', login: 'rozed-bot' });
+    const polls = fetch.seen.map((request, index) => ({ url: request.url, at: sent[index] ?? 0 }));
+    const start = sent[0] ?? 0;
+    expect(polls.filter(({ url }) => url === POLL).map(({ at }) => at - start)).toEqual([
+      300, 600, 900,
+    ]);
+    expect(kept).toHaveLength(1);
   });
 
   it('polls as slowly as GitHub asks', async () => {

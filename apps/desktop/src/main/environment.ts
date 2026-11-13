@@ -231,6 +231,40 @@ export function compareWait(options: { packaged: boolean; env: Environment }): n
 }
 
 /**
+ * `value`, the text of the test-only variable `name`, as a whole number of milliseconds. It throws
+ * for anything else, so a test that mistypes one finds out.
+ */
+function milliseconds(name: string, value: string): number {
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new Error(`${name} must be a whole number of milliseconds, not "${value}".`);
+  }
+  return Number(value);
+}
+
+/**
+ * How long the window holds back what a pull request's tab shows first, as it opens, for the
+ * overview or a place in the diff, in milliseconds, from `LO_HOLD_LIMIT_MS` in a build run from
+ * source, so a test that isn't about that bound doesn't race it on a busy machine; nothing to take
+ * the window's own. A packaged build ignores it.
+ */
+export function holdLimit(options: { packaged: boolean; env: Environment }): number | undefined {
+  const wait = options.env.LO_HOLD_LIMIT_MS;
+  if (options.packaged || wait === undefined) return undefined;
+  return milliseconds('LO_HOLD_LIMIT_MS', wait);
+}
+
+/**
+ * How long a sign-in waits between polls for the token, in milliseconds, from `LO_DEVICE_POLL_MS`
+ * in a build run from source, in place of GitHub's interval, so a test needn't wait seconds for a
+ * poll; nothing to follow GitHub's. A packaged build ignores it.
+ */
+export function devicePoll(options: { packaged: boolean; env: Environment }): number | undefined {
+  const wait = options.env.LO_DEVICE_POLL_MS;
+  if (options.packaged || wait === undefined) return undefined;
+  return milliseconds('LO_DEVICE_POLL_MS', wait);
+}
+
+/**
  * The `gh` to run rather than one Lo finds, from `LO_GH`: an absolute path, or `none` for no gh at
  * all. Tests bring a gh of their own this way, so they never run the one on `PATH`, which holds the
  * tokens of whoever runs them. A test run, one talking to a GitHub on this machine, runs no gh
