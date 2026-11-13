@@ -291,12 +291,45 @@ jobs:
         if: steps.affected.outputs.run == 'true'
         run: pnpm --filter @lo/git test
 
+  # Fails when the overview checker's package, as this commit packs it, differs from npm's copy of
+  # the same version, so a change to it comes with a new version, which merging publishes. Lo's
+  # skill runs the checker by that version. It passes while npm hasn't got the version, so it only
+  # installs and packs once npm has. scripts/overview-npm.sh does the work, as publish.yml does.
+  overview:
+    name: overview
+    needs: changes
+    if: needs.changes.outputs.check == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Look for this version on npm
+        id: npm
+        run: |
+          lookup=$(sh scripts/overview-npm.sh lookup)
+          echo "$lookup"
+          echo "$lookup" >> "$GITHUB_OUTPUT"
+
+      - if: steps.npm.outputs.published == 'true'
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          cache: true
+          save-cache: false
+          require-lockfile: true
+
+      - name: Compare the package with npm's copy
+        if: steps.npm.outputs.published == 'true'
+        run: sh scripts/overview-npm.sh compare
+
   # The one check to require besides pr-title, so adding jobs never changes the ruleset. Skipped
   # jobs pass. A job with a matrix, like app, has one result: failure if any of its jobs failed.
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, commitlint, symlinks, shellcheck, format, check, app, oldest-git]
+    needs: [changes, commitlint, symlinks, shellcheck, format, check, app, oldest-git, overview]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

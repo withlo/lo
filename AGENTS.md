@@ -793,6 +793,15 @@ Generated files are committed, and each project that makes them has a `codegen` 
 one by hand: change its source, run `pnpm nx run-many -t codegen`, and commit both together.
 `pnpm check:generated` fails when one is out of date.
 
+## Publishing the checker
+
+The `publish` workflow publishes `@withlo/overview` to npm. To release a change to the checker or
+the skill it carries, bump `version` in `skill/checker/package.json` and merge: the workflow tests,
+builds and packs the checker, and publishes that version with npm's trusted publishing, which needs
+no token and signs provenance. The skill runs the checker by that exact version, so CI's `overview`
+job fails a pull request whose package differs from npm's copy of its version.
+`scripts/overview-npm.sh` packs the package the same way for both.
+
 ## Design
 
 Read [`design/README.md`](design/README.md) before you write or change any interface, and

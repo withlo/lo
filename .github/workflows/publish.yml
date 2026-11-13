@@ -1,0 +1,144 @@
+# Publishes the overview checker, @withlo/overview, to npm when main has a version of it that npm
+# hasn't. Bumping the version in skill/checker/package.json and merging publishes it. Lo's skill runs
+# the checker by that version, and CI's overview job fails a change to the package that keeps a
+# version npm already has.
+#
+# It publishes with npm's trusted publishing: npm trusts this workflow, by its file name, to publish
+# the package, and the publish job trades GitHub's OIDC token for a short-lived one, so no npm token
+# is stored anywhere. npm signs provenance for the package, which links it to this run. Trusted
+# publishing can only publish a package that's on npm already, so until the first version is there
+# the run builds and uploads the tarball, publishes nothing, and says to publish it by hand.
+name: publish
+
+on:
+  push:
+    branches: [main]
+    paths: [skill/checker/package.json]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time, never cancelled midway: a newer run waits for the one before it to finish.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+env:
+  # nx.json turns both off too.
+  NX_DAEMON: 'false'
+  NX_NO_CLOUD: 'true'
+
+jobs:
+  # What main holds, and whether npm has it. Everything after it skips when npm has this version, so
+  # a run with nothing to publish passes. Only main publishes, even when started by hand.
+  version:
+    name: version
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      name: ${{ steps.npm.outputs.name }}
+      version: ${{ steps.npm.outputs.version }}
+      package: ${{ steps.npm.outputs.package }}
+      published: ${{ steps.npm.outputs.published }}
+      node: ${{ steps.node.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Look for this version on npm
+        id: npm
+        run: |
+          lookup=$(sh scripts/overview-npm.sh lookup)
+          echo "$lookup"
+          echo "$lookup" >> "$GITHUB_OUTPUT"
+
+      # The publish job's Node, whose npm publishes.
+      - name: Find Node's version
+        id: node
+        run: echo "version=$(jq -r .devEngines.runtime.version package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Say there's nothing to publish
+        if: steps.npm.outputs.published == 'true'
+        env:
+          PACKAGE: ${{ steps.npm.outputs.name }}@${{ steps.npm.outputs.version }}
+        run: echo "::notice::npm has $PACKAGE already, so there's nothing to publish."
+
+  # Lints, type checks, tests and builds the checker as CI does, then packs it. It installs without
+  # the store cache, so what's published comes from the lockfile alone, and it holds no token.
+  build:
+    name: build
+    needs: version
+    if: needs.version.outputs.published == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installs the Node and pnpm that package.json's devEngines pins, then the dependencies.
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          require-lockfile: true
+
+      - name: Lint, type check, test and build the checker
+        run: pnpm nx run-many -t lint typecheck test build --projects=checker --output-style=static
+
+      - name: Pack the checker
+        run: sh scripts/overview-npm.sh pack "$RUNNER_TEMP/pack"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: withlo-overview-${{ needs.version.outputs.version }}
+          path: ${{ runner.temp }}/pack/withlo-overview-${{ needs.version.outputs.version }}.tgz
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Say how to publish the first version
+        if: needs.version.outputs.package == 'false'
+        env:
+          ARTIFACT: withlo-overview-${{ needs.version.outputs.version }}
+        run: |
+          echo "::notice::npm hasn't got the package, so trusted publishing can't publish it yet. Publish this run's $ARTIFACT artifact by hand: gh run download $GITHUB_RUN_ID --repo $GITHUB_REPOSITORY -n $ARTIFACT, then npm publish $ARTIFACT.tgz --access public."
+
+  # Publishes the tarball the build job packed. The only job that can mint an OIDC token, it checks
+  # out nothing and runs nothing of the repository's.
+  publish:
+    name: publish
+    needs: [version, build]
+    if: needs.version.outputs.package == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: withlo-overview-${{ needs.version.outputs.version }}
+          path: ${{ runner.temp }}/pack
+
+      # pnpm installs Node without npm, so this installs the same Node with the npm it ships.
+      # Trusted publishing needs npm 11.5.1 or later and Node 22.14.0 or later. No registry-url, so
+      # no .npmrc holds a token in place of the OIDC one, and no cache for a release.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ needs.version.outputs.node }}
+          package-manager-cache: false
+
+      - name: Check npm's version
+        run: |
+          npm=$(npm --version)
+          echo "npm $npm"
+          if [ "$(printf '%s\n' 11.5.1 "$npm" | sort -V | head -n 1)" != 11.5.1 ]; then
+            echo "::error::Trusted publishing needs npm 11.5.1 or later, not $npm."
+            exit 1
+          fi
+
+      - name: Publish to npm
+        env:
+          TARBALL: ${{ runner.temp }}/pack/withlo-overview-${{ needs.version.outputs.version }}.tgz
+        run: npm publish "$TARBALL" --access public --provenance
