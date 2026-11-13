@@ -324,3 +324,50 @@ test('e2es timelines have their force push and base change', async () => {
       : undefined,
   ).toEqual(['rozed-bot', 'main', 'e8/base', 'changed']);
 });
+
+/** A newest page of a timeline holding only `nodes`, as GitHub answers it. */
+function page(nodes: unknown[]): Response {
+  return Response.json({
+    data: {
+      rateLimit: null,
+      repository: {
+        pullRequest: {
+          author: { __typename: 'User', login: 'rozed-bot' },
+          body: '',
+          createdAt: '2026-11-06T12:00:00Z',
+          lastEditedAt: null,
+          timelineEvents: { updatedAt: '2026-11-06T12:00:00Z' },
+          timelineItems: {
+            filteredCount: nodes.length,
+            pageInfo: { hasPreviousPage: false, startCursor: null },
+            edges: nodes.map((node, at) => ({ cursor: `c${at}`, node })),
+          },
+        },
+      },
+    },
+  });
+}
+
+/** A label added, as GitHub answers it, in `color`. */
+function labeled(color: string): unknown {
+  return {
+    __typename: 'LabeledEvent',
+    actor: { __typename: 'User', login: 'rozed-bot' },
+    createdAt: '2026-11-06T12:00:00Z',
+    label: { name: 'api', color },
+  };
+}
+
+test('a labels color reaches the timeline only as six hex digits', async () => {
+  const github = new GithubClient({
+    fetch: () => Promise.resolve(page([labeled('2700AF'), labeled('fff;background:url(x)')])),
+    token: new Token('gho_FAKE'),
+  });
+  const all = items(
+    await readTimeline(github, new PullRef('rozed-dev', 'e2e', 23), { now: noon() }),
+  );
+  expect(all.map((item) => (item.kind === 'label' ? item.color : item.kind))).toEqual([
+    '2700af',
+    undefined,
+  ]);
+});

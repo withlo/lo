@@ -172,13 +172,16 @@ export const TIMELINE: ReadKind<PullRequestTimeline> = {
 };
 
 /**
- * A pull request's labels, reviewers, assignees and draft state, beside its description. A label,
- * a review request, an assignee or a draft changed moves the pull request's own `updatedAt`, and a
- * submitted review the count of submitted reviews.
+ * A pull request's labels, reviewers, assignees and draft state, beside its description. Each
+ * change to them is an item of the timeline the check counts and dates: a label added or removed,
+ * a review requested or its request removed, an assignee, a draft marked or made ready, and a review
+ * dismissed, which changes the reviewer's latest review without moving the count of submitted
+ * reviews, since that counts dismissed ones too. The pull request's own `updatedAt` and the count of
+ * submitted reviews catch what the timeline's may not.
  */
 export const PULL_REQUEST_SIDEBAR: ReadKind<PullRequestSidebar> = {
   name: 'PullRequestSidebar',
-  watched: ['/updatedAt', '/submittedReviews/totalCount'],
+  watched: ['/updatedAt', '/timelineEvents', '/submittedReviews/totalCount'],
 };
 
 /** What decides whether a pull request can merge. */

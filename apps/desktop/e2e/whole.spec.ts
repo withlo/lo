@@ -267,7 +267,7 @@ test('the finder’s ⌘⏎ opens any file whole, and ` steps between the diff a
   await expect(code(page).locator('.cm-content')).toBeFocused();
 
   // ~ and ` step through the middle views: back to the diff, then the file again, where it was,
-  // and on past it to the overview, the first.
+  // and back past the diff to the overview, the first.
   await press(page, 'j', 'j');
   await expect.poll(async () => (await wholeAt(page))?.line).toBe(3);
   await press(page, '~');
@@ -279,9 +279,7 @@ test('the finder’s ⌘⏎ opens any file whole, and ` steps between the diff a
   await expect
     .poll(() => wholeAt(page))
     .toEqual({ path: 'src/text/wrap.ts', version: 'new', line: 3 });
-  await press(page, '~');
-  await expect(page.locator('.lo-diffview')).toBeVisible();
-  await press(page, '`', '`');
+  await press(page, '~', '~');
   await expect(page.locator('[data-lo-middle-view="overview.view"]')).toBeVisible();
   await expect(page.locator('.lo-diffview')).toBeHidden();
   expect(refused).toEqual([]);

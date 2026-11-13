@@ -108,8 +108,17 @@ export type TimelineItem =
       before: string | undefined;
       after: string | undefined;
     }
-  /** `LabeledEvent`, or `UnlabeledEvent` when `added` is false. `color` is six hex digits. */
-  | { kind: 'label'; event: TimelineEvent; name: string; color: string; added: boolean }
+  /**
+   * `LabeledEvent`, or `UnlabeledEvent` when `added` is false. `color` is six lowercase hex digits,
+   * or `undefined` when GitHub's isn't ({@link labelColor}).
+   */
+  | {
+      kind: 'label';
+      event: TimelineEvent;
+      name: string;
+      color: string | undefined;
+      added: boolean;
+    }
   /**
    * `AssignedEvent`, or `UnassignedEvent` when `added` is false. `assignee` is `undefined` for a
    * deleted account.
@@ -668,6 +677,14 @@ export function actor(node: ActorNode | null | undefined): Actor | undefined {
   return typeof login === 'string' ? { login, type } : undefined;
 }
 
+/**
+ * `color`, a label's, as six lowercase hex digits without the `#`, or `undefined` when it isn't
+ * that, so a color never reaches a style as anything else.
+ */
+export function labelColor(color: string): string | undefined {
+  return /^[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : undefined;
+}
+
 type ReviewerNode = Extract<Node, { __typename: 'ReviewRequestedEvent' }>['requestedReviewer'];
 
 /**
@@ -784,7 +801,7 @@ function itemOf(node: Node): TimelineItem {
         kind: 'label',
         event: event(node),
         name: node.label.name,
-        color: node.label.color,
+        color: labelColor(node.label.color),
         added: typename === 'LabeledEvent',
       };
     case 'AssignedEvent':

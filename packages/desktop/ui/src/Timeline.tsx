@@ -1,5 +1,13 @@
 import { cva } from 'class-variance-authority';
-import type { HTMLAttributes, ReactNode, Ref } from 'react';
+import {
+  createContext,
+  use,
+  useId,
+  useMemo,
+  type HTMLAttributes,
+  type ReactNode,
+  type Ref,
+} from 'react';
 
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
@@ -138,36 +146,66 @@ function Marker({ marker }: { marker: TimelineMarker }) {
   );
 }
 
-/** What every row takes beside its own: a `data-` attribute to find it by, a right-click, an id. */
-export type TimelineRowAttributes = Omit<HTMLAttributes<HTMLLIElement>, 'children' | 'hidden'>;
+/** What a timeline tells its rows: how their ids start, and which row the keyboard is on. */
+interface Rows {
+  readonly prefix: string;
+  readonly focused: string | undefined;
+}
+
+const RowsContext = createContext<Rows | undefined>(undefined);
+
+/** The id of the row whose `item` is `item`, in the timeline whose ids start with `prefix`. */
+function rowId(prefix: string, item: string): string {
+  return `${prefix}-row-${encodeURIComponent(item)}`;
+}
+
+/**
+ * What every row takes beside its own: what identifies it in its timeline, a `data-` attribute to
+ * find it by, a right-click.
+ */
+export type TimelineRowAttributes = Omit<HTMLAttributes<HTMLLIElement>, 'children' | 'hidden'> & {
+  /**
+   * What identifies the row in its timeline, which the timeline's `focused` names: the row gets an
+   * id from it, which the timeline names as its active descendant while the keyboard is on it.
+   */
+  item?: string | undefined;
+};
 
 export interface TimelineRowProps extends TimelineRowAttributes {
   marker: TimelineMarker;
   /**
-   * The keyboard is on it. It's ringed only while the timeline itself has keyboard focus, since
-   * the timeline is one focusable element with its rows as active descendants.
+   * The keyboard is on it: by default, when its `item` is the one the timeline's `focused` names.
+   * It's ringed only while the timeline itself has keyboard focus, since the timeline is one
+   * focusable element with its rows as active descendants.
    */
   focused?: boolean | undefined;
   children: ReactNode;
 }
 
 /**
- * One row of the timeline: a marker on the rail, and what happened beside it. The other rows are
- * made of this one, and so is a box at the end of the timeline, which has its own avatar for a
- * marker.
+ * One row of the timeline: a marker on the rail, and what happened beside it, as one of the
+ * timeline's options. The other rows are made of this one, and so is a box at the end of the
+ * timeline, which has its own avatar for a marker.
  */
 export function TimelineRow({
   marker,
-  focused = false,
+  item,
+  focused,
   children,
   className = '',
   ...rest
 }: TimelineRowProps) {
+  const rows = use(RowsContext);
+  const own = item !== undefined && rows !== undefined ? rowId(rows.prefix, item) : undefined;
+  const on = focused ?? (item !== undefined && rows?.focused === item);
   return (
     <li
+      id={own}
+      role="option"
+      aria-selected={on}
       {...rest}
-      data-focused={focused ? '' : undefined}
-      className={`tl-row flex gap-12 rounded-md py-8 ${focused ? 'group-focus-visible/timeline:shadow-ring-inset' : ''} ${className}`}
+      data-focused={on ? '' : undefined}
+      className={`tl-row flex gap-12 rounded-md py-8 ${on ? 'group-focus-visible/timeline:shadow-ring-inset' : ''} ${className}`}
     >
       <Marker marker={marker} />
       <div className="min-w-0 flex-1">{children}</div>
@@ -178,24 +216,34 @@ export function TimelineRow({
 export interface TimelineProps extends Omit<HTMLAttributes<HTMLOListElement>, 'children'> {
   /** The rows, each a {@link TimelineRow} or one of the kinds below. */
   children: ReactNode;
+  /**
+   * The row the keyboard is on, by its `item`: the timeline names it as its active descendant,
+   * and rings it while the timeline has keyboard focus. It must be one of the rows.
+   */
+  focused?: string | undefined;
   /** The list itself, which can take focus, with the row the keyboard is on as its active descendant. */
   listRef?: Ref<HTMLOListElement> | undefined;
 }
 
 /**
- * The pull request's history as one column of rows down a rail, oldest first. Like the threads
- * list it takes what a focusable list takes: a ref, `tabIndex`, a `role` and the rest.
+ * The pull request's history as one column of rows down a rail, oldest first: a listbox, whose
+ * options are its rows, as the threads list is. Like the threads list it takes what a focusable
+ * list takes: a ref, `tabIndex` and the rest.
  */
-export function Timeline({ children, listRef, className = '', ...rest }: TimelineProps) {
+export function Timeline({ children, focused, listRef, className = '', ...rest }: TimelineProps) {
+  const prefix = useId();
+  const rows = useMemo<Rows>(() => ({ prefix, focused }), [prefix, focused]);
   return (
     <div className="px-24 py-24">
       <ol
         ref={listRef}
+        role="listbox"
         aria-label="Timeline"
+        aria-activedescendant={focused === undefined ? undefined : rowId(prefix, focused)}
         {...rest}
         className={`group/timeline mx-auto flex max-w-read-measure list-none flex-col ${className}`}
       >
-        {children}
+        <RowsContext value={rows}>{children}</RowsContext>
       </ol>
     </div>
   );

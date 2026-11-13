@@ -333,6 +333,46 @@ describe('Timeline', () => {
     expect(row(host, 1).hasAttribute('data-focused')).toBe(false);
   });
 
+  it('is a listbox of its rows, naming the one the keyboard is on by its item', () => {
+    const host = render(
+      <Timeline tabIndex={0} focused="PRR_2">
+        <TimelineEvent glyph="queue" item="PRR_1">
+          queued
+        </TimelineEvent>
+        <TimelineEvent glyph="queue" item="PRR_2">
+          removed
+        </TimelineEvent>
+        <TimelineOlder count={3} item="older" />
+      </Timeline>,
+    );
+    const list = host.querySelector('ol')!;
+    expect(list.getAttribute('role')).toBe('listbox');
+    const rows = [...host.querySelectorAll('ol > li')];
+    expect(rows.map((each) => each.getAttribute('role'))).toEqual(['option', 'option', 'option']);
+    const ids = rows.map((each) => each.id);
+    // Each row's own id, unique in the page.
+    expect(new Set(ids).size).toBe(3);
+    expect(ids.every((id) => id !== '' && host.ownerDocument.getElementById(id) !== null)).toBe(
+      true,
+    );
+    expect(list.getAttribute('aria-activedescendant')).toBe(ids[1]);
+    expect(rows.map((each) => each.getAttribute('aria-selected'))).toEqual([
+      'false',
+      'true',
+      'false',
+    ]);
+    expect(rows.map((each) => each.hasAttribute('data-focused'))).toEqual([false, true, false]);
+    // With no row named, it names none.
+    const unfocused = render(
+      <Timeline>
+        <TimelineEvent glyph="queue" item="PRR_1">
+          queued
+        </TimelineEvent>
+      </Timeline>,
+    ).querySelector('ol')!;
+    expect(unfocused.hasAttribute('aria-activedescendant')).toBe(false);
+  });
+
   it('draws one of your comments with its mark, Edit and Delete and their keys, and no one else’s', () => {
     const onEdit = vi.fn<() => void>();
     const onDelete = vi.fn<() => void>();
