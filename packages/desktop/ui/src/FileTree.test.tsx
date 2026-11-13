@@ -105,6 +105,24 @@ describe('FileTree', () => {
     ).not.toContain('data-hit');
   });
 
+  it('shows a file’s threads on its row, standing out while any is unresolved', () => {
+    const html = renderToStaticMarkup(
+      <FileTree
+        rows={[
+          { ...fileRow('a.ts'), change: 'modified', threads: { total: 3, unresolved: 2 } },
+          { ...fileRow('b.ts'), change: 'modified', threads: { total: 1, unresolved: 0 } },
+          { ...fileRow('c.ts'), change: 'modified' },
+        ]}
+      />,
+    );
+    const [a, b, c] = html.split('role="treeitem"').slice(1);
+    expect(a).toContain('aria-label="2 unresolved of 3"');
+    expect(a).toContain('data-open=""');
+    expect(b).toContain('aria-label="1 thread, resolved"');
+    expect(b).not.toContain('data-open');
+    expect(c).not.toContain('role="img"');
+  });
+
   it("only uses utilities that Lo's stylesheet has, so no spacing is silently dropped", async () => {
     const classes = [
       ...new Set(

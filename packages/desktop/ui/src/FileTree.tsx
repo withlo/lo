@@ -13,6 +13,7 @@ import {
 import { Key } from './Key.tsx';
 import { Spinner } from './Spinner.tsx';
 import { Tag } from './Tag.tsx';
+import { ThreadCount } from './ThreadCount.tsx';
 
 declare module 'react' {
   interface CSSProperties {
@@ -55,6 +56,8 @@ export interface FileTreeFile {
   /** Generated or a lockfile. */
   generated?: boolean | undefined;
   viewed?: FileTreeViewed | undefined;
+  /** Its review threads on screen: how many, and how many of them are unresolved. */
+  threads?: { total: number; unresolved: number } | undefined;
   /** In review order, the folder it's in, after its name. */
   folder?: string | undefined;
   /** The whole path, as the name's tooltip, when the name shows only part of it. */
@@ -427,6 +430,9 @@ function Row({
       <span
         className={`ms-auto flex flex-none items-center gap-6 ps-6 ${aside ? 'opacity-45' : ''}`}
       >
+        {each.threads && (
+          <ThreadCount total={each.threads.total} unresolved={each.threads.unresolved} />
+        )}
         {each.change && (
           <FileMarks change={each.change} viewed={each.viewed} generated={each.generated} />
         )}
