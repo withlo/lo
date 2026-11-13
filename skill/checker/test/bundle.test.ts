@@ -165,9 +165,17 @@ test('the packed package runs with Node alone, from an empty folder', () => {
   expect(manifest.dependencies).toBeUndefined();
   expect(manifest.bin).toEqual({ 'lo-overview': './dist/checker.js' });
   // In the workspace the app imports the installer's source; packed, the export is the built file,
-  // which the package ships, and the packed manifest keeps no `publishConfig` to override it.
+  // which the package ships, and the packed manifest's `publishConfig` keeps nothing to override it.
   expect(manifest.exports).toEqual({ './install': './dist/install.js' });
-  expect(manifest.publishConfig).toBeUndefined();
+  expect(manifest.publishConfig).toEqual({ access: 'public' });
+  // It's published, from this repository: npm checks a trusted publish against the repository the
+  // manifest names.
+  expect(manifest.private).toBeUndefined();
+  expect(manifest.repository).toEqual({
+    type: 'git',
+    url: 'git+https://github.com/withlo/lo.git',
+    directory: 'skill/checker',
+  });
 
   const run = (args: string[], cwd: string) =>
     execFileSync(process.execPath, [join(empty, 'package/dist/checker.js'), ...args], {

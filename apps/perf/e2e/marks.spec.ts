@@ -2,8 +2,10 @@
 // inline. The line at the top of the screen and the one in its middle are watched every frame: on a
 // frame with no input, neither may move. Markers that arrive or go while the reader is part way
 // down move nothing; nor do notes opened or closed above the screen, two at a time included; a note
-// opened from its ball, or closed with `Esc`, leaves the line at the top where it is; and a note on
-// screen whose mark changes or goes stays as it is until it's scrolled away.
+// opened from its ball, or closed with `Esc`, leaves the line at the top where it is; a note on
+// screen whose mark changes or goes stays as it is until it's scrolled away; and a note closed above
+// the screen just after a scroll that came with no input, as a script's, leaves the screen where
+// that scroll put it.
 
 import type { OverviewMark, Place, Spot } from '@lo/ui/code';
 import type { Page } from '@playwright/test';
@@ -111,6 +113,33 @@ for (const layout of ['split', 'inline'] as const) {
     }
   });
 
+  test(`a note closed above the screen just after a scroll with no input leaves the screen where that scroll put it, ${name(layout)}`, async ({
+    page,
+  }) => {
+    await partWay(page, layout);
+    let top = await lineAt(page, 0);
+    for (let tries = 0; top.line < 52 && tries < 10; tries++) {
+      await scrollBy(page, 400);
+      top = await lineAt(page, 0);
+    }
+    if (top.line < 52) throw new Error('The screen is too near the top of its file.');
+    const above = mark(top.file, 'new', top.line - 50, top.line - 48);
+    await page.evaluate((marks) => window.perfOverview(marks), [above]);
+    await frames(page, 5);
+    // Opened above the screen, the note leaves the line at the top where it was, and settles.
+    expect(await page.evaluate((line) => window.perfOpenNote(line), placeOf(above))).toBe(true);
+    await frames(page, 10);
+    // A scroll no wheel, key or pointer made, as a script's, soon after.
+    await page.evaluate(() => {
+      document.querySelector('.lo-diffview')!.scrollTop += 300;
+    });
+    await frames(page, 5);
+    await watch(page);
+    expect(await page.evaluate(() => window.perfCloseNote())).toBe(true);
+    await frames(page, 10);
+    expect(await stopWatching(page)).toEqual([]);
+  });
+
   test(`a note on screen stays as it is while its mark changes and goes, until it's scrolled away, ${name(layout)}`, async ({
     page,
   }) => {
@@ -165,7 +194,8 @@ for (const layout of ['split', 'inline'] as const) {
     await frames(page, 10);
     await expect(page.locator('.lo-ovnote:visible')).toContainText('A query over');
     expect(await stopWatching(page)).toEqual([]);
-    const past = await scrollPastNote(page);
+    // Past the line the note goes under now, too: a note that comes on screen moves what's below.
+    const past = await scrollPastNote(page, placeOf(moved));
     expect(past.off).toBeLessThanOrEqual(0.5);
     await scrollBy(page, -past.by);
     await expect(page.locator('.lo-ovnote:visible')).toHaveText(/Moved down a line\./);
@@ -284,24 +314,30 @@ function mark(file: string, side: 'old' | 'new', from: number, to: number): Over
 }
 
 /**
- * Scrolls until the note on screen is just above it, and says how far, and how far a line low on
- * the screen ended up from where the scroll alone would put it.
+ * Scrolls until the note on screen, and line `also` if given, are just above it, and says how far,
+ * and how far a line low on the screen ended up from where the scroll alone would put it.
  */
-async function scrollPastNote(page: Page): Promise<{ by: number; off: number }> {
-  const before = await page.evaluate(() => {
+async function scrollPastNote(page: Page, also?: Place): Promise<{ by: number; off: number }> {
+  const before = await page.evaluate((line) => {
     const box = document.querySelector('.lo-diffview')!.getBoundingClientRect();
     const note = [...document.querySelectorAll('.lo-ovnote')].find(
       (each) => each.getClientRects().length > 0,
     );
     if (!note) throw new Error('No note is drawn.');
-    const by = Math.ceil(note.getBoundingClientRect().bottom - box.top + 40);
+    let bottom = note.getBoundingClientRect().bottom;
+    if (line) {
+      const below = window.diffView.spotBottom({ kind: 'line', at: line });
+      if (below === undefined) throw new Error('The line isn’t drawn.');
+      bottom = Math.max(bottom, below);
+    }
+    const by = Math.ceil(bottom - box.top + 40);
     for (let y = box.top + box.height * 0.85; y < box.bottom; y += 2) {
       const spot = window.diffView.spotAt(y);
       const top = spot && window.diffView.spotTop(spot);
       if (spot && top !== undefined && top - by > box.top + 20) return { by, spot, top };
     }
     throw new Error('No line is low enough on the screen.');
-  });
+  }, also);
   await scrollBy(page, before.by);
   const top = await page.evaluate((spot) => window.diffView.spotTop(spot), before.spot);
   if (top === undefined) throw new Error('The line low on the screen isn’t drawn now.');
