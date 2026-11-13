@@ -31,7 +31,7 @@ function row(number: number, path: number[], current = false): Row {
 const STACK: StackView = {
   kind: 'stack',
   root: 'stack/root',
-  found: 'both',
+  found: ['baseBranch', 'sharedCommits'],
   rows: [
     row(82, []),
     row(83, [82]),

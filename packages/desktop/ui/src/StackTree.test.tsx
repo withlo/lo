@@ -79,7 +79,7 @@ const LAYERS: StackTreeLayer[] = [
 ];
 
 function props(over: Partial<StackTreeProps> = {}): StackTreeProps {
-  return { layers: LAYERS, root: 'main', found: 'base', ...over };
+  return { layers: LAYERS, root: 'main', found: ['base'], ...over };
 }
 
 /** The tree's rows, in order, by key. */
@@ -183,11 +183,17 @@ describe('StackTree', () => {
       render(<StackTree {...props({ found, layers })} />)
         .querySelector('section > div')
         ?.textContent?.replace('Stack', '');
-    expect(heads('base')).toBe('5 layers · by base branch');
-    expect(heads('commits')).toBe('5 layers · by shared commits');
-    expect(heads('both')).toBe('5 layers · by base branch and shared commits');
-    expect(heads('github', LAYERS.slice(0, 4))).toBe('GitHub stack · 4 layers');
-    expect(heads('github', LAYERS.slice(0, 1))).toBe('GitHub stack · 1 layer');
+    expect(heads(['base'])).toBe('5 layers · by base branch');
+    expect(heads(['commits'])).toBe('5 layers · by shared commits');
+    expect(heads(['commits', 'base'])).toBe('5 layers · by base branch and shared commits');
+    expect(heads(['github'], LAYERS.slice(0, 4))).toBe('GitHub stack · 4 layers');
+    expect(heads(['github'], LAYERS.slice(0, 1))).toBe('GitHub stack · 1 layer');
+    // A GitHub stack along one path of a stack that branches, and other layers off it.
+    expect(heads(['base', 'github'])).toBe('5 layers · by GitHub stack and base branch');
+    expect(heads(['github', 'commits'])).toBe('5 layers · by GitHub stack and shared commits');
+    expect(heads(['commits', 'base', 'github'])).toBe(
+      '5 layers · by GitHub stack, base branch and shared commits',
+    );
     // A layer alone, such as one that needs a rebase, was found by nothing.
     expect(heads(undefined, LAYERS.slice(0, 1))).toBe('1 layer');
   });

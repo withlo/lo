@@ -255,12 +255,18 @@ GraphQL pages. It builds the stack graph from that and refreshes it as it polls.
 ### The stack tree
 
 The tree sits at the top of the left panel, above the files, whenever the PR on screen is in a
-stack, and only then. A PR alone shows its stack of one when it needs a rebase, to say why. Each
-layer shows its title, number, author, review state, the state of its checks, its place in the merge
-queue, any "needs rebase" mark, whether it has an overview, and how many of its files you've viewed.
-`]s` and `[s` walk the tree from top to bottom, finishing one branch before starting the next, and
-stop at either end. Showing a layer isn't a jump, so `⌃o` doesn't go back to the one before. A link
-to any layer opens the whole stack in one tab, at that layer, and each layer keeps its own place.
+stack, and only then. A PR alone shows its stack of one when it needs a rebase, to say why. Its head
+says how many layers there are and how they were found: "GitHub stack · 4 layers" when every layer
+is in one GitHub stack, and otherwise each kind of link between them, in the order above, such as "4
+layers · by base branch and shared commits". GitHub stacks can't branch, so a tree that branches can
+hold a GitHub stack along one path and other layers off it: "4 layers · by GitHub stack and base
+branch", with a note under the rows for each GitHub stack in it, naming its layers: "#4790, #4797
+and #4803 are a GitHub stack." Each layer shows its title, number, author, review state, the state
+of its checks, its place in the merge queue, any "needs rebase" mark, whether it has an overview,
+and how many of its files you've viewed. `]s` and `[s` walk the tree from top to bottom, finishing
+one branch before starting the next, and stop at either end. Showing a layer isn't a jump, so `⌃o`
+doesn't go back to the one before. A link to any layer opens the whole stack in one tab, at that
+layer, and each layer keeps its own place.
 
 ### Turning chains into GitHub stacks
 

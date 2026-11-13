@@ -89,6 +89,7 @@ export type Row = z.output<typeof row>;
 /**
  * Something the stack's tree says under its rows:
  *
+ * - `github`: which layers are a GitHub stack, in a stack that isn't one GitHub stack;
  * - `busy`: the repository has more open pull requests than Lo reads;
  * - `merged`: some merged pull requests weren't looked up yet;
  * - `rulesets`: the repository's rulesets couldn't be read;
@@ -96,18 +97,34 @@ export type Row = z.output<typeof row>;
  * - `needsRebase`: a layer sits on a squash-merged pull request;
  * - `start`: the layer on screen couldn't be compared with the layer below it.
  */
-export const noteKind = z.enum(['busy', 'merged', 'rulesets', 'cycle', 'needsRebase', 'start']);
+export const noteKind = z.enum([
+  'github',
+  'busy',
+  'merged',
+  'rulesets',
+  'cycle',
+  'needsRebase',
+  'start',
+]);
 export type NoteKind = z.output<typeof noteKind>;
 
 export const note = z.strictObject({ kind: noteKind, text: z.string() });
 export type Note = z.output<typeof note>;
 
 /**
- * How a stack's layers were found to sit on each other, as its head says: every layer in one
- * GitHub stack, or by base branch, by shared commits, or both. A GitHub stack's layers sit on each
- * other's branches, so in a stack that's more than one they count as found by base branch.
+ * How a layer was found to sit on the one below, in the order the design lists them: as the next
+ * layer up in a GitHub stack, by base branch, or by shared commits.
  */
-export const found = z.enum(['github', 'baseBranch', 'sharedCommits', 'both']);
+export const link = z.enum(['github', 'baseBranch', 'sharedCommits']);
+export type Link = z.output<typeof link>;
+
+/**
+ * How a stack's layers were found to sit on each other, as its head says: each kind of link between
+ * them, once, in the order `link` lists them. `github` alone says every layer is in one GitHub
+ * stack, as a layer alone in one is. A GitHub stack can't branch, so a stack that branches can hold
+ * one along a path, with other links off it.
+ */
+export const found = z.array(link).min(1);
 export type Found = z.output<typeof found>;
 
 /**
