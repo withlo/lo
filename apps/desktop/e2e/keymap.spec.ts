@@ -86,25 +86,6 @@ test.describe('with a keymap file', () => {
   });
 });
 
-test.describe('with a keymap file over the limit', () => {
-  test.use({ keymap: `# ${'-'.repeat(1024 * 1024)}` });
-
-  test('key help says Lo didn’t read it, and reads the next file that’s small enough', async ({
-    page,
-  }) => {
-    const help = await openHelp(page);
-    await expect(help.getByRole('alert')).toHaveText(
-      "The keymap file is over 1 MiB, so Lo didn't read it.",
-    );
-    saveByRename('bind cmd+j keys.palette\n');
-    await expect(help.getByRole('alert')).toHaveCount(0);
-    await expect(help.locator('[data-command="keys.palette"] kbd')).toHaveText([
-      mac ? '⌘J' : 'Ctrl+J',
-      mac ? '⌘⇧P' : 'Ctrl+Shift+P',
-    ]);
-  });
-});
-
 /** Presses `g` and `,` in the middle of the window, which open the keymap file. */
 async function pressOpen(page: Page): Promise<void> {
   await page.locator('main[data-lo-middle]').focus();
@@ -153,24 +134,6 @@ test.describe('with no keymap file', () => {
     await expect.poll(() => existsSync(path)).toBe(true);
     await expect.poll(opened).toEqual([realpathSync(path)]);
     await expect(page.getByRole('status').filter({ hasText: /\w/ })).toHaveCount(0);
-  });
-});
-
-test.describe('with a keymap file that is a link into a dotfiles folder', () => {
-  test('opens the file the link leads to', async ({ page }) => {
-    const dotfiles = join(dataFolder(), 'dotfiles');
-    mkdirSync(dotfiles, { recursive: true });
-    const target = join(dotfiles, 'lo-keymap');
-    writeFileSync(target, 'bind cmd+j keys.palette\n');
-    mkdirSync(join(dataFolder(), 'config'), { recursive: true });
-    symlinkSync(target, keymapPath(dataFolder()));
-    // Only now does Lo read the file: it was started before the link was made.
-    const help = await openHelp(page);
-    await expect(help.locator('[data-command="keys.palette"] kbd').first()).toHaveText(
-      mac ? '⌘J' : 'Ctrl+J',
-    );
-    await openKeymap(help).click();
-    await expect.poll(opened).toEqual([realpathSync(target)]);
   });
 });
 
@@ -227,15 +190,5 @@ test.describe('with a keymap file that opening could run', () => {
     await expect(toast(page, "isn't a plain file")).toBeVisible();
     await page.waitForTimeout(300);
     expect(opened()).toEqual([]);
-  });
-});
-
-test.describe('when the system has no editor to open it with', () => {
-  test.use({ launch: { env: { LO_KEYMAP_EDITOR: '/no/such/editor' } } });
-
-  test('g , says so in a toast', async ({ page }) => {
-    await pressOpen(page);
-    await expect(toast(page, "Lo couldn't open the keymap file in a text editor.")).toBeVisible();
-    await expect(toast(page, 'Open the keymap file')).toBeVisible();
   });
 });

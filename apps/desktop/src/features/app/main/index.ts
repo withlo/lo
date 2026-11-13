@@ -1,6 +1,7 @@
 import { formatVersion, type GitStatus } from '@lo/git';
 import { app, BrowserWindow, nativeTheme } from 'electron';
 
+import { holdLimit } from '../../../main/environment.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { pageNonce } from '../../../main/security.ts';
 import { appInfo, contract, type GitInfo, type Theme } from '../contract.ts';
@@ -38,6 +39,7 @@ export default defineFeature(contract, {
         git: gitInfo(git.status),
         packaged: app.isPackaged,
         nonce: pageNonce(),
+        holdLimit: holdLimit({ packaged: app.isPackaged, env: process.env }),
       }),
     quit() {
       app.quit();

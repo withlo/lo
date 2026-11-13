@@ -171,7 +171,10 @@ test.describe('with a low memory cap', () => {
           (error: unknown) => (error instanceof Error && 'code' in error ? error.code : 'thrown'),
         );
       const failedAt = performance.now();
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      // The new port comes once the process is back.
+      for (let waited = 0; connected.length === 0 && waited < 20_000; waited += 25) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
       return { code, failedAt, connectedAt: connected[0] };
     });
     expect(outcome.code).toBe('restarted');

@@ -69,6 +69,12 @@ const INTERVAL_MARGIN = 1.2;
 export interface SignInOptions extends WebOptions {
   /** Stops the sign-in: no more requests are sent, and it rejects with the signal's reason. */
   signal?: AbortSignal | undefined;
+  /**
+   * How long {@link waitForToken} waits before each poll, in milliseconds, in place of GitHub's
+   * interval. GitHub's shortest is 5 seconds, which a test that polls more than once can't spend;
+   * a build run from source sets it for those, and never for a user's sign-in.
+   */
+  pollEvery?: number | undefined;
 }
 
 /** The codes GitHub issued for one sign-in, as GitHub gave them. */
@@ -290,7 +296,7 @@ export function parsePoll(status: number, body: string, now: number): Poll {
  * with each such poll in a row, up to a minute. When the next poll would come after the codes
  * expire, a last one goes a second before they do, if that's at least an interval after the
  * previous one; then the flow ends without waiting for GitHub to say so. Aborting `signal` stops
- * it.
+ * it. With `pollEvery`, each poll waits that long instead, without the margin.
  *
  * Throws a {@link DeviceFlowError} when the sign-in ends without a token.
  */
@@ -301,12 +307,16 @@ export async function waitForToken(options: SignInOptions, codes: DeviceCodes): 
   let interval = clampInterval(codes.interval);
   let failures = 0;
   for (;;) {
-    let wait = backoff(Math.round(interval * 1000 * INTERVAL_MARGIN), failures);
+    const every = options.pollEvery ?? interval * 1000;
+    let wait = backoff(
+      options.pollEvery ?? Math.round(interval * 1000 * INTERVAL_MARGIN),
+      failures,
+    );
     const at = Date.now();
     const last = at + wait >= deadline;
     if (last) {
       wait = deadline - at - LAST_POLL_MARGIN_MS;
-      if (wait < interval * 1000) throw new DeviceFlowError({ kind: 'expired' });
+      if (wait < every) throw new DeviceFlowError({ kind: 'expired' });
     }
     await sleep(wait, signal);
     const poll = await pollOnce(options, codes, now);

@@ -1,11 +1,11 @@
 // What a pull request's tab opens on: its overview, when it has one Lo can show and Settings says
 // to open on it, else its diff. The overview is the first middle view, so the tab starts on it; it
-// draws the tab's placeholder until it knows, for {@link HOLD_LIMIT} at most, then stays or hands
+// draws the tab's placeholder until it knows, for {@link holdLimit} at most, then stays or hands
 // the middle to the diff before either has drawn anything. Once chosen, it's never chosen again for
 // the tab: an overview that comes later is offered, never switched to. A view the reader picks
 // while the tab waits is where the tab stays.
 
-import { HOLD_LIMIT } from '../../revisions/contract.ts';
+import { holdLimit } from '../../revisions/window/shared.ts';
 import { tabState } from '../../tab/window/shared.ts';
 import type { OpenOn } from '../settings.ts';
 import type { Known } from './facts.ts';
@@ -20,7 +20,7 @@ export type Opening = 'waiting' | 'overview' | 'diff';
  * after the tab first drew, at the bound.
  */
 export function openingOf(setting: OpenOn | undefined, known: Known, waited: number): Opening {
-  if (waited >= HOLD_LIMIT && (setting === undefined || known === 'unknown')) return 'diff';
+  if (waited >= holdLimit() && (setting === undefined || known === 'unknown')) return 'diff';
   if (setting === undefined) return 'waiting';
   if (setting === 'diff') return 'diff';
   if (known === 'shown') return 'overview';

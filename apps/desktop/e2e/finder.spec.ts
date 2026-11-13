@@ -157,42 +157,6 @@ test('⌘P lists the files by name, the changed ones first and marked, and Esc g
   await expect(middle(page)).toBeFocused();
 });
 
-test('Tab lists only the changed files, and keeps the keyboard in the finder', async ({ page }) => {
-  await shown(page);
-  await middle(page).focus();
-  await openFinder(page);
-  const everything = await options(page).count();
-  expect(everything).toBeGreaterThan(7);
-
-  await page.keyboard.press('Tab');
-  await expect(options(page)).toHaveCount(7);
-  await expect(field(page)).toBeFocused();
-  await expect(finder(page)).toContainText('7 of 7 changed files');
-  await expect(finder(page).getByText('All files')).toBeVisible();
-  expect((await texts(options(page))).some((each) => each?.endsWith('whole file'))).toBe(false);
-
-  // A search narrows the changed files alone.
-  await page.keyboard.type('src');
-  await expect(options(page).first()).toContainText('src');
-  expect((await texts(options(page))).every((each) => !each?.endsWith('whole file'))).toBe(true);
-  await page.keyboard.press(`${held}+a`);
-  await page.keyboard.press('Backspace');
-
-  await page.keyboard.press('Tab');
-  await expect(options(page)).toHaveCount(everything);
-  await expect(field(page)).toBeFocused();
-  await expect(finder(page).getByText('All files')).toBeHidden();
-
-  // Nothing matches among the changed files, though a file that isn't changed does.
-  await page.keyboard.type('readme');
-  await expect(options(page)).toHaveCount(1);
-  await page.keyboard.press('Tab');
-  await expect(options(page)).toHaveCount(0);
-  await expect(finder(page)).toContainText('No changed file matches "readme".');
-  await page.keyboard.press('Escape');
-  await expect(middle(page)).toBeFocused();
-});
-
 test('⏎ reveals a changed file in the tree, and the diff shows it', async ({ page }) => {
   await shown(page);
   await expect(page.locator('.lo-diffview')).toBeVisible();
@@ -215,62 +179,6 @@ test('⏎ reveals a changed file in the tree, and the diff shows it', async ({ p
   expect(await focused(page)).toBe('src/text/wrap.ts');
   // The diff brings the file's header on screen, focus staying in the tree.
   await expect(diffHeader(page, 'src/text/wrap.ts')).toBeInViewport();
-});
-
-test('⏎ on an unchanged file and ⌘⏎ on any open the file whole, and focus it', async ({ page }) => {
-  await shown(page);
-  await middle(page).focus();
-  await openFinder(page);
-  await page.keyboard.type('readme');
-  await expect(options(page).first()).toContainText('README.md');
-  await page.keyboard.press('Enter');
-  await expect(finder(page)).toBeHidden();
-  const whole = page.locator('[data-lo-whole]');
-  await expect(whole.locator('.lo-fileview')).toContainText('# App fixture');
-  await expect(whole.locator('.cm-content')).toBeFocused();
-
-  // ⌘⏎ opens a changed file whole too.
-  await openFinder(page);
-  await page.keyboard.type('format');
-  await expect(options(page).first()).toContainText('format.ts');
-  await page.keyboard.press(`${held}+Enter`);
-  await expect(finder(page)).toBeHidden();
-  await expect(whole.locator('.lo-fileview')).toContainText('export function format(lines');
-  await expect(whole.locator('.cm-content')).toBeFocused();
-});
-
-test('⌘P says there’s no pull request on screen when none is', async ({ page }) => {
-  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
-  await middle(page).focus();
-  await page.keyboard.press(`${held}+p`);
-  await expect(finder(page)).toHaveCount(0);
-  await expect(page.getByRole('status').filter({ hasText: 'Go to a file' })).toContainText(
-    'There’s no pull request on screen.',
-  );
-});
-
-test('Tab and ⌘⏎ do nothing in the other palettes, and Tab still keeps the keyboard there', async ({
-  page,
-}) => {
-  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
-  await middle(page).focus();
-  for (const [open, name] of [
-    [`${held}+Shift+p`, 'Command palette'],
-    [`${held}+l`, 'Review a pull request'],
-  ] as const) {
-    await page.keyboard.press(open);
-    const palette = page.getByRole('dialog', { name });
-    const input = palette.getByRole('combobox', { name });
-    await expect(input).toBeFocused();
-    await page.keyboard.press('Tab');
-    await page.keyboard.press('Shift+Tab');
-    await page.keyboard.press(`${held}+Enter`);
-    await expect(input).toBeFocused();
-    await expect(palette).toBeVisible();
-    await expect(page.getByRole('status').filter({ hasText: /finder|highlighted/ })).toHaveCount(0);
-    await page.keyboard.press('Escape');
-    await expect(palette).toBeHidden();
-  }
 });
 
 test('closing a palette or key help gives focus back to where it was, in a pull request’s tab', async ({

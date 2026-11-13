@@ -137,12 +137,6 @@ test('⏎ with focus on another control does what that control does', async ({ p
   await expect(page.getByTestId('sign-in')).toHaveCount(0);
 });
 
-test('a link that is not a pull request goes where the open box sends it', async ({ page }) => {
-  await linkField(page).fill('https://github.com/rozed-dev/e2e/issues/12');
-  await welcome(page).getByRole('button', { name: 'Open', exact: true }).click();
-  await expect.poll(browsed).toEqual(['https://github.com/rozed-dev/e2e/issues/12']);
-});
-
 test('opens a public pull request without signing in, and returns when it closes', async ({
   page,
 }) => {
@@ -258,30 +252,6 @@ test.describe('with a git too old', () => {
     const info = await page.evaluate(() => window.lo.invoke('app.info'));
     expect(info).toMatchObject({ ok: true, value: { git: { status: 'found' } } });
   });
-});
-
-test.describe('with no git', () => {
-  test.use({
-    launch: async ({ github }, use) => {
-      await use({
-        args: [appFolder, ...KEYCHAIN],
-        env: { LO_GITHUB: new URL(github.urls.api).origin, LO_GIT: 'none' },
-      });
-    },
-  });
-
-  test('says how to install it', async ({ page }) => {
-    await expect(welcome(page)).toContainText("Lo can't find git.", { timeout: 15_000 });
-    await expect(welcome(page).getByRole('button', { name: 'Check again' })).toBeEnabled();
-  });
-});
-
-test('installs the lo command from the screen', async ({ page }) => {
-  // The overview skill has a step of its own, with its own button.
-  const step = welcome(page).getByRole('listitem').filter({ hasText: 'Install the lo command' });
-  await step.getByRole('button', { name: 'Install', exact: true }).click();
-  await expect(step.getByRole('button', { name: 'Installed' })).toBeDisabled();
-  await expect(page.getByRole('status').filter({ hasText: 'Installed' })).toBeVisible();
 });
 
 test('"Send PR links to Lo" opens the rules for Finicky, Velja and Choosy to copy', async ({

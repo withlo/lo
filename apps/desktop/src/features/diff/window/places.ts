@@ -7,7 +7,7 @@ import type { Side, Target } from '@lo/ui/commands';
 
 import { notify, withdraw } from '../../../window/commands/notices.tsx';
 import { here, registry } from '../../../window/commands/registry.ts';
-import { HOLD_LIMIT } from '../../revisions/contract.ts';
+import { holdLimit } from '../../revisions/window/shared.ts';
 import { showMiddle } from '../../tab/window/shared.ts';
 import { fileKey, type TreePath } from '../../tree/contract.ts';
 import { onShowFile, pathOf } from '../../tree/window/shared.ts';
@@ -79,7 +79,7 @@ const INPUT = ['keydown', 'pointerdown', 'wheel'] as const;
  * head, with lines `marked` picked out. Without a line, the file's top. Where the tab was is
  * recorded in its history first, as a jump's place, and focus goes to the code. Until the diff's
  * files are known, which has the file isn't: a note says it waits for them, for up to
- * `HOLD_LIMIT`. Past that, or once the reader does anything else, it's dropped, and a note says
+ * `holdLimit()`. Past that, or once the reader does anything else, it's dropped, and a note says
  * so; a later place asked for in the tab takes its place.
  */
 export function showPlace(
@@ -107,7 +107,7 @@ export function showPlace(
     notify(WAITING.title, why);
   };
   const moved = () => drop(STOPPED);
-  const bound = setTimeout(() => drop(TOO_LONG), HOLD_LIMIT);
+  const bound = setTimeout(() => drop(TOO_LONG), holdLimit());
   const listening = loader.subscribe(() => {
     if (!loader.snapshot().state?.files) return;
     stop();

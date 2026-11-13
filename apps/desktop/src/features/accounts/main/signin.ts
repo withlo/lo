@@ -37,6 +37,8 @@ export interface SignInsOptions {
   log: (message: string) => void;
   /** Milliseconds since the Unix epoch, now: the computer's clock unless said otherwise. */
   now?: (() => number) | undefined;
+  /** How long to wait between polls for the token, in milliseconds: GitHub's interval unless said. */
+  pollEvery?: number | undefined;
 }
 
 /** The sign-in running, if any. */
@@ -137,7 +139,12 @@ export class SignIns {
   async #finish(running: Running, codes: DeviceCodes): Promise<void> {
     const { id, controller } = running;
     const { signal } = controller;
-    const web = { fetch: this.#options.fetch, urls: this.#options.urls, signal };
+    const web = {
+      fetch: this.#options.fetch,
+      urls: this.#options.urls,
+      signal,
+      pollEvery: this.#options.pollEvery,
+    };
     try {
       const grant = await waitForToken(web, codes);
       signal.throwIfAborted();

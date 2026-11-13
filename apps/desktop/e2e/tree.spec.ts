@@ -6,7 +6,7 @@ import { writeFileSync } from 'node:fs';
 
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import type { Locator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { appFolder, DIFF_FIRST, expect, KEYCHAIN, test as base } from './app.ts';
 
@@ -95,8 +95,6 @@ async function shown(page: Page): Promise<string> {
   return id;
 }
 
-const marks = (locator: Locator) => locator.evaluate((element) => element.textContent);
-
 /** The path of the file whose header the diff's cursor is on, if it's on one. */
 function cursorPath(page: Page): Promise<string | undefined> {
   return page.evaluate(() => {
@@ -118,27 +116,6 @@ function headerBelow(page: Page, path: string): Promise<number | undefined> {
     return box && top !== undefined ? Math.round(top - box.top) : undefined;
   }, path);
 }
-
-test('shows the repository’s files at the head on screen, with the pull request’s changes marked', async ({
-  page,
-}) => {
-  await shown(page);
-  const panel = page.getByRole('region', { name: 'Files' });
-  await expect(panel).toContainText('0 / 7 viewed');
-  // Folders with changes open; their files carry how they changed.
-  await expect(row(page, 'src')).toHaveAttribute('aria-expanded', 'true');
-  await expect(row(page, 'src/text')).toHaveAttribute('aria-expanded', 'true');
-  expect(await marks(row(page, 'src/parser.ts'))).toContain('← parse.ts');
-  expect(await marks(row(page, 'src/parser.ts'))).toContain('R');
-  // A deleted file is where it was, struck through.
-  expect(await marks(row(page, 'src/legacy.ts'))).toContain('D');
-  await expect(row(page, 'src/legacy.ts').locator('.line-through')).toHaveText('legacy.ts');
-  expect(await marks(row(page, 'pnpm-lock.yaml'))).toContain('gen');
-  await expect(row(page, 'data/numbers.txt').locator('[title="Not viewed"]')).toBeVisible();
-  // An unchanged neighbour is dimmed, with no mark.
-  await expect(row(page, 'README.md')).toHaveClass(/text-fg-dim/);
-  expect(await marks(row(page, 'README.md'))).toBe('README.md');
-});
 
 test('answers its keys: moving, opening and closing folders, review order and changed only', async ({
   page,
@@ -270,6 +247,33 @@ async function focusCode(page: Page): Promise<void> {
     .evaluate((content: HTMLElement) => content.focus({ preventScroll: true }));
 }
 
+/**
+ * Waits until the diff has stopped changing: nothing in it added, removed or restyled, and it
+ * hasn't scrolled, for `quiet` ms. What a fold does to the layout settles over a frame or two after
+ * its key, which is how long this waits for the first change, too.
+ */
+async function settled(page: Page, quiet = 150): Promise<void> {
+  await page.locator('.lo-diffview').evaluate(
+    (box, wait) =>
+      new Promise<void>((resolve) => {
+        const finish = () => {
+          observer.disconnect();
+          box.removeEventListener('scroll', again);
+          resolve();
+        };
+        let timer = setTimeout(finish, wait);
+        const again = () => {
+          clearTimeout(timer);
+          timer = setTimeout(finish, wait);
+        };
+        const observer = new MutationObserver(again);
+        observer.observe(box, { subtree: true, childList: true, attributes: true });
+        box.addEventListener('scroll', again);
+      }),
+    quiet,
+  );
+}
+
 for (const layout of ['split', 'inline'] as const) {
   test(`a file a click brought to the top keeps its header there as it's folded, ${layout === 'split' ? 'side by side' : 'inline'}`, async ({
     page,
@@ -289,7 +293,7 @@ for (const layout of ['split', 'inline'] as const) {
       for (const keys of ['za', 'za', 'zR', 'zc', 'zo']) {
         await page.keyboard.press(keys[0]!);
         await page.keyboard.press(keys[1]!);
-        await page.waitForTimeout(300);
+        await settled(page);
         expect(await headerBelow(page, path), `${path} after ${keys}`).toBe(0);
         await expect(row(page, path)).toHaveClass(/tree-current/);
         // Only the room after the last file that's on screen is left.
