@@ -4,7 +4,9 @@
 // viewed mark changes elsewhere, a file off screen changes at once; one the reader is looking at
 // stays as it is until it's off screen once the reader stops scrolling, or until the reader moves
 // the cursor, opens or closes it. `e` closes a file the reader marks viewed at once, and puts the
-// next file's header where the reader expects it.
+// next file's header where the reader expects it. Review threads go under their lines as the
+// threader places them, now and each time they change, and each file's header counts what its
+// hold.
 
 import {
   createDiffView,
@@ -12,8 +14,10 @@ import {
   type Mark,
   type Place as Line,
   type Probe,
+  type RenderThread,
   type Spot,
   type Target,
+  type ThreadView,
   type Viewport,
 } from '@lo/ui/code';
 import { plainTarget } from '@lo/ui/commands';
@@ -29,6 +33,15 @@ import { diffFileOf, headerOf, startWith } from './files.ts';
 import type { Entry, Loader, Moved, Shown } from './loader.ts';
 import { main } from './main.ts';
 import { setDrawn, takeReveal } from './tabs.ts';
+import {
+  type DiffThreads,
+  NO_THREADS,
+  onThreads,
+  sameCounts,
+  sameThreads,
+  type ThreadedFile,
+  threader,
+} from './threads.ts';
 
 declare global {
   interface Window {
@@ -53,6 +66,8 @@ declare global {
           openNote(at: Line): boolean;
           /** The marks on the lines the overview explains, as the diff last gave them. */
           explained(): readonly Mark[];
+          /** The review threads under the lines, as the diff last gave them. */
+          threads(): readonly ThreadView[];
         }
       | undefined;
   }
@@ -208,6 +223,8 @@ export interface DrawOptions {
   loader: Loader;
   entries: readonly Entry[];
   at: string;
+  /** The comparison of revisions it shows, by its key, or none for the whole pull request. */
+  comparison: string | null;
   /** The commit a stack's layer is compared with, when it's that. */
   compareFrom: string | null;
   layout: 'split' | 'inline';
@@ -232,13 +249,18 @@ let draws = 0;
 /** Draws the view of `entries`, fills in what's been worked out, and hooks it up. */
 export function draw(options: DrawOptions): Drawing {
   draws += 1;
-  const { parent, tab, loader, entries, at, compareFrom } = options;
+  const { parent, tab, loader, entries, at, comparison, compareFrom } = options;
   const keys = registry();
   let marks = options.marks;
   /** The files as they are now, as `update` last gave them. */
   let latest: readonly Entry[] = entries;
   const markOf = (entry: Entry) =>
     viewedMarkOf(marks, entry.versions.path, entry.versions.previous);
+  /** The review threads under the lines, and what each file's hold, as the threader last said. */
+  let placed: DiffThreads = NO_THREADS;
+  /** A file's header: its counts, tags and viewed mark, and its threads counted. */
+  const headerFor = (entry: Entry) =>
+    headerOf(entry.versions, markOf(entry), placed.counts.get(entry.id));
   /**
    * Files the reader marked viewed, or cleared, here: how they show is theirs to say now, so a
    * mark that changes again, as when GitHub didn't take it, doesn't open or close them.
@@ -453,6 +475,28 @@ export function draw(options: DrawOptions): Drawing {
     view.setMarks(next);
   };
   explain();
+  // The review threads under the lines, placed as the threader says for what each column shows, and
+  // drawn by it, now and each time they change. The headers count what each file's hold.
+  const toggle = (thread: string) => view.openThread(thread, 'toggle');
+  let rendering: { readonly from: object; readonly render: RenderThread } | undefined;
+  /** With `now`, as the view is made, before the reader has seen it, they all come at once. */
+  const showThreads = (now = false) => {
+    const given = threader();
+    const next =
+      given?.threadsIn(tab.id, { at, comparison, compareFrom, files: threadFiles(latest) }) ??
+      NO_THREADS;
+    if (given && rendering?.from !== given)
+      rendering = { from: given, render: given.render(tab, toggle) };
+    const before = placed;
+    placed = next;
+    if (!sameThreads(before.threads, next.threads) && rendering) {
+      view.setThreads(next.threads, rendering.render, { now });
+    }
+    const counted = new Set([...before.counts.keys(), ...next.counts.keys()]);
+    if ([...counted].some((id) => !sameCounts(before.counts.get(id), next.counts.get(id)))) {
+      take(latest);
+    }
+  };
   // Each file's diff and highlighting came with it.
   view.setMoves(shownMoves);
   loader.attach({
@@ -520,6 +564,7 @@ export function draw(options: DrawOptions): Drawing {
     },
     keys.subscribe(() => view.setVimKeys(keys.vimKeys())),
     onExplained(tab.id, explain),
+    onThreads(tab.id, () => showThreads()),
   ];
   const setShown = (shown: boolean) => {
     if (shown === (showing !== undefined)) return;
@@ -632,6 +677,7 @@ export function draw(options: DrawOptions): Drawing {
         setMarks: (given: readonly Mark[]) => view.setMarks(given),
         openNote: (line: Line) => view.openNote(line),
         explained: () => explained,
+        threads: () => placed.threads,
       };
   if (testing) window.loDiff = testing;
   // Back where the tab's last view was: its cursor, and what was at the top of the screen. Or, for
@@ -657,7 +703,7 @@ export function draw(options: DrawOptions): Drawing {
     latest = next;
     for (const entry of next) {
       const mark = markOf(entry);
-      const header = headerOf(entry.versions, mark);
+      const header = headerFor(entry);
       const said = JSON.stringify(header);
       if (headers.has(entry.id) && headers.get(entry.id) !== said) {
         headers.set(entry.id, said);
@@ -673,9 +719,14 @@ export function draw(options: DrawOptions): Drawing {
     }
     settle();
   };
+  showThreads(true);
   return {
     view,
-    update: take,
+    update(next) {
+      take(next);
+      // A file's local copy may show it from where it was viewed, which places its threads anew.
+      showThreads();
+    },
     setMarks(next) {
       if (next === marks) return;
       marks = next;
@@ -702,6 +753,17 @@ export function draw(options: DrawOptions): Drawing {
       for (const stop of stops) stop();
     },
   };
+}
+
+/** The files of a diff as its threads are looked up on them. */
+function threadFiles(entries: readonly Entry[]): ThreadedFile[] {
+  return entries.map(({ id, key, versions }) => ({
+    id,
+    key,
+    path: versions.change === 'deleted' ? null : versions.path.text,
+    old: versions.change === 'added' ? null : (versions.previous ?? versions.path).text,
+    since: versions.since !== null,
+  }));
 }
 
 /** Whether two lists hold the same moves, in any order. */

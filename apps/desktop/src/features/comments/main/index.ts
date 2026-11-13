@@ -1,8 +1,10 @@
-// The comments feature in main: posts' HTML, read on demand as the window asks for the posts on
-// screen, and offered to the other features as `comments.bodies`; and the images in posts, and
-// avatars, which the window loads only on the image scheme, served here from GitHub's image hosts
-// (`./images.ts`). An image in a post is fetched, and kept, as the account its pull request's tab
-// acts as, whose token goes only to GitHub's address for an attachment.
+// The comments feature in main: each view's review threads and your pending review, read for the
+// view on screen and sent to the window as they change (`./threads.ts`); posts' HTML, read on
+// demand as the window asks for the posts on screen, and offered to the other features as
+// `comments.bodies`; and the images in posts, and avatars, which the window loads only on the image
+// scheme, served here from GitHub's image hosts (`./images.ts`). An image in a post is fetched, and
+// kept, as the account its pull request's tab acts as, whose token goes only to GitHub's address
+// for an attachment.
 
 import { app, net, session } from 'electron';
 
@@ -14,11 +16,13 @@ import { windowPartition } from '../../../main/policy.ts';
 import { serveImages, type ServedImage } from '../../../main/security.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
+import { comparisons } from '../../revisions/service.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { bodies } from '../service.ts';
 import { readBodies } from './bodies.ts';
 import { IMAGE_LIMITS, ImageError, Images } from './images.ts';
+import { ThreadReads } from './threads.ts';
 
 /**
  * Images come through Chromium's network stack in main's own session, as requests to GitHub do,
@@ -30,9 +34,11 @@ const fetch = netFetch((options) => net.request(options), { limit: IMAGE_LIMITS.
 const log = (line: string) => console.error(`comments: ${line}`);
 
 let stopServing: (() => void) | undefined;
+let reads: ThreadReads | undefined;
+const stops: (() => void)[] = [];
 
 export default defineFeature(contract, {
-  uses: [github, tabs],
+  uses: [github, tabs, comparisons],
   provide: (context) => [
     provides(bodies, {
       read: (id, posts, options) =>
@@ -56,8 +62,34 @@ export default defineFeature(contract, {
         gone: read.gone,
       };
     },
+    current: ({ id }) => reads?.current(id) ?? { threads: undefined, review: undefined },
   },
-  start({ use }) {
+  start({ use, publish }) {
+    const service = use(tabs);
+    const threads = new ThreadReads({
+      poller: (login) => use(github).poller(login),
+      view: (id) => service.pull(id),
+      onScreen: () => service.list().active,
+      compared(id) {
+        const on = use(comparisons).onScreen(id);
+        if (on.kind !== 'revisions') return null;
+        const { key, old, new: now } = on.comparing;
+        return { key, from: old.head, replayed: old.base !== now.base };
+      },
+      publishThreads: (view) => publish('threads', view),
+      publishReview: (view) => publish('review', view),
+      log: (line) => log(`threads: ${line}`),
+    });
+    reads = threads;
+    stops.push(
+      service.onPull((id) => threads.follow(id)),
+      // The view shown reads its threads, the first time it's on screen.
+      service.onTabs(({ active }) => {
+        if (active !== undefined) threads.follow(active);
+      }),
+      use(comparisons).onChange((id) => threads.compared(id)),
+    );
+    for (const tab of service.list().tabs) if (tab.kind === 'pull') threads.follow(tab.id);
     // In a test run, GitHub's image hosts are the test's server, as GitHub itself is. A packaged
     // build always fetches from the hosts.
     const { images: stand } = githubSettings({ packaged: app.isPackaged, env: process.env });
@@ -93,6 +125,9 @@ export default defineFeature(contract, {
     );
   },
   stop() {
+    for (const stop of stops.splice(0)) stop();
+    reads?.stop();
+    reads = undefined;
     stopServing?.();
     stopServing = undefined;
   },

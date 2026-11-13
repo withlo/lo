@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://github-production-user-asset-6210df.s3.amazonaws.com/353226052/699308503-08c730b3-f0b0-4c7d-93a2-95f8d167d0d9.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=REDACTED&X-Amz-Date=20261113T202727Z&X-Amz-Expires=300&X-Amz-Signature=REDACTED&X-Amz-SignedHeaders=host&response-content-type=image%2Fpng"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "image/png",
+      "etag": "\"22e2d074095541ce43ef534d8cc5f113\"",
+      "last-modified": "Mon, 09 Nov 2026 05:34:35 GMT"
+    },
+    "body_base64": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAGUlEQVR4AQEOAPH/AMgeHsgeHgDIHh7IHh4fJgQR7LzY4QAAAABJRU5ErkJggg=="
+  }
+}

@@ -696,7 +696,11 @@ class View implements DiffView {
     if (layout !== this.#pane) this.#toggleLayout();
   }
 
-  setThreads(threads: readonly ThreadView[], render: RenderThread): void {
+  setThreads(
+    threads: readonly ThreadView[],
+    render: RenderThread,
+    options: { readonly now?: boolean } = {},
+  ): void {
     this.#hosts.render = render;
     // What comes under the line of a comment box, open or closed since, is the reader's doing,
     // as when they sent it: it comes now, and grows, that line staying where it is.
@@ -737,7 +741,7 @@ class View implements DiffView {
     }
     const now = this.#freeLines((file, key) => theirs.has(waitKey(file, key)));
     if (now[0]) this.#keepLine(lineAt(now[0].file, now[0].key), () => this.#showLines(now));
-    this.#letThreadsGo('off', true);
+    this.#letThreadsGo(options.now ? 'all' : 'off', true);
     this.#dropThreads();
   }
 
@@ -1875,16 +1879,17 @@ class View implements DiffView {
     return thread === undefined ? { kind: 'line', at: place } : { kind: 'line', at: place, thread };
   }
 
-  /** The thread under `at` that a key there acts on: the only one, or the one `]t` landed on. */
+  /**
+   * The thread a key at `at` acts on: the one `]t` landed on there, under the line or beside it,
+   * else the only one under the line.
+   */
   #threadAt(at: At): string | undefined {
-    const threads = this.#threads[at.file]?.get(`${at.side}:${at.line}`);
-    if (!threads) return undefined;
-    if (threads.length === 1) return threads[0]!.id;
     const landed = this.#landed;
     if (landed && landed.file === at.file && landed.side === at.side && landed.line === at.line) {
       return landed.thread;
     }
-    return undefined;
+    const threads = this.#threads[at.file]?.get(`${at.side}:${at.line}`);
+    return threads?.length === 1 ? threads[0]!.id : undefined;
   }
 
   // Comments ---------------------------------------------------------------------------------
@@ -2868,11 +2873,28 @@ class View implements DiffView {
         return count === 0 ? header : at(pane, Math.min(start, count));
       });
     }
-    return [...this.#threads[file]!.values()]
-      .map((threads) => threads[0]!.at)
-      .filter((place) => pane === 'inline' || place.side === pane)
-      .map((place) => at(place.side, place.line))
-      .toSorted((a, b) => a - b);
+    // Side by side, a thread under the other column's line stops at the line beside it, so `]t`
+    // walks both columns' threads in the file's order.
+    const stops = [...this.#threads[file]!.values()].map((threads) => {
+      const { side, line } = threads[0]!.at;
+      return at(side, line);
+    });
+    return [...new Set(stops)].toSorted((a, b) => a - b);
+  }
+
+  /**
+   * The thread a stop of `]t` at document line `line` of `pane` lands on, in file `file`: one under
+   * that line, else one under the other column's line beside it.
+   */
+  #threadStoppedAt(pane: Pane, file: number, line: number): string | undefined {
+    let beside: string | undefined;
+    for (const threads of this.#threads[file]?.values() ?? []) {
+      const { side, line: under } = threads[0]!.at;
+      if (this.#docLine(pane, { file, side, line: under }) !== line) continue;
+      if (pane === 'inline' || side === pane) return threads[0]!.id;
+      beside ??= threads[0]!.id;
+    }
+    return beside;
   }
 
   /** The document line `count` stops of `target` after (or before) line `line` of `pane`. */
@@ -2898,8 +2920,8 @@ class View implements DiffView {
     }
     if (found !== undefined && target === 'thread') {
       const at = this.#placeAt(pane, found);
-      const thread = this.#threads[at.file]?.get(`${at.side}:${at.line}`)?.[0];
-      this.#landed = thread ? { ...at, thread: thread.id } : undefined;
+      const thread = this.#threadStoppedAt(pane, at.file, found);
+      this.#landed = thread === undefined ? undefined : { ...at, thread };
     }
     return found;
   }

@@ -8,7 +8,7 @@ import { buffer } from 'node:stream/consumers';
 
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import type { Mark, Place, Probe, Viewport } from '@lo/ui/code';
+import type { Mark, Place, Probe, ThreadView, Viewport } from '@lo/ui/code';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 
 import {
@@ -37,6 +37,7 @@ declare global {
           setMarks(marks: readonly Mark[]): void;
           openNote(at: Place): boolean;
           explained(): readonly Mark[];
+          threads(): readonly ThreadView[];
         }
       | undefined;
     /** How long each frame took while a test timed them, in milliseconds. */
