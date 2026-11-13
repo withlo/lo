@@ -26,6 +26,11 @@ export interface Span {
 export interface LineTarget {
   kind: 'line';
   at: Place | Span;
+  /**
+   * The lines `v` selected when they cross files or sides, as they show, a run of lines of one
+   * file on one side each. `at` is then the cursor's line, for what acts on one line.
+   */
+  across?: readonly Span[];
   /** The thread `]t` landed on, or the only one on the cursor's line. */
   thread?: string;
 }

@@ -14,11 +14,14 @@ import {
   markable,
   markViewed,
   move,
+  movePage,
+  moveToEnd,
   openRow,
   pullOnScreen,
   setAll,
   show,
   showable,
+  toggleRow,
   treeShown,
   wholeShowable,
 } from './actions.ts';
@@ -30,11 +33,13 @@ import { pathOfKey } from './paths.ts';
 import { choices, showState } from './store.ts';
 import { goToTree, onFindFile, pathOf, showFile } from './shared.ts';
 
-/** Runs `act` on the pull request's tab on screen. */
-function onTab(act: (tab: string) => void): () => void {
-  return () => {
+/** Runs `act` on the pull request's tab on screen, with the count typed before the key, or 1. */
+function onTab(
+  act: (tab: string, count: number) => void,
+): (target: unknown, count?: number) => void {
+  return (_target, count = 1) => {
     const tab = pullOnScreen();
-    if (typeof tab !== 'string') act(tab.id);
+    if (typeof tab !== 'string') act(tab.id, count);
   };
 }
 
@@ -78,8 +83,12 @@ export default {
       ),
       enabled: inPull,
     },
-    down: { run: onTab((tab) => move(tab, 1)), enabled: inPull },
-    up: { run: onTab((tab) => move(tab, -1)), enabled: inPull },
+    down: { run: onTab((tab, count) => move(tab, 1, count)), enabled: inPull },
+    up: { run: onTab((tab, count) => move(tab, -1, count)), enabled: inPull },
+    top: { run: onTab((tab) => moveToEnd(tab, 'first')), enabled: inPull },
+    bottom: { run: onTab((tab) => moveToEnd(tab, 'last')), enabled: inPull },
+    pageDown: { run: onTab((tab) => movePage(tab, 1)), enabled: inPull },
+    pageUp: { run: onTab((tab) => movePage(tab, -1)), enabled: inPull },
     open: { run: onTab(openRow), enabled: inPull },
     close: { run: onTab(closeRow), enabled: inPull },
     openAll: { run: onTab((tab) => setAll(tab, true)), enabled: inPull },
@@ -90,8 +99,9 @@ export default {
         if (typeof tab === 'string') return;
         const key = target.kind === 'file' ? target.file : undefined;
         const row = key ?? focusedFile(tab.id);
+        // On a folder, as a click: it opens, or closes.
         if (row !== undefined) show(tab.id, row);
-        else openRow(tab.id);
+        else toggleRow(tab.id);
       },
       enabled: (target) => {
         const tab = pullOnScreen();
@@ -101,9 +111,9 @@ export default {
       },
     },
     markViewed: {
-      run: (target) => {
+      run: (target, count) => {
         const tab = pullOnScreen();
-        if (typeof tab !== 'string') markViewed(tab.id, target.file);
+        if (typeof tab !== 'string') markViewed(tab.id, target.file, count);
       },
       enabled: (target) => {
         const tab = pullOnScreen();

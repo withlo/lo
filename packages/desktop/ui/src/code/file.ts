@@ -41,6 +41,7 @@ import {
   onVimMode,
   passToVim,
   setVimKeys,
+  vimCount,
   vimMode,
   vimPending,
 } from './keys.ts';
@@ -251,9 +252,10 @@ class WholeFile implements FileView {
 
   // Keys -------------------------------------------------------------------------------------
 
-  keyState(): { mode: Mode; pending: boolean; target: Target } {
+  keyState(): { mode: Mode; pending: boolean; count: number | undefined; target: Target } {
     const view = this.#view;
-    return { mode: vimMode(view), pending: vimPending(view), target: this.#target() };
+    const target = this.#target();
+    return { mode: vimMode(view), pending: vimPending(view), count: vimCount(view), target };
   }
 
   passKeys(keys: readonly string[]): void {

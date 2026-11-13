@@ -10,6 +10,7 @@ const diff = defineCommands('diff', {
     group: 'Act',
     keys: ['e'],
     overVim: true,
+    count: 'files',
     when: { scope: ['diff', 'tree'], mode: 'normal' },
   },
   nextFile: { label: 'Next file', group: 'Jump', keys: ['] f'], vim: 'motion' },
@@ -80,6 +81,17 @@ describe('docs/keys.md', () => {
       '| Tree or review order | `t` | In `tree` | `tree.order` |',
     );
     expect(section('## Where keys apply')).toContain('| `tree` | Named by `tree`. |');
+  });
+
+  it('lists the commands that take a count, what one counts, and where digits are one', () => {
+    const lines = section('## Counts');
+    expect(lines).toContain(
+      '| Mark viewed | `e` | files | In `diff` and `tree`; in code views, only in normal mode | `diff.markViewed` |',
+    );
+    expect(lines.join('\n')).toContain('Elsewhere digits are a count only in `tree`');
+    expect(section('## Where keys apply').join('\n')).toContain(
+      'In a code view it waits however long it takes',
+    );
   });
 
   it('lists keys for one system in that system’s form', () => {

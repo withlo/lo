@@ -1,8 +1,18 @@
 // A pull request's tab: its header, its banners, the left panel, the middle sheet, with what goes
-// across its top, and the right panel other features fill, and its status bar. Until the diff and the threads arrive,
-// the middle says what's coming.
+// across its top, and the right panel other features fill, and its status bar, which ends with
+// Vim's mode while code has focus. Until the diff and the threads arrive, the middle says what's
+// coming.
 
-import { Banner, PRHeader, Spinner, StatusBar, StatusItem, type HeaderConnection } from '@lo/ui';
+import {
+  Banner,
+  PRHeader,
+  Spinner,
+  StatusBar,
+  StatusItem,
+  StatusMode,
+  type HeaderConnection,
+} from '@lo/ui';
+import { focusedMode, onFocusedMode } from '@lo/ui/code';
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { client } from '../../../window/ipc.ts';
@@ -218,6 +228,12 @@ function LocalItem({ local }: { local: LocalState | undefined }): ReactNode {
   }
 }
 
+/** Vim's mode in the code view that has focus, while one has, as the status bar's end shows it. */
+function FocusedMode() {
+  const mode = useSyncExternalStore(onFocusedMode, focusedMode);
+  return mode === undefined ? null : <StatusMode name={mode} />;
+}
+
 /** A pull request's tab, as its kind draws it. */
 export function PullRequestTab({ tab }: { tab: PullTab }) {
   const view = usePull(tab.id);
@@ -229,7 +245,10 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const rights = useViews(right);
   viewCounts.left = lefts.length;
   viewCounts.middle = middles.length;
-  if (middleIds.ids.length !== middles.length) middleIds.ids = middles.map((each) => each.id);
+  if (middleIds.ids.length !== middles.length) {
+    middleIds.ids = middles.map((each) => each.id);
+    middleIds.labeled = middles.map((each) => each.label !== undefined);
+  }
   const heading = view?.header;
   const acting = view?.acting;
   const showLeft = leftOpen && lefts.length > 0;
@@ -319,6 +338,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
             <Slot slot={status} props={{ tab }} />
           </>
         }
+        end={<FocusedMode />}
       />
     </div>
   );

@@ -1,6 +1,8 @@
 // What the tree's keys and clicks do to a tab's tree: move the keyboard's row, open and close
 // folders, show a file, mark it viewed, and the file's menu. They act on what the tree last showed.
 
+import { ROW_HEIGHT } from '@lo/ui';
+
 import { notify } from '../../../window/commands/notices.tsx';
 import { passedOver, toggleViewed, viewedMarksOf } from '../../revisions/window/shared.ts';
 import { activeTab, type PullTab } from '../../tab/window/shared.ts';
@@ -28,18 +30,43 @@ function focusedIndex(tab: string): number {
   return rowAt(rows, onScreen.get(tab));
 }
 
-/** Moves the keyboard `step` rows, past the groups' labels, stopping at the ends. */
-export function move(tab: string, step: 1 | -1): void {
+/**
+ * Moves the keyboard `count` rows down (`step` 1) or up (-1), past the groups' labels, stopping at
+ * the ends.
+ */
+export function move(tab: string, step: 1 | -1, count = 1): void {
   const rows = rowsOf(tab);
   let at = focusedIndex(tab);
   if (at < 0) at = step > 0 ? -1 : rows.length;
-  for (let next = at + step; next >= 0 && next < rows.length; next += step) {
+  let landed: Row | undefined;
+  let left = count;
+  for (let next = at + step; next >= 0 && next < rows.length && left > 0; next += step) {
     const row = rows[next];
     if (row && row.kind !== 'group') {
-      focusRow(tab, row.key);
-      return;
+      landed = row;
+      left -= 1;
     }
   }
+  if (landed) focusRow(tab, landed.key);
+}
+
+/** Moves the keyboard to the first row (`gg`) or the last (`G`), past the groups' labels. */
+export function moveToEnd(tab: string, end: 'first' | 'last'): void {
+  const rows = rowsOf(tab);
+  const row = (end === 'first' ? rows : rows.toReversed()).find((each) => each.kind !== 'group');
+  if (row) focusRow(tab, row.key);
+}
+
+/** How many rows the tree on screen shows at once, at least one. */
+function pageRows(): number {
+  const tree = document.querySelector('[data-lo-scope="tree"]');
+  const height = tree instanceof HTMLElement ? tree.clientHeight : 0;
+  return Math.max(1, Math.floor(height / ROW_HEIGHT) - 1);
+}
+
+/** `PgDn` and `PgUp`: moves the keyboard a page of rows, as many as the tree shows less one. */
+export function movePage(tab: string, step: 1 | -1): void {
+  move(tab, step, pageRows());
 }
 
 /** Opens the folder the keyboard is on, or on an open one goes to what's in it. */
@@ -54,6 +81,12 @@ export function openRow(tab: string): void {
   }
   const inside = rows[at + 1];
   if (inside && inside.kind !== 'group' && inside.depth > row.depth) focusRow(tab, inside.key);
+}
+
+/** `⏎` on a folder, as a click on it: opens it, or closes an open one. */
+export function toggleRow(tab: string): void {
+  const row = rowsOf(tab)[focusedIndex(tab)];
+  if (row?.kind === 'folder') setOpen(tab, row.key, !row.open);
 }
 
 /** Closes the folder the keyboard is on, or goes to the folder its row is in. */
@@ -100,34 +133,50 @@ export function markable(tab: string, key: string): true | string {
 /**
  * `e` on the file `key`: marks it viewed, or clears its mark. Marking moves the keyboard to the next
  * changed file that isn't viewed, in the panel's order, round the end, past any `e` can't mark.
+ * With a count, `3e` marks three: `key` first unless it's viewed, then the next that aren't. It
+ * clears no mark.
  */
-export function markViewed(tab: string, key: string): void {
+export function markViewed(tab: string, key: string, count = 1): void {
   const changes = states.get(tab)?.changes ?? [];
   const byKey = new Map(changes.map((change) => [keyOf(change.path), change]));
-  const change = byKey.get(key);
-  if (!change) {
+  if (!byKey.has(key)) {
     notify('Mark viewed', 'Only a changed file has a viewed mark.');
     return;
   }
-  const toggled = toggleViewed(tab, { path: change.path, previous: change.previous });
-  if (toggled.kind === 'refused') {
-    notify('Mark viewed', toggled.why);
-    return;
-  }
-  if (toggled.kind !== 'marking') return;
-  // Read after the toggle, so the file just marked counts as viewed.
-  const marks = viewedMarksOf(tab);
+  // Read each time, so a file just marked counts as viewed.
+  const done = (other: string): boolean => {
+    const change = byKey.get(other);
+    return !change || passedOver(viewedMarksOf(tab), change.path, change.previous);
+  };
   const order = shown.get(tab)?.order ?? [];
-  const from = order.indexOf(key);
-  if (from < 0) return;
-  for (let step = 1; step < order.length; step++) {
-    const next = order[(from + step) % order.length];
-    const other = next === undefined ? undefined : byKey.get(next);
-    if (next !== undefined && other && !passedOver(marks, other.path, other.previous)) {
-      revealFile(tab, next);
+  let at: string | undefined = count > 1 && done(key) ? nextIn(order, key, done) : key;
+  for (let left = count; left > 0 && at !== undefined; left--) {
+    const change = byKey.get(at);
+    if (!change) return;
+    const toggled = toggleViewed(tab, { path: change.path, previous: change.previous });
+    if (toggled.kind === 'refused') {
+      notify('Mark viewed', toggled.why);
       return;
     }
+    if (toggled.kind !== 'marking') return;
+    at = nextIn(order, at, done);
   }
+  if (at !== undefined) revealFile(tab, at);
+}
+
+/** The file after `key` in `order` that isn't `done`, round the end, if there's one. */
+function nextIn(
+  order: readonly string[],
+  key: string,
+  done: (key: string) => boolean,
+): string | undefined {
+  const from = order.indexOf(key);
+  if (from < 0) return undefined;
+  for (let step = 1; step < order.length; step++) {
+    const next = order[(from + step) % order.length];
+    if (next !== undefined && !done(next)) return next;
+  }
+  return undefined;
 }
 
 /** Why the file `key` can't be shown, or `true`: a changed file in the diff, any whole. */

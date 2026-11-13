@@ -22,6 +22,7 @@ import type {
 } from './api.ts';
 import { createComposer } from './composer.ts';
 import { editsText } from './keys.ts';
+import { focusedMode } from './mode.ts';
 import { swapping } from './lines.ts';
 import { createDiffView } from './view.ts';
 
@@ -543,6 +544,28 @@ describe('targets', () => {
     });
     after.keys('<Esc>');
     expect(shown.keyState().mode).toBe('normal');
+  });
+
+  test('lines selected across files are the cursor’s line, with each file’s lines across', () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 40));
+    const after = vimIn('After');
+    // To document line 45, file b's line 2, past b's header.
+    after.keys('V', '4', '5', 'G');
+    expect(shown.keyState().target).toMatchObject({
+      kind: 'line',
+      at: { file: 'b', side: 'new', line: 2 },
+      across: [
+        { file: 'a', side: 'new', from: 40, to: 41 },
+        { file: 'b', side: 'new', from: 1, to: 2 },
+      ],
+    });
+    // Up from a line to the header of its own file: its lines alone.
+    after.keys('<Esc>', 'V', '4', '3', 'G');
+    expect(shown.keyState().target).toEqual({
+      kind: 'line',
+      at: { file: 'b', side: 'new', from: 1, to: 2 },
+    });
   });
 
   test('a right-click on a thread is its menu', () => {
@@ -1189,6 +1212,42 @@ describe('keys', () => {
     expect(shown.keyState()).toMatchObject({ mode: 'visual', pending: false });
     shown.clearPending();
     expect(shown.keyState().mode).toBe('visual');
+  });
+
+  test('keyState says the count Vim holds when that’s all it holds', () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 10));
+    const after = vimIn('After');
+    expect(shown.keyState().count).toBeUndefined();
+    after.keys('1', '2');
+    expect(shown.keyState()).toMatchObject({ pending: true, count: 12 });
+    after.keys('y');
+    expect(shown.keyState()).toMatchObject({ pending: true, count: undefined });
+    shown.clearPending();
+    expect(shown.keyState().count).toBeUndefined();
+  });
+
+  test('the status bar hears Vim’s mode while the view has focus, and nothing after', async () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 10));
+    shown.focus();
+    const after = vimIn('After');
+    after.content.focus();
+    await Promise.resolve();
+    expect(focusedMode()).toBe('NORMAL');
+    after.keys('V');
+    await Promise.resolve();
+    expect(focusedMode()).toBe('V-LINE');
+    after.keys('v');
+    await Promise.resolve();
+    expect(focusedMode()).toBe('VISUAL');
+    after.keys('<Esc>');
+    await Promise.resolve();
+    expect(focusedMode()).toBe('NORMAL');
+    after.content.blur();
+    await vi.waitFor(() => {
+      expect(focusedMode()).toBeUndefined();
+    });
   });
 
   test('passKeys hands keys to Vim, as if typed', () => {

@@ -7,10 +7,14 @@
 //   held keys go back to the code view they were typed in, and the key is matched afresh, so
 //   `y w` still yanks a word. A chord Lo runs drops the held keys instead, so Vim isn't left in
 //   the middle of a command it never sees finished. One sequence is pending for the window, never
-//   one per editor.
+//   one per editor. In a code view held keys wait for the next key however long it takes, as
+//   Vim's own `y` and `g` do; anywhere else, for a second.
 // - In a code view in insert mode or in the middle of a command (a count, an operator), only
 //   chords are Lo's: the rest go to Vim. Vim's own keys (`vim: 'own'`) are never taken, and Lo's
 //   motions (`vim: 'motion'`) are Vim's to run in a code view.
+// - A count is Vim's in a code view: in normal mode, when it's all Vim holds, the keys of a command
+//   that takes one (`count`) are Lo's, and the command gets it. Elsewhere, digits before a key are
+//   held as its count where the focused scope has a command of its own that takes one.
 // - A text field keeps typing and moving through its text. One inside a code view, such as Vim's
 //   `/` and `:` prompt, is typed into as insert mode is: only chords are Lo's.
 // - On Linux, in a box in insert mode or a code view's text field, Ctrl+C, X, V, A, Z and W are
@@ -34,9 +38,11 @@ export interface Binding {
   readonly strokes: readonly Stroke[];
 }
 
-/** The keys held back, waiting for the rest of a sequence. */
+/** The keys held back, waiting for the rest of a sequence, and a count typed before them. */
 export interface Pending {
   readonly strokes: readonly Stroke[];
+  /** A count typed before them, outside a code view: Vim keeps its own. */
+  readonly count?: number | undefined;
   /** The scope they were typed in. */
   readonly scope: string;
   /** When the last of them was pressed, in ms. */
@@ -59,8 +65,15 @@ export interface Focus {
   readonly scope: string;
   /** A text field has focus: outside a code view, or a field inside one, such as Vim's prompt. */
   readonly text: boolean;
-  /** A code view's state, when the scope is one. A field inside one is in insert mode. */
-  readonly view?: { readonly mode: Mode; readonly pending: boolean };
+  /**
+   * A code view's state, when the scope is one: `count` is Vim's, when that's all it holds. A field
+   * inside one is in insert mode.
+   */
+  readonly view?: {
+    readonly mode: Mode;
+    readonly pending: boolean;
+    readonly count?: number | undefined;
+  };
 }
 
 /** What becomes of a key. */
@@ -69,8 +82,8 @@ export type Outcome =
   | { readonly kind: 'pass' }
   /** The start of a sequence: the event is stopped, and the key waits for the rest. */
   | { readonly kind: 'hold' }
-  /** The event is stopped and `command` runs. */
-  | { readonly kind: 'run'; readonly command: Command }
+  /** The event is stopped and `command` runs, with the count typed before it if it takes one. */
+  | { readonly kind: 'run'; readonly command: Command; readonly count?: number | undefined }
   /** The event is stopped and nothing runs: a held key repeating, or `Esc` ending a sequence. */
   | { readonly kind: 'stop' }
   /**
@@ -86,8 +99,11 @@ export interface Step {
   readonly outcome: Outcome;
 }
 
-/** Vim's `timeoutlen`: how long a held key waits for the rest of its sequence. */
+/** How long a held key waits for the rest of its sequence outside a code view. */
 export const SEQUENCE_TIMEOUT = 1000;
+
+/** The largest count Lo keeps: more than any list it counts through has. */
+export const COUNT_LIMIT = 99_999;
 
 /**
  * Keys Linux's text boxes keep for editing in insert mode, in Lo's notation: copy, cut, paste,
@@ -127,11 +143,14 @@ export class Bindings {
   readonly timeout: number;
   /** Each binding, by its first stroke, in order of precedence. */
   private readonly byFirst = new Map<string, Binding[]>();
+  /** The bindings of commands that take a count. */
+  private readonly counting: Binding[] = [];
 
   constructor(system: System, bindings: readonly Binding[], timeout = SEQUENCE_TIMEOUT) {
     this.system = system;
     this.timeout = timeout;
     for (const binding of bindings) {
+      if (binding.command.count !== undefined) this.counting.push(binding);
       const first = binding.strokes[0];
       if (first === undefined) continue;
       const list = this.byFirst.get(first.id);
@@ -164,6 +183,20 @@ export class Bindings {
     }
     return { longer: false };
   }
+
+  /**
+   * Whether digits typed where `focus` is are a count Lo keeps: outside a code view and text, where
+   * a command of the focused scope's own takes one. A command for anywhere doesn't make digits a
+   * count everywhere.
+   */
+  counts(focus: Focus): boolean {
+    if (focus.view || focus.text) return false;
+    return this.counting.some(
+      (binding) =>
+        listOf(binding.command.when?.scope).includes(focus.scope) &&
+        applies(binding, focus, this.system),
+    );
+  }
 }
 
 /** Whether `binding` can be matched where `focus` is, on `system`. */
@@ -193,7 +226,9 @@ export function holds(binding: Binding, focus: Focus, system: System): boolean {
   if (first === undefined) return false;
   if (view) {
     if (when?.mode !== undefined && !listOf(when.mode).includes(view.mode)) return false;
-    if ((view.mode === 'insert' || view.pending) && !isChord(first)) return false;
+    if ((view.mode === 'insert' || view.pending) && !isChord(first) && !counted(command, view)) {
+      return false;
+    }
     if (
       system === 'linux' &&
       (focus.scope === 'box' || focus.text) &&
@@ -206,6 +241,14 @@ export function holds(binding: Binding, focus: Focus, system: System): boolean {
     return false;
   }
   return true;
+}
+
+/**
+ * Whether `command` takes the count Vim in `view` holds: one that takes a count, in normal mode,
+ * when the count is all Vim holds.
+ */
+function counted(command: Command, view: NonNullable<Focus['view']>): boolean {
+  return command.count !== undefined && view.mode === 'normal' && view.count !== undefined;
 }
 
 /** Whether `strokes` begin with `prefix`, or are the same keys. */
@@ -230,17 +273,34 @@ export function match(
   const { stroke } = press;
   // Keys held in another scope can't be completed here. Focus changes drop them before this.
   if (pending && pending.scope !== focus.scope) pending = undefined;
-  if (pending) {
-    if (press.time - pending.at >= bindings.timeout) {
-      return { pending: undefined, outcome: { kind: 'replay', strokes: pending.strokes } };
+  // In a code view held keys wait however long it takes, as Vim's own `y` and `g` do.
+  if (pending && !focus.view && press.time - pending.at >= bindings.timeout) {
+    return { pending: undefined, outcome: { kind: 'replay', strokes: pending.strokes } };
+  }
+  // Digits before a key are its count, where Lo keeps one; one bound to a command is that command.
+  const counting = pending !== undefined && pending.strokes.length === 0;
+  const digit = pending === undefined || counting ? digitOf(stroke, counting) : undefined;
+  if (digit !== undefined && (counting || bindings.counts(focus))) {
+    if (counting || !isTaken(bindings.find([stroke], focus))) {
+      // A held digit repeating counts once.
+      if (press.repeat) return { pending, outcome: STOP };
+      const count = Math.min(COUNT_LIMIT, (pending?.count ?? 0) * 10 + digit);
+      return { pending: { strokes: [], count, scope: focus.scope, at: press.time }, outcome: HOLD };
     }
+  }
+  if (pending) {
     // The held key repeating: it's still one press.
     if (press.repeat && pending.strokes.at(-1)?.id === stroke.id) return { pending, outcome: STOP };
     const strokes = [...pending.strokes, stroke];
     const found = bindings.find(strokes, focus);
-    if (found.command) return { pending: undefined, outcome: run(found.command, press) };
+    if (found.command) {
+      return { pending: undefined, outcome: run(found.command, press, countOf(pending, focus)) };
+    }
     if (found.longer) {
-      return { pending: { strokes, scope: focus.scope, at: press.time }, outcome: HOLD };
+      return {
+        pending: { strokes, count: pending.count, scope: focus.scope, at: press.time },
+        outcome: HOLD,
+      };
     }
     if (stroke.id === 'esc') return { pending: undefined, outcome: STOP };
     if (isChord(stroke)) {
@@ -256,7 +316,9 @@ export function match(
       : undefined;
   if (arrow !== undefined) return { pending: undefined, outcome: { kind: 'arrow', key: arrow } };
   const found = bindings.find([stroke], focus);
-  if (found.command) return { pending: undefined, outcome: run(found.command, press) };
+  if (found.command) {
+    return { pending: undefined, outcome: run(found.command, press, countOf(undefined, focus)) };
+  }
   if (found.longer) {
     // A held key never starts a sequence by repeating.
     if (press.repeat) return { pending: undefined, outcome: STOP };
@@ -265,9 +327,32 @@ export function match(
   return { pending: undefined, outcome: PASS };
 }
 
-/** Runs `command`, unless the press is a held key repeating and the command doesn't repeat. */
-function run(command: Command, press: Press): Outcome {
-  return press.repeat && !command.repeat ? STOP : { kind: 'run', command };
+/** What a digit adds to a count: 1 to 9 start one, and 0 goes on with one, as in Vim. */
+function digitOf(stroke: Stroke, counting: boolean): number | undefined {
+  if (!/^[0-9]$/.test(stroke.id)) return undefined;
+  const digit = Number(stroke.id);
+  return digit === 0 && !counting ? undefined : digit;
+}
+
+/** Whether a key has a use for Lo where it was found: a command, or the start of one. */
+function isTaken(found: { command?: Command; longer: boolean }): boolean {
+  return found.command !== undefined || found.longer;
+}
+
+/** The count typed before a command: the one held, or, in a code view, Vim's. */
+function countOf(pending: Pending | undefined, focus: Focus): number | undefined {
+  return pending?.count ?? (focus.view?.mode === 'normal' ? focus.view.count : undefined);
+}
+
+/**
+ * Runs `command`, with `count` if it takes one, unless the press is a held key repeating and the
+ * command doesn't repeat.
+ */
+function run(command: Command, press: Press, count: number | undefined): Outcome {
+  if (press.repeat && !command.repeat) return STOP;
+  return command.count !== undefined && count !== undefined
+    ? { kind: 'run', command, count }
+    : { kind: 'run', command };
 }
 
 /** A keydown that can be read as more than one stroke, as `eventStrokes` reads layouts. */

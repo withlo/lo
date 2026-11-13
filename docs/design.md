@@ -402,7 +402,8 @@ says so. The same applies to a stacked layer when the layer below it gets a new 
   opens the file to what changed since then. For a file marked viewed elsewhere, it shows what
   changed since your last review instead.
 - **Keys.** `e` marks a file viewed and moves to the next unviewed file. Pressing it again on a
-  viewed file clears the mark.
+  viewed file clears the mark. A count marks that many and clears none: `3e` marks three files
+  viewed, from this one on.
 
 ## 8. Overviews
 
@@ -716,6 +717,12 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 
 Copying is always `y` plus a letter; there's no single-key `y`. `⌃o` returns from anywhere a key
 took you: from the code back to the overview block, from a definition back to the diff.
+
+A count typed before a key repeats it, as in Vim, for `e`, `yy`, `]s` and `[s`, and `j` and `k` in
+the file tree: `3e` marks three files viewed, and `2yy` copies two lines. A count before any other
+key in the code goes to Vim with it. In the file tree, `gg`, `G`, `PgUp` and `PgDn` move as in the
+overview, and `⏎` on a folder opens or closes it; in the stack tree, `+` goes back down to the
+files.
 
 **On Linux,** Ctrl takes the place of `⌘` in every key above, and the app shows each platform its
 own. Vim's `⌃` keys keep their meanings, so two keys differ from what that rule would give, on both

@@ -66,3 +66,23 @@ export function StatusItem({
     </button>
   );
 }
+
+/** How each kind of mode draws, as a comment box's foot draws it. */
+const MODES = {
+  normal: 'mode-chip mode-chip-normal',
+  visual: 'mode-chip',
+  insert: 'mode-chip mode-chip-insert',
+} as const;
+
+/**
+ * Vim's mode, at the status bar's end, named as Vim names it: `NORMAL`, `VISUAL`, `V-LINE`,
+ * `V-BLOCK` or `INSERT`.
+ */
+export function StatusMode({ name }: { name: string }) {
+  const kind = name === 'NORMAL' ? 'normal' : name === 'INSERT' ? 'insert' : 'visual';
+  return (
+    <span className={`flex-none ${MODES[kind]}`} title="Vim’s mode in the code that has focus">
+      {name}
+    </span>
+  );
+}

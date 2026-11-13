@@ -20,7 +20,7 @@ export { Banner, type BannerAction, type BannerProps } from './Banner.tsx';
 export { PRHeader, type HeaderConnection, type PRHeaderProps } from './PRHeader.tsx';
 export { Skeleton, Spinner, type SpinnerProps } from './Spinner.tsx';
 export { StatePill, type PullRequestState } from './StatePill.tsx';
-export { StatusBar, StatusItem } from './StatusBar.tsx';
+export { StatusBar, StatusItem, StatusMode } from './StatusBar.tsx';
 export { Button, type ButtonProps } from './Button.tsx';
 export { Input, type InputProps } from './Input.tsx';
 export { Meter, type MeterProps } from './Meter.tsx';

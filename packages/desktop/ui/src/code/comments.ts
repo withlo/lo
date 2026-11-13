@@ -32,6 +32,7 @@ import {
   onVimMode,
   passToVim,
   setVimKeys,
+  showMode,
   vimMode,
   vimPending,
 } from './keys.ts';
@@ -118,6 +119,7 @@ export class CommentBox implements BoxHost, KeySource {
       doc: options.draft,
       extensions: [
         vim(),
+        showMode,
         drawSelection(),
         history(),
         markdown(),

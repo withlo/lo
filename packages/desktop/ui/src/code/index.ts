@@ -58,4 +58,5 @@ export { createComposer } from './composer.ts';
 export { createExcerptView } from './excerpt.ts';
 export { createFileView } from './file.ts';
 export { createDiffView } from './view.ts';
+export { focusedMode, onFocusedMode, type ModeName } from './mode.ts';
 export { codeTypeface } from './typeface.ts';

@@ -250,7 +250,7 @@ test('a file the pull request leaves alone opens whole from the tree, and Back r
   expect(refused).toEqual([]);
 });
 
-test('the finder’s ⌘⏎ opens any file whole, and ` steps between the diff and it', async ({
+test('the finder’s ⌘⏎ opens any file whole, and ` steps past it to the views the header lists', async ({
   page,
 }) => {
   const refused = refusals(page);
@@ -266,23 +266,15 @@ test('the finder’s ⌘⏎ opens any file whole, and ` steps between the diff a
   await expect(code(page)).toContainText('export function wrap(text: string, width: number)');
   await expect(code(page).locator('.cm-content')).toBeFocused();
 
-  // ~ and ` step through the middle views: back to the diff, then the file again, where it was,
-  // and on past it to the overview, the first.
-  await press(page, 'j', 'j');
-  await expect.poll(async () => (await wholeAt(page))?.line).toBe(3);
+  // ~ and ` step through the views the header's switch lists: back from the file to the diff, and
+  // on from the diff to the next of them, never the file, which ⌃o comes back from.
   await press(page, '~');
   await expect(page.locator('.lo-diffview')).toBeVisible();
   await expect(code(page)).toBeHidden();
   await press(page, '`');
-  await expect(code(page)).toBeVisible();
-  await expect(code(page)).toContainText('export function wrap(text: string, width: number)');
-  await expect
-    .poll(() => wholeAt(page))
-    .toEqual({ path: 'src/text/wrap.ts', version: 'new', line: 3 });
+  await expect(page.locator('.lo-diffview')).toBeHidden();
+  await expect(code(page)).toBeHidden();
   await press(page, '~');
   await expect(page.locator('.lo-diffview')).toBeVisible();
-  await press(page, '`', '`');
-  await expect(page.locator('[data-lo-middle-view="overview.view"]')).toBeVisible();
-  await expect(page.locator('.lo-diffview')).toBeHidden();
   expect(refused).toEqual([]);
 });

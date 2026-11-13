@@ -32,7 +32,7 @@ export interface RegistryOptions {
   readonly commands: readonly Command[];
   /** Where the tab is now: the place a `jump` command records before it runs. */
   readonly here?: () => Entry | undefined;
-  /** How long a held key waits for the rest of its sequence, in ms. */
+  /** How long a held key waits for the rest of its sequence outside a code view, in ms. */
   readonly timeout?: number;
   /** A clock in ms, for timing sequences. */
   readonly now?: () => number;
@@ -190,12 +190,12 @@ export class Registry {
   }
 
   /**
-   * Runs `id` on `target`, as a key, a menu or the palette asks: `true`, or why it didn't. A
-   * `jump` command records where the tab is in its history first. A command that can't run is
-   * reported to `onRefused`, and a handler that throws or rejects to `onError`, never thrown to
-   * the caller.
+   * Runs `id` on `target`, as a key, a menu or the palette asks, `count` times for a command that
+   * takes a count: `true`, or why it didn't. A `jump` command records where the tab is in its
+   * history first. A command that can't run is reported to `onRefused`, and a handler that throws
+   * or rejects to `onError`, never thrown to the caller.
    */
-  run(id: string, target: Target): true | string {
+  run(id: string, target: Target, count = 1): true | string {
     const ready = this.prepare(id, target);
     if (typeof ready === 'string') {
       this.onRefused?.(ready, id);
@@ -207,7 +207,7 @@ export class Registry {
       if (from) this.history.record(from);
     }
     try {
-      const result = handler.run(ready.target);
+      const result = handler.run(ready.target, command.count === undefined ? 1 : count);
       if (result !== undefined) {
         result.catch((error: unknown) => {
           this.onError(error, command);
@@ -250,7 +250,9 @@ export class Registry {
     switch (outcome.kind) {
       case 'hold':
         this.holder = place.scope.source;
-        this.arm();
+        // In a code view held keys wait for the next however long it takes, as Vim's own do.
+        if (isKeySource(source)) this.disarm();
+        else this.arm();
         return STOP;
       case 'stop':
         this.settle();
@@ -267,7 +269,9 @@ export class Registry {
             this.onError(error, outcome.command);
           }
         }
-        this.run(outcome.command.id, target);
+        // A count Vim held is the command's now, and Vim drops it.
+        if (outcome.count !== undefined && isKeySource(source)) this.clear(source);
+        this.run(outcome.command.id, target, outcome.count);
         return STOP;
       }
       case 'arrow':
@@ -300,8 +304,13 @@ export class Registry {
     this.drop();
     if (!isKeySource(left)) return;
     if (left === this.active) this.active = undefined;
+    this.clear(left);
+  }
+
+  /** Drops whatever `view` has Vim waiting on. */
+  private clear(view: KeySource): void {
     try {
-      left.clearPending();
+      view.clearPending();
     } catch (error) {
       this.onError(error, undefined);
     }
@@ -327,8 +336,8 @@ export class Registry {
       // A field inside a code view, such as Vim's prompt, is typed into as insert mode is.
       if (place.text === 'field')
         return { scope: name, text: true, view: { mode: 'insert', pending: false } };
-      const { mode, pending } = source.keyState();
-      return { scope: name, text: false, view: { mode, pending } };
+      const { mode, pending, count } = source.keyState();
+      return { scope: name, text: false, view: { mode, pending, count } };
     }
     return { scope: name, text: place.text !== undefined };
   }
@@ -345,7 +354,7 @@ export class Registry {
     }
   }
 
-  /** After the timeout, the held keys go to the code view, as Vim's do after its `timeoutlen`. */
+  /** After the timeout, held keys outside a code view are dropped. */
   private arm(): void {
     this.disarm();
     this.timer = setTimeout(() => {
