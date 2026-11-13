@@ -11,7 +11,15 @@ import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import { _electron as electron, type Page } from '@playwright/test';
 
-import { appEnvironment, appFolder, dataFolder, expect, KEYCHAIN, test as base } from './app.ts';
+import {
+  appEnvironment,
+  appFolder,
+  dataFolder,
+  drawnWindow,
+  expect,
+  KEYCHAIN,
+  test as base,
+} from './app.ts';
 
 /** A stand-in token, never a real one: the cassette was recorded with the same. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
@@ -162,8 +170,7 @@ test('comes back offline with what it saved and what it fetched', async ({
     chromiumSandbox: true,
   });
   try {
-    const shown = await again.firstWindow();
-    await shown.waitForLoadState('load');
+    const shown = await drawnWindow(again);
     await expect(shown.getByRole('heading', { level: 1 })).toHaveText(TITLE);
     await expect(shown.getByRole('status').filter({ hasText: "You're offline." })).toContainText(
       'Showing what Lo saved',
@@ -197,8 +204,7 @@ test('shows a spinner and a placeholder on a tab still opening, until GitHub ans
     chromiumSandbox: true,
   });
   try {
-    const page = await app.firstWindow();
-    await page.waitForLoadState('load');
+    const page = await drawnWindow(app);
     await page.evaluate(() =>
       window.lo.invoke('tab.open', { kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 }),
     );

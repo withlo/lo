@@ -217,7 +217,11 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   `pnpm nx run desktop:e2e -- --shard=2/4` runs one. In CI each test records a trace of the window,
   kept in its results when it fails, which CI uploads as `app-test-results-<shard>`; a test that
   times the page's frames opts out (`traced: false`), since recording slows them. CI retries a
-  failed test once, and Playwright shows one that then passes as flaky.
+  failed test once, and Playwright shows one that then passes as flaky. A test drives Lo's window
+  only once it has drawn, through the `page` fixture or, for a copy of Lo it starts itself,
+  `drawnWindow`: the page runs before Electron's GPU process has started, which in CI has taken up
+  to half a minute, and until it has, nothing that waits on a frame happens, such as a closed dialog
+  leaving.
 
 The window shows untrusted content, so it's locked down, and the smoke test shows each guard
 holding:

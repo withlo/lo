@@ -18,6 +18,7 @@ import {
   browsed,
   dataFolder,
   DIFF_FIRST,
+  drawnWindow,
   expect,
   KEYCHAIN,
   onStacks as test,
@@ -433,8 +434,7 @@ test('comes back at the layer it showed after a restart', async ({
     chromiumSandbox: true,
   });
   try {
-    const shown = await again.firstWindow();
-    await shown.waitForLoadState('load');
+    const shown = await drawnWindow(again);
     await expect(shown.getByRole('heading', { level: 1 })).toHaveText(
       'Stack B: rate limit GraphQL queries by cost',
       { timeout: 20_000 },
