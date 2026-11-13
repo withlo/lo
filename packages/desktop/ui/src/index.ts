@@ -34,7 +34,7 @@ export {
   type SettingsSectionProps,
 } from './Settings.tsx';
 export { ThemeChoice, type ThemeChoiceProps, type ThemeName } from './ThemeChoice.tsx';
-export { Avatar, avatarHue, initials } from './Avatar.tsx';
+export { Avatar, avatarHue, initials, type AvatarProps } from './Avatar.tsx';
 export { Callout, type CalloutProps, type CalloutTone } from './Callout.tsx';
 export { Choices, type ChoiceItem, type ChoicesProps } from './Choices.tsx';
 export { SegmentedControl, type Segment, type SegmentedControlProps } from './SegmentedControl.tsx';
@@ -78,3 +78,64 @@ export {
   type StackTreeNote,
   type StackTreeProps,
 } from './StackTree.tsx';
+export { Label, labelColor, type LabelProps } from './Label.tsx';
+export { CommentIcon, ThreadCount, type ThreadCountProps } from './ThreadCount.tsx';
+export {
+  Thread,
+  type ThreadComment,
+  type ThreadKeys,
+  type ThreadProps,
+  type ThreadTag,
+} from './Thread.tsx';
+export {
+  CommentBox,
+  type CommentBoxAccount,
+  type CommentBoxAction,
+  type CommentBoxAttach,
+  type CommentBoxFoot,
+  type CommentBoxHead,
+  type CommentBoxMode,
+  type CommentBoxNote,
+  type CommentBoxProps,
+  type CommentBoxUpload,
+} from './CommentBox.tsx';
+export {
+  ThreadFilter,
+  ThreadList,
+  type ThreadFilterProps,
+  type ThreadListGroup,
+  type ThreadListProps,
+  type ThreadListRow,
+  type ThreadsFilter,
+} from './ThreadList.tsx';
+export {
+  Timeline,
+  TimelineChecks,
+  TimelineComment,
+  TimelineDescription,
+  TimelineEvent,
+  TimelineForcePush,
+  TimelineName,
+  TimelineOlder,
+  TimelinePush,
+  TimelineReview,
+  TimelineRow,
+  type TimelineChecksProps,
+  type TimelineCommentProps,
+  type TimelineDescriptionProps,
+  type TimelineEventProps,
+  type TimelineForcePushProps,
+  type TimelineGlyph,
+  type TimelineHidden,
+  type TimelineMarker,
+  type TimelineOlderProps,
+  type TimelineProps,
+  type TimelinePushProps,
+  type TimelineReviewProps,
+  type TimelineReviewer,
+  type TimelineReviewerState,
+  type TimelineRowAttributes,
+  type TimelineRowProps,
+  type TimelineTone,
+  type TimelineVerdict,
+} from './Timeline.tsx';
