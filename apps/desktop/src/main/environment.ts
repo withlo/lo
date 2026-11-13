@@ -168,17 +168,23 @@ export interface GithubSettings {
   testRun: boolean;
   /** A file holding a token, for an account added as Lo starts. */
   tokenFile: string | undefined;
+  /**
+   * Where GitHub's image hosts are in a test run: a server on this machine that serves each host's
+   * images under `<images>/<host>/`. Nothing for the hosts themselves.
+   */
+  images: string | undefined;
 }
 
 /**
  * Which GitHub Lo talks to. A build run from source talks to a server on this machine instead,
  * such as the tests' replay server, when `LO_GITHUB` names its address (`http://127.0.0.1:<port>`,
- * which serves GitHub's API under `/api`, its website under `/web` and its uploads under
- * `/uploads`), and adds the account whose token is in the file `LO_TEST_TOKEN_FILE` names as it
- * starts. A packaged build ignores both, and always talks to github.com.
+ * which serves GitHub's API under `/api`, its website under `/web`, its uploads under `/uploads`,
+ * and each of GitHub's image hosts' images under `/images/<host>`), and adds the account whose
+ * token is in the file `LO_TEST_TOKEN_FILE` names as it starts. A packaged build ignores both, and
+ * always talks to github.com and its image hosts.
  */
 export function githubSettings(options: { packaged: boolean; env: Environment }): GithubSettings {
-  const settings = { urls: GITHUB_URLS, testRun: false, tokenFile: undefined };
+  const settings = { urls: GITHUB_URLS, testRun: false, tokenFile: undefined, images: undefined };
   if (options.packaged) return settings;
   const address = options.env.LO_GITHUB;
   const tokenFile = options.env.LO_TEST_TOKEN_FILE;
@@ -198,6 +204,7 @@ export function githubSettings(options: { packaged: boolean; env: Environment })
     urls: { api: `${origin}/api`, web: `${origin}/web`, uploads: `${origin}/uploads` },
     testRun: true,
     tokenFile,
+    images: `${origin}/images`,
   };
 }
 

@@ -76,8 +76,10 @@ export interface RecordedResponse {
   headers: Record<string, string>;
   /** The body, when it's JSON. */
   body?: Json;
-  /** The body, when it isn't. */
+  /** The body, when it's other text. */
   body_text?: string;
+  /** The body, in base64, when it's an image or any other bytes that aren't text. */
+  body_base64?: string;
 }
 
 /** A cassette as read from its folder, its interactions in file-name order. */
@@ -116,9 +118,15 @@ export const SCOPES_KEPT_FOR = '/user';
 export const NULL_BODY: ReadonlySet<number> = new Set([101, 103, 204, 205, 304]);
 
 /** The bytes of the response body a recorded response stands for. */
-export function responseBody(response: RecordedResponse): string {
-  if (response.body !== undefined && response.body !== null) return JSON.stringify(response.body);
-  return response.body_text ?? '';
+export function responseBody(response: RecordedResponse): Uint8Array<ArrayBuffer> {
+  if (response.body_base64 !== undefined) {
+    return new Uint8Array(Buffer.from(response.body_base64, 'base64'));
+  }
+  const text =
+    response.body !== undefined && response.body !== null
+      ? JSON.stringify(response.body)
+      : (response.body_text ?? '');
+  return new TextEncoder().encode(text);
 }
 
 /** What a GraphQL request body holds. */

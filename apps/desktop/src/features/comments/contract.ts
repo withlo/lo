@@ -1,6 +1,8 @@
 // Comments on a pull request, as main reads them for the window: the HTML GitHub renders for
 // posts, which threads and the timeline show in place of their Markdown. The window asks for the
-// posts on screen or near it, and keeps what comes back in its memory only.
+// posts on screen or near it, and keeps what comes back in its memory only. It loads the images in
+// posts, and avatars, on the image scheme (`ipc/images.ts`), which the feature serves in main, so
+// nothing of that goes through a request.
 
 import { z } from 'zod';
 

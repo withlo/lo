@@ -14,7 +14,7 @@ import { cacheFolder, createGit, curlProxy, GitStopped, gitSettings, onceUp } fr
 import { serveFeatures } from './ipc.ts';
 import { incomingLinks, linksIn } from './links.ts';
 import { migrate } from './migrations.ts';
-import { windowUrl } from './policy.ts';
+import { windowPartition, windowUrl } from './policy.ts';
 import { registerScheme, secureContents, secureSession } from './security.ts';
 import { findServices } from './services.ts';
 import { StartupError } from './startup.ts';
@@ -173,7 +173,7 @@ function start(): void {
     .then(async () => {
       // The window gets a session of its own, so its restrictions never reach requests main
       // makes for itself.
-      const secured = session.fromPartition('persist:window');
+      const secured = session.fromPartition(windowPartition);
       await secureSession(secured, windowFiles, dev);
       // Every feature's tables are ready before any of its handlers can be asked anything.
       const opened = openDatabase(join(app.getPath('userData'), 'lo.db'));

@@ -5,6 +5,7 @@ import type { ClientRequestConstructorOptions } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  AnswerTooLarge,
   netFetch,
   UPLOAD_PROGRESS_EVERY,
   type NetAnswer,
@@ -70,13 +71,16 @@ class FakeRequest extends EventEmitter implements NetRequest {
 }
 
 /** A `netFetch` over fake requests, and the requests it made. */
-function fake() {
+function fake(limit?: number) {
   const sent: FakeRequest[] = [];
-  const fetch = netFetch((options) => {
-    const request = new FakeRequest(options);
-    sent.push(request);
-    return request;
-  });
+  const fetch = netFetch(
+    (options) => {
+      const request = new FakeRequest(options);
+      sent.push(request);
+      return request;
+    },
+    { limit },
+  );
   /** The request made, once it has been sent whole. */
   const made = async (): Promise<FakeRequest> => {
     await expect.poll(() => sent.at(-1)?.ended).toBe(true);
@@ -175,6 +179,25 @@ describe('netFetch', () => {
     expect(request.aborted).toBe(true);
     // An answer after that changes nothing.
     request.answer(200, {}, '{}');
+  });
+
+  it('reads an answer up to its limit, and cancels one that says it is longer or turns out so', async () => {
+    const { fetch, made } = fake(4);
+    const within = fetch('https://avatars.githubusercontent.com/octocat?s=40');
+    (await made()).answer(200, {}, 'four');
+    expect(await (await within).text()).toBe('four');
+
+    const said = fetch('https://avatars.githubusercontent.com/octocat?s=40');
+    const saying = await made();
+    saying.emit('response', new FakeAnswer(200, { 'content-length': '5' }));
+    await expect(said).rejects.toBeInstanceOf(AnswerTooLarge);
+    expect(saying.aborted).toBe(true);
+
+    const turned = fetch('https://avatars.githubusercontent.com/octocat?s=40');
+    const turning = await made();
+    turning.answer(200, {}, 'fives');
+    await expect(turned).rejects.toBeInstanceOf(AnswerTooLarge);
+    expect(turning.aborted).toBe(true);
   });
 
   it('sends nothing when given up on before it starts', async () => {

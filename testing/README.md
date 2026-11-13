@@ -14,7 +14,8 @@ instead of the network, two ways:
 - **`serveReplay(name)`** from `@lo/testing/server`, for tests of the app, whose `fetch` can't be
   swapped out: the same replayer behind an HTTP server on `127.0.0.1` and a free port. Give the app
   `server.urls` as GitHub's API, website and uploads addresses, and `await server.close()` when the
-  test ends.
+  test ends. It serves GitHub's image hosts too, each under `/images/<host>/` (`IMAGE_HOSTS`), and
+  hands their redirects back as they were recorded, for the app to read against the host.
 
 A request is matched by its key:
 
@@ -67,8 +68,8 @@ Each request file holds `{ request, response }`:
 - `request`: `method`, `url`, and for GraphQL `operation`, `variables` and `query_sha256`; for any
   other body `body_sha256`, or `body` itself in a cassette written by hand; and `if_none_match` or
   `if_modified_since` for a conditional request. Request headers are never stored.
-- `response`: `status`, `headers` (only those `KEPT_HEADERS` lists) and `body` as JSON, or
-  `body_text` when it isn't JSON.
+- `response`: `status`, `headers` (only those `KEPT_HEADERS` lists) and `body` as JSON, `body_text`
+  when it's other text, or `body_base64` when it's an image or other bytes.
 
 A cassette written by hand, for what can't be recorded on demand, says `"synthetic": true` in its
 `cassette.json`. Its stand-in tokens are spelled like `gho_FAKE_SIGNED_IN`.
@@ -93,8 +94,9 @@ script:
 - records into `fixtures/github/<cassette>`, replacing what's there;
 - sends nothing that writes to GitHub (anything but a read or a GraphQL query) unless the scenario
   says it writes and `LO_RECORD_WRITES=1` is set; without it, such scenarios are skipped;
-- never stores request headers, keeps only the allowed response headers, redacts signed URLs and
-  blanks credential fields such as a private repository's `temp_clone_token`;
+- never stores request headers, keeps only the allowed response headers, redacts signed URLs, in
+  what it requested as in what came back, and blanks credential fields such as a private
+  repository's `temp_clone_token`;
 - refuses to write the token, as is, percent-encoded or in base64, or anything shaped like a GitHub
   token, and deletes the cassette if it would.
 
@@ -110,14 +112,16 @@ LO_FIXTURE_TOKEN_FILE=<file holding rozed-bot's token> \
   node testing/scripts/record-proxy.ts <cassette> <repository> <description>
 ```
 
-starts a proxy on `127.0.0.1` that stands in for GitHub as the replay server does, and prints the
-address to start Lo with as `LO_GITHUB`. Start Lo with a stand-in token in `LO_TEST_TOKEN_FILE`: the
-proxy signs each request it forwards with the bot's token, and an anonymous one stays anonymous, so
-Lo never holds the bot's token. Drive Lo through what the cassette should hold, long enough for its
-polls to repeat, then stop the proxy with Ctrl+C. It checks the token's account and every file as
-`record.ts` does, and sends nothing that writes to GitHub unless `LO_RECORD_WRITES=1` is set: then
-each write Lo sends goes to GitHub and is recorded, so record writes only to rozed-dev's fixtures,
-and put them back after.
+starts a proxy on `127.0.0.1` that stands in for GitHub as the replay server does, its image hosts
+included, and prints the address to start Lo with as `LO_GITHUB`. Start Lo with a stand-in token in
+`LO_TEST_TOKEN_FILE`: the proxy signs each request it forwards with the bot's token, and an
+anonymous one stays anonymous, so Lo never holds the bot's token. Of the image hosts, only an
+attachment's address on github.com is ever signed; the signed addresses it redirects to are recorded
+with their signatures redacted, as the redirect is. Drive Lo through what the cassette should hold,
+long enough for its polls to repeat, then stop the proxy with Ctrl+C. It checks the token's account
+and every file as `record.ts` does, and sends nothing that writes to GitHub unless
+`LO_RECORD_WRITES=1` is set: then each write Lo sends goes to GitHub and is recorded, so record
+writes only to rozed-dev's fixtures, and put them back after.
 
 The pull request the app's tests open, rozed-dev/e2e#80, comes from `fixtures/app.sh`, which builds
 its repository with fixed names, dates and contents, so every commit has the ID GitHub has for it: a
@@ -130,6 +134,11 @@ remote for `LO_GIT_REMOTE`, and `APP_PULL` names its commits; `{ firstPush: fals
 first push out, as if GitHub no longer had it. The overview's files are left in `overview/` beside
 it. Its cassette is `app_e2e`, and `app_e2e_late` is the same with GitHub's patch of one file left
 out.
+
+`images_e2e` holds the images the app's security test loads, recorded with main's own image loader
+(`apps/desktop/src/features/comments/main/test/images.ts` is its scenarios module): a 2x2 PNG
+attached in rozed-dev/e2e, by its address on github.com and the signed address that redirects to,
+and rozed-bot's avatar.
 
 The stacks the app's tests open come from `fixtures/stack.sh`, built the same way, in rozed-dev/e2e:
 
