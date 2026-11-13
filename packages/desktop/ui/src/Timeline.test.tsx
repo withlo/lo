@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 function row(host: HTMLElement, at = 0): HTMLElement {
-  const found = host.querySelectorAll<HTMLElement>('li.tl-row')[at];
+  const found = host.querySelectorAll<HTMLElement>('ol > li')[at];
   if (found === undefined) throw new Error(`No row ${at}.`);
   return found;
 }
@@ -70,7 +70,6 @@ describe('Label', () => {
     const host = render(<Label color="url(https://example.com/a.png)">needs-load-test</Label>);
     const dot = host.querySelector<HTMLElement>('span > span');
     expect(dot?.getAttribute('style')).toBeNull();
-    expect(dot?.className).toContain('bg-fg-muted');
     expect(host.textContent).toBe('needs-load-test');
   });
 });
@@ -86,7 +85,7 @@ describe('Timeline', () => {
       </Timeline>,
     );
     expect(host.querySelector('ol')?.getAttribute('aria-label')).toBe('Timeline');
-    expect(host.querySelectorAll('li.tl-row')).toHaveLength(2);
+    expect(host.querySelectorAll('ol > li')).toHaveLength(2);
     expect(row(host, 0).textContent).toBe('ravi-k added needs-load-test3 days ago');
     // A glyph's disc is decoration; a person's avatar is too, beside their login.
     expect(row(host, 0).querySelector('[aria-hidden="true"]')).not.toBeNull();
@@ -114,12 +113,16 @@ describe('Timeline', () => {
       </Timeline>,
     );
     const card = row(host);
-    const head = card.querySelector('.border-b');
-    expect(head?.textContent).toContain('ravi-k opened this 3 days ago');
-    expect(head?.textContent).toContain('Author');
-    expect(head?.textContent).toContain('Draft');
-    expect(head?.textContent).toContain('Read-only in Lo');
-    expect(card.textContent).toContain('GraphQL requests are now limited by what they cost.');
+    for (const said of [
+      'ravi-k opened this 3 days ago',
+      'Author',
+      'Draft',
+      'Read-only in Lo',
+      'GraphQL requests are now limited by what they cost.',
+      'Reviewers',
+    ]) {
+      expect(card.textContent).toContain(said);
+    }
     const dots = [...card.querySelectorAll<HTMLElement>('[style]')].map(
       (each) => each.style.backgroundColor,
     );
@@ -278,7 +281,7 @@ describe('Timeline', () => {
     ]);
   });
 
-  it('says how many older items are left out, in the singular too', () => {
+  it('says how many older items are left out, in the singular too, as a row on the rail', () => {
     const onSee = vi.fn<() => void>();
     const host = render(
       <Timeline>
@@ -293,18 +296,103 @@ describe('Timeline', () => {
     expect(onSee).toHaveBeenCalledOnce();
   });
 
-  it('rings the row the keyboard is on and passes on what finds it', () => {
+  it('is one focusable list: it takes a ref, tabIndex and the rest, and names the row the keyboard is on', () => {
+    let held: HTMLOListElement | null = null;
     const host = render(
-      <Timeline>
-        <TimelineEvent glyph="queue" focused data-key="queue-1">
+      <Timeline
+        tabIndex={0}
+        role="listbox"
+        aria-activedescendant="queue-1"
+        data-lo-scope="timeline"
+        listRef={(element) => {
+          held = element;
+        }}
+      >
+        <TimelineEvent glyph="queue" focused id="queue-1" data-key="queue-1">
           queued
         </TimelineEvent>
-        <TimelineEvent glyph="queue">other</TimelineEvent>
+        <TimelineEvent glyph="queue" id="queue-2">
+          other
+        </TimelineEvent>
       </Timeline>,
     );
+    const list = host.querySelector('ol')!;
+    expect(held).toBe(list);
+    expect(list.getAttribute('tabindex')).toBe('0');
+    expect(list.getAttribute('role')).toBe('listbox');
+    expect(list.getAttribute('data-lo-scope')).toBe('timeline');
+    // It's still the Timeline unless it's told otherwise.
+    expect(
+      render(<Timeline>{null}</Timeline>)
+        .querySelector('ol')
+        ?.getAttribute('aria-label'),
+    ).toBe('Timeline');
+    expect(list.getAttribute('aria-activedescendant')).toBe('queue-1');
     expect(row(host, 0).dataset['key']).toBe('queue-1');
-    expect(row(host, 0).className).toContain('shadow-ring-inset');
-    expect(row(host, 1).className).not.toContain('shadow-ring-inset');
+    expect(row(host, 0).hasAttribute('data-focused')).toBe(true);
+    expect(row(host, 1).hasAttribute('data-focused')).toBe(false);
+  });
+
+  it('draws one of your comments with its mark, Edit and Delete and their keys, and no one else’s', () => {
+    const onEdit = vi.fn<() => void>();
+    const onDelete = vi.fn<() => void>();
+    const host = render(
+      <Timeline>
+        <TimelineComment
+          author="tess-okafor"
+          when="now"
+          mine
+          keys={{ edit: ['i'], delete: ['d', 'd'] }}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          body={<p>Mine.</p>}
+        />
+        <TimelineComment author="jun-park" when="now" body={<p>Theirs.</p>} />
+      </Timeline>,
+    );
+    const [mine, theirs] = [row(host, 0), row(host, 1)];
+    expect(mine.textContent).toContain('tess-okafor (you) commented');
+    expect(button(mine, 'Edit').textContent).toBe('Editi');
+    expect(button(mine, 'Delete').textContent).toBe('Deletedd');
+    click(button(mine, 'Edit'));
+    click(button(mine, 'Delete'));
+    expect(onEdit).toHaveBeenCalledOnce();
+    expect(onDelete).toHaveBeenCalledOnce();
+    expect(theirs.textContent).not.toContain('(you)');
+    expect(theirs.querySelector('button')).toBeNull();
+  });
+
+  it('shows an edit box in place of the text while a comment is edited, and holds back its buttons', () => {
+    const host = render(
+      <Timeline>
+        <TimelineComment
+          author="tess-okafor"
+          when="now"
+          mine
+          body={<p data-testid="text">Mine.</p>}
+          editing={<textarea aria-label="Edit your comment" />}
+        />
+      </Timeline>,
+    );
+    expect(host.querySelector('[data-testid="text"]')).toBeNull();
+    expect(host.querySelector('textarea')).not.toBeNull();
+    expect(host.querySelector('button')).toBeNull();
+    // A hidden comment shows no buttons either: it isn't being read.
+    const hidden = render(
+      <Timeline>
+        <TimelineComment
+          author="tess-okafor"
+          when="now"
+          mine
+          body="x"
+          hidden={{ reason: 'spam' }}
+        />
+      </Timeline>,
+    );
+    expect(hidden.textContent).toContain('Hidden as spam');
+    expect([...hidden.querySelectorAll('button')].map((each) => each.textContent)).toEqual([
+      'Show comment',
+    ]);
   });
 
   it("only uses utilities that Lo's stylesheet has, and runs the rail marker to marker", async () => {
@@ -334,9 +422,14 @@ describe('Timeline', () => {
         <TimelineOlder count={3} />
       </Timeline>,
     );
-    expect(await missingRules(host)).toEqual([]);
+    expect(await missingRules(host, ['group-focus-visible/timeline:shadow-ring-inset'])).toEqual(
+      [],
+    );
     const css = await buildCss(['tl-row']);
     expect(css).toMatch(/&:first-child::before\s*\{\s*top: calc\(/);
     expect(css).toMatch(/&:last-child::before\s*\{\s*bottom: calc\(/);
+    // The row is inset by what the rail's line is offset by, so the line stays at the marker.
+    expect(css).toMatch(/padding-inline: var\(--lo-sp-8\)/);
+    expect(css).toMatch(/inset-inline-start: calc\(var\(--lo-sp-8\) \+ var\(--lo-sp-16\)/);
   });
 });

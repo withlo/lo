@@ -173,6 +173,7 @@ export function Thread({
         role="group"
         aria-label={`${word} thread by ${first.author}`}
         data-thread-state={state}
+        data-focused={focused ? '' : undefined}
         className={`${card({ view: 'collapsed', ground })} ${className}`}
       >
         <button
@@ -214,18 +215,24 @@ export function Thread({
       role="group"
       aria-label={`${word} thread by ${first.author}`}
       data-thread-state={state}
+      data-focused={focused ? '' : undefined}
       className={`${card({ view: 'open', ground })} ${className}`}
     >
-      <div className="flex h-32 items-center gap-8 border-b border-border-subtle ps-12 pe-6 text-fg-muted text-small">
-        <Tag tone={tone}>{word}</Tag>
-        {outdated && <Tag>Outdated</Tag>}
-        {tags.map((tag) => (
-          <Tag key={tag.label} tone={tag.tone}>
-            {tag.label}
-          </Tag>
-        ))}
-        <span>{pendingAll ? 'Your review, not sent' : counted(comments)}</span>
-        <span className="ms-auto flex items-center gap-2">
+      <div className="flex min-h-32 items-center gap-8 border-b border-border-subtle py-4 ps-12 pe-6 text-fg-muted text-small">
+        {/* The tags and the count wrap in the room the buttons leave, which they never give up. */}
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-8 gap-y-4">
+          <Tag tone={tone}>{word}</Tag>
+          {outdated && <Tag>Outdated</Tag>}
+          {tags.map((tag) => (
+            <Tag key={tag.label} tone={tag.tone}>
+              {tag.label}
+            </Tag>
+          ))}
+          <span className="whitespace-nowrap">
+            {pendingAll ? 'Your review, not sent' : counted(comments)}
+          </span>
+        </span>
+        <span className="flex flex-none items-center gap-2">
           {canResolve && !pendingAll && (
             <Button variant="ghost" size="sm" onClick={onResolve}>
               {resolved ? 'Unresolve' : 'Resolve'}
@@ -253,16 +260,16 @@ export function Thread({
         >
           <Avatar login={comment.author} image={comment.image} size="sm" />
           <div className="min-w-0 flex-1">
-            <div className="flex min-h-24 items-center gap-8 text-fg-muted text-small">
-              <span className="font-semibold text-fg">
+            <div className="flex min-h-24 flex-wrap items-center gap-x-8 gap-y-2 text-fg-muted text-small">
+              <span className="font-semibold whitespace-nowrap text-fg">
                 {comment.author}
                 {comment.mine && <span className="font-normal text-fg-muted"> (you)</span>}
               </span>
-              <span className="lo-num">{comment.when}</span>
+              <span className="lo-num whitespace-nowrap">{comment.when}</span>
               {comment.byAuthor && <Tag>Author</Tag>}
               {comment.pending && !pendingAll && <Tag tone="warning">Pending</Tag>}
               {comment.mine && (
-                <span className="ms-auto flex items-center gap-2">
+                <span className="ms-auto flex flex-none items-center gap-2">
                   <Button
                     variant="ghost"
                     size="sm"

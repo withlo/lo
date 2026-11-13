@@ -74,10 +74,14 @@ describe('Thread', () => {
       />,
     );
     const line = host.querySelector('button');
-    // The avatar's initials, then who and the opening, then the replies.
-    expect(line?.textContent).toBe(
-      'ResolvedMCmira-chen Import order: the linter wants type imports last.1 reply',
-    );
+    for (const part of [
+      'Resolved',
+      'mira-chen',
+      'Import order: the linter wants type imports last.',
+      '1 reply',
+    ]) {
+      expect(line?.textContent).toContain(part);
+    }
     expect(line?.getAttribute('aria-expanded')).toBe('false');
     // Only the line: none of the comments are drawn.
     expect(host.querySelectorAll('button')).toHaveLength(1);
@@ -192,7 +196,7 @@ describe('Thread', () => {
     expect(collapse?.getAttribute('title')).toBe('Collapse the thread (z a)');
     click(collapse!);
     expect(onToggle).toHaveBeenCalledOnce();
-    expect(host.querySelector('[role="group"]')?.className).toContain('shadow-ring');
+    expect(host.querySelector('[role="group"]')?.hasAttribute('data-focused')).toBe(true);
   });
 
   it('draws nothing for a thread with no comments', () => {

@@ -5,7 +5,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, render } from '../test/dom.ts';
+import { cleanUp, click, render, rerender } from '../test/dom.ts';
 import {
   ThreadFilter,
   ThreadList,
@@ -105,8 +105,6 @@ describe('ThreadList', () => {
     expect(b?.getAttribute('aria-selected')).toBe('true');
     const list = host.querySelector('[role="listbox"]');
     expect(list?.getAttribute('aria-activedescendant')).toBe(b?.id);
-    expect(b?.className).toContain('group-focus-visible/list:shadow-ring-inset');
-    expect(a?.className).not.toContain('shadow-ring-inset');
   });
 
   it('shows a thread when its row is clicked', () => {
@@ -116,10 +114,44 @@ describe('ThreadList', () => {
     expect(onShow).toHaveBeenCalledWith('e');
   });
 
-  it('says why there are none when it has nothing to list', () => {
-    const host = render(<ThreadList groups={[]} empty="No unresolved threads." />);
-    expect(host.textContent).toBe('No unresolved threads.');
-    expect(host.querySelector('[role="listbox"]')).toBeNull();
+  it('keeps its focusable element, with the message in it, when no thread is left to list', () => {
+    const list = (groups: ThreadListGroup[]) => (
+      <ThreadList
+        groups={groups}
+        focused="b"
+        empty="No unresolved threads."
+        data-lo-scope="threads"
+        listRef={ref}
+      />
+    );
+    let held: HTMLDivElement | null = null;
+    const ref = (element: HTMLDivElement | null) => {
+      held = element;
+    };
+    const host = render(list(GROUPS));
+    const before = host.querySelector<HTMLElement>('[role="listbox"]')!;
+    before.focus();
+    expect(document.activeElement).toBe(before);
+
+    // The filter changes to one that lists none: the same element still has focus.
+    rerender(host, list([]));
+    const after = host.querySelector<HTMLElement>('[aria-label="Threads"]')!;
+    expect(after).toBe(before);
+    expect(document.activeElement).toBe(before);
+    expect(held).toBe(before);
+    expect(after.getAttribute('tabindex')).toBe('0');
+    expect(after.getAttribute('data-lo-scope')).toBe('threads');
+    expect(after.getAttribute('aria-activedescendant')).toBeNull();
+    expect(after.textContent).toBe('No unresolved threads.');
+    // It says so as what it is: a group with a message, not a listbox without options.
+    expect(after.getAttribute('role')).toBe('group');
+    expect(host.querySelector('[role="option"]')).toBeNull();
+
+    // And back, when a filter lists threads again.
+    rerender(host, list(GROUPS));
+    expect(host.querySelector('[aria-label="Threads"]')).toBe(before);
+    expect(before.getAttribute('role')).toBe('listbox');
+    expect(document.activeElement).toBe(before);
   });
 
   it('counts each choice of the filter, marks the one on, and changes it', () => {

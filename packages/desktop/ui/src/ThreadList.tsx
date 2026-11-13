@@ -159,7 +159,8 @@ function Row({
  * The threads panel's rows: a group for each file, with a row for each thread: who started it,
  * where, its replies, its state and the opening of what was said. It's one focusable element:
  * the thread the keyboard is on is its active descendant. Move and filter with the keys the panel
- * gives, and say which filter is on with {@link ThreadFilter}.
+ * gives, and say which filter is on with {@link ThreadFilter}. With no thread to list it stays, with
+ * `empty` in it, so focus isn't lost when the filter changes to one that lists none.
  */
 export function ThreadList({
   groups,
@@ -173,21 +174,23 @@ export function ThreadList({
 }: ThreadListProps) {
   const prefix = useId();
   const rows = groups.flatMap((group) => group.rows);
-  if (rows.length === 0 && empty !== undefined) {
-    return <div className="px-12 py-8 text-fg-muted text-small">{empty}</div>;
-  }
   const rowId = (key: string | undefined) =>
     `${prefix}-row-${rows.findIndex((row) => row.key === key)}`;
   return (
     <div
       ref={listRef}
-      role="listbox"
+      // With nothing to list it's a group holding the message, not a listbox without options. It's
+      // the same element either way, so a list that has focus when the filter empties keeps it.
+      role={rows.length === 0 ? 'group' : 'listbox'}
       aria-label="Threads"
       tabIndex={0}
       aria-activedescendant={rows.some((row) => row.key === focused) ? rowId(focused) : undefined}
       className={`group/list flex flex-col gap-2 px-6 pb-12 ${className}`}
       {...rest}
     >
+      {rows.length === 0 && empty !== undefined && (
+        <div className="px-6 py-8 text-fg-muted text-small">{empty}</div>
+      )}
       {groups
         .filter((group) => group.rows.length > 0)
         .map((group) => (

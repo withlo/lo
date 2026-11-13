@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import type { ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, type ReactNode, type Ref } from 'react';
 
 import { Avatar } from './Avatar.tsx';
 import type { BannerAction } from './Banner.tsx';
@@ -77,8 +77,12 @@ export interface CommentBoxAction {
   keys?: readonly string[] | undefined;
   /** The box's main button: one at most. */
   primary?: boolean | undefined;
-  /** It can't be pressed now. `why` says so in its tooltip. */
+  /** It can't be pressed now. */
   disabled?: boolean | undefined;
+  /**
+   * Why it can't, in the box's own words: "Offline. Lo keeps this as a draft until you send it."
+   * The box says it in a note while the button is off, so the reason is never only a tooltip.
+   */
   why?: string | undefined;
   onClick?: (() => void) | undefined;
 }
@@ -114,6 +118,11 @@ export interface CommentBoxProps {
   foot?: CommentBoxFoot | undefined;
   /** More classes for the box, such as the space the code view leaves around it. */
   className?: string | undefined;
+  /**
+   * The box's element, for whoever answers for its keys. It's the `box` scope: its head, preview
+   * and foot are in it as well as the editor, so keys keep working wherever focus is in the box.
+   */
+  frameRef?: Ref<HTMLDivElement> | undefined;
 }
 
 const box = cva('max-w-read-measure overflow-hidden rounded-md bg-bg-raised text-ui', {
@@ -136,8 +145,8 @@ const noteIcon = cva('flex-none', {
 const mode = cva('flex-none', {
   variants: {
     kind: {
-      normal: 'mode-chip-normal',
-      insert: 'mode-chip-insert',
+      normal: 'mode-chip mode-chip-normal',
+      insert: 'mode-chip mode-chip-insert',
       visual: 'mode-chip',
     },
     lit: { true: '', false: 'opacity-60' },
@@ -175,9 +184,9 @@ function NoteIcon({ tone, icon }: Pick<CommentBoxNote, 'tone' | 'icon'>) {
   );
 }
 
-function Note({ each }: { each: CommentBoxNote }) {
+function Note({ each, id }: { each: CommentBoxNote; id?: string | undefined }) {
   return (
-    <div role="status" className={note({ tone: each.tone })}>
+    <div id={id} role="status" className={note({ tone: each.tone })}>
       <NoteIcon tone={each.tone} icon={each.icon} />
       <span className="min-w-0 flex-1">{each.text}</span>
       {each.actions !== undefined && each.actions.length > 0 && (
@@ -271,14 +280,21 @@ function Attach({ attach }: { attach: CommentBoxAttach }) {
   );
 }
 
-function ActionButton({ action }: { action: CommentBoxAction }) {
+function ActionButton({
+  action,
+  reason,
+}: {
+  action: CommentBoxAction;
+  /** The id of the note that says why it's off. */
+  reason?: string | undefined;
+}) {
   const off = action.disabled === true;
   return (
     <Button
       variant={action.primary === true ? 'primary' : 'secondary'}
       size="sm"
       aria-disabled={off || undefined}
-      title={off ? action.why : undefined}
+      aria-describedby={off ? reason : undefined}
       onClick={() => {
         if (!off) action.onClick?.();
       }}
@@ -295,12 +311,17 @@ function ActionButton({ action }: { action: CommentBoxAction }) {
   );
 }
 
+/** What takes the keyboard in an editor: a field, or editable content like CodeMirror's. */
+const EDITABLE = 'textarea, input, select, [contenteditable]:not([contenteditable="false"])';
+
 /**
  * The frame around a comment's editor: a head with the Write and Preview switch, where the comment
  * goes and who it's from; notes; the editor, or its preview; the files being uploaded; and a foot
  * with the Vim mode, Attach and the buttons. The same frame goes round every box: a line's, a
  * reply, the timeline's and the review summary, each with the parts it needs. It draws what it's
- * given and decides nothing.
+ * given and decides nothing, but for where focus goes when the preview takes the editor's place:
+ * the preview, and back to the editor when it goes, so the keys of the box (`box` scope) work
+ * throughout.
  */
 export function CommentBox({
   children,
@@ -314,16 +335,58 @@ export function CommentBox({
   dropping,
   foot,
   className = '',
+  frameRef,
 }: CommentBoxProps) {
+  const id = useId();
+  const slot = useRef<HTMLDivElement | null>(null);
+  const pane = useRef<HTMLDivElement | null>(null);
+  // Whether focus is in the box, and hasn't gone to something else: when the editor is hidden or
+  // the preview is removed, the browser drops focus to the page without a word.
+  const held = useRef(false);
+  const was = useRef(previewing);
+
+  useLayoutEffect(() => {
+    if (was.current === previewing) return;
+    was.current = previewing;
+    const active = document.activeElement;
+    const lost = active === null || active === document.body;
+    if (previewing) {
+      // The editor has gone: focus goes to the preview, still inside the box.
+      if (slot.current?.contains(active) || (lost && held.current)) pane.current?.focus();
+    } else if (lost && held.current) {
+      slot.current?.querySelector<HTMLElement>(EDITABLE)?.focus();
+    }
+  }, [previewing]);
+
+  // A button that's off says why in a note, once for each reason.
+  const reasons = [
+    ...new Set(
+      (foot?.actions ?? []).flatMap((each) =>
+        each.disabled === true && each.why !== undefined ? [each.why] : [],
+      ),
+    ),
+  ];
+  const reasonId = (why: string | undefined) =>
+    why === undefined ? undefined : `${id}-why-${reasons.indexOf(why)}`;
+
   return (
     <div
+      ref={frameRef}
       role="group"
       aria-label={label}
+      data-lo-scope="box"
       data-focused={focused ? '' : undefined}
       className={`${box({ focused })} ${className}`}
+      onFocus={() => {
+        held.current = true;
+      }}
+      onBlur={(event) => {
+        const next = event.relatedTarget;
+        if (next instanceof Node && !event.currentTarget.contains(next)) held.current = false;
+      }}
     >
       {head !== undefined && (
-        <div className="flex items-center gap-8 border-b border-border-subtle py-6 ps-12 pe-8 text-fg-muted text-small">
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-4 border-b border-border-subtle py-6 ps-12 pe-8 text-fg-muted text-small">
           <SegmentedControl
             label="Write or preview"
             kind="views"
@@ -339,11 +402,11 @@ export function CommentBox({
           {head.where !== undefined && <span className="min-w-0 truncate">{head.where}</span>}
           {head.account !== undefined && (
             <span
-              className="ms-auto inline-flex h-24 flex-none items-center gap-6 rounded-pill ps-4 pe-8 whitespace-nowrap text-fg"
+              className="ms-auto inline-flex h-24 min-w-0 shrink-first items-center gap-6 rounded-pill ps-4 pe-8 whitespace-nowrap text-fg"
               title={`Commenting as ${head.account.login}`}
             >
               <Avatar login={head.account.login} image={head.account.image} size="sm" />
-              <span>
+              <span className="min-w-0 truncate">
                 <span className="text-fg-muted">as</span> {head.account.login}
               </span>
             </span>
@@ -353,7 +416,10 @@ export function CommentBox({
       {notes.map((each) => (
         <Note key={each.key} each={each} />
       ))}
-      <div hidden={previewing} className="relative bg-code-bg text-code-fg code-text">
+      {reasons.map((why) => (
+        <Note key={why} id={reasonId(why)} each={{ key: why, tone: 'info', text: why }} />
+      ))}
+      <div ref={slot} hidden={previewing} className="relative bg-code-bg text-code-fg code-text">
         {children}
         {dropping !== undefined && !previewing && (
           <div className="pointer-events-none absolute inset-6 grid place-items-center rounded-sm border-2 border-dashed border-accent bg-accent-soft text-fg-accent text-ui-strong">
@@ -365,9 +431,11 @@ export function CommentBox({
       </div>
       {previewing && (
         <div
+          ref={pane}
           role="region"
           aria-label="Preview"
-          className="lo-selectable px-12 py-12 text-fg read-comment"
+          tabIndex={0}
+          className="lo-selectable px-12 py-12 text-fg read-comment focus-visible:shadow-ring-inset"
         >
           {preview ?? <p className="text-fg-muted">Nothing to preview.</p>}
         </div>
@@ -391,7 +459,7 @@ export function CommentBox({
           {foot.attach !== undefined && <Attach attach={foot.attach} />}
           <span className="flex-1" />
           {foot.actions?.map((action) => (
-            <ActionButton key={action.label} action={action} />
+            <ActionButton key={action.label} action={action} reason={reasonId(action.why)} />
           ))}
         </div>
       )}

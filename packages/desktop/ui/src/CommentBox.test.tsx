@@ -7,7 +7,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { buildCss } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, render } from '../test/dom.ts';
+import { cleanUp, click, focus, render, rerender } from '../test/dom.ts';
+import { findScope } from './commands/scopes.ts';
 import { CommentBox, type CommentBoxFoot, type CommentBoxProps } from './CommentBox.tsx';
 
 beforeAll(() => {
@@ -65,6 +66,8 @@ describe('CommentBox', () => {
     );
     const buttons = [...(foot?.querySelectorAll('button') ?? [])].map((each) => each.textContent);
     expect(buttons.at(-1)).toBe('Add to review⌘⏎');
+    // Nothing is off, so there's nothing to explain.
+    expect(box?.querySelector('[role="status"]')).toBeNull();
   });
 
   it('shows the account and never offers to choose another', () => {
@@ -107,6 +110,63 @@ describe('CommentBox', () => {
     expect(onPreviewing).toHaveBeenCalledWith(false);
   });
 
+  it('takes focus to the preview and gives it back to the editor, in the box’s scope throughout', () => {
+    const box = (previewing: boolean) => (
+      <CommentBox {...WRITING} previewing={previewing} preview={<p>Previewed.</p>}>
+        <textarea aria-label="Comment" />
+      </CommentBox>
+    );
+    const host = render(box(false));
+    const editor = host.querySelector('textarea')!;
+    focus(editor);
+    expect(findScope(document.activeElement).name).toBe('box');
+
+    // The editor is hidden: focus goes to the preview rather than to the page.
+    rerender(host, box(true));
+    const pane = host.querySelector('[role="region"]');
+    expect(pane?.getAttribute('tabindex')).toBe('0');
+    expect(document.activeElement).toBe(pane);
+    expect(findScope(document.activeElement).name).toBe('box');
+
+    // The preview is gone: focus goes back to the same editor.
+    rerender(host, box(false));
+    expect(document.activeElement).toBe(host.querySelector('textarea'));
+    expect(document.activeElement).toBe(editor);
+    expect(findScope(document.activeElement).name).toBe('box');
+  });
+
+  it('leaves focus where it is when the preview is switched from outside the box', () => {
+    const outside = (previewing: boolean) => (
+      <>
+        <button type="button">Elsewhere</button>
+        <CommentBox {...WRITING} previewing={previewing}>
+          <textarea aria-label="Comment" />
+        </CommentBox>
+      </>
+    );
+    const host = render(outside(false));
+    const elsewhere = host.querySelector('button')!;
+    focus(elsewhere);
+    rerender(host, outside(true));
+    expect(document.activeElement).toBe(elsewhere);
+    rerender(host, outside(false));
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it('hands the box’s element to whoever answers for its keys', () => {
+    let element: HTMLDivElement | null = null;
+    const host = render(
+      <CommentBox
+        {...WRITING}
+        frameRef={(each) => {
+          element = each;
+        }}
+      />,
+    );
+    expect(element).toBe(host.querySelector('[role="group"]'));
+    expect(host.querySelector('[role="group"]')?.getAttribute('data-lo-scope')).toBe('box');
+  });
+
   it('says there is nothing to preview when there is nothing', () => {
     const host = render(<CommentBox {...WRITING} previewing />);
     expect(host.querySelector('[role="region"]')?.textContent).toBe('Nothing to preview.');
@@ -132,7 +192,12 @@ describe('CommentBox', () => {
         ]}
         foot={{
           mode: { name: 'INSERT', kind: 'insert' },
-          actions: ACTIONS.map((each) => ({ ...each, disabled: true, onClick })),
+          actions: ACTIONS.map((each) => ({
+            ...each,
+            disabled: true,
+            why: 'Sending waits while a file uploads.',
+            onClick,
+          })),
         }}
       />,
     );
@@ -160,6 +225,13 @@ describe('CommentBox', () => {
       click(button!);
     }
     expect(onClick).not.toHaveBeenCalled();
+    // Why they're off is in the box, said once, and the buttons point to it.
+    const notes = [...box.querySelectorAll('[role="status"]')].map((each) => each.textContent);
+    expect(notes.filter((each) => each === 'Sending waits while a file uploads.')).toHaveLength(1);
+    const why = [...box.querySelectorAll('[role="status"]')].find(
+      (each) => each.textContent === 'Sending waits while a file uploads.',
+    );
+    expect(labelled(host, 'Add to review')?.getAttribute('aria-describedby')).toBe(why?.id);
   });
 
   it('says how many files are over it while they are dragged, and not over a preview', () => {
@@ -203,12 +275,13 @@ describe('CommentBox', () => {
     expect(onDiscard).toHaveBeenCalledOnce();
     const foot = host.querySelector('[role="group"]')?.lastElementChild;
     expect(foot?.textContent).toBe("NORMALReply to tess-okafor's threadReply now⌥⏎Add to review⌘⏎");
-    // Not focused: no ring, and its mode chip steps back.
+    // Not focused, where the box with the editor focused is.
     expect(host.querySelector('[role="group"]')?.hasAttribute('data-focused')).toBe(false);
-    expect(foot?.firstElementChild?.className).toContain('opacity-60');
     expect(
-      render(<CommentBox {...WRITING} />).querySelector('[role="group"]')?.className,
-    ).toContain('shadow-ring');
+      render(<CommentBox {...WRITING} />)
+        .querySelector('[role="group"]')
+        ?.hasAttribute('data-focused'),
+    ).toBe(true);
   });
 
   it('turns Attach off where uploads are refused, with its note, and leaves out the hint', () => {
@@ -264,9 +337,12 @@ describe('CommentBox', () => {
     expect(rule('mode-chip-normal')).toContain('color: var(--lo-fg-accent)');
     expect(rule('mode-chip-insert')).toContain('background: var(--lo-success-bg)');
     expect(rule('mode-chip-insert')).toContain('color: var(--lo-success)');
-    // Each keeps the chip's own shape.
-    expect(rule('mode-chip-insert')).toContain('border-radius: var(--lo-r-xs)');
+    // The chip keeps its shape and Powder for Visual; a mode's colors come after, and so win.
+    expect(rule('mode-chip')).toContain('border-radius: var(--lo-r-xs)');
     expect(rule('mode-chip')).toContain('background: var(--lo-accent)');
+    for (const modifier of ['mode-chip-normal', 'mode-chip-insert']) {
+      expect(css.indexOf(`.${modifier} {`)).toBeGreaterThan(css.indexOf('.mode-chip {'));
+    }
   });
 
   it("only uses utilities that Lo's stylesheet has", async () => {

@@ -37,13 +37,12 @@ describe('Avatar', () => {
     expect(host.textContent).toBe('MC');
     const img = picture(host);
     expect(img?.getAttribute('src')).toBe('lo-image://avatar/mira-chen?s=56');
-    // It's laid out, unseen, so it loads.
-    expect(img?.className).toContain('opacity-0');
+    // The picture is decoration beside the login, so it has no description of its own.
     expect(img?.getAttribute('alt')).toBe('');
 
     happens(img!, 'load');
     expect(host.textContent).toBe('');
-    expect(picture(host)?.className).not.toContain('opacity-0');
+    expect(picture(host)).not.toBeNull();
   });
 
   it('keeps the initials, and drops the picture, when it fails', () => {

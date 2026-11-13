@@ -1,8 +1,9 @@
 import { cva } from 'class-variance-authority';
-import type { HTMLAttributes, ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode, Ref } from 'react';
 
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
+import { Key } from './Key.tsx';
 import { Label } from './Label.tsx';
 import { StateIcon } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
@@ -30,7 +31,8 @@ export type TimelineGlyph =
   | 'branch'
   | 'dismissed'
   | 'auto'
-  | 'stack';
+  | 'stack'
+  | 'more';
 
 /** The color of a marker's disc: GitHub's own meanings, or none. */
 export type TimelineTone = 'neutral' | 'ok' | 'fail' | 'warn' | 'merged';
@@ -104,6 +106,7 @@ const GLYPHS: Readonly<Record<TimelineGlyph, ReactNode>> = {
   ),
   auto: <path d="M9 2 4 9h3.5L7 14l5-7H8.5Z" />,
   stack: <path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3M2 11.25l6 3 6-3" />,
+  more: <path d="M3.5 8h.01M8 8h.01M12.5 8h.01" strokeWidth="2.4" />,
 };
 
 const disc = cva('relative grid size-32 flex-none place-items-center rounded-pill inset-ring-2', {
@@ -140,7 +143,10 @@ export type TimelineRowAttributes = Omit<HTMLAttributes<HTMLLIElement>, 'childre
 
 export interface TimelineRowProps extends TimelineRowAttributes {
   marker: TimelineMarker;
-  /** The keyboard is on it. */
+  /**
+   * The keyboard is on it. It's ringed only while the timeline itself has keyboard focus, since
+   * the timeline is one focusable element with its rows as active descendants.
+   */
   focused?: boolean | undefined;
   children: ReactNode;
 }
@@ -160,7 +166,8 @@ export function TimelineRow({
   return (
     <li
       {...rest}
-      className={`tl-row flex gap-12 rounded-md py-8 ${focused ? 'shadow-ring-inset' : ''} ${className}`}
+      data-focused={focused ? '' : undefined}
+      className={`tl-row flex gap-12 rounded-md py-8 ${focused ? 'group-focus-visible/timeline:shadow-ring-inset' : ''} ${className}`}
     >
       <Marker marker={marker} />
       <div className="min-w-0 flex-1">{children}</div>
@@ -168,16 +175,26 @@ export function TimelineRow({
   );
 }
 
-export interface TimelineProps {
+export interface TimelineProps extends Omit<HTMLAttributes<HTMLOListElement>, 'children'> {
   /** The rows, each a {@link TimelineRow} or one of the kinds below. */
   children: ReactNode;
+  /** The list itself, which can take focus, with the row the keyboard is on as its active descendant. */
+  listRef?: Ref<HTMLOListElement> | undefined;
 }
 
-/** The pull request's history as one column of rows down a rail, oldest first. */
-export function Timeline({ children }: TimelineProps) {
+/**
+ * The pull request's history as one column of rows down a rail, oldest first. Like the threads
+ * list it takes what a focusable list takes: a ref, `tabIndex`, a `role` and the rest.
+ */
+export function Timeline({ children, listRef, className = '', ...rest }: TimelineProps) {
   return (
-    <div className="px-32 py-24">
-      <ol aria-label="Timeline" className="mx-auto flex max-w-read-measure list-none flex-col">
+    <div className="px-24 py-24">
+      <ol
+        ref={listRef}
+        aria-label="Timeline"
+        {...rest}
+        className={`group/timeline mx-auto flex max-w-read-measure list-none flex-col ${className}`}
+      >
         {children}
       </ol>
     </div>
@@ -377,16 +394,19 @@ function LinkButton({
 }
 
 const card = 'overflow-hidden rounded-md bg-bg-raised ring-1 ring-border';
-const cardHead = cva('flex min-h-40 items-center gap-8 px-12 text-fg-muted text-small', {
-  variants: {
-    edge: {
-      none: '',
-      below: 'border-b border-border-subtle',
-      above: 'border-t border-border-subtle',
+const cardHead = cva(
+  'flex min-h-40 flex-wrap items-center gap-x-8 gap-y-2 px-12 py-4 text-fg-muted text-small',
+  {
+    variants: {
+      edge: {
+        none: '',
+        below: 'border-b border-border-subtle',
+        above: 'border-t border-border-subtle',
+      },
     },
+    defaultVariants: { edge: 'below' },
   },
-  defaultVariants: { edge: 'below' },
-});
+);
 
 /** What a card shows in place of a hidden comment's text. Its images load only once it's shown. */
 export interface TimelineHidden {
@@ -420,36 +440,78 @@ export interface TimelineCommentProps extends TimelineRowAttributes {
   author: string;
   image?: string | undefined;
   when: string;
+  /** It's yours: it says so, and offers Edit and Delete. No one else's does. */
+  mine?: boolean | undefined;
   /** Written by the pull request's author. */
   byAuthor?: boolean | undefined;
   /** The comment's text, already drawn. It isn't drawn while the comment is hidden. */
   body: ReactNode;
+  /**
+   * An edit box, in place of the text, while the comment is being edited. Edit and Delete step
+   * aside while it shows.
+   */
+  editing?: ReactNode;
+  /** The keys of Edit and Delete, as this system shows each (`['i']`, `['d', 'd']`). */
+  keys?:
+    { edit?: readonly string[] | undefined; delete?: readonly string[] | undefined } | undefined;
+  onEdit?: (() => void) | undefined;
+  onDelete?: (() => void) | undefined;
   hidden?: TimelineHidden | undefined;
   focused?: boolean | undefined;
 }
 
-/** A comment on the pull request, as a card beside its author's avatar. */
+/**
+ * A comment on the pull request, as a card beside its author's avatar. One of yours says so, and
+ * has Edit and Delete with their keys, which another person's never has.
+ */
 export function TimelineComment({
   author,
   image,
   when,
+  mine,
   byAuthor,
   body,
+  editing,
+  keys = {},
+  onEdit,
+  onDelete,
   hidden,
   focused,
   ...row
 }: TimelineCommentProps) {
+  const acts = mine === true && hidden === undefined && editing === undefined;
   return (
     <TimelineRow marker={{ login: author, image }} focused={focused} {...row}>
       <div className={card}>
         <div className={cardHead({ edge: 'below' })}>
           <span>
-            <TimelineName>{author}</TimelineName> commented
+            <TimelineName>{author}</TimelineName>
+            {mine === true && <span> (you)</span>} commented
           </span>
           {byAuthor && <Tag>Author</Tag>}
-          <time className="ms-auto">{when}</time>
+          <span className="ms-auto flex flex-wrap items-center justify-end gap-x-8">
+            {acts && (
+              <span className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={onEdit}>
+                  Edit
+                  {keys.edit && <Key keys={keys.edit} decorative />}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={onDelete}>
+                  Delete
+                  {keys.delete && <Key keys={keys.delete} decorative />}
+                </Button>
+              </span>
+            )}
+            <time>{when}</time>
+          </span>
         </div>
-        {hidden === undefined ? <Text>{body}</Text> : <HiddenBody hidden={hidden} />}
+        {hidden !== undefined ? (
+          <HiddenBody hidden={hidden} />
+        ) : editing !== undefined ? (
+          <div className="px-12 py-12">{editing}</div>
+        ) : (
+          <Text>{body}</Text>
+        )}
       </div>
     </TimelineRow>
   );
@@ -644,21 +706,27 @@ export function TimelineDescription({
   );
 }
 
-export interface TimelineOlderProps {
+export interface TimelineOlderProps extends TimelineRowAttributes {
   /** How many items are left out. */
   count: number;
   /** "See them on GitHub" was pressed. */
   onSee?: (() => void) | undefined;
+  focused?: boolean | undefined;
 }
 
-/** Past the pages Lo reads, what's left out: "120 older items aren't shown. See them on GitHub." */
-export function TimelineOlder({ count, onSee }: TimelineOlderProps) {
+/**
+ * Past the pages Lo reads, what's left out: "120 older items aren't shown. See them on GitHub."
+ * It's a row on the rail like the others, so the line runs through it.
+ */
+export function TimelineOlder({ count, onSee, focused, ...row }: TimelineOlderProps) {
   return (
-    <li className="flex flex-wrap items-center gap-6 py-8 text-fg-muted text-small">
-      <span>
-        {count} older {count === 1 ? "item isn't" : "items aren't"} shown.
-      </span>
-      <LinkButton onClick={onSee}>See {count === 1 ? 'it' : 'them'} on GitHub.</LinkButton>
-    </li>
+    <TimelineRow marker={{ glyph: 'more' }} focused={focused} {...row}>
+      <div className="flex min-h-32 flex-wrap items-center gap-x-6 gap-y-2 text-fg-muted text-small">
+        <span>
+          {count} older {count === 1 ? "item isn't" : "items aren't"} shown.
+        </span>
+        <LinkButton onClick={onSee}>See {count === 1 ? 'it' : 'them'} on GitHub.</LinkButton>
+      </div>
+    </TimelineRow>
   );
 }
