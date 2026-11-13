@@ -28,7 +28,11 @@ export const scenarios: Scenario[] = [
       "Images as main loads them, as rozed-bot: a 2x2 PNG attached in rozed-dev/e2e, by its address on github.com and the signed address it redirects to, and rozed-bot's avatar, 56 pixels a side",
     repo: 'rozed-dev/e2e',
     async run(fetch, token) {
-      const images = new Images({ fetch, token: () => Promise.resolve(new Token(token)) });
+      const images = new Images({
+        fetch,
+        acting: () => 'rozed-bot',
+        token: () => Promise.resolve(new Token(token)),
+      });
       await images.load({ kind: 'post', view: 'recording', address: ATTACHMENT });
       await images.load({ kind: 'avatar', ...AVATAR });
       return undefined;

@@ -1,7 +1,7 @@
 // The comments feature in main: the images in posts, and avatars, which the window loads only on
 // the image scheme, served here from GitHub's image hosts (`./images.ts`). An image in a post is
-// fetched as the account its pull request's tab acts as, whose token goes only to GitHub's address
-// for an attachment.
+// fetched, and kept, as the account its pull request's tab acts as, whose token goes only to
+// GitHub's address for an attachment.
 
 import { app, net, session } from 'electron';
 
@@ -40,10 +40,12 @@ export default defineFeature(contract, {
         stand === undefined
           ? address.href
           : `${stand}/${address.host}${address.pathname}${address.search}`,
-      async token(view) {
+      acting(view) {
         const acting = use(tabs).pull(view)?.acting;
-        if (acting?.kind !== 'account') return undefined;
-        return (await use(github).client(acting.login)).token;
+        return acting?.kind === 'account' ? acting.login : undefined;
+      },
+      async token(login) {
+        return (await use(github).client(login)).token;
       },
     });
     stopServing = serveImages(

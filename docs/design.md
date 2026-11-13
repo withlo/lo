@@ -124,7 +124,8 @@ Everything a PR contains is untrusted: code, Markdown, images and artifacts.
 - **Markdown and SVG** are sanitized before they're shown.
 - **Images** load only through the main process, and only from GitHub's image hosts. Main adds the
   account's token only for an attachment's address on github.com, which needs it in private repos;
-  the signed and proxied addresses GitHub renders need none.
+  the signed and proxied addresses GitHub renders need none. An image fetched as one account is
+  shown only to tabs acting as that account.
 - **Links** open only web addresses, in your default browser. The window can't navigate away or open
   new windows.
 
@@ -631,9 +632,9 @@ outdated ones. `]t` and `[t` jump between threads.
 
 The PR's full GitHub timeline: the description, comments, reviews, pushes and force-pushes, CI
 results, labels, assignments, review requests, cross-references, merges, queue events and
-deployments. Markdown is rendered, GIFs play, and images load with the account's token so images in
-private repos show. A comment box at the bottom posts a comment on the PR itself. The PR's title,
-description, labels, reviewers and draft status are read-only in Lo.
+deployments. Markdown is rendered, GIFs play, and images load through the main process as the tab's
+account, so attachments in private repos show. A comment box at the bottom posts a comment on the PR
+itself. The PR's title, description, labels, reviewers and draft status are read-only in Lo.
 
 ## 11. Merging and the merge queue
 

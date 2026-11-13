@@ -749,13 +749,15 @@ The window shows an image from outside Lo only as `<img src="lo-image://…">`, 
   the rest, and any that fail, as links.
 - Main fetches each through Chromium's network stack, as it does GitHub's requests: over `https` on
   the default port with no user name, from GitHub's image hosts or `avatars.githubusercontent.com`,
-  following at most 5 redirects, each to the same hosts, within 30 s and 16 MiB, 6 at once. Only an
-  attachment's address on github.com (`/user-attachments/assets/<id>`) gets the account's token; its
-  redirect to GitHub's attachment store on S3, the only way that host is reached, goes without it.
+  following at most 5 redirects, each to the same hosts, within 30 s and 16 MiB, 6 at once. On
+  github.com, only an attachment's address (`/user-attachments/assets/<uuid>`) is fetched, and only
+  when the window asks for it does it get the account's token: its redirect to GitHub's attachment
+  store on S3, the only way that host is reached, and every later hop go without it.
 - It serves a PNG, JPEG, GIF or WebP, by its first bytes alone, read with `@lo/artifact`'s image
   reader and held to 16,384 pixels a side and 40 megapixels, as that type with `nosniff`, and
-  nothing else. It keeps the last 64 MiB it served, by address without the signature GitHub adds to
-  a private image's, which changes with every read.
+  nothing else. It keeps the last 64 MiB it served, each by the account it was fetched as (or
+  nobody) and its whole address, signature included: no other account, and no address signed
+  otherwise, finds it.
 - A test run fetches the image hosts from the test's GitHub too, each under `/images/<host>/`,
   through `githubSettings`, so a packaged build never does.
 

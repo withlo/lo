@@ -153,7 +153,15 @@ export function toGitHub(path: string): string {
         `the replay server got ${path}, which isn't on one of GitHub's image hosts`,
       );
     }
-    return `https://${host}${rest.slice(slash)}`;
+    // Only an address that's already as `URL` writes it: none with a `..` or `%2e` that would
+    // step out of where it seems to be.
+    const target = `https://${host}${rest.slice(slash)}`;
+    if (URL.parse(target)?.href !== target) {
+      throw new ReplayError(
+        `the replay server got ${path}, which isn't an image's address as it stands`,
+      );
+    }
+    return target;
   }
   for (const name of NAMES) {
     const prefix = PREFIXES[name];

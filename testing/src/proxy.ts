@@ -12,8 +12,18 @@ import { buffer } from 'node:stream/consumers';
 import { Recorder } from './record.ts';
 import { fromGitHub, isImagePath, PREFIXES, toGitHub, type GitHubUrls } from './server.ts';
 
-/** The one image address the bot's token goes to: an attachment's, on github.com. */
-const ATTACHMENTS = 'https://github.com/user-attachments/assets/';
+/**
+ * The one image address the bot's token goes to: an attachment's on github.com, which GitHub names
+ * by a lowercase UUID.
+ */
+const ATTACHMENT =
+  /^\/user-attachments\/assets\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Whether `target`, as `toGitHub` gives it, is an attachment's address on github.com. */
+function isAttachment(target: string): boolean {
+  const url = URL.parse(target);
+  return url?.href === target && url.host === 'github.com' && ATTACHMENT.test(url.pathname);
+}
 
 /** Request headers never forwarded: the connection's own, and what `fetch` sets itself. */
 const DROPPED_REQUEST = new Set([
@@ -97,10 +107,7 @@ export async function startRecordingProxy(options: RecordingProxyOptions): Promi
     const target = toGitHub(path);
     // Signed in as the bot only when the app signs in at all: an anonymous request stays one. Of
     // the image hosts, only an attachment's address on github.com ever gets the token.
-    if (
-      incoming.headers.authorization !== undefined &&
-      (!image || target.startsWith(ATTACHMENTS))
-    ) {
+    if (incoming.headers.authorization !== undefined && (!image || isAttachment(target))) {
       headers.set('authorization', `token ${options.token}`);
     }
     const method = incoming.method ?? 'GET';

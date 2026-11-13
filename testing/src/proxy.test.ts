@@ -1,4 +1,5 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -101,6 +102,21 @@ const PNG = Uint8Array.from(
 );
 const SIGNED =
   'https://github-production-user-asset-6210df.s3.amazonaws.com/1/a.png?X-Amz-Credential=AKIA%2F1&X-Amz-Signature=abc123&X-Amz-Expires=300';
+/** An attachment's id, as GitHub names one. */
+const ID = '08c730b3-f0b0-4c7d-93a2-95f8d167d0d9';
+
+/** The status the server at `origin` answers `path` with, sent as it is, which `fetch` won't. */
+function statusOf(origin: string, path: string, headers: Record<string, string> = {}) {
+  const { hostname, port } = new URL(origin);
+  return new Promise<number | undefined>((resolve, reject) => {
+    const asked = httpRequest({ hostname, port, path, headers }, (answer) => {
+      answer.resume();
+      answer.on('end', () => resolve(answer.statusCode));
+    });
+    asked.on('error', reject);
+    asked.end();
+  });
+}
 
 test('records the image hosts under /images/, with the token for an attachment alone, signatures redacted', async () => {
   const dir = scratch();
@@ -113,7 +129,7 @@ test('records the image hosts under /images/, with the token for an attachment a
   const origin = new URL(proxy.urls.api).origin;
   const signedIn = { authorization: 'token gho_FAKE_APP_ACCOUNT' };
 
-  const attachment = await fetch(`${origin}/images/github.com/user-attachments/assets/a1`, {
+  const attachment = await fetch(`${origin}/images/github.com/user-attachments/assets/${ID}`, {
     headers: signedIn,
     redirect: 'manual',
   });
@@ -132,7 +148,7 @@ test('records the image hosts under /images/, with the token for an attachment a
   });
   expect((await fetch(`${origin}/images/example.com/a.png`)).status).toBe(502);
   expect(github.got.map(({ url, authorization }) => [url, authorization])).toEqual([
-    ['https://github.com/user-attachments/assets/a1', `token ${TOKEN}`],
+    [`https://github.com/user-attachments/assets/${ID}`, `token ${TOKEN}`],
     [SIGNED, null],
     ['https://avatars.githubusercontent.com/rozed-bot?s=56', null],
   ]);
@@ -150,7 +166,7 @@ test('records the image hosts under /images/, with the token for an attachment a
   const server = await serveReplay(Replay.fromDir(dir));
   onTestFinished(() => server.close());
   const served = new URL(server.urls.api).origin;
-  const redirect = await fetch(`${served}/images/github.com/user-attachments/assets/a1`, {
+  const redirect = await fetch(`${served}/images/github.com/user-attachments/assets/${ID}`, {
     redirect: 'manual',
   });
   const replayed = new URL(redirect.headers.get('location') ?? '');
@@ -160,6 +176,32 @@ test('records the image hosts under /images/, with the token for an attachment a
   );
   expect(image.headers.get('content-type')).toBe('image/png');
   expect(new Uint8Array(await image.arrayBuffer())).toEqual(PNG);
+});
+
+test("sends the token to no image address that steps out of an attachment's", async () => {
+  const github = upstream(() => new Response(PNG, { headers: { 'content-type': 'image/png' } }));
+  const proxy = await startRecordingProxy({ dir: scratch(), token: TOKEN, fetch: github.fetch });
+  const origin = new URL(proxy.urls.api).origin;
+  const signedIn = { authorization: 'token gho_FAKE_APP_ACCOUNT' };
+  const assets = '/images/github.com/user-attachments/assets';
+  for (const path of [
+    `${assets}/../../settings/tokens`,
+    `${assets}/%2e%2e/%2E%2E/settings/tokens`,
+    `${assets}/${ID}/../../../x`,
+    '/images/github.com/./user-attachments/assets/' + ID,
+  ]) {
+    expect(await statusOf(origin, path, signedIn)).toBe(502);
+  }
+  // Under the attachments, but no attachment's id: forwarded as nobody.
+  expect(await statusOf(origin, `${assets}/..%2F..%2Fsettings%2Ftokens`, signedIn)).toBe(200);
+  expect(github.got).toEqual([
+    {
+      url: 'https://github.com/user-attachments/assets/..%2F..%2Fsettings%2Ftokens',
+      authorization: null,
+      host: null,
+    },
+  ]);
+  await proxy.finish({ description: 'A test.', repo: 'rozed-dev/e2e' });
 });
 
 test('refuses to send anything that writes to GitHub, and records nothing then', async () => {

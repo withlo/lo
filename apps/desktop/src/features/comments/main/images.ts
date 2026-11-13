@@ -6,13 +6,16 @@
 //   GitHub's image hosts (`imageAddress`), or for an avatar to `avatars.githubusercontent.com`,
 //   following at most 5 redirects, each to the same list. GitHub's attachment store on S3 is
 //   reached only as an attachment's redirect.
-// - **The token** goes only to an attachment's address on github.com, which answers with a
-//   redirect to its bytes at an address signed for a few minutes. Every other request, the
-//   redirect's included, goes without it: signed and proxied addresses need none.
+// - **Who asks:** a post's image is fetched as the account its view acts as, or as nobody, and
+//   kept for that account alone: what one tab's account could see never reaches another's.
+// - **The token** goes only to the first request for an attachment's address on github.com
+//   (`/user-attachments/assets/<uuid>`), which answers with a redirect to its bytes at an address
+//   signed for a few minutes. Every other request, each redirect's included, goes without it:
+//   signed and proxied addresses need none.
 // - **What's served:** a PNG, JPEG, GIF or WebP image, by its first bytes alone, whose header gives
 //   a size no browser balks at: 16 MiB at most, fetched within 30 s. Anything else fails.
-// - **What's kept:** the bytes served last, 64 MiB at most, keyed by address without the signature
-//   GitHub adds to a private image's, which changes with every read.
+// - **What's kept:** the bytes served last, 64 MiB at most, each by the account it was fetched as
+//   and its exact address, signature and all, so only the address that fetched it finds it.
 
 import { imageHeader, imageType, LIMITS, type ImageType } from '@lo/artifact';
 import type { Token } from '@lo/github';
@@ -92,10 +95,12 @@ export interface ImagesOptions {
   /** The `fetch` images come through: main's, which keeps no cookie and nothing on disk. */
   fetch: typeof globalThis.fetch;
   /**
-   * The token of the account view `view` acts as, read as each attachment's request starts, or
+   * The login of the account view `view` acts as, as the window asks for an image in it, or
    * nothing for a view acting as nobody, or no such view.
    */
-  token(view: string): Promise<Token | undefined>;
+  acting(view: string): string | undefined;
+  /** Account `login`'s token, read as an attachment's request starts. */
+  token(login: string): Promise<Token | undefined>;
   /**
    * Where to send a request for `address`, on one of GitHub's image hosts: the address itself, or
    * in a test run, a stand-in for the host. Redirects are read against the host's own address.
@@ -107,7 +112,8 @@ export interface ImagesOptions {
 /** Fetches, checks and keeps the images the window asks for. */
 export class Images {
   readonly #fetch: typeof globalThis.fetch;
-  readonly #token: (view: string) => Promise<Token | undefined>;
+  readonly #acting: (view: string) => string | undefined;
+  readonly #token: (login: string) => Promise<Token | undefined>;
   readonly #route: (address: URL) => string;
   readonly #limits: ImageLimits;
   /** The images kept, the one served last at the end. */
@@ -121,14 +127,20 @@ export class Images {
 
   constructor(options: ImagesOptions) {
     this.#fetch = options.fetch;
-    this.#token = (view) => options.token(view);
+    this.#acting = (view) => options.acting(view);
+    this.#token = (login) => options.token(login);
     this.#route = options.route ?? ((address) => address.href);
     this.#limits = { ...IMAGE_LIMITS, ...options.limits };
   }
 
-  /** The image `asked` asks for: kept, or fetched and checked. Throws an {@link ImageError}. */
+  /**
+   * The image `asked` asks for: kept, or fetched and checked, as the account its view acts as now.
+   * Throws an {@link ImageError}.
+   */
   async load(asked: ImageAsked): Promise<LoadedImage> {
-    const key = keyOf(asked);
+    // An avatar is fetched as nobody, whoever asks.
+    const as = asked.kind === 'post' ? this.#acting(asked.view) : undefined;
+    const key = keyOf(asked, as);
     const kept = this.#kept.get(key);
     if (kept) {
       this.#kept.delete(key);
@@ -137,7 +149,7 @@ export class Images {
     }
     let loading = this.#loading.get(key);
     if (!loading) {
-      loading = this.#inTurn(() => this.#fetched(asked))
+      loading = this.#inTurn(() => this.#fetched(asked, as))
         .then((image) => {
           this.#keep(key, image);
           return image;
@@ -173,10 +185,15 @@ export class Images {
     }
   }
 
-  async #fetched(asked: ImageAsked): Promise<LoadedImage> {
+  /** Fetches `asked` as account `as`, or as nobody. */
+  async #fetched(asked: ImageAsked, as: string | undefined): Promise<LoadedImage> {
     const deadline = AbortSignal.timeout(this.#limits.deadline);
     let address = firstAddress(asked);
     let from: URL | undefined;
+    // Only the address the window asked for, when it's an attachment's, is asked with the token:
+    // never one a redirect leads to, wherever it is.
+    const token =
+      as !== undefined && isAttachment(address) ? await this.#accountToken(as) : undefined;
     for (let redirects = 0; ; redirects++) {
       if (!mayFetch(asked, address, from)) {
         throw new ImageError(
@@ -186,7 +203,11 @@ export class Images {
             : `${from.host} redirected to ${address.host}, which isn't one of GitHub's image hosts for it`,
         );
       }
-      const response = await this.#request(asked, address, deadline);
+      const response = await this.#request(
+        address,
+        from === undefined ? token : undefined,
+        deadline,
+      );
       if (response.status !== 200) await response.body?.cancel();
       if (REDIRECTS.has(response.status)) {
         const location = response.headers.get('location');
@@ -211,10 +232,8 @@ export class Images {
     }
   }
 
-  /** Asks for `address`, with the view's token only when it's an attachment's address. */
-  async #request(asked: ImageAsked, address: URL, signal: AbortSignal): Promise<Response> {
-    const token =
-      asked.kind === 'post' && isAttachment(address) ? await this.#viewToken(asked) : undefined;
+  /** Asks for `address`, with `token` when it's given. */
+  async #request(address: URL, token: Token | undefined, signal: AbortSignal): Promise<Response> {
     let headers: Headers;
     try {
       headers = new Headers({ accept: ACCEPT });
@@ -243,9 +262,9 @@ export class Images {
     }
   }
 
-  async #viewToken(asked: Extract<ImageAsked, { kind: 'post' }>): Promise<Token | undefined> {
+  async #accountToken(login: string): Promise<Token | undefined> {
     try {
-      return await this.#token(asked.view);
+      return await this.#token(login);
     } catch {
       // An account that's signed out, or whose token can't be read just now, fetches as nobody,
       // which GitHub refuses for an attachment it hides.
@@ -337,14 +356,15 @@ function firstAddress(asked: ImageAsked): URL {
 /**
  * Whether `asked` may be fetched from `address`, reached by a redirect from `from` unless it's the
  * first: over `https` on the default port, with no user name or password, from one of GitHub's
- * image hosts. A post's image may come from GitHub's attachment store only as an attachment's
- * redirect, and an avatar only from the avatars' host.
+ * image hosts. On github.com, only an attachment's address. A post's image may come from GitHub's
+ * attachment store only as an attachment's redirect, and an avatar only from the avatars' host.
  */
 export function mayFetch(asked: ImageAsked, address: URL, from?: URL): boolean {
   if (address.protocol !== 'https:' || address.port !== '') return false;
   if (address.username !== '' || address.password !== '') return false;
   switch (asked.kind) {
     case 'post':
+      if (address.hostname === 'github.com') return isAttachment(address);
       return (
         imageAddress(address.href) !== undefined ||
         (address.hostname === ATTACHMENT_STORE && from !== undefined && isAttachment(from))
@@ -357,7 +377,14 @@ export function mayFetch(asked: ImageAsked, address: URL, from?: URL): boolean {
   }
 }
 
-/** Whether `address` is an attachment's on github.com, the one address that gets the token. */
+/**
+ * An attachment's path on github.com: GitHub names each by a lowercase UUID. Nothing else under it
+ * is one, an id that steps out of the path (`..%2F`) least of all.
+ */
+const ATTACHMENT_PATH =
+  /^\/user-attachments\/assets\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Whether `address` is an attachment's on github.com, the one address that may get the token. */
 export function isAttachment(address: URL): boolean {
   return (
     address.protocol === 'https:' &&
@@ -365,24 +392,21 @@ export function isAttachment(address: URL): boolean {
     address.port === '' &&
     address.username === '' &&
     address.password === '' &&
-    /^\/user-attachments\/assets\/[^/]+$/.test(address.pathname)
+    ATTACHMENT_PATH.test(address.pathname)
   );
 }
 
 /**
- * The parameter GitHub signs a private image's address with, new on each read of the post: an
- * image is kept without it, so the same image read again is the one kept.
+ * What an image is kept by. A post's image: the account it's fetched as, or nobody, and its whole
+ * address but the fragment, signature included, so an address signed otherwise, or not at all,
+ * never finds a signed image. An avatar, fetched as nobody for everyone: its login and size.
  */
-const SIGNATURE = 'jwt';
-
-/** What an image is kept by: its address without its signature, or the avatar's login and size. */
-export function keyOf(asked: ImageAsked): string {
+export function keyOf(asked: ImageAsked, as?: string): string {
   switch (asked.kind) {
     case 'post': {
       const address = new URL(asked.address);
-      address.searchParams.delete(SIGNATURE);
       address.hash = '';
-      return `post ${address.href}`;
+      return `post ${as === undefined ? 'nobody' : `@${as.toLowerCase()}`} ${address.href}`;
     }
     case 'avatar':
       return `avatar ${asked.login.toLowerCase()} ${asked.size}`;

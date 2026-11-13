@@ -15,11 +15,21 @@ import {
   type ImageLimits,
 } from './images.ts';
 
-/** A stand-in token, shaped like one. */
+/** Stand-in tokens, shaped like one: octocat's, and hubot's. */
 const TOKEN = 'gho_FAKEVIEWTOKENFAKEVIEWTOKENFAKEVIEWTOK';
+const OTHER = 'gho_FAKEOTHERTOKENFAKEOTHERTOKENFAKEOTHE';
 
-const ATTACHMENT =
-  'https://github.com/user-attachments/assets/08c730b3-f0b0-4c7d-93a2-95f8d167d0d9';
+/** The account each view acts as. Any other view acts as nobody. */
+const ACTING: Readonly<Record<string, string>> = {
+  'tab-1': 'octocat',
+  'tab-2': 'octocat',
+  'tab-3': 'hubot',
+  'tab-7:12': 'octocat',
+};
+
+const ID = '08c730b3-f0b0-4c7d-93a2-95f8d167d0d9';
+const ATTACHMENT = `https://github.com/user-attachments/assets/${ID}`;
+const ANOTHER = 'https://github.com/user-attachments/assets/1b0e7c2a-5d4f-4e8a-9c3b-6f2d1a0e9b87';
 const SIGNED = `https://${ATTACHMENT_STORE}/1/a.png?X-Amz-Signature=abc&X-Amz-Expires=300`;
 const CAMO = 'https://camo.githubusercontent.com/abc/68747470733a2f2f652e636f6d2f612e706e67';
 const PRIVATE = 'https://private-user-images.githubusercontent.com/1/2-a.png';
@@ -59,31 +69,57 @@ const redirect = (location: string, status = 302) =>
 const post = (address: string, view = 'tab-1'): ImageAsked => ({ kind: 'post', view, address });
 const avatar = (login: string, size = 56): ImageAsked => ({ kind: 'avatar', login, size });
 
-/** `Images` over a GitHub that answers each address as `answer` says, and what it was sent. */
+interface Sent {
+  url: string;
+  authorization: string | null;
+  accept: string | null;
+}
+
+/**
+ * `Images` over a GitHub that answers each request as `answer` says, with views acting as
+ * {@link ACTING} says, whose accounts have `tokens`; what it was sent; and whose tokens it read.
+ */
 function images(
-  answer: (url: string) => Response | Promise<Response>,
-  options: { token?: string | undefined; limits?: Partial<ImageLimits> } = { token: TOKEN },
+  answer: (url: string, sent: Sent) => Response | Promise<Response>,
+  options: {
+    tokens?: Readonly<Record<string, string | undefined>>;
+    limits?: Partial<ImageLimits>;
+  } = {},
 ) {
-  const sent: { url: string; authorization: string | null; accept: string | null }[] = [];
-  const views: string[] = [];
+  const tokens = options.tokens ?? { octocat: TOKEN, hubot: OTHER };
+  const sent: Sent[] = [];
+  const read: string[] = [];
   const loader = new Images({
     fetch: async (input, init) => {
       const request = new Request(input, init);
-      sent.push({
+      const one = {
         url: request.url,
         authorization: request.headers.get('authorization'),
         accept: request.headers.get('accept'),
-      });
-      return answer(request.url);
+      };
+      sent.push(one);
+      return answer(request.url, one);
     },
-    token: (view) => {
-      views.push(view);
-      return Promise.resolve(options.token === undefined ? undefined : new Token(options.token));
+    acting: (view) => ACTING[view],
+    token: (login) => {
+      read.push(login);
+      const token = tokens[login];
+      return Promise.resolve(token === undefined ? undefined : new Token(token));
     },
     limits: options.limits,
   });
-  return { loader, sent, views };
+  return { loader, sent, read };
 }
+
+/** GitHub's answer to an attachment's address: the signed address to an account, 404 to nobody. */
+const attachment = (url: string, { authorization }: Sent) => {
+  if (url === ATTACHMENT) {
+    return authorization === null ? new Response('Not Found', { status: 404 }) : redirect(SIGNED);
+  }
+  return image(png());
+};
+
+const NOT_FOUND = { reason: 'failed', message: 'github.com answered 404' };
 
 /** Why `loading` failed. */
 async function refusal(loading: Promise<unknown>): Promise<{ reason: string; message: string }> {
@@ -97,7 +133,7 @@ async function refusal(loading: Promise<unknown>): Promise<{ reason: string; mes
 
 describe('Images', () => {
   it("fetches an avatar from GitHub's avatars by login, without the token", async () => {
-    const { loader, sent, views } = images(() => image(png(56, 56)));
+    const { loader, sent, read } = images(() => image(png(56, 56)));
     const loaded = await loader.load(avatar('rozed-bot'));
     expect(loaded).toMatchObject({ type: 'png', contentType: 'image/png' });
     expect(sent).toEqual([
@@ -107,35 +143,35 @@ describe('Images', () => {
         accept: 'image/png, image/jpeg, image/gif, image/webp',
       },
     ]);
-    expect(views).toEqual([]);
+    expect(read).toEqual([]);
   });
 
-  it("sends the view's token to an attachment's address alone, and follows it to the store without", async () => {
-    const { loader, sent, views } = images((url) =>
-      url === ATTACHMENT ? redirect(SIGNED) : image(png()),
-    );
+  it("sends the view's account's token to an attachment's address alone, and follows it to the store without", async () => {
+    const { loader, sent, read } = images(attachment);
     const loaded = await loader.load(post(ATTACHMENT, 'tab-7:12'));
     expect(loaded.bytes).toEqual(png());
     expect(sent.map(({ url, authorization }) => [url, authorization])).toEqual([
       [ATTACHMENT, `token ${TOKEN}`],
       [SIGNED, null],
     ]);
-    expect(views).toEqual(['tab-7:12']);
+    expect(read).toEqual(['octocat']);
   });
 
-  it('asks for an attachment as nobody in a view acting as nobody', async () => {
-    const { loader, sent } = images(() => new Response('Not Found', { status: 404 }), {
-      token: undefined,
-    });
-    expect(await refusal(loader.load(post(ATTACHMENT)))).toEqual({
-      reason: 'failed',
-      message: 'github.com answered 404',
-    });
+  it('asks for an attachment without a token in a view acting as nobody', async () => {
+    const { loader, sent, read } = images(attachment);
+    expect(await refusal(loader.load(post(ATTACHMENT, 'tab-9')))).toEqual(NOT_FOUND);
+    expect(sent.map(({ authorization }) => authorization)).toEqual([null]);
+    expect(read).toEqual([]);
+  });
+
+  it("asks without a token for an account whose token isn't there", async () => {
+    const { loader, sent } = images(attachment, { tokens: {} });
+    expect(await refusal(loader.load(post(ATTACHMENT)))).toEqual(NOT_FOUND);
     expect(sent.map(({ authorization }) => authorization)).toEqual([null]);
   });
 
   it('fetches proxied and signed images without the token', async () => {
-    const { loader, sent, views } = images(() => image(png()));
+    const { loader, sent, read } = images(() => image(png()));
     for (const address of [
       CAMO,
       `${PRIVATE}?jwt=eyJx`,
@@ -144,7 +180,46 @@ describe('Images', () => {
       await loader.load(post(address));
     }
     expect(sent.map(({ authorization }) => authorization)).toEqual([null, null, null]);
-    expect(views).toEqual([]);
+    expect(read).toEqual([]);
+  });
+
+  it('gives the token to the address asked for alone, never to an attachment a redirect leads to', async () => {
+    // The store, or the proxy, sending Lo back to github.com for another attachment.
+    const viaStore = images((url) => {
+      if (url === ATTACHMENT) return redirect(SIGNED);
+      if (url === SIGNED) return redirect(ANOTHER);
+      if (url === ANOTHER) return redirect(`${SIGNED}&second`);
+      return image(png());
+    });
+    await viaStore.loader.load(post(ATTACHMENT));
+    expect(viaStore.sent.map(({ url, authorization }) => [url, authorization])).toEqual([
+      [ATTACHMENT, `token ${TOKEN}`],
+      [SIGNED, null],
+      [ANOTHER, null],
+      [`${SIGNED}&second`, null],
+    ]);
+    const viaCamo = images((url) => {
+      if (url === CAMO) return redirect(ATTACHMENT);
+      if (url === ATTACHMENT) return redirect(SIGNED);
+      return image(png());
+    });
+    await viaCamo.loader.load(post(CAMO));
+    expect(viaCamo.sent.map(({ authorization }) => authorization)).toEqual([null, null, null]);
+    expect(viaCamo.read).toEqual([]);
+  });
+
+  it.each([
+    ['an id that steps out of its path', '..%2F..%2Fsettings%2Ftokens'],
+    ['a path that steps out', '../../settings/tokens'],
+    ["an id that isn't a UUID", 'a'],
+    ['a UUID in capitals', ID.toUpperCase()],
+    ['a UUID and more', `${ID}/..%2F..`],
+  ])("refuses an attachment's address with %s, and sends nothing", async (_what, id) => {
+    const { loader, sent, read } = images(attachment);
+    const address = new URL(`https://github.com/user-attachments/assets/${id}`).href;
+    expect(await refusal(loader.load(post(address)))).toMatchObject({ reason: 'refused' });
+    expect(sent).toEqual([]);
+    expect(read).toEqual([]);
   });
 
   it.each([
@@ -180,13 +255,15 @@ describe('Images', () => {
   it("gives the token only to an attachment's address on github.com", () => {
     expect(isAttachment(new URL(ATTACHMENT))).toBe(true);
     for (const address of [
-      'http://github.com/user-attachments/assets/a',
-      'https://github.com:444/user-attachments/assets/a',
-      'https://me@github.com/user-attachments/assets/a',
+      `http://github.com/user-attachments/assets/${ID}`,
+      `https://github.com:444/user-attachments/assets/${ID}`,
+      `https://me@github.com/user-attachments/assets/${ID}`,
       'https://github.com/user-attachments/assets/',
-      'https://github.com/user-attachments/assets/a/b',
-      'https://github.com/user-attachments/files/a',
-      'https://api.github.com/user-attachments/assets/a',
+      'https://github.com/user-attachments/assets/a',
+      `https://github.com/user-attachments/assets/${ID}/b`,
+      `https://github.com/user-attachments/assets/${ID}%2F..%2F..%2Fsettings`,
+      `https://github.com/user-attachments/files/${ID}`,
+      `https://api.github.com/user-attachments/assets/${ID}`,
       SIGNED,
       CAMO,
     ]) {
@@ -278,7 +355,7 @@ describe('Images', () => {
     const said = images(
       () =>
         new Response(png(), { headers: { 'content-length': '65', 'content-type': 'image/png' } }),
-      { token: TOKEN, limits },
+      { limits },
     );
     expect(await refusal(said.loader.load(post(CAMO)))).toEqual({
       reason: 'unsafe',
@@ -297,10 +374,10 @@ describe('Images', () => {
             },
           }),
         ),
-      { token: TOKEN, limits },
+      { limits },
     );
     expect(await refusal(sent.loader.load(post(CAMO)))).toMatchObject({ reason: 'unsafe' });
-    const within = images(() => image(png()), { token: TOKEN, limits });
+    const within = images(() => image(png()), { limits });
     await within.loader.load(post(CAMO));
   });
 
@@ -312,6 +389,7 @@ describe('Images', () => {
           const signal = init?.signal;
           signal?.addEventListener('abort', () => reject(new Error(String(signal.reason))));
         }),
+      acting: () => undefined,
       token: () => Promise.resolve(undefined),
       limits: { deadline: 10 },
     });
@@ -330,27 +408,71 @@ describe('Images', () => {
     expect(message).not.toContain(TOKEN);
   });
 
-  it('keeps an image by its address without its signature, so a new signature finds it', async () => {
-    const { loader, sent } = images(() => image(png()));
-    const first = await loader.load(post(`${PRIVATE}?jwt=first`, 'tab-1'));
-    const again = await loader.load(post(`${PRIVATE}?jwt=second`, 'tab-2'));
-    expect(again).toBe(first);
-    await loader.load(
-      post('https://private-user-images.githubusercontent.com/1/3-b.png?jwt=first'),
-    );
+  it('keeps an image for the account it was fetched as alone, never for another or nobody', async () => {
+    const { loader, sent } = images(attachment);
+    const first = await loader.load(post(ATTACHMENT, 'tab-1'));
+    // Another view acting as the same account finds it.
+    expect(await loader.load(post(ATTACHMENT, 'tab-2'))).toBe(first);
     expect(sent).toHaveLength(2);
-    expect(keyOf(post(`${PRIVATE}?jwt=eyJ.a.b`))).toBe(`post ${PRIVATE}`);
-    expect(keyOf(post(`${PRIVATE}?jwt=eyJ.a.b&v=2`))).toBe(`post ${PRIVATE}?v=2`);
+    // A view acting as nobody asks GitHub, without a token, and GitHub refuses.
+    expect(await refusal(loader.load(post(ATTACHMENT, 'tab-9')))).toEqual(NOT_FOUND);
+    // A view acting as another account asks GitHub with that account's token.
+    await loader.load(post(ATTACHMENT, 'tab-3'));
+    expect(sent.slice(2).map(({ url, authorization }) => [url, authorization])).toEqual([
+      [ATTACHMENT, null],
+      [ATTACHMENT, `token ${OTHER}`],
+      [SIGNED, null],
+    ]);
+  });
+
+  it('fetches apart for an account and nobody asking at once', async () => {
+    const answers: (() => void)[] = [];
+    const { loader, sent } = images(
+      (url, one) =>
+        new Promise<Response>((resolve) => answers.push(() => resolve(attachment(url, one)))),
+    );
+    const both = Promise.allSettled([
+      loader.load(post(ATTACHMENT, 'tab-1')),
+      loader.load(post(ATTACHMENT, 'tab-9')),
+    ]);
+    await expect.poll(() => sent.length).toBe(2);
+    while (answers.length > 0) {
+      answers.shift()?.();
+      await new Promise((resolve) => setTimeout(resolve));
+    }
+    expect((await both).map(({ status }) => status)).toEqual(['fulfilled', 'rejected']);
+    const asked = sent.map(({ url, authorization }) => `${url} ${authorization ?? 'nobody'}`);
+    expect(asked.toSorted()).toEqual(
+      [`${ATTACHMENT} nobody`, `${ATTACHMENT} token ${TOKEN}`, `${SIGNED} nobody`].toSorted(),
+    );
+  });
+
+  it('keeps a signed image by its whole address, so no other signature, or none, finds it', async () => {
+    const signed = `${PRIVATE}?jwt=eyJ.real`;
+    const { loader, sent } = images((url) =>
+      url === signed ? image(png()) : new Response('Not Found', { status: 404 }),
+    );
+    const first = await loader.load(post(signed));
+    for (const address of [`${PRIVATE}?jwt=eyJ.fake`, PRIVATE, `${PRIVATE}?jwt=`]) {
+      expect(await refusal(loader.load(post(address)))).toMatchObject({ reason: 'failed' });
+    }
+    expect(await loader.load(post(`${signed}#again`))).toBe(first);
+    expect(sent.map(({ url }) => url)).toEqual([
+      signed,
+      `${PRIVATE}?jwt=eyJ.fake`,
+      PRIVATE,
+      `${PRIVATE}?jwt=`,
+    ]);
+    expect(keyOf(post(signed), 'octocat')).toBe(`post @octocat ${signed}`);
+    expect(keyOf(post(signed), 'Octocat')).toBe(keyOf(post(signed), 'octocat'));
+    expect(keyOf(post(signed))).toBe(`post nobody ${signed}`);
     expect(keyOf(avatar('Rozed-Bot'))).toBe(keyOf(avatar('rozed-bot')));
     expect(keyOf(avatar('rozed-bot', 40))).not.toBe(keyOf(avatar('rozed-bot', 56)));
   });
 
   it('keeps at most its limit of bytes, dropping the image served longest ago', async () => {
     const size = png().length;
-    const { loader, sent } = images(() => image(png()), {
-      token: TOKEN,
-      limits: { kept: size * 2 },
-    });
+    const { loader, sent } = images(() => image(png()), { limits: { kept: size * 2 } });
     for (const at of [1, 2, 1, 3, 1, 2]) await loader.load(post(`${CAMO}/${at}`));
     // 1 and 2 are kept; 3 drops 2, which was served longest ago; 2 is fetched again.
     expect(sent.map(({ url }) => url.at(-1))).toEqual(['1', '2', '3', '2']);
