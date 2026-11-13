@@ -1,0 +1,22 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/git/matching-refs/lo/pr/84"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "\"74d1db57f0fec3481bb6b4d9bcdc020d656635ec6c53ee589d27a8831cbbe280\"",
+      "last-modified": "Sun, 08 Nov 2026 13:03:37 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-poll-interval": "300",
+      "x-ratelimit-limit": "60",
+      "x-ratelimit-remaining": "58",
+      "x-ratelimit-reset": "1794541562",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "2"
+    },
+    "body": []
+  }
+}

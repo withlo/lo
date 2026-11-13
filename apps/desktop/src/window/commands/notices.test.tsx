@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import keys from '../../features/keys/window/index.ts';
-import { notice, notify, NOTICE_TIME, Notices } from './notices.tsx';
+import { announce, notice, notify, NOTICE_TIME, Notices } from './notices.tsx';
 import { createRegistry, registry } from './registry.ts';
 
 beforeAll(() => {
@@ -76,6 +76,22 @@ describe('notices', () => {
     act(() => notify('Back', 'Nowhere.'));
     expect(status()?.className).toContain('toast-floating');
     expect(status()?.querySelector('.toast')?.className).toContain('shadow-pop');
+  });
+
+  it('put each reason on a line of its own', () => {
+    act(() => notify('Make this a GitHub stack', 'One reason.\nAnother reason.'));
+    const lines = [...(status()?.querySelectorAll('.toast span.block') ?? [])];
+    expect(lines.map((line) => line.textContent)).toEqual(['One reason.', 'Another reason.']);
+  });
+
+  it('say what’s done with a tick, and with nothing under it when there’s nothing more', () => {
+    act(() => announce('Made #82, #83 and #84 a GitHub stack'));
+    expect(toast()).toEqual({
+      title: 'Made #82, #83 and #84 a GitHub stack',
+      body: null,
+      icon: true,
+    });
+    expect(status()?.querySelector('.toast .text-success')).not.toBeNull();
   });
 });
 

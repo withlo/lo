@@ -7,8 +7,8 @@
 // It prints the address to start Lo with as LO_GITHUB, with a stand-in token in
 // LO_TEST_TOKEN_FILE: the proxy signs every request with the bot's token, so Lo never holds it.
 // Drive Lo through what the cassette should hold, then stop the proxy with Ctrl+C, or by closing
-// its input, to write the cassette. Nothing that writes to GitHub is sent. testing/README.md has
-// the details.
+// its input, to write the cassette. Nothing that writes to GitHub is sent unless LO_RECORD_WRITES=1
+// is set, for a recording of what Lo writes. testing/README.md has the details.
 
 import { readFileSync } from 'node:fs';
 
@@ -31,8 +31,10 @@ if (!tokenFile) {
 const token = readFileSync(tokenFile, 'utf8').trim();
 await checkRecordingAccount(fetch, token);
 
-const proxy = await startRecordingProxy({ dir: cassetteDir(name), token });
+const writes = process.env['LO_RECORD_WRITES'] === '1';
+const proxy = await startRecordingProxy({ dir: cassetteDir(name), token, writes });
 console.log(`LO_GITHUB=${new URL(proxy.urls.api).origin}`);
+if (writes) console.log('Writes to GitHub are sent and recorded.');
 
 let finishing = false;
 const finish = async () => {
