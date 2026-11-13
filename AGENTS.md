@@ -212,10 +212,12 @@ pnpm nx run desktop:package  # build it, then make the Mac zip in apps/desktop/r
   place of the system's text editor, so a test starts no editor.
 - Code that doesn't call Electron goes in its own module, with unit tests beside it. The smoke test
   in `e2e/` drives the built app with Playwright, each test on an empty data folder, and covers what
-  needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`. In CI each test records
-  a trace of the window, kept in its results when it fails, which CI uploads; a test that times the
-  page's frames opts out (`traced: false`), since recording slows them. CI retries a failed test
-  once, and Playwright shows one that then passes as flaky.
+  needs Electron. On Linux it needs a display: CI runs it under `xvfb-run`, in four shards, one job
+  each (`app (1/4)` to `app (4/4)`), which split the tests by count with Playwright's `--shard`;
+  `pnpm nx run desktop:e2e -- --shard=2/4` runs one. In CI each test records a trace of the window,
+  kept in its results when it fails, which CI uploads as `app-test-results-<shard>`; a test that
+  times the page's frames opts out (`traced: false`), since recording slows them. CI retries a
+  failed test once, and Playwright shows one that then passes as flaky.
 
 The window shows untrusted content, so it's locked down, and the smoke test shows each guard
 holding:
