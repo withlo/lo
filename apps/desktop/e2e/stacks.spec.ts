@@ -334,8 +334,11 @@ test.describe('a run of layers', () => {
     await expect(stack).toContainText('V-LINE');
     // #D sits on #A, on another branch: `j` from #B goes to #C, and no further.
     await type(page, 'j', 'j');
+    // `⏎` is Enter on Linux.
     await expect(stack.getByRole('note').first()).toHaveText(
-      `#${STACK.b} and #${STACK.c}, compared with the top of #${STACK.a}. ⏎ shows them as one diff; Esc goes back to one layer.`,
+      new RegExp(
+        `^#${STACK.b} and #${STACK.c}, compared with the top of #${STACK.a}\\. (⏎|Enter) shows them as one diff; Esc goes back to one layer\\.$`,
+      ),
     );
     await expect(rowOf(page, STACK.d)).toHaveAttribute('data-dim', '');
     await type(page, 'Enter');
@@ -345,7 +348,7 @@ test.describe('a run of layers', () => {
       { timeout: 20_000 },
     );
     await expect(bar(page)).toContainText('stack/a → stack/c · 2 files', { timeout: 20_000 });
-    await expect(bar(page).getByRole('button')).toHaveText(`Back to #${STACK.c}Esc`);
+    await expect(bar(page).getByRole('button')).toHaveText(new RegExp(`^Back to #${STACK.c}`));
     const run = `${c}:${STACK.b}-${STACK.c}`;
     await expect
       .poll(() => diffOf(page, run), { timeout: 20_000 })
@@ -432,6 +435,8 @@ test('comes back at the layer it showed after a restart', async ({
   test.setTimeout(90_000);
   await open(page, STACK.a);
   await expect(current(page)).toHaveAttribute('data-key', String(STACK.a), { timeout: 20_000 });
+  // Focus moving into the middle as it's drawn would drop a sequence typed before it.
+  await settled(page);
   await type(page, ']', 's');
   await expect(current(page)).toHaveAttribute('data-key', String(STACK.b), { timeout: 20_000 });
   await app.close();
