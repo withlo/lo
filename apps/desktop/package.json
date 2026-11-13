@@ -23,6 +23,7 @@
     "@lo/github": "workspace:*",
     "@lo/markdown": "workspace:*",
     "@lo/review": "workspace:*",
+    "@lo/stacks": "workspace:*",
     "@lo/syntax": "workspace:*",
     "@lo/ui": "workspace:*",
     "@withlo/overview": "workspace:*",

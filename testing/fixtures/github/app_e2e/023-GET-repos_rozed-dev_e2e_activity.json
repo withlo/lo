@@ -1,0 +1,81 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/activity?ref=refs%2Fheads%2Fapp%2Fbase&direction=desc&per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"986ec8cdff2a415a4431fd35c4ffac17fbeda7a99b3e0ec1845e45312ed8f485\"",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4880",
+      "x-ratelimit-reset": "1794534447",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "120"
+    },
+    "body": [
+      {
+        "id": 49866473950,
+        "node_id": "PSH_kwLOVleUfc8AAAALnEYB3g",
+        "before": "99d29e0c4b73b37b7a59349c8ab0744d02ddf575",
+        "after": "dccd782aff9cd7a5088122cd3fb4a515964acee7",
+        "ref": "refs/heads/app/base",
+        "timestamp": "2026-11-11T13:57:50Z",
+        "activity_type": "push",
+        "actor": {
+          "login": "rozed-bot",
+          "id": 353226052,
+          "node_id": "U_kgDOFQ3NRA",
+          "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/rozed-bot",
+          "html_url": "https://github.com/rozed-bot",
+          "followers_url": "https://api.github.com/users/rozed-bot/followers",
+          "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+          "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+          "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+          "repos_url": "https://api.github.com/users/rozed-bot/repos",
+          "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        }
+      },
+      {
+        "id": 49866000557,
+        "node_id": "PSH_kwLOVleUfc8AAAALnD7IrQ",
+        "before": "0000000000000000000000000000000000000000",
+        "after": "99d29e0c4b73b37b7a59349c8ab0744d02ddf575",
+        "ref": "refs/heads/app/base",
+        "timestamp": "2026-11-11T13:53:55Z",
+        "activity_type": "branch_creation",
+        "actor": {
+          "login": "rozed-bot",
+          "id": 353226052,
+          "node_id": "U_kgDOFQ3NRA",
+          "avatar_url": "https://avatars.githubusercontent.com/u/353226052?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/rozed-bot",
+          "html_url": "https://github.com/rozed-bot",
+          "followers_url": "https://api.github.com/users/rozed-bot/followers",
+          "following_url": "https://api.github.com/users/rozed-bot/following{/other_user}",
+          "gists_url": "https://api.github.com/users/rozed-bot/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/rozed-bot/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/rozed-bot/subscriptions",
+          "organizations_url": "https://api.github.com/users/rozed-bot/orgs",
+          "repos_url": "https://api.github.com/users/rozed-bot/repos",
+          "events_url": "https://api.github.com/users/rozed-bot/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/rozed-bot/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        }
+      }
+    ]
+  }
+}

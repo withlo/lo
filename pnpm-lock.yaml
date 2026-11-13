@@ -241,6 +241,9 @@ importers:
       '@lo/review':
         specifier: workspace:*
         version: link:../../packages/core/review
+      '@lo/stacks':
+        specifier: workspace:*
+        version: link:../../packages/core/stacks
       '@lo/syntax':
         specifier: workspace:*
         version: link:../../packages/desktop/syntax

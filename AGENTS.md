@@ -583,6 +583,32 @@ The diff and the tree follow it through the feature's `revisions.comparisons` se
   the tree marks the files that changed between them, and steps the pull request's other changes
   back.
 
+### Stacks
+
+The `stacks` feature finds the stack a pull request's tab is in: the open pull requests that sit on
+each other with it, by base branch, by shared commits, or as a GitHub stack, as `@lo/stacks` finds
+them.
+
+- Every account's poller looks up the merged pull requests a watched repository's stacks link
+  through, after each new list of its open pull requests (`@lo/stacks`' `lookUpMerged`), so a layer
+  whose lower layer merged still sits where it did.
+- For each repository a pull request's tab is in, main keeps its stacks (`stacksOf`), from the
+  account's poller's list of its open pull requests, its rulesets, and the merged pull requests the
+  layers' state found below layers GitHub moved. They're worked out again, once for all the
+  repository's tabs, when any of those changes. Until the rulesets have been read once, a tab's
+  stack is unknown, and a tab that acts as nobody has none to show.
+- A tab shows its stack when it has two layers or more, or when its pull request is in a GitHub
+  stack. Only the tab on screen reads its layers' state (`poller.stackLayers`, by the layers' node
+  IDs): their reviews, checks, places in the merge queue and viewed counts. It reads them again when
+  the list shows a layer at a newer head than its state, and stops once the tab closes or its pull
+  request leaves the stack.
+- When the pull request on screen merges or closes, its row stays where it was, among the other
+  layers as the stack now has them, while they're still one stack.
+- The window gets each tab's stack on `stacks.stack`, and asks for it with `stacks.state`: its rows
+  in the order `]s` walks them, how it was found ("4 layers · by base branch"), and notes on what Lo
+  couldn't read, cycles it broke and layers that need a rebase. Titles, logins and branch names are
+  GitHub's, as text.
+
 ### Opening pull requests
 
 The `open` feature opens links: typed or pasted in the open box (`⌘L`, and `⌘O` on macOS), a row of

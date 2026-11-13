@@ -1,0 +1,68 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequest",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 89,
+      "filesFirst": 100,
+      "filesAfter": null
+    },
+    "query_sha256": "faebcf58d69c5e012ebe96425bca46ad442d8bf907b11b029049c26d755fc48b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4975",
+      "x-ratelimit-reset": "1794536958",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "25"
+    },
+    "body": {
+      "data": {
+        "repository": {
+          "pullRequest": {
+            "id": "PR_kwDOVleUfc8AAAABOzOKiA",
+            "number": 89,
+            "title": "Stack G2: retry reads that time out",
+            "url": "https://github.com/rozed-dev/e2e/pull/89",
+            "state": "OPEN",
+            "isDraft": false,
+            "updatedAt": "2026-11-13T01:17:42Z",
+            "author": {
+              "__typename": "User",
+              "login": "rozed-bot",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/353226052?v=4"
+            },
+            "baseRefName": "stack/g1",
+            "baseRefOid": "1727dc85d2e6e6f24d49b47b1397b69aa16ef1af",
+            "headRefName": "stack/g2",
+            "headRefOid": "973eab4d84b2a6f6f8660d10ebdcc4c852810627",
+            "isCrossRepository": false,
+            "headRepository": {
+              "nameWithOwner": "rozed-dev/e2e",
+              "isFork": false
+            },
+            "files": {
+              "totalCount": 1,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "MQ"
+              },
+              "nodes": [
+                {
+                  "path": "src/reads.ts",
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -113,6 +113,20 @@ first push out, as if GitHub no longer had it. The overview's files are left in 
 it. Its cassette is `app_e2e`, and `app_e2e_late` is the same with GitHub's patch of one file left
 out.
 
+The stacks the app's tests open come from `fixtures/stack.sh`, built the same way, in rozed-dev/e2e:
+
+- #82, #83, #84 and #85, a stack on `stack/root`, a branch no pull request comes from: #83 on #82 by
+  its base branch, #84 on #83 by the commits they share, and #85, opened after #83, a second layer
+  on #82;
+- #87 on #86, which was squash-merged, so #87 needs a rebase;
+- #88 and #89, GitHub stack #90.
+
+#83 has an overview at `refs/lo/pr/83`. `writeStackRemote` from `@lo/testing/git` builds the remote,
+and `STACK_PULLS` names the pull requests and their heads. Their cassette is `app_stack`. Making a
+GitHub stack of #82, #83 and #84 changes #84's base branch on GitHub; `fixtures/stack-reset.sh`, run
+with `LO_FIXTURE_TOKEN_FILE` as `record.ts` is, puts them back as `stack.sh` made them, so that can
+be recorded again.
+
 ## The credential scan
 
 `test/fixtures.test.ts` checks every file under `fixtures/` the way the recorder checks a new one,
