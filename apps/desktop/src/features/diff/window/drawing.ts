@@ -33,6 +33,7 @@ import { diffFileOf, headerOf, startWith } from './files.ts';
 import type { Entry, Loader, Moved, Shown } from './loader.ts';
 import { main } from './main.ts';
 import { setDrawn, takeReveal } from './tabs.ts';
+import { shown as shownWanted, wantedIn } from './wanted.ts';
 import {
   type DiffThreads,
   NO_THREADS,
@@ -496,6 +497,17 @@ export function draw(options: DrawOptions): Drawing {
     if ([...counted].some((id) => !sameCounts(before.counts.get(id), next.counts.get(id)))) {
       take(latest);
     }
+    showWanted();
+  };
+  /**
+   * The thread another feature asked the diff to show, once this view is on screen and has it:
+   * opened, its line at the top of the screen. Focus stays where it is.
+   */
+  const showWanted = () => {
+    const thread = wantedIn(tab.id);
+    if (showing === undefined || thread === undefined || !view.openThread(thread, true)) return;
+    shownWanted(tab.id);
+    view.revealAtTop({ kind: 'thread', thread });
   };
   // Each file's diff and highlighting came with it.
   view.setMoves(shownMoves);
@@ -654,6 +666,7 @@ export function draw(options: DrawOptions): Drawing {
     else if (waiting && !samePlace(waiting.target, view.keyState().target)) {
       view.reveal(waiting.target);
     }
+    showWanted();
     // Focus that's nowhere in particular, or left behind in a middle view now hidden, comes to the
     // diff, as it does to any middle view.
     const focused = document.activeElement;

@@ -1,8 +1,8 @@
 // What the diff shares with other features' window code: the slot over the diff, where what it
 // compares is said; showing the diff, and a place in it or the file whole; how many files it shows; one file of it beside
 // another view; the lines another feature explains, which the diff marks; the review threads
-// another feature places under its lines; and diffing texts another feature has, as the diff's own
-// files are diffed.
+// another feature places under its lines, and showing one of them; and diffing texts another
+// feature has, as the diff's own files are diffed.
 
 import { createElement, type ReactNode } from 'react';
 
@@ -14,7 +14,7 @@ import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
 import { Beside } from './Beside.tsx';
 import { changed, explainWith, type Explainer } from './explained.ts';
 import { diffJobs } from './main.ts';
-import { showPlace as showCode } from './places.ts';
+import { showPlace as showCode, showThread as showThreadAt } from './places.ts';
 import { loaderOf, useSnapshot } from './tabs.ts';
 import { changed as changedThreads, threadWith, type Threader } from './threads.ts';
 import { DIFF_VIEW } from './whole.ts';
@@ -142,6 +142,17 @@ export function setThreader(threader: Threader): () => void {
 /** Says tab `tab`'s review threads changed, so a diff drawn asks for them again. */
 export function threadsChanged(tab: string): void {
   changedThreads(tab);
+}
+
+/**
+ * Shows review thread `thread` in pull request's tab `tab`'s diff, as the threads panel does: opens
+ * it and puts its line at the top of the screen, a jump `⌃o` comes back from. Focus stays where it
+ * is. With the diff on screen, it's shown at once, and this says whether the diff has it.
+ * Otherwise, or with `wait`, as when another comparison that shows it is coming, the diff comes on
+ * screen and shows it once it's drawn with it, unless the reader does anything else first.
+ */
+export function showThread(tab: string, thread: string, { wait = false } = {}): boolean {
+  return showThreadAt(tab, thread, wait);
 }
 
 /**

@@ -5,7 +5,9 @@
 // Each file's header and its row in the tree count them, `]t` and `[t` walk them, and `za` opens
 // or collapses the one the cursor is on. Comments are drawn as GitHub renders them, images and all.
 // A renamed file's thread under one of its old lines shows there. A stack's layer shows its own
-// threads.
+// threads. The threads panel, `⌘⇧\`, lists them, without moving the diff's lines, and shows one in
+// the diff, an outdated one in the whole diff of the revision it was written on. The stack's row of
+// the layer on screen counts its unresolved threads.
 
 import { writeFileSync } from 'node:fs';
 
@@ -99,6 +101,38 @@ const card = (page: Page, words: string) =>
 /** A collapsed thread's card's one line: a button that opens it. */
 const openCard = (page: Page, words: string) =>
   card(page, words).locator('button[aria-expanded="false"]');
+
+/** The threads panel. */
+const panel = (page: Page) => page.locator('[data-lo-threads]');
+
+/** The rows the threads panel lists: each one's file and where it says the thread is. */
+function rows(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('[data-lo-threads] [role="option"]')].map(
+      (row) =>
+        `${row.closest('[role="group"]')?.getAttribute('aria-label')} ${row.querySelector('.code-small')?.textContent}`,
+    ),
+  );
+}
+
+/** The row the keyboard is on in the threads panel. */
+const focusedRow = (page: Page) => panel(page).locator('[role="option"][aria-selected="true"]');
+
+/** The threads panel's filter that says `name`: its word and its count. */
+const filter = (page: Page, name: string) => panel(page).getByRole('tab', { name, exact: true });
+
+/** Whether focus is in the threads panel's list. */
+function inPanel(page: Page): Promise<boolean> {
+  return page.evaluate(() => document.activeElement?.closest('[data-lo-scope="threads"]') !== null);
+}
+
+/** What's at the top of the diff: the line or header there. */
+function top(page: Page): Promise<unknown> {
+  return page.evaluate(() => window.loDiff?.viewport().at);
+}
+
+/** `⌘⇧\`, which opens and closes the threads panel. */
+const PANEL = `${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+Backslash`;
 
 /** Waits for the middle view to take focus, as it does once it's drawn, so keys reach it. */
 async function settled(page: Page): Promise<void> {
@@ -228,4 +262,116 @@ onStacks('a layer of a stack shows its own threads', async ({ page }) => {
     .toEqual(['src/plans.ts']);
   await expect.poll(() => placed(page)).toEqual([]);
   await expect(card(page, 'GitHub rounds each 100 nodes up')).toHaveCount(0);
+});
+
+onStacks(
+  'the threads panel shows the layer on screen’s threads, and its row counts them',
+  async ({ page }) => {
+    test.setTimeout(60_000);
+    await open(page, STACK.b);
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
+    await settled(page);
+    await page.keyboard.press(PANEL);
+    await expect.poll(() => rows(page)).toEqual(['src/cost.ts new 5']);
+    // #B's row, the layer on screen, counts its unresolved thread.
+    const stack = page.locator('[data-lo-scope="stack"]');
+    await expect(
+      stack.locator('[aria-current="true"]').getByRole('img', { name: '1 unresolved thread' }),
+    ).toBeVisible();
+
+    // The layer below has none of its own.
+    // Esc goes back to the diff, whose keys walk the stack.
+    await page.keyboard.press('Escape');
+    await settled(page);
+    await page.keyboard.press('[');
+    await page.keyboard.press('s');
+    await expect
+      .poll(() => page.evaluate(() => window.loDiff?.files.map((file) => file.path)), {
+        timeout: 20_000,
+      })
+      .toEqual(['src/plans.ts']);
+    await expect(panel(page)).toContainText('No unresolved threads.');
+  },
+);
+
+test('the threads panel lists the threads and shows one in the diff', async ({ page }) => {
+  test.setTimeout(60_000);
+  await open(page, COMMENTS_PULL.number);
+  await expect.poll(() => placed(page), { timeout: 20_000 }).toHaveLength(9);
+  await settled(page);
+  // Down the diff a way, so the line at the top is one a change of width could move.
+  await page.evaluate(() => {
+    const file = window.loDiff?.files.find((each) => each.path === 'src/backoff.ts')?.id;
+    if (file) {
+      window.loDiff?.scrollTo({
+        at: { kind: 'line', at: { file, side: 'new', line: 10 } },
+        offset: 0,
+      });
+    }
+  });
+  await expect.poll(() => top(page)).toMatchObject({ kind: 'line', at: { side: 'new', line: 10 } });
+  const before = await top(page);
+
+  await test.step('opens with focus on its list, leaving the diff’s lines where they were', async () => {
+    const toggle = page.locator('[data-lo-right-toggle]');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await page.keyboard.press(PANEL);
+    await expect(panel(page)).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => inPanel(page)).toBe(true);
+    await expect.poll(() => top(page)).toEqual(before);
+  });
+
+  await test.step('lists the unresolved threads by file, the outdated one by where it was written', async () => {
+    await expect
+      .poll(() => rows(page))
+      .toEqual([
+        'docs/usage.md On the file',
+        'src/backoff.ts new 2',
+        'src/backoff.ts new 8',
+        'src/backoff.ts r1 · line 9',
+        'src/backoff.ts new 15',
+        'src/backoff.ts new 17',
+        'src/queue.ts new 10',
+        'src/queue.ts new 10–35',
+        'src/retry.ts old 2',
+        'src/retry.ts new 16',
+      ]);
+    await expect(filter(page, 'Unresolved 10')).toHaveAttribute('aria-selected', 'true');
+    await expect(filter(page, 'All 11')).toBeVisible();
+    // The header's toggle counts them too.
+    await expect(page.locator('[data-lo-right-toggle]')).toHaveAccessibleName(
+      'Threads panel 10 unresolved',
+    );
+  });
+
+  await test.step('shows the thread the keyboard is on in the diff, keeping focus', async () => {
+    await page.keyboard.press('j');
+    await page.keyboard.press('j');
+    await expect(focusedRow(page)).toContainText('new 8');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
+    await expect(focusedRow(page)).toHaveAttribute('aria-current', 'true');
+    expect(await inPanel(page)).toBe(true);
+  });
+
+  await test.step('shows an outdated thread in the whole diff of the revision it was written on', async () => {
+    await page.keyboard.press('j');
+    await expect(focusedRow(page)).toContainText('r1 · line 9');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => cursor(page), { timeout: 20_000 }).toBe('src/backoff.ts new 9');
+    expect(await placed(page)).toContain('src/backoff.ts new 9');
+    await expect(card(page, 'This grows without bound')).toBeVisible();
+  });
+
+  await test.step('lists every thread with f, and closes, leaving the lines where they were', async () => {
+    await page.keyboard.press('f');
+    await expect(filter(page, 'All 11')).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(async () => (await rows(page)).length).toBe(11);
+    const shown = await top(page);
+    await page.keyboard.press(PANEL);
+    await expect(panel(page)).toHaveCount(0);
+    await settled(page);
+    await expect.poll(() => top(page)).toEqual(shown);
+  });
 });

@@ -14,6 +14,7 @@ import { onShowFile, pathOf } from '../../tree/window/shared.ts';
 import type { Version } from '../contract.ts';
 import { keyOf } from './loader.ts';
 import { drawnFor, loaderOf, revealWhenDrawn } from './tabs.ts';
+import { keepWanted, shown, want } from './wanted.ts';
 import { changeAt, changedIn, DIFF_VIEW, known, opened, versionOf, WHOLE_VIEW } from './whole.ts';
 
 /** How many files have been asked to open whole, so each ask is told from the last. */
@@ -60,6 +61,27 @@ export function openWhole(
     ask: { at: file.at, focus: file.focus, count: asks },
   });
   showMiddle(tab, WHOLE_VIEW);
+}
+
+/**
+ * Shows review thread `thread` in tab `tab`'s diff: opens it and puts its line at the top of the
+ * screen, a jump. With the diff on screen, at once, saying whether it has the thread; otherwise, or
+ * with `wait`, as when another comparison is coming, the diff comes on screen and shows it once
+ * it's drawn with it, unless the reader does anything else first. Focus stays where it is.
+ */
+export function showThread(tab: string, thread: string, wait: boolean): boolean {
+  const drawn = drawnFor(tab);
+  if (drawn && !wait) {
+    if (!drawn.view.openThread(thread, true)) return false;
+    leave();
+    shown(tab);
+    drawn.view.revealAtTop({ kind: 'thread', thread });
+    return true;
+  }
+  leave();
+  want(tab, thread);
+  if (!drawn) showMiddle(tab, DIFF_VIEW);
+  return true;
 }
 
 /** A place asked for in each tab before its diff's files were known, and what stops it waiting. */
@@ -231,6 +253,7 @@ export function placesFor(tab: string): void {
 export function keepPlaces(open: ReadonlySet<string>): void {
   for (const tab of registered) if (!open.has(tab)) registered.delete(tab);
   for (const [tab, stop] of waiting) if (!open.has(tab)) stop();
+  keepWanted(open);
 }
 
 /**

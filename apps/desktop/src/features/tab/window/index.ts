@@ -12,7 +12,7 @@ import { follow } from './follow.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
 import { inStrip, movable, stepTab } from './order.ts';
-import { panels, viewCounts } from './panels.ts';
+import { panels, toggleRight, viewCounts } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
 import { activeTab, kinds } from './shared.ts';
 import { pullsStore, showFiles, showLocal, showPull, showTabs, tabsStore } from './store.ts';
@@ -118,6 +118,14 @@ export default {
         const tab = pullOnScreen();
         if (typeof tab === 'string') return tab;
         return viewCounts.left > 0 || 'This pull request has no left panel yet.';
+      },
+    },
+    rightPanel: {
+      run: toggleRight,
+      enabled: () => {
+        const tab = pullOnScreen();
+        if (typeof tab === 'string') return tab;
+        return viewCounts.right > 0 || 'This pull request has no threads panel yet.';
       },
     },
     nextView: { run: () => stepMiddle(1), enabled: middleSteps },

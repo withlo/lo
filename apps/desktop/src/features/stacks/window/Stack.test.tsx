@@ -24,6 +24,7 @@ const ROW: Row = {
   needsRebase: false,
   overview: true,
   viewed: { source: 'layers', viewed: 41, files: 214, complete: false },
+  threads: null,
 };
 
 const ON_SCREEN: OnScreen = {
@@ -65,6 +66,24 @@ describe('a row', () => {
     const listed = { ...ON_SCREEN, count: { viewed: 1, total: 3, partial: false } };
     expect(layerOf(current, listed).viewed).toEqual({ viewed: 1, total: 3, partial: false });
     expect(layerOf(current, { ...ON_SCREEN, count: undefined }).viewed).toBeUndefined();
+  });
+
+  it("counts another layer's unresolved threads as read with the layers, the one on screen's live", () => {
+    const read = { ...ROW, threads: { unresolved: 3, threads: 120, complete: false } };
+    // Only the first 100 threads' states were read: "3+".
+    expect(layerOf(read, ON_SCREEN).threads).toEqual({ unresolved: 3, partial: true });
+    const all = { ...ROW, threads: { unresolved: 2, threads: 4, complete: true } };
+    expect(layerOf(all, ON_SCREEN).threads).toEqual({ unresolved: 2, partial: false });
+    expect(layerOf(ROW, ON_SCREEN).threads).toBeUndefined();
+    // The layer on screen counts every thread it has, once they're read; until then, as read.
+    const current = { ...read, current: true };
+    expect(layerOf(current, { ...ON_SCREEN, threads: 5 }).threads).toEqual({ unresolved: 5 });
+    expect(layerOf(current, ON_SCREEN).threads).toEqual({ unresolved: 3, partial: true });
+    // Another layer's count never comes from the threads on screen.
+    expect(layerOf(read, { ...ON_SCREEN, threads: 5 }).threads).toEqual({
+      unresolved: 3,
+      partial: true,
+    });
   });
 
   it('draws the text of a pull request without what turns its direction around', () => {

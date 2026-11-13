@@ -11,8 +11,9 @@ const button = cva(
         // The one main action in a view.
         primary:
           'border-transparent bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-press',
-        // In toolbars and headers, where a border would be noise.
-        ghost: 'border-transparent bg-transparent text-fg-muted hover:bg-hover hover:text-fg',
+        // In toolbars and headers, where a border would be noise. A toggle's is pressed while on.
+        ghost:
+          'border-transparent bg-transparent text-fg-muted hover:bg-hover hover:text-fg aria-pressed:bg-selected aria-pressed:text-fg',
         // Destructive or refusing.
         danger: 'border-danger-border bg-danger-bg text-danger',
       },

@@ -271,12 +271,14 @@ hold a GitHub stack along one path and other layers off it: "4 layers · by GitH
 branch", with a note under the rows for each GitHub stack in it, naming its layers: "#4790, #4797
 and #4803 are a GitHub stack." Each layer shows its title, number, author, review state, the state
 of its checks, its place in the merge queue, any "needs rebase" mark, whether it has an overview,
-and how many of its files you've viewed: for the layer on screen, of the files its diff shows. The
-tree scrolls when the stack is longer than its share of the panel, and keeps the layer on screen, or
-the one the keyboard moved to, in view as they change and as the space around the tree does, unless
-you've scrolled the tree yourself since: then it stays where you left it until another layer is
-shown. `]s` and `[s` walk the tree from top to bottom, finishing one branch before starting the
-next, and stop at either end. Showing a layer isn't a jump, so `⌃o` doesn't go back to the one
+how many of its files you've viewed (for the layer on screen, of the files its diff shows), and how
+many of its review threads are unresolved (for the layer on screen, as its threads panel counts
+them, and for the others, of the first 100 threads GitHub lists, with a plus when there are more).
+The tree scrolls when the stack is longer than its share of the panel, and keeps the layer on
+screen, or the one the keyboard moved to, in view as they change and as the space around the tree
+does, unless you've scrolled the tree yourself since: then it stays where you left it until another
+layer is shown. `]s` and `[s` walk the tree from top to bottom, finishing one branch before starting
+the next, and stop at either end. Showing a layer isn't a jump, so `⌃o` doesn't go back to the one
 before. A link to any layer opens the whole stack in one tab, at that layer, and each layer keeps
 its own place.
 
@@ -626,8 +628,22 @@ a fork is someone else's code, even in a repo you trust.
 
 ### Threads panel
 
-Lists every thread on the PR. It can show unresolved threads, all threads or only yours, and labels
-outdated ones. `]t` and `[t` jump between threads.
+The right panel. `⌘⇧\` or the toggle in the tab's header opens and closes it for the whole window,
+and opening it puts focus in its list. Opening or closing it leaves the line at the top of the diff
+where it is. The toggle counts the unresolved threads.
+
+It lists the threads of the view on screen, so each layer of a stack shows its own. A run of layers
+has none of its own, and the panel says to show one of its layers. Threads are grouped by file in
+the file tree's order, each file's own threads first and then by line. Each row shows who started
+the thread, where it is, its replies and whether it's resolved. Outdated threads are labeled with
+the revision and line they were written on. It lists the unresolved threads at first, and `f` steps
+to all threads, then to yours: the ones you started or replied in.
+
+`j` and `k` move through it. `⏎` or a click shows the thread in the diff, opened, at the top of the
+screen, and focus stays in the panel. It's a jump, so `⌃o` goes back. A thread the diff on screen
+doesn't show, such as an outdated one, shows in the whole diff of the revision it's on, which Lo
+compares first, and `⌃o` doesn't change the comparison back. A file-level thread shows its file's
+header. In the diff, `]t` and `[t` jump between threads.
 
 ### Timeline
 
