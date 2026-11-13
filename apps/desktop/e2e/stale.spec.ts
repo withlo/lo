@@ -387,6 +387,11 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
   test.setTimeout(90_000);
   const id = await opened(app, page);
   await expect.poll(() => current(page, id), { timeout: 30_000 }).toMatchObject({ code: 'ready' });
+  // Seen, once its first blocks have drawn. "Read it in the overview" asks for a block's focus
+  // once, and a block can't take it while the overview is hidden for its first draw, which ends at
+  // the bound on what a tab holds back if it doesn't end sooner: left for the diff before then,
+  // the ask would race that bound.
+  await expect(shown(page).locator('.lo-ov')).not.toHaveClass(/is-drawing/, { timeout: 10_000 });
   await diffTab(page).click();
   const diff = page.locator('[data-lo-middle-view="diff.view"] .lo-diffview');
   await expect(diff).toBeVisible({ timeout: 20_000 });
