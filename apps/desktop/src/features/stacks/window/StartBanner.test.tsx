@@ -12,7 +12,7 @@ import type { PullTab } from '../../tab/window/shared.ts';
 import type { Offer, StackState } from '../contract.ts';
 import feature from './index.ts';
 import { StartBanner } from './StartBanner.tsx';
-import { startSwitch } from './store.ts';
+import { startSwitch } from './offers.ts';
 
 const BELOW = '5'.repeat(40);
 

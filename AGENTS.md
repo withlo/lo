@@ -634,6 +634,30 @@ them.
   couldn't read, cycles it broke and layers that need a rebase. Titles, logins and branch names are
   GitHub's, as text.
 
+`gS` makes the chain the pull request on screen is in a GitHub stack
+(`features/stacks/main/conversion.ts`), and the confirmation is the only way anything is sent.
+
+- Main plans it (`stacks.plan`): first Lo's own reasons (a tab that acts as nobody, a conversion
+  already running in the repository), then GitHub's stacks holding the pull request, read through
+  the account's queue (a 404 means the repository has no Stacks API, and an answer that disagrees
+  with the list has it listed again), then whether a layer is in a merge queue, from the layers'
+  state, then `@lo/stacks`' `planConversion`. A refusal lists every reason in words. A plan is kept
+  in main under a random key, a tab's last one only, and the window confirms the key
+  (`stacks.convert`): it never names a change.
+- Each plan runs once: it's taken from the plans kept before anything is sent. Its changes go in
+  order through `poller.runConversionStep`, stopping at the first GitHub refuses or that fails. They
+  wait out GitHub's pauses, which the dialog says, and the reader's stop (`stacks.stop`) gives up
+  the next one before it's sent. Nothing is ever sent again by itself; a change whose answer was
+  lost counts as maybe done.
+- A conversion that failed or stopped can put back what it changed, once the reader asks
+  (`stacks.putBack`): a stack it may have made, only while GitHub's stack holds exactly the plan's
+  pull requests (`poller.unstack`, which refuses as `stackChanged`), then the base branches it
+  changed, last first, through `poller.retarget`. A base branch changed elsewhere since is left and
+  named, and so is an add to a GitHub stack that may have gone through. "Try again" plans anew, once
+  the repository's pull requests have been listed since.
+- A repository has one conversion at a time, and none outlives Lo: as it quits, what isn't sent is
+  given up on, and no plan is kept. The window hears how each goes on `stacks.conversion`.
+
 ### Opening pull requests
 
 The `open` feature opens links: typed or pasted in the open box (`⌘L`, and `⌘O` on macOS), a row of

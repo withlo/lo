@@ -6,7 +6,7 @@
 import { Banner } from '@lo/ui';
 
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { applyOffer, offers } from './store.ts';
+import { applyOffer, offers } from './offers.ts';
 
 export function StartBanner({ tab }: { tab: PullTab }) {
   const offer = useTabState(offers, tab.id);

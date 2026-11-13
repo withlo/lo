@@ -1,50 +1,50 @@
-// Where each layer's diff could start, as main last offered it in the layer's stack: kept with the
-// layer's view of its tab, and gone when the tab closes.
+// What the window knows of making a chain a GitHub stack: the dialog, while it's open, and each
+// conversion main says how it goes. Only this feature writes here.
 
-import { tabState, type BannerSwitch } from '../../tab/window/shared.ts';
-import type { Offer, StackState } from '../contract.ts';
-import { main } from './main.ts';
+import { createStore } from 'zustand/vanilla';
 
-/** The start each view of a pull request's tab is offered, if any. */
-export const offers = tabState<Offer | null>(() => null);
-
-/** Takes what main sent of a tab's stack. */
-export function takeStack(state: StackState): void {
-  const kept = offers.get(state.id);
-  if (JSON.stringify(kept) !== JSON.stringify(state.offer)) offers.set(state.id, state.offer);
-}
-
-const asked = new Set<string>();
-
-/** Asks main for a tab's stack, once, for a tab drawn before main said anything of it. */
-export function catchUp(id: string): void {
-  if (asked.has(id)) return;
-  asked.add(id);
-  main()
-    .state({ id })
-    .then((state) => {
-      if (state && offers.get(id) === null) offers.set(id, state.offer);
-    })
-    .catch((error: unknown) => console.error("Lo couldn't ask about a tab's stack:", error))
-    .finally(() => asked.delete(id));
-}
-
-/** Starts tab `id`'s layer's diff where `offer` says, as its banner's button does. */
-export function applyOffer(id: string, offer: Offer): void {
-  offers.set(id, null);
-  main()
-    .useStart({ id, commit: offer.commit })
-    .catch((error: unknown) => console.error("Lo couldn't start the layer's diff there:", error));
-}
+import type { ConversionView, Plan } from '../contract.ts';
 
 /**
- * Whether a tab's banner shows: while it's offered a start. A tab drawn before main said anything
- * of its stack asks for it as it comes on screen.
+ * The dialog, for the pull request `number` in tab `tab`:
+ *
+ * - `planning`: main is asking GitHub; the dialog shows only once that takes a moment (`shown`);
+ * - `confirm`: the plan, for the reader to confirm; `sending` once they have, and `problem`, why
+ *   main didn't run it, if it didn't;
+ * - `conversion`: the conversion named `key`, as main says it goes; `asking` while main is asked to
+ *   put its base branches back.
  */
-export const startSwitch: BannerSwitch = {
-  shows: (tab) => offers.get(tab.id) !== null,
-  subscribe(tab, listener) {
-    if (offers.get(tab.id) === null) catchUp(tab.id);
-    return offers.subscribe(listener);
-  },
-};
+export type Dialog =
+  | {
+      readonly kind: 'planning';
+      readonly tab: string;
+      readonly number: number;
+      readonly shown: boolean;
+    }
+  | {
+      readonly kind: 'confirm';
+      readonly tab: string;
+      readonly number: number;
+      readonly plan: Plan;
+      readonly sending: boolean;
+      readonly problem: string | undefined;
+    }
+  | {
+      readonly kind: 'conversion';
+      readonly tab: string;
+      readonly number: number;
+      readonly key: string;
+      readonly asking: boolean;
+    };
+
+export interface StacksWindowState {
+  /** The dialog, or nothing while it's closed. */
+  readonly dialog: Dialog | undefined;
+  /** Each conversion, by its plan's key, as main last said. */
+  readonly conversions: ReadonlyMap<string, ConversionView>;
+}
+
+export const stacksStore = createStore<StacksWindowState>()(() => ({
+  dialog: undefined,
+  conversions: new Map(),
+}));

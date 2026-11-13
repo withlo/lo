@@ -39,6 +39,7 @@ export { Callout, type CalloutProps, type CalloutTone } from './Callout.tsx';
 export { Choices, type ChoiceItem, type ChoicesProps } from './Choices.tsx';
 export { SegmentedControl, type Segment, type SegmentedControlProps } from './SegmentedControl.tsx';
 export { Dialog, DialogSpacer, type DialogProps } from './Dialog.tsx';
+export { Steps, type StepItem, type StepsProps, type StepState } from './Steps.tsx';
 export { Mark, type MarkProps } from './Mark.tsx';
 export { SetupItem, SetupList, type SetupItemProps, type SetupListProps } from './Setup.tsx';
 export { Switch, type SwitchProps } from './Switch.tsx';

@@ -275,9 +275,14 @@ export interface Held {
 
 /**
  * `test`, with Lo signed in as rozed-bot on a replay server that answers from `app_stack`, recorded
- * from the app on the stacks, and fetching from their repository, built on this machine.
+ * from the app on the stacks, or the cassette `cassette` names, and fetching from their repository,
+ * built on this machine. With `account` false, Lo starts with no account.
  */
 export const onStacks = test.extend<{
+  /** The cassette GitHub answers from. */
+  cassette: string;
+  /** Whether Lo starts with rozed-bot's account. */
+  account: boolean;
   github: ReplayServer;
   remote: string;
   /** Whether Lo starts without git, so it has only what GitHub says. */
@@ -294,12 +299,13 @@ export const onStacks = test.extend<{
   /** Where Lo finds GitHub: the replay server, or one in front of it that holds requests back. */
   githubOrigin: string;
 }>({
+  cassette: ['app_stack', { option: true }],
+  account: [true, { option: true }],
   noGit: [false, { option: true }],
   lateRemote: [false, { option: true }],
   holdStacks: [false, { option: true }],
-  // oxlint-disable-next-line no-empty-pattern
-  github: async ({}, use) => {
-    const server = await serveReplay('app_stack');
+  github: async ({ cassette }, use) => {
+    const server = await serveReplay(cassette);
     await use(server);
     await server.close();
   },
@@ -368,14 +374,14 @@ export const onStacks = test.extend<{
     const folder = base.info().outputPath('remote');
     await use(lateRemote ? `file://${folder}` : writeStackRemote(folder));
   },
-  launch: async ({ githubOrigin, remote, noGit }, use) => {
+  launch: async ({ githubOrigin, remote, noGit, account }, use) => {
     const tokenFile = base.info().outputPath('token');
     writeFileSync(tokenFile, `${TOKEN}\n`);
     await use({
       args: [appFolder, ...KEYCHAIN],
       env: {
         LO_GITHUB: githubOrigin,
-        LO_TEST_TOKEN_FILE: tokenFile,
+        ...(account ? { LO_TEST_TOKEN_FILE: tokenFile } : {}),
         LO_GIT_REMOTE: remote,
         ...(noGit ? { LO_GIT: 'none' } : {}),
       },

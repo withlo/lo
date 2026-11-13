@@ -39,6 +39,11 @@ export interface RecordingProxyOptions {
   readonly token: string;
   /** The `fetch` that reaches GitHub. */
   readonly fetch?: typeof globalThis.fetch | undefined;
+  /**
+   * Whether requests that write to GitHub are sent and recorded, as `LO_RECORD_WRITES=1` says for
+   * a recording of what the app writes. Off unless set: they're refused.
+   */
+  readonly writes?: boolean | undefined;
 }
 
 export interface RecordingProxy {
@@ -53,13 +58,14 @@ export interface RecordingProxy {
 /**
  * Starts a recording proxy on a free port. Every request it gets is sent to GitHub signed as the
  * bot, whatever token the app sent, and recorded; a request that would write to GitHub is refused,
- * since the recorder sends none. Redirects come back to the app as they are, for it to follow.
+ * unless `writes` says to send it. Redirects come back to the app as they are, for it to follow.
  */
 export async function startRecordingProxy(options: RecordingProxyOptions): Promise<RecordingProxy> {
   const recorder = new Recorder({
     fetch: options.fetch ?? fetch,
     dir: options.dir,
     secrets: [options.token],
+    writes: options.writes ?? false,
   });
   const failures: string[] = [];
   const server = createServer();

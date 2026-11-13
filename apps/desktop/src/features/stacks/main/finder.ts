@@ -24,6 +24,7 @@ import {
 
 import type { PullState } from '../../tab/contract.ts';
 import type { Offer, StackState } from '../contract.ts';
+import type { Found } from './conversion.ts';
 import { planStart, type StartForest } from './starts.ts';
 import { viewOf, type Shown } from './view.ts';
 
@@ -193,6 +194,25 @@ export class StackFinder {
     // The tab changes, and the stacks are worked out again.
     this.#options.compareFrom(id, commit ?? undefined);
     return true;
+  }
+
+  /**
+   * What tab `id`'s stack is worked out from now, for making it a GitHub stack: its repository's
+   * stacks, the open pull requests they were found among, and its layers' state as last read.
+   * Nothing until they're known, and for a tab that acts as nobody.
+   */
+  found(id: string): Found | undefined {
+    const tab = this.#followed.get(id)?.tab;
+    if (tab?.login === undefined) return undefined;
+    const entry = this.#pollers.get(tab.login.toLowerCase());
+    if (entry?.kind !== 'ready') return undefined;
+    const { poller } = entry;
+    const repo = tab.pull.repo;
+    const forest = this.#forest(poller, repo)?.stacks;
+    const list = poller.openPullRequests(repo)?.value;
+    if (!forest || !list) return undefined;
+    const layers = poller.cachedRead(tab.pull, STACK_LAYERS)?.value;
+    return { login: poller.login, forest, list, layers };
   }
 
   /** Forgets what was kept for an account that was removed, whose poller stopped. */
