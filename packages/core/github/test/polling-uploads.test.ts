@@ -13,6 +13,7 @@ import {
   pr,
   Polling,
   postComment,
+  QUIET,
   recorded,
   useFakeClock,
   wall,
@@ -20,6 +21,7 @@ import {
 } from './support/polling.ts';
 import { prepareAttachment, type PreparedAttachment } from '../src/attachments.ts';
 import { RepoRef } from '../src/refs.ts';
+import { Token } from '../src/token.ts';
 
 beforeEach(useFakeClock);
 
@@ -142,4 +144,46 @@ test('an upload given up while it waits is never sent, and one under way is canc
     [0, TARGET],
     [1, UPLOAD],
   ]);
+});
+
+/** The token each request the cassette was asked was sent with. */
+function sentAs(t: Polling): (string | null)[] {
+  return t.http.seen.map((request) => request.headers.get('authorization'));
+}
+
+test('an upload given a token is sent as it, alone, through the same queue and checks', async () => {
+  const t = await Polling.start('uploads_as_gh', uploaded(), { delay: slowUploads });
+  const gh = new Token('gho_GH');
+  const first = t.poller.upload(E2E, png(), { token: gh });
+  const second = t.poller.upload(E2E, png());
+  expect(await t.finish(first)).toBe(ASSET);
+  expect(await t.finish(second)).toBe(ASSET);
+  expect(t.requests()).toEqual([
+    [0, TARGET],
+    [1, UPLOAD],
+    [11, UPLOAD],
+  ]);
+  expect(sentAs(t)).toEqual(['token gho_FAKE', 'token gho_GH', 'token gho_FAKE']);
+});
+
+test('a token given for an upload that github refuses is neither kept nor named', async () => {
+  const [target, upload] = uploaded();
+  if (!target || !upload) throw new Error('attachments_e2e changed');
+  const refused = answer(
+    upload,
+    401,
+    [['content-type', 'application/json; charset=utf-8']],
+    '{"message":"Bad credentials"}',
+  );
+  const t = await Polling.start('uploads_as_gh_refused', [target, refused, upload]);
+  const gh = new Token('gho_GH_REFUSED');
+  const failed = await t.finish(outcome(t.poller.upload(E2E, png(), { token: gh })));
+  expect(failed.ok).toBe(false);
+  const said = failed.ok ? '' : `${String(failed.error)} ${JSON.stringify(failed.error)}`;
+  expect(said).not.toContain('gho_GH_REFUSED');
+  // Sent once, and the account's own token was never taken for refused.
+  expect(await t.finish(t.poller.upload(E2E, png()))).toBe(ASSET);
+  expect(sentAs(t)).toEqual(['token gho_FAKE', 'token gho_GH_REFUSED', 'token gho_FAKE']);
+  expect(t.status()).toEqual(QUIET);
+  expect(t.logs.join('\n')).not.toContain('gho_GH_REFUSED');
 });

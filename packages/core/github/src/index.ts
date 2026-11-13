@@ -1,6 +1,7 @@
 export * from './accounts.ts';
 export * from './activity.ts';
 export * from './attachments.ts';
+export * from './bodies.ts';
 export * from './choice.ts';
 export * from './client.ts';
 export * from './comparisons.ts';

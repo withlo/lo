@@ -8,25 +8,25 @@
       "name": "cli",
       "number": 13013
     },
-    "query_sha256": "6e00dbdbd42ffd1b4d021aef6113dbae5a18cb34ae18a726f6ff2b58e78279ba"
+    "query_sha256": "045c9189f9f7d2e76cca726c3d781cf897a7a6de99b09dad7d3bcdb461a51aab"
   },
   "response": {
     "status": 200,
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4973",
+      "x-ratelimit-remaining": "4969",
       "x-ratelimit-reset": "1794564294",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "27"
+      "x-ratelimit-used": "31"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4973,
-          "used": 27,
+          "remaining": 4969,
+          "used": 31,
           "resetAt": "2026-11-13T10:04:54Z"
         },
         "repository": {

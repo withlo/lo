@@ -71,8 +71,8 @@ export interface PullRequestTimeline {
 
 /** The pull request's description: its first post. */
 export interface TimelineDescription {
-  /** `author.login`. `undefined` for a deleted account. */
-  author: string | undefined;
+  /** `author`. `undefined` for a deleted account. */
+  author: Actor | undefined;
   /** `body`, in Markdown. */
   body: string;
   createdAt: string;
@@ -111,10 +111,10 @@ export type TimelineItem =
   /** `LabeledEvent`, or `UnlabeledEvent` when `added` is false. `color` is six hex digits. */
   | { kind: 'label'; event: TimelineEvent; name: string; color: string; added: boolean }
   /**
-   * `AssignedEvent`, or `UnassignedEvent` when `added` is false. `assignee` is a login,
-   * `undefined` for a deleted account.
+   * `AssignedEvent`, or `UnassignedEvent` when `added` is false. `assignee` is `undefined` for a
+   * deleted account.
    */
-  | { kind: 'assignment'; event: TimelineEvent; assignee: string | undefined; added: boolean }
+  | { kind: 'assignment'; event: TimelineEvent; assignee: Actor | undefined; added: boolean }
   /**
    * `ReviewRequestedEvent`, or `ReviewRequestRemovedEvent` when `added` is false. `reviewer` is
    * `undefined` for a deleted account or team.
@@ -177,7 +177,7 @@ export type TimelineItem =
       kind: 'reviewDismissed';
       event: TimelineEvent;
       review: string | undefined;
-      reviewer: string | undefined;
+      reviewer: Actor | undefined;
       message: string | undefined;
       previousState: PullRequestReviewState;
     }
@@ -197,18 +197,32 @@ export type TimelineItem =
    */
   | { kind: 'other'; typename: string | undefined };
 
-/** Who did something, and when: an event's `actor.login` and `createdAt`. */
+/** Who did something, and when: an event's `actor` and `createdAt`. */
 export interface TimelineEvent {
   /** `undefined` for a deleted account. */
-  actor: string | undefined;
+  actor: Actor | undefined;
   at: string;
+}
+
+/**
+ * The type of account GitHub names someone with (`__typename`). Only a `User`'s or an
+ * `Organization`'s login names its avatar at `avatars.githubusercontent.com`: GraphQL gives a bot's
+ * login without the `[bot]` that sets it apart from a person's, and a mannequin or an enterprise
+ * account isn't an account on github.com.
+ */
+export type ActorType = 'User' | 'Bot' | 'Mannequin' | 'Organization' | 'EnterpriseUserAccount';
+
+/** An account, by its login and its type. */
+export interface Actor {
+  login: string;
+  type: ActorType;
 }
 
 /** `IssueComment`'s fields. */
 export interface TimelineComment {
   id: string;
-  /** `author.login`. `undefined` for a deleted account. */
-  author: string | undefined;
+  /** `author`. `undefined` for a deleted account. */
+  author: Actor | undefined;
   /** `body`, in Markdown. */
   body: string;
   createdAt: string;
@@ -226,8 +240,8 @@ export interface TimelineComment {
 /** `PullRequestReview`'s fields. */
 export interface TimelineReview {
   id: string;
-  /** `author.login`. `undefined` for a deleted account. */
-  author: string | undefined;
+  /** `author`. `undefined` for a deleted account. */
+  author: Actor | undefined;
   /** `body`, in Markdown, which may be empty. */
   body: string;
   state: PullRequestReviewState;
@@ -263,10 +277,11 @@ export interface TimelineCommit {
 export type ForcePushedBranch = 'head' | 'base';
 
 /**
- * Who was asked for a review: a person, bot or mannequin by login, or a team as `org/team` (an
- * enterprise team by its slug).
+ * Who was asked for a review: a person, bot or mannequin by login and type, or a team as
+ * `org/team` (an enterprise team by its slug).
  */
-export type RequestedReviewer = { kind: 'account'; login: string } | { kind: 'team'; slug: string };
+export type RequestedReviewer =
+  { kind: 'account'; login: string; type: ActorType } | { kind: 'team'; slug: string };
 
 /** An issue or pull request that mentioned this one. */
 export interface ReferenceSource {
@@ -616,7 +631,7 @@ async function readPage(
   const items = pullRequest.timelineItems;
   return {
     description: {
-      author: pullRequest.author?.login,
+      author: actor(pullRequest.author),
       body: pullRequest.body,
       createdAt: pullRequest.createdAt,
       lastEditedAt: pullRequest.lastEditedAt ?? undefined,
@@ -636,8 +651,21 @@ function other(typename: string | undefined): TimelineItem {
 }
 
 /** Who did an event and when: every event names them the same way. */
-function event(node: { actor: { login: string } | null; createdAt: string }): TimelineEvent {
-  return { actor: node.actor?.login, at: node.createdAt };
+function event(node: { actor: ActorNode | null; createdAt: string }): TimelineEvent {
+  return { actor: actor(node.actor), at: node.createdAt };
+}
+
+/** An account as GitHub names it: its type, and its login unless Lo doesn't ask about its type. */
+type ActorNode = { __typename: ActorType; login?: string };
+
+/**
+ * `node`, an account, or `undefined` for a deleted one, or one of a type Lo doesn't know, which
+ * comes without a login.
+ */
+export function actor(node: ActorNode | null | undefined): Actor | undefined {
+  if (!node) return undefined;
+  const { __typename: type, login } = node;
+  return typeof login === 'string' ? { login, type } : undefined;
 }
 
 type ReviewerNode = Extract<Node, { __typename: 'ReviewRequestedEvent' }>['requestedReviewer'];
@@ -653,7 +681,7 @@ export function requestedReviewer(requested: ReviewerNode): RequestedReviewer | 
     case 'Bot':
     case 'Mannequin':
     case 'User':
-      return { kind: 'account', login: requested.login };
+      return { kind: 'account', login: requested.login, type: typename };
     case 'Team':
       return { kind: 'team', slug: requested.combinedSlug };
     case 'EnterpriseTeam':
@@ -700,7 +728,7 @@ function itemOf(node: Node): TimelineItem {
         kind: 'comment',
         comment: {
           id: node.id,
-          author: node.author?.login,
+          author: actor(node.author),
           body: node.body,
           createdAt: node.createdAt,
           lastEditedAt: node.lastEditedAt ?? undefined,
@@ -715,7 +743,7 @@ function itemOf(node: Node): TimelineItem {
         kind: 'review',
         review: {
           id: node.id,
-          author: node.author?.login,
+          author: actor(node.author),
           body: node.body,
           state: node.state,
           createdAt: node.createdAt,
@@ -764,8 +792,8 @@ function itemOf(node: Node): TimelineItem {
       return {
         kind: 'assignment',
         event: event(node),
-        // A login, or nothing for a deleted account or one of a kind Lo doesn't know.
-        assignee: node.assignee?.login,
+        // Nothing for a deleted account or one of a kind Lo doesn't know.
+        assignee: actor(node.assignee),
         added: typename === 'AssignedEvent',
       };
     case 'ReviewRequestedEvent':
@@ -843,7 +871,7 @@ function itemOf(node: Node): TimelineItem {
         kind: 'reviewDismissed',
         event: event(node),
         review: node.review?.id,
-        reviewer: node.review?.author?.login,
+        reviewer: actor(node.review?.author),
         message: node.dismissalMessage ?? undefined,
         previousState: node.previousReviewState,
       };

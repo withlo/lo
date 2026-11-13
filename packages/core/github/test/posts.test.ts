@@ -8,8 +8,8 @@ import { replayFetch } from '@lo/testing';
 import { expect, test } from 'vitest';
 
 import { POSTS_23 } from './scenarios/posts.ts';
+import { BODIES_A_REQUEST, readRenderedBodies } from '../src/bodies.ts';
 import { GithubClient } from '../src/client.ts';
-import { RenderedBodiesDocument } from '../src/generated/graphql.ts';
 import { PullRef } from '../src/refs.ts';
 import { labelColor, readPullRequestSidebar } from '../src/sidebar.ts';
 import { Token } from '../src/token.ts';
@@ -20,30 +20,75 @@ function client(cassette: string): GithubClient {
 
 test('a review comments html reads by its node id, as a reviews does', async () => {
   const github = client('rendered_bodies_e2e_23');
+  const pull = new PullRef('rozed-dev', 'e2e', 23);
   const ids = [POSTS_23.comment, POSTS_23.reply, POSTS_23.review, POSTS_23.deleted];
-  const { data, errors } = await github.graphqlWithErrors(
-    RenderedBodiesDocument,
-    { owner: 'rozed-dev', name: 'e2e', number: 23, description: false, ids },
-    1,
-  );
-  const html = new Map(
-    data.nodes.flatMap((node) => {
-      if (!node || !('bodyHTML' in node)) return [];
-      const { __typename: typename, id, bodyHTML } = node;
-      return [[id, [typename, bodyHTML]]];
-    }),
-  );
-  expect(html.get(POSTS_23.comment)).toEqual([
-    'PullRequestReviewComment',
+  const read = await readRenderedBodies(github, pull, ids);
+  expect(read.bodies.get(POSTS_23.comment)).toBe(
     '<p dir="auto">Fixture E11: a line thread, the first comment of a pending review.</p>',
-  ]);
-  expect(html.get(POSTS_23.reply)?.[0]).toBe('PullRequestReviewComment');
-  expect(html.get(POSTS_23.review)?.[0]).toBe('PullRequestReview');
+  );
+  expect([...read.bodies.keys()]).toEqual([POSTS_23.comment, POSTS_23.reply, POSTS_23.review]);
   // A post that's gone is null, with an error about it alone; the description wasn't asked for.
-  expect(data.nodes[3]).toBeNull();
-  expect(errors.map((error) => error.path)).toEqual([['nodes', 3]]);
-  expect(data.repository?.pullRequest).toBeUndefined();
+  expect(read.gone).toEqual([POSTS_23.deleted]);
+  expect(read.description).toBeUndefined();
   expect(github.rateLimits().lastGraphQLCost).toBe(1);
+
+  const described = await readRenderedBodies(github, pull, [POSTS_23.review], {
+    description: true,
+  });
+  expect(described.description).toMatch(/^<p dir="auto">Fixture E11 \(review writes\)/);
+  expect(described.bodies).toEqual(
+    new Map([
+      [
+        POSTS_23.review,
+        '<p dir="auto">Fixture E11: the pending review\'s summary, submitted as a comment.</p>',
+      ],
+    ]),
+  );
+  expect(described.gone).toEqual([]);
+});
+
+/** The node IDs a `RenderedBodies` request asked for. */
+function askedIds(body: unknown): string[] {
+  const variables: unknown = typeof body === 'object' && body ? Reflect.get(body, 'variables') : {};
+  const ids: unknown =
+    typeof variables === 'object' && variables ? Reflect.get(variables, 'ids') : [];
+  if (!Array.isArray(ids)) throw new Error('no ids');
+  return ids.map(String);
+}
+
+/** GitHub's answer to a read of `ids`, each a comment. */
+function comments(ids: string[]): Response {
+  return Response.json({
+    data: {
+      rateLimit: null,
+      repository: { pullRequest: null },
+      nodes: ids.map((id) => ({ __typename: 'IssueComment', id, bodyHTML: `<p>${id}</p>` })),
+    },
+  });
+}
+
+test('posts are read a hundred at a time, and nothing is sent for nothing', async () => {
+  const sent: number[] = [];
+  const github = new GithubClient({
+    fetch: async (input, init) => {
+      const ids = askedIds(await new Request(input, init).json());
+      sent.push(ids.length);
+      return comments(ids);
+    },
+    token: new Token('gho_FAKE'),
+  });
+  const pull = new PullRef('rozed-dev', 'e2e', 23);
+  expect(await readRenderedBodies(github, pull, [])).toEqual({
+    description: undefined,
+    bodies: new Map(),
+    gone: [],
+  });
+  expect(sent).toEqual([]);
+  const ids = Array.from({ length: BODIES_A_REQUEST * 2 + 5 }, (_, at) => `IC_${at}`);
+  const read = await readRenderedBodies(github, pull, [...ids, ids[0] ?? '']);
+  expect(sent).toEqual([BODIES_A_REQUEST, BODIES_A_REQUEST, 5]);
+  expect([...read.bodies.keys()]).toEqual(ids);
+  expect(read.bodies.get('IC_204')).toBe('<p>IC_204</p>');
 });
 
 test('the sidebar holds labels, reviewers, their latest reviews, assignees and drafts', async () => {
@@ -55,21 +100,24 @@ test('the sidebar holds labels, reviewers, their latest reviews, assignees and d
       { name: 'ready-for-review', color: '39d965' },
     ],
     requested: [
-      { kind: 'account', login: 'williammartin' },
-      { kind: 'account', login: 'BagToad' },
+      // A team rozed-bot can't see, which GitHub answers with null and no error.
+      { kind: 'hiddenTeam' },
+      { kind: 'account', login: 'williammartin', type: 'User' },
+      { kind: 'account', login: 'BagToad', type: 'User' },
     ],
-    // A team rozed-bot can't see.
-    unseenRequests: 1,
     reviews: [
-      { author: 'copilot-pull-request-reviewer', state: 'COMMENTED' },
-      { author: 'ke66344060-ship-it', state: 'COMMENTED' },
+      { author: { login: 'copilot-pull-request-reviewer', type: 'Bot' }, state: 'COMMENTED' },
+      { author: { login: 'ke66344060-ship-it', type: 'User' }, state: 'COMMENTED' },
     ],
     assignees: [],
   });
   const draft = await readPullRequestSidebar(github, new PullRef('cli', 'cli', 13017));
   expect(draft.isDraft).toBe(true);
-  expect(draft.requested).toEqual([{ kind: 'account', login: 'babakks' }]);
-  expect(draft.assignees).toEqual(['babakks', 'Copilot']);
+  expect(draft.requested).toEqual([{ kind: 'account', login: 'babakks', type: 'User' }]);
+  expect(draft.assignees).toEqual([
+    { login: 'babakks', type: 'User' },
+    { login: 'Copilot', type: 'User' },
+  ]);
   expect(github.rateLimits().lastGraphQLCost).toBe(1);
 });
 

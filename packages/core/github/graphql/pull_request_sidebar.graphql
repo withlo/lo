@@ -19,7 +19,8 @@ query PullRequestSidebar($owner: String!, $name: String!, $number: Int!) {
           color
         }
       }
-      # Those asked to review who haven't since. Null for a team the account can't see.
+      # Those asked to review who haven't since. A team the account can't see is null, without an
+      # error.
       reviewRequests(first: 100) {
         nodes {
           requestedReviewer {
@@ -54,6 +55,7 @@ query PullRequestSidebar($owner: String!, $name: String!, $number: Int!) {
       }
       assignees(first: 100) {
         nodes {
+          __typename
           login
         }
       }

@@ -15,10 +15,11 @@
  * - **Uploads can't be undone:** GitHub has no way to delete one, so Lo never sends one again by
  *   itself, but for once when GitHub refused the token, and so took nothing, and the account's
  *   `onUnauthorized` renewed it.
- * - **Where a file goes:** only to GitHub's uploads address, with the account's token, and the
- *   address GitHub answers must be an attachment's on `github.com` before Markdown shows it. On a
- *   private repository that address answers only to someone signed in who can see it; Lo never
- *   fetches it, and shows an attachment in the preview from the bytes it sent.
+ * - **Where a file goes:** only to GitHub's uploads address, with the account's token or one given
+ *   for that upload alone ({@link UploadOptions.token}), and the address GitHub answers must be an
+ *   attachment's on `github.com` before Markdown shows it. On a private repository that address
+ *   answers only to someone signed in who can see it; Lo never fetches it, and shows an attachment
+ *   in the preview from the bytes it sent.
  */
 
 import type { GithubClient, UploadProgress } from './client.ts';
@@ -26,6 +27,7 @@ import { GithubError } from './errors.ts';
 import { isRecord } from './graphql.ts';
 import { stripMetadata, UnreadableMetadata, type Metadata } from './metadata.ts';
 import type { RepoRef } from './refs.ts';
+import type { Token } from './token.ts';
 
 /** Where attachments go, under GitHub's uploads address. */
 export const UPLOAD_PATH = '/user-attachments/assets';
@@ -353,21 +355,26 @@ export interface UploadOptions {
   signal?: AbortSignal | undefined;
   /** Hears how much of the file has been sent, when the client's `fetch` can tell. */
   progress?: UploadProgress | undefined;
+  /**
+   * Uploads as this token instead of the account's, for this upload alone: as when the account's
+   * own can't upload and `gh`'s can. It's never kept, and refused, the upload isn't sent again.
+   */
+  token?: Token | undefined;
 }
 
 /**
- * Uploads `file` to the repository with ID `repositoryId`, as the account. Returns the
- * attachment's address. It's never sent again by itself, as an upload can't be undone, but for
- * once: when GitHub refused the token, and so took nothing, and the client's `onUnauthorized` hands
- * over a new one, as when an expired token is renewed.
+ * Uploads `file` to the repository with ID `repositoryId`, as the account, or as the token
+ * `options` give. Returns the attachment's address. It's never sent again by itself, as an upload
+ * can't be undone, but for once: when GitHub refused the account's token, and so took nothing, and
+ * the client's `onUnauthorized` hands over a new one, as when an expired token is renewed.
  */
 export async function uploadAttachment(
   client: GithubClient,
   repositoryId: number,
   file: PreparedAttachment,
-  { signal, progress }: UploadOptions = {},
+  { signal, progress, token }: UploadOptions = {},
 ): Promise<string> {
-  if (client.token === undefined) {
+  if ((token ?? client.token) === undefined) {
     throw new GithubError({
       kind: 'unauthorized',
       message: 'attaching files needs a signed-in account',
@@ -389,6 +396,7 @@ export async function uploadAttachment(
     followRedirects: false,
     signal,
     uploadProgress: progress,
+    token,
   });
   if (response.status !== 201) {
     throw new GithubError({

@@ -901,7 +901,7 @@ export type PullRequestSidebarQuery = { rateLimit: { cost: number, limit: number
             | { __typename: 'Mannequin', login: string }
             | { __typename: 'Organization', login: string }
             | { __typename: 'User', login: string }
-           | null } | null> | null } | null, assignees: { nodes: Array<{ login: string } | null> | null } } | null } | null };
+           | null } | null> | null } | null, assignees: { nodes: Array<{ __typename: 'User', login: string } | null> | null } } | null } | null };
 
 export type QueueRemovalQueryVariables = Exact<{
   owner: string;
@@ -4682,6 +4682,7 @@ export const PullRequestSidebarDocument = new TypedDocumentString(`
       }
       assignees(first: 100) {
         nodes {
+          __typename
           login
         }
       }

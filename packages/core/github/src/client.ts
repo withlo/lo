@@ -173,6 +173,12 @@ export interface SendOptions {
   signal?: AbortSignal | undefined;
   /** Hears how much of the body has been sent, when the client's `fetch` can tell. */
   uploadProgress?: UploadProgress | undefined;
+  /**
+   * Sends this request alone as `token`, not the client's. It's never kept, and GitHub refusing it
+   * isn't the client's token refused: `onUnauthorized` isn't asked, and nothing is sent again.
+   * What its answer says of the rate limit is that token's, so it isn't recorded.
+   */
+  token?: Token | undefined;
 }
 
 interface Shared {
@@ -356,12 +362,13 @@ export class GithubClient {
     options: SendOptions,
     inspect: (response: RestResponse) => T,
   ): Promise<T> {
-    const token = this.token;
+    const token = options.token ?? this.token;
     try {
       return await this.#sendWith(token, method, path, options, inspect);
     } catch (error) {
       if (!(error instanceof GithubError) || !error.isUnauthorized() || token === undefined)
         throw error;
+      if (options.token !== undefined) throw error;
       const renewed = await this.tokenAfterRefusal(token);
       if (renewed === undefined) throw error;
       return this.#sendWith(renewed, method, path, options, inspect);
@@ -511,10 +518,12 @@ export class GithubClient {
         { cause: error },
       );
     }
-    const state = this.#shared.state;
-    state.rateLimits.recordHeaders(response.headers);
-    const sso = parseSsoHeader(response.headers.get('x-github-sso'));
-    if (sso) state.sso = sso;
+    if (options.token === undefined) {
+      const state = this.#shared.state;
+      state.rateLimits.recordHeaders(response.headers);
+      const sso = parseSsoHeader(response.headers.get('x-github-sso'));
+      if (sso) state.sso = sso;
+    }
     return new RestResponse(response.status, response.headers, bytes);
   }
 

@@ -14,6 +14,7 @@ import {
   type UploadOptions,
   type UploadRefusal,
 } from '../attachments.ts';
+import { readRenderedBodies, type RenderedBodies, type RenderedBodiesOptions } from '../bodies.ts';
 import type { Conditional, GithubClient, HeardLimit, RequestGate, TooFast } from '../client.ts';
 import { GithubError, MAX_RETRY_AFTER, type GithubErrorDetail } from '../errors.ts';
 import { unchecked } from '../json.ts';
@@ -1571,6 +1572,28 @@ export class Poller {
   }
 
   /**
+   * The HTML GitHub renders for the posts on `pull` whose node IDs are `ids`, and for its
+   * description when asked ({@link readRenderedBodies}), read as this account. Each request asks
+   * for up to 100 posts and takes a turn in the account's queue as a read
+   * someone is waiting on, so a write can go between them. Never kept: its images' addresses are
+   * signed afresh on every read. Given up through `signal`, a request waiting for its turn is never
+   * made, and the read fails with the signal's reason.
+   */
+  async renderedBodies(
+    pull: PullRef,
+    ids: readonly string[],
+    { description, signal }: RenderedBodiesOptions & { signal?: AbortSignal | undefined } = {},
+  ): Promise<RenderedBodies> {
+    if (signal?.aborted) throw abandoned(signal);
+    const client = await this.#client();
+    const gated = client.gated(this.#queue.gate('foreground', signal));
+    const result = await settle(readRenderedBodies(gated, pull, ids, { description }));
+    this.#answeredWith(client, result);
+    if (result.ok) return result.value;
+    throw result.error;
+  }
+
+  /**
    * Uploads `file` to `repo`, the pull request's base repository, as the account
    * ({@link uploadAttachment}), and answers with the attachment's address. While GitHub has asked
    * Lo to hold off writing ({@link Poller.writesHeldUntil}), it isn't sent: it's refused as
@@ -1583,8 +1606,10 @@ export class Poller {
    *
    * Given up through `signal`, one waiting for its turn is never sent, and one being sent is
    * cancelled, though it may have reached GitHub; either fails with the signal's reason. `progress`
-   * hears how much has been sent, when the account's `fetch` can tell. Never sent again by Lo
-   * itself, since an upload can't be undone.
+   * hears how much has been sent, when the account's `fetch` can tell. Given a `token`, it's sent
+   * as that token instead of the account's, as {@link UploadOptions.token} says, through the same
+   * queue and checks; the poller never keeps it. Never sent again by Lo itself, since an upload
+   * can't be undone.
    */
   async upload(
     repo: RepoRef,

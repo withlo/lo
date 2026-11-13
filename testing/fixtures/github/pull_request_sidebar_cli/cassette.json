@@ -1,5 +1,5 @@
 {
-  "description": "The labels, reviewers, assignees and draft state of cli/cli#13013, which asks two people and a team rozed-bot can't see for reviews and was reviewed by a bot and a person, and of cli/cli#13017, a draft assigned to two people, read as rozed-bot",
-  "recorded_at": "2026-11-13T09:28:25Z",
+  "description": "The labels, reviewers, assignees and draft state of cli/cli#13013, which asks two people and a team rozed-bot can't see for reviews and was reviewed by a bot and a person, and of cli/cli#13017, a draft assigned to two people, read as rozed-bot, with each account's type",
+  "recorded_at": "2026-11-13T09:42:58Z",
   "repo": "cli/cli"
 }

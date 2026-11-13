@@ -1,14 +1,15 @@
 /**
  * What threads and the timeline read beside the posts' Markdown, recorded as `rozed-bot`, read
- * only: the HTML GitHub renders for a review, its review comments, a reply and a comment that's
- * gone, on rozed-dev/e2e#23; and the labels, reviewers, assignees and draft state of two of
- * cli/cli's pull requests, read by an account that can't see every team asked to review them.
+ * only: the HTML GitHub renders for a review, its review comments, a reply, a comment that's gone
+ * and the description, on rozed-dev/e2e#23; and the labels, reviewers, assignees and draft state
+ * of two of cli/cli's pull requests, read by an account that can't see every team asked to review
+ * them.
  */
 
 import type { Scenario } from '@lo/testing';
 
+import { readRenderedBodies } from '../../src/bodies.ts';
 import { GithubClient } from '../../src/client.ts';
-import { RenderedBodiesDocument } from '../../src/generated/graphql.ts';
 import { PullRef } from '../../src/refs.ts';
 import { readPullRequestSidebar } from '../../src/sidebar.ts';
 import { Token } from '../../src/token.ts';
@@ -30,28 +31,25 @@ export const scenarios: Scenario[] = [
   {
     name: 'rendered_bodies_e2e_23',
     description:
-      "The HTML GitHub renders for rozed-dev/e2e#23's posts, read as rozed-bot: a review comment, a reply to it, the review they were submitted with, and a review comment that was deleted, which GitHub answers with null and an error",
+      "The HTML GitHub renders for rozed-dev/e2e#23's posts, read as rozed-bot: a review comment, a reply to it, the review they were submitted with, and a review comment that was deleted, which GitHub answers with null and an error; then the review again, with the description",
     repo: 'rozed-dev/e2e',
     async run(fetch, token) {
       const client = new GithubClient({ fetch, token: new Token(token) });
-      await client.graphqlWithErrors(
-        RenderedBodiesDocument,
-        {
-          owner: 'rozed-dev',
-          name: 'e2e',
-          number: 23,
-          description: false,
-          ids: [POSTS_23.comment, POSTS_23.reply, POSTS_23.review, POSTS_23.deleted],
-        },
-        1,
-      );
+      const pull = new PullRef('rozed-dev', 'e2e', 23);
+      await readRenderedBodies(client, pull, [
+        POSTS_23.comment,
+        POSTS_23.reply,
+        POSTS_23.review,
+        POSTS_23.deleted,
+      ]);
+      await readRenderedBodies(client, pull, [POSTS_23.review], { description: true });
       return undefined;
     },
   },
   {
     name: 'pull_request_sidebar_cli',
     description:
-      "The labels, reviewers, assignees and draft state of cli/cli#13013, which asks two people and a team rozed-bot can't see for reviews and was reviewed by a bot and a person, and of cli/cli#13017, a draft assigned to two people, read as rozed-bot",
+      "The labels, reviewers, assignees and draft state of cli/cli#13013, which asks two people and a team rozed-bot can't see for reviews and was reviewed by a bot and a person, and of cli/cli#13017, a draft assigned to two people, read as rozed-bot, with each account's type",
     repo: 'cli/cli',
     async run(fetch, token) {
       const client = new GithubClient({ fetch, token: new Token(token) });
