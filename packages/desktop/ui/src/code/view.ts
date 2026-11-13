@@ -196,6 +196,8 @@ class NumberMarker extends GutterMarker {
 interface OpenBox {
   box: CommentBox;
   place: At;
+  /** Whether the threads under its line changed since it opened, as when what it sent came. */
+  answered?: boolean;
 }
 
 /** The view's threads in one file, by where they are (`side:line`). */
@@ -211,6 +213,22 @@ function splitKey(each: string): { file: number; key: string } {
   const bar = each.indexOf('|');
   return { file: Number(each.slice(0, bar)), key: each.slice(bar + 1) };
 }
+
+/** The line of file `file` at `key` (`side:line`). */
+function lineAt(file: number, key: string): At {
+  const colon = key.indexOf(':');
+  return {
+    file,
+    side: key.slice(0, colon) === 'old' ? 'old' : 'new',
+    line: Number(key.slice(colon + 1)),
+  };
+}
+
+/**
+ * Which changes held on screen the view lets go: those off it, those on it that no scroll can take
+ * off it, or all.
+ */
+type Letting = 'off' | 'stuck' | 'all';
 
 /** An overview mark, on one side of a file by its index, as the view keeps it. */
 interface OverviewAt extends MarkedLines {
@@ -678,14 +696,18 @@ class View implements DiffView {
 
   setThreads(threads: readonly ThreadView[], render: RenderThread): void {
     this.#hosts.render = render;
+    // What comes under the line of a comment box, open or closed since, is the reader's doing,
+    // as when they sent it: it comes now, and grows, that line staying where it is.
+    const theirs = this.#readerLines();
+    const changed = new Set<string>();
     const next: FileThreads[] = this.#ids.map(() => new Map());
     const given = new Set<string>();
     for (const thread of threads) {
       const file = this.#index.get(thread.at.file);
       if (file === undefined || thread.at.line < 1 || given.has(thread.id)) continue;
       given.add(thread.id);
-      this.#hosts.take(thread);
       const key = `${thread.at.side}:${thread.at.line}`;
+      if (this.#hosts.take(thread, theirs.has(waitKey(file, key)))) changed.add(waitKey(file, key));
       const there = next[file]!.get(key);
       if (there) there.push(thread);
       else next[file]!.set(key, [thread]);
@@ -698,15 +720,42 @@ class View implements DiffView {
         const wanted = byPlace.get(key);
         if (!sameIds(drawn.get(key), wanted)) {
           this.#waiting.add(waitKey(file, key));
+          changed.add(waitKey(file, key));
           continue;
         }
         this.#waiting.delete(waitKey(file, key));
         if (wanted) drawn.set(key, wanted);
       }
     });
-    this.#letThreadsGo(false, true);
+    // A closed box's line is the reader's until what they sent there comes.
+    for (const each of changed) this.#boxClosed.delete(each);
+    for (const open of this.#boxes.values()) {
+      const { file, side, line } = open.place;
+      if (changed.has(waitKey(file, `${side}:${line}`))) open.answered = true;
+    }
+    const now = this.#freeLines((file, key) => theirs.has(waitKey(file, key)));
+    if (now[0]) this.#keepLine(lineAt(now[0].file, now[0].key), () => this.#showLines(now));
+    this.#letThreadsGo('off', true);
     this.#dropThreads();
   }
+
+  /**
+   * The lines comment boxes are under, by `waitKey`: those open, and those closed since the
+   * threads under them last changed, while they're on screen.
+   */
+  #readerLines(): Set<string> {
+    const lines = new Set(this.#boxClosed);
+    for (const { place } of this.#boxes.values()) {
+      lines.add(waitKey(place.file, `${place.side}:${place.line}`));
+    }
+    return lines;
+  }
+
+  /**
+   * Lines whose comment boxes closed before anything came under them, by `waitKey`: what comes
+   * there next is the reader's.
+   */
+  readonly #boxClosed = new Set<string>();
 
   openThread(id: string, open: boolean | 'toggle'): boolean {
     const host = this.#hosts.get(id);
@@ -720,30 +769,47 @@ class View implements DiffView {
 
   /**
    * Lines waiting for their threads, and threads held at the height they were drawn at, take what
-   * they have now: those off screen, or `all`. What's at the top of the screen stays where it is,
-   * and with `hold`, is held there as the change is measured.
+   * they have now, as `letting` says. What's at the top of the screen stays where it is, and with
+   * `hold`, is held there as the change is measured.
    */
-  #letThreadsGo(all: boolean, hold: boolean): void {
+  #letThreadsGo(letting: Letting, hold: boolean): void {
     if (this.#held.size === 0 && this.#waiting.size === 0) return;
-    const held = [...this.#held].filter((host) => all || !this.#onScreen(host.dom));
-    const lines = this.#freeLines((file, key) => all || !this.#lineOnScreen(file, key));
+    const held = [...this.#held].filter((host) => this.#mayGo(letting, this.#spanOf(host.dom)));
+    const lines = this.#freeLines((file, key) => this.#mayGo(letting, this.#lineSpan(file, key)));
     if (held.length === 0 && lines.length === 0) return;
     this.#keepTop(() => {
       for (const host of held) {
         this.#held.delete(host);
         host.letGo();
       }
-      for (const { file, key, threads } of lines) {
-        if (threads.length > 0) this.#threads[file]!.set(key, threads);
-        else this.#threads[file]!.delete(key);
-      }
-      for (const file of new Set(lines.map((line) => line.file))) {
-        this.#keepAt(file);
-        this.#refresh(file);
-      }
-      this.#aligner.schedule();
+      this.#showLines(lines);
     }, hold);
     this.#dropThreads();
+  }
+
+  /** Draws `lines` with the threads they take, and has the spacer pass line up after. */
+  #showLines(lines: readonly { file: number; key: string; threads: ThreadView[] }[]): void {
+    for (const { file, key, threads } of lines) {
+      if (threads.length > 0) this.#threads[file]!.set(key, threads);
+      else this.#threads[file]!.delete(key);
+    }
+    for (const file of new Set(lines.map((line) => line.file))) {
+      this.#keepAt(file);
+      this.#refresh(file);
+    }
+    this.#aligner.schedule();
+  }
+
+  /**
+   * Whether what's drawn from `span.top` to `span.bottom` on the page may change now, as `letting`
+   * says: with `off`, what isn't drawn on screen; with `stuck`, what's on screen that no scroll can
+   * take off it, the rest waiting for the scroll that takes it off.
+   */
+  #mayGo(letting: Letting, span: { top: number; bottom: number } | undefined): boolean {
+    if (letting === 'all') return true;
+    const shown = span !== undefined && this.#spanOnScreen(span.top, span.bottom);
+    if (letting === 'off') return !shown;
+    return shown && !this.#canLeave(span.top, span.bottom);
   }
 
   /**
@@ -870,31 +936,46 @@ class View implements DiffView {
   };
 
   /**
-   * Whether a change under line `key` (`side:line`) of file `file` would move what's on screen:
-   * whether its line, with what's drawn under it, is on screen. Nothing is while the view is
+   * Where on the page line `key` (`side:line`) of file `file` is drawn, which a change under it
+   * would move what's below of: the line, with what's drawn under it. Nowhere while the view is
    * hidden or has no room, nor in a file that draws no lines.
    */
-  #lineOnScreen(file: number, key: string): boolean {
-    const colon = key.indexOf(':');
-    const side = key.slice(0, colon) === 'old' ? 'old' : 'new';
-    const line = Number(key.slice(colon + 1));
-    if (!this.#showing() || this.#noteOf(file)) return false;
-    if (line < 1 || line > this.#lines[file]![side].length) return false;
+  #lineSpan(file: number, key: string): { top: number; bottom: number } | undefined {
+    const { side, line } = lineAt(file, key);
+    if (!this.#showing() || this.#noteOf(file)) return undefined;
+    if (line < 1 || line > this.#lines[file]![side].length) return undefined;
     const pane: Pane = this.#pane === 'inline' ? 'inline' : side;
-    if (pane === 'inline' && !this.#inline?.layout.lines[file]) return false;
+    if (pane === 'inline' && !this.#inline?.layout.lines[file]) return undefined;
     const view = this.#viewOf(pane);
     const pos = view.state.doc.line(this.#docLine(pane, { file, side, line })).from;
     const block = view.lineBlockAt(pos);
-    return this.#spanOnScreen(view.documentTop + block.top, view.documentTop + block.bottom);
+    return { top: view.documentTop + block.top, bottom: view.documentTop + block.bottom };
+  }
+
+  /** Where on the page `element` is drawn, while the view shows it. */
+  #spanOf(element: HTMLElement): { top: number; bottom: number } | undefined {
+    if (!this.#showing() || !element.isConnected || element.getClientRects().length === 0) {
+      return undefined;
+    }
+    const { top, bottom } = element.getBoundingClientRect();
+    return { top, bottom };
   }
 
   /** Whether any of `element` is drawn on screen. */
   #onScreen(element: HTMLElement): boolean {
-    if (!this.#showing() || !element.isConnected || element.getClientRects().length === 0) {
-      return false;
-    }
-    const { top, bottom } = element.getBoundingClientRect();
-    return this.#spanOnScreen(top, bottom);
+    const span = this.#spanOf(element);
+    return span !== undefined && this.#spanOnScreen(span.top, span.bottom);
+  }
+
+  /**
+   * Whether some scroll would take the page from `top` to `bottom` off screen: the box scrolls
+   * past it, or back above it.
+   */
+  #canLeave(top: number, bottom: number): boolean {
+    const screen = this.dom.getBoundingClientRect().top;
+    const scrolled = this.dom.scrollTop;
+    const most = this.dom.scrollHeight - this.dom.clientHeight;
+    return bottom - screen + scrolled < most || top - screen + scrolled > this.dom.clientHeight;
   }
 
   /** Whether any of the page from `top` to `bottom` is on screen, edges included. */
@@ -1076,16 +1157,22 @@ class View implements DiffView {
    */
   readonly #letNotesGo = (): void => {
     this.#letHeldGo((note) => !this.#noteOnScreen(note));
-    this.#letThreadsGo(false, false);
+    this.#letThreadsGo('off', false);
+    // A closed box's line scrolled off screen: what comes there now is no longer the reader's.
+    for (const each of this.#boxClosed) {
+      const { file, key } = splitKey(each);
+      if (!this.#mayGo('off', this.#lineSpan(file, key))) continue;
+      this.#boxClosed.delete(each);
+    }
   };
 
   /** A pass of `#letHeldGo` waiting for the input that asked for it to be handled. */
   #settling: ReturnType<typeof setTimeout> | undefined;
 
   /**
-   * The reader's wheel, key or click. In a diff too short to scroll, where notes, threads and lines
-   * held on screen would never leave it, they take what they have now, once the input is handled,
-   * so it acts on what the reader saw.
+   * The reader's wheel, key or click. Notes, threads and lines held on screen where no scroll can
+   * take them off it, as in a diff too short to scroll or near its ends, would never leave it: they
+   * take what they have now, once the input is handled, so it acts on what the reader saw.
    */
   readonly #afterInput = (): void => {
     if (this.#settling !== undefined) return;
@@ -1093,11 +1180,21 @@ class View implements DiffView {
     if (!notes && this.#held.size === 0 && this.#waiting.size === 0) return;
     this.#settling = setTimeout(() => {
       this.#settling = undefined;
-      if (this.dom.scrollHeight > this.dom.clientHeight) return;
-      this.#letHeldGo(() => true);
-      this.#letThreadsGo(true, false);
+      this.#letHeldGo((note) => this.#noteOnScreen(note) && this.#noteStuck(note));
+      this.#letThreadsGo('stuck', false);
     });
   };
+
+  /** Whether no scroll can take note `note` off screen. */
+  #noteStuck(note: OpenNote): boolean {
+    for (const element of this.dom.querySelectorAll<HTMLElement>('.lo-ovnote')) {
+      if (element.dataset.note !== note.key) continue;
+      for (const rect of element.getClientRects()) {
+        if (rect.height > 0 && this.#canLeave(rect.top, rect.bottom)) return false;
+      }
+    }
+    return true;
+  }
 
   /**
    * Notes held as they were on screen, whose marks changed since, take what their marks say now:
@@ -1845,8 +1942,9 @@ class View implements DiffView {
   #closeBox(box: CommentBox): void {
     const found = [...this.#boxes].find(([, open]) => open.box === box);
     if (!found) return;
-    const [key, { place }] = found;
+    const [key, { place, answered }] = found;
     this.#boxes.delete(key);
+    if (!answered) this.#boxClosed.add(waitKey(place.file, `${place.side}:${place.line}`));
     this.#keepLine(place, () => this.#refresh(place.file));
     const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
     const view = this.#viewOf(pane);
@@ -2218,7 +2316,7 @@ class View implements DiffView {
    */
   #toggleLayout(focus = true): void {
     // Lines and threads waiting to change on screen change with the layout, which moves it all.
-    this.#letThreadsGo(true, false);
+    this.#letThreadsGo('all', false);
     const pane = this.#activePane();
     const view = this.#viewOf(pane);
     const from = this.#placeAt(pane, view.state.doc.lineAt(view.state.selection.main.head).number);

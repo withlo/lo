@@ -67,7 +67,8 @@ function threads() {
   const { render, asked } = caller();
   made.render = render;
   const take = (shown: ThreadView): ThreadHost => {
-    const host = made.take(shown);
+    made.take(shown);
+    const host = made.get(shown.id)!;
     if (!host.dom.isConnected) document.body.append(host.dom);
     return host;
   };
@@ -173,19 +174,30 @@ describe('sizes', () => {
     expect(one.dom.style.height).toBe('60px');
   });
 
-  test('the reader’s doing is theirs once, for a moment', () => {
-    vi.useFakeTimers();
-    try {
-      const { take } = threads();
-      const one = take(thread('one'));
-      one.touched();
-      expect(one.takeInput()).toBe(true);
-      expect(one.takeInput()).toBe(false);
-      one.touched();
-      vi.advanceTimersByTime(1500);
-      expect(one.takeInput()).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
+  test('a change the reader made is theirs once: one they asked for, or one the next frame lays out', async () => {
+    const { made, take } = threads();
+    const one = take(thread('one'));
+    made.draw(one);
+    one.setOpen(false);
+    expect(one.takeInput()).toBe(true);
+    expect(one.takeInput()).toBe(false);
+    // What the caller changes at the reader's asking, until it changes something of its own.
+    expect(made.take(thread('one', true, 2), true)).toBe(true);
+    expect(one.takeInput()).toBe(true);
+    made.take(thread('one', true, 3), true);
+    made.take(thread('one', true, 4));
+    expect(one.takeInput()).toBe(false);
+    // A pointer or key in it, for what the next frame lays out.
+    one.touched();
+    expect(one.takeInput()).toBe(true);
+    one.touched();
+    await frame();
+    await frame();
+    expect(one.takeInput()).toBe(false);
   });
 });
+
+/** Waits for the page's next frame. */
+function frame(): Promise<number> {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}

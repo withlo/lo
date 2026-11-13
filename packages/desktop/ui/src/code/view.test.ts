@@ -800,6 +800,28 @@ describe('comment boxes', () => {
     expect(box.text).toBe('Hello');
   });
 
+  test('insert types at the cursor as it shows, and the preview gives back the mode it took', () => {
+    const box = open().compose(at('a', 'new', 10), 'Hello', composerEvents());
+    const comment = vimIn('Comment');
+    // In normal mode the cursor is on the `o`: the text goes after it.
+    comment.keys('<Esc>');
+    box.insert('!');
+    expect(box.text).toBe('Hello!');
+    expect(comment.mode).toBe('normal');
+    // Insert mode at the start, through the preview and back.
+    comment.keys('0', 'i');
+    box.preview(true);
+    expect(comment.mode).toBe('normal');
+    box.preview(false);
+    expect(comment.mode).toBe('insert');
+    box.insert('> ');
+    expect(box.text).toBe('> Hello!');
+    comment.keys('<Esc>');
+    box.preview(true);
+    box.preview(false);
+    expect(comment.mode).toBe('normal');
+  });
+
   test('insert and replace change the draft where they say, inside it', () => {
     const box = open().compose(at('a', 'new', 10), 'Hello world', composerEvents());
     box.replace(6, 11, 'there');
@@ -961,6 +983,90 @@ describe('threads', () => {
     await nextFrame();
     expect(card.style.height).toBe('120px');
   });
+
+  test('what comes under a comment box’s line, open or just closed, comes at once', () => {
+    const shown = open();
+    const { render } = plain();
+    shown.compose(at('a', 'new', 4), 'Mine', composerEvents());
+    // New line 22 says `added two`.
+    onScreen(['line 4', 'added two']);
+    // As the reader sends it, the box open.
+    shown.setThreads([thread('mine', at('a', 'new', 4))], render);
+    expect(drawnThreads()).toEqual(['mine']);
+    // Esc Esc, and then what they sent comes.
+    const { content } = vimIn('Comment');
+    press(content, 'Escape');
+    press(content, 'Escape');
+    shown.compose(at('a', 'new', 22), 'Another', composerEvents());
+    const second = vimIn('Comment').content;
+    press(second, 'Escape');
+    press(second, 'Escape');
+    shown.setThreads(
+      [thread('mine', at('a', 'new', 4)), thread('sent', at('a', 'new', 22))],
+      render,
+    );
+    expect(drawnThreads()).toEqual(['mine', 'sent']);
+    // Once it's come, the line is anyone's again.
+    shown.setThreads(
+      [
+        thread('mine', at('a', 'new', 4)),
+        thread('sent', at('a', 'new', 22)),
+        thread('late', at('a', 'new', 22)),
+      ],
+      render,
+    );
+    expect(drawnThreads()).toEqual(['mine', 'sent']);
+  });
+
+  test('a reply under a box on a thread on screen grows in full, at once', async () => {
+    const sizes = observers();
+    const shown = open();
+    const { render } = plain();
+    shown.setThreads([thread('one', at('a', 'new', 4))], render);
+    onScreen(['line 4'], ['one']);
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="one"]')!;
+    const content = card.querySelector('.lo-diffthread__host')!;
+    sizes.resize(content, 40);
+    const box = shown.compose({ thread: 'one' }, 'A reply', composerEvents());
+    shown.setThreads([thread('one', at('a', 'new', 4), true, 2)], render);
+    box.close();
+    sizes.resize(content, 90);
+    await nextFrame();
+    expect(card.style.height).toBe('90px');
+    expect(card.classList).not.toContain('is-held');
+    // What the caller changes there of its own accord, after, is held.
+    shown.setThreads([thread('one', at('a', 'new', 4), true, 3)], render);
+    sizes.resize(content, 120);
+    await nextFrame();
+    expect(card.classList).toContain('is-held');
+  });
+
+  test('in a diff that scrolls a little, what no scroll takes off screen changes on input', async () => {
+    const sizes = observers();
+    const shown = open();
+    const { render } = plain();
+    shown.setThreads([thread('one', at('a', 'new', 4))], render);
+    const screen = onScreen(['line 4'], ['one'], 300);
+    Object.defineProperty(scroller(), 'scrollHeight', { configurable: true, value: 750 });
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="one"]')!;
+    const content = card.querySelector('.lo-diffthread__host')!;
+    sizes.resize(content, 40);
+    sizes.resize(content, 90);
+    expect(card.classList).toContain('is-held');
+    shown.setThreads([thread('one', at('a', 'new', 4)), thread('two', at('a', 'new', 4))], render);
+    expect(drawnThreads()).toEqual(['one']);
+    press(scroller(), 'j');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(card.classList).not.toContain('is-held');
+    expect(drawnThreads()).toEqual(['one', 'two']);
+    // Where a scroll can take it off screen, it waits for that.
+    Object.defineProperty(scroller(), 'scrollHeight', { configurable: true, value: 2000 });
+    screen.threads.add('two');
+    shown.setThreads([thread('one', at('a', 'new', 4))], render);
+    press(scroller(), 'j');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(drawnThreads()).toEqual(['one', 'two']);
+  });
 });
 
 /** Waits for the page's next frame. */
@@ -985,9 +1091,10 @@ function drawnThreads(): (string | undefined)[] {
 
 /**
  * jsdom lays nothing out: from now on the view's box is a screen, and on it are the lines that say
- * one of `lines` and the threads whose ids are among `threads`. The rest are far below it.
+ * one of `lines`, `top` down it, and the threads whose ids are among `threads`. The rest are far
+ * below it.
  */
-function onScreen(lines: string[], threads: string[] = []) {
+function onScreen(lines: string[], threads: string[] = [], top = 100) {
   const screen = { lines: new Set(lines), threads: new Set(threads) };
   Object.defineProperty(scroller(), 'clientHeight', { configurable: true, value: 600 });
   const lineBlockAt: unknown = Reflect.get(EditorView.prototype, 'lineBlockAt');
@@ -998,8 +1105,8 @@ function onScreen(lines: string[], threads: string[] = []) {
     const block: unknown =
       typeof lineBlockAt === 'function' ? Reflect.apply(lineBlockAt, this, [pos]) : undefined;
     if (!(block instanceof BlockInfo)) throw new Error('The editor has no line there.');
-    const top = screen.lines.has(this.state.doc.lineAt(pos).text) ? 100 : 5000;
-    const moved: unknown = Object.create(block, { top: { value: top }, height: { value: 20 } });
+    const drawn = screen.lines.has(this.state.doc.lineAt(pos).text) ? top : 5000;
+    const moved: unknown = Object.create(block, { top: { value: drawn }, height: { value: 20 } });
     if (!(moved instanceof BlockInfo)) throw new Error('The line could not be moved.');
     return moved;
   });
@@ -1010,7 +1117,7 @@ function onScreen(lines: string[], threads: string[] = []) {
     if (this.classList.contains('lo-diffview')) return new DOMRect(0, 0, 800, 600);
     const id = threadOf(this);
     if (id === undefined) return new DOMRect();
-    return new DOMRect(0, screen.threads.has(id) ? 100 : 5000, 400, 40);
+    return new DOMRect(0, screen.threads.has(id) ? top : 5000, 400, 40);
   });
   return screen;
 }

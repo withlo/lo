@@ -10,7 +10,7 @@
 import { history, indentLess, indentMore } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting } from '@codemirror/language';
-import { Prec } from '@codemirror/state';
+import { findClusterBreak, Prec } from '@codemirror/state';
 import { drawSelection, EditorView, keymap, runScopeHandlers } from '@codemirror/view';
 import { classHighlighter } from '@lezer/highlight';
 import { getCM, Vim, vim } from '@replit/codemirror-vim';
@@ -79,6 +79,8 @@ export class CommentBox implements BoxHost, KeySource {
   readonly #stops: (() => void)[] = [];
   #frame: { destroy(): void } | undefined;
   #previewing = false;
+  /** Where the cursor was in insert mode as the preview showed, to go back to insert mode there. */
+  #resume: number | undefined;
   /** How deep into the box files being dragged are, by the elements they entered. */
   #dragged = 0;
   /** How tall the box was when its editor last changed. */
@@ -235,7 +237,19 @@ export class CommentBox implements BoxHost, KeySource {
   }
 
   insert(text: string): void {
-    this.view.dispatch(this.view.state.replaceSelection(text));
+    if (vimMode(this.view) === 'insert' || text === '') {
+      this.view.dispatch(this.view.state.replaceSelection(text));
+      return;
+    }
+    // Outside insert mode the cursor is a block on a character: the text goes after it, as `a`
+    // puts it, and the cursor ends on the last character put in.
+    leaveToNormal(this.view);
+    const { state } = this.view;
+    const head = state.selection.main.head;
+    const line = state.doc.lineAt(head);
+    const at = head < line.to ? line.from + findClusterBreak(line.text, head - line.from) : head;
+    const last = at + findClusterBreak(text, text.length, false);
+    this.view.dispatch({ changes: { from: at, insert: text }, selection: { anchor: last } });
   }
 
   replace(from: number, to: number, text: string): void {
@@ -246,15 +260,30 @@ export class CommentBox implements BoxHost, KeySource {
     this.view.dispatch({ changes: { from: start, to: end, insert: text } });
   }
 
-  /** Shows the preview in the editor's place, leaving insert mode, or the editor again. */
+  /**
+   * Shows the preview in the editor's place, leaving insert mode, or the editor again, in insert
+   * mode where it was if it was.
+   */
   preview(on: boolean): void {
     if (on === this.#previewing) return;
     const focused = this.dom.contains(this.dom.ownerDocument.activeElement);
-    if (on) leaveToNormal(this.view);
+    if (on) {
+      this.#resume =
+        vimMode(this.view) === 'insert' ? this.view.state.selection.main.head : undefined;
+      leaveToNormal(this.view);
+    }
     this.#previewing = on;
     this.view.dom.hidden = on;
     this.#parts.preview.hidden = !on;
     this.dom.classList.toggle('is-preview', on);
+    const resume = on ? undefined : this.#resume;
+    const cm = getCM(this.view);
+    if (resume !== undefined && cm) {
+      // Back in insert mode, where the cursor was.
+      this.#resume = undefined;
+      Vim.handleKey(cm, 'i', 'user');
+      this.view.dispatch({ selection: { anchor: Math.min(resume, this.view.state.doc.length) } });
+    }
     if (focused) this.#focusShown();
   }
 

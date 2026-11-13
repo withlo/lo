@@ -1,11 +1,24 @@
 // Review threads in the diff view, on the small pull request, side by side and inline. The line at
 // the top of the screen and the one in its middle are watched every frame while a thread arrives
-// above the screen, and then grows there: neither may move.
+// above the screen, and then grows there: neither may move. And what the reader sends from a
+// comment box on screen, a thread and then a reply in it, comes at once and whole, the box's line
+// kept where it is.
 
 import type { Place } from '@lo/ui/code';
 import type { Page } from '@playwright/test';
 
-import { expect, frames, name, partWay, stopWatching, test, watch } from './suite.ts';
+import {
+  cursor,
+  expect,
+  frames,
+  inBox,
+  name,
+  partWay,
+  press,
+  stopWatching,
+  test,
+  watch,
+} from './suite.ts';
 
 test('a thread that arrives or grows above the screen moves nothing on it, side by side and inline', async ({
   page,
@@ -34,6 +47,44 @@ test('a thread that arrives or grows above the screen moves nothing on it, side 
     const drawn = await thread.boundingBox();
     if (!screen || !drawn) throw new Error('The thread isn’t drawn.');
     expect(drawn.y + drawn.height).toBeLessThan(screen.y);
+  }
+});
+
+test('a comment and a reply sent from a box on screen come at once and whole, side by side and inline', async ({
+  page,
+}) => {
+  for (const layout of ['split', 'inline'] as const) {
+    await partWay(page, layout);
+    // The cursor on a line in the middle of the screen, as a click puts it.
+    const label = layout === 'split' ? 'After' : 'Changes';
+    const column = await page.locator(`.cm-content[aria-label="${label}"]`).boundingBox();
+    const screen = await page.locator('.lo-diffview').boundingBox();
+    if (!column || !screen) throw new Error('The view isn’t drawn.');
+    await page.mouse.click(column.x + 120, screen.y + screen.height / 2);
+    await frames(page, 5);
+    const spot = (await cursor(page))?.at;
+    if (spot?.kind !== 'line') throw new Error('The cursor isn’t on a line.');
+    const lineTop = () => page.evaluate((at) => window.diffView.spotTop(at), spot);
+    const said = `Sent ${name(layout)}.`;
+    for (const text of [said, `Replied ${name(layout)}. ${'And more. '.repeat(30)}`]) {
+      await press(page, 'c');
+      await expect.poll(() => inBox(page)).toBe(true);
+      await page.keyboard.type(text);
+      await frames(page, 5);
+      const before = await lineTop();
+      await press(page, 'ControlOrMeta+Enter');
+      await expect.poll(() => inBox(page)).toBe(false);
+      await frames(page, 5);
+      expect(await lineTop()).toBe(before);
+    }
+    const thread = page.locator('.lo-diffthread__thread', { hasText: said });
+    await expect(thread).toContainText('And more.');
+    await expect(thread).not.toHaveClass(/is-held/);
+    const heights = await thread.evaluate((element) => ({
+      kept: element.getBoundingClientRect().height,
+      drawn: element.firstElementChild?.getBoundingClientRect().height,
+    }));
+    expect(heights.kept).toBe(heights.drawn);
   }
 });
 

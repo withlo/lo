@@ -206,7 +206,10 @@ export interface Composer {
   readonly previewing: boolean;
   /** Focuses the box: in insert mode at the end of its text, or its preview while that shows. */
   focus(): void;
-  /** Types `text` at the cursor. */
+  /**
+   * Types `text` at the cursor as the reader sees it: where it is in insert mode, and after the
+   * character it's on otherwise.
+   */
   insert(text: string): void;
   /**
    * Puts `text` in place of the text from offset `from` to offset `to`, as an upload's link takes
@@ -214,8 +217,8 @@ export interface Composer {
    */
   replace(from: number, to: number, text: string): void;
   /**
-   * Shows the preview in the editor's place, leaving insert mode, or the editor again. Focus in the
-   * box goes with it.
+   * Shows the preview in the editor's place, leaving insert mode, or the editor again, back in
+   * insert mode if it was. Focus in the box goes with it.
    */
   preview(on: boolean): void;
   /**

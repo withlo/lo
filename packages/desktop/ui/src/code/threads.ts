@@ -15,9 +15,6 @@ import type { RenderThread, ThreadContent, ThreadView } from './api.ts';
 /** About how tall a thread is before it's been measured: open, or collapsed to one line. */
 const GUESS = { open: 120, closed: 36 } as const;
 
-/** How long after the reader acts on a thread its next change of size is theirs, in ms. */
-const INPUT_WINDOW = 1000;
-
 /** One thread's element, and what the caller drew in it. */
 export class ThreadHost {
   readonly id: string;
@@ -45,8 +42,18 @@ export class ThreadHost {
   fresh = true;
   /** Whether the view holds it as it was on screen, a change of size since cut off. */
   held = false;
-  /** Until when its next change of size is the reader's doing, by `performance.now()`. */
-  #input = 0;
+  /**
+   * Whether the view changed it at the reader's asking, as `openThread` does, or as what comes
+   * under a comment box's line does: its next change of size is theirs.
+   */
+  #asked = false;
+  /**
+   * Whether a pointer or key of the reader's landed in it since the last frame: a change of size
+   * laid out in the next frame is what the caller drew for it.
+   */
+  #touched = false;
+  /** Which touch the last was, so only the frame after it ends it. */
+  #touches = 0;
 
   constructor(thread: ThreadView) {
     this.id = thread.id;
@@ -72,32 +79,47 @@ export class ThreadHost {
   /**
    * Takes what the caller says of the thread now. Whether it's open changes only when the caller
    * says something other than it said last, so the reader's `openThread` stands until then. What's
-   * drawn is drawn again if anything changed.
+   * drawn is drawn again if anything changed, and then the next change of size is the reader's
+   * doing only if `asked`. Says whether it was drawn again.
    */
-  give(thread: ThreadView): void {
+  give(thread: ThreadView, asked = false): boolean {
     const before = this.thread;
     if (thread.open !== this.#given.open) this.#open = thread.open;
     this.#given = thread;
-    if (this.#content && !sameThread(before, this.thread)) this.#content.update(this.thread);
+    if (!this.#content || sameThread(before, this.thread)) return false;
+    this.#asked = asked;
+    this.#content.update(this.thread);
+    return true;
   }
 
   /** Opens or collapses it, as the reader asked: its next change of size is theirs. */
   setOpen(open: boolean): void {
     if (open === this.#open) return;
     this.#open = open;
-    this.touched();
+    this.#asked = true;
     this.#content?.update(this.thread);
   }
 
-  /** The reader acted on it: its next change of size, within a second, is their doing. */
+  /**
+   * The reader's pointer or key landed in it: a change of size laid out in the next frame, which
+   * is what the caller drew for that, is theirs.
+   */
   touched(): void {
-    this.#input = performance.now() + INPUT_WINDOW;
+    this.#touched = true;
+    const touch = ++this.#touches;
+    // The second frame from now begins after the next has laid out and measured what changed.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (touch === this.#touches) this.#touched = false;
+      }),
+    );
   }
 
   /** Whether this change of size is the reader's doing; asking uses it up. */
   takeInput(): boolean {
-    const input = performance.now() < this.#input;
-    this.#input = 0;
+    const input = this.#asked || this.#touched;
+    this.#asked = false;
+    this.#touched = false;
     return input;
   }
 
@@ -200,18 +222,18 @@ export class Threads {
     return host?.dom === found ? host : undefined;
   }
 
-  /** The element for `thread`, made if it's new, given what the caller says of it now. */
-  take(thread: ThreadView): ThreadHost {
+  /**
+   * The element for `thread`, made if it's new, given what the caller says of it now: at the
+   * reader's asking, if `asked`. Says whether a thread drawn already is drawn again.
+   */
+  take(thread: ThreadView, asked = false): boolean {
     const host = this.#hosts.get(thread.id);
-    if (host) {
-      host.give(thread);
-      return host;
-    }
+    if (host) return host.give(thread, asked);
     const made = new ThreadHost(thread);
     this.#hosts.set(thread.id, made);
     this.#byHost.set(made.host, made);
     this.#watcher().observe(made.host);
-    return made;
+    return false;
   }
 
   /** Takes down the threads `gone` says are gone. */
