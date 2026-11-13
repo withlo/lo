@@ -65,3 +65,14 @@ export {
   type FileTreeRow,
   type FileTreeViewed,
 } from './FileTree.tsx';
+export {
+  StackTree,
+  type StackChecks,
+  type StackOverview,
+  type StackReview,
+  type StackRun,
+  type StackTreeFound,
+  type StackTreeLayer,
+  type StackTreeNote,
+  type StackTreeProps,
+} from './StackTree.tsx';

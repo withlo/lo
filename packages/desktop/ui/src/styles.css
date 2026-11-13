@@ -399,6 +399,113 @@
   background: radial-gradient(circle, var(--lo-warning) 0 2px, transparent 2.5px);
 }
 
+/* The stack tree's rows. A layer is a grid: the rail's column, then its title and meta. The rail,
+   its balls and a branch's elbow are drawn from the numbers set here, so a line always meets the
+   center of a ball and an elbow meets the trunk. The ball sits at the middle of the title's line. */
+@utility stack-layer {
+  --stack-line: 1.5px;
+  --stack-ball: calc(var(--lo-sp-12) - var(--lo-sp-2));
+  --stack-ball-top: var(--lo-sp-4);
+  --stack-ball-mid: calc(var(--stack-ball-top) + var(--stack-ball) / 2);
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--lo-sp-16) minmax(0, 1fr);
+  column-gap: var(--lo-sp-8);
+  padding: var(--lo-sp-6) var(--lo-sp-8);
+}
+
+/* A layer on a branch's own rail sits one step in, the width of the rail's column. */
+@utility stack-branch {
+  margin-inline-start: var(--lo-sp-16);
+}
+
+/* The layer that starts a branch has the rail bend off the trunk, one step out, to its ball. */
+@utility stack-sprout {
+  &::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: calc(var(--stack-line) / -2);
+    top: calc(var(--lo-sp-6) * -1);
+    width: calc(var(--lo-sp-8) + (var(--lo-sp-16) - var(--stack-ball)) / 2 + var(--stack-line) / 2);
+    height: calc(var(--lo-sp-6) * 2 + var(--stack-ball-mid) + var(--stack-line) / 2);
+    border-inline-start: var(--stack-line) solid var(--lo-border-strong);
+    border-block-end: var(--stack-line) solid var(--lo-border-strong);
+    border-end-start-radius: var(--lo-sp-8);
+    pointer-events: none;
+  }
+}
+
+/* Where a branch's layers are, the trunk runs on down the rows' left edge as far as the last layer
+   that branches off it. */
+@utility stack-trunk {
+  &::after {
+    content: '';
+    position: absolute;
+    inset-inline-start: calc(var(--stack-line) / -2);
+    inset-block: 0;
+    width: var(--stack-line);
+    background: var(--lo-border-strong);
+    pointer-events: none;
+  }
+}
+
+/* A layer's rail: a line through its row to its neighbours, and its ball. The line runs on past the
+   row's padding to meet the next row's, unless a modifier ends it at the ball. A hollow ball is a
+   layer not on screen; the modifiers below fill it. */
+@utility stack-rail {
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: calc((var(--lo-sp-16) - var(--stack-line)) / 2);
+    top: var(--stack-rail-top, calc(var(--lo-sp-6) * -1));
+    bottom: var(--stack-rail-bottom, calc(var(--lo-sp-6) * -1));
+    width: var(--stack-line);
+    background: var(--lo-border-strong);
+  }
+  &::after {
+    content: '';
+    position: absolute;
+    inset-inline-start: calc((var(--lo-sp-16) - var(--stack-ball)) / 2);
+    top: var(--stack-ball-top);
+    width: var(--stack-ball);
+    height: var(--stack-ball);
+    border-radius: 50%;
+    background: var(--stack-ball-fill, var(--lo-bg-chrome));
+    box-shadow: var(--stack-ball-edge, inset 0 0 0 1.5px var(--lo-fg-dim));
+  }
+}
+@utility stack-rail-sprout {
+  --stack-rail-top: var(--stack-ball-mid);
+}
+@utility stack-rail-last {
+  --stack-rail-bottom: calc(100% - var(--stack-ball-mid));
+}
+@utility stack-ball-current {
+  --stack-ball-fill: var(--lo-accent);
+  --stack-ball-edge: 0 0 0 3px var(--lo-current-strong);
+}
+@utility stack-ball-run {
+  --stack-ball-fill: var(--lo-accent);
+  --stack-ball-edge: none;
+}
+@utility stack-ball-merged {
+  --stack-ball-fill: var(--lo-state-merged);
+  --stack-ball-edge: none;
+}
+@utility stack-ball-closed {
+  --stack-ball-fill: var(--lo-state-closed);
+  --stack-ball-edge: none;
+}
+
+/* A note under the stack's rows: the layers it names stand out from the rest. */
+@utility stack-note {
+  & strong {
+    color: var(--lo-fg);
+    font-weight: 600;
+  }
+}
+
 /* On Linux the system's window controls sit over the end of the strip, and the overlay's geometry
    says where they start. */
 :root[data-lo-platform][data-lo-frame='custom'] {
