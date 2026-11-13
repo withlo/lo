@@ -18,10 +18,11 @@ import {
 
 /**
  * How long the window holds back what a tab shows first, in a test that isn't about that bound:
- * long enough that a busy machine never races it. A test that is about it asks for the bound
- * itself, with `test.use({ holdLimit: HOLD_LIMIT })`.
+ * three times the real one, so a busy machine is never late enough to race it, and no longer, since
+ * a test that leaves the overview before it's drawn is waiting on the bound to let it go. A test
+ * that is about the bound asks for it itself, with `test.use({ holdLimit: HOLD_LIMIT })`.
  */
-export const HELD_LONG = 10_000;
+export const HELD_LONG = 3_000;
 
 /** The app's folder. Electron starts the built main process its `package.json` names. */
 export const appFolder = fileURLToPath(new URL('..', import.meta.url));
