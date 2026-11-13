@@ -6,6 +6,7 @@ import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from '
 import { focusMiddle } from '../../../window/commands/registry.ts';
 import { Slots, type View } from '../../../window/slots.tsx';
 import type { SettingsState } from '../contract.ts';
+import feature from './index.ts';
 import { moveSection } from './nav.ts';
 import { SettingsTab } from './Page.tsx';
 import { defineSection } from './shared.ts';
@@ -38,6 +39,13 @@ function scroll(element: Element): void {
   act(() => {
     element.dispatchEvent(new Event('scroll', { bubbles: true }));
   });
+}
+
+/** The handler the feature gives the command called `name`. */
+function handlerOf(name: string) {
+  const handler = feature.commands.find((command) => command.name === name)?.handler;
+  if (!handler) throw new Error(`settings.${name} has no handler.`);
+  return handler;
 }
 
 /** Moves a section, as the keys do. */
@@ -172,6 +180,21 @@ describe('the list of sections', () => {
     move(-1);
     move(-1);
     move(-1);
+    expect(page.current()).toBe('Appearance');
+  });
+
+  it('moves by the feature’s next and previous section commands, which j and k run', () => {
+    const next = handlerOf('nextSection');
+    const previous = handlerOf('previousSection');
+    const page = render();
+    expect(next.enabled?.({ kind: 'none' })).toBe(true);
+    act(() => {
+      void next.run({ kind: 'none' });
+    });
+    expect(page.current()).toBe('Cache');
+    act(() => {
+      void previous.run({ kind: 'none' });
+    });
     expect(page.current()).toBe('Appearance');
   });
 

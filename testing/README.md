@@ -146,9 +146,8 @@ and `STACK_PULLS` names the pull requests and their heads. Their cassette is `ap
 #84's base branch to `stack/b`, then made GitHub stack #92. `fixtures/stack-reset.sh`, run with
 `LO_FIXTURE_TOKEN_FILE` as `record.ts` is, unstacks them and changes #84's base back, as `stack.sh`
 made them, so that can be recorded again. What GitHub can't be made to do on demand, a lost answer,
-a refusal or a base branch changed elsewhere meanwhile, the app's tests answer from the same
-cassette with those answers changed (`apps/desktop/e2e/convert.spec.ts`). `app_stack_nobody` is #84
-opened with no account.
+the app's tests answer from the same cassette with that answer changed
+(`apps/desktop/e2e/convert.spec.ts`).
 
 ## The credential scan
 

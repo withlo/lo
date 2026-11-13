@@ -74,25 +74,56 @@ async function listed(page: Page): Promise<unknown> {
   return reply;
 }
 
-test('the account in the token file is added as Lo starts, and the window gets only its summary', async ({
+test('the account in the token file is added as Lo starts, and the window gets only its summary; the app menu has Add an account and Sign out…; Linux’s fallback is marked v10; and a build run from source goes by Lo Dev', async ({
+  app,
   page,
 }) => {
-  const reply = await listed(page);
-  expect(reply).toEqual({
-    ok: true,
-    value: [
-      {
-        login: 'rozed-bot',
-        name: null,
-        source: 'deviceFlow',
-        signedOut: null,
-        cantSave: false,
-        needsKeyring: false,
-      },
-    ],
+  await test.step('the account in the token file is added as Lo starts, and the window gets only its summary', async () => {
+    const reply = await listed(page);
+    expect(reply).toEqual({
+      ok: true,
+      value: [
+        {
+          login: 'rozed-bot',
+          name: null,
+          source: 'deviceFlow',
+          signedOut: null,
+          cantSave: false,
+          needsKeyring: false,
+        },
+      ],
+    });
+    expect(JSON.stringify(reply)).not.toContain(TOKEN);
+    expect(rows('SELECT login FROM accounts_accounts')).toEqual([{ login: 'rozed-bot' }]);
   });
-  expect(JSON.stringify(reply)).not.toContain(TOKEN);
-  expect(rows('SELECT login FROM accounts_accounts')).toEqual([{ login: 'rozed-bot' }]);
+
+  // The app menu is the Mac's.
+  if (process.platform === 'darwin') {
+    await test.step('the app menu has Add an account and Sign out…', async () => {
+      const labels = await app.evaluate(({ Menu }) =>
+        (Menu.getApplicationMenu()?.items[0]?.submenu?.items ?? []).map((item) => item.label),
+      );
+      expect(labels).toContain('Add an account');
+      expect(labels).toContain('Sign out…');
+    });
+  }
+
+  // Only Linux has safeStorage's fallback store.
+  if (process.platform === 'linux') {
+    await test.step("Linux's fallback encrypts with the built-in key, marked v10, which Lo takes only in a test run", async () => {
+      const backend = await app.evaluate(async ({ safeStorage }) => {
+        await safeStorage.isAsyncEncryptionAvailable();
+        return safeStorage.getSelectedStorageBackend();
+      });
+      expect(backend).toBe('basic_text');
+      // What it encrypted is marked as the built-in key's, which is what Lo goes by.
+      expect(sealedGrant().subarray(0, 3).toString()).toBe('v10');
+    });
+  }
+
+  await test.step('a build run from source goes by Lo Dev, so its keychain key is its own', async () => {
+    expect(await app.evaluate(({ app: electronApp }) => electronApp.getName())).toBe('Lo Dev');
+  });
 });
 
 test('the token is kept encrypted by safeStorage, and is never in a file or argv in the clear', async ({
@@ -193,35 +224,6 @@ test('Sign out… in the palette asks first, then removes the account and its to
   await expect(dialog).toBeHidden();
   await expect.poll(() => rows('SELECT count(*) AS n FROM accounts_accounts')).toEqual([{ n: 0 }]);
   expect(rows('SELECT count(*) AS n FROM accounts_grants')).toEqual([{ n: 0 }]);
-});
-
-test('the app menu has Add an account and Sign out…', async ({ app, page }) => {
-  test.skip(process.platform !== 'darwin', 'The app menu is the Mac’s.');
-  await listed(page);
-  const labels = await app.evaluate(({ Menu }) =>
-    (Menu.getApplicationMenu()?.items[0]?.submenu?.items ?? []).map((item) => item.label),
-  );
-  expect(labels).toContain('Add an account');
-  expect(labels).toContain('Sign out…');
-});
-
-test("Linux's fallback encrypts with the built-in key, marked v10, which Lo takes only in a test run", async ({
-  app,
-  page,
-}) => {
-  test.skip(process.platform !== 'linux', "Only Linux has safeStorage's fallback store.");
-  await listed(page);
-  const backend = await app.evaluate(async ({ safeStorage }) => {
-    await safeStorage.isAsyncEncryptionAvailable();
-    return safeStorage.getSelectedStorageBackend();
-  });
-  expect(backend).toBe('basic_text');
-  // What it encrypted is marked as the built-in key's, which is what Lo goes by.
-  expect(sealedGrant().subarray(0, 3).toString()).toBe('v10');
-});
-
-test('a build run from source goes by Lo Dev, so its keychain key is its own', async ({ app }) => {
-  expect(await app.evaluate(({ app: electronApp }) => electronApp.getName())).toBe('Lo Dev');
 });
 
 test("Lo follows GitHub's redirect itself, sending the token only to GitHub's API", async () => {
