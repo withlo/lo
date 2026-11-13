@@ -41,10 +41,11 @@ These bind every change (design section 1).
 | `brand/`            | The mark, wordmark, app icon, colors and motion; `brand/README.md` rules |
 | `scripts/`          | Repo scripts: the boundary check, git hooks, CI checks                   |
 
-Every package is a private pnpm workspace package named `@lo/<name>`, and an Nx project named after
-its folder (`"nx": { "name": "<name>", "tags": [...] }` in its `package.json`). Names are one short
-word, without hyphens, unless clarity needs two. The one package made for npm, `skill/checker`, is
-named `@withlo/overview`: it holds the checker and, built in, the skill it installs.
+Every package but one is a private pnpm workspace package named `@lo/<name>`, and each is an Nx
+project named after its folder (`"nx": { "name": "<name>", "tags": [...] }` in its `package.json`).
+Names are one short word, without hyphens, unless clarity needs two. The one package published to
+npm, `skill/checker`, is named `@withlo/overview`: it holds the checker and, built in, the skill it
+installs (see "Publishing the checker").
 
 ## Set up
 
@@ -799,8 +800,29 @@ The `publish` workflow publishes `@withlo/overview` to npm. To release a change 
 the skill it carries, bump `version` in `skill/checker/package.json` and merge: the workflow tests,
 builds and packs the checker, and publishes that version with npm's trusted publishing, which needs
 no token and signs provenance. The skill runs the checker by that exact version, so CI's `overview`
-job fails a pull request whose package differs from npm's copy of its version.
-`scripts/overview-npm.sh` packs the package the same way for both.
+job fails a pull request whose package differs from npm's copy of its version, its manifest's
+`devDependencies`, `scripts` and `nx` aside. `scripts/overview-npm.sh` packs the package the same
+way for both.
+
+Only main can publish. The publish job runs in the `npm` environment, which the repository's
+settings limit to deployments from `main`, and npm's trusted publisher for the package names that
+environment, so a branch's edited copy of the workflow can't publish. GitHub creates a missing
+environment, without protection, the first time a job uses it, so the `npm` environment must exist,
+limited to `main`, before the trusted publisher is added.
+
+npm adds a trusted publisher only to a package it already has, so the first version is published by
+hand. Build the tarball fresh from main when publishing it: start the workflow, which builds and
+uploads it and, with no package on npm, publishes nothing, then download it and publish it.
+
+```sh
+gh workflow run publish.yml --repo withlo/lo --ref main
+gh run download <run id> --repo withlo/lo -n withlo-overview-<version> -D <folder>
+npm publish <folder>/withlo-overview-<version>.tgz --access public
+```
+
+Then add the trusted publisher in the package's settings on npmjs.com, under Trusted publishing:
+GitHub Actions, `withlo`, `lo`, `publish.yml`, environment `npm`, allowing `npm publish`. npm drops
+one that hasn't published within two days, so add it just before the next version merges.
 
 ## Design
 

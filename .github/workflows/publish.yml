@@ -3,11 +3,13 @@
 # the checker by that version, and CI's overview job fails a change to the package that keeps a
 # version npm already has.
 #
-# It publishes with npm's trusted publishing: npm trusts this workflow, by its file name, to publish
-# the package, and the publish job trades GitHub's OIDC token for a short-lived one, so no npm token
-# is stored anywhere. npm signs provenance for the package, which links it to this run. Trusted
-# publishing can only publish a package that's on npm already, so until the first version is there
-# the run builds and uploads the tarball, publishes nothing, and says to publish it by hand.
+# It publishes with npm's trusted publishing: npm trusts this workflow, by its file name and the
+# `npm` environment, to publish the package, and the publish job trades GitHub's OIDC token for a
+# short-lived one, so no npm token is stored anywhere. The repository's settings let only main
+# deploy to that environment, so a branch's copy of this file can't publish. npm signs provenance
+# for the package, which links it to this run. Trusted publishing can only publish a package that's
+# on npm already, so until the first version is there the run builds and uploads the tarball,
+# publishes nothing, and says to publish it by hand. AGENTS.md has the steps.
 name: publish
 
 on:
@@ -19,9 +21,12 @@ on:
 permissions:
   contents: read
 
-# One run at a time, never cancelled midway: a newer run waits for the one before it to finish.
+# Runs for one commit wait for each other, so a run started by hand while the push's run publishes
+# then finds the version on npm. Runs for different commits don't wait, so a newer bump never
+# cancels an older one waiting to publish. Two runs publishing the same version can't both succeed:
+# npm refuses the second.
 concurrency:
-  group: publish
+  group: publish-${{ github.sha }}
   cancel-in-progress: false
 
 env:
@@ -31,7 +36,8 @@ env:
 
 jobs:
   # What main holds, and whether npm has it. Everything after it skips when npm has this version, so
-  # a run with nothing to publish passes. Only main publishes, even when started by hand.
+  # a run with nothing to publish passes. The publish job's environment is what keeps other branches
+  # from publishing; this only spares their runs.
   version:
     name: version
     if: github.ref == 'refs/heads/main'
@@ -105,12 +111,14 @@ jobs:
           echo "::notice::npm hasn't got the package, so trusted publishing can't publish it yet. Publish this run's $ARTIFACT artifact by hand: gh run download $GITHUB_RUN_ID --repo $GITHUB_REPOSITORY -n $ARTIFACT, then npm publish $ARTIFACT.tgz --access public."
 
   # Publishes the tarball the build job packed. The only job that can mint an OIDC token, it checks
-  # out nothing and runs nothing of the repository's.
+  # out nothing and runs nothing of the repository's. Its OIDC token names the `npm` environment,
+  # which npm's trusted publisher requires and only main may deploy to.
   publish:
     name: publish
     needs: [version, build]
     if: needs.version.outputs.package == 'true'
     runs-on: ubuntu-latest
+    environment: npm
     timeout-minutes: 10
     permissions:
       contents: read
