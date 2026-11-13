@@ -1,6 +1,6 @@
 {
   "name": "@withlo/overview",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Lo's overview skill for coding agents, and its checker: installs the skill, checks an overview as Lo would, and commits it for its pull request's ref.",
   "keywords": [
     "lo",
