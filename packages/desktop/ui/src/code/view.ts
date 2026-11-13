@@ -510,6 +510,8 @@ class View implements DiffView {
    * row don't walk it away a fraction of a pixel at a time.
    */
   #holdEnds = 0;
+  /** The scroll when the line held last settled, to tell a scroll since that the view didn't make. */
+  #heldScroll = 0;
 
   /** The reader moves: what's at the top is theirs to choose again. */
   readonly #letGo = (): void => {
@@ -1530,8 +1532,9 @@ class View implements DiffView {
   }
 
   viewport(): Viewport {
-    // While the view is putting a line back at the top, or has just, that's where it belongs.
-    if (this.#holding && performance.now() < this.#holdEnds) {
+    // While the view is putting a line back at the top, or has just, that's where it belongs,
+    // unless the screen has since scrolled away from it.
+    if (this.#holding && performance.now() < this.#holdEnds && !this.#scrolledAway(this.#holding)) {
       return {
         at: this.#holding.at,
         offset: this.dom.getBoundingClientRect().top - this.#heldAt(this.#holding.at),
@@ -1650,6 +1653,21 @@ class View implements DiffView {
   }
 
   /**
+   * Whether the screen has scrolled since `held`, a line the view put back, settled, and taken the
+   * line from where it was put: a scroll the view didn't make, and that no wheel, key or pointer
+   * let go of, as a script's. What's at the top is then what that scroll put there. The view's own
+   * scrolls keep the line where it is, and until the line settles, it's the top whatever moves.
+   */
+  #scrolledAway(held: Viewport): boolean {
+    if (this.#holdEnds === Infinity || this.dom.scrollTop === this.#heldScroll) return false;
+    const found = this.#atOf(held.at);
+    if (!found) return true;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : found.place.side;
+    const moved = this.#lineTop(pane, this.#viewOf(pane), found.place) - this.#heldAt(held.at);
+    return Math.abs(moved) >= 1;
+  }
+
+  /**
    * Where on the page a jump's line goes now: where it was, or lower, as far below the box's top as
    * the jump put it, as the box moves down. It stays there as the box moves back up.
    */
@@ -1714,6 +1732,7 @@ class View implements DiffView {
       // Put back, it stays for a while; one that can't be, as past the end, is let go.
       if (still >= 2) {
         this.#holdEnds = performance.now() + HOLD_AFTER;
+        this.#heldScroll = this.dom.scrollTop;
         // Room a jump made that the scroll didn't need, below the screen, goes now.
         this.#trimRoom();
       } else if (frames > 30) this.#holding = undefined;
