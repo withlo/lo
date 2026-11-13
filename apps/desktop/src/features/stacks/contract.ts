@@ -2,6 +2,9 @@
 // in main among its repository's open pull requests by base branch, by shared commits, or as a
 // GitHub stack, with each layer's state, how the stack was found, and what Lo couldn't read. Main
 // works the stack out again as the repository's pull requests change, and sends it on `stack`.
+//
+// And making a chain a GitHub stack: main plans it and keeps the plan under a key, the window shows
+// it and confirms the key, and main sends the changes, saying how they go on `conversion`.
 
 import { z } from 'zod';
 
@@ -114,6 +117,164 @@ export type StackView = z.output<typeof stackView>;
 export const stack = z.strictObject({ id: tabId, stack: stackView });
 export type StackState = z.output<typeof stack>;
 
+/** A branch's name, as GitHub gives it: text. */
+const branch = z.string();
+
+/** A moment, in milliseconds since the Unix epoch. */
+const time = z.number().int().nonnegative();
+
+/**
+ * What names a plan main keeps for making a chain a GitHub stack: the window confirms it by this,
+ * and never sends the changes themselves.
+ */
+export const planKey = z.string().regex(/^[0-9a-f-]{36}$/);
+
+/**
+ * A change that making a GitHub stack sends, or that putting its base branches back does:
+ *
+ * - `retarget`: a pull request's base branch, from `from` to `to`;
+ * - `create`: a GitHub stack made of `prs`, bottom to top;
+ * - `add`: `prs`, bottom to top, added at the top of GitHub stack `stack`;
+ * - `unstack`: GitHub stack `stack`, which holds `prs`, taken apart.
+ */
+export const change = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('retarget'), pr: number, from: branch, to: branch }),
+  z.strictObject({ kind: z.literal('create'), prs: z.array(number) }),
+  z.strictObject({ kind: z.literal('add'), stack: number, prs: z.array(number) }),
+  z.strictObject({ kind: z.literal('unstack'), stack: number, prs: z.array(number) }),
+]);
+export type Change = z.output<typeof change>;
+
+/**
+ * How a change stands:
+ *
+ * - `todo`: not sent yet; `now`: being sent, or waiting for GitHub to allow it;
+ * - `done`: GitHub did it; `unchanged`: it was so already, so nothing was sent;
+ * - `failed`: GitHub refused it, or it failed, and it wasn't done;
+ * - `unknown`: GitHub's answer was lost, so it may have been done;
+ * - `left`: it was changed elsewhere since, so Lo left it;
+ * - `skipped`: never sent, since what came before it stopped.
+ */
+export const changeStatus = z.enum([
+  'todo',
+  'now',
+  'done',
+  'unchanged',
+  'failed',
+  'unknown',
+  'left',
+  'skipped',
+]);
+export type ChangeStatus = z.output<typeof changeStatus>;
+
+/**
+ * A change, as the dialog lists it: how it stands, and `detail`, what GitHub said of one that
+ * failed, or, for one `left`, the base branch its pull request is on now.
+ */
+export const changeRow = z.strictObject({
+  change,
+  status: changeStatus,
+  detail: z.string().nullable(),
+});
+export type ChangeRow = z.output<typeof changeRow>;
+
+/**
+ * A pull request in a plan: its title as GitHub gives it, its base branch now, and the base branch
+ * the plan gives it, or `null` when that doesn't change.
+ */
+export const planRow = z.strictObject({
+  number,
+  title: z.string(),
+  base: branch,
+  to: branch.nullable(),
+});
+export type PlanRow = z.output<typeof planRow>;
+
+/**
+ * What making a chain a GitHub stack will do, for the reader to confirm before anything is sent:
+ *
+ * - `key`: what names the plan, which the window confirms;
+ * - `title`, `description`: "Make these 3 PRs a GitHub stack?", the repository and how they were
+ *   found;
+ * - `heading` and `rows`: "1 · One base branch changes", then each pull request in the path, or
+ *   only those added to a GitHub stack, with its base branch and the one it gets;
+ * - `stack`: "#4790 → #4797 → #4803, through GitHub's Stacks API.";
+ * - `warning`: who sees a diff change, when a base branch changes;
+ * - `login`: the account it's done as; `confirm`: its button's label.
+ */
+export const plan = z.strictObject({
+  kind: z.literal('plan'),
+  key: planKey,
+  title: z.string(),
+  description: z.string(),
+  heading: z.string(),
+  rows: z.array(planRow).min(1),
+  stack: z.string(),
+  warning: z.string().nullable(),
+  login: z.string(),
+  confirm: z.string(),
+});
+export type Plan = z.output<typeof plan>;
+
+/** Why a chain can't be made a GitHub stack now: every reason, in words, Lo's own first. */
+export const notOffered = z.strictObject({
+  kind: z.literal('notOffered'),
+  reasons: z.array(z.string()).min(1),
+});
+export type NotOffered = z.output<typeof notOffered>;
+
+/** A plan for the reader to confirm, or why there's none. */
+export const planned = z.discriminatedUnion('kind', [plan, notOffered]);
+export type Planned = z.output<typeof planned>;
+
+/**
+ * Where a conversion is:
+ *
+ * - `running`: sending its changes, in order;
+ * - `done`: every change was made;
+ * - `failed`: GitHub refused a change, or it failed, and nothing after it was sent;
+ * - `stopped`: the reader stopped it, and nothing after the change being sent was sent;
+ * - `puttingBack`: putting back the base branches it changed, last first;
+ * - `putBack`: that's over, as its changes say.
+ */
+export const phase = z.enum(['running', 'done', 'failed', 'stopped', 'puttingBack', 'putBack']);
+export type Phase = z.output<typeof phase>;
+
+/** Something the dialog says under the changes, with GitHub's page for it, if there is one. */
+export const conversionNote = z.strictObject({ text: z.string(), link: z.string().nullable() });
+export type ConversionNote = z.output<typeof conversionNote>;
+
+/**
+ * Making a chain a GitHub stack, as it goes, for the plan named `key`, asked for from tab `tab`:
+ *
+ * - `title`, `description`: what's happening, or what happened;
+ * - `waitingUntil`: while GitHub has asked Lo to hold off writing, until when;
+ * - `stopping`: the reader stopped it, and the change being sent finishes first;
+ * - `changes`: the plan's, in order; `putBack`: putting back's, once asked for;
+ * - `putBackLabel`: "Put the base branch back", while there's something to put back, else `null`;
+ * - `notes`: what Lo left, and why;
+ * - `made`: once it's done, what was made, for the toast;
+ * - `version`: higher each time main says it anew, so an older answer never replaces a newer one.
+ */
+export const conversion = z.strictObject({
+  key: planKey,
+  tab: tabId,
+  version: z.number().int().nonnegative(),
+  phase,
+  title: z.string(),
+  description: z.string(),
+  waitingUntil: time.nullable(),
+  stopping: z.boolean(),
+  changes: z.array(changeRow),
+  putBack: z.array(changeRow),
+  putBackLabel: z.string().nullable(),
+  notes: z.array(conversionNote),
+  made: z.string().nullable(),
+});
+export type ConversionView = z.output<typeof conversion>;
+
+const byKey = z.strictObject({ key: planKey });
+
 export const contract = defineContract('stacks', {
   requests: {
     /**
@@ -121,9 +282,33 @@ export const contract = defineContract('stacks', {
      * tab that isn't a pull request's.
      */
     state: { input: z.strictObject({ id: tabId }), reply: reply<StackState | undefined>() },
+    /**
+     * Plans making the chain the pull request in tab `id` is in a GitHub stack, from what GitHub
+     * says now, and keeps the plan for the reader to confirm, in place of the tab's last one; or
+     * says why it can't.
+     */
+    plan: { input: z.strictObject({ id: tabId }), reply: reply<Planned>() },
+    /**
+     * Runs the plan named `key`, once: its changes go to GitHub in order, as `conversion` says.
+     * A plan that's gone or ran already, or one for a repository with a conversion running, is
+     * refused.
+     */
+    convert: { input: byKey, reply: reply<ConversionView>() },
+    /**
+     * Ends what `key` names: a plan not run is forgotten; a conversion, or putting it back, stops
+     * before its next change is sent; one that's over is forgotten.
+     */
+    stop: { input: byKey, reply: reply<void>() },
+    /**
+     * Puts back the base branches a conversion that failed or stopped changed, last first, as
+     * `conversion` says.
+     */
+    putBack: { input: byKey, reply: reply<ConversionView>() },
   },
   topics: {
     /** A pull request's tab's stack, each time it changes. */
     stack,
+    /** A conversion, each time it changes. */
+    conversion,
   },
 });

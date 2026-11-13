@@ -104,6 +104,29 @@
   z-index: var(--lo-z-toast);
 }
 
+/* Ordered steps, 10 px apart: each a ball, then what the step is with a line under it. */
+@utility steps {
+  gap: calc(var(--lo-sp-12) - var(--lo-sp-2));
+}
+@utility step {
+  grid-template-columns: calc(var(--lo-sp-20) + var(--lo-sp-2)) minmax(0, 1fr);
+  gap: var(--lo-sp-2) calc(var(--lo-sp-12) - var(--lo-sp-2));
+}
+
+/* An ordered step's ball: its number in a ring not yet, filled once it's done, being done, or
+   stopped. */
+@utility step-ball {
+  display: grid;
+  place-items: center;
+  width: calc(var(--lo-sp-20) + var(--lo-sp-2));
+  height: calc(var(--lo-sp-20) + var(--lo-sp-2));
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--lo-border-strong);
+}
+@utility step-ball-filled {
+  box-shadow: none;
+}
+
 /* A small wait in place: a ring turning, in the accent at its top. Reduce Motion stops it. */
 @keyframes lo-spin {
   to {

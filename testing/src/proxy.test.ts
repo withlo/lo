@@ -106,3 +106,38 @@ test('refuses to send anything that writes to GitHub, and records nothing then',
     /refused to record/,
   );
 });
+
+test('sends and records a write once it may, as LO_RECORD_WRITES=1 says', async () => {
+  const dir = scratch();
+  const github = upstream(
+    () =>
+      new Response(JSON.stringify({ number: 84, base: { ref: 'stack/b' } }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+  );
+  const proxy = await startRecordingProxy({ dir, token: TOKEN, fetch: github.fetch, writes: true });
+  const body = JSON.stringify({ base: 'stack/b' });
+  const response = await fetch(`${proxy.urls.api}/repos/rozed-dev/e2e/pulls/84`, {
+    method: 'PATCH',
+    headers: { authorization: 'token gho_FAKE_APP_ACCOUNT' },
+    body,
+  });
+  expect(response.status).toBe(200);
+  expect(github.got).toEqual([
+    {
+      url: 'https://api.github.com/repos/rozed-dev/e2e/pulls/84',
+      authorization: `token ${TOKEN}`,
+      host: null,
+    },
+  ]);
+  await proxy.finish({ description: 'A test.', repo: 'rozed-dev/e2e' });
+  // Replayed, the same write gets the same answer.
+  const replay = Replay.fromDir(dir);
+  const answer = replay.answer({
+    method: 'PATCH',
+    url: 'https://api.github.com/repos/rozed-dev/e2e/pulls/84',
+    headers: new Headers(),
+    body: new TextEncoder().encode(body),
+  });
+  expect(await answer.json()).toEqual({ number: 84, base: { ref: 'stack/b' } });
+});

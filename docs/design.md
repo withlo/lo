@@ -255,8 +255,9 @@ link to any layer opens the whole stack in one tab, at that layer.
 2. Lo creates the stack through the Stacks API, from the bottom PR to the top.
 
 GitHub stacks can't branch, so for a tree Lo converts the path through the layer you're on. The
-option isn't offered when a PR comes from a fork, when the repo doesn't have stacks turned on, or
-when a PR is already in a merge queue.
+option isn't offered when a PR comes from a fork, when GitHub's Stacks API isn't there for the repo
+(it answers 404; github.com has no setting that turns stacks on), or when a PR is already in a merge
+queue.
 
 ## 5. The file tree
 

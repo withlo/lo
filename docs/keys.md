@@ -67,6 +67,12 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Copy path                | `y p`                             | In `tree`                                                           | `tree.copyPath`     |
 | Open on GitHub           | `g x`                             | In `tree`                                                           | `tree.openOnGithub` |
 
+## Review
+
+| Action                   | Keys  | Where                                                                                  | Command          |
+| ------------------------ | ----- | -------------------------------------------------------------------------------------- | ---------------- |
+| Make this a GitHub stack | `g S` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.convert` |
+
 ## Find
 
 | Action                         | Keys                    | Where                               | Command              |
