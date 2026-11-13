@@ -1,8 +1,9 @@
 # @withlo/overview
 
-<!-- Placeholder: the GIF's absolute URL goes here. -->
-
-![Lo showing a pull request's overview beside its diff](https://raw.githubusercontent.com/withlo/lo/main/PLACEHOLDER.gif)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/withlo/lo/81e9d8bf6c3c2ceca0af1064b4c4be3425401718/brand/banner/banner-dark.svg">
+  <img alt="Lo" src="https://raw.githubusercontent.com/withlo/lo/81e9d8bf6c3c2ceca0af1064b4c4be3425401718/brand/banner/banner-light.svg" width="100%">
+</picture>
 
 [Lo](https://github.com/withlo/lo) is a fast, keyboard-first desktop app for reviewing GitHub pull
 requests, built for people who read far more code than they write.
