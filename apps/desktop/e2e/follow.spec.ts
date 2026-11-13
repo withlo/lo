@@ -660,6 +660,12 @@ test('⌃o puts the block back where it was: cut by the top of the screen, the w
 
   await test.step('the window shorter while away', async () => {
     await sizeWindow(app, 1200, 900);
+    // From the top, so the block comes on screen from below as it does in a fresh Lo, with room
+    // above it to put it low on the screen.
+    await scroller.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await toBlock(page, BLOCK.tldr);
     await toBlock(page, BLOCK.format);
     // Low on the screen, below where the shorter window ends.
     await scroller.evaluate((element, number) => {
