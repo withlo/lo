@@ -6,6 +6,7 @@
 import { MERGE_FACTS_WATCHED, mergeFactsComplete, type MergeFacts } from '../merge.ts';
 import type { PendingReviewRead } from '../pending.ts';
 import { PUSH_HISTORY_WATCHED, pushHistoryIsComplete, type PushHistory } from '../push-history.ts';
+import type { PullRequestSidebar } from '../sidebar.ts';
 import { STACK_LAYERS_WATCHED, stackLayersComplete, type StackLayerList } from '../stack-layers.ts';
 import type { ReviewThreadList } from '../threads.ts';
 import type { PullRequestTimeline } from '../timeline.ts';
@@ -168,6 +169,16 @@ export const PENDING_REVIEW: ReadKind<PendingReviewRead> = {
 export const TIMELINE: ReadKind<PullRequestTimeline> = {
   name: 'Timeline',
   watched: ['/timelineEvents', '/statusCheckRollup', '/lastEditedAt', '/updatedAt'],
+};
+
+/**
+ * A pull request's labels, reviewers, assignees and draft state, beside its description. A label,
+ * a review request, an assignee or a draft changed moves the pull request's own `updatedAt`, and a
+ * submitted review the count of submitted reviews.
+ */
+export const PULL_REQUEST_SIDEBAR: ReadKind<PullRequestSidebar> = {
+  name: 'PullRequestSidebar',
+  watched: ['/updatedAt', '/submittedReviews/totalCount'],
 };
 
 /** What decides whether a pull request can merge. */

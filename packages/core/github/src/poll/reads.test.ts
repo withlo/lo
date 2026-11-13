@@ -4,6 +4,7 @@ import { expect, test } from 'vitest';
 import {
   MERGE_FACTS,
   PENDING_REVIEW,
+  PULL_REQUEST_SIDEBAR,
   PUSH_HISTORY,
   REVIEW_THREADS,
   STACK_LAYERS,
@@ -65,6 +66,7 @@ test('every kept read watches fields the check has', () => {
     PENDING_REVIEW,
     TIMELINE,
     MERGE_FACTS,
+    PULL_REQUEST_SIDEBAR,
   ]) {
     for (const pointer of kind.watched) {
       expect.soft(stamp(pull, [pointer])).not.toBe('<absent>');
@@ -180,7 +182,14 @@ test('what decides a merge is read again when github may decide otherwise', () =
   const moved = (watched: readonly string[]) =>
     stamp(running, watched) !== stamp(finished, watched);
   expect(moved(MERGE_FACTS.watched)).toBe(true);
-  for (const kind of [PUSH_HISTORY, STACK_LAYERS, REVIEW_THREADS, PENDING_REVIEW, TIMELINE]) {
+  for (const kind of [
+    PUSH_HISTORY,
+    STACK_LAYERS,
+    REVIEW_THREADS,
+    PENDING_REVIEW,
+    TIMELINE,
+    PULL_REQUEST_SIDEBAR,
+  ]) {
     expect.soft(moved(kind.watched)).toBe(false);
   }
 });

@@ -6,6 +6,14 @@
  * monotonic clock, which doesn't move while the computer sleeps.
  */
 
+import {
+  attachmentTarget,
+  uploadAttachment,
+  type AttachmentTarget,
+  type PreparedAttachment,
+  type UploadOptions,
+  type UploadRefusal,
+} from '../attachments.ts';
 import type { Conditional, GithubClient, HeardLimit, RequestGate, TooFast } from '../client.ts';
 import { GithubError, MAX_RETRY_AFTER, type GithubErrorDetail } from '../errors.ts';
 import { unchecked } from '../json.ts';
@@ -51,6 +59,7 @@ import {
 import { RateLimits } from '../rate-limit.ts';
 import { PullRef, RepoRef, type Target } from '../refs.ts';
 import type { CommentId, ReviewWrite, ReviewWriteRefusal, Sent } from '../review-writes.ts';
+import { readPullRequestSidebar, type PullRequestSidebar } from '../sidebar.ts';
 import { readStackLayers, type StackLayerList } from '../stack-layers.ts';
 import { reviewThreads, type ReviewThreadList } from '../threads.ts';
 import { readTimeline, type PullRequestTimeline } from '../timeline.ts';
@@ -92,6 +101,7 @@ import {
 import {
   MERGE_FACTS,
   PENDING_REVIEW,
+  PULL_REQUEST_SIDEBAR,
   PUSH_HISTORY,
   REVIEW_THREADS,
   sameJson,
@@ -315,6 +325,9 @@ const MAX_LISTED_PAGES = MAX_OPEN_PULL_REQUESTS / PAGE_SIZE;
 /** What a write waiting for a pause to end fails with when the poller stops first. */
 const STOPPED_WAITING =
   "Lo stopped polling for the account before GitHub's pause ended, so the write wasn't sent";
+/** What an upload waiting for its turn fails with when the poller stops first. */
+const STOPPED_UPLOADING =
+  "Lo stopped polling for the account before the upload's turn, so it wasn't sent";
 
 /** The names the poller keeps its own reads under in the cache. */
 const SUMMARY = 'PullSummary';
@@ -582,6 +595,20 @@ function givenUpOn(signal: AbortSignal): RequestGate {
     signal.aborted ? Promise.reject(abandoned(signal)) : Promise.resolve(() => undefined);
 }
 
+/** `promise`, or the reason `signal` gives once it gives up first. */
+function untilGivenUp<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (signal === undefined) return promise;
+  if (signal.aborted) return Promise.reject(abandoned(signal));
+  return new Promise<T>((resolve, reject) => {
+    const giveUp = () => reject(abandoned(signal));
+    signal.addEventListener('abort', giveUp, { once: true });
+    promise
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', giveUp))
+      .catch(() => {});
+  });
+}
+
 async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
   try {
     return { ok: true, value: await promise };
@@ -645,6 +672,13 @@ export class Poller {
   #status: PollStatus = { rateLimit: { kind: 'normal' }, offline: undefined, signedOut: false };
   /** The writes sent or waiting in the account's queue, each done when it and what follows it here have finished. */
   readonly #writes = new Set<Promise<void>>();
+  /**
+   * Uploads, one at a time in the order they came, in a queue of their own beside the account's,
+   * so a large one never holds a poll or a write.
+   */
+  readonly #uploads = new RequestQueue(0);
+  /** Where each repository's attachments go, by the repository's key, read once each. */
+  readonly #attachmentTargets = new Map<string, Promise<AttachmentTarget>>();
   readonly #listeners = new Set<(event: PollEvent) => void>();
   readonly #observers = new Set<() => void>();
   #stopped = false;
@@ -1053,6 +1087,17 @@ export class Poller {
   timeline(pull: PullRef): Promise<Cached<PullRequestTimeline> | undefined> {
     return this.readCached(pull, TIMELINE, (client, known) =>
       readTimeline(client, pull, { known, now: new Date(this.#config.now()) }),
+    );
+  }
+
+  /**
+   * `pull`'s labels, reviewers, assignees and draft state, as {@link Poller.readCached} keeps them,
+   * read as this account. They're read again when the pull request is updated or a review is
+   * submitted, and on the 5-minute refresh.
+   */
+  pullRequestSidebar(pull: PullRef): Promise<Cached<PullRequestSidebar> | undefined> {
+    return this.readCached(pull, PULL_REQUEST_SIDEBAR, (client) =>
+      readPullRequestSidebar(client, pull),
     );
   }
 
@@ -1491,6 +1536,79 @@ export class Poller {
    */
   async changed(target: Target): Promise<void> {
     await this.#invalidate(target);
+  }
+
+  /**
+   * Where attachments to comments on `repo` go, and whether the account may upload them
+   * ({@link attachmentTarget}). It's read once, in the account's queue as a read someone is waiting
+   * on, and kept for as long as the poller runs; one that fails isn't kept, so the next asks again.
+   * Given up through `signal`, it fails with the signal's reason, while the read goes on for anyone
+   * else waiting.
+   */
+  attachmentTarget(repo: RepoRef, signal?: AbortSignal): Promise<AttachmentTarget> {
+    let target = this.#attachmentTargets.get(repo.key);
+    if (!target) {
+      const reading = this.#readAttachmentTarget(repo);
+      target = reading;
+      this.#attachmentTargets.set(repo.key, reading);
+      reading.catch(() => {
+        if (this.#attachmentTargets.get(repo.key) === reading) {
+          this.#attachmentTargets.delete(repo.key);
+        }
+      });
+    }
+    return untilGivenUp(target, signal);
+  }
+
+  async #readAttachmentTarget(repo: RepoRef): Promise<AttachmentTarget> {
+    const client = await this.#client();
+    const result = await settle(
+      this.#queue.read(() => attachmentTarget(client, repo), undefined, 'foreground'),
+    );
+    this.#answeredWith(client, result);
+    if (result.ok) return result.value;
+    throw result.error;
+  }
+
+  /**
+   * Uploads `file` to `repo`, the pull request's base repository, as the account
+   * ({@link uploadAttachment}), and answers with the attachment's address. While GitHub has asked
+   * Lo to hold off writing ({@link Poller.writesHeldUntil}), it isn't sent: it's refused as
+   * `paused`, when asked for and again at its turn.
+   *
+   * Uploads go one at a time, in the order they came, in a queue of their own: a large video takes
+   * minutes, and never holds the account's queue, where polls and writes go. Only the first read of
+   * where `repo`'s attachments go ({@link Poller.attachmentTarget}) takes a turn there. A rate limit
+   * GitHub answers an upload with pauses polling and writes as any request's does.
+   *
+   * Given up through `signal`, one waiting for its turn is never sent, and one being sent is
+   * cancelled, though it may have reached GitHub; either fails with the signal's reason. `progress`
+   * hears how much has been sent, when the account's `fetch` can tell. Never sent again by Lo
+   * itself, since an upload can't be undone.
+   */
+  async upload(
+    repo: RepoRef,
+    file: PreparedAttachment,
+    options: UploadOptions = {},
+  ): Promise<string | UploadRefusal> {
+    const { signal } = options;
+    if (signal?.aborted) throw abandoned(signal);
+    this.#takeIn(await this.#client());
+    const held = this.writesHeldUntil();
+    if (held !== undefined) return { refusal: 'paused', until: held };
+    const target = await this.attachmentTarget(repo, signal);
+    return this.#uploads.read(async (): Promise<string | UploadRefusal> => {
+      if (this.#stopped) throw new Error(STOPPED_UPLOADING);
+      const client = await this.#client();
+      // GitHub may have asked Lo to hold off while it waited.
+      this.#takeIn(client);
+      const until = this.writesHeldUntil();
+      if (until !== undefined) return { refusal: 'paused', until };
+      const result = await settle(uploadAttachment(client, target.repositoryId, file, options));
+      this.#answeredWith(client, result);
+      if (result.ok) return result.value;
+      throw result.error;
+    }, signal);
   }
 
   /** Sends `write`, which `@lo/review`'s pending review planned for `pull`, reading back what the check can't see ({@link sendReview}). */

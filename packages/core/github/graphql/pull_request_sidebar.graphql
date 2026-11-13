@@ -1,0 +1,62 @@
+# What the timeline's description card shows beside the description (`docs/design.md`,
+# "Timeline"): the pull request's labels, who was asked to review it and each reviewer's latest
+# review, who it's assigned to, and whether it's a draft. GitHub takes 10 assignees at most; past
+# the first 100 labels, reviewers or requests, the rest are left out.
+query PullRequestSidebar($owner: String!, $name: String!, $number: Int!) {
+  rateLimit {
+    cost
+    limit
+    remaining
+    used
+    resetAt
+  }
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      isDraft
+      labels(first: 100) {
+        nodes {
+          name
+          color
+        }
+      }
+      # Those asked to review who haven't since. Null for a team the account can't see.
+      reviewRequests(first: 100) {
+        nodes {
+          requestedReviewer {
+            __typename
+            ... on User {
+              login
+            }
+            ... on Bot {
+              login
+            }
+            ... on Mannequin {
+              login
+            }
+            ... on Team {
+              combinedSlug
+            }
+            ... on EnterpriseTeam {
+              slug
+            }
+          }
+        }
+      }
+      # Each reviewer's latest submitted review, which a pending one doesn't replace.
+      latestReviews(first: 100) {
+        nodes {
+          author {
+            __typename
+            login
+          }
+          state
+        }
+      }
+      assignees(first: 100) {
+        nodes {
+          login
+        }
+      }
+    }
+  }
+}

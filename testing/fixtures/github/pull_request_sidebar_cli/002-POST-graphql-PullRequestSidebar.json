@@ -1,0 +1,74 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequestSidebar",
+    "variables": {
+      "owner": "cli",
+      "name": "cli",
+      "number": 13017
+    },
+    "query_sha256": "6e00dbdbd42ffd1b4d021aef6113dbae5a18cb34ae18a726f6ff2b58e78279ba"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4972",
+      "x-ratelimit-reset": "1794564294",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "28"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4972,
+          "used": 28,
+          "resetAt": "2026-11-13T10:04:54Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "isDraft": true,
+            "labels": {
+              "nodes": []
+            },
+            "reviewRequests": {
+              "nodes": [
+                {
+                  "requestedReviewer": {
+                    "__typename": "User",
+                    "login": "babakks"
+                  }
+                }
+              ]
+            },
+            "latestReviews": {
+              "nodes": [
+                {
+                  "author": {
+                    "__typename": "User",
+                    "login": "navayla777-dotcom"
+                  },
+                  "state": "COMMENTED"
+                }
+              ]
+            },
+            "assignees": {
+              "nodes": [
+                {
+                  "login": "babakks"
+                },
+                {
+                  "login": "Copilot"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

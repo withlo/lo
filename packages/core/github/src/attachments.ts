@@ -21,7 +21,7 @@
  *   fetches it, and shows an attachment in the preview from the bytes it sent.
  */
 
-import type { GithubClient } from './client.ts';
+import type { GithubClient, UploadProgress } from './client.ts';
 import { GithubError } from './errors.ts';
 import { isRecord } from './graphql.ts';
 import { stripMetadata, UnreadableMetadata, type Metadata } from './metadata.ts';
@@ -336,6 +336,26 @@ export function uploadTimeoutMs(bytes: number): number {
 }
 
 /**
+ * Lo's refusal of an upload while GitHub has asked it to hold off writing, until `until`, a
+ * wall-clock time in milliseconds since the Unix epoch. Nothing was sent.
+ */
+export interface UploadRefusal {
+  refusal: 'paused';
+  until: number;
+}
+
+/** What an upload hears and can be given up through. */
+export interface UploadOptions {
+  /**
+   * Gives the upload up: cancelled while it's sent, it fails with the signal's reason, and may
+   * still have reached GitHub.
+   */
+  signal?: AbortSignal | undefined;
+  /** Hears how much of the file has been sent, when the client's `fetch` can tell. */
+  progress?: UploadProgress | undefined;
+}
+
+/**
  * Uploads `file` to the repository with ID `repositoryId`, as the account. Returns the
  * attachment's address. It's never sent again by itself, as an upload can't be undone, but for
  * once: when GitHub refused the token, and so took nothing, and the client's `onUnauthorized` hands
@@ -345,6 +365,7 @@ export async function uploadAttachment(
   client: GithubClient,
   repositoryId: number,
   file: PreparedAttachment,
+  { signal, progress }: UploadOptions = {},
 ): Promise<string> {
   if (client.token === undefined) {
     throw new GithubError({
@@ -366,6 +387,8 @@ export async function uploadAttachment(
     timeoutMs: uploadTimeoutMs(file.bytes.length),
     // An upload's answer is a 201; a redirect isn't followed with the file.
     followRedirects: false,
+    signal,
+    uploadProgress: progress,
   });
   if (response.status !== 201) {
     throw new GithubError({

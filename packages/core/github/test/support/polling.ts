@@ -116,10 +116,10 @@ export class Network {
   readonly log: Logged[] = [];
   /** While set, every request fails as `fetch` does without a network. */
   offline = false;
-  readonly #delay: number | undefined;
+  readonly #delay: Delay | undefined;
   readonly #replayed: typeof globalThis.fetch;
 
-  constructor(replay: Replay, delay: number | undefined) {
+  constructor(replay: Replay, delay: Delay | undefined) {
     this.replay = replay;
     this.start = performance.now();
     this.#delay = delay;
@@ -134,16 +134,33 @@ export class Network {
   readonly fetch: typeof globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
     const sent = Math.floor((performance.now() - this.start) / 1000);
-    this.log.push([sent, describeRequest(request, bodyText(init?.body))]);
+    const what = describeRequest(request, bodyText(init?.body));
+    this.log.push([sent, what]);
     const offline = this.offline;
-    const delay = this.#delay;
-    if (delay !== undefined) await new Promise((resolve) => setTimeout(resolve, delay));
+    const delay = typeof this.#delay === 'function' ? this.#delay(what) : this.#delay;
+    if (delay !== undefined) await wait(delay, init?.signal ?? undefined);
     if (offline) {
       const down = Object.assign(new Error('the network is down'), { code: 'ENETDOWN' });
       throw new TypeError('fetch failed', { cause: down });
     }
     return this.#replayed(input, init);
   };
+}
+
+/** Waits `delay` milliseconds, as a request takes them, or fails as `fetch` does once `signal` gives up. */
+function wait(delay: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', giveUp);
+      resolve();
+    }, delay);
+    const giveUp = () => {
+      clearTimeout(timer);
+      const reason: unknown = signal?.reason;
+      reject(reason instanceof Error ? reason : new Error('given up', { cause: reason }));
+    };
+    signal?.addEventListener('abort', giveUp, { once: true });
+  });
 }
 
 export function user(): AuthenticatedUser {
@@ -158,9 +175,12 @@ function renew(): Promise<Grant> {
   return Promise.reject(new RenewalError('refused', 'the token has no refresh token'));
 }
 
+/** How long each request takes, in milliseconds: all alike, or by what it is, as the log says. */
+export type Delay = number | ((what: string) => number | undefined);
+
 export interface PollingOptions {
   /** How long each request takes, in milliseconds. */
-  delay?: number | undefined;
+  delay?: Delay | undefined;
   /** How the account signed in. */
   source?: AccountSource | undefined;
   /** Reads an account imported from `gh` from `gh` again, given the network. */

@@ -643,10 +643,10 @@ function event(node: { actor: { login: string } | null; createdAt: string }): Ti
 type ReviewerNode = Extract<Node, { __typename: 'ReviewRequestedEvent' }>['requestedReviewer'];
 
 /**
- * Who was asked for a review, or `undefined` for a deleted account or team, or one of a kind Lo
- * doesn't know.
+ * Who was asked for a review, or `undefined` for a deleted account or team, one the account can't
+ * see, or one of a kind Lo doesn't know.
  */
-function reviewer(requested: ReviewerNode): RequestedReviewer | undefined {
+export function requestedReviewer(requested: ReviewerNode): RequestedReviewer | undefined {
   if (requested === null) return undefined;
   const { __typename: typename } = requested;
   switch (typename) {
@@ -773,7 +773,7 @@ function itemOf(node: Node): TimelineItem {
       return {
         kind: 'reviewRequest',
         event: event(node),
-        reviewer: reviewer(node.requestedReviewer),
+        reviewer: requestedReviewer(node.requestedReviewer),
         added: typename === 'ReviewRequestedEvent',
       };
     case 'CrossReferencedEvent':

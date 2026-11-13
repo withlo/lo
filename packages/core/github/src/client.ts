@@ -11,6 +11,7 @@ import {
 } from './errors.ts';
 import { decodeGraphQL, isBelow, type GraphQLError, type GraphQLResponse } from './graphql.ts';
 import { unchecked, type Read } from './json.ts';
+import { abandoned } from './poll/queue.ts';
 import { RateLimits } from './rate-limit.ts';
 import type { Token } from './token.ts';
 import { parseScopes, type AuthenticatedUser, type User } from './user.ts';
@@ -69,8 +70,25 @@ export type OnUnauthorized = (refused: Token) => Promise<Token | undefined>;
  */
 export type RequestGate = () => Promise<() => void>;
 
+/**
+ * Hears how much of a request's body has been sent: `sent` bytes of `total`. A `fetch` that can
+ * tell calls it every so often while the body goes.
+ */
+export type UploadProgress = (sent: number, total: number) => void;
+
+/**
+ * What a client hands its `fetch`: a `RequestInit`, and how to report how much of the body has
+ * been sent, which a `fetch` that can't tell, such as the platform's own, ignores.
+ */
+export interface FetchInit extends RequestInit {
+  uploadProgress?: UploadProgress | undefined;
+}
+
 export interface ClientOptions {
-  /** The `fetch` requests go through. */
+  /**
+   * The `fetch` requests go through. It's given a {@link FetchInit}, and may report an upload's
+   * progress through it.
+   */
   fetch: typeof globalThis.fetch;
   /** The account's token. Without one, the client signs in as nobody, for public repositories. */
   token?: Token | undefined;
@@ -147,6 +165,14 @@ export interface SendOptions {
   timeoutMs?: number | undefined;
   /** Whether to follow a redirect to where the token may go. On unless turned off. */
   followRedirects?: boolean | undefined;
+  /**
+   * Gives the request up: one that waits at the client's gate or hasn't been sent isn't sent, and
+   * one under way is cancelled. Either fails with the signal's reason. One cancelled under way may
+   * still have reached GitHub.
+   */
+  signal?: AbortSignal | undefined;
+  /** Hears how much of the body has been sent, when the client's `fetch` can tell. */
+  uploadProgress?: UploadProgress | undefined;
 }
 
 interface Shared {
@@ -401,9 +427,12 @@ export class GithubClient {
     let url = this.url(path);
     let currentMethod = method;
     let body = options.body;
+    const { signal } = options;
+    if (signal?.aborted) throw abandoned(signal);
     const release = this.#gate ? await this.#gate() : undefined;
     try {
       for (let redirects = 0; ; redirects++) {
+        if (signal?.aborted) throw abandoned(signal);
         const response = await this.#exchange(token, currentMethod, url, body, options);
         const location = response.header('location');
         const redirected = [301, 302, 303, 307, 308].includes(response.status);
@@ -460,17 +489,23 @@ export class GithubClient {
     }
     let response: Response;
     let bytes: Uint8Array;
+    const timeout = AbortSignal.timeout(options.timeoutMs ?? TIMEOUT_MS);
+    const given = options.signal;
+    const init: FetchInit = {
+      method,
+      headers,
+      body: body === undefined || typeof body === 'string' ? body : new Uint8Array(body),
+      redirect: 'manual',
+      signal: given ? AbortSignal.any([timeout, given]) : timeout,
+      uploadProgress: options.uploadProgress,
+    };
     try {
-      response = await this.#fetch(url, {
-        method,
-        headers,
-        body: body === undefined || typeof body === 'string' ? body : new Uint8Array(body),
-        redirect: 'manual',
-        signal: AbortSignal.timeout(options.timeoutMs ?? TIMEOUT_MS),
-      });
+      response = await this.#fetch(url, init);
       bytes = new Uint8Array(await response.arrayBuffer());
     } catch (error) {
       if (error instanceof GithubError) throw error;
+      // Given up on by whoever sent it, which isn't the network failing.
+      if (given?.aborted) throw abandoned(given);
       throw new GithubError(
         { kind: 'network', failure: this.#classify(error), message: describeThrown(error) },
         { cause: error },
