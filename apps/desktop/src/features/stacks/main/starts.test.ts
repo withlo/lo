@@ -128,6 +128,27 @@ describe('where a layer’s diff starts', () => {
     });
   });
 
+  it('is left as it is for a layer compared with its base branch’s tip, retargeted onto it', async () => {
+    const { list, rules } = await recorded('app_stack', E2E);
+    const below = headOf(list, 83);
+    // #84's base branch is now stack/b, #83's head branch, at #83's head: GitHub's diff of #84
+    // starts where #84's diff on screen already does.
+    const retargeted = changePull(list, 84, (pr) => ({
+      ...pr,
+      baseRefName: 'stack/b',
+      baseRef: pr.baseRef && { ...pr.baseRef, target: { __typename: 'Commit', oid: below } },
+    }));
+    const forest = forestOf(retargeted, rules);
+    for (const drawn of [false, true]) {
+      const layer = view(retargeted, 84, { compareFrom: below, drawn });
+      expect(planStart(layer, forest, undefined)).toMatchObject({
+        start: { kind: 'baseBranch', branch: 'stack/b', tip: below },
+        set: undefined,
+        offer: undefined,
+      });
+    }
+  });
+
   it('is taken back while nothing is drawn when the stack was found at another head', async () => {
     const { list, rules } = await recorded('app_stack', E2E);
     const forest = forestOf(list, rules);

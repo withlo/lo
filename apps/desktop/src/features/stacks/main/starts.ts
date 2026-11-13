@@ -66,7 +66,12 @@ export function planStart(
     return !view.drawn && view.compareFrom !== undefined ? { ...none, set: null } : none;
   }
   const commit = start.kind === 'baseBranch' ? undefined : start.commit;
-  if (commit === view.compareFrom) {
+  // A layer compared with its base branch's tip already starts where GitHub's diff does, as when
+  // it was retargeted onto the layer below's branch.
+  const same =
+    commit === view.compareFrom ||
+    (start.kind === 'baseBranch' && start.tip !== undefined && start.tip === view.compareFrom);
+  if (same) {
     return view.missing ? { ...none, note: missingNote(view, start) } : none;
   }
   if (!view.drawn) return { ...none, set: commit ?? null };
