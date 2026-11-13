@@ -1,8 +1,9 @@
-// A pull request's tab in main: which account it acts as, what GitHub says of the pull request, how
-// that stands, and its local copy. The account's poller watches the pull request from the moment
-// the tab knows its account, so the strip has its title; the rest starts the first time the tab is
-// shown. What's on screen stays on the head the tab opened at until the newer push is loaded.
-// Nothing here calls Electron.
+// A pull request's tab in main, or a view of one, which a tab has for each layer of a stack it
+// shows: which account it acts as, what GitHub says of the pull request, how that stands, and its
+// local copy. The account's poller watches the pull request from the moment the tab knows its
+// account, so the strip has its title; the rest starts the first time the tab is shown. What's on
+// screen stays on the head the tab opened at until the newer push is loaded. Nothing here calls
+// Electron.
 
 import { type PullRequestRefs, parseOid, type Repo } from '@lo/git';
 import {
@@ -86,6 +87,13 @@ export interface PullTabOptions {
   readonly keep: (kept: Kept) => void;
   /** Hears that what {@link PullTab.info} says may have changed. */
   readonly changed?: (() => void) | undefined;
+  /**
+   * Whether other views watch `pull` with `poller`, as a layer of one tab and the pull request
+   * another tab opened on can, and whether one of them is on screen: the tab then leaves the poller
+   * watching it as it stops, and keeps it the open one while that view is on screen.
+   */
+  readonly sharing?:
+    ((pull: PullRef, poller: Poller) => { watched: boolean; shown: boolean }) | undefined;
   readonly log: (line: string) => void;
   /** How long GitHub must be out of reach before the tab says so: {@link OFFLINE_AFTER}. */
   readonly offlineAfter?: number | undefined;
@@ -307,6 +315,11 @@ export class PullTab {
     this.#local?.close();
   }
 
+  /** Whether the tab watches `pull` with `poller`, until it closes. */
+  watches(pull: PullRef, poller: Poller): boolean {
+    return !this.#closed && this.#poller === poller && this.pull.equals(pull);
+  }
+
   /** What other features in main follow of the tab. */
   info(): PullTabInfo {
     const repository = this.#repository ?? this.pull.repo;
@@ -476,10 +489,11 @@ export class PullTab {
     const poller = this.#poller;
     this.#poller = undefined;
     if (poller) {
-      if (poller.open?.equals(this.pull)) {
+      const others = this.#options.sharing?.(this.pull, poller);
+      if (poller.open?.equals(this.pull) && others?.shown !== true) {
         poller.setOpen(undefined).catch((error: unknown) => this.#options.log(describe(error)));
       }
-      poller.unwatch(this.pull);
+      if (others?.watched !== true) poller.unwatch(this.pull);
     }
   }
 

@@ -1,9 +1,13 @@
 import type { Repo } from '@lo/git';
 
 import { defineService } from '../../main/services.ts';
-import type { Acting, LocalState, Opening, Tabs } from './contract.ts';
+import type { Acting, LocalState, Opening, Stack, Tabs } from './contract.ts';
 
-/** A pull request's tab, as features in main that show what's in it follow it. */
+/**
+ * A view of a pull request's tab, as features in main that show what's in it follow it: the tab's
+ * view of the pull request it opened on, by the tab's id, or of another layer of a stack it holds,
+ * by `<tab id>:<number>`. Each keeps its own place, comparison and overview.
+ */
 export interface PullTabInfo {
   readonly id: string;
   /** Its repository, by the name GitHub gives it now, once known; else as the tab was opened. */
@@ -35,40 +39,52 @@ export interface PullTabInfo {
 
 /**
  * The window's tabs, for features that open them from main, as links from other apps do, and for
- * features that show what's in a pull request's tab.
+ * features that show what's in a pull request's tab. A pull request's tab holds a view of each
+ * layer of a stack the reader has shown, and these name it by its view on screen, so a feature
+ * that follows the tabs follows the layers too.
  */
 export interface TabService {
-  /** The tabs in the strip's order, and the one on screen. */
+  /**
+   * The tabs in the strip's order, and the one on screen: a pull request's tab by its view on
+   * screen, that view's id and its layer's number.
+   */
   list(): Tabs;
   /**
-   * Opens a tab and shows it, and returns its id. A pull request already open, by any name it's
-   * known by, or Settings when it's open, shows the tab it's in. A new pull request's tab acts as
-   * `as.login` when given, an account that can see its repository, and otherwise works out its
-   * account itself.
+   * Opens a tab and shows it, and returns the id of the view that shows what was opened. A pull
+   * request already open, by any name it's known by, shows the tab it opened in, at its layer; else
+   * one a tab's stack holds ({@link TabService.setLayers}) shows the first such tab, at that layer.
+   * Settings when it's open shows its tab. A new pull request's tab acts as `as.login` when given,
+   * an account that can see its repository, and otherwise works out its account itself.
    */
   open(opening: Opening, as?: { login: string }): string;
-  /** What main has of a pull request's tab now, or nothing for a tab that isn't one, or is closed. */
+  /**
+   * Keeps the stack the pull request's tab of view `id` holds, `undefined` once it holds none, so a
+   * link to any of its layers shows that tab, at that layer, and the window's title says where in
+   * the stack the layer on screen is. Two tabs that turn out to hold one stack stay two.
+   */
+  setLayers(id: string, stack: Stack | undefined): void;
+  /** What main has of a view of a pull request's tab now, or nothing for no such view. */
   pull(id: string): PullTabInfo | undefined;
   /**
-   * Calls `listener` with a pull request's tab's id each time what {@link TabService.pull} says of
-   * it may have changed, and once it's closed. Returns a function that stops it.
+   * Calls `listener` with a view's id each time what {@link TabService.pull} says of it may have
+   * changed, and once it's closed, with its tab. Returns a function that stops it.
    */
   onPull(listener: (id: string) => void): () => void;
   /**
-   * Calls `listener` with the tabs each time they change, as the window hears them: one opened,
-   * closed, moved or shown. Returns a function that stops it.
+   * Calls `listener` with the tabs, as {@link TabService.list} names them, each time they change:
+   * one opened, closed, moved or shown, or another layer shown. Returns a function that stops it.
    */
   onTabs(listener: (tabs: Tabs) => void): () => void;
   /**
-   * A pull request's tab's local copy, opened, to read what's been fetched into it: nothing until
-   * the tab first fetches. The tab closes it as the tab closes, so a reader never does.
+   * A view's local copy, opened, to read what's been fetched into it: nothing until the view first
+   * fetches. The tab closes it as the tab closes, so a reader never does.
    */
   clone(id: string): Promise<Repo> | undefined;
   /**
-   * Says a pull request's tab's diff is drawn at `head`. If that's the head on screen, it stays
-   * there from now on, until the reader loads a newer one: a head taken from what Lo saved, which
-   * GitHub's first answer would otherwise replace, is no longer replaced, and a newer head from
-   * GitHub is offered as a newer push instead, so the diff never moves under the reader.
+   * Says a view's diff is drawn at `head`. If that's the head on screen, it stays there from now
+   * on, until the reader loads a newer one: a head taken from what Lo saved, which GitHub's first
+   * answer would otherwise replace, is no longer replaced, and a newer head from GitHub is offered
+   * as a newer push instead, so the diff never moves under the reader.
    */
   drawn(id: string, head: string): void;
 }

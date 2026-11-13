@@ -5,7 +5,7 @@
 import type { NoTarget, TabTarget } from '@lo/ui/commands';
 import { createStore } from 'zustand/vanilla';
 
-import type { Moved, Tab } from '../contract.ts';
+import { layerOf, type Moved, type Tab } from '../contract.ts';
 import { main } from './main.ts';
 import { moreStore } from './more.ts';
 import { tabsStore, type TabsState } from './store.ts';
@@ -13,11 +13,11 @@ import { tabsStore, type TabsState } from './store.ts';
 /** What the strip last said of a tab it moved, for a screen reader. */
 export const movedStore = createStore<{ readonly said: string }>()(() => ({ said: '' }));
 
-/** A tab's name, as the strip shows it. */
+/** A tab's name, as the strip shows it: a pull request's by its layer on screen. */
 function nameOf(tab: Tab): string {
   switch (tab.kind) {
     case 'pull':
-      return `${tab.repo} #${tab.number}`;
+      return `${tab.repo} #${layerOf(tab)}`;
     case 'recent':
       return 'Recent pull requests';
     case 'settings':

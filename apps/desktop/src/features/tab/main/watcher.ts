@@ -1,18 +1,23 @@
-// The pull requests in the window's tabs, as main follows them: a PullTab for each tab of a pull
-// request, made as the tab opens or comes back after a restart, shown as the tab is, and closed with
-// it. Nothing here calls Electron.
+// The pull requests in the window's tabs, as main follows them: a PullTab for each view of a pull
+// request's tab, one for each layer it has shown, made as the tab opens, comes back after a
+// restart, or shows another layer; the view on screen shown, and the rest hidden; and all of them
+// closed with their tab. Nothing here calls Electron.
 
 import type { Repo } from '@lo/git';
+import type { Poller, PullRef } from '@lo/github';
 
 import type { LocalGit } from '../../../main/git.ts';
 import type { GithubEvent } from '../../accounts/service.ts';
-import type { Tabs } from '../contract.ts';
+import { layerOf, layersOf, viewId, type Tab, type Tabs } from '../contract.ts';
 import type { PullTabInfo } from '../service.ts';
 import { PullTab, type Kept, type Snapshot, type TabGithub, type TabPublish } from './pull.ts';
 
-/** What the watcher keeps with each tab, and reads back as it restores one. */
+/**
+ * What the watcher keeps with each tab, and reads back as it restores one, by the id of the view
+ * it's kept from: a view's tab keeps what its views share.
+ */
 export interface TabStore {
-  /** What was kept with a tab: its account and repository's name, if any. */
+  /** What was kept with a view's tab: its account and repository's name, if any. */
   kept(id: string): { login?: string | undefined; repository?: string | undefined };
   keep(id: string, kept: Kept): void;
 }
@@ -51,33 +56,25 @@ export class Watcher {
   }
 
   /**
-   * Follows the tabs as they are now: a PullTab for each new tab of a pull request, which starts
-   * watching with the account it last acted as; the tab on screen shown, and the one before it
-   * hidden; and those closed, closed.
+   * Follows the tabs as they are now: a PullTab for each new view of a pull request's tab, which
+   * starts watching with the account its tab last acted as; the view on screen shown, and the one
+   * before it hidden; and the views of tabs closed, closed.
    */
   follow({ tabs, active }: Tabs): void {
     if (this.#stopped) return;
     const open = new Set<string>();
+    let onScreen: string | undefined;
     for (const tab of tabs) {
-      if (tab.kind !== 'pull') continue;
-      open.add(tab.id);
-      if (this.#tabs.has(tab.id)) continue;
-      const kept = this.#options.store.kept(tab.id);
-      const pull = new PullTab({
-        id: tab.id,
-        link: { owner: tab.owner, repo: tab.repo, number: tab.number },
-        login: kept.login,
-        repository: kept.repository,
-        github: this.#options.github,
-        git: this.#options.git,
-        publish: this.#options.publish,
-        keep: (change) => this.#options.store.keep(tab.id, change),
-        changed: () => this.#changed(tab.id),
-        log: (line) => this.#options.log(`${tab.owner}/${tab.repo}#${tab.number}: ${line}`),
-        offlineAfter: this.#options.offlineAfter,
-      });
-      this.#tabs.set(tab.id, pull);
-      void pull.watch();
+      if (tab.kind !== 'pull') {
+        if (tab.id === active) onScreen = tab.id;
+        continue;
+      }
+      for (const layer of layersOf(tab)) {
+        const id = viewId(tab, layer);
+        open.add(id);
+        if (!this.#tabs.has(id)) this.#make(tab, id, layer);
+      }
+      if (tab.id === active) onScreen = viewId(tab, layerOf(tab));
     }
     for (const [id, pull] of this.#tabs) {
       if (open.has(id)) continue;
@@ -85,27 +82,64 @@ export class Watcher {
       this.#tabs.delete(id);
       this.#changed(id);
     }
-    if (active !== this.#active) {
+    if (onScreen !== this.#active) {
       const before = this.#active === undefined ? undefined : this.#tabs.get(this.#active);
       before?.hide();
-      this.#active = active;
-      this.#tabs.get(active)?.show();
+      this.#active = onScreen;
+      if (onScreen !== undefined) this.#tabs.get(onScreen)?.show();
     }
   }
 
-  /** What other features follow of a pull request's tab, or nothing for a tab that isn't one. */
+  /** Makes `tab`'s view `id` of `layer`, which starts watching it. */
+  #make(tab: Extract<Tab, { kind: 'pull' }>, id: string, layer: number): void {
+    const kept = this.#options.store.kept(id);
+    const name = `${tab.owner}/${tab.repo}#${layer}`;
+    const pull = new PullTab({
+      id,
+      link: { owner: tab.owner, repo: tab.repo, number: layer },
+      login: kept.login,
+      repository: kept.repository,
+      github: this.#options.github,
+      git: this.#options.git,
+      publish: this.#options.publish,
+      keep: (change) => this.#options.store.keep(id, change),
+      changed: () => this.#changed(id),
+      sharing: (ref, poller) => this.#sharing(id, ref, poller),
+      log: (line) => this.#options.log(`${name}: ${line}`),
+      offlineAfter: this.#options.offlineAfter,
+    });
+    this.#tabs.set(id, pull);
+    void pull.watch();
+  }
+
+  /**
+   * Whether views besides `id` watch `pull` with `poller`, as a layer of one tab and a pull request
+   * another tab opened on can, and whether one of them is on screen.
+   */
+  #sharing(id: string, pull: PullRef, poller: Poller): { watched: boolean; shown: boolean } {
+    let watched = false;
+    let shown = false;
+    for (const [other, view] of this.#tabs) {
+      if (other === id || !view.watches(pull, poller)) continue;
+      watched = true;
+      if (other === this.#active) shown = true;
+    }
+    return { watched, shown };
+  }
+
+  /** What other features follow of a view of a pull request's tab, or nothing for no such view. */
   info(id: string): PullTabInfo | undefined {
     return this.#tabs.get(id)?.info();
   }
 
-  /** A pull request's tab's local copy's clone, once it's opened. */
+  /** A view's local copy's clone, once it's opened. */
   clone(id: string): Promise<Repo> | undefined {
     return this.#tabs.get(id)?.clone();
   }
 
   /**
-   * Calls `listener` with a pull request's tab's id each time what {@link Watcher.info} says of it
-   * may have changed, and as it closes. Returns a function that stops it.
+   * Calls `listener` with a view's id each time what {@link Watcher.info} says of it may have
+   * changed, and as it closes. Returns a function that stops it.
    */
   onChange(listener: (id: string) => void): () => void {
     this.#listeners.add(listener);
@@ -114,12 +148,12 @@ export class Watcher {
     };
   }
 
-  /** What a pull request's tab has now, or nothing for a tab that isn't one. */
+  /** What a view of a pull request's tab has now, or nothing for no such view. */
   snapshot(id: string): Snapshot | undefined {
     return this.#tabs.get(id)?.snapshot();
   }
 
-  /** A pull request's tab's diff is drawn at `head`, which stays on screen if it's there now. */
+  /** A view's diff is drawn at `head`, which stays on screen if it's there now. */
   drawn(id: string, head: string): void {
     this.#tabs.get(id)?.drawn(head);
   }
@@ -136,7 +170,7 @@ export class Watcher {
     await this.#tabs.get(id)?.choose(login);
   }
 
-  /** Whether `id` is a pull request's tab. */
+  /** Whether `id` is a view of a pull request's tab. */
   has(id: string): boolean {
     return this.#tabs.has(id);
   }

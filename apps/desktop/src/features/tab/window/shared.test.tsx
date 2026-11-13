@@ -5,8 +5,16 @@ import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vite
 
 import type { Tab } from '../contract.ts';
 import { middleIds, panels } from './panels.ts';
-import { activeTab, showMiddle, tabState, useActiveTab, useTabState } from './shared.ts';
-import { showTabs } from './store.ts';
+import {
+  activeTab,
+  pullOf,
+  showMiddle,
+  tabState,
+  useActiveTab,
+  useTabState,
+  type PullView,
+} from './shared.ts';
+import { showPull, showTabs } from './store.ts';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -42,6 +50,56 @@ describe('the tab on screen', () => {
     expect(shown.text()).toBe('fd#2212');
     act(() => showTabs({ tabs: [fd, bat], active: 'bat' }));
     expect(shown.text()).toBe('bat#7');
+  });
+});
+
+describe('a stack’s tab on screen', () => {
+  const stack: Tab = { ...fd, title: 'Add --jemalloc', layer: 2213, layers: [2212, 2213] };
+
+  it('is its view on screen, by the view’s id and its layer’s number', () => {
+    showTabs({ tabs: [stack, bat], active: 'fd' });
+    expect(activeTab()).toEqual({
+      id: 'fd:2213',
+      kind: 'pull',
+      owner: 'sharkdp',
+      repo: 'fd',
+      number: 2213,
+      title: 'Add --jemalloc',
+    });
+    // The same view each time it's asked for, until main says something new.
+    expect(activeTab()).toBe(activeTab());
+    const shown = render(<Title />);
+    expect(shown.text()).toBe('fd#2213');
+    act(() => showTabs({ tabs: [{ ...stack, layer: undefined }, bat], active: 'fd' }));
+    expect(shown.text()).toBe('fd#2212');
+    expect(activeTab()?.id).toBe('fd');
+  });
+
+  it('keeps each view’s state and what main said of it until the tab closes', () => {
+    const count = tabState(() => 0);
+    showTabs({ tabs: [stack, bat], active: 'fd' });
+    count.set('fd', 3);
+    count.set('fd:2213', 4);
+    const view: PullView = {
+      id: 'fd:2213',
+      loading: false,
+      acting: null,
+      header: null,
+      connection: { kind: 'live' },
+      problem: null,
+      shown: null,
+      newer: null,
+    };
+    showPull(view);
+    showTabs({ tabs: [{ ...stack, layer: undefined }, bat], active: 'bat' });
+    expect([count.get('fd'), count.get('fd:2213')]).toEqual([3, 4]);
+    expect(pullOf('fd:2213')).toBe(view);
+    // A view of a layer the tab has none of isn't kept.
+    showPull({ ...view, id: 'fd:2214' });
+    expect(pullOf('fd:2214')).toBeUndefined();
+    showTabs({ tabs: [bat], active: 'bat' });
+    expect([count.get('fd'), count.get('fd:2213')]).toEqual([0, 0]);
+    expect(pullOf('fd:2213')).toBeUndefined();
   });
 });
 
