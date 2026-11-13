@@ -46,6 +46,27 @@ function labelled(host: HTMLElement, text: string): HTMLButtonElement | undefine
   return [...host.querySelectorAll('button')].find((each) => each.textContent.startsWith(text));
 }
 
+/** A box with a real editor in it, as it is when the preview is switched on and off. */
+function withPreview(previewing: boolean) {
+  return (
+    <CommentBox {...WRITING} previewing={previewing} preview={<p>Previewed.</p>}>
+      <textarea aria-label="Comment" />
+    </CommentBox>
+  );
+}
+
+/** The same box with something else on the page to hold focus. */
+function besideButton(previewing: boolean) {
+  return (
+    <>
+      <button type="button">Elsewhere</button>
+      <CommentBox {...WRITING} previewing={previewing}>
+        <textarea aria-label="Comment" />
+      </CommentBox>
+    </>
+  );
+}
+
 describe('CommentBox', () => {
   it('frames the editor with a head, a foot and the two buttons, the main one last', () => {
     const host = render(<CommentBox {...WRITING} />);
@@ -111,45 +132,32 @@ describe('CommentBox', () => {
   });
 
   it('takes focus to the preview and gives it back to the editor, in the box’s scope throughout', () => {
-    const box = (previewing: boolean) => (
-      <CommentBox {...WRITING} previewing={previewing} preview={<p>Previewed.</p>}>
-        <textarea aria-label="Comment" />
-      </CommentBox>
-    );
-    const host = render(box(false));
+    const host = render(withPreview(false));
     const editor = host.querySelector('textarea')!;
     focus(editor);
     expect(findScope(document.activeElement).name).toBe('box');
 
     // The editor is hidden: focus goes to the preview rather than to the page.
-    rerender(host, box(true));
+    rerender(host, withPreview(true));
     const pane = host.querySelector('[role="region"]');
     expect(pane?.getAttribute('tabindex')).toBe('0');
     expect(document.activeElement).toBe(pane);
     expect(findScope(document.activeElement).name).toBe('box');
 
     // The preview is gone: focus goes back to the same editor.
-    rerender(host, box(false));
+    rerender(host, withPreview(false));
     expect(document.activeElement).toBe(host.querySelector('textarea'));
     expect(document.activeElement).toBe(editor);
     expect(findScope(document.activeElement).name).toBe('box');
   });
 
   it('leaves focus where it is when the preview is switched from outside the box', () => {
-    const outside = (previewing: boolean) => (
-      <>
-        <button type="button">Elsewhere</button>
-        <CommentBox {...WRITING} previewing={previewing}>
-          <textarea aria-label="Comment" />
-        </CommentBox>
-      </>
-    );
-    const host = render(outside(false));
+    const host = render(besideButton(false));
     const elsewhere = host.querySelector('button')!;
     focus(elsewhere);
-    rerender(host, outside(true));
+    rerender(host, besideButton(true));
     expect(document.activeElement).toBe(elsewhere);
-    rerender(host, outside(false));
+    rerender(host, besideButton(false));
     expect(document.activeElement).toBe(elsewhere);
   });
 

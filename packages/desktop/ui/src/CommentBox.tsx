@@ -312,7 +312,14 @@ function ActionButton({
 }
 
 /** What takes the keyboard in an editor: a field, or editable content like CodeMirror's. */
-const EDITABLE = 'textarea, input, select, [contenteditable]:not([contenteditable="false"])';
+const EDITABLE = 'textarea, input, select, [contenteditable]';
+
+/** The first of those that is really editable: `contenteditable="false"` marks content that isn't. */
+function firstEditable(within: HTMLElement | null): HTMLElement | undefined {
+  return [...(within?.querySelectorAll<HTMLElement>(EDITABLE) ?? [])].find(
+    (each) => each.getAttribute('contenteditable') !== 'false',
+  );
+}
 
 /**
  * The frame around a comment's editor: a head with the Write and Preview switch, where the comment
@@ -354,7 +361,7 @@ export function CommentBox({
       // The editor has gone: focus goes to the preview, still inside the box.
       if (slot.current?.contains(active) || (lost && held.current)) pane.current?.focus();
     } else if (lost && held.current) {
-      slot.current?.querySelector<HTMLElement>(EDITABLE)?.focus();
+      firstEditable(slot.current)?.focus();
     }
   }, [previewing]);
 
