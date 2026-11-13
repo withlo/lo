@@ -167,7 +167,7 @@ interface Fixtures {
   traced: boolean;
   /** Lo, started on an empty data folder with Chromium's sandbox on. */
   app: ElectronApplication;
-  /** Lo's window, once its page has loaded. */
+  /** Lo's window, once its page has loaded and the window has drawn. */
   page: Page;
 }
 
@@ -213,11 +213,22 @@ export const test = base.extend<Fixtures>({
     }
     await app.close();
   },
-  page: async ({ app }, use) => {
-    const page = await app.firstWindow();
-    await page.waitForLoadState('load');
-    await use(page);
-  },
+  page: [
+    async ({ app }, use) => {
+      const page = await app.firstWindow();
+      await page.waitForLoadState('load');
+      // The page loads, runs and takes keys before the window can draw: its frames come once
+      // Electron's GPU process has started, which in CI, with copies of Lo and of the perf suite
+      // starting at once, has taken up to half a minute. Until then nothing that waits on a frame
+      // happens, such as a closed dialog leaving, so a test starts once the window has drawn.
+      await page.evaluate(
+        () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+      );
+      await use(page);
+    },
+    // Its own time, so a late first frame doesn't use up the test's.
+    { scope: 'test', timeout: 60_000 },
+  ],
 });
 
 export { expect };
