@@ -1,0 +1,87 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "RenderedBodies",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 23,
+      "description": true,
+      "ids": [
+        "PRR_kwDOVleUfc8AAAABWlR4mQ",
+        "PRR_kwDOVleUfc8AAAABWlSA-Q",
+        "PRR_kwDOVleUfc8AAAABWlhDMA",
+        "PRR_kwDOVleUfc8AAAABWlhK2w",
+        "PRR_kwDOVleUfc8AAAABWu3eKg",
+        "PRR_kwDOVleUfc8AAAABWu3rDg",
+        "PRR_kwDOVleUfc8AAAABWv73rA"
+      ]
+    },
+    "query_sha256": "285b3a71ef24563ae33870f157b845fcb0e9fc71ff54b6235fa3b18c95041504"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4953",
+      "x-ratelimit-reset": "1794596796",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "47"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4953,
+          "used": 47,
+          "resetAt": "2026-11-13T19:06:36Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "bodyHTML": "<p dir=\"auto\">Fixture E11 (review writes): Lo's recordings of comments, replies and reviews are written here as rozed-bot, which can only comment on its own pull request. <code class=\"notranslate\">e11/review.txt</code> changes lines 10, 11, 30 and 50, so the diff has three hunks with lines outside them, and <code class=\"notranslate\">e11/notes.md</code> changes one line, for file-level comments. The recordings delete the comments they can afterwards; submitted reviews stay. It targets <code class=\"notranslate\">e11/base</code>, which adds the files it changes to <code class=\"notranslate\">main</code>. Made by <code class=\"notranslate\">script/e2e/fixtures.sh</code> in scornz/lo.</p>"
+          }
+        },
+        "nodes": [
+          {
+            "__typename": "PullRequestReview",
+            "id": "PRR_kwDOVleUfc8AAAABWlR4mQ",
+            "bodyHTML": "<p dir=\"auto\">Fixture E11: the pending review's summary, submitted as a comment.</p>"
+          },
+          {
+            "__typename": "PullRequestReview",
+            "id": "PRR_kwDOVleUfc8AAAABWlSA-Q",
+            "bodyHTML": "<p dir=\"auto\">Fixture E11: a review with only a summary.</p>"
+          },
+          {
+            "__typename": "PullRequestReview",
+            "id": "PRR_kwDOVleUfc8AAAABWlhDMA",
+            "bodyHTML": "<p dir=\"auto\">Fixture E11: the pending review's summary, submitted as a comment.</p>"
+          },
+          {
+            "__typename": "PullRequestReview",
+            "id": "PRR_kwDOVleUfc8AAAABWlhK2w",
+            "bodyHTML": "<p dir=\"auto\">Fixture E11: a review with only a summary.</p>"
+          },
+          {
+            "__typename": "PullRequestReview",
+            "id": "PRR_kwDOVleUfc8AAAABWu3eKg",
+            "bodyHTML": "<p dir=\"auto\">A summary written before submitting (body left out of the submit).</p>"
+          },
+          {
+            "__typename": "PullRequestReview",
+            "id": "PRR_kwDOVleUfc8AAAABWu3rDg",
+            "bodyHTML": "<p dir=\"auto\">A summary written before submitting (Lo's mutation, body sent as null).</p>"
+          },
+          {
+            "__typename": "PullRequestReview",
+            "id": "PRR_kwDOVleUfc8AAAABWv73rA",
+            "bodyHTML": "<p dir=\"auto\">Fixture E11: the pending review's summary, submitted as a comment.</p>"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -136,6 +136,8 @@ function nameOf(kind: TargetKind): string {
       return 'Block actions';
     case 'tab':
       return 'Tab actions';
+    case 'row':
+      return 'Row actions';
     case 'none':
       return 'Actions';
     default:

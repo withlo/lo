@@ -176,7 +176,10 @@ export interface SendOptions {
   /**
    * Sends this request alone as `token`, not the client's. It's never kept, and GitHub refusing it
    * isn't the client's token refused: `onUnauthorized` isn't asked, and nothing is sent again.
-   * What its answer says of the rate limit is that token's, so it isn't recorded.
+   * The rate limit its answer's headers report is that token's, so they aren't recorded. A refusal
+   * for the rate limit is recorded, as any request's is ({@link GithubClient.rateLimited}), and
+   * pauses the account: the token is for the same login, and GitHub counts a limit by account, so
+   * the account's own requests would be refused alike.
    */
   token?: Token | undefined;
 }
