@@ -222,8 +222,9 @@ export interface Composer {
    */
   preview(on: boolean): void;
   /**
-   * Closes the box, as after it was sent: in a code view, giving focus back to the line it was on.
-   * A box `createComposer` made is taken away.
+   * Closes the box, as after it was sent: in a code view, giving focus back to the line it was on,
+   * and taking what comes under that line next as what was sent, at once. A box `createComposer`
+   * made is taken away.
    */
   close(): void;
 }

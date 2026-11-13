@@ -752,8 +752,8 @@ class View implements DiffView {
   }
 
   /**
-   * Lines whose comment boxes closed before anything came under them, by `waitKey`: what comes
-   * there next is the reader's.
+   * Lines whose comment boxes were sent and closed before anything came under them, by `waitKey`:
+   * what comes there next is what the reader sent.
    */
   readonly #boxClosed = new Set<string>();
 
@@ -1897,10 +1897,10 @@ class View implements DiffView {
       nonce: this.#nonce,
       escape: (closed) => {
         const keep = closed.text.trim() !== '';
-        this.#closeBox(closed);
+        this.#closeBox(closed, false);
         on.close(keep);
       },
-      close: (closed) => this.#closeBox(closed),
+      close: (closed) => this.#closeBox(closed, true),
       // What the reader types keeps the line the box is under where it is.
       resized: () => this.#keepLine(place, () => {}),
     });
@@ -1939,12 +1939,16 @@ class View implements DiffView {
     return undefined;
   }
 
-  #closeBox(box: CommentBox): void {
+  /**
+   * Closes `box`. One the caller closed, as after it was sent, leaves its line the reader's until
+   * what was sent comes there; one closed with `Esc Esc` sent nothing, and leaves no claim.
+   */
+  #closeBox(box: CommentBox, sent: boolean): void {
     const found = [...this.#boxes].find(([, open]) => open.box === box);
     if (!found) return;
     const [key, { place, answered }] = found;
     this.#boxes.delete(key);
-    if (!answered) this.#boxClosed.add(waitKey(place.file, `${place.side}:${place.line}`));
+    if (sent && !answered) this.#boxClosed.add(waitKey(place.file, `${place.side}:${place.line}`));
     this.#keepLine(place, () => this.#refresh(place.file));
     const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
     const view = this.#viewOf(pane);

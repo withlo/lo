@@ -984,37 +984,31 @@ describe('threads', () => {
     expect(card.style.height).toBe('120px');
   });
 
-  test('what comes under a comment box’s line, open or just closed, comes at once', () => {
+  test('what comes under a comment box’s line, open or closed after it was sent, comes at once', () => {
     const shown = open();
     const { render } = plain();
-    shown.compose(at('a', 'new', 4), 'Mine', composerEvents());
+    const first = shown.compose(at('a', 'new', 4), 'Mine', composerEvents());
     // New line 22 says `added two`.
-    onScreen(['line 4', 'added two']);
+    onScreen(['line 4', 'line 6', 'added two']);
     // As the reader sends it, the box open.
     shown.setThreads([thread('mine', at('a', 'new', 4))], render);
     expect(drawnThreads()).toEqual(['mine']);
-    // Esc Esc, and then what they sent comes.
+    first.close();
+    // Closed as after it was sent, and then what they sent comes.
+    shown.compose(at('a', 'new', 22), 'Another', composerEvents()).close();
+    const mine = thread('mine', at('a', 'new', 4));
+    shown.setThreads([mine, thread('sent', at('a', 'new', 22))], render);
+    expect(drawnThreads()).toEqual(['mine', 'sent']);
+    // Once it's come, the line is anyone's again.
+    const sent = thread('sent', at('a', 'new', 22));
+    shown.setThreads([mine, sent, thread('late', at('a', 'new', 22))], render);
+    expect(drawnThreads()).toEqual(['mine', 'sent']);
+    // Esc Esc sends nothing: a thread coming there after, with no input, waits as any does.
+    shown.compose(at('a', 'new', 6), 'Not sent', composerEvents());
     const { content } = vimIn('Comment');
     press(content, 'Escape');
     press(content, 'Escape');
-    shown.compose(at('a', 'new', 22), 'Another', composerEvents());
-    const second = vimIn('Comment').content;
-    press(second, 'Escape');
-    press(second, 'Escape');
-    shown.setThreads(
-      [thread('mine', at('a', 'new', 4)), thread('sent', at('a', 'new', 22))],
-      render,
-    );
-    expect(drawnThreads()).toEqual(['mine', 'sent']);
-    // Once it's come, the line is anyone's again.
-    shown.setThreads(
-      [
-        thread('mine', at('a', 'new', 4)),
-        thread('sent', at('a', 'new', 22)),
-        thread('late', at('a', 'new', 22)),
-      ],
-      render,
-    );
+    shown.setThreads([mine, sent, thread('theirs', at('a', 'new', 6))], render);
     expect(drawnThreads()).toEqual(['mine', 'sent']);
   });
 
