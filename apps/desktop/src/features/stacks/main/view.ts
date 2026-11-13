@@ -209,7 +209,8 @@ function drawn(
     view: {
       kind: 'stack',
       root: stack.root,
-      found: foundOf(layers, placed),
+      githubStack: oneGithubStack(layers),
+      found: foundOf(placed),
       rows: placed.map(({ row }) => row),
       notes: [...githubNotes(layers), ...notesOf(input, forest, list, stack)],
       callout: left ? null : calloutOf(input, forest),
@@ -281,8 +282,8 @@ function viewedOf(layer: StackLayer | undefined, current: boolean): Row['viewed'
   return { source: 'layers', ...viewedFiles(layer) };
 }
 
-/** Whether every one of `layers` is in one GitHub stack. */
-function oneGithubStack(layers: readonly Pick<Layer, 'nativeStack'>[]): boolean {
+/** Whether every one of `layers` is in one GitHub stack, as the head says in place of the links. */
+export function oneGithubStack(layers: readonly Pick<Layer, 'nativeStack'>[]): boolean {
   const github = new Set(layers.map((layer) => layer.nativeStack?.stack));
   return layers.length > 0 && github.size === 1 && !github.has(undefined);
 }
@@ -295,16 +296,11 @@ const LINKS: Readonly<Record<Rule, Link>> = {
 };
 
 /**
- * How the stack's layers were found, as its head says it: a GitHub stack alone when every layer is
- * in one, else each kind of link that placed its rows, or nothing for a layer no rule linked. A
- * GitHub stack can't branch, so a stack that does may hold one along a path, with layers off it
- * linked by base branch or shared commits.
+ * How the stack's layers were found: each kind of link that placed its rows, or nothing for a layer
+ * no rule linked. A GitHub stack can't branch, so a stack that does may hold one along a path, with
+ * layers off it linked by base branch or shared commits.
  */
-export function foundOf(
-  layers: readonly Pick<Layer, 'nativeStack'>[],
-  rows: readonly Pick<ShownRow, 'rule'>[],
-): Found | null {
-  if (oneGithubStack(layers)) return ['github'];
+export function foundOf(rows: readonly Pick<ShownRow, 'rule'>[]): Found | null {
   const used = new Set(rows.flatMap(({ rule }) => (rule === undefined ? [] : [LINKS[rule]])));
   const found = link.options.filter((each) => used.has(each));
   return found.length > 0 ? found : null;
@@ -312,7 +308,8 @@ export function foundOf(
 
 /**
  * Which layers are a GitHub stack, a note for each GitHub stack in a stack that isn't one, bottom
- * first: "#82, #83 and #84 are a GitHub stack." The head says so when every layer is in one.
+ * first: "#82, #83 and #84 are a GitHub stack.", or "#2 is in a GitHub stack." for its one layer
+ * here. The head says so when every layer is in one.
  */
 export function githubNotes(layers: readonly Pick<Layer, 'number' | 'nativeStack'>[]): Note[] {
   if (oneGithubStack(layers)) return [];
@@ -326,7 +323,7 @@ export function githubNotes(layers: readonly Pick<Layer, 'number' | 'nativeStack
       .map(({ number }) => number);
     return {
       kind: 'github',
-      text: `${numbers(prs)} ${prs.length === 1 ? 'is' : 'are'} a GitHub stack.`,
+      text: `${numbers(prs)} ${prs.length === 1 ? 'is in' : 'are'} a GitHub stack.`,
     };
   });
 }

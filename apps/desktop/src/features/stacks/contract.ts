@@ -119,10 +119,9 @@ export const link = z.enum(['github', 'baseBranch', 'sharedCommits']);
 export type Link = z.output<typeof link>;
 
 /**
- * How a stack's layers were found to sit on each other, as its head says: each kind of link between
- * them, once, in the order `link` lists them. `github` alone says every layer is in one GitHub
- * stack, as a layer alone in one is. A GitHub stack can't branch, so a stack that branches can hold
- * one along a path, with other links off it.
+ * How a stack's layers were found to sit on each other: each kind of link between them, once, in
+ * the order `link` lists them. A GitHub stack can't branch, so a stack that branches can hold one
+ * along a path, with other links off it.
  */
 export const found = z.array(link).min(1);
 export type Found = z.output<typeof found>;
@@ -134,9 +133,10 @@ export type Found = z.output<typeof found>;
  *   tab that acts as nobody, which no poller reads them for;
  * - `none` when its pull request isn't in a stack: a stack shows when it has two layers or more,
  *   when the pull request is in a GitHub stack, or when it needs a rebase;
- * - `stack`: the root branch its bottom layer sits on, how its layers were found (`null` for a
- *   layer alone), its rows and its notes; and `callout`, what the offer to make it a GitHub stack
- *   says, while Lo could make the chain through the layer on screen one.
+ * - `stack`: the root branch its bottom layer sits on; whether every layer is in one GitHub stack
+ *   (`githubStack`), which its head then says in place of how its layers were found (`found`,
+ *   `null` for a layer alone); its rows and its notes; and `callout`, what the offer to make it a
+ *   GitHub stack says, while Lo could make the chain through the layer on screen one.
  */
 export const stackView = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('unknown') }),
@@ -144,6 +144,7 @@ export const stackView = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('stack'),
     root: z.string(),
+    githubStack: z.boolean(),
     found: found.nullable(),
     rows: z.array(row).min(1),
     notes: z.array(note),

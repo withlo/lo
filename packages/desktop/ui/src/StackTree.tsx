@@ -88,8 +88,13 @@ export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   /** The branch the bottom layer sits on. */
   root: string;
   /**
-   * How Lo found the layers to sit on each other, each kind of link once: `github` alone when every
-   * layer is in one GitHub stack. Nothing for a layer alone, which none sits on.
+   * Every layer is in one GitHub stack, which the head says in place of how Lo found them to sit on
+   * each other.
+   */
+  githubStack?: boolean | undefined;
+  /**
+   * How Lo found the layers to sit on each other, each kind of link once. Nothing for a layer alone,
+   * which none sits on.
    */
   found?: readonly StackTreeLink[] | undefined;
   /** The layer the keyboard is on, by key. */
@@ -156,12 +161,16 @@ const LINK_WORDS: Readonly<Record<StackTreeLink, string>> = {
 const LINK_ORDER: readonly StackTreeLink[] = ['github', 'base', 'commits'];
 
 /**
- * "GitHub stack · 4 layers" for one GitHub stack, else each kind of link, in order: "4 layers · by
- * GitHub stack and base branch".
+ * "GitHub stack · 4 layers" when every layer is in one GitHub stack, else each kind of link, in
+ * order: "4 layers · by GitHub stack and base branch".
  */
-function headText(count: number, found: readonly StackTreeLink[] | undefined): string {
+function headText(
+  count: number,
+  githubStack: boolean,
+  found: readonly StackTreeLink[] | undefined,
+): string {
   const layers = `${count} ${count === 1 ? 'layer' : 'layers'}`;
-  if (found?.length === 1 && found[0] === 'github') return `GitHub stack · ${layers}`;
+  if (githubStack) return `GitHub stack · ${layers}`;
   const words = LINK_ORDER.filter((link) => found?.includes(link)).map((link) => LINK_WORDS[link]);
   const last = words.pop();
   if (last === undefined) return layers;
@@ -399,6 +408,7 @@ function reveal(tree: HTMLElement | null, key: string | undefined): void {
 export function StackTree({
   layers,
   root,
+  githubStack = false,
   found,
   focused,
   current,
@@ -444,7 +454,7 @@ export function StackTree({
           {choosing ? (
             <span className="mode-chip">V-LINE</span>
           ) : (
-            <span className="lo-num">{headText(layers.length, found)}</span>
+            <span className="lo-num">{headText(layers.length, githubStack, found)}</span>
           )}
         </span>
       </div>

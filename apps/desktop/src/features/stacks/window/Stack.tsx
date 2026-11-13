@@ -205,6 +205,7 @@ export function Stack({ tab }: { tab: PullTab }) {
           return run === undefined ? layer : { ...layer, run };
         })}
         root={withoutBidi(view.root)}
+        githubStack={view.githubStack}
         found={view.found?.map((link) => LINKS[link])}
         focused={on === undefined ? undefined : String(on)}
         current={current === undefined ? undefined : String(current.number)}

@@ -179,15 +179,21 @@ describe('StackTree', () => {
   });
 
   it('says how many layers and how Lo found them', () => {
-    const heads = (found: StackTreeProps['found'], layers: StackTreeLayer[] = LAYERS) =>
-      render(<StackTree {...props({ found, layers })} />)
+    const heads = (
+      found: StackTreeProps['found'],
+      layers: StackTreeLayer[] = LAYERS,
+      githubStack = false,
+    ) =>
+      render(<StackTree {...props({ found, layers, githubStack })} />)
         .querySelector('section > div')
         ?.textContent?.replace('Stack', '');
     expect(heads(['base'])).toBe('5 layers · by base branch');
     expect(heads(['commits'])).toBe('5 layers · by shared commits');
     expect(heads(['commits', 'base'])).toBe('5 layers · by base branch and shared commits');
-    expect(heads(['github'], LAYERS.slice(0, 4))).toBe('GitHub stack · 4 layers');
-    expect(heads(['github'], LAYERS.slice(0, 1))).toBe('GitHub stack · 1 layer');
+    expect(heads(['github'], LAYERS.slice(0, 4), true)).toBe('GitHub stack · 4 layers');
+    expect(heads(undefined, LAYERS.slice(0, 1), true)).toBe('GitHub stack · 1 layer');
+    // Linked by GitHub stack alone, through a merged layer, but not every layer is in it.
+    expect(heads(['github'], LAYERS.slice(0, 2))).toBe('2 layers · by GitHub stack');
     // A GitHub stack along one path of a stack that branches, and other layers off it.
     expect(heads(['base', 'github'])).toBe('5 layers · by GitHub stack and base branch');
     expect(heads(['github', 'commits'])).toBe('5 layers · by GitHub stack and shared commits');
