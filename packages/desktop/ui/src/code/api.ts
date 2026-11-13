@@ -125,14 +125,22 @@ export interface DiffInit {
 }
 
 /**
- * A review thread under a line, as a code view places and sizes it. What it says is the caller's:
- * the view makes an element for it, under its line, and has the caller draw it there
- * (`RenderThread`).
+ * A file as a whole, where a comment on the file goes: under the file's header, in a code view that
+ * draws one.
+ */
+export interface OnFile {
+  file: string;
+}
+
+/**
+ * A review thread under a line, or on a file under its header, as a code view places and sizes it.
+ * What it says is the caller's: the view makes an element for it, under its line or header, and
+ * has the caller draw it there (`RenderThread`).
  */
 export interface ThreadView {
   id: string;
-  /** The line it's under. */
-  at: Place;
+  /** The line it's under, or the file whose header it's under. */
+  at: Place | OnFile;
   /**
    * Whether it shows open, or collapsed to one line: how it starts, and what it becomes whenever
    * the caller says something other than it said last. `openThread` changes it in between.
@@ -144,7 +152,7 @@ export interface ThreadView {
 
 /** What the caller drew for a thread, which the view keeps up to date and takes down. */
 export interface ThreadContent {
-  /** The thread changed: its version, whether it's open, or its line. Draw it again. */
+  /** The thread changed: its version, whether it's open, or where it is. Draw it again. */
   update(thread: ThreadView): void;
   /** The view doesn't show the thread anymore: take down what was drawn. */
   destroy(): void;
@@ -230,6 +238,11 @@ export interface Composer {
    * made is taken away.
    */
   close(): void;
+  /**
+   * Closes the box with nothing sent, as a draft discarded or moved elsewhere is: as `Esc Esc`
+   * closes it, but without a word to the caller, and leaving its line no claim on what comes there.
+   */
+  dismiss(): void;
 }
 
 /**
@@ -256,6 +269,12 @@ export interface BoxParts {
  * returns takes the frame down as the box goes.
  */
 export type BoxFrame = (parts: BoxParts, box: Composer) => { destroy(): void };
+
+/** How a comment box opens. */
+export interface ComposeOptions {
+  /** Whether it takes focus: yes, unless it's false, as for a draft restored. */
+  focus?: boolean;
+}
 
 /** A comment box outside a code view, as the timeline's and a review's summary are. */
 export interface ComposerInit {
@@ -373,8 +392,10 @@ export interface DiffView extends KeySource {
   /** Lays the diff out again, keeping the cursor's line on screen. */
   setLayout(layout: DiffLayout): void;
   /**
-   * Replaces the threads drawn under lines, each drawn by `render` in an element of its own the
-   * first time it's drawn, and kept up to date through what that returns. A line on screen whose
+   * Replaces the threads drawn under lines, and under files' headers, each drawn by `render` in an
+   * element of its own the first time it's drawn, and kept up to date through what that returns. A
+   * file's threads go under its header in the newer column, or in the inline layout's one, whether
+   * or not the file shows its lines. A line or header on screen whose
    * threads change keeps those it shows until it's off screen, or in a diff too short to scroll,
    * until the reader's next wheel, key or click, so no line on screen moves; the rest change now,
    * and what's at the top of the screen stays where it is. A thread drawn on screen that changes
@@ -470,15 +491,18 @@ export interface DiffView extends KeySource {
   /** The text of a span's lines, as `yy` copies them. */
   lines(span: Span): readonly string[];
   /**
-   * Opens a comment box with `draft` in it, under a line, the last line of a span, or a thread,
-   * with `frame` drawn around its editor, and focuses it. A box already open there is focused
-   * instead, as it is. The box's line stays where it is as it opens, grows and closes.
+   * Opens a comment box with `draft` in it, under a line, the last line of a span, a thread, or a
+   * file's header, for a comment on the file, with `frame` drawn around its editor, and focuses it,
+   * unless `focus` is false, as for a draft restored. A box already open there is focused instead,
+   * as it is. The box's line or header stays where it is as it opens, grows and closes. A box on a
+   * file goes where its threads do, whether or not the file shows its lines.
    */
   compose(
-    at: Place | Span | { thread: string },
+    at: Place | Span | { thread: string } | OnFile,
     draft: string,
     on: ComposerEvents,
     frame?: BoxFrame,
+    options?: ComposeOptions,
   ): Composer;
   focus(): void;
   destroy(): void;

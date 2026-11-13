@@ -41,7 +41,8 @@ export class PlainThreads {
     const fill = (shown: ThreadView): void => {
       const card = document.createElement('div');
       card.className = 'perf-thread';
-      for (const comment of this.#threads.get(placeKey(shown.at))?.comments ?? []) {
+      const drawn = [...this.#threads.values()].find((each) => each.view.id === shown.id);
+      for (const comment of drawn?.comments ?? []) {
         const item = document.createElement('div');
         item.className = 'perf-thread__comment';
         const author = document.createElement('div');

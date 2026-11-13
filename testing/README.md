@@ -184,11 +184,12 @@ resolved, with replies, with a suggestion, with an image attached and one from a
 outdated, and written on the second push; and #95, which renames a file, with a thread on its base's
 side. Every comment on them starts with `Fixture C:`. `writeCommentsRemote` from `@lo/testing/git`
 builds the remote, and `COMMENTS_PULL` and `COMMENTS_RENAME_PULL` name their commits. Their cassette
-is `app_comments`. `fixtures/comments-reset.sh`, run with `LO_FIXTURE_TOKEN_FILE` as `record.ts` is,
-deletes what a recording with writes added there and resolves and unresolves the threads as
-`comments.sh` left them. Which posts the window asks GitHub to render at once depends on what's near
-the screen, so the app's tests answer those reads from every post the cassette recorded
-(`apps/desktop/e2e/bodies.ts`).
+is `app_comments`, and `app_comments_write` was recorded with writes, as Lo started rozed-bot's
+pending review on #94 with a comment on a line. `fixtures/comments-reset.sh`, run with
+`LO_FIXTURE_TOKEN_FILE` as `record.ts` is, deletes what a recording with writes added there and
+resolves and unresolves the threads as `comments.sh` left them. Which posts the window asks GitHub
+to render at once depends on what's near the screen, so the app's tests answer those reads from
+every post the cassette recorded (`apps/desktop/e2e/bodies.ts`).
 
 ## The credential scan
 

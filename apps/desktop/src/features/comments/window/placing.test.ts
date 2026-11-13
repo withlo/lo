@@ -73,7 +73,7 @@ test('a thread goes under its line, open while unresolved, and its file counts i
   expect(placed.byKey.get('a.ts')).toEqual({ total: 2, unresolved: 1 });
 });
 
-test('a file’s thread is only counted; an outdated one, and one on no file shown, are left out', () => {
+test('a file’s thread goes under its header; an outdated one, and one on no file shown, are left out', () => {
   const placed = placeThreads(
     [
       row({ id: 'F', subject: 'FILE', line: null, originalLine: null }),
@@ -83,7 +83,9 @@ test('a file’s thread is only counted; an outdated one, and one on no file sho
     drawn([file()]),
     null,
   );
-  expect(placed.threads).toEqual([]);
+  expect(placed.threads).toEqual([
+    { id: 'F', at: { file: 'd0' }, open: true, version: expect.any(Number) },
+  ]);
   expect(placed.counts.get('d0')).toEqual({ threads: 1, unresolved: 1, comments: 1 });
 });
 

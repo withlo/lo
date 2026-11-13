@@ -62,6 +62,8 @@ export interface BoxOptions {
   escape: (box: CommentBox) => void;
   /** `close()` on its handle. */
   close: (box: CommentBox) => void;
+  /** `dismiss()` on its handle: as `close()`, unless it's given. */
+  dismiss?: ((box: CommentBox) => void) | undefined;
   /** The box grew or shrank as it was typed in, or as its editor changed width. */
   resized?: ((box: CommentBox) => void) | undefined;
 }
@@ -230,10 +232,14 @@ export class CommentBox implements BoxHost, KeySource {
       return;
     }
     const { doc } = this.view.state;
-    this.view.dispatch({ selection: { anchor: doc.line(doc.lines).from } });
-    this.view.focus();
     const cm = getCM(this.view);
-    if (cm && !cm.state.vim?.insertMode) Vim.handleKey(cm, 'A', 'user');
+    // In insert mode the cursor goes to the end itself; otherwise `A` takes it there, into insert mode.
+    const inserting = cm?.state.vim?.insertMode === true;
+    this.view.dispatch({
+      selection: { anchor: inserting ? doc.length : doc.line(doc.lines).from },
+    });
+    this.view.focus();
+    if (cm && !inserting) Vim.handleKey(cm, 'A', 'user');
   }
 
   insert(text: string): void {
@@ -339,6 +345,7 @@ export class CommentBox implements BoxHost, KeySource {
       replace: (from, to, text) => this.replace(from, to, text),
       preview: (on) => this.preview(on),
       close: () => options.close(this),
+      dismiss: () => (options.dismiss ?? options.close)(this),
     };
   }
 

@@ -1,9 +1,18 @@
 // What the diff shares with other features' window code: the slot over the diff, where what it
 // compares is said; showing the diff, and a place in it or the file whole; how many files it shows; one file of it beside
 // another view; the lines another feature explains, which the diff marks; the review threads
-// another feature places under its lines; and diffing texts another feature has, as the diff's own
-// files are diffed.
+// another feature places under its lines, and the comment boxes it opens there; and diffing texts
+// another feature has, as the diff's own files are diffed.
 
+import type {
+  BoxFrame,
+  ComposeOptions,
+  Composer,
+  ComposerEvents,
+  OnFile,
+  Place,
+  Span,
+} from '@lo/ui/code';
 import { createElement, type ReactNode } from 'react';
 
 import { defineSlot, Slot } from '../../../window/slots.tsx';
@@ -15,8 +24,8 @@ import { Beside } from './Beside.tsx';
 import { changed, explainWith, type Explainer } from './explained.ts';
 import { diffJobs } from './main.ts';
 import { showPlace as showCode } from './places.ts';
-import { loaderOf, useSnapshot } from './tabs.ts';
-import { changed as changedThreads, threadWith, type Threader } from './threads.ts';
+import { drawnFor, keysDiff, loaderOf, onDrawn, useSnapshot } from './tabs.ts';
+import { changed as changedThreads, type DrawnDiff, threadWith, type Threader } from './threads.ts';
 import { DIFF_VIEW } from './whole.ts';
 
 export type { ExplainedLines, Explainer } from './explained.ts';
@@ -142,6 +151,58 @@ export function setThreader(threader: Threader): () => void {
 /** Says tab `tab`'s review threads changed, so a diff drawn asks for them again. */
 export function threadsChanged(tab: string): void {
   changedThreads(tab);
+}
+
+/** A pull request's tab's diff as it's drawn, where comments are written. */
+export interface WritingDiff {
+  /** What it draws now, as its review threads are placed on it: its head and its files. */
+  drawn(): DrawnDiff;
+  /** The text of a span's lines, as `yy` copies them. */
+  lines(span: Span): readonly string[];
+  /**
+   * Opens a comment box with `draft` in it, under a line, the last line of a span, a thread, or a
+   * file's header, with `frame` drawn around its editor, and focuses it unless `focus` is false. A
+   * box already open there is the one it gives. It throws for a line the diff doesn't draw, as in
+   * a file kept out.
+   */
+  compose(
+    at: Place | Span | { thread: string } | OnFile,
+    draft: string,
+    on: ComposerEvents,
+    frame?: BoxFrame,
+    options?: ComposeOptions,
+  ): Composer;
+  /** Puts file `id`'s header at the top of the screen, with the cursor on it. */
+  toTop(id: string): boolean;
+  /** Hands keys to the diff's Vim, in Vim's notation, as a key Lo took but had no use for. */
+  vim(keys: readonly string[]): void;
+}
+
+/**
+ * Pull request's tab `tab`'s diff while it's drawn, where comments are written. With `keys`, the
+ * one the keys act on, which is nothing while a file of the diff beside another view has them,
+ * since that draws no threads.
+ */
+export function writingDiff(tab: string, keys = false): WritingDiff | undefined {
+  const drawn = keys ? keysDiff(tab) : drawnFor(tab);
+  const threaded = drawn?.threaded;
+  if (!drawn || !threaded) return undefined;
+  const { view } = drawn;
+  return {
+    drawn: threaded,
+    lines: (span) => view.lines(span),
+    compose: (at, draft, on, frame, options) => view.compose(at, draft, on, frame, options),
+    toTop: (id) => drawn.toTop(id),
+    vim: (typed) => view.passKeys(typed),
+  };
+}
+
+/**
+ * Calls `listener` with a pull request's tab's id each time its diff is drawn, or shown again.
+ * Returns a function that stops it.
+ */
+export function onDiffDrawn(listener: (tab: string) => void): () => void {
+  return onDrawn(listener);
 }
 
 /**

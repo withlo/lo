@@ -72,13 +72,13 @@ export default defineCommands('tab', {
   },
   /**
    * The menu of the tabs that don't fit in the strip, "N more", to show one of them. Browsers
-   * search their tabs with the same key.
+   * search their tabs with the same key. In a comment box, the key attaches files instead.
    */
   more: {
     label: 'Tabs that don’t fit',
     group: 'Tabs and window',
     keys: ['cmd+shift+a'],
-    when: outside,
+    when: { except: ['dialog', 'palette', 'box'] },
   },
   /** Opens and closes a pull request's left panel: its stack and files. */
   leftPanel: {

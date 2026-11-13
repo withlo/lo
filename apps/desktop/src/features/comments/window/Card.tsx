@@ -10,6 +10,7 @@ import { registry } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
 import { usePull, useTabState } from '../../tab/window/shared.ts';
 import type { ThreadCommentRow, ThreadRow } from '../contract.ts';
+import { landed } from './landed.ts';
 import { Post, type PostPull } from './Post.tsx';
 import { held } from './threads.ts';
 
@@ -65,12 +66,22 @@ export interface CardProps {
 export function Card({ view, pull, id, open, onToggle }: CardProps): ReactNode {
   const threads = useTabState(held, view, (value) => value.threads);
   const author = usePull(view)?.header?.author;
+  const newer = useTabState(landed, view, (ids) => ids.has(id));
   const row = threads?.threads.find((each) => each.id === id);
   if (!row) return null;
   const body = (comment: ThreadCommentRow) => (
     <Post view={view} post={{ kind: 'post', id: comment.id }} markdown={comment.body} pull={pull} />
   );
-  return <ThreadCard row={row} open={open} onToggle={onToggle} author={author} body={body} />;
+  return (
+    <ThreadCard
+      row={row}
+      open={open}
+      onToggle={onToggle}
+      author={author}
+      body={body}
+      landed={newer}
+    />
+  );
 }
 
 /** A thread's card, from what main sent of it. */
@@ -80,6 +91,7 @@ export function ThreadCard({
   onToggle,
   author,
   body,
+  landed: newer = false,
   now = Date.now(),
 }: {
   row: ThreadRow;
@@ -89,6 +101,11 @@ export function ThreadCard({
   author: string | null | undefined;
   /** Draws a comment's text. */
   body: (comment: ThreadCommentRow) => ReactNode;
+  /**
+   * You wrote it on a revision, and GitHub put it on a newer push, where its lines may hold other
+   * code.
+   */
+  landed?: boolean;
   now?: number;
 }): ReactNode {
   const comments = row.comments.map((comment): ThreadComment => ({
@@ -110,6 +127,7 @@ export function ThreadCard({
       resolved={row.resolved}
       open={open}
       outdated={row.outdated}
+      tags={newer ? [{ label: 'On a newer push', tone: 'warning' }] : undefined}
       excerpt={row.comments[0] && excerptOf(row.comments[0].body)}
       keys={{ toggle: keysOf('diff.toggleFile') }}
       onToggle={onToggle}

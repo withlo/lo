@@ -20,6 +20,7 @@ import type {
   ThreadView,
   VimKey,
 } from './api.ts';
+import { Aligner } from './aligner.ts';
 import { createComposer } from './composer.ts';
 import { editsText } from './keys.ts';
 import { swapping } from './lines.ts';
@@ -206,6 +207,11 @@ function at(file: string, side: 'old' | 'new', line: number): Place {
 /** A thread under the line at `place`, open unless it says. */
 function thread(id: string, place: Place, opened = true, version = 1): ThreadView {
   return { id, at: place, open: opened, version };
+}
+
+/** A thread on file `file`, under its header. */
+function onFile(id: string, file: string): ThreadView {
+  return { id, at: { file }, open: true, version: 1 };
 }
 
 /** A thread as `plain` draws it: what it shows. */
@@ -680,6 +686,21 @@ describe('comment boxes', () => {
     expect(findScope(vimIn('After').content).name).toBe('diff');
   });
 
+  test('focus() puts the cursor at the end of the text, in insert mode, from either mode', () => {
+    const shown = open();
+    const box = shown.compose(at('a', 'new', 10), 'First\nSecond', composerEvents());
+    const comment = vimIn('Comment');
+    box.replace(0, box.text.length, 'One\nTwo\nThree');
+    box.focus();
+    expect(comment.mode).toBe('insert');
+    expect(comment.cursor).toBe(box.text.length);
+    press(comment.content, 'Escape');
+    comment.keys('g', 'g');
+    box.focus();
+    expect(comment.mode).toBe('insert');
+    expect(comment.cursor).toBe(box.text.length);
+  });
+
   test('a box under a thread, or the last line of a span, acts on them', () => {
     const shown = open();
     shown.setThreads([thread('here', at('a', 'new', 10))], plain().render);
@@ -1046,6 +1067,13 @@ describe('threads', () => {
     press(content, 'Escape');
     shown.setThreads([mine, sent, thread('theirs', at('a', 'new', 6))], render);
     expect(drawnThreads()).toEqual(['mine', 'sent']);
+    // Nor does a box dismissed, as a draft discarded is, and its caller hears nothing of it.
+    const on = composerEvents();
+    shown.compose(at('a', 'new', 4), 'Discarded', on).dismiss();
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+    expect(on.close).not.toHaveBeenCalled();
+    shown.setThreads([mine, sent, thread('later', at('a', 'new', 4))], render);
+    expect(drawnThreads()).toEqual(['mine', 'sent']);
   });
 
   test('a reply under a box on a thread on screen grows in full, at once', async () => {
@@ -1069,6 +1097,120 @@ describe('threads', () => {
     sizes.resize(content, 120);
     await nextFrame();
     expect(card.classList).toContain('is-held');
+  });
+
+  test("a file's threads go under its header, in the newer column, whether or not its lines show", () => {
+    const shown = open();
+    const { render, asked } = plain();
+    shown.setThreads([onFile('on a', 'a'), thread('line', at('a', 'new', 4))], render);
+    expect(asked.toSorted()).toEqual(['draw line', 'draw on a']);
+    const header = () => parent!.querySelector('[data-thread-id="on a"]')?.closest('.lo-fileblock');
+    expect(header()?.textContent).toContain('src/a.ts');
+    // The header's block in the newer column holds it; the older column's draws the header alone.
+    const [before, after] = parent!.querySelectorAll('.cm-editor');
+    expect(after!.querySelector('[data-thread-id="on a"]')).not.toBeNull();
+    expect(before!.querySelector('[data-thread-id="on a"]')).toBeNull();
+    // Closed into one block, the file keeps it under its header.
+    shown.setCollapsed('a', true);
+    expect(drawnThreads()).toEqual(['on a']);
+    expect(header()?.textContent).toContain('src/a.ts');
+    expect(shown.reveal({ kind: 'thread', thread: 'on a' })).toBe(true);
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('a', 'new'));
+  });
+
+  test("a file's header on screen waits for threads that come or go there, as a line does", () => {
+    const shown = open();
+    const screen = onScreen(['src/a.ts']);
+    const { render } = plain();
+    const below = thread('below', at('a', 'new', 22));
+    shown.setThreads([onFile('here', 'a'), below], render);
+    expect(drawnThreads()).toEqual(['below']);
+    screen.lines.clear();
+    scroller().dispatchEvent(new Event('scroll'));
+    expect(drawnThreads()).toEqual(['here', 'below']);
+    screen.lines.add('src/a.ts');
+    shown.setThreads([below], render);
+    expect(drawnThreads()).toEqual(['here', 'below']);
+  });
+
+  test('a box on a file goes under its header, after its threads, and acts on the header', () => {
+    const shown = open();
+    shown.setThreads([onFile('first', 'a')], plain().render);
+    const on = composerEvents();
+    shown.compose({ file: 'a' }, 'On the file', on);
+    const block = parent!.querySelector('.lo-fileblock')!;
+    expect(block.querySelectorAll('[data-thread-id], .lo-diffcomposer')).toHaveLength(2);
+    expect(block.lastElementChild!.lastElementChild!.className).toContain('lo-diffcomposer');
+    const scope = findScope(vimIn('Comment').content);
+    expect(isKeySource(scope.source) && scope.source.keyState().target).toEqual(
+      onHeader('a', 'new'),
+    );
+    // A box on a thread on the file is the same box; the file closed, it stays.
+    expect(shown.compose({ thread: 'first' }, 'x', composerEvents()).text).toBe('On the file');
+    shown.setCollapsed('a', true);
+    expect(parent!.querySelectorAll('.lo-fileblock .lo-diffcomposer')).toHaveLength(1);
+    // What the reader sent comes at once, the header on screen.
+    onScreen(['src/a.ts']);
+    shown.compose({ file: 'a' }, '', on).close();
+    shown.setThreads([onFile('first', 'a'), onFile('sent', 'a')], plain().render);
+    expect(drawnThreads()).toEqual(['first', 'sent']);
+  });
+
+  test('a box opened unfocused leaves focus where it was', () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 10));
+    shown.focus();
+    const before = document.activeElement;
+    const box = shown.compose(at('a', 'new', 4), 'Restored', composerEvents(), undefined, {
+      focus: false,
+    });
+    expect(box.text).toBe('Restored');
+    expect(document.activeElement).toBe(before);
+    expect(parent!.querySelector('.lo-diffcomposer')).not.toBeNull();
+  });
+
+  test('a box opened or grown with no input keeps what’s on screen, and one typed in its line', () => {
+    const shown = open();
+    shown.reveal(onLine('a', 'new', 10));
+    shown.focus();
+    const line = vi.spyOn(Aligner.prototype, 'anchorAt');
+    const top = vi.spyOn(Aligner.prototype, 'anchorTop');
+    // A draft restored opens for the reader: nothing they did asked for it.
+    const restored = shown.compose(at('a', 'new', 4), 'Restored', composerEvents(), undefined, {
+      focus: false,
+    });
+    expect(line).not.toHaveBeenCalled();
+    expect(top).toHaveBeenCalled();
+    // Each change to the box's text makes it a little taller.
+    let height = 40;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      return this.classList.contains('lo-diffcomposer')
+        ? new DOMRect(0, 0, 400, (height += 20))
+        : new DOMRect();
+    });
+    top.mockClear();
+    restored.replace(0, 0, 'Filled in ');
+    expect(line).not.toHaveBeenCalled();
+    expect(top).toHaveBeenCalled();
+    // Typed in, it keeps its line, as one the reader opens does.
+    restored.focus();
+    restored.insert(' and typed');
+    expect(line).toHaveBeenCalled();
+    line.mockClear();
+    shown.compose(at('a', 'new', 6), '', composerEvents());
+    expect(line).toHaveBeenCalled();
+  });
+
+  test("]t stops at a file's threads, on its header", () => {
+    const shown = open();
+    shown.setThreads([onFile('on b', 'b'), thread('line', at('b', 'new', 6))], plain().render);
+    shown.reveal(onLine('a', 'new', 10));
+    shown.jump('thread', 1);
+    expect(shown.probe.cursor()?.at).toEqual(onHeader('b', 'new'));
+    shown.jump('thread', 1);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('b', 'new', 6));
   });
 
   test('in a diff that scrolls a little, what no scroll takes off screen changes on input', async () => {
