@@ -1,0 +1,72 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequest",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 23,
+      "filesFirst": 100,
+      "filesAfter": null
+    },
+    "query_sha256": "faebcf58d69c5e012ebe96425bca46ad442d8bf907b11b029049c26d755fc48b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4955",
+      "x-ratelimit-reset": "1794596782",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "45"
+    },
+    "body": {
+      "data": {
+        "repository": {
+          "pullRequest": {
+            "id": "PR_kwDOVleUfc8AAAABNeGO7Q",
+            "number": 23,
+            "title": "E11: review writes",
+            "url": "https://github.com/rozed-dev/e2e/pull/23",
+            "state": "OPEN",
+            "isDraft": false,
+            "updatedAt": "2026-11-11T05:24:57Z",
+            "author": {
+              "__typename": "User",
+              "login": "rozed-bot",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/353226052?v=4"
+            },
+            "baseRefName": "e11/base",
+            "baseRefOid": "5055651e117287d286d48a0eb3fa757ca359715f",
+            "headRefName": "e11/writes",
+            "headRefOid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630",
+            "isCrossRepository": false,
+            "headRepository": {
+              "nameWithOwner": "rozed-dev/e2e",
+              "isFork": false
+            },
+            "files": {
+              "totalCount": 2,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "Mg"
+              },
+              "nodes": [
+                {
+                  "path": "e11/notes.md",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "e11/review.txt",
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

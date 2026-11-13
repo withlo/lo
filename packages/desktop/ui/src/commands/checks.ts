@@ -270,6 +270,8 @@ function sampleTarget(kind: TargetKind): Target {
       return { kind, block: 'b' };
     case 'tab':
       return { kind, tab: 't' };
+    case 'row':
+      return { kind, row: 'r' };
     case 'none':
       return NO_TARGET;
     default:

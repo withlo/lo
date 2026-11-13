@@ -26,7 +26,12 @@ import {
 import { GithubError } from '../src/errors.ts';
 import { PUSH_HISTORY_WATCHED } from '../src/push-history.ts';
 import { readPullSummary } from '../src/pulls.ts';
-import { STACK_LAYERS, type ReadKind, type ReadMark } from '../src/poll/reads.ts';
+import {
+  PULL_REQUEST_SIDEBAR,
+  STACK_LAYERS,
+  type ReadKind,
+  type ReadMark,
+} from '../src/poll/reads.ts';
 import type { PullRef } from '../src/refs.ts';
 
 beforeEach(useFakeClock);
@@ -161,6 +166,108 @@ test('a cached read runs after the open prs poll and again when a field it watch
   await t.run();
   await t.runUntil(125);
   expect(answers.runs).toBe(3);
+});
+
+/**
+ * PR #1's labels, reviewers, assignees and draft state as GitHub answers `PullRequestSidebar`, for
+ * the GraphQL request `like` made: rozed-bot's latest review as `state`, and `labels`.
+ */
+function sidebarRead(like: Interaction, state: string, labels: Json[]): Interaction {
+  const interaction = structuredClone(like);
+  interaction.request.operation = 'PullRequestSidebar';
+  interaction.request.variables = { owner: 'rozed-dev', name: 'playground', number: 1 };
+  delete interaction.request.query_sha256;
+  interaction.response = {
+    status: 200,
+    headers: {},
+    body: {
+      data: {
+        rateLimit: null,
+        repository: {
+          pullRequest: {
+            isDraft: false,
+            labels: { nodes: labels },
+            reviewRequests: { nodes: [] },
+            latestReviews: {
+              nodes: [{ author: { __typename: 'User', login: 'rozed-bot' }, state }],
+            },
+            assignees: { nodes: [] },
+          },
+        },
+      },
+    },
+  };
+  return interaction;
+}
+
+/**
+ * Labels, review requests and dismissals don't always move the pull request's own `updatedAt`, and
+ * the count of submitted reviews counts dismissed ones, so the sidebar also follows the timeline the
+ * check counts.
+ */
+test('the sidebar is read again when the timeline or the pull request moves', async () => {
+  const r = recorded();
+  const rollup = checkWith(r, (pull) => {
+    pull['statusCheckRollup'] = { state: 'PENDING' };
+  });
+  // A review dismissed: a new item of the timeline, and nothing else the check holds.
+  const dismissed = checkWith(r, (pull) => {
+    pull['statusCheckRollup'] = { state: 'PENDING' };
+    const events = object(pull, 'timelineEvents');
+    events['filteredCount'] = Number(events['filteredCount']) + 1;
+    events['updatedAt'] = '2026-11-06T12:00:00Z';
+  });
+  // A label added: another item, and the pull request's own time.
+  const labeled = checkWith(r, (pull) => {
+    pull['statusCheckRollup'] = { state: 'PENDING' };
+    const events = object(pull, 'timelineEvents');
+    events['filteredCount'] = Number(events['filteredCount']) + 2;
+    events['updatedAt'] = '2026-11-06T12:01:00Z';
+    pull['updatedAt'] = '2026-11-06T12:01:00Z';
+  });
+  const api = { name: 'api', color: '2700AF' };
+  const interactions = [
+    at(r, 0),
+    at(r, 6),
+    at(r, 1),
+    at(r, 1),
+    rollup,
+    dismissed,
+    labeled,
+    at(r, 2),
+    sidebarRead(at(r, 1), 'CHANGES_REQUESTED', []),
+    sidebarRead(at(r, 1), 'DISMISSED', []),
+    sidebarRead(at(r, 1), 'DISMISSED', [api]),
+    ...repoAnswers(r),
+  ];
+  const t = await Polling.start('sidebar_read', interactions);
+  const reads = () => t.requests().filter(([, what]) => what === 'PullRequestSidebar').length;
+  const sidebar = () => t.poller.cachedRead(pr(1), PULL_REQUEST_SIDEBAR)?.value;
+  void t.poller.setOpen(pr(1));
+  expect(await t.finish(t.poller.pullRequestSidebar(pr(1)))).toBeUndefined();
+  await t.run();
+  expect(reads()).toBe(1);
+  expect(t.events()).toContain('read PullRequestSidebar #1');
+  expect(sidebar()?.reviews).toEqual([
+    { author: { login: 'rozed-bot', type: 'User' }, state: 'CHANGES_REQUESTED' },
+  ]);
+
+  // The checks' state isn't a field it watches.
+  await t.runUntil(40);
+  expect(reads()).toBe(0);
+  expect(t.events()).toEqual(['check #1']);
+
+  // The dismissal moves only the timeline.
+  await t.runUntil(60);
+  expect(reads()).toBe(1);
+  expect(t.events()).toEqual(['check #1', 'read PullRequestSidebar #1']);
+  expect(sidebar()?.reviews.map((review) => review.state)).toEqual(['DISMISSED']);
+
+  await t.runUntil(80);
+  expect(reads()).toBe(1);
+  expect(sidebar()?.labels).toEqual([{ name: 'api', color: '2700af' }]);
+  await t.runUntil(120);
+  expect(reads()).toBe(0);
 });
 
 test('a cached read is refreshed every five minutes and kept across restarts', async () => {

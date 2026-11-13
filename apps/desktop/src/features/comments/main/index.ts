@@ -1,7 +1,8 @@
-// The comments feature in main: the images in posts, and avatars, which the window loads only on
-// the image scheme, served here from GitHub's image hosts (`./images.ts`). An image in a post is
-// fetched, and kept, as the account its pull request's tab acts as, whose token goes only to
-// GitHub's address for an attachment.
+// The comments feature in main: posts' HTML, read on demand as the window asks for the posts on
+// screen, and offered to the other features as `comments.bodies`; and the images in posts, and
+// avatars, which the window loads only on the image scheme, served here from GitHub's image hosts
+// (`./images.ts`). An image in a post is fetched, and kept, as the account its pull request's tab
+// acts as, whose token goes only to GitHub's address for an attachment.
 
 import { app, net, session } from 'electron';
 
@@ -11,9 +12,12 @@ import { defineFeature } from '../../../main/features.ts';
 import { netFetch } from '../../../main/fetch.ts';
 import { windowPartition } from '../../../main/policy.ts';
 import { serveImages, type ServedImage } from '../../../main/security.ts';
+import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
+import { bodies } from '../service.ts';
+import { readBodies } from './bodies.ts';
 import { IMAGE_LIMITS, ImageError, Images } from './images.ts';
 
 /**
@@ -29,7 +33,30 @@ let stopServing: (() => void) | undefined;
 
 export default defineFeature(contract, {
   uses: [github, tabs],
-  handlers: {},
+  provide: (context) => [
+    provides(bodies, {
+      read: (id, posts, options) =>
+        readBodies(
+          {
+            pull: (view) => context.use(tabs).pull(view),
+            poller: (login) => context.use(github).poller(login),
+          },
+          id,
+          posts,
+          options,
+        ),
+    }),
+  ],
+  handlers: {
+    async bodies({ id, posts, description }, { use }) {
+      const read = await use(bodies).read(id, posts, { description });
+      return {
+        description: read.description ?? null,
+        posts: [...read.bodies].map(([post, html]) => ({ id: post, html })),
+        gone: read.gone,
+      };
+    },
+  },
   start({ use }) {
     // In a test run, GitHub's image hosts are the test's server, as GitHub itself is. A packaged
     // build always fetches from the hosts.

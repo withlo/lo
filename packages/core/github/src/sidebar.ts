@@ -9,7 +9,13 @@ import type { GithubClient } from './client.ts';
 import { GithubError } from './errors.ts';
 import { PullRequestSidebarDocument, type PullRequestReviewState } from './generated/graphql.ts';
 import type { PullRef } from './refs.ts';
-import { actor, requestedReviewer, type Actor, type RequestedReviewer } from './timeline.ts';
+import {
+  actor,
+  labelColor,
+  requestedReviewer,
+  type Actor,
+  type RequestedReviewer,
+} from './timeline.ts';
 
 /** A pull request's labels, reviewers and assignees, as `PullRequestSidebar` reads them. */
 export interface PullRequestSidebar {
@@ -36,8 +42,8 @@ export type SidebarReviewer = RequestedReviewer | { kind: 'hiddenTeam' };
 export interface SidebarLabel {
   name: string;
   /**
-   * Its color as six lowercase hex digits, without the `#`, or `undefined` when GitHub's isn't,
-   * so a color never reaches a style as anything else.
+   * Its color as six lowercase hex digits, or `undefined` when GitHub's isn't
+   * ({@link labelColor}).
    */
   color: string | undefined;
 }
@@ -86,9 +92,4 @@ export async function readPullRequestSidebar(
     ),
     assignees: (pullRequest.assignees.nodes ?? []).flatMap((user) => actor(user) ?? []),
   };
-}
-
-/** `color`, a label's, as six lowercase hex digits, or `undefined` when it isn't that. */
-export function labelColor(color: string): string | undefined {
-  return /^[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : undefined;
 }

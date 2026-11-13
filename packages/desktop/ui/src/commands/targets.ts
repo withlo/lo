@@ -69,6 +69,12 @@ export interface TabTarget {
   tab: string;
 }
 
+/** A row of a list that isn't code, such as an event of a pull request's timeline, by its key. */
+export interface RowTarget {
+  kind: 'row';
+  row: string;
+}
+
 /** Nothing in particular: the command acts on the window or the review. */
 export interface NoTarget {
   kind: 'none';
@@ -82,6 +88,7 @@ export type Target =
   | LayerTarget
   | BlockTarget
   | TabTarget
+  | RowTarget
   | NoTarget;
 
 export type TargetKind = Target['kind'];
@@ -98,6 +105,7 @@ export const targetKinds: readonly TargetKind[] = [
   'layer',
   'block',
   'tab',
+  'row',
   'none',
 ];
 
@@ -141,6 +149,7 @@ function derive(kind: TargetKind, target: Target): Target | undefined {
     case 'layer':
     case 'block':
     case 'tab':
+    case 'row':
       return undefined;
     default:
       kind satisfies never;
@@ -172,6 +181,8 @@ export function plainTarget(target: Target): Target {
       return { kind: 'block', block: target.block };
     case 'tab':
       return { kind: 'tab', tab: target.tab };
+    case 'row':
+      return { kind: 'row', row: target.row };
     case 'none':
       return NO_TARGET;
     default:

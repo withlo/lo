@@ -12,21 +12,25 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Move
 
-| Action                       | Keys          | Where                        | Command                    |
-| ---------------------------- | ------------- | ---------------------------- | -------------------------- |
-| Line down                    | `j`           | Vim's own key, in code views | `diff.down`                |
-| Line up                      | `k`           | Vim's own key, in code views | `diff.up`                  |
-| Select lines                 | `v`           | Vim's own key, in code views | `diff.select`              |
-| Next pull request            | `j`, `↓`      | In `recent`                  | `open.nextRecent`          |
-| Previous pull request        | `k`, `↑`      | In `recent`                  | `open.previousRecent`      |
-| Scroll down                  | `j`, `↓`      | In `overview`                | `overview.scrollDown`      |
-| Scroll up                    | `k`, `↑`      | In `overview`                | `overview.scrollUp`        |
-| Top of the overview          | `g g`, `Home` | In `overview`                | `overview.top`             |
-| End of the overview          | `G`, `End`    | In `overview`                | `overview.bottom`          |
-| Page down                    | `PgDn`        | In `overview`                | `overview.pageDown`        |
-| Page up                      | `PgUp`        | In `overview`                | `overview.pageUp`          |
-| Next section of Settings     | `j`           | In `settings`                | `settings.nextSection`     |
-| Previous section of Settings | `k`           | In `settings`                | `settings.previousSection` |
+| Action                               | Keys          | Where                        | Command                    |
+| ------------------------------------ | ------------- | ---------------------------- | -------------------------- |
+| Line down                            | `j`           | Vim's own key, in code views | `diff.down`                |
+| Line up                              | `k`           | Vim's own key, in code views | `diff.up`                  |
+| Select lines                         | `v`           | Vim's own key, in code views | `diff.select`              |
+| Next pull request                    | `j`, `↓`      | In `recent`                  | `open.nextRecent`          |
+| Previous pull request                | `k`, `↑`      | In `recent`                  | `open.previousRecent`      |
+| Scroll down                          | `j`, `↓`      | In `overview`                | `overview.scrollDown`      |
+| Scroll up                            | `k`, `↑`      | In `overview`                | `overview.scrollUp`        |
+| Top of the overview                  | `g g`, `Home` | In `overview`                | `overview.top`             |
+| End of the overview                  | `G`, `End`    | In `overview`                | `overview.bottom`          |
+| Page down                            | `PgDn`        | In `overview`                | `overview.pageDown`        |
+| Page up                              | `PgUp`        | In `overview`                | `overview.pageUp`          |
+| Next section of Settings             | `j`           | In `settings`                | `settings.nextSection`     |
+| Previous section of Settings         | `k`           | In `settings`                | `settings.previousSection` |
+| Next event in the timeline           | `j`, `↓`      | In `timeline`                | `timeline.down`            |
+| Previous event in the timeline       | `k`, `↑`      | In `timeline`                | `timeline.up`              |
+| Next link or button in the event     | `Tab`         | In `timeline`                | `timeline.nextLink`        |
+| Previous link or button in the event | `⇧Tab`        | In `timeline`                | `timeline.previousLink`    |
 
 ## Jump
 
@@ -42,11 +46,12 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Act
 
-| Action              | Keys | Where                                         | Command           |
-| ------------------- | ---- | --------------------------------------------- | ----------------- |
-| Mark viewed         | `e`  | In `diff`; in code views, only in normal mode | `diff.markViewed` |
-| Mark viewed         | `e`  | In `tree`                                     | `tree.markViewed` |
-| Sign in with GitHub | `⏎`  | In `welcome`                                  | `welcome.signIn`  |
+| Action                  | Keys                              | Where                                         | Command                |
+| ----------------------- | --------------------------------- | --------------------------------------------- | ---------------------- |
+| Mark viewed             | `e`                               | In `diff`; in code views, only in normal mode | `diff.markViewed`      |
+| Show the hidden comment | None: in its menu and the palette | In `timeline`                                 | `timeline.showComment` |
+| Mark viewed             | `e`                               | In `tree`                                     | `tree.markViewed`      |
+| Sign in with GitHub     | `⏎`                               | In `welcome`                                  | `welcome.signIn`       |
 
 ## Code
 
@@ -57,19 +62,21 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Copy and open
 
-| Action                   | Keys                              | Where                                                               | Command               |
-| ------------------------ | --------------------------------- | ------------------------------------------------------------------- | --------------------- |
-| Copy the sign-in code    | `y y`                             | In `dialog`                                                         | `accounts.copyCode`   |
-| Whole file at the cursor | `g f`                             | In `diff`; in code views, only in normal mode                       | `diff.wholeFile`      |
-| Copy the lines           | `y y`                             | In `diff` and `file`; in code views, only in normal and visual mode | `diff.copyLines`      |
-| Copy the line's link     | `y l`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyLink`       |
-| Copy path                | `y p`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyPath`       |
-| Open on GitHub           | `g x`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.openOnGithub`   |
-| Overview note            | None: in its menu and the palette | In `diff`; in code views, only in normal mode                       | `diff.overviewNote`   |
-| Open on GitHub           | `g x`                             | In `stack`                                                          | `stacks.openOnGithub` |
-| Whole file               | `g f`                             | In `tree`                                                           | `tree.wholeFile`      |
-| Copy path                | `y p`                             | In `tree`                                                           | `tree.copyPath`       |
-| Open on GitHub           | `g x`                             | In `tree`                                                           | `tree.openOnGithub`   |
+| Action                         | Keys                              | Where                                                               | Command                 |
+| ------------------------------ | --------------------------------- | ------------------------------------------------------------------- | ----------------------- |
+| Copy the sign-in code          | `y y`                             | In `dialog`                                                         | `accounts.copyCode`     |
+| Whole file at the cursor       | `g f`                             | In `diff`; in code views, only in normal mode                       | `diff.wholeFile`        |
+| Copy the lines                 | `y y`                             | In `diff` and `file`; in code views, only in normal and visual mode | `diff.copyLines`        |
+| Copy the line's link           | `y l`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyLink`         |
+| Copy path                      | `y p`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyPath`         |
+| Open on GitHub                 | `g x`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.openOnGithub`     |
+| Overview note                  | None: in its menu and the palette | In `diff`; in code views, only in normal mode                       | `diff.overviewNote`     |
+| Open on GitHub                 | `g x`                             | In `stack`                                                          | `stacks.openOnGithub`   |
+| See the older events on GitHub | None: in its menu and the palette | In `timeline`                                                       | `timeline.seeOlder`     |
+| Open on GitHub                 | `g x`                             | In `timeline`                                                       | `timeline.openOnGithub` |
+| Whole file                     | `g f`                             | In `tree`                                                           | `tree.wholeFile`        |
+| Copy path                      | `y p`                             | In `tree`                                                           | `tree.copyPath`         |
+| Open on GitHub                 | `g x`                             | In `tree`                                                           | `tree.openOnGithub`     |
 
 ## Review
 
@@ -93,11 +100,13 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## View
 
-| Action               | Keys    | Where                                                                                               | Command            |
-| -------------------- | ------- | --------------------------------------------------------------------------------------------------- | ------------------ |
-| Compare revisions    | `g v`   | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker` |
-| Next middle view     | `` ` `` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`     |
-| Previous middle view | `~`     | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView` |
+| Action                                 | Keys                              | Where                                                                                               | Command               |
+| -------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
+| Compare revisions                      | `g v`                             | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker`    |
+| Next middle view                       | `` ` ``                           | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`        |
+| Previous middle view                   | `~`                               | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`    |
+| Show the review’s comments in the diff | None: in its menu and the palette | In `timeline`                                                                                       | `timeline.showInDiff` |
+| Compare the force-push’s revisions     | None: in its menu and the palette | In `timeline`                                                                                       | `timeline.compare`    |
 
 ## Files
 
@@ -236,6 +245,7 @@ comment box and another elsewhere.
 | `revisions` | Named by `revisions`.                                                                 |
 | `settings`  | Named by `settings`.                                                                  |
 | `stack`     | Named by `stacks`.                                                                    |
+| `timeline`  | Named by `timeline`.                                                                  |
 | `tree`      | Named by `tree`.                                                                      |
 | `welcome`   | Named by `welcome`.                                                                   |
 

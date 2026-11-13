@@ -1,0 +1,119 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequestCheck",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 23
+    },
+    "query_sha256": "ca008209e496ac84a5c7317d266f8c0073cbcf8760c30f5896796e361b06bad0"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4950",
+      "x-ratelimit-reset": "1794596782",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "50"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4950,
+          "used": 50,
+          "resetAt": "2026-11-13T19:06:22Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "updatedAt": "2026-11-11T05:24:57Z",
+            "state": "OPEN",
+            "isDraft": false,
+            "baseRefName": "e11/base",
+            "baseRefOid": "5055651e117287d286d48a0eb3fa757ca359715f",
+            "headRefOid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630",
+            "reviewDecision": null,
+            "mergeStateStatus": "CLEAN",
+            "statusCheckRollup": null,
+            "checkCounts": null,
+            "mergeQueueEntry": null,
+            "timelineItems": {
+              "updatedAt": "2026-11-11T03:27:17Z",
+              "totalCount": 16
+            },
+            "revisionEvents": {
+              "filteredCount": 0
+            },
+            "commits": {
+              "totalCount": 1
+            },
+            "reviews": {
+              "totalCount": 10
+            },
+            "submittedReviews": {
+              "totalCount": 10
+            },
+            "reviewThreads": {
+              "totalCount": 6,
+              "nodes": [
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 3
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                }
+              ]
+            },
+            "viewerPendingReview": {
+              "nodes": []
+            },
+            "comments": {
+              "totalCount": 0
+            },
+            "changedFiles": 2,
+            "lastEditedAt": null,
+            "timelineEvents": {
+              "filteredCount": 11,
+              "updatedAt": "2026-11-11T03:27:17Z"
+            }
+          }
+        }
+      }
+    }
+  }
+}

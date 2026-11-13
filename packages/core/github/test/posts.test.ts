@@ -11,7 +11,8 @@ import { POSTS_23 } from './scenarios/posts.ts';
 import { BODIES_A_REQUEST, readRenderedBodies } from '../src/bodies.ts';
 import { GithubClient } from '../src/client.ts';
 import { PullRef } from '../src/refs.ts';
-import { labelColor, readPullRequestSidebar } from '../src/sidebar.ts';
+import { readPullRequestSidebar } from '../src/sidebar.ts';
+import { labelColor } from '../src/timeline.ts';
 import { Token } from '../src/token.ts';
 
 function client(cassette: string): GithubClient {

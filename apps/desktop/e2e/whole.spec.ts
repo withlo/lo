@@ -266,15 +266,18 @@ test('the finder’s ⌘⏎ opens any file whole, and ` steps past it to the vie
   await expect(code(page)).toContainText('export function wrap(text: string, width: number)');
   await expect(code(page).locator('.cm-content')).toBeFocused();
 
-  // ~ and ` step through the views the header's switch lists: back from the file to the diff, and
-  // on from the diff to the next of them, never the file, which ⌃o comes back from.
+  // ~ and ` step through the views the header's switch lists: back from the file to the diff, on
+  // to the timeline, and back past the diff to the overview, the first. Never the file, which ⌃o
+  // comes back from.
   await press(page, '~');
   await expect(page.locator('.lo-diffview')).toBeVisible();
   await expect(code(page)).toBeHidden();
   await press(page, '`');
+  await expect(page.locator('[data-lo-middle-view="timeline.view"]')).toBeVisible();
   await expect(page.locator('.lo-diffview')).toBeHidden();
   await expect(code(page)).toBeHidden();
-  await press(page, '~');
-  await expect(page.locator('.lo-diffview')).toBeVisible();
+  await press(page, '~', '~');
+  await expect(page.locator('[data-lo-middle-view="overview.view"]')).toBeVisible();
+  await expect(page.locator('.lo-diffview')).toBeHidden();
   expect(refused).toEqual([]);
 });

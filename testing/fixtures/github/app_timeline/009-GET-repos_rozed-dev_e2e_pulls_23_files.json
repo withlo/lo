@@ -1,0 +1,46 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/23/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"4c464d7f40f9b66779e1e885023c86972a6f28e39a9e44a8c1e1b85269e2980d\"",
+      "last-modified": "Wed, 11 Nov 2026 05:24:57 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4890",
+      "x-ratelimit-reset": "1794598298",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "110"
+    },
+    "body": [
+      {
+        "sha": "5a781615cb8415dc3dd4fd17fc69c38e0a567674",
+        "filename": "e11/notes.md",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "changes": 2,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/5a48d2255817f0f19dfdfc3168925f0cdb85c630/e11%2Fnotes.md",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/5a48d2255817f0f19dfdfc3168925f0cdb85c630/e11%2Fnotes.md",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/e11%2Fnotes.md?ref=5a48d2255817f0f19dfdfc3168925f0cdb85c630",
+        "patch": "@@ -2,4 +2,4 @@\n \n Fixture E11: Lo comments, replies and reviews here as rozed-bot.\n \n-This line is the base side's.\n+This line is the head side's."
+      },
+      {
+        "sha": "6f083679bcb12f12d85a164fa8cb55a23f5a5094",
+        "filename": "e11/review.txt",
+        "status": "modified",
+        "additions": 4,
+        "deletions": 4,
+        "changes": 8,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/5a48d2255817f0f19dfdfc3168925f0cdb85c630/e11%2Freview.txt",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/5a48d2255817f0f19dfdfc3168925f0cdb85c630/e11%2Freview.txt",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/e11%2Freview.txt?ref=5a48d2255817f0f19dfdfc3168925f0cdb85c630",
+        "patch": "@@ -7,8 +7,8 @@ line 6\n line 7\n line 8\n line 9\n-line 10\n-line 11\n+line 10 changed\n+line 11 changed\n line 12\n line 13\n line 14\n@@ -27,7 +27,7 @@ line 26\n line 27\n line 28\n line 29\n-line 30\n+line 30 changed\n line 31\n line 32\n line 33\n@@ -47,7 +47,7 @@ line 46\n line 47\n line 48\n line 49\n-line 50\n+line 50 changed\n line 51\n line 52\n line 53"
+      }
+    ]
+  }
+}
