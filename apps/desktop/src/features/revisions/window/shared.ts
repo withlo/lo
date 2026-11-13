@@ -1,10 +1,12 @@
 // What the revisions feature shares with other features' window code: each pull request's tab's
 // viewed marks, as they show, and `e`, which marks a changed file viewed or clears its mark. The
 // tree and the diff draw the marks, and each moves on in its own way after `e`. Another feature
-// marks a revision for the picker to show, as the overview marks the one it describes.
+// marks a revision for the picker to show, as the overview marks the one it describes. And how long
+// a pull request's tab holds back what it shows first, which the overview and the diff both keep.
 
 import { useTabState } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
+import { holdLimit as heldFor } from './hold.ts';
 import { marked } from './store.ts';
 import {
   markable,
@@ -16,8 +18,15 @@ import {
   type Toggled,
 } from './viewed.ts';
 
-export { holdLimit } from './hold.ts';
 export type { Mark, ShownMarks, Toggled } from './viewed.ts';
+
+/**
+ * How long a pull request's tab holds back what it shows first, as it opens, in milliseconds:
+ * `HOLD_LIMIT`, unless a build run from source was started with another, for its tests.
+ */
+export function holdLimit(): number {
+  return heldFor();
+}
 
 /** `tab`'s viewed marks as they show, re-rendering as they change. */
 export function useViewedMarks(tab: string): ShownMarks {

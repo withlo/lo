@@ -21,7 +21,7 @@ import {
  * long enough that a busy machine never races it. A test that is about it asks for the bound
  * itself, with `test.use({ holdLimit: HOLD_LIMIT })`.
  */
-const HELD_LONG = 10_000;
+export const HELD_LONG = 10_000;
 
 /** The app's folder. Electron starts the built main process its `package.json` names. */
 export const appFolder = fileURLToPath(new URL('..', import.meta.url));

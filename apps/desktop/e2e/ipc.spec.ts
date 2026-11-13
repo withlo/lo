@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { appFolder, expect, test } from './app.ts';
+import { appFolder, expect, HELD_LONG, test } from './app.ts';
 
 test('the page gets invoke and subscribe, and nothing else', async ({ page }) => {
   expect(
@@ -30,6 +30,8 @@ test('app.info answers', async ({ page }) => {
         status: expect.stringMatching(/^(checking|found|missing|tooOld)$/),
       }),
       packaged: false,
+      // What the suite asks for, so its tests aren't racing the bound on what a tab holds back.
+      holdLimit: HELD_LONG,
       nonce: expect.stringMatching(/^[A-Za-z0-9+/]{24}$/),
     },
   });
