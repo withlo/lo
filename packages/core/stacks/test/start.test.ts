@@ -37,10 +37,10 @@ test('a layer holding the head of the one below starts at that head', () => {
 
 test("a layer on a fork's pull request starts at that one's head, which it holds", () => {
   // A fork's branch is never a base, so #2's `t` is the base repository's own branch of that name,
-  // not #1's.
+  // not #1's, which doesn't hold #1's head.
   const prs = [
     pr(1, 'main', 't').fork().withCommits(['t.1']),
-    pr(2, 't', 'u').withCommits(['t.1', 'u.1']),
+    pr(2, 't', 'u').withCommits(['t.1', 'u.1']).baseAt('t.0'),
   ];
   const stacks = expectForest(prs, ['main', '  #1', '    #2 shared-commits']);
   expect(layerStart(stacks, prs, 2)).toEqual({ kind: 'sharedCommits', below: 1, commit: 't.1' });
@@ -56,15 +56,18 @@ test('a layer on a squash-merged one starts at its last commit the layer lists',
   expect(layerStart(stacks, prs, 2)).toEqual({ kind: 'needsRebase', merged: 1, commit: 'a.1' });
 });
 
-test("a layer on a squash-merged one's branch starts at that one's head, which the branch holds", () => {
+test("a layer on a squash-merged one's branch starts at its base branch, which holds that one's head", () => {
   // #1 was squash-merged, and its branch kept: #2's commits, as GitHub lists a pull request's,
-  // leave out #1's, which its base branch has.
+  // leave out #1's, which its base branch has, so GitHub's diff of #2 already leaves them out.
   const prs = [
     pr(1, 'main', 'a').withCommits(['a.1', 'a.2']).merged(false),
     pr(2, 'a', 'b').withCommits(['b.1']).baseAt('a.2'),
   ];
   const stacks = expectForest(prs, ['main', '  #2 base-branch needs-rebase(#1 a.2)']);
-  expect(layerStart(stacks, prs, 2)).toEqual({ kind: 'needsRebase', merged: 1, commit: 'a.2' });
+  expect(layerStart(stacks, prs, 2)).toEqual({ kind: 'baseBranch', branch: 'a', tip: 'a.2' });
+  // Nor does it start there when it lists that head too.
+  const listing = [prs[0]!, pr(2, 'a', 'b').withCommits(['a.1', 'a.2', 'b.1']).baseAt('a.2')];
+  expect(layerStart(stacks, listing, 2)).toEqual({ kind: 'baseBranch', branch: 'a', tip: 'a.2' });
 });
 
 test('a layer rebased since the forest was built starts at its base branch, not the merged one', () => {
@@ -81,13 +84,13 @@ test('a layer rebased since the forest was built starts at its base branch, not 
 });
 
 test('a layer that needs a rebase above an open one starts at the merged one, not the open one', () => {
-  // #2 sat on #1 and was squash-merged into #1's branch; #3 sat on #2.
+  // #2 sat on #1 and was squash-merged into #1's branch, which deleted its own; #3 sat on #2.
   const prs = [
     pr(1, 'main', 'p'),
     pr(2, 'p', 'a').withCommits(['p.1', 'a.1']).merged(false),
-    pr(3, 'a', 'b').withCommits(['p.1', 'a.1', 'b.1']).baseAt('a.1'),
+    pr(3, 'a', 'b').withCommits(['p.1', 'a.1', 'b.1']).baseDeleted(),
   ];
-  const stacks = expectForest(prs, ['main', '  #1', '    #3 base-branch needs-rebase(#2 a.1)']);
+  const stacks = expectForest(prs, ['main', '  #1', '    #3 shared-commits needs-rebase(#2 a.1)']);
   expect(layerStart(stacks, prs, 3)).toEqual({ kind: 'needsRebase', merged: 2, commit: 'a.1' });
 });
 

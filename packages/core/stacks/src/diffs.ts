@@ -34,11 +34,11 @@ export type LayerStart =
  * when `number` isn't a layer.
  *
  * A layer that needs a rebase starts at the merged layer's last commit it lists, while it still
- * lists it, or at the merged layer's head while its base branch is still there. One linked by
- * shared commits starts at the head of the open pull request below, while its own commits hold
- * that head. Any other starts at its base branch, and so does a layer whose
+ * lists it. One linked by shared commits starts at the head of the open pull request below, while
+ * its own commits hold that head. Any other starts at its base branch, and so does a layer whose
  * pull requests in `prs` don't say what its link does, such as ones read after the forest was
- * built.
+ * built, and one whose start would be its base branch's tip, where GitHub's own diff already
+ * starts.
  */
 export function layerStart(
   stacks: Stacks,
@@ -48,24 +48,25 @@ export function layerStart(
   const layer = layerOf(stacks, number);
   if (!layer) return undefined;
   const own = openPr(prs, number);
+  const base: LayerStart = { kind: 'baseBranch', branch: layer.baseRef, tip: own?.baseTip };
+  // A start at the base branch's tip is where GitHub's own diff already starts.
+  const holds = (commit: string) =>
+    own?.commits.includes(commit) === true && own.baseTip !== commit;
   if (layer.needsRebase) {
     const { merged, compareAgainst } = layer.needsRebase;
     // Rebased since the forest was built, the layer no longer holds the merged layer's commit, and
-    // a diff from it would show what its base branch gained since as the layer's own. A layer lists
-    // none of the merged one's commits while its base branch still holds them, at that branch's
-    // tip: GitHub's own diff already starts there.
-    if (own?.commits.includes(compareAgainst) || own?.baseTip === compareAgainst) {
-      return { kind: 'needsRebase', merged, commit: compareAgainst };
-    }
+    // a diff from it would show what its base branch gained since as the layer's own.
+    if (holds(compareAgainst)) return { kind: 'needsRebase', merged, commit: compareAgainst };
+    return base;
   }
   const { parent } = layer;
   if (layer.rule === 'sharedCommits' && parent.kind === 'pr') {
     const below = openPr(prs, parent.number);
-    if (below && own?.commits.includes(below.headOid)) {
+    if (below && holds(below.headOid)) {
       return { kind: 'sharedCommits', below: below.number, commit: below.headOid };
     }
   }
-  return { kind: 'baseBranch', branch: layer.baseRef, tip: own?.baseTip };
+  return base;
 }
 
 /** The open pull request `number` in `prs`, as {@link findStacks} picks it when several have it. */

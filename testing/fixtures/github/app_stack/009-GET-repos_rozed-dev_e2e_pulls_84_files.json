@@ -11,10 +11,10 @@
       "last-modified": "Fri, 13 Nov 2026 02:43:48 GMT",
       "x-github-api-version-selected": "2022-11-28",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4820",
-      "x-ratelimit-reset": "1794541990",
+      "x-ratelimit-remaining": "4963",
+      "x-ratelimit-reset": "1794545595",
       "x-ratelimit-resource": "core",
-      "x-ratelimit-used": "180"
+      "x-ratelimit-used": "37"
     },
     "body": [
       {

@@ -10,6 +10,9 @@ import { offer as offerSchema } from '../contract.ts';
 import { planStart, type StartForest, type StartView } from './starts.ts';
 import { changePull, E2E, recorded } from './test/support.ts';
 
+/** #86's head: #87's base branch, stack/m, sits there. */
+const M = 'a5f519461fbac8b315f978b48deb5cf66ca22a22';
+
 /** The forest of `list`, as the finder keeps it. */
 function forestOf(list: OpenPullRequestList, rules: Parameters<typeof stacksOf>[1]): StartForest {
   return { stacks: stacksOf(list, rules), prs: stackPullRequests(list), list };
@@ -35,7 +38,7 @@ function view(list: OpenPullRequestList, number: number, more: Partial<StartView
 }
 
 describe('where a layer’s diff starts', () => {
-  it('is set before its diff is drawn: at the layer below’s head, or the merged layer’s last commit', async () => {
+  it('is set before its diff is drawn, at the layer below’s head', async () => {
     const { list, rules } = await recorded('app_stack', E2E);
     const forest = forestOf(list, rules);
     expect(planStart(view(list, 84), forest, undefined)).toMatchObject({
@@ -43,10 +46,15 @@ describe('where a layer’s diff starts', () => {
       set: headOf(list, 83),
       offer: undefined,
     });
-    expect(planStart(view(list, 87), forest, undefined)).toMatchObject({
-      start: { kind: 'needsRebase', merged: 86 },
-      set: 'a5f519461fbac8b315f978b48deb5cf66ca22a22',
-    });
+    // #87 needs a rebase on #86, but its base branch still sits at #86's head, where GitHub's diff
+    // already starts: nothing changes, drawn or not.
+    for (const drawn of [false, true]) {
+      expect(planStart(view(list, 87, { drawn }), forest, undefined)).toMatchObject({
+        start: { kind: 'baseBranch', branch: 'stack/m', tip: M },
+        set: undefined,
+        offer: undefined,
+      });
+    }
     // A GitHub stack's layer starts at its base branch, as GitHub's diff does: nothing changes.
     expect(planStart(view(list, 89), forest, undefined)).toMatchObject({
       start: { kind: 'baseBranch', branch: 'stack/g1' },
@@ -68,10 +76,28 @@ describe('where a layer’s diff starts', () => {
       action: "Show only #84's",
       commit: headOf(list, 83),
     });
-    expect(planStart(view(list, 87, { drawn: true }), forest, undefined).offer).toEqual({
+  });
+
+  it('is offered at the merged layer’s last commit for a layer whose base branch moved on', async () => {
+    const { list, rules } = await recorded('app_stack', E2E);
+    // stack/m moved past #86's head, which #87 lists.
+    const moved = changePull(list, 87, (pr) => ({
+      ...pr,
+      baseRef: pr.baseRef && {
+        ...pr.baseRef,
+        target: { __typename: 'Commit', oid: 'f'.repeat(40) },
+      },
+      commits: { ...pr.commits, nodes: [{ commit: { oid: M } }, ...(pr.commits.nodes ?? [])] },
+    }));
+    const forest = forestOf(moved, rules);
+    expect(planStart(view(moved, 87), forest, undefined)).toMatchObject({
+      start: { kind: 'needsRebase', merged: 86 },
+      set: M,
+    });
+    expect(planStart(view(moved, 87, { drawn: true }), forest, undefined).offer).toEqual({
       title: "#87's diff includes #86's, which was squash-merged.",
       action: 'Hide them',
-      commit: 'a5f519461fbac8b315f978b48deb5cf66ca22a22',
+      commit: M,
     });
   });
 

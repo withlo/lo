@@ -358,10 +358,19 @@ describe('where the layer on screen starts', () => {
     // The tab starts there now, and its diff starts again: nothing is offered.
     finder.follow([tab(84, { ...c, compareFrom: b })]);
     expect(finder.state('t84')?.offer).toBeNull();
-    // #87's stack is known before its diff is drawn: its start is set at once.
-    finder.follow([tab(84, { ...c, compareFrom: b }), tab(87, { head: headIn(list, 87) })]);
-    expect(starts.at(-1)).toEqual(['t87', 'a5f519461fbac8b315f978b48deb5cf66ca22a22']);
-    expect(finder.state('t87')?.stack).toMatchObject({ kind: 'stack', rows: [{ number: 87 }] });
+    // #87 needs a rebase, but its base branch still sits at #86's head, where GitHub's diff of it
+    // already starts: its stack shows, with the note, and nothing is set or offered.
+    for (const drawn of [false, true]) {
+      finder.follow([
+        tab(84, { ...c, compareFrom: b }),
+        tab(87, { head: headIn(list, 87), drawn }),
+      ]);
+      expect(starts).toEqual([['t84', b]]);
+      expect(finder.state('t87')).toMatchObject({
+        stack: { kind: 'stack', rows: [{ number: 87 }], notes: [{ kind: 'needsRebase' }] },
+        offer: null,
+      });
+    }
   });
 
   it("says when the local copy couldn't get the commit, under the stack's notes", async () => {

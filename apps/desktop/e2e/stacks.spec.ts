@@ -131,13 +131,10 @@ test.describe('a layer’s diff', () => {
       await expect
         .poll(() => diffOf(page, c), { timeout: 20_000 })
         .toEqual({ ...onB, from: 'github' });
-      // #E starts at #M's head, which was squash-merged: #M's changes stay out.
+      // #E needs a rebase on #M, which was squash-merged, but its base branch still sits at #M's
+      // head, where GitHub's diff already starts: #M's changes stay out, with nothing to change.
       const e = await open(page, STACK.e);
-      const onM = {
-        at: STACK_PULLS.e.head,
-        compareFrom: STACK_PULLS.m.head,
-        files: ['src/cache.ts'],
-      };
+      const onM = { at: STACK_PULLS.e.head, compareFrom: null, files: ['src/cache.ts'] };
       await expect
         .poll(() => diffOf(page, e), { timeout: 20_000 })
         .toEqual({ ...onM, from: 'github' });
@@ -147,6 +144,7 @@ test.describe('a layer’s diff', () => {
       await expect
         .poll(() => diffOf(page, e), { timeout: 30_000 })
         .toEqual({ ...onM, from: 'local' });
+      await expect(page.locator('[data-lo-banners]')).toHaveCount(0);
       expect(await open(page, STACK.c)).toBe(c);
       await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), c);
       await expect
