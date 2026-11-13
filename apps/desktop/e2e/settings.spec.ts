@@ -83,31 +83,61 @@ const systemTheme = (app: ElectronApplication) =>
 const wears = (page: Page, name: string) =>
   expect(page.locator('html')).toHaveAttribute('data-theme', name);
 
-test('⌘, opens Settings in one tab, and shows it again from anywhere', async ({ page }) => {
-  await openSettings(page);
-  await expect(tabs(page)).toHaveText(['Settings']);
-  await expect(page.getByRole('navigation', { name: 'Settings' })).toBeVisible();
-  for (const section of ['Accounts', 'Pull requests', 'Appearance', 'Cache', 'Keys']) {
-    await expect(page.getByRole('heading', { name: section, level: 2 })).toBeVisible();
-  }
+test('⌘, opens Settings in one tab, and shows it again from anywhere; and Pull requests sets what a pull request opens on, and the diff’s layout', async ({
+  page,
+}) => {
+  await test.step('⌘, opens Settings in one tab, and shows it again from anywhere', async () => {
+    await openSettings(page);
+    await expect(tabs(page)).toHaveText(['Settings']);
+    await expect(page.getByRole('navigation', { name: 'Settings' })).toBeVisible();
+    for (const section of ['Accounts', 'Pull requests', 'Appearance', 'Cache', 'Keys']) {
+      await expect(page.getByRole('heading', { name: section, level: 2 })).toBeVisible();
+    }
 
-  // With others open, it goes to the end once, and a second press shows it, not another.
-  await openPull(page, 1);
-  await expect(tabs(page)).toHaveText(['Settings', PULL]);
-  await expect(shown(page)).toHaveText(PULL);
-  await page.keyboard.press(`${cmd}+Comma`);
-  await expect(shown(page)).toHaveText('Settings');
-  await page.keyboard.press(`${cmd}+Comma`);
-  await expect(tabs(page)).toHaveText(['Settings', PULL]);
-  await expect(shown(page)).toHaveText('Settings');
-  // The page is drawn once, however many times it was asked for.
-  await expect(page.getByRole('navigation', { name: 'Settings' })).toHaveCount(1);
+    // With others open, it goes to the end once, and a second press shows it, not another.
+    await openPull(page, 1);
+    await expect(tabs(page)).toHaveText(['Settings', PULL]);
+    await expect(shown(page)).toHaveText(PULL);
+    await page.keyboard.press(`${cmd}+Comma`);
+    await expect(shown(page)).toHaveText('Settings');
+    await page.keyboard.press(`${cmd}+Comma`);
+    await expect(tabs(page)).toHaveText(['Settings', PULL]);
+    await expect(shown(page)).toHaveText('Settings');
+    // The page is drawn once, however many times it was asked for.
+    await expect(page.getByRole('navigation', { name: 'Settings' })).toHaveCount(1);
 
-  // Closed, and asked for again, it comes back as one tab.
-  await page.keyboard.press(`${cmd}+KeyW`);
-  await expect(tabs(page)).toHaveText([PULL]);
-  await page.keyboard.press(`${cmd}+Comma`);
-  await expect(tabs(page)).toHaveText([PULL, 'Settings']);
+    // Closed, and asked for again, it comes back as one tab.
+    await page.keyboard.press(`${cmd}+KeyW`);
+    await expect(tabs(page)).toHaveText([PULL]);
+    await page.keyboard.press(`${cmd}+Comma`);
+    await expect(tabs(page)).toHaveText([PULL, 'Settings']);
+  });
+
+  await test.step('Pull requests sets what a pull request opens on, and the diff’s layout', async () => {
+    await openSettings(page);
+    await page
+      .getByRole('navigation', { name: 'Settings' })
+      .getByRole('button', { name: 'Pull requests' })
+      .click();
+    const openOn = page.getByRole('radiogroup', { name: 'Open on' });
+    await expect(openOn.getByRole('radio', { name: 'Overview' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await openOn.getByRole('radio', { name: 'Diff' }).click();
+    await expect.poll(saved).toEqual({ 'overview.open': 'diff' });
+    await expect(openOn.getByRole('radio', { name: 'Diff' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    const layout = page.getByRole('radiogroup', { name: 'Diff layout' });
+    await expect(layout.getByRole('radio', { name: 'Side by side' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await layout.getByRole('radio', { name: 'Inline' }).click();
+    await expect.poll(saved).toEqual({ 'overview.open': 'diff', 'diff.layout': 'inline' });
+  });
 });
 
 test('a change in Settings is written to the file, applied at once, and kept across a restart', async () => {
@@ -157,70 +187,50 @@ test('a change in Settings is written to the file, applied at once, and kept acr
   }
 });
 
-test('Pull requests sets what a pull request opens on, and the diff’s layout', async ({ page }) => {
-  await openSettings(page);
-  await page
-    .getByRole('navigation', { name: 'Settings' })
-    .getByRole('button', { name: 'Pull requests' })
-    .click();
-  const openOn = page.getByRole('radiogroup', { name: 'Open on' });
-  await expect(openOn.getByRole('radio', { name: 'Overview' })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
-  await openOn.getByRole('radio', { name: 'Diff' }).click();
-  await expect.poll(saved).toEqual({ 'overview.open': 'diff' });
-  await expect(openOn.getByRole('radio', { name: 'Diff' })).toHaveAttribute('aria-checked', 'true');
-  const layout = page.getByRole('radiogroup', { name: 'Diff layout' });
-  await expect(layout.getByRole('radio', { name: 'Side by side' })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
-  await layout.getByRole('radio', { name: 'Inline' }).click();
-  await expect.poll(saved).toEqual({ 'overview.open': 'diff', 'diff.layout': 'inline' });
-});
-
 test.describe('with a hand-edited bad value', () => {
-  test.use({ settings: '{ "theme": "purple", "cache.cap": 12, "mine": "kept" }\n' });
+  const BAD = '{ "theme": "purple", "cache.cap": 12, "mine": "kept" }\n';
+  test.use({ settings: BAD });
 
-  test('Settings shows the error, uses the default, and keeps the rest of the file', async ({
+  test('Settings shows the error, uses the default, and keeps the rest of the file; and changing the setting that is wrong writes a good value, and the rest stays as it was', async ({
     app,
     page,
   }) => {
-    await openSettings(page);
-    const alert = problems(page);
-    await expect(alert).toContainText('Lo found a problem in the settings file');
-    await expect(alert).toContainText('settings.json');
-    await expect(alert).toContainText(
-      'theme is "purple", but it must be dark, light or system. Lo uses "system".',
-    );
-    // The bad value is ignored: the default stands, and the good ones apply.
-    await expect(theme(page, 'Match the system')).toBeChecked();
-    await expect(sizeLimit(page)).toHaveValue('12');
-    await wears(page, await systemTheme(app));
+    await test.step('Settings shows the error, uses the default, and keeps the rest of the file', async () => {
+      await openSettings(page);
+      const alert = problems(page);
+      await expect(alert).toContainText('Lo found a problem in the settings file');
+      await expect(alert).toContainText('settings.json');
+      await expect(alert).toContainText(
+        'theme is "purple", but it must be dark, light or system. Lo uses "system".',
+      );
+      // The bad value is ignored: the default stands, and the good ones apply.
+      await expect(theme(page, 'Match the system')).toBeChecked();
+      await expect(sizeLimit(page)).toHaveValue('12');
+      await wears(page, await systemTheme(app));
 
-    // Fixed by hand, it applies at once and the error goes.
-    edit('{ "theme": "light", "mine": "kept" }\n');
-    await expect(alert).toHaveCount(0);
-    await expect(theme(page, 'Light')).toBeChecked();
-    await wears(page, 'light');
-    await expect(sizeLimit(page)).toHaveValue('10');
+      // Fixed by hand, it applies at once and the error goes.
+      edit('{ "theme": "light", "mine": "kept" }\n');
+      await expect(alert).toHaveCount(0);
+      await expect(theme(page, 'Light')).toBeChecked();
+      await wears(page, 'light');
+      await expect(sizeLimit(page)).toHaveValue('10');
 
-    // Bad again, in another way, and live.
-    edit('{ "theme": "dark", "cache.cap": "big" }\n');
-    await expect(alert).toContainText('cache.cap is "big", but it must be a whole number of GB');
-    await expect(alert).not.toContainText('theme is');
-    await wears(page, 'dark');
-  });
+      // Bad again, in another way, and live.
+      edit('{ "theme": "dark", "cache.cap": "big" }\n');
+      await expect(alert).toContainText('cache.cap is "big", but it must be a whole number of GB');
+      await expect(alert).not.toContainText('theme is');
+      await wears(page, 'dark');
+    });
 
-  test('changing the setting that is wrong writes a good value, and the rest stays as it was', async ({
-    page,
-  }) => {
-    await openSettings(page);
-    await expect(problems(page)).toBeVisible();
-    await theme(page, 'Dark').click();
-    await expect(problems(page)).toHaveCount(0);
-    await expect.poll(saved).toEqual({ theme: 'dark', 'cache.cap': 12, mine: 'kept' });
+    await test.step('changing the setting that is wrong writes a good value, and the rest stays as it was', async () => {
+      // The file as it was, hand-edited again, which Lo reads live.
+      edit(BAD);
+      await openSettings(page);
+      await expect(problems(page)).toContainText('theme is "purple"');
+      await theme(page, 'Dark').click();
+      await expect(problems(page)).toHaveCount(0);
+      await expect.poll(saved).toEqual({ theme: 'dark', 'cache.cap': 12, mine: 'kept' });
+    });
   });
 });
 
