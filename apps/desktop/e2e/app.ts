@@ -221,49 +221,57 @@ export const test = base.extend<Fixtures>({
 
 export { expect };
 
+declare global {
+  interface Window {
+    /** How many times the page has been resized since `sizeWindow` last asked, and when last. */
+    loSized?: { resizes: number; last: number };
+  }
+}
+
 /**
- * Sets the window's size, as the reader would, and waits until the page has it, and has drawn two
- * frames at it. A width the window can't take, such as one under its minimum or past the screen,
- * is waited for a moment only.
+ * Sets the window's size, as the reader would, and waits until the page has taken it: its last
+ * resize was 100 ms ago, and two frames have drawn since. A window that was that size already sends
+ * no resize, which is waited for half a second.
  */
 export async function sizeWindow(
   app: ElectronApplication,
   width: number,
   height: number,
 ): Promise<void> {
-  const across = await app.evaluate(
-    ({ BrowserWindow }, size) => {
-      const window = BrowserWindow.getAllWindows()[0];
-      if (!window) return undefined;
-      window.setSize(size.width, size.height);
-      // The page's width is the window's, as the zoom scales it, and never under the minimum.
-      const [minimum] = window.getMinimumSize();
-      return Math.max(size.width, minimum ?? 0) / window.webContents.getZoomFactor();
-    },
+  const page = await app.firstWindow();
+  // Listening before the window moves, so no resize is missed.
+  await page.evaluate(() => {
+    const sized = window.loSized ?? { resizes: 0, last: 0 };
+    sized.resizes = 0;
+    if (!window.loSized) {
+      window.addEventListener('resize', () => {
+        sized.resizes += 1;
+        sized.last = performance.now();
+      });
+    }
+    window.loSized = sized;
+  });
+  await app.evaluate(
+    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]?.setSize(size.width, size.height),
     { width, height },
   );
-  if (across === undefined) return;
-  const page = await app.firstWindow();
-  await page.evaluate((wanted) => {
-    const has = () => Math.abs(window.innerWidth - wanted) <= 1;
-    return new Promise<void>((resolve) => {
-      const frames = () => requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      if (has()) {
-        frames();
-        return;
-      }
-      const done = () => {
-        clearTimeout(timer);
-        window.removeEventListener('resize', onResize);
-        frames();
-      };
-      const onResize = () => {
-        if (has()) done();
-      };
-      const timer = setTimeout(done, 2000);
-      window.addEventListener('resize', onResize);
-    });
-  }, across);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const from = performance.now();
+        const check = () => {
+          const now = performance.now();
+          const sized = window.loSized;
+          const still = sized && sized.resizes > 0 ? now - sized.last >= 100 : now - from >= 500;
+          if (!still) {
+            setTimeout(check, 25);
+            return;
+          }
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        };
+        check();
+      }),
+  );
 }
 
 /**
