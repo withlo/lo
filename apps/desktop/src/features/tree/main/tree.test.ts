@@ -592,7 +592,7 @@ describe('a stack’s layer’s tree', () => {
     const { tree, settled } = treeTab({ github });
     tree.update(layerInfo(B));
     const state = await settled((sent) => sent.changes !== null && sent.from !== null);
-    expect(state).toMatchObject({ at: C, changesFrom: 'github', partial: false });
+    expect(state).toMatchObject({ at: C, changesFrom: 'github', partial: false, start: B });
     expect(changes(state)).toEqual(['added e2/c.txt']);
     expect(asked).toContain(`/repos/rozed-dev/e2e/compare/${B}...${C}`);
     expect(asked).not.toContain('/repos/rozed-dev/e2e/pulls/4/files');
@@ -623,12 +623,14 @@ describe('a stack’s layer’s tree', () => {
     tree.update(layerInfo(undefined));
     const own = await settled((state) => state.changes !== null && state.from !== null);
     expect(changes(own)).toEqual(['added e2/b.txt']);
+    expect(own.start).toBeNull();
     const trees = asked.filter((path) => path.includes('/git/trees/')).length;
     tree.update(layerInfo(B));
     // What the head holds stays while what changed is read again.
-    expect(sent.at(-1)).toMatchObject({ from: 'github', changes: null });
+    expect(sent.at(-1)).toMatchObject({ from: 'github', changes: null, start: B });
     const compared = await settled((state) => state.changes !== null);
     expect(changes(compared)).toEqual(['added e2/c.txt']);
+    expect(compared.start).toBe(B);
     expect(asked.filter((path) => path.includes('/git/trees/'))).toHaveLength(trees);
   });
 

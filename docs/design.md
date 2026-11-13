@@ -392,7 +392,8 @@ says so. The same applies to a stacked layer when the layer below it gets a new 
   and other computers. Each PR in a stack has its own marks.
 - **The count.** "Viewed" counts the files of the PR, or of the layer's own diff when it starts
   above the PR's base, and comparing revisions doesn't change it: files that only changed between
-  two revisions aren't in it.
+  two revisions aren't in it. A layer's own files are good for the head and start they were listed
+  at: after a push or a new start, GitHub's count shows until they're listed again.
 - **Changed since viewed.** When a push changes a viewed file, GitHub resets it to "changed since
   viewed." Lo remembers, on this computer, the revision at which you marked each file viewed, and
   opens the file to what changed since then. For a file marked viewed elsewhere, it shows what
