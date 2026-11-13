@@ -85,6 +85,18 @@ describe('the tab on screen', () => {
     expect(document.activeElement).toBe(middle);
   });
 
+  it('is a stack’s layer on screen, drawn afresh as another is shown, taking focus that left', () => {
+    const stack: Tab = { ...fd, layer: 2213, layers: [2212, 2213] };
+    act(() => showTabs({ tabs: [stack, bat], active: 'fd' }));
+    const { middle } = render();
+    const field = () => middle.querySelector('input');
+    expect(field()?.value).toBe('2213');
+    field()?.focus();
+    act(() => showTabs({ tabs: [{ ...stack, layer: undefined }, bat], active: 'fd' }));
+    expect(field()?.value).toBe('2212');
+    expect(document.activeElement).toBe(middle);
+  });
+
   it('leaves focus where it is when it didn’t leave with the last tab', () => {
     act(() => showTabs({ tabs: [fd, bat], active: 'fd' }));
     render();

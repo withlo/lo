@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { choice, COPY_LIMIT, contract, isGithubPage, opening, pull } from './contract.ts';
+import {
+  choice,
+  COPY_LIMIT,
+  contract,
+  isGithubPage,
+  opening,
+  pull,
+  viewIds,
+  viewsOnScreen,
+  type Tab,
+} from './contract.ts';
 
 describe("the tab feature's contract", () => {
   it('opens a pull request by an owner, repository and number GitHub allows, or Settings', () => {
@@ -75,6 +85,65 @@ describe("the tab feature's contract", () => {
       {},
     ];
     expect(refused.filter((move) => input.safeParse(move).success)).toEqual([]);
+  });
+
+  it('shows a layer of a pull request’s tab by the tab’s or a view’s id, and a number GitHub can hold', () => {
+    const { input } = contract.requests.layer;
+    for (const layer of [
+      { id: 't1', number: 2213 },
+      { id: 't1:2213', number: 2 ** 31 - 1 },
+    ]) {
+      expect(input.parse(layer)).toEqual(layer);
+    }
+    const refused = [
+      { id: 't1', number: 0 },
+      { id: 't1', number: 2 ** 31 },
+      { id: 't1', number: 1.5 },
+      { id: 't1' },
+      { number: 1 },
+      { id: 't1', number: 1, also: 'more' },
+    ];
+    expect(refused.filter((layer) => input.safeParse(layer).success)).toEqual([]);
+  });
+
+  it('names a pull request’s tab by its view on screen for what follows the tabs', () => {
+    const fd: Tab = {
+      id: 't1',
+      kind: 'pull',
+      owner: 'sharkdp',
+      repo: 'fd',
+      number: 2212,
+      title: 'Add --jemalloc',
+      layer: 2213,
+      layers: [2212, 2213, 2214],
+      stack: { layers: [2212, 2213, 2214], root: 'main' },
+    };
+    const bat: Tab = { id: 't2', kind: 'pull', owner: 'sharkdp', repo: 'bat', number: 7 };
+    const settings: Tab = { id: 't3', kind: 'settings' };
+    const tabs = { tabs: [fd, bat, settings], active: 't1' };
+    expect(viewsOnScreen(tabs)).toEqual({
+      tabs: [
+        {
+          id: 't1:2213',
+          kind: 'pull',
+          owner: 'sharkdp',
+          repo: 'fd',
+          number: 2213,
+          title: 'Add --jemalloc',
+        },
+        bat,
+        settings,
+      ],
+      active: 't1:2213',
+    });
+    // At its own layer, by its own id; a tab with one view, as it is.
+    const own = viewsOnScreen({ ...tabs, tabs: [{ ...fd, layer: undefined }, bat, settings] });
+    expect(own.tabs[0]).toMatchObject({ id: 't1', number: 2212 });
+    expect(own.tabs[1]).toBe(bat);
+    expect(viewsOnScreen({ ...tabs, active: 't2' }).active).toBe('t2');
+    // Every view, which what's kept for each lasts as long as.
+    expect(viewIds(tabs.tabs)).toEqual(['t1', 't1:2213', 't1:2214', 't2', 't3']);
+    expect(viewIds([{ ...fd, layer: 2214, layers: [2214] }])).toEqual(['t1', 't1:2214']);
   });
 
   it('opens only pages on github.com, over HTTPS, in the browser', () => {

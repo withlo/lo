@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Tab } from '../contract.ts';
 import { forPullRequest, inStack, windowTitle, withoutBidi } from './title.ts';
 
 describe("the window's title", () => {
@@ -18,6 +19,27 @@ describe("the window's title", () => {
     // Once it merged, it's no layer of the stack.
     expect(inStack(title, { root: 'main', layers: 4 })).toBe(
       'rozed-dev/e2e#3 — feat: b · 4 layers, stack on main',
+    );
+  });
+
+  it('a stack’s tab is titled by its layer on screen, and where that is once the stack is known', () => {
+    const stack: Tab = {
+      id: 'a',
+      kind: 'pull',
+      owner: 'rozed-dev',
+      repo: 'e2e',
+      number: 2,
+      title: 'feat: b',
+      layer: 3,
+      layers: [2, 3],
+    };
+    expect(windowTitle(stack)).toBe('rozed-dev/e2e#3 — feat: b');
+    expect(windowTitle({ ...stack, stack: { layers: [2, 3, 4, 6, 5], root: 'main' } })).toBe(
+      'rozed-dev/e2e#3 — feat: b · layer 2 of 5, stack on main',
+    );
+    // A layer that left the stack, as one that merged does.
+    expect(windowTitle({ ...stack, stack: { layers: [2, 4], root: 'main\u202E' } })).toBe(
+      'rozed-dev/e2e#3 — feat: b · 2 layers, stack on main',
     );
   });
 

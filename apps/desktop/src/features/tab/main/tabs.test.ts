@@ -393,3 +393,115 @@ describe('restoring the tabs', () => {
     expect(heard).toEqual([]);
   });
 });
+
+/** Another pull request in fd's repository, as a layer of a stack would be. */
+const layer = (number: number) => ({ ...fd, number });
+
+describe('the layers of a stack in a pull request’s tab', () => {
+  it('show in its tab, each in a view of its own made the first time, by the tab’s id or a view’s', () => {
+    const { tabs, heard } = three();
+    expect(tabs.layer('t1', 2213)).toBe('t1:2213');
+    expect(tabs.list().active).toBe('t1');
+    expect(tabs.list().tabs[0]).toEqual({ ...fd, id: 't1', layer: 2213, layers: [2212, 2213] });
+    // The tab's own pull request is its own layer, and its view stays.
+    expect(tabs.layer('t1:2213', 2212)).toBe('t1');
+    expect(tabs.list().tabs[0]).toEqual({ ...fd, id: 't1', layers: [2212, 2213] });
+    expect(heard).toHaveLength(2);
+    // The layer on screen again changes nothing.
+    expect(tabs.layer('t1', 2212)).toBe('t1');
+    expect(heard).toHaveLength(2);
+    // Nothing for a tab that isn't a pull request's, or isn't open.
+    tabs.open({ kind: 'settings' });
+    expect(tabs.layer('t4', 1)).toBeUndefined();
+    expect(tabs.layer('gone', 1)).toBeUndefined();
+  });
+
+  it('a link to a layer finds its stack’s tab and shows it at that layer', () => {
+    const { tabs, heard } = three();
+    tabs.setLayers('t1', { layers: [2212, 2213, 2214], root: 'main' });
+    expect(heard.at(-1)?.tabs[0]).toMatchObject({ stack: { layers: [2212, 2213, 2214] } });
+    expect(tabs.open({ ...layer(2214), owner: 'SharkDP' })).toBe('t1:2214');
+    expect(tabs.list().active).toBe('t1');
+    expect(tabs.list().tabs[0]).toMatchObject({ layer: 2214 });
+    // The pull request the tab opened on brings it back to its own layer.
+    expect(tabs.open(fd)).toBe('t1');
+    expect(tabs.list().tabs[0]).not.toHaveProperty('layer');
+    // A pull request outside the stack opens a tab of its own.
+    expect(tabs.open(layer(2215))).toBe('t4');
+    // Two tabs that turn out to hold one stack stay two: a link to the pull request a tab opened
+    // on shows that tab.
+    tabs.setLayers('t4', { layers: [2212, 2215], root: 'main' });
+    expect(tabs.open(fd)).toBe('t1');
+    expect(tabs.open(layer(2215))).toBe('t4');
+    // Once the stack is gone, only the layers the tab has a view of are found in it.
+    tabs.setLayers('t1:2214', undefined);
+    expect(tabs.open(layer(2213))).toBe('t5');
+    expect(tabs.open(layer(2214))).toBe('t1:2214');
+  });
+
+  it('show the layer on screen’s title and state in the strip', () => {
+    const { tabs } = three();
+    tabs.describe('t1', { title: 'Honor explicit use-jemalloc requests', state: 'open' });
+    tabs.layer('t1', 2213);
+    // Not yet said for the layer, so the strip waits for it.
+    expect(tabs.list().tabs[0]).not.toHaveProperty('title');
+    tabs.describe('t1:2213', { title: 'Add --jemalloc', state: 'draft' });
+    expect(tabs.list().tabs[0]).toMatchObject({ title: 'Add --jemalloc', state: 'draft' });
+    // What's said of a layer off screen shows once it's back.
+    tabs.describe('t1', { title: 'Honor jemalloc requests', state: 'merged' });
+    expect(tabs.list().tabs[0]).toMatchObject({ title: 'Add --jemalloc', state: 'draft' });
+    tabs.layer('t1', 2212);
+    expect(tabs.list().tabs[0]).toMatchObject({
+      title: 'Honor jemalloc requests',
+      state: 'merged',
+    });
+  });
+
+  it('share their tab’s account and repository', () => {
+    const { tabs } = three();
+    tabs.layer('t1', 2213);
+    tabs.remember('t1:2213', { login: 'rozed-bot', repository: 'sharkdp/fd' });
+    expect(tabs.kept('t1')).toEqual({ login: 'rozed-bot', repository: 'sharkdp/fd' });
+    expect(tabs.kept('t1:2213')).toEqual({ login: 'rozed-bot', repository: 'sharkdp/fd' });
+  });
+
+  it('come back at the layer on screen after a restart, with only its view, and its title', () => {
+    const on = database();
+    const before = tabsOn(on).tabs;
+    before.open(fd);
+    before.open(bat);
+    before.layer('t1', 2213);
+    before.describe('t1:2213', { title: 'Add --jemalloc', state: 'draft' });
+    before.setLayers('t1', { layers: [2212, 2213], root: 'main' });
+
+    const after = tabsOn(on).tabs;
+    // The stack is found again as Lo starts, so it isn't kept.
+    expect(after.list()).toEqual({
+      tabs: [
+        { ...fd, id: 't1', layer: 2213, layers: [2213], title: 'Add --jemalloc', state: 'draft' },
+        { ...bat, id: 't2' },
+      ],
+      active: 't1',
+    });
+    after.layer('t1', 2212);
+    expect(after.list().tabs[0]).toEqual({ ...fd, id: 't1', layers: [2213, 2212] });
+    expect(tabsOn(on).tabs.list().tabs[0]).toEqual({ ...fd, id: 't1' });
+  });
+
+  it('come back at the tab’s own when the layer kept can’t be read', () => {
+    const on = database();
+    on.prepare(
+      'INSERT INTO tab_tabs (id, position, kind, owner, repo, number, active, layer) VALUES (?, ?, ?, ?, ?, ?, 1, ?)',
+    ).run('fd', 0, 'pull', 'sharkdp', 'fd', 2212, 2 ** 40);
+    const tabs = createTabs({ database: on, changed: () => {}, log: () => {} });
+    expect(tabs.list().tabs).toEqual([{ ...fd, id: 'fd' }]);
+  });
+
+  it('close with their tab, by its id or a view’s', () => {
+    const { tabs } = three();
+    tabs.layer('t1', 2213);
+    tabs.close('t1:2213');
+    expect(names(tabs.list())).toEqual(['*bat#7', 'lo#1']);
+    expect(tabs.layer('t1:2213', 2212)).toBeUndefined();
+  });
+});

@@ -1,5 +1,5 @@
-// Each pull request's tab's panels, kept while the tab is open: whether its left panel is open,
-// and which of the middle views it shows.
+// Each pull request's tab's panels, for each of its views, kept while the tab is open: whether its
+// left panel is open, and which of the middle views it shows.
 
 import { makeTabState, useKept } from './kept.ts';
 

@@ -1,5 +1,7 @@
 // What the tab feature shares with other features' window code: the tabs and the one on screen,
-// state a feature keeps for each tab, and the slot each kind of tab draws what it holds in.
+// state a feature keeps for each tab, and the slot each kind of tab draws what it holds in. A pull
+// request's tab holds a view of each layer of a stack the reader has shown; what's shared names it
+// by its view on screen, so what follows the tab on screen follows the layer on screen.
 
 import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
@@ -24,14 +26,18 @@ export type {
 } from '../contract.ts';
 export type { TabsState } from './store.ts';
 
-/** A pull request's tab. */
+/**
+ * A pull request's tab, as what's shared names it: by its view on screen, that view's id and its
+ * layer's number.
+ */
 export type PullTab = Extract<Tab, { kind: 'pull' }>;
 
 /**
  * Where each kind of tab draws what it holds, under the strip. The feature that owns a kind puts
  * one view here, which draws a tab of its kind and nothing for the others: Settings' for
- * `settings`, the Recent list's for `recent`. Only the tab on screen is drawn, and drawn afresh
- * each time it's shown, so a view keeps what it needs across switches in a {@link tabState}.
+ * `settings`, the Recent list's for `recent`. Only the tab on screen is drawn, a pull request's as
+ * its view on screen, and drawn afresh each time it's shown, so a view keeps what it needs across
+ * switches in a {@link tabState}.
  */
 export const kinds = defineSlot<{ tab: Tab }>('tab.kinds');
 
@@ -124,7 +130,7 @@ export function withoutBidi(text: string): string {
   return text.replaceAll(/[\u202A-\u202E\u2066-\u2069]/g, '');
 }
 
-/** What main last said of a pull request's tab, re-rendering when it changes. */
+/** What main last said of a view of a pull request's tab, re-rendering when it changes. */
 export function usePull(tab: string): PullView | undefined {
   return useStore(pullsStore, (state) => state.views.get(tab));
 }
@@ -186,28 +192,38 @@ export function onChangedFiles(listener: (tab: string, files: Files) => void): (
  */
 export const dialogs = defineSlot('tab.dialogs');
 
-/** The tabs and the one on screen, re-rendering when they change. */
+/**
+ * The tabs in the strip and the one on screen, as main sent them, re-rendering when they change: a
+ * pull request's tab by its own id, with the layers it has views of.
+ */
 export function useTabs(): TabsState {
   return useStore(tabsStore);
 }
 
-/** The tab on screen, re-rendering when another is shown. */
+/**
+ * The tab on screen, a pull request's as its view on screen, re-rendering when another tab or layer
+ * is shown.
+ */
 export function useActiveTab(): Tab | undefined {
   return useStore(tabsStore, activeOf);
 }
 
-/** The tab on screen now. */
+/** The tab on screen now, a pull request's as its view on screen. */
 export function activeTab(): Tab | undefined {
   return activeOf(tabsStore.getState());
 }
 
-/** State a feature keeps for each open tab: a value a tab, forgotten as the tab closes. */
+/**
+ * State a feature keeps for each open tab: a value a tab, or a view of a pull request's tab, by its
+ * id, forgotten as the tab closes.
+ */
 export type { TabState } from './kept.ts';
 
 /**
  * Makes a store of a feature's state for each tab, a Zustand store of its own: what the tree has
- * open, say, so a tab shows it again when it's back on screen. A tab's value starts as `initial()`
- * makes it, the first time it's asked for, and goes when the tab closes.
+ * open, say, so a tab shows it again when it's back on screen. Each view of a pull request's tab
+ * has its own value, by the view's id, so each layer keeps its own. A value starts as `initial()`
+ * makes it, the first time it's asked for, and goes when its tab closes.
  */
 export function tabState<T>(initial: () => T): TabState<T> {
   return makeTabState(initial);

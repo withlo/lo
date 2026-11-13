@@ -442,6 +442,17 @@ status bar.
   earlier fetch brought while GitHub can't be reached.
 - The head on screen is GitHub's when the tab opened. A newer push says so in a banner, and moves
   nothing until it's loaded.
+- A tab holds a whole stack: a view of each layer the reader has shown (`tab.layer`), each a pull
+  request's tab as described here, with an id of its own: the tab's for the pull request it opened
+  on, and `<tab id>:<number>` for another layer. What main and the other features keep of a pull
+  request's tab, they keep for each view, so each layer keeps its place, folds, comparison and
+  overview until the tab closes. Only the view on screen is drawn. `tab.tabs`' `list` and `onTabs`,
+  and the window's `activeTab`, name a pull request's tab by its view on screen, so what follows the
+  tabs follows the layers. `tab_tabs.layer` keeps the layer on screen, and a tab comes back at it,
+  with only that view made. The strip shows the layer on screen's title and state, and the window's
+  title where it is in its stack. The stacks feature tells the tab which stack each holds
+  (`setLayers`), so a link to a layer shows the tab opened on it, or else the first whose stack
+  holds it, at that layer. Two tabs that turn out to hold one stack stay two.
 - A tab says it's offline once GitHub has been out of reach for 25 s, so a blip says nothing. A
   build run from source takes another wait from `LO_OFFLINE_AFTER_MS`, for its tests; a packaged
   build ignores it.

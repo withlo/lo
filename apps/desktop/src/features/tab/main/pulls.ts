@@ -80,6 +80,12 @@ export function findTab(keys: readonly TabKey[], link: PullLink): number | undef
   return index < 0 ? undefined : index;
 }
 
+/** The index of the first of `keys` whose stack holds `link`'s pull request as a layer. */
+export function findLayer(keys: readonly TabKey[], link: PullLink): number | undefined {
+  const index = keys.findIndex((key) => hasLayer(key, link));
+  return index < 0 ? undefined : index;
+}
+
 /** Every name the pull request's repository is known by: the link's, GitHub's, and the aliases. */
 function names(key: TabKey): Repository[] {
   return [key.openedAs, ...(key.canonical ? [key.canonical] : []), ...key.aliases];

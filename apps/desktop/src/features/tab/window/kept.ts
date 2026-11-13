@@ -1,12 +1,17 @@
-// State a feature keeps for each open tab, which goes as the tab closes. The tab's own modules make
-// theirs here; other features make theirs through `shared.ts`.
+// State a feature keeps for each open tab, and each view of a pull request's tab, which goes as the
+// tab closes. The tab's own modules make theirs here; other features make theirs through
+// `shared.ts`.
 
 import { useSyncExternalStore } from 'react';
 import { createStore } from 'zustand/vanilla';
 
+import { viewIds } from '../contract.ts';
 import { tabsStore } from './store.ts';
 
-/** State a feature keeps for each open tab: a value a tab, forgotten as the tab closes. */
+/**
+ * State a feature keeps for each open tab: a value a tab, or a view of a pull request's tab, by its
+ * id, forgotten as the tab closes.
+ */
 export interface TabState<T> {
   /** `tab`'s value: the one `initial` made for it, until it's set. */
   get(tab: string): T;
@@ -42,10 +47,10 @@ export function makeTabState<T>(initial: () => T): TabState<T> {
     initials.delete(tab);
     store.setState(new Map(store.getState()).set(tab, { value }), true);
   };
-  // A closed tab's value goes with it.
+  // A closed tab's values go with it, its views' too.
   tabsStore.subscribe((next, previous) => {
-    const open = new Set(next.tabs.map(({ id }) => id));
-    const closed = previous.tabs.filter(({ id }) => !open.has(id)).map(({ id }) => id);
+    const open = new Set(viewIds(next.tabs));
+    const closed = viewIds(previous.tabs).filter((id) => !open.has(id));
     for (const id of closed) initials.delete(id);
     const values = store.getState();
     if (!closed.some((id) => values.has(id))) return;

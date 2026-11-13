@@ -15,6 +15,7 @@ import { defineView } from '../../../window/slots.tsx';
 import { commandLine } from '../../open/window/shared.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
 import { opening } from '../../settings/window/shared.ts';
+import { viewIds } from '../../tab/contract.ts';
 import { activeTab, middle, status } from '../../tab/window/shared.ts';
 import { setup } from '../../welcome/window/shared.ts';
 import keys from '../keys.ts';
@@ -315,8 +316,9 @@ export default {
     followMarkers();
     main().subscribe('state', takeState);
     client(revisionsContract).subscribe('comparison', takeRevisions);
+    // Each view of a pull request's tab keeps its overview until the tab closes.
     tabs().subscribe('tabs', ({ tabs: open }) => {
-      const ids = new Set(open.map(({ id }) => id));
+      const ids = new Set(viewIds(open));
       keepOnly(ids);
       keepPlaces(ids);
       keepSinceOnly(ids);
@@ -324,9 +326,7 @@ export default {
     });
     tabs()
       .list()
-      .then(({ tabs: open }) =>
-        catchUp(open.filter(({ kind }) => kind === 'pull').map(({ id }) => id)),
-      )
+      .then(({ tabs: open }) => catchUp(viewIds(open.filter(({ kind }) => kind === 'pull'))))
       .catch((error: unknown) => console.error("Lo couldn't list the tabs:", error));
   },
 } satisfies WindowFeature;

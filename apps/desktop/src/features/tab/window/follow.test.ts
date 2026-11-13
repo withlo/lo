@@ -72,6 +72,27 @@ describe('the history ⌃o and ⌃i walk', () => {
   });
 });
 
+describe('the history of a stack’s tab', () => {
+  it('is each layer’s own, and goes with the tab', () => {
+    const { registry, revealed, views, show } = followed();
+    views('fd', 'fd:2213');
+    show([fd], 'fd');
+    registry.history.record(at('a.ts'));
+    const stack: Tab = { ...fd, layer: 2213, layers: [2212, 2213] };
+    show([stack], 'fd');
+    registry.history.record(at('b.ts'));
+    expect(registry.history.back()).toEqual(at('b.ts'));
+    expect(registry.history.back()).toBeUndefined();
+    show([{ ...stack, layer: undefined }], 'fd');
+    expect(registry.history.back()).toEqual(at('a.ts'));
+    expect(revealed).toEqual(['fd:2213:b.ts', 'fd:a.ts']);
+
+    show([bat], 'bat');
+    registry.history.tab('fd:2213');
+    expect(registry.history.entries()).toEqual([]);
+  });
+});
+
 describe("the window's title", () => {
   it('follows the tab on screen, and what GitHub says of it', () => {
     const { titles, show } = followed();
@@ -84,6 +105,17 @@ describe("the window's title", () => {
       'sharkdp/fd#2212',
       'sharkdp/bat#7 — Page with less',
       'sharkdp/bat#7 — Page with less, always',
+    ]);
+  });
+
+  it('is a stack’s layer on screen’s, and says where it is once the stack is known', () => {
+    const { titles, show } = followed();
+    const stack: Tab = { ...bat, number: 5, layer: 7, layers: [5, 7] };
+    show([stack], 'bat');
+    show([{ ...stack, stack: { layers: [5, 7, 9], root: 'master' } }], 'bat');
+    expect(titles).toEqual([
+      'sharkdp/bat#7 — Page with less',
+      'sharkdp/bat#7 — Page with less · layer 2 of 3, stack on master',
     ]);
   });
 });

@@ -11,7 +11,7 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { changeSetting, opening } from '../../settings/window/shared.ts';
-import { contract as tabContract } from '../../tab/contract.ts';
+import { contract as tabContract, viewIds } from '../../tab/contract.ts';
 import { activeTab, middle, status, type PullTab } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
 import type { FileVersions } from '../contract.ts';
@@ -326,8 +326,9 @@ export default {
   start() {
     main().subscribe('state', takeState);
     showTreeFiles();
+    // Each view of a pull request's tab keeps its diff until the tab closes.
     tabs().subscribe('tabs', ({ tabs: open }) => {
-      const ids = new Set(open.map(({ id }) => id));
+      const ids = new Set(viewIds(open));
       keepOnly(ids);
       keepPlaces(ids);
     });

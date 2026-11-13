@@ -12,6 +12,7 @@ const e2e = { id: 'p1', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 8
 const missing = { id: 'p2', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 9999 } as const;
 const settings = { id: 's1', kind: 'settings' } as const;
 const E2E = new PullRef('rozed-dev', 'e2e', 80);
+const MISSING = new PullRef('rozed-dev', 'e2e', 9999);
 
 /** A watcher on GitHub replayed, keeping what tabs keep in a map. */
 async function watcher(kept: Record<string, { login?: string; repository?: string }> = {}) {
@@ -117,6 +118,66 @@ describe('the watcher', { timeout: 60_000 }, () => {
     expect(watching.info('p1')).toBe(undefined);
     expect(watching.clone('p1')).toBe(undefined);
     stop();
+    watching.stop();
+  });
+
+  it('makes a view of each layer a tab shows, shows the one on screen, and closes them with the tab', async () => {
+    const { watching, replay } = await watcher();
+    const stack = { ...e2e, layer: 9999, layers: [80, 9999] };
+    watching.follow({ tabs: [stack, settings], active: 'p1' });
+    expect(watching.has('p1')).toBe(true);
+    expect(watching.has('p1:9999')).toBe(true);
+    // The layer on screen is read, under its view's id, and is the pull request opened, so it
+    // counts as opened.
+    await expect.poll(() => watching.snapshot('p1:9999')?.pull.problem?.kind).toBe('notFound');
+    const poller = replay.pollers.get('rozed-bot');
+    expect(poller?.open?.equals(MISSING)).toBe(true);
+    await expect.poll(() => replay.cache.recent.map(({ pull }) => pull.key)).toContain(MISSING.key);
+    expect(watching.info('p1:9999')).toMatchObject({ id: 'p1:9999', number: 9999 });
+
+    watching.follow({ tabs: [{ ...stack, layer: undefined }, settings], active: 'p1' });
+    await expect.poll(() => poller?.open?.equals(E2E)).toBe(true);
+
+    watching.follow({ tabs: [settings], active: 's1' });
+    expect(watching.has('p1')).toBe(false);
+    expect(watching.has('p1:9999')).toBe(false);
+    expect(poller?.watches(E2E)).toBe(false);
+    expect(poller?.watches(MISSING)).toBe(false);
+    watching.stop();
+  });
+
+  it('restores a tab at its layer, making only that view', async () => {
+    const { watching } = await watcher();
+    watching.follow({ tabs: [{ ...e2e, layer: 9999, layers: [9999] }], active: 'p1' });
+    expect(watching.has('p1:9999')).toBe(true);
+    expect(watching.has('p1')).toBe(false);
+    await expect.poll(() => watching.snapshot('p1:9999')?.pull.problem?.kind).toBe('notFound');
+    watching.stop();
+  });
+
+  it('leaves a pull request watched, and open, while another tab’s view of it is', async () => {
+    const { watching, replay } = await watcher({
+      p1: { login: 'rozed-bot' },
+      'p3:80': { login: 'rozed-bot' },
+    });
+    // A tab opened on #9999 whose stack has #80 too, shown there before.
+    const other = {
+      id: 'p3',
+      kind: 'pull',
+      owner: 'rozed-dev',
+      repo: 'e2e',
+      number: 9999,
+    } as const;
+    const holding = { ...other, layer: 80, layers: [9999, 80] };
+    watching.follow({ tabs: [e2e, holding], active: 'p1' });
+    const poller = replay.pollers.get('rozed-bot');
+    await expect.poll(() => poller?.open?.equals(E2E)).toBe(true);
+
+    watching.follow({ tabs: [e2e], active: 'p1' });
+    expect(poller?.watches(E2E)).toBe(true);
+    expect(poller?.open?.equals(E2E)).toBe(true);
+    watching.follow({ tabs: [settings], active: 's1' });
+    expect(poller?.watches(E2E)).toBe(false);
     watching.stop();
   });
 });

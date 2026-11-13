@@ -6,7 +6,7 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { contract as app } from '../../app/contract.ts';
-import type { Choice, Tab } from '../contract.ts';
+import { layersOf, viewId, type Choice, type Tab } from '../contract.ts';
 import keys from '../keys.ts';
 import { follow } from './follow.ts';
 import { main } from './main.ts';
@@ -53,19 +53,24 @@ function middleSteps(): true | string {
   return viewCounts.middle > 1 ? true : 'This pull request has one view so far.';
 }
 
-/** Asks main what it has for every pull request's tab the window has heard nothing of yet. */
+/** Asks main what it has for every view of a pull request's tab the window has heard nothing of. */
 function catchUp(): void {
   const { views } = pullsStore.getState();
-  for (const tab of tabsStore.getState().tabs) {
-    if (tab.kind !== 'pull' || views.has(tab.id)) continue;
+  const unheard = tabsStore
+    .getState()
+    .tabs.flatMap((tab) =>
+      tab.kind === 'pull' ? layersOf(tab).map((layer) => viewId(tab, layer)) : [],
+    )
+    .filter((id) => !views.has(id));
+  for (const id of unheard) {
     main()
-      .state({ id: tab.id })
+      .state({ id })
       .then((state) => {
         if (!state) return;
         // A topic that arrived meanwhile is newer.
-        if (!pullsStore.getState().views.has(tab.id)) showPull(state.pull);
-        if (state.files && !pullsStore.getState().files.has(tab.id)) showFiles(state.files);
-        if (!pullsStore.getState().locals.has(tab.id)) showLocal(state.local);
+        if (!pullsStore.getState().views.has(id)) showPull(state.pull);
+        if (state.files && !pullsStore.getState().files.has(id)) showFiles(state.files);
+        if (!pullsStore.getState().locals.has(id)) showLocal(state.local);
       })
       .catch((error: unknown) => console.error("Lo couldn't ask about a tab:", error));
   }

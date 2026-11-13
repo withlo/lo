@@ -1,29 +1,37 @@
-// The window's tabs as main keeps them: opened, closed, shown and moved, in the strip's order. Each
-// change is written to `tab_tabs` before anyone hears of it, so the tabs come back as they were
-// after Lo restarts. Nothing here calls Electron.
+// The window's tabs as main keeps them: opened, closed, shown and moved, in the strip's order, and
+// the layers each pull request's tab has views of. Each change is written to `tab_tabs` before
+// anyone hears of it, so the tabs come back as they were after Lo restarts, each at the layer it
+// showed. Nothing here calls Electron.
 
 import { randomUUID } from 'node:crypto';
 
 import type { Database, Row } from '../../../main/database.ts';
 import { login as accountLogin } from '../../accounts/contract.ts';
 import {
+  layerOf,
+  layersOf,
   opening as openingSchema,
+  pullNumber,
   tab as tabSchema,
+  viewId,
+  viewIds,
   type Choice,
   type Moved,
   type Opening,
   type PullState,
+  type Stack,
   type Tab,
   type Tabs,
 } from '../contract.ts';
-import { findTab, shows, tabKey, type TabKey } from './pulls.ts';
+import { findLayer, findTab, shows, tabKey, type TabKey } from './pulls.ts';
 
 /** Recent pull requests: the tab that stands in for an empty strip. */
 export const RECENT: Tab = { id: 'recent', kind: 'recent' };
 
 /**
  * A tab main keeps: a pull request's or Settings'. A pull request's also keeps the account it acts
- * as and its repository's name as GitHub last gave it, which the window isn't sent.
+ * as and its repository's name as GitHub last gave it, which the window isn't sent. Of its layers,
+ * only the one on screen is written: its views of the others, and its stack, last while Lo runs.
  */
 type Kept =
   | (Extract<Tab, { kind: 'pull' }> & {
@@ -39,6 +47,12 @@ export interface PullKept {
   readonly repository?: string | undefined;
 }
 
+/** What GitHub last said of a view's pull request. */
+interface Described {
+  readonly title: string;
+  readonly state: PullState;
+}
+
 /** The tabs main keeps, in order, and the one on screen: one of them, or none when there are none. */
 interface State {
   readonly kept: readonly Kept[];
@@ -49,18 +63,33 @@ export interface TabList {
   /** The tabs in the strip's order, and the one on screen: Recent alone while nothing is open. */
   list(): Tabs;
   /**
-   * Opens a tab at the end of the strip and shows it, and returns its id. A pull request already
-   * open, by any name it's known by, or Settings when it's open, shows the tab it's in. A new pull
-   * request's tab keeps `as.login` as its account, when given.
+   * Opens a tab at the end of the strip and shows it, and returns the id of the view that shows
+   * what was opened. A pull request already open, by any name it's known by, shows the tab it
+   * opened in, at its layer; else one a tab's stack holds shows the first such tab, at that layer.
+   * Settings when it's open shows its tab. A new pull request's tab keeps `as.login` as its
+   * account, when given.
    */
   open(opening: Opening, as?: { login: string }): string;
   /**
-   * Closes `id`, or the tab on screen. Closing the tab on screen shows the one after it, or the
-   * one before it at the end of the strip, or Recent once nothing is open. Recent stays.
+   * Closes `id`, or the tab on screen, with every view it has. Closing the tab on screen shows the
+   * one after it, or the one before it at the end of the strip, or Recent once nothing is open.
+   * Recent stays.
    */
   close(id?: string): void;
   /** Shows a tab. A choice of no tab, such as a place past the last, changes nothing. */
   select(choice: Choice): void;
+  /**
+   * Shows pull request's tab `id`, or the tab of view `id`, at layer `number`, and returns the id
+   * of its view of it, which is made the first time and lives until the tab closes. Nothing for a
+   * tab that isn't a pull request's.
+   */
+  layer(id: string, number: number): string | undefined;
+  /**
+   * Keeps the stack pull request's tab `id`, or the tab of view `id`, holds, or that it holds none:
+   * a link to any of its layers shows the tab, and the window's title says where in it the layer on
+   * screen is. It isn't written, since the stack is found again once Lo starts.
+   */
+  setLayers(id: string, stack: Stack | undefined): void;
   /**
    * Moves a tab to place `to`, from 0, counted without it, or to the end when `to` is past it, and
    * says where it is now. Nothing for a tab that isn't open.
@@ -72,13 +101,16 @@ export interface TabList {
    * Recent is open.
    */
   step(id: string | undefined, by: 1 | -1, within?: number): Moved | undefined;
-  /** Keeps what GitHub said of a pull request's tab, so the strip shows it from then on. */
+  /**
+   * Keeps what GitHub said of view `id`'s pull request, so the strip shows it while that layer is
+   * on screen.
+   */
   describe(id: string, details: { title: string; state: PullState }): void;
-  /** What's kept with a pull request's tab: its account and repository, if known. */
+  /** What's kept with a pull request's tab, or a view's: its account and repository, if known. */
   kept(id: string): PullKept;
   /**
-   * Keeps a pull request's tab's account, or forgets it with `null`, and its repository's name.
-   * The window hears nothing of it.
+   * Keeps a pull request's tab's account, or forgets it with `null`, and its repository's name,
+   * from the tab or any of its views, which share them. The window hears nothing of it.
    */
   remember(
     id: string,
@@ -101,6 +133,12 @@ export function createTabs(options: TabListOptions): TabList {
   const { database, changed, newId = randomUUID } = options;
   const log = options.log ?? ((message: string) => console.error(message));
   let state = load(database, log);
+  /** What GitHub said of each view's pull request, by the view's id, while its tab is open. */
+  const described = new Map<string, Described>();
+  for (const tab of state.kept) {
+    if (tab.kind !== 'pull' || tab.title === undefined || tab.state === undefined) continue;
+    described.set(viewId(tab, layerOf(tab)), { title: tab.title, state: tab.state });
+  }
 
   const list = (): Tabs => {
     const [first] = state.kept;
@@ -121,6 +159,12 @@ export function createTabs(options: TabListOptions): TabList {
     state = next;
   };
 
+  /** Makes `next` the tabs and says so, without writing them: it changed nothing that's kept. */
+  const tell = (next: State): void => {
+    state = next;
+    changed(list());
+  };
+
   /** Shows `id`, a kept tab, unless it's on screen already. */
   const show = (id: string): void => {
     if (state.active !== id) commit({ ...state, active: id });
@@ -130,6 +174,36 @@ export function createTabs(options: TabListOptions): TabList {
   const add = (tab: Kept): string => {
     commit({ kept: [...state.kept, tab], active: tab.id });
     return tab.id;
+  };
+
+  /** The pull request's tab `id` names, by its own id or a view's, and that view's layer. */
+  const viewOf = (id: string): { index: number; tab: PullTab; layer: number } | undefined => {
+    for (const [index, tab] of state.kept.entries()) {
+      if (tab.kind !== 'pull') continue;
+      const layer = layersOf(tab).find((each) => viewId(tab, each) === id);
+      if (layer !== undefined || tab.id === id) return { index, tab, layer: layer ?? tab.number };
+    }
+    return undefined;
+  };
+
+  /** The id of the tab `id` names: itself, or the pull request's tab one of whose views it is. */
+  const tabOf = (id: string): string => viewOf(id)?.tab.id ?? id;
+
+  /**
+   * Shows `tab`, the kept pull request's tab at `index`, at `layer`, making its view of it if it
+   * has none, and returns that view's id.
+   */
+  const showAt = (index: number, tab: PullTab, layer: number): string => {
+    const id = viewId(tab, layer);
+    if (layerOf(tab) === layer) {
+      show(tab.id);
+      return id;
+    }
+    commit({
+      kept: state.kept.with(index, atLayer(tab, layer, described.get(id))),
+      active: tab.id,
+    });
+    return id;
   };
 
   const moveTo = (id: string, to: number): Moved | undefined => {
@@ -150,13 +224,14 @@ export function createTabs(options: TabListOptions): TabList {
       switch (opening.kind) {
         case 'pull': {
           const link = { owner: opening.owner, repo: opening.repo, number: opening.number };
-          const pulls = state.kept.filter((tab): tab is PullTab => tab.kind === 'pull');
-          const at = findTab(pulls.map(keyOf), link);
+          const pulls = state.kept.flatMap((tab, index) =>
+            tab.kind === 'pull' ? [{ tab, index }] : [],
+          );
+          const keys = pulls.map(({ tab }) => keyOf(tab));
+          // The tab opened on it, else the first whose stack holds it.
+          const at = findTab(keys, link) ?? findLayer(keys, link);
           const found = at === undefined ? undefined : pulls[at];
-          if (found) {
-            show(found.id);
-            return found.id;
-          }
+          if (found) return showAt(found.index, found.tab, link.number);
           return add({ id: newId(), kind: 'pull', ...link, login: as?.login });
         }
         case 'settings': {
@@ -174,19 +249,23 @@ export function createTabs(options: TabListOptions): TabList {
     },
 
     close(id) {
-      const closing = id ?? state.active;
+      const closing = id === undefined ? state.active : tabOf(id);
       const index = state.kept.findIndex((tab) => tab.id === closing);
-      if (index < 0) return;
+      const tab = state.kept[index];
+      if (!tab) return;
       const kept = state.kept.toSpliced(index, 1);
       const active = closing === state.active ? (kept[index] ?? kept[index - 1])?.id : state.active;
       commit({ kept, active });
+      for (const view of viewIds([tab])) described.delete(view);
     },
 
     select(choice) {
       const { tabs, active } = list();
       let chosen: Tab | undefined;
-      if ('id' in choice) chosen = tabs.find((tab) => tab.id === choice.id);
-      else if ('position' in choice) chosen = tabs[choice.position - 1];
+      if ('id' in choice) {
+        const id = tabOf(choice.id);
+        chosen = tabs.find((tab) => tab.id === id);
+      } else if ('position' in choice) chosen = tabs[choice.position - 1];
       else if ('last' in choice) chosen = tabs.at(-1);
       else {
         // Round the ends of the tabs the strip shows.
@@ -201,10 +280,26 @@ export function createTabs(options: TabListOptions): TabList {
       if (chosen && chosen.kind !== 'recent') show(chosen.id);
     },
 
-    move: moveTo,
+    layer(id, number) {
+      const found = viewOf(id);
+      return found && showAt(found.index, found.tab, number);
+    },
+
+    setLayers(id, stack) {
+      const found = viewOf(id);
+      if (!found || sameStack(found.tab.stack, stack)) return;
+      const { stack: _held, ...rest } = found.tab;
+      const next: PullTab =
+        stack === undefined
+          ? rest
+          : { ...rest, stack: { layers: [...stack.layers], root: stack.root } };
+      tell({ ...state, kept: state.kept.with(found.index, next) });
+    },
+
+    move: (id, to) => moveTo(tabOf(id), to),
 
     step(id, by, within = state.kept.length) {
-      const moving = id ?? list().active;
+      const moving = id === undefined ? list().active : tabOf(id);
       const from = state.kept.findIndex((tab) => tab.id === moving);
       if (from < 0) return undefined;
       const last = Math.max(from, within - 1);
@@ -212,22 +307,25 @@ export function createTabs(options: TabListOptions): TabList {
     },
 
     describe(id, { title, state: pullState }) {
-      const index = state.kept.findIndex((tab) => tab.id === id);
-      const tab = state.kept[index];
-      if (tab?.kind !== 'pull' || (tab.title === title && tab.state === pullState)) return;
+      const found = viewOf(id);
+      if (!found) return;
+      const { index, tab, layer } = found;
+      described.set(viewId(tab, layer), { title, state: pullState });
+      // The strip shows the layer on screen's.
+      if (layer !== layerOf(tab) || (tab.title === title && tab.state === pullState)) return;
       commit({ ...state, kept: state.kept.with(index, { ...tab, title, state: pullState }) });
     },
 
     kept(id) {
-      const tab = state.kept.find((each) => each.id === id);
-      if (tab?.kind !== 'pull') return {};
+      const tab = viewOf(id)?.tab;
+      if (!tab) return {};
       return { login: tab.login, repository: tab.repository };
     },
 
     remember(id, { login, repository }) {
-      const index = state.kept.findIndex((tab) => tab.id === id);
-      const tab = state.kept[index];
-      if (tab?.kind !== 'pull') return;
+      const found = viewOf(id);
+      if (!found) return;
+      const { index, tab } = found;
       const next: PullTab = {
         ...tab,
         login: login === undefined ? tab.login : (login ?? undefined),
@@ -237,6 +335,31 @@ export function createTabs(options: TabListOptions): TabList {
       quietly({ ...state, kept: state.kept.with(index, next) });
     },
   };
+}
+
+/**
+ * `tab` at `layer`, which isn't the layer on screen: with a view of it, and the title and state
+ * GitHub gave it, `said`, until GitHub says them again.
+ */
+function atLayer(tab: PullTab, layer: number, said: Described | undefined): PullTab {
+  const { layer: _shown, layers: _views, title: _title, state: _state, ...rest } = tab;
+  const views = layersOf(tab);
+  return {
+    ...rest,
+    ...said,
+    ...(layer === tab.number ? {} : { layer }),
+    layers: views.includes(layer) ? [...views] : [...views, layer],
+  };
+}
+
+/** Whether `a` and `b` are the same stack, or both none. */
+function sameStack(a: Stack | undefined, b: Stack | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return (
+    a.root === b.root &&
+    a.layers.length === b.layers.length &&
+    a.layers.every((layer, at) => layer === b.layers[at])
+  );
 }
 
 /** A kept tab as the strip shows it: without what main keeps for itself. */
@@ -254,7 +377,7 @@ function shown(tab: Kept): Tab {
 function load(database: Database, log: (message: string) => void): State {
   const rows = database
     .prepare(
-      'SELECT id, kind, owner, repo, number, title, state, active, login, repository FROM tab_tabs ORDER BY position, id',
+      'SELECT id, kind, owner, repo, number, title, state, active, login, repository, layer FROM tab_tabs ORDER BY position, id',
     )
     .all();
   const kept: Kept[] = [];
@@ -275,10 +398,15 @@ function load(database: Database, log: (message: string) => void): State {
 
 /**
  * A pull request's tab's key: the link it was opened by, and its repository's name as GitHub last
- * gave it, so a link by either name finds it after a rename or a transfer.
+ * gave it, so a link by either name finds it after a rename or a transfer; and its layers, those of
+ * its stack and those it has views of, so a link to any of them finds it too.
  */
-function keyOf({ owner, repo, number, repository }: PullTab): TabKey {
-  const key = tabKey({ owner, repo, number });
+function keyOf(tab: PullTab): TabKey {
+  const { owner, repo, number, repository } = tab;
+  const key = {
+    ...tabKey({ owner, repo, number }),
+    layers: [...(tab.stack?.layers ?? []), ...layersOf(tab)],
+  };
   const [canonicalOwner, canonicalRepo] = repository?.split('/') ?? [];
   if (canonicalOwner === undefined || canonicalRepo === undefined) return key;
   return { ...key, canonical: { owner: canonicalOwner, repo: canonicalRepo } };
@@ -291,9 +419,13 @@ function isSameTab(a: Kept, b: Kept): boolean {
   return shows(tabKey({ owner, repo, number }), b);
 }
 
-/** A row as a kept tab, if it's one: what Lo saved is read as carefully as any outside value. */
+/**
+ * A row as a kept tab, if it's one: what Lo saved is read as carefully as any outside value. A
+ * layer that can't be read back leaves the tab at its own. Only the view of the layer on screen is
+ * made at first.
+ */
 function readRow(row: Row): Kept | undefined {
-  const { id, kind, owner, repo, number, title, state, login, repository } = row;
+  const { id, kind, owner, repo, number, title, state, login, repository, layer } = row;
   if (kind === 'pull' && !openingSchema.safeParse({ kind, owner, repo, number }).success) {
     return undefined;
   }
@@ -312,8 +444,14 @@ function readRow(row: Row): Kept | undefined {
   );
   if (!read.success || read.data.kind === 'recent') return undefined;
   if (read.data.kind !== 'pull') return read.data;
+  const shownLayer = pullNumber.safeParse(layer);
+  const restored =
+    shownLayer.success && shownLayer.data !== read.data.number
+      ? { layer: shownLayer.data, layers: [shownLayer.data] }
+      : {};
   return {
     ...read.data,
+    ...restored,
     login: typeof login === 'string' && accountLogin.safeParse(login).success ? login : undefined,
     repository:
       typeof repository === 'string' && /^[^/\s]+\/[^/\s]+$/.test(repository)
@@ -327,12 +465,12 @@ function save(database: Database, { kept, active }: State): void {
   database.transaction(() => {
     database.prepare('DELETE FROM tab_tabs').run();
     const insert = database.prepare(
-      'INSERT INTO tab_tabs (id, position, kind, owner, repo, number, title, state, active, login, repository) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO tab_tabs (id, position, kind, owner, repo, number, title, state, active, login, repository, layer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     );
     kept.forEach((tab, position) => {
       const onScreen = tab.id === active ? 1 : 0;
       if (tab.kind === 'pull') {
-        const { id, owner, repo, number, title, state, login, repository } = tab;
+        const { id, owner, repo, number, title, state, login, repository, layer } = tab;
         insert.run(
           id,
           position,
@@ -345,9 +483,23 @@ function save(database: Database, { kept, active }: State): void {
           onScreen,
           login ?? null,
           repository ?? null,
+          layer ?? null,
         );
       } else {
-        insert.run(tab.id, position, tab.kind, null, null, null, null, null, onScreen, null, null);
+        insert.run(
+          tab.id,
+          position,
+          tab.kind,
+          null,
+          null,
+          null,
+          null,
+          null,
+          onScreen,
+          null,
+          null,
+          null,
+        );
       }
     });
   });
