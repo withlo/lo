@@ -10,6 +10,7 @@ import {
   noteOf,
   overviewNote,
   rowsOf,
+  runNoteOf,
   shortcutRows,
   shortcutsOf,
   withEnd,
@@ -172,6 +173,16 @@ describe('the revision picker', () => {
 });
 
 describe('the note over the diff', () => {
+  it('names the layers of a run, or the pull request when GitHub couldn’t compare it as one diff', () => {
+    expect(runNoteOf([83, 84], false)).toEqual({
+      tone: 'plain',
+      text: 'Every change in #83 to #84',
+    });
+    expect(runNoteOf([82, 83, 84], false).text).toBe('Every change in #82 to #84');
+    // The diff shows only the top layer's pull request then, which is what the note says.
+    expect(runNoteOf([83, 84], true).text).toBe('Every change in the pull request');
+  });
+
   it('says what’s compared, and why it starts where it does', () => {
     expect(noteOf(view())).toEqual({ tone: 'plain', text: 'r4 → r5, since you last looked' });
     expect(noteOf(view({ comparison: { from: head('2'), to: head('5') } })).text).toBe(

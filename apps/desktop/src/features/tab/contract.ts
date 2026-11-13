@@ -146,6 +146,16 @@ export function topOf({ layers, from }: Pick<Run, 'layers' | 'from'>): number {
 }
 
 /**
+ * The layer a pull request's tab shows the pull request of: a run's top layer, whose head its diff
+ * ends at, else the layer on screen. It's the one the header and the strip name.
+ */
+export function shownLayerOf(
+  named: PullTabName & { readonly layer?: number | undefined; readonly run?: Run | undefined },
+): number {
+  return named.run ? topOf(named.run) : layerOf(named);
+}
+
+/**
  * The id of every view of `open`: each tab's own, each other layer a pull request's tab has a view
  * of, and the run of layers it shows, if any. What a feature keeps for a view goes once its id is
  * no longer among them.

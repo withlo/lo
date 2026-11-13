@@ -252,6 +252,20 @@ export interface Note {
 }
 
 /**
+ * The note over the diff of a run of a stack's layers, bottom first: which layers it holds, as the
+ * note names what a diff compares. A run that GitHub couldn't compare (`uncompared`) shows the top
+ * layer's pull request, which is what the note says then.
+ */
+export function runNoteOf(layers: readonly number[], uncompared: boolean): Note {
+  const [bottom] = layers;
+  const top = layers.at(-1);
+  if (uncompared || bottom === undefined || top === undefined) {
+    return { tone: 'plain', text: 'Every change in the pull request' };
+  }
+  return { tone: 'plain', text: `Every change in #${bottom} to #${top}` };
+}
+
+/**
  * The note over the diff: what it compares, and anything to know about how. A comparison offered,
  * which came too late to be drawn first, is named with the key that opens the picker at it,
  * `pickerKey`.

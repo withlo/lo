@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { untilLocalCopy } from '../../diff/window/shared.ts';
 import type { Row, StackView } from '../contract.ts';
 import { barOf } from './RunOnScreen.tsx';
 import { bandOf } from './Stack.tsx';
@@ -58,8 +59,21 @@ describe('the bar over a run of layers', () => {
     const run = { layers: [83, 84], start: START, from: 84 };
     expect(barOf(run, VIEW).instead).toBeUndefined();
     expect(barOf(run, VIEW, true).instead).toBe(
-      'Only #84’s pull request: GitHub couldn’t compare the run as one diff',
+      'Showing only #84’s pull request: GitHub couldn’t compare the run as one diff',
     );
+  });
+
+  it('says the local copy replaces it with the run, as the status bar does, where it will', () => {
+    const run = { layers: [83, 84], start: START, from: 84 };
+    expect(barOf(run, VIEW, true, untilLocalCopy(undefined)).instead).toBe(
+      'Showing only #84’s pull request until the local copy is ready: GitHub couldn’t compare the run as one diff',
+    );
+    // Without git, nothing will.
+    expect(
+      barOf(run, VIEW, true, untilLocalCopy({ kind: 'noGit', message: '', install: '' })).instead,
+    ).toBe('Showing only #84’s pull request: GitHub couldn’t compare the run as one diff');
+    // Nothing is said instead of a run that was compared.
+    expect(barOf(run, VIEW, false, untilLocalCopy(undefined)).instead).toBeUndefined();
   });
 
   it('names its layers by number until the stack is known', () => {

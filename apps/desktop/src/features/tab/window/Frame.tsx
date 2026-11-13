@@ -1,7 +1,7 @@
 // The window's frame: the strip of tabs, and under it the tab on screen, drawn by the view its
 // kind's feature puts in the `tab.kinds` slot, with whatever covers it over it.
 
-import { TabBar, type Tab as StripTab } from '@lo/ui';
+import { TabBar } from '@lo/ui';
 import { NO_TARGET } from '@lo/ui/commands';
 import { useEffect, useRef } from 'react';
 import { useStore } from 'zustand';
@@ -9,44 +9,12 @@ import { useStore } from 'zustand';
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { focusMiddle, registry } from '../../../window/commands/registry.ts';
 import { Slot } from '../../../window/slots.tsx';
-import { layerOf, viewId, type PullView, type Tab } from '../contract.ts';
 import { main } from './main.ts';
 import { moreStore, setFolded, setMoreOpen } from './more.ts';
 import { dropTab, movedStore } from './order.ts';
 import { cover, kinds, useActiveTab, useTabs } from './shared.ts';
 import { pullsStore } from './store.ts';
-import { withoutBidi } from './title.ts';
-
-/**
- * How the strip draws `tab`: a pull request's by its layer on screen, with `view`, what main said
- * of that layer's view, still opening until its title arrives, unless main has said it can't be
- * shown or isn't opening it yet. A stack's tab says how many layers it has.
- */
-function stripTab(tab: Tab, view: PullView | undefined): StripTab {
-  switch (tab.kind) {
-    case 'pull': {
-      const { id, repo, title, state, stack } = tab;
-      const header = view?.header;
-      const shownTitle = header?.title ?? title;
-      return {
-        kind: 'pull',
-        id,
-        repo,
-        number: layerOf(tab),
-        title: shownTitle === undefined ? undefined : withoutBidi(shownTitle),
-        state: header?.state ?? state,
-        stack: stack?.layers.length,
-        loading: view === undefined || (view.loading && view.problem === null),
-      };
-    }
-    case 'recent':
-    case 'settings':
-      return { kind: tab.kind, id: tab.id };
-    default:
-      tab satisfies never;
-      throw new Error(`A tab of an unknown kind: ${JSON.stringify(tab)}.`);
-  }
-}
+import { stripTab } from './strip.ts';
 
 /** The tab a right-click landed on, by the id the strip gives each. */
 function tabAt(target: EventTarget): string | undefined {
@@ -72,9 +40,7 @@ export function TabStrip() {
   return (
     <div className="contents" {...menu}>
       <TabBar
-        tabs={tabs.map((tab) =>
-          stripTab(tab, views.get(tab.kind === 'pull' ? viewId(tab, layerOf(tab)) : tab.id)),
-        )}
+        tabs={tabs.map((tab) => stripTab(tab, views))}
         selected={active}
         moreOpen={moreOpen}
         onMoreOpenChange={setMoreOpen}

@@ -413,9 +413,25 @@ export function StackTree({
     if (layers[index]?.sitsOn !== undefined) below = true;
   }
 
-  // The layer the keyboard moved to, and the one on screen when it changes, come into view.
-  useEffect(() => reveal(scroller.current, focused), [focused]);
-  useEffect(() => reveal(scroller.current, current), [current]);
+  // The layer the keyboard moved to, and the one on screen when it changes, come into view, and
+  // stay in view when the tree's height changes under them: an offer arriving above it, a note
+  // below, or the window's size.
+  const keeping = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (focused !== undefined) keeping.current = focused;
+    reveal(scroller.current, focused);
+  }, [focused]);
+  useEffect(() => {
+    if (current !== undefined) keeping.current = current;
+    reveal(scroller.current, current);
+  }, [current]);
+  useEffect(() => {
+    const tree = scroller.current;
+    if (tree === null || typeof ResizeObserver === 'undefined') return undefined;
+    const watching = new ResizeObserver(() => reveal(tree, keeping.current));
+    watching.observe(tree);
+    return () => watching.disconnect();
+  }, []);
 
   const setRefs = (element: HTMLDivElement | null) => {
     scroller.current = element;

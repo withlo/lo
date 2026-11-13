@@ -17,6 +17,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanUp();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const LAYERS: StackTreeLayer[] = [
@@ -399,6 +400,44 @@ describe('StackTree', () => {
       expect(scroller.scrollTop).toBe(0);
       rerender(host, <StackTree {...props({ focused: 'a', current: 'e' })} />);
       expect(scroller.scrollTop).toBe(24 + 4 * 40 + 40 - 100);
+    });
+
+    it('keeps the layer on screen in view when the tree gets shorter, as an offer above it does', () => {
+      // jsdom has no layout, and no ResizeObserver: one that tells when the tree's size changes.
+      const resized: (() => void)[] = [];
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(callback: () => void) {
+            resized.push(callback);
+          }
+          observe() {}
+          disconnect() {}
+        },
+      );
+      const host = render(<StackTree {...props({ current: 'c' })} />);
+      const scroller = tree(host);
+      let height = 238;
+      Object.defineProperty(scroller, 'clientHeight', { get: () => height });
+      Object.defineProperty(scroller, 'scrollTop', { value: 0, writable: true });
+      for (const [key, element] of rows(host)) {
+        Object.defineProperty(element, 'offsetTop', {
+          value: 24 + LAYERS.findIndex((each) => each.key === key) * 40,
+        });
+        Object.defineProperty(element, 'offsetHeight', { value: 40 });
+      }
+      // The tree shows every row, so nothing scrolls. Then an offer arrives above it, and it has
+      // 100 of its height left: the layer on screen is below it, so the tree scrolls to it.
+      for (const resize of resized) resize();
+      expect(scroller.scrollTop).toBe(0);
+      height = 100;
+      for (const resize of resized) resize();
+      expect(scroller.scrollTop).toBe(24 + 2 * 40 + 40 - 100);
+      // The keyboard moved on to another layer since: that's the one it keeps in view now.
+      rerender(host, <StackTree {...props({ current: 'c', focused: 'e' })} />);
+      height = 80;
+      for (const resize of resized) resize();
+      expect(scroller.scrollTop).toBe(24 + 4 * 40 + 40 - 80);
     });
   });
 

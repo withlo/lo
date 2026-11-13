@@ -42,6 +42,38 @@ describe('RunBar', () => {
     );
   });
 
+  it('says what shows instead when the run couldn’t be compared, and no longer the branches or the files', () => {
+    const host = render(
+      <RunBar
+        {...PROPS}
+        instead="Showing only #4821’s pull request: GitHub couldn’t compare the run as one diff"
+      />,
+    );
+    expect(said(host)).toBe(
+      'Showing only #4821’s pull request: GitHub couldn’t compare the run as one diff · #4819 Load per-plan limits and #4821 Rate limit GraphQL queries by cost' +
+        'Back to #4821Esc',
+    );
+    // Neither how many layers it holds, nor where its diff goes between, nor how many files.
+    expect(said(host)).not.toContain('layers as one diff');
+    expect(said(host)).not.toContain('→');
+    expect(said(host)).not.toContain('245');
+  });
+
+  it('keeps the file count whole, and leaves the branches out first, when the bar is narrow', async () => {
+    const host = render(<RunBar {...PROPS} />);
+    const count = [...host.querySelectorAll('span')].find(
+      (each) => each.textContent === '245 files',
+    );
+    const branches = host.querySelector('span.truncate');
+    expect(count?.className).toContain('whitespace-nowrap');
+    expect(count?.className).not.toContain('truncate');
+    // The bar is the container the branches are measured against, and a narrow one hides them.
+    expect(host.querySelector('[role="region"]')?.className).toContain('@container');
+    expect(branches?.className).toContain('run-branches');
+    const css = await buildCss(['run-branches']);
+    expect(css).toMatch(/\.run-branches \{[^}]*@container \(width < 1000px\) \{\s*display: none;/);
+  });
+
   it('lists three layers or more with commas, and names a layer by number until its title is known', () => {
     const host = render(
       <RunBar

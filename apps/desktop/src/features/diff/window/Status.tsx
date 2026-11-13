@@ -6,6 +6,7 @@ import { StatusItem } from '@lo/ui';
 import { useCallback, useSyncExternalStore } from 'react';
 
 import { useLocalCopy, type PullTab } from '../../tab/window/shared.ts';
+import { untilLocalCopy } from './shared.ts';
 import { loaderOf } from './tabs.ts';
 
 export function DiffStatus({ tab }: { tab: PullTab }) {
@@ -15,7 +16,7 @@ export function DiffStatus({ tab }: { tab: PullTab }) {
     loader.snapshot(),
   );
   // Without git, what GitHub says is all there is.
-  const later = useLocalCopy(tab.id)?.kind === 'noGit' ? '' : ' until the local copy is ready';
+  const later = untilLocalCopy(useLocalCopy(tab.id));
   return (
     <>
       {ready?.from === 'github' && (
@@ -35,8 +36,7 @@ export function DiffStatus({ tab }: { tab: PullTab }) {
           Some files left out
         </StatusItem>
       )}
-      {state?.uncompared &&
-        ready?.from === 'github' &&
+      {ready?.uncompared &&
         (tab.run ? (
           <StatusItem
             dot="warn"

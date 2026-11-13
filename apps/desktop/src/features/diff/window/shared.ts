@@ -6,7 +6,9 @@
 import { createElement, type ReactNode } from 'react';
 
 import { defineSlot, Slot } from '../../../window/slots.tsx';
+import type { LocalState } from '../../tab/contract.ts';
 import { showMiddle, type PullTab } from '../../tab/window/shared.ts';
+import type { DiffState } from '../contract.ts';
 import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
 import { Beside } from './Beside.tsx';
 import { changed, explainWith, type Explainer } from './explained.ts';
@@ -33,22 +35,45 @@ export function showDiff(tab: string): boolean {
 }
 
 /**
- * How many files pull request's tab `tab`'s diff shows, once main has said, with whether GitHub
- * listed only some of them, and whether GitHub couldn't compare it from where it should start, so
- * it shows the pull request's own files until the local copy is ready; re-rendering as that
- * changes.
+ * How many files pull request's tab `tab`'s diff on screen shows, once it can be drawn, with whether
+ * GitHub listed only some of them, and whether GitHub couldn't compare it from where it should
+ * start, so it shows the pull request's own files until the local copy is ready; re-rendering as
+ * that changes. It reads what the status bar reads, the files drawn, so the two agree.
  */
 export function useDiffFiles(
   tab: string,
 ): { readonly count: number; readonly partial: boolean; readonly uncompared: boolean } | undefined {
-  const { state } = useSnapshot(loaderOf(tab));
-  return state?.files
-    ? {
-        count: state.files.length,
-        partial: state.partial,
-        uncompared: state.uncompared && state.from === 'github',
-      }
-    : undefined;
+  const { ready } = useSnapshot(loaderOf(tab));
+  return (
+    ready && {
+      count: ready.entries.length,
+      partial: ready.partial,
+      uncompared: ready.uncompared,
+    }
+  );
+}
+
+/** What main last said of pull request's tab `tab`'s diff, re-rendering as it changes. */
+export function useDiffState(tab: string): DiffState | undefined {
+  return useSnapshot(loaderOf(tab)).state;
+}
+
+/** What main last said of pull request's tab `tab`'s diff, read once. */
+export function diffStateOf(tab: string): DiffState | undefined {
+  return loaderOf(tab).snapshot().state;
+}
+
+/** Calls `listener` each time main says pull request's tab `tab`'s diff anew. Returns a function that stops it. */
+export function onDiffState(tab: string, listener: () => void): () => void {
+  return loaderOf(tab).subscribe(listener);
+}
+
+/**
+ * What replaces a diff that's GitHub's until the local copy is ready, as a clause for a sentence:
+ * ` until the local copy is ready`, or nothing where it never will be, as without git.
+ */
+export function untilLocalCopy(local: LocalState | undefined): string {
+  return local?.kind === 'noGit' ? '' : ' until the local copy is ready';
 }
 
 /**

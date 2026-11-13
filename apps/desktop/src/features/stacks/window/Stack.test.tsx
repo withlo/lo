@@ -27,8 +27,7 @@ const ROW: Row = {
 };
 
 const ON_SCREEN: OnScreen = {
-  count: { viewed: 1, total: 3 },
-  files: { id: 't1', files: [], total: 3 },
+  count: { viewed: 1, total: 3, partial: true },
   overview: 'stale',
 };
 
@@ -60,17 +59,10 @@ describe('a row', () => {
     const current = { ...ROW, current: true, viewed: { source: 'tab' as const } };
     expect(layerOf(current, ON_SCREEN)).toMatchObject({
       overview: 'stale',
-      // GitHub listed fewer files than the pull request changes.
+      // GitHub listed only some of the files, so there may be more.
       viewed: { viewed: 1, total: 3, partial: true },
     });
-    const listed = {
-      ...ON_SCREEN,
-      files: {
-        id: 't1',
-        files: ['a', 'b', 'c'].map((path) => ({ path, viewed: 'unviewed' as const })),
-        total: 3,
-      },
-    };
+    const listed = { ...ON_SCREEN, count: { viewed: 1, total: 3, partial: false } };
     expect(layerOf(current, listed).viewed).toEqual({ viewed: 1, total: 3, partial: false });
     expect(layerOf(current, { ...ON_SCREEN, count: undefined }).viewed).toBeUndefined();
   });

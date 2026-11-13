@@ -11,13 +11,20 @@ export interface RunBarLayer {
 export interface RunBarProps {
   /** The run's layers, bottom first. */
   layers: readonly RunBarLayer[];
-  /** The branch its diff starts from, under its bottom layer, and the one it ends at, its top's. */
+  /**
+   * The branch its diff starts from, under its bottom layer, and the one it ends at, its top's.
+   * Left out while `instead` is, since they don't describe what's on screen.
+   */
   branches?: { readonly from: string; readonly to: string } | undefined;
-  /** How many files its diff changes, once that's known, with whether more were left out. */
+  /**
+   * How many files its diff changes, once that's known, with whether more were left out. Left out
+   * while `instead` is, for the same reason.
+   */
   files?: { readonly count: number; readonly partial?: boolean | undefined } | undefined;
   /**
    * What shows instead of the run's diff, in words, when it couldn't be compared as one: said in
-   * place of how many layers it holds, which isn't what's on screen.
+   * place of how many layers it holds, which isn't what's on screen, and with neither the branches
+   * nor the file count, which describe the run's diff.
    */
   instead?: string | undefined;
   /** The layer the button goes back to: the one the run was chosen from. */
@@ -47,16 +54,23 @@ function fileCount({ count, partial }: NonNullable<RunBarProps['files']>): strin
  * The bar across the top of the middle while a run of a stack's layers is on screen as one diff:
  * how many layers and which, or what shows instead when it couldn't be compared, the branches the
  * diff goes between, how many files it changes, and the way back to the layer the run was chosen
- * from. A pull request's text is drawn as text; the key
- * and what the button does belong to the caller.
+ * from. A pull request's text is drawn as text; the key and what the button does belong to the
+ * caller.
+ *
+ * The count of files keeps its room whatever the width. The branches are the first to go: a bar
+ * under 1,000 px wide, as the window's default is, leaves them out rather than cutting the layers'
+ * names, or the count, short for them.
  */
 export function RunBar({ layers, branches, files, instead, back, backKeys, onBack }: RunBarProps) {
   const which = listed(layers.map(named));
+  // What's on screen isn't the run's diff, so neither is where it goes between nor how many files.
+  const between = instead === undefined ? branches : undefined;
+  const count = instead === undefined ? files : undefined;
   return (
     <div
       role="region"
       aria-label="Run of layers"
-      className="flex min-w-0 flex-none items-center gap-12 border-b border-accent-line bg-accent-soft py-4 ps-16 pe-8 text-fg text-ui"
+      className="@container flex min-w-0 flex-none items-center gap-12 border-b border-accent-line bg-accent-soft py-4 ps-16 pe-8 text-fg text-ui"
     >
       <svg className="lo-i flex-none text-fg-accent" viewBox="0 0 16 16" aria-hidden="true">
         <path d="M8 2.25 13.75 5 8 7.75 2.25 5Z" />
@@ -68,11 +82,15 @@ export function RunBar({ layers, branches, files, instead, back, backKeys, onBac
         </strong>{' '}
         · {which}
       </p>
-      {(branches !== undefined || files !== undefined) && (
-        <span className="min-w-0 truncate text-fg-muted code-small">
-          {branches !== undefined && `${branches.from} → ${branches.to}`}
-          {branches !== undefined && files !== undefined && ' · '}
-          {files !== undefined && fileCount(files)}
+      {(between !== undefined || count !== undefined) && (
+        <span className="flex flex-none items-center gap-6 text-fg-muted code-small">
+          {between !== undefined && (
+            <span className="run-branches min-w-0 truncate">
+              {between.from} → {between.to}
+              {count !== undefined && ' · '}
+            </span>
+          )}
+          {count !== undefined && <span className="whitespace-nowrap">{fileCount(count)}</span>}
         </span>
       )}
       <span className="flex-1" />

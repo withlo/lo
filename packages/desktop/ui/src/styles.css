@@ -301,6 +301,16 @@
   gap: var(--lo-sp-6) var(--lo-sp-12);
 }
 
+/* The branches in a run's bar, which the bar leaves out when it's under 1,000px wide, as the
+   window's default is: there's no room for them beside the layers' names, which would be cut short
+   for them, and the count of files, which is never cut. The bar is the container (`@container`). */
+@utility run-branches {
+  max-width: 20rem;
+  @container (width < 1000px) {
+    display: none;
+  }
+}
+
 /* Dialogs and palettes sit over the window. */
 @utility z-dialog {
   z-index: var(--lo-z-dialog);

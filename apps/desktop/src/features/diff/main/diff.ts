@@ -84,6 +84,11 @@ interface At {
   /** The commit the whole pull request is compared with, for a stack's layer. */
   readonly compareFrom: Oid | undefined;
   from: Source | undefined;
+  /**
+   * The commit the files' changes start from, once the local copy has worked them out: where the
+   * head meets what it's compared with. GitHub doesn't say, so none while the files are GitHub's.
+   */
+  start: Oid | undefined;
   files: FileVersions[] | undefined;
   /** GitHub's patches, by the files' places, while the files are GitHub's. */
   patches: (string | undefined)[];
@@ -171,6 +176,7 @@ export class DiffTab {
       since: at?.since ?? null,
       waiting: this.#waiting ?? null,
       from: at?.from ?? null,
+      start: at?.start ?? null,
       files: at?.files ?? null,
       partial: at?.partial ?? false,
       uncompared: at?.uncompared ?? false,
@@ -262,6 +268,7 @@ export class DiffTab {
       comparing,
       compareFrom,
       from: undefined,
+      start: undefined,
       files: undefined,
       patches: [],
       partial: false,
@@ -577,6 +584,7 @@ export class DiffTab {
       at.files = narrowed.files;
       at.since = narrowed.key;
       at.from = 'local';
+      at.start = mergeBase;
       at.patches = [];
       at.partial = false;
       at.problem = undefined;
