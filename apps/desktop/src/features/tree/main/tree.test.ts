@@ -4,6 +4,7 @@ import { replayFetch } from '@lo/testing';
 import { APP_PULL, RepoServer } from '@lo/testing/git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import type { Comparing } from '../../revisions/service.ts';
 import type { LocalState } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type { Changed, TreeState } from '../contract.ts';
@@ -592,7 +593,7 @@ describe('a stack’s layer’s tree', () => {
     const { tree, settled } = treeTab({ github });
     tree.update(layerInfo(B));
     const state = await settled((sent) => sent.changes !== null && sent.from !== null);
-    expect(state).toMatchObject({ at: C, changesFrom: 'github', partial: false });
+    expect(state).toMatchObject({ at: C, changesFrom: 'github', partial: false, start: B });
     expect(changes(state)).toEqual(['added e2/c.txt']);
     expect(asked).toContain(`/repos/rozed-dev/e2e/compare/${B}...${C}`);
     expect(asked).not.toContain('/repos/rozed-dev/e2e/pulls/4/files');
@@ -623,13 +624,60 @@ describe('a stack’s layer’s tree', () => {
     tree.update(layerInfo(undefined));
     const own = await settled((state) => state.changes !== null && state.from !== null);
     expect(changes(own)).toEqual(['added e2/b.txt']);
+    expect(own.start).toBeNull();
     const trees = asked.filter((path) => path.includes('/git/trees/')).length;
     tree.update(layerInfo(B));
     // What the head holds stays while what changed is read again.
-    expect(sent.at(-1)).toMatchObject({ from: 'github', changes: null });
+    expect(sent.at(-1)).toMatchObject({ from: 'github', changes: null, start: B });
     const compared = await settled((state) => state.changes !== null);
     expect(changes(compared)).toEqual(['added e2/c.txt']);
+    expect(compared.start).toBe(B);
     expect(asked.filter((path) => path.includes('/git/trees/'))).toHaveLength(trees);
+  });
+
+  it('lists the layer’s own files from GitHub, from where it starts, when the local copy refuses the comparison', async () => {
+    const repo = await e2eClone();
+    const refusing = new Proxy(repo, {
+      get(target, property) {
+        if (property === 'compareRevisions') {
+          return () => Promise.resolve({ refused: true, limit: 200 * 2 ** 20 });
+        }
+        const value: unknown = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const { github } = layerGithub();
+    const { tree, settled } = treeTab({ clone: () => Promise.resolve(refusing), github });
+    tree.update(
+      layerInfo(B, {
+        kind: 'ready',
+        head: C,
+        base: B,
+        mergeBase: B,
+        from: { commit: B, missing: false },
+        offline: false,
+      }),
+    );
+    const state = await settled((sent) => sent.changesFrom === 'github' && sent.changes !== null);
+    expect(state).toMatchObject({ at: C, start: B, partial: false });
+    expect(state.problem).toContain('larger than 200 MB');
+    expect(changes(state)).toEqual(['added e2/c.txt']);
+  });
+
+  it('has no start while revisions are compared, which a layer’s own files are listed from', () => {
+    const { github } = layerGithub();
+    const { tree, sent } = treeTab({ github });
+    tree.update(layerInfo(B));
+    expect(sent.at(-1)).toMatchObject({ at: C, start: B });
+    const side = { head: parseOid(C), base: parseOid(B) };
+    const comparing: Comparing = {
+      key: 'r3 r4',
+      old: side,
+      new: side,
+      compared: () => Promise.reject(new Error('this test reads nothing from the local copy')),
+    };
+    tree.update(layerInfo(B), { kind: 'revisions', comparing });
+    expect(sent.at(-1)).toMatchObject({ at: C, start: null });
   });
 
   it('waits for the local copy compared with the same commit', async () => {
