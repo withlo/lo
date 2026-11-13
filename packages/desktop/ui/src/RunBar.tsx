@@ -15,6 +15,11 @@ export interface RunBarProps {
   branches?: { readonly from: string; readonly to: string } | undefined;
   /** How many files its diff changes, once that's known, with whether more were left out. */
   files?: { readonly count: number; readonly partial?: boolean | undefined } | undefined;
+  /**
+   * What shows instead of the run's diff, in words, when it couldn't be compared as one: said in
+   * place of how many layers it holds, which isn't what's on screen.
+   */
+  instead?: string | undefined;
   /** The layer the button goes back to: the one the run was chosen from. */
   back: number;
   /** The button's key, as the system shows it, if it has one. */
@@ -40,11 +45,12 @@ function fileCount({ count, partial }: NonNullable<RunBarProps['files']>): strin
 
 /**
  * The bar across the top of the middle while a run of a stack's layers is on screen as one diff:
- * how many layers and which, the branches the diff goes between, how many files it changes, and the
- * way back to the layer the run was chosen from. A pull request's text is drawn as text; the key
+ * how many layers and which, or what shows instead when it couldn't be compared, the branches the
+ * diff goes between, how many files it changes, and the way back to the layer the run was chosen
+ * from. A pull request's text is drawn as text; the key
  * and what the button does belong to the caller.
  */
-export function RunBar({ layers, branches, files, back, backKeys, onBack }: RunBarProps) {
+export function RunBar({ layers, branches, files, instead, back, backKeys, onBack }: RunBarProps) {
   const which = listed(layers.map(named));
   return (
     <div
@@ -57,7 +63,10 @@ export function RunBar({ layers, branches, files, back, backKeys, onBack }: RunB
         <path d="M2.25 8 8 10.75 13.75 8M2.25 11 8 13.75 13.75 11" />
       </svg>
       <p className="min-w-0 truncate" title={which}>
-        <strong className="font-semibold">{layers.length} layers as one diff</strong> · {which}
+        <strong className="font-semibold">
+          {instead ?? `${layers.length} layers as one diff`}
+        </strong>{' '}
+        · {which}
       </p>
       {(branches !== undefined || files !== undefined) && (
         <span className="min-w-0 truncate text-fg-muted code-small">

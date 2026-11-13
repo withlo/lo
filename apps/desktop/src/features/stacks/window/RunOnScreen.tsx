@@ -1,6 +1,8 @@
 // The bar across the top of the middle while a run of a stack's layers is on screen as one diff:
 // which layers, the branches its diff goes between, how many files it changes, and the way back to
-// the layer it was chosen from, which `Esc` takes too. Nothing shows for a view of one layer.
+// the layer it was chosen from, which `Esc` takes too. While GitHub couldn't compare the run, it
+// says so, and that the top layer's pull request shows instead. Nothing shows for a view of one
+// layer.
 
 import { RunBar } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
@@ -8,6 +10,7 @@ import { useEffect } from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { useDiffFiles } from '../../diff/window/shared.ts';
+import { topOf } from '../../tab/contract.ts';
 import { useTabState, withoutBidi, type PullTab, type Run } from '../../tab/window/shared.ts';
 import type { StackView } from '../contract.ts';
 import { catchUp, stacks } from './layers.ts';
@@ -22,15 +25,21 @@ function keyOf(id: string): string[] | undefined {
 /**
  * What the bar says of `run` from its stack, `view`: each layer's title, and the branches its diff
  * goes between: from the head of the layer below its bottom one, or the branch the stack sits on,
- * to its top layer's head. Only numbers until the stack is known.
+ * to its top layer's head. Only numbers until the stack is known. When GitHub couldn't compare it
+ * (`uncompared`), what shows instead: the top layer's pull request, as GitHub lists it.
  */
 export function barOf(
   run: Run,
   view: StackView | undefined,
+  uncompared = false,
 ): {
   layers: { number: number; title: string | undefined }[];
   branches: { from: string; to: string } | undefined;
+  instead: string | undefined;
 } {
+  const instead = uncompared
+    ? `Only #${topOf(run)}’s pull request: GitHub couldn’t compare the run as one diff`
+    : undefined;
   const rows = view?.kind === 'stack' ? view.rows : [];
   const rowOf = (number: number | undefined) => rows.find((row) => row.number === number);
   const layers = run.layers.map((number) => {
@@ -39,11 +48,13 @@ export function barOf(
   });
   const bottom = rowOf(run.layers[0]);
   const top = rowOf(run.layers.at(-1));
-  if (view?.kind !== 'stack' || !bottom || !top) return { layers, branches: undefined };
+  if (view?.kind !== 'stack' || !bottom || !top) return { layers, branches: undefined, instead };
   const below = bottom.path.at(-2);
   const from = below === undefined ? view.root : rowOf(below)?.head;
-  if (from === undefined || from === '' || top.head === '') return { layers, branches: undefined };
-  return { layers, branches: { from: withoutBidi(from), to: withoutBidi(top.head) } };
+  if (from === undefined || from === '' || top.head === '') {
+    return { layers, branches: undefined, instead };
+  }
+  return { layers, branches: { from: withoutBidi(from), to: withoutBidi(top.head) }, instead };
 }
 
 /** The bar over the run of layers `tab` shows, while it shows one. */
@@ -59,12 +70,13 @@ function Bar({ tab, run }: { tab: PullTab; run: Run }) {
   useEffect(() => {
     if (stacks.get(tab.id) === undefined) catchUp(tab.id);
   }, [tab.id]);
-  const { layers, branches } = barOf(run, view);
+  const { layers, branches, instead } = barOf(run, view, files?.uncompared);
   return (
     <RunBar
       layers={layers}
       branches={branches}
       files={files}
+      instead={instead}
       back={run.from}
       backKeys={keyOf('stacks.back')}
       onBack={leaveRun}

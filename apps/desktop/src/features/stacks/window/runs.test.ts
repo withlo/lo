@@ -61,6 +61,22 @@ describe('a run of layers being chosen', () => {
     expect(stepChoice(ROWS, from(82), 1)).toEqual(from(82, 83));
   });
 
+  it('never drops a layer it holds for one on another branch, and stays at the branch’s end', () => {
+    // From #82, j takes #83, the first layer on it, then #84, then stays: #85 would drop both.
+    let choice = from(82);
+    const ends = [1, 1, 1].map(() => {
+      choice = stepChoice(ROWS, choice, 1);
+      return choice.end;
+    });
+    expect(ends).toEqual([83, 84, 84]);
+    // k shrinks it back the same way, and from the stack's bottom it stays.
+    expect(stepChoice(ROWS, from(82, 84), -1)).toEqual(from(82, 83));
+    expect(stepChoice(ROWS, from(82, 83), -1)).toEqual(from(82, 82));
+    expect(stepChoice(ROWS, from(82), -1)).toEqual(from(82, 82));
+    // From #84 down to #82, j shrinks it from the bottom, toward where it started.
+    expect(stepChoice(ROWS, from(84, 82), 1)).toEqual(from(84, 83));
+  });
+
   it('says which layers, what they’re compared with, and what the keys do', () => {
     expect(choiceNote(ROWS, 'stack/root', { anchor: 83, end: 84 }, KEYS)).toBe(
       '#83 and #84, compared with the top of #82. ⏎ shows them as one diff; Esc goes back to one layer.',

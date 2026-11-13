@@ -1,6 +1,6 @@
 // Choosing a run of a stack's layers in its tree, to view as one diff: `v` starts one at the layer
-// the keyboard is on, and `j` and `k` move its other end along the branch it's on, past the layers
-// on other branches, since only a chain, each layer sitting on the one before, is one diff. Each row
+// the keyboard is on, and `j` and `k` move its other end along the branch it's on, never onto
+// another, since only a chain, each layer sitting on the one before, is one diff. Each row
 // main sends has its path from the stack's bottom, which is all a chain needs. Nothing here touches
 // the DOM or main.
 
@@ -28,17 +28,30 @@ export function chainIn(rows: readonly Row[], a: number, b: number): readonly nu
 }
 
 /**
- * Where `j` (`by` 1) or `k` (-1) moves `choice`'s end: to the next row in the tree's order that's
- * on one branch with where it started, skipping the rest. At either end of that branch it stays.
+ * Where `j` (`by` 1) or `k` (-1) moves `choice`'s end, which is the run's top or its bottom. `j`
+ * takes the end up a layer: from the bottom, toward where the run started; from the top, onto the
+ * first layer in the tree's order that sits on it, the rest being other branches. `k` takes it
+ * down a layer: from the top, toward where it started; from the bottom, onto the layer it sits on.
+ * Neither drops a layer the run holds for one on another branch, and at the end of the branch, or
+ * the stack's bottom, the end stays.
  */
 export function stepChoice(rows: readonly Row[], choice: Choice, by: 1 | -1): Choice {
-  const at = rows.findIndex((row) => row.number === choice.end);
-  if (at < 0) return choice;
-  for (let index = at + by; index >= 0 && index < rows.length; index += by) {
-    const row = rows[index];
-    if (row && chainIn(rows, choice.anchor, row.number)) return { ...choice, end: row.number };
+  const run = chainIn(rows, choice.anchor, choice.end);
+  if (!run) return choice;
+  const at = run.indexOf(choice.end);
+  const [bottom] = run;
+  const top = run.at(-1);
+  let end: number | undefined;
+  if (by > 0) {
+    end =
+      choice.end === top
+        ? rows.find((row) => row.path.length > 1 && row.path.at(-2) === top)?.number
+        : run[at + 1];
+  } else {
+    end =
+      choice.end === bottom ? rows.find((row) => row.number === bottom)?.path.at(-2) : run[at - 1];
   }
-  return choice;
+  return end === undefined ? choice : { ...choice, end };
 }
 
 /** "#83", "#83 and #84", "#82, #83 and #84". */
