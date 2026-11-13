@@ -1,8 +1,9 @@
-export { Markdown, reveal, type MarkdownProps } from './Markdown.tsx';
+export { Markdown, MAX_IMAGES, reveal, type MarkdownProps } from './Markdown.tsx';
 export {
   drawBlock,
   drawBlocks,
   drawInlines,
+  firstImages,
   Fold,
   FollowLink,
   MarkdownBlock,

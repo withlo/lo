@@ -6,6 +6,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { githubTree, markdownTree, type Block, type Inline, type Tree } from '@lo/markdown';
 
+import { act } from 'react';
+
 import { buildCss, hasRule } from '../../scripts/stylesheet.ts';
 import { cleanUp, click, disallowed, ids, press, render } from '../../test/dom.ts';
 import {
@@ -14,6 +16,7 @@ import {
   isMarkdownAttribute,
   Markdown,
   MARKDOWN_ELEMENTS,
+  MAX_IMAGES,
   type Followed,
   type Rendering,
 } from './index.ts';
@@ -310,6 +313,135 @@ describe('links', () => {
   });
 });
 
+/** Where main serves an image: its address, on the image scheme. */
+const served = (url: string) => `lo-image://post/tab/${encodeURIComponent(url)}`;
+const picture = (url: string, alt = 'a picture'): Inline => ({ kind: 'image', url, alt });
+
+describe('images', () => {
+  it('loads an image only from main, lazily, with its alt text', () => {
+    const url = 'https://camo.githubusercontent.com/a';
+    const page = render(<Markdown tree={tree([paragraph(picture(url))])} images={served} />);
+    const image = page.querySelector('img');
+    expect(image?.getAttribute('src')).toBe(served(url));
+    expect(image?.getAttribute('alt')).toBe('a picture');
+    expect(image?.getAttribute('loading')).toBe('lazy');
+    expect(image?.getAttribute('decoding')).toBe('async');
+    expect(page.querySelector('a')).toBeNull();
+  });
+
+  it('shows an image as a link without an address from main, or with one not on its scheme', () => {
+    const url = 'https://camo.githubusercontent.com/a';
+    const none = render(
+      <Markdown tree={tree([paragraph(picture(url))])} images={() => undefined} />,
+    );
+    const elsewhere = render(
+      <Markdown tree={tree([paragraph(picture(url))])} images={(address) => address} />,
+    );
+    for (const page of [none, elsewhere]) {
+      expect(page.querySelector('img')).toBeNull();
+      expect(page.querySelector('a')?.textContent).toBe('a picture');
+    }
+  });
+
+  it('shows its link in its place once it fails', () => {
+    const onFollow = vi.fn<(target: Followed, from: Element) => void>();
+    const url = 'https://camo.githubusercontent.com/a';
+    const page = render(
+      <Markdown tree={tree([paragraph(picture(url, ''))])} images={served} onFollow={onFollow} />,
+    );
+    act(() => {
+      page.querySelector('img')?.dispatchEvent(new Event('error'));
+    });
+    expect(page.querySelector('img')).toBeNull();
+    const link = page.querySelector('a');
+    expect(link?.textContent).toBe('Image');
+    click(link!);
+    expect(onFollow).toHaveBeenCalledWith({ kind: 'web', url }, link);
+  });
+
+  it(`loads the first ${MAX_IMAGES} images in the text, wherever they are, and links the rest`, () => {
+    const urls = Array.from(
+      { length: MAX_IMAGES + 5 },
+      (_, index) => `https://camo.githubusercontent.com/${index}`,
+    );
+    const page = render(
+      <Markdown
+        tree={tree([
+          paragraph(...urls.slice(0, 10).map((url) => picture(url))),
+          {
+            kind: 'details',
+            open: false,
+            summary: [picture(urls[10]!)],
+            children: [paragraph(...urls.slice(11, 20).map((url) => picture(url)))],
+          },
+          {
+            kind: 'list',
+            ordered: false,
+            start: 1,
+            tight: true,
+            items: [
+              {
+                children: [
+                  paragraph({
+                    kind: 'strong',
+                    children: urls.slice(20).map((url) => picture(url)),
+                  }),
+                ],
+              },
+            ],
+          },
+        ])}
+        images={served}
+      />,
+    );
+    expect([...page.querySelectorAll('img')].map((image) => image.getAttribute('src'))).toEqual(
+      urls.slice(0, MAX_IMAGES).map(served),
+    );
+    expect(page.querySelectorAll('a')).toHaveLength(5);
+  });
+
+  it('writes nothing else that loads, from hostile files, and only addresses from main', () => {
+    let shown = 0;
+    for (const name of readdirSync(HOSTILE).filter((file) => file.endsWith('.html'))) {
+      const source = readFileSync(new URL(name, HOSTILE), 'utf8');
+      const page = render(
+        <Markdown
+          tree={githubTree({ html: source, markdown: 'fallback' }, OPTIONS)}
+          images={served}
+        />,
+      );
+      shown += page.querySelectorAll('img').length;
+      for (const image of page.querySelectorAll('img')) {
+        expect([...image.attributes].map(({ name: attribute }) => attribute).toSorted()).toEqual([
+          'alt',
+          'class',
+          'decoding',
+          'loading',
+          'src',
+        ]);
+        expect(image.getAttribute('src')).toMatch(/^lo-image:\/\/post\/tab\/https%3A%2F%2F/);
+      }
+      const others = disallowed(page, allowed).filter((found) => !found.startsWith('img'));
+      expect(others).toEqual([]);
+    }
+    expect(shown).toBeGreaterThan(0);
+  });
+
+  it('uses only utilities Lo’s stylesheet has', async () => {
+    const markup = renderToStaticMarkup(
+      <Markdown
+        tree={tree([paragraph(picture('https://camo.githubusercontent.com/a'))])}
+        images={served}
+      />,
+    );
+    const classes = [...markup.matchAll(/class="([^"]*)"/g)].flatMap(([, value]) =>
+      (value ?? '').split(/\s+/),
+    );
+    const css = await buildCss(classes);
+    expect(classes.filter((name) => !hasRule(css, name))).toEqual([]);
+  });
+});
+
 const heading = (anchor: string, words: string): Block => ({
   kind: 'heading',
   level: 2,
@@ -385,6 +517,36 @@ describe('folds', () => {
     click(summary);
     expect(closed?.open).toBe(true);
     expect(closed?.textContent).toContain('Behind the title.');
+  });
+
+  it('follows a link in its title, by a click or ⏎, and stays as it was', () => {
+    const onFollow = vi.fn<(target: Followed, from: Element) => void>();
+    const page = render(
+      <Markdown
+        tree={tree([
+          {
+            ...BLOCKS.details,
+            summary: [
+              text('See '),
+              {
+                kind: 'link',
+                target: { kind: 'web', url: 'https://example.com/' },
+                children: [text('this')],
+              },
+            ],
+          },
+        ])}
+        onFollow={onFollow}
+      />,
+    );
+    const fold = page.querySelector('details')!;
+    const link = fold.querySelector('summary a')!;
+    click(link);
+    press(link, 'Enter');
+    expect(onFollow).toHaveBeenCalledTimes(2);
+    expect(fold.open).toBe(false);
+    click(fold.querySelector('summary span')!);
+    expect(fold.open).toBe(true);
   });
 });
 

@@ -1,8 +1,12 @@
+import { writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 
+import { cassette, Replay } from '@lo/testing';
+import { APP_PULL, writeAppRemote } from '@lo/testing/git';
+import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { ElectronApplication, Page } from '@playwright/test';
 
-import { expect, test } from './app.ts';
+import { appFolder, expect, KEYCHAIN, test } from './app.ts';
 
 declare global {
   interface Window {
@@ -43,9 +47,30 @@ async function inSandbox(app: ElectronApplication, pid: number): Promise<boolean
 /** The policy of a page whose style elements may carry `nonce`. */
 function policy(nonce: string): string {
   return (
-    `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; img-src 'self'; ` +
-    "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; " +
-    "form-action 'none'; frame-ancestors 'none'"
+    `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; ` +
+    "img-src 'self' lo-image:; font-src 'self'; connect-src 'self'; object-src 'none'; " +
+    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  );
+}
+
+/** What became of each image the page loaded: its size once loaded, or `refused`. */
+async function loaded(page: Page, addresses: readonly string[]): Promise<string[]> {
+  return page.evaluate(
+    (all) =>
+      Promise.all(
+        all.map(
+          (src) =>
+            new Promise<string>((resolve) => {
+              const image = new Image();
+              image.addEventListener('load', () =>
+                resolve(`${image.naturalWidth}x${image.naturalHeight}`),
+              );
+              image.addEventListener('error', () => resolve('refused'));
+              image.src = src;
+            }),
+        ),
+      ),
+    addresses,
   );
 }
 
@@ -370,6 +395,127 @@ test('spellcheck is off', async ({ app, page }) => {
   expect(enabled).toBe(false);
 });
 
+/** A stand-in token, never a real one: the cassettes were recorded with the same. */
+const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
+
+/** A 2x2 PNG attached in rozed-dev/e2e, as a post's Markdown holds it. */
+const ATTACHMENT =
+  'https://github.com/user-attachments/assets/08c730b3-f0b0-4c7d-93a2-95f8d167d0d9';
+
+/** Where the window loads a post's image in `view` from. */
+const postImage = (view: string, address: string) =>
+  `lo-image://post/${encodeURIComponent(view)}/${encodeURIComponent(address)}`;
+
+/** Lo as rozed-bot, on a GitHub that answers for #80 and for the images `images_e2e` recorded. */
+const onGithub = test.extend<{ github: ReplayServer }>({
+  // Playwright reads a fixture's dependencies from its first parameter, which must be a pattern.
+  // oxlint-disable-next-line no-empty-pattern
+  github: async ({}, use) => {
+    const interactions = ['app_e2e', 'images_e2e'].flatMap((name) =>
+      cassette(name).interactions.map(({ interaction }) => interaction),
+    );
+    const server = await serveReplay(new Replay('app_e2e with images_e2e', interactions));
+    await use(server);
+    await server.close();
+  },
+  launch: async ({ github }, use) => {
+    const tokenFile = test.info().outputPath('token');
+    writeFileSync(tokenFile, `${TOKEN}\n`);
+    await use({
+      args: [appFolder, ...KEYCHAIN],
+      env: {
+        LO_GITHUB: new URL(github.urls.api).origin,
+        LO_TEST_TOKEN_FILE: tokenFile,
+        LO_GIT_REMOTE: writeAppRemote(test.info().outputPath('remote')),
+      },
+    });
+  },
+});
+
+onGithub(
+  "images load only from main, from GitHub's image hosts, with the token for an attachment alone",
+  async ({ page, github }) => {
+    await expect
+      .poll(async () =>
+        JSON.stringify(await page.evaluate(() => window.lo.invoke('accounts.list'))),
+      )
+      .toContain('rozed-bot');
+    const reply = await page.evaluate(
+      (number) =>
+        window.lo.invoke('tab.open', { kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number }),
+      APP_PULL.number,
+    );
+    if (!reply.ok || typeof reply.value !== 'string') throw new Error(JSON.stringify(reply));
+    const view = reply.value;
+    // The tab acts as rozed-bot, so an attachment in its posts is fetched as rozed-bot.
+    await expect(page.locator('header').first()).toContainText('as rozed-bot');
+
+    const origin = new URL(github.urls.api).origin;
+    expect(
+      await loaded(page, [
+        postImage(view, ATTACHMENT),
+        'lo-image://avatar/rozed-bot?s=56',
+        postImage(view, 'https://example.com/a.png'),
+        postImage(view, 'http://camo.githubusercontent.com/a.png'),
+        'lo-image://avatar/dependabot%5Bbot%5D?s=56',
+        'lo-image://elsewhere/a.png',
+        `${origin}/images/avatars.githubusercontent.com/rozed-bot?s=56`,
+        'https://avatars.githubusercontent.com/rozed-bot?s=56',
+      ]),
+    ).toEqual(['2x2', '420x420', ...Array<string>(6).fill('refused')]);
+    // A view acting as nobody, as one Lo doesn't know does, never gets the image fetched as
+    // rozed-bot: main asks GitHub again, without a token. GitHub refuses that for an attachment in
+    // a private repository; the stand-in answers whoever asks.
+    expect(await loaded(page, [postImage('nobody', ATTACHMENT)])).toEqual(['2x2']);
+
+    // Main asked for the attachment with the tab's token, and for where it led, and the avatar,
+    // without it; then for the attachment as nobody. Nothing else reached an image host.
+    const images = github.replay.seen
+      .filter(
+        ({ url }) => !/^https:\/\/(api\.|uploads\.)?github\.com\/(?!user-attachments\/)/.test(url),
+      )
+      .map(({ url, headers }) => `${new URL(url).host} ${headers.get('authorization') ?? 'nobody'}`)
+      .toSorted();
+    expect(images).toEqual([
+      'avatars.githubusercontent.com nobody',
+      'github-production-user-asset-6210df.s3.amazonaws.com nobody',
+      'github-production-user-asset-6210df.s3.amazonaws.com nobody',
+      'github.com nobody',
+      `github.com token ${TOKEN}`,
+    ]);
+  },
+);
+
+onGithub('the page can draw an image from main, but never read it back', async ({ page }) => {
+  const avatar = 'lo-image://avatar/rozed-bot?s=56';
+  const outcome = await page.evaluate(async (src) => {
+    const drawn = new Image();
+    drawn.src = src;
+    await drawn.decode();
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('no 2D canvas');
+    context.drawImage(drawn, 0, 0);
+    let pixels: string;
+    try {
+      context.getImageData(0, 0, 1, 1);
+      pixels = 'read';
+    } catch (error) {
+      pixels = error instanceof DOMException ? error.name : String(error);
+    }
+    // Asked for as an image another origin may read, it doesn't load at all.
+    const shared = new Image();
+    shared.crossOrigin = 'anonymous';
+    shared.src = src;
+    const asShared = await shared.decode().then(
+      () => 'loaded',
+      () => 'refused',
+    );
+    return { pixels, asShared };
+  }, avatar);
+  expect(outcome).toEqual({ pixels: 'SecurityError', asShared: 'refused' });
+});
+
 test.describe('with the content security policy bypassed', () => {
   test.use({ launch: { bypassCSP: true } });
 
@@ -385,5 +531,52 @@ test.describe('with the content security policy bypassed', () => {
     const request = await failed;
     expect(request.url()).toBe('https://example.com/');
     expect(request.failure()?.errorText).toBe('net::ERR_BLOCKED_BY_CLIENT');
+  });
+
+  test('the window asks main for an image only as an image', async ({ page }) => {
+    // With the policy bypassed, only the window's request filter stands between the page and
+    // main's images: it cancels an image's address asked for as a script or a style sheet, as it
+    // cancels a request outside Lo's files, before main sees it.
+    const src = 'lo-image://avatar/rozed-bot?s=56';
+    const failed: { url: string; error: string | undefined }[] = [];
+    page.on('requestfailed', (request) =>
+      failed.push({ url: request.url(), error: request.failure()?.errorText }),
+    );
+    const outcomes = await page.evaluate(
+      (address) =>
+        Promise.all(
+          [document.createElement('script'), document.createElement('link')].map(
+            (element) =>
+              new Promise<string>((resolve) => {
+                element.addEventListener('load', () => resolve('loaded'));
+                element.addEventListener('error', () => resolve('refused'));
+                if (element instanceof HTMLScriptElement) element.src = address;
+                else {
+                  element.rel = 'stylesheet';
+                  element.href = address;
+                }
+                document.head.append(element);
+              }),
+          ),
+        ),
+      src,
+    );
+    expect(outcomes).toEqual(['refused', 'refused']);
+    await expect
+      .poll(() => failed)
+      .toEqual([
+        { url: src, error: 'net::ERR_BLOCKED_BY_CLIENT' },
+        { url: src, error: 'net::ERR_BLOCKED_BY_CLIENT' },
+      ]);
+    // The scheme isn't one `fetch` may ask at all, whatever the filter would say.
+    const read = await page.evaluate(
+      (address) =>
+        fetch(address).then(
+          () => 'read',
+          () => 'refused',
+        ),
+      src,
+    );
+    expect(read).toBe('refused');
   });
 });

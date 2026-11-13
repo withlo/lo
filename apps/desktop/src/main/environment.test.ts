@@ -298,10 +298,11 @@ describe('githubSettings', () => {
       urls: github,
       testRun: false,
       tokenFile: undefined,
+      images: undefined,
     });
   });
 
-  it('talks to a server on this machine in an unpackaged build, as a test run', () => {
+  it('talks to a server on this machine in an unpackaged build, as a test run, images and all', () => {
     const env = { LO_GITHUB: 'http://127.0.0.1:4567', LO_TEST_TOKEN_FILE: '/tmp/token' };
     expect(githubSettings({ packaged: false, env })).toEqual({
       urls: {
@@ -311,15 +312,17 @@ describe('githubSettings', () => {
       },
       testRun: true,
       tokenFile: '/tmp/token',
+      images: 'http://127.0.0.1:4567/images',
     });
   });
 
-  it('ignores both switches in a packaged build', () => {
+  it('ignores both switches in a packaged build, so its images come from GitHub too', () => {
     const env = { LO_GITHUB: 'http://127.0.0.1:4567', LO_TEST_TOKEN_FILE: '/tmp/token' };
     expect(githubSettings({ packaged: true, env })).toEqual({
       urls: github,
       testRun: false,
       tokenFile: undefined,
+      images: undefined,
     });
   });
 

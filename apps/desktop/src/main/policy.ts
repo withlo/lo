@@ -1,8 +1,10 @@
 // What the window may load and where it may go. Lo's window shows untrusted content (code,
 // Markdown, images from pull requests), so it loads only Lo's own files, from Lo's own scheme, and
-// never leaves its page.
+// images main serves, from the image scheme, and never leaves its page.
 
 import { randomBytes } from 'node:crypto';
+
+import { imageScheme, readImageAddress } from '../ipc/images.ts';
 
 /** The scheme the window's files are served from. Never `file:`. */
 export const appScheme = 'lo-app';
@@ -14,16 +16,23 @@ export const appHost = 'app';
 export const windowUrl = `${appScheme}://${appHost}/index.html`;
 
 /**
+ * The window's session: its own, so its restrictions never reach the requests main makes for
+ * itself.
+ */
+export const windowPartition = 'persist:window';
+
+/**
  * The content security policy, sent as a header with every file the window loads. Scripts, styles,
- * fonts, images and requests come from Lo's own files only, with no inline code but the style
- * elements that carry the page's nonce, which its code views make. Anything a directive doesn't
+ * fonts and requests come from Lo's own files only, with no inline code but the style elements
+ * that carry the page's nonce, which its code views make. Images come from Lo's own files too, and
+ * from the image scheme, which main serves from GitHub's image hosts. Anything a directive doesn't
  * name falls back to `default-src 'none'`: no frames, workers from elsewhere, media or manifests.
  */
 const directives = {
   'default-src': ["'none'"],
   'script-src': ["'self'"],
   'style-src': ["'self'"],
-  'img-src': ["'self'"],
+  'img-src': ["'self'", `${imageScheme}:`],
   'font-src': ["'self'"],
   'connect-src': ["'self'"],
   'object-src': ["'none'"],
@@ -59,13 +68,17 @@ export function newNonce(): string {
 }
 
 /**
- * Whether the window's session may make a request: only for Lo's own files, plus the dev server
- * and its WebSocket under `electron-vite dev`. Everything else is cancelled before it leaves.
+ * Whether the window's session may make a request: for Lo's own files; for an image, of `kind`
+ * `image`, at an address the image scheme serves (`readImageAddress`); and for the dev server and
+ * its WebSocket under `electron-vite dev`. Everything else is cancelled before it leaves.
  */
-export function isAllowedRequest(address: string, dev?: URL): boolean {
+export function isAllowedRequest(address: string, dev?: URL, kind?: string): boolean {
   const url = URL.parse(address);
   if (!url) return false;
   if (url.protocol === `${appScheme}:`) return url.host === appHost;
+  if (url.protocol === `${imageScheme}:`) {
+    return kind === 'image' && readImageAddress(address) !== undefined;
+  }
   return dev !== undefined && ['http:', 'ws:'].includes(url.protocol) && url.host === dev.host;
 }
 

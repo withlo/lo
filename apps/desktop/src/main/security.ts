@@ -1,5 +1,6 @@
 import { protocol, type Session, type WebContents } from 'electron';
 
+import { imageScheme } from '../ipc/images.ts';
 import { serveFile } from './files.ts';
 import {
   appScheme,
@@ -31,7 +32,9 @@ export function pageNonce(): string {
 
 /**
  * Registers Lo's scheme as a standard, secure origin, so the window's page gets the web platform's
- * same-origin rules, `fetch` and a code cache, as it would over https. Must run before `ready`.
+ * same-origin rules, `fetch` and a code cache, as it would over https; and the image scheme as a
+ * standard, secure origin of its own, which the page's `fetch` can't reach, so an image from it is
+ * only ever drawn, never read. Must run before `ready`.
  */
 export function registerScheme(): void {
   protocol.registerSchemesAsPrivileged([
@@ -39,7 +42,44 @@ export function registerScheme(): void {
       scheme: appScheme,
       privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true },
     },
+    { scheme: imageScheme, privileges: { standard: true, secure: true } },
   ]);
+}
+
+/** An image main serves the window: its bytes, and the type they were checked to be. */
+export interface ServedImage {
+  readonly contentType: string;
+  readonly bytes: Uint8Array;
+}
+
+/**
+ * What every answer on the image scheme says: never to read it as anything but the type it's
+ * served as, never to keep it, and, were it ever shown as a page, to run and load nothing.
+ */
+const IMAGE_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'cache-control': 'no-store',
+  'content-security-policy': "default-src 'none'",
+};
+
+/**
+ * Serves the image scheme in the window's session: each address the window asks for goes to
+ * `image`, which answers with the image, or nothing for one it won't or can't serve, which the
+ * window gets as a 404 with no body. The request filter has already let through only addresses
+ * the scheme serves, and only as images. Returns a function that stops serving.
+ */
+export function serveImages(
+  session: Session,
+  image: (address: string) => Promise<ServedImage | undefined>,
+): () => void {
+  session.protocol.handle(imageScheme, async (request) => {
+    const served = request.method === 'GET' ? await image(request.url) : undefined;
+    if (!served) return new Response(null, { status: 404, headers: IMAGE_HEADERS });
+    return new Response(served.bytes, {
+      headers: { ...IMAGE_HEADERS, 'content-type': served.contentType },
+    });
+  });
+  return () => session.protocol.unhandle(imageScheme);
 }
 
 /**
@@ -55,7 +95,7 @@ export async function secureSession(session: Session, root: string, dev?: URL): 
   );
 
   session.webRequest.onBeforeRequest((details, callback) => {
-    const allowed = isAllowedRequest(details.url, dev);
+    const allowed = isAllowedRequest(details.url, dev, details.resourceType);
     if (allowed && details.resourceType === 'mainFrame') nonce = newNonce();
     callback({ cancel: !allowed });
   });

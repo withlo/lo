@@ -2,7 +2,8 @@
  * Draws `@lo/markdown`'s tree: a closed switch over each node's `kind`, which makes only Lo's own
  * elements and sets every attribute itself. Nothing in the tree is markup, an attribute, a class or
  * a style, so whatever the text said, the page holds only what this file writes. Text is set only
- * as text, never as HTML, and nothing loads from anywhere.
+ * as text, never as HTML. Nothing loads from anywhere but an image, and that only from main, at
+ * the address the document's `image` gives on Lo's image scheme; without one, an image is a link.
  *
  * Links have no address on the page. Following one hands its target to the document, which opens
  * an `https://` page through main, moves to an anchor in itself, or gives an extension's target
@@ -88,7 +89,15 @@ export interface Rendering<X extends Extension = Plain> {
    * term's definition in its hover card, shows them as their text.
    */
   readonly interactive: boolean;
+  /**
+   * Where to load an image from: an address on Lo's image scheme, which main serves, or nothing to
+   * show the image as a link to it. Without this, every image is a link.
+   */
+  readonly image?: ((node: Image) => string | undefined) | undefined;
 }
+
+/** The scheme main serves images on, the only one an image here loads from. */
+const IMAGE_SCHEME = 'lo-image:';
 
 const RenderingContext = createContext<Rendering<Extension> | undefined>(undefined);
 
@@ -245,6 +254,81 @@ function isPlainTarget<X extends Extension>(target: Target<X>): target is PlainT
   if (target.kind === 'web') return 'url' in target && typeof target.url === 'string';
   if (target.kind === 'anchor') return 'name' in target && typeof target.name === 'string';
   return false;
+}
+
+/**
+ * The first `most` images in `blocks`, in the order they're read, among the nodes `@lo/markdown`
+ * makes itself: an extension's own hold none.
+ */
+export function firstImages<X extends Extension>(
+  blocks: readonly Block<X>[],
+  most: number,
+): ReadonlySet<Image> {
+  const found = new Set<Image>();
+  const inlines = (nodes: readonly Inline<X>[]): void => {
+    for (const node of nodes) {
+      if (found.size >= most || !isPlainInline(node)) continue;
+      switch (node.kind) {
+        case 'image':
+          found.add(node);
+          break;
+        case 'strong':
+        case 'emphasis':
+        case 'strike':
+        case 'link':
+        case 'sub':
+        case 'sup':
+        case 'kbd':
+          inlines(node.children);
+          break;
+        case 'text':
+        case 'inlineCode':
+        case 'break':
+        case 'mention':
+        case 'footnoteReference':
+          break;
+        default:
+          node satisfies never;
+          throw new Error(`A kind of text Lo doesn't know: ${JSON.stringify(node)}.`);
+      }
+    }
+  };
+  const walk = (nodes: readonly Block<X>[]): void => {
+    for (const node of nodes) {
+      if (found.size >= most || !isPlainBlock(node)) continue;
+      switch (node.kind) {
+        case 'paragraph':
+        case 'heading':
+          inlines(node.children);
+          break;
+        case 'quote':
+        case 'alert':
+          walk(node.children);
+          break;
+        case 'list':
+        case 'footnotes':
+          for (const item of node.items) walk(item.children);
+          break;
+        case 'table':
+          for (const cell of node.head) inlines(cell);
+          for (const row of node.rows) for (const cell of row) inlines(cell);
+          break;
+        case 'details':
+          inlines(node.summary);
+          walk(node.children);
+          break;
+        case 'code':
+        case 'rule':
+        case 'suggestion':
+          break;
+        default:
+          node satisfies never;
+          throw new Error(`A kind of block Lo doesn't know: ${JSON.stringify(node)}.`);
+      }
+    }
+  };
+  walk(blocks);
+  return found;
 }
 
 export function drawBlocks<X extends Extension>(
@@ -485,9 +569,11 @@ export function Fold<X extends Extension>({
 }: FoldProps<X>) {
   const r = useRendering<X>();
   const [open, setOpen] = useState(node.open);
-  // The browser's own toggle is left out, so what's open is always what Lo says.
+  // The browser's own toggle is left out, so what's open is always what Lo says. A link in the
+  // title follows, and leaves the fold as it is.
   const toggle = (event: MouseEvent | KeyboardEvent) => {
     event.preventDefault();
+    if (inLink(event)) return;
     setOpen((was) => !was);
   };
   return (
@@ -514,6 +600,13 @@ export function Fold<X extends Extension>({
       <div className="lo-fold__body">{drawBlocks(node.children, r)}</div>
     </details>
   );
+}
+
+/** Whether `event` came from a link inside the element it's handled on. */
+function inLink(event: MouseEvent | KeyboardEvent): boolean {
+  const { target, currentTarget } = event;
+  const link = target instanceof Element ? target.closest('a') : null;
+  return link !== null && link !== currentTarget && currentTarget.contains(link);
 }
 
 export function drawInlines<X extends Extension>(
@@ -544,9 +637,17 @@ function drawInline<X extends Extension>(node: Inline<X>, r: Rendering<X>): Reac
       return <code>{plain.value}</code>;
     case 'link':
       return drawLink(plain.target, drawInlines(plain.children, r), r);
-    case 'image':
-      // Shown as a link to the image until Lo can show it without loading it from its host.
-      return drawLink({ kind: 'web', url: plain.url }, plain.alt === '' ? 'Image' : plain.alt, r);
+    case 'image': {
+      // As a link to the image, unless main serves it, and as that link again if it fails.
+      const link = drawLink(
+        { kind: 'web', url: plain.url },
+        plain.alt === '' ? 'Image' : plain.alt,
+        r,
+      );
+      const src = r.image?.(plain);
+      if (src === undefined || !src.startsWith(IMAGE_SCHEME)) return link;
+      return <Picture key={src} src={src} alt={plain.alt} failed={link} />;
+    }
     case 'break':
       return <br />;
     case 'sub':
@@ -576,6 +677,25 @@ function drawInline<X extends Extension>(node: Inline<X>, r: Rendering<X>): Reac
       plain satisfies never;
       throw new Error(`A kind of text Lo doesn't know: ${JSON.stringify(node.kind)}.`);
   }
+}
+
+/**
+ * An image main serves, loaded once it's near the screen and decoded off the page's thread, or
+ * `failed` in its place once it can't be.
+ */
+function Picture({ src, alt, failed }: { src: string; alt: string; failed: ReactNode }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) return failed;
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      className="inline-block h-auto max-w-full align-bottom"
+      onError={() => setBroken(true)}
+    />
+  );
 }
 
 /** A text's lines, with its newlines as line breaks. */
