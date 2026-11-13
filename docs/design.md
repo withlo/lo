@@ -636,6 +636,11 @@ deployments. Markdown is rendered, GIFs play, and images load through the main p
 account, so attachments in private repos show. A comment box at the bottom posts a comment on the PR
 itself. The PR's title, description, labels, reviewers and draft status are read-only in Lo.
 
+It's the third middle view, after the overview and the diff. Lo reads it from GitHub when you first
+show it, and keeps it current from then on. `j` and `k` move between its events, and `gx` opens the
+one you're on on GitHub. A tab acting as nobody asks you to sign in to see it, and a run of a
+stack's layers has none of its own.
+
 ## 11. Merging and the merge queue
 
 ### Merge status
@@ -706,6 +711,7 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | View            | `` ` `` next middle view (overview, diff, timeline), `~` previous, `gv` compare revisions                                                                                                                                                                                    |
 | Files           | `-` go to the file tree at the file on screen, and `-` again up to the stack tree. In the tree: `t` tree or review order, `f` changed files only, `l`/`h` (or `→`/`←`) open and close a folder, `zR`/`zM` open and close all, `⏎` show the file, `e` mark viewed, `Esc` back |
 | Overview        | `]b`/`[b` next and previous block, `⏎` follow a block to its code, `o` open its code beside the overview (`o` again or `Esc` to close), `Tab` next part of a figure, `←`/`→` walkthrough step or tab, `ya` copy a prompt for an agent                                        |
+| Timeline        | `j`/`k` move between events, `gx` open the one you're on on GitHub                                                                                                                                                                                                           |
 | Panels          | `⌘\` left panel, `⌘⇧\` threads panel. In the threads panel: `f` unresolved, all or yours. In the stack tree: `j`/`k` move, `⏎` show the layer, `gx` open it on GitHub, `Esc` back, `v` choose a run of layers, `j`/`k` to grow it, `⏎` to view it as one diff                |
 | Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file                                                                                                            |
 | Comment box     | `⌘⏎` add to review, `⌥⏎` comment now, `⌘⇧V` write or preview, `Esc` leave insert mode, `Esc Esc` close and keep the draft                                                                                                                                                    |

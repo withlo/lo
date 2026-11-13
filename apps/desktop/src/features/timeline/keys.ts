@@ -1,6 +1,5 @@
 // The timeline's keys, in its own view, the `timeline` scope: moving between its rows, and opening
-// the row the keyboard is on on GitHub. The actions a row's buttons take have no key of their own:
-// the palette offers them for the row the keyboard is on.
+// the row the keyboard is on on GitHub. The actions a row's buttons take have no key of their own.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -34,13 +33,6 @@ export default defineCommands(
       keys: ['g x'],
       when: timeline,
     },
-    /** Shows the hidden comment or review the keyboard is on, as its "Show comment" does. */
-    showComment: { label: 'Show the hidden comment', group: 'Act', keys: [] },
-    /**
-     * Compares the revisions before and after the force-push the keyboard is on, and shows the
-     * diff, as its "Compare" does.
-     */
-    compare: { label: 'Compare the force-push’s revisions', group: 'View', keys: [] },
   },
   { scopes: ['timeline'] },
 );

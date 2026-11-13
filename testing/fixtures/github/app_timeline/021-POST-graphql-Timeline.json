@@ -1,0 +1,318 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "Timeline",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 23,
+      "last": 100,
+      "before": null
+    },
+    "query_sha256": "47e40bcb3b8456549af3dbad87d4732dad4ffddd79ccf959341968d142bcaac6"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4951",
+      "x-ratelimit-reset": "1794596782",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "49"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4951,
+          "used": 49,
+          "resetAt": "2026-11-13T19:06:22Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "author": {
+              "__typename": "User",
+              "login": "rozed-bot"
+            },
+            "body": "Fixture E11 (review writes): Lo's recordings of comments, replies and reviews are written here as rozed-bot, which can only comment on its own pull request. `e11/review.txt` changes lines 10, 11, 30 and 50, so the diff has three hunks with lines outside them, and `e11/notes.md` changes one line, for file-level comments. The recordings delete the comments they can afterwards; submitted reviews stay. It targets `e11/base`, which adds the files it changes to `main`. Made by `script/e2e/fixtures.sh` in scornz/lo.",
+            "createdAt": "2026-11-07T05:58:18Z",
+            "lastEditedAt": null,
+            "timelineEvents": {
+              "updatedAt": "2026-11-11T03:27:17Z"
+            },
+            "timelineItems": {
+              "filteredCount": 11,
+              "pageInfo": {
+                "hasPreviousPage": false,
+                "startCursor": "Y3Vyc29yOnYyOpPPAAABobSWEMAH2gAzNTE5ODk0MTkzMzo1YTQ4ZDIyNTU4MTdmMGYxOWRmZGZjMzE2ODkyNWYwY2RiODVjNjMw"
+              },
+              "edges": [
+                {
+                  "cursor": "Y3Vyc29yOnYyOpPPAAABobSWEMAH2gAzNTE5ODk0MTkzMzo1YTQ4ZDIyNTU4MTdmMGYxOWRmZGZjMzE2ODkyNWYwY2RiODVjNjMw",
+                  "node": {
+                    "__typename": "PullRequestCommit",
+                    "gitCommit": {
+                      "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630",
+                      "messageHeadline": "test(e11): change lines in three places",
+                      "committedDate": "2026-11-07T05:58:16Z",
+                      "author": {
+                        "name": "rozed-bot",
+                        "user": {
+                          "login": "rozed-bot"
+                        }
+                      },
+                      "statusCheckRollup": null
+                    }
+                  }
+                },
+                {
+                  "cursor": "Y3Vyc29yOnYyOpPPAAABobSZmwAFqjU4MTA0NTI2MzM=",
+                  "node": {
+                    "__typename": "PullRequestReview",
+                    "id": "PRR_kwDOVleUfc8AAAABWlR4mQ",
+                    "author": {
+                      "__typename": "User",
+                      "login": "rozed-bot"
+                    },
+                    "body": "Fixture E11: the pending review's summary, submitted as a comment.",
+                    "state": "COMMENTED",
+                    "createdAt": "2026-11-07T06:01:55Z",
+                    "submittedAt": "2026-11-07T06:02:08Z",
+                    "lastEditedAt": null,
+                    "url": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5810452633",
+                    "isMinimized": false,
+                    "commit": {
+                      "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                    },
+                    "comments": {
+                      "totalCount": 0
+                    }
+                  }
+                },
+                {
+                  "cursor": "Y3Vyc29yOnYyOpPPAAABobSZukAFqjU4MTA0NTQ3Nzc=",
+                  "node": {
+                    "__typename": "PullRequestReview",
+                    "id": "PRR_kwDOVleUfc8AAAABWlSA-Q",
+                    "author": {
+                      "__typename": "User",
+                      "login": "rozed-bot"
+                    },
+                    "body": "Fixture E11: a review with only a summary.",
+                    "state": "COMMENTED",
+                    "createdAt": "2026-11-07T06:02:16Z",
+                    "submittedAt": "2026-11-07T06:02:16Z",
+                    "lastEditedAt": null,
+                    "url": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5810454777",
+                    "isMinimized": false,
+                    "commit": {
+                      "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                    },
+                    "comments": {
+                      "totalCount": 0
+                    }
+                  }
+                },
+                {
+                  "cursor": "Y3Vyc29yOnYyOpPPAAABobTTshgFqjU4MTA3MDExMDQ=",
+                  "node": {
+                    "__typename": "PullRequestReview",
+                    "id": "PRR_kwDOVleUfc8AAAABWlhDMA",
+                    "author": {
+                      "__typename": "User",
+                      "login": "rozed-bot"
+                    },
+                    "body": "Fixture E11: the pending review's summary, submitted as a comment.",
+                    "state": "COMMENTED",
+                    "createdAt": "2026-11-07T07:05:21Z",
+                    "submittedAt": "2026-11-07T07:05:35Z",
+                    "lastEditedAt": null,
+                    "url": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5810701104",
+                    "isMinimized": false,
+                    "commit": {
+                      "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                    },
+                    "comments": {
+                      "totalCount": 0
+                    }
+                  }
+                },
+                {
+                  "cursor": "Y3Vyc29yOnYyOpPPAAABobTT1UAFqjU4MTA3MDMwNjc=",
+                  "node": {
+                    "__typename": "PullRequestReview",
+                    "id": "PRR_kwDOVleUfc8AAAABWlhK2w",
+                    "author": {
+                      "__typename": "User",
+                      "login": "rozed-bot"
+                    },
+                    "body": "Fixture E11: a review with only a summary.",
+                    "state": "COMMENTED",
+                    "createdAt": "2026-11-07T07:05:44Z",
+                    "submittedAt": "2026-11-07T07:05:44Z",
+                    "lastEditedAt": null,
+                    "url": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5810703067",
+                    "isMinimized": false,
+                    "commit": {
+                      "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                    },
+                    "comments": {
+                      "totalCount": 0
+                    }
+                  }
+                },
+                {
+                  "cursor": "Y3Vyc29yOnYyOpPPAAABob3EotgFqjU4MjA1MDQ2Mjk=",
+                  "node": {
+                    "__typename": "PullRequestReview",
+                    "id": "PRR_kwDOVleUfc8AAAABWu3aNQ",
+                    "author": {
+                      "__typename": "User",
+                      "login": "rozed-bot"
+                    },
+                    "body": "",
+                    "state": "COMMENTED",
+                    "createdAt": "2026-11-09T00:45:36Z",
+                    "submittedAt": "2026-11-09T00:45:43Z",
+                    "lastEditedAt": null,
+                    "url": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5820504629",
+                    "isMinimized": false,
+                    "commit": {
+                      "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                    },
+                    "comments": {
+                      "totalCount": 1
+                    }
+                  }
+                },
+                {
+                  "cursor": "Y3Vyc29yOnYyOpPPAAABob3E4VgFqjU4MjA1MDU2NDI=",
+                  "node": {
+                    "__typename": "PullRequestReview",
+                    "id": "PRR_kwDOVleUfc8AAAABWu3eKg",
+                    "author": {
+                      "__typename": "User",
+                      "login": "rozed-bot"
+                    },
+                    "body": "A summary written before submitting (body left out of the submit).",
+                    "state": "COMMENTED",
+                    "createdAt": "2026-11-09T00:45:52Z",
+                    "submittedAt": "2026-11-09T00:45:59Z",
+                    "lastEditedAt": "2026-11-11T05:24:57Z",
+                    "url": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5820505642",
+                    "isMinimized": false,
+                    "commit": {
+                      "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                    },
+                    "comments": {
+                      "totalCount": 1
+                    }
+                  }
+                },
+                {
+                  "cursor": "Y3Vyc29yOnYyOpPPAAABob3FnNgFqjU4MjA1MDg5NDI=",
+                  "node": {
+                    "__typename": "PullRequestReview",
+                    "id": "PRR_kwDOVleUfc8AAAABWu3rDg",
+                    "author": {
+                      "__typename": "User",
+                      "login": "rozed-bot"
+                    },
+                    "body": "A summary written before submitting (Lo's mutation, body sent as null).",
+                    "state": "COMMENTED",
+                    "createdAt": "2026-11-09T00:46:39Z",
+                    "submittedAt": "2026-11-09T00:46:47Z",
+                    "lastEditedAt": "2026-11-11T05:24:58Z",
+                    "url": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5820508942",
+                    "isMinimized": false,
+                    "commit": {
+                      "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                    },
+                    "comments": {
+                      "totalCount": 1
+                    }
+                  }
+                },
+                {
+                  "cursor": "Y3Vyc29yOnYyOpPPAAABob6KzVAFqjU4MjE2MjYyODQ=",
+                  "node": {
+                    "__typename": "PullRequestReview",
+                    "id": "PRR_kwDOVleUfc8AAAABWv73rA",
+                    "author": {
+                      "__typename": "User",
+                      "login": "rozed-bot"
+                    },
+                    "body": "Fixture E11: the pending review's summary, submitted as a comment.",
+                    "state": "COMMENTED",
+                    "createdAt": "2026-11-09T04:21:55Z",
+                    "submittedAt": "2026-11-09T04:22:10Z",
+                    "lastEditedAt": null,
+                    "url": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5821626284",
+                    "isMinimized": false,
+                    "commit": {
+                      "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                    },
+                    "comments": {
+                      "totalCount": 0
+                    }
+                  }
+                },
+                {
+                  "cursor": "Y3Vyc29yOnYyOpPPAAABob6K7JAFqjU4MjE2MjgxNDk=",
+                  "node": {
+                    "__typename": "PullRequestReview",
+                    "id": "PRR_kwDOVleUfc8AAAABWv7-9Q",
+                    "author": {
+                      "__typename": "User",
+                      "login": "rozed-bot"
+                    },
+                    "body": "Fixture E11: a review with only a summary.",
+                    "state": "COMMENTED",
+                    "createdAt": "2026-11-09T04:22:18Z",
+                    "submittedAt": "2026-11-09T04:22:18Z",
+                    "lastEditedAt": null,
+                    "url": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5821628149",
+                    "isMinimized": false,
+                    "commit": {
+                      "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                    },
+                    "comments": {
+                      "totalCount": 0
+                    }
+                  }
+                },
+                {
+                  "cursor": "Y3Vyc29yOnYyOpPPAAABocilRggFqjU4NTMzNzk1MTI=",
+                  "node": {
+                    "__typename": "PullRequestReview",
+                    "id": "PRR_kwDOVleUfc8AAAABXON7uA",
+                    "author": {
+                      "__typename": "User",
+                      "login": "rozed-bot"
+                    },
+                    "body": "Fixture E11: the pending review's summary, submitted as a comment.",
+                    "state": "COMMENTED",
+                    "createdAt": "2026-11-11T03:27:04Z",
+                    "submittedAt": "2026-11-11T03:27:17Z",
+                    "lastEditedAt": null,
+                    "url": "https://github.com/rozed-dev/e2e/pull/23#pullrequestreview-5853379512",
+                    "isMinimized": false,
+                    "commit": {
+                      "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                    },
+                    "comments": {
+                      "totalCount": 5
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

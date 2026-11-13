@@ -1,12 +1,13 @@
 // A post's text: a comment's, a review's, a review comment's or a pull request's description, drawn
 // from GitHub's rendering of it, as GitHub's page shows it, and from its Markdown until that's
 // there, so it's never blank. Its HTML is asked for as it comes near the screen, and again, while
-// its images are on screen, before their addresses lapse. The background process makes the tree,
-// and links open through main.
+// its images are on screen, before their addresses lapse. The background process makes the tree;
+// its images load through main, as the view's account, and links open through main.
 
 import { Markdown, secureLink, type Followed } from '@lo/ui/markdown';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
+import { postImage } from '../../../window/images.ts';
 import { followLink } from '../../open/window/shared.ts';
 import { HTML_LIMIT, MARKDOWN_LIMIT, type Rendered } from '../jobs.ts';
 import { STALE_AFTER, type PostRef } from './bodies.ts';
@@ -64,6 +65,7 @@ export function Post({ view, post: given, markdown, pull }: PostProps) {
   const { owner, repo, number } = pull;
   const [made, setMade] = useState(() => drawnOf(view, post));
   const [near, setNear] = useState(false);
+  const image = useCallback((url: string) => postImage(view, url), [view]);
 
   // Its tree, made anew from its HTML once that's there, or from its Markdown; the one before
   // stays until the new one is made.
@@ -117,7 +119,12 @@ export function Post({ view, post: given, markdown, pull }: PostProps) {
   return (
     <div ref={element} data-lo-post={key}>
       {made ? (
-        <Markdown tree={made.rendered.tree} onFollow={follow} className="lo-prose read-comment" />
+        <Markdown
+          tree={made.rendered.tree}
+          onFollow={follow}
+          images={image}
+          className="lo-prose read-comment"
+        />
       ) : (
         <p className="whitespace-pre-wrap">{text}</p>
       )}

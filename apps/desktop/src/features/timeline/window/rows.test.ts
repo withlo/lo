@@ -122,7 +122,7 @@ describe('rowsOf', () => {
     expect(rows).toEqual([
       expect.objectContaining({
         kind: 'description',
-        author: { login: 'mona', avatar: true },
+        author: { login: 'mona', type: 'User' },
         body: 'Adds the cache.',
         draft: true,
         labels: [{ name: 'api', color: '2700af' }],
@@ -237,7 +237,7 @@ describe('rowsOf', () => {
         id: 'IC_1',
         byAuthor: true,
         hidden: 'outdated',
-        author: { login: 'mona', avatar: true },
+        author: { login: 'mona', type: 'User' },
       }),
       expect.objectContaining({
         kind: 'review',
@@ -245,7 +245,7 @@ describe('rowsOf', () => {
         verdict: 'changes',
         revision: 1,
         comments: 3,
-        author: { login: 'lint-bot', avatar: false },
+        author: { login: 'lint-bot', type: 'Bot' },
       }),
     ]);
   });
@@ -393,9 +393,9 @@ describe('reviewersOf', () => {
         'mona',
       ),
     ).toEqual([
-      { person: { login: 'Ravi-K', avatar: true }, state: 'approved' },
-      { person: { login: 'lint-bot', avatar: false }, state: 'requested' },
-      { person: { login: 'rozed-dev/core', avatar: false }, state: 'requested' },
+      { person: { login: 'Ravi-K', type: 'User' }, state: 'approved' },
+      { person: { login: 'lint-bot', type: 'Bot' }, state: 'requested' },
+      { person: { login: 'rozed-dev/core', type: 'Team' }, state: 'requested' },
     ]);
   });
 

@@ -22,13 +22,14 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { setMiddle } from '../../../window/commands/registry.ts';
+import { avatarImage } from '../../../window/images.ts';
 import { signIn } from '../../accounts/window/shared.ts';
 import { Post, type PostPull } from '../../comments/window/shared.ts';
 import { showDiff } from '../../diff/window/shared.ts';
 import { usePull, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import { compare, focusRow, setDrawn, showHidden, stillHidden } from './actions.ts';
 import { tabs } from './main.ts';
-import { rowsOf, type Part, type Row } from './rows.ts';
+import { rowsOf, type Part, type Person, type Row } from './rows.ts';
 import {
   comparisons,
   focusedRows,
@@ -176,7 +177,7 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
   }, [shown, tab, rows]);
   return (
     <div ref={root} className="h-full overflow-y-auto" data-lo-scope="timeline">
-      <Timeline listRef={list} tabIndex={0} focused={focused}>
+      <Timeline listRef={list} tabIndex={0} focused={focused} aria-label="Timeline">
         {rows.map((row) => (
           <RowOf
             key={row.key}
@@ -237,6 +238,15 @@ function Sentence({ parts }: { parts: readonly Part[] }) {
   );
 }
 
+/** How many pixels a side the avatar that marks a row is, and one beside a line of small text. */
+const MARKER = 32;
+const SMALL = 20;
+
+/** Where to load `person`'s avatar from, `size` pixels a side: nothing keeps their initials. */
+function imageOf(person: Person | undefined, size: number): string | undefined {
+  return person && avatarImage(person, size);
+}
+
 /** A revision's number as a tag shows it. */
 function revisionOf(number: number | undefined): string | undefined {
   return number === undefined ? undefined : `r${number}`;
@@ -267,6 +277,7 @@ function RowOf({
         <TimelineDescription
           {...attributes}
           author={withoutBidi(row.author?.login ?? 'ghost')}
+          image={imageOf(row.author, MARKER)}
           when={when(row.at, now)}
           draft={row.draft}
           body={
@@ -277,6 +288,7 @@ function RowOf({
           labels={row.labels.map(labelOf)}
           reviewers={row.reviewers.map(({ person, state }) => ({
             login: withoutBidi(person.login),
+            image: imageOf(person, SMALL),
             state,
           }))}
         />
@@ -300,6 +312,7 @@ function RowOf({
         <TimelineComment
           {...attributes}
           author={withoutBidi(row.author?.login ?? 'ghost')}
+          image={imageOf(row.author, MARKER)}
           when={when(row.at, now)}
           byAuthor={row.byAuthor}
           hidden={hidden()}
@@ -313,6 +326,7 @@ function RowOf({
         <TimelineReview
           {...attributes}
           author={withoutBidi(row.author?.login ?? 'ghost')}
+          image={imageOf(row.author, SMALL)}
           when={when(row.at, now)}
           verdict={row.verdict}
           revision={revisionOf(row.revision)}

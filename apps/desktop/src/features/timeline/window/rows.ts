@@ -10,14 +10,13 @@ import type { ComparisonView } from '../../revisions/contract.ts';
 import type { Actor, Item, Reviewer, Sidebar, Timeline } from '../contract.ts';
 
 /**
- * Someone, as a row names them: their login, and whether GitHub has a picture of them by their
- * login (`avatars.githubusercontent.com/<login>`). A person's or an organization's login names its
- * picture; a bot's, a team's, a mannequin's or a deleted account's never does, so they show their
- * initials.
+ * Someone, as a row names them: their login, or a team's slug, and the type of account GitHub
+ * names it with (`User`, `Bot`, `Organization`…, or `Team`), which says whether it has an avatar on
+ * GitHub (`window/images.ts`): a bot, a team, a mannequin or a deleted account keeps its initials.
  */
 export interface Person {
   readonly login: string;
-  readonly avatar: boolean;
+  readonly type: string;
 }
 
 /** A part of a one-line event's sentence. */
@@ -134,15 +133,14 @@ const GHOST = 'ghost';
 
 /** `actor` as a row names them. */
 export function personOf(actor: Actor | undefined): Person | undefined {
-  if (!actor) return undefined;
-  return { login: actor.login, avatar: actor.type === 'User' || actor.type === 'Organization' };
+  return actor && { login: actor.login, type: actor.type };
 }
 
 /** Who someone a reviewer asked is, as a row names them. */
 function reviewerOf(reviewer: Reviewer): Person {
   return reviewer.kind === 'team'
-    ? { login: reviewer.slug, avatar: false }
-    : { login: reviewer.login, avatar: reviewer.type === 'User' };
+    ? { login: reviewer.slug, type: 'Team' }
+    : { login: reviewer.login, type: reviewer.type };
 }
 
 function sameLogin(a: string | undefined, b: string | undefined): boolean {
