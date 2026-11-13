@@ -1,0 +1,65 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "RenderedBodies",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 94,
+      "description": false,
+      "ids": [
+        "PRRC_kwDOVleUfc8AAAABEDy5Lg",
+        "PRRC_kwDOVleUfc8AAAABEDy5mw",
+        "PRRC_kwDOVleUfc8AAAABEDy6mA",
+        "PRRC_kwDOVleUfc8AAAABEDy8Eg"
+      ]
+    },
+    "query_sha256": "285b3a71ef24563ae33870f157b845fcb0e9fc71ff54b6235fa3b18c95041504"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4990",
+      "x-ratelimit-reset": "1794605193",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "10"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4990,
+          "used": 10,
+          "resetAt": "2026-11-13T21:26:33Z"
+        },
+        "repository": {},
+        "nodes": [
+          {
+            "__typename": "PullRequestReviewComment",
+            "id": "PRRC_kwDOVleUfc8AAAABEDy5Lg",
+            "bodyHTML": "<p dir=\"auto\">Fixture C: Should the jitter cover the whole delay?</p>"
+          },
+          {
+            "__typename": "PullRequestReviewComment",
+            "id": "PRRC_kwDOVleUfc8AAAABEDy5mw",
+            "bodyHTML": "<p dir=\"auto\">Fixture C: Full jitter spreads clients out the most.</p>"
+          },
+          {
+            "__typename": "PullRequestReviewComment",
+            "id": "PRRC_kwDOVleUfc8AAAABEDy6mA",
+            "bodyHTML": "<p dir=\"auto\">Fixture C: It can also wait almost nothing.</p>"
+          },
+          {
+            "__typename": "PullRequestReviewComment",
+            "id": "PRRC_kwDOVleUfc8AAAABEDy8Eg",
+            "bodyHTML": "<p dir=\"auto\">Fixture C: Fine for three tries. Keeping it.</p>"
+          }
+        ]
+      }
+    }
+  }
+}

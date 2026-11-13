@@ -34,8 +34,9 @@
 #
 # rozed-bot pushed every branch, opened the pull requests in this order, made #G1 and #G2 a GitHub
 # stack, squash-merged #M, and pushed #B's overview, which `lo-overview commit` wrote from
-# `overview` in `work`. `stack-reset.sh` puts back what making a GitHub stack of #A, #B and #C
-# changes.
+# `overview` in `work`. Later it wrote one review thread on #B, on line 5 of src/cost.ts, so a
+# layer has threads of its own; it starts with `Fixture C:`, as the comments fixture's do
+# (`comments.sh`). `stack-reset.sh` puts back what making a GitHub stack of #A, #B and #C changes.
 
 set -euo pipefail
 

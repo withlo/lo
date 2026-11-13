@@ -38,15 +38,16 @@ test('j, ]f, ]t and G keep the cursor on screen', async ({ page }) => {
     'docs/added.ts',
     'src/removed.ts',
   ]);
+  // ]t stops at threads on either side, in file order: one under the old side's line, beside it.
   await press(page, 'g', 'g');
   const threads: string[] = [];
-  for (let step = 0; step < 2; step++) {
+  for (let step = 0; step < 3; step++) {
     await press(page, ']', 't');
     await expect.poll(async () => (await cursor(page))?.onScreen).toBe(true);
     const at = (await cursor(page))?.at;
     threads.push(`${fileOf(at)}:${lineOf(at)}`);
   }
-  expect(threads).toEqual(['src/app.ts:40', 'docs/added.ts:120']);
+  expect(threads).toEqual(['src/app.ts:40', 'src/app.ts:152', 'docs/added.ts:120']);
   await press(page, 'G');
   await expect.poll(async () => (await cursor(page))?.onScreen).toBe(true);
   expect(fileOf((await cursor(page))?.at)).toBe('src/removed.ts');

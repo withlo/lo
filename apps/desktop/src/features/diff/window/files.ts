@@ -8,6 +8,7 @@ import type { Mark } from '../../revisions/window/shared.ts';
 import type { Changed } from '../../tree/contract.ts';
 import type { FileVersions, Start } from '../contract.ts';
 import type { Entry, Shown } from './loader.ts';
+import type { ThreadCounts } from './threads.ts';
 
 /** How a file starts out, with its viewed mark: one viewed that would show its lines starts closed. */
 export function startWith(versions: FileVersions, mark: Mark | undefined): Start {
@@ -148,12 +149,15 @@ export function tagsOf(versions: FileVersions): string[] {
   return tags;
 }
 
-/** A file's header: its counts, tags and viewed mark. */
-export function headerOf(versions: FileVersions, mark?: Mark): FileHeader {
+/** A file's header: its counts, tags and viewed mark, and its threads as the tree counts them. */
+export function headerOf(versions: FileVersions, mark?: Mark, threads?: ThreadCounts): FileHeader {
   const tags = tagsOf(versions);
   const header: FileHeader = { additions: versions.additions, deletions: versions.deletions };
   if (tags.length > 0) header.tags = tags;
   if (mark) header.viewed = mark === 'dismissed' ? 'stale' : mark;
+  if (threads && threads.threads > 0) {
+    header.threads = { total: threads.threads, unresolved: threads.unresolved };
+  }
   return header;
 }
 

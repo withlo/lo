@@ -2,7 +2,7 @@
 // kind of target clicked, in their order, each with its keys as they are now and, when it can't
 // run on that target, why.
 
-import type { Group } from './declare.ts';
+import { type Group, menuPlaces } from './declare.ts';
 import { liveKeys, liveShortcut, onSystem } from './help.ts';
 import type { Registry } from './registry.ts';
 import type { Target } from './targets.ts';
@@ -30,22 +30,24 @@ export interface MenuItem {
 export function menuSections(registry: Registry, target: Target): MenuItem[][] {
   const commands = registry
     .commands()
-    .filter(
-      (command) =>
-        command.menu?.on === target.kind &&
+    .flatMap((command) => {
+      const place = menuPlaces(command).find(({ on }) => on === target.kind);
+      return place &&
         command.handler !== undefined &&
         command.vim !== 'own' &&
         onSystem(registry, command) &&
-        registry.listed(command.id, target),
-    )
-    .toSorted((a, b) => (a.menu?.order ?? 0) - (b.menu?.order ?? 0));
+        registry.listed(command.id, target)
+        ? [{ command, place }]
+        : [];
+    })
+    .toSorted((a, b) => a.place.order - b.place.order);
   const sections: MenuItem[][] = [];
   let group: Group | undefined;
-  for (const command of commands) {
+  for (const { command, place } of commands) {
     const ready = registry.enabled(command.id, target);
     const item: MenuItem = {
       id: command.id,
-      label: command.label,
+      label: place.label ?? command.label,
       keys: liveKeys(registry, command)[0],
       shortcut: liveShortcut(registry, command),
       disabled: ready === true ? undefined : ready,

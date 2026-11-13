@@ -79,6 +79,18 @@
   background: var(--lo-fg-muted);
   box-shadow: none;
 }
+/* Its review threads, as the file tree counts them: bright while any is unresolved. */
+.lo-diffhead .lo-count {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--lo-sp-2);
+  font: var(--lo-text-micro);
+  color: var(--lo-fg-muted);
+}
+.lo-diffhead .lo-count.is-open {
+  color: var(--lo-fg);
+}
 .lo-diffhead__ball.is-stale {
   box-shadow: inset 0 0 0 1.5px var(--lo-warning);
   background: radial-gradient(circle, var(--lo-warning) 0 2px, transparent 2.5px);

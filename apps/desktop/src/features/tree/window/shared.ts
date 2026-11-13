@@ -1,12 +1,14 @@
 // What the file tree shares with other features' window code: the order it lists the changed files
 // in, which the diff shows them in; the file on screen, which the diff says as it scrolls and the
 // tree follows; going to the tree, at the file on screen; the views that show a file the tree asks
-// for; the path a file's key names; and the file finder, opened on a name.
+// for; the path a file's key names; the file finder, opened on a name; and how many review
+// threads each file has on screen, which another feature counts.
 
 import { useViewedMarks, viewedCountIn, type ShownMarks } from '../../revisions/window/shared.ts';
 import type { LocalState } from '../../tab/contract.ts';
 import { useChangedFiles, useLocalCopy, useTabState, type Files } from '../../tab/window/shared.ts';
 import type { Changed, TreePath, TreeState } from '../contract.ts';
+import { countsChanged, countWith, type FileCounter } from './counts.ts';
 import { foldersOf, panelOrder, type Mode } from './model.ts';
 import { keyOf, pathOfKey } from './paths.ts';
 import {
@@ -215,6 +217,22 @@ export function showFile(view: FileView, tab: string, file: string): boolean {
   if (!show) return false;
   show(tab, file, pathOf(tab, file));
   return true;
+}
+
+export type { FileCounter, FileThreads } from './counts.ts';
+
+/**
+ * Gives the trees what counts each file's review threads on screen, such as the comments: a file's
+ * row shows how many it has, and stands out while any is unresolved. Returns a function that takes
+ * it back.
+ */
+export function setFileCounts(counter: FileCounter): () => void {
+  return countWith(counter);
+}
+
+/** Says tab `tab`'s files' thread counts changed, so its tree, if it's drawn, reads them again. */
+export function fileCountsChanged(tab: string): void {
+  countsChanged(tab);
 }
 
 /** How the file finder opens with a name typed, once the tree's window feature has said. */

@@ -3,6 +3,7 @@ import {
   commandsOf,
   declaredBindings,
   match,
+  menuPlaces,
   parseKeys,
   systemStrokes,
   type Focus,
@@ -126,9 +127,9 @@ describe('the right-click menu', () => {
 
   it('is the window’s own: what a right-click on nothing in particular lists, Back and Forward', () => {
     const items = commands
-      .filter((command) => command.menu)
-      .toSorted((a, b) => (a.menu?.order ?? 0) - (b.menu?.order ?? 0))
-      .map((command) => [command.id, command.menu?.on]);
+      .flatMap((command) => menuPlaces(command).map((place) => ({ command, place })))
+      .toSorted((a, b) => a.place.order - b.place.order)
+      .map(({ command, place }) => [command.id, place.on]);
     expect(items).toEqual([
       ['keys.back', 'none'],
       ['keys.forward', 'none'],

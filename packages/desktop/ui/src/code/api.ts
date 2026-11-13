@@ -54,8 +54,11 @@ export interface FileHeader {
    * since it was viewed. None for a file with no mark, as when nobody's signed in.
    */
   viewed?: 'viewed' | 'unviewed' | 'stale';
-  /** How many comments its threads hold, when it has any. */
-  comments?: number;
+  /**
+   * Its review threads, counted as the file tree counts them, when it has any: a comment mark and
+   * their number, which stands out while any is unresolved.
+   */
+  threads?: { readonly total: number; readonly unresolved: number };
   /** Short labels after its counts, such as "generated". */
   tags?: readonly string[];
 }
@@ -377,8 +380,14 @@ export interface DiffView extends KeySource {
    * and what's at the top of the screen stays where it is. A thread drawn on screen that changes
    * size with no input asking, as when an image in it loads, is held at the height it was drawn at
    * the same way. What the reader does to a thread, such as opening it, keeps its line where it is.
+   * With `now`, lines on screen take their threads at once too: for a view the reader hasn't seen
+   * yet, as one made in the same task.
    */
-  setThreads(threads: readonly ThreadView[], render: RenderThread): void;
+  setThreads(
+    threads: readonly ThreadView[],
+    render: RenderThread,
+    options?: { readonly now?: boolean },
+  ): void;
   /**
    * Opens a thread, collapses it, or the other of the two, as the reader asked: the caller draws it
    * again, its line staying where it is. Says whether the view has the thread.

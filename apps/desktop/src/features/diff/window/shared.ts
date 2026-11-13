@@ -1,7 +1,8 @@
 // What the diff shares with other features' window code: the slot over the diff, where what it
 // compares is said; showing the diff, and a place in it or the file whole; how many files it shows; one file of it beside
-// another view; the lines another feature explains, which the diff marks; and diffing texts another
-// feature has, as the diff's own files are diffed.
+// another view; the lines another feature explains, which the diff marks; the review threads
+// another feature places under its lines; and diffing texts another feature has, as the diff's own
+// files are diffed.
 
 import { createElement, type ReactNode } from 'react';
 
@@ -15,9 +16,11 @@ import { changed, explainWith, type Explainer } from './explained.ts';
 import { diffJobs } from './main.ts';
 import { showPlace as showCode } from './places.ts';
 import { loaderOf, useSnapshot } from './tabs.ts';
+import { changed as changedThreads, threadWith, type Threader } from './threads.ts';
 import { DIFF_VIEW } from './whole.ts';
 
 export type { ExplainedLines, Explainer } from './explained.ts';
+export type { DiffThreads, DrawnDiff, ThreadCounts, ThreadedFile, Threader } from './threads.ts';
 
 /**
  * Over a pull request's tab's diff, the same height from its first frame on: a note on what it
@@ -124,6 +127,21 @@ export function setExplainer(explainer: Explainer): () => void {
 /** Says the lines explained in tab `tab`'s diff changed, so a diff drawn asks for them again. */
 export function explainedChanged(tab: string): void {
   changed(tab);
+}
+
+/**
+ * Gives the diffs what places and draws their review threads, such as the comments: a diff drawn
+ * asks it for its threads, saying what each column shows, has the view draw each under its line,
+ * and counts what each file's hold on its header. `za` on a thread opens or collapses it, and
+ * `]t` and `[t` walk them. Returns a function that takes it back.
+ */
+export function setThreader(threader: Threader): () => void {
+  return threadWith(threader);
+}
+
+/** Says tab `tab`'s review threads changed, so a diff drawn asks for them again. */
+export function threadsChanged(tab: string): void {
+  changedThreads(tab);
 }
 
 /**

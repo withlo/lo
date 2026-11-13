@@ -13,7 +13,14 @@
 //
 // Each returns its problems as sentences, and none when the declarations pass.
 
-import { commandsOf, isCommandId, listOf, type Command, type Declarations } from './declare.ts';
+import {
+  commandsOf,
+  isCommandId,
+  listOf,
+  menuPlaces,
+  type Command,
+  type Declarations,
+} from './declare.ts';
 import {
   declaredBindings,
   holds,
@@ -289,16 +296,16 @@ export function checkMenus(features: readonly Declarations[]): string[] {
   for (const command of features.flatMap(commandsOf)) {
     // A command with no key on purpose has none to show in its menu.
     const on = keyless(command) ? [] : systemsOf(command);
-    if (command.menu) {
+    for (const place of menuPlaces(command)) {
       for (const system of on.filter((each) => !hasKey(command, each))) {
         problems.push(
-          `${command.id} is in the right-click menu of a ${command.menu.on}, with no key on ${systemNames[system]}.`,
+          `${command.id} is in the right-click menu of a ${place.on}, with no key on ${systemNames[system]}.`,
         );
       }
       const takes = command.targets ?? ['none'];
-      if (fit(takes, sampleTarget(command.menu.on)) === undefined) {
+      if (fit(takes, sampleTarget(place.on)) === undefined) {
         problems.push(
-          `${command.id} is in the right-click menu of a ${command.menu.on}, but acts on ${listed(takes, 'or')}.`,
+          `${command.id} is in the right-click menu of a ${place.on}, but acts on ${listed(takes, 'or')}.`,
         );
       }
     }

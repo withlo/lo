@@ -3,6 +3,7 @@ import {
   commandsOf,
   declaredBindings,
   match,
+  menuPlaces,
   parseKeys,
   systemStrokes,
   type Focus,
@@ -82,7 +83,7 @@ describe('the tab keys', () => {
   it('close the tab right-clicked, or the one on screen', () => {
     const close = commands.find(({ name }) => name === 'close');
     expect(close?.targets).toEqual(['tab', 'none']);
-    expect(close?.menu?.on).toBe('tab');
+    expect(close && menuPlaces(close)[0]?.on).toBe('tab');
   });
 
   it('⌃⇧PageUp and ⌃⇧PageDown move a tab, from anywhere but a dialog or a palette, on both systems', () => {
@@ -106,10 +107,9 @@ describe('the tab keys', () => {
     expect(moves.map(({ label }) => label)).toEqual(['Move tab left', 'Move tab right']);
     for (const move of moves) {
       expect(move.targets).toEqual(['tab', 'none']);
-      expect(move.menu?.on).toBe('tab');
-      expect(move.menu?.order).toBeLessThan(
-        commands.find(({ name }) => name === 'close')?.menu?.order ?? 0,
-      );
+      const close = commands.find(({ name }) => name === 'close');
+      expect(menuPlaces(move)[0]?.on).toBe('tab');
+      expect(menuPlaces(move)[0]?.order).toBeLessThan((close && menuPlaces(close)[0]?.order) ?? 0);
     }
   });
 

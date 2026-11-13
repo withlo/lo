@@ -3,14 +3,12 @@
 // so the tab has only what GitHub says.
 
 import { writeFileSync } from 'node:fs';
-import { createServer, type ServerResponse } from 'node:http';
-import { buffer } from 'node:stream/consumers';
 
-import { cassetteDir, parseJson, readCassette, type Json } from '@lo/testing';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
 
 import { appFolder, DIFF_FIRST, expect, KEYCHAIN, test as base } from './app.ts';
+import { serveBodies } from './bodies.ts';
 
 /** The cassette, recorded from the app on rozed-dev/e2e#23: one push, and ten reviews. */
 const CASSETTE = 'app_timeline';
@@ -18,37 +16,6 @@ const NUMBER = 23;
 
 /** A stand-in token, never a real one: the cassette answers for it as rozed-bot. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
-
-/** An object of JSON, or nothing for any other value. */
-function objectOf(value: Json | undefined): { [key: string]: Json } | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value : undefined;
-}
-
-/** GitHub's recorded answer to a read of posts' HTML. */
-function recordedBodies(): { [key: string]: Json } {
-  const recorded = readCassette(cassetteDir(CASSETTE)).interactions.find(
-    ({ interaction }) => interaction.request.operation === 'RenderedBodies',
-  );
-  const data = objectOf(objectOf(recorded?.interaction.response.body)?.['data']);
-  if (!data) throw new Error(`${CASSETTE} has no read of posts' HTML`);
-  return data;
-}
-
-/**
- * GitHub's answer to a read of the HTML of posts `ids`, from the one recorded. Which posts the
- * window asks for at once depends on which are near the screen, and so on the window's size, so
- * each is answered alone, and one that wasn't recorded as GitHub answers an ID it has no post for.
- */
-function bodiesFor(recorded: { [key: string]: Json }, ids: readonly string[]): Json {
-  const nodes = Array.isArray(recorded['nodes']) ? recorded['nodes'] : [];
-  const byId = new Map(nodes.map((node) => [objectOf(node)?.['id'], node]));
-  return { data: { ...recorded, nodes: ids.map((id) => byId.get(id) ?? null) } };
-}
-
-function json(outgoing: ServerResponse, body: Json): void {
-  outgoing.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-  outgoing.end(JSON.stringify(body));
-}
 
 const test = base.extend<{ github: ReplayServer; githubOrigin: string }>({
   // oxlint-disable-next-line no-empty-pattern
@@ -58,51 +25,9 @@ const test = base.extend<{ github: ReplayServer; githubOrigin: string }>({
     await server.close();
   },
   githubOrigin: async ({ github }, use) => {
-    const origin = new URL(github.urls.api).origin;
-    const recorded = recordedBodies();
-    // Passes each request on to the replay server, but a read of posts' HTML, answered here.
-    const front = createServer((incoming, outgoing) => {
-      void (async () => {
-        const body = await buffer(incoming);
-        if (incoming.url?.endsWith('/graphql')) {
-          const asked = objectOf(parseJson(body.toString('utf8')));
-          if (asked?.['operationName'] === 'RenderedBodies') {
-            const ids = objectOf(asked['variables'])?.['ids'];
-            const strings = Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
-            return json(outgoing, bodiesFor(recorded, strings));
-          }
-        }
-        const headers = new Headers();
-        for (const [name, value] of Object.entries(incoming.headers)) {
-          if (typeof value === 'string' && name !== 'host') headers.set(name, value);
-        }
-        const method = incoming.method ?? 'GET';
-        const response = await fetch(`${origin}${incoming.url ?? '/'}`, {
-          method,
-          headers,
-          body: method === 'GET' || method === 'HEAD' ? undefined : new Uint8Array(body),
-          redirect: 'manual',
-        });
-        const out: Record<string, string> = {};
-        response.headers.forEach((value, name) => {
-          if (!['content-length', 'content-encoding', 'transfer-encoding'].includes(name)) {
-            out[name] = value;
-          }
-        });
-        outgoing.writeHead(response.status, out);
-        outgoing.end(Buffer.from(await response.arrayBuffer()));
-        return undefined;
-      })().catch(() => {
-        // The test has ended, and the replay server with it: the request goes unanswered.
-        outgoing.destroy();
-      });
-    });
-    await new Promise<void>((resolve) => front.listen(0, '127.0.0.1', resolve));
-    const address = front.address();
-    if (address === null || typeof address === 'string') throw new Error('no port');
-    await use(`http://127.0.0.1:${address.port}`);
-    front.closeAllConnections();
-    await new Promise((resolve) => front.close(resolve));
+    const front = await serveBodies(CASSETTE, new URL(github.urls.api).origin);
+    await use(front.origin);
+    await front.close();
   },
   launch: async ({ githubOrigin }, use) => {
     const tokenFile = base.info().outputPath('token');

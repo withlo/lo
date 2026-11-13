@@ -1,0 +1,35 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/rozed-dev/e2e/pulls/95/files?per_page=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "etag": "W/\"3660932d83ed18e67585af8be2a14e83d60cfd648a426d687dafcb350040cd73\"",
+      "last-modified": "Fri, 13 Nov 2026 20:24:57 GMT",
+      "x-github-api-version-selected": "2022-11-28",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4967",
+      "x-ratelimit-reset": "1794601902",
+      "x-ratelimit-resource": "core",
+      "x-ratelimit-used": "33"
+    },
+    "body": [
+      {
+        "sha": "5b1dace6f2c3cfa5888cc059eaffb6f0ef7856c2",
+        "filename": "docs/guide.md",
+        "status": "renamed",
+        "additions": 1,
+        "deletions": 1,
+        "changes": 2,
+        "blob_url": "https://github.com/rozed-dev/e2e/blob/c94f2a0782f2ca1e42a5ed0c5c04cbb4cb0e3dc1/docs%2Fguide.md",
+        "raw_url": "https://github.com/rozed-dev/e2e/raw/c94f2a0782f2ca1e42a5ed0c5c04cbb4cb0e3dc1/docs%2Fguide.md",
+        "contents_url": "https://api.github.com/repos/rozed-dev/e2e/contents/docs%2Fguide.md?ref=c94f2a0782f2ca1e42a5ed0c5c04cbb4cb0e3dc1",
+        "patch": "@@ -2,4 +2,4 @@\n \n Add a job with `enqueue`. Two jobs run at once, and the rest wait their turn.\n \n-A job that fails is tried again, up to three times, a second apart.\n+A job that fails is tried again, up to three times, with a longer wait each time.",
+        "previous_filename": "docs/usage.md"
+      }
+    ]
+  }
+}

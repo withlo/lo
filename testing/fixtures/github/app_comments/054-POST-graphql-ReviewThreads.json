@@ -1,0 +1,96 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "ReviewThreads",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 95,
+      "first": 100,
+      "after": null
+    },
+    "query_sha256": "89476c194892866c84d28316d05a62244432d190b6b0fce18fc3df748b08fb5d"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4987",
+      "x-ratelimit-reset": "1794605193",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "13"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4987,
+          "used": 13,
+          "resetAt": "2026-11-13T21:26:33Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "reviewThreads": {
+              "totalCount": 1,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QyMDoyNDo1N1rOt0WNPA=="
+              },
+              "nodes": [
+                {
+                  "id": "PRRT_kwDOVleUfc63RY08",
+                  "path": "docs/guide.md",
+                  "subjectType": "LINE",
+                  "diffSide": "LEFT",
+                  "startDiffSide": null,
+                  "line": 5,
+                  "startLine": 5,
+                  "originalLine": 5,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QyMDoyNDo1N1rPAAAAARBKO8c="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEEo7xw",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: The old wording said a second apart.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T20:24:57Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/95#discussion_r4568267719",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "c94f2a0782f2ca1e42a5ed0c5c04cbb4cb0e3dc1"
+                        },
+                        "originalCommit": {
+                          "oid": "c94f2a0782f2ca1e42a5ed0c5c04cbb4cb0e3dc1"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

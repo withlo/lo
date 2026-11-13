@@ -23,6 +23,7 @@ import { usePage } from './page.ts';
 import { placesFor } from './places.ts';
 import { notes } from './shared.ts';
 import { loaderOf, useSnapshot } from './tabs.ts';
+import { useSaysWaiting, useThreadsSettled } from './settled.ts';
 
 /** Where each tab's view was when it last went, to come back to. */
 const places = tabState<Place | undefined>(() => undefined);
@@ -62,6 +63,8 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const loader = loaderOf(tab.id);
   const snapshot = useSnapshot(loader);
   const { ready } = snapshot;
+  const settled = useThreadsSettled(tab.id, ready !== undefined);
+  const saysWaiting = useSaysWaiting(tab.id, settled);
   // The panel's order, worked out from the diff's own files as the tree works it out from its
   // own, so the first view is drawn in it: the tree has its files a while after. It stays until
   // the reader orders the files another way.
@@ -102,13 +105,32 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   // What a new view is drawn with, read as it's drawn: a change of layout alone needs no new view.
   const comparison = ready && comparisonOf(ready);
   const compareFrom = ready?.compareFrom ?? null;
-  const latest = useRef({ entries, layout, packaged, shown, marks, comparison, compareFrom });
-  latest.current = { entries, layout, packaged, shown, marks, comparison, compareFrom };
+  const revisions = ready?.comparison ?? null;
+  const latest = useRef({
+    entries,
+    layout,
+    packaged,
+    shown,
+    marks,
+    comparison,
+    revisions,
+    compareFrom,
+  });
+  latest.current = {
+    entries,
+    layout,
+    packaged,
+    shown,
+    marks,
+    comparison,
+    revisions,
+    compareFrom,
+  };
 
   useEffect(() => {
     const parent = box.current;
     const drawn = latest.current;
-    if (!parent || nonceValue === undefined || !drawn.entries || key === undefined) {
+    if (!parent || nonceValue === undefined || !drawn.entries || key === undefined || !settled) {
       return undefined;
     }
     const at = key.slice(0, key.indexOf('|'));
@@ -123,6 +145,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
       loader,
       entries: drawn.entries,
       at,
+      comparison: drawn.revisions,
       compareFrom: drawn.compareFrom,
       layout: drawn.layout,
       nonce: nonceValue,
@@ -139,7 +162,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
       made.view.destroy();
     };
     // A new view only for new files, or a new order of them.
-  }, [key, nonceValue]);
+  }, [key, nonceValue, settled]);
 
   // Where the view is as it goes, read while it's still on the page: as the tab goes off screen,
   // its view is taken off the page before the effects above are undone.
@@ -174,8 +197,8 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <Slot slot={notes} props={{ tab }} />
-      {!ready || nonceValue === undefined ? (
-        <Waiting tab={tab} snapshot={snapshot} />
+      {!ready || nonceValue === undefined || !settled ? (
+        <Waiting tab={tab} snapshot={snapshot} threads={saysWaiting} />
       ) : (
         <div ref={box} className="min-h-0 flex-1" data-lo-diff={tab.id} />
       )}
@@ -183,11 +206,23 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   );
 }
 
-/** What the middle says until the diff is drawn. */
-function Waiting({ tab, snapshot }: { tab: PullTab; snapshot: Snapshot }) {
+/**
+ * What the middle says until the diff is drawn. With the files ready, it says nothing unless
+ * `threads` says the view has waited a while for its threads; otherwise all that's left is the
+ * page's nonce, a moment on each switch back to the tab.
+ */
+function Waiting({
+  tab,
+  snapshot,
+  threads,
+}: {
+  tab: PullTab;
+  snapshot: Snapshot;
+  threads: boolean;
+}) {
   const pull = usePull(tab.id);
-  const { state, progress } = snapshot;
-  let text = 'Reading what the pull request changes…';
+  const { ready, state, progress } = snapshot;
+  let text: string | undefined = 'Reading what the pull request changes…';
   // Until the tab knows its head, it's still opening, or can't.
   if (!pull?.shown) text = pull?.problem ? 'Nothing to show yet.' : 'Opening the pull request…';
   else if (state?.waiting) text = state.waiting;
@@ -197,10 +232,11 @@ function Waiting({ tab, snapshot }: { tab: PullTab; snapshot: Snapshot }) {
         ? 'The pull request changes no files.'
         : 'No file changed between these revisions.';
   } else if (state?.problem && state.files === null) text = state.problem;
+  else if (ready) text = threads ? 'Reading the review threads…' : undefined;
   else if (progress.of > 0) text = `Diffing the files: ${progress.done} of ${progress.of}…`;
   return (
     <div className="grid min-h-0 flex-1 place-items-center p-32 text-center text-fg-muted text-ui">
-      <p className="max-w-read-measure">{text}</p>
+      {text === undefined ? null : <p className="max-w-read-measure">{text}</p>}
     </div>
   );
 }

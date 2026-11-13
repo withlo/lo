@@ -54,6 +54,26 @@ operation and when in `cassette.json` (`rerecorded`). Before recording an answer
 moved on since, such as a pull request's base changed by a recording with writes, put GitHub in that
 state first, and back after.
 
+### When the app reads something new
+
+When the app begins to send a request its cassettes were recorded without, add only that request's
+answer to each, in place:
+
+```sh
+LO_FIXTURE_TOKEN_FILE=<file holding rozed-bot's token> \
+  node testing/scripts/add-answers.ts <query's .graphql file> <variables as JSON> <cassette> ...
+```
+
+Each cassette gets its own answer from GitHub, in a file after its others, so the requests recorded
+before it stay as they were. It checks the token's account and keeps and refuses what `rerecord.ts`
+does, refuses a cassette that holds the request already, and notes the operation and when in
+`cassette.json` (`added`). An answer another cassette recorded, such as an avatar, goes in as it is,
+with nothing sent to GitHub:
+
+```sh
+node testing/scripts/add-answers.ts --copy <recorded request's file> <cassette> ...
+```
+
 ## A cassette
 
 ```
@@ -156,7 +176,19 @@ and `STACK_PULLS` names the pull requests and their heads. Their cassette is `ap
 `LO_FIXTURE_TOKEN_FILE` as `record.ts` is, unstacks them and changes #84's base back, as `stack.sh`
 made them, so that can be recorded again. What GitHub can't be made to do on demand, a lost answer,
 the app's tests answer from the same cassette with that answer changed
-(`apps/desktop/e2e/convert.spec.ts`).
+(`apps/desktop/e2e/convert.spec.ts`). #83 has one review thread, on `src/cost.ts`.
+
+The review threads the app's tests read come from `fixtures/comments.sh`, built the same way:
+rozed-dev/e2e#94, two pushes, and threads on a line, on a range, on the base's side, on a file,
+resolved, with replies, with a suggestion, with an image attached and one from another site,
+outdated, and written on the second push; and #95, which renames a file, with a thread on its base's
+side. Every comment on them starts with `Fixture C:`. `writeCommentsRemote` from `@lo/testing/git`
+builds the remote, and `COMMENTS_PULL` and `COMMENTS_RENAME_PULL` name their commits. Their cassette
+is `app_comments`. `fixtures/comments-reset.sh`, run with `LO_FIXTURE_TOKEN_FILE` as `record.ts` is,
+deletes what a recording with writes added there and resolves and unresolves the threads as
+`comments.sh` left them. Which posts the window asks GitHub to render at once depends on what's near
+the screen, so the app's tests answer those reads from every post the cassette recorded
+(`apps/desktop/e2e/bodies.ts`).
 
 ## The credential scan
 

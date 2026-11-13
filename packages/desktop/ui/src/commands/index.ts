@@ -30,6 +30,7 @@ export {
   handlers,
   isCommandId,
   listOf,
+  menuPlaces,
   type BarMenu,
   type Command,
   type Declaration,
@@ -38,6 +39,7 @@ export {
   type Handler,
   type HandlersFor,
   type KeySpec,
+  type MenuPlace,
   type TargetFor,
   type When,
 } from './declare.ts';

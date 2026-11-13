@@ -418,6 +418,35 @@ describe('jumps', () => {
     expect(shown.probe.cursor()?.at).toMatchObject(onLine('b', 'new', 4));
   });
 
+  test('side by side, a thread under the other column’s line is a stop beside it, and acts there', () => {
+    const shown = open();
+    shown.setThreads(
+      [
+        thread('t1', at('a', 'new', 3)),
+        thread('old', at('a', 'old', 5)),
+        thread('t2', at('b', 'new', 4)),
+      ],
+      plain().render,
+    );
+    shown.reveal(onLine('a', 'new', 1));
+    const after = vimIn('After');
+    after.keys(']', 't');
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 3));
+    after.keys(']', 't');
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 5));
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'old' });
+    shown.jump('thread', 1);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('b', 'new', 4));
+    shown.jump('thread', -1);
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'old' });
+    // From the old column, the new column's threads are stops beside their lines.
+    shown.reveal(onLine('a', 'new', 1));
+    shown.otherSide();
+    shown.jump('thread', 1);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'old', 3));
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 't1' });
+  });
+
   test("Vim runs Lo's motions with counts, under the keys it's given", () => {
     const shown = open();
     shown.reveal(onLine('a', 'new', 1));
@@ -928,6 +957,13 @@ describe('threads', () => {
     expect(asked.at(-1)).toBe('destroy here');
   });
 
+  test('with now, a line on screen takes its threads at once, as in a view not yet seen', () => {
+    const shown = open();
+    onScreen(['line 4']);
+    shown.setThreads([thread('here', at('a', 'new', 4))], plain().render, { now: true });
+    expect(drawnThreads()).toEqual(['here']);
+  });
+
   test('a line takes its threads at once while the view is hidden, as behind another view', () => {
     const shown = open();
     onScreen(['line 4']);
@@ -1244,12 +1280,21 @@ describe('headers and notes', () => {
       additions: 10,
       deletions: 0,
       viewed: 'viewed',
-      comments: 2,
+      threads: { total: 3, unresolved: 2 },
       tags: ['new'],
     });
     const header = parent!.querySelector('.cm-content[aria-label="After"] [data-row="h:1"]')!;
     expect(header.classList.contains('is-viewed')).toBe(true);
-    expect(header.textContent).toContain('new · 2 comments');
+    expect(header.textContent).toContain('new3');
+    const count = header.querySelector('.lo-count');
+    expect(count?.getAttribute('title')).toBe('2 unresolved of 3');
+    expect(count?.classList.contains('is-open')).toBe(true);
+    shown.setHeader('b', { additions: 10, deletions: 0, threads: { total: 1, unresolved: 0 } });
+    const resolved = parent!.querySelector(
+      '.cm-content[aria-label="After"] [data-row="h:1"] .lo-count',
+    );
+    expect(resolved?.getAttribute('aria-label')).toBe('1 thread, resolved');
+    expect(resolved?.classList.contains('is-open')).toBe(false);
     expect(header.querySelector('.lo-diffhead__ball.is-viewed')?.getAttribute('title')).toBe(
       'Viewed',
     );
