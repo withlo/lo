@@ -63,14 +63,14 @@ describe('a file read whole', () => {
   it('shows its lines, then their highlighting, and drops what an older read brings', async () => {
     const { made, asked, answers, colors } = work();
     const file = { key: 'src/a.ts', version: 'new' as const, path: { text: 'src/a.ts' } };
-    readWhole('t1', file, HEAD, false, made);
+    readWhole('t1', file, HEAD, null, false, made);
     expect(reads.get('t1')).toMatchObject({
       key: 'src/a.ts',
       at: HEAD,
       content: { kind: 'reading' },
     });
     // Another file asked for before the first came: the first's text is dropped.
-    readWhole('t1', { ...file, key: 'b.ts', path: { text: 'b.ts' } }, HEAD, false, made);
+    readWhole('t1', { ...file, key: 'b.ts', path: { text: 'b.ts' } }, HEAD, null, false, made);
     answers[0]?.({ kind: 'text', text: 'old\n' });
     answers[1]?.({ kind: 'text', text: 'one\r\ntwo\n' });
     await settle();
@@ -107,7 +107,7 @@ describe('a file read whole', () => {
       ],
       [new Error('the bridge fell over'), { kind: 'failed', why: 'Lo couldn’t read it.' }],
     ] as const) {
-      readWhole('t2', file, HEAD, true, made);
+      readWhole('t2', file, HEAD, null, true, made);
       answers.at(-1)?.(answer);
       await settle();
       expect(reads.get('t2')).toMatchObject({ large: true, content });
@@ -115,18 +115,21 @@ describe('a file read whole', () => {
     expect(logged).toEqual([new Error('the bridge fell over')]);
   });
 
-  it('is of one file, version and head', () => {
+  it('is of one file, version, head and start', () => {
     const read = {
       key: 'a.ts',
       version: 'old',
       at: HEAD,
+      from: null,
       large: false,
       content: { kind: 'reading' },
     } as const;
-    expect(readOf(read, { key: 'a.ts', version: 'old' }, HEAD)).toBe(true);
-    expect(readOf(read, { key: 'a.ts', version: 'new' }, HEAD)).toBe(false);
-    expect(readOf(read, { key: 'a.ts', version: 'old' }, 'b'.repeat(40))).toBe(false);
-    expect(readOf(undefined, { key: 'a.ts', version: 'old' }, HEAD)).toBe(false);
+    expect(readOf(read, { key: 'a.ts', version: 'old' }, HEAD, null)).toBe(true);
+    expect(readOf(read, { key: 'a.ts', version: 'new' }, HEAD, null)).toBe(false);
+    expect(readOf(read, { key: 'a.ts', version: 'old' }, 'b'.repeat(40), null)).toBe(false);
+    expect(readOf(undefined, { key: 'a.ts', version: 'old' }, HEAD, null)).toBe(false);
+    // A stack's layer compared with the layer below has another base side.
+    expect(readOf(read, { key: 'a.ts', version: 'old' }, HEAD, 'c'.repeat(40))).toBe(false);
   });
 });
 

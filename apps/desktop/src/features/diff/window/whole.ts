@@ -69,6 +69,8 @@ export interface Read {
   readonly version: Version;
   /** The head on screen it's read at. */
   readonly at: string;
+  /** The commit a stack's layer's diff starts from, which its base side is read at, if any. */
+  readonly from: string | null;
   /** Whether it was asked for past the size Lo loads at once. */
   readonly large: boolean;
   readonly content: Content;
@@ -143,13 +145,16 @@ export function pathIn(
   return version === 'old' ? (change.previous ?? change.path) : change.path;
 }
 
-/** Whether `read` is of `file` at the head `at`. */
+/** Whether `read` is of `file` at the head `at`, from the start `from`. */
 export function readOf(
   read: Read | undefined,
   file: { key: string; version: Version },
   at: string,
+  from: string | null,
 ): read is Read {
-  return read?.key === file.key && read.version === file.version && read.at === at;
+  return (
+    read?.key === file.key && read.version === file.version && read.at === at && read.from === from
+  );
 }
 
 /** What reading a whole file asks of main and the background process. */
@@ -174,6 +179,7 @@ export function readWhole(
   tab: string,
   file: { key: string; version: Version; path: TreePath },
   at: string,
+  from: string | null,
   large: boolean,
   work: WholeWork,
 ): void {
@@ -181,6 +187,7 @@ export function readWhole(
     key: file.key,
     version: file.version,
     at,
+    from,
     large,
     content: { kind: 'reading' },
   };
