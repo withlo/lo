@@ -3,7 +3,14 @@
 // comment, restored from main's drafts, saved as they're typed in, and closed once what they sent
 // is on GitHub.
 
-import type { BoxFrame, Composer, ComposerEvents, ComposeOptions } from '@lo/ui/code';
+import type {
+  BoxFrame,
+  Composer,
+  ComposerEvents,
+  ComposeOptions,
+  OnFile,
+  Place,
+} from '@lo/ui/code';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { notice } from '../../../window/commands/notices.tsx';
@@ -75,6 +82,8 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
   const claimed: string[] = [];
   const released: string[] = [];
   const toggled: string[] = [];
+  /** The threads drawn under each line or header, by `where`. */
+  const onScreen = new Map<string, string[]>();
   const vim = vi.fn<(keys: readonly string[]) => void>();
   const shown: DrawnDiff = {
     at: HEAD,
@@ -135,9 +144,15 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
       claimed.push(id);
       return () => released.push(id);
     },
+    threadsDrawn: (at) => onScreen.get(where(at)) ?? [],
   };
   diff.current = writing;
-  return { drawn, writing, vim, claimed, released, toggled };
+  return { drawn, writing, vim, claimed, released, toggled, onScreen };
+}
+
+/** A line or header, as a key. */
+function where(at: Place | OnFile): string {
+  return 'line' in at ? `${at.file}:${at.side}:${at.line}` : at.file;
 }
 
 const answers: Record<string, (input: unknown) => unknown> = {};
@@ -556,7 +571,7 @@ function standing(stands: ActRow['stands']): ActRow {
   return { thread: 'T2', comment: null, change: 'resolve', stands };
 }
 
-/** The diff, with `rows`, the threads main sent, placed in it. */
+/** The diff, with `rows`, the threads main sent, placed in it and drawn. */
 function withThreads(...rows: ThreadRow[]) {
   const fake = fakeDiff();
   threads.held.set(VIEW, {
@@ -570,6 +585,11 @@ function withThreads(...rows: ThreadRow[]) {
     },
   });
   threads.placedIn(VIEW, fake.writing.drawn());
+  for (const { id } of rows) {
+    const at = threads.shownAt(VIEW, id);
+    if (!at) continue;
+    fake.onScreen.set(where(at), [...(fake.onScreen.get(where(at)) ?? []), id]);
+  }
   return fake;
 }
 
@@ -595,6 +615,30 @@ describe('acting on a thread', () => {
     // One `]t` landed on is the one.
     acts.reply(tab(), { ...ON_FIVE, thread: 'T5b' });
     expect(drawn.map((each) => each.at)).toEqual([{ thread: 'T2' }, { thread: 'T5b' }]);
+  });
+
+  test('a thread placed under a line but not drawn there yet is no key’s to act on', async () => {
+    const { drawn, onScreen } = withThreads(threadRow('T2', 2));
+    onScreen.clear();
+    answers['comments.resolve'] = (): ActOutcome => ({ kind: 'done' });
+    acts.resolve(tab(), ON_TWO);
+    expect(notice()?.body).toBe('There’s no thread on this line.');
+    acts.reply(tab(), ON_TWO);
+    await acts.edit(tab(), ON_TWO);
+    acts.remove(tab(), ON_TWO);
+    expect(notice()?.body).toBe('There’s no thread on this line.');
+    expect(drawn).toEqual([]);
+    expect(acts.deleteAsking()).toBeUndefined();
+    expect(asked('comments.resolve')).toEqual([]);
+    expect(asked('comments.editing')).toEqual([]);
+  });
+
+  test('a reply box closed and kept lets the card offer “Reply…” again', () => {
+    const { drawn } = withThreads(threadRow('T2', 2));
+    acts.reply(tab(), ON_TWO);
+    expect(replying.get(VIEW).has('T2')).toBe(true);
+    drawn[0]!.on.close(true);
+    expect(replying.get(VIEW).has('T2')).toBe(false);
   });
 
   test('a thread GitHub takes no reply on says so', () => {
@@ -699,6 +743,16 @@ describe('acting on a thread', () => {
       },
     ]);
     expect(claimed).toEqual(['T2']);
+  });
+
+  test('`dd` offline says so at once, asking nothing', () => {
+    withThreads(threadRow('T2', 2));
+    said.pull = pull({
+      connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'down' },
+    });
+    acts.remove(tab(), ON_TWO);
+    expect(acts.deleteAsking()).toBeUndefined();
+    expect(notice()?.body).toBe('Offline. Try again once GitHub can be reached.');
   });
 
   test('a change whose answer was lost says Lo is checking, or that it didn’t go, until the thread shows it', () => {

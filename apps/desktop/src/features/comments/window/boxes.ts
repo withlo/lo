@@ -291,6 +291,7 @@ function eventsOf(box: Box): ComposerEvents {
     close(keep) {
       box.composer = undefined;
       box.open = false;
+      replyingChanged(box.view);
       if (keep) {
         box.saveNow();
         return;
@@ -303,7 +304,6 @@ function eventsOf(box: Box): ComposerEvents {
       holdDropped(box);
       if (box.state.place.kind === 'edit') discard(box);
       else save(box.view, box.state.place, '');
-      replyingChanged(box.view);
     },
     mode(mode) {
       box.set({ mode });

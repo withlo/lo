@@ -148,6 +148,11 @@ export interface ThreadView {
   open: boolean;
   /** Changes whenever what the thread shows changes, so the view has the caller draw it again. */
   version: number;
+  /**
+   * The keyboard is on it: `]t` landed on it, and the cursor is still on its line. The view sets
+   * it; what the caller gives is taken as false.
+   */
+  focused?: boolean;
 }
 
 /** What the caller drew for a thread, which the view keeps up to date and takes down. */
@@ -426,6 +431,12 @@ export interface DiffView extends KeySource {
    * again, its line staying where it is. Says whether the view has the thread.
    */
   openThread(id: string, open: boolean | 'toggle'): boolean;
+  /**
+   * The threads drawn under line `at`, or under file `at`'s header, by their ids, in their order:
+   * none while those given there wait to come, as they do while the line is on screen. What a key
+   * there can act on.
+   */
+  threadsDrawn(at: Place | OnFile): readonly string[];
   /**
    * Replaces the marks on lines: overview markers, in a gutter that's there from the start, so
    * marks change no line's width or height, and what's on screen stays where it is. Kinds the diff

@@ -16,7 +16,6 @@ import {
 
 import { registry } from '../../../window/commands/registry.ts';
 import { cancelDelete, confirmDelete, deleteAsking, subscribeAsking } from './acts.ts';
-import { excerptOf } from './Card.tsx';
 
 /** A key written in Lo's notation, such as `enter`, as this system shows it. */
 function labels(keys: string): string[] {
@@ -32,6 +31,19 @@ function pressed(run: () => void): (event: MouseEvent) => void {
   return (event) => {
     if (event.detail <= 1) run();
   };
+}
+
+/** How much of the comment's first line the question shows. */
+const FIRST_LINE = 120;
+
+/** The comment's first line with any text, as the question shows it: a long one cut short. */
+export function firstLine(body: string): string {
+  const line = body
+    .split('\n')
+    .map((each) => each.trim())
+    .find((each) => each !== '');
+  if (line === undefined) return '';
+  return line.length > FIRST_LINE ? `${line.slice(0, FIRST_LINE - 1)}…` : line;
 }
 
 /** What takes `⏎` for itself: a button, a link or a field. */
@@ -76,7 +88,7 @@ export function DeleteDialog(): ReactNode {
         if (!next) cancelDelete();
       }}
       title="Delete your comment?"
-      description={asking && excerptOf(asking.body)}
+      description={asking && firstLine(asking.body)}
       foot={
         <>
           <DialogSpacer />

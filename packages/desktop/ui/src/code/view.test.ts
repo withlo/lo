@@ -1431,6 +1431,61 @@ describe('threads', () => {
     expect(box.text).toBe('ent as it is');
   });
 
+  test(']t lands on each thread drawn, of a line or a file, and keys act on the one it landed on', () => {
+    const shown = open();
+    const landed: string[] = [];
+    const render: RenderThread = (host, first) => {
+      if (first.focused === true) landed.push(first.id);
+      return {
+        update(next) {
+          if (next.focused === true) landed.push(next.id);
+        },
+        destroy() {},
+      };
+    };
+    shown.setThreads(
+      [
+        thread('one', at('a', 'new', 4)),
+        thread('two', at('a', 'new', 4)),
+        onFile('on b', 'b'),
+        onFile('also on b', 'b'),
+      ],
+      render,
+    );
+    expect(shown.threadsDrawn(at('a', 'new', 4))).toEqual(['one', 'two']);
+    expect(shown.threadsDrawn({ file: 'b' })).toEqual(['on b', 'also on b']);
+    shown.reveal(onLine('a', 'new', 1));
+    shown.jump('thread', 1);
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'one' });
+    // The next on the same line: the cursor stays.
+    shown.jump('thread', 1);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 4));
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'two' });
+    shown.jump('thread', 1);
+    expect(shown.keyState().target).toEqual({
+      kind: 'header',
+      file: 'b',
+      side: 'new',
+      thread: 'on b',
+    });
+    shown.jump('thread', 1);
+    expect(shown.keyState().target).toMatchObject({ kind: 'header', thread: 'also on b' });
+    shown.jump('thread', -2);
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'two' });
+    // Its card says the keyboard is on it.
+    expect(landed).toEqual(['one', 'two', 'on b', 'also on b', 'two']);
+  });
+
+  test('a thread waiting to come under a line on screen isn’t drawn there for a key to act on', () => {
+    const shown = open();
+    const screen = onScreen(['line 4']);
+    shown.setThreads([thread('here', at('a', 'new', 4))], plain().render);
+    expect(shown.threadsDrawn(at('a', 'new', 4))).toEqual([]);
+    screen.lines.clear();
+    scroller().dispatchEvent(new Event('scroll'));
+    expect(shown.threadsDrawn(at('a', 'new', 4))).toEqual(['here']);
+  });
+
   test("]t stops at a file's threads, on its header", () => {
     const shown = open();
     shown.setThreads([onFile('on b', 'b'), thread('line', at('b', 'new', 6))], plain().render);

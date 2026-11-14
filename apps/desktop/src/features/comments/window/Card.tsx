@@ -70,12 +70,14 @@ export interface CardProps {
   readonly id: string;
   /** Whether it shows open, or collapsed to one line. */
   readonly open: boolean;
+  /** The keyboard is on it: `]t` landed on it. */
+  readonly focused?: boolean;
   /** Opens or collapses it, as its own buttons ask. */
   readonly onToggle: () => void;
 }
 
 /** View `tab`'s thread `id`, as main last sent it: nothing once it's gone. */
-export function Card({ tab, id, open, onToggle }: CardProps): ReactNode {
+export function Card({ tab, id, open, focused = false, onToggle }: CardProps): ReactNode {
   const view = tab.id;
   const pull: PostPull = { owner: tab.owner, repo: tab.repo, number: tab.number };
   const threads = useTabState(held, view, (value) => value.threads);
@@ -98,6 +100,7 @@ export function Card({ tab, id, open, onToggle }: CardProps): ReactNode {
       <ThreadCard
         row={row}
         open={open}
+        focused={focused}
         onToggle={onToggle}
         author={author}
         body={body}
@@ -148,6 +151,7 @@ export interface CardActions {
 export function ThreadCard({
   row,
   open,
+  focused = false,
   onToggle,
   author,
   body,
@@ -159,6 +163,8 @@ export function ThreadCard({
 }: {
   row: ThreadRow;
   open: boolean;
+  /** The keyboard is on it: `]t` landed on it. */
+  focused?: boolean;
   onToggle: () => void;
   /** The pull request's author's login, if GitHub still has the account. */
   author: string | null | undefined;
@@ -196,6 +202,7 @@ export function ThreadCard({
       comments={comments}
       resolved={row.resolved}
       open={open}
+      focused={focused}
       outdated={row.outdated}
       tags={newer ? [{ label: 'On a newer push', tone: 'warning' }] : undefined}
       excerpt={row.comments[0] && excerptOf(row.comments[0].body)}

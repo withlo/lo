@@ -606,15 +606,15 @@ a fork is someone else's code, even in a repo you trust.
   collapses it. A file's header and its row in the file tree count its threads.
 - **Threads.** You can reply, resolve and unresolve, and edit or delete your own comments, from the
   thread's buttons, its right-click menu or its keys. A key acts on the thread `]t` landed on, or
-  the only thread on the cursor's line, or under the file's header; where a line has more than one,
-  Lo says to pick one with `]t`. `r` opens a reply box right after the thread, whose buttons add the
-  reply to your pending review or post it at once. `x` resolves the thread, or unresolves it, here
-  and in the threads panel, where GitHub lets you. `i` opens a box with your newest comment's text,
-  and saving it replaces the comment on GitHub. `dd` asks first, showing the comment's first line,
-  whether it leaves your pending review and whether its thread goes with it: `⏎` deletes it and
-  `Esc` leaves it, and a held or repeated key never confirms. Lo changes only your own comments,
-  even where GitHub would let you change someone else's: theirs are for GitHub's page. A reply box
-  and a comment box on the same line can both be open.
+  the only thread on screen on the cursor's line, or under the file's header; where there's more
+  than one, Lo says to pick one with `]t`. `r` opens a reply box right after the thread, whose
+  buttons add the reply to your pending review or post it at once. `x` resolves the thread, or
+  unresolves it, here and in the threads panel, where GitHub lets you. `i` opens a box with your
+  newest comment's text, and saving it replaces the comment on GitHub. `dd` asks first, showing the
+  comment's first line, whether it leaves your pending review and whether its thread goes with it:
+  `⏎` deletes it and `Esc` leaves it, and a held or repeated key never confirms. Lo changes only
+  your own comments, even where GitHub would let you change someone else's: theirs are for GitHub's
+  page. A reply box and a comment box on the same line can both be open.
 - **Edits and deletes.** An edit keeps the text it started from with its draft, through a restart.
   GitHub's edit doesn't check what it replaces, so before saving Lo reads the comment again, and
   saves only if GitHub's text is still the one the edit started from. If it was edited elsewhere
@@ -675,7 +675,8 @@ shows in the whole diff of the revision it's on, which Lo compares first, saying
 → r1". `⌃o` then goes back to the comparison before and the place in it, and `⌃i` comes forward
 again. The last move wins: a comparison still coming is called off, with what Lo said of it, when
 the diff on screen shows the next thread asked for, or when `⌃o` or `⌃i` goes elsewhere first. A
-file-level thread shows its file's header. In the diff, `]t` and `[t` jump between threads.
+file-level thread shows its file's header. In the diff, `]t` and `[t` jump between threads, a stop
+for each, a file's threads under its header included, and the thread landed on is ringed.
 
 ### Timeline
 

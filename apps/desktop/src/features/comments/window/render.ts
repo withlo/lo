@@ -15,8 +15,8 @@ import { Card } from './Card.tsx';
 export function renderThreads(tab: PullTab, toggle: (thread: string) => void): RenderThread {
   return (host, thread) => {
     const root = createRoot(host);
-    const draw = ({ id, open }: ThreadView) => {
-      root.render(createElement(Card, { tab, id, open, onToggle: () => toggle(id) }));
+    const draw = ({ id, open, focused = false }: ThreadView) => {
+      root.render(createElement(Card, { tab, id, open, focused, onToggle: () => toggle(id) }));
     };
     draw(thread);
     let gone = false;

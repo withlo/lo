@@ -1,7 +1,8 @@
 // Acting on a view's review threads in its diff, from their keys, menus and buttons: replying (a
 // box right after the thread's card), resolving or unresolving, editing your comment (a box with
 // GitHub's text) and deleting it, after a dialog asks. Each acts on the thread `]t` landed on, the
-// only one on the cursor's line or the header's file, or the card that was pressed or right-clicked.
+// only one the diff draws on the cursor's line or under the header, or the card that was pressed or
+// right-clicked: never on one placed there that hasn't come on screen yet.
 // A write main sends claims its thread in the diff, so what it changes there comes at once. How a
 // change main sent stands, while Lo checks whether it went after GitHub's answer was lost, shows
 // on its thread's card.
@@ -16,7 +17,7 @@ import type { ActRefusal, ActRow, ActsView, ThreadRow } from '../contract.ts';
 import { canWrite, claimBriefly, knowPull, loginOf, offline, openAt } from './boxes.ts';
 import { main } from './main.ts';
 import { threadOf } from './placing.ts';
-import { held, shownAt, shownUnder } from './threads.ts';
+import { held, shownAt } from './threads.ts';
 import { actText, NO_REPLY, type Doing } from './writing.ts';
 
 /** Why a change to a thread can't go while GitHub can't be reached. */
@@ -105,22 +106,25 @@ export function actNote(
 export type ThreadKeyTarget = LineTarget | HeaderTarget | ThreadTarget;
 
 /**
- * The thread `target` names in view `view`'s diff, as main last sent it: the thread a card or
- * `]t` named, or the only one under the cursor's line, or under the header's file. Why there's none
- * otherwise.
+ * The thread `target` names in view `view`'s diff, as main last sent it: the thread a card, the
+ * panel or `]t` named, or the only one the diff draws under the cursor's line, or under the
+ * header. Why there's none otherwise.
  */
 export function threadFor(view: string, target: ThreadKeyTarget): ThreadRow | string {
   let id: string | undefined;
-  if (target.kind === 'thread') id = target.thread;
-  else if (target.kind === 'line' && target.thread !== undefined) id = target.thread;
+  if (target.kind === 'thread' || target.thread !== undefined) id = target.thread;
   else {
-    const under =
+    const diff = writingDiff(view, true) ?? writingDiff(view);
+    if (!diff) return 'The diff isn’t drawn yet.';
+    const under = diff.threadsDrawn(
       target.kind === 'header'
-        ? shownUnder(view, target.file)
-        : shownUnder(view, target.at.file, {
+        ? { file: target.file }
+        : {
+            file: target.at.file,
             side: target.at.side,
             line: 'line' in target.at ? target.at.line : target.at.to,
-          });
+          },
+    );
     if (under.length > 1) return `There are ${under.length} threads here. Press ]t to pick one.`;
     id = under[0];
     if (id === undefined) {
@@ -340,6 +344,11 @@ export function remove(tab: PullTab, target: ThreadKeyTarget, comment?: string):
   if (!row) return;
   const chosen = yours(tab.id, row, 'delete', title, comment);
   if (!chosen) return;
+  // Nothing would go: it's refused now, not after the question.
+  if (offline(tab.id)) {
+    notify(title, OFFLINE_ACT);
+    return;
+  }
   const facts = deleteFacts(threadOf(row), chosen, undefined);
   setAsking({
     tab,

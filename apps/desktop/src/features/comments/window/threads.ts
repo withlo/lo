@@ -50,24 +50,6 @@ export function shownAt(view: string, id: string): ThreadView['at'] | undefined 
   return shown.get(view).get(id);
 }
 
-/**
- * The threads in view `view`'s diff as last placed under a line of file `file`, on `side`, or with
- * no line, under its header: by their ids, in their order.
- */
-export function shownUnder(
-  view: string,
-  file: string,
-  line?: { readonly side: 'old' | 'new'; readonly line: number },
-): string[] {
-  const ids: string[] = [];
-  for (const [id, at] of shown.get(view)) {
-    if (at.file !== file) continue;
-    const under = 'line' in at ? line && at.side === line.side && at.line === line.line : !line;
-    if (under) ids.push(id);
-  }
-  return ids;
-}
-
 /** What view `view`'s threads hold in each file of its diff as last placed, by the tree's key. */
 export function countsIn(view: string): ReadonlyMap<string, FileThreads> {
   return counted.get(view);
