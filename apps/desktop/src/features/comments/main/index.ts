@@ -134,7 +134,9 @@ export default defineFeature(contract, {
         const on = use(comparisons).onScreen(id);
         if (on.kind !== 'revisions') return null;
         const { key, old, new: now } = on.comparing;
-        return { key, from: old.head, replayed: old.base !== now.base };
+        // A revision compared from the base starts where it branched off.
+        const from = old.head === now.base ? null : old.head;
+        return { key, from, replayed: old.base !== now.base };
       },
       publishThreads: (view) => publish('threads', view),
       publishReview: (view) => publish('review', view),

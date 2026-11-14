@@ -64,6 +64,7 @@ function row(number: number, below: number[]): Row {
     needsRebase: false,
     overview: null,
     viewed: null,
+    threads: null,
   };
 }
 

@@ -384,6 +384,29 @@ describe('StackTree', () => {
       expect(said(row(host, 'a'))).not.toContain('12+');
       expect(row(host, 'a').querySelector('[title="12 of 12 files viewed"]')).toBeTruthy();
     });
+
+    it('counts its unresolved threads while it has any, with a plus when only some were read', () => {
+      const host = render(
+        <StackTree
+          {...props({
+            layers: [
+              sample('a', { threads: { unresolved: 1 } }),
+              sample('b', { threads: { unresolved: 3, partial: true } }),
+              sample('c', { threads: { unresolved: 0 } }),
+              sample('d'),
+            ],
+          })}
+        />,
+      );
+      const one = row(host, 'a').querySelector('[role="img"][aria-label="1 unresolved thread"]');
+      expect(one?.textContent).toBe('1');
+      expect(one?.hasAttribute('data-open')).toBe(true);
+      const some = row(host, 'b').querySelector('[aria-label="At least 3 unresolved threads"]');
+      expect(some?.textContent).toBe('3+');
+      // None unresolved, or none read, shows nothing.
+      expect(row(host, 'c').querySelector('[aria-label*="unresolved"]')).toBeNull();
+      expect(row(host, 'd').querySelector('[aria-label*="unresolved"]')).toBeNull();
+    });
   });
 
   describe('the layer on screen and the keyboard', () => {

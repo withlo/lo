@@ -58,10 +58,10 @@ export function threadOf(row: ThreadRow): Thread {
 
 /**
  * What the columns of a diff as drawn show: the head on screen on the right, and on the left the
- * pull request's base, or the older of two revisions compared, as main said it compares them. Where
- * the left column's lines are no commit's a thread is written on, no thread shows there: two
- * revisions replayed onto one base, a stack's layer compared with the layer below it, and a
- * comparison main hasn't said yet.
+ * pull request's base, or the older of two revisions compared, as main said it compares them; a
+ * revision compared from the base is its whole diff. Where the left column's lines are no commit's
+ * a thread is written on, no thread shows there: two revisions replayed onto one base, a stack's
+ * layer compared with the layer below it, and a comparison main hasn't said yet.
  */
 export function screenOf(drawn: DrawnDiff, compared: Compared | null): Screen {
   const { at, comparison, compareFrom } = drawn;
@@ -69,6 +69,7 @@ export function screenOf(drawn: DrawnDiff, compared: Compared | null): Screen {
     return compareFrom === null ? Screen.full(at) : Screen.replayed(compareFrom, at);
   }
   if (compared?.key !== comparison) return Screen.replayed(comparison, at);
+  if (compared.from === null) return Screen.full(at);
   return compared.replayed ? Screen.replayed(compared.from, at) : Screen.between(compared.from, at);
 }
 
