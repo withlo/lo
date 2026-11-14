@@ -111,6 +111,10 @@ export default defineFeature(contract, {
     cancelUpload({ id, upload }) {
       started(uploads).cancel(id, upload);
     },
+    editing: ({ id, place, base }) => started(writer).editing(id, place, base),
+    edit: ({ id, place, text }) => started(writer).edit(id, place, text),
+    resolve: ({ id, thread, resolved }) => started(writer).resolve(id, thread, resolved),
+    remove: ({ id, thread, comment, asked }) => started(writer).remove(id, thread, comment, asked),
   },
   start({ use, publish, database }) {
     const service = use(tabs);
@@ -121,6 +125,7 @@ export default defineFeature(contract, {
       view: (id) => service.pull(id),
       drafts: kept,
       publish: (view) => publish('drafts', view),
+      publishActs: (view) => publish('acts', view),
       async unchanged(id, from, to, path) {
         const repo = await service.clone(id);
         if (!repo) return false;

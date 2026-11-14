@@ -1,9 +1,10 @@
 // A comment box's frame in a diff, drawn in the parts the code view makes around its editor: the
-// head, with Write and Preview, where the comment goes and who it's from; the notes, of a restored
-// draft, a refusal with what to do about it, or how sending stands; the preview, the text as GitHub
-// would render it; the files attached to it (`./Attached.tsx`); and the foot, with Vim's mode,
-// "Attach" and the buttons that send. Each part is a React root of its own, drawn from the box's
-// state, and drawn at once as the box is made, so it's as tall as it'll be before it's on screen.
+// head, with Write and Preview, where the comment goes, or the thread a reply is to, or that it's
+// an edit, and who it's from; the notes, of a restored draft, a refusal with what to do about it,
+// or how sending stands; the preview, the text as GitHub would render it; the files attached to it
+// (`./Attached.tsx`); and the foot, with Vim's mode, "Attach" and the buttons that send. Each part
+// is a React root of its own, drawn from the box's state, and drawn at once as the box is made, so
+// it's as tall as it'll be before it's on screen.
 
 import {
   CommentBoxFootBar,
@@ -22,11 +23,12 @@ import { createRoot } from 'react-dom/client';
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
-import { usePull, useRun } from '../../tab/window/shared.ts';
+import { usePull, useRun, useTabState } from '../../tab/window/shared.ts';
 import { act, type Box, type BoxState, pullIn, send, sendingNow, takenDown } from './boxes.ts';
 import { Preview as Rendering } from './Preview.tsx';
 import { Dropzone, UploadRows, useUploads } from './Attached.tsx';
 import { holdText, takeAddresses, UPLOADING } from './uploads.ts';
+import { held } from './threads.ts';
 import {
   IN_A_LAYER,
   notesOf,
@@ -66,15 +68,36 @@ function useWhyNot(box: Box): string | undefined {
   return undefined;
 }
 
-/** The foot's buttons: the main one, as `c` or `C` opened the box, last. */
+/** What each of a box's buttons says, by what it does: a reply's say it replies. */
+function buttonLabel(state: BoxState, how: 'review' | 'now'): string {
+  if (how === 'review') return 'Add to review';
+  return state.place.kind === 'reply' ? 'Reply now' : 'Comment now';
+}
+
+/**
+ * The foot's buttons: the main one, as `c` or `C` opened the box, last. An edit's has one, which
+ * saves it.
+ */
 function footOf(box: Box, state: BoxState, why: string | undefined): CommentBoxFoot {
   const waiting = sendingNow(state);
   const blank = state.text.trim() === '';
+  const disabled = why !== undefined || waiting || blank;
+  if (state.place.kind === 'edit') {
+    const save: CommentBoxAction = {
+      label: 'Save the edit',
+      keys: labels('cmd+enter'),
+      primary: true,
+      disabled,
+      why,
+      onClick: () => void send(box, 'review'),
+    };
+    return { mode: modes[state.mode], actions: [save] };
+  }
   const button = (how: 'review' | 'now'): CommentBoxAction => ({
-    label: how === 'review' ? 'Add to review' : 'Comment now',
+    label: buttonLabel(state, how),
     keys: labels(how === 'review' ? 'cmd+enter' : 'alt+enter'),
     primary: state.primary === how,
-    disabled: why !== undefined || waiting || blank,
+    disabled,
     why,
     onClick: () => void send(box, how),
   });
@@ -103,6 +126,13 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
   const state = useBox(box);
   const pull = usePull(box.view);
   const login = pull?.acting?.kind === 'account' ? pull.acting.login : undefined;
+  const { place } = state;
+  // Who started the thread a reply is to.
+  const started = useTabState(held, box.view, (value) =>
+    place.kind === 'reply'
+      ? value.threads?.threads.find((each) => each.id === place.thread)?.comments[0]?.author
+      : undefined,
+  );
   return (
     <CommentBoxHeadBar
       previewing={state.previewing}
@@ -112,7 +142,7 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
           box.set({ previewing: on });
         },
         previewKeys: labels('cmd+shift+v'),
-        where: whereText(state.place),
+        where: whereText(place, started),
         account:
           login === undefined
             ? undefined

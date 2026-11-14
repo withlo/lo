@@ -15,7 +15,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { openDatabase } from '../../../main/database.ts';
 import { migrate } from '../../../main/migrations.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { DraftPlaceRow, DraftsView } from '../contract.ts';
+import type { DraftPlaceRow, DraftsView, ThreadPlaceRow } from '../contract.ts';
 import { DraftStore } from './drafts.ts';
 import { threadRows as threadRowsOf } from './threads.ts';
 import { holdsComment, Writer, type WriterPoller } from './writer.ts';
@@ -36,7 +36,7 @@ const OLDER = 'b'.repeat(40);
 const PULL = new PullRef('rozed-dev', 'e2e', 94);
 
 /** A line comment on new line 5 of `src/backoff.ts`, written at `commit`. */
-function onLine(commit = HEAD): DraftPlaceRow {
+function onLine(commit = HEAD): ThreadPlaceRow {
   return {
     kind: 'thread',
     commit,

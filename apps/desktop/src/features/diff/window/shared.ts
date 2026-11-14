@@ -178,6 +178,19 @@ export interface WritingDiff {
   toTop(id: string): boolean;
   /** Hands keys to the diff's Vim, in Vim's notation, as a key Lo took but had no use for. */
   vim(keys: readonly string[]): void;
+  /** Opens or collapses review thread `id`, as the reader asked. Says whether the diff has it. */
+  openThread(id: string, open: boolean): boolean;
+  /**
+   * The review threads drawn under a line, or under a file's header, by their ids: none while those
+   * placed there wait to come (the code view's `threadsDrawn`).
+   */
+  threadsDrawn(at: Place | OnFile): readonly string[];
+  /**
+   * The reader acted on review thread `id` by a write that will change it: what next comes under
+   * its line is their doing, until the function returned is called (the code view's
+   * `claimThread`).
+   */
+  claimThread(id: string): () => void;
 }
 
 /**
@@ -196,6 +209,9 @@ export function writingDiff(tab: string, keys = false): WritingDiff | undefined 
     compose: (at, draft, on, frame, options) => view.compose(at, draft, on, frame, options),
     toTop: (id) => drawn.toTop(id),
     vim: (typed) => view.passKeys(typed),
+    openThread: (id, open) => view.openThread(id, open),
+    threadsDrawn: (at) => view.threadsDrawn(at),
+    claimThread: (id) => view.claimThread(id),
   };
 }
 

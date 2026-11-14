@@ -75,6 +75,8 @@ function setUp(
     canWrite?: boolean | undefined;
     /** Why GitHub couldn't be asked whether the account can write, if it couldn't. */
     unreadable?: Error;
+    /** Why the poller couldn't read where the upload goes, if it couldn't. */
+    noTarget?: Error;
     gh?: () => Promise<Token | undefined>;
     view?: PullTabInfo;
   } = {},
@@ -90,6 +92,7 @@ function setUp(
   const poller: UploadsPoller = {
     attachmentTarget(repo) {
       targets.push(repo);
+      if (options.noTarget) return Promise.reject(options.noTarget);
       return Promise.resolve({ repositoryId: 1448580221, canWrite });
     },
     upload(repo, file, uploadOptions = {}) {
@@ -243,6 +246,21 @@ describe('uploading', () => {
     uploads.cancel('t1', 'u2');
     uploads.cancel('t1', 'u1');
     expect(await uploading).toEqual({ kind: 'cancelled' });
+  });
+
+  test('says nothing was sent when where it goes couldn’t be read first', async () => {
+    const lost = new GithubError({
+      kind: 'network',
+      failure: 'lost',
+      message: 'net::ERR_CONNECTION_RESET',
+    });
+    const { uploads, sent } = setUp([], { noTarget: lost });
+    expect(await uploads.upload('t1', 'u1', 'shot.png', PNG)).toEqual({
+      kind: 'failed',
+      message:
+        "Lo sent nothing, since it couldn’t first read whether rozed-bot can write to rozed-dev/e2e: couldn't reach GitHub: net::ERR_CONNECTION_RESET.",
+    });
+    expect(sent).toEqual([]);
   });
 
   test('says a lost answer may have reached GitHub, and never sends it again', async () => {

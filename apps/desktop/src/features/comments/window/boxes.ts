@@ -1,6 +1,7 @@
 // The comment boxes of each view's diff, in the window until the view's tab closes: where each is,
 // its text, and how sending it stands, as main keeps its draft. A box opens from `c`, `C`, `s` or a
-// file's `c`; a draft main restored reopens, unfocused, once its view's diff draws its line, and so
+// file's `c`, and in a thread, right after its card, from `r` (a reply) or `i` (an edit of your
+// comment, which starts from GitHub's text and saves over it); a draft main restored reopens, unfocused, once its view's diff draws its line, and so
 // does a box the diff took down as it was drawn again, and, after the window is loaded again, every
 // draft's. Text is saved 300 ms after typing stops, and at once as the box closes or the window
 // goes. While it's sent, and until Lo knows whether it posted, its text is held as it is. A box
@@ -17,20 +18,21 @@ import { announce, notice, notify, withdraw } from '../../../window/commands/not
 import { client } from '../../../window/ipc.ts';
 import { showDiff, writingDiff, type WritingDiff } from '../../diff/window/shared.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
-import { pullOf, runOf, type PullTab } from '../../tab/window/shared.ts';
+import { pullOf, runOf, tabState, type PullTab } from '../../tab/window/shared.ts';
 import type {
+  ActOutcome,
   Commentable,
   DraftPlaceRow,
   DraftRow,
   DraftsView,
-  SendRefusal,
+  SendOutcome,
   Sending,
 } from '../contract.ts';
 import { main, tabs } from './main.ts';
 import { screenOf } from './placing.ts';
 import type { PostPull } from './Post.tsx';
 import { landed } from './landed.ts';
-import { held } from './threads.ts';
+import { held, shownAt } from './threads.ts';
 import { attachFiles, draggingOver, endUploads, pickFiles, uploadsHold } from './uploads.ts';
 import {
   boxAt,
@@ -46,6 +48,7 @@ import {
   type Offer,
   placeKey,
   placeOf,
+  type Refusal,
   SIGN_IN,
 } from './writing.ts';
 
@@ -76,7 +79,7 @@ export interface BoxState {
   /** A send was asked for, and main hasn't answered. */
   readonly busy: boolean;
   /** Why the last send was refused. */
-  readonly refusal: SendRefusal | undefined;
+  readonly refusal: Refusal | undefined;
 }
 
 /** Whether a box's comment is being sent, or may be on GitHub: its text is held as it is. */
@@ -300,18 +303,21 @@ function eventsOf(box: Box): ComposerEvents {
     close(keep) {
       box.composer = undefined;
       box.open = false;
+      replyingChanged(box.view);
       if (keep) {
         box.saveNow();
         return;
       }
       // Nothing to keep: its draft goes, unless main is still settling what it sent, and nothing
-      // still uploading goes into it.
+      // still uploading goes into it. An edit's keeps its draft even with no text, so it goes as
+      // discarded.
       box.dropSave();
       endUploads(box);
       if (box.sentMark || box.state.busy) return;
       boxesOf(box.view).delete(box.key);
       holdDropped(box);
-      save(box.view, box.state.place, '');
+      if (box.state.place.kind === 'edit') discard(box);
+      else save(box.view, box.state.place, '');
     },
     mode(mode) {
       box.set({ mode });
@@ -353,8 +359,13 @@ function show(box: Box, diff: WritingDiff): boolean {
     return true;
   }
   const drawn = diff.drawn();
-  const file = drawn.files.find((each) => githubPath(each) === box.state.place.path);
-  const where = boxAt(drawn, screenFor(box.view, diff, file?.since ?? false), box.state.place);
+  const { place } = box.state;
+  const file =
+    place.kind === 'thread'
+      ? drawn.files.find((each) => githubPath(each) === place.path)
+      : undefined;
+  const screen = screenFor(box.view, diff, file?.since ?? false);
+  const where = boxAt(drawn, screen, place, (thread) => shownAt(box.view, thread) !== undefined);
   if (!where) return false;
   try {
     box.composer = diff.compose(where.at, box.state.text, eventsOf(box), framer?.(box), {
@@ -416,8 +427,9 @@ export function catchUpDrafts(view: string): void {
     .catch((error: unknown) => console.error("Lo couldn't ask about a view's drafts:", error));
 }
 
-/** Whether two places are the same lines of the same file, at whatever revision. */
+/** Whether two places are new threads' on the same lines of the same file, at whatever revision. */
 function sameLines(a: DraftPlaceRow, b: DraftPlaceRow): boolean {
+  if (a.kind !== 'thread' || b.kind !== 'thread') return false;
   return a.path === b.path && JSON.stringify(a.lines) === JSON.stringify(b.lines);
 }
 
@@ -471,6 +483,7 @@ export function takeDrafts(given: DraftsView): void {
     takeRow(box, row);
   }
   restore(view);
+  replyingChanged(view);
 }
 
 /** A box takes its draft's row: how sending it stands, and its text unless it was typed in. */
@@ -488,7 +501,7 @@ function takeRow(box: Box, row: DraftRow): void {
  * Opens a box at `place` in view `view`'s diff, focused: the one there, if there is one. One with
  * no text yet starts with `draft`.
  */
-function openAt(
+export function openAt(
   view: string,
   diff: WritingDiff,
   place: DraftPlaceRow,
@@ -508,7 +521,9 @@ function openAt(
   box.open = true;
   box.focusOnOpen = true;
   const fresh = box.composer !== undefined && box.composer.text.trim() === '' && draft !== '';
-  if (!show(box, diff)) return undefined;
+  const shown = show(box, diff);
+  replyingChanged(view);
+  if (!shown) return undefined;
   if (fresh && box.composer) {
     box.composer.replace(0, box.composer.text.length, draft);
     box.composer.focus();
@@ -640,7 +655,10 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
   await comment(tab, { kind: 'header', file: file.id, side: 'new' }, 'review');
 }
 
-/** Sends a box's text, as `⌘⏎` (`review`) or `⌥⏎` (`now`) asks. */
+/**
+ * Sends a box's text, as `⌘⏎` (`review`) or `⌥⏎` (`now`) asks: an edit's saves it over the
+ * comment, either way.
+ */
 export async function send(box: Box, how: Send): Promise<void> {
   const { view } = box;
   const { place, text } = box.state;
@@ -650,14 +668,16 @@ export async function send(box: Box, how: Send): Promise<void> {
   box.lastHow = how;
   box.set({ busy: true, refusal: undefined });
   try {
-    const outcome = await main().send({ id: view, place, text, how });
+    const outcome: SendOutcome | ActOutcome =
+      place.kind === 'edit'
+        ? await main().edit({ id: view, place, text })
+        : await main().send({ id: view, place, text, how });
     switch (outcome.kind) {
+      case 'done':
+        closeSent(box);
+        break;
       case 'sent': {
-        boxesOf(view).delete(box.key);
-        box.open = false;
-        const { composer } = box;
-        box.composer = undefined;
-        composer?.close();
+        closeSent(box);
         if (outcome.landedOn && outcome.thread !== null) {
           const thread = outcome.thread;
           landed.update(view, (was) => new Set([...was, thread]));
@@ -685,6 +705,17 @@ export async function send(box: Box, how: Send): Promise<void> {
   } finally {
     box.set({ busy: false });
   }
+}
+
+/** Closes the box of a comment or an edit GitHub took. */
+function closeSent(box: Box): void {
+  const { view } = box;
+  boxesOf(view).delete(box.key);
+  box.open = false;
+  const { composer } = box;
+  box.composer = undefined;
+  composer?.close();
+  replyingChanged(view);
 }
 
 /** Does what a box's note offers. */
@@ -736,8 +767,14 @@ function drop(box: Box): void {
   box.composer = undefined;
   composer?.dismiss();
   holdDropped(box);
+  discard(box);
+  replyingChanged(view);
+}
+
+/** Has main discard `box`'s draft. */
+function discard(box: Box): void {
   main()
-    .discard({ id: view, place: box.state.place })
+    .discard({ id: box.view, place: box.state.place })
     .catch((error: unknown) => console.error("Lo couldn't discard a draft:", error));
 }
 
@@ -757,6 +794,7 @@ function toFile(box: Box): void {
   const diff = writingDiff(view);
   if (!diff) return;
   const { place, text, primary } = box.state;
+  if (place.kind !== 'thread') return;
   const onFile: DraftPlaceRow = { ...place, lines: null };
   drop(box);
   const there = openAt(view, diff, onFile, primary);
@@ -785,6 +823,37 @@ export function keepBoxesOf(kept: ReadonlySet<string>): void {
     retrying.delete(view);
   }
   for (const [key, { view }] of commentables) if (!kept.has(view)) commentables.delete(key);
+}
+
+/** The threads of each view a reply box is open in, by their ids. */
+export const replying = tabState<ReadonlySet<string>>(() => new Set());
+
+/**
+ * Notes which threads of view `view` a reply box is open in, as a box opens or goes: their cards
+ * offer no reply of their own meanwhile. The card that changes is the reader's doing.
+ */
+function replyingChanged(view: string): void {
+  const now = new Set<string>();
+  for (const box of views.get(view)?.values() ?? []) {
+    if (box.open && box.state.place.kind === 'reply') now.add(box.state.place.thread);
+  }
+  const was = replying.get(view);
+  if (was.size === now.size && [...now].every((thread) => was.has(thread))) return;
+  const diff = writingDiff(view);
+  for (const thread of new Set([...was, ...now])) {
+    if (was.has(thread) !== now.has(thread) && diff) claimBriefly(diff, thread);
+  }
+  replying.set(view, now);
+}
+
+/**
+ * Has what next comes under thread `thread` in `diff` be the reader's doing, for as long as a card
+ * takes to be drawn again: what comes in the second frame from now, after the next has laid it out
+ * and measured it.
+ */
+export function claimBriefly(diff: WritingDiff, thread: string): void {
+  const release = diff.claimThread(thread);
+  requestAnimationFrame(() => requestAnimationFrame(release));
 }
 
 /** The box the diff took down as it was drawn again: it opens again once the diff is drawn. */

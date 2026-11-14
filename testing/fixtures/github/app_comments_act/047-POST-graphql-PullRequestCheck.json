@@ -1,0 +1,149 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequestCheck",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 94
+    },
+    "query_sha256": "ca008209e496ac84a5c7317d266f8c0073cbcf8760c30f5896796e361b06bad0"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4922",
+      "x-ratelimit-reset": "1794621242",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "78"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4922,
+          "used": 78,
+          "resetAt": "2026-11-14T01:54:02Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "updatedAt": "2026-11-14T01:38:21Z",
+            "state": "OPEN",
+            "isDraft": false,
+            "baseRefName": "comments/base",
+            "baseRefOid": "821ed37fcaa08351275aa23203ed36569d0a8446",
+            "headRefOid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c",
+            "reviewDecision": null,
+            "mergeStateStatus": "CLEAN",
+            "statusCheckRollup": null,
+            "checkCounts": null,
+            "mergeQueueEntry": null,
+            "timelineItems": {
+              "updatedAt": "2026-11-14T01:24:40Z",
+              "totalCount": 25
+            },
+            "revisionEvents": {
+              "filteredCount": 0
+            },
+            "commits": {
+              "totalCount": 2
+            },
+            "reviews": {
+              "totalCount": 18
+            },
+            "submittedReviews": {
+              "totalCount": 18
+            },
+            "reviewThreads": {
+              "totalCount": 11,
+              "nodes": [
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                },
+                {
+                  "isResolved": true,
+                  "comments": {
+                    "totalCount": 2
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 4
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 2
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                },
+                {
+                  "isResolved": false,
+                  "comments": {
+                    "totalCount": 1
+                  }
+                }
+              ]
+            },
+            "viewerPendingReview": {
+              "nodes": []
+            },
+            "comments": {
+              "totalCount": 1
+            },
+            "changedFiles": 4,
+            "lastEditedAt": null,
+            "timelineEvents": {
+              "filteredCount": 20,
+              "updatedAt": "2026-11-14T01:24:40Z"
+            }
+          }
+        }
+      }
+    }
+  }
+}

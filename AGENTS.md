@@ -401,9 +401,12 @@ repositories, which account opens a repository, and the pull requests opened lat
 - Each account's requests go one at a time through its poller's queue. One whose answer hasn't begun
   within 15 s (GitHub gives up on a request after 10 s), or hasn't all come within 30 s, is given up
   as an answer lost, so the queue goes on: a read is tried again later, and a write may have been
-  done, so it's never sent again by itself. An upload has a limit of its own. A view's first read of
-  its review threads goes ahead of polls and of the tab's other reads while it's on screen, as an
-  opening tab's overview reads do, since the diff's first draw waits on it.
+  done, so it's never sent again by itself. An upload has a limit of its own. The one exception to
+  the queue is the read of whether an account can write to a repository, which attachments ask first
+  (`comments.attachable`): it's read with the account's client, outside the queue, with the same
+  limits, so nothing waits on it. A view's first read of its review threads goes ahead of polls and
+  of the tab's other reads while it's on screen, as an opening tab's overview reads do, since the
+  diff's first draw waits on it.
 - Each account's poller keeps what it read in the database, read back only by the build of Lo that
   wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
@@ -830,6 +833,32 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   text holds a placeholder whose upload isn't under way, as after a restart; the box names the file,
   and the reader takes the placeholder out. A box's uploads are given up as its draft goes, and a
   summary's files go once the review is submitted.
+
+### Acting on review threads
+
+On a thread in the diff, `r` replies, `x` resolves or unresolves it, `i` edits your newest comment
+and `dd` deletes it, as do the card's buttons and its right-click menu (`window/acts.ts`). A key
+acts on the thread `]t` landed on, or the only one the view has drawn on the cursor's line or under
+the file's header (`threadsDrawn`), never one placed there that hasn't come on screen yet. `]t`
+stops at each drawn thread, so one of several on a line, or on a file, can be picked. The threads
+panel's `x` resolves the thread the keyboard is on, through the same function.
+
+- A reply's box and an edit's are comment boxes, kept by their thread (`reply` and `edit` places),
+  and drawn right after the thread's card. The code view keeps a box for each place and name, so a
+  reply's box and a new comment's on the same line both stay open.
+- An edit's draft keeps the text it started from (`base`, in `comments_drafts`), GitHub's as the
+  card showed it when `i` started it (`comments.editing`), through a restart. `comments.edit` reads
+  the comment afresh (`reviewComment`) and saves only if GitHub's text is still that one
+  (`beforeEdit`); otherwise the box keeps the text and offers to discard it.
+- `comments.resolve` and `comments.remove` go in their turn among the pull request's writes, like a
+  comment. A delete reads the comment afresh first, and goes only if it's as the question showed it
+  (its text, whether it's pending, whether it's its thread's only comment). Lo changes only your own
+  comments.
+- A write whose answer is lost is never sent again by itself: main reads the comment or the threads
+  10 s or more after it was sent, and `comments.acts` says how it stands meanwhile, which the card
+  shows, with "Try again" once Lo found it didn't go or can't tell.
+- A thread the reader acts on is claimed in the diff (`claimThread`), so what their write changes
+  there comes at once and keeps their line in place, as what comes under a sent box's line does.
 
 ### Submitting a review
 

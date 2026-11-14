@@ -201,7 +201,17 @@ export class Uploads {
     };
     try {
       const poller = await this.#options.poller(login);
-      const target = await poller.attachmentTarget(repo, signal);
+      let target: AttachmentTarget;
+      try {
+        target = await poller.attachmentTarget(repo, signal);
+      } catch (error) {
+        if (signal.aborted) return { kind: 'cancelled' };
+        // Nothing was sent: say only why.
+        return {
+          kind: 'failed',
+          message: `Lo sent nothing, since it couldn’t first read whether ${login} can write to ${owner}/${name}: ${sentence(describe(error))}`,
+        };
+      }
       if (target.canWrite === false) {
         return { kind: 'refused', refusal: { kind: 'cantWrite', repo: name } };
       }

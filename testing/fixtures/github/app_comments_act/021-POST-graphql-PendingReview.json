@@ -1,0 +1,43 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PendingReview",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 94,
+      "login": "rozed-bot"
+    },
+    "query_sha256": "6ab88a5df43f6f2f6b7bfc1387d88f840c4318c4798a2279584fa0120a8b495b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4928",
+      "x-ratelimit-reset": "1794621242",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "72"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4928,
+          "used": 72,
+          "resetAt": "2026-11-14T01:54:02Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "reviews": {
+              "nodes": []
+            }
+          }
+        }
+      }
+    }
+  }
+}
