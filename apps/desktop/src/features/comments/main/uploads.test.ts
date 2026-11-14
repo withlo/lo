@@ -73,6 +73,8 @@ function setUp(
   given: Answer[],
   options: {
     canWrite?: boolean | undefined;
+    /** Why GitHub couldn't be asked whether the account can write, if it couldn't. */
+    unreadable?: Error;
     gh?: () => Promise<Token | undefined>;
     view?: PullTabInfo;
   } = {},
@@ -86,6 +88,7 @@ function setUp(
   const poller: UploadsPoller = {
     attachmentTarget(repo) {
       targets.push(repo);
+      if (options.unreadable) return Promise.reject(options.unreadable);
       return Promise.resolve({ repositoryId: 1448580221, canWrite });
     },
     upload(repo, file, uploadOptions = {}) {
@@ -128,6 +131,39 @@ describe('checking a file again before it goes', () => {
 
   test('takes a PNG whose bytes agree', () => {
     expect(checkedFile('shot.png', PNG)).toMatchObject({ name: 'shot.png', kind: 'png' });
+  });
+});
+
+describe('whether the account can upload', () => {
+  test('is what GitHub says of its writing to the pull request’s repository', async () => {
+    const can = setUp([]);
+    expect(await can.uploads.check('t1')).toEqual({ kind: 'open', login: 'rozed-bot' });
+    expect(can.targets.map((repo) => repo.key)).toEqual([new RepoRef('rozed-dev', 'e2e').key]);
+    expect(await setUp([], { canWrite: false }).uploads.check('t1')).toEqual({
+      kind: 'cantWrite',
+      login: 'rozed-bot',
+      repo: 'e2e',
+    });
+    // GitHub didn't say: the upload finds out.
+    expect(await setUp([], { canWrite: undefined }).uploads.check('t1')).toEqual({
+      kind: 'open',
+      login: 'rozed-bot',
+    });
+  });
+
+  test('isn’t known for a view acting as nobody, a run of layers, or while GitHub can’t be asked', async () => {
+    const nobody = setUp([], { view: info({ acting: { kind: 'anonymous' } }) });
+    const run = setUp([], { view: info({ run: [94, 95] }) });
+    const offline = setUp([], {
+      unreadable: new GithubError({ kind: 'network', failure: 'offline', message: 'offline' }),
+    });
+    expect(
+      await Promise.all([nobody, run, offline].map(({ uploads }) => uploads.check('t1'))),
+    ).toEqual([{ kind: 'unknown' }, { kind: 'unknown' }, { kind: 'unknown' }]);
+    expect([...nobody.targets, ...run.targets]).toEqual([]);
+    expect(offline.logged).toEqual([
+      "reading whether rozed-bot can upload to rozed-dev/e2e: couldn't reach GitHub: offline",
+    ]);
   });
 });
 

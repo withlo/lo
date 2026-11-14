@@ -809,19 +809,24 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   the box closes; not found, or not read, the box says so. While the read can't be made, as offline,
   it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
   is sent again by itself, and nothing is sent while GitHub can't be reached.
-- Files dropped on a box, pasted into it or picked with "Attach" (`⌘⇧A`), ten at a time, are
-  attached (`window/uploads.ts`): each goes in at the cursor at once as a placeholder, the
-  background process checks it and takes its metadata out (`comments.prepare`) from the bytes of the
-  window's own `File`, and `comments.upload` hands those bytes to main, which never reads a path the
-  window names. Main checks the kind, size and first bytes again, and that the account can write to
-  the repository, then uploads through the poller's `upload`, one at a time for each account, saying
-  how far it has gone on `comments.uploads`; `comments.cancelUpload` gives one up. The placeholder
-  becomes the file's Markdown, or goes when it's refused, fails or is cancelled. When GitHub answers
-  Not Found though the account can write, main reads gh's token for that login (`accounts.github`'s
-  `ghToken`) for that upload alone, never keeping or logging it, and sends it once more; without gh,
-  the view's boxes take no more uploads, and an image's `https` address pasted or dropped goes in as
-  an image. Nothing is uploaded again by itself, and a comment, or a review's summary, isn't sent
-  while a file is on its way into it.
+- Files dropped on a box, pasted into it or picked with "Attach" (`⌘⇧A`), ten on their way into a
+  box at a time, are attached (`window/uploads.ts`): each goes in at the cursor at once as a
+  placeholder, the background process checks it and takes its metadata out (`comments.prepare`) from
+  the bytes of the window's own `File`, and `comments.upload` hands those bytes to main, which never
+  reads a path the window names. Main checks the kind, size and first bytes again, and that the
+  account can write to the repository, then uploads through the poller's `upload`, one at a time for
+  each account, saying how far it has gone on `comments.uploads`; `comments.cancelUpload` gives one
+  up. The placeholder becomes the file's Markdown, or goes when it's refused, fails or is cancelled;
+  one the reader took out meanwhile leaves its row offering "Insert". When GitHub answers Not Found
+  though the account can write, main reads gh's token for that login (`accounts.github`'s `ghToken`)
+  for that upload alone, never keeping or logging it, and sends it once more. Once a view's diff is
+  drawn, `comments.attachable` says whether its account can write to the repository. Where it can't,
+  or GitHub takes no uploads with Lo's sign-in and gh has none, the view's boxes take no file, and
+  an image's `https` address pasted or dropped goes in as an image. Nothing is uploaded again by
+  itself. A comment, or a review's summary, isn't sent while a file is on its way into it, nor while
+  its text holds a placeholder whose upload isn't under way, as after a restart; the box names the
+  file, and the reader takes the placeholder out. A box's uploads are given up as its draft goes,
+  and a summary's files go once the review is submitted.
 
 ### Submitting a review
 

@@ -26,7 +26,7 @@ import { usePull, useRun } from '../../tab/window/shared.ts';
 import { act, type Box, type BoxState, pullIn, send, sendingNow, takenDown } from './boxes.ts';
 import { Preview as Rendering } from './Preview.tsx';
 import { Dropzone, UploadRows, useUploads } from './Attached.tsx';
-import { takeAddresses, UPLOADING } from './uploads.ts';
+import { holdText, takeAddresses, UPLOADING } from './uploads.ts';
 import {
   IN_A_LAYER,
   notesOf,
@@ -124,8 +124,8 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
 
 function Notes({ box }: { box: Box }): ReactNode {
   const state = useBox(box);
-  const uploads = useUploads(box, labels('cmd+shift+a'));
-  const why = useWhyNot(box) ?? (uploads.running ? UPLOADING : undefined);
+  const uploads = useUploads(box, labels('cmd+shift+a'), state.text);
+  const why = useWhyNot(box) ?? holdText(uploads.hold, UPLOADING);
   const notes = [
     ...notesOf(state, Date.now()).map((note) => drawnNote(box, note)),
     ...uploads.notes,
@@ -135,8 +135,8 @@ function Notes({ box }: { box: Box }): ReactNode {
 
 function Foot({ box }: { box: Box }): ReactNode {
   const state = useBox(box);
-  const uploads = useUploads(box, labels('cmd+shift+a'));
-  const why = useWhyNot(box) ?? (uploads.running ? UPLOADING : undefined);
+  const uploads = useUploads(box, labels('cmd+shift+a'), state.text);
+  const why = useWhyNot(box) ?? holdText(uploads.hold, UPLOADING);
   const foot = { ...footOf(box, state, why), attach: uploads.attach };
   return <CommentBoxFootBar id={box.id} foot={foot} focused={state.focused} />;
 }

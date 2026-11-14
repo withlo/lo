@@ -2,9 +2,9 @@
 // your pending review, which main reads for the view on screen and sends each time they change;
 // and the HTML GitHub renders for posts, which threads and the timeline show in place of their
 // Markdown. The comments you write: the drafts main keeps of each comment box, which lines GitHub
-// takes a comment on, and sending one, which only the reader does; and the files attached to them,
-// whose bytes the window hands over from its own `File`s, which main uploads to GitHub with how far
-// each has gone. The window asks for the posts on
+// takes a comment on, and sending one, which only the reader does; and the files attached to them:
+// whether the account can upload them, and their bytes, which the window hands over from its own
+// `File`s, and main uploads to GitHub with how far each has gone. The window asks for the posts on
 // screen or near it, and keeps what comes back in its memory only. It loads the images in posts,
 // and avatars, on the image scheme (`ipc/images.ts`), which the feature serves in main, so nothing
 // of that goes through a request.
@@ -323,6 +323,17 @@ export type UploadOutcome =
   | { kind: 'cancelled' }
   | { kind: 'failed'; message: string };
 
+/**
+ * Whether a view's account can upload files to its pull request's repository, as GitHub says, for
+ * account `login`: `cantWrite`, where it can't write to the repository `repo`, which uploads need;
+ * `open`, where it can, or GitHub didn't say, which leaves it to the upload; `unknown`, where Lo
+ * couldn't ask, as for a view acting as nobody, a run of layers, or while GitHub can't be reached.
+ */
+export type AttachCheck =
+  | { kind: 'open'; login: string }
+  | { kind: 'cantWrite'; login: string; repo: string }
+  | { kind: 'unknown' };
+
 /** How far an upload of a view's has gone: `sent` bytes of `total`. */
 export const uploadProgress = z.strictObject({
   id: tabId,
@@ -397,6 +408,12 @@ export const contract = defineContract('comments', {
       }),
       reply: reply<SendOutcome>(),
     },
+    /**
+     * Whether view `id`'s account can upload files to its pull request's repository, read once for
+     * each account and repository, so a box where it can't takes none, and says so, before anything
+     * is sent.
+     */
+    attachable: { input: z.strictObject({ id: tabId }), reply: reply<AttachCheck>() },
     /**
      * Uploads `bytes`, the file `name` attached to a comment on view `id`'s pull request, to its
      * repository as its account, once main has checked its kind, size and first bytes again; the

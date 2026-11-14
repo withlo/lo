@@ -65,7 +65,7 @@ export function Summary({ view, pull, initial, restored, held, editor }: Summary
   const start = useRef(initial);
   // What files are attached to: the view's summary, which outlives the dialog.
   const attached = summaryBox(view);
-  const uploads = useUploads(attached, labels('cmd+shift+a'));
+  const uploads = useUploads(attached, labels('cmd+shift+a'), text);
   const holding = useRef(held);
   holding.current = held;
 

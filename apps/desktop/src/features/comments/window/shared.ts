@@ -15,16 +15,18 @@ import { Preview as PreviewText, type PreviewProps } from './Preview.tsx';
 import {
   attachFiles as attach,
   draggingOver as dragging,
+  endUploads as end,
   pickFiles as pick,
   takeAddresses as addresses,
-  uploadsRunning as running,
+  uploadsHold as hold,
   type Attachable,
+  type UploadsHold,
 } from './uploads.ts';
 
 export type { PostRef } from './bodies.ts';
 export type { PostProps, PostPull } from './Post.tsx';
 export type { PreviewProps } from './Preview.tsx';
-export type { Attachable } from './uploads.ts';
+export type { Attachable, UploadsHold } from './uploads.ts';
 export type { BoxUploads } from './Attached.tsx';
 
 /**
@@ -63,9 +65,20 @@ export function draggingOver(box: Attachable, count: number): void {
   dragging(box, count);
 }
 
-/** Whether a file is still on its way into comment box `box`, so what it's in isn't sent yet. */
-export function uploadsRunning(box: Attachable): boolean {
-  return running(box);
+/**
+ * Why what comment box `box` is in isn't sent yet for its files, if it isn't: a file is still on its
+ * way in, or its text holds a placeholder whose upload isn't, with what the box says of that.
+ */
+export function uploadsHold(box: Attachable): UploadsHold | undefined {
+  return hold(box);
+}
+
+/**
+ * Gives up every file still on its way into comment box `box`, and forgets them all, as what it's
+ * in is sent or discarded.
+ */
+export function endUploads(box: Attachable): void {
+  end(box);
 }
 
 /**
@@ -76,12 +89,15 @@ export function takeAddresses(frame: HTMLElement, box: Attachable): () => void {
   return addresses(frame, box);
 }
 
-/** What comment box `box`'s frame shows of its files: notes, "Attach" with `keys`, and whether one uploads. */
-export function useUploads(box: Attachable, keys: readonly string[]): BoxUploads {
-  return uploadsOf(box, keys);
+/**
+ * What comment box `box`'s frame shows of its files, while its text is `text`: notes, "Attach" with
+ * `keys`, and why it isn't sent yet for them.
+ */
+export function useUploads(box: Attachable, keys: readonly string[], text: string): BoxUploads {
+  return uploadsOf(box, keys, text);
 }
 
-/** Each file attached to comment box `box`, uploading or uploaded, with "Cancel". */
+/** Each file attached to comment box `box`, uploading or uploaded, with "Cancel" or "Insert". */
 export function UploadRows(props: { box: Attachable }): ReactNode {
   return createElement(UploadRowsOf, props);
 }

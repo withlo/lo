@@ -5,8 +5,9 @@
 // repository, which GitHub's uploads need. The account's poller sends it, one at a time, and says
 // how far it has gone. When GitHub answers Not Found though the account can write, as it does when
 // it won't take Lo's sign-in for uploads, gh's token for the account is read for that upload alone,
-// and it's sent once more with that. Nothing else sends one again: an upload can't be undone.
-// Nothing here calls Electron.
+// and it's sent once more with that. Nothing else sends one again: an upload can't be undone. The
+// window asks first whether the account can write there at all (`check`), so a box where it can't
+// takes no file. Nothing here calls Electron.
 
 import {
   attachmentKind,
@@ -24,7 +25,7 @@ import {
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { UploadOutcome, UploadProgressRow, UploadRefusal } from '../contract.ts';
+import type { AttachCheck, UploadOutcome, UploadProgressRow, UploadRefusal } from '../contract.ts';
 
 /** What uploads use of an account's poller. */
 export type UploadsPoller = Pick<Poller, 'upload' | 'attachmentTarget'>;
@@ -121,6 +122,31 @@ export class Uploads {
       return await this.#send(id, upload, acting.login, info, file, giveUp.signal);
     } finally {
       this.#running.delete(key);
+    }
+  }
+
+  /**
+   * Whether view `id`'s account can upload to its pull request's repository, as GitHub says: read
+   * once for each account and repository, by the poller.
+   */
+  async check(id: string): Promise<AttachCheck> {
+    const info = this.#options.view(id);
+    if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    const { acting } = info;
+    if (this.#stopped || info.run || acting?.kind !== 'account') return { kind: 'unknown' };
+    const { login } = acting;
+    const { owner, name } = info.repository;
+    try {
+      const poller = await this.#options.poller(login);
+      const target = await poller.attachmentTarget(new RepoRef(owner, name));
+      return target.canWrite === false
+        ? { kind: 'cantWrite', login, repo: name }
+        : { kind: 'open', login };
+    } catch (error) {
+      this.#options.log(
+        `reading whether ${login} can upload to ${owner}/${name}: ${describe(error)}`,
+      );
+      return { kind: 'unknown' };
     }
   }
 

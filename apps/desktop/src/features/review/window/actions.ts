@@ -1,14 +1,15 @@
 // What the review's key, the status bar's item and the dialog do: open the dialog on the pull
 // request on screen, read what it shows, keep its summary as it's typed, with the files attached
 // to it, and submit. Held keys and a second press while one is sent submit nothing more, and
-// nothing goes while GitHub can't be reached, a file attached to the summary is on its way in, or
-// Lo waits to know whether a review whose answer was lost was submitted.
+// nothing goes while GitHub can't be reached, a file attached to the summary is on its way in or
+// its text holds a placeholder whose upload isn't, or Lo waits to know whether a review whose
+// answer was lost was submitted. Once it's submitted, the summary's files go with it.
 
 import type { Composer } from '@lo/ui/code';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { announce, notify } from '../../../window/commands/notices.tsx';
-import { type Attachable, uploadsRunning } from '../../comments/window/shared.ts';
+import { type Attachable, endUploads, uploadsHold } from '../../comments/window/shared.ts';
 import { pullOf, runOf, activeTab, type PullTab } from '../../tab/window/shared.ts';
 import { IN_A_LAYER, SIGN_IN, type ReviewEventRow, type Submission } from '../contract.ts';
 import { main, revisions as revisionsClient, tabs } from './main.ts';
@@ -176,7 +177,8 @@ export function whyNot(): string | undefined {
   const can = canSubmit(dialog.view);
   if (can !== true) return can;
   if (offline(dialog.view)) return OFFLINE;
-  if (uploadsRunning(summaryBox(dialog.view))) return UPLOADING;
+  const hold = uploadsHold(summaryBox(dialog.view));
+  if (hold) return hold.kind === 'running' ? UPLOADING : hold.text;
   return undefined;
 }
 
@@ -206,6 +208,7 @@ export async function submit(anyway = false): Promise<void> {
         // The toast comes with what main says of it, for every view of the pull request.
         if (reviewStore.getState().dialog?.view === view)
           reviewStore.setState({ dialog: undefined });
+        endUploads(summaryBox(view));
         break;
       case 'refused':
         changeDialog(view, { refusal: outcome.refusal });
@@ -226,6 +229,8 @@ export async function submit(anyway = false): Promise<void> {
 export function heard(submission: Submission): void {
   takeSubmission(submission);
   if (!submission.submitted) return;
+  // The summary went with it, and its files.
+  endUploads(summaryBox(submission.id));
   const { dialog } = reviewStore.getState();
   if (dialog?.view === submission.id) reviewStore.setState({ dialog: undefined });
   announce(toastOf(submission.submitted.event, submission.number));

@@ -618,16 +618,20 @@ a fork is someone else's code, even in a repo you trust.
 - **Outdated threads.** A thread whose line has since changed appears where it was written when you
   view that revision, and is labeled outdated elsewhere.
 - **Attachments.** Drag, paste or pick (`⌘⇧A`) files (PNG, JPEG, GIF, WebP, SVG, MP4, MOV or WebM),
-  up to 10 at a time, into any comment box, including the review summary. Each goes in at the cursor
-  as a placeholder, and Lo uploads it the way `gh --attach` does, one at a time, with its progress
-  and Cancel, then puts its Markdown in the placeholder's place. Lo takes a photo's location and
-  other metadata out first, and says what it took. While files are in a box, it warns that uploads
-  stay reachable by link even if the comment is deleted, and the comment isn't sent until they're
-  in. Images and GIFs can be up to 10 MB, and videos 10 MB on free plans or 100 MB on paid ones.
-  Uploading needs write access to the repo. Where you don't have it, Lo says so, and an image's web
-  address pasted or dropped goes in as an image. If GitHub won't take Lo's sign-in for uploads, Lo
-  uses `gh`'s sign-in for that one upload, read from gh each time and never kept, and without gh it
-  takes web addresses only. An upload is never sent again by itself. There's no built-in GIF search.
+  up to 10 on their way into a box at a time, into any comment box, including the review summary.
+  Each goes in at the cursor as a placeholder, and Lo uploads it the way `gh --attach` does, one at
+  a time, with its progress and Cancel, then puts its Markdown in the placeholder's place. If you
+  took the placeholder out meanwhile, its row says so and offers Insert. Lo takes a photo's location
+  and other metadata out first, and says what it took; a GIF, SVG or WebM goes as it is, and Lo says
+  it couldn't remove its metadata. While files are in a box, it warns that uploads stay reachable by
+  link even if the comment is deleted, and the comment isn't sent until they're in. A placeholder
+  whose upload didn't finish, as when Lo quit, holds the comment too: the box names the file, and
+  you take the placeholder out. Images and GIFs can be up to 10 MB, and videos 10 MB on free plans
+  or 100 MB on paid ones. Uploading needs write access to the repo. Where you don't have it, Attach
+  is off, the box says so, and an image's web address pasted or dropped goes in as an image. If
+  GitHub won't take Lo's sign-in for uploads, Lo uses `gh`'s sign-in for that one upload, read from
+  gh each time and never kept, and without gh it takes web addresses only. An upload is never sent
+  again by itself. There's no built-in GIF search.
 
 ### Reviews
 

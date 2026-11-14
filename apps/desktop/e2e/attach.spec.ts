@@ -5,7 +5,8 @@
 // dropped is refused, and nothing of it is sent. Where GitHub answers the upload Not Found
 // (`attachments_e2e_not_found`, derived from it), though rozed-bot can write there, Lo asks gh for
 // a token, and with no gh, the box says uploads need its sign-in, turns "Attach" off, and takes an
-// image's web address pasted in as an image.
+// image's web address pasted in as an image. With the upload held on its way, the comment isn't
+// sent, its row is as tall as once it's in, and the draft, loaded again, says it didn't finish.
 
 import { writeFileSync } from 'node:fs';
 
@@ -35,6 +36,34 @@ const PNG = [
 /** Where GitHub put it. */
 const ASSET = 'https://github.com/user-attachments/assets/2c8f1e6f-0846-4210-a57f-c0c6b27e9717';
 
+/** Holds uploads on their way to GitHub while it's shut, until it's opened. */
+class Gate {
+  #shut = false;
+  readonly #waiting: (() => void)[] = [];
+
+  /** How many uploads it holds. */
+  get holding(): number {
+    return this.#waiting.length;
+  }
+
+  shut(): void {
+    this.#shut = true;
+  }
+
+  open(): void {
+    this.#shut = false;
+    for (const go of this.#waiting.splice(0)) go();
+  }
+
+  /** What a request for `path` waits for: an upload, while it's shut. */
+  readonly hold = (path: string): Promise<void> | undefined => {
+    if (!this.#shut || !path.startsWith('/uploads/')) return undefined;
+    return new Promise((resolve) => {
+      this.#waiting.push(resolve);
+    });
+  };
+}
+
 /** GitHub's answers to the PNG's upload to rozed-dev/e2e, as cassette `name` has them. */
 function uploadsIn(name: string): Interaction[] {
   return recorded(name)
@@ -51,6 +80,7 @@ function uploadsIn(name: string): Interaction[] {
 
 const test = base.extend<{
   uploads: string;
+  gate: Gate;
   github: ReplayServer;
   front: BodiesServer;
   remote: string;
@@ -62,9 +92,14 @@ const test = base.extend<{
     await use(server);
     await server.close();
   },
-  front: async ({ github }, use) => {
-    const front = await serveBodies(CASSETTE, new URL(github.urls.api).origin);
+  // oxlint-disable-next-line no-empty-pattern
+  gate: async ({}, use) => {
+    await use(new Gate());
+  },
+  front: async ({ github, gate }, use) => {
+    const front = await serveBodies(CASSETTE, new URL(github.urls.api).origin, gate.hold);
     await use(front);
+    gate.open();
     await front.close();
   },
   // oxlint-disable-next-line no-empty-pattern
@@ -142,6 +177,18 @@ function cursor(page: Page): Promise<string | undefined> {
     const path = diff?.files.find((each) => each.id === file)?.path;
     return spot.kind === 'line' ? `${path} ${spot.at.side} ${spot.at.line}` : `${path} header`;
   });
+}
+
+/** What Lo wrote to GitHub but uploads: each request but a read or a GraphQL query. */
+function writes(github: ReplayServer): string[] {
+  return github.replay.seen
+    .filter(({ method, url, body }) => {
+      if (method === 'GET' || url.startsWith('https://uploads.github.com/')) return false;
+      return (
+        new URL(url).pathname !== '/graphql' || /\bmutation\b/.test(new TextDecoder().decode(body))
+      );
+    })
+    .map(({ method, url }) => `${method} ${url}`);
 }
 
 /** The comment boxes in the diff. */
@@ -227,4 +274,48 @@ test.describe('where GitHub answers the upload Not Found', () => {
       'Repro: ![retry-storm](https://example.com/shots/retry-storm.gif)',
     );
   });
+});
+
+test('while an upload is held on its way, nothing is sent; its row stays as tall once it’s in; loaded again, the draft says it didn’t finish', async ({
+  page,
+  github,
+  gate,
+}) => {
+  await openBox(page);
+  const box = boxes(page);
+  const rows = box.getByRole('list', { name: 'Uploads' });
+  const addToReview = box.getByRole('button', { name: /Add to review/ });
+  gate.shut();
+  await drop(page, [{ name: 'lo-attachment.png', bytes: PNG }]);
+  await expect.poll(() => gate.holding, { timeout: 20_000 }).toBe(1);
+  await expect(box).toContainText('Uploading. Send the comment once the files are in.');
+  await expect(addToReview).toHaveAttribute('aria-disabled', 'true');
+  // `⌘⏎` sends nothing either.
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter');
+  const uploading = await rows.boundingBox();
+  gate.open();
+  await expect(box.locator('.cm-content')).toHaveText(`Repro: ![lo-attachment](${ASSET})`, {
+    timeout: 20_000,
+  });
+  await expect(rows).toContainText('Uploaded');
+  // Nothing under the box moved as it landed.
+  expect((await rows.boundingBox())?.height).toBe(uploading?.height);
+  await expect(addToReview).not.toHaveAttribute('aria-disabled');
+
+  // Another, held as the window is loaded again: its placeholder comes back with the draft.
+  gate.shut();
+  await drop(page, [{ name: 'lo-attachment.png', bytes: PNG }]);
+  await expect.poll(() => gate.holding, { timeout: 20_000 }).toBe(1);
+  await page.reload();
+  await expect(box.locator('.cm-content')).toContainText(
+    '![lo-attachment](uploading lo-attachment.png…)',
+    { timeout: 20_000 },
+  );
+  await expect(box).toContainText(
+    'lo-attachment.png didn’t finish uploading. Attach it again, and take out its placeholder.',
+  );
+  await expect(addToReview).toHaveAttribute('aria-disabled', 'true');
+  gate.open();
+  await expect.poll(() => gate.holding).toBe(0);
+  expect(writes(github)).toEqual([]);
 });

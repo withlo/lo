@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 // Submitting from the dialog, as its main button and `⌘⏎` do: nothing goes while GitHub asks Lo to
-// hold off, and once the pause is over, the review goes with its verdict and summary.
+// hold off, and once the pause is over, the review goes with its verdict and summary, and the
+// summary's files with it.
 
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { installBridge } from '../../../window/test/bridge.ts';
+import type * as CommentsShared from '../../comments/window/shared.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { DialogView } from '../contract.ts';
-import { submit } from './actions.ts';
+import { heard, submit, summaryBox } from './actions.ts';
 import { reviewStore } from './store.ts';
 
 vi.mock('../../tab/window/shared.ts', async (original) => ({
@@ -17,6 +19,12 @@ vi.mock('../../tab/window/shared.ts', async (original) => ({
     connection: { kind: 'online' },
   }),
   runOf: () => undefined,
+}));
+
+const ended = vi.hoisted(() => [] as unknown[]);
+vi.mock('../../comments/window/shared.ts', async (original) => ({
+  ...(await original<typeof CommentsShared>()),
+  endUploads: (box: unknown) => ended.push(box),
 }));
 
 const HEAD = 'a'.repeat(40);
@@ -62,6 +70,7 @@ const sent = () =>
 beforeEach(() => {
   vi.useFakeTimers();
   bridge.calls.length = 0;
+  ended.length = 0;
   answers['review.submit'] = () => ({ kind: 'submitted', event: 'APPROVE' });
 });
 
@@ -80,4 +89,13 @@ test('while GitHub asks Lo to hold off, `⌘⏎` sends nothing, and once it’s 
   expect(sent()).toEqual([{ id: 'v0', event: 'APPROVE', body: 'Ship it.', anyway: false }]);
   // Submitted, the dialog closes.
   expect(reviewStore.getState().dialog).toBeUndefined();
+});
+
+test('once the review is submitted, the files attached to its summary go with it', async () => {
+  open(read());
+  await submit();
+  expect(ended).toEqual([summaryBox('v0')]);
+  // As when main says it was submitted from another view of the pull request.
+  heard({ id: 'v1', number: 94, state: null, submitted: { event: 'APPROVE' } });
+  expect(ended).toEqual([summaryBox('v0'), summaryBox('v1')]);
 });

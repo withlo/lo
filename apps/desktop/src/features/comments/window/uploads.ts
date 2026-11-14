@@ -1,13 +1,17 @@
 // Files attached to a comment box: dropped on it, pasted into it, or picked with "Attach" (`⌘⇧A`),
-// ten at a time at most. Each goes in at the cursor at once as a placeholder, is checked and has its
-// metadata taken out in the background process (`comments.prepare`), from the bytes of the window's
-// own `File`, and main uploads it to the pull request's repository, one at a time, saying how far it
-// has gone. Once it's uploaded, the placeholder becomes the Markdown that shows it; refused, failed
+// ten on their way into a box at most. Each goes in at the cursor at once as a placeholder, is
+// checked and has its metadata taken out in the background process (`comments.prepare`), from the
+// bytes of the window's own `File`, and main uploads it to the pull request's repository, one at a
+// time, saying how far it has gone. Once it's uploaded, the placeholder becomes the Markdown that
+// shows it, or, where the placeholder went meanwhile, its row offers to insert it; refused, failed
 // or cancelled, it goes. The box lists each file meanwhile, warns that uploads stay reachable, and
-// says what Lo took out of each and why it didn't attach one; its comment isn't sent while one
-// uploads. Where GitHub takes no uploads from the account, or none with Lo's sign-in and gh has
-// none, "Attach" is off in the view's boxes, and an image's `https` address pasted or dropped goes
-// in as an image. Nothing is uploaded again by itself.
+// says what Lo took out of each, or that it couldn't, and why it didn't attach one. Its comment
+// isn't sent while one uploads, nor while its text holds a placeholder whose upload isn't under
+// way, as after Lo restarts; it says which, and the reader takes it out. Main says once a view
+// whether its account can write to the repository, which uploads need. Where it can't, or GitHub
+// takes no uploads with Lo's sign-in and gh has none, "Attach" is off in the view's boxes, nothing
+// dropped goes in, and an image's `https` address pasted or dropped goes in as an image. Nothing is
+// uploaded again by itself.
 
 import type { Metadata } from '@lo/github';
 import type { Composer } from '@lo/ui/code';
@@ -57,6 +61,8 @@ export interface UploadRow {
   /** How far it has gone, from 0 to 1, once main says. */
   readonly progress: number | undefined;
   readonly uploaded: boolean;
+  /** Uploaded, but its placeholder had gone from the text, so its Markdown isn't in it. */
+  readonly unplaced: boolean;
 }
 
 /** What a box shows of the files attached to it. */
@@ -84,6 +90,10 @@ interface Attachment {
   progress: number | undefined;
   stage: 'preparing' | 'uploading' | 'uploaded';
   cancelled: boolean;
+  /** The Markdown that shows it, once it's uploaded. */
+  markdown: string | undefined;
+  /** Uploaded, but its placeholder had gone, so its Markdown isn't in the text. */
+  unplaced: boolean;
   /** What the box says of it, while it's in the box: what Lo took out, and how it went. */
   notes: BoxNote[];
 }
@@ -116,12 +126,13 @@ class Attaching {
   /** What it shows has changed: tells whoever draws it. */
   changed(): void {
     this.#state = {
-      rows: this.files.map(({ key, name, size, progress, stage }) => ({
+      rows: this.files.map(({ key, name, size, progress, stage, unplaced }) => ({
         key,
         name,
         size,
         progress: stage === 'uploading' ? progress : undefined,
         uploaded: stage === 'uploaded',
+        unplaced,
       })),
       notes: [
         ...(this.files.length > 0
@@ -141,6 +152,11 @@ class Attaching {
     this.changed();
   }
 
+  /** The files still on their way in. */
+  get running(): Attachment[] {
+    return this.files.filter((file) => file.stage !== 'uploaded' && !file.cancelled);
+  }
+
   /** Takes `file` out of the box, and its placeholder out of the text. */
   remove(file: Attachment): void {
     const at = this.files.indexOf(file);
@@ -155,9 +171,15 @@ const attachings = new WeakMap<Attachable, Attaching>();
 /** Each upload under way, by the window's name for it, as main says how far it has gone. */
 const underway = new Map<string, { attaching: Attaching; file: Attachment }>();
 
-/** Each view whose boxes take no uploads, and why. */
-const offViews = new Map<string, UploadsOff>();
+/** Each view whose boxes take no uploads, why, and for which account. */
+const offViews = new Map<string, { login: string; off: UploadsOff }>();
 const offListeners = new Set<() => void>();
+
+/**
+ * What main said of whether each view's account can upload, by view and login: asked once, and
+ * again only when main couldn't tell.
+ */
+const checks = new Map<string, { view: string; done: boolean; asked: Promise<void> }>();
 
 /** The files attached to `box`, and what it says of them. */
 export function attachingOf(box: Attachable): Attaching {
@@ -169,14 +191,103 @@ export function attachingOf(box: Attachable): Attaching {
   return attaching;
 }
 
-/** Whether a file is still on its way into `box`, so its comment isn't sent yet. */
-export function uploadsRunning(box: Attachable): boolean {
-  return attachings.get(box)?.files.some((file) => file.stage !== 'uploaded') ?? false;
+/**
+ * Why `box`'s text isn't sent yet for the files attached to it: `running`, while one is on its way
+ * in; `stranded`, while `text`, its text, holds a placeholder, whole or partly edited, whose upload
+ * isn't under way, as after Lo restarts or the placeholder changed, with what the box says of it.
+ */
+export type UploadsHold = { kind: 'running' } | { kind: 'stranded'; text: string };
+
+/** Why `box`'s text isn't sent yet for its files, if it isn't. */
+export function uploadsHold(
+  box: Attachable,
+  text = box.composer?.text ?? box.state.text,
+): UploadsHold | undefined {
+  const attaching = attachings.get(box);
+  if ((attaching?.running.length ?? 0) > 0) return { kind: 'running' };
+  const found = strandedIn(attaching, text);
+  return found.length === 0
+    ? undefined
+    : { kind: 'stranded', text: strandedText(attaching, found) };
 }
 
-/** Why view `view`'s boxes take no uploads, if they don't. */
+/** What a box says of `hold`, why it isn't sent: `uploading` while a file is on its way in. */
+export function holdText(hold: UploadsHold | undefined, uploading: string): string | undefined {
+  if (hold === undefined) return undefined;
+  return hold.kind === 'running' ? uploading : hold.text;
+}
+
+/**
+ * What marks an upload's placeholder in a box's text, whole or partly edited: where its address
+ * starts, or its file's name with the ellipsis after it.
+ */
+const MARK = /\]\(uploading |uploading [^\n…]{1,300}…/g;
+
+/** The name of a file in its placeholder, from where its mark starts, without its count. */
+const NAMED = /^(?:\]\()?uploading ([^\n…]{1,300}?)(?: \(\d+\))?…/;
+
+/**
+ * The placeholders in `text`, whole or partly edited, whose uploads aren't under way in `attaching`,
+ * each by the name of its file, or nothing for one that names none.
+ */
+function strandedIn(attaching: Attaching | undefined, text: string): (string | undefined)[] {
+  const under: [number, number][] = [];
+  for (const file of attaching?.running ?? []) {
+    let at = text.indexOf(file.placeholder);
+    while (at !== -1) {
+      under.push([at, at + file.placeholder.length]);
+      at = text.indexOf(file.placeholder, at + 1);
+    }
+  }
+  const found: (string | undefined)[] = [];
+  for (const match of text.matchAll(MARK)) {
+    const at = match.index;
+    if (under.some(([from, to]) => at >= from && at < to)) continue;
+    found.push(NAMED.exec(text.slice(at, at + 320))?.[1]);
+  }
+  return found;
+}
+
+/** What a box says of the placeholders `found` in its text, whose uploads aren't under way. */
+function strandedText(attaching: Attaching | undefined, found: (string | undefined)[]): string {
+  const unplaced = new Set(
+    (attaching?.files ?? []).filter((file) => file.unplaced).map((file) => shownName(file.name)),
+  );
+  const changed: string[] = [];
+  const lost: string[] = [];
+  let unnamed = false;
+  for (const name of new Set(found)) {
+    if (name === undefined) unnamed = true;
+    else if (unplaced.has(name)) changed.push(name);
+    else lost.push(name);
+  }
+  const said: string[] = [];
+  if (lost.length > 0) {
+    const one = lost.length === 1;
+    said.push(
+      `${listed(lost)} didn’t finish uploading. Attach ${one ? 'it' : 'them'} again, and take out ${one ? 'its placeholder' : 'their placeholders'}.`,
+    );
+  }
+  if (changed.length > 0) {
+    const one = changed.length === 1;
+    said.push(
+      `Lo didn’t put ${listed(changed)} in, as ${one ? 'its placeholder' : 'their placeholders'} changed. Take ${one ? 'it' : 'them'} out, and “Insert” puts ${one ? 'the file' : 'each'} at the cursor.`,
+    );
+  }
+  if (unnamed) said.push('Take out what’s left of an upload’s placeholder.');
+  return said.join(' ');
+}
+
+/** The login view `view` writes as, if it writes as anyone. */
+function loginOf(view: string): string | undefined {
+  const acting = pullOf(view)?.acting;
+  return acting?.kind === 'account' ? acting.login : undefined;
+}
+
+/** Why view `view`'s boxes take no uploads, for the account it acts as now, if they don't. */
 export function uploadsOff(view: string): UploadsOff | undefined {
-  return offViews.get(view);
+  const off = offViews.get(view);
+  return off !== undefined && off.login === loginOf(view) ? off.off : undefined;
 }
 
 export function onUploadsOff(listener: () => void): () => void {
@@ -186,14 +297,50 @@ export function onUploadsOff(listener: () => void): () => void {
   };
 }
 
-function setOff(view: string, off: UploadsOff): void {
-  offViews.set(view, off);
+function setOff(view: string, login: string, off: UploadsOff): void {
+  offViews.set(view, { login, off });
   for (const listener of offListeners) listener();
+}
+
+/**
+ * Asks main once whether view `view`'s account can upload to its repository, so a view where it
+ * can't takes no file. Answers what to wait for while it's asked, or nothing once it's known, or
+ * where there's nothing to ask.
+ */
+export function checkUploads(view: string): Promise<void> | undefined {
+  const login = loginOf(view);
+  if (login === undefined || runOf(view)) return undefined;
+  const key = `${view}\n${login}`;
+  const known = checks.get(key);
+  if (known) return known.done ? undefined : known.asked;
+  const check = { view, done: false, asked: Promise.resolve() };
+  check.asked = main()
+    .attachable({ id: view })
+    .then(
+      (answer) => {
+        // Main couldn't tell: it's asked again next time.
+        if (answer.kind === 'unknown') {
+          if (checks.get(key) === check) checks.delete(key);
+          return;
+        }
+        check.done = true;
+        if (answer.kind === 'cantWrite' && answer.login === login) {
+          setOff(view, login, { kind: 'cantWrite', repo: answer.repo });
+        }
+      },
+      (error: unknown) => {
+        if (checks.get(key) === check) checks.delete(key);
+        console.error("Lo couldn't ask whether uploads go:", error);
+      },
+    );
+  checks.set(key, check);
+  return check.asked;
 }
 
 /** Forgets what it knew of views other than those in `kept`, as their tabs close. */
 export function keepUploadsOf(kept: ReadonlySet<string>): void {
   for (const view of offViews.keys()) if (!kept.has(view)) offViews.delete(view);
+  for (const [key, { view }] of checks) if (!kept.has(view)) checks.delete(key);
 }
 
 /** What a box says while its view's boxes take no uploads. */
@@ -210,7 +357,8 @@ export function whyNoAttach(view: string): string | undefined {
   const pull = pullOf(view);
   if (pull?.acting?.kind !== 'account') return 'Sign in to attach files.';
   if (runOf(view)) return 'Comment in a layer';
-  if (offViews.has(view)) return offNote(offViews.get(view)!).text;
+  const off = uploadsOff(view);
+  if (off !== undefined) return offNote(off).text;
   if (pull.connection.kind === 'offline') return 'Offline. Attach files once Lo can reach GitHub.';
   return undefined;
 }
@@ -244,12 +392,17 @@ export function altOf(name: string): string {
   return alt === '' ? 'image' : alt;
 }
 
+/** File `name` as its placeholder names it. */
+function shownName(name: string): string {
+  return name.replace(/[()\r\n]/g, ' ');
+}
+
 /**
  * What stands in for file `name` in the text until it's uploaded, told apart from any other
  * placeholder in `text`: `![retry storm](uploading retry-storm.gif…)`.
  */
 export function placeholderFor(name: string, text: string): string {
-  const shown = name.replace(/[()\r\n]/g, ' ');
+  const shown = shownName(name);
   for (let count = 1; ; count++) {
     const placeholder = `![${altOf(name)}](uploading ${shown}${count === 1 ? '' : ` (${count})`}…)`;
     if (!text.includes(placeholder)) return placeholder;
@@ -283,14 +436,18 @@ export function inPlaceOf(
   return from === -1 ? undefined : { from, to: from + placeholder.length, insert: markdown };
 }
 
-/** Changes `box`'s text as `change` works out from it: in its editor, or else in its draft. */
-function edit(box: Attachable, change: (text: string) => TextChange | undefined): void {
+/**
+ * Changes `box`'s text as `change` works out from it: in its editor, or else in its draft. Says
+ * whether there was anything to change.
+ */
+function edit(box: Attachable, change: (text: string) => TextChange | undefined): boolean {
   const { composer } = box;
   const text = composer?.text ?? box.state.text;
   const made = change(text);
-  if (!made) return;
+  if (!made) return false;
   if (composer) composer.replace(made.from, made.to, made.insert);
   else box.rewrite(text.slice(0, made.from) + made.insert + text.slice(made.to));
+  return true;
 }
 
 /** "a", "a and b", "a, b and c". */
@@ -300,11 +457,14 @@ function listed(what: readonly string[]): string {
   return rest.length === 0 ? last : `${rest.join(', ')} and ${last}`;
 }
 
-/** What the box says Lo took out of file `name` before uploading it, if there's anything to say. */
+/**
+ * What the box says Lo took out of file `name` before uploading it, or that it couldn't, if there's
+ * anything to say.
+ */
 export function metadataNote(name: string, metadata: Metadata): string | undefined {
   switch (metadata.kind) {
     case 'asIs':
-      return undefined;
+      return `Lo couldn’t remove metadata from ${name}, so it uploads as it is.`;
     case 'image': {
       const { location, other, embedded } = metadata.removed;
       const what: string[] = [];
@@ -362,23 +522,42 @@ function uploadKey(): string {
   return `upload-${Date.now().toString(36)}-${made}`;
 }
 
+/** Whether `file` may be attached, by its name and size alone. */
+function takes(file: File): boolean {
+  return looksAttachable(file.name) && file.size <= ATTACHMENT_LIMIT;
+}
+
 /**
- * Attaches `files`, dropped on `box`, pasted into it or picked: ten at most, each a placeholder at
- * the cursor at once, then prepared and uploaded in turn.
+ * Attaches `files`, dropped on `box`, pasted into it or picked: each a placeholder at the cursor at
+ * once, while no more than ten are on their way into the box, then prepared and uploaded in turn.
+ * Where main hasn't said yet whether the account can upload, they wait until it has.
  */
 export function attachFiles(box: Attachable, files: readonly File[]): void {
+  const waiting = checkUploads(box.view);
+  if (waiting) {
+    void waiting.then(() => attachNow(box, files));
+    return;
+  }
+  attachNow(box, files);
+}
+
+function attachNow(box: Attachable, files: readonly File[]): void {
   const attaching = attachingOf(box);
   // What the box said of the files it didn't attach last time goes, as more come.
   attaching.said = [];
   const why = whyNoAttach(box.view);
   if (why !== undefined) {
-    if (!offViews.has(box.view)) attaching.say('upload-why', why);
+    if (uploadsOff(box.view) === undefined) attaching.say('upload-why', why);
     else attaching.changed();
     return;
   }
-  const taken = files.slice(0, FILES_AT_ONCE);
-  if (files.length > FILES_AT_ONCE) {
-    const rest = files.length - FILES_AT_ONCE;
+  // Refused by name or size alone: nothing of them is read.
+  const refused = files.filter((file) => !takes(file)).slice(0, FILES_AT_ONCE);
+  const attachable = files.filter(takes);
+  const room = Math.max(0, FILES_AT_ONCE - attaching.running.length);
+  const taken = attachable.slice(0, room);
+  if (attachable.length > room) {
+    const rest = attachable.length - room;
     attaching.say(
       'upload-many',
       `Lo attaches ${FILES_AT_ONCE} files at a time, so it left out ${rest} ${rest === 1 ? 'file' : 'files'}.`,
@@ -386,12 +565,7 @@ export function attachFiles(box: Attachable, files: readonly File[]): void {
   }
   const text = box.composer?.text ?? box.state.text;
   const coming: { file: File; attachment: Attachment }[] = [];
-  const refused: File[] = [];
   for (const file of taken) {
-    if (!looksAttachable(file.name) || file.size > ATTACHMENT_LIMIT) {
-      refused.push(file);
-      continue;
-    }
     const placeholders = coming.map(({ attachment }) => attachment.placeholder).join('\n');
     const attachment: Attachment = {
       key: uploadKey(),
@@ -401,6 +575,8 @@ export function attachFiles(box: Attachable, files: readonly File[]): void {
       progress: undefined,
       stage: 'preparing',
       cancelled: false,
+      markdown: undefined,
+      unplaced: false,
       notes: [],
     };
     coming.push({ file, attachment });
@@ -411,7 +587,6 @@ export function attachFiles(box: Attachable, files: readonly File[]): void {
   }
   attaching.changed();
   void (async () => {
-    // Refused by name or size alone: nothing of them is read.
     for (const file of refused) await refuseUnread(attaching, file);
     for (const { file, attachment } of coming) await attachOne(attaching, file, attachment);
   })();
@@ -448,7 +623,7 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
   }
   if (attachment.cancelled) return;
   // An upload before it found the view takes none: the box says so, and this one isn't sent.
-  if (offViews.has(box.view)) {
+  if (uploadsOff(box.view) !== undefined) {
     attaching.remove(attachment);
     return;
   }
@@ -458,7 +633,12 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
   }
   const said = metadataNote(name, prepared.metadata);
   if (said !== undefined) {
-    attachment.notes.push({ key: `upload-metadata-${attachment.key}`, tone: 'info', text: said });
+    attachment.notes.push({
+      key: `upload-metadata-${attachment.key}`,
+      // Sent as it is, with whatever it holds.
+      tone: prepared.metadata.kind === 'asIs' ? 'warning' : 'info',
+      text: said,
+    });
   }
   if (prepared.paidPlan) {
     attachment.notes.push({
@@ -470,6 +650,7 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
   attachment.stage = 'uploading';
   attaching.changed();
   underway.set(attachment.key, { attaching, file: attachment });
+  const login = loginOf(box.view);
   let outcome: UploadOutcome;
   try {
     outcome = await main().upload({
@@ -487,7 +668,11 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
   switch (outcome.kind) {
     case 'uploaded':
       attachment.stage = 'uploaded';
-      edit(box, (text) => inPlaceOf(text, attachment.placeholder, outcome.markdown));
+      attachment.markdown = outcome.markdown;
+      // Its placeholder went meanwhile: its row offers to insert it.
+      attachment.unplaced = !edit(box, (text) =>
+        inPlaceOf(text, attachment.placeholder, outcome.markdown),
+      );
       if (outcome.viaGh) {
         attachment.notes.push({
           key: `upload-gh-${attachment.key}`,
@@ -501,7 +686,7 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
       const { refusal } = outcome;
       if (refusal.kind === 'cantWrite' || refusal.kind === 'needsGh') {
         attaching.remove(attachment);
-        setOff(box.view, refusal);
+        if (login !== undefined) setOff(box.view, login, refusal);
         return;
       }
       failed(refusedText(name, refusal));
@@ -538,10 +723,38 @@ export function cancelUpload(box: Attachable, key: string): void {
     .catch((error: unknown) => console.error("Lo couldn't cancel an upload:", error));
 }
 
-/** Gives up every file still on its way into `box`, as its draft is discarded. */
-export function cancelUploads(box: Attachable): void {
-  // A copy: each one cancelled leaves the list.
-  for (const file of (attachings.get(box)?.files ?? []).slice()) cancelUpload(box, file.key);
+/**
+ * Gives up every file still on its way into `box`, and forgets them all, as its draft goes, or once
+ * what it held is sent: nothing more goes into its text.
+ */
+export function endUploads(box: Attachable): void {
+  const attaching = attachings.get(box);
+  if (!attaching) return;
+  for (const file of attaching.running) {
+    file.cancelled = true;
+    // One still being prepared never reaches main.
+    if (file.stage !== 'uploading') continue;
+    main()
+      .cancelUpload({ id: box.view, upload: file.key })
+      .catch((error: unknown) => console.error("Lo couldn't cancel an upload:", error));
+  }
+  attaching.files.length = 0;
+  attaching.said = [];
+  attaching.dropping = 0;
+  attaching.changed();
+}
+
+/**
+ * Puts the Markdown of upload `key` in `box` at its cursor, as its row's "Insert" does, for one
+ * whose placeholder went while it uploaded.
+ */
+export function insertUpload(box: Attachable, key: string): void {
+  const attaching = attachings.get(box);
+  const file = attaching?.files.find((each) => each.key === key);
+  if (!attaching || !file?.unplaced || file.markdown === undefined || !box.composer) return;
+  box.composer.insert(file.markdown);
+  file.unplaced = false;
+  attaching.changed();
 }
 
 /** Files are dragged over `box`: how many, or 0 once they're dropped or leave. */
@@ -626,7 +839,7 @@ export function imageAddress(text: string): { url: string; alt: string } | undef
  */
 export function takeAddresses(frame: HTMLElement, box: Attachable): () => void {
   const take = (event: Event, text: string | undefined) => {
-    if (!offViews.has(box.view) || text === undefined) return;
+    if (uploadsOff(box.view) === undefined || text === undefined) return;
     const found = imageAddress(text);
     if (!found || !box.composer) return;
     event.preventDefault();

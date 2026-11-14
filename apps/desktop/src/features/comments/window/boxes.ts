@@ -6,7 +6,8 @@
 // goes. While it's sent, and until Lo knows whether it posted, its text is held as it is. A box
 // goes once what it sent is on GitHub, or its draft is discarded; `Esc Esc` closes it and keeps the
 // draft for the next box there. Files dropped on it, pasted into it or picked are attached
-// (`./uploads.ts`), and it isn't sent while one is on its way in.
+// (`./uploads.ts`). It isn't sent while one is on its way in, nor while its text holds a
+// placeholder whose upload isn't, and its uploads are given up as its draft goes.
 
 import { Lines, suggestionBlock, takesSuggestion } from '@lo/review';
 import type { Composer, ComposerEvents, Mode, Send } from '@lo/ui/code';
@@ -30,7 +31,7 @@ import { screenOf } from './placing.ts';
 import type { PostPull } from './Post.tsx';
 import { landed } from './landed.ts';
 import { held } from './threads.ts';
-import { attachFiles, cancelUploads, draggingOver, pickFiles, uploadsRunning } from './uploads.ts';
+import { attachFiles, draggingOver, endUploads, pickFiles, uploadsHold } from './uploads.ts';
 import {
   boxAt,
   commentableOn,
@@ -303,8 +304,10 @@ function eventsOf(box: Box): ComposerEvents {
         box.saveNow();
         return;
       }
-      // Nothing to keep: its draft goes, unless main is still settling what it sent.
+      // Nothing to keep: its draft goes, unless main is still settling what it sent, and nothing
+      // still uploading goes into it.
       box.dropSave();
+      endUploads(box);
       if (box.sentMark || box.state.busy) return;
       boxesOf(box.view).delete(box.key);
       holdDropped(box);
@@ -641,7 +644,7 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
 export async function send(box: Box, how: Send): Promise<void> {
   const { view } = box;
   const { place, text } = box.state;
-  if (sendingNow(box.state) || uploadsRunning(box)) return;
+  if (sendingNow(box.state) || uploadsHold(box) !== undefined) return;
   if (text.trim() === '' || offline(view) || canWrite(view) !== true) return;
   box.dropSave();
   box.lastHow = how;
@@ -725,7 +728,7 @@ export function act(box: Box, offer: Offer): void {
  */
 function drop(box: Box): void {
   const { view, key } = box;
-  cancelUploads(box);
+  endUploads(box);
   boxesOf(view).delete(key);
   box.dropSave();
   box.open = false;
