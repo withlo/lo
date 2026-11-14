@@ -56,6 +56,8 @@ export function placeKey(place: BoxPlace): string {
 export interface BoxOptions {
   /** What a key in the box acts on: the line it's under, and its thread. */
   target: Target;
+  /** The thread it's written in, as a reply's box is, which it's drawn right after. */
+  thread?: string | undefined;
   draft: string;
   on: ComposerEvents;
   frame: BoxFrame | undefined;
@@ -76,6 +78,8 @@ export class CommentBox implements BoxHost, KeySource {
   readonly view: EditorView;
   /** What a key in the box acts on. */
   readonly target: Target;
+  /** The thread it's written in, if it's written in one. */
+  readonly thread: string | undefined;
   /** The caller's handle on the box. */
   readonly composer: Composer;
   readonly #parts: BoxParts;
@@ -100,6 +104,7 @@ export class CommentBox implements BoxHost, KeySource {
     installVim();
     const { on } = options;
     this.target = options.target;
+    this.thread = options.thread;
     this.#on = on;
     this.#escape = options.escape;
     this.dom = document.createElement('div');

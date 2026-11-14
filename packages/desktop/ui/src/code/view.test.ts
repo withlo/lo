@@ -1161,6 +1161,79 @@ describe('threads', () => {
     expect(card.classList).toContain('is-held');
   });
 
+  test('boxes named apart are boxes of their own: one in a thread goes right after it', () => {
+    const shown = open();
+    const both = [thread('one', at('a', 'new', 4)), thread('two', at('a', 'new', 4))];
+    shown.setThreads(both, plain().render);
+    const named = (name: string) => ({ name });
+    const line = shown.compose(
+      at('a', 'new', 4),
+      'On the line',
+      composerEvents(),
+      undefined,
+      named('line'),
+    );
+    const reply = shown.compose(
+      { thread: 'one' },
+      'A reply',
+      composerEvents(),
+      undefined,
+      named('reply'),
+    );
+    const edit = shown.compose(
+      { thread: 'one' },
+      'An edit',
+      composerEvents(),
+      undefined,
+      named('edit'),
+    );
+    // The same name is the same box.
+    expect(shown.compose({ thread: 'one' }, '', composerEvents(), undefined, named('reply'))).toBe(
+      reply,
+    );
+    const block = parent!.querySelector('.lo-diffthread')!;
+    const order = [...block.children].map((each) =>
+      each instanceof HTMLElement && each.dataset.threadId !== undefined
+        ? each.dataset.threadId
+        : (each.querySelector('.cm-content')?.textContent ?? ''),
+    );
+    expect(order).toEqual(['one', 'A reply', 'An edit', 'two', 'On the line']);
+    for (const box of [reply, edit, line]) box.dismiss();
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+  });
+
+  test('what comes under a thread the reader wrote to comes at once, until it comes or the claim goes', async () => {
+    const sizes = observers();
+    const shown = open();
+    const { render } = plain();
+    shown.setThreads([thread('one', at('a', 'new', 4))], render);
+    onScreen(['line 4'], ['one']);
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="one"]')!;
+    const content = card.querySelector('.lo-diffthread__host')!;
+    sizes.resize(content, 90);
+    // Resolved, as the reader asked: it collapses at once, its line kept.
+    shown.claimThread('one');
+    const resolved = thread('one', at('a', 'new', 4), false, 2);
+    shown.setThreads([resolved], render);
+    sizes.resize(content, 36);
+    await nextFrame();
+    expect(card.style.height).toBe('36px');
+    expect(card.classList).not.toContain('is-held');
+    // Once it's come, what comes next waits, as any change does.
+    shown.setThreads([resolved, thread('late', at('a', 'new', 4))], render);
+    expect(drawnThreads()).toEqual(['one']);
+    // A claim let go, as when the write changed nothing, leaves the line as it was.
+    shown.setThreads([resolved], render);
+    const letGo = shown.claimThread('one');
+    letGo();
+    shown.setThreads([thread('one', at('a', 'new', 4), false, 3)], render);
+    sizes.resize(content, 50);
+    await nextFrame();
+    expect(card.classList).toContain('is-held');
+    // A thread the view doesn't have claims nothing.
+    expect(() => shown.claimThread('none')()).not.toThrow();
+  });
+
   test("a file's threads go under its header, in the newer column, whether or not its lines show", () => {
     const shown = open();
     const { render, asked } = plain();

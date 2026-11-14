@@ -754,8 +754,11 @@ class View implements DiffView {
         if (wanted) drawn.set(key, wanted);
       }
     });
-    // A closed box's line is the reader's until what they sent there comes.
-    for (const each of changed) this.#boxClosed.delete(each);
+    // A closed box's line, or a thread's the reader wrote to, is theirs until what they sent comes.
+    for (const each of changed) {
+      this.#boxClosed.delete(each);
+      this.#claimed.delete(each);
+    }
     for (const open of this.#boxes.values()) {
       const { file, side, line } = open.place;
       if (changed.has(waitKey(file, `${side}:${line}`))) open.answered = true;
@@ -768,10 +771,11 @@ class View implements DiffView {
 
   /**
    * The lines comment boxes are under, by `waitKey`: those open, and those closed since the
-   * threads under them last changed, while they're on screen.
+   * threads under them last changed, while they're on screen; and the lines of threads the reader
+   * wrote to since.
    */
   #readerLines(): Set<string> {
-    const lines = new Set(this.#boxClosed);
+    const lines = new Set([...this.#boxClosed, ...this.#claimed.keys()]);
     for (const { place } of this.#boxes.values()) {
       lines.add(waitKey(place.file, `${place.side}:${place.line}`));
     }
@@ -785,11 +789,43 @@ class View implements DiffView {
   readonly #boxClosed = new Set<string>();
 
   /**
+   * The lines of threads the reader wrote to, by `waitKey`, each with its claims: what comes there
+   * next is what they did.
+   */
+  readonly #claimed = new Map<string, Set<symbol>>();
+
+  /**
    * The room comment boxes took on screen, kept empty, by their keys: boxes their callers closed
    * with no input of the reader's, as their answers came. What's on screen stays as it was, and
    * what comes under their lines waits, until the reader's next input, or until it's off screen.
    */
   readonly #rooms = new Map<string, { place: At; room: BoxHost }>();
+
+  claimThread(id: string): () => void {
+    const place = this.#threadPlace(id);
+    if (!place) return () => {};
+    const key = waitKey(place.file, `${place.side}:${place.line}`);
+    const claim = Symbol(id);
+    let claims = this.#claimed.get(key);
+    if (!claims) {
+      claims = new Set();
+      this.#claimed.set(key, claims);
+    }
+    claims.add(claim);
+    return () => {
+      const held = this.#claimed.get(key);
+      if (!held?.delete(claim) || held.size > 0) return;
+      this.#claimed.delete(key);
+    };
+  }
+
+  /** Whether the reader wrote to a thread under `host`'s line, so what it does next is theirs. */
+  #claimedAt(host: ThreadHost): boolean {
+    const place = this.#threadPlace(host.id);
+    return (
+      place !== undefined && this.#claimed.has(waitKey(place.file, `${place.side}:${place.line}`))
+    );
+  }
 
   openThread(id: string, open: boolean | 'toggle'): boolean {
     const host = this.#hosts.get(id);
@@ -936,7 +972,7 @@ class View implements DiffView {
     const taking = this.#taking ?? { hosts: new Set<ThreadHost>(), kept: undefined };
     for (const { host, fresh, reflowed } of threads) {
       host.hold();
-      if (!fresh && host.takeInput()) {
+      if (!fresh && (host.takeInput() || this.#claimedAt(host))) {
         taking.kept ??= this.#threadPlace(host.id);
         taking.hosts.add(host);
       } else if (!fresh && !reflowed && this.#onScreen(host.dom)) {
@@ -1197,11 +1233,14 @@ class View implements DiffView {
     this.#letRoomsGo((room) => !this.#onScreen(room));
     this.#letHeldGo((note) => !this.#noteOnScreen(note));
     this.#letThreadsGo('off', false);
-    // A closed box's line scrolled off screen: what comes there now is no longer the reader's.
-    for (const each of this.#boxClosed) {
-      const { file, key } = splitKey(each);
-      if (!this.#mayGo('off', this.#lineSpan(file, key))) continue;
-      this.#boxClosed.delete(each);
+    // A closed box's line, or a thread's the reader wrote to, scrolled off screen: what comes there
+    // now is no longer the reader's.
+    for (const lines of [this.#boxClosed, this.#claimed]) {
+      for (const each of lines.keys()) {
+        const { file, key } = splitKey(each);
+        if (!this.#mayGo('off', this.#lineSpan(file, key))) continue;
+        lines.delete(each);
+      }
     }
   };
 
@@ -2014,7 +2053,8 @@ class View implements DiffView {
     if (place.line === 0 ? 'line' in at : place.line < 1 || this.#noteOf(place.file)) {
       throw new Error('A comment box goes under a line of a file that is shown.');
     }
-    const key = placeKey(place);
+    // A box the caller named is one of its own: a reply's beside a comment on the same line.
+    const key = options.name === undefined ? placeKey(place) : `${placeKey(place)}|${options.name}`;
     const open = this.#boxes.get(key);
     if (open) {
       if (options.focus !== false) open.box.focus();
@@ -2035,6 +2075,7 @@ class View implements DiffView {
     if (options.name !== undefined) target.box = options.name;
     const box = new CommentBox({
       target,
+      thread: 'thread' in at ? at.thread : undefined,
       draft,
       on,
       frame,
@@ -2137,7 +2178,9 @@ class View implements DiffView {
       room.className = 'lo-diffcomposer-room';
       room.style.height = `${box.dom.getBoundingClientRect().height}px`;
       this.#boxClosed.delete(waitKey(place.file, `${place.side}:${place.line}`));
-      this.#rooms.set(key, { place, room: { dom: room, attach: (parent) => parent.append(room) } });
+      const { thread } = box;
+      const attach = (parent: HTMLElement) => parent.append(room);
+      this.#rooms.set(key, { place, room: { dom: room, thread, attach } });
       this.#refresh(place.file);
     } else if (sent) this.#keepUnasked(() => this.#refresh(place.file));
     else this.#keepLine(place, () => this.#refresh(place.file));
@@ -2660,7 +2703,8 @@ class View implements DiffView {
       const { side, line } = place;
       const key = `${side}:${line}`;
       const shown = byPlace.get(key) ?? { id: placeKey(place), side, line, threads: [] };
-      byPlace.set(key, { ...shown, box, drawing: this.#drawing });
+      const under = [...(shown.boxes ?? []), box];
+      byPlace.set(key, { ...shown, boxes: under, drawing: this.#drawing });
     }
     for (const { key: markKey, shown: mark } of this.#notes) {
       const { side, line } = mark;

@@ -282,7 +282,8 @@ export interface ComposeOptions {
   focus?: boolean;
   /**
    * The caller's name for the box: a key in it acts on its line or header with the box named
-   * (`box`), so the caller's commands can act on the box, as from its frame's right-click menu.
+   * (`box`), so the caller's commands can act on the box, as from its frame's right-click menu. A
+   * box named otherwise than one open at its place is a box of its own.
    */
   name?: string;
 }
@@ -502,11 +503,13 @@ export interface DiffView extends KeySource {
   /** The text of a span's lines, as `yy` copies them. */
   lines(span: Span): readonly string[];
   /**
-   * Opens a comment box with `draft` in it, under a line, the last line of a span, a thread, or a
-   * file's header, for a comment on the file, with `frame` drawn around its editor, and focuses it,
-   * unless `focus` is false, as for a draft restored. A box already open there is focused instead,
-   * as it is. The box's line or header stays where it is as it opens, grows and closes. A box on a
-   * file goes where its threads do, whether or not the file shows its lines.
+   * Opens a comment box with `draft` in it, under a line, the last line of a span, or a file's
+   * header, for a comment on the file, or in a thread, right after it, with `frame` drawn around
+   * its editor, and focuses it, unless `focus` is false, as for a draft restored. A box already open
+   * there with the same name, or with none, is focused instead, as it is: boxes named otherwise are
+   * boxes of their own, as a reply's in a thread is beside a comment on its line. The box's line or
+   * header stays where it is as it opens, grows and closes. A box on a file goes where its threads
+   * do, whether or not the file shows its lines.
    */
   compose(
     at: Place | Span | { thread: string } | OnFile,
@@ -515,6 +518,15 @@ export interface DiffView extends KeySource {
     frame?: BoxFrame,
     options?: ComposeOptions,
   ): Composer;
+  /**
+   * The reader acted on thread `id` by a write whose answer will change it, as resolving it or
+   * deleting one of its comments: what next comes under its line or header, and its own next
+   * changes of size, are their doing, as what comes under a sent comment box's line is. It comes
+   * at once, and keeps the line where it is. That lasts until something comes there, the line goes
+   * off screen, or the function returned is called, as when the write changed nothing. A thread the
+   * view doesn't have gets a function that does nothing.
+   */
+  claimThread(id: string): () => void;
   focus(): void;
   destroy(): void;
   readonly probe: Probe;

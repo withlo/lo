@@ -35,18 +35,19 @@ export interface ViewFile extends HeaderInfo {
 }
 
 /**
- * What's under one of a file's lines: the threads there, a comment box, the notes of overview
+ * What's under one of a file's lines: the threads there, comment boxes, the notes of overview
  * markers that end there, or any of them together. Line 0 is the file's header, under which go the
- * threads and comment box on the file.
+ * threads and comment boxes on the file.
  */
 export interface ViewThread {
   id: string;
   side: Side;
   line: number;
   threads: readonly ThreadHost[];
-  box?: BoxHost | undefined;
+  /** The comment boxes under the line: on it, or written in one of its threads. */
+  boxes?: readonly BoxHost[] | undefined;
   /**
-   * Changes when the threads and the box must be drawn again, to move them into the editor
+   * Changes when the threads and the boxes must be drawn again, to move them into the editor
    * showing.
    */
   drawing?: number | undefined;
@@ -187,7 +188,7 @@ export function inlineBlocks(
 
 /**
  * The file's header, with `note` in it, where the file has no lines, and `onFile`, the threads and
- * comment box on the file: as blocks of their own after the header, CodeMirror can draw them above
+ * comment boxes on the file: as blocks of their own after the header, CodeMirror can draw them above
  * the lines it draws (see `HeaderWidget`).
  */
 function header(
@@ -198,7 +199,7 @@ function header(
 ): Range<Decoration> {
   const under = onFile && {
     threads: onFile.threads,
-    box: onFile.box,
+    boxes: onFile.boxes ?? [],
     drawing: onFile.drawing ?? 0,
     draw: input.draw,
   };
@@ -258,7 +259,7 @@ function threadAt(
     thread.threads,
     sizes,
     draw,
-    thread.box,
+    thread.boxes,
     thread.drawing,
     thread.notes,
   );
