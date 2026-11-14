@@ -121,9 +121,13 @@ export function move(by: 1 | -1): void {
 /** What `Tab` stops at in a row: its links and buttons, as drawn now. */
 const STOPS = 'a[href], button, input, select, textarea, [tabindex]';
 
-/** Whether `target`, what a click landed on, is in a link or button of a row. */
+/** Where an edit of your comment is drawn, in its card: it keeps focus, as a link or button does. */
+const EDIT = '[data-lo-timeline="edit"]';
+
+/** Whether `target`, what a click landed on, is in a link or button of a row, or in an edit box. */
 export function inStop(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
+  if (target.closest(EDIT) !== null) return true;
   // The list takes focus itself; a stop is inside one of its rows.
   const stop = target.closest(STOPS);
   return stop !== null && stop.closest('li[data-key]') !== null;

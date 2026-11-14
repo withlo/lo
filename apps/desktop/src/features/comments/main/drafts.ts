@@ -1,10 +1,11 @@
 // The drafts of comment boxes, in main: what the reader typed and hasn't posted, by account, pull
 // request and place, saved in the database as the window hands it over, so quitting Lo or a crash
 // loses none of it. Those saved before Lo started come back marked restored. An edit's keeps the
-// text it started from, while it's kept at all. Besides the boxes' drafts (new threads, replies and
-// edits), a pull request has one summary, the submit dialog's, which the review feature keeps here
-// through the `comments.drafts` service. A place of a kind this version of Lo doesn't know, written
-// by a later one, stays in the database as it is and is never opened. Nothing here calls Electron.
+// text it started from, while it's kept at all. Besides the boxes' drafts (new threads, replies,
+// the box on the pull request itself and edits), a pull request has one summary, the submit
+// dialog's, which the review feature keeps here through the `comments.drafts` service. A place of a
+// kind this version of Lo doesn't know, written by a later one, stays in the database as it is and
+// is never opened. Nothing here calls Electron.
 
 import { PullRef } from '@lo/github';
 import { Drafts, type DraftPlace, type ThreadDraftPlace } from '@lo/review';
@@ -51,7 +52,7 @@ function lower(text: string): string {
   return text.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
 }
 
-/** Whether `place` is a box's: a new thread's, a reply's or an edit's. */
+/** Whether `place` is a box's: a new thread's, a reply's, the pull request's own or an edit's. */
 function isBox(place: StoredPlace): place is DraftPlaceRow {
   return place.kind !== SUMMARY.kind;
 }
@@ -73,6 +74,8 @@ export function placeJson(place: StoredPlace): string {
     }
     case 'reply':
       return JSON.stringify({ kind: place.kind, thread: place.thread });
+    case 'conversation':
+      return JSON.stringify({ kind: place.kind });
     case 'edit':
       return JSON.stringify({ kind: place.kind, thread: place.thread, comment: place.comment });
     case 'summary':

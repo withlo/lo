@@ -179,25 +179,43 @@ export type CommentLinesRow = z.output<typeof commentLines>;
 const path = z.string().min(1).max(4096);
 
 /**
- * Where a comment box is, which its draft is kept by: a new thread on lines of the revision whose
- * head is `commit`, the newer column's when it was written, or on the file when it has no lines; a
- * reply in the thread `thread`; or an edit of your comment `comment` in the thread `thread`. Boxes
+ * A new thread's comment box: on lines of the revision whose head is `commit`, the newer column's
+ * when it was written, or on the file when it has no lines.
+ */
+export const threadPlace = z.strictObject({
+  kind: z.literal('thread'),
+  commit: oid,
+  path,
+  lines: commentLines.nullable(),
+});
+export type ThreadPlaceRow = z.output<typeof threadPlace>;
+
+/** The comment box on the pull request itself, in its conversation: one a pull request. */
+export const conversationPlace = z.strictObject({ kind: z.literal('conversation') });
+export type ConversationPlaceRow = z.output<typeof conversationPlace>;
+
+/**
+ * An edit of your comment `comment`: in the review thread `thread`, or, with no thread, on the pull
+ * request itself, in its conversation.
+ */
+const editPlace = z.strictObject({
+  kind: z.literal('edit'),
+  thread: nodeId.nullable(),
+  comment: nodeId,
+});
+
+/**
+ * Where a comment box is, which its draft is kept by: a new thread's; a reply in the thread
+ * `thread`; the pull request's own, at the end of its timeline; or an edit of your comment. Boxes
  * of other kinds come with the features that open them.
  */
 export const draftPlace = z.discriminatedUnion('kind', [
-  z.strictObject({
-    kind: z.literal('thread'),
-    commit: oid,
-    path,
-    lines: commentLines.nullable(),
-  }),
+  threadPlace,
   z.strictObject({ kind: z.literal('reply'), thread: nodeId }),
-  z.strictObject({ kind: z.literal('edit'), thread: nodeId, comment: nodeId }),
+  conversationPlace,
+  editPlace,
 ]);
 export type DraftPlaceRow = z.output<typeof draftPlace>;
-
-/** A new thread's place, of those a draft may have. */
-export type ThreadPlaceRow = Extract<DraftPlaceRow, { kind: 'thread' }>;
 
 /** An edit's place, of those a draft may have. */
 export type EditPlaceRow = Extract<DraftPlaceRow, { kind: 'edit' }>;
@@ -362,9 +380,6 @@ export const uploadProgress = z.strictObject({
   total: z.number().int().nonnegative(),
 });
 export type UploadProgressRow = z.output<typeof uploadProgress>;
-/** An edit's place, as a request names it. */
-const editPlace = z.strictObject({ kind: z.literal('edit'), thread: nodeId, comment: nodeId });
-
 /**
  * Why Lo didn't edit, resolve, unresolve or delete, as the window says it, with what to do:
  *
@@ -402,13 +417,14 @@ export const change = z.enum(['resolve', 'unresolve', 'delete']);
 export type Change = z.output<typeof change>;
 
 /**
- * How resolving or unresolving a thread, or deleting your comment `comment` in it, stands, from
- * when it's asked until Lo knows it's done: `waiting` for the answer to the last write to its pull
- * request; `sending`; `checking`, after GitHub's answer was lost, whether it went; `notDone`, when
- * Lo found it didn't; `unknown`, when Lo couldn't tell.
+ * How resolving or unresolving a thread, or deleting your comment `comment` in it, or on the pull
+ * request itself when there's no `thread`, stands, from when it's asked until Lo knows it's done:
+ * `waiting` for the answer to the last write to its pull request; `sending`; `checking`, after
+ * GitHub's answer was lost, whether it went; `notDone`, when Lo found it didn't; `unknown`, when Lo
+ * couldn't tell.
  */
 export const actRow = z.strictObject({
-  thread: nodeId,
+  thread: nodeId.nullable(),
   comment: nodeId.nullable(),
   change,
   stands: z.enum(['waiting', 'sending', 'checking', 'notDone', 'unknown']),
@@ -421,8 +437,9 @@ export type ActsView = z.output<typeof actsView>;
 
 /**
  * What a question to delete a comment said of it, from what Lo last read: its text, whether it's
- * in your pending review, and whether it's its thread's only comment, so the thread goes too.
- * GitHub's comment is read again as it's answered, and isn't deleted when that says otherwise.
+ * in your pending review, and whether it's its thread's only comment, so the thread goes too. A
+ * comment on the pull request itself is neither. GitHub's comment is read again as it's answered,
+ * and isn't deleted when that says otherwise.
  */
 export const deleteAsked = z.strictObject({
   body: z.string().max(BODY_LIMIT),
@@ -483,8 +500,9 @@ export const contract = defineContract('comments', {
     },
     /**
      * Sends `text` as the comment at `place` on view `id`'s pull request, as its account: added to
-     * your pending review (`review`), or posted at once (`now`). It's kept as the draft until
-     * GitHub takes it. One write to a pull request goes at a time: this one waits for the last
+     * your pending review (`review`), or posted at once (`now`). A comment on the pull request
+     * itself (`conversation`) joins no review, so it's posted at once either way. It's kept as the
+     * draft until GitHub takes it. One write to a pull request goes at a time: this one waits for the last
      * one's answer. Never sent again by itself.
      */
     send: {
@@ -557,12 +575,18 @@ export const contract = defineContract('comments', {
       reply: reply<ActOutcome>(),
     },
     /**
-     * Deletes your comment `comment` in the thread `thread` on view `id`'s pull request, once the
-     * last write to the pull request has its answer, and only if a read of it, made then, finds it
-     * as the question showed it (`asked`). Never sent again by itself.
+     * Deletes your comment `comment` in the thread `thread` on view `id`'s pull request, or, with no
+     * thread, on the pull request itself, once the last write to the pull request has its answer,
+     * and only if a read of it, made then, finds it as the question showed it (`asked`). Never sent
+     * again by itself.
      */
     remove: {
-      input: z.strictObject({ id: tabId, thread: nodeId, comment: nodeId, asked: deleteAsked }),
+      input: z.strictObject({
+        id: tabId,
+        thread: nodeId.nullable(),
+        comment: nodeId,
+        asked: deleteAsked,
+      }),
       reply: reply<ActOutcome>(),
     },
   },

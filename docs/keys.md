@@ -63,6 +63,9 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Send it anyway                  | None: in its menu and the palette | In `box`                                                 | `comments.sendAnyway`    |
 | Move the comment to the file    | None: in its menu and the palette | In `box`                                                 | `comments.moveToFile`    |
 | Mark viewed                     | `e`                               | In `diff`; in code views, only in normal mode            | `diff.markViewed`        |
+| Comment on the pull request     | `c`                               | In `timeline`                                            | `timeline.comment`       |
+| Edit your comment               | `i`                               | In `timeline`                                            | `timeline.editComment`   |
+| Delete your comment…            | `d d`                             | In `timeline`                                            | `timeline.deleteComment` |
 | Show the hidden comment         | None: in its menu and the palette | In `timeline`                                            | `timeline.showComment`   |
 | Mark viewed                     | `e`                               | In `tree`                                                | `tree.markViewed`        |
 | Sign in with GitHub             | `⏎`                               | In `welcome`                                             | `welcome.signIn`         |

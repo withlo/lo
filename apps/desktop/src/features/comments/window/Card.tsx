@@ -15,6 +15,7 @@ import type { ThreadCommentRow, ThreadRow } from '../contract.ts';
 import {
   acting,
   actNote,
+  type ActNote,
   closeAct,
   closedActs,
   edit,
@@ -116,25 +117,47 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
       />
       {note && asked && (
         <div className="mt-8 max-w-read-measure">
-          <Callout tone={note.checking ? 'info' : 'warning'} role="status">
-            <div className="flex flex-wrap items-center gap-8">
-              {note.checking && <Spinner />}
-              <span className="min-w-0 flex-1">{note.text}</span>
-              {note.again && (
-                <span className="flex flex-none gap-4">
-                  <Button size="sm" onClick={() => tryAgain(tab, asked)}>
-                    Try again
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => closeAct(view, asked)}>
-                    Close
-                  </Button>
-                </span>
-              )}
-            </div>
-          </Callout>
+          <ActCallout
+            note={note}
+            onAgain={() => tryAgain(tab, asked)}
+            onClose={() => closeAct(view, asked)}
+          />
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * What a card says of a change asked of it while GitHub's answer was lost, with "Try again" and
+ * "Close" once Lo found it didn't go, or can't tell.
+ */
+export function ActCallout({
+  note,
+  onAgain,
+  onClose,
+}: {
+  note: ActNote;
+  onAgain: () => void;
+  onClose: () => void;
+}): ReactNode {
+  return (
+    <Callout tone={note.checking ? 'info' : 'warning'} role="status">
+      <div className="flex flex-wrap items-center gap-8">
+        {note.checking && <Spinner />}
+        <span className="min-w-0 flex-1">{note.text}</span>
+        {note.again && (
+          <span className="flex flex-none gap-4">
+            <Button size="sm" onClick={onAgain}>
+              Try again
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onClose}>
+              Close
+            </Button>
+          </span>
+        )}
+      </div>
+    </Callout>
   );
 }
 

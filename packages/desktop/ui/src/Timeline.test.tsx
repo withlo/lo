@@ -14,6 +14,7 @@ import {
   TimelineChecks,
   TimelineComment,
   TimelineDescription,
+  TimelineEnd,
   TimelineEvent,
   TimelineForcePush,
   TimelineName,
@@ -90,6 +91,26 @@ describe('Timeline', () => {
     // A glyph's disc is decoration; a person's avatar is too, beside their login.
     expect(row(host, 0).querySelector('[aria-hidden="true"]')).not.toBeNull();
     expect(row(host, 1).textContent).toBe('TOa box');
+  });
+
+  it('draws what follows the rows, as the box at the end, outside the list, beside its marker', () => {
+    const host = render(
+      <Timeline
+        end={
+          <TimelineEnd marker={{ login: 'tess-okafor' }} data-testid="end">
+            a box
+          </TimelineEnd>
+        }
+      >
+        <TimelineEvent glyph="tag" when="now">
+          added
+        </TimelineEvent>
+      </Timeline>,
+    );
+    expect(host.querySelectorAll('[role="option"]')).toHaveLength(1);
+    const end = host.querySelector('[data-testid="end"]');
+    expect(end?.closest('ol')).toBeNull();
+    expect(end?.textContent).toBe('TOa box');
   });
 
   it('draws the description as a card: who opened it, the text, labels in color and the reviewers', () => {
@@ -437,7 +458,7 @@ describe('Timeline', () => {
 
   it("only uses utilities that Lo's stylesheet has, and runs the rail marker to marker", async () => {
     const host = render(
-      <Timeline>
+      <Timeline end={<TimelineEnd marker={{ login: 'a' }}>box</TimelineEnd>}>
         <TimelineDescription
           author="ravi-k"
           when="3 days ago"

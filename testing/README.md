@@ -217,12 +217,14 @@ is `app_comments`, and `app_comments_write` was recorded with writes, as Lo star
 pending review on #94 with a comment on a line and then submitted it as a comment, and
 `app_comments_now` as Lo posted one at once. `app_comments_act` was recorded with writes as Lo acted
 on #94's threads: a reply posted at once on line 2's thread, then edited, then deleted, and line 5's
-resolved thread unresolved and resolved again. `fixtures/comments-reset.sh`, run with
-`LO_FIXTURE_TOKEN_FILE` as `record.ts` is, deletes what a recording with writes added there and
-resolves and unresolves the threads as `comments.sh` left them. A submitted review can't be deleted,
-so each recording of `app_comments_write` leaves one more on #94. Which posts the window asks GitHub
-to render at once depends on what's near the screen, so the app's tests answer those reads from
-every post the cassette recorded (`apps/desktop/e2e/bodies.ts`).
+resolved thread unresolved and resolved again, and `app_comments_box` as Lo wrote on #94 itself from
+its timeline: a comment posted from the box at its end, then edited, then deleted.
+`fixtures/comments-reset.sh`, run with `LO_FIXTURE_TOKEN_FILE` as `record.ts` is, deletes what a
+recording with writes added there and resolves and unresolves the threads as `comments.sh` left
+them. A submitted review can't be deleted, so each recording of `app_comments_write` leaves one more
+on #94. Which posts the window asks GitHub to render at once depends on what's near the screen, so
+the app's tests answer those reads from every post the cassette recorded
+(`apps/desktop/e2e/bodies.ts`).
 
 ## The credential scan
 

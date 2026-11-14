@@ -3,7 +3,9 @@
 // recorded from the app. On line 2's thread, `r` opens a reply box right after its card, and `⌥⏎`
 // posts the reply; `i` opens a box with the reply's text, and `⌘⏎` saves the edit over it; `dd`
 // asks first, and `⏎` deletes it. On line 5's resolved thread, `x` unresolves it, and `x` again
-// resolves it. Each change comes into the card as GitHub reads it back.
+// resolves it. Each change comes into the card as GitHub reads it back. In the timeline, as
+// `app_comments_box` recorded, `c` puts focus in the box at its end, and `⌘⏎` posts a comment on
+// the pull request itself, which `i` edits in its card and `dd` deletes.
 
 import {
   cassette as recorded,
@@ -23,7 +25,11 @@ import { type BodiesServer, serveBodies } from './bodies.ts';
 /** A stand-in token, never a real one: the cassettes were recorded with the same. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
 
+/** The cassette of acting on threads in the diff. */
 const CASSETTE = 'app_comments_act';
+
+/** The cassette of writing on the pull request itself, in the timeline. */
+const BOX = 'app_comments_box';
 
 /**
  * The cassette that recorded the images #94's comments show, which the threads' cards load as they
@@ -40,6 +46,9 @@ const WRITES = new Set([
   'DeletePullRequestReviewComment',
   'UnresolveReviewThread',
   'ResolveReviewThread',
+  'AddComment',
+  'UpdateIssueComment',
+  'DeleteIssueComment',
 ]);
 
 /** The GraphQL operation a request names, if it names one. */
@@ -99,18 +108,19 @@ class Staged extends Replay {
 }
 
 const test = base.extend<{
+  cassette: string;
   github: ReplayServer;
   front: BodiesServer;
   remote: string;
 }>({
-  // oxlint-disable-next-line no-empty-pattern
-  github: async ({}, use) => {
-    const server = await serveReplay(new Staged(CASSETTE));
+  cassette: [CASSETTE, { option: true }],
+  github: async ({ cassette }, use) => {
+    const server = await serveReplay(new Staged(cassette));
     await use(server);
     await server.close();
   },
-  front: async ({ github }, use) => {
-    const front = await serveBodies(CASSETTE, new URL(github.urls.api).origin);
+  front: async ({ cassette, github }, use) => {
+    const front = await serveBodies(cassette, new URL(github.urls.api).origin);
     await use(front);
     await front.close();
   },
@@ -248,5 +258,75 @@ test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and 
     await expect(fifth).toHaveAttribute('data-thread-state', 'unresolved', { timeout: 20_000 });
     await page.keyboard.press('x');
     await expect(fifth).toHaveAttribute('data-thread-state', 'resolved', { timeout: 20_000 });
+  });
+});
+
+test.describe('in the timeline', () => {
+  test.use({ cassette: BOX });
+
+  test('`c` and `⌘⏎` post a comment from the box at its end, and `i` and `dd` edit and delete it', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await open(page);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () =>
+              document.activeElement
+                ?.closest('[data-lo-middle-view]')
+                ?.getAttribute('data-lo-middle-view') ?? null,
+          ),
+        { timeout: 20_000 },
+      )
+      .toBe('diff.view');
+    await page.keyboard.press('`');
+    const timeline = page.getByRole('listbox', { name: 'Timeline' });
+    await expect(timeline).toBeFocused({ timeout: 20_000 });
+    const box = page.locator('[data-lo-timeline="box"]');
+    const editor = box.locator('.cm-content');
+    const comment = timeline
+      .locator('li[data-key]')
+      .filter({ hasText: 'Posted from the timeline’s box.' });
+
+    await test.step('`c` puts focus in the box at the end, and `⌘⏎` posts the comment', async () => {
+      await expect(box).toContainText('On the pull request');
+      await expect(box).toContainText('as rozed-bot');
+      await page.keyboard.press('c');
+      await expect(editor).toBeFocused();
+      await page.keyboard.type('Posted from the timeline’s box.');
+      await page.keyboard.press(`${cmd}+Enter`);
+      await expect(comment).toContainText('rozed-bot (you) commented', { timeout: 20_000 });
+      await expect(editor).toHaveText('');
+      // Focus goes back to the list as the sent box goes.
+      await expect(timeline).toBeFocused();
+    });
+
+    await test.step('`i` opens the comment’s text in a box in its card, and `⌘⏎` saves the edit', async () => {
+      await comment.click();
+      await page.keyboard.press('i');
+      const edit = comment.locator('[data-lo-timeline="edit"]');
+      await expect(edit).toContainText('Edit your comment');
+      await expect(edit.locator('.cm-content')).toHaveText('Posted from the timeline’s box.');
+      await expect(edit.locator('.cm-content')).toBeFocused();
+      await page.keyboard.type(' Then edited.');
+      await page.keyboard.press(`${cmd}+Enter`);
+      await expect(edit).toHaveCount(0, { timeout: 20_000 });
+      await expect(comment).toContainText('Posted from the timeline’s box. Then edited.', {
+        timeout: 20_000,
+      });
+    });
+
+    await test.step('`dd` asks first, and `⏎` deletes the comment', async () => {
+      await page.keyboard.press('d');
+      await page.keyboard.press('d');
+      const dialog = page.getByTestId('delete-comment');
+      await expect(dialog).toContainText('Delete your comment?');
+      await expect(dialog).toContainText('Posted from the timeline’s box. Then edited.');
+      await page.keyboard.press('Enter');
+      await expect(dialog).toHaveCount(0);
+      await expect(comment).toHaveCount(0, { timeout: 20_000 });
+    });
   });
 });

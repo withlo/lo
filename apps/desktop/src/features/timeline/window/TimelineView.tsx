@@ -1,8 +1,11 @@
 // A pull request's timeline, the third of its tab's middle views: the description card, then
-// everything that happened to the pull request, oldest first, as GitHub lists it. Main reads it the
-// first time it's shown, and keeps it current. The keyboard moves between its rows (`j`, `k`), the
-// list being one focusable element with the row the keyboard is on as its active descendant.
-// Posts draw through the comments' `Post`, from GitHub's rendering of them.
+// everything that happened to the pull request, oldest first, as GitHub lists it, and at its end
+// the box that comments on the pull request itself. Main reads it the first time it's shown, and
+// keeps it current; what comes while it's on screen waits for the reader's next key, click or
+// scroll, and the row they're reading stays where it is as it comes. The keyboard moves between its
+// rows (`j`, `k`), the list being one focusable element with the row the keyboard is on as its
+// active descendant. Posts draw through the comments' `Post`, from GitHub's rendering of them; your
+// own comments have Edit and Delete, and an edit's box is drawn in the comment's card.
 
 import {
   Button,
@@ -16,10 +19,11 @@ import {
   TimelineName,
   TimelineOlder,
   TimelinePush,
+  TimelineEnd,
   TimelineReview,
   type TimelineHidden,
 } from '@lo/ui';
-import { setScopeSource } from '@lo/ui/commands';
+import { keyLabels, setScopeSource } from '@lo/ui/commands';
 import {
   useEffect,
   useLayoutEffect,
@@ -28,13 +32,24 @@ import {
   useState,
   type MouseEvent,
   type ReactNode,
+  type RefObject,
 } from 'react';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
-import { setMiddle } from '../../../window/commands/registry.ts';
+import { registry, setMiddle } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
 import { signIn } from '../../accounts/window/shared.ts';
-import { Post, type PostPull } from '../../comments/window/shared.ts';
+import {
+  deletePullComment,
+  editPullComment,
+  Post,
+  type PostPull,
+  type PullComment,
+  PullCommentBox,
+  PullCommentEdit,
+  PullCommentNote,
+  useEditsOnPull,
+} from '../../comments/window/shared.ts';
 import { showDiff } from '../../diff/window/shared.ts';
 import { usePull, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import {
@@ -47,16 +62,21 @@ import {
   stillHidden,
 } from './actions.ts';
 import { tabs } from './main.ts';
+import { keepPlace, readingPlace, type ReadingPlace } from './place.ts';
 import { rowsOf, type Part, type Person, type Row } from './rows.ts';
 import {
+  beforeShowing,
   comparisons,
   focusedRows,
+  setLooked,
+  showHeld,
   shownHidden,
+  shownTimelines,
   showTimeline,
   sidebars,
-  timelines,
 } from './store.ts';
 import { when } from './words.ts';
+import { commentIn, isYours } from './yours.ts';
 
 /**
  * Whether focus is nowhere in particular, in the view itself, or left behind in a middle view now
@@ -131,7 +151,7 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
   useEffect(() => {
     if (shown) showTimeline(tab.id);
   }, [tab.id, shown]);
-  const view = useTabState(timelines, tab.id);
+  const view = useTabState(shownTimelines, tab.id);
   const sidebar = useTabState(sidebars, tab.id);
   const revisions = useTabState(comparisons, tab.id);
   const author = usePull(tab.id)?.header?.author ?? undefined;
@@ -172,7 +192,55 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
   }
 }
 
-/** The timeline's rows, in a list the keyboard moves through. */
+/** The input that shows what came while the reader looked: a key, a click or a scroll. */
+const INPUT = ['keydown', 'pointerdown', 'wheel', 'touchstart'] as const;
+
+/**
+ * While `shown`, what main sends of tab `tab`'s timeline waits for the reader's next key, click or
+ * scroll; and as it goes on screen, what the reader looks at in `root` stays where it is, `rows`
+ * being what's drawn.
+ */
+function useHolding(
+  tab: string,
+  shown: boolean,
+  root: RefObject<HTMLDivElement | null>,
+  rows: readonly Row[],
+): void {
+  const place = useRef<ReadingPlace | undefined>(undefined);
+  useEffect(() => {
+    setLooked(tab, shown);
+    if (!shown) return undefined;
+    const input = () => showHeld(tab);
+    for (const event of INPUT) document.addEventListener(event, input, true);
+    const stop = beforeShowing(tab, () => {
+      place.current = root.current ? readingPlace(root.current) : undefined;
+    });
+    return () => {
+      stop();
+      for (const event of INPUT) document.removeEventListener(event, input, true);
+      setLooked(tab, false);
+    };
+  }, [tab, shown, root]);
+  useLayoutEffect(() => {
+    const kept = place.current;
+    place.current = undefined;
+    if (kept && root.current) keepPlace(root.current, kept);
+  }, [rows, root]);
+}
+
+/** The login tab `tab` acts as, if it acts as anyone. */
+function useLogin(tab: string): string | undefined {
+  const acting = usePull(tab)?.acting;
+  return acting?.kind === 'account' ? acting.login : undefined;
+}
+
+/** The first keys command `id` has now, as this system shows them, if it has any. */
+function keysOf(id: string): string[] | undefined {
+  const [first] = registry().keysOf(id);
+  return first && keyLabels(first, registry().system);
+}
+
+/** The timeline's rows, in a list the keyboard moves through, and the box at its end. */
 function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readonly Row[] }) {
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLOListElement>(null);
@@ -180,12 +248,14 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
   const focused = rows.some((row) => row.key === kept) ? kept : rows[0]?.key;
   const now = useNow(shown);
   useTabState(shownHidden, tab.id);
+  const login = useLogin(tab.id);
+  const edits = useEditsOnPull(tab.id);
+  useHolding(tab.id, shown, root, rows);
   useMiddle(
     shown,
     () => root.current,
     () => list.current?.focus({ preventScroll: true }),
   );
-  const tabId = tab.id;
   const { owner, repo, number } = tab;
   const pull = useMemo<PostPull>(() => ({ owner, repo, number }), [owner, repo, number]);
   const drawn = useMemo(() => ({ tab, rows, list: () => list.current }), [tab, rows]);
@@ -195,6 +265,7 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
     const own = root.current;
     return own ? setScopeSource(own, { target: () => rowTarget(drawn) }) : undefined;
   }, [drawn]);
+  const leave = useMemo(() => () => list.current?.focus({ preventScroll: true }), []);
   // A right-click on a row: the row's menu, the keyboard moving to it.
   const menu = useMenuTarget((event) => {
     const element = event.target instanceof Element ? event.target.closest('li[data-key]') : null;
@@ -206,14 +277,29 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
   });
   return (
     <div ref={root} className="h-full overflow-y-auto" data-lo-scope="timeline" {...menu}>
-      <Timeline listRef={list} tabIndex={0} focused={focused} aria-label="Timeline">
+      <Timeline
+        listRef={list}
+        tabIndex={0}
+        focused={focused}
+        aria-label="Timeline"
+        end={
+          login !== undefined && (
+            <TimelineEnd marker={{ login, image: avatarImage({ login, type: 'User' }, MARKER) }}>
+              <PullCommentBox tab={tab} leave={leave} />
+            </TimelineEnd>
+          )
+        }
+      >
         {rows.map((row) => (
           <RowOf
             key={row.key}
-            tab={tabId}
+            tab={tab}
             pull={pull}
             row={row}
             now={now}
+            login={login}
+            editing={row.kind === 'comment' && edits.has(row.id)}
+            leave={leave}
             onFocus={(event) => {
               focusRow(drawn, row.key);
               // A link or button clicked in the row keeps focus, for what it does.
@@ -283,22 +369,60 @@ function revisionOf(number: number | undefined): string | undefined {
   return number === undefined ? undefined : `r${number}`;
 }
 
+/** A comment of yours on the pull request: its Edit and Delete, its edit's box and its note. */
+function yourComment(
+  tab: PullTab,
+  comment: PullComment,
+  editing: boolean,
+  leave: () => void,
+): {
+  mine: true;
+  keys: { edit: string[] | undefined; delete: string[] | undefined };
+  onEdit: () => void;
+  onDelete: () => void;
+  editing: ReactNode;
+  note: ReactNode;
+} {
+  return {
+    mine: true,
+    keys: { edit: keysOf('timeline.editComment'), delete: keysOf('timeline.deleteComment') },
+    onEdit: () => void editPullComment(tab, comment),
+    onDelete: () => deletePullComment(tab, comment),
+    editing: editing ? (
+      <div data-lo-timeline="edit">
+        <PullCommentEdit tab={tab} comment={comment.id} leave={leave} />
+      </div>
+    ) : undefined,
+    note: <PullCommentNote tab={tab} comment={comment} />,
+  };
+}
+
 function RowOf({
-  tab,
+  tab: pullTab,
   pull,
   row,
   now,
+  login,
+  editing,
+  leave,
   onFocus,
   onReveal,
 }: {
-  tab: string;
+  tab: PullTab;
   pull: PostPull;
   row: Row;
   now: number;
+  /** Who the tab acts as: their comments have Edit and Delete. */
+  login: string | undefined;
+  /** It's your comment, and its edit's box is open. */
+  editing: boolean;
+  /** Gives focus back to the list, as an edit's box does as it goes. */
+  leave: () => void;
   onFocus: (event: MouseEvent<HTMLElement>) => void;
   /** Shows the row's hidden comment, focus going back to the list as its button goes. */
   onReveal: () => void;
 }) {
+  const tab = pullTab.id;
   const attributes = { item: row.key, 'data-key': row.key, onClick: onFocus };
   const hidden = (): TimelineHidden | undefined => {
     if (!stillHidden(tab, row)) return undefined;
@@ -341,7 +465,12 @@ function RowOf({
           }}
         />
       );
-    case 'comment':
+    case 'comment': {
+      const comment = commentIn(row, false);
+      const yours =
+        isYours(row, login) && typeof comment !== 'string'
+          ? yourComment(pullTab, comment, editing, leave)
+          : undefined;
       return (
         <TimelineComment
           {...attributes}
@@ -350,11 +479,25 @@ function RowOf({
           when={when(row.at, now)}
           byAuthor={row.byAuthor}
           hidden={hidden()}
+          mine={yours?.mine}
+          keys={yours?.keys}
+          onEdit={yours?.onEdit}
+          onDelete={yours?.onDelete}
+          editing={yours?.editing}
           body={
-            <Post view={tab} post={{ kind: 'post', id: row.id }} markdown={row.body} pull={pull} />
+            <>
+              {yours?.note}
+              <Post
+                view={tab}
+                post={{ kind: 'post', id: row.id }}
+                markdown={row.body}
+                pull={pull}
+              />
+            </>
           }
         />
       );
+    }
     case 'review':
       return (
         <TimelineReview

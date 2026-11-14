@@ -65,6 +65,9 @@ export type Row =
       readonly byAuthor: boolean;
       /** Why GitHub hid it, while it's hidden: `outdated`, or nothing GitHub says. */
       readonly hidden: string | undefined;
+      /** Whether GitHub lets the account edit it, and delete it. */
+      readonly canUpdate: boolean;
+      readonly canDelete: boolean;
     }
   | {
       readonly kind: 'review';
@@ -606,6 +609,8 @@ export function rowsOf(timeline: Timeline, repository: string, context: RowsCont
         url: comment.url,
         byAuthor: sameLogin(comment.author?.login, context.author ?? description.author?.login),
         hidden: comment.hidden,
+        canUpdate: comment.viewerCanUpdate,
+        canDelete: comment.viewerCanDelete,
       });
     } else if (item.kind === 'review') {
       const { review } = item;

@@ -18,6 +18,8 @@ const HIDDEN: Row = {
   url: 'https://github.com/rozed-dev/e2e/pull/23#issuecomment-1',
   byAuthor: false,
   hidden: 'spam',
+  canUpdate: false,
+  canDelete: false,
 };
 
 describe('revealHidden', () => {

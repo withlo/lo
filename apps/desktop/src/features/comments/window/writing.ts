@@ -1,7 +1,9 @@
 // Writing comments in a view's diff, worked out: where a comment on the cursor's line, the lines
 // `v` selected or a file goes, as GitHub takes it and as main keeps its draft; where a draft's box
-// goes in the diff as drawn, a reply's or an edit's in its thread; and what a box's frame says of
-// where it is and how sending it stands, and why a change to a thread wasn't made.
+// goes in the diff as drawn, a reply's or an edit's in its thread, or whether it's drawn in the
+// timeline, as the pull request's own box and an edit of your comment on it are; and what a box's
+// frame says of where it is and how sending it stands, and why a change to a thread, or to a
+// comment, wasn't made.
 
 import { CommentableLines, Line, type Lines, type Screen } from '@lo/review';
 import type { OnFile, Place, Span } from '@lo/ui/code';
@@ -12,6 +14,7 @@ import type {
   ActRefusal,
   Commentable,
   CommentLinesRow,
+  ConversationPlaceRow,
   DraftPlaceRow,
   HunkRow,
   SendRefusal,
@@ -117,6 +120,26 @@ function lineKey(each: CommentLinesRow['end'] | null): string {
   return each ? `${each.side}${each.number}` : '';
 }
 
+/** The place of the comment box on the pull request itself: one a pull request. */
+export const ON_PULL: ConversationPlaceRow = { kind: 'conversation' };
+
+/**
+ * Whether a draft is the one the box at the end of the pull request's timeline keeps, after a
+ * restart too, with how sending it stands: a comment on the pull request itself, written there, and
+ * so with no other home.
+ */
+export function isPullsOwn(place: DraftPlaceRow): boolean {
+  return place.kind === 'conversation';
+}
+
+/**
+ * Whether a draft's box is drawn in the timeline, not the diff: the pull request's own box, and an
+ * edit of your comment on the pull request itself, which is in no thread.
+ */
+export function inTimeline(place: DraftPlaceRow): boolean {
+  return isPullsOwn(place) || (place.kind === 'edit' && place.thread === null);
+}
+
 /** A key for a draft's place: the same for the same place, however its object was made. */
 export function placeKey(place: DraftPlaceRow): string {
   switch (place.kind) {
@@ -132,6 +155,8 @@ export function placeKey(place: DraftPlaceRow): string {
     }
     case 'reply':
       return JSON.stringify([place.kind, place.thread]);
+    case 'conversation':
+      return JSON.stringify([place.kind]);
     case 'edit':
       return JSON.stringify([place.kind, place.thread, place.comment]);
     default:
@@ -143,7 +168,8 @@ export function placeKey(place: DraftPlaceRow): string {
  * Where a draft's box goes in a diff as drawn: under the last of its lines, or under its file's
  * header, or, for a reply or an edit, in its thread, when the diff places it (`placed`). Nowhere
  * when the diff shows another head than the one it was written at, or not its file, or, for one on
- * the older side, another commit than the base there, as between revisions.
+ * the older side, another commit than the base there, as between revisions; nor for a box the
+ * timeline draws.
  */
 export function boxAt(
   drawn: DrawnDiff,
@@ -151,8 +177,11 @@ export function boxAt(
   place: DraftPlaceRow,
   placed: (thread: string) => boolean = () => false,
 ): { at: Place | Span | OnFile | { thread: string } } | undefined {
-  if (place.kind !== 'thread')
-    return placed(place.thread) ? { at: { thread: place.thread } } : undefined;
+  if (place.kind === 'conversation') return undefined;
+  if (place.kind !== 'thread') {
+    const { thread } = place;
+    return thread !== null && placed(thread) ? { at: { thread } } : undefined;
+  }
   if (place.commit.toLowerCase() !== drawn.at.toLowerCase()) return undefined;
   const file = drawn.files.find((each) => githubPath(each) === place.path);
   if (!file) return undefined;
@@ -174,14 +203,15 @@ function sideWords(side: 'LEFT' | 'RIGHT'): string {
 
 /**
  * Where a box's comment goes, as its head says: "On line 41, new side", "On lines 39–41, new side",
- * "On the file", "Reply to mira-chen's thread", "Edit your comment". `author` started the thread a
- * reply is in, if GitHub still has the account.
+ * "On the file", "Reply to mira-chen's thread", "On the pull request", "Edit your comment".
+ * `author` started the thread a reply is in, if GitHub still has the account.
  */
 export function whereText(place: DraftPlaceRow, author?: string | null): string {
   if (place.kind === 'reply') {
     return author ? `Reply to ${author}’s thread` : 'Reply to the thread';
   }
   if (place.kind === 'edit') return 'Edit your comment';
+  if (place.kind === 'conversation') return 'On the pull request';
   const { lines } = place;
   if (!lines) return 'On the file';
   const { start, end } = lines;
