@@ -6,7 +6,7 @@
 
 import { Key, PaletteHint, ThreadFilter, ThreadList } from '@lo/ui';
 import { keyLabels, setScopeSource } from '@lo/ui/commands';
-import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { threadsChanged } from '../../diff/window/shared.ts';
@@ -14,6 +14,7 @@ import { catchUpRevisions, useRevisions } from '../../revisions/window/shared.ts
 import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { useFileOrder } from '../../tree/window/shared.ts';
 import type { ThreadsView } from '../contract.ts';
+import { useExcerpts } from './excerpts.ts';
 import { filterCounts, focusedIn, rowKeys } from './list.ts';
 import {
   emptyText,
@@ -27,7 +28,7 @@ import {
   shownRows,
   useFilter,
 } from './panel.ts';
-import { catchUp, held } from './threads.ts';
+import { catchUp, held, listed } from './threads.ts';
 
 /** The first keys `id` has now, as this system shows them, if it has any. */
 function keysOf(id: string): string[] | undefined {
@@ -58,7 +59,8 @@ export function UnresolvedCount({ tab }: { tab: PullTab }): ReactNode {
 export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   useKeys();
   const view = tab.id;
-  const threads = useTabState(held, view, (value) => value.threads);
+  // What it lists is main's threads once their openings are read, so no row draws without one.
+  const threads = useTabState(listed, view);
   const filter = useFilter();
   // What the list reads, so it's drawn again when any of them changes.
   useFileOrder(view);
@@ -74,6 +76,13 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
     catchUpRevisions(view);
   }, [view]);
 
+  // The openings are read as the threads come, and kept; one that's let go, as the oldest are, is
+  // read again.
+  const openings = useMemo(
+    () => listable(threads).flatMap((row) => (row.comments[0] ? [row.comments[0].body] : [])),
+    [threads],
+  );
+  useExcerpts(openings);
   const groups = groupsIn(view, filter);
   const keys = rowKeys(groups);
   const on = focusedIn(keys, focused);

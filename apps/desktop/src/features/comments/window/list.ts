@@ -1,14 +1,13 @@
 // The threads panel's list, from a view's threads as main sent them: which threads each filter
 // lists and how many, and a group for each file, in the left panel's order, each file's own threads
 // first, then by line, every row saying who started the thread, where it is, its replies, its state
-// and the opening of what was said.
+// and the opening of what was said, in plain words.
 
 import { panelShows, type PanelFilter } from '@lo/review';
 import type { ThreadListGroup, ThreadListRow } from '@lo/ui';
 
 import { avatarImage } from '../../../window/images.ts';
 import type { ThreadRow } from '../contract.ts';
-import { excerptOf } from './Card.tsx';
 import { threadOf } from './placing.ts';
 
 /** The panel's filters, in the order `f` steps through them. */
@@ -65,8 +64,15 @@ function sortLine(row: ThreadRow): number {
   return (row.outdated ? row.originalLine : (row.line ?? row.originalLine)) ?? 0;
 }
 
-/** A thread's row in the panel. */
-export function rowOf(row: ThreadRow, label: (head: string) => string | undefined): ThreadListRow {
+/**
+ * A thread's row in the panel. `excerpt` gives the opening of a comment's Markdown as one line of
+ * plain text, which is what the row shows of the first comment.
+ */
+export function rowOf(
+  row: ThreadRow,
+  label: (head: string) => string | undefined,
+  excerpt: (markdown: string) => string,
+): ThreadListRow {
   const [first] = row.comments;
   const author = first?.author ?? null;
   return {
@@ -82,7 +88,7 @@ export function rowOf(row: ThreadRow, label: (head: string) => string | undefine
     resolved: row.resolved,
     pending: first?.state === 'PENDING',
     outdated: row.outdated,
-    excerpt: first === undefined ? '' : excerptOf(first.body),
+    excerpt: first === undefined ? '' : excerpt(first.body),
   };
 }
 
@@ -95,6 +101,8 @@ export interface ListOptions {
   readonly order: readonly string[];
   /** A revision's label, `r2`, by its head, if it's one of the pull request's. */
   readonly label: (head: string) => string | undefined;
+  /** A comment's opening as one line of plain text, from its Markdown. */
+  readonly excerpt: (markdown: string) => string;
 }
 
 /**
@@ -104,7 +112,7 @@ export interface ListOptions {
  */
 export function threadGroups(
   rows: readonly ThreadRow[],
-  { filter, viewer, order, label }: ListOptions,
+  { filter, viewer, order, label, excerpt }: ListOptions,
 ): ThreadListGroup[] {
   const listed =
     viewer === undefined && filter === 'yours'
@@ -126,7 +134,7 @@ export function threadGroups(
       .toSorted(
         (a, b) => sortLine(a) - sortLine(b) || (a.side === b.side ? 0 : a.side === 'LEFT' ? -1 : 1),
       )
-      .map((row) => rowOf(row, label)),
+      .map((row) => rowOf(row, label, excerpt)),
   }));
 }
 

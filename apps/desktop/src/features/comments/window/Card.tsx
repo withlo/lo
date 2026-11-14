@@ -25,15 +25,13 @@ import {
   tryAgain,
 } from './acts.ts';
 import { replying } from './boxes.ts';
+import { useExcerpt } from './excerpts.ts';
 import { landed } from './landed.ts';
 import { Post, type PostPull } from './Post.tsx';
 import { held } from './threads.ts';
 
 /** How tall a comment's avatar is drawn, in pixels: `Avatar`'s small size. */
 const AVATAR = 20;
-
-/** How much of the first comment the collapsed line shows. */
-const EXCERPT = 120;
 
 /** How long ago `at` was, in words, from `now`. */
 export function ago(at: number, now: number): string {
@@ -46,12 +44,6 @@ export function ago(at: number, now: number): string {
   if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
   const days = Math.round(hours / 24);
   return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-}
-
-/** The opening of a comment's text, on one line, for a collapsed thread. */
-export function excerptOf(body: string): string {
-  const line = body.replaceAll(/\s+/g, ' ').trim();
-  return line.length > EXCERPT ? `${line.slice(0, EXCERPT - 1)}…` : line;
 }
 
 /** Whether two logins name one account: GitHub's ignore case. */
@@ -90,6 +82,8 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
   const asked = useTabState(acting, view, (acts) => acts.get(id));
   const isClosed = useTabState(closedActs, view, (rows) => asked !== undefined && rows.has(asked));
   const row = threads?.threads.find((each) => each.id === id);
+  // Its first comment's opening, as plain words, which it shows while it's collapsed.
+  const opening = useExcerpt(row?.comments[0]?.body, !open);
   if (!row) return null;
   const body = (comment: ThreadCommentRow) => (
     <Post view={view} post={{ kind: 'post', id: comment.id }} markdown={comment.body} pull={pull} />
@@ -105,6 +99,7 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
         onToggle={onToggle}
         author={author}
         body={body}
+        excerpt={opening}
         landed={newer}
         login={login}
         replying={replied}
@@ -178,6 +173,7 @@ export function ThreadCard({
   onToggle,
   author,
   body,
+  excerpt,
   landed: newer = false,
   login,
   replying: replied = false,
@@ -193,6 +189,8 @@ export function ThreadCard({
   author: string | null | undefined;
   /** Draws a comment's text. */
   body: (comment: ThreadCommentRow) => ReactNode;
+  /** The first comment's opening as one line of plain text, which the collapsed line shows. */
+  excerpt?: string | undefined;
   /**
    * You wrote it on a revision, and GitHub put it on a newer push, where its lines may hold other
    * code.
@@ -228,7 +226,7 @@ export function ThreadCard({
       focused={focused}
       outdated={row.outdated}
       tags={newer ? [{ label: 'On a newer push', tone: 'warning' }] : undefined}
-      excerpt={row.comments[0] && excerptOf(row.comments[0].body)}
+      excerpt={excerpt === '' ? undefined : excerpt}
       canResolve={
         actions !== undefined &&
         login !== undefined &&

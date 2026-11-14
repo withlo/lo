@@ -7,7 +7,7 @@ import { createRoot } from 'react-dom/client';
 import { beforeAll, expect, onTestFinished, test, vi } from 'vitest';
 
 import type { ThreadCommentRow, ThreadRow } from '../contract.ts';
-import { ago, excerptOf, ThreadCard } from './Card.tsx';
+import { ago, ThreadCard } from './Card.tsx';
 
 vi.mock('../../../window/commands/registry.ts', () => ({
   registry: () => ({ keysOf: () => [], system: 'mac' }),
@@ -61,8 +61,16 @@ function row(overrides: Partial<ThreadRow> = {}): ThreadRow {
   };
 }
 
-/** Draws a card of `thread`, each comment's text as `text: <its body>`. */
-function drawn(thread: ThreadRow, open: boolean, onToggle: () => void = () => undefined) {
+/**
+ * Draws a card of `thread`, each comment's text as `text: <its body>`, and `excerpt` as the first
+ * comment's opening.
+ */
+function drawn(
+  thread: ThreadRow,
+  open: boolean,
+  onToggle: () => void = () => undefined,
+  excerpt?: string,
+) {
   const element = document.createElement('div');
   document.body.append(element);
   const root = createRoot(element);
@@ -74,6 +82,7 @@ function drawn(thread: ThreadRow, open: boolean, onToggle: () => void = () => un
         onToggle={onToggle}
         author="rozed-bot"
         body={(each) => <p>text: {each.body}</p>}
+        excerpt={excerpt}
         now={NOW}
       />,
     ),
@@ -103,14 +112,28 @@ test('an open thread shows each comment, by whom, when, and its text as the call
 
 test('a collapsed thread is one line, its first comment cut short, that opens it', () => {
   const toggled = vi.fn<() => void>();
-  const long = `Fixture C: ${'word '.repeat(40)}`;
-  const card = drawn(row({ resolved: true, comments: [comment({ body: long })] }), false, toggled);
+  const opening = `Fixture C: ${'word '.repeat(20)}…`;
+  const card = drawn(
+    row({ resolved: true, comments: [comment({ body: '**Fixture C:** `word`' })] }),
+    false,
+    toggled,
+    opening,
+  );
   const line = card.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
   expect(line?.textContent).toContain('Resolved');
-  expect(line?.textContent).toContain(excerptOf(long));
+  expect(line?.textContent).toContain(opening);
+  // What it shows of the comment is the opening it was given, never the comment's Markdown.
+  expect(line?.textContent).not.toContain('**');
   expect(card.textContent).not.toContain('text:');
   act(() => line?.click());
   expect(toggled).toHaveBeenCalledOnce();
+});
+
+test('a collapsed thread whose opening isn’t read yet shows its author alone', () => {
+  const card = drawn(row({ comments: [comment({ body: '**Fixture C**' })] }), false);
+  const line = card.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
+  expect(line?.textContent).toContain('rozed-bot');
+  expect(line?.textContent).not.toContain('Fixture C');
 });
 
 test('a thread GitHub put on a newer push says so', () => {
@@ -142,11 +165,4 @@ test('when a comment was written, in words', () => {
   expect(ago(NOW - 60 * 60_000, NOW)).toBe('1 hour ago');
   expect(ago(NOW - 49 * 60 * 60_000, NOW)).toBe('2 days ago');
   expect(ago(Number.NaN, NOW)).toBe('');
-});
-
-test('an excerpt is one line, cut short with an ellipsis', () => {
-  expect(excerptOf('one\n\n  two ')).toBe('one two');
-  const cut = excerptOf('x'.repeat(200));
-  expect(cut).toHaveLength(120);
-  expect(cut.endsWith('…')).toBe(true);
 });

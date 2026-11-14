@@ -806,6 +806,22 @@ description's, for the timeline and the diff's threads alike, with its `Post` co
   is 4 minutes old. The HTML is held for the Markdown it was asked for: an edited post shows its new
   Markdown at once, and is asked for again. Main offers the same read to other features as
   `comments.bodies`.
+- A thread's collapsed line and the threads panel's rows show its first comment's opening as one
+  line of plain words, never its Markdown. The window asks the background process for them
+  (`comments.excerpts`, 500 comments or a megabyte of Markdown an ask), which reads each comment in
+  full with `@lo/markdown`, and cuts the words at 120 characters, after reading, so none of a link
+  or an image's syntax is left in them. Only the Markdown tree's raw HTML is read as the words it
+  shows (`markdownTree`'s `html: 'words'`: an `<img>` is its alt text, or "image"); text, escapes
+  and entities stay as GitHub shows them, so `if a<b then` and `&lt;b&gt;` are kept. The window
+  holds the newest 2,000, joins an ask in flight for a comment wanted again, and the line shows none
+  until its words are read.
+- The threads panel lists the threads main sent once their openings are read (`listed`, in
+  `window/threads.ts`), and keeps the last list until then, so a row is never drawn without its
+  words and nothing in it moves as they come: an edited comment's row changes in one step. A row
+  reserves its two lines of words whatever they are (`min-h-2lh`), so one that has none yet, or
+  never gets them, is already its final height. The diff, the tree and the cards take main's threads
+  at once. A row whose thread has just gone from main's list says so (`GONE`) to `⏎` and `x`, rather
+  than that it isn't on the pull request.
 
 ### Writing comments
 
@@ -838,6 +854,19 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   the box closes; not found, or not read, the box says so. While the read can't be made, as offline,
   it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
   is sent again by itself, and nothing is sent while GitHub can't be reached.
+- A comment sent to post at once (`⌥⏎`) while you have a pending review joins it, since GitHub posts
+  nothing else from you until it's submitted, and the notice says so ("Added to your pending
+  review"). Main says it did when it planned the comment into your review, and for a reply when
+  GitHub's answer says it joined a review Lo hadn't read (`joined`). One whose answer was lost says
+  it too, once the read that settles it finds the comment pending in your review
+  (`comments.joined`).
+- The box's keys (`⌘⏎`, `⌥⏎`, `⌘⇧V`, `⌘⇧A`, `Esc`) are declared in `keys.ts` as `editor` commands
+  but run by the box's editor (`createComposer`'s keymap in `@lo/ui/code`), as its own: the registry
+  lists them in key help and `docs/keys.md` and checks them for clashes, and never runs, swallows or
+  offers them, so the editor and the summary's `⌘⏎` hear every key as before. The keymap file can't
+  rebind them, and a `vim` line can't map them, as the editor runs the four keys with a modifier
+  before Vim's. The foot's labels read the declarations (`window/boxkeys.ts`), and
+  `window/boxkeys.test.ts` presses each declared key in a real box. Change a key in both places.
 - Files dropped on a box, pasted into it or picked with "Attach" (`⌘⇧A`), ten on their way into a
   box at a time, are attached (`window/uploads.ts`): each goes in at the cursor at once as a
   placeholder, the background process checks it and takes its metadata out (`comments.prepare`) from

@@ -11,7 +11,7 @@ import type { Token } from 'markdown-it';
 
 import { append, assemble, plainBlocks, type FootnotePart, type Part } from './assemble.ts';
 import { Builder } from './build.ts';
-import { withoutComments } from './html.ts';
+import { htmlWords, withoutComments } from './html.ts';
 import { cut, resolveLimits, type Limits } from './limits.ts';
 import { environment, parser, type Plugin } from './parser.ts';
 import { isLogin, isRepoName, type Repo } from './references.ts';
@@ -38,6 +38,13 @@ export interface MarkdownOptions<X extends Extension = Plain> {
   /** Whether a newline inside a paragraph breaks the line, as in GitHub's comments. Default true. */
   breaks?: boolean;
   limits?: Partial<Limits>;
+  /**
+   * How raw HTML in the text shows: as its text, as it's written (`text`, the default), or as the
+   * words GitHub shows for it (`words`): `<b>`, `<details>` and `<summary>` give their text, an
+   * `<img>` its alt text, or "image". Only raw HTML is read so; text, escapes, entities and code
+   * stay as written.
+   */
+  html?: 'text' | 'words';
   /** Syntax an extension adds, such as the overview format's blocks. */
   syntax?: Syntax<X>;
 }
@@ -81,6 +88,9 @@ export type InlineHandler<X extends Extension> = (
  * without being built. What is built is measured again, exactly.
  */
 const SLACK = 4;
+
+/** The most elements one piece of raw HTML may build to be read as its words, past which it's left as written. */
+const HTML_ELEMENTS = 1_024;
 
 /** `text`, Markdown from anyone, as Lo's tree. Pure and synchronous; never throws on any text. */
 export function markdownTree<X extends Extension = Plain>(
@@ -136,6 +146,7 @@ class Mapper<X extends Extension> {
   private readonly footnoteNames = new Map<number, string>();
   private readonly syntax: Syntax<X>;
   private readonly breaks: boolean;
+  private readonly words: boolean;
 
   constructor(
     tokens: Token[],
@@ -151,6 +162,7 @@ class Mapper<X extends Extension> {
     this.lineStarts = lineStarts(source);
     this.syntax = options.syntax ?? {};
     this.breaks = options.breaks ?? true;
+    this.words = options.html === 'words';
     this.builder = new Builder<X>(limits, notes, options.page, this.syntax.link);
   }
 
@@ -302,9 +314,11 @@ class Mapper<X extends Extension> {
         return [{ kind: 'code', text: withoutNewline(token.content) }];
       case 'hr':
         return [{ kind: 'rule' }];
-      case 'html_block':
+      case 'html_block': {
         this.builder.diagnose('html');
-        return plainBlocks(withoutComments(token.content, 4 * this.limits.nodes));
+        const html = withoutComments(token.content, 4 * this.limits.nodes);
+        return plainBlocks(this.words ? htmlWords(html, HTML_ELEMENTS) : html);
+      }
       case 'table_open':
         return [this.table(i, close)];
       default: {
@@ -458,8 +472,12 @@ class Mapper<X extends Extension> {
           case 'html_inline':
             builder.diagnose('html');
             // An inline HTML comment is a token of its own, which GitHub never shows.
-            if (!token.content.startsWith('<!--'))
-              push(out, [{ kind: 'text', value: token.content }]);
+            if (!token.content.startsWith('<!--')) {
+              const html = token.content;
+              push(out, [
+                { kind: 'text', value: this.words ? htmlWords(html, HTML_ELEMENTS) : html },
+              ]);
+            }
             break;
           case 'footnote_ref':
             push(out, this.footnoteReference(token));

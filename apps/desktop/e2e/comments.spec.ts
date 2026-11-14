@@ -166,6 +166,31 @@ function lineTop(page: Page): Promise<number> {
   });
 }
 
+/**
+ * Waits for src/backoff.ts's new line 10 to hold the same place for `ms`, and says where. A scroll
+ * puts it there in passes, as the editors measure and the file's sticky header takes its room: it
+ * can be at the same place on two reads a hundred milliseconds apart and then move to its last,
+ * 30 px lower, a few frames later. A place taken between passes isn't where it stays.
+ */
+async function stillLine(page: Page, ms = 700): Promise<number> {
+  let place = Number.NaN;
+  let since = Date.now();
+  await expect
+    .poll(
+      async () => {
+        const y = await lineTop(page);
+        if (y !== place) {
+          place = y;
+          since = Date.now();
+        }
+        return Number.isFinite(y) && Date.now() - since >= ms;
+      },
+      { intervals: [50], timeout: 15_000 },
+    )
+    .toBe(true);
+  return place;
+}
+
 /** How far src/backoff.ts's new line 10 has moved since it was `before` below the diff's top. */
 async function moved(page: Page, before: number): Promise<number> {
   return Math.abs((await lineTop(page)) - before);
@@ -389,15 +414,9 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
     }
   });
   // Once it's scrolled there and still: at the top, below the file's header.
-  let before = Number.NaN;
-  await expect
-    .poll(async () => {
-      const y = await lineTop(page);
-      const still = y === before;
-      before = y;
-      return still && y >= 0 && y < 100;
-    })
-    .toBe(true);
+  const before = await stillLine(page);
+  expect(before).toBeGreaterThanOrEqual(0);
+  expect(before).toBeLessThan(100);
 
   await test.step('opens and closes, leaving the diff’s lines where they were', async () => {
     const toggle = page.locator('[data-lo-right-toggle]');
@@ -482,6 +501,76 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
     await expect(panel(page)).toHaveCount(0);
     await settled(page);
   });
+});
+
+/** A threads panel row as one frame shows it. */
+interface Drawn {
+  key: string;
+  top: number;
+  height: number;
+  /** What the row says after its author: the opening of the thread's first comment. */
+  words: string;
+}
+
+/**
+ * Every frame from now in which the threads panel has rows, until a second and a half after the
+ * first one: each row's place and size, and its words.
+ */
+function framesOfRows(page: Page): Promise<Drawn[][]> {
+  return page.evaluate(
+    () =>
+      new Promise<Drawn[][]>((resolve) => {
+        const frames: Drawn[][] = [];
+        const start = performance.now();
+        let first: number | undefined;
+        const tick = (now: number) => {
+          const list = document.querySelector('[data-lo-threads] [role="listbox"]');
+          const found = [
+            ...document.querySelectorAll<HTMLElement>('[data-lo-threads] [role="option"]'),
+          ];
+          if (list && found.length > 0) {
+            first ??= now;
+            const listTop = list.getBoundingClientRect().top;
+            frames.push(
+              found.map((row) => {
+                const box = row.getBoundingClientRect();
+                const text = row.querySelector('p');
+                const author = text?.querySelector('.font-semibold')?.textContent ?? '';
+                return {
+                  key: row.dataset['key'] ?? '',
+                  top: Math.round(box.top - listTop),
+                  height: Math.round(box.height),
+                  words: (text?.textContent ?? '').slice(author.length).trim(),
+                };
+              }),
+            );
+          }
+          if ((first !== undefined && now - first > 1500) || now - start > 25_000) resolve(frames);
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
+}
+
+test('the threads panel draws each row whole, and nothing in it moves as the openings are read', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await open(page, COMMENTS_PULL.number);
+  await expect(page.locator('[data-lo-right-toggle]')).toBeVisible();
+  // Opened as the tab is, before its threads are read, so the openings are read as the rows come.
+  const sampling = framesOfRows(page);
+  await page.keyboard.press(PANEL);
+  await expect(panel(page)).toBeVisible();
+  const frames = await sampling;
+  expect(frames.length).toBeGreaterThan(5);
+  // The first frame that has rows has all of them, each with its words.
+  const [first] = frames;
+  expect(first).toHaveLength(10);
+  for (const row of first ?? []) expect(row.words, row.key).not.toBe('');
+  // And no frame after it has them anywhere else, or any other size: not one moved.
+  expect(new Set(frames.map((frame) => JSON.stringify(frame))).size).toBe(1);
 });
 
 test.describe('while the local copy is still coming', () => {

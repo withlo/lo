@@ -432,7 +432,11 @@ export class Registry {
     const command = this.byId.get(id);
     if (!command) return `There's no command called ${id}.`;
     const { handler } = command;
-    if (!handler) return `${command.label} is Vim's.`;
+    if (!handler) {
+      return command.editor
+        ? `${command.label} is its editor's own key.`
+        : `${command.label} is Vim's.`;
+    }
     const fitted = fit(command.targets ?? ['none'], target);
     if (!fitted) return `${command.label} doesn't apply here.`;
     let enabled: true | string;

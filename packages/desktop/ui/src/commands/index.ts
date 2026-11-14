@@ -29,6 +29,7 @@ export {
   groups,
   handlers,
   isCommandId,
+  isOwned,
   listOf,
   menuPlaces,
   type BarMenu,

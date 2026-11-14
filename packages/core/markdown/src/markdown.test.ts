@@ -5,6 +5,7 @@ import { problems, walk } from '../test/walker.ts';
 import { DEFAULT_LIMITS } from './limits.ts';
 import { markdownTree, type MarkdownOptions } from './markdown.ts';
 import type { Plugin } from './parser.ts';
+import { plainText } from './text.ts';
 import type { Block, Inline, Tree } from './tree.ts';
 
 const PAGE = 'https://github.com/octo/repo/pull/1#discussion_r1';
@@ -805,5 +806,56 @@ describe('extensions', () => {
     expect(made.blocks).toEqual([
       { kind: 'paragraph', children: [text(`:::\n${'> '.repeat(MAX_DEPTH)}x\n:::`)] },
     ]);
+  });
+});
+
+/** A text's words on one line, with its raw HTML as the words GitHub shows for it. */
+const words = (markdown: string) => plainText(markdownTree(markdown, { html: 'words' }));
+
+describe('raw HTML as words', () => {
+  test('a tag gives its text, a summary and its details theirs, and an image its alt text', () => {
+    expect(
+      words(
+        'A <b>bold</b>move, <kbd>Ctrl</kbd>+<i>c</i> and<br>a <a href="https://e.com">link</a>',
+      ),
+    ).toBe('A boldmove, Ctrl+c and a link');
+    expect(words('<details><summary>Stack trace</summary>\n\nat main (a.ts:1)\n\n</details>')).toBe(
+      'Stack trace at main (a.ts:1)',
+    );
+    expect(words('<details>\n<summary>Stack trace</summary>\n\nat main (a.ts:1)\n</details>')).toBe(
+      'Stack trace at main (a.ts:1)',
+    );
+    expect(words('See <img width="10" src="x.png" alt="the chart"> and <img src="y.png">.')).toBe(
+      'See the chart and image .',
+    );
+    expect(words('<img src="y.png" alt="  ">')).toBe('image');
+    expect(words('<p align="center"><img src="y.png" alt="logo"></p>')).toBe('logo');
+  });
+
+  test('what GitHub never shows, and a comment, give nothing', () => {
+    expect(words('<script>alert(1)</script>\n\n<style>p{}</style>\n\nb <!-- c -->')).toBe('b');
+  });
+
+  test('text that is no HTML shows as typed: a less-than sign, an escape and an entity', () => {
+    expect(words('if a<b then return')).toBe('if a<b then return');
+    expect(words('x<y here, and z>w')).toBe('x<y here, and z>w');
+    expect(words('a < b, 1 <3 2 and 3 > 2')).toBe('a < b, 1 <3 2 and 3 > 2');
+    expect(words('&lt;b&gt;bold&lt;/b&gt;')).toBe('<b>bold</b>');
+    expect(words('\\<b\\>bold\\</b\\>')).toBe('<b>bold</b>');
+    expect(words('Tom &amp; Jerry')).toBe('Tom & Jerry');
+  });
+
+  test('code stays as written, in a line or a block', () => {
+    expect(words('Use `<div>` or:\n\n```html\n<b>x</b>\n```')).toBe('Use <div> or: <b>x</b>');
+  });
+
+  test('without the option, raw HTML shows as its text, as written', () => {
+    expect(plainText(markdownTree('a <b>b</b>'))).toBe('a <b>b</b>');
+    expect(plainText(markdownTree('a <b>b</b>', { html: 'text' }))).toBe('a <b>b</b>');
+  });
+
+  test('HTML that builds more elements than a limit is left as it is written', () => {
+    const html = `<div>${'<i>'.repeat(5_000)}`;
+    expect(plainText(markdownTree(html, { html: 'words' }))).toBe(html);
   });
 });

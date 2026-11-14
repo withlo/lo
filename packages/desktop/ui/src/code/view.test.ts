@@ -914,6 +914,36 @@ describe('comment boxes', () => {
     expect(box.text).toBe('Hello');
   });
 
+  test.each(['insert', 'normal', 'visual'] as const)(
+    'a Vim mapping in %s mode, as the keymap file’s vim lines make, can’t take the box’s keys',
+    (mode) => {
+      const shown = open();
+      const on = boxEvents();
+      shown.compose(at('a', 'new', 10), 'Hello', on);
+      const comment = vimIn('Comment');
+      // Mapped away, as `vim <mode> <C-CR> <Esc>` and the like would, in this mode and the others.
+      const keys = ['<C-CR>', '<A-CR>', '<C-S-v>', '<C-S-a>', '<C-S-V>', '<C-S-A>'];
+      shown.setVimKeys(
+        (['insert', 'normal', 'visual'] as const).flatMap((each) =>
+          keys.map((lhs) => ({ kind: 'map' as const, mode: each, keys: lhs, to: '<Esc>' })),
+        ),
+      );
+      comment.keys('<Esc>');
+      if (mode === 'insert') comment.keys('i');
+      if (mode === 'visual') comment.keys('v');
+      expect(comment.mode).toBe(mode);
+      const { content } = comment;
+      press(content, 'Enter', { ctrlKey: true });
+      expect(on.submit).toHaveBeenLastCalledWith('review');
+      press(content, 'Enter', { altKey: true });
+      expect(on.submit).toHaveBeenLastCalledWith('now');
+      press(content, 'v', { ctrlKey: true, shiftKey: true });
+      expect(on.preview).toHaveBeenLastCalledWith(true);
+      press(content, 'a', { ctrlKey: true, shiftKey: true });
+      expect(on.attach).toHaveBeenCalledOnce();
+    },
+  );
+
   test('insert types at the cursor as it shows, and the preview gives back the mode it took', () => {
     const box = open().compose(at('a', 'new', 10), 'Hello', composerEvents());
     const comment = vimIn('Comment');

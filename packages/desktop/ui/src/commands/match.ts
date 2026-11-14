@@ -10,8 +10,9 @@
 //   one per editor. In a code view held keys wait for the next key however long it takes, as
 //   Vim's own `y` and `g` do; anywhere else, for a second.
 // - In a code view in insert mode or in the middle of a command (a count, an operator), only
-//   chords are Lo's: the rest go to Vim. Vim's own keys (`vim: 'own'`) are never taken, and Lo's
-//   motions (`vim: 'motion'`) are Vim's to run in a code view.
+//   chords are Lo's: the rest go to Vim. Vim's own keys (`vim: 'own'`) are never taken, nor the
+//   comment box editor's (`editor`), and Lo's motions (`vim: 'motion'`) are Vim's to run in a code
+//   view.
 // - A count is Vim's in a code view: in normal mode, when it's all Vim holds, the keys of a command
 //   that takes one (`count`) are Lo's, and the command gets it. Elsewhere, digits before a key are
 //   held as its count where the focused scope has a command of its own that takes one.
@@ -21,7 +22,7 @@
 //   never taken.
 // - Keys during IME composition go to the text.
 
-import { listOf, type Command } from './declare.ts';
+import { isOwned, listOf, type Command } from './declare.ts';
 import {
   isChord,
   isTyping,
@@ -199,10 +200,13 @@ export class Bindings {
   }
 }
 
-/** Whether `binding` can be matched where `focus` is, on `system`. */
+/**
+ * Whether `binding` can be matched where `focus` is, on `system`: never one Vim's own, or an
+ * editor's, handles itself, which the registry leaves alone.
+ */
 function applies(binding: Binding, focus: Focus, system: System): boolean {
-  const { vim } = binding.command;
-  if (vim === 'own' || (vim === 'motion' && focus.view)) return false;
+  const { command } = binding;
+  if (isOwned(command) || (command.vim === 'motion' && focus.view)) return false;
   return holds(binding, focus, system);
 }
 

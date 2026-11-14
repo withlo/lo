@@ -16,6 +16,7 @@
 import {
   commandsOf,
   isCommandId,
+  isOwned,
   listOf,
   menuPlaces,
   type Command,
@@ -214,9 +215,11 @@ export function checkHandlers(
   }
   for (const [id, command] of declared) {
     const count = counts.get(id) ?? 0;
-    if (command.vim === 'own') {
-      if (count > 0)
-        problems.push(`${id} is one of Vim's own keys, which nothing runs, but has a handler.`);
+    if (isOwned(command)) {
+      if (count > 0) {
+        const whose = command.editor ? "its scope's editor's own key" : "one of Vim's own keys";
+        problems.push(`${id} is ${whose}, which nothing runs, but has a handler.`);
+      }
     } else if (count === 0) {
       problems.push(`${id} has no handler.`);
     } else if (count > 1) {
@@ -325,9 +328,10 @@ export function checkMenus(features: readonly Declarations[]): string[] {
  * key, nor one the start of another's sequence (a lone `g` against `g S`), since one of the two
  * would never run. Lo's motions count in code views, where Vim runs them. The one exception is the
  * rule matching follows: a command for the focused scope beats one for anywhere on the same keys,
- * so `⌘⏎` can add to the review in a box and submit it elsewhere. A motion against another command
- * in a code view has no such exception, since matching never takes the motion there. Nor may a
- * binding start with a key the engine takes first: `j` or `k` in a menu.
+ * so `⌘⏎` can add to the review in a box and submit it elsewhere, unless the key is one the box's
+ * editor handles itself (`editor`), which a command for anywhere would take from it. A motion
+ * against another command in a code view has no such exception, since matching never takes the
+ * motion there. Nor may a binding start with a key the engine takes first: `j` or `k` in a menu.
  */
 export function checkClashes(features: readonly Declarations[]): string[] {
   const commands = features.flatMap(commandsOf).filter((command) => command.vim !== 'own');
@@ -383,8 +387,11 @@ function clash(a: Binding, b: Binding, site: Site): string | undefined {
     // of the two is a motion: matching never takes a motion there, so Lo's other command takes
     // the key before Vim, and the motion never runs.
     const motion = a.command.vim === 'motion' || b.command.vim === 'motion';
+    // Nor in one an editor handles itself: matching never takes it, so a command for anywhere that
+    // holds there takes the key from the editor.
+    const owned = a.command.editor === true || b.command.editor === true;
     const overridden = scoped(a.command) !== scoped(b.command);
-    if (overridden && !(motion && site.mode !== undefined)) return undefined;
+    if (overridden && !owned && !(motion && site.mode !== undefined)) return undefined;
     return `${quoted(a.strokes, system)} runs both ${a.command.id} and ${b.command.id}`;
   }
   return `${quoted(short.strokes, system)} (${short.command.id}) starts ${quoted(long.strokes, system)} (${long.command.id})`;

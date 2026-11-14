@@ -27,7 +27,30 @@ const tree = defineCommands(
   },
   { scopes: ['tree'] },
 );
-const doc = keysDoc([diff, keys, tree]);
+const comments = defineCommands('comments', {
+  add: {
+    label: 'Add to review',
+    group: 'Comment box',
+    keys: ['cmd+enter'],
+    editor: true,
+    when: { scope: 'box' },
+  },
+  leave: {
+    label: 'Leave insert mode',
+    group: 'Comment box',
+    keys: ['esc'],
+    vim: 'own',
+    when: { scope: 'box', mode: 'insert' },
+  },
+  close: {
+    label: 'Close the box and keep the draft',
+    group: 'Comment box',
+    keys: ['esc'],
+    editor: true,
+    when: { scope: 'box', mode: 'normal' },
+  },
+});
+const doc = keysDoc([diff, keys, tree, comments]);
 
 /** The lines of `doc`'s section under `heading`, up to the next heading of its level or above. */
 function section(heading: string): string[] {
@@ -43,13 +66,14 @@ function section(heading: string): string[] {
 describe('docs/keys.md', () => {
   it('lists key help’s groups in their order, in macOS form', () => {
     const headings = doc.split('\n').filter((line) => line.startsWith('## '));
-    expect(headings.slice(0, 8)).toEqual([
+    expect(headings.slice(0, 9)).toEqual([
       '## Move',
       '## Jump',
       '## Act',
       '## Code',
       '## Find',
       '## Files',
+      '## Comment box',
       '## Palettes',
       '## Tabs and window',
     ]);
@@ -81,6 +105,34 @@ describe('docs/keys.md', () => {
       '| Tree or review order | `t` | In `tree` | `tree.order` |',
     );
     expect(section('## Where keys apply')).toContain('| `tree` | Named by `tree`. |');
+  });
+
+  it('lists the keys an editor handles itself, saying the keymap file can’t change them', () => {
+    const lines = section('## Comment box');
+    expect(lines).toContain(
+      "| Add to review | `⌘⏎` | In `box`; the editor's own key, which the keymap file can't change | `comments.add` |",
+    );
+    expect(lines).toContain(
+      "| Close the box and keep the draft | `Esc` | In `box`; in code views, only in normal mode; the editor's own key, which the keymap file can't change | `comments.close` |",
+    );
+    expect(lines).toContain(
+      "| Leave insert mode | `Esc` | Vim's own key, in code views | `comments.leave` |",
+    );
+    const note = lines.join('\n');
+    expect(note).toContain(
+      'neither the keymap file nor a `vim` line in it can change them. A `bind` that names one, or would take its keys in a comment box, is reported',
+    );
+    // What `⌘⏎` and `⌥⏎` do in each kind of box, and `Esc` in the preview.
+    expect(note).toContain("in the review summary's box it submits the review");
+    expect(note).toContain(
+      'it posts the comment; in a box that edits one of your comments it saves',
+    );
+    expect(note).toContain("In the box's preview, or on its frame, `Esc` closes it at once");
+    expect(section('## Where keys apply')).not.toContain('comments.add');
+    expect(doc).toContain("names one of Vim's own keys or one of the comment box's");
+    expect(doc).toContain("A `vim` line can't take them either");
+    // Neither is a key over Vim's, which a keymap's `bind` could replace.
+    expect(section("## Keys over Vim's").join('\n')).not.toContain('comments.');
   });
 
   it('lists the commands that take a count, what one counts, and where digits are one', () => {

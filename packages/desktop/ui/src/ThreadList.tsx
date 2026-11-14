@@ -59,7 +59,10 @@ export interface ThreadListRow {
   pending?: boolean | undefined;
   /** Its line has changed since it was written. */
   outdated?: boolean | undefined;
-  /** The first comment's opening, as plain text. The row shows two lines of it. */
+  /**
+   * The first comment's opening, as plain text. The row shows two lines of it, and holds the room
+   * of two before it's there, so its coming moves nothing.
+   */
   excerpt: string;
 }
 
@@ -147,7 +150,10 @@ function Row({
             {state === 'unresolved' && <Tag tone="warning">Unresolved</Tag>}
           </span>
         </div>
-        <p className={`line-clamp-2 text-small ${row.resolved ? 'text-fg-muted' : 'text-fg'}`}>
+        {/* Always two lines tall, whatever it holds, so the words coming never move a row. */}
+        <p
+          className={`line-clamp-2 min-h-2lh text-small ${row.resolved ? 'text-fg-muted' : 'text-fg'}`}
+        >
           <span className="font-semibold">{row.author}</span> {row.excerpt}
         </p>
       </div>

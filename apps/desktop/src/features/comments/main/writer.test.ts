@@ -16,7 +16,13 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { openDatabase } from '../../../main/database.ts';
 import { migrate } from '../../../main/migrations.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { DraftHomeRow, DraftPlaceRow, DraftsView, ThreadPlaceRow } from '../contract.ts';
+import type {
+  DraftHomeRow,
+  DraftPlaceRow,
+  DraftsView,
+  JoinedView,
+  ThreadPlaceRow,
+} from '../contract.ts';
 import { holdsPullComment } from './conversation.ts';
 import { DraftStore } from './drafts.ts';
 import { threadRows as threadRowsOf } from './threads.ts';
@@ -251,19 +257,23 @@ function fresh() {
 
 function writer(fake: ReturnType<typeof poller>, view = info(), database = fresh()) {
   const published: DraftsView[] = [];
+  /** The comments said to have joined your pending review, with how many drafts were left then. */
+  const joined: { view: JoinedView; drafts: number }[] = [];
   const drafts = new DraftStore(database);
   const made = new Writer({
     poller: () => Promise.resolve(fake.poller),
     view: (id) => (id === view.id ? view : undefined),
     drafts,
     publish: (each) => published.push(each),
+    publishJoined: (each) =>
+      joined.push({ view: each, drafts: published.at(-1)?.drafts.length ?? 0 }),
     log: () => {},
     settleAfter: 10_000,
     readWait: 60_000,
   });
   made.follow(view.id);
   const last = () => published.at(-1)?.drafts ?? [];
-  return { made, drafts, published, last, database };
+  return { made, drafts, published, last, database, joined };
 }
 
 afterEach(() => {
@@ -323,6 +333,33 @@ describe('sending', () => {
       thread: 'T_3',
     });
     expect(joining.sent.map((write) => write.kind)).toEqual(['addThread']);
+  });
+
+  test('⌥⏎ on a reply, with a pending review Lo hadn’t read, says GitHub added it to the review', async () => {
+    const unread: PendingReviewRead = { kind: 'unknown', why: 'not read since' };
+    /** A poller that has read no threads, and cannot say whether you have a pending review. */
+    const reading = (answers: Answer[]) => {
+      const fake = poller(answers, unread);
+      Reflect.set(fake.poller, 'cachedRead', (_pull: PullRef, kind: { name: string }) =>
+        kind.name === 'PendingReview' ? { value: unread, fetchedAt: 0 } : undefined,
+      );
+      return fake;
+    };
+    const quietly = reading([{ review: 'PRR_1', comment: 'C_4', joinedPending: 'PRR_1' }]);
+    const place: DraftPlaceRow = { kind: 'reply', thread: 'T_1' };
+    expect(await writer(quietly).made.send('t1', place, 'Now.', 'now')).toMatchObject({
+      kind: 'sent',
+      pending: true,
+      joined: true,
+    });
+    expect(quietly.sent.map((write) => write.kind)).toEqual(['postReply']);
+    // Posted at once, as GitHub says, it's no word about a review.
+    const alone = reading([{ review: 'PRR_5', comment: 'C_5' }]);
+    expect(await writer(alone).made.send('t1', place, 'Now.', 'now')).toMatchObject({
+      kind: 'sent',
+      pending: false,
+      joined: false,
+    });
   });
 
   test('one write to a pull request goes at a time, the next planned from your pending review as read after', async () => {
@@ -488,6 +525,28 @@ function lost(): GithubError {
   return new GithubError({ kind: 'network', failure: 'lost', message: 'reset' });
 }
 
+/** A reply in the thread `node` makes for src/backoff.ts. */
+const REPLY: DraftPlaceRow = { kind: 'reply', thread: 'T_src/backoff.ts' };
+
+/** A poller that has read no threads, so a reply is sent on GitHub's word that it may be. */
+function replying(answers: Answer[]) {
+  const fake = poller(answers);
+  const none: PendingReviewRead = { kind: 'read', review: undefined };
+  Reflect.set(fake.poller, 'cachedRead', (_pull: PullRef, kind: { name: string }) =>
+    kind.name === 'PendingReview' ? { value: none, fetchedAt: 0 } : undefined,
+  );
+  return fake;
+}
+
+/** The thread with the comment `body`, as GitHub holds it once it's submitted, not pending. */
+function submitted(body: string) {
+  const thread = node('src/backoff.ts', body);
+  for (const comment of thread.comments.nodes ?? []) {
+    if (comment) comment.state = 'SUBMITTED';
+  }
+  return thread;
+}
+
 describe('a lost answer', () => {
   test('is looked for with a read made the wait after it was sent, which finds what came late', async () => {
     vi.useFakeTimers();
@@ -537,6 +596,56 @@ describe('a lost answer', () => {
     expect(unknown.last()).toMatchObject([{ sending: 'unknown', sent: 'Lost?' }]);
     // Nothing was sent again; the reader may send it anyway.
     expect([...missing.sent, ...away.sent, ...refusing.sent]).toHaveLength(3);
+  });
+
+  describe('found in your pending review', () => {
+    test('says a REPLY sent to post at once joined it, as its answer would have, before its draft goes', async () => {
+      vi.useFakeTimers();
+      const fake = replying([lost()]);
+      const { made, last, joined } = writer(fake);
+      expect(await made.send('t1', REPLY, 'Lost?', 'now')).toEqual({ kind: 'lost' });
+      // GitHub added it to the review, quietly, and the read finds it pending.
+      fake.threads.now = { nodes: [node('src/backoff.ts', 'Lost?')], missing: 0 };
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(joined).toEqual([{ view: { id: 't1', place: REPLY }, drafts: 1 }]);
+      expect(last()).toEqual([]);
+    });
+
+    test('says nothing of a comment added to the review as asked, or one that posted alone', async () => {
+      vi.useFakeTimers();
+      const asked = replying([lost()]);
+      const adding = writer(asked);
+      await adding.made.send('t1', REPLY, 'Lost?', 'review');
+      asked.threads.now = { nodes: [node('src/backoff.ts', 'Lost?')], missing: 0 };
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(adding.last()).toEqual([]);
+      expect(adding.joined).toEqual([]);
+      const alone = replying([lost()]);
+      const posting = writer(alone);
+      await posting.made.send('t1', REPLY, 'Lost?', 'now');
+      alone.threads.now = { nodes: [submitted('Lost?')], missing: 0 };
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(posting.last()).toEqual([]);
+      expect(posting.joined).toEqual([]);
+    });
+
+    test('says nothing of one that never posted, nor, with no word of how it was sent, one lost before a restart', async () => {
+      vi.useFakeTimers();
+      const missing = replying([lost()]);
+      const none = writer(missing);
+      await none.made.send('t1', REPLY, 'Lost?', 'now');
+      missing.threads.now = { nodes: [node('src/backoff.ts', 'Something else')], missing: 0 };
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(none.joined).toEqual([]);
+      const database = fresh();
+      await writer(replying([lost()]), info(), database).made.send('t1', REPLY, 'Lost?', 'now');
+      const after = replying([]);
+      after.threads.now = { nodes: [node('src/backoff.ts', 'Lost?')], missing: 0 };
+      const restarted = writer(after, info(), database);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(restarted.last()).toEqual([]);
+      expect(restarted.joined).toEqual([]);
+    });
   });
 
   test('is judged by GitHub’s clock, whatever this computer’s says', async () => {

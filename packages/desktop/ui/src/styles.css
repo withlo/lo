@@ -77,6 +77,11 @@
   background-color: var(--lo-current);
 }
 
+/* Two lines of text tall at least, in the text's own line height, so what fills it moves nothing. */
+@utility min-h-2lh {
+  min-height: 2lh;
+}
+
 /* Menus sit over the window's content, and under its dialogs. */
 @utility z-popover {
   z-index: var(--lo-z-popover);

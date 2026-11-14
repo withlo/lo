@@ -51,6 +51,7 @@ import type {
   DraftPlaceRow,
   DraftRow,
   DraftsView,
+  JoinedView,
   SendOutcome,
   Sending,
 } from '../contract.ts';
@@ -852,6 +853,18 @@ function sameLines(a: DraftPlaceRow, b: DraftPlaceRow): boolean {
   return a.path === b.path && JSON.stringify(a.lines) === JSON.stringify(b.lines);
 }
 
+/** What a box says when its comment joined your pending review, after what it says that was. */
+const JOINED = 'GitHub posts nothing else from you while you have one.';
+
+/**
+ * A comment sent to post at once, whose answer was lost, was found in your pending review: says so,
+ * as its answer would have, in the view whose box sent it.
+ */
+export function takeJoined({ id: view, place }: JoinedView): void {
+  if (!boxesOf(view).get(placeKey(place))?.sentMark) return;
+  announce('Added to your pending review', JOINED);
+}
+
 /**
  * Takes the drafts main sent for a view: each box takes how sending it stands, and a box not yet
  * typed in since takes its text. A draft restored as Lo started gets a box that opens once its line
@@ -1165,9 +1178,7 @@ export async function send(box: Box, how: Send): Promise<void> {
           const thread = outcome.thread;
           landed.update(view, (was) => new Set([...was, thread]));
         }
-        const joined = outcome.joined
-          ? 'GitHub posts nothing else from you while you have one.'
-          : undefined;
+        const joined = outcome.joined ? JOINED : undefined;
         // A comment from a block that won't show under it says where it went.
         const { home } = box;
         const went = home.kind === 'block' ? wentFrom(view, home.block, place, outcome) : undefined;

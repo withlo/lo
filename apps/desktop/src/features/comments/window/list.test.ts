@@ -61,8 +61,12 @@ function row(id: string, overrides: Partial<ThreadRow> = {}): ThreadRow {
 
 const label = (head: string) => (head === FIRST ? 'r1' : head === HEAD ? 'r2' : undefined);
 
+/** Stands in for the background process's reading of a comment's opening as plain words. */
+const plain = (markdown: string) =>
+  markdown.replaceAll(/[*`_]/g, '').replaceAll(/\s+/g, ' ').trim();
+
 function options(overrides: Partial<ListOptions> = {}): ListOptions {
-  return { filter: 'all', viewer: 'rozed-bot', order: [], label, ...overrides };
+  return { filter: 'all', viewer: 'rozed-bot', order: [], label, excerpt: plain, ...overrides };
 }
 
 describe('the filter', () => {
@@ -164,7 +168,7 @@ describe('the groups', () => {
           originalLine: 22,
           writtenOn: FIRST,
           comments: [
-            comment({ body: 'Fixture C:\n  Is   doubling\nenough?' }),
+            comment({ body: '**Fixture C:**\n  Is   `doubling`\nenough?' }),
             comment({ id: 'C2' }),
             comment({ id: 'C3' }),
           ],
@@ -186,6 +190,13 @@ describe('the groups', () => {
       outdated: true,
       excerpt: 'Fixture C: Is doubling enough?',
     });
+    // A row shows the opening it's given for the first comment, never the comment's Markdown, and
+    // none while that's still being read.
+    const unread = threadGroups([row('a', { comments: [comment({ body: '**Bold**' })] })], {
+      ...options(),
+      excerpt: () => '',
+    }).flatMap((group) => group.rows);
+    expect(unread.map((each) => each.excerpt)).toEqual(['']);
     // A deleted account is GitHub's ghost, with no avatar; a pending thread says so.
     expect(listed('b')).toMatchObject({ author: 'ghost', image: undefined, pending: true });
     // A bot has no avatar of its own to load.

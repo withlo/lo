@@ -675,6 +675,9 @@ a fork is someone else's code, even in a repo you trust.
 
 - **Pending review.** Comments collect into a pending review by default. It's stored on GitHub, so
   it survives quitting Lo and shows as pending on the web. `C` posts one comment right away instead.
+  While you have one, GitHub posts nothing else from you, so a comment sent right away (`C`, `⌥⏎`)
+  joins it, and Lo says so: "Added to your pending review", even when GitHub's answer was lost and a
+  later read finds the comment in the review.
 - **Submitting.** `⌘⏎` opens the submit dialog. It has a summary box, a choice of Comment, Approve
   or Request changes, the number of pending comments, and the account you're acting as. On your own
   PRs only Comment is offered, since GitHub allows nothing else there.
@@ -689,9 +692,10 @@ where it is. The toggle counts the unresolved threads.
 It lists the threads of the view on screen, so each layer of a stack shows its own. A run of layers
 has none of its own, and the panel says to show one of its layers. Threads are grouped by file in
 the file tree's order, each file's own threads first and then by line. Each row shows who started
-the thread, where it is, its replies and whether it's resolved. Outdated threads are labeled with
-the revision and line they were written on. It lists the unresolved threads at first, and `f` steps
-to all threads, then to yours: the ones you started or replied in.
+the thread, where it is, its replies, whether it's resolved, and the opening of its first comment as
+plain words, with none of its Markdown, as a collapsed thread in the diff does. Outdated threads are
+labeled with the revision and line they were written on. It lists the unresolved threads at first,
+and `f` steps to all threads, then to yours: the ones you started or replied in.
 
 `j` and `k` move through it, and `x` resolves or unresolves the thread the keyboard is on. `⏎` or a
 click shows the thread in the diff, opened, at the top of the screen, and focus stays in the panel.

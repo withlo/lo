@@ -215,3 +215,43 @@ export function textOf(root: ChildNode | Fragment): string {
   }
   return text;
 }
+
+/**
+ * Raw `html`, as a Markdown text holds it, as the words it shows: its text, an image as its alt
+ * text, or "image" when it has none, with the text of elements that stand apart set apart by
+ * spaces, and what GitHub never shows left out. HTML that holds no tag is as it was, and so is
+ * HTML that would build more than `elements` elements. With an explicit stack, so no nesting
+ * overflows it.
+ */
+export function htmlWords(html: string, elements: number): string {
+  if (!html.includes('<')) return html;
+  const fragment = parseHtml(html, elements);
+  if (!fragment) return html;
+  let text = '';
+  const stack: (ChildNode | Fragment | ' ')[] = [fragment];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (node === ' ') {
+      text += ' ';
+      continue;
+    }
+    if (node.nodeName === '#text' && 'value' in node) {
+      text += node.value;
+      continue;
+    }
+    if ('tagName' in node) {
+      if (REMOVED.has(node.tagName)) continue;
+      if (node.tagName === 'img') {
+        const alt = node.attrs.find((attribute) => attribute.name === 'alt')?.value.trim();
+        text += ` ${alt || 'image'} `;
+        continue;
+      }
+    }
+    const apart = 'tagName' in node && BLOCKS.has(node.tagName);
+    if (apart) stack.push(' ');
+    const children = childrenOf(node);
+    for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]!);
+    if (apart) stack.push(' ');
+  }
+  return text;
+}

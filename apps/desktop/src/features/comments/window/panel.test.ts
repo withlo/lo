@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ComparisonView, RevisionRow } from '../../revisions/contract.ts';
 import type { ThreadRow, ThreadsView } from '../contract.ts';
-import { comparisonFor, emptyText, planShow } from './panel.ts';
+import { comparisonFor, emptyText, GONE, planShow, threadIn } from './panel.ts';
 
 const FIRST = 'f'.repeat(40);
 const SECOND = 's'.repeat(40);
@@ -168,5 +168,28 @@ describe('the panel with nothing to list', () => {
     expect(emptyText(emptyView('ready'), 'yours')).toBe(
       'You haven’t started or replied in a thread.',
     );
+  });
+});
+
+/** Main's threads for a pull request, ready, with these rows. */
+const threads = (...rows: ThreadRow[]): ThreadsView => ({
+  id: 'tab',
+  status: 'ready',
+  threads: rows,
+  missing: 0,
+  compared: null,
+  problem: null,
+});
+
+describe('a row whose thread main no longer holds', () => {
+  it('is the thread, while main holds it', () => {
+    const held = row({ id: 'T1' });
+    expect(threadIn(threads(held, row({ id: 'T2' })), 'T1')).toBe(held);
+  });
+
+  it('says what’s true of one that has just gone, rather than nothing or what isn’t', () => {
+    expect(threadIn(threads(row({ id: 'T2' })), 'T1')).toBe(GONE);
+    expect(threadIn(undefined, 'T1')).toBe(GONE);
+    expect(GONE).toBe('That thread has just gone from the pull request. The list is catching up.');
   });
 });
