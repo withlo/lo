@@ -340,7 +340,8 @@ export type SendRefusal =
 
 /**
  * What came of sending a draft: `sent`, with whether it went into your pending review, whether it
- * did so though it was asked to post at once (`joined`), the thread it added when GitHub named it,
+ * did so though it was asked to post at once (`joined`: Lo planned it so, or, for a reply, GitHub
+ * said so of a pending review Lo hadn't read), the thread it added when GitHub named it,
  * and, for a line thread GitHub put on a newer push that couldn't be taken back from it
  * (`landedOn`), that push's head when GitHub named it; `refused`, the draft kept; or `lost`, when
  * GitHub's answer was lost, and Lo checks whether it posted, as its draft says.

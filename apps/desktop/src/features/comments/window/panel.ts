@@ -28,6 +28,7 @@ import {
 import { activeTab, pullOf, tabState, type PullTab } from '../../tab/window/shared.ts';
 import { fileOrder, showFile } from '../../tree/window/shared.ts';
 import type { ThreadRow, ThreadsView } from '../contract.ts';
+import { excerptOf } from './excerpts.ts';
 import { focusedIn, nextFilter, rowKeys, stepRow, threadGroups } from './list.ts';
 import { screenOf, threadOf } from './placing.ts';
 import { held } from './threads.ts';
@@ -114,6 +115,7 @@ export function groupsIn(view: string, filter: PanelFilter): ThreadListGroup[] {
     viewer: viewerOf(view),
     order: fileOrder(view),
     label: (head) => revisionLabel(known, head),
+    excerpt: excerptOf,
   });
 }
 

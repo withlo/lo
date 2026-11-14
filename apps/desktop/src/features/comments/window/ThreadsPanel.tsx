@@ -6,7 +6,7 @@
 
 import { Key, PaletteHint, ThreadFilter, ThreadList } from '@lo/ui';
 import { keyLabels, setScopeSource } from '@lo/ui/commands';
-import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { threadsChanged } from '../../diff/window/shared.ts';
@@ -14,6 +14,7 @@ import { catchUpRevisions, useRevisions } from '../../revisions/window/shared.ts
 import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { useFileOrder } from '../../tree/window/shared.ts';
 import type { ThreadsView } from '../contract.ts';
+import { useExcerpts } from './excerpts.ts';
 import { filterCounts, focusedIn, rowKeys } from './list.ts';
 import {
   emptyText,
@@ -74,6 +75,12 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
     catchUpRevisions(view);
   }, [view]);
 
+  // The threads' openings are read in the background, and the rows draw them as they come.
+  const openings = useMemo(
+    () => listable(threads).flatMap((row) => (row.comments[0] ? [row.comments[0].body] : [])),
+    [threads],
+  );
+  useExcerpts(openings);
   const groups = groupsIn(view, filter);
   const keys = rowKeys(groups);
   const on = focusedIn(keys, focused);

@@ -761,10 +761,13 @@ export class Writer {
         continue;
       }
       this.#posted(target, key, place, text);
+      // A reply sent to be posted at once joins a pending review Lo hadn't read, quietly: GitHub's
+      // answer says so, and the box does too.
+      const quietly = sent.joinedPending !== undefined;
       return {
         kind: 'sent',
-        pending: intoReview(write),
-        joined,
+        pending: intoReview(write) || quietly,
+        joined: joined || quietly,
         thread: sent.thread ?? null,
         landedOn: sent.landedOn ? { head: sent.landedOn.head ?? null } : null,
       };

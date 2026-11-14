@@ -1,7 +1,9 @@
-// The comments' jobs: a post's text as Lo's tree, and a file to attach. Pure work on what the window
-// sends: GitHub's rendering through `githubTree`, which reads it as untrusted and falls back to the
-// Markdown, or the Markdown itself, with the pull request's repository as what its references refer
-// to; and a file checked as GitHub takes it, with its metadata taken out (`prepareAttachment`).
+// The comments' jobs: a post's text as Lo's tree, comments' openings as plain text, and a file to
+// attach. Pure work on what the window sends: GitHub's rendering through `githubTree`, which reads
+// it as untrusted and falls back to the Markdown, or the Markdown itself, with the pull request's
+// repository as what its references refer to; a comment's Markdown as one line of its words
+// (`plainText`); and a file checked as GitHub takes it, with its metadata taken out
+// (`prepareAttachment`).
 
 import {
   attachmentKind,
@@ -11,11 +13,12 @@ import {
   RefusedAttachment,
   uploadLimit,
 } from '@lo/github';
-import { githubTree, markdownTree, type Tree } from '@lo/markdown';
+import { githubTree, markdownTree, plainText, type Tree } from '@lo/markdown';
 
 import { defineRunner } from '../../../background/runners.ts';
 import {
   contract,
+  EXCERPT,
   type PrepareInput,
   type Prepared,
   type RenderInput,
@@ -24,6 +27,7 @@ import {
 
 export default defineRunner(contract, {
   render: { run: (input) => renderPost(input) },
+  excerpts: { run: ({ bodies }) => bodies.map(excerptFrom) },
   // A large video's boxes take a while to read through.
   prepare: { run: (input) => prepareFile(input), limits: { deadline: 30_000 } },
 });
@@ -59,6 +63,19 @@ export function prepareFile({ name, bytes }: PrepareInput): Prepared {
     if (error instanceof RefusedAttachment) return { kind: 'refused', why: error.message };
     throw error;
   }
+}
+
+/**
+ * A comment's opening as one line of plain text, as `comments.excerpts` makes it: its words, none
+ * of its Markdown's syntax, and a long one cut short with an ellipsis.
+ */
+export function excerptFrom(markdown: string): string {
+  const text = plainText(markdownTree(markdown), EXCERPT + 1);
+  if (text.length <= EXCERPT) return text;
+  let end = EXCERPT - 1;
+  // Never half of a character a surrogate pair makes.
+  if (/[\uD800-\uDBFF]/.test(text.charAt(end - 1))) end -= 1;
+  return `${text.slice(0, end).trimEnd()}…`;
 }
 
 /** A post as Lo's tree, as `comments.render` makes it. */

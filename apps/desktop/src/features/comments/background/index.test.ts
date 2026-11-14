@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { prepareFile, renderPost } from './index.ts';
+import { excerptFrom, prepareFile, renderPost } from './index.ts';
 
 const AT = {
   repo: { owner: 'rozed-dev', name: 'e2e' },
@@ -20,6 +20,44 @@ describe('renderPost', () => {
     const { tree, images } = renderPost({ html, markdown: 'Before\n\n![shot](x)', ...AT });
     expect(JSON.stringify(tree)).toContain('Before');
     expect(images).toBe(true);
+  });
+});
+
+describe('excerptFrom', () => {
+  it('is a comment’s words on one line, with none of its Markdown’s syntax', () => {
+    expect(excerptFrom('Fixture C:\n  Is   doubling\nenough?')).toBe(
+      'Fixture C: Is doubling enough?',
+    );
+    expect(
+      excerptFrom('**Bold**, _soft_ and ~~gone~~: use `retry()` or [the guide](https://x.dev/g).'),
+    ).toBe('Bold, soft and gone: use retry() or the guide.');
+    expect(excerptFrom('Looks like this ![a screenshot](https://x.dev/a.png) is stale.')).toBe(
+      'Looks like this a screenshot is stale.',
+    );
+    expect(excerptFrom('# Heading\n\n- one\n- two\n\n> quoted')).toBe('Heading one two quoted');
+  });
+
+  it('shows what a code fence and a suggestion hold, not the fence', () => {
+    const text = excerptFrom('Try this:\n```suggestion\nconst tries = 3;\n```\nThen run it.');
+    expect(text).toBe('Try this: const tries = 3; Then run it.');
+    expect(text).not.toContain('`');
+    expect(text).not.toContain('suggestion');
+    expect(excerptFrom('```ts\nlet x = 1;\n```')).toBe('let x = 1;');
+  });
+
+  it('says a mention as it is written, and is empty for a comment with no words', () => {
+    expect(excerptFrom('cc @mira-chen, see #7')).toBe('cc @mira-chen, see #7');
+    expect(excerptFrom('  \n\n ')).toBe('');
+  });
+
+  it('cuts a long one short with an ellipsis, never through a character', () => {
+    const cut = excerptFrom('word '.repeat(60));
+    expect(cut).toHaveLength(120);
+    expect(cut.endsWith('word…')).toBe(true);
+    // A pair of surrogates straddling the cut goes whole or not at all.
+    const emoji = excerptFrom('x'.repeat(118) + '😀😀😀');
+    expect(emoji).toBe(`${'x'.repeat(118)}…`);
+    expect(excerptFrom('x'.repeat(120))).toBe('x'.repeat(120));
   });
 });
 

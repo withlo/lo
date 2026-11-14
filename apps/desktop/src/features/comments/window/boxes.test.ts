@@ -980,6 +980,23 @@ describe('sending', () => {
     expect(landed.get(VIEW).has('T_1')).toBe(true);
   });
 
+  test('⌥⏎ into your pending review says so, once the box has closed', async () => {
+    const { drawn, box } = await opened();
+    answers['comments.send'] = (): SendOutcome => ({
+      kind: 'sent',
+      pending: true,
+      joined: true,
+      thread: 'T_1',
+      landedOn: null,
+    });
+    await send(box, 'now');
+    expect(drawn[0]!.composer.closed).toBe('close');
+    expect(notice()).toMatchObject({
+      title: 'Added to your pending review',
+      body: 'GitHub posts nothing else from you while you have one.',
+    });
+  });
+
   test('while it’s sent, and until Lo knows whether it posted, its text is held', async () => {
     const { drawn, box } = await opened();
     let answer!: (outcome: SendOutcome) => void;

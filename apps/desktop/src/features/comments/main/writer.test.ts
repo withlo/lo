@@ -325,6 +325,33 @@ describe('sending', () => {
     expect(joining.sent.map((write) => write.kind)).toEqual(['addThread']);
   });
 
+  test('⌥⏎ on a reply, with a pending review Lo hadn’t read, says GitHub added it to the review', async () => {
+    const unread: PendingReviewRead = { kind: 'unknown', why: 'not read since' };
+    /** A poller that has read no threads, and cannot say whether you have a pending review. */
+    const reading = (answers: Answer[]) => {
+      const fake = poller(answers, unread);
+      Reflect.set(fake.poller, 'cachedRead', (_pull: PullRef, kind: { name: string }) =>
+        kind.name === 'PendingReview' ? { value: unread, fetchedAt: 0 } : undefined,
+      );
+      return fake;
+    };
+    const quietly = reading([{ review: 'PRR_1', comment: 'C_4', joinedPending: 'PRR_1' }]);
+    const place: DraftPlaceRow = { kind: 'reply', thread: 'T_1' };
+    expect(await writer(quietly).made.send('t1', place, 'Now.', 'now')).toMatchObject({
+      kind: 'sent',
+      pending: true,
+      joined: true,
+    });
+    expect(quietly.sent.map((write) => write.kind)).toEqual(['postReply']);
+    // Posted at once, as GitHub says, it's no word about a review.
+    const alone = reading([{ review: 'PRR_5', comment: 'C_5' }]);
+    expect(await writer(alone).made.send('t1', place, 'Now.', 'now')).toMatchObject({
+      kind: 'sent',
+      pending: false,
+      joined: false,
+    });
+  });
+
   test('one write to a pull request goes at a time, the next planned from your pending review as read after', async () => {
     let answer!: (sent: Sent) => void;
     const first = new Promise<Sent>((resolve) => {

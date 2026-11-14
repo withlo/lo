@@ -797,6 +797,11 @@ description's, for the timeline and the diff's threads alike, with its `Post` co
   is 4 minutes old. The HTML is held for the Markdown it was asked for: an edited post shows its new
   Markdown at once, and is asked for again. Main offers the same read to other features as
   `comments.bodies`.
+- A thread's collapsed line and the threads panel's rows show its first comment's opening as one
+  line of plain words, never its Markdown. The window asks the background process for them
+  (`comments.excerpts`, 500 comments an ask), which reads the first 1,000 characters of each with
+  `@lo/markdown` and takes its words with `plainText`, at most 120 characters. A comment shows none
+  until its words are read, and the window keeps the newest 2,000.
 
 ### Writing comments
 
@@ -823,6 +828,10 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   the box closes; not found, or not read, the box says so. While the read can't be made, as offline,
   it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
   is sent again by itself, and nothing is sent while GitHub can't be reached.
+- A comment sent to post at once (`⌥⏎`) while you have a pending review joins it, since GitHub posts
+  nothing else from you until it's submitted, and the notice says so ("Added to your pending
+  review"). Main says it did when it planned the comment into your review, and for a reply when
+  GitHub's answer says it joined a review Lo hadn't read (`joined`).
 - Files dropped on a box, pasted into it or picked with "Attach" (`⌘⇧A`), ten on their way into a
   box at a time, are attached (`window/uploads.ts`): each goes in at the cursor at once as a
   placeholder, the background process checks it and takes its metadata out (`comments.prepare`) from

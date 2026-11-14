@@ -1,7 +1,7 @@
 // The comments' jobs in the background process: a post's text as Lo's tree, from GitHub's rendering
-// of it once main has read that, and from its Markdown until then, so text is never blank; and a
-// file attached to a comment, checked and with its metadata taken out, as it's uploaded. Nothing
-// here calls Node or Electron.
+// of it once main has read that, and from its Markdown until then, so text is never blank; comments'
+// openings as one line of plain text; and a file attached to a comment, checked and with its
+// metadata taken out, as it's uploaded. Nothing here calls Node or Electron.
 
 import type { Metadata } from '@lo/github';
 import { DEFAULT_LIMITS, type Tree } from '@lo/markdown';
@@ -43,6 +43,24 @@ export const renderInput = z.strictObject({
 });
 export type RenderInput = z.output<typeof renderInput>;
 
+/** The longest an excerpt of a comment is, in characters, its ellipsis included. */
+export const EXCERPT = 120;
+
+/**
+ * How much of a comment's Markdown its excerpt is read from, in characters: far more than the few
+ * words an excerpt holds, so a long comment costs no more than a short one.
+ */
+export const EXCERPT_SOURCE = 1_000;
+
+/** The most comments one `comments.excerpts` reads. */
+export const EXCERPTS_AN_ASK = 500;
+
+/** What `comments.excerpts` takes: the opening of comments' Markdown. */
+export const excerptsInput = z.strictObject({
+  bodies: z.array(z.string().max(EXCERPT_SOURCE)).max(EXCERPTS_AN_ASK),
+});
+export type ExcerptsInput = z.output<typeof excerptsInput>;
+
 /** A post's tree, and whether it holds an image, whose address GitHub signs for a few minutes. */
 export interface Rendered {
   tree: Tree;
@@ -81,6 +99,11 @@ export type Prepared =
 export const contract = defineJobs('comments', {
   /** A post's text as Lo's tree: from its HTML when given, else from its Markdown. */
   render: { input: renderInput, reply: reply<Rendered>() },
+  /**
+   * Each comment's opening as one line of plain text, for a collapsed thread and the threads panel:
+   * its words, with none of its Markdown's syntax, in the order of `bodies`.
+   */
+  excerpts: { input: excerptsInput, reply: reply<string[]>() },
   /**
    * A file to attach, checked as GitHub takes it, by its name, its bytes and their size, with its
    * metadata taken out.
