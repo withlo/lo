@@ -72,21 +72,22 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Copy and open
 
-| Action                         | Keys                              | Where                                                               | Command                 |
-| ------------------------------ | --------------------------------- | ------------------------------------------------------------------- | ----------------------- |
-| Copy the sign-in code          | `y y`                             | In `dialog`                                                         | `accounts.copyCode`     |
-| Whole file at the cursor       | `g f`                             | In `diff`; in code views, only in normal mode                       | `diff.wholeFile`        |
-| Copy the lines                 | `y y`                             | In `diff` and `file`; in code views, only in normal and visual mode | `diff.copyLines`        |
-| Copy the line's link           | `y l`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyLink`         |
-| Copy path                      | `y p`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyPath`         |
-| Open on GitHub                 | `g x`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.openOnGithub`     |
-| Overview note                  | None: in its menu and the palette | In `diff`; in code views, only in normal mode                       | `diff.overviewNote`     |
-| Open on GitHub                 | `g x`                             | In `stack`                                                          | `stacks.openOnGithub`   |
-| See the older events on GitHub | None: in its menu and the palette | In `timeline`                                                       | `timeline.seeOlder`     |
-| Open on GitHub                 | `g x`                             | In `timeline`                                                       | `timeline.openOnGithub` |
-| Whole file                     | `g f`                             | In `tree`                                                           | `tree.wholeFile`        |
-| Copy path                      | `y p`                             | In `tree`                                                           | `tree.copyPath`         |
-| Open on GitHub                 | `g x`                             | In `tree`                                                           | `tree.openOnGithub`     |
+| Action                                    | Keys                              | Where                                                               | Command                       |
+| ----------------------------------------- | --------------------------------- | ------------------------------------------------------------------- | ----------------------------- |
+| Copy the sign-in code                     | `y y`                             | In `dialog`                                                         | `accounts.copyCode`           |
+| Whole file at the cursor                  | `g f`                             | In `diff`; in code views, only in normal mode                       | `diff.wholeFile`              |
+| Copy the lines                            | `y y`                             | In `diff` and `file`; in code views, only in normal and visual mode | `diff.copyLines`              |
+| Copy the line's link                      | `y l`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyLink`               |
+| Copy path                                 | `y p`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.copyPath`               |
+| Open on GitHub                            | `g x`                             | In `diff` and `file`; in code views, only in normal mode            | `diff.openOnGithub`           |
+| Overview note                             | None: in its menu and the palette | In `diff`; in code views, only in normal mode                       | `diff.overviewNote`           |
+| Copy the overview skill’s install command | `y c`                             | In `settings`                                                       | `overview.copyInstallCommand` |
+| Open on GitHub                            | `g x`                             | In `stack`                                                          | `stacks.openOnGithub`         |
+| See the older events on GitHub            | None: in its menu and the palette | In `timeline`                                                       | `timeline.seeOlder`           |
+| Open on GitHub                            | `g x`                             | In `timeline`                                                       | `timeline.openOnGithub`       |
+| Whole file                                | `g f`                             | In `tree`                                                           | `tree.wholeFile`              |
+| Copy path                                 | `y p`                             | In `tree`                                                           | `tree.copyPath`               |
+| Open on GitHub                            | `g x`                             | In `tree`                                                           | `tree.openOnGithub`           |
 
 ## Review
 

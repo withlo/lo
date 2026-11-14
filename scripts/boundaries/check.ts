@@ -153,7 +153,8 @@ const loaderFiles = new Set([
   'apps/desktop/e2e/app.ts',
   // Counts the cores in the app's main process.
   'apps/desktop/e2e/background.spec.ts',
-  // Finds the fonts' license files, to ship beside the window's files.
+  // Finds the fonts' license files, to ship beside the window's files, and the overview checker's
+  // manifest, for its version.
   'apps/desktop/electron.vite.config.ts',
   // Loads node:sqlite, which an older Node doesn't have.
   'apps/desktop/src/main/database.ts',

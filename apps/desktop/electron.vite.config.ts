@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, posix } from 'node:path';
 
@@ -8,6 +8,26 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import type { Plugin } from 'vite';
+import { z } from 'zod';
+
+/**
+ * The overview checker Lo builds in, as `@withlo/overview@<version>`: the skill Lo installs runs the
+ * checker by that exact version, and Settings shows the command that installs the same skill from a
+ * terminal. The package doesn't export its manifest, and exporting it would change the package,
+ * which takes a release, so the manifest is found above the module the package does export.
+ * vitest.config.ts defines it for the tests too.
+ */
+export const OVERVIEW_CHECKER = ((): string => {
+  let folder = dirname(createRequire(import.meta.url).resolve('@withlo/overview/install'));
+  while (!existsSync(join(folder, 'package.json'))) {
+    if (dirname(folder) === folder) throw new Error("@withlo/overview's package.json is missing.");
+    folder = dirname(folder);
+  }
+  const manifest = z
+    .object({ name: z.string(), version: z.string() })
+    .parse(JSON.parse(readFileSync(join(folder, 'package.json'), 'utf8')));
+  return `${manifest.name}@${manifest.version}`;
+})();
 
 /** The fonts' licenses, shipped beside the window's files as the SIL Open Font License asks. */
 function fontLicenses(): Plugin {
@@ -99,6 +119,7 @@ export default defineConfig({
   renderer: {
     root: 'src/window',
     plugins: [react(), tailwindcss(), fontLicenses()],
+    define: { LO_OVERVIEW_CHECKER: JSON.stringify(OVERVIEW_CHECKER) },
     build: {
       outDir: 'dist/window',
       rolldownOptions: {
