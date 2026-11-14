@@ -67,10 +67,11 @@ export function prepareFile({ name, bytes }: PrepareInput): Prepared {
 
 /**
  * A comment's opening as one line of plain text, as `comments.excerpts` makes it: its words, none
- * of its Markdown's syntax, and a long one cut short with an ellipsis.
+ * of its Markdown's syntax or raw HTML's tags, and a long one cut short with an ellipsis. All of
+ * it is read before it's cut, so no half of a link or an image is left in it.
  */
 export function excerptFrom(markdown: string): string {
-  const text = plainText(markdownTree(markdown), EXCERPT + 1);
+  const text = plainText(markdownTree(markdown), Infinity, { html: true });
   if (text.length <= EXCERPT) return text;
   let end = EXCERPT - 1;
   // Never half of a character a surrogate pair makes.

@@ -126,6 +126,7 @@ export default defineFeature(contract, {
       drafts: kept,
       publish: (view) => publish('drafts', view),
       publishActs: (view) => publish('acts', view),
+      publishJoined: (view) => publish('joined', view),
       async unchanged(id, from, to, path) {
         const repo = await service.clone(id);
         if (!repo) return false;

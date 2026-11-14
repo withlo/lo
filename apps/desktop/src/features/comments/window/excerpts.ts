@@ -1,11 +1,12 @@
 // What a comment's opening says as one line of plain text, for a thread's collapsed line and the
 // threads panel's rows: its Markdown read by the background process, a batch at a time, and kept in
 // the window's memory under the Markdown it was read from, so a comment drawn again needn't wait. A
-// comment shows no words until they're read, and its Markdown's syntax is never shown instead.
+// comment shows no words until they're read, and its Markdown's syntax is never shown instead. What
+// lists many, as the panel, waits for them (`ready`) rather than draw rows without them.
 
 import { useEffect, useSyncExternalStore } from 'react';
 
-import { EXCERPT_SOURCE, EXCERPTS_AN_ASK } from '../jobs.ts';
+import { EXCERPTS_AN_ASK, EXCERPTS_CHARACTERS } from '../jobs.ts';
 import { commentsJobs } from './main.ts';
 
 /** How many openings the window keeps: the longest kept go first. */
@@ -21,11 +22,6 @@ export interface ExcerptStoreOptions {
   readonly log?: ((line: string) => void) | undefined;
 }
 
-/** The part of a comment's Markdown its opening is read from. */
-function sourceOf(markdown: string): string {
-  return markdown.slice(0, EXCERPT_SOURCE);
-}
-
 export class ExcerptStore {
   readonly #read: Read;
   readonly #later: (run: () => void) => () => void;
@@ -34,10 +30,14 @@ export class ExcerptStore {
   readonly #held = new Map<string, string>();
   /** The Markdown to read at the next ask. */
   readonly #wanted = new Set<string>();
+  /** The Markdown being read now, which wanting again doesn't ask for a second time. */
+  readonly #flying = new Set<string>();
+  /** What waits for openings, with those it still waits for. */
+  readonly #waiting = new Set<{ readonly sources: Set<string>; readonly done: () => void }>();
   readonly #listeners = new Set<() => void>();
   #version = 0;
   #asking = false;
-  #waiting: (() => void) | undefined;
+  #scheduled: (() => void) | undefined;
 
   constructor({ read, later, log }: ExcerptStoreOptions) {
     this.#read = read;
@@ -57,23 +57,48 @@ export class ExcerptStore {
 
   /** The opening of `markdown` as one line of plain text, or nothing while it's still being read. */
   of(markdown: string): string {
-    return this.#held.get(sourceOf(markdown)) ?? '';
+    return this.#held.get(markdown) ?? '';
+  }
+
+  /** Whether `markdown` has an opening still to read: one with no words has none. */
+  #needs(markdown: string): boolean {
+    return markdown.trim() !== '' && !this.#held.has(markdown);
+  }
+
+  /** Whether the openings of all of `bodies` are read, or have nothing to read. */
+  holds(bodies: Iterable<string>): boolean {
+    for (const body of bodies) if (this.#needs(body)) return false;
+    return true;
   }
 
   /**
-   * Reads the openings of `bodies` soon, but those held or already wanted. Those that go together,
-   * as a view's threads do, go in one ask, five hundred at most, and then the rest. An ask that
-   * fails is given up, and a comment wanted again is asked for again.
+   * Reads the openings of `bodies` soon, but those held, already wanted or being read now. Those
+   * that go together, as a view's threads do, go in one ask, five hundred comments or a megabyte of
+   * Markdown at most, and then the rest. An ask that fails is given up, and a comment wanted again
+   * is asked for again.
    */
   want(bodies: Iterable<string>): void {
     let added = false;
     for (const body of bodies) {
-      const source = sourceOf(body);
-      if (source.trim() === '' || this.#held.has(source) || this.#wanted.has(source)) continue;
-      this.#wanted.add(source);
+      if (!this.#needs(body) || this.#wanted.has(body) || this.#flying.has(body)) continue;
+      this.#wanted.add(body);
       added = true;
     }
     if (added) this.#schedule();
+  }
+
+  /**
+   * Reads the openings of `bodies`, and settles once each is read, or its ask failed and was given
+   * up, so what waits for them is never held back for good. Settled at once when they're held.
+   */
+  ready(bodies: Iterable<string>): Promise<void> {
+    const sources = new Set<string>();
+    for (const body of bodies) if (this.#needs(body)) sources.add(body);
+    if (sources.size === 0) return Promise.resolve();
+    this.want(sources);
+    return new Promise((resolve) => {
+      this.#waiting.add({ sources, done: resolve });
+    });
   }
 
   /** Calls `listener` each time an opening is read, until the returned function. */
@@ -85,18 +110,34 @@ export class ExcerptStore {
   }
 
   #schedule(): void {
-    if (this.#asking || this.#waiting) return;
-    this.#waiting = this.#later(() => {
-      this.#waiting = undefined;
+    if (this.#asking || this.#scheduled) return;
+    this.#scheduled = this.#later(() => {
+      this.#scheduled = undefined;
       void this.#ask();
     });
+  }
+
+  /** The next ask: what's wanted, as many as one ask reads, at least one. */
+  #batch(): string[] {
+    const batch: string[] = [];
+    let characters = 0;
+    for (const source of this.#wanted) {
+      if (batch.length >= EXCERPTS_AN_ASK) break;
+      if (batch.length > 0 && characters + source.length > EXCERPTS_CHARACTERS) break;
+      batch.push(source);
+      characters += source.length;
+    }
+    return batch;
   }
 
   async #ask(): Promise<void> {
     if (this.#asking || this.#wanted.size === 0) return;
     this.#asking = true;
-    const batch = [...this.#wanted].slice(0, EXCERPTS_AN_ASK);
-    for (const source of batch) this.#wanted.delete(source);
+    const batch = this.#batch();
+    for (const source of batch) {
+      this.#wanted.delete(source);
+      this.#flying.add(source);
+    }
     try {
       const lines = await this.#read(batch);
       batch.forEach((source, index) => this.#keep(source, lines[index] ?? ''));
@@ -107,8 +148,24 @@ export class ExcerptStore {
         `Lo couldn't read comments' openings: ${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
+      for (const source of batch) this.#flying.delete(source);
       this.#asking = false;
+      this.#settle();
       if (this.#wanted.size > 0) this.#schedule();
+    }
+  }
+
+  /** Lets go what waited for openings that are read now, or that won't be. */
+  #settle(): void {
+    for (const waiter of this.#waiting) {
+      for (const source of waiter.sources) {
+        if (this.#held.has(source) || !(this.#wanted.has(source) || this.#flying.has(source))) {
+          waiter.sources.delete(source);
+        }
+      }
+      if (waiter.sources.size > 0) continue;
+      this.#waiting.delete(waiter);
+      waiter.done();
     }
   }
 

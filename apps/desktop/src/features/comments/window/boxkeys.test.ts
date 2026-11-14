@@ -163,10 +163,20 @@ describe('the keys the box’s editor runs', () => {
     expect(flagged.toSorted()).toEqual([...named, 'close'].toSorted());
   });
 
-  test('the registry holds none of them, held or after another key', () => {
+  test('the registry leaves each one alone held down, and straight after another key', () => {
     for (const name of [...named, 'close' as const]) {
-      press(eventOf(name));
+      seen.length = 0;
+      const event = eventOf(name);
+      // A key pressed first, as a modifier is before the key it goes with, and the key itself.
+      press({ key: 'Shift', shiftKey: true, bubbles: true, cancelable: true });
+      press(event);
       expect(registry.isPending()).toBe(false);
+      // Then held down, as the system repeats it.
+      press({ ...event, repeat: true });
+      press({ ...event, repeat: true });
+      expect(registry.isPending()).toBe(false);
+      expect(seen.map((each) => each.key)).toEqual(['Shift', event.key, event.key, event.key]);
+      expect(seen.every((each) => !each.prevented)).toBe(true);
     }
   });
 });

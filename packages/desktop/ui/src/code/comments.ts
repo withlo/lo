@@ -41,6 +41,9 @@ import {
 import type { Side } from './layout.ts';
 import type { BoxHost } from './widgets.ts';
 
+/** The scope of the box's own keys, `⌘⏎`, `⌥⏎`, `⌘⇧V` and `⌘⇧A`, which its editor runs first. */
+const BOX_KEYS = 'box-keys';
+
 /** Where a box is: under a file's line on one side, by the file's index. */
 export interface BoxPlace {
   file: number;
@@ -152,8 +155,14 @@ export class CommentBox implements BoxHost, KeySource {
               shift: (view) => (vimMode(view) === 'insert' ? indentLess(view) : true),
               preventDefault: true,
             },
-            { key: 'Mod-Enter', run: send('review') },
-            { key: 'Alt-Enter', run: send('now') },
+          ]),
+        ),
+        // The box's own keys, which the keymap file's `vim` lines can't take: its keys run before
+        // Vim's, which a keymap's own handler, at the default precedence, would follow.
+        Prec.highest(
+          keymap.of([
+            { key: 'Mod-Enter', run: send('review'), scope: BOX_KEYS },
+            { key: 'Alt-Enter', run: send('now'), scope: BOX_KEYS },
             {
               key: 'Mod-Shift-v',
               run: () => {
@@ -161,6 +170,7 @@ export class CommentBox implements BoxHost, KeySource {
                 on.preview?.(this.#previewing);
                 return true;
               },
+              scope: BOX_KEYS,
             },
             {
               key: 'Mod-Shift-a',
@@ -168,12 +178,14 @@ export class CommentBox implements BoxHost, KeySource {
                 on.attach?.();
                 return true;
               },
+              scope: BOX_KEYS,
             },
           ]),
         ),
         Prec.highest(
           EditorView.domEventHandlers({
             keydown: (event, view) => {
+              if (runScopeHandlers(view, event, BOX_KEYS)) return true;
               if (event.key !== 'Escape' || !idle(view)) return false;
               event.preventDefault();
               this.#escape(this);
@@ -395,7 +407,10 @@ export class CommentBox implements BoxHost, KeySource {
     if (event.defaultPrevented || !(target instanceof Node) || this.view.dom.contains(target)) {
       return;
     }
-    if (runScopeHandlers(this.view, event, 'editor')) {
+    if (
+      runScopeHandlers(this.view, event, 'editor') ||
+      runScopeHandlers(this.view, event, BOX_KEYS)
+    ) {
       event.preventDefault();
       return;
     }

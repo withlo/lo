@@ -44,6 +44,7 @@ import {
   restoreBlock,
   saveAll,
   takeDrafts,
+  takeJoined,
   takeOffer,
 } from './boxes.ts';
 import { DeleteDialog } from './DeleteDialog.tsx';
@@ -207,6 +208,7 @@ export default {
       keepUploadsOf(kept);
     });
     main().subscribe('drafts', takeDrafts);
+    main().subscribe('joined', takeJoined);
     main().subscribe('uploads', takeProgress);
     frameWith(frameOf);
     onDiffDrawn((view) => {

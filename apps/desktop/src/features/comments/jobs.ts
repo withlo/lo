@@ -46,19 +46,24 @@ export type RenderInput = z.output<typeof renderInput>;
 /** The longest an excerpt of a comment is, in characters, its ellipsis included. */
 export const EXCERPT = 120;
 
-/**
- * How much of a comment's Markdown its excerpt is read from, in characters: far more than the few
- * words an excerpt holds, so a long comment costs no more than a short one.
- */
-export const EXCERPT_SOURCE = 1_000;
-
 /** The most comments one `comments.excerpts` reads. */
 export const EXCERPTS_AN_ASK = 500;
 
-/** What `comments.excerpts` takes: the opening of comments' Markdown. */
-export const excerptsInput = z.strictObject({
-  bodies: z.array(z.string().max(EXCERPT_SOURCE)).max(EXCERPTS_AN_ASK),
-});
+/** The most characters of Markdown, all comments' together, one `comments.excerpts` reads. */
+export const EXCERPTS_CHARACTERS = 1_048_576;
+
+/**
+ * What `comments.excerpts` takes: comments' Markdown, each read in full, since cutting it first
+ * could leave half a link or an image to show.
+ */
+export const excerptsInput = z
+  .strictObject({
+    bodies: z.array(z.string().max(MARKDOWN_LIMIT)).max(EXCERPTS_AN_ASK),
+  })
+  .refine(
+    ({ bodies }) => bodies.reduce((all, body) => all + body.length, 0) <= EXCERPTS_CHARACTERS,
+    'That is more Markdown than one ask reads.',
+  );
 export type ExcerptsInput = z.output<typeof excerptsInput>;
 
 /** A post's tree, and whether it holds an image, whose address GitHub signs for a few minutes. */

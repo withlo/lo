@@ -67,6 +67,7 @@ import type {
   DraftRow,
   DraftsView,
   EditPlaceRow,
+  JoinedView,
   SendOutcome,
   SendRefusal,
   Sending,
@@ -112,6 +113,11 @@ export interface WriterOptions {
   readonly publish: (view: DraftsView) => void;
   /** Tells a view how the changes asked of its pull request stand. */
   readonly publishActs?: (view: ActsView) => void;
+  /**
+   * Tells a view that a comment sent to post at once, whose answer was lost, was found in your
+   * pending review, as its answer would have said.
+   */
+  readonly publishJoined?: (view: JoinedView) => void;
   /**
    * Whether the file at `path` is the same at commits `from` and `to` in view `id`'s local copy,
    * so a draft on its lines at the one can move to the other.
@@ -242,11 +248,31 @@ function threadOn(thread: ThreadRow, place: DraftPlaceRow): boolean {
 }
 
 /**
- * Whether `threads` hold the comment `login` sent as `sent` at `place`, at `sentAt`: a thread on
- * its file and lines, or on the file as it is, or the thread replied to, with a comment of
- * `login`'s whose text is the same, made no earlier than it was sent, give or take
- * {@link CLOCK_SLACK}.
+ * The comment `login` sent as `sent` at `place`, at `sentAt`, if `threads` hold it: in a thread on
+ * its file and lines, or on the file as it is, or the thread replied to, a comment of `login`'s
+ * whose text is the same, made no earlier than it was sent, give or take {@link CLOCK_SLACK}.
  */
+export function findComment(
+  threads: readonly ThreadRow[],
+  login: string,
+  place: DraftPlaceRow,
+  sent: string,
+  sentAt: number,
+): ThreadCommentRow | undefined {
+  for (const thread of threads) {
+    if (!threadOn(thread, place)) continue;
+    const found = thread.comments.find(
+      (comment) =>
+        sameLogin(comment.author, login) &&
+        Date.parse(comment.createdAt) >= sentAt - CLOCK_SLACK &&
+        sameCommentText(comment.body, sent),
+    );
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** Whether `threads` hold the comment `login` sent as `sent` at `place`, as {@link findComment}. */
 export function holdsComment(
   threads: readonly ThreadRow[],
   login: string,
@@ -254,16 +280,7 @@ export function holdsComment(
   sent: string,
   sentAt: number,
 ): boolean {
-  return threads.some(
-    (thread) =>
-      threadOn(thread, place) &&
-      thread.comments.some(
-        (comment) =>
-          sameLogin(comment.author, login) &&
-          Date.parse(comment.createdAt) >= sentAt - CLOCK_SLACK &&
-          sameCommentText(comment.body, sent),
-      ),
-  );
+  return findComment(threads, login, place, sent, sentAt) !== undefined;
 }
 
 /** The threads `poller` last read of `pull`, by id: nothing when it hasn't read them. */
@@ -746,7 +763,7 @@ export class Writer {
         sent = await poller.sendReview(pull, write);
       } catch (error) {
         if (!(error instanceof GithubError) || !error.mayHavePosted()) throw error;
-        this.#lost(target, key, place, text, sentAt);
+        this.#lost(target, key, place, text, sentAt, how);
         return { kind: 'lost' };
       } finally {
         this.#written.add(pull.key);
@@ -1003,6 +1020,23 @@ export class Writer {
     return this.#targetOf(id) ?? { kind: 'refused', refusal: { kind: 'signIn' } };
   }
 
+  /** Tells each view of `target` that the comment at `place` joined your pending review. */
+  #joined(target: Target, place: DraftPlaceRow): void {
+    const publish = this.#options.publishJoined;
+    if (this.#stopped || !publish) return;
+    for (const id of this.#views) {
+      const other = this.#targetOf(id);
+      if (!other || !sameLogin(other.login, target.login) || !other.pull.equals(target.pull)) {
+        continue;
+      }
+      try {
+        publish({ id, place });
+      } catch (error) {
+        this.#options.log(`telling a comment joined your pending review: ${describe(error)}`);
+      }
+    }
+  }
+
   #publishActs(id: string): void {
     const publish = this.#options.publishActs;
     if (this.#stopped || !publish) return;
@@ -1106,7 +1140,8 @@ export class Writer {
    * the draft stays marked sent, and is `checking` until Lo knows. Once the wait after it was sent
    * has passed, Lo reads the threads afresh, then, and looks for it, or for an edit, reads the
    * comment. When the read can't be made, as while offline, it stays `checking` and Lo tries again
-   * in a while.
+   * in a while. A comment sent `how` to post at once that's found in your pending review says so, as
+   * its answer would have; one marked sent before Lo started has no `how`, and says nothing.
    */
   #lost(
     target: Target,
@@ -1114,6 +1149,7 @@ export class Writer {
     place: DraftPlaceRow,
     text: string,
     sentAt: number | null,
+    how?: 'review' | 'now',
   ): void {
     const { login, pull } = target;
     const at = sentAt ?? this.#now();
@@ -1181,10 +1217,10 @@ export class Writer {
       if (!still()) return undefined;
       // When it was sent, by GitHub's clock.
       const sentThere = at + (read.ahead ?? 0);
-      const holds = holdsComment(threadRows(read.list), login, place, text, sentThere);
+      const found = findComment(threadRows(read.list), login, place, text, sentThere);
       // Not found where GitHub left threads out: it may be among them.
-      if (read.list.missing > 0 && !holds) return 'again';
-      this.#look(target, key, place, text, holds);
+      if (read.list.missing > 0 && !found) return 'again';
+      this.#look(target, key, place, text, found, how);
       return undefined;
     };
     this.#lookAfter(login, at, still, look, unknown);
@@ -1267,14 +1303,24 @@ export class Writer {
   }
 
   /**
-   * Settles the comment sent as `sent` at `place` by whether a fresh read `holds` it: found, as
-   * {@link Writer.#posted}; otherwise it didn't post.
+   * Settles the comment sent as `sent` at `place` by whether a fresh read `found` it: found, as
+   * {@link Writer.#posted}, and said to have joined your pending review if it was sent to post at
+   * once and is a pending comment; otherwise it didn't post.
    */
-  #look(target: Target, key: string, place: DraftPlaceRow, sent: string, holds: boolean): void {
+  #look(
+    target: Target,
+    key: string,
+    place: DraftPlaceRow,
+    sent: string,
+    found: ThreadCommentRow | undefined,
+    how: 'review' | 'now' | undefined,
+  ): void {
     const { login, pull } = target;
     const kept = this.#options.drafts.get(login, pull, place);
     if (!kept) return;
-    if (holds) {
+    if (found) {
+      // Before the draft goes, so the box that sent it is there to say so.
+      if (how === 'now' && found.state === 'PENDING') this.#joined(target, place);
       this.#posted(target, key, place, sent);
       return;
     }

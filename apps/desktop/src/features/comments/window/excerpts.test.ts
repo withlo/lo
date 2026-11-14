@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { EXCERPT_SOURCE, EXCERPTS_AN_ASK } from '../jobs.ts';
+import { EXCERPTS_AN_ASK, EXCERPTS_CHARACTERS, MARKDOWN_LIMIT } from '../jobs.ts';
 import { ExcerptStore, KEPT } from './excerpts.ts';
 
 /** A store whose asks run when a test says, and the asks it made. */
@@ -35,6 +35,9 @@ function storeOf(read: (bodies: string[]) => Promise<readonly string[]>) {
 const words = (bodies: string[]): Promise<readonly string[]> =>
   Promise.resolve(bodies.map((body) => body.replaceAll('**', '')));
 
+/** A comment as long as one may be, made of `letter`. */
+const big = (letter: string) => letter.repeat(MARKDOWN_LIMIT);
+
 describe('ExcerptStore', () => {
   it('shows nothing of a comment until its opening is read, then its words', async () => {
     const { store, tick } = storeOf(words);
@@ -59,13 +62,27 @@ describe('ExcerptStore', () => {
     expect(store.of('')).toBe('');
   });
 
-  it('reads only the opening of a long comment, and holds it under that', async () => {
+  it('reads a long comment in full, never cut before its words are read', async () => {
     const { store, asks, tick } = storeOf(words);
-    const long = `${'x'.repeat(EXCERPT_SOURCE)}tail`;
+    const long = `${'x'.repeat(5_000)} tail`;
     store.want([long]);
     await tick();
-    expect(asks).toEqual([['x'.repeat(EXCERPT_SOURCE)]]);
-    expect(store.of(`${'x'.repeat(EXCERPT_SOURCE)}another tail`)).toBe('x'.repeat(EXCERPT_SOURCE));
+    expect(asks).toEqual([[long]]);
+    expect(store.of(long)).toBe(long);
+    // One that differs after its first thousand characters is another comment.
+    expect(store.of(`${'x'.repeat(5_000)} other tail`)).toBe('');
+  });
+
+  it('asks for no more Markdown at once than one ask reads, then for the rest', async () => {
+    const { store, asks, tick } = storeOf(words);
+    const bodies = ['a', 'b', 'c', 'd', 'e'].map(big);
+    expect(MARKDOWN_LIMIT * 4).toBe(EXCERPTS_CHARACTERS);
+    store.want(bodies);
+    await tick();
+    expect(asks.map((each) => each.length)).toEqual([4]);
+    await tick();
+    expect(asks.map((each) => each.length)).toEqual([4, 1]);
+    expect(store.holds(bodies)).toBe(true);
   });
 
   it('asks for no more than it may at once, then for the rest', async () => {
@@ -111,5 +128,80 @@ describe('ExcerptStore', () => {
     expect(store.of(`new ${KEPT / EXCERPTS_AN_ASK - 1} 0`)).toBe(
       `new ${KEPT / EXCERPTS_AN_ASK - 1} 0`,
     );
+  });
+
+  it('joins the ask in flight for a comment wanted again, and asks for no second', async () => {
+    const answers: (() => void)[] = [];
+    const { store, asks, tick } = storeOf(
+      (bodies) =>
+        new Promise((resolve) => {
+          answers.push(() => resolve(bodies));
+        }),
+    );
+    store.want(['one', 'two']);
+    await tick();
+    expect(asks).toEqual([['one', 'two']]);
+    // Wanted again, with another, while it's read.
+    store.want(['one', 'three']);
+    await tick();
+    expect(asks).toEqual([['one', 'two']]);
+    answers.shift()?.();
+    await tick();
+    // Then only the new one, and not the ones read.
+    await tick();
+    expect(asks).toEqual([['one', 'two'], ['three']]);
+    answers.shift()?.();
+    await tick();
+    expect(store.holds(['one', 'two', 'three'])).toBe(true);
+  });
+
+  describe('ready', () => {
+    it('settles at once for openings it holds or that have no words', async () => {
+      const { store, asks, tick } = storeOf(words);
+      await store.ready(['', ' ']);
+      store.want(['one']);
+      await tick();
+      await store.ready(['one']);
+      expect(asks).toEqual([['one']]);
+      expect(store.holds(['one', ''])).toBe(true);
+      expect(store.holds(['two'])).toBe(false);
+    });
+
+    it('asks for what it waits for, and settles once all are read', async () => {
+      const { store, asks, tick } = storeOf(words);
+      let settled = false;
+      const waiting = store.ready(['one', 'two']).then(() => {
+        settled = true;
+      });
+      expect(store.of('one')).toBe('');
+      expect(settled).toBe(false);
+      await tick();
+      await waiting;
+      expect(asks).toEqual([['one', 'two']]);
+      expect(store.of('two')).toBe('two');
+    });
+
+    it('waits for an ask in flight rather than ask again, and settles when it fails, which is given up', async () => {
+      let answer: (() => void) | undefined;
+      const { store, asks, tick } = storeOf(
+        () =>
+          new Promise((_, reject) => {
+            answer = () => reject(new Error('The process stopped.'));
+          }),
+      );
+      store.want(['one']);
+      await tick();
+      let settled = false;
+      const waiting = store.ready(['one']).then(() => {
+        settled = true;
+      });
+      await tick();
+      expect(settled).toBe(false);
+      expect(asks).toHaveLength(1);
+      answer?.();
+      await tick();
+      await waiting;
+      expect(store.of('one')).toBe('');
+    });
   });
 });

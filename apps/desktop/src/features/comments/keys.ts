@@ -10,13 +10,15 @@
 // the code is read-only.
 // A line GitHub takes no comment on says so, and then `⏎` comments on its file instead; anywhere
 // else `⏎` is Vim's. The box's own keys, in the Comment box group, are the box's editor's: `⌘⏎` adds
-// the comment to your review (in the pull request's own box, which joins no review, it posts it)
-// and `⌥⏎` posts it now, `⌘⇧V` shows the preview or the editor, `⌘⇧A` asks for files to attach, and
-// `Esc` leaves insert mode, then closes the box, keeping the draft. The editor runs them itself,
-// whatever box it's in, so they're declared as its own (`editor`): listed, checked for clashes, and
-// never run or offered by the registry, nor changed by the keymap file. What the buttons in a box's
-// notes do is also on its frame's right-click menu, and in the palette while focus is in the box,
-// each only where the box offers it, without a key of its own.
+// the comment to your review (in the pull request's own box, which joins no review, it posts it; in
+// an edit's box it saves it; in the review summary's it submits the review) and `⌥⏎` posts it now,
+// or replies now, `⌘⇧V` shows the preview or the editor, `⌘⇧A` asks for files to attach, and `Esc`
+// leaves insert mode, then closes the box, keeping the draft. `Esc` closes it at once from the
+// box's preview or its frame. The editor runs them itself, whatever box it's in, so they're
+// declared as its own (`editor`): listed, checked for clashes, and never run or offered by the
+// registry, nor changed by the keymap file. What the buttons in a box's notes do is also on its
+// frame's right-click menu, and in the palette while focus is in the box, each only where the box
+// offers it, without a key of its own.
 //
 // In the threads panel, the `threads` scope: `j` and `k` move between its threads, `⏎` shows the
 // one the keyboard is on in the diff, and `f` steps through what it lists: the unresolved threads,
@@ -215,9 +217,12 @@ export default defineCommands(
       editor: true,
       when: box,
     },
-    /** In the box's editor: posts the comment now, or the reply, outside your pending review. */
+    /**
+     * In the box's editor: posts the comment now, or the reply, outside your pending review. In the
+     * pull request's own box it posts the comment, and in an edit's box saves it, as `⌘⏎` does.
+     */
     postNow: {
-      label: 'Comment now',
+      label: 'Comment or reply now',
       group: 'Comment box',
       keys: ['alt+enter'],
       editor: true,
@@ -249,7 +254,8 @@ export default defineCommands(
     },
     /**
      * In normal mode, with nothing typed towards a command: closes the box, keeping the draft, as
-     * `Esc` again after leaving insert mode does.
+     * `Esc` again after leaving insert mode does. In the box's preview, or on its frame, `Esc`
+     * closes it at once, whatever mode the box was in.
      */
     close: {
       label: 'Close the box and keep the draft',

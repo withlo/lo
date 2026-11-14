@@ -204,16 +204,24 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Action                           | Keys  | Where                                                                                                  | Command                |
 | -------------------------------- | ----- | ------------------------------------------------------------------------------------------------------ | ---------------------- |
 | Add to review                    | `⌘⏎`  | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.addToReview` |
-| Comment now                      | `⌥⏎`  | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.postNow`     |
+| Comment or reply now             | `⌥⏎`  | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.postNow`     |
 | Write or preview                 | `⌘⇧V` | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.preview`     |
 | Attach files                     | `⌘⇧A` | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.attach`      |
 | Leave insert mode                | `Esc` | Vim's own key, in code views                                                                           | `comments.leaveInsert` |
 | Close the box and keep the draft | `Esc` | In `box`; in code views, only in normal mode; the editor's own key, which the keymap file can't change | `comments.close`       |
 
 The comment box's editor runs these keys itself, so Lo's key engine never does: the command palette
-and menus don't offer them, and the keymap file can't change them. A `bind` that names one, or would
-take its keys in a comment box, is reported, and an `unbind` with no command leaves them as they
-are. `Esc` leaves insert mode, which is Vim's; once in normal mode, `Esc` closes the box.
+and menus don't offer them, and neither the keymap file nor a `vim` line in it can change them. A
+`bind` that names one, or would take its keys in a comment box, is reported, and an `unbind` with no
+command leaves them as they are.
+
+`⌘⏎` adds the comment to your review in a box on a line, a file or a thread's reply. In the box for
+a comment on the pull request itself, which joins no review, it posts the comment; in a box that
+edits one of your comments it saves the edit; and in the review summary's box it submits the review.
+`⌥⏎` posts a comment, or a reply, right away, outside your pending review, and posts or saves in the
+pull request's own box and an edit's, as `⌘⏎` does. `Esc` leaves insert mode, which is Vim's; once
+in normal mode, `Esc` closes the box and keeps the draft. In the box's preview, or on its frame,
+`Esc` closes it at once, from any mode.
 
 ## Revision picker
 
@@ -409,7 +417,8 @@ A line that can't be read or applied is reported with its number, and the others
 `bind` doesn't apply when it names one of Vim's own keys or one of the comment box's (see Comment
 box), repeats a key the command already has, or would keep another command's key from running: one
 of the two being the start of the other where both apply. A `bind` that would take the comment box's
-keys there is refused too, and an `unbind` with no command leaves them as they are.
+keys there is refused too, and an `unbind` with no command leaves them as they are. A `vim` line
+can't take them either: the box's editor runs its own keys before Vim's.
 
 Lo watches the file, so a saved change applies within a second, with no restart, and key help (`?`)
 shows the new keys and the lines Lo can't use. To open the file, use the button in key help, the

@@ -118,11 +118,19 @@ describe('docs/keys.md', () => {
     expect(lines).toContain(
       "| Leave insert mode | `Esc` | Vim's own key, in code views | `comments.leave` |",
     );
-    expect(lines.join('\n')).toContain(
-      "the keymap file can't change them. A `bind` that names one, or would take its keys in a comment box, is reported",
+    const note = lines.join('\n');
+    expect(note).toContain(
+      'neither the keymap file nor a `vim` line in it can change them. A `bind` that names one, or would take its keys in a comment box, is reported',
     );
+    // What `⌘⏎` and `⌥⏎` do in each kind of box, and `Esc` in the preview.
+    expect(note).toContain("in the review summary's box it submits the review");
+    expect(note).toContain(
+      'it posts the comment; in a box that edits one of your comments it saves',
+    );
+    expect(note).toContain("In the box's preview, or on its frame, `Esc` closes it at once");
     expect(section('## Where keys apply')).not.toContain('comments.add');
     expect(doc).toContain("names one of Vim's own keys or one of the comment box's");
+    expect(doc).toContain("A `vim` line can't take them either");
     // Neither is a key over Vim's, which a keymap's `bind` could replace.
     expect(section("## Keys over Vim's").join('\n')).not.toContain('comments.');
   });

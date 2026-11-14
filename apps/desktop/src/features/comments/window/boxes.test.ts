@@ -54,6 +54,7 @@ import {
   send,
   reopenAll,
   takeDrafts,
+  takeJoined,
   takenDown,
   takeOffer,
   replying,
@@ -1044,6 +1045,28 @@ describe('sending', () => {
     expect(drawn[0]!.composer.closed).toBeUndefined();
     takeDrafts({ id: VIEW, drafts: [] });
     expect(drawn[0]!.composer.closed).toBe('close');
+  });
+
+  test('when main finds a comment sent to post at once in your pending review, the box says so', async () => {
+    await opened();
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'checking', sent: 'Ship it?' })],
+    });
+    takeJoined({ id: VIEW, place: onLines(null, 5) });
+    expect(notice()).toMatchObject({
+      title: 'Added to your pending review',
+      body: 'GitHub posts nothing else from you while you have one.',
+    });
+  });
+
+  test('a comment main says joined it that no box here sent says nothing', async () => {
+    await opened();
+    const before = notice();
+    // The box was never sent: its draft isn't marked sent. And there's none at all at the other.
+    takeJoined({ id: VIEW, place: onLines(null, 5) });
+    takeJoined({ id: VIEW, place: onLines(null, 9) });
+    expect(notice()).toBe(before);
   });
 });
 

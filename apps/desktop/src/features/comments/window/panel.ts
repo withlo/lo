@@ -31,7 +31,7 @@ import type { ThreadRow, ThreadsView } from '../contract.ts';
 import { excerptOf } from './excerpts.ts';
 import { focusedIn, nextFilter, rowKeys, stepRow, threadGroups } from './list.ts';
 import { screenOf, threadOf } from './placing.ts';
-import { held } from './threads.ts';
+import { held, listed } from './threads.ts';
 
 /** What the panel lists, the same in every tab: the unresolved threads until the reader asks. */
 export const filterStore = createStore<{ readonly filter: PanelFilter }>()(() => ({
@@ -102,7 +102,10 @@ export function viewerOf(view: string): string | undefined {
   return acting?.kind === 'account' ? acting.login : undefined;
 }
 
-/** The threads view `view`'s panel can list: none until they're read, and none in a run. */
+/**
+ * The threads a view's panel can list: none until they're read, and none in a run. `threads` are
+ * those the panel lists (`listed`): main's, once their openings are read.
+ */
 export function listable(threads: ThreadsView | undefined): readonly ThreadRow[] {
   return threads?.status === 'ready' ? threads.threads : [];
 }
@@ -110,7 +113,7 @@ export function listable(threads: ThreadsView | undefined): readonly ThreadRow[]
 /** The groups view `view`'s panel lists now, as `filter` says. */
 export function groupsIn(view: string, filter: PanelFilter): ThreadListGroup[] {
   const known = revisionsOf(view);
-  return threadGroups(listable(held.get(view).threads), {
+  return threadGroups(listable(listed.get(view)), {
     filter,
     viewer: viewerOf(view),
     order: fileOrder(view),

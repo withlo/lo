@@ -484,6 +484,76 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
   });
 });
 
+/** A threads panel row as one frame shows it. */
+interface Drawn {
+  key: string;
+  top: number;
+  height: number;
+  /** What the row says after its author: the opening of the thread's first comment. */
+  words: string;
+}
+
+/**
+ * Every frame from now in which the threads panel has rows, until a second and a half after the
+ * first one: each row's place and size, and its words.
+ */
+function framesOfRows(page: Page): Promise<Drawn[][]> {
+  return page.evaluate(
+    () =>
+      new Promise<Drawn[][]>((resolve) => {
+        const frames: Drawn[][] = [];
+        const start = performance.now();
+        let first: number | undefined;
+        const tick = (now: number) => {
+          const list = document.querySelector('[data-lo-threads] [role="listbox"]');
+          const found = [
+            ...document.querySelectorAll<HTMLElement>('[data-lo-threads] [role="option"]'),
+          ];
+          if (list && found.length > 0) {
+            first ??= now;
+            const listTop = list.getBoundingClientRect().top;
+            frames.push(
+              found.map((row) => {
+                const box = row.getBoundingClientRect();
+                const text = row.querySelector('p');
+                const author = text?.querySelector('.font-semibold')?.textContent ?? '';
+                return {
+                  key: row.dataset['key'] ?? '',
+                  top: Math.round(box.top - listTop),
+                  height: Math.round(box.height),
+                  words: (text?.textContent ?? '').slice(author.length).trim(),
+                };
+              }),
+            );
+          }
+          if ((first !== undefined && now - first > 1500) || now - start > 25_000) resolve(frames);
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
+}
+
+test('the threads panel draws each row whole, and nothing in it moves as the openings are read', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await open(page, COMMENTS_PULL.number);
+  await expect(page.locator('[data-lo-right-toggle]')).toBeVisible();
+  // Opened as the tab is, before its threads are read, so the openings are read as the rows come.
+  const sampling = framesOfRows(page);
+  await page.keyboard.press(PANEL);
+  await expect(panel(page)).toBeVisible();
+  const frames = await sampling;
+  expect(frames.length).toBeGreaterThan(5);
+  // The first frame that has rows has all of them, each with its words.
+  const [first] = frames;
+  expect(first).toHaveLength(10);
+  for (const row of first ?? []) expect(row.words, row.key).not.toBe('');
+  // And no frame after it has them anywhere else, or any other size: not one moved.
+  expect(new Set(frames.map((frame) => JSON.stringify(frame))).size).toBe(1);
+});
+
 test.describe('while the local copy is still coming', () => {
   // So r1's whole diff, which needs it, stays coming until the test lets it come.
   test.use({ lateRemote: true });

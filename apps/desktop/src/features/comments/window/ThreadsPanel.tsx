@@ -28,7 +28,7 @@ import {
   shownRows,
   useFilter,
 } from './panel.ts';
-import { catchUp, held } from './threads.ts';
+import { catchUp, held, listed } from './threads.ts';
 
 /** The first keys `id` has now, as this system shows them, if it has any. */
 function keysOf(id: string): string[] | undefined {
@@ -59,7 +59,8 @@ export function UnresolvedCount({ tab }: { tab: PullTab }): ReactNode {
 export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   useKeys();
   const view = tab.id;
-  const threads = useTabState(held, view, (value) => value.threads);
+  // What it lists is main's threads once their openings are read, so no row draws without one.
+  const threads = useTabState(listed, view);
   const filter = useFilter();
   // What the list reads, so it's drawn again when any of them changes.
   useFileOrder(view);
@@ -75,7 +76,8 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
     catchUpRevisions(view);
   }, [view]);
 
-  // The threads' openings are read in the background, and the rows draw them as they come.
+  // The openings are read as the threads come, and kept; one that's let go, as the oldest are, is
+  // read again.
   const openings = useMemo(
     () => listable(threads).flatMap((row) => (row.comments[0] ? [row.comments[0].body] : [])),
     [threads],

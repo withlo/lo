@@ -298,6 +298,14 @@ export const draftsView = z.strictObject({ id: tabId, drafts: z.array(draftRow) 
 export type DraftsView = z.output<typeof draftsView>;
 
 /**
+ * A comment sent to post at once, whose answer was lost, was found in your pending review: GitHub
+ * added it to the review, as it does a reply while you have one, and the window says so, as the
+ * answer would have. Sent once, when Lo found it.
+ */
+export const joinedView = z.strictObject({ id: tabId, place: draftPlace });
+export type JoinedView = z.output<typeof joinedView>;
+
+/**
  * A hunk of a file's patch, as comments find their lines in it: its first row on each side, from 0,
  * and its lines' kinds in order, `' '` unchanged, `-` deleted and `+` added.
  */
@@ -643,6 +651,8 @@ export const contract = defineContract('comments', {
     review: reviewView,
     /** The drafts of a view's account on its pull request, each time they change. */
     drafts: draftsView,
+    /** A comment sent to post at once, whose answer was lost, was found in your pending review. */
+    joined: joinedView,
     /** How far an upload has gone, as main's `fetch` tells, every so often while it's sent. */
     uploads: uploadProgress,
     /** How the changes asked of a view's pull request stand, each time they change. */

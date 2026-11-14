@@ -23,6 +23,13 @@ describe('renderPost', () => {
   });
 });
 
+/** An image's syntax, which says few words in many characters. */
+const image = (index: number) =>
+  `![shot ${index}](https://github.com/user-attachments/assets/${'a'.repeat(36)}) `;
+
+/** A link's syntax, with an address far longer than its words. */
+const link = (index: number) => `[link ${index}](https://example.com/${'p'.repeat(200)}) `;
+
 describe('excerptFrom', () => {
   it('is a comment’s words on one line, with none of its Markdown’s syntax', () => {
     expect(excerptFrom('Fixture C:\n  Is   doubling\nenough?')).toBe(
@@ -43,6 +50,30 @@ describe('excerptFrom', () => {
     expect(text).not.toContain('`');
     expect(text).not.toContain('suggestion');
     expect(excerptFrom('```ts\nlet x = 1;\n```')).toBe('let x = 1;');
+  });
+
+  it('shows the words of raw HTML, an image as its alt text or "image", and code as written', () => {
+    expect(
+      excerptFrom('<b>Heads up</b>: <details><summary>Stack trace</summary>\n\nat main</details>'),
+    ).toBe('Heads up: Stack trace at main');
+    expect(excerptFrom('Before <img width="9" src="a.png" alt="the chart"> after')).toBe(
+      'Before the chart after',
+    );
+    expect(excerptFrom('<img src="a.png">')).toBe('image');
+    expect(excerptFrom('Use `<div>` here.')).toBe('Use <div> here.');
+  });
+
+  it('reads all of a comment before it cuts, so no half a link or an image is left', () => {
+    // The words are far fewer than the syntax around them, and the cut falls inside the last one.
+    const text = excerptFrom(Array.from({ length: 40 }, (_, index) => image(index)).join(''));
+    expect(text.startsWith('shot 0 shot 1 shot 2')).toBe(true);
+    expect(text).toHaveLength(120);
+    expect(text.endsWith('…')).toBe(true);
+    for (const syntax of ['![', '](', 'https:', 'user-attachments'])
+      expect(text).not.toContain(syntax);
+    expect(excerptFrom(Array.from({ length: 30 }, (_, index) => link(index)).join(''))).not.toMatch(
+      /[[\]()]|https/,
+    );
   });
 
   it('says a mention as it is written, and is empty for a comment with no words', () => {
