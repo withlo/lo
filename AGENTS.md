@@ -952,9 +952,9 @@ job fails a pull request whose package differs from npm's copy of its version, i
 time, in the order they started, so every bumped version is published, and bumps merged close
 together publish in order. A version that isn't above every release npm has, as when a failed run is
 re-run after a newer bump has published, or a prerelease, goes out under the `previous` tag, so
-`latest` only moves forward. A version can't carry build metadata (`1.2.3+build`): npm drops it when
-it publishes, so the version on npm wouldn't be the one the skill runs, and CI's `overview` job and
-the workflow both refuse it.
+`latest` only moves forward. A version can't carry build metadata (`1.2.3+build`) or a leading v
+(`v1.2.3`): npm drops it when it publishes, so the version on npm wouldn't be the one the skill
+runs, and CI's `overview` job and the workflow both refuse it.
 
 Only main can publish. The publish job runs in the `npm` environment, and npm's trusted publisher
 for the package names that environment, so a branch's edited copy of the workflow can't publish as

@@ -28,7 +28,7 @@ export interface SkillStore {
   readonly installing: boolean;
   /** What went wrong when main couldn't be asked to install it, until the next install. */
   readonly said: string | undefined;
-  /** Whether the install command was copied since Settings' row for it appeared. */
+  /** Whether the install command was copied a moment ago: not since Settings' row appeared. */
   readonly copied: boolean;
 }
 
@@ -94,12 +94,25 @@ export async function installSkill(
   return results;
 }
 
-/** Puts the command that installs the skill from a terminal on the clipboard, as `yc` does. */
+/** How long the button says "Copied" after a copy, in ms. */
+export const COPIED_FOR = 3000;
+
+let forgetting: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Puts the command that installs the skill from a terminal on the clipboard, as `yc` does, and says
+ * so for a few seconds, each time. When it can't, says that in a notice.
+ */
 export async function copyInstallCommand(): Promise<void> {
+  let copied = true;
   try {
     await tabs().copy({ text: INSTALL_COMMAND });
-    skillStore.setState({ copied: true });
   } catch (error) {
     console.error("Lo couldn't copy the command that installs the overview skill:", error);
+    notify(TITLE, "Lo couldn't copy the command.");
+    copied = false;
   }
+  clearTimeout(forgetting);
+  skillStore.setState({ copied });
+  if (copied) forgetting = setTimeout(() => skillStore.setState({ copied: false }), COPIED_FOR);
 }

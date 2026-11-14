@@ -10,8 +10,9 @@ import { join } from 'node:path';
 import { install } from '@withlo/overview/install';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { IpcError } from '../../../ipc/contract.ts';
 import { notice } from '../../../window/commands/notices.tsx';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { Slot, Slots } from '../../../window/slots.tsx';
@@ -20,7 +21,7 @@ import { commandLine } from '../../open/window/shared.ts';
 import { setup } from '../../welcome/window/shared.ts';
 import type { SkillAgent, SkillResult, SkillState } from '../contract.ts';
 import feature from './index.ts';
-import { INSTALL_COMMAND, skillStore } from './skill.ts';
+import { COPIED_FOR, INSTALL_COMMAND, skillStore, TITLE } from './skill.ts';
 
 /** Both agents as main reports them, `changes` over each. */
 function state(claude: Partial<SkillAgent> = {}, codex: Partial<SkillAgent> = {}): SkillState {
@@ -143,6 +144,13 @@ function button(within: Element | null, text: string): HTMLButtonElement {
 function click(element: Element): void {
   act(() => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+}
+
+/** Lets `ms` go by, with fake timers on. */
+function advance(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms);
   });
 }
 
@@ -406,7 +414,7 @@ describe('Settings’ row for the command that installs the skill', () => {
     await settle();
     expect(commandRow()?.querySelector('.code-small')?.textContent).toBe(command);
     expect(commandRow()?.querySelector('.text-fg-muted')?.textContent).toBe(
-      `${command} installs the skill Lo does, for each agent set up where it runs.`,
+      `${command} installs the skill Lo does, for each agent set up on the computer you run it on.`,
     );
     const copy = button(commandRow() ?? null, 'Copy');
     expect([...copy.querySelectorAll('kbd')].map((each) => each.textContent)).toEqual(['y', 'c']);
@@ -422,6 +430,55 @@ describe('Settings’ row for the command that installs the skill', () => {
     expect(copies()).toEqual([{ text: command }]);
     expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
     expect(commandRow()?.querySelector('[role="status"]')?.textContent).toBe('Copied the command.');
+  });
+
+  it('goes back to "Copy" after a few seconds, and says each copy again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    main(state());
+    render();
+    await settle();
+    const status = () => commandRow()?.querySelector('[role="status"]')?.textContent;
+    click(button(commandRow() ?? null, 'Copy'));
+    await settle();
+    expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
+    expect(status()).toBe('Copied the command.');
+    // Copying again before it went back starts the time again.
+    advance(COPIED_FOR - 1000);
+    click(button(commandRow() ?? null, 'Copied'));
+    await settle();
+    advance(COPIED_FOR - 1000);
+    expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
+    advance(1000);
+    expect(button(commandRow() ?? null, 'Copy')).toBeDefined();
+    expect(status()).toBe('');
+    // So the next copy is said as the first was.
+    click(button(commandRow() ?? null, 'Copy'));
+    await settle();
+    expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
+    expect(status()).toBe('Copied the command.');
+    expect(copies()).toHaveLength(3);
+  });
+
+  it('says so when it can’t copy the command', async () => {
+    const asked = main(state());
+    render();
+    await settle();
+    click(button(commandRow() ?? null, 'Copy'));
+    await settle();
+    expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
+    answers['tab.copy'] = () => {
+      throw new IpcError('unavailable', 'The clipboard is busy.');
+    };
+    click(button(commandRow() ?? null, 'Copied'));
+    await settle();
+    expect(asked.bridge.calls.filter(([channel]) => channel === 'tab.copy')).toHaveLength(2);
+    expect(notice()).toEqual({ title: TITLE, body: "Lo couldn't copy the command." });
+    // Not "Copied", which would say the clipboard has what it doesn't.
+    expect(button(commandRow() ?? null, 'Copy')).toBeDefined();
+    expect(commandRow()?.querySelector('[role="status"]')?.textContent).toBe('');
   });
 
   it('copies it with y c, in Settings', async () => {

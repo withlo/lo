@@ -112,7 +112,10 @@ describe("publish.yml's tag", () => {
 });
 
 describe('overview-npm.sh', () => {
-  test('refuses a version with build metadata before asking npm', () => {
+  test.each([
+    ['build metadata', '0.1.2+build', 'has build metadata'],
+    ['a leading v', 'v0.1.2', 'starts with a v'],
+  ])('refuses a version with %s before asking npm', (_, version, why) => {
     const dir = folder();
     const bin = fakeCurl(dir);
     mkdirSync(join(dir, 'scripts'));
@@ -120,7 +123,7 @@ describe('overview-npm.sh', () => {
     copyFileSync(join(root, 'scripts/overview-npm.sh'), join(dir, 'scripts/overview-npm.sh'));
     writeFileSync(
       join(dir, 'skill/checker/package.json'),
-      JSON.stringify({ name: '@withlo/overview', version: '0.1.2+build' }),
+      JSON.stringify({ name: '@withlo/overview', version }),
     );
     for (const command of ['lookup', 'compare']) {
       const run = spawnSync('sh', ['scripts/overview-npm.sh', command], {
@@ -131,8 +134,8 @@ describe('overview-npm.sh', () => {
       expect(run.status).toBe(1);
       expect(run.stdout).toBe('');
       expect(run.stderr).toBe(
-        "@withlo/overview's version, 0.1.2+build, has build metadata, which npm drops when it" +
-          ' publishes.\nGive skill/checker/package.json a version without it.\n',
+        `@withlo/overview's version, ${version}, ${why}, which npm drops when it publishes.\n` +
+          'Give skill/checker/package.json a version without it.\n',
       );
     }
   });
