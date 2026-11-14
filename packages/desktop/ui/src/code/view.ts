@@ -1355,6 +1355,9 @@ class View implements DiffView {
    * top of the screen. What's above it or below it moves instead.
    */
   #keepReading(clicked: EventTarget | null, change: () => void): void {
+    // The input's own scroll comes first, as `j`'s bringing the cursor on screen, which the editor
+    // makes as it next measures: what the reader reads is where that leaves it.
+    for (const pane of this.#panes()) this.#viewOf(pane).lineBlockAtHeight(0);
     const reading = this.#reading(clicked);
     const kept = (): void => {
       this.#keptForReader = true;
