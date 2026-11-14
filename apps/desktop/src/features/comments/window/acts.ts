@@ -183,7 +183,7 @@ function refused(title: string, refusal: ActRefusal, doing: Doing): void {
  */
 export function resolve(tab: PullTab, target: ThreadKeyTarget): void {
   const row = found(tab, target, 'Resolve');
-  if (row) resolveThread(tab, row);
+  if (row) void resolveThread(tab, row);
 }
 
 /** Resolves thread `row` of tab `tab`, or unresolves it once it's resolved: `x` on it anywhere. */
@@ -396,12 +396,12 @@ export function tryAgain(tab: PullTab, row: ActRow): void {
     if (row.comment !== null) remove(tab, thread, row.comment);
     return;
   }
-  const found = threadFor(tab.id, thread);
-  if (typeof found === 'string') {
-    notify(row.change === 'resolve' ? 'Resolve' : 'Unresolve', found);
+  const now = threadFor(tab.id, thread);
+  if (typeof now === 'string') {
+    notify(row.change === 'resolve' ? 'Resolve' : 'Unresolve', now);
     return;
   }
-  // Asked again as it was, whatever the thread shows now.
-  if (found.resolved === (row.change === 'resolve')) return;
-  void resolveThread(tab, found);
+  // Asked again as it was, unless the thread shows it done now.
+  if (now.resolved === (row.change === 'resolve')) return;
+  void resolveThread(tab, now);
 }

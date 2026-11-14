@@ -7,7 +7,7 @@ import {
   type CommentId,
   GithubError,
   type PendingReviewRead,
-  PullRef,
+  type PullRef,
   type ReviewThread,
   type ReviewThreadList,
   type ReviewWrite,
@@ -36,7 +36,6 @@ const migrations = Object.fromEntries(
 );
 
 const HEAD = 'a'.repeat(40);
-const PULL = new PullRef('rozed-dev', 'e2e', 94);
 const THREAD = 'PRRT_1';
 const MINE = 'PRRC_1';
 
@@ -464,7 +463,7 @@ describe('editing', () => {
 
   test('an answer that was lost is settled by the comment’s text in a read made after', async () => {
     vi.useFakeTimers();
-    const cases: [Now | undefined, string, unknown][] = [
+    const cases: [Now | undefined, string, object[]][] = [
       [{ body: 'Mine.' }, 'gone', []],
       [{ body: 'Start higher?' }, 'not taken', [{ sending: 'notPosted', sent: null }]],
       [{ body: 'Elsewhere.' }, 'changed', [{ sending: 'changed', sent: null }]],
@@ -480,7 +479,7 @@ describe('editing', () => {
       if (now) fake.comments.set(MINE, now);
       else fake.comments.delete(MINE);
       await vi.advanceTimersByTimeAsync(10_000);
-      expect(last()).toMatchObject(drafts as object[]);
+      expect(last()).toMatchObject(drafts);
       expect(fake.sent).toHaveLength(1);
     }
   });

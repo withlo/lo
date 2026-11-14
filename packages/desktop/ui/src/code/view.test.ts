@@ -981,6 +981,11 @@ function carrying(type: string, file: File): Event {
   return Object.assign(event, { dataTransfer });
 }
 
+/** Compose options naming a box `name`. */
+function named(name: string) {
+  return { name };
+}
+
 describe('threads', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1165,7 +1170,6 @@ describe('threads', () => {
     const shown = open();
     const both = [thread('one', at('a', 'new', 4)), thread('two', at('a', 'new', 4))];
     shown.setThreads(both, plain().render);
-    const named = (name: string) => ({ name });
     const line = shown.compose(
       at('a', 'new', 4),
       'On the line',

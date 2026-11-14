@@ -39,7 +39,6 @@ import {
 import {
   afterLostEdit,
   beforeEdit,
-  changeRefusal,
   type NewComment,
   type ReviewRefusal,
   sameCommentText,
@@ -51,7 +50,6 @@ import { IpcError } from '../../../ipc/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type {
   ActOutcome,
-  ActRefusal,
   ActRow,
   ActsView,
   Change,

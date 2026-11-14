@@ -33,9 +33,10 @@ export function inThread(comment: string): CommentId {
  */
 export function commentNow(read: ReviewCommentRead): CommentNow | undefined {
   const { comment, thread } = read;
-  if (comment?.__typename !== 'PullRequestReviewComment') return undefined;
+  // Only a review comment has these, and only a review thread is resolved.
+  if (!comment || !('viewerDidAuthor' in comment)) return undefined;
   const pending = comment.state === 'PENDING';
-  const inThreadNow = thread?.__typename === 'PullRequestReviewThread' ? thread : undefined;
+  const inThreadNow = thread && 'isResolved' in thread ? thread : undefined;
   return {
     body: comment.body,
     author: comment.author?.login,

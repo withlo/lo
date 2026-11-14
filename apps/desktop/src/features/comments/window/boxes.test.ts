@@ -20,16 +20,7 @@ import type {
   SendOutcome,
   ThreadRow,
 } from '../contract.ts';
-import {
-  actNote,
-  cancelDelete,
-  confirmDelete,
-  deleteAsking,
-  edit,
-  remove,
-  reply,
-  resolve,
-} from './acts.ts';
+import * as acts from './acts.ts';
 import {
   act,
   canWrite,
@@ -46,7 +37,7 @@ import {
   type Box,
 } from './boxes.ts';
 import { landed } from './landed.ts';
-import { held, placedIn } from './threads.ts';
+import * as threads from './threads.ts';
 import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
@@ -83,7 +74,7 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
   /** The threads claimed, and those of them let go since. */
   const claimed: string[] = [];
   const released: string[] = [];
-  const opened: string[] = [];
+  const toggled: string[] = [];
   const vim = vi.fn<(keys: readonly string[]) => void>();
   const shown: DrawnDiff = {
     at: HEAD,
@@ -137,7 +128,7 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
     toTop: () => true,
     vim,
     openThread: (id) => {
-      opened.push(id);
+      toggled.push(id);
       return true;
     },
     claimThread: (id) => {
@@ -146,7 +137,7 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
     },
   };
   diff.current = writing;
-  return { drawn, writing, vim, claimed, released, opened };
+  return { drawn, writing, vim, claimed, released, toggled };
 }
 
 const answers: Record<string, (input: unknown) => unknown> = {};
@@ -520,85 +511,103 @@ describe('sending', () => {
   });
 });
 
+/** A comment of a thread main sent, by `author`. */
+function threadComment(id: string, author: string, body: string): ThreadRow['comments'][number] {
+  return {
+    id,
+    author,
+    authorType: 'User',
+    body,
+    state: 'SUBMITTED',
+    createdAt: '2026-11-13T11:00:00Z',
+    url: 'https://github.com/rozed-dev/e2e/pull/94#discussion_r1',
+    hidden: null,
+    viewerCanUpdate: author === 'rozed-bot',
+    viewerCanDelete: author === 'rozed-bot',
+  };
+}
+
+/** Thread `id` on new line `line` of src/backoff.ts, open, with rozed-bot's comment. */
+function threadRow(id: string, line: number, changes: Partial<ThreadRow> = {}): ThreadRow {
+  return {
+    id,
+    path: 'src/backoff.ts',
+    subject: 'LINE',
+    side: 'RIGHT',
+    startSide: null,
+    line,
+    startLine: null,
+    originalLine: line,
+    originalStartLine: null,
+    outdated: false,
+    resolved: false,
+    currentOn: HEAD,
+    writtenOn: HEAD,
+    comments: [threadComment(`${id}_C1`, 'rozed-bot', 'Start a little higher?\nIt waits.')],
+    viewerCanReply: true,
+    viewerCanResolve: true,
+    viewerCanUnresolve: false,
+    ...changes,
+  };
+}
+
+/** Resolving thread T2, as it stands. */
+function standing(stands: ActRow['stands']): ActRow {
+  return { thread: 'T2', comment: null, change: 'resolve', stands };
+}
+
+/** The diff, with `rows`, the threads main sent, placed in it. */
+function withThreads(...rows: ThreadRow[]) {
+  const fake = fakeDiff();
+  threads.held.set(VIEW, {
+    threads: {
+      id: VIEW,
+      status: 'ready',
+      threads: rows,
+      missing: 0,
+      compared: null,
+      problem: null,
+    },
+  });
+  threads.placedIn(VIEW, fake.writing.drawn());
+  return fake;
+}
+
 describe('acting on a thread', () => {
-  function comment(id: string, author: string, body: string): ThreadRow['comments'][number] {
-    return {
-      id,
-      author,
-      authorType: 'User',
-      body,
-      state: 'SUBMITTED',
-      createdAt: '2026-11-13T11:00:00Z',
-      url: 'https://github.com/rozed-dev/e2e/pull/94#discussion_r1',
-      hidden: null,
-      viewerCanUpdate: author === 'rozed-bot',
-      viewerCanDelete: author === 'rozed-bot',
-    };
-  }
-
-  function thread(id: string, line: number, changes: Partial<ThreadRow> = {}): ThreadRow {
-    return {
-      id,
-      path: 'src/backoff.ts',
-      subject: 'LINE',
-      side: 'RIGHT',
-      startSide: null,
-      line,
-      startLine: null,
-      originalLine: line,
-      originalStartLine: null,
-      outdated: false,
-      resolved: false,
-      currentOn: HEAD,
-      writtenOn: HEAD,
-      comments: [comment(`${id}_C1`, 'rozed-bot', 'Start a little higher?\nIt waits.')],
-      viewerCanReply: true,
-      viewerCanResolve: true,
-      viewerCanUnresolve: false,
-      ...changes,
-    };
-  }
-
-  /** The diff, with `threads` placed in it, as main sent them. */
-  function withThreads(...threads: ThreadRow[]) {
-    const fake = fakeDiff();
-    held.set(VIEW, {
-      threads: { id: VIEW, status: 'ready', threads, missing: 0, compared: null, problem: null },
-    });
-    placedIn(VIEW, fake.writing.drawn());
-    return fake;
-  }
-
   const ON_TWO = { kind: 'line', at: { file: 'f0', side: 'new', line: 2 } } as const;
   const ON_FIVE = { kind: 'line', at: { file: 'f0', side: 'new', line: 5 } } as const;
 
   test('`r` opens a reply box right after the only thread on the line, opening it first', () => {
-    const { drawn, opened } = withThreads(thread('T2', 2), thread('T5a', 5), thread('T5b', 5));
-    reply(tab(), ON_TWO);
-    expect(opened).toEqual(['T2']);
+    const { drawn, toggled } = withThreads(
+      threadRow('T2', 2),
+      threadRow('T5a', 5),
+      threadRow('T5b', 5),
+    );
+    acts.reply(tab(), ON_TWO);
+    expect(toggled).toEqual(['T2']);
     expect(drawn.map((each) => each.at)).toEqual([{ thread: 'T2' }]);
     expect(replying.get(VIEW).has('T2')).toBe(true);
     // Two threads on a line: `]t` picks one.
-    reply(tab(), ON_FIVE);
+    acts.reply(tab(), ON_FIVE);
     expect(notice()?.body).toBe('There are 2 threads here. Press ]t to pick one.');
-    reply(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 9 } });
+    acts.reply(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 9 } });
     expect(notice()?.body).toBe('There’s no thread on this line.');
     // One `]t` landed on is the one.
-    reply(tab(), { ...ON_FIVE, thread: 'T5b' });
+    acts.reply(tab(), { ...ON_FIVE, thread: 'T5b' });
     expect(drawn.map((each) => each.at)).toEqual([{ thread: 'T2' }, { thread: 'T5b' }]);
   });
 
   test('a thread GitHub takes no reply on says so', () => {
-    const { drawn } = withThreads(thread('T2', 2, { viewerCanReply: false }));
-    reply(tab(), ON_TWO);
+    const { drawn } = withThreads(threadRow('T2', 2, { viewerCanReply: false }));
+    acts.reply(tab(), ON_TWO);
     expect(drawn).toEqual([]);
     expect(notice()?.body).toBe('GitHub doesn’t let you reply to this thread.');
   });
 
   test('`x` claims the thread and resolves it; a refusal says why and lets the claim go', async () => {
-    const { claimed, released } = withThreads(thread('T2', 2));
+    const { claimed, released } = withThreads(threadRow('T2', 2));
     answers['comments.resolve'] = (): ActOutcome => ({ kind: 'done' });
-    resolve(tab(), ON_TWO);
+    acts.resolve(tab(), ON_TWO);
     await vi.waitFor(() =>
       expect(asked('comments.resolve')).toEqual([{ id: VIEW, thread: 'T2', resolved: true }]),
     );
@@ -608,32 +617,32 @@ describe('acting on a thread', () => {
       kind: 'refused',
       refusal: { kind: 'paused', until: new Date(2026, 10, 13, 14, 5).getTime() },
     });
-    resolve(tab(), ON_TWO);
+    acts.resolve(tab(), ON_TWO);
     await vi.waitFor(() => expect(released).toEqual(['T2']));
     expect(notice()?.body).toMatch(/^GitHub asked Lo to hold off until .+\. Resolve it then\.$/);
   });
 
   test('`x` where GitHub doesn’t let you, or offline, sends nothing', () => {
-    withThreads(thread('T2', 2, { viewerCanResolve: false }), thread('T5', 5));
-    resolve(tab(), ON_TWO);
+    withThreads(threadRow('T2', 2, { viewerCanResolve: false }), threadRow('T5', 5));
+    acts.resolve(tab(), ON_TWO);
     expect(notice()?.body).toMatch(/^GitHub doesn’t let you resolve this thread\./);
     said.pull = pull({
       connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'down' },
     });
-    resolve(tab(), ON_FIVE);
+    acts.resolve(tab(), ON_FIVE);
     expect(notice()?.body).toBe('Offline. Try again once GitHub can be reached.');
     expect(asked('comments.resolve')).toEqual([]);
   });
 
   test('`i` starts an edit of your newest comment from its text, in a box after the thread', async () => {
-    const mine = comment('C_mine', 'rozed-bot', 'Mine.');
+    const mine = threadComment('C_mine', 'rozed-bot', 'Mine.');
     const { drawn } = withThreads(
-      thread('T2', 2, { comments: [comment('C_old', 'rozed-bot', 'Older.'), mine] }),
-      thread('T5', 5, { comments: [comment('C_theirs', 'ravi-k', 'Theirs.')] }),
+      threadRow('T2', 2, { comments: [threadComment('C_old', 'rozed-bot', 'Older.'), mine] }),
+      threadRow('T5', 5, { comments: [threadComment('C_theirs', 'ravi-k', 'Theirs.')] }),
     );
     answers['comments.editing'] = (): ActOutcome => ({ kind: 'done' });
     answers['comments.edit'] = (): ActOutcome => ({ kind: 'done' });
-    await edit(tab(), ON_TWO);
+    await acts.edit(tab(), ON_TWO);
     const place = { kind: 'edit', thread: 'T2', comment: 'C_mine' };
     expect(asked('comments.editing')).toEqual([{ id: VIEW, place, base: 'Mine.' }]);
     expect(drawn.map((each) => [each.at, each.composer.text])).toEqual([
@@ -646,18 +655,18 @@ describe('acting on a thread', () => {
     );
     await vi.waitFor(() => expect(drawn[0]!.composer.closed).toBe('close'));
     // Someone else's is refused in Lo's words.
-    await edit(tab(), ON_FIVE);
+    await acts.edit(tab(), ON_FIVE);
     expect(notice()?.body).toBe(
       'None of this thread’s comments are yours. You can edit and delete only your own.',
     );
-    await edit(tab(), { kind: 'thread', thread: 'T5' }, 'C_theirs');
+    await acts.edit(tab(), { kind: 'thread', thread: 'T5' }, 'C_theirs');
     expect(notice()?.body).toBe('It’s ravi-k’s comment. You can edit and delete only your own.');
   });
 
   test('an edit closed with no text is discarded, as is one edited on GitHub since', async () => {
-    const { drawn } = withThreads(thread('T2', 2));
+    const { drawn } = withThreads(threadRow('T2', 2));
     answers['comments.editing'] = (): ActOutcome => ({ kind: 'done' });
-    await edit(tab(), ON_TWO);
+    await acts.edit(tab(), ON_TWO);
     drawn[0]!.composer.replace(0, drawn[0]!.composer.text.length, '');
     drawn[0]!.on.close(false);
     expect(asked('comments.discard')).toEqual([
@@ -666,21 +675,21 @@ describe('acting on a thread', () => {
   });
 
   test('`dd` asks first, and Delete deletes the comment as the question showed it', async () => {
-    const { claimed } = withThreads(thread('T2', 2));
+    const { claimed } = withThreads(threadRow('T2', 2));
     answers['comments.remove'] = (): ActOutcome => ({ kind: 'done' });
-    remove(tab(), ON_TWO);
-    expect(deleteAsking()).toMatchObject({
+    acts.remove(tab(), ON_TWO);
+    expect(acts.deleteAsking()).toMatchObject({
       thread: 'T2',
       comment: 'T2_C1',
       pending: false,
       onlyComment: true,
     });
     expect(asked('comments.remove')).toEqual([]);
-    cancelDelete();
-    expect(deleteAsking()).toBeUndefined();
-    remove(tab(), ON_TWO);
-    await confirmDelete();
-    expect(deleteAsking()).toBeUndefined();
+    acts.cancelDelete();
+    expect(acts.deleteAsking()).toBeUndefined();
+    acts.remove(tab(), ON_TWO);
+    await acts.confirmDelete();
+    expect(acts.deleteAsking()).toBeUndefined();
     expect(asked('comments.remove')).toEqual([
       {
         id: VIEW,
@@ -693,24 +702,20 @@ describe('acting on a thread', () => {
   });
 
   test('a change whose answer was lost says Lo is checking, or that it didn’t go, until the thread shows it', () => {
-    const open = thread('T2', 2);
-    const row = (stands: ActRow['stands']): ActRow => ({
-      thread: 'T2',
-      comment: null,
-      change: 'resolve',
-      stands,
-    });
-    expect(actNote(row('sending'), open, false)).toBeUndefined();
-    expect(actNote(row('checking'), open, false)).toEqual({
+    const unresolved = threadRow('T2', 2);
+    expect(acts.actNote(standing('sending'), unresolved, false)).toBeUndefined();
+    expect(acts.actNote(standing('checking'), unresolved, false)).toEqual({
       text: 'GitHub’s answer was lost. Lo is checking whether it resolved the thread.',
       again: false,
       checking: true,
     });
-    expect(actNote(row('notDone'), open, false)).toMatchObject({ again: true });
-    expect(actNote(row('unknown'), open, false)?.text).toBe(
+    expect(acts.actNote(standing('notDone'), unresolved, false)).toMatchObject({ again: true });
+    expect(acts.actNote(standing('unknown'), unresolved, false)?.text).toBe(
       'GitHub’s answer was lost, and Lo can’t tell whether it resolved the thread.',
     );
-    expect(actNote(row('unknown'), { ...open, resolved: true }, false)).toBeUndefined();
-    expect(actNote(row('unknown'), open, true)).toBeUndefined();
+    expect(
+      acts.actNote(standing('unknown'), { ...unresolved, resolved: true }, false),
+    ).toBeUndefined();
+    expect(acts.actNote(standing('unknown'), unresolved, true)).toBeUndefined();
   });
 });
