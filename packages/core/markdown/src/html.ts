@@ -217,9 +217,9 @@ export function textOf(root: ChildNode | Fragment): string {
 }
 
 /**
- * Raw `html`, as Markdown leaves it in a text, as the words it shows: its text, an image as its alt
+ * Raw `html`, as a Markdown text holds it, as the words it shows: its text, an image as its alt
  * text, or "image" when it has none, with the text of elements that stand apart set apart by
- * spaces, and what GitHub never shows left out. Text that holds no HTML is as it was, and so is
+ * spaces, and what GitHub never shows left out. HTML that holds no tag is as it was, and so is
  * HTML that would build more than `elements` elements. With an explicit stack, so no nesting
  * overflows it.
  */

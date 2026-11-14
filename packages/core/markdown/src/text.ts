@@ -1,20 +1,7 @@
-import { htmlWords } from './html.ts';
 import type { Extension, Plain, Tree } from './tree.ts';
 
 /** Inline nodes whose text runs on into the text around them. */
 const RUNS_ON = new Set(['strong', 'emphasis', 'strike', 'link', 'sub', 'sup', 'kbd']);
-
-/** The most elements one run of a text's raw HTML may build, past which it's left as it is. */
-const HTML_ELEMENTS = 1_024;
-
-/** How {@link plainText} reads a tree. */
-export interface TextOptions {
-  /**
-   * Reads the raw HTML in a text as the words it shows, as GitHub shows it: `<b>`, `<details>` and
-   * `<summary>` give their text, and an `<img>` its alt text, or "image". Code is read as written.
-   */
-  readonly html?: boolean;
-}
 
 /** Set apart from the text around it. */
 const APART = Symbol('apart');
@@ -25,11 +12,7 @@ const APART = Symbol('apart');
  * characters, so a summary of a huge tree costs no more than a short one's, and walks the tree
  * with an explicit stack, so no tree can overflow it.
  */
-export function plainText<X extends Extension = Plain>(
-  tree: Tree<X>,
-  max = Infinity,
-  { html = false }: TextOptions = {},
-): string {
+export function plainText<X extends Extension = Plain>(tree: Tree<X>, max = Infinity): string {
   let text = '';
   let space = false;
   const add = (value: string): void => {
@@ -66,8 +49,6 @@ export function plainText<X extends Extension = Plain>(
     }
     switch (kind) {
       case 'text':
-        add(html ? htmlWords(asString(field('value')), HTML_ELEMENTS) : asString(field('value')));
-        break;
       case 'inlineCode':
         add(asString(field('value')));
         break;
@@ -87,8 +68,7 @@ export function plainText<X extends Extension = Plain>(
         break;
       case 'code':
       case 'suggestion':
-        // Code is read as written: a text node here would have its HTML read.
-        stack.push(APART, { kind: 'inlineCode', value: asString(field('text')) }, APART);
+        stack.push(APART, { kind: 'text', value: asString(field('text')) }, APART);
         break;
       case 'list':
       case 'footnotes':

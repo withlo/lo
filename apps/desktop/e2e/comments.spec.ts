@@ -166,6 +166,31 @@ function lineTop(page: Page): Promise<number> {
   });
 }
 
+/**
+ * Waits for src/backoff.ts's new line 10 to hold the same place for `ms`, and says where. A scroll
+ * puts it there in passes, as the editors measure and the file's sticky header takes its room: it
+ * can be at the same place on two reads a hundred milliseconds apart and then move to its last,
+ * 30 px lower, a few frames later. A place taken between passes isn't where it stays.
+ */
+async function stillLine(page: Page, ms = 700): Promise<number> {
+  let place = Number.NaN;
+  let since = Date.now();
+  await expect
+    .poll(
+      async () => {
+        const y = await lineTop(page);
+        if (y !== place) {
+          place = y;
+          since = Date.now();
+        }
+        return Number.isFinite(y) && Date.now() - since >= ms;
+      },
+      { intervals: [50], timeout: 15_000 },
+    )
+    .toBe(true);
+  return place;
+}
+
 /** How far src/backoff.ts's new line 10 has moved since it was `before` below the diff's top. */
 async function moved(page: Page, before: number): Promise<number> {
   return Math.abs((await lineTop(page)) - before);
@@ -389,15 +414,9 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
     }
   });
   // Once it's scrolled there and still: at the top, below the file's header.
-  let before = Number.NaN;
-  await expect
-    .poll(async () => {
-      const y = await lineTop(page);
-      const still = y === before;
-      before = y;
-      return still && y >= 0 && y < 100;
-    })
-    .toBe(true);
+  const before = await stillLine(page);
+  expect(before).toBeGreaterThanOrEqual(0);
+  expect(before).toBeLessThan(100);
 
   await test.step('opens and closes, leaving the diff’s lines where they were', async () => {
     const toggle = page.locator('[data-lo-right-toggle]');

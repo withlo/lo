@@ -800,14 +800,19 @@ description's, for the timeline and the diff's threads alike, with its `Post` co
 - A thread's collapsed line and the threads panel's rows show its first comment's opening as one
   line of plain words, never its Markdown. The window asks the background process for them
   (`comments.excerpts`, 500 comments or a megabyte of Markdown an ask), which reads each comment in
-  full with `@lo/markdown`, raw HTML as the words it shows (`plainText`'s `html`: an `<img>` is its
-  alt text, or "image"), and cuts the words at 120 characters, after reading, so none of a link or
-  an image's syntax is left in them. The window holds the newest 2,000, joins an ask in flight for a
-  comment wanted again, and the line shows none until its words are read.
+  full with `@lo/markdown`, and cuts the words at 120 characters, after reading, so none of a link
+  or an image's syntax is left in them. Only the Markdown tree's raw HTML is read as the words it
+  shows (`markdownTree`'s `html: 'words'`: an `<img>` is its alt text, or "image"); text, escapes
+  and entities stay as GitHub shows them, so `if a<b then` and `&lt;b&gt;` are kept. The window
+  holds the newest 2,000, joins an ask in flight for a comment wanted again, and the line shows none
+  until its words are read.
 - The threads panel lists the threads main sent once their openings are read (`listed`, in
   `window/threads.ts`), and keeps the last list until then, so a row is never drawn without its
-  words and nothing in it moves as they come: an edited comment's row changes in one step. The diff,
-  the tree and the cards take main's threads at once.
+  words and nothing in it moves as they come: an edited comment's row changes in one step. A row
+  reserves its two lines of words whatever they are (`min-h-2lh`), so one that has none yet, or
+  never gets them, is already its final height. The diff, the tree and the cards take main's threads
+  at once. A row whose thread has just gone from main's list says so (`GONE`) to `⏎` and `x`, rather
+  than that it isn't on the pull request.
 
 ### Writing comments
 

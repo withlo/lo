@@ -20,7 +20,7 @@ export {
 export { githubTree, type GithubOptions, type Post } from './github.ts';
 export type { Plugin } from './parser.ts';
 export type { Repo } from './references.ts';
-export { plainText, type TextOptions } from './text.ts';
+export { plainText } from './text.ts';
 export {
   FIGURE_COLORS,
   isSvgAttribute,

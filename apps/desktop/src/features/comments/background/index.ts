@@ -71,7 +71,7 @@ export function prepareFile({ name, bytes }: PrepareInput): Prepared {
  * it is read before it's cut, so no half of a link or an image is left in it.
  */
 export function excerptFrom(markdown: string): string {
-  const text = plainText(markdownTree(markdown), Infinity, { html: true });
+  const text = plainText(markdownTree(markdown, { html: 'words' }));
   if (text.length <= EXCERPT) return text;
   let end = EXCERPT - 1;
   // Never half of a character a surrogate pair makes.

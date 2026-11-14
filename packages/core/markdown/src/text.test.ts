@@ -30,33 +30,3 @@ test("any tree's text is read without recursion, whatever made it", () => {
   };
   expect(plainText(tree)).toBe('deep');
 });
-
-/** A Markdown text's words, with the raw HTML in it as the words it shows. */
-const read = (markdown: string) => plainText(markdownTree(markdown), Infinity, { html: true });
-
-test('with html, the raw HTML in a text is the words it shows', () => {
-  expect(
-    read('A <b>bold</b>move, <kbd>Ctrl</kbd>+<i>c</i> and<br>a <a href="https://e.com">link</a>'),
-  ).toBe('A boldmove, Ctrl+c and a link');
-  expect(read('<details>\n<summary>Stack trace</summary>\n\nat main (a.ts:1)\n</details>')).toBe(
-    'Stack trace at main (a.ts:1)',
-  );
-  // An image is its alt text, or "image".
-  expect(read('See <img width="10" src="x.png" alt="the chart"> and <img src="y.png">.')).toBe(
-    'See the chart and image .',
-  );
-  expect(read('<img src="y.png" alt="  ">')).toBe('image');
-  // What GitHub never shows, and a comment, give nothing.
-  expect(read('a<script>alert(1)</script><style>p{}</style> b <!-- c -->')).toBe('a b');
-  // Entities are the characters they stand for, and text that isn't HTML is as it was.
-  expect(read('Tom &amp; Jerry, 1 < 2 and 3 > 2, a <3')).toBe('Tom & Jerry, 1 < 2 and 3 > 2, a <3');
-  // Code is read as written, in a line or a block.
-  expect(read('Use `<div>` or:\n\n```html\n<b>x</b>\n```')).toBe('Use <div> or: <b>x</b>');
-  // Without the option it's the text as it's written.
-  expect(plainText(markdownTree('a <b>b</b>'))).toBe('a <b>b</b>');
-});
-
-test('with html, a text with more raw HTML than a limit is left as it is', () => {
-  const text = '<b>'.repeat(5_000);
-  expect(plainText(markdownTree(text), Infinity, { html: true })).toBe(text);
-});

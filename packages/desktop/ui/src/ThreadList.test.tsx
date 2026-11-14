@@ -4,6 +4,7 @@
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { buildCss, declarations } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, render, rerender } from '../test/dom.ts';
 import {
@@ -74,6 +75,29 @@ describe('ThreadList', () => {
     const name = groups[0]?.querySelector('[role="presentation"] span span');
     expect(name?.textContent).toBe('rate-limit.ts');
     expect(groups[2]?.querySelector('[role="presentation"] span span')).toBeNull();
+  });
+
+  it('holds the room of two lines of words for every row, whatever it has to say yet', async () => {
+    const host = render(
+      <ThreadList
+        groups={[
+          {
+            key: 'g',
+            label: 'a.ts',
+            file: true,
+            rows: [row('short', { excerpt: 'One.' }), row('empty', { excerpt: '' })],
+          },
+        ]}
+      />,
+    );
+    const paragraphs = [...host.querySelectorAll('[role="option"] p')];
+    expect(paragraphs).toHaveLength(2);
+    // Two lines tall at least, and at most, so the words arriving change no row's height.
+    for (const paragraph of paragraphs) {
+      expect(paragraph.classList.contains('min-h-2lh')).toBe(true);
+      expect(paragraph.classList.contains('line-clamp-2')).toBe(true);
+    }
+    expect(declarations(await buildCss(['min-h-2lh']), 'min-h-2lh')).toBe('min-height: 2lh;');
   });
 
   it('says each thread where it is, its replies and its state in the one word GitHub uses', () => {

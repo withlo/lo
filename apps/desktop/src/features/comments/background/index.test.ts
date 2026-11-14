@@ -63,6 +63,14 @@ describe('excerptFrom', () => {
     expect(excerptFrom('Use `<div>` here.')).toBe('Use <div> here.');
   });
 
+  it('shows text that is no HTML as GitHub shows it, with its less-than signs, escapes and entities', () => {
+    expect(excerptFrom('if a<b then return')).toBe('if a<b then return');
+    expect(excerptFrom('x<y here, and z>w')).toBe('x<y here, and z>w');
+    expect(excerptFrom('&lt;b&gt;bold&lt;/b&gt; and \\<b\\>bold\\</b\\>')).toBe(
+      '<b>bold</b> and <b>bold</b>',
+    );
+  });
+
   it('reads all of a comment before it cuts, so no half a link or an image is left', () => {
     // The words are far fewer than the syntax around them, and the cut falls inside the last one.
     const text = excerptFrom(Array.from({ length: 40 }, (_, index) => image(index)).join(''));

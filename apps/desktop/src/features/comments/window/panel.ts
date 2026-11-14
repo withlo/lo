@@ -157,9 +157,19 @@ export function onThread(target: Target): true | string {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return tab;
   if (target.kind !== 'thread') return 'No thread has focus.';
-  return held.get(tab.id).threads?.threads.some((row) => row.id === target.thread)
-    ? true
-    : 'That thread isn’t on the pull request on screen.';
+  const found = threadIn(held.get(tab.id).threads, target.thread);
+  return typeof found === 'string' ? found : true;
+}
+
+/**
+ * What's true of a row the panel lists whose thread main's threads don't hold: it was listed
+ * before main sent them again without it, and the list is catching up.
+ */
+export const GONE = 'That thread has just gone from the pull request. The list is catching up.';
+
+/** Thread `id` in the threads main sent, or why there's none to act on. */
+export function threadIn(threads: ThreadsView | undefined, id: string): ThreadRow | string {
+  return threads?.threads.find((row) => row.id === id) ?? GONE;
 }
 
 /** What the notes about showing a thread say they're about. */
@@ -183,8 +193,11 @@ function keyOf(id: string): string | undefined {
  * the keyboard is on, as {@link planShow} decides.
  */
 export function showThread(tab: PullTab, id: string): void {
-  const row = held.get(tab.id).threads?.threads.find((each) => each.id === id);
-  if (!row) return;
+  const row = threadIn(held.get(tab.id).threads, id);
+  if (typeof row === 'string') {
+    notify(SHOW, row);
+    return;
+  }
   focusedRows.set(tab.id, id);
   shownRows.set(tab.id, id);
   const here = onScreenNow(tab.id, row);
