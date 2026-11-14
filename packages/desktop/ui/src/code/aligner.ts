@@ -219,6 +219,8 @@ interface Anchor {
   /** The editor the line is in: that one, unless it had no line on screen. */
   side: Side;
   pos: number;
+  /** What's kept in place instead of the line itself, drawn among its blocks, while it's drawn. */
+  element?: Element;
   offset: number;
   /** The scroll when the anchor was taken. */
   scrollTop: number;
@@ -394,12 +396,14 @@ export class Aligner {
   /**
    * Takes line `pos` of `side`'s editor, where it's drawn now, as where things belong, not the line
    * the pass would take: the view is about to change heights below it, at the reader's asking, as
-   * when a comment box under it grows, and what's above it stays where it is. It stands, as
-   * `anchorTop`'s does, until the pass runs. A line that isn't drawn leaves the anchor as it is.
+   * when a comment box under it grows, and what's above it stays where it is. With `element`, drawn
+   * among the line's blocks, as a comment box the reader writes in, that stays where it is instead,
+   * while it's drawn. It stands, as `anchorTop`'s does, until the pass runs. A line that isn't
+   * drawn leaves the anchor as it is.
    */
-  anchorAt(side: Side, pos: number): void {
+  anchorAt(side: Side, pos: number, element?: Element): void {
     if (this.#paused) return;
-    const top = drawnTop(this.#views[side], pos);
+    const top = element ? element.getBoundingClientRect().top : drawnTop(this.#views[side], pos);
     if (top === undefined) return;
     this.#topTaken = true;
     this.#chosen = true;
@@ -407,6 +411,7 @@ export class Aligner {
       for: this.#anchorSide(),
       side,
       pos,
+      ...(element && { element }),
       offset: top - this.#scroller.getBoundingClientRect().top,
       scrollTop: this.#scroller.scrollTop,
     };
@@ -521,6 +526,7 @@ export class Aligner {
           anchor = this.#anchorNow();
         } else if (
           turn === 0 &&
+          anchor.element === undefined &&
           (anchor.offset < 0 || anchor.offset >= this.#scroller.clientHeight)
         ) {
           // After a jump, neither editor drew anything on screen yet when the scroll moved, so the
@@ -1300,12 +1306,13 @@ export class Aligner {
   /** Puts the anchored line back where it was on screen. Says whether the scroll moved. */
   #restore(anchor: Anchor): boolean {
     const view = this.#views[anchor.side];
-    if (anchor.pos > view.state.doc.length) {
+    const { element } = anchor;
+    if (anchor.pos > view.state.doc.length || (element && !element.isConnected)) {
       this.#anchor = this.#anchorNow();
       return false;
     }
     const screen = this.#scroller.getBoundingClientRect().top;
-    const drawn = drawnTop(view, anchor.pos);
+    const drawn = element ? element.getBoundingClientRect().top : drawnTop(view, anchor.pos);
     const shift =
       drawn === undefined
         ? ownTop(view.lineBlockAt(anchor.pos)) - anchor.offset - (screen - origin(view))

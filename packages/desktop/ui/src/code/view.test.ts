@@ -5,7 +5,7 @@ import { diffText } from '@lo/diff';
 import { getCM, Vim } from '@replit/codemirror-vim';
 import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vitest';
 
-import { findScope, isKeySource } from '../commands/index.ts';
+import { findScope, isKeySource, KEY_EVENT } from '../commands/index.ts';
 import type {
   BoxFrame,
   ComposerEvents,
@@ -1538,6 +1538,38 @@ describe('threads', () => {
     expect(card.classList).not.toContain('is-held');
     expect(drawnThreads()).toEqual(['one', 'two']);
   });
+
+  test('a key the registry takes is the reader’s next input too, as the listener tells the view of it', async () => {
+    const shown = open();
+    onScreen(['line 4']);
+    shown.setThreads([thread('here', at('a', 'new', 4))], plain().render);
+    expect(drawnThreads()).toEqual([]);
+    // As `listen` sends it before the registry runs the key, which goes no further.
+    vimIn('After').content.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(drawnThreads()).toEqual(['here']);
+  });
+
+  test.each([
+    ['side by side', 'split', 'After'],
+    ['inline', 'inline', 'Changes'],
+  ] as const)(
+    ']t counts the threads waiting on screen, which come as it’s pressed, %s',
+    (_, layout, label) => {
+      const shown = open(events(), { layout });
+      shown.reveal(onLine('a', 'new', 1));
+      onScreen(['line 1', 'line 4']);
+      shown.setThreads(
+        [thread('here', at('a', 'new', 4)), thread('further', at('a', 'new', 24))],
+        plain().render,
+      );
+      expect(drawnThreads()).toEqual(['further']);
+      vimIn(label).keys(']', 't');
+      expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 4));
+      expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'here' });
+      expect(drawnThreads()).toEqual(['here', 'further']);
+    },
+  );
 
   test('a reply that comes once its box closed on screen takes the room the box left', async () => {
     const sizes = observers();

@@ -23,6 +23,7 @@ import type { FileDiff } from '@lo/diff';
 
 import {
   type HeaderTarget,
+  KEY_EVENT,
   type LineTarget,
   SCOPE_ATTRIBUTE,
   setScopeSource,
@@ -218,23 +219,42 @@ class NumberMarker extends GutterMarker {
 /** The room a box closed once its comment was sent keeps, as tall as the box was. */
 class Room implements BoxHost {
   readonly dom: HTMLElement;
+  #height: number;
 
   constructor(height: number) {
     this.dom = document.createElement('div');
     this.dom.className = 'lo-diffcomposer-room';
+    this.#height = height;
     this.dom.style.height = `${height}px`;
   }
 
   attach(parent: HTMLElement): void {
     parent.append(this.dom);
   }
+
+  /**
+   * Gives `height` of itself to the thread right above it as it grows, or takes it back as it
+   * shrinks, so nothing below moves. Says whether it had that much.
+   */
+  give(height: number): boolean {
+    if (height > this.#height + 0.5) return false;
+    this.#height = Math.max(0, this.#height - height);
+    this.dom.style.height = `${this.#height}px`;
+    return true;
+  }
 }
 
 /** What may change now: what's off screen, or also what's on it that no scroll can take off it. */
 type Letting = 'off' | 'stuck' | 'all';
 
-/** The reader's input outside the excerpt, which lets go of what no scroll can take off screen. */
-const INPUT = ['keydown', 'pointerdown'] as const;
+/**
+ * The reader's input outside the excerpt, which lets go of what no scroll can take off screen: keys
+ * the registry takes too, which go no further than its event.
+ */
+const INPUT = ['keydown', KEY_EVENT, 'pointerdown'] as const;
+
+/** The reader's input in the excerpt, which lets go of what waits in it. */
+const TOUCH = ['pointerdown', 'keydown', KEY_EVENT] as const;
 
 class Excerpt implements ExcerptView {
   readonly dom: HTMLElement;
@@ -281,20 +301,31 @@ class Excerpt implements ExcerptView {
     // What's drawn under its lines changed size: each thread takes its new height in the next
     // frame, which the editor measures. A change of size made now, as the page tells its observers
     // of sizes, would go untold to the editor's.
-    // One on screen that changed by itself is held so until it's off screen, or the reader acts.
+    // One on screen that changed by itself is held so until it's off screen, or the reader acts,
+    // unless a sent box's room is right after it, as when the reply sent there comes: then it takes
+    // the room, as far as there's enough.
     this.#hosts = new Threads((entries) => {
       const changed = this.#hosts.resized(entries);
       if (changed.length === 0) return;
       const taking: ThreadHost[] = [];
+      const roomed: ThreadHost[] = [];
       for (const { host, fresh, reflowed } of changed) {
         host.hold();
         if (!fresh && host.takeInput()) taking.push(host);
-        else if (!fresh && !reflowed && this.#onScreen(host.dom)) this.#held.add(host);
-        else taking.push(host);
+        else if (!fresh && !reflowed && this.#onScreen(host.dom)) {
+          if (this.#roomAfter(host)) roomed.push(host);
+          else this.#held.add(host);
+        } else taking.push(host);
       }
-      if (taking.length === 0) return;
+      if (taking.length === 0 && roomed.length === 0) return;
       requestAnimationFrame(() => {
         for (const host of taking) if (!this.#held.has(host)) host.letGo();
+        for (const host of roomed) {
+          if (this.#held.has(host) || !host.held) continue;
+          const room = this.#roomAfter(host);
+          if (room?.give((host.height ?? 0) - (host.pinned ?? 0))) host.letGo();
+          else this.#held.add(host);
+        }
         this.#view.requestMeasure();
       });
     });
@@ -367,9 +398,7 @@ class Excerpt implements ExcerptView {
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
     // The reader's pointer or key in the excerpt lets go of what waits in it; in a thread, what
     // becomes of the thread's size next is theirs.
-    for (const type of ['pointerdown', 'keydown'] as const) {
-      this.dom.addEventListener(type, this.#touched, { capture: true });
-    }
+    for (const type of TOUCH) this.dom.addEventListener(type, this.#touched, { capture: true });
     document.addEventListener('scroll', this.#scrolled, { capture: true, passive: true });
     for (const type of INPUT) {
       window.addEventListener(type, this.#elsewhere, { capture: true, passive: true });
@@ -689,6 +718,14 @@ class Excerpt implements ExcerptView {
     if (held.length > 0) this.#view.requestMeasure();
   }
 
+  /** The room of a sent box right after thread `host`, the last under its line, if one's kept. */
+  #roomAfter(host: ThreadHost): Room | undefined {
+    for (const [line, threads] of this.#threads) {
+      if (threads.at(-1)?.id === host.id) return this.#rooms.get(line);
+    }
+    return undefined;
+  }
+
   /** Whether anything waits. */
   get #holding(): boolean {
     return this.#held.size > 0 || this.#rooms.size > 0 || this.#waiting !== undefined;
@@ -796,9 +833,7 @@ class Excerpt implements ExcerptView {
   }
 
   destroy(): void {
-    for (const type of ['pointerdown', 'keydown'] as const) {
-      this.dom.removeEventListener(type, this.#touched, { capture: true });
-    }
+    for (const type of TOUCH) this.dom.removeEventListener(type, this.#touched, { capture: true });
     document.removeEventListener('scroll', this.#scrolled, { capture: true });
     for (const type of INPUT) {
       window.removeEventListener(type, this.#elsewhere, { capture: true });

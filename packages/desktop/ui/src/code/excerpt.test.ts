@@ -3,9 +3,18 @@ import { EditorView } from '@codemirror/view';
 import { diffText } from '@lo/diff';
 import tokenNames from '@lo/design/syntax.json' with { type: 'json' };
 import { getCM, Vim } from '@replit/codemirror-vim';
-import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vitest';
+import {
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  type Mock,
+  onTestFinished,
+  test,
+  vi,
+} from 'vitest';
 
-import { findScope, isKeySource } from '../commands/index.ts';
+import { findScope, isKeySource, KEY_EVENT } from '../commands/index.ts';
 import type {
   ComposerEvents,
   ExcerptEvents,
@@ -687,6 +696,66 @@ describe('threads and comment boxes', () => {
     expect(room()).toBeNull();
   });
 
+  test('a key the registry takes, in the excerpt or out of it, lets what waits come, as the listener tells of it', async () => {
+    const shown = open();
+    await frame();
+    const { render } = plain();
+    shown.setThreads([thread('here', 6)], render);
+    expect(drawnThreads()).toEqual([]);
+    // As `listen` sends it before the registry runs the key, which goes no further.
+    editor().contentDOM.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
+    expect(drawnThreads()).toEqual(['here']);
+    // Elsewhere, what no scroll can take off screen comes: the page doesn't scroll here.
+    shown.setThreads([], render);
+    expect(drawnThreads()).toEqual(['here']);
+    document.body.dispatchEvent(new Event(KEY_EVENT, { bubbles: true }));
+    expect(drawnThreads()).toEqual([]);
+  });
+
+  test('a reply that comes once its box closed on screen takes the room the box left', async () => {
+    const sizes = observers();
+    const shown = open();
+    const { render } = plain();
+    shown.setThreads([thread('here', 6)], render);
+    await frame();
+    // The thread is drawn on screen, and the box is 80 px tall.
+    const drawnAt = new DOMRect(0, 100, 400, 80);
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      const rects = this.closest('[data-thread-id]') ? [drawnAt] : [];
+      return Object.assign(rects, { item: (index: number) => rects[index] ?? null });
+    });
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      return this.closest('[data-thread-id]') ? drawnAt : new DOMRect();
+    });
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.classList.contains('lo-diffcomposer') ? 80 : 0;
+    });
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="here"]')!;
+    const content = card.querySelector('.lo-diffthread__host')!;
+    sizes.resize(content, 40);
+    // Closed as GitHub answered, before the reply is in the thread.
+    shown.compose({ thread: 'here' }, 'A reply', composerEvents()).close();
+    const room = parent!.querySelector<HTMLElement>('.lo-diffcomposer-room')!;
+    expect(room.style.height).toBe('80px');
+    shown.setThreads([{ ...thread('here', 6), version: 2 }], render);
+    sizes.resize(content, 90);
+    await frame();
+    expect(card.style.height).toBe('90px');
+    expect(card.classList).not.toContain('is-held');
+    expect(room.style.height).toBe('30px');
+    // More than the room has left waits for the reader.
+    shown.setThreads([{ ...thread('here', 6), version: 3 }], render);
+    sizes.resize(content, 150);
+    await frame();
+    expect(card.style.height).toBe('90px');
+    expect(card.classList).toContain('is-held');
+    vi.restoreAllMocks();
+  });
+
   test('a box opened unfocused leaves focus and Vim’s selection be; asked for again, it’s focused', () => {
     const shown = open();
     shown.focus();
@@ -718,6 +787,46 @@ describe('threads and comment boxes', () => {
     outside.remove();
   });
 });
+
+/** Resize observers made from now on, until the test ends, which the test calls as the page would. */
+function observers() {
+  const made: { callback: ResizeObserverCallback; watched: Set<Element> }[] = [];
+  const before = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    readonly #watched = new Set<Element>();
+    constructor(callback: ResizeObserverCallback) {
+      made.push({ callback, watched: this.#watched });
+    }
+    observe(element: Element): void {
+      this.#watched.add(element);
+    }
+    unobserve(element: Element): void {
+      this.#watched.delete(element);
+    }
+    disconnect(): void {
+      this.#watched.clear();
+    }
+  };
+  onTestFinished(() => {
+    globalThis.ResizeObserver = before;
+  });
+  return {
+    /** Tells the observers watching `element` that it's `height` tall now. */
+    resize(element: Element, height: number): void {
+      const size = { blockSize: height, inlineSize: 400 };
+      const entry: ResizeObserverEntry = {
+        target: element,
+        borderBoxSize: [size],
+        contentBoxSize: [size],
+        devicePixelContentBoxSize: [size],
+        contentRect: new DOMRect(0, 0, 400, height),
+      };
+      for (const { callback, watched } of made) {
+        if (watched.has(element)) callback([entry], new globalThis.ResizeObserver(() => {}));
+      }
+    },
+  };
+}
 
 /** The next frame. */
 function frame(): Promise<void> {

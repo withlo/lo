@@ -413,14 +413,17 @@ export interface DiffView extends KeySource {
    * element of its own the first time it's drawn, and kept up to date through what that returns. A
    * file's threads go under its header in the newer column, or in the inline layout's one, whether
    * or not the file shows its lines. A line or header on screen whose threads change keeps those it
-   * shows until it's off screen, or until the reader's next wheel, key or click, so no line on
-   * screen moves without them; the rest change now, and what's at the top of the screen stays where
-   * it is. A thread drawn on screen that changes size with no input asking, as when an image in it
-   * loads, is held at the height it was drawn at the same way, unless a reply's box was closed right
-   * after it as its answer came: then it grows into the room the box left, where that's tall
-   * enough. What the reader does to a thread, such as opening it, keeps its line where it is.
-   * With `now`, lines on screen take their threads at once too: for a view the reader hasn't seen
-   * yet, as one made in the same task.
+   * shows until it's off screen, or until the reader's next wheel, key or click, a key `listen`
+   * hands the registry too, so no line on screen moves without them; the rest change now, and
+   * what's at the top of the screen stays where it is. A thread drawn on screen that changes size
+   * with no input asking, as when an image in it loads, is held at the height it was drawn at the
+   * same way, unless a reply's box was closed right after it as its answer came: then it grows into
+   * the room the box left, where that's tall enough. What comes with the reader's input leaves what
+   * they read where it is: the comment box they write in, or the thread they clicked; or else the
+   * cursor's line, while it's on screen; or else the top of the screen. `]t` counts the threads
+   * waiting on screen, which come as it's pressed. What the reader does to a thread, such as
+   * opening it, keeps its line where it is. With `now`, lines on screen take their threads at once
+   * too: for a view the reader hasn't seen yet, as one made in the same task.
    */
   setThreads(
     threads: readonly ThreadView[],
@@ -743,7 +746,8 @@ export interface ExcerptView extends KeySource {
    * diff view's are. Threads on lines it doesn't show are left out. Once the excerpt has been on
    * the page, threads that would come, go or move on a line on screen wait, until none of the lines
    * they change is on screen, the reader acts in the excerpt, or acts anywhere while no scroll can
-   * take those lines off screen; then they come together.
+   * take those lines off screen, a key `listen` hands the registry counting; then they come
+   * together.
    */
   setThreads(threads: readonly ThreadView[], render: RenderThread): void;
   /** Opens a thread, collapses it, or the other of the two. Says whether the excerpt has it. */
@@ -753,7 +757,8 @@ export interface ExcerptView extends KeySource {
    * span, or a thread, with `frame` drawn around its editor, and focuses it unless
    * `options.focus` is false. A box already open there is the one it gives, as it is. Throws for a
    * line the excerpt doesn't show. A box closed once its comment was sent (`close()`) on screen
-   * keeps its room, as the threads that come there wait.
+   * keeps its room, as the threads that come there wait; the thread right above it, as a reply's
+   * comes, grows into it, where it's tall enough.
    */
   compose(
     at: Place | Span | { thread: string },
