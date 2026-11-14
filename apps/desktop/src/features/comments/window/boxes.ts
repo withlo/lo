@@ -164,6 +164,9 @@ type Opens =
   | { readonly kind: 'waits' };
 
 function opensAt(box: Box): Opens {
+  // Taken down open as the diff was drawn again, it's still in its box there, whatever the
+  // overview did meanwhile.
+  if (box.kept !== undefined) return IN_DIFF;
   const { home } = box;
   if (home.kind === 'block') {
     const under = opensUnderBlock(box.view, home.block);
@@ -240,6 +243,12 @@ export class Box {
   home: Home = IN_DIFF;
   /** Where its composer is drawn, while it has one. */
   drawnIn: 'diff' | 'block' | 'timeline' | undefined;
+  /**
+   * Where it opens in its view's diff once the diff, drawn again with it open, draws it anew: on its
+   * line (`line`), as it stays in its box, whatever the overview did meanwhile; or, its line gone
+   * from the diff drawn anew and its block not in the overview, under its file's header (`file`).
+   */
+  kept: 'line' | 'file' | undefined;
   /** Its editor is taking main's text, not the reader's typing, which isn't saved again. */
   taking = false;
   /**
@@ -450,6 +459,9 @@ function eventsOf(box: Box): ComposerEvents {
     close(keep) {
       box.composer = undefined;
       box.open = false;
+      // Shut, it's kept nowhere, and takes no focus the next time it opens by itself.
+      box.kept = undefined;
+      box.focusOnOpen = false;
       replyingChanged(box.view);
       if (keep) {
         box.saveNow();
@@ -525,19 +537,7 @@ function show(box: Box, diff: WritingDiff | undefined): boolean {
       box.drawnIn = 'block';
     } else {
       if (opens.kind !== 'diff' || !diff) return false;
-      const drawn = diff.drawn();
-      const { place } = box.state;
-      const file =
-        place.kind === 'thread'
-          ? drawn.files.find((each) => githubPath(each) === place.path)
-          : undefined;
-      const screen = screenFor(box.view, diff, file?.since ?? false);
-      const where = boxAt(
-        drawn,
-        screen,
-        place,
-        (thread) => shownAt(box.view, thread) !== undefined,
-      );
+      const where = inDiffAt(box, diff);
       if (!where) return false;
       box.composer = diff.compose(where.at, box.state.text, eventsOf(box), framer?.(box), options);
       box.drawnIn = 'diff';
@@ -550,7 +550,48 @@ function show(box: Box, diff: WritingDiff | undefined): boolean {
   box.set({ mode: box.composer.mode });
   box.focusOnOpen = false;
   box.retries = 0;
+  box.kept = undefined;
   return true;
+}
+
+/**
+ * Where box `box` goes in `diff` as it's drawn now: under the last of its lines, or its file's
+ * header, or in its thread, as {@link boxAt} places it; under its file's header for one kept there
+ * as its line went. Nowhere where the diff can't place it.
+ */
+function inDiffAt(box: Box, diff: WritingDiff): ReturnType<typeof boxAt> {
+  const drawn = diff.drawn();
+  const { place } = box.state;
+  const file =
+    place.kind === 'thread'
+      ? drawn.files.find((each) => githubPath(each) === place.path)
+      : undefined;
+  if (box.kept === 'file') {
+    const here = place.kind === 'thread' && place.commit.toLowerCase() === drawn.at.toLowerCase();
+    return file && here ? { at: { file: file.id } } : undefined;
+  }
+  const screen = screenFor(box.view, diff, file?.since ?? false);
+  return boxAt(drawn, screen, place, (thread) => shownAt(box.view, thread) !== undefined);
+}
+
+/**
+ * Box `box`, kept on its line as the diff was drawn again, can't open there: the diff drawn anew,
+ * `diff`, doesn't have the line, or never drew it. It opens where it would now: under its block,
+ * unfocused, if the overview has the block; otherwise, in the same diff, under its file's header,
+ * with its place as it was; and in another diff, as of another revision, where a draft of its place
+ * opens.
+ */
+function lineGone(box: Box, diff: WritingDiff): void {
+  const { place } = box.state;
+  const same =
+    place.kind === 'thread' && place.commit.toLowerCase() === diff.drawn().at.toLowerCase();
+  box.retries = 0;
+  if (same && opensUnderBlock(box.view, homeRow(box.home)) !== true) {
+    box.kept = 'file';
+    return;
+  }
+  box.kept = undefined;
+  box.focusOnOpen = false;
 }
 
 const retrying = new Map<string, ReturnType<typeof setTimeout>>();
@@ -558,20 +599,28 @@ const retrying = new Map<string, ReturnType<typeof setTimeout>>();
 /**
  * Opens view `view`'s boxes that should show in its diff, as it's drawn now: drafts restored as Lo
  * started, boxes the diff took down as it was drawn again, and those whose block the overview no
- * longer has. One whose line isn't drawn yet tries again in a moment, a few times.
+ * longer has. One whose line isn't drawn yet tries again in a moment, a few times. A box the diff
+ * took down whose line it no longer has, or never draws, opens where it would now ({@link lineGone}).
  */
 export function restore(view: string): void {
   const diff = writingDiff(view);
   const own = views.get(view);
   if (!diff || !own) return;
   let again = false;
+  let gone = false;
   for (const box of own.values()) {
     if (!box.open || box.composer || opensAt(box).kind !== 'diff') continue;
-    if (!show(box, diff) && box.retries < RETRIES) {
+    if (show(box, diff)) continue;
+    const onLines = box.kept === 'line' && box.state.place.kind === 'thread';
+    if (onLines && (!inDiffAt(box, diff) || box.retries >= RETRIES)) {
+      lineGone(box, diff);
+      gone = true;
+    } else if (box.retries < RETRIES) {
       box.retries += 1;
       again = true;
     }
   }
+  if (gone) queueMicrotask(() => reopen(view));
   if (again && !retrying.has(view)) {
     retrying.set(
       view,
@@ -776,6 +825,8 @@ export function openAt(
   } else if (!box.composer) {
     box.set({ primary: how, ...(box.state.text.trim() === '' ? { text: draft } : {}) });
   }
+  // Opened here by the reader: it's kept nowhere else.
+  box.kept = undefined;
   const elsewhere = box.composer !== undefined && box.drawnIn !== home.kind;
   if (elsewhere || JSON.stringify(box.home) !== JSON.stringify(home)) {
     // Drawn elsewhere: it comes here, its text as it is, and its draft's home with it.
@@ -1364,14 +1415,21 @@ export function claimBriefly(diff: WritingDiff, thread: string): void {
 }
 
 /**
- * The box the diff or a block took down as it was drawn again: it opens again once it's drawn, or,
- * from a block the overview no longer has, where it opens now.
+ * The box the diff or a block took down as it was drawn again: one the diff took down, open, opens
+ * again on its line once the diff is drawn anew; one from a block the overview no longer has, where
+ * it opens now.
  */
 export function takenDown(box: Box, composer: Composer): void {
   if (box.composer !== composer) return;
   box.composer = undefined;
   // A block goes as its overview changes: its boxes open where they open now, once it's gone.
   if (box.drawnIn === 'block') queueMicrotask(() => reopen(box.view));
+  // The diff is drawn again: a box open there stays in its box, on its line once that's drawn
+  // anew, focused if it was, whatever the overview did meanwhile.
+  else if (box.drawnIn === 'diff' && box.open) {
+    box.kept = 'line';
+    if (box.state.focused) box.focusOnOpen = true;
+  }
 }
 
 /**

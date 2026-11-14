@@ -167,8 +167,11 @@ function composerOf(draft: string, on: ComposerEvents): Drawn['composer'] {
   return composer;
 }
 
-/** A diff that draws boxes, as the code view does, but for lines it doesn't draw yet. */
-function fakeDiff(missing: (at: unknown) => boolean = () => false) {
+/**
+ * A diff that draws boxes, as the code view does, but for lines it doesn't draw yet. Its file is
+ * `since` a commit other than the base, where it has no older side to comment on.
+ */
+function fakeDiff(missing: (at: unknown) => boolean = () => false, since = false) {
   const drawn: Drawn[] = [];
   /** The threads claimed, and those of them let go since. */
   const claimed: string[] = [];
@@ -187,7 +190,7 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
         key: 'src/backoff.ts',
         path: 'src/backoff.ts',
         old: 'src/backoff.ts',
-        since: false,
+        since,
       },
     ],
   };
@@ -352,6 +355,16 @@ function onLines(start: number | null, end: number): DraftPlaceRow {
       start: start === null ? null : { side: 'RIGHT', number: start },
       end: { side: 'RIGHT', number: end },
     },
+  };
+}
+
+/** A comment on line `end` of `src/backoff.ts`'s older side, at `HEAD`. */
+function onOldLine(end: number): DraftPlaceRow {
+  return {
+    kind: 'thread',
+    commit: HEAD,
+    path: 'src/backoff.ts',
+    lines: { start: null, end: { side: 'LEFT', number: end } },
   };
 }
 
@@ -812,6 +825,67 @@ describe('a box on a code block', () => {
     await Promise.resolve();
     expect(again.drawn).toEqual([]);
     expect(onDiff.drawn).toHaveLength(2);
+  });
+
+  test('drawn again with no input, the diff keeps a box open in it on its line, focused, though its block is back', async () => {
+    const onDiff = fakeDiff();
+    const key = blockKey(OLDER, PATH, 3, 9);
+    overview.has.set(key, false);
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'On the line', { savedAt: 1, home: blockHome(5) })],
+    });
+    await Promise.resolve();
+    const [first] = onDiff.drawn;
+    const box = boxIn(first!);
+    // Focus is in it, and the overview has its block again, drawn: it stays where it is.
+    box.set({ focused: true });
+    overview.has.delete(key);
+    const block = fakeBlock();
+    reopenAll();
+    await Promise.resolve();
+    expect(block.drawn).toEqual([]);
+    // The diff is drawn again, as when the local copy's files take the place of GitHub's: its
+    // frame goes, and the diff drawn anew draws it on its line, focused, and nowhere else.
+    takenDown(box, first!.composer);
+    const again = fakeDiff();
+    restore(VIEW);
+    reopenAll();
+    await Promise.resolve();
+    expect(
+      again.drawn.map(({ at, options, composer }) => [at, options?.focus, composer.text]),
+    ).toEqual([[{ file: 'f0', side: 'new', line: 5 }, true, 'On the line']]);
+    expect(block.drawn).toEqual([]);
+  });
+
+  test('drawn again without its line, a box opens under its block if the overview has it, else on its file', async () => {
+    const onDiff = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onOldLine(4), 'From the block', { savedAt: 1, home: blockHome(4, 4, null, 'old') }),
+        row(onOldLine(6), 'Written in the diff', { savedAt: 2 }),
+      ],
+    });
+    await Promise.resolve();
+    expect(onDiff.drawn.map(({ composer }) => composer.text)).toEqual([
+      'From the block',
+      'Written in the diff',
+    ]);
+    // The overview has the first's block again, and the diff is drawn again with no older side.
+    const block = fakeBlock();
+    for (const each of onDiff.drawn) takenDown(boxIn(each), each.composer);
+    const again = fakeDiff(() => false, true);
+    restore(VIEW);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(block.drawn.map(({ at, composer }) => [at, composer.text])).toEqual([
+      [{ file: 'x0', side: 'old', line: 4 }, 'From the block'],
+    ]);
+    expect(again.drawn.map(({ at, composer }) => [at, composer.text])).toEqual([
+      [{ file: 'f0' }, 'Written in the diff'],
+    ]);
+    // It says where it goes, as its place does: on its line.
+    expect(boxIn(again.drawn[0]!).state.place).toEqual(onOldLine(6));
   });
 
   test('the pull request’s draft from a block opens in the timeline’s box, once, as the overview moves past the block', async () => {

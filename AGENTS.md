@@ -812,7 +812,10 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   once as the box closes or the window goes, by account, pull request and place, until GitHub takes
   it. Drafts saved before Lo started, or before the window was loaded again, reopen, unfocused, once
   their view's diff draws their line. A push moves a draft to the newer revision when its file
-  didn't change.
+  didn't change. A box open in the diff when the diff is drawn again stays in its box (`kept`): it
+  opens on its line in the diff drawn anew, focused if it was, whatever the overview did meanwhile;
+  where the line is gone, under its block if the overview has it, or else under its file's header
+  (`lineGone`).
 - `comments.send` plans each write with `@lo/review`'s `YourReview` and sends it with the poller's
   `sendReview`, one write to a pull request at a time, each planned from your pending review as read
   after the last one's answer. The box's text is held, read-only, while it's sent. A refusal keeps

@@ -248,8 +248,10 @@ export function frameOf(box: Box): BoxFrame {
         frame?.removeEventListener('focusin', into);
         frame?.removeEventListener('focusout', out);
         stopAddresses?.();
-        box.set({ focused: false, previewing: false });
+        // Before focus is let go: a box the diff takes down as it's drawn again takes focus there
+        // again if it had it.
         takenDown(box, composer);
+        box.set({ focused: false, previewing: false });
         // Not while React may be rendering, as when the view takes boxes down in an effect.
         queueMicrotask(() => {
           for (const root of made) root.unmount();
