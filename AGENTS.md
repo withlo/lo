@@ -773,8 +773,10 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
 - What main sends while the timeline is on screen waits for the reader's next key, click or scroll
   (`window/holding.ts`, `window/store.ts`), except what their own write changed, which the comments
   feature tells it of (`onCommentWritten`) and which shows as it comes, for a minute at most. As it
-  goes on screen, the row the reader is on, or the box at the end while it's on screen, keeps its
-  place (`window/place.ts`).
+  goes on screen, what the reader is at keeps its place (`window/place.ts`): the box at the end
+  while they write in it or the list is at its end, or else the keyboard's row while it's on screen,
+  or else the first row on screen. When the keyboard's row goes, as a comment deleted, the keyboard
+  moves to its neighbour, with nothing scrolled.
 - The box at the end comments on the pull request itself, and your comments there have Edit and
   Delete (`i`, `dd`), drawn through the comments feature's `PullCommentBox`, `PullCommentEdit` and
   `PullCommentNote`. `window/yours.ts` says which row a key acts on, and refuses the rest in Lo's

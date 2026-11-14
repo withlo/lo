@@ -121,6 +121,8 @@ export class Box {
   retries = 0;
   /** Where it's drawn. */
   readonly home: Home;
+  /** Its editor is taking main's text, not the reader's typing, which isn't saved again. */
+  taking = false;
   /**
    * What takes focus once the box goes while it had it, where the view it's drawn in doesn't take
    * it back itself, as the timeline's list does.
@@ -316,6 +318,10 @@ function commentableOf(
 function eventsOf(box: Box): ComposerEvents {
   return {
     change(text) {
+      if (box.taking) {
+        box.set({ text });
+        return;
+      }
       box.set({ text, restored: undefined });
       box.saveSoon();
     },
@@ -524,7 +530,16 @@ function takeRow(box: Box, row: DraftRow): void {
     ...(row.restored ? { restored: row.savedAt } : {}),
     ...(typed ? {} : { text: row.text }),
   });
-  if (blank) composer.replace(0, 0, row.text);
+  if (!blank) return;
+  // Main's text, not typing: it isn't saved again, which would take back what main said of how
+  // sending it stands, and the box still says it was restored.
+  box.taking = true;
+  try {
+    composer.replace(0, 0, row.text);
+  } finally {
+    box.taking = false;
+  }
+  if (row.restored) box.set({ restored: row.savedAt });
 }
 
 /**
@@ -757,7 +772,9 @@ function takeAway(box: Box, how: 'close' | 'dismiss'): void {
 /** Closes the box of a comment or an edit GitHub took. */
 function closeSent(box: Box): void {
   const { view } = box;
-  boxesOf(view).delete(box.key);
+  const own = boxesOf(view);
+  // Unless main's drafts took it down first, and another box is there now.
+  if (own.get(box.key) === box) own.delete(box.key);
   box.open = false;
   takeAway(box, 'close');
   replyingChanged(view);
@@ -911,8 +928,8 @@ export function timelineBox(view: string, place: DraftPlaceRow): Box {
   if (!box) {
     box = new Box(view, place, 'now', '');
     box.open = true;
+    // A draft discarded here stays so, whatever main sent before it heard.
     own.set(key, box);
-    dropped.get(view)?.delete(key);
     queueMicrotask(() => timelineChanged(view));
   }
   return box;
@@ -950,6 +967,10 @@ export function openInTimeline(view: string, place: DraftPlaceRow, base: string)
 export function timelineEvents(box: Box, leave: () => void): ComposerEvents {
   return {
     change(text) {
+      if (box.taking) {
+        box.set({ text });
+        return;
+      }
       box.set({ text, restored: undefined });
       box.saveSoon();
     },

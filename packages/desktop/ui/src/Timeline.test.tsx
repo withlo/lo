@@ -423,7 +423,7 @@ describe('Timeline', () => {
     expect(theirs.querySelector('button')).toBeNull();
   });
 
-  it('shows an edit box in place of the text while a comment is edited, and holds back its buttons', () => {
+  it('shows an edit box in place of the text while a comment is edited, as no option, and holds back its buttons', () => {
     const host = render(
       <Timeline>
         <TimelineComment
@@ -438,6 +438,9 @@ describe('Timeline', () => {
     expect(host.querySelector('[data-testid="text"]')).toBeNull();
     expect(host.querySelector('textarea')).not.toBeNull();
     expect(host.querySelector('button')).toBeNull();
+    // An option's content is read as its name: while the box shows, the row isn't one.
+    expect(row(host).getAttribute('role')).toBe('none');
+    expect(row(host).hasAttribute('aria-selected')).toBe(false);
     // A hidden comment shows no buttons either: it isn't being read.
     const hidden = render(
       <Timeline>

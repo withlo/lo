@@ -12,7 +12,19 @@ import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab, PullView } from '../../tab/window/shared.ts';
 import type { DraftRow } from '../contract.ts';
 import { deleteAsking, setAsking } from './acts.ts';
-import { catchUpDrafts, takeDrafts, timelineBox, timelineBoxes } from './boxes.ts';
+import type { Composer } from '@lo/ui/code';
+
+import {
+  act,
+  type Box,
+  catchUpDrafts,
+  SAVE_AFTER,
+  send,
+  takeDrafts,
+  timelineBox,
+  timelineBoxes,
+  timelineEvents,
+} from './boxes.ts';
 import { editOnPull, type PullComment, pullChangeRefusal, removeOnPull } from './conversation.ts';
 import { ON_PULL } from './writing.ts';
 
@@ -40,6 +52,34 @@ function pull(changes: Partial<PullView> = {}): PullView {
     newer: null,
     ...changes,
   };
+}
+
+/**
+ * Gives `box` an editor as the timeline draws one, empty, which tells the box of each change as it
+ * comes, as CodeMirror's does.
+ */
+function drawn(box: Box): Composer {
+  const events = timelineEvents(box, () => {});
+  let text = '';
+  const composer = {
+    get text() {
+      return text;
+    },
+    mode: 'insert',
+    previewing: false,
+    focus() {},
+    insert() {},
+    replace(from: number, to: number, put: string) {
+      text = text.slice(0, from) + put + text.slice(to);
+      events.change(text);
+    },
+    preview() {},
+    hold() {},
+    close() {},
+    dismiss() {},
+  } satisfies Composer;
+  box.composer = composer;
+  return composer;
 }
 
 function tab(): PullTab {
@@ -95,6 +135,52 @@ describe('the box at the end of the timeline', () => {
     expect(timelineBoxes.get(VIEW).own).toBe(box);
     expect(box.state).toMatchObject({ text: 'Ship it.', sending: 'unknown' });
     expect(box.sentMark).toBe(true);
+  });
+
+  test('drawn first, it takes main’s draft without saving it again, still saying how it stands', () => {
+    vi.useFakeTimers();
+    const box = timelineBox(VIEW, ON_PULL);
+    const composer = drawn(box);
+    takeDrafts({ id: VIEW, drafts: [draft({ sending: 'notPosted', savedAt: 7 })] });
+    expect(composer.text).toBe('Ship it.');
+    expect(box.state).toMatchObject({ text: 'Ship it.', sending: 'notPosted', restored: 7 });
+    vi.advanceTimersByTime(SAVE_AFTER * 2);
+    expect(bridge.calls.filter(([channel]) => channel === 'comments.draft')).toEqual([]);
+    vi.useRealTimers();
+  });
+
+  test('a draft discarded stays so, though main’s drafts sent before it heard still hold it', () => {
+    const box = timelineBox(VIEW, ON_PULL);
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
+    expect(box.state.text).toBe('Ship it.');
+    act(box, 'discard');
+    const next = timelineBox(VIEW, ON_PULL);
+    expect(next).not.toBe(box);
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
+    expect(next.state.text).toBe('');
+  });
+
+  test('a post whose draft main took down before its answer came leaves the next box be', async () => {
+    let answer!: (outcome: unknown) => void;
+    answers['comments.send'] = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const box = timelineBox(VIEW, ON_PULL);
+    takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
+    const sending = send(box, 'now');
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    // Main marked it sent, then found it posted: its draft goes before the answer comes here.
+    takeDrafts({
+      id: VIEW,
+      drafts: [draft({ restored: false, sending: 'sending', sent: 'Ship it.' })],
+    });
+    takeDrafts({ id: VIEW, drafts: [] });
+    const next = timelineBox(VIEW, ON_PULL);
+    answer({ kind: 'sent', pending: false, joined: false, thread: null, landedOn: null });
+    await sending;
+    await vi.waitFor(() => expect(timelineBoxes.get(VIEW).own).toBe(next));
+    expect(timelineBox(VIEW, ON_PULL)).toBe(next);
   });
 
   test('asks main for the drafts once, after a reload, though the box was drawn first', async () => {

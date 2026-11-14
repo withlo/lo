@@ -41,6 +41,28 @@ export function focusedRow(timeline: DrawnTimeline): Row | undefined {
   return timeline.rows.find((row) => row.key === key) ?? timeline.rows[0];
 }
 
+/**
+ * The row the keyboard stays on, by its key, as the rows drawn go from `before` to `after`: `key`'s
+ * while it's there. Once it's gone, as a comment deleted, its neighbour: the next of `before` still
+ * there, or else the one before it. The first row only when none of them is.
+ */
+export function keptRow(
+  before: readonly Row[],
+  after: readonly Row[],
+  key: string | undefined,
+): string | undefined {
+  const there = new Set(after.map((row) => row.key));
+  if (key !== undefined && there.has(key)) return key;
+  const at = before.findIndex((row) => row.key === key);
+  if (at >= 0) {
+    const next = before.slice(at + 1).find((row) => there.has(row.key));
+    const previous = before.slice(0, at).findLast((row) => there.has(row.key));
+    const neighbour = next ?? previous;
+    if (neighbour) return neighbour.key;
+  }
+  return after[0]?.key;
+}
+
 /** Where the row the keyboard is on is among `timeline`'s rows. */
 function indexOfFocused(timeline: DrawnTimeline): number {
   const row = focusedRow(timeline);

@@ -523,7 +523,8 @@ export interface TimelineCommentProps extends TimelineRowAttributes {
   body: ReactNode;
   /**
    * An edit box, in place of the text, while the comment is being edited. Edit and Delete step
-   * aside while it shows.
+   * aside while it shows, and the row isn't one of the timeline's options, whose content is read
+   * as their name alone.
    */
   editing?: ReactNode;
   /** The keys of Edit and Delete, as this system shows each (`['i']`, `['d', 'd']`). */
@@ -555,8 +556,11 @@ export function TimelineComment({
   ...row
 }: TimelineCommentProps) {
   const acts = mine === true && hidden === undefined && editing === undefined;
+  // An option's content is read as its name alone, so while an edit box shows, the row isn't one:
+  // the box is read as the text box it is.
+  const role = editing === undefined ? {} : { role: 'none', 'aria-selected': undefined };
   return (
-    <TimelineRow marker={{ login: author, image }} focused={focused} {...row}>
+    <TimelineRow marker={{ login: author, image }} focused={focused} {...row} {...role}>
       <div className={card}>
         <div className={cardHead({ edge: 'below' })}>
           <span>

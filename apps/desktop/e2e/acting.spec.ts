@@ -289,6 +289,12 @@ test.describe('in the timeline', () => {
     const comment = timeline
       .locator('li[data-key]')
       .filter({ hasText: 'Posted from the timeline’s box.' });
+    /** The row the keyboard is on, by its key. */
+    const on = () =>
+      timeline.evaluate((list) => {
+        const id = list.getAttribute('aria-activedescendant');
+        return id === null ? null : document.getElementById(id)?.getAttribute('data-key');
+      });
 
     await test.step('`c` puts focus in the box at the end, and `⌘⏎` posts the comment', async () => {
       await expect(box).toContainText('On the pull request');
@@ -318,7 +324,12 @@ test.describe('in the timeline', () => {
       });
     });
 
-    await test.step('`dd` asks first, and `⏎` deletes the comment', async () => {
+    await test.step('`dd` asks first, and `⏎` deletes the comment, the keyboard going to the row before it', async () => {
+      // The comment is the newest event: the row before it is its neighbour once it goes.
+      const before = await comment.evaluate(
+        (row) => row.previousElementSibling?.getAttribute('data-key') ?? null,
+      );
+      expect(before).not.toBeNull();
       await page.keyboard.press('d');
       await page.keyboard.press('d');
       const dialog = page.getByTestId('delete-comment');
@@ -327,6 +338,8 @@ test.describe('in the timeline', () => {
       await page.keyboard.press('Enter');
       await expect(dialog).toHaveCount(0);
       await expect(comment).toHaveCount(0, { timeout: 20_000 });
+      // Not back at the description, at the top.
+      await expect.poll(on).toBe(before);
     });
   });
 });

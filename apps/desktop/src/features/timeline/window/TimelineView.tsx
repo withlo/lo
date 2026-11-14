@@ -56,6 +56,7 @@ import {
   compare,
   focusRow,
   inStop,
+  keptRow,
   revealHidden,
   rowTarget,
   setDrawn,
@@ -213,7 +214,7 @@ function useHolding(
     const input = () => showHeld(tab);
     for (const event of INPUT) document.addEventListener(event, input, true);
     const stop = beforeShowing(tab, () => {
-      place.current = root.current ? readingPlace(root.current) : undefined;
+      place.current = root.current ? readingPlace(root.current, focusedRows.get(tab)) : undefined;
     });
     return () => {
       stop();
@@ -226,6 +227,22 @@ function useHolding(
     place.current = undefined;
     if (kept && root.current) keepPlace(root.current, kept);
   }, [rows, root]);
+}
+
+/**
+ * As tab `tab`'s rows become `rows`, the keyboard stays on its row, or, once that's gone, as after
+ * your `dd` or a delete that came while you looked, moves to its neighbour, with nothing scrolled:
+ * never back to the first row.
+ */
+function useKeptRow(tab: string, rows: readonly Row[]): void {
+  const before = useRef(rows);
+  useLayoutEffect(() => {
+    const was = before.current;
+    before.current = rows;
+    const key = focusedRows.get(tab);
+    if (key === undefined || rows.some((row) => row.key === key)) return;
+    focusedRows.set(tab, keptRow(was, rows, key));
+  }, [tab, rows]);
 }
 
 /** The login tab `tab` acts as, if it acts as anyone. */
@@ -251,6 +268,7 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
   const login = useLogin(tab.id);
   const edits = useEditsOnPull(tab.id);
   useHolding(tab.id, shown, root, rows);
+  useKeptRow(tab.id, rows);
   useMiddle(
     shown,
     () => root.current,
