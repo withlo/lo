@@ -1,9 +1,10 @@
 // The drafts of comment boxes, in main: what the reader typed and hasn't posted, by account, pull
 // request and place, saved in the database as the window hands it over, so quitting Lo or a crash
 // loses none of it. Those saved before Lo started come back marked restored. An edit's keeps the
-// text it started from, while it's kept at all. A place of a kind this version of Lo doesn't know,
-// written by a later one, stays in the database as it is and is never opened. Nothing here calls
-// Electron.
+// text it started from, while it's kept at all. Besides the boxes' drafts (new threads, replies and
+// edits), a pull request has one summary, the submit dialog's, which the review feature keeps here
+// through the `comments.drafts` service. A place of a kind this version of Lo doesn't know, written
+// by a later one, stays in the database as it is and is never opened. Nothing here calls Electron.
 
 import { PullRef } from '@lo/github';
 import { Drafts, type DraftPlace, type ThreadDraftPlace } from '@lo/review';
@@ -11,9 +12,20 @@ import { Drafts, type DraftPlace, type ThreadDraftPlace } from '@lo/review';
 import type { Database } from '../../../main/database.ts';
 import { draftPlace, type DraftPlaceRow, type ThreadPlaceRow } from '../contract.ts';
 
-/** A draft as main keeps it. */
-export interface Kept {
-  readonly place: DraftPlaceRow;
+/** The submit dialog's summary: one a pull request, for each account. */
+export interface SummaryPlace {
+  readonly kind: 'summary';
+}
+
+/** The summary's place. */
+export const SUMMARY: SummaryPlace = { kind: 'summary' };
+
+/** Any place a draft is kept by: a box's, or the summary. */
+export type StoredPlace = DraftPlaceRow | SummaryPlace;
+
+/** A draft as main keeps it, a box's unless it says otherwise. */
+export interface Kept<P extends StoredPlace = DraftPlaceRow> {
+  readonly place: P;
   readonly text: string;
   /** When it was last saved, in milliseconds since the Unix epoch. */
   readonly savedAt: number;
@@ -39,8 +51,13 @@ function lower(text: string): string {
   return text.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
 }
 
+/** Whether `place` is a box's: a new thread's, a reply's or an edit's. */
+function isBox(place: StoredPlace): place is DraftPlaceRow {
+  return place.kind !== SUMMARY.kind;
+}
+
 /** A place as the database keeps it: JSON, the same for the same place. */
-export function placeJson(place: DraftPlaceRow): string {
+export function placeJson(place: StoredPlace): string {
   switch (place.kind) {
     case 'thread': {
       const { lines } = place;
@@ -58,19 +75,22 @@ export function placeJson(place: DraftPlaceRow): string {
       return JSON.stringify({ kind: place.kind, thread: place.thread });
     case 'edit':
       return JSON.stringify({ kind: place.kind, thread: place.thread, comment: place.comment });
+    case 'summary':
+      return JSON.stringify({ kind: place.kind });
     default:
       throw new Error(`a draft's place Lo doesn't know: ${JSON.stringify(place satisfies never)}`);
   }
 }
 
 /** A place the database kept, if this version of Lo knows its kind. */
-export function readPlace(json: string): DraftPlaceRow | undefined {
+export function readPlace(json: string): StoredPlace | undefined {
   let value: unknown;
   try {
     value = JSON.parse(json);
   } catch {
     return undefined;
   }
+  if (json === placeJson(SUMMARY)) return SUMMARY;
   const read = draftPlace.safeParse(value);
   return read.success ? read.data : undefined;
 }
@@ -86,8 +106,8 @@ export function corePlace(place: ThreadPlaceRow): ThreadDraftPlace {
   };
 }
 
-/** A place from `@lo/review`, if it's of a kind the contract carries. */
-export function rowPlace(place: DraftPlace): DraftPlaceRow | undefined {
+/** A new thread's place from `@lo/review`, if it's of a kind the contract carries. */
+export function rowPlace(place: DraftPlace): ThreadPlaceRow | undefined {
   if (place.kind !== 'thread') return undefined;
   const { lines } = place;
   return {
@@ -96,6 +116,16 @@ export function rowPlace(place: DraftPlace): DraftPlaceRow | undefined {
     path: place.path,
     lines: lines ? { start: lines.start ?? null, end: lines.end } : null,
   };
+}
+
+/** Whether `kept` is kept by a place of `place`'s kind, as one kept by its JSON is. */
+function sameKind<P extends StoredPlace>(kept: Kept<StoredPlace>, place: P): kept is Kept<P> {
+  return kept.place.kind === place.kind;
+}
+
+/** Whether `kept` is a box's draft. */
+function isBoxDraft(kept: Kept<StoredPlace>): kept is Kept {
+  return isBox(kept.place);
 }
 
 /** What a pull request's drafts are kept by, for one account. */
@@ -107,7 +137,7 @@ export class DraftStore {
   readonly #database: Database;
   readonly #now: () => number;
   /** Each account's drafts on each pull request, by {@link keyOf}, then by {@link placeJson}. */
-  readonly #kept = new Map<string, Map<string, Kept>>();
+  readonly #kept = new Map<string, Map<string, Kept<StoredPlace>>>();
   /** The account and pull request each {@link keyOf} names. */
   readonly #named = new Map<string, { account: string; pull: PullRef }>();
 
@@ -136,29 +166,42 @@ export class DraftStore {
     }
   }
 
-  /** `account`'s drafts on `pull`, ordered by place. */
+  /** `account`'s boxes' drafts on `pull`, ordered by place. */
   of(account: string, pull: PullRef): Kept[] {
     const own = this.#kept.get(keyOf(account, pull));
     if (!own) return [];
     return [...own.entries()]
       .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([, kept]) => kept);
+      .flatMap(([, kept]) => (isBoxDraft(kept) ? [kept] : []));
   }
 
-  /** Every draft marked sent, with its account and pull request. */
+  /** Every box's draft marked sent, with its account and pull request. */
   marked(): { account: string; pull: PullRef; kept: Kept }[] {
-    const found: { account: string; pull: PullRef; kept: Kept }[] = [];
+    return this.#marked(isBoxDraft);
+  }
+
+  /** Every summary marked sent, with its account and pull request. */
+  markedSummaries(): { account: string; pull: PullRef; kept: Kept<SummaryPlace> }[] {
+    return this.#marked((kept): kept is Kept<SummaryPlace> => kept.place.kind === SUMMARY.kind);
+  }
+
+  #marked<P extends StoredPlace>(
+    is: (kept: Kept<StoredPlace>) => kept is Kept<P>,
+  ): { account: string; pull: PullRef; kept: Kept<P> }[] {
+    const found: { account: string; pull: PullRef; kept: Kept<P> }[] = [];
     for (const [key, own] of this.#kept) {
       const named = this.#named.get(key);
       if (!named) continue;
-      for (const kept of own.values()) if (kept.sent !== null) found.push({ ...named, kept });
+      for (const kept of own.values())
+        if (kept.sent !== null && is(kept)) found.push({ ...named, kept });
     }
     return found;
   }
 
   /** The draft at `place`, if there is one. */
-  get(account: string, pull: PullRef, place: DraftPlaceRow): Kept | undefined {
-    return this.#kept.get(keyOf(account, pull))?.get(placeJson(place));
+  get<P extends StoredPlace>(account: string, pull: PullRef, place: P): Kept<P> | undefined {
+    const kept = this.#kept.get(keyOf(account, pull))?.get(placeJson(place));
+    return kept && sameKind(kept, place) ? kept : undefined;
   }
 
   /**
@@ -166,7 +209,7 @@ export class DraftStore {
    * its answer lost, which keeps it until that's settled, or it's an edit's, which keeps the text it
    * started from until it's sent or discarded. Says whether anything changed.
    */
-  save(account: string, pull: PullRef, place: DraftPlaceRow, text: string): boolean {
+  save(account: string, pull: PullRef, place: StoredPlace, text: string): boolean {
     const json = placeJson(place);
     const was = this.#kept.get(keyOf(account, pull))?.get(json);
     if (text.trim() === '' && was?.sent == null && was?.base == null)
@@ -206,26 +249,32 @@ export class DraftStore {
 
   /**
    * Marks the draft at `place` sent, `sent` the text sent, now or at `at`: it may be on GitHub
-   * until Lo knows. `null` settles it.
+   * until Lo knows. `null` settles it. With `keep`, a place with no draft gets one with that text,
+   * as a review sent with no summary does, so the mark outlasts a restart.
    */
   markSent(
     account: string,
     pull: PullRef,
-    place: DraftPlaceRow,
+    place: StoredPlace,
     sent: string | null,
     at: number = this.#now(),
+    keep = false,
   ): void {
     const json = placeJson(place);
-    const was = this.#kept.get(keyOf(account, pull))?.get(json);
+    const was =
+      this.#kept.get(keyOf(account, pull))?.get(json) ??
+      (keep && sent !== null
+        ? { place, text: sent, savedAt: at, restored: false, sent: null, sentAt: null, base: null }
+        : undefined);
     if (!was || (was.sent === null && sent === null)) return;
     this.#put(account, pull, json, { ...was, sent, sentAt: sent === null ? null : at });
   }
 
   /** Removes the draft at `place` and returns it: once it's posted, or discarded. */
-  take(account: string, pull: PullRef, place: DraftPlaceRow): Kept | undefined {
+  take<P extends StoredPlace>(account: string, pull: PullRef, place: P): Kept<P> | undefined {
     const own = this.#kept.get(keyOf(account, pull));
     const json = placeJson(place);
-    const was = own?.get(json);
+    const was = this.get(account, pull, place);
     if (!was) return undefined;
     own!.delete(json);
     if (own!.size === 0) {
@@ -290,7 +339,7 @@ export class DraftStore {
     this.#database.prepare('DELETE FROM comments_drafts WHERE account = ?').run(account);
   }
 
-  #own(account: string, pull: PullRef): Map<string, Kept> {
+  #own(account: string, pull: PullRef): Map<string, Kept<StoredPlace>> {
     const key = keyOf(account, pull);
     let own = this.#kept.get(key);
     if (!own) {
@@ -301,7 +350,7 @@ export class DraftStore {
     return own;
   }
 
-  #put(account: string, pull: PullRef, json: string, kept: Kept): void {
+  #put(account: string, pull: PullRef, json: string, kept: Kept<StoredPlace>): void {
     this.#own(account, pull).set(json, kept);
     this.#database
       .prepare(

@@ -74,6 +74,35 @@ with nothing sent to GitHub:
 node testing/scripts/add-answers.ts --copy <recorded request's file> <cassette> ...
 ```
 
+### What GitHub can't be made to answer
+
+Some answers can't be recorded on demand: a lost answer, a refusal of content sent too fast, or an
+approval of a pull request rozed-bot opened, which GitHub refuses from its author, and rozed-bot
+opened every pull request in rozed-dev/e2e. `src/derivations.ts` lists them, each a cassette derived
+from a recorded one, and
+
+```sh
+node testing/scripts/derive-answers.ts [cassette ...]
+```
+
+writes them, as `nx run testing:codegen` does, sending nothing to GitHub. A derived cassette's
+folder holds only what it changes: each answer in the file of the recorded one it replaces, by
+number, and each it adds numbered after them, with `derived_from` naming the recorded cassette in
+its `cassette.json`. Read, it's the recorded cassette with those in place, so the replayer and
+`bodies.ts` take it by name as any other. Answers are never added to one in place: change its
+recording, then write it again. A test checks that each is as its derivation writes it now.
+
+- `app_comments_write_others`: `app_comments_write` as if someone else had opened #94, with the
+  pending review's submission answered for Approve and Request changes. The replayer matches GraphQL
+  by operation and variables, so each verdict gets its own answer.
+- `app_comments_write_lost`: the submission answered 502, after which Lo reads your reviews.
+- `app_comments_now_too_fast`: the comment posted at once refused as "was submitted too quickly".
+- `review_writes_e2e_23_not_in_diff`: a thread on lines outside the diff, answered with no thread.
+- `attachments_e2e_not_found`: an upload answered 404.
+
+To add one, add its derivation to the list, with what it changes in its description, and run the
+script.
+
 ## A cassette
 
 ```
@@ -185,11 +214,13 @@ outdated, and written on the second push; and #95, which renames a file, with a 
 side. Every comment on them starts with `Fixture C:`. `writeCommentsRemote` from `@lo/testing/git`
 builds the remote, and `COMMENTS_PULL` and `COMMENTS_RENAME_PULL` name their commits. Their cassette
 is `app_comments`, and `app_comments_write` was recorded with writes, as Lo started rozed-bot's
-pending review on #94 with a comment on a line, and `app_comments_now` as Lo posted one at once.
-`fixtures/comments-reset.sh`, run with `LO_FIXTURE_TOKEN_FILE` as `record.ts` is, deletes what a
-recording with writes added there and resolves and unresolves the threads as `comments.sh` left
-them. Which posts the window asks GitHub to render at once depends on what's near the screen, so the
-app's tests answer those reads from every post the cassette recorded (`apps/desktop/e2e/bodies.ts`).
+pending review on #94 with a comment on a line and then submitted it as a comment, and
+`app_comments_now` as Lo posted one at once. `fixtures/comments-reset.sh`, run with
+`LO_FIXTURE_TOKEN_FILE` as `record.ts` is, deletes what a recording with writes added there and
+resolves and unresolves the threads as `comments.sh` left them. A submitted review can't be deleted,
+so each recording of `app_comments_write` leaves one more on #94. Which posts the window asks GitHub
+to render at once depends on what's near the screen, so the app's tests answer those reads from
+every post the cassette recorded (`apps/desktop/e2e/bodies.ts`).
 
 ## The credential scan
 

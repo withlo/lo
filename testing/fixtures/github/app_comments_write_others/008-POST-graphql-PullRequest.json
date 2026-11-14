@@ -1,0 +1,80 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "PullRequest",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 94,
+      "filesFirst": 100,
+      "filesAfter": null
+    },
+    "query_sha256": "faebcf58d69c5e012ebe96425bca46ad442d8bf907b11b029049c26d755fc48b"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4975",
+      "x-ratelimit-reset": "1794621242",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "25"
+    },
+    "body": {
+      "data": {
+        "repository": {
+          "pullRequest": {
+            "id": "PR_kwDOVleUfc8AAAABO_mnJQ",
+            "number": 94,
+            "title": "Comments fixture: back off between retries",
+            "url": "https://github.com/rozed-dev/e2e/pull/94",
+            "state": "OPEN",
+            "isDraft": false,
+            "updatedAt": "2026-11-13T23:39:22Z",
+            "author": {
+              "__typename": "User",
+              "login": "ghost",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/353226052?v=4"
+            },
+            "baseRefName": "comments/base",
+            "baseRefOid": "821ed37fcaa08351275aa23203ed36569d0a8446",
+            "headRefName": "comments/feature",
+            "headRefOid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c",
+            "isCrossRepository": false,
+            "headRepository": {
+              "nameWithOwner": "rozed-dev/e2e",
+              "isFork": false
+            },
+            "files": {
+              "totalCount": 4,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "NA"
+              },
+              "nodes": [
+                {
+                  "path": "docs/usage.md",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "src/backoff.ts",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "src/queue.ts",
+                  "viewerViewedState": "UNVIEWED"
+                },
+                {
+                  "path": "src/retry.ts",
+                  "viewerViewedState": "UNVIEWED"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

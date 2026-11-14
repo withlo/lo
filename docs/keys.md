@@ -96,6 +96,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 | Action                   | Keys  | Where                                                                                  | Command          |
 | ------------------------ | ----- | -------------------------------------------------------------------------------------- | ---------------- |
+| Submit review            | `⌘⏎`  | Anywhere but `box`, `dialog`, `palette` and `menu`                                     | `review.submit`  |
 | Make this a GitHub stack | `g S` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.convert` |
 
 ## Find

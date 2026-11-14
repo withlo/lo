@@ -810,6 +810,54 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
   is sent again by itself, and nothing is sent while GitHub can't be reached.
 
+### Acting on review threads
+
+On a thread in the diff, `r` replies, `x` resolves or unresolves it, `i` edits your newest comment
+and `dd` deletes it, as do the card's buttons and its right-click menu (`window/acts.ts`). A key
+acts on the thread `]t` landed on, or the only one on the cursor's line or under the file's header.
+The threads panel's `x` resolves the thread the keyboard is on, through the same function.
+
+- A reply's box and an edit's are comment boxes, kept by their thread (`reply` and `edit` places),
+  and drawn right after the thread's card. The code view keeps a box for each place and name, so a
+  reply's box and a new comment's on the same line both stay open.
+- An edit's draft keeps the text it started from (`base`, in `comments_drafts`), GitHub's as the
+  card showed it when `i` started it (`comments.editing`), through a restart. `comments.edit` reads
+  the comment afresh (`reviewComment`) and saves only if GitHub's text is still that one
+  (`beforeEdit`); otherwise the box keeps the text and offers to discard it.
+- `comments.resolve` and `comments.remove` go in their turn among the pull request's writes, like a
+  comment. A delete reads the comment afresh first, and goes only if it's as the question showed it
+  (its text, whether it's pending, whether it's its thread's only comment). Lo changes only your own
+  comments.
+- A write whose answer is lost is never sent again by itself: main reads the comment or the threads
+  10 s or more after it was sent, and `comments.acts` says how it stands meanwhile, which the card
+  shows, with "Try again" once Lo found it didn't go or can't tell.
+- A thread the reader acts on is claimed in the diff (`claimThread`), so what their write changes
+  there comes at once and keeps their line in place, as what comes under a sent box's line does.
+
+### Submitting a review
+
+The `review` feature submits your review of the pull request on screen: `⌘⏎` anywhere in its tab but
+a comment box, a dialog, the palette or a menu, or the status bar's "3 pending · ⌘⏎", opens the
+submit dialog (`tab.dialogs`). The palette says the count too, "Submit review · 3 pending": a
+command's handler may say something after its label (`detail`).
+
+- The dialog asks main what it shows as it opens (`review.dialog`): your pending review and its
+  comments, the revision on screen, and whether you opened the pull request, in which case only
+  Comment is offered. `window/model.ts` words the verdicts, the refusals and the notes, as plain
+  functions tested alone, and plans the review with `@lo/review`'s `YourReview`, so what can't go
+  says so before anything is sent. A banner says once when your pending review sits on another
+  revision than the one on screen.
+- The summary box is the comment box's editor (`createComposer`). Main keeps its text with the
+  comments' drafts (`comments.drafts`, as a `summary` place), saved as it's typed.
+- `review.submit` sends in its turn among the comments' writes to the pull request
+  (`comments.reviews`' `inTurn`), with the poller's `sendReview`. The summary is marked sent, with
+  when, as a comment's draft is. When GitHub's answer is lost, nothing more is sent until a fresh
+  read of your reviews (`YourReviews`), made 10 s or more after the send, says whether it was
+  submitted, by GitHub's clock, even after a restart; when GitHub refuses that read, only "Submit
+  anyway" sends. Once it's submitted, the summary goes, a toast names the verdict, and the threads
+  and the timeline read again. A tab acting as nobody or showing a run of layers can't submit, nor
+  can one offline, or while GitHub asked Lo to hold off.
+
 ### Images from GitHub
 
 The window shows an image from outside Lo only as `<img src="lo-image://…">`, which main serves.

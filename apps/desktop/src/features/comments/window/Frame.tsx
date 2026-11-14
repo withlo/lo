@@ -16,19 +16,16 @@ import {
 } from '@lo/ui';
 import type { BoxFrame, Composer, Mode } from '@lo/ui/code';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
-import { Markdown, secureLink, type Followed } from '@lo/ui/markdown';
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useSyncExternalStore, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry } from '../../../window/commands/registry.ts';
-import { avatarImage, postImage } from '../../../window/images.ts';
-import { followLink } from '../../open/window/shared.ts';
+import { avatarImage } from '../../../window/images.ts';
 import { usePull, useRun, useTabState } from '../../tab/window/shared.ts';
-import { MARKDOWN_LIMIT, type Rendered } from '../jobs.ts';
 import { act, type Box, type BoxState, pullIn, send, sendingNow, takenDown } from './boxes.ts';
-import { commentsJobs } from './main.ts';
+import { Preview as Rendering } from './Preview.tsx';
 import { held } from './threads.ts';
 import {
   IN_A_LAYER,
@@ -166,52 +163,12 @@ function Foot({ box }: { box: Box }): ReactNode {
   return <CommentBoxFootBar id={box.id} foot={footOf(box, state, why)} focused={state.focused} />;
 }
 
-/** Opens a link followed in the preview: an `https` page, through main. */
-function follow(target: Followed): void {
-  if (target.kind !== 'web') return;
-  const url = secureLink(target.url);
-  if (url !== undefined) void followLink(url);
-}
-
 /** The text as GitHub would render it, made by the background process while the preview shows. */
 function Preview({ box }: { box: Box }): ReactNode {
   const { previewing, text } = useBox(box);
-  const [rendered, setRendered] = useState<{ text: string; rendered: Rendered }>();
   const pull = pullIn(box.view);
-  useEffect(() => {
-    if (!previewing || !pull) return undefined;
-    const stop = new AbortController();
-    const markdown = text.slice(0, MARKDOWN_LIMIT);
-    const page = `https://github.com/${pull.owner}/${pull.repo}/pull/${pull.number}`;
-    commentsJobs()
-      .render(
-        { html: null, markdown, repo: { owner: pull.owner, name: pull.repo }, page },
-        { signal: stop.signal },
-      )
-      .then((made: Rendered) => {
-        if (!stop.signal.aborted) setRendered({ text, rendered: made });
-      })
-      .catch((error: unknown) => {
-        if (!stop.signal.aborted) console.error("Lo couldn't draw a comment's preview:", error);
-      });
-    return () => stop.abort();
-  }, [previewing, text, pull]);
-  if (!previewing) return null;
-  if (text.trim() === '') return <p className="px-12 py-8 text-fg-muted">Nothing to preview</p>;
-  return (
-    <div className="px-12 py-8">
-      {rendered?.text === text ? (
-        <Markdown
-          tree={rendered.rendered.tree}
-          onFollow={follow}
-          images={(url) => postImage(box.view, url)}
-          className="lo-prose read-comment"
-        />
-      ) : (
-        <p className="whitespace-pre-wrap">{text}</p>
-      )}
-    </div>
-  );
+  if (!previewing || !pull) return null;
+  return <Rendering view={box.view} text={text} pull={pull} />;
 }
 
 /**

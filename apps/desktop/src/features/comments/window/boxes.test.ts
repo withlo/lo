@@ -617,7 +617,9 @@ describe('acting on a thread', () => {
     withThreads(thread('T2', 2, { viewerCanResolve: false }), thread('T5', 5));
     resolve(tab(), ON_TWO);
     expect(notice()?.body).toMatch(/^GitHub doesn’t let you resolve this thread\./);
-    said.pull = pull({ connection: { kind: 'offline' } });
+    said.pull = pull({
+      connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'down' },
+    });
     resolve(tab(), ON_FIVE);
     expect(notice()?.body).toBe('Offline. Try again once GitHub can be reached.');
     expect(asked('comments.resolve')).toEqual([]);

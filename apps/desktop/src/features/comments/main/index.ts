@@ -3,10 +3,12 @@
 // writes, kept as drafts until they're sent, and sent one at a time to a pull request
 // (`./writer.ts`), with which lines GitHub takes them on (`./commentable.ts`); posts' HTML, read on
 // demand as the window asks for the posts on screen, and offered to the other features as
-// `comments.bodies`; and the images in posts, and avatars, which the window loads only on the image
-// scheme, served here from GitHub's image hosts (`./images.ts`). An image in a post is fetched, and
-// kept, as the account its pull request's tab acts as, whose token goes only to GitHub's address
-// for an attachment.
+// `comments.bodies`; the threads, your pending review and a turn among the writes, offered as
+// `comments.reviews`, and the submit dialog's summary, kept with the drafts and offered as
+// `comments.drafts` (`./summary.ts`), for submitting a review; and the images in posts, and
+// avatars, which the window loads only on the image scheme, served here from GitHub's image hosts
+// (`./images.ts`). An image in a post is fetched, and kept, as the account its pull request's tab
+// acts as, whose token goes only to GitHub's address for an attachment.
 
 import { parseOid } from '@lo/git';
 import { app, net, session } from 'electron';
@@ -22,11 +24,12 @@ import { github } from '../../accounts/service.ts';
 import { comparisons } from '../../revisions/service.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
-import { bodies } from '../service.ts';
+import { bodies, drafts, reviews } from '../service.ts';
 import { readBodies } from './bodies.ts';
 import { CommentableReads } from './commentable.ts';
 import { DraftStore } from './drafts.ts';
 import { IMAGE_LIMITS, ImageError, Images } from './images.ts';
+import { summaries } from './summary.ts';
 import { ThreadReads } from './threads.ts';
 import { Writer } from './writer.ts';
 
@@ -43,6 +46,7 @@ let stopServing: (() => void) | undefined;
 let reads: ThreadReads | undefined;
 let writer: Writer | undefined;
 let commentable: CommentableReads | undefined;
+let store: DraftStore | undefined;
 const stops: (() => void)[] = [];
 
 /** What `start` made, for a handler: the window asks nothing before main has started. */
@@ -66,6 +70,15 @@ export default defineFeature(contract, {
           options,
         ),
     }),
+    // For the submit dialog: your pending review, a turn among the writes, and its summary.
+    provides(reviews, {
+      current: (id) => reads?.current(id) ?? { threads: undefined, review: undefined },
+      inTurn: (id, write) => started(writer).inTurn(id, write),
+    }),
+    provides(
+      drafts,
+      summaries(() => started(store)),
+    ),
   ],
   handlers: {
     async bodies({ id, posts, description }, { use }) {
@@ -96,11 +109,12 @@ export default defineFeature(contract, {
   },
   start({ use, publish, database }) {
     const service = use(tabs);
-    const store = new DraftStore(database);
+    const kept = new DraftStore(database);
+    store = kept;
     const writing = new Writer({
       poller: (login) => use(github).poller(login),
       view: (id) => service.pull(id),
-      drafts: store,
+      drafts: kept,
       publish: (view) => publish('drafts', view),
       publishActs: (view) => publish('acts', view),
       async unchanged(id, from, to, path) {
@@ -207,6 +221,7 @@ export default defineFeature(contract, {
     reads = undefined;
     writer?.stop();
     writer = undefined;
+    store = undefined;
     commentable = undefined;
     stopServing?.();
     stopServing = undefined;

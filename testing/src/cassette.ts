@@ -10,7 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Kind, parse, print, type DefinitionNode } from 'graphql';
@@ -48,6 +48,12 @@ export interface CassetteInfo {
    * of `recorded_at`.
    */
   added?: Record<string, string>;
+  /**
+   * The recorded cassette it's derived from (`testing/src/derivations.ts`): its folder holds only
+   * the answers it changes, each in the file of the recorded one it replaces, by number, and those
+   * it adds, numbered after the recorded ones. Read, it's the recorded cassette with those in place.
+   */
+  derived_from?: string;
 }
 
 /** One request and the response GitHub gave it. */
@@ -295,16 +301,29 @@ export function cassette(name: string): Cassette {
   return readCassette(cassetteDir(name));
 }
 
-/** Reads a cassette's folder: `cassette.json` and its interactions, in file-name order. */
+/**
+ * Reads a cassette's folder: `cassette.json` and its interactions, in file-name order. A derived
+ * cassette is read as the cassette it's derived from with its own answers in place
+ * ({@link CassetteInfo.derived_from}).
+ */
 export function readCassette(dir: string): Cassette {
   const info = readJson(join(dir, 'cassette.json'));
   if (!isCassetteInfo(info)) {
     throw new Error(`${join(dir, 'cassette.json')} has no description`);
   }
+  const own = readInteractions(dir);
+  const name = basename(dir);
+  if (info.derived_from === undefined) return { name, info, interactions: own };
+  const from = readCassette(join(dirname(dir), info.derived_from));
+  return { name, info, interactions: withDerived(from.interactions, own) };
+}
+
+/** A cassette folder's interactions, in file-name order. */
+function readInteractions(dir: string): Cassette['interactions'] {
   const files = readdirSync(dir)
     .filter((file) => file.endsWith('.json') && file !== 'cassette.json')
     .toSorted(compare);
-  const interactions = files.map((file) => {
+  return files.map((file) => {
     const path = join(dir, file);
     const interaction = readJson(path);
     if (!isInteraction(interaction)) {
@@ -312,7 +331,28 @@ export function readCassette(dir: string): Cassette {
     }
     return { file, interaction };
   });
-  return { name: basename(dir), info, interactions };
+}
+
+/** The number a cassette's file starts with: its place among the cassette's requests. */
+export function fileNumber(file: string): number {
+  const number = Number.parseInt(file, 10);
+  if (!Number.isSafeInteger(number) || number < 1) {
+    throw new Error(`${file} doesn't start with a request's number`);
+  }
+  return number;
+}
+
+/**
+ * `recorded` with `derived`'s answers in place: each replaces the recorded one of its number, and
+ * any other comes in its number's place after them.
+ */
+function withDerived(
+  recorded: Cassette['interactions'],
+  derived: Cassette['interactions'],
+): Cassette['interactions'] {
+  const byNumber = new Map(recorded.map((each) => [fileNumber(each.file), each]));
+  for (const each of derived) byNumber.set(fileNumber(each.file), each);
+  return [...byNumber].toSorted(([a], [b]) => a - b).map(([, each]) => each);
 }
 
 function readJson(path: string): Json {
