@@ -18,6 +18,7 @@ import type { FileVersions } from '../contract.ts';
 import keys from '../keys.ts';
 import { layout, whitespace } from '../settings.ts';
 import { Diff } from './Diff.tsx';
+import { drawnElsewhere, linesElsewhere } from './elsewhere.ts';
 import { changesLink, fileLink } from './links.ts';
 import { main } from './main.ts';
 import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
@@ -199,6 +200,25 @@ async function copy(text: string): Promise<void> {
   await tabs().copy({ text });
 }
 
+/** `yy` in the whole file on screen, or in the diff on screen. */
+const copyCode = inCode<LineTarget>(
+  async (whole, target, count) => {
+    const all = wholeLines(whole);
+    if (!all) return;
+    const lines = spansOf(target, count).flatMap((span) =>
+      all.slice(Math.min(span.from, span.to) - 1, Math.max(span.from, span.to)),
+    );
+    await copy(lines.join('\n'));
+  },
+  async ({ view }, target, count) => {
+    await copy(
+      spansOf(target, count)
+        .flatMap((span) => view.lines(span))
+        .join('\n'),
+    );
+  },
+);
+
 export default {
   commands: handlers(keys, {
     nextChange: { run: withDiff(({ view }) => view.jump('change', 1)), enabled: drawnNow },
@@ -267,24 +287,13 @@ export default {
       listed: hasNote,
     },
     copyLines: {
-      run: inCode(
-        async (whole, target, count) => {
-          const all = wholeLines(whole);
-          if (!all) return;
-          const lines = spansOf(target, count).flatMap((span) =>
-            all.slice(Math.min(span.from, span.to) - 1, Math.max(span.from, span.to)),
-          );
-          await copy(lines.join('\n'));
-        },
-        async ({ view }, target, count) => {
-          await copy(
-            spansOf(target, count)
-              .flatMap((span) => view.lines(span))
-              .join('\n'),
-          );
-        },
-      ),
-      enabled: codeNow,
+      // Code another feature draws, such as an overview's code block, copies from what it draws.
+      run: (target, count) => {
+        const elsewhere = linesElsewhere(spansOf(target, count));
+        if (elsewhere) void copy(elsewhere.join('\n'));
+        else copyCode(target, count);
+      },
+      enabled: (target) => drawnElsewhere(target.at.file) || codeNow(),
     },
     copyLink: {
       run: inCode(

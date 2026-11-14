@@ -11,7 +11,7 @@ import { notify } from '../../../window/commands/notices.tsx';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { EditPlaceRow } from '../contract.ts';
 import { OFFLINE_ACT, setAsking } from './acts.ts';
-import { canWrite, knowPull, loginOf, offline, openInTimeline } from './boxes.ts';
+import { bringToTimeline, canWrite, knowPull, loginOf, offline, openInTimeline } from './boxes.ts';
 import { main } from './main.ts';
 import { actText } from './writing.ts';
 
@@ -147,6 +147,8 @@ export function focusPullBox(tab: PullTab): void {
     notify(title, can);
     return;
   }
+  // The draft is under the code block it was written on: it comes here, and takes focus as it does.
+  if (bringToTimeline(tab.id)) return;
   const focus = focusers.get(tab.id);
   if (focus) focus();
   else notify(title, 'The timeline isn’t drawn yet.');

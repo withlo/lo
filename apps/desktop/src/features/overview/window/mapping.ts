@@ -317,3 +317,72 @@ export function linesIn(runs: readonly Run[]): number[] {
   for (const { from, to } of runs) for (let line = from; line <= to; line++) lines.push(line);
   return lines;
 }
+
+/**
+ * Why a comment on a code block's lines goes on their file at the head on screen: the lines
+ * `changed` since the overview's commit, or another line came between them; they're on the
+ * `older` side, which Lo doesn't map past the overview's commit, since the base under them may have
+ * moved; or Lo can't tell where they are (`unknown`), as for a file it can't compare.
+ */
+export type FileWhy = 'changed' | 'older' | 'unknown';
+
+/**
+ * Where lines a comment on a code block is on, at the head on screen: on the same lines there, when
+ * each is there unchanged, in one run (`lines`); on the file, when it's there but they can't be,
+ * saying why (`file`); or not at all, the file at `path` gone (`gone`), as when the pull request
+ * deletes it, which GitHub still takes a comment on.
+ */
+export type CommentOnHead =
+  | {
+      readonly kind: 'lines';
+      readonly path: string;
+      readonly side: 'old' | 'new';
+      readonly from: number;
+      readonly to: number;
+    }
+  | { readonly kind: 'file'; readonly path: string; readonly why: FileWhy }
+  | { readonly kind: 'gone'; readonly path: string };
+
+/**
+ * Where lines `from` to `to` on `side` of the file at `path`, at the overview's commit, are for a
+ * comment at the head on screen, as `since` says: `same` where the overview describes that head.
+ * Lines on the older side stay only where the head is the overview's commit, since the base under
+ * them may have moved.
+ */
+export function commentOnHead(
+  since: FileSince | 'same',
+  path: string,
+  lines: { readonly side: 'old' | 'new'; readonly from: number; readonly to: number },
+): CommentOnHead {
+  const from = Math.min(lines.from, lines.to);
+  const to = Math.max(lines.from, lines.to);
+  if (since === 'same') return { kind: 'lines', path, side: lines.side, from, to };
+  switch (since.kind) {
+    case 'deleted':
+      return { kind: 'gone', path };
+    case 'unknown':
+      return { kind: 'file', path, why: 'unknown' };
+    case 'opaque':
+      return { kind: 'file', path: since.path, why: 'unknown' };
+    case 'same':
+    case 'changed': {
+      if (lines.side === 'old') return { kind: 'file', path: since.path, why: 'older' };
+      const first = lineOnHead(since, from);
+      const last = lineOnHead(since, to);
+      // Each line there, unchanged, with nothing added between them.
+      const kept =
+        first !== undefined &&
+        last !== undefined &&
+        last - first === to - from &&
+        Array.from({ length: to - from + 1 }, (_, at) => lineOnHead(since, from + at)).every(
+          (line, at) => line === first + at,
+        );
+      return kept
+        ? { kind: 'lines', path: since.path, side: 'new', from: first, to: last }
+        : { kind: 'file', path: since.path, why: 'changed' };
+    }
+    default:
+      since satisfies never;
+      return { kind: 'file', path, why: 'unknown' };
+  }
+}

@@ -1476,6 +1476,27 @@ describe('threads', () => {
     expect(landed).toEqual(['one', 'two', 'on b', 'also on b', 'two']);
   });
 
+  test('a thread ]t landed on that’s no longer drawn there is no key’s to act on', () => {
+    const shown = open();
+    shown.setThreads(
+      [thread('one', at('a', 'new', 4)), thread('two', at('a', 'new', 4))],
+      plain().render,
+    );
+    shown.reveal(onLine('a', 'new', 1));
+    shown.jump('thread', 2);
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'two' });
+    // It went, as when it was deleted: the line's only thread is what keys act on.
+    shown.setThreads([thread('one', at('a', 'new', 4))], plain().render);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 4));
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'one' });
+    // Back beside another, it's not the one landed on until ]t lands on it again.
+    shown.setThreads(
+      [thread('one', at('a', 'new', 4)), thread('three', at('a', 'new', 4))],
+      plain().render,
+    );
+    expect(shown.keyState().target).not.toHaveProperty('thread');
+  });
+
   test('a thread waiting to come under a line on screen isn’t drawn there for a key to act on', () => {
     const shown = open();
     const screen = onScreen(['line 4']);
@@ -2389,6 +2410,29 @@ describe('overview marks', () => {
     expect(noted('After')).toEqual([]);
     expect(markers('After')).toEqual(['ball first', 'rail', 'rail last']);
     expect(shown.closeNote()).toBe(false);
+  });
+
+  test('a note’s text is the caller’s to draw, in place of its plain text, until it closes', () => {
+    const shown = open();
+    const takenDown = vi.fn<() => void>();
+    const draw = vi.fn<(into: HTMLElement) => () => void>((into) => {
+      const words = document.createElement('p');
+      const stress = document.createElement('em');
+      stress.textContent = 'refused';
+      words.append('A query is ', stress);
+      into.append(words);
+      return takenDown;
+    });
+    const mark = overview('new', 4, 6, 'one', 'A query is refused');
+    if (mark.kind === 'overview') mark.note.draw = draw;
+    shown.setMarks([mark]);
+    shown.openNote(at('a', 'new', 4));
+    expect(draw).toHaveBeenCalledTimes(1);
+    const text = parent!.querySelector('.cm-content[aria-label="After"] .lo-ovnote__text')!;
+    expect(text.innerHTML).toBe('<p>A query is <em>refused</em></p>');
+    expect(takenDown).not.toHaveBeenCalled();
+    shown.closeNote();
+    expect(takenDown).toHaveBeenCalledTimes(1);
   });
 
   test('Esc in the diff closes the note opened last, once Vim is waiting on nothing', () => {

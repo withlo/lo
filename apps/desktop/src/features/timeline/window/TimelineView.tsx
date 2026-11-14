@@ -303,7 +303,7 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
         end={
           login !== undefined && (
             <TimelineEnd marker={{ login, image: avatarImage({ login, type: 'User' }, MARKER) }}>
-              <PullCommentBox tab={tab} leave={leave} />
+              <PullCommentBox tab={tab} leave={leave} keys={keysOf('timeline.comment')} />
             </TimelineEnd>
           )
         }

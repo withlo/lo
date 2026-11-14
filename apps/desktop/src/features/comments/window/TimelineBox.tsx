@@ -6,6 +6,7 @@
 // so nothing around it moves; the next key, click or scroll lets it go. Under a comment whose
 // delete's answer was lost, the card says how that stands.
 
+import { Button, Key } from '@lo/ui';
 import { createComposer } from '@lo/ui/code';
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
 
@@ -13,6 +14,7 @@ import { useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { acting, closeAct, closedActs, noteOf } from './acts.ts';
 import {
   type Box,
+  bringToTimeline,
   catchUpDrafts,
   knowPull,
   sendingNow,
@@ -58,6 +60,7 @@ function TimelineComposer({
       timelineFrame(box),
     );
     box.composer = made;
+    box.drawnIn = 'timeline';
     box.left = back;
     made.hold(sendingNow(box.state));
     box.set({ mode: made.mode });
@@ -69,9 +72,10 @@ function TimelineComposer({
     return () => {
       box.saveNow();
       if (box.left === back) box.left = undefined;
-      // Closed already, as once it was sent.
+      // Closed already, as once it was sent, or taken elsewhere.
       if (box.composer !== made) return;
       box.composer = undefined;
+      box.drawnIn = undefined;
       made.dismiss();
     };
   }, [box, nonce, label]);
@@ -116,17 +120,21 @@ export interface PullBoxProps {
   readonly tab: PullTab;
   /** Gives focus back to the timeline. */
   readonly leave: () => void;
+  /** The keys of `c` there, which brings the draft from a code block, as this system shows them. */
+  readonly keys?: readonly string[] | undefined;
 }
 
 /**
  * The box at the end of tab `tab`'s timeline, which comments on the pull request itself: its draft
  * as main keeps it, restored after a restart, and a new, empty box once GitHub takes the comment.
- * `c` in the timeline puts focus in it.
+ * `c` in the timeline puts focus in it. While the draft opens under the code block it was written
+ * on, it says so in the box's place, and `c` brings it here.
  */
-export function PullBox({ tab, leave }: PullBoxProps): ReactNode {
+export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
   const view = tab.id;
   const own = useTabState(timelineBoxes, view, (boxes) => boxes.own);
-  const box = own ?? timelineBox(view, ON_PULL);
+  const away = useTabState(timelineBoxes, view, (boxes) => boxes.away);
+  const box = own ?? (away ? undefined : timelineBox(view, ON_PULL));
   const outer = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -137,7 +145,7 @@ export function PullBox({ tab, leave }: PullBoxProps): ReactNode {
     () =>
       setPullBoxFocus(view, () => {
         inner.current?.scrollIntoView({ block: 'nearest' });
-        box.composer?.focus();
+        box?.composer?.focus();
       }),
     [view, box],
   );
@@ -145,7 +153,19 @@ export function PullBox({ tab, leave }: PullBoxProps): ReactNode {
   return (
     <div ref={outer} data-lo-timeline="box">
       <div ref={inner}>
-        <TimelineComposer box={box} label="Comment on the pull request" leave={leave} />
+        {box ? (
+          <TimelineComposer box={box} label="Comment on the pull request" leave={leave} />
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-4 py-4 text-fg-muted text-small">
+            <span>
+              Your comment on the pull request is open under its code block in the overview.
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => bringToTimeline(view)}>
+              Write it here
+              {keys && <Key keys={keys} decorative />}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -7,7 +7,7 @@
 import { WidgetType } from '@codemirror/view';
 
 import { COMMENT_PATH, threadWords } from '../counts.ts';
-import type { FileHeader } from './api.ts';
+import type { DrawNote, FileHeader } from './api.ts';
 import type { ThreadHost } from './threads.ts';
 
 /** How each viewed mark is drawn: a ring, a filled ball, or an amber ring with a dot. */
@@ -331,10 +331,16 @@ export interface NoteDraw {
   /** The overview's block that explains the lines, which "Read it in the overview" names. */
   readonly block: string;
   readonly label: string;
+  /** Its text, plain, which sizes it before it's drawn, and which it shows unless `draw` draws it. */
   readonly text: string;
+  /** What draws its text in its place, the caller's way. */
+  readonly draw?: DrawNote | undefined;
   /** Whether it links back to the overview. */
   readonly link: boolean;
 }
+
+/** What takes down the text a caller drew in a note, by the element it drew it in. */
+const drawnNotes = new WeakMap<Element, () => void>();
 
 /** The attribute on a note's link that names the overview's block it shows. */
 export const NOTE_BLOCK_ATTRIBUTE = 'data-note-block';
@@ -415,7 +421,11 @@ export class ThreadWidget extends WidgetType {
 
   override destroy(dom: HTMLElement): void {
     this.sizes.unobserve(dom);
-    for (const text of dom.querySelectorAll('.lo-ovnote__text')) this.sizes.unobserve(text);
+    for (const text of dom.querySelectorAll('.lo-ovnote__text')) {
+      this.sizes.unobserve(text);
+      drawnNotes.get(text)?.();
+      drawnNotes.delete(text);
+    }
   }
 
   /** Whether it holds notes alone, whose size as drawn is kept for drawing them again. */
@@ -465,8 +475,8 @@ function sameNote(a: NoteDraw, b: NoteDraw | undefined): boolean {
 }
 
 /**
- * An overview marker's note: its label, its text, and a foot with the way back to the overview,
- * all plain text.
+ * An overview marker's note: its label, its text, as the caller draws it or else plain, and a foot
+ * with the way back to the overview.
  */
 function noteElement(note: NoteDraw): HTMLElement {
   const box = element('div', 'lo-ovnote');
@@ -482,7 +492,10 @@ function noteElement(note: NoteDraw): HTMLElement {
     foot.append(link);
   }
   foot.append(element('span', '', 'Esc closes it'));
-  box.append(label, element('div', 'lo-ovnote__text', note.text), foot);
+  const text = element('div', 'lo-ovnote__text');
+  if (note.draw) drawnNotes.set(text, note.draw(text));
+  else text.textContent = note.text;
+  box.append(label, text, foot);
   return box;
 }
 

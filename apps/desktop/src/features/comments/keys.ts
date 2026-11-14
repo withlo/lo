@@ -1,10 +1,13 @@
 // The comments' keys: writing a comment in the diff, and acting on its review threads. `c` opens a
 // comment box under the cursor's line, or the lines `v` selected, on either side, or on the file
 // with the cursor on its header; `C` opens the same box to post right away; `s` opens it with the
-// lines in a `suggestion` block. In the file tree `c` comments on the file. On a thread, the one
-// `]t` landed on or the only one on the cursor's line or the header's file, `r` replies, `x`
-// resolves or unresolves it, `i` edits your newest comment in it and `dd` deletes that comment,
-// after asking. Each replaces Vim's key, since the diff is read-only.
+// lines in a `suggestion` block. In the file tree `c` comments on the file. On an overview's code
+// block, `c` comments on its lines, and in its code on the cursor's line or the lines `v` selected:
+// on those lines at the head on screen where GitHub takes a comment on them, else on their file,
+// else on the pull request itself. On a thread, the one `]t` landed on or the only one on the
+// cursor's line or the header's file, `r` replies, `x` resolves or unresolves it, `i` edits your
+// newest comment in it and `dd` deletes that comment, after asking. Each replaces Vim's key, since
+// the code is read-only.
 // A line GitHub takes no comment on says so, and then `⏎` comments on its file instead; anywhere
 // else `⏎` is Vim's. The box's own keys are the code view's (`⌘⏎`, `⌥⏎`, `⌘⇧V`, `Esc Esc`). What
 // the buttons in a box's notes do is also on its frame's right-click menu, and in the palette while
@@ -76,6 +79,21 @@ export default defineCommands(
       targets: ['header', 'file'],
       when: { scope: 'tree' },
       menu: { on: 'header', order: 6 },
+    },
+    /**
+     * A comment box under a code block's lines in the overview, from the block, its menu, or its
+     * code, where it's on the cursor's line or the lines `v` selected: on those lines at the head
+     * on screen, where GitHub takes a comment on them; otherwise on their file, where the pull
+     * request changes it; otherwise on the pull request itself.
+     */
+    commentOnBlock: {
+      label: 'Comment on these lines',
+      group: 'Act',
+      keys: ['c'],
+      targets: ['block', 'line'],
+      overVim: true,
+      when: { scope: ['overview', 'file'], mode: ['normal', 'visual'] },
+      menu: { on: 'block', order: 25 },
     },
     /**
      * Just after a line refused a comment, as GitHub takes none there, a comment on its file instead.

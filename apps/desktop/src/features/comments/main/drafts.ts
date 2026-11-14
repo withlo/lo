@@ -1,17 +1,24 @@
 // The drafts of comment boxes, in main: what the reader typed and hasn't posted, by account, pull
 // request and place, saved in the database as the window hands it over, so quitting Lo or a crash
 // loses none of it. Those saved before Lo started come back marked restored. An edit's keeps the
-// text it started from, while it's kept at all. Besides the boxes' drafts (new threads, replies,
-// the box on the pull request itself and edits), a pull request has one summary, the submit
-// dialog's, which the review feature keeps here through the `comments.drafts` service. A place of a
-// kind this version of Lo doesn't know, written by a later one, stays in the database as it is and
-// is never opened. Nothing here calls Electron.
+// text it started from, while it's kept at all, and one written on an overview's code block keeps
+// the block, where its box opens again. Besides the boxes' drafts (new threads, replies, edits and
+// the pull request's own), a pull request has one summary, the submit dialog's, which the review
+// feature keeps here through the `comments.drafts` service. A place of a kind this version of Lo
+// doesn't know, written by a later one, stays in the database as it is and is never opened.
+// Nothing here calls Electron.
 
 import { PullRef } from '@lo/github';
 import { Drafts, type DraftPlace, type ThreadDraftPlace } from '@lo/review';
 
 import type { Database } from '../../../main/database.ts';
-import { draftPlace, type DraftPlaceRow, type ThreadPlaceRow } from '../contract.ts';
+import {
+  draftHome,
+  draftPlace,
+  type DraftHomeRow,
+  type DraftPlaceRow,
+  type ThreadPlaceRow,
+} from '../contract.ts';
 
 /** The submit dialog's summary: one a pull request, for each account. */
 export interface SummaryPlace {
@@ -41,6 +48,8 @@ export interface Kept<P extends StoredPlace = DraftPlaceRow> {
   readonly sentAt: number | null;
   /** For an edit, the comment's text on GitHub when it started. */
   readonly base: string | null;
+  /** The overview's code block its box was written on, if it was. */
+  readonly home: DraftHomeRow | null;
 }
 
 function integer(value: unknown): number {
@@ -74,14 +83,24 @@ export function placeJson(place: StoredPlace): string {
     }
     case 'reply':
       return JSON.stringify({ kind: place.kind, thread: place.thread });
-    case 'conversation':
-      return JSON.stringify({ kind: place.kind });
     case 'edit':
       return JSON.stringify({ kind: place.kind, thread: place.thread, comment: place.comment });
+    case 'conversation':
     case 'summary':
       return JSON.stringify({ kind: place.kind });
     default:
       throw new Error(`a draft's place Lo doesn't know: ${JSON.stringify(place satisfies never)}`);
+  }
+}
+
+/** A draft's code block, as the database keeps it: none for text this version can't read. */
+function readHome(json: unknown): DraftHomeRow | null {
+  if (typeof json !== 'string') return null;
+  try {
+    const read = draftHome.safeParse(JSON.parse(json));
+    return read.success ? read.data : null;
+  } catch {
+    return null;
   }
 }
 
@@ -150,7 +169,7 @@ export class DraftStore {
     this.#now = now;
     const rows = database
       .prepare(
-        'SELECT account, owner, repo, number, place, body, sent, sent_at, saved_at, base FROM comments_drafts',
+        'SELECT account, owner, repo, number, place, body, sent, sent_at, saved_at, base, home FROM comments_drafts',
       )
       .all();
     for (const row of rows) {
@@ -165,6 +184,7 @@ export class DraftStore {
         sent: row.sent === null ? null : String(row.sent),
         sentAt: row.sent === null || row.sent_at === null ? null : integer(row.sent_at),
         base: row.base === null ? null : String(row.base),
+        home: readHome(row.home),
       });
     }
   }
@@ -210,14 +230,22 @@ export class DraftStore {
   /**
    * Keeps `text` as the draft at `place`, as typed: blank text removes it, unless it was sent with
    * its answer lost, which keeps it until that's settled, or it's an edit's, which keeps the text it
-   * started from until it's sent or discarded. Says whether anything changed.
+   * started from until it's sent or discarded. `home`, when it's given, is the code block its box
+   * was written on, or none; otherwise it keeps the one it has. Says whether anything changed.
    */
-  save(account: string, pull: PullRef, place: StoredPlace, text: string): boolean {
+  save(
+    account: string,
+    pull: PullRef,
+    place: StoredPlace,
+    text: string,
+    home?: DraftHomeRow | null,
+  ): boolean {
     const json = placeJson(place);
     const was = this.#kept.get(keyOf(account, pull))?.get(json);
     if (text.trim() === '' && was?.sent == null && was?.base == null)
       return this.take(account, pull, place) !== undefined;
-    if (was?.text === text) return false;
+    const kept = home === undefined ? (was?.home ?? null) : home;
+    if (was?.text === text && JSON.stringify(was.home) === JSON.stringify(kept)) return false;
     this.#put(account, pull, json, {
       place,
       text,
@@ -226,6 +254,7 @@ export class DraftStore {
       sent: was?.sent ?? null,
       sentAt: was?.sentAt ?? null,
       base: was?.base ?? null,
+      home: kept,
     });
     return true;
   }
@@ -246,6 +275,7 @@ export class DraftStore {
       sent: null,
       sentAt: null,
       base,
+      home: null,
     });
     return true;
   }
@@ -267,7 +297,16 @@ export class DraftStore {
     const was =
       this.#kept.get(keyOf(account, pull))?.get(json) ??
       (keep && sent !== null
-        ? { place, text: sent, savedAt: at, restored: false, sent: null, sentAt: null, base: null }
+        ? {
+            place,
+            text: sent,
+            savedAt: at,
+            restored: false,
+            sent: null,
+            sentAt: null,
+            base: null,
+            home: null,
+          }
         : undefined);
     if (!was || (was.sent === null && sent === null)) return;
     this.#put(account, pull, json, { ...was, sent, sentAt: sent === null ? null : at });
@@ -358,11 +397,11 @@ export class DraftStore {
     this.#database
       .prepare(
         `INSERT INTO comments_drafts
-           (account, owner, repo, number, place, body, sent, sent_at, saved_at, base)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (account, owner, repo, number, place, body, sent, sent_at, saved_at, base, home)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (account, owner, repo, number, place) DO UPDATE SET
            body = excluded.body, sent = excluded.sent, sent_at = excluded.sent_at,
-           saved_at = excluded.saved_at, base = excluded.base`,
+           saved_at = excluded.saved_at, base = excluded.base, home = excluded.home`,
       )
       .run(
         account,
@@ -375,6 +414,7 @@ export class DraftStore {
         kept.sentAt === null ? null : Math.round(kept.sentAt),
         Math.round(kept.savedAt),
         kept.base,
+        kept.home === null ? null : JSON.stringify(kept.home),
       );
   }
 }

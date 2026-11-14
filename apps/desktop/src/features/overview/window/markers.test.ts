@@ -2,8 +2,9 @@
 // The overview's markers in the diff: on the lines it points at as written, at the commit it
 // describes; mapped to the head on screen once each file is worked out there, with none on lines
 // that changed or went, nor on a file that's gone; none at any other commit, nor for a reference
-// that doesn't resolve; the diff told as they change; and "Read it in the overview" showing the
-// overview at the note's block, only for the overview the tab has now.
+// that doesn't resolve; the diff told as they change; a note's words drawn as the overview draws
+// them; and "Read it in the overview" showing the overview at the note's block, only for the
+// overview the tab has now.
 
 import { checkArtifact, parseArtifact } from '@lo/artifact';
 import { diffText } from '@lo/diff';
@@ -214,7 +215,7 @@ describe('the overview’s markers', () => {
   it('mark its lines as written at the commit it describes, and none at another', async () => {
     const tree = await shown(R1);
     at(R1);
-    const note = { label: 'How it works', text: SAID };
+    const note = { label: 'How it works', text: SAID, draw: expect.any(Function) };
     expect(linesAt(R1)).toEqual([
       { path: 'src/a.ts', from: 2, to: 2, block: `${tree}.3`, note },
       // A reference that doesn't resolve marks nothing.
@@ -231,7 +232,7 @@ describe('the overview’s markers', () => {
     expect(linesAt(R2)).toEqual([]);
     await settled();
     expect(fake.changed).toContain(tab);
-    const note = { label: 'How it works', text: SAID };
+    const note = { label: 'How it works', text: SAID, draw: expect.any(Function) };
     // Line 3 changed, and a line was added at the top: the file is src/b.ts now.
     expect(linesAt(R2)).toEqual([
       { path: 'src/b.ts', from: 3, to: 3, block: `${tree}.3`, note },
@@ -240,6 +241,20 @@ describe('the overview’s markers', () => {
     ]);
     // Not on the overview's own commit, which the diff doesn't show then.
     expect(linesAt(R1)).toHaveLength(2);
+  });
+
+  it('draw a note’s words as the overview draws them, a link to code as its words', async () => {
+    await shown(R1);
+    at(R1);
+    const [first] = linesAt(R1) ?? [];
+    const into = document.createElement('div');
+    const takeDown = first!.note.draw!(into);
+    // At once, as the diff measures the note as it's drawn.
+    expect(into.querySelector('p')?.textContent).toBe(SAID);
+    expect(into.querySelector('a')).toBeNull();
+    takeDown();
+    await settled();
+    expect(into.childElementCount).toBe(0);
   });
 
   it('mark nothing of a file gone since', async () => {

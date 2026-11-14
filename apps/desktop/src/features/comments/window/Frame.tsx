@@ -154,7 +154,7 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
           box.set({ previewing: on });
         },
         previewKeys: labels('cmd+shift+v'),
-        where: whereText(place, started),
+        where: state.where ?? whereText(place, started),
         account:
           login === undefined
             ? undefined

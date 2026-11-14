@@ -153,6 +153,22 @@
 .lo-ovnote__text {
   overflow-wrap: anywhere;
 }
+/* A note's words as the overview draws them, as tight as its plain text. */
+.lo-ovnote__words > * + * {
+  margin-top: 6px;
+}
+.lo-ovnote__words :where(ul, ol) {
+  padding-left: 20px;
+}
+.lo-ovnote__words :where(h2, h3, h4, h5, h6) {
+  font: inherit;
+  font-weight: 600;
+}
+.lo-ovnote__words :where(a) {
+  color: var(--lo-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .lo-ovnote__read {
   color: var(--lo-link);
   font: inherit;

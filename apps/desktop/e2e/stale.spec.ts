@@ -4,7 +4,9 @@
 // changed since once the local copy is there; flags the code block on lines r2 changed, its code
 // still r1's; compares r1 with r2 in the diff when asked; marks r1 in the revision picker as the
 // revision it describes; and marks the lines it explains in the diff, mapped to r2, each with a
-// note. Nothing on screen moves without the reader as all that comes in.
+// note. A comment on a block whose lines r2 changed goes on the file, and on a block of a file the
+// pull request leaves alone, on the pull request. Nothing on screen moves without the reader as all
+// that comes in.
 
 import { writeFileSync } from 'node:fs';
 
@@ -270,6 +272,38 @@ test('says it was written for r1 from its first frame, and flags the block on li
     }
   });
 
+  await test.step('a comment on a block whose lines r2 changed goes on the file, and on a file the pull request leaves alone, on the pull request', async () => {
+    const boxes = shown(page).locator('.lo-codeblock .lo-diffcomposer');
+    // The block's menu, on the parser's lines r2 changed: on the file, under the block's last line.
+    const parser = codeBlock(page, 'src/parser.ts', 'L7–10');
+    await parser.scrollIntoViewIfNeeded();
+    // At its corner, its own: a right-click on its code is the line's.
+    await parser.click({ button: 'right', position: { x: 4, y: 4 } });
+    await page
+      .getByRole('menu', { name: 'Block actions' })
+      .getByRole('menuitem', { name: /^Comment on these lines/ })
+      .click();
+    const onFile = parser.locator('.lo-diffcomposer');
+    await expect(onFile).toContainText('On the file, since these lines changed after r1', {
+      timeout: 20_000,
+    });
+    await expect(onFile.locator('.mode-chip')).toHaveText('INSERT');
+    for (const key of ['Escape', 'Escape']) await page.keyboard.press(key);
+    await expect(boxes).toHaveCount(0);
+
+    // `c` on a line of the README's block, which the pull request doesn't touch.
+    const readme = codeBlock(page, 'README.md', 'L1–4');
+    await readme.scrollIntoViewIfNeeded();
+    await readme.locator('.cm-line:visible').first().click();
+    await page.keyboard.press('c');
+    const onPull = readme.locator('.lo-diffcomposer');
+    await expect(onPull).toContainText('On the pull request, since it doesn’t change this file', {
+      timeout: 20_000,
+    });
+    for (const key of ['Escape', 'Escape']) await page.keyboard.press(key);
+    await expect(boxes).toHaveCount(0);
+  });
+
   await test.step('keeps the banner as tall whatever its labels and what changed since say, at any width', async () => {
     await expect(banner(page).locator('.lo-ov-stale__sub')).toContainText('code block', {
       timeout: 20_000,
@@ -438,6 +472,8 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
     await expect(note.locator('.lo-ovnote__text')).toHaveText(
       'The formatter takes its Line from the new path, and passes wrap on from where it lives now:',
     );
+    // As the overview draws its words: its code as code.
+    await expect(note.locator('.lo-ovnote__text p code')).toHaveText(['Line', 'wrap']);
     await expect(note.getByRole('button', { name: 'Read it in the overview' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(note).toHaveCount(0);

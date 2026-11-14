@@ -1,8 +1,8 @@
 // Writing on a pull request itself, from main: a comment there posts at once, in its turn, joining
-// no review, and one whose answer was lost is looked for in the timeline read afresh; your comments
-// there are edited only over the text the edit started from, and deleted only as the question
-// showed them, each read afresh from the timeline first, and settled the same way when GitHub's
-// answer is lost. Nothing is ever sent again by itself.
+// no review (`writer.test.ts` settles one whose answer was lost); your comments there are edited
+// only over the text the edit started from, and deleted only as the question showed them, each
+// read afresh from the timeline first, and settled the same way when GitHub's answer is lost.
+// Nothing is ever sent again by itself.
 
 import {
   type CommentId,
@@ -251,26 +251,6 @@ describe('commenting on the pull request', () => {
     });
     expect(fake.sent).toEqual([{ kind: 'post', pull: 'PR_94', body: 'Ship it.' }]);
     expect(last()).toEqual([]);
-  });
-
-  test('an answer that was lost is settled from the timeline read afresh, kept through a restart', async () => {
-    vi.useFakeTimers();
-    for (const posted of [true, false]) {
-      const fake = poller([lost()]);
-      const database = fresh();
-      const { made, last } = writer(fake, database);
-      expect(await made.send('t1', ON_PULL, 'Ship it.', 'now')).toEqual({ kind: 'lost' });
-      expect(last()).toMatchObject([{ sending: 'checking', sent: 'Ship it.' }]);
-      // Lo starts again before it knows: the draft still says it was sent.
-      made.stop();
-      const again = writer(fake, database);
-      fake.timeline.now = posted ? [{ id: 'IC_2', body: 'Ship it.\r\n' }] : [];
-      await vi.advanceTimersByTimeAsync(10_000);
-      expect(again.last()).toMatchObject(posted ? [] : [{ sending: 'notPosted', sent: null }]);
-      expect(fake.afresh).toEqual(posted ? ['Timeline'] : []);
-      // Never sent again by itself.
-      expect(fake.sent).toHaveLength(1);
-    }
   });
 });
 

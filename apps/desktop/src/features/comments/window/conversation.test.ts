@@ -54,6 +54,13 @@ function pull(changes: Partial<PullView> = {}): PullView {
   };
 }
 
+/** The box at the end of the timeline, which the pull request's draft opens in now. */
+function ownBox(): Box {
+  const box = timelineBox(VIEW, ON_PULL);
+  if (!box) throw new Error('The pull request’s draft opens elsewhere.');
+  return box;
+}
+
 /**
  * Gives `box` an editor as the timeline draws one, empty, which tells the box of each change as it
  * comes, as CodeMirror's does.
@@ -107,6 +114,7 @@ function draft(changes: Partial<DraftRow> = {}): DraftRow {
     sending: null,
     sent: null,
     base: null,
+    home: null,
     ...changes,
   };
 }
@@ -126,7 +134,7 @@ afterEach(() => {
 describe('the box at the end of the timeline', () => {
   test('takes the pull request’s draft as main restored it, with how sending it stands', () => {
     // Drawn before main said anything.
-    const box = timelineBox(VIEW, ON_PULL);
+    const box = ownBox();
     expect(box.state.text).toBe('');
     takeDrafts({
       id: VIEW,
@@ -139,7 +147,7 @@ describe('the box at the end of the timeline', () => {
 
   test('drawn first, it takes main’s draft without saving it again, still saying how it stands', () => {
     vi.useFakeTimers();
-    const box = timelineBox(VIEW, ON_PULL);
+    const box = ownBox();
     const composer = drawn(box);
     takeDrafts({ id: VIEW, drafts: [draft({ sending: 'notPosted', savedAt: 7 })] });
     expect(composer.text).toBe('Ship it.');
@@ -150,11 +158,11 @@ describe('the box at the end of the timeline', () => {
   });
 
   test('a draft discarded stays so, though main’s drafts sent before it heard still hold it', () => {
-    const box = timelineBox(VIEW, ON_PULL);
+    const box = ownBox();
     takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
     expect(box.state.text).toBe('Ship it.');
     act(box, 'discard');
-    const next = timelineBox(VIEW, ON_PULL);
+    const next = ownBox();
     expect(next).not.toBe(box);
     takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
     expect(next.state.text).toBe('');
@@ -166,7 +174,7 @@ describe('the box at the end of the timeline', () => {
       new Promise((resolve) => {
         answer = resolve;
       });
-    const box = timelineBox(VIEW, ON_PULL);
+    const box = ownBox();
     takeDrafts({ id: VIEW, drafts: [draft({ restored: false })] });
     const sending = send(box, 'now');
     await vi.waitFor(() => expect(answer).toBeDefined());
@@ -176,7 +184,7 @@ describe('the box at the end of the timeline', () => {
       drafts: [draft({ restored: false, sending: 'sending', sent: 'Ship it.' })],
     });
     takeDrafts({ id: VIEW, drafts: [] });
-    const next = timelineBox(VIEW, ON_PULL);
+    const next = ownBox();
     answer({ kind: 'sent', pending: false, joined: false, thread: null, landedOn: null });
     await sending;
     await vi.waitFor(() => expect(timelineBoxes.get(VIEW).own).toBe(next));
@@ -189,7 +197,7 @@ describe('the box at the end of the timeline', () => {
       review: undefined,
       drafts: { id: VIEW, drafts: [draft({ sending: 'notPosted' })] },
     });
-    const box = timelineBox(VIEW, ON_PULL);
+    const box = ownBox();
     catchUpDrafts(VIEW);
     await vi.waitFor(() => expect(box.state).toMatchObject({ text: 'Ship it.' }));
     expect(box.state.sending).toBe('notPosted');

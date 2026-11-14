@@ -6,7 +6,11 @@
 // replace mode, its jumps go to the caller as places, its style elements carry the window's nonce,
 // and its cursor doesn't blink. The cursor shows only while the excerpt has focus. Under its lines
 // it draws review threads, each in an element the caller draws it in, and comment boxes, as the
-// diff view does; it doesn't hold what changes size, which is for whatever scrolls around it.
+// diff view does. Nothing on screen moves without the reader: threads that come, go or move on a
+// line on screen, a thread that changes size there by itself, as an image loading, and the room a
+// box left as it closed once its comment was sent wait until what they'd move is off screen, or the
+// reader acts in the excerpt, or anywhere when no scroll can take them off. Whatever scrolls around
+// it keeps the rest where it is as the excerpt changes height.
 //
 // Callers see none of this: they name the file by their own id, places by that id, a side and a
 // line, and reach the excerpt only through `ExcerptView` (`api.ts`). Keys reach it through the
@@ -26,6 +30,7 @@ import {
 } from '../commands/index.ts';
 import type {
   BoxFrame,
+  ComposeOptions,
   Composer,
   ComposerEvents,
   ExcerptEvents,
@@ -58,7 +63,7 @@ import {
 } from './keys.ts';
 import { marking } from './marks.ts';
 import { type ThreadHost, Threads } from './threads.ts';
-import { FileNoteWidget, ThreadSizes, ThreadWidget } from './widgets.ts';
+import { type BoxHost, FileNoteWidget, ThreadSizes, ThreadWidget } from './widgets.ts';
 
 /** Opens an excerpt of `init`'s file in `parent`, which tells `on` what happens in it. */
 export function createExcerptView(
@@ -210,6 +215,27 @@ class NumberMarker extends GutterMarker {
   }
 }
 
+/** The room a box closed once its comment was sent keeps, as tall as the box was. */
+class Room implements BoxHost {
+  readonly dom: HTMLElement;
+
+  constructor(height: number) {
+    this.dom = document.createElement('div');
+    this.dom.className = 'lo-diffcomposer-room';
+    this.dom.style.height = `${height}px`;
+  }
+
+  attach(parent: HTMLElement): void {
+    parent.append(this.dom);
+  }
+}
+
+/** What may change now: what's off screen, or also what's on it that no scroll can take off it. */
+type Letting = 'off' | 'stuck' | 'all';
+
+/** The reader's input outside the excerpt, which lets go of what no scroll can take off screen. */
+const INPUT = ['keydown', 'pointerdown'] as const;
+
 class Excerpt implements ExcerptView {
   readonly dom: HTMLElement;
   readonly #view: EditorView;
@@ -236,6 +262,17 @@ class Excerpt implements ExcerptView {
   readonly #boxes = new Map<number, CommentBox>();
   /** How tall what's drawn under lines is, made as the first thread or box comes. */
   #sizes: ThreadSizes | undefined;
+  /**
+   * The threads last given, by the document line they're under, while they wait for the lines
+   * they'd change to leave the screen.
+   */
+  #waiting: Map<number, ThreadView[]> | undefined;
+  /** Threads that changed size on screen by themselves, held at the height they were drawn at. */
+  readonly #held = new Set<ThreadHost>();
+  /** The rooms of boxes closed once their comments were sent, by the line they're under. */
+  readonly #rooms = new Map<number, Room>();
+  /** Whether it's been on the page a frame: until then, what it's given is how it comes. */
+  #drawn = false;
 
   constructor(parent: HTMLElement, init: ExcerptInit, on: ExcerptEvents) {
     installVim();
@@ -244,12 +281,20 @@ class Excerpt implements ExcerptView {
     // What's drawn under its lines changed size: each thread takes its new height in the next
     // frame, which the editor measures. A change of size made now, as the page tells its observers
     // of sizes, would go untold to the editor's.
+    // One on screen that changed by itself is held so until it's off screen, or the reader acts.
     this.#hosts = new Threads((entries) => {
       const changed = this.#hosts.resized(entries);
       if (changed.length === 0) return;
-      for (const { host } of changed) host.hold();
+      const taking: ThreadHost[] = [];
+      for (const { host, fresh, reflowed } of changed) {
+        host.hold();
+        if (!fresh && host.takeInput()) taking.push(host);
+        else if (!fresh && !reflowed && this.#onScreen(host.dom)) this.#held.add(host);
+        else taking.push(host);
+      }
+      if (taking.length === 0) return;
       requestAnimationFrame(() => {
-        for (const { host } of changed) host.letGo();
+        for (const host of taking) if (!this.#held.has(host)) host.letGo();
         this.#view.requestMeasure();
       });
     });
@@ -320,6 +365,18 @@ class Excerpt implements ExcerptView {
       setScopeSource(this.dom, this),
     );
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
+    // The reader's pointer or key in the excerpt lets go of what waits in it; in a thread, what
+    // becomes of the thread's size next is theirs.
+    for (const type of ['pointerdown', 'keydown'] as const) {
+      this.dom.addEventListener(type, this.#touched, { capture: true });
+    }
+    document.addEventListener('scroll', this.#scrolled, { capture: true, passive: true });
+    for (const type of INPUT) {
+      window.addEventListener(type, this.#elsewhere, { capture: true, passive: true });
+    }
+    requestAnimationFrame(() => {
+      this.#drawn = true;
+    });
     setVimKeys(init.vimKeys);
   }
 
@@ -384,6 +441,20 @@ class Excerpt implements ExcerptView {
 
   setThreads(threads: readonly ThreadView[], render: RenderThread): void {
     this.#hosts.render = render;
+    const next = this.#placed(threads);
+    for (const placed of next.values()) for (const thread of placed) this.#hosts.take(thread);
+    // Threads that would come, go or move on a line on screen wait for it to leave the screen.
+    const changes = changedLines(this.#threads, next);
+    if (this.#drawn && changes.some((line) => this.#lineOnScreen(line))) {
+      this.#waiting = next;
+      this.#dropThreads();
+      return;
+    }
+    this.#showThreads(next);
+  }
+
+  /** The threads on lines the excerpt shows, by the document line they're under. */
+  #placed(threads: readonly ThreadView[]): Map<number, ThreadView[]> {
     const next = new Map<number, ThreadView[]>();
     const given = new Set<string>();
     for (const thread of threads) {
@@ -391,19 +462,39 @@ class Excerpt implements ExcerptView {
       const line = 'line' in at && at.file === this.#id && this.#docLine(at.side, at.line);
       if (!line || given.has(thread.id)) continue;
       given.add(thread.id);
-      this.#hosts.take(thread);
       const there = next.get(line);
       if (there) there.push(thread);
       else next.set(line, [thread]);
     }
+    return next;
+  }
+
+  /** Draws `next` as the threads under their lines, in place of those drawn. */
+  #showThreads(next: Map<number, ThreadView[]>): void {
+    this.#waiting = undefined;
     this.#threads = next;
-    this.#hosts.drop((host) => !given.has(host.id));
+    this.#dropThreads();
     this.#drawBlocks();
+  }
+
+  /** Takes down the threads neither drawn nor waiting to be. */
+  #dropThreads(): void {
+    const kept = new Set<string>();
+    for (const threads of this.#threads.values()) for (const { id } of threads) kept.add(id);
+    for (const threads of this.#waiting?.values() ?? []) for (const { id } of threads) kept.add(id);
+    this.#hosts.drop((host) => {
+      if (kept.has(host.id)) return false;
+      this.#held.delete(host);
+      return true;
+    });
   }
 
   openThread(id: string, open: boolean | 'toggle'): boolean {
     const host = this.#hosts.get(id);
     if (!host) return false;
+    // The reader's doing: it takes its own height.
+    this.#held.delete(host);
+    host.letGo();
     host.setOpen(open === 'toggle' ? !host.open : open);
     return true;
   }
@@ -413,37 +504,47 @@ class Excerpt implements ExcerptView {
     draft: string,
     on: ComposerEvents,
     frame?: BoxFrame,
+    options: ComposeOptions = {},
   ): Composer {
     const line = this.#boxLine(at);
     if (line === undefined) throw new Error('A comment box goes under a line the excerpt shows.');
+    const focus = options.focus !== false;
     const open = this.#boxes.get(line);
     if (open) {
-      open.focus();
+      if (focus) open.focus();
       return open.composer;
     }
     const where = 'thread' in at ? this.#spot(line) : { kind: 'line' as const, at };
     if (where.kind !== 'line')
       throw new Error('A comment box goes under a line the excerpt shows.');
     const thread = 'thread' in at ? at.thread : this.#threadOn(line);
+    const target: LineTarget =
+      thread === undefined
+        ? { kind: 'line', at: where.at }
+        : { kind: 'line', at: where.at, thread };
+    // A key in the box names it too, for the caller's commands on the box.
+    if (options.name !== undefined) target.box = options.name;
     const box = new CommentBox({
-      target:
-        thread === undefined
-          ? { kind: 'line', at: where.at }
-          : { kind: 'line', at: where.at, thread },
+      target,
       draft,
       on,
       frame,
       nonce: this.#nonce,
       escape: (closed) => {
         const keep = closed.text.trim() !== '';
-        this.#closeBox(closed);
+        this.#closeBox(closed, 'escape');
         on.close(keep);
       },
-      close: (closed) => this.#closeBox(closed),
+      close: (closed) => this.#closeBox(closed, 'sent'),
+      dismiss: (closed) => this.#closeBox(closed, 'dismiss'),
     });
+    // A box opened where one's room is kept takes its place.
+    this.#rooms.delete(line);
     this.#boxes.set(line, box);
+    // The lines `v` selected are the box's now.
+    if (focus && vimMode(this.#view) === 'visual') passToVim(this.#view, ['<Esc>']);
     this.#drawBlocks();
-    box.focus();
+    if (focus) box.focus();
     return box.composer;
   }
 
@@ -465,24 +566,162 @@ class Excerpt implements ExcerptView {
     return threads?.length === 1 ? threads[0]!.id : undefined;
   }
 
-  #closeBox(box: CommentBox): void {
+  /**
+   * Takes a box away: `Esc Esc`, the reader's, gives its line focus; once its comment was sent, or
+   * as its draft goes elsewhere, focus goes to its line only if it was in the box, and a box sent
+   * on screen leaves its room, which goes with what waits there.
+   */
+  #closeBox(box: CommentBox, how: 'escape' | 'sent' | 'dismiss'): void {
     const found = [...this.#boxes].find(([, open]) => open === box);
     if (!found) return;
     const [line] = found;
+    const focused = how === 'escape' || box.dom.contains(document.activeElement);
+    const height = box.dom.offsetHeight;
     this.#boxes.delete(line);
+    if (how === 'sent' && this.#drawn && this.#lineOnScreen(line)) {
+      this.#rooms.set(line, new Room(height));
+    }
     this.#drawBlocks();
-    this.#view.dispatch({ selection: { anchor: this.#view.state.doc.line(line).from } });
-    this.#view.focus();
+    if (focused) {
+      this.#view.dispatch({ selection: { anchor: this.#view.state.doc.line(line).from } });
+      this.#view.focus();
+    }
     box.destroy();
   }
+
+  // Holding ---------------------------------------------------------------------------------
+
+  /**
+   * Where what's visible of the page is, top to bottom: the window, within every element around the
+   * excerpt that clips what it holds.
+   */
+  #visible(): { top: number; bottom: number } {
+    let top = 0;
+    let bottom = window.innerHeight;
+    for (let element = this.dom.parentElement; element; element = element.parentElement) {
+      const { overflowY } = getComputedStyle(element);
+      if (overflowY === 'visible') continue;
+      const box = element.getBoundingClientRect();
+      top = Math.max(top, box.top);
+      bottom = Math.min(bottom, box.bottom);
+    }
+    return { top, bottom };
+  }
+
+  /** Whether anything from `top` to `bottom` on the page is on screen. */
+  #spanOnScreen(top: number, bottom: number): boolean {
+    if (bottom <= top) return false;
+    const visible = this.#visible();
+    return bottom > visible.top && top < visible.bottom;
+  }
+
+  #onScreen(element: Element): boolean {
+    const { top, bottom } = element.getBoundingClientRect();
+    return this.#spanOnScreen(top, bottom);
+  }
+
+  /** Where document line `line` is on the page, with what's drawn under it. */
+  #lineSpan(line: number): { top: number; bottom: number } {
+    const view = this.#view;
+    const { doc } = view.state;
+    const top = view.documentTop + view.lineBlockAt(doc.line(line).from).top;
+    const bottom =
+      view.documentTop +
+      (line < doc.lines ? view.lineBlockAt(doc.line(line + 1).from).top : view.contentHeight);
+    return { top, bottom };
+  }
+
+  #lineOnScreen(line: number): boolean {
+    const { top, bottom } = this.#lineSpan(line);
+    return this.#spanOnScreen(top, bottom);
+  }
+
+  /**
+   * Whether a scroll could take what's from `top` to `bottom` on the page off screen, in the
+   * nearest element around the excerpt that scrolls.
+   */
+  #canLeave(top: number, bottom: number): boolean {
+    let scroller: Element | null = this.dom.parentElement;
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) {
+      scroller = scroller.parentElement;
+    }
+    scroller ??= document.scrollingElement;
+    if (!scroller) return false;
+    const box =
+      scroller === document.scrollingElement ? { top: 0 } : scroller.getBoundingClientRect();
+    const from = top - box.top + scroller.scrollTop;
+    const to = bottom - box.top + scroller.scrollTop;
+    return to <= scroller.scrollHeight - scroller.clientHeight || from >= scroller.clientHeight;
+  }
+
+  /** Whether what's from `top` to `bottom` on the page may change now, as `letting` says. */
+  #mayGo(letting: Letting, span: { top: number; bottom: number }): boolean {
+    if (letting === 'all') return true;
+    const shown = this.#spanOnScreen(span.top, span.bottom);
+    if (letting === 'off') return !shown;
+    return !shown || !this.#canLeave(span.top, span.bottom);
+  }
+
+  /**
+   * What waits takes what it has now, as `letting` says: threads held at the height they were
+   * drawn at, threads waiting for their lines, and the rooms of boxes sent. Waiting threads come
+   * all at once, once none of the lines they change is held back; a room goes with them.
+   */
+  #letGo(letting: Letting): void {
+    const held = [...this.#held].filter((host) =>
+      this.#mayGo(letting, host.dom.getBoundingClientRect()),
+    );
+    for (const host of held) {
+      this.#held.delete(host);
+      host.letGo();
+    }
+    const rooms = [...this.#rooms.keys()].filter((line) =>
+      this.#mayGo(letting, this.#lineSpan(line)),
+    );
+    for (const line of rooms) this.#rooms.delete(line);
+    const next = this.#waiting;
+    const changes = next ? changedLines(this.#threads, next) : [];
+    if (next && changes.every((line) => this.#mayGo(letting, this.#lineSpan(line)))) {
+      this.#showThreads(next);
+    } else if (rooms.length > 0) {
+      this.#drawBlocks();
+    }
+    if (held.length > 0) this.#view.requestMeasure();
+  }
+
+  /** Whether anything waits. */
+  get #holding(): boolean {
+    return this.#held.size > 0 || this.#rooms.size > 0 || this.#waiting !== undefined;
+  }
+
+  /** A scroll anywhere: what waits off screen now changes. */
+  readonly #scrolled = (): void => {
+    if (this.#holding) this.#letGo('off');
+  };
+
+  /** The reader's pointer or key outside the excerpt: what no scroll can take off screen changes. */
+  readonly #elsewhere = (event: Event): void => {
+    if (!this.#holding || (event.target instanceof Node && this.dom.contains(event.target))) return;
+    this.#letGo('stuck');
+  };
+
+  /** The reader's pointer or key in the excerpt: what waits in it changes. */
+  readonly #touched = (event: Event): void => {
+    const { target } = event;
+    if (target instanceof Element) {
+      const host = this.#hosts.around(target);
+      host?.touched();
+    }
+    if (this.#holding) this.#letGo('all');
+  };
 
   /** Draws the threads and boxes under their lines, in place of those drawn. */
   #drawBlocks(): void {
     const { doc } = this.#view.state;
     const draw = (host: ThreadHost): void => this.#hosts.draw(host);
-    const lines = [...new Set([...this.#threads.keys(), ...this.#boxes.keys()])].toSorted(
-      (a, b) => a - b,
-    );
+    const lines = [
+      ...new Set([...this.#threads.keys(), ...this.#boxes.keys(), ...this.#rooms.keys()]),
+    ].toSorted((a, b) => a - b);
     if (lines.length === 0) {
       this.#view.dispatch({ effects: setBlocks.of([]) });
       return;
@@ -493,7 +732,7 @@ class Excerpt implements ExcerptView {
         const host = this.#hosts.get(thread.id);
         return host ? [host] : [];
       });
-      const box = this.#boxes.get(line);
+      const box = this.#boxes.get(line) ?? this.#rooms.get(line);
       const widget = new ThreadWidget(`x:${line}`, hosts, sizes, draw, box ? [box] : []);
       return Decoration.widget({ widget, block: true, side: 2 }).range(doc.line(line).to);
     });
@@ -557,6 +796,15 @@ class Excerpt implements ExcerptView {
   }
 
   destroy(): void {
+    for (const type of ['pointerdown', 'keydown'] as const) {
+      this.dom.removeEventListener(type, this.#touched, { capture: true });
+    }
+    document.removeEventListener('scroll', this.#scrolled, { capture: true });
+    for (const type of INPUT) {
+      window.removeEventListener(type, this.#elsewhere, { capture: true });
+    }
+    this.#held.clear();
+    this.#rooms.clear();
     for (const stop of this.#stops) stop();
     for (const box of this.#boxes.values()) box.destroy();
     this.#boxes.clear();
@@ -728,6 +976,21 @@ function docLinesOf(numbers: readonly number[]): { first: number; lines: number[
     lines[number - first] = index + 1;
   });
   return { first, lines };
+}
+
+/** The ids of the threads under a line, as one string. */
+function idsOf(threads: readonly ThreadView[] | undefined): string {
+  return (threads ?? []).map(({ id }) => id).join('\n');
+}
+
+/** The lines whose threads differ between `drawn` and `next`, by their ids, in order. */
+function changedLines(
+  drawn: ReadonlyMap<number, readonly ThreadView[]>,
+  next: ReadonlyMap<number, readonly ThreadView[]>,
+): number[] {
+  return [...new Set([...drawn.keys(), ...next.keys()])]
+    .filter((line) => idsOf(drawn.get(line)) !== idsOf(next.get(line)))
+    .toSorted((a, b) => a - b);
 }
 
 /** Whether `spans` are `span` alone. */

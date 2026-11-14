@@ -651,4 +651,89 @@ describe('threads and comment boxes', () => {
     expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
     expect(() => shown.compose(at(19), '', on)).toThrow('A comment box goes under a line');
   });
+
+  test('threads that come on a line on screen wait until the reader acts in the excerpt, or it’s off screen', async () => {
+    const shown = open();
+    await frame();
+    const { render } = plain();
+    shown.setThreads([thread('here', 6)], render);
+    expect(drawnThreads()).toEqual([]);
+    // A scroll that leaves the line on screen changes nothing; a pointer in the excerpt lets it come.
+    document.dispatchEvent(new Event('scroll'));
+    expect(drawnThreads()).toEqual([]);
+    editor().contentDOM.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(drawnThreads()).toEqual(['here']);
+    // Going, it waits too, until a scroll takes its line off screen.
+    shown.setThreads([], render);
+    expect(drawnThreads()).toEqual(['here']);
+    const below = vi.spyOn(EditorView.prototype, 'documentTop', 'get').mockReturnValue(5000);
+    document.dispatchEvent(new Event('scroll'));
+    expect(drawnThreads()).toEqual([]);
+    below.mockRestore();
+  });
+
+  test('a box sent on screen keeps its room until the reader acts, and one opened there takes it', async () => {
+    const shown = open();
+    await frame();
+    const on = composerEvents();
+    const room = () => parent!.querySelector('.lo-diffcomposer-room');
+    shown.compose(at(6), 'Sent', on).close();
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+    expect(room()).not.toBeNull();
+    expect(on.close).not.toHaveBeenCalled();
+    shown.compose(at(6), 'Next', on).close();
+    expect(parent!.querySelectorAll('.lo-diffcomposer-room')).toHaveLength(1);
+    editor().contentDOM.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(room()).toBeNull();
+  });
+
+  test('a box opened unfocused leaves focus and Vim’s selection be; asked for again, it’s focused', () => {
+    const shown = open();
+    shown.focus();
+    const keyed = vim();
+    keyed.keys('V');
+    const on = composerEvents();
+    const box = shown.compose(at(6), 'Kept', on, undefined, { focus: false });
+    expect(keyed.mode).toBe('visual');
+    expect(document.activeElement).toBe(keyed.content);
+    expect(shown.compose(at(6), '', on)).toBe(box);
+    expect(inBox(document.activeElement)).toBe(true);
+    expect(box.text).toBe('Kept');
+  });
+
+  test('a box dismissed, as its draft goes elsewhere, tells its caller nothing; focus in it goes to its line', () => {
+    const shown = open();
+    const on = composerEvents();
+    shown.compose(at(6), 'Moved', on).dismiss();
+    expect(parent!.querySelector('.lo-diffcomposer, .lo-diffcomposer-room')).toBeNull();
+    expect(on.close).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(editor().contentDOM);
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', at: at(6) });
+    // Focus elsewhere stays there.
+    const outside = document.createElement('input');
+    document.body.append(outside);
+    outside.focus();
+    shown.compose(at(8), 'Elsewhere', on, undefined, { focus: false }).dismiss();
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
 });
+
+/** The next frame. */
+function frame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+/** A box's events, each a spy. */
+function composerEvents() {
+  return {
+    change: vi.fn<ComposerEvents['change']>(),
+    submit: vi.fn<ComposerEvents['submit']>(),
+    close: vi.fn<ComposerEvents['close']>(),
+  };
+}
+
+/** Whether `element` is in a comment box. */
+function inBox(element: Element | null): boolean {
+  return element?.closest('.lo-diffcomposer') != null;
+}
