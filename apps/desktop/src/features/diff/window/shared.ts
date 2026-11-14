@@ -2,7 +2,8 @@
 // compares is said; showing the diff, and a place in it or the file whole; how many files it shows; one file of it beside
 // another view; the lines another feature explains, which the diff marks; the review threads
 // another feature places under its lines, showing one of them, and the comment boxes it opens
-// there; and diffing texts another feature has, as the diff's own files are diffed.
+// there; diffing texts another feature has, as the diff's own files are diffed; and the code
+// other features draw in views of their own, whose lines the diff's keys read as its own.
 
 import type {
   BoxFrame,
@@ -22,6 +23,7 @@ import type { DiffState } from '../contract.ts';
 import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
 import { Beside } from './Beside.tsx';
 import { changed, explainWith, type Explainer } from './explained.ts';
+import { addCodeElsewhere, type CodeElsewhere } from './elsewhere.ts';
 import { diffJobs } from './main.ts';
 import { showPlace as showCode, showThread as showThreadAt, type ShowWhen } from './places.ts';
 import { drawnFor, keysDiff, loaderOf, onDrawn, useSnapshot } from './tabs.ts';
@@ -29,6 +31,8 @@ import { changed as changedThreads, type DrawnDiff, threadWith, type Threader } 
 import { DIFF_VIEW } from './whole.ts';
 
 export type { ShowWhen } from './places.ts';
+
+export type { CodeElsewhere } from './elsewhere.ts';
 
 export type { ExplainedLines, Explainer } from './explained.ts';
 export type { DiffThreads, DrawnDiff, ThreadCounts, ThreadedFile, Threader } from './threads.ts';
@@ -148,6 +152,15 @@ export function explainedChanged(tab: string): void {
  */
 export function setThreader(threader: Threader): () => void {
   return threadWith(threader);
+}
+
+/**
+ * Gives the diff's keys that read lines the code another feature draws in code views of its own,
+ * such as an overview's code blocks: `yy` there copies its lines, with a count or the lines `v`
+ * selected, as it copies the diff's. Returns a function that takes it back.
+ */
+export function setCodeElsewhere(source: CodeElsewhere): () => void {
+  return addCodeElsewhere(source);
 }
 
 /** Says tab `tab`'s review threads changed, so a diff drawn asks for them again. */

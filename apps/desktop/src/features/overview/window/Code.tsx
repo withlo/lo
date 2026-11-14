@@ -42,6 +42,7 @@ import { useLocalCopy, usePull, useTabState } from '../../tab/window/shared.ts';
 import { findFile, showFile } from '../../tree/window/shared.ts';
 import { onStep, setStep, stepOf } from './blocks.ts';
 import type { CodeRead } from './checking.ts';
+import { drawnLines } from './copying.ts';
 import { useFirstDraw, type FirstDraw } from './drawing.ts';
 import { revisionAt } from './facts.ts';
 import { holdFile, type FileCode, type FileHold } from './files.ts';
@@ -311,6 +312,8 @@ function ExcerptCode({
       QUIET,
     );
     drawnView.current = view;
+    // `yy` copies from it.
+    const forget = drawnLines(id, code.lines);
     // Its height is its code's once the view has measured its lines, which it does a frame on.
     let frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
@@ -324,6 +327,7 @@ function ExcerptCode({
       cancelAnimationFrame(frame);
       // Let go far from the screen, it keeps its room: as tall as its lines, laid out.
       parent.style.minHeight = `${view.height()}px`;
+      forget();
       stop();
       view.destroy();
     };
@@ -470,6 +474,8 @@ function StepCode({ tab, commit, target }: { tab: string; commit: string; target
       QUIET,
     );
     view.current = made;
+    // `yy` copies from it.
+    const forget = drawnLines(id, { old: [], new: lines.lines });
     let live = true;
     void lines.tokens.then((tokens) => {
       if (live && tokens) made.setTokens(tokens);
@@ -477,6 +483,7 @@ function StepCode({ tab, commit, target }: { tab: string; commit: string; target
     const stop = keys.subscribe(() => made.setVimKeys(keys.vimKeys()));
     return () => {
       live = false;
+      forget();
       stop();
       view.current = undefined;
       made.destroy();

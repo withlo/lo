@@ -1,7 +1,7 @@
 // The overview feature in the window: each pull request's tab's overview, checked as main reads
 // it, shown as the first of the tab's middle views, with its mark in the view switch and what it
-// says in the status bar; its markers in the diff; the prompt `ya` copies; the setting for what a
-// tab opens on; and the overview skill's rows.
+// says in the status bar; its markers in the diff; copying from its blocks' code, as in the diff;
+// the prompt `ya` copies; the setting for what a tab opens on; and the overview skill's rows.
 
 import { handlers, type Target } from '@lo/ui/commands';
 import { closeCards } from '@lo/ui/overview';
@@ -12,6 +12,7 @@ import { escapeToMiddle } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
+import { setCodeElsewhere } from '../../diff/window/shared.ts';
 import { commandLine } from '../../open/window/shared.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
 import { opening } from '../../settings/window/shared.ts';
@@ -20,6 +21,7 @@ import { activeTab, middle, status } from '../../tab/window/shared.ts';
 import { setup } from '../../welcome/window/shared.ts';
 import keys from '../keys.ts';
 import { copyPrompt, promptNow } from './copy.ts';
+import { blockCode } from './copying.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { main, tabs } from './main.ts';
 import { followMarkers, keepMarkersOnly } from './markers.ts';
@@ -314,6 +316,8 @@ export default {
   start() {
     followSkill();
     followMarkers();
+    // `yy` in a block's code copies from it, as in the diff.
+    setCodeElsewhere(blockCode);
     main().subscribe('state', takeState);
     client(revisionsContract).subscribe('comparison', takeRevisions);
     // Each view of a pull request's tab keeps its overview until the tab closes.
