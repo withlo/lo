@@ -194,20 +194,37 @@ export function applyKeymap(
     if (line.kind === 'vim') continue;
     const strokes = systemStrokes(line.keys, system);
     const keys = strokes.map((each) => each.id).join(' ');
+    const written = writeKeys(line.keys);
+    const fail = (message: string) => errors.push({ line: line.line, message });
     if (line.kind === 'unbind') {
-      for (const entry of alive(byKeys, keys)) {
-        if (line.command === undefined || entry.binding.command.id === line.command) {
-          entry.alive = false;
-        }
+      const named = line.command === undefined ? undefined : commands.get(line.command);
+      if (named?.editor) {
+        fail(editorMessage(named));
+        continue;
       }
+      let kept: Command | undefined;
+      let freed = false;
+      for (const entry of alive(byKeys, keys)) {
+        if (line.command !== undefined && entry.binding.command.id !== line.command) continue;
+        // A key the editor handles itself isn't the keymap's to take away.
+        if (entry.binding.command.editor) {
+          kept = entry.binding.command;
+          continue;
+        }
+        entry.alive = false;
+        freed = true;
+      }
+      if (kept && !freed) fail(editorMessage(kept));
       continue;
     }
     const command = commands.get(line.command);
     if (!command) continue;
-    const written = writeKeys(line.keys);
-    const fail = (message: string) => errors.push({ line: line.line, message });
     if (command.vim === 'own') {
       fail(`${command.id} is one of Vim's own keys: change Vim's keys with a vim line.`);
+      continue;
+    }
+    if (command.editor) {
+      fail(editorMessage(command));
       continue;
     }
     const same = alive(byKeys, keys);
@@ -215,13 +232,24 @@ export function applyKeymap(
       fail(`${written} already runs ${command.id}.`);
       continue;
     }
+    // Another command on the same keys takes them in its scope, but not from an editor's own.
+    const taken = same.find(
+      (entry) => entry.binding.command.editor && overlap(command, entry.binding.command),
+    );
+    if (taken) {
+      const other = `${writeStrokes(taken.binding.strokes, system)} (${taken.binding.command.id})`;
+      fail(`${written} would take ${other} from the editor that handles it itself.`);
+      continue;
+    }
     const conflict = shadowed(command, strokes.length, keys, byKeys, byStart);
     if (conflict) {
       const other = `${writeStrokes(conflict.binding.strokes, system)} (${conflict.binding.command.id})`;
       fail(
-        conflict.binding.strokes.length > strokes.length
-          ? `${written} would keep ${other} from ever running.`
-          : `${written} would never run: ${other} runs first.`,
+        conflict.binding.command.editor
+          ? `${written} would take ${other} from the editor that handles it itself.`
+          : conflict.binding.strokes.length > strokes.length
+            ? `${written} would keep ${other} from ever running.`
+            : `${written} would never run: ${other} runs first.`,
       );
       continue;
     }
@@ -253,12 +281,33 @@ function shadowed(
   return alive(byStart, keys).find((entry) => overlap(command, entry.binding.command));
 }
 
+/** Why the keymap file can't change `command`, whose keys its scope's editor handles itself. */
+function editorMessage(command: Command): string {
+  const scopes = listOf(command.when?.scope).map((scope) => `\`${scope}\``);
+  return `${command.id} is handled by the editor in ${scopes.join(' and ')}, so the keymap file can't change its keys.`;
+}
+
+/** Whether `command` takes keys in the scope an editor's `owner` is in, in a mode they share. */
+function takesFrom(command: Command, owner: Command): boolean {
+  const { when } = command;
+  const there = listOf(owner.when?.scope).some(
+    (scope) =>
+      (when?.scope === undefined || listOf(when.scope).includes(scope)) &&
+      !when?.except?.includes(scope),
+  );
+  return there && sharesMode(when, owner.when);
+}
+
 /**
  * Whether two commands' keys meet at the same level of precedence somewhere: both for anywhere,
- * or both for a scope they share, in a mode they share. Vim's own keys are never Lo's to run.
+ * or both for a scope they share, in a mode they share. Vim's own keys are never Lo's to run. A
+ * key an editor handles itself is met by any command that would take it in the editor's scope,
+ * for anywhere or not, since matching leaves the editor's alone and the other takes it.
  */
 function overlap(a: Command, b: Command): boolean {
   if (a.vim === 'own' || b.vim === 'own') return false;
+  if (a.editor) return !b.editor && takesFrom(b, a);
+  if (b.editor) return takesFrom(a, b);
   const scopesA = listOf(a.when?.scope);
   const scopesB = listOf(b.when?.scope);
   if ((scopesA.length === 0) !== (scopesB.length === 0)) return false;

@@ -91,6 +91,14 @@ export interface Declaration {
   readonly vim?: 'own' | 'motion';
   /** Its key replaces one of Vim's in a code view, on purpose. */
   readonly overVim?: boolean;
+  /**
+   * Its keys belong to the editor in the scope it names (`when.scope`, which it must give): the
+   * comment box's CodeMirror, which handles them itself, before and apart from the registry. Key
+   * help and the docs list them and the clash and Vim checks cover them, but the registry never
+   * runs or swallows them, the palette and menus don't offer them, nothing handles them, and the
+   * keymap file can't change them.
+   */
+  readonly editor?: true;
   /** Running it records the place it leaves in the tab's history first. */
   readonly jump?: boolean;
   /** A held key runs it again with each repeat. Without it, a held key runs it once. */
@@ -146,10 +154,23 @@ export type TargetFor<D extends Declaration> = D extends {
   ? TargetOf<K>
   : NoTarget;
 
-/** A handler for each of a feature's commands, but Vim's own keys, which nothing runs. */
+/**
+ * A handler for each of a feature's commands, but Vim's own keys and those an editor handles
+ * itself, which the registry never runs.
+ */
 export type HandlersFor<D extends Record<string, Declaration>> = {
-  [K in keyof D as D[K] extends { readonly vim: 'own' } ? never : K]: Handler<TargetFor<D[K]>>;
+  [
+    K in keyof D as D[K] extends { readonly vim: 'own' } | { readonly editor: true } ? never : K
+  ]: Handler<TargetFor<D[K]>>;
 };
+
+/**
+ * Whether the registry never runs `command`: it's one of Vim's own keys, or one the editor in its
+ * scope handles itself. Its keys are listed and checked, but a key press is never Lo's for it.
+ */
+export function isOwned(command: Pick<Declaration, 'vim' | 'editor'>): boolean {
+  return command.vim === 'own' || command.editor === true;
+}
 
 /** A command as the registry has it: its declaration, its id, and its handler. */
 export interface Command extends Declaration {
@@ -188,6 +209,22 @@ export function defineCommands<const D extends Record<string, Declaration>>(
   for (const [name, declaration] of Object.entries(commands)) {
     if (!NAME.test(name)) throw new Error(`"${feature}.${name}" isn't a command id.`);
     for (const spec of declaration.keys) parseKeys(typeof spec === 'string' ? spec : spec.keys);
+    if (declaration.editor === true) {
+      const id = `${feature}.${name}`;
+      if (listOf(declaration.when?.scope).length === 0) {
+        throw new Error(
+          `${id} says its editor handles its keys, but names no scope for the editor.`,
+        );
+      }
+      const extra = (
+        ['vim', 'targets', 'menu', 'bar', 'count', 'jump', 'repeat', 'overVim'] as const
+      )
+        .filter((field) => declaration[field] !== undefined)
+        .join(', ');
+      if (extra !== '') {
+        throw new Error(`${id} is handled by its editor, so it has no ${extra}: nothing runs it.`);
+      }
+    }
   }
   return { feature, commands, scopes: options.scopes ?? [] };
 }
@@ -223,6 +260,11 @@ export function handlers<const D extends Record<string, Declaration>>(
     if (declaration.vim === 'own') {
       throw new Error(
         `${feature}.${name} is one of Vim's own keys, which nothing runs, so it has no handler.`,
+      );
+    }
+    if (declaration.editor === true) {
+      throw new Error(
+        `${feature}.${name} is handled by its scope's editor, which nothing here runs, so it has no handler.`,
       );
     }
   }

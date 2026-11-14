@@ -14,6 +14,7 @@ import {
   useUploads as uploadsOf,
 } from './Attached.tsx';
 import type { BoxUploads } from './Attached.tsx';
+import { boxKeys as keysOf, type BoxKey } from './boxkeys.ts';
 import {
   editOnPull,
   focusPullBox,
@@ -45,6 +46,7 @@ import {
 import { onPullWrite, type PullWrite } from './written.ts';
 
 export type { PostRef } from './bodies.ts';
+export type { BoxKey } from './boxkeys.ts';
 export type { PullComment } from './conversation.ts';
 export type { PostProps, PostPull } from './Post.tsx';
 export type { PreviewProps } from './Preview.tsx';
@@ -69,6 +71,14 @@ export function Post(props: PostProps): ReactNode {
  */
 export function Preview(props: PreviewProps): ReactNode {
   return createElement(PreviewText, props);
+}
+
+/**
+ * One of a comment box's own keys, as this system shows it, read from the declaration of the keys
+ * its editor handles itself: for a frame that shows them.
+ */
+export function boxKeys(name: BoxKey): string[] {
+  return keysOf(name);
 }
 
 /**

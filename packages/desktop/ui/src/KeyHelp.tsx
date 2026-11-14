@@ -176,6 +176,7 @@ export function KeyHelp({
                             )}
                           </span>
                           {row.vim && <span className="text-fg-muted text-micro">Vim's</span>}
+                          {row.editor && <span className="text-fg-muted text-micro">Fixed</span>}
                           {row.overVim && (
                             <span className="text-fg-muted text-micro">Replaces Vim's</span>
                           )}

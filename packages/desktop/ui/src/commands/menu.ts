@@ -2,7 +2,7 @@
 // kind of target clicked, in their order, each with its keys as they are now and, when it can't
 // run on that target, why.
 
-import { type Group, menuPlaces } from './declare.ts';
+import { type Group, isOwned, menuPlaces } from './declare.ts';
 import { liveKeys, liveShortcut, onSystem } from './help.ts';
 import type { Registry } from './registry.ts';
 import type { Target } from './targets.ts';
@@ -34,7 +34,7 @@ export function menuSections(registry: Registry, target: Target): MenuItem[][] {
       const place = menuPlaces(command).find(({ on }) => on === target.kind);
       return place &&
         command.handler !== undefined &&
-        command.vim !== 'own' &&
+        !isOwned(command) &&
         onSystem(registry, command) &&
         registry.listed(command.id, target)
         ? [{ command, place }]

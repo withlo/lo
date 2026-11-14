@@ -6,13 +6,12 @@
 
 import { CommentBoxFootBar, CommentBoxNotes, type CommentBoxNote } from '@lo/ui';
 import { createComposer, type BoxParts, type Composer, type Mode } from '@lo/ui/code';
-import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
-import { registry } from '../../../window/commands/registry.ts';
 import {
   attachFiles,
+  boxKeys,
   draggingOver,
   Dropzone,
   pickFiles,
@@ -23,12 +22,6 @@ import {
 } from '../../comments/window/shared.ts';
 import { closeDialog, summaryBox, typed } from './actions.ts';
 import { useNonce } from './page.ts';
-
-/** A key, as this system shows it. */
-function labels(keys: string): string[] {
-  const { system } = registry();
-  return keyLabels(systemStrokes(parseKeys(keys), system), system);
-}
 
 const MODES: Readonly<Record<Mode, { name: string; kind: Mode }>> = {
   normal: { name: 'NORMAL', kind: 'normal' },
@@ -65,7 +58,7 @@ export function Summary({ view, pull, initial, restored, held, editor }: Summary
   const start = useRef(initial);
   // What files are attached to: the view's summary, which outlives the dialog.
   const attached = summaryBox(view);
-  const uploads = useUploads(attached, labels('cmd+shift+a'), text);
+  const uploads = useUploads(attached, boxKeys('attach'), text);
   const holding = useRef(held);
   holding.current = held;
 
@@ -169,7 +162,7 @@ export function Summary({ view, pull, initial, restored, held, editor }: Summary
               actions: [
                 {
                   label: previewing ? 'Write' : 'Preview',
-                  keys: labels('cmd+shift+v'),
+                  keys: boxKeys('preview'),
                   onClick: toggle,
                 },
               ],

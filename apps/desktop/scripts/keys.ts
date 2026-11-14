@@ -88,6 +88,7 @@ function where(command: Command): string {
   const inCode = scopes.length === 0 || scopes.some((scope) => modesOf(scope)[0] !== undefined);
   if (modes.length > 0 && inCode) text += `; in code views, only in ${listed(modes)} mode`;
   if (command.vim === 'motion') text += "; in code views, Vim's motion";
+  if (command.editor) text += "; the editor's own key, which the keymap file can't change";
   return text;
 }
 
@@ -114,20 +115,39 @@ function noKey(command: Command): string {
     : 'None: in its menu and the palette';
 }
 
+/**
+ * What follows a group's table when some of its keys are an editor's own: the comment box's, which
+ * its CodeMirror runs, apart from the registry.
+ */
+function editorNote(rows: readonly Command[]): string[] {
+  if (!rows.some((command) => command.editor)) return [];
+  return [
+    "The comment box's editor runs these keys itself, so Lo's key engine never does: the command palette and menus don't offer them, and the keymap file can't change them. A `bind` that names one, or would take its keys in a comment box, is reported, and an `unbind` with no command leaves them as they are. `Esc` leaves insert mode, which is Vim's; once in normal mode, `Esc` closes the box.",
+    '',
+  ];
+}
+
 /** Key help's groups as macOS shows them: each command on macOS, with its keys there. */
 function groupSections(commands: readonly Command[]): string[] {
   return groups.flatMap((group) => {
-    const rows = commands
-      .filter((command) => command.group === group && systemsOf(command).includes('mac'))
-      .map((command) => {
-        const keys = command.keys
-          .map(specOf)
-          .filter(({ on }) => on !== 'linux')
-          .map(({ keys: each, on }) => `${code(form(each, 'mac'))}${on ? ' (macOS only)' : ''}`);
-        return [command.label, keys.join(', ') || noKey(command), where(command), code(command.id)];
-      });
+    const here = commands.filter(
+      (command) => command.group === group && systemsOf(command).includes('mac'),
+    );
+    const rows = here.map((command) => {
+      const keys = command.keys
+        .map(specOf)
+        .filter(({ on }) => on !== 'linux')
+        .map(({ keys: each, on }) => `${code(form(each, 'mac'))}${on ? ' (macOS only)' : ''}`);
+      return [command.label, keys.join(', ') || noKey(command), where(command), code(command.id)];
+    });
     if (rows.length === 0) return [];
-    return [`## ${group}`, '', ...table(['Action', 'Keys', 'Where', 'Command'], rows), ''];
+    return [
+      `## ${group}`,
+      '',
+      ...table(['Action', 'Keys', 'Where', 'Command'], rows),
+      '',
+      ...editorNote(here),
+    ];
   });
 }
 
@@ -336,7 +356,7 @@ function keymapSection(commands: readonly Command[]): string[] {
     example,
     '```',
     '',
-    "A line that can't be read or applied is reported with its number, and the others still apply. A `bind` doesn't apply when it names one of Vim's own keys, repeats a key the command already has, or would keep another command's key from running: one of the two being the start of the other where both apply.",
+    "A line that can't be read or applied is reported with its number, and the others still apply. A `bind` doesn't apply when it names one of Vim's own keys or one of the comment box's (see Comment box), repeats a key the command already has, or would keep another command's key from running: one of the two being the start of the other where both apply. A `bind` that would take the comment box's keys there is refused too, and an `unbind` with no command leaves them as they are.",
     '',
     `Lo watches the file, so a saved change applies within a second, with no restart, and key help (\`?\`) shows the new keys and the lines Lo can't use. To open the file, use the button in key help, the command palette or ${code(form(openKeymapKeys(commands), 'mac'))}: Lo opens it as text in your system's text editor, writing it first, with a header of comments, if there isn't one. Opening never runs anything, so Lo doesn't open a file that is executable, isn't a plain file (a folder, or an app a link leads to) or is over the limit below: key help says why, and has no button. The editor is the app for text whatever the file's name or contents, even through a link to a file named like a launcher or a web page: on Linux, the app \`xdg-mime query default text/plain\` names, started with \`gio launch\`. Without one of those, Lo says so and opens nothing. A link to a file in a dotfiles folder is followed. Lo reads a file of up to ${KEYMAP_SIZE_LIMIT / 1024 ** 2} MiB and lines of up to ${KEYMAP_LINE_LIMIT.toLocaleString('en')} characters; a longer line is reported and skipped, and a longer file isn't read. Nothing in the file is ever run.`,
     '',

@@ -2,7 +2,7 @@
 // command's live keys in this system's form, where they apply, and whether they're Vim's.
 
 import { listed } from './checks.ts';
-import { groups, listOf, type Command, type Group } from './declare.ts';
+import { groups, isOwned, listOf, type Command, type Group } from './declare.ts';
 import { ariaShortcut, keyLabels } from './notation.ts';
 import type { Registry } from './registry.ts';
 import type { Target } from './targets.ts';
@@ -17,6 +17,8 @@ export interface HelpRow {
   readonly where: string | undefined;
   /** One of Vim's own keys, which key help lists and Lo never takes. */
   readonly vim: boolean;
+  /** One of an editor's own keys, such as the comment box's: listed, never run, and fixed. */
+  readonly editor: boolean;
   /** Its keys take one of Vim's in code views. */
   readonly overVim: boolean;
 }
@@ -93,6 +95,7 @@ export function helpGroups(registry: Registry): HelpGroup[] {
         keys: liveKeys(registry, command),
         where: whereText(command),
         vim: command.vim === 'own',
+        editor: command.editor === true,
         overVim: command.overVim === true,
       }));
     return rows.length > 0 ? [{ group, rows }] : [];
@@ -143,14 +146,14 @@ function appliesIn(command: Command, scope: string): boolean {
 /**
  * The palette's commands, for what had focus before it opened: `scope` and `target`. Every command
  * on this system that applies there and can run on the target now, in the key table's order, but
- * Vim's own keys, which nothing runs.
+ * Vim's own keys and an editor's, which nothing here runs.
  */
 export function paletteItems(registry: Registry, scope: string, target: Target): PaletteItem[] {
   const commands = registry
     .commands()
     .filter(
       (command) =>
-        command.vim !== 'own' &&
+        !isOwned(command) &&
         onSystem(registry, command) &&
         appliesIn(command, scope) &&
         registry.enabled(command.id, target) === true,

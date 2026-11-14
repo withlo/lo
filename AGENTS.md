@@ -832,6 +832,12 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   nothing else from you until it's submitted, and the notice says so ("Added to your pending
   review"). Main says it did when it planned the comment into your review, and for a reply when
   GitHub's answer says it joined a review Lo hadn't read (`joined`).
+- The box's keys (`⌘⏎`, `⌥⏎`, `⌘⇧V`, `⌘⇧A`, `Esc`) are declared in `keys.ts` as `editor` commands
+  but run by the box's editor (`createComposer`'s keymap in `@lo/ui/code`), as its own: the registry
+  lists them in key help and `docs/keys.md` and checks them for clashes, and never runs, swallows or
+  offers them, so the editor and the summary's `⌘⏎` hear every key as before. The keymap file can't
+  rebind them. The foot's labels read the declarations (`window/boxkeys.ts`), and
+  `window/boxkeys.test.ts` presses each declared key in a real box. Change a key in both places.
 - Files dropped on a box, pasted into it or picked with "Attach" (`⌘⇧A`), ten on their way into a
   box at a time, are attached (`window/uploads.ts`): each goes in at the cursor at once as a
   placeholder, the background process checks it and takes its metadata out (`comments.prepare`) from

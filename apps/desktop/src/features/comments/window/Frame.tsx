@@ -15,16 +15,15 @@ import {
   type CommentBoxNote,
 } from '@lo/ui';
 import type { BoxFrame, Composer, Mode } from '@lo/ui/code';
-import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useSyncExternalStore, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
-import { registry } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
 import { usePull, useRun, useTabState } from '../../tab/window/shared.ts';
 import { act, type Box, type BoxState, pullIn, send, sendingNow, takenDown } from './boxes.ts';
+import { boxKeys } from './boxkeys.ts';
 import { Preview as Rendering } from './Preview.tsx';
 import { Dropzone, UploadRows, useUploads } from './Attached.tsx';
 import { holdText, takeAddresses, UPLOADING } from './uploads.ts';
@@ -41,12 +40,6 @@ import {
 
 /** How tall the account's avatar is drawn in the head, in pixels: `Avatar`'s small size. */
 const AVATAR = 20;
-
-/** A key the box takes, as this system shows it. */
-function labels(keys: string): string[] {
-  const { system } = registry();
-  return keyLabels(systemStrokes(parseKeys(keys), system), system);
-}
 
 const modes: Readonly<Record<Mode, { name: string; kind: Mode }>> = {
   normal: { name: 'NORMAL', kind: 'normal' },
@@ -86,7 +79,7 @@ function footOf(box: Box, state: BoxState, why: string | undefined): CommentBoxF
   if (state.place.kind === 'conversation') {
     const post: CommentBoxAction = {
       label: 'Comment',
-      keys: labels('cmd+enter'),
+      keys: boxKeys('addToReview'),
       primary: true,
       disabled,
       why,
@@ -97,7 +90,7 @@ function footOf(box: Box, state: BoxState, why: string | undefined): CommentBoxF
   if (state.place.kind === 'edit') {
     const save: CommentBoxAction = {
       label: 'Save the edit',
-      keys: labels('cmd+enter'),
+      keys: boxKeys('addToReview'),
       primary: true,
       disabled,
       why,
@@ -107,7 +100,7 @@ function footOf(box: Box, state: BoxState, why: string | undefined): CommentBoxF
   }
   const button = (how: 'review' | 'now'): CommentBoxAction => ({
     label: buttonLabel(state, how),
-    keys: labels(how === 'review' ? 'cmd+enter' : 'alt+enter'),
+    keys: boxKeys(how === 'review' ? 'addToReview' : 'postNow'),
     primary: state.primary === how,
     disabled,
     why,
@@ -153,7 +146,7 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
           composer.preview(on);
           box.set({ previewing: on });
         },
-        previewKeys: labels('cmd+shift+v'),
+        previewKeys: boxKeys('preview'),
         where: state.where ?? whereText(place, started),
         account:
           login === undefined
@@ -166,7 +159,7 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
 
 function Notes({ box }: { box: Box }): ReactNode {
   const state = useBox(box);
-  const uploads = useUploads(box, labels('cmd+shift+a'), state.text);
+  const uploads = useUploads(box, boxKeys('attach'), state.text);
   const why = useWhyNot(box) ?? holdText(uploads.hold, UPLOADING);
   const notes = [
     ...notesOf(state, Date.now()).map((note) => drawnNote(box, note)),
@@ -177,7 +170,7 @@ function Notes({ box }: { box: Box }): ReactNode {
 
 function Foot({ box }: { box: Box }): ReactNode {
   const state = useBox(box);
-  const uploads = useUploads(box, labels('cmd+shift+a'), state.text);
+  const uploads = useUploads(box, boxKeys('attach'), state.text);
   const why = useWhyNot(box) ?? holdText(uploads.hold, UPLOADING);
   const foot = { ...footOf(box, state, why), attach: uploads.attach };
   return <CommentBoxFootBar id={box.id} foot={foot} focused={state.focused} />;
