@@ -1,13 +1,19 @@
 // The key path's DOM side: one keydown listener in the capture phase on `window`, which sees every
-// key before widgets and CodeMirror and hands it to the registry, and the `Tab` backstop. A focus
-// change and the window's blur drop the pending sequence and clear the code view focus left; a
-// pointer down drops the pending sequence.
+// key before widgets and CodeMirror, tells the element it's for, and hands it to the registry, and
+// the `Tab` backstop. A focus change and the window's blur drop the pending sequence and clear the
+// code view focus left; a pointer down drops the pending sequence.
 
 import { contradicts, eventStrokes, type KeyEventLike, type Layout } from './notation.ts';
 import type { Registry } from './registry.ts';
 import { endsTab, findScope, textKind } from './scopes.ts';
 
 type Win = Window & typeof globalThis;
+
+/**
+ * What each key sends first, before the registry reads it, to the element it's for, bubbling: what
+ * listens there for the reader's keys hears those the registry takes too, which go no further.
+ */
+export const KEY_EVENT = 'lo-key';
 
 /** The part of `navigator.keyboard` Lo reads, where Chromium has it. */
 interface Keyboard {
@@ -76,6 +82,7 @@ export function listen(win: Win, registry: Registry): () => void {
     tab = undefined;
     checkLayout(event);
     const element = focused(win, event);
+    (element ?? win.document.body).dispatchEvent(new win.Event(KEY_EVENT, { bubbles: true }));
     const scope = findScope(element);
     const reading = { system: registry.system, layout };
     const handled = registry.handle(

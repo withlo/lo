@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { FakeView, testCommands, type Ran } from '../../test/commands.ts';
-import { listen } from './listener.ts';
+import { KEY_EVENT, listen } from './listener.ts';
 import { Registry } from './registry.ts';
 import { setScopeSource } from './scopes.ts';
 
@@ -103,6 +103,17 @@ describe('the listener', () => {
     const other = press('row', 'q');
     expect(other.defaultPrevented).toBe(false);
     expect(log).toEqual(['row q']);
+  });
+
+  test('tells the element a key is for of it first, though the registry takes the key', () => {
+    const heard: string[] = [];
+    element('diff').addEventListener(KEY_EVENT, (event) => {
+      const id = event.target instanceof Element ? event.target.id : '';
+      heard.push(`${id}, ${ran.length} run`);
+    });
+    expect(press('editor', 'e').defaultPrevented).toBe(true);
+    expect(heard).toEqual(['editor, 0 run']);
+    expect(ids()).toEqual(['diff.markViewed']);
   });
 
   test('runs a key on the code view’s target', () => {

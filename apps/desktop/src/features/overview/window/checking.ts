@@ -18,6 +18,8 @@
 
 import type { CheckedArtifact, ParsedArtifact } from '@lo/artifact';
 
+import { IpcError } from '../../../ipc/contract.ts';
+
 import {
   FIRST_FIGURES,
   type CodeAccess,
@@ -81,6 +83,26 @@ export type CheckedOverview =
       code: CodeRead;
     }
   | { kind: 'failed'; key: string; commit: OverviewCommit; why: string };
+
+/** `artifact.md` couldn't be read, as main says why, which the log keeps. */
+class Unread extends Error {}
+
+/** Why a check failed of the background process's own failures, where Lo can say why. */
+const JOB_FAILURES = new Map([
+  ['timeout', 'Checking it took longer than Lo allows.'],
+  ['memory', 'Checking it took more memory than Lo allows.'],
+  ['restarted', 'Lo’s background process stopped while checking it.'],
+]);
+
+/**
+ * Why a check failed, as the overview says it: in Lo's words, naming the cause where Lo knows it,
+ * and saying so where it doesn't. What the error itself said goes only to the log.
+ */
+export function failedWhy(error: unknown): string {
+  if (error instanceof Unread) return 'Lo couldn’t read artifact.md.';
+  const known = error instanceof IpcError ? JOB_FAILURES.get(error.code) : undefined;
+  return known ?? 'Lo can’t tell why.';
+}
 
 /** What a tab's checking reads with, and where it sends what it found. */
 export interface CheckingParts {
@@ -227,7 +249,7 @@ export class Checking {
       .catch((error: unknown) => {
         if (running.signal.aborted) return;
         this.#failed = true;
-        const why = error instanceof Error ? error.message : String(error);
+        const why = failedWhy(error);
         this.#parts.log(`Lo couldn't check the overview of tab ${this.#id}:`, error);
         // What was shown of the commit stays, until a check succeeds. Of one nothing was shown of
         // yet, as a newer commit than the last result's, why is said, so it isn't left looking as
@@ -340,7 +362,7 @@ export class Checking {
     // Main reads no file of a commit its listing says is too large, or that holds no artifact.md.
     if (!commit.read) return { artifact: null, parse: undefined };
     const [text] = await this.#parts.files({ id: this.#id, commit: commit.id, paths: [ARTIFACT] });
-    if (text?.kind === 'unread') throw new Error(`Lo couldn't read artifact.md: ${text.why}`);
+    if (text?.kind === 'unread') throw new Unread(`Lo couldn't read artifact.md: ${text.why}`);
     // The listing says what else it is, which the check reports.
     if (text?.kind !== 'file' || text.bytes === null) return { artifact: null, parse: undefined };
     const artifact = text.bytes;

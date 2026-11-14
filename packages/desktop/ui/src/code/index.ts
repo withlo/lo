@@ -27,6 +27,7 @@ export type {
   Fold,
   HeaderTarget,
   JumpTo,
+  KeptBox,
   KeySource,
   LineTarget,
   LinesMark,

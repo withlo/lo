@@ -7,7 +7,8 @@
 // keeps until it's sent, and the files attached to it; and acting on threads, in the diff and the
 // panel: replying, resolving, and editing and deleting your comments, with the dialog that asks
 // before a delete. The threads on an overview's code blocks are drawn under their lines too, and
-// `c` there opens a box under them. What it keeps of a view goes as the view's tab closes.
+// `c` there opens a box under them. The status bar says which drafts the diff, drawn again, had
+// nowhere to open. What it keeps of a view goes as the view's tab closes.
 
 import { handlers, type HeaderTarget, type LineTarget, type Target } from '@lo/ui/commands';
 import { createElement } from 'react';
@@ -24,7 +25,7 @@ import {
 } from '../../overview/window/shared.ts';
 import { setLayerCounts } from '../../stacks/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
-import { activeTab, dialogs, right, type PullTab } from '../../tab/window/shared.ts';
+import { activeTab, dialogs, right, status, type PullTab } from '../../tab/window/shared.ts';
 import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
 import { edit, remove, reply, resolve, takeActs, type ThreadKeyTarget } from './acts.ts';
@@ -49,6 +50,7 @@ import {
 } from './boxes.ts';
 import { DeleteDialog } from './DeleteDialog.tsx';
 import { frameOf } from './Frame.tsx';
+import { KeptStatus } from './KeptStatus.tsx';
 import { main, tabs } from './main.ts';
 import { inPanel, moveRow, onThread, showTarget, stepFilter } from './panel.ts';
 import { ThreadsPanel, UnresolvedCount, unresolvedOf } from './ThreadsPanel.tsx';
@@ -198,6 +200,12 @@ export default {
       id: 'comments.delete',
       order: 40,
       render: () => createElement(DeleteDialog),
+    }),
+    // After the diff's.
+    defineView(status, {
+      id: 'comments.status',
+      order: 25,
+      render: ({ tab }) => createElement(KeptStatus, { tab }),
     }),
   ],
   start() {

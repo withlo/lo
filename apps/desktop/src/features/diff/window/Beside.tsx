@@ -228,6 +228,7 @@ function Code({
           viewedHere(file, viewed) {
             made.setCollapsed(file, viewed);
           },
+          hasFocus: () => parent.contains(document.activeElement),
         },
       }),
     ];

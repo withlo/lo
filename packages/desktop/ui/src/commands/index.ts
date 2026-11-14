@@ -66,7 +66,7 @@ export {
   type KeymapError,
   type KeymapLine,
 } from './keymap.ts';
-export { listen } from './listener.ts';
+export { KEY_EVENT, listen } from './listener.ts';
 export {
   Bindings,
   declaredBindings,

@@ -483,8 +483,15 @@ A repo's or a user's instructions can drop, add or reorder everything except the
   A comment on the PR itself is posted at once, since it joins no review. A draft keeps the block it
   was written from, and reopens there after a restart while the overview still has that block;
   otherwise it opens where it would have without one, in the diff for lines and files, and in the
-  timeline's box for the PR. A draft opens in one box only. Threads that arrive, grow or go while a
-  block is on screen move nothing you're reading.
+  timeline's box for the PR. A draft opens in one box only, and an open box keeps its draft,
+  whatever the overview does. When the diff is drawn again without your asking, as once the local
+  copy's files replace GitHub's, a box open there comes back as it was, in the same mode with the
+  same caret and undo history, on its line. Where the diff drawn anew doesn't show that line, as in
+  a file closed as viewed, it goes under its file's header, still a comment on the line; only where
+  the diff has neither does the draft open under its block, if the overview has it. Otherwise it's
+  in no box, and the status bar says the draft was kept, until its line or block is shown again.
+  Focus comes back only to a box that had it, and only if you've done nothing since. Threads that
+  arrive, grow or go while a block is on screen move nothing you're reading.
 - **From the block to the code.** Following a block jumps to the diff at that spot, or to the
   whole-file view when the code is outside the diff. `⌃o` returns to the same place in the overview.
   A menu and a key open the code beside the overview instead.

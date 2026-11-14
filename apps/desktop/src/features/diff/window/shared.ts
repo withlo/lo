@@ -178,7 +178,8 @@ export interface WritingDiff {
    * Opens a comment box with `draft` in it, under a line, the last line of a span, a thread, or a
    * file's header, with `frame` drawn around its editor, and focuses it unless `focus` is false. A
    * box already open there is the one it gives. It throws for a line the diff doesn't draw, as in
-   * a file kept out.
+   * a file kept out. A box opened as it was before the diff was drawn anew (`kept`) goes under its
+   * file's header where the file is drawn without its lines, as one closed as viewed is.
    */
   compose(
     at: Place | Span | { thread: string } | OnFile,
@@ -204,6 +205,8 @@ export interface WritingDiff {
    * `claimThread`).
    */
   claimThread(id: string): () => void;
+  /** Whether focus is in it. */
+  hasFocus(): boolean;
 }
 
 /**
@@ -225,6 +228,7 @@ export function writingDiff(tab: string, keys = false): WritingDiff | undefined 
     openThread: (id, open) => view.openThread(id, open),
     threadsDrawn: (at) => view.threadsDrawn(at),
     claimThread: (id) => view.claimThread(id),
+    hasFocus: () => drawn.hasFocus(),
   };
 }
 
