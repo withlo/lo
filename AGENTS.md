@@ -899,8 +899,12 @@ your comment there edit and delete it (`window/conversation.ts`, `window/Timelin
   looks for your comment with its text made since, by GitHub's clock.
 - The draft is the one an overview's code block writes on the pull request too. It opens under that
   block while the overview has it (`opensUnderBlock`), and otherwise in this box (`isPullsOwn`),
-  checked again as the overview changes. While it's under the block, the box says so, and `c` or its
-  "Write it here" brings the draft into the box (`bringToTimeline`).
+  checked again as the overview changes. A draft the box shows stays in it while it's open, whatever
+  the overview does, so nothing moves and focus stays. One in no box waits while Lo reads or checks
+  the overview, which the box says. A draft the box lets go while it's still open, as the timeline
+  goes, opens where it opens now (`leftTimeline`), though its block was drawn first. While it's
+  under the block, the box says so, and `c` or its "Write it here" brings the draft into the box
+  (`bringToTimeline`).
 - An edit of your comment there is an `edit` place with no thread, drawn in the comment's card. It,
   and a delete, read the comment afresh from a full read of the timeline (`readPullComment`); one
   the read may have left out among older events settles nothing. A delete's question is the diff's
