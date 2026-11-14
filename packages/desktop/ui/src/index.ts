@@ -89,6 +89,11 @@ export {
 } from './Thread.tsx';
 export {
   CommentBox,
+  CommentBoxDropzone,
+  CommentBoxFootBar,
+  CommentBoxHeadBar,
+  CommentBoxNotes,
+  CommentBoxUploads,
   type CommentBoxAccount,
   type CommentBoxAction,
   type CommentBoxAttach,

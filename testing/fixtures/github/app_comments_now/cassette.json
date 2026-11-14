@@ -1,0 +1,5 @@
+{
+  "description": "What the app's test of a comment posted at once reads from GitHub and writes there, recorded from the app with writes and the comments fixture's git: rozed-dev/e2e#94, opened on its diff; C on line 2 of src/backoff.ts, a comment typed, and its Comment now button, which posted it as rozed-bot's thread with no pending review; the threads read again after, and the polls repeated while it stayed open.",
+  "recorded_at": "2026-11-13T23:39:13Z",
+  "repo": "rozed-dev/e2e"
+}

@@ -1,0 +1,49 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "AddPullRequestReview",
+    "variables": {
+      "pullRequestId": "PR_kwDOVleUfc8AAAABO_mnJQ",
+      "commitOID": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c",
+      "event": "COMMENT",
+      "threads": [
+        {
+          "path": "src/backoff.ts",
+          "body": "Is two the right start?",
+          "line": 2,
+          "side": "RIGHT"
+        }
+      ]
+    },
+    "query_sha256": "78f1afd1a88b5ede43e01820453e20b6d2fd270b8b98c80c72d3ca7a388a763a"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4981",
+      "x-ratelimit-reset": "1794616604",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "19"
+    },
+    "body": {
+      "data": {
+        "addPullRequestReview": {
+          "pullRequestReview": {
+            "id": "PRR_kwDOVleUfc8AAAABX6TN6g",
+            "state": "COMMENTED",
+            "comments": {
+              "nodes": [
+                {
+                  "id": "PRRC_kwDOVleUfc8AAAABEGNJow"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

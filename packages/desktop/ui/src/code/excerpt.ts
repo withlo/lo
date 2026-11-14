@@ -387,7 +387,8 @@ class Excerpt implements ExcerptView {
     const next = new Map<number, ThreadView[]>();
     const given = new Set<string>();
     for (const thread of threads) {
-      const line = thread.at.file === this.#id && this.#docLine(thread.at.side, thread.at.line);
+      const { at } = thread;
+      const line = 'line' in at && at.file === this.#id && this.#docLine(at.side, at.line);
       if (!line || given.has(thread.id)) continue;
       given.add(thread.id);
       this.#hosts.take(thread);
@@ -532,6 +533,7 @@ class Excerpt implements ExcerptView {
       case 'block':
       case 'tab':
       case 'row':
+      case 'box':
       case 'none':
         return undefined;
       default:

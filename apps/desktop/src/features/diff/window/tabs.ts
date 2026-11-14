@@ -11,6 +11,7 @@ import { orderIn, orderModeOf } from '../../tree/window/shared.ts';
 import type { DiffState } from '../contract.ts';
 import { Loader, type Snapshot } from './loader.ts';
 import { diffJobs, main } from './main.ts';
+import type { DrawnDiff } from './threads.ts';
 
 const loaders = new Map<string, Loader>();
 
@@ -74,6 +75,11 @@ export interface Drawn {
   readonly order: readonly string[];
   /** It's one file of the diff beside another view, such as the overview: always inline. */
   readonly beside?: boolean;
+  /**
+   * What it draws, as review threads are placed on it and comments written in it: none for a file
+   * beside another view, which draws no threads.
+   */
+  readonly threaded?: (() => DrawnDiff) | undefined;
   /** The reader opened or closed a file: how it starts out is theirs to say now. */
   acted(file: string): void;
   /**
@@ -129,9 +135,23 @@ export function keysDiff(id: string): Drawn | undefined {
   return drawn.get(id);
 }
 
+const drawnListeners = new Set<(id: string) => void>();
+
+/**
+ * Calls `listener` with a tab's id each time a view is drawn for it, or shown again. Returns a
+ * function that stops it.
+ */
+export function onDrawn(listener: (id: string) => void): () => void {
+  drawnListeners.add(listener);
+  return () => {
+    drawnListeners.delete(listener);
+  };
+}
+
 /** Records the view drawn for tab `id`. Returns a function that forgets it, as it goes. */
 export function setDrawn(id: string, view: Drawn): () => void {
   drawn.set(id, view);
+  for (const listener of drawnListeners) listener(id);
   return () => {
     if (drawn.get(id) === view) drawn.delete(id);
   };

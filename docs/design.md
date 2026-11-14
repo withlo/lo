@@ -595,14 +595,21 @@ a fork is someone else's code, even in a repo you trust.
 ### Comments
 
 - **Where.** `c` comments on the current line, and `v` then `c` on a range of lines, on either side
-  of the diff. A key on a file's header leaves a file-level comment. Comments can also be written on
+  of the diff. `c` on a file's header, or on its row in the file tree, leaves a file-level comment,
+  written under the header. GitHub takes line comments only on lines in the PR's diff, so on any
+  other line Lo says so, and `⏎` then comments on the file instead. Comments can also be written on
   an overview's code blocks (section 8).
-- **In the diff.** Threads appear under their line. Unresolved threads start open, and resolved ones
-  start collapsed. `za` on a thread opens or collapses it. A file's header and its row in the file
-  tree count its threads.
+- **In the diff.** Threads appear under their line, and a file's threads under its header.
+  Unresolved threads start open, and resolved ones start collapsed. `za` on a thread opens or
+  collapses it. A file's header and its row in the file tree count its threads.
 - **Threads.** You can reply, resolve and unresolve, and edit or delete your own comments.
 - **Writing.** The comment box is a CodeMirror editor with Markdown highlighting, Vim keys and a
-  preview toggle.
+  preview toggle. Its head says where the comment goes and which account it's from, and its foot has
+  Vim's mode and the buttons that send. While a comment is sent, its text can't be changed. One
+  write to a PR goes at a time, so a second comment waits for the first's answer. When GitHub's
+  answer is lost, Lo reads your comments to find out whether it posted, after a restart too, and
+  until it knows, the comment can't be sent again. Lo never sends it again by itself. A comment that
+  GitHub puts on a newer push than the one it was written on is labeled "On a newer push".
 - **Suggestions.** `s` opens the comment box with the selected lines in a `suggestion` block, ready
   to edit. It works on the new side only, because GitHub can only apply suggestions there. Applying
   them happens on GitHub.
@@ -806,7 +813,8 @@ repos and PRs, the theme, the cache, and whether a PR opens on its overview or i
   comments: they're kept on this computer as drafts, and you post them yourself once you're back
   online. Nothing posts by itself. Reviewing and merging are off until then.
 - **Unsent text.** Text in comment boxes is saved on this computer until it's posted, so a crash or
-  restart doesn't lose it.
+  restart doesn't lose it. After a restart, or a reload of the window, its box opens again where it
+  was, unfocused, saying when the draft was saved, with a button to discard it.
 - **Rate limit used up.** A banner shows when it resets. Polling pauses until then, and so does
   writing, as it does for a minute when GitHub turns a comment away as sent too fast. A comment,
   review or merge asked for meanwhile isn't sent, and says when it can be. A change to a stack's

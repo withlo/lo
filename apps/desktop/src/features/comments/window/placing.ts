@@ -1,4 +1,4 @@
-// Where a view's review threads go in its diff as drawn: under a line of either column, on a
+// Where a view's review threads go in its diff as drawn: under a line of either column, under a
 // file's header, or nowhere in the diff, as `@lo/review`'s `place` says for what each column shows.
 // A file's threads are looked up by the path each column shows it at. GitHub names a renamed file
 // by its new path on both sides, so a thread under one of its old lines is found by that path too.
@@ -120,6 +120,12 @@ export function placeThreads(
     for (const file of files) {
       const placement = place(thread, file.since ? sinceScreen : screen);
       if (placement.kind === 'file') {
+        threads.push({
+          id: thread.id,
+          at: { file: file.id },
+          open: Thread.startsOpen(thread),
+          version: versionOf(JSON.stringify(row)),
+        });
         count(file, thread);
         break;
       }

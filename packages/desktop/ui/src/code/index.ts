@@ -4,6 +4,7 @@
 export type {
   BoxFrame,
   BoxParts,
+  ComposeOptions,
   Composer,
   ComposerEvents,
   ComposerInit,
@@ -34,6 +35,7 @@ export type {
   MovedCode,
   MovedEnd,
   Movement,
+  OnFile,
   OverviewMark,
   PassStats,
   PeekAnswer,

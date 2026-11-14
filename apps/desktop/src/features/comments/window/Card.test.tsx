@@ -113,6 +113,29 @@ test('a collapsed thread is one line, its first comment cut short, that opens it
   expect(toggled).toHaveBeenCalledOnce();
 });
 
+test('a thread GitHub put on a newer push says so', () => {
+  const element = document.createElement('div');
+  document.body.append(element);
+  const root = createRoot(element);
+  act(() =>
+    root.render(
+      <ThreadCard
+        row={row()}
+        open
+        onToggle={() => undefined}
+        author="rozed-bot"
+        body={(each) => <p>{each.body}</p>}
+        landed
+        now={NOW}
+      />,
+    ),
+  );
+  expect(element.textContent).toContain('On a newer push');
+  act(() => root.unmount());
+  element.remove();
+  expect(drawn(row(), true).textContent).not.toContain('On a newer push');
+});
+
 test('when a comment was written, in words', () => {
   expect(ago(NOW - 20_000, NOW)).toBe('just now');
   expect(ago(NOW - 5 * 60_000, NOW)).toBe('5 min ago');

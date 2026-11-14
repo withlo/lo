@@ -35,6 +35,7 @@ import { main } from './main.ts';
 import { setDrawn, takeReveal } from './tabs.ts';
 import {
   type DiffThreads,
+  type DrawnDiff,
   NO_THREADS,
   onThreads,
   sameCounts,
@@ -477,14 +478,13 @@ export function draw(options: DrawOptions): Drawing {
   explain();
   // The review threads under the lines, placed as the threader says for what each column shows, and
   // drawn by it, now and each time they change. The headers count what each file's hold.
+  const threaded = (): DrawnDiff => ({ at, comparison, compareFrom, files: threadFiles(latest) });
   const toggle = (thread: string) => view.openThread(thread, 'toggle');
   let rendering: { readonly from: object; readonly render: RenderThread } | undefined;
   /** With `now`, as the view is made, before the reader has seen it, they all come at once. */
   const showThreads = (now = false) => {
     const given = threader();
-    const next =
-      given?.threadsIn(tab.id, { at, comparison, compareFrom, files: threadFiles(latest) }) ??
-      NO_THREADS;
+    const next = given?.threadsIn(tab.id, threaded()) ?? NO_THREADS;
     if (given && rendering?.from !== given)
       rendering = { from: given, render: given.render(tab, toggle) };
     const before = placed;
@@ -580,6 +580,7 @@ export function draw(options: DrawOptions): Drawing {
         tab: tab.id,
         pull: { owner: tab.owner, repo: tab.repo, number: tab.number },
         order: files.map((file) => file.id),
+        threaded,
         acted(id) {
           pending.delete(id);
           catchUp(id);
