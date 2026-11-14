@@ -11,13 +11,15 @@ import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
+import { clockOf, savedWhen } from '../../../window/time.ts';
 import { useTabState, usePull } from '../../tab/window/shared.ts';
 import type { DialogView, ReviewEventRow } from '../contract.ts';
 import { choose, closeDialog, showRevision, submit, TITLE, whyNot } from './actions.ts';
 import {
-  clockOf,
   counted,
+  dialogKey,
   held,
+  pausedUntil,
   pendingCount,
   plannedRefusal,
   refusalNote,
@@ -40,18 +42,6 @@ function labels(keys: string): string[] {
 
 /** How tall the account's avatar is drawn in the foot, in pixels: `Avatar`'s small size. */
 const AVATAR = 20;
-
-/** When a summary was saved, as its note says: "today, 09:12", "yesterday, 18:40". */
-function savedWhen(at: number, now: number): string {
-  const when = new Date(at);
-  const today = new Date(now);
-  const yesterday = new Date(now);
-  yesterday.setDate(today.getDate() - 1);
-  const time = clockOf(at);
-  if (when.toDateString() === today.toDateString()) return `today, ${time}`;
-  if (when.toDateString() === yesterday.toDateString()) return `yesterday, ${time}`;
-  return `${when.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
-}
 
 /** A note's buttons: what it offers to do. */
 function offerButton(offer: Offer, view: string, label: (head: string) => string): ReactNode {
@@ -133,18 +123,18 @@ function Pending({ read }: { read: DialogView }) {
 function useBlocked(open: Open | undefined): Note | undefined {
   // Read for its changes: offline comes and goes with the view's connection.
   usePull(open?.view ?? '');
-  const until = open?.read?.pausedUntil ?? null;
   const [now, setNow] = useState(() => Date.now());
+  const until = open?.read && pausedUntil(open.read, now);
   // A pause shows until it's over.
   useEffect(() => {
-    if (until === null || until <= now) return undefined;
+    if (until === undefined) return undefined;
     const timer = setTimeout(() => setNow(Date.now()), until - now);
     return () => clearTimeout(timer);
   }, [until, now]);
   if (!open?.read) return undefined;
   const why = whyNot();
   if (why !== undefined) return { tone: 'info', text: why, offers: [] };
-  if (until !== null && until > now) {
+  if (until !== undefined) {
     return {
       tone: 'info',
       text: `GitHub asked Lo to hold off until ${clockOf(until)}. Submit it then.`,
@@ -166,24 +156,19 @@ export function SubmitDialog() {
   const blocked = useBlocked(open);
   const label = (head: string) => revisionLabel(comparison, head);
 
-  // `⌘⏎` submits from anywhere in the dialog, before the summary's editor hears it, and a held
-  // `⏎`, with or without `⌘`, does nothing more: a held `⌘⏎` that opened the dialog never submits
-  // it, nor does one held after it's submitted.
+  // `⌘⏎` submits from anywhere in the dialog, before the summary's editor hears it, and a held key
+  // that would confirm does nothing more: a held `⌘⏎` that opened the dialog never submits it, nor
+  // does one held after it's submitted. A held `⏎` in the summary goes on making lines.
   useEffect(() => {
     if (!isOpen) return undefined;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Enter') return;
-      if (event.repeat) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-      const command = registry().system === 'mac' ? event.metaKey : event.ctrlKey;
-      const other = registry().system === 'mac' ? event.ctrlKey : event.metaKey;
-      if (!command || other || event.altKey || event.shiftKey) return;
+      const inEditor =
+        event.target instanceof Element && event.target.closest('.cm-editor') !== null;
+      const does = dialogKey(event, registry().system, inEditor);
+      if (does === undefined) return;
       event.preventDefault();
       event.stopPropagation();
-      void submit();
+      if (does === 'submit') void submit();
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);

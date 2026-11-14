@@ -1,0 +1,47 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "RenderedBodies",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 94,
+      "description": false,
+      "ids": [
+        "PRRC_kwDOVleUfc8AAAABEDy9Eg"
+      ]
+    },
+    "query_sha256": "285b3a71ef24563ae33870f157b845fcb0e9fc71ff54b6235fa3b18c95041504"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4963",
+      "x-ratelimit-reset": "1794621242",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "37"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4963,
+          "used": 37,
+          "resetAt": "2026-11-14T01:54:02Z"
+        },
+        "repository": {},
+        "nodes": [
+          {
+            "__typename": "PullRequestReviewComment",
+            "id": "PRRC_kwDOVleUfc8AAAABEDy9Eg",
+            "bodyHTML": "<p dir=\"auto\">Fixture C: Start a little higher?</p>\n  <div class=\"my-2 border rounded-2 js-suggested-changes-blob diff-view js-check-hidden-unicode\" id=\"\">\n    <div class=\"f6 p-2 lh-condensed border-bottom d-flex\">\n      <div class=\"flex-auto flex-items-center color-fg-muted\">\n        Suggested change\n      </div>\n    </div>\n    <div itemprop=\"text\" class=\"blob-wrapper data file rounded-0\" style=\"margin: 0; border: none; overflow-y: visible; overflow-x: auto;\">\n      <table class=\"d-table tab-size mb-0 width-full\" data-paste-markdown-skip=\"\">\n          <tbody><tr class=\"border-0\">\n            <td class=\"blob-num blob-num-deletion text-right border-0 px-2 py-1 lh-default\" data-line-number=\"2\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion\"><span class=\"pl-k\">const</span> <span class=\"pl-c1\">FIRST</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1 x x-first x-last\">250</span><span class=\"pl-kos\">;</span></td>\n          </tr>\n          <tr class=\"border-0\">\n            <td class=\"blob-num blob-num-addition text-right border-0 px-2 py-1 lh-default\" data-line-number=\"2\"></td>\n            <td class=\"border-0 px-2 py-1 blob-code-inner blob-code-addition js-blob-code-addition blob-code-marker-addition\"><span class=\"pl-k\">const</span> <span class=\"pl-c1\">FIRST</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1 x x-first x-last\">500</span><span class=\"pl-kos\">;</span></td>\n          </tr>\n      </tbody></table>\n    </div>\n    <div class=\"js-apply-changes\"></div>\n  </div>\n"
+          }
+        ]
+      }
+    }
+  }
+}

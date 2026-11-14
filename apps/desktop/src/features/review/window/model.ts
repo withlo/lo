@@ -3,7 +3,9 @@
 // toast once it's done. Pure functions, so they're tested without a window.
 
 import { reviewChoices, YourReview, type ReviewRefusal } from '@lo/review';
+import type { System } from '@lo/ui/commands';
 
+import { clockOf } from '../../../window/time.ts';
 import type { PendingReviewRow } from '../../comments/contract.ts';
 import type { ComparisonView } from '../../revisions/contract.ts';
 import {
@@ -44,6 +46,12 @@ export function subtitleOf(view: DialogView, label: (head: string) => string): s
 /** The comments your pending review holds, as the dialog counts them. */
 export function pendingCount(pending: PendingReviewRow): number {
   return pending.kind === 'pending' ? pending.comments : 0;
+}
+
+/** What the palette says after "Submit review" of your pending review: "3 pending", or nothing. */
+export function pendingDetail(pending: PendingReviewRow | undefined): string | undefined {
+  const count = pending ? pendingCount(pending) : 0;
+  return count > 0 ? `${count} pending` : undefined;
 }
 
 /** A verdict's name, as its choice and the dialog's main button say it. */
@@ -152,11 +160,6 @@ export interface Note {
   readonly offers: readonly Offer[];
 }
 
-/** A time of day, as the system shows it: "14:05". */
-export function clockOf(at: number): string {
-  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
 /**
  * What the dialog says of why `event` wasn't, or can't be, submitted, and what it offers to do.
  * `label` names a revision by its head.
@@ -236,6 +239,41 @@ export function submittingNote(state: Submitting | null): Note | undefined {
       state satisfies never;
       return undefined;
   }
+}
+
+/** Until when GitHub asked Lo to hold off writing, as the dialog read it, if that's still to come. */
+export function pausedUntil(view: DialogView, now: number): number | undefined {
+  const until = view.pausedUntil;
+  return until !== null && until > now ? until : undefined;
+}
+
+/** What the dialog hears of a key: its name, whether it's held, and its modifiers. */
+export interface DialogKey {
+  readonly key: string;
+  readonly repeat: boolean;
+  readonly metaKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly altKey: boolean;
+  readonly shiftKey: boolean;
+}
+
+/**
+ * What the dialog does with a key, before what has focus hears it: `submit` for `⌘⏎` (`Ctrl+⏎` on
+ * Linux); `drop` for a held `⏎` where it would confirm, `⌘⏎` anywhere or `⏎` outside the summary's
+ * editor, so a held key submits nothing more; nothing for any other, a held `⏎` in the editor among
+ * them, which goes on making lines.
+ */
+export function dialogKey(
+  key: DialogKey,
+  system: System,
+  inEditor: boolean,
+): 'submit' | 'drop' | undefined {
+  if (key.key !== 'Enter') return undefined;
+  const command = system === 'mac' ? key.metaKey : key.ctrlKey;
+  const other = system === 'mac' ? key.ctrlKey : key.metaKey;
+  const submits = command && !other && !key.altKey && !key.shiftKey;
+  if (key.repeat) return submits || !inEditor ? 'drop' : undefined;
+  return submits ? 'submit' : undefined;
 }
 
 /** Whether a review can't be sent now, as submitting stands: it's sent, or may be on GitHub. */

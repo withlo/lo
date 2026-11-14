@@ -2,7 +2,10 @@ import { expect, test } from 'vitest';
 
 import type { DialogView } from '../contract.ts';
 import {
+  dialogKey,
   otherRevisionOf,
+  pausedUntil,
+  pendingDetail,
   plannedRefusal,
   refusalNote,
   subtitleOf,
@@ -131,4 +134,43 @@ test('the banner shows while your pending review is on another revision than the
   expect(otherRevisionOf({ ...pending, commit: null }, R3, label)).toMatchObject({
     show: undefined,
   });
+});
+
+test('while GitHub asks Lo to hold off, nothing is submitted until the time it gave', () => {
+  expect(pausedUntil(dialog({ pausedUntil: 2_000 }), 1_000)).toBe(2_000);
+  expect(pausedUntil(dialog({ pausedUntil: 2_000 }), 2_000)).toBeUndefined();
+  expect(pausedUntil(dialog(), 1_000)).toBeUndefined();
+});
+
+test('`⌘⏎` submits from anywhere in the dialog, and a held key submits nothing more, but makes lines in the summary', () => {
+  const enter = {
+    key: 'Enter',
+    repeat: false,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+  };
+  const command = { ...enter, metaKey: true };
+  expect(dialogKey(command, 'mac', true)).toBe('submit');
+  expect(dialogKey(command, 'mac', false)).toBe('submit');
+  expect(dialogKey({ ...enter, ctrlKey: true }, 'linux', true)).toBe('submit');
+  expect(dialogKey({ ...enter, ctrlKey: true }, 'mac', true)).toBeUndefined();
+  expect(dialogKey({ ...command, shiftKey: true }, 'mac', true)).toBeUndefined();
+  // Held: `⌘⏎` anywhere, and `⏎` where it would press a button, do nothing more.
+  expect(dialogKey({ ...command, repeat: true }, 'mac', true)).toBe('drop');
+  expect(dialogKey({ ...enter, repeat: true }, 'mac', false)).toBe('drop');
+  // In the summary, `⏎` makes lines, held or not.
+  expect(dialogKey(enter, 'mac', true)).toBeUndefined();
+  expect(dialogKey({ ...enter, repeat: true }, 'mac', true)).toBeUndefined();
+  expect(dialogKey({ ...enter, key: 'a' }, 'mac', true)).toBeUndefined();
+});
+
+test('the palette says how many comments your pending review holds, if any', () => {
+  expect(pendingDetail({ kind: 'pending', id: 'PRR_1', commit: R3, comments: 3 })).toBe(
+    '3 pending',
+  );
+  expect(pendingDetail({ kind: 'pending', id: 'PRR_1', commit: R3, comments: 0 })).toBeUndefined();
+  expect(pendingDetail({ kind: 'none' })).toBeUndefined();
+  expect(pendingDetail(undefined)).toBeUndefined();
 });

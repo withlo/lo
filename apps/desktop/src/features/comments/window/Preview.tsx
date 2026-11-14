@@ -1,6 +1,6 @@
-// What a comment box outside the diff shows in its preview: its text as GitHub would render it, made
-// by the background process, with the pull request's repository as what references refer to, for
-// the submit dialog's summary.
+// What a comment box shows in its preview, in the diff and outside it, as the submit dialog's
+// summary: its text as GitHub would render it, made by the background process, with the pull
+// request's repository as what references refer to.
 
 import { Markdown, secureLink, type Followed } from '@lo/ui/markdown';
 import { useEffect, useState, type ReactNode } from 'react';

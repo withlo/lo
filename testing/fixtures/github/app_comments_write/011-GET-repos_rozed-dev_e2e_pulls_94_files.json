@@ -8,13 +8,13 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "etag": "W/\"74b1f64c731afd42abc6279c36d50183eb52d4b8c02e382c798eb9d34a5a95ef\"",
-      "last-modified": "Fri, 13 Nov 2026 18:59:53 GMT",
+      "last-modified": "Fri, 13 Nov 2026 23:39:22 GMT",
       "x-github-api-version-selected": "2022-11-28",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4935",
-      "x-ratelimit-reset": "1794607921",
+      "x-ratelimit-remaining": "4954",
+      "x-ratelimit-reset": "1794621229",
       "x-ratelimit-resource": "core",
-      "x-ratelimit-used": "65"
+      "x-ratelimit-used": "46"
     },
     "body": [
       {

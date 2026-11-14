@@ -5,6 +5,7 @@
 import { CommentableLines, Line, type Lines, type Screen } from '@lo/review';
 import type { OnFile, Place, Span } from '@lo/ui/code';
 
+import { clockOf, savedWhen } from '../../../window/time.ts';
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
 import type {
   Commentable,
@@ -167,23 +168,6 @@ export function whereText(place: DraftPlaceRow): string {
     return `On lines ${start.number}–${end.number}, ${sideWords(end.side)}`;
   }
   return `On line ${start.number}, ${sideWords(start.side)}, to line ${end.number}, ${sideWords(end.side)}`;
-}
-
-/** A time of day, as the system shows it: "14:05". */
-export function clockOf(at: number): string {
-  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-/** When a draft was saved, as a restored one's note says: "today, 09:12", "yesterday, 18:40". */
-export function savedWhen(at: number, now: number): string {
-  const when = new Date(at);
-  const today = new Date(now);
-  const yesterday = new Date(now);
-  yesterday.setDate(today.getDate() - 1);
-  const time = clockOf(at);
-  if (when.toDateString() === today.toDateString()) return `today, ${time}`;
-  if (when.toDateString() === yesterday.toDateString()) return `yesterday, ${time}`;
-  return `${when.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
 }
 
 /** What a box's note offers to do about what it says. */

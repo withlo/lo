@@ -19,19 +19,19 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4943",
-      "x-ratelimit-reset": "1794605106",
+      "x-ratelimit-remaining": "4969",
+      "x-ratelimit-reset": "1794621242",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "57"
+      "x-ratelimit-used": "31"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4943,
-          "used": 57,
-          "resetAt": "2026-11-13T21:25:06Z"
+          "remaining": 4969,
+          "used": 31,
+          "resetAt": "2026-11-14T01:54:02Z"
         },
         "repository": {},
         "nodes": [

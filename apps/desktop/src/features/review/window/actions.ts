@@ -8,7 +8,7 @@ import { announce, notify } from '../../../window/commands/notices.tsx';
 import { pullOf, runOf, activeTab, type PullTab } from '../../tab/window/shared.ts';
 import { IN_A_LAYER, SIGN_IN, type ReviewEventRow, type Submission } from '../contract.ts';
 import { main, revisions as revisionsClient, tabs } from './main.ts';
-import { held, OFFLINE, plannedRefusal, toastOf } from './model.ts';
+import { held, OFFLINE, pausedUntil, plannedRefusal, toastOf } from './model.ts';
 import { changeDialog, reviewStore, submitting, takeSubmission } from './store.ts';
 
 /** How long after the last key the summary is saved, in milliseconds. */
@@ -134,6 +134,8 @@ export async function submit(anyway = false): Promise<void> {
   const { dialog } = reviewStore.getState();
   if (!dialog?.read || dialog.busy || whyNot() !== undefined) return;
   const { view, read, event, text } = dialog;
+  // While GitHub asked Lo to hold off, the dialog says until when, and nothing goes.
+  if (pausedUntil(read, Date.now()) !== undefined) return;
   const state = submitting.get(view);
   if (state === 'unknown' ? !anyway : held(state)) return;
   if (plannedRefusal(read, event, text) !== undefined) return;

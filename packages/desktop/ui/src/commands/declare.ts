@@ -125,6 +125,11 @@ export interface Handler<T extends Target = Target> {
    * one, which no key could reach elsewhere.
    */
   listed?(target: T): boolean;
+  /**
+   * What the palette says after its label on `target` now, such as how many there are to act on:
+   * "Submit review · 3 pending". Nothing, or without this, the label alone.
+   */
+  detail?(target: T): string | undefined;
 }
 
 /** The target a command's handler gets, from the kinds it declares. */

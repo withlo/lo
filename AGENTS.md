@@ -808,7 +808,8 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
 
 The `review` feature submits your review of the pull request on screen: `⌘⏎` anywhere in its tab but
 a comment box, a dialog, the palette or a menu, or the status bar's "3 pending · ⌘⏎", opens the
-submit dialog (`tab.dialogs`).
+submit dialog (`tab.dialogs`). The palette says the count too, "Submit review · 3 pending": a
+command's handler may say something after its label (`detail`).
 
 - The dialog asks main what it shows as it opens (`review.dialog`): your pending review and its
   comments, the revision on screen, and whether you opened the pull request, in which case only

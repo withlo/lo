@@ -17,19 +17,19 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4942",
-      "x-ratelimit-reset": "1794605105",
+      "x-ratelimit-remaining": "4965",
+      "x-ratelimit-reset": "1794621242",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "58"
+      "x-ratelimit-used": "35"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4942,
-          "used": 58,
-          "resetAt": "2026-11-13T21:25:05Z"
+          "remaining": 4965,
+          "used": 35,
+          "resetAt": "2026-11-14T01:54:02Z"
         },
         "repository": {
           "pullRequest": {
@@ -37,7 +37,7 @@
               "totalCount": 12,
               "pageInfo": {
                 "hasNextPage": false,
-                "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QyMToxNjo0OVrOt0oZTg=="
+                "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xNFQwMTowNDoxN1rOt1mKuA=="
               },
               "nodes": [
                 {
@@ -631,7 +631,7 @@
                   }
                 },
                 {
-                  "id": "PRRT_kwDOVleUfc63ShlO",
+                  "id": "PRRT_kwDOVleUfc63WYq4",
                   "path": "src/backoff.ts",
                   "subjectType": "LINE",
                   "diffSide": "RIGHT",
@@ -649,19 +649,19 @@
                     "totalCount": 1,
                     "pageInfo": {
                       "hasNextPage": false,
-                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QyMToxNjo0OVrPAAAAARBRqRo="
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xNFQwMTowNDoxN1rPAAAAARBrLV4="
                     },
                     "nodes": [
                       {
-                        "id": "PRRC_kwDOVleUfc8AAAABEFGpGg",
+                        "id": "PRRC_kwDOVleUfc8AAAABEGstXg",
                         "author": {
                           "__typename": "User",
                           "login": "rozed-bot"
                         },
                         "body": "Does the first wait need a cap?",
                         "state": "PENDING",
-                        "createdAt": "2026-11-13T21:16:49Z",
-                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4568754458",
+                        "createdAt": "2026-11-14T01:04:17Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4570426718",
                         "isMinimized": false,
                         "minimizedReason": null,
                         "viewerCanUpdate": true,

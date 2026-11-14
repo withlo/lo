@@ -156,7 +156,10 @@ function key(login: string, pull: PullRef): string {
 function summaryDrafts(kept: Map<string, SummaryDraft>): DraftsService {
   for (const [each, draft] of kept) kept.set(each, { ...draft, restored: true });
   return {
-    summary: (login, pull) => kept.get(key(login, pull)),
+    summary(login, pull) {
+      const draft = kept.get(key(login, pull));
+      return draft && (draft.sent !== null || draft.text.trim() !== '') ? draft : undefined;
+    },
     saveSummary(login, pull, text) {
       const was = kept.get(key(login, pull));
       if (text.trim() === '' && (was?.sent ?? null) === null) {
@@ -175,6 +178,11 @@ function summaryDrafts(kept: Map<string, SummaryDraft>): DraftsService {
       const was = kept.get(key(login, pull));
       const draft = was ?? { text: sent ?? '', savedAt: at, restored: false };
       if (!was && sent === null) return;
+      // A blank summary is kept only while it's marked sent.
+      if (sent === null && draft.text.trim() === '') {
+        kept.delete(key(login, pull));
+        return;
+      }
       kept.set(key(login, pull), {
         ...draft,
         sent,

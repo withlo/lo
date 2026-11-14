@@ -9,6 +9,7 @@
     "./git": "./src/git/index.ts"
   },
   "scripts": {
+    "codegen": "node scripts/derive-answers.ts",
     "lint": "oxlint",
     "test": "vitest run --root .. --project @lo/testing"
   },
@@ -19,6 +20,11 @@
     "vitest": "5.1.0"
   },
   "nx": {
-    "name": "testing"
+    "name": "testing",
+    "targets": {
+      "codegen": {
+        "cache": false
+      }
+    }
   }
 }

@@ -1,7 +1,7 @@
 {
   "request": {
     "method": "GET",
-    "url": "https://github-production-user-asset-6210df.s3.amazonaws.com/353226052/699308503-08c730b3-f0b0-4c7d-93a2-95f8d167d0d9.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=REDACTED&X-Amz-Date=20261113T211652Z&X-Amz-Expires=300&X-Amz-Signature=REDACTED&X-Amz-SignedHeaders=host&response-content-type=image%2Fpng"
+    "url": "https://private-user-images.githubusercontent.com/353226052/699308503-08c730b3-f0b0-4c7d-93a2-95f8d167d0d9.png?jwt=REDACTED"
   },
   "response": {
     "status": 200,

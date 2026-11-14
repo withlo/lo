@@ -13,9 +13,10 @@ import { banners, dialogs, status } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import { heard, openDialog, pullOnScreen, saveNow } from './actions.ts';
 import { comments, main, revisions } from './main.ts';
+import { pendingDetail } from './model.ts';
 import { OtherRevisionBanner, otherRevisionSwitch } from './OtherRevision.tsx';
 import { PendingItem } from './Status.tsx';
-import { takeReview, takeRevisions } from './store.ts';
+import { pendings, takeReview, takeRevisions } from './store.ts';
 import { SubmitDialog } from './SubmitDialog.tsx';
 
 export default {
@@ -28,6 +29,11 @@ export default {
       enabled: () => {
         const tab = pullOnScreen();
         return typeof tab === 'string' ? tab : true;
+      },
+      // "Submit review · 3 pending", while your pending review holds comments.
+      detail: () => {
+        const tab = pullOnScreen();
+        return typeof tab === 'string' ? undefined : pendingDetail(pendings.get(tab.id));
       },
     },
   }),

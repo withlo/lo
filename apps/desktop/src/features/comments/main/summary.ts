@@ -11,18 +11,26 @@ function summaryOf(kept: Kept<SummaryPlace>): SummaryDraft {
   return { text, savedAt, restored, sent, sentAt };
 }
 
+/** Whether a kept summary says nothing: blank, and not marked sent. Such a one isn't kept. */
+function empty(kept: Kept<SummaryPlace>): boolean {
+  return kept.sent === null && kept.text.trim() === '';
+}
+
 /** The summaries in `store`, which is asked for only once it's there, as the feature starts. */
 export function summaries(store: () => DraftStore): DraftsService {
   return {
     summary(login, pull) {
       const kept = store().get(login, pull, SUMMARY);
-      return kept && summaryOf(kept);
+      return kept && !empty(kept) ? summaryOf(kept) : undefined;
     },
     saveSummary(login, pull, text) {
       store().save(login, pull, SUMMARY, text);
     },
     markSummarySent(login, pull, sent, at) {
       store().markSent(login, pull, SUMMARY, sent, at, true);
+      // A blank summary is kept only while it's marked sent: unmarked, it goes.
+      const kept = store().get(login, pull, SUMMARY);
+      if (kept && empty(kept)) store().take(login, pull, SUMMARY);
     },
     takeSummary(login, pull) {
       store().take(login, pull, SUMMARY);

@@ -189,6 +189,21 @@ export class Registry {
     }
   }
 
+  /** What the palette says after `id`'s label on `target` now, as its handler's `detail` says. */
+  detail(id: string, target: Target): string | undefined {
+    const command = this.byId.get(id);
+    const handler = command?.handler;
+    if (!command || !handler?.detail) return undefined;
+    const fitted = fit(command.targets ?? ['none'], target);
+    if (!fitted) return undefined;
+    try {
+      return handler.detail(fitted);
+    } catch (error) {
+      this.onError(error, command);
+      return undefined;
+    }
+  }
+
   /**
    * Runs `id` on `target`, as a key, a menu or the palette asks: `true`, or why it didn't. A
    * `jump` command records where the tab is in its history first. A command that can't run is
