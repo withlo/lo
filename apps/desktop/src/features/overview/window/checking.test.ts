@@ -474,6 +474,11 @@ describe('Checking', () => {
     failing.take({ ...stateOf(commit, 'ready'), problem: null, saved: true });
     await vi.waitFor(() => expect(published).toHaveLength(3));
     expect(firstCode(last())).toEqual({ state: 'resolved' });
+    // A newer commit it can't check says why too, though the last one's check showed.
+    fail = true;
+    failing.take(stateOf(commitOf('e'.repeat(40)), 'ready'));
+    await vi.waitFor(() => expect(published).toHaveLength(4));
+    expect(last()).toMatchObject({ kind: 'failed', commit: { id: 'e'.repeat(40) } });
   });
 
   it('publishes nothing once stopped', async () => {
