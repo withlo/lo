@@ -1,8 +1,8 @@
 // The submit dialog's summary: a comment box outside any code view (`createComposer`), with Vim's
 // keys, Markdown and a preview, drawn in the frame the box makes: a note when it was kept from
-// before Lo started, the preview, and a foot with Vim's mode and the preview's switch. The dialog
-// takes `⌘⏎` before the box hears it, and `Esc Esc` in the box closes the dialog, keeping the
-// summary. Files dropped or pasted into it aren't attached yet: the box takes none.
+// before Lo started, the preview, the files attached to it, as to any comment box, and a foot with
+// Vim's mode, "Attach" and the preview's switch. The dialog takes `⌘⏎` before the box hears it, and
+// `Esc Esc` in the box closes the dialog, keeping the summary.
 
 import { CommentBoxFootBar, CommentBoxNotes, type CommentBoxNote } from '@lo/ui';
 import { createComposer, type BoxParts, type Composer, type Mode } from '@lo/ui/code';
@@ -11,8 +11,17 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } f
 import { createPortal } from 'react-dom';
 
 import { registry } from '../../../window/commands/registry.ts';
-import { Preview } from '../../comments/window/shared.ts';
-import { closeDialog, typed } from './actions.ts';
+import {
+  attachFiles,
+  draggingOver,
+  Dropzone,
+  pickFiles,
+  Preview,
+  takeAddresses,
+  UploadRows,
+  useUploads,
+} from '../../comments/window/shared.ts';
+import { closeDialog, summaryBox, typed } from './actions.ts';
 import { useNonce } from './page.ts';
 
 /** A key, as this system shows it. */
@@ -54,6 +63,11 @@ export function Summary({ view, pull, initial, restored, held, editor }: Summary
   // What it starts with is read once, as it's made: a summary main sends later doesn't replace
   // what's typed.
   const start = useRef(initial);
+  // What files are attached to: the view's summary, which outlives the dialog.
+  const attached = summaryBox(view);
+  const uploads = useUploads(attached, labels('cmd+shift+a'), text);
+  const holding = useRef(held);
+  holding.current = held;
 
   useLayoutEffect(() => {
     const parent = host.current;
@@ -72,6 +86,14 @@ export function Summary({ view, pull, initial, restored, held, editor }: Summary
         close: () => closeDialog(),
         mode: setMode,
         preview: setPreviewing,
+        // Nothing is attached while its text is held, as while it's sent.
+        attach() {
+          if (!holding.current) pickFiles(attached);
+        },
+        files(files) {
+          if (!holding.current) attachFiles(attached, files);
+        },
+        dragging: (count) => draggingOver(attached, count),
       },
       (given) => {
         setParts(given);
@@ -79,16 +101,19 @@ export function Summary({ view, pull, initial, restored, held, editor }: Summary
       },
     );
     box.current = made;
+    attached.composer = made;
+    attached.heard(start.current);
     editor.current = parent.querySelector<HTMLElement>('.cm-content');
     // In insert mode at the end of the text, as a box opened to write in is.
     const frame = requestAnimationFrame(() => made.focus());
     return () => {
       cancelAnimationFrame(frame);
       box.current = undefined;
+      if (attached.composer === made) attached.composer = undefined;
       editor.current = null;
       made.dismiss();
     };
-  }, [nonce, editor]);
+  }, [nonce, editor, attached]);
 
   useEffect(() => box.current?.hold(held), [held, parts]);
 
@@ -104,16 +129,21 @@ export function Summary({ view, pull, initial, restored, held, editor }: Summary
     frame.addEventListener('focusin', into);
     frame.addEventListener('focusout', out);
     if (frame.contains(document.activeElement)) setFocused(true);
+    // An image's address pasted or dropped where the view takes no uploads goes in as an image.
+    const stopAddresses = takeAddresses(frame, attached);
     return () => {
       frame.removeEventListener('focusin', into);
       frame.removeEventListener('focusout', out);
+      stopAddresses();
     };
-  }, [parts]);
+  }, [parts, attached]);
 
-  const notes: CommentBoxNote[] =
-    restored !== undefined && !edited
-      ? [{ key: 'restored', tone: 'info', icon: 'clock', text: restored }]
-      : [];
+  const notes: CommentBoxNote[] = [
+    ...(restored !== undefined && !edited
+      ? [{ key: 'restored', tone: 'info' as const, icon: 'clock' as const, text: restored }]
+      : []),
+    ...uploads.notes,
+  ];
   const toggle = () => {
     const now = !previewing;
     box.current?.preview(now);
@@ -125,6 +155,8 @@ export function Summary({ view, pull, initial, restored, held, editor }: Summary
       {parts &&
         previewing &&
         createPortal(<Preview view={view} text={text} pull={pull} />, parts.preview, 'preview')}
+      {parts && createPortal(<Dropzone box={attached} />, parts.dropzone, 'dropzone')}
+      {parts && createPortal(<UploadRows box={attached} />, parts.uploads, 'uploads')}
       {parts &&
         createPortal(
           <CommentBoxFootBar
@@ -133,6 +165,7 @@ export function Summary({ view, pull, initial, restored, held, editor }: Summary
             foot={{
               mode: MODES[mode],
               text: 'Summary · Markdown',
+              attach: uploads.attach,
               actions: [
                 {
                   label: previewing ? 'Write' : 'Preview',

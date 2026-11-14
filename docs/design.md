@@ -646,13 +646,21 @@ a fork is someone else's code, even in a repo you trust.
   them happens on GitHub.
 - **Outdated threads.** A thread whose line has since changed appears where it was written when you
   view that revision, and is labeled outdated elsewhere.
-- **Attachments.** Drag, paste or pick a file (PNG, JPEG, GIF, WebP, SVG, MP4, MOV or WebM) into any
-  comment box, including review comments and the review summary. Lo uploads it the way `gh --attach`
-  does and inserts the Markdown. Images and GIFs can be up to 10 MB, and videos 10 MB on free plans
-  or 100 MB on paid ones. Uploading needs write access to the repo. Where you don't have it, Lo says
-  so, and you can still paste or drop a GIF's web address, which goes in as an image. If GitHub
-  won't take Lo's sign-in for uploads, Lo uses an imported `gh` sign-in, and without one it accepts
-  web addresses only. There's no built-in GIF search.
+- **Attachments.** Drag, paste or pick (`⌘⇧A`) files (PNG, JPEG, GIF, WebP, SVG, MP4, MOV or WebM),
+  up to 10 on their way into a box at a time, into any comment box, including the review summary.
+  Each goes in at the cursor as a placeholder, and Lo uploads it the way `gh --attach` does, one at
+  a time, with its progress and Cancel, then puts its Markdown in the placeholder's place. If you
+  took the placeholder out meanwhile, its row says so and offers Insert. Lo takes a photo's location
+  and other metadata out first, and says what it took; a GIF, SVG or WebM goes as it is, and Lo says
+  it couldn't remove its metadata. While files are in a box, it warns that uploads stay reachable by
+  link even if the comment is deleted, and the comment isn't sent until they're in. A placeholder
+  whose upload didn't finish, as when Lo quit, holds the comment too: the box names the file, and
+  you take the placeholder out. Images and GIFs can be up to 10 MB, and videos 10 MB on free plans
+  or 100 MB on paid ones. Uploading needs write access to the repo. Where you don't have it, Attach
+  is off, the box says so, and an image's web address pasted or dropped goes in as an image. If
+  GitHub won't take Lo's sign-in for uploads, Lo uses `gh`'s sign-in for that one upload, read from
+  gh each time and never kept, and without gh it takes web addresses only. An upload is never sent
+  again by itself. There's no built-in GIF search.
 
 ### Reviews
 
@@ -773,7 +781,7 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | Timeline        | `j`/`k` move between events, `Tab` through its links and buttons, `Esc` back to the list, `gx` open the one you're on on GitHub                                                                                                                                                                                                        |
 | Panels          | `⌘\` left panel, `⌘⇧\` threads panel. In the threads panel: `j`/`k` move, `⏎` show the thread in the diff, `x` resolve or unresolve, `f` unresolved, all or yours. In the stack tree: `j`/`k` move, `⏎` show the layer, `gx` open it on GitHub, `Esc` back, `v` choose a run of layers, `j`/`k` to grow it, `⏎` to view it as one diff |
 | Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file or the thread at the cursor                                                                                                                                          |
-| Comment box     | `⌘⏎` add to review, `⌥⏎` comment now, `⌘⇧V` write or preview, `Esc` leave insert mode, `Esc Esc` close and keep the draft                                                                                                                                                                                                              |
+| Comment box     | `⌘⏎` add to review, `⌥⏎` comment now, `⌘⇧V` write or preview, `⌘⇧A` attach files, `Esc` leave insert mode, `Esc Esc` close and keep the draft                                                                                                                                                                                          |
 | Merge queue     | `x` remove, `J` jump to the front, `a` auto-merge, `⏎` open the PR                                                                                                                                                                                                                                                                     |
 | Revision picker | `j`/`k` move, `Space` set an end, `⏎` compare                                                                                                                                                                                                                                                                                          |
 | Palettes        | `⏎` open, `⌘⏎` the other way (a new window, the whole file), `Tab` changed files only in the file finder, `⌥⏎` show an action's key                                                                                                                                                                                                    |

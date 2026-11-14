@@ -1,20 +1,26 @@
 // @vitest-environment jsdom
 // The overview skill's rows in a window of their own, with main answered by a stand-in bridge: the
-// step on the welcome screen, the row in Settings' Command line, and the command in the app menu.
+// step on the welcome screen, the rows in Settings' Command line, and the command in the app menu.
 // What main installs, and in which folders, is tested beside it, in a temporary home.
 
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { install } from '@withlo/overview/install';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 
 import { notice } from '../../../window/commands/notices.tsx';
+import { createRegistry } from '../../../window/commands/registry.ts';
 import { Slot, Slots } from '../../../window/slots.tsx';
 import { installBridge, type FakeBridge } from '../../../window/test/bridge.ts';
 import { commandLine } from '../../open/window/shared.ts';
 import { setup } from '../../welcome/window/shared.ts';
 import type { SkillAgent, SkillResult, SkillState } from '../contract.ts';
 import feature from './index.ts';
-import { skillStore } from './skill.ts';
+import { INSTALL_COMMAND, skillStore } from './skill.ts';
 
 /** Both agents as main reports them, `changes` over each. */
 function state(claude: Partial<SkillAgent> = {}, codex: Partial<SkillAgent> = {}): SkillState {
@@ -51,12 +57,14 @@ let shared: FakeBridge;
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
   shared = installBridge(answers);
+  // The window's keys, for the keys the rows show.
+  createRegistry(feature.commands ?? [], 'mac');
   // As the window starts the feature, once: main's pushes reach the store.
   feature.start?.();
 });
 
 afterEach(() => {
-  skillStore.setState({ state: undefined, installing: false, said: undefined });
+  skillStore.setState({ state: undefined, installing: false, said: undefined, copied: false });
 });
 
 /**
@@ -76,6 +84,7 @@ function main(
       if (after) current = after;
       return results;
     },
+    'tab.copy': () => undefined,
   });
   shared.calls.length = 0;
   return {
@@ -365,5 +374,68 @@ describe('the command in the app menu', () => {
     });
     await settle();
     expect(asked.asked()).toEqual([['overview.installSkill', { agents: ['claude', 'codex'] }]]);
+  });
+});
+
+/** Settings' row for the command that installs the skill from a terminal. */
+const commandRow = () =>
+  [...(row()?.querySelectorAll<HTMLElement>('.setting-row') ?? [])].find((each) =>
+    each.textContent.startsWith('Install from a terminal'),
+  );
+/** What the window asked main to put on the clipboard. */
+const copies = () =>
+  shared.calls.filter(([channel]) => channel === 'tab.copy').map(([, input]) => input);
+
+describe('Settings’ row for the command that installs the skill', () => {
+  const command = INSTALL_COMMAND;
+
+  it('pins the checker by the version the skill Lo installs runs', () => {
+    const skills = mkdtempSync(join(tmpdir(), 'lo-skill-'));
+    onTestFinished(() => rmSync(skills, { recursive: true, force: true }));
+    const [installed] = install([{ agent: undefined, skills }]);
+    const text = readFileSync(join(installed?.folder ?? skills, 'SKILL.md'), 'utf8');
+    const pinned = new Set(text.match(/@withlo\/overview@\S+/g));
+    expect([...pinned]).toHaveLength(1);
+    expect(command).toBe(`npx ${[...pinned][0]} install`);
+    expect(command).toMatch(/^npx @withlo\/overview@\d+\.\d+\.\d+ install$/);
+  });
+
+  it('shows the command, and the key that copies it', async () => {
+    main(state());
+    render();
+    await settle();
+    expect(commandRow()?.querySelector('.code-small')?.textContent).toBe(command);
+    expect(commandRow()?.querySelector('.text-fg-muted')?.textContent).toBe(
+      `${command} installs the skill Lo does, for each agent set up where it runs.`,
+    );
+    const copy = button(commandRow() ?? null, 'Copy');
+    expect([...copy.querySelectorAll('kbd')].map((each) => each.textContent)).toEqual(['y', 'c']);
+    expect(copy.getAttribute('aria-description')).toBe('Keys y then c');
+  });
+
+  it('copies it with its button, and says so', async () => {
+    main(state());
+    render();
+    await settle();
+    click(button(commandRow() ?? null, 'Copy'));
+    await settle();
+    expect(copies()).toEqual([{ text: command }]);
+    expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
+    expect(commandRow()?.querySelector('[role="status"]')?.textContent).toBe('Copied the command.');
+  });
+
+  it('copies it with y c, in Settings', async () => {
+    main(state());
+    render();
+    await settle();
+    const copy = feature.commands?.find((each) => each.id === 'overview.copyInstallCommand');
+    expect(copy?.keys).toEqual(['y c']);
+    expect(copy?.when).toEqual({ scope: 'settings' });
+    await act(async () => {
+      await copy?.handler?.run({ kind: 'none' });
+    });
+    await settle();
+    expect(copies()).toEqual([{ text: command }]);
+    expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
   });
 });

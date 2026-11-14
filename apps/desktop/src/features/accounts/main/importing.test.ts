@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { Gh } from './gh.ts';
 import { NoKeychain } from './grants.ts';
-import { importFromGh, listGh, rereadFromGh } from './importing.ts';
+import { ghTokenForUpload, importFromGh, listGh, rereadFromGh } from './importing.ts';
 import { fakeGh, GH_TOKEN_FOR_BOT, GH_TOKEN_FOR_SOMEONE_ELSE } from './test/gh.ts';
 
 const nowhere: Places = { folders: [], groups: defaultPlaces(process.platform).groups };
@@ -283,5 +283,35 @@ describe('reading a token from gh again', () => {
     expect(logged).toEqual([
       "reading rozed-bot's token from gh again: Lo can't find gh, GitHub's command-line tool.",
     ]);
+  });
+});
+
+describe("reading gh's token for an upload", () => {
+  it('reads it from gh afresh each time, once GitHub says it’s the account’s, and never logs it', async () => {
+    const { gh, log, logged, folder } = setUp();
+    const token = ghTokenForUpload({ gh, fetch: replayFetch('user'), urls: GITHUB_URLS, log });
+    expect((await token('rozed-bot'))?.expose()).toBe(GH_TOKEN_FOR_BOT);
+    expect((await token('rozed-bot'))?.expose()).toBe(GH_TOKEN_FOR_BOT);
+    // Nothing is kept: gh is asked for each upload.
+    expect(asked(folder).filter((line) => line.startsWith('auth token'))).toEqual([
+      'auth token --hostname github.com --user=rozed-bot',
+      'auth token --hostname github.com --user=rozed-bot',
+    ]);
+    expect(await token('nobody')).toBeUndefined();
+    expect(logged).toEqual([
+      "reading nobody's token from gh for an upload: gh isn't signed in to nobody.",
+    ]);
+    expect(logged.join('\n')).not.toContain(GH_TOKEN_FOR_BOT);
+  });
+
+  it('answers nothing without gh', async () => {
+    const none = new Gh({ env: {}, platform: process.platform, program: 'none' });
+    const token = ghTokenForUpload({
+      gh: none,
+      fetch: replayFetch('user'),
+      urls: GITHUB_URLS,
+      log: () => undefined,
+    });
+    expect(await token('rozed-bot')).toBeUndefined();
   });
 });

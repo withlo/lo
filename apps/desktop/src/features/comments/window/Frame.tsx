@@ -1,10 +1,10 @@
 // A comment box's frame in a diff, drawn in the parts the code view makes around its editor: the
 // head, with Write and Preview, where the comment goes, or the thread a reply is to, or that it's
-// an edit, and who it's from; the notes, of a restored
-// draft, a refusal with what to do about it, or how sending stands; the preview, the text as GitHub
-// would render it; and the foot, with Vim's mode and the buttons that send. Each part is a React
-// root of its own, drawn from the box's state, and drawn at once as the box is made, so it's as
-// tall as it'll be before it's on screen.
+// an edit, and who it's from; the notes, of a restored draft, a refusal with what to do about it,
+// or how sending stands; the preview, the text as GitHub would render it; the files attached to it
+// (`./Attached.tsx`); and the foot, with Vim's mode, "Attach" and the buttons that send. Each part
+// is a React root of its own, drawn from the box's state, and drawn at once as the box is made, so
+// it's as tall as it'll be before it's on screen.
 
 import {
   CommentBoxFootBar,
@@ -26,6 +26,8 @@ import { avatarImage } from '../../../window/images.ts';
 import { usePull, useRun, useTabState } from '../../tab/window/shared.ts';
 import { act, type Box, type BoxState, pullIn, send, sendingNow, takenDown } from './boxes.ts';
 import { Preview as Rendering } from './Preview.tsx';
+import { Dropzone, UploadRows, useUploads } from './Attached.tsx';
+import { holdText, takeAddresses, UPLOADING } from './uploads.ts';
 import { held } from './threads.ts';
 import {
   IN_A_LAYER,
@@ -164,15 +166,21 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
 
 function Notes({ box }: { box: Box }): ReactNode {
   const state = useBox(box);
-  const why = useWhyNot(box);
-  const notes = notesOf(state, Date.now()).map((note) => drawnNote(box, note));
+  const uploads = useUploads(box, labels('cmd+shift+a'), state.text);
+  const why = useWhyNot(box) ?? holdText(uploads.hold, UPLOADING);
+  const notes = [
+    ...notesOf(state, Date.now()).map((note) => drawnNote(box, note)),
+    ...uploads.notes,
+  ];
   return <CommentBoxNotes id={box.id} notes={notes} foot={footOf(box, state, why)} />;
 }
 
 function Foot({ box }: { box: Box }): ReactNode {
   const state = useBox(box);
-  const why = useWhyNot(box);
-  return <CommentBoxFootBar id={box.id} foot={footOf(box, state, why)} focused={state.focused} />;
+  const uploads = useUploads(box, labels('cmd+shift+a'), state.text);
+  const why = useWhyNot(box) ?? holdText(uploads.hold, UPLOADING);
+  const foot = { ...footOf(box, state, why), attach: uploads.attach };
+  return <CommentBoxFootBar id={box.id} foot={foot} focused={state.focused} />;
 }
 
 /** The text as GitHub would render it, made by the background process while the preview shows. */
@@ -208,6 +216,8 @@ export function frameOf(box: Box): BoxFrame {
         </OnMenu>,
       ],
       [parts.preview, <Preview key="preview" box={box} />],
+      [parts.dropzone, <Dropzone key="dropzone" box={box} />],
+      [parts.uploads, <UploadRows key="uploads" box={box} />],
       [
         parts.foot,
         <OnMenu key="foot" box={box}>
@@ -231,10 +241,13 @@ export function frameOf(box: Box): BoxFrame {
     frame?.addEventListener('focusin', into);
     frame?.addEventListener('focusout', out);
     if (frame?.contains(document.activeElement)) box.set({ focused: true });
+    // An image's address pasted or dropped where the view takes no uploads goes in as an image.
+    const stopAddresses = frame ? takeAddresses(frame, box) : undefined;
     return {
       destroy() {
         frame?.removeEventListener('focusin', into);
         frame?.removeEventListener('focusout', out);
+        stopAddresses?.();
         box.set({ focused: false, previewing: false });
         takenDown(box, composer);
         // Not while React may be rendering, as when the view takes boxes down in an effect.

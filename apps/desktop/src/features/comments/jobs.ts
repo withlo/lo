@@ -1,12 +1,15 @@
-// The comments' job in the background process: a post's text as Lo's tree, from GitHub's rendering
-// of it once main has read that, and from its Markdown until then, so text is never blank. Nothing
+// The comments' jobs in the background process: a post's text as Lo's tree, from GitHub's rendering
+// of it once main has read that, and from its Markdown until then, so text is never blank; and a
+// file attached to a comment, checked and with its metadata taken out, as it's uploaded. Nothing
 // here calls Node or Electron.
 
+import type { Metadata } from '@lo/github';
 import { DEFAULT_LIMITS, type Tree } from '@lo/markdown';
 import { z } from 'zod';
 
 import { reply } from '../../ipc/contract.ts';
 import { defineJobs } from '../../ipc/jobs.ts';
+import { ATTACHMENT_LIMIT, fileName } from './contract.ts';
 
 /**
  * The most characters of GitHub's rendering a post's tree is made from: as many as `@lo/markdown`
@@ -46,7 +49,41 @@ export interface Rendered {
   images: boolean;
 }
 
+/**
+ * What `comments.prepare` takes: a file's name, and its bytes, or nothing for one larger than
+ * {@link ATTACHMENT_LIMIT}, which no kind may be, so it isn't read.
+ */
+export const prepareInput = z.strictObject({
+  name: fileName,
+  bytes: z
+    .instanceof(Uint8Array)
+    .refine((bytes) => bytes.byteLength <= ATTACHMENT_LIMIT)
+    .nullable(),
+});
+export type PrepareInput = z.output<typeof prepareInput>;
+
+/**
+ * A file ready to upload: its name, the bytes to send, how large they are as people read sizes,
+ * what Lo took out of it, and whether GitHub takes it only on a paid plan; or why Lo won't attach
+ * it, in a few words.
+ */
+export type Prepared =
+  | {
+      kind: 'prepared';
+      name: string;
+      bytes: Uint8Array<ArrayBuffer>;
+      size: string;
+      metadata: Metadata;
+      paidPlan: boolean;
+    }
+  | { kind: 'refused'; why: string };
+
 export const contract = defineJobs('comments', {
   /** A post's text as Lo's tree: from its HTML when given, else from its Markdown. */
   render: { input: renderInput, reply: reply<Rendered>() },
+  /**
+   * A file to attach, checked as GitHub takes it, by its name, its bytes and their size, with its
+   * metadata taken out.
+   */
+  prepare: { input: prepareInput, reply: reply<Prepared>() },
 });

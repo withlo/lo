@@ -10,6 +10,7 @@ import type {
   RepoAccount,
   RepoRef,
   SignedOut,
+  Token,
 } from '@lo/github';
 
 import { defineService } from '../../main/services.ts';
@@ -84,6 +85,13 @@ export interface GithubAccess {
   forgetRecent(pull: PullRef): void;
   /** Forgets every answer the pollers kept, never the accounts or the recent pull requests. */
   clearAnswers(): void;
+  /**
+   * gh's token for `login`, for one upload GitHub took none of with Lo's own: read from gh afresh
+   * each time it's asked, checked with GitHub to be the account's, and never kept or logged.
+   * Nothing when gh has none for the account, as without gh. Throws when gh or GitHub couldn't be
+   * asked.
+   */
+  ghToken(login: string): Promise<Token | undefined>;
   /** Calls `listener` with each {@link GithubEvent}, until the returned function is called. */
   onEvent(listener: (event: GithubEvent) => void): () => void;
 }

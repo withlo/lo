@@ -1,4 +1,4 @@
-// The overview skill's rows in the app: the step on the welcome screen, the row in Settings' Command
+// The overview skill's rows in the app: the step on the welcome screen, the rows in Settings' Command
 // line, and the command in the app menu and the palette. Each test starts Lo with a home folder of
 // its own, so the skill goes into folders the test made and never into the real ~/.claude or
 // ~/.agents, and with the variables that move an agent's folder cleared.
@@ -164,6 +164,36 @@ test.describe('in Settings', () => {
     expect(isSkill(claudeSkill(home))).toBe(true);
     expect(lstatSync(join(skills, 'lo-overview')).isSymbolicLink()).toBe(true);
     expect(readdirSync(outside)).toEqual([]);
+  });
+});
+
+test.describe('in Settings, from a terminal', () => {
+  test('shows the command that installs the skill Lo does, which y c copies', async ({
+    app,
+    page,
+    home,
+  }) => {
+    mkdirSync(join(home, '.claude'));
+    await installFor(page, ['claude']);
+    // The version of the checker the skill Lo installs runs.
+    const pinned = /@withlo\/overview@(\S+) /.exec(readFileSync(claudeSkill(home), 'utf8'))?.[1];
+    expect(pinned).toBeDefined();
+    const command = `npx @withlo/overview@${pinned} install`;
+
+    await openSettings(page);
+    const terminal = page
+      .locator('[data-settings-section="open.command"]')
+      .locator('.setting-row')
+      .filter({ hasText: 'Install from a terminal' });
+    await expect(terminal).toContainText(
+      `${command} installs the skill Lo does, for each agent set up where it runs.`,
+    );
+    // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
+    test.skip(mac, "The Mac's clipboard is its user's.");
+    await page.keyboard.press('y');
+    await page.keyboard.press('c');
+    await expect(terminal.getByRole('button', { name: 'Copied' })).toBeVisible();
+    await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe(command);
   });
 });
 

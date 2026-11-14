@@ -3,11 +3,11 @@
 // the tree; the threads panel, in the tab's right panel, with its keys and the header toggle's
 // count, and each stack layer's unresolved threads, for the layer on screen; posts' text, as other
 // features draw it through `Post`, from the HTML main reads for the posts on screen; writing
-// comments: the keys that open a comment box in the diff, the box's frame, and its draft, which
-// main keeps until it's sent; and acting on threads, in the diff and the panel: replying,
-// resolving, and editing and deleting your comments, with the dialog that asks before a delete.
-// The threads on an overview's code blocks are drawn under their lines too, and `c` there opens a
-// box under them. What it keeps of a view goes as the view's tab closes.
+// comments: the keys that open a comment box in the diff, the box's frame, its draft, which main
+// keeps until it's sent, and the files attached to it; and acting on threads, in the diff and the
+// panel: replying, resolving, and editing and deleting your comments, with the dialog that asks
+// before a delete. The threads on an overview's code blocks are drawn under their lines too, and
+// `c` there opens a box under them. What it keeps of a view goes as the view's tab closes.
 
 import { handlers, type HeaderTarget, type LineTarget, type Target } from '@lo/ui/commands';
 import { createElement } from 'react';
@@ -51,6 +51,7 @@ import { inPanel, moveRow, onThread, showTarget, stepFilter } from './panel.ts';
 import { ThreadsPanel, UnresolvedCount, unresolvedOf } from './ThreadsPanel.tsx';
 import { renderThreads } from './render.ts';
 import { keepOnly } from './store.ts';
+import { checkUploads, keepUploadsOf, takeProgress } from './uploads.ts';
 import {
   catchUp,
   countsIn,
@@ -201,11 +202,16 @@ export default {
       const kept = new Set(viewIds(open));
       keepOnly(kept);
       keepBoxesOf(kept);
+      keepUploadsOf(kept);
     });
     main().subscribe('drafts', takeDrafts);
+    main().subscribe('uploads', takeProgress);
     frameWith(frameOf);
     onDiffDrawn((view) => {
       catchUpDrafts(view);
+      // Before a box opens, main says whether the account can upload, so its box says so as it's
+      // drawn, not after.
+      void checkUploads(view);
       queueMicrotask(() => restore(view));
     });
     // What waits to be saved is saved as the window goes.
