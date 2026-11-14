@@ -46,6 +46,7 @@ test('a draft is saved as typed, comes back restored, and blank text removes it'
       restored: false,
       sent: null,
       sentAt: null,
+      base: null,
     },
   ]);
   const again = new DraftStore(db);
@@ -108,12 +109,43 @@ test('drafts on an older revision move to the newer one where their file is the 
   );
 });
 
+test('an edit’s draft keeps the text it started from through blank text and a restart', () => {
+  const db = database();
+  const store = new DraftStore(db, () => 500);
+  const place: DraftPlaceRow = { kind: 'edit', thread: 'PRRT_1', comment: 'PRRC_1' };
+  expect(store.startEdit('rozed-bot', PULL, place, 'GitHub’s text')).toBe(true);
+  expect(store.get('rozed-bot', PULL, place)).toMatchObject({
+    text: 'GitHub’s text',
+    base: 'GitHub’s text',
+  });
+  store.save('rozed-bot', PULL, place, 'Typed');
+  // Started again, it's the draft there that stays.
+  expect(store.startEdit('rozed-bot', PULL, place, 'Newer')).toBe(false);
+  store.save('rozed-bot', PULL, place, '');
+  expect(new DraftStore(db).get('rozed-bot', PULL, place)).toMatchObject({
+    text: '',
+    base: 'GitHub’s text',
+    restored: true,
+  });
+  store.take('rozed-bot', PULL, place);
+  expect(new DraftStore(db).of('rozed-bot', PULL)).toEqual([]);
+});
+
+test('a reply’s draft is kept by its thread, and stays where it is as a newer push is shown', () => {
+  const store = new DraftStore(database());
+  const place: DraftPlaceRow = { kind: 'reply', thread: 'PRRT_1' };
+  store.save('rozed-bot', PULL, place, 'A reply');
+  expect(store.startEdit('rozed-bot', PULL, place, 'Not an edit')).toBe(false);
+  expect(store.moveToLatest('rozed-bot', PULL, R2, () => undefined)).toBe(false);
+  expect(store.of('rozed-bot', PULL)).toMatchObject([{ place, text: 'A reply', base: null }]);
+});
+
 test('the summary is kept beside the threads’ drafts, its mark of a review sent too, a blank one’s included', () => {
   const db = database();
   const store = new DraftStore(db, () => 700);
   store.save('rozed-bot', PULL, on(R1, 'a.ts', 4), 'A line');
   expect(store.save('rozed-bot', PULL, SUMMARY, 'Looks good')).toBe(true);
-  // The threads' drafts are only the threads'.
+  // The boxes' drafts are only the boxes'.
   expect(store.of('rozed-bot', PULL).map(({ text }) => text)).toEqual(['A line']);
   expect(store.get('rozed-bot', PULL, SUMMARY)).toMatchObject({ text: 'Looks good', sent: null });
   // A review sent with no summary keeps a blank one, marked, so the mark outlasts a restart.

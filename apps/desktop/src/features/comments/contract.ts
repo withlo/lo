@@ -178,8 +178,9 @@ const path = z.string().min(1).max(4096);
 
 /**
  * Where a comment box is, which its draft is kept by: a new thread on lines of the revision whose
- * head is `commit`, the newer column's when it was written, or on the file when it has no lines.
- * Boxes of other kinds come with the features that open them.
+ * head is `commit`, the newer column's when it was written, or on the file when it has no lines; a
+ * reply in the thread `thread`; or an edit of your comment `comment` in the thread `thread`. Boxes
+ * of other kinds come with the features that open them.
  */
 export const draftPlace = z.discriminatedUnion('kind', [
   z.strictObject({
@@ -188,21 +189,39 @@ export const draftPlace = z.discriminatedUnion('kind', [
     path,
     lines: commentLines.nullable(),
   }),
+  z.strictObject({ kind: z.literal('reply'), thread: nodeId }),
+  z.strictObject({ kind: z.literal('edit'), thread: nodeId, comment: nodeId }),
 ]);
 export type DraftPlaceRow = z.output<typeof draftPlace>;
+
+/** A new thread's place, of those a draft may have. */
+export type ThreadPlaceRow = Extract<DraftPlaceRow, { kind: 'thread' }>;
+
+/** An edit's place, of those a draft may have. */
+export type EditPlaceRow = Extract<DraftPlaceRow, { kind: 'edit' }>;
 
 /**
  * Where sending a draft stands, when it's been sent: `waiting` for the answer to the last write to
  * its pull request, since one goes at a time; `sending`; `checking`, after GitHub's answer was
  * lost, whether it posted, by reading your comments once the write's read-back lands; `notPosted`,
- * when it found it didn't; `unknown`, when it couldn't read them.
+ * when it found it didn't; `unknown`, when it couldn't read them. An edit whose answer was lost may
+ * also find its comment `changed` on GitHub to another text since, or `gone`.
  */
-export const sending = z.enum(['waiting', 'sending', 'checking', 'notPosted', 'unknown']);
+export const sending = z.enum([
+  'waiting',
+  'sending',
+  'checking',
+  'notPosted',
+  'unknown',
+  'changed',
+  'gone',
+]);
 export type Sending = z.output<typeof sending>;
 
 /**
  * A comment box's draft: where it is, its text, when it was last saved, whether it was saved before
- * Lo started, and how sending it stands, with the text sent when GitHub's answer was lost.
+ * Lo started, and how sending it stands, with the text sent when GitHub's answer was lost. An
+ * edit's has `base`, the comment's text on GitHub when the edit started.
  */
 export const draftRow = z.strictObject({
   place: draftPlace,
@@ -211,6 +230,7 @@ export const draftRow = z.strictObject({
   restored: z.boolean(),
   sending: sending.nullable(),
   sent: z.string().max(BODY_LIMIT).nullable(),
+  base: z.string().max(BODY_LIMIT).nullable(),
 });
 export type DraftRow = z.output<typeof draftRow>;
 
@@ -277,6 +297,75 @@ export type SendOutcome =
   | { kind: 'refused'; refusal: SendRefusal }
   | { kind: 'lost' };
 
+/** An edit's place, as a request names it. */
+const editPlace = z.strictObject({ kind: z.literal('edit'), thread: nodeId, comment: nodeId });
+
+/**
+ * Why Lo didn't edit, resolve, unresolve or delete, as the window says it, with what to do:
+ *
+ * - `theirs`: the comment is `author`'s, or a deleted account's, and Lo changes only yours;
+ * - `notAllowed`: it's yours, but GitHub doesn't let you change it now, for `reasons`, GitHub's
+ *   own, such as `LOCKED`;
+ * - `cantResolve`: GitHub doesn't let you resolve the thread, or unresolve it (`resolved` false);
+ * - `changed`: the comment was edited on GitHub since the edit started, or since the delete was
+ *   asked;
+ * - `gone`: the thread or the comment is gone from GitHub;
+ * - `busy`: it's being sent, or Lo is still looking whether it went;
+ * - `paused`, `signIn`, `run` and `github`, as for a comment.
+ */
+export type ActRefusal =
+  | { kind: 'theirs'; author: string | null }
+  | { kind: 'notAllowed'; reasons: string[] }
+  | { kind: 'cantResolve'; resolved: boolean }
+  | { kind: 'changed' }
+  | { kind: 'gone' }
+  | { kind: 'busy' }
+  | { kind: 'paused'; until: number }
+  | { kind: 'signIn' }
+  | { kind: 'run' }
+  | { kind: 'github'; message: string };
+
+/**
+ * What came of an edit, a resolve or a delete: `done`, `refused`, or `lost`, when GitHub's answer
+ * was lost, and Lo looks whether it went.
+ */
+export type ActOutcome =
+  { kind: 'done' } | { kind: 'refused'; refusal: ActRefusal } | { kind: 'lost' };
+
+/** What's done to a thread, or to your comment in it, besides writing one. */
+export const change = z.enum(['resolve', 'unresolve', 'delete']);
+export type Change = z.output<typeof change>;
+
+/**
+ * How resolving or unresolving a thread, or deleting your comment `comment` in it, stands, from
+ * when it's asked until Lo knows it's done: `waiting` for the answer to the last write to its pull
+ * request; `sending`; `checking`, after GitHub's answer was lost, whether it went; `notDone`, when
+ * Lo found it didn't; `unknown`, when Lo couldn't tell.
+ */
+export const actRow = z.strictObject({
+  thread: nodeId,
+  comment: nodeId.nullable(),
+  change,
+  stands: z.enum(['waiting', 'sending', 'checking', 'notDone', 'unknown']),
+});
+export type ActRow = z.output<typeof actRow>;
+
+/** How the changes asked of a view's pull request stand, sent each time they change. */
+export const actsView = z.strictObject({ id: tabId, acts: z.array(actRow) });
+export type ActsView = z.output<typeof actsView>;
+
+/**
+ * What a question to delete a comment said of it, from what Lo last read: its text, whether it's
+ * in your pending review, and whether it's its thread's only comment, so the thread goes too.
+ * GitHub's comment is read again as it's answered, and isn't deleted when that says otherwise.
+ */
+export const deleteAsked = z.strictObject({
+  body: z.string().max(BODY_LIMIT),
+  pending: z.boolean(),
+  onlyComment: z.boolean(),
+});
+export type DeleteAsked = z.output<typeof deleteAsked>;
+
 export const contract = defineContract('comments', {
   requests: {
     /**
@@ -342,6 +431,47 @@ export const contract = defineContract('comments', {
       }),
       reply: reply<SendOutcome>(),
     },
+    /**
+     * Starts an edit of your comment at `place` on view `id`'s pull request, keeping its draft with
+     * `base`, GitHub's text as the window shows it, which the edit then goes over only while GitHub
+     * still has it. A draft there already stays as it is. Refused for a comment that isn't yours, or
+     * that GitHub doesn't let you edit.
+     */
+    editing: {
+      input: z.strictObject({ id: tabId, place: editPlace, base: z.string().max(BODY_LIMIT) }),
+      reply: reply<ActOutcome>(),
+    },
+    /**
+     * Sends `text` as the new text of the comment the edit at `place` on view `id`'s pull request
+     * is of, once the last write to its pull request has its answer, and only if a read of the
+     * comment, made then, finds GitHub's text still the one the edit started from. It's kept as the
+     * draft until GitHub takes it. Never sent again by itself.
+     */
+    edit: {
+      input: z.strictObject({
+        id: tabId,
+        place: editPlace,
+        text: z.string().min(1).max(BODY_LIMIT),
+      }),
+      reply: reply<ActOutcome>(),
+    },
+    /**
+     * Resolves the thread `thread` on view `id`'s pull request, or with `resolved` false unresolves
+     * it, once the last write to the pull request has its answer. Never sent again by itself.
+     */
+    resolve: {
+      input: z.strictObject({ id: tabId, thread: nodeId, resolved: z.boolean() }),
+      reply: reply<ActOutcome>(),
+    },
+    /**
+     * Deletes your comment `comment` in the thread `thread` on view `id`'s pull request, once the
+     * last write to the pull request has its answer, and only if a read of it, made then, finds it
+     * as the question showed it (`asked`). Never sent again by itself.
+     */
+    remove: {
+      input: z.strictObject({ id: tabId, thread: nodeId, comment: nodeId, asked: deleteAsked }),
+      reply: reply<ActOutcome>(),
+    },
   },
   topics: {
     /** A view's review threads, each time they change. */
@@ -350,5 +480,7 @@ export const contract = defineContract('comments', {
     review: reviewView,
     /** The drafts of a view's account on its pull request, each time they change. */
     drafts: draftsView,
+    /** How the changes asked of a view's pull request stand, each time they change. */
+    acts: actsView,
   },
 });

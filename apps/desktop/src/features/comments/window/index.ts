@@ -2,9 +2,11 @@
 // their lines in the view's diff and drawn there, and counted on each file's header and its row in
 // the tree; the threads panel, in the tab's right panel, with its keys and the header toggle's
 // count, and each stack layer's unresolved threads, for the layer on screen; posts' text, as other
-// features draw it through `Post`, from the HTML main reads for the posts on screen; and writing
+// features draw it through `Post`, from the HTML main reads for the posts on screen; writing
 // comments: the keys that open a comment box in the diff, the box's frame, and its draft, which
-// main keeps until it's sent. What it keeps of a view goes as the view's tab closes.
+// main keeps until it's sent; and acting on threads, in the diff and the panel: replying,
+// resolving, and editing and deleting your comments, with the dialog that asks before a delete.
+// What it keeps of a view goes as the view's tab closes.
 
 import { handlers, type HeaderTarget, type LineTarget } from '@lo/ui/commands';
 import { createElement } from 'react';
@@ -14,9 +16,10 @@ import { defineView } from '../../../window/slots.tsx';
 import { onDiffDrawn, setThreader, threadsChanged, writingDiff } from '../../diff/window/shared.ts';
 import { setLayerCounts } from '../../stacks/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
-import { activeTab, right, type PullTab } from '../../tab/window/shared.ts';
+import { activeTab, dialogs, right, type PullTab } from '../../tab/window/shared.ts';
 import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
+import { edit, remove, reply, resolve, takeActs, type ThreadKeyTarget } from './acts.ts';
 import {
   canWrite,
   catchUpDrafts,
@@ -31,6 +34,7 @@ import {
   takeDrafts,
   takeOffer,
 } from './boxes.ts';
+import { DeleteDialog } from './DeleteDialog.tsx';
 import { frameOf } from './Frame.tsx';
 import { main, tabs } from './main.ts';
 import { inPanel, moveRow, onThread, showTarget, stepFilter } from './panel.ts';
@@ -81,6 +85,14 @@ function writing(how: 'review' | 'now', suggest = false) {
   };
 }
 
+/** Acts on a thread as `r`, `x`, `i` or `dd` do. */
+function actOn(run: (tab: PullTab, target: ThreadKeyTarget) => unknown) {
+  return (target: ThreadKeyTarget): void => {
+    const tab = writable();
+    if (typeof tab !== 'string') void run(tab, target);
+  };
+}
+
 export default {
   commands: handlers(keys, {
     comment: { run: writing('review'), enabled: enabled(inDiff) },
@@ -103,6 +115,10 @@ export default {
         writingDiff(tab.id, true)?.vim(['<CR>']);
       },
     },
+    reply: { run: actOn(reply), enabled: enabled(writable) },
+    resolve: { run: actOn(resolve), enabled: enabled(writable) },
+    edit: { run: actOn(edit), enabled: enabled(writable) },
+    remove: { run: actOn(remove), enabled: enabled(writable) },
     discard: offering('discard'),
     sendAnyway: offering('sendAnyway'),
     moveToFile: offering('onFile'),
@@ -112,6 +128,13 @@ export default {
     previousThread: { run: () => moveRow(-1), enabled: inPanel },
     showThread: { run: showTarget, enabled: onThread },
     filterThreads: { run: stepFilter, enabled: inPanel },
+    resolveInPanel: {
+      run: actOn(resolve),
+      enabled: (target) => {
+        const on = onThread(target);
+        return on === true ? enabled(writable)() : on;
+      },
+    },
   }),
   views: [
     defineView(right, {
@@ -119,6 +142,12 @@ export default {
       order: 10,
       render: ({ tab }) => createElement(ThreadsPanel, { tab }),
       count: UnresolvedCount,
+    }),
+    // After the other features' dialogs: one opens at a time.
+    defineView(dialogs, {
+      id: 'comments.delete',
+      order: 40,
+      render: () => createElement(DeleteDialog),
     }),
   ],
   start() {
@@ -139,6 +168,7 @@ export default {
       if (takeThreads(view)) threadsChanged(view.id);
     });
     main().subscribe('review', takeReview);
+    main().subscribe('acts', takeActs);
     setThreader({
       threadsIn(view, drawn) {
         // A view drawn before main said anything of it asks main once.

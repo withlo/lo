@@ -3,7 +3,14 @@
 // comment, restored from main's drafts, saved as they're typed in, and closed once what they sent
 // is on GitHub.
 
-import type { BoxFrame, Composer, ComposerEvents, ComposeOptions } from '@lo/ui/code';
+import type {
+  BoxFrame,
+  Composer,
+  ComposerEvents,
+  ComposeOptions,
+  OnFile,
+  Place,
+} from '@lo/ui/code';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { notice } from '../../../window/commands/notices.tsx';
@@ -11,7 +18,16 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import type { DrawnDiff, WritingDiff } from '../../diff/window/shared.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab, PullView } from '../../tab/window/shared.ts';
-import type { Commentable, DraftPlaceRow, DraftRow, SendOutcome } from '../contract.ts';
+import type {
+  ActOutcome,
+  ActRow,
+  Commentable,
+  DraftPlaceRow,
+  DraftRow,
+  SendOutcome,
+  ThreadRow,
+} from '../contract.ts';
+import * as acts from './acts.ts';
 import {
   act,
   canWrite,
@@ -24,9 +40,11 @@ import {
   send,
   takeDrafts,
   takeOffer,
+  replying,
   type Box,
 } from './boxes.ts';
 import { landed } from './landed.ts';
+import * as threads from './threads.ts';
 import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
@@ -60,6 +78,12 @@ vi.mock('../../diff/window/shared.ts', () => ({
 /** A diff that draws boxes, as the code view does, but for lines it doesn't draw yet. */
 function fakeDiff(missing: (at: unknown) => boolean = () => false) {
   const drawn: Drawn[] = [];
+  /** The threads claimed, and those of them let go since. */
+  const claimed: string[] = [];
+  const released: string[] = [];
+  const toggled: string[] = [];
+  /** The threads drawn under each line or header, by `where`. */
+  const onScreen = new Map<string, string[]>();
   const vim = vi.fn<(keys: readonly string[]) => void>();
   const shown: DrawnDiff = {
     at: HEAD,
@@ -112,9 +136,23 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
     },
     toTop: () => true,
     vim,
+    openThread: (id) => {
+      toggled.push(id);
+      return true;
+    },
+    claimThread: (id) => {
+      claimed.push(id);
+      return () => released.push(id);
+    },
+    threadsDrawn: (at) => onScreen.get(where(at)) ?? [],
   };
   diff.current = writing;
-  return { drawn, writing, vim };
+  return { drawn, writing, vim, claimed, released, toggled, onScreen };
+}
+
+/** A line or header, as a key. */
+function where(at: Place | OnFile): string {
+  return 'line' in at ? `${at.file}:${at.side}:${at.line}` : at.file;
 }
 
 const answers: Record<string, (input: unknown) => unknown> = {};
@@ -154,7 +192,16 @@ function onLines(start: number | null, end: number): DraftPlaceRow {
 }
 
 function row(place: DraftPlaceRow, text: string, changes: Partial<DraftRow> = {}): DraftRow {
-  return { place, text, savedAt: 0, restored: false, sending: null, sent: null, ...changes };
+  return {
+    place,
+    text,
+    savedAt: 0,
+    restored: false,
+    sending: null,
+    sent: null,
+    base: null,
+    ...changes,
+  };
 }
 
 /** The requests to `channel` made so far. */
@@ -476,5 +523,253 @@ describe('sending', () => {
     expect(drawn[0]!.composer.closed).toBeUndefined();
     takeDrafts({ id: VIEW, drafts: [] });
     expect(drawn[0]!.composer.closed).toBe('close');
+  });
+});
+
+/** A comment of a thread main sent, by `author`. */
+function threadComment(id: string, author: string, body: string): ThreadRow['comments'][number] {
+  return {
+    id,
+    author,
+    authorType: 'User',
+    body,
+    state: 'SUBMITTED',
+    createdAt: '2026-11-13T11:00:00Z',
+    url: 'https://github.com/rozed-dev/e2e/pull/94#discussion_r1',
+    hidden: null,
+    viewerCanUpdate: author === 'rozed-bot',
+    viewerCanDelete: author === 'rozed-bot',
+  };
+}
+
+/** Thread `id` on new line `line` of src/backoff.ts, open, with rozed-bot's comment. */
+function threadRow(id: string, line: number, changes: Partial<ThreadRow> = {}): ThreadRow {
+  return {
+    id,
+    path: 'src/backoff.ts',
+    subject: 'LINE',
+    side: 'RIGHT',
+    startSide: null,
+    line,
+    startLine: null,
+    originalLine: line,
+    originalStartLine: null,
+    outdated: false,
+    resolved: false,
+    currentOn: HEAD,
+    writtenOn: HEAD,
+    comments: [threadComment(`${id}_C1`, 'rozed-bot', 'Start a little higher?\nIt waits.')],
+    viewerCanReply: true,
+    viewerCanResolve: true,
+    viewerCanUnresolve: false,
+    ...changes,
+  };
+}
+
+/** Resolving thread T2, as it stands. */
+function standing(stands: ActRow['stands']): ActRow {
+  return { thread: 'T2', comment: null, change: 'resolve', stands };
+}
+
+/** The diff, with `rows`, the threads main sent, placed in it and drawn. */
+function withThreads(...rows: ThreadRow[]) {
+  const fake = fakeDiff();
+  threads.held.set(VIEW, {
+    threads: {
+      id: VIEW,
+      status: 'ready',
+      threads: rows,
+      missing: 0,
+      compared: null,
+      problem: null,
+    },
+  });
+  threads.placedIn(VIEW, fake.writing.drawn());
+  for (const { id } of rows) {
+    const at = threads.shownAt(VIEW, id);
+    if (!at) continue;
+    fake.onScreen.set(where(at), [...(fake.onScreen.get(where(at)) ?? []), id]);
+  }
+  return fake;
+}
+
+describe('acting on a thread', () => {
+  const ON_TWO = { kind: 'line', at: { file: 'f0', side: 'new', line: 2 } } as const;
+  const ON_FIVE = { kind: 'line', at: { file: 'f0', side: 'new', line: 5 } } as const;
+
+  test('`r` opens a reply box right after the only thread on the line, opening it first', () => {
+    const { drawn, toggled } = withThreads(
+      threadRow('T2', 2),
+      threadRow('T5a', 5),
+      threadRow('T5b', 5),
+    );
+    acts.reply(tab(), ON_TWO);
+    expect(toggled).toEqual(['T2']);
+    expect(drawn.map((each) => each.at)).toEqual([{ thread: 'T2' }]);
+    expect(replying.get(VIEW).has('T2')).toBe(true);
+    // Two threads on a line: `]t` picks one.
+    acts.reply(tab(), ON_FIVE);
+    expect(notice()?.body).toBe('There are 2 threads here. Press ]t to pick one.');
+    acts.reply(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 9 } });
+    expect(notice()?.body).toBe('There’s no thread on this line.');
+    // One `]t` landed on is the one.
+    acts.reply(tab(), { ...ON_FIVE, thread: 'T5b' });
+    expect(drawn.map((each) => each.at)).toEqual([{ thread: 'T2' }, { thread: 'T5b' }]);
+  });
+
+  test('a thread placed under a line but not drawn there yet is no key’s to act on', async () => {
+    const { drawn, onScreen } = withThreads(threadRow('T2', 2));
+    onScreen.clear();
+    answers['comments.resolve'] = (): ActOutcome => ({ kind: 'done' });
+    acts.resolve(tab(), ON_TWO);
+    expect(notice()?.body).toBe('There’s no thread on this line.');
+    acts.reply(tab(), ON_TWO);
+    await acts.edit(tab(), ON_TWO);
+    acts.remove(tab(), ON_TWO);
+    expect(notice()?.body).toBe('There’s no thread on this line.');
+    expect(drawn).toEqual([]);
+    expect(acts.deleteAsking()).toBeUndefined();
+    expect(asked('comments.resolve')).toEqual([]);
+    expect(asked('comments.editing')).toEqual([]);
+  });
+
+  test('a reply box closed and kept lets the card offer “Reply…” again', () => {
+    const { drawn } = withThreads(threadRow('T2', 2));
+    acts.reply(tab(), ON_TWO);
+    expect(replying.get(VIEW).has('T2')).toBe(true);
+    drawn[0]!.on.close(true);
+    expect(replying.get(VIEW).has('T2')).toBe(false);
+  });
+
+  test('a thread GitHub takes no reply on says so', () => {
+    const { drawn } = withThreads(threadRow('T2', 2, { viewerCanReply: false }));
+    acts.reply(tab(), ON_TWO);
+    expect(drawn).toEqual([]);
+    expect(notice()?.body).toBe('GitHub doesn’t let you reply to this thread.');
+  });
+
+  test('`x` claims the thread and resolves it; a refusal says why and lets the claim go', async () => {
+    const { claimed, released } = withThreads(threadRow('T2', 2));
+    answers['comments.resolve'] = (): ActOutcome => ({ kind: 'done' });
+    acts.resolve(tab(), ON_TWO);
+    await vi.waitFor(() =>
+      expect(asked('comments.resolve')).toEqual([{ id: VIEW, thread: 'T2', resolved: true }]),
+    );
+    expect(claimed).toEqual(['T2']);
+    expect(released).toEqual([]);
+    answers['comments.resolve'] = (): ActOutcome => ({
+      kind: 'refused',
+      refusal: { kind: 'paused', until: new Date(2026, 10, 13, 14, 5).getTime() },
+    });
+    acts.resolve(tab(), ON_TWO);
+    await vi.waitFor(() => expect(released).toEqual(['T2']));
+    expect(notice()?.body).toMatch(/^GitHub asked Lo to hold off until .+\. Resolve it then\.$/);
+  });
+
+  test('`x` where GitHub doesn’t let you, or offline, sends nothing', () => {
+    withThreads(threadRow('T2', 2, { viewerCanResolve: false }), threadRow('T5', 5));
+    acts.resolve(tab(), ON_TWO);
+    expect(notice()?.body).toMatch(/^GitHub doesn’t let you resolve this thread\./);
+    said.pull = pull({
+      connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'down' },
+    });
+    acts.resolve(tab(), ON_FIVE);
+    expect(notice()?.body).toBe('Offline. Try again once GitHub can be reached.');
+    expect(asked('comments.resolve')).toEqual([]);
+  });
+
+  test('`i` starts an edit of your newest comment from its text, in a box after the thread', async () => {
+    const mine = threadComment('C_mine', 'rozed-bot', 'Mine.');
+    const { drawn } = withThreads(
+      threadRow('T2', 2, { comments: [threadComment('C_old', 'rozed-bot', 'Older.'), mine] }),
+      threadRow('T5', 5, { comments: [threadComment('C_theirs', 'ravi-k', 'Theirs.')] }),
+    );
+    answers['comments.editing'] = (): ActOutcome => ({ kind: 'done' });
+    answers['comments.edit'] = (): ActOutcome => ({ kind: 'done' });
+    await acts.edit(tab(), ON_TWO);
+    const place = { kind: 'edit', thread: 'T2', comment: 'C_mine' };
+    expect(asked('comments.editing')).toEqual([{ id: VIEW, place, base: 'Mine.' }]);
+    expect(drawn.map((each) => [each.at, each.composer.text])).toEqual([
+      [{ thread: 'T2' }, 'Mine.'],
+    ]);
+    drawn[0]!.composer.replace(0, 5, 'Mine, edited.');
+    drawn[0]!.on.submit('review');
+    await vi.waitFor(() =>
+      expect(asked('comments.edit')).toEqual([{ id: VIEW, place, text: 'Mine, edited.' }]),
+    );
+    await vi.waitFor(() => expect(drawn[0]!.composer.closed).toBe('close'));
+    // Someone else's is refused in Lo's words.
+    await acts.edit(tab(), ON_FIVE);
+    expect(notice()?.body).toBe(
+      'None of this thread’s comments are yours. You can edit and delete only your own.',
+    );
+    await acts.edit(tab(), { kind: 'thread', thread: 'T5' }, 'C_theirs');
+    expect(notice()?.body).toBe('It’s ravi-k’s comment. You can edit and delete only your own.');
+  });
+
+  test('an edit closed with no text is discarded, as is one edited on GitHub since', async () => {
+    const { drawn } = withThreads(threadRow('T2', 2));
+    answers['comments.editing'] = (): ActOutcome => ({ kind: 'done' });
+    await acts.edit(tab(), ON_TWO);
+    drawn[0]!.composer.replace(0, drawn[0]!.composer.text.length, '');
+    drawn[0]!.on.close(false);
+    expect(asked('comments.discard')).toEqual([
+      { id: VIEW, place: { kind: 'edit', thread: 'T2', comment: 'T2_C1' } },
+    ]);
+  });
+
+  test('`dd` asks first, and Delete deletes the comment as the question showed it', async () => {
+    const { claimed } = withThreads(threadRow('T2', 2));
+    answers['comments.remove'] = (): ActOutcome => ({ kind: 'done' });
+    acts.remove(tab(), ON_TWO);
+    expect(acts.deleteAsking()).toMatchObject({
+      thread: 'T2',
+      comment: 'T2_C1',
+      pending: false,
+      onlyComment: true,
+    });
+    expect(asked('comments.remove')).toEqual([]);
+    acts.cancelDelete();
+    expect(acts.deleteAsking()).toBeUndefined();
+    acts.remove(tab(), ON_TWO);
+    await acts.confirmDelete();
+    expect(acts.deleteAsking()).toBeUndefined();
+    expect(asked('comments.remove')).toEqual([
+      {
+        id: VIEW,
+        thread: 'T2',
+        comment: 'T2_C1',
+        asked: { body: 'Start a little higher?\nIt waits.', pending: false, onlyComment: true },
+      },
+    ]);
+    expect(claimed).toEqual(['T2']);
+  });
+
+  test('`dd` offline says so at once, asking nothing', () => {
+    withThreads(threadRow('T2', 2));
+    said.pull = pull({
+      connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'down' },
+    });
+    acts.remove(tab(), ON_TWO);
+    expect(acts.deleteAsking()).toBeUndefined();
+    expect(notice()?.body).toBe('Offline. Try again once GitHub can be reached.');
+  });
+
+  test('a change whose answer was lost says Lo is checking, or that it didn’t go, until the thread shows it', () => {
+    const unresolved = threadRow('T2', 2);
+    expect(acts.actNote(standing('sending'), unresolved, false)).toBeUndefined();
+    expect(acts.actNote(standing('checking'), unresolved, false)).toEqual({
+      text: 'GitHub’s answer was lost. Lo is checking whether it resolved the thread.',
+      again: false,
+      checking: true,
+    });
+    expect(acts.actNote(standing('notDone'), unresolved, false)).toMatchObject({ again: true });
+    expect(acts.actNote(standing('unknown'), unresolved, false)?.text).toBe(
+      'GitHub’s answer was lost, and Lo can’t tell whether it resolved the thread.',
+    );
+    expect(
+      acts.actNote(standing('unknown'), { ...unresolved, resolved: true }, false),
+    ).toBeUndefined();
+    expect(acts.actNote(standing('unknown'), unresolved, true)).toBeUndefined();
   });
 });

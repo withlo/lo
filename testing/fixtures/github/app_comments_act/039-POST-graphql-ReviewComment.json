@@ -1,0 +1,63 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "ReviewComment",
+    "variables": {
+      "comment": "PRRC_kwDOVleUfc8AAAABEG5Gag",
+      "thread": "PRRT_kwDOVleUfc63PTSJ"
+    },
+    "query_sha256": "deb080fbc9303856335b2b46188101e005c63af244908404be8dd0ce21d51e6c"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4925",
+      "x-ratelimit-reset": "1794621242",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "75"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4925,
+          "used": 75,
+          "resetAt": "2026-11-14T01:54:02Z"
+        },
+        "comment": {
+          "__typename": "PullRequestReviewComment",
+          "id": "PRRC_kwDOVleUfc8AAAABEG5Gag",
+          "author": {
+            "__typename": "User",
+            "login": "rozed-bot"
+          },
+          "body": "Three tries at most.",
+          "state": "SUBMITTED",
+          "lastEditedAt": null,
+          "editor": null,
+          "viewerDidAuthor": true,
+          "viewerCanUpdate": true,
+          "viewerCanDelete": true,
+          "viewerCannotUpdateReasons": [],
+          "pullRequestReview": {
+            "state": "COMMENTED",
+            "comments": {
+              "totalCount": 1
+            }
+          }
+        },
+        "thread": {
+          "__typename": "PullRequestReviewThread",
+          "isResolved": false,
+          "comments": {
+            "totalCount": 2
+          }
+        }
+      }
+    }
+  }
+}

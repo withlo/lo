@@ -493,7 +493,8 @@ class Excerpt implements ExcerptView {
         const host = this.#hosts.get(thread.id);
         return host ? [host] : [];
       });
-      const widget = new ThreadWidget(`x:${line}`, hosts, sizes, draw, this.#boxes.get(line));
+      const box = this.#boxes.get(line);
+      const widget = new ThreadWidget(`x:${line}`, hosts, sizes, draw, box ? [box] : []);
       return Decoration.widget({ widget, block: true, side: 2 }).range(doc.line(line).to);
     });
     this.#view.dispatch({ effects: setBlocks.of(blocks) });

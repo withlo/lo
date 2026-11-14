@@ -1,0 +1,5 @@
+{
+  "description": "What the app's test of acting on review threads reads from GitHub and writes there, recorded from the app with writes and the comments fixture's git: rozed-dev/e2e#94, opened on its diff; r on line 2 of src/backoff.ts and a reply posted at once; i on the reply, edited and saved; dd and ⏎, which deleted it; x on line 5's resolved thread, which unresolved it, and x again, which resolved it; the threads read again after each, and the polls repeated while it stayed open.",
+  "recorded_at": "2026-11-14T01:40:53Z",
+  "repo": "rozed-dev/e2e"
+}

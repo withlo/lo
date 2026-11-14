@@ -55,6 +55,8 @@ export interface HeaderTarget {
   kind: 'header';
   file: string;
   side: Side;
+  /** The thread on the file `]t` landed on, or the only one under the header. */
+  thread?: string;
   /** The comment box the key is in, by its caller's name for it. */
   box?: string;
 }
@@ -162,7 +164,7 @@ function derive(kind: TargetKind, target: Target): Target | undefined {
       if (target.kind === 'line') return { kind: 'file', file: target.at.file };
       return target.kind === 'header' ? { kind: 'file', file: target.file } : undefined;
     case 'thread':
-      return target.kind === 'line' && target.thread !== undefined
+      return (target.kind === 'line' || target.kind === 'header') && target.thread !== undefined
         ? { kind: 'thread', thread: target.thread }
         : undefined;
     case 'box':
@@ -196,6 +198,7 @@ export function plainTarget(target: Target): Target {
     }
     case 'header': {
       const header: HeaderTarget = { kind: 'header', file: target.file, side: target.side };
+      if (target.thread !== undefined) header.thread = target.thread;
       if (target.box !== undefined) header.box = target.box;
       return header;
     }

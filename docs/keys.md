@@ -48,20 +48,24 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Act
 
-| Action                       | Keys                              | Where                                                    | Command                  |
-| ---------------------------- | --------------------------------- | -------------------------------------------------------- | ------------------------ |
-| Comment                      | `c`                               | In `diff`; in code views, only in normal and visual mode | `comments.comment`       |
-| Comment right away           | `C`                               | In `diff`; in code views, only in normal and visual mode | `comments.commentNow`    |
-| Suggest a change             | `s`                               | In `diff`; in code views, only in normal and visual mode | `comments.suggest`       |
-| Comment on the file          | `c`                               | In `tree`                                                | `comments.commentOnFile` |
-| Comment on the file instead  | `⏎`                               | In `diff`; in code views, only in normal mode            | `comments.onFileInstead` |
-| Discard the draft            | None: in its menu and the palette | In `box`                                                 | `comments.discard`       |
-| Send it anyway               | None: in its menu and the palette | In `box`                                                 | `comments.sendAnyway`    |
-| Move the comment to the file | None: in its menu and the palette | In `box`                                                 | `comments.moveToFile`    |
-| Mark viewed                  | `e`                               | In `diff`; in code views, only in normal mode            | `diff.markViewed`        |
-| Show the hidden comment      | None: in its menu and the palette | In `timeline`                                            | `timeline.showComment`   |
-| Mark viewed                  | `e`                               | In `tree`                                                | `tree.markViewed`        |
-| Sign in with GitHub          | `⏎`                               | In `welcome`                                             | `welcome.signIn`         |
+| Action                          | Keys                              | Where                                                    | Command                  |
+| ------------------------------- | --------------------------------- | -------------------------------------------------------- | ------------------------ |
+| Comment                         | `c`                               | In `diff`; in code views, only in normal and visual mode | `comments.comment`       |
+| Comment right away              | `C`                               | In `diff`; in code views, only in normal and visual mode | `comments.commentNow`    |
+| Suggest a change                | `s`                               | In `diff`; in code views, only in normal and visual mode | `comments.suggest`       |
+| Comment on the file             | `c`                               | In `tree`                                                | `comments.commentOnFile` |
+| Comment on the file instead     | `⏎`                               | In `diff`; in code views, only in normal mode            | `comments.onFileInstead` |
+| Reply to the thread             | `r`                               | In `diff`; in code views, only in normal mode            | `comments.reply`         |
+| Resolve or unresolve the thread | `x`                               | In `diff`; in code views, only in normal mode            | `comments.resolve`       |
+| Edit your comment               | `i`                               | In `diff`; in code views, only in normal mode            | `comments.edit`          |
+| Delete your comment…            | `d d`                             | In `diff`; in code views, only in normal mode            | `comments.remove`        |
+| Discard the draft               | None: in its menu and the palette | In `box`                                                 | `comments.discard`       |
+| Send it anyway                  | None: in its menu and the palette | In `box`                                                 | `comments.sendAnyway`    |
+| Move the comment to the file    | None: in its menu and the palette | In `box`                                                 | `comments.moveToFile`    |
+| Mark viewed                     | `e`                               | In `diff`; in code views, only in normal mode            | `diff.markViewed`        |
+| Show the hidden comment         | None: in its menu and the palette | In `timeline`                                            | `timeline.showComment`   |
+| Mark viewed                     | `e`                               | In `tree`                                                | `tree.markViewed`        |
+| Sign in with GitHub             | `⏎`                               | In `welcome`                                             | `welcome.signIn`         |
 
 ## Code
 
@@ -166,6 +170,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Next thread in the panel                        | `j`, `↓`                          | In `threads`                        | `comments.nextThread`     |
 | Previous thread in the panel                    | `k`, `↑`                          | In `threads`                        | `comments.previousThread` |
 | Show the thread in the diff                     | `⏎`                               | In `threads`                        | `comments.showThread`     |
+| Resolve or unresolve the thread                 | `x`                               | In `threads`                        | `comments.resolveInPanel` |
 | Unresolved, all or your threads                 | `f`                               | In `threads`                        | `comments.filterThreads`  |
 | Next layer in the stack                         | `j`, `↓`                          | In `stack`                          | `stacks.down`             |
 | Previous layer in the stack                     | `k`, `↑`                          | In `stack`                          | `stacks.up`               |
@@ -331,6 +336,10 @@ these, which run Lo's command in place of Vim's key:
 | `C`              | Comment right away              | `C`       | `diff`                                                               | `comments.commentNow`    |
 | `s`              | Suggest a change                | `s`       | `diff`                                                               | `comments.suggest`       |
 | `⏎`              | Comment on the file instead     | `⏎`       | `diff` (normal)                                                      | `comments.onFileInstead` |
+| `r`              | Reply to the thread             | `r`       | `diff` (normal)                                                      | `comments.reply`         |
+| `x`              | Resolve or unresolve the thread | `x`       | `diff` (normal)                                                      | `comments.resolve`       |
+| `i`              | Edit your comment               | `i`       | `diff` (normal)                                                      | `comments.edit`          |
+| `d d`            | Delete your comment…            | `d`       | `diff` (normal)                                                      | `comments.remove`        |
 | `e`              | Mark viewed                     | `e`       | `diff` (normal)                                                      | `diff.markViewed`        |
 | `g i`            | Inline or side by side          | `g i`     | `diff` (normal)                                                      | `diff.inline`            |
 | `g w`            | Hide or show whitespace changes | `g w`     | `diff` (normal)                                                      | `diff.whitespace`        |

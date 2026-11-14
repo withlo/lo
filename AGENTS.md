@@ -810,6 +810,32 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
   is sent again by itself, and nothing is sent while GitHub can't be reached.
 
+### Acting on review threads
+
+On a thread in the diff, `r` replies, `x` resolves or unresolves it, `i` edits your newest comment
+and `dd` deletes it, as do the card's buttons and its right-click menu (`window/acts.ts`). A key
+acts on the thread `]t` landed on, or the only one the view has drawn on the cursor's line or under
+the file's header (`threadsDrawn`), never one placed there that hasn't come on screen yet. `]t`
+stops at each drawn thread, so one of several on a line, or on a file, can be picked. The threads
+panel's `x` resolves the thread the keyboard is on, through the same function.
+
+- A reply's box and an edit's are comment boxes, kept by their thread (`reply` and `edit` places),
+  and drawn right after the thread's card. The code view keeps a box for each place and name, so a
+  reply's box and a new comment's on the same line both stay open.
+- An edit's draft keeps the text it started from (`base`, in `comments_drafts`), GitHub's as the
+  card showed it when `i` started it (`comments.editing`), through a restart. `comments.edit` reads
+  the comment afresh (`reviewComment`) and saves only if GitHub's text is still that one
+  (`beforeEdit`); otherwise the box keeps the text and offers to discard it.
+- `comments.resolve` and `comments.remove` go in their turn among the pull request's writes, like a
+  comment. A delete reads the comment afresh first, and goes only if it's as the question showed it
+  (its text, whether it's pending, whether it's its thread's only comment). Lo changes only your own
+  comments.
+- A write whose answer is lost is never sent again by itself: main reads the comment or the threads
+  10 s or more after it was sent, and `comments.acts` says how it stands meanwhile, which the card
+  shows, with "Try again" once Lo found it didn't go or can't tell.
+- A thread the reader acts on is claimed in the diff (`claimThread`), so what their write changes
+  there comes at once and keeps their line in place, as what comes under a sent box's line does.
+
 ### Submitting a review
 
 The `review` feature submits your review of the pull request on screen: `⌘⏎` anywhere in its tab but
