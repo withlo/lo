@@ -1,11 +1,13 @@
 // What an overview says of the lines of code it points at, for the diff's markers: each code block,
 // walkthrough step, figure part and link to lines of code, with the section it's in and the words
-// that point there, as plain text. Each is known by its block's place in the article, and a step's
-// in its walkthrough, as "Read it in the overview" goes back to it. Plain functions, each tested
-// alone.
+// that point there, as plain text and as the blocks they're in, each cut short alike. Each is known
+// by its block's place in the article, and a step's in its walkthrough, as "Read it in the
+// overview" goes back to it. Plain functions, each tested alone.
 
 import type { CodeRange, Overview, OverviewBlock, OverviewTree } from '@lo/artifact';
 import { plainText, type Block, type Inline } from '@lo/markdown';
+
+import { cutBlocks } from './cut.ts';
 
 /** The most characters of a note's words: a longer paragraph is cut at a word, with an ellipsis. */
 export const NOTE_LIMIT = 600;
@@ -27,6 +29,8 @@ export interface Explanation {
    * a step's words or a figure's caption.
    */
   readonly text: string;
+  /** The same words as the blocks they're in, cut short as `text` is, to draw as rich text. */
+  readonly content: readonly OverviewBlock[];
 }
 
 /** Where in the article what's read is. */
@@ -48,10 +52,12 @@ type Work =
       readonly kind: 'inlines';
       readonly inlines: readonly Inline<Overview>[];
       readonly where: Where;
-      readonly text: string;
+      /** What holds them, whose words a link among them is said with. */
+      readonly said: readonly Block<Overview>[];
     };
 
-type Add = (where: Where, target: CodeRange, text: string) => void;
+/** Notes that `target` is pointed at from `where`, said with the words of `said`. */
+type Add = (where: Where, target: CodeRange, said: readonly Block<Overview>[]) => void;
 
 /** What a code block says with no prose around it. */
 const BLOCK_WORDS = 'A code block in the overview shows these lines.';
@@ -67,11 +73,12 @@ const FIGURE_WORDS = 'A figure in the overview points at these lines.';
 export function explanationsOf(tree: OverviewTree): Explanation[] {
   const found: Explanation[] = [];
   const seen = new Set<string>();
-  const add: Add = (where, { path, lines: { start, end } }, text) => {
+  const add: Add = (where, { path, lines: { start, end } }, said) => {
     const key = JSON.stringify([where.block, where.step, path, start, end]);
     if (seen.has(key)) return;
     seen.add(key);
-    found.push({ ...where, target: { kind: 'code', path, lines: { start, end } }, text });
+    const target: CodeRange = { kind: 'code', path, lines: { start, end } };
+    found.push({ ...where, target, text: textOf(said), content: cutBlocks(said, NOTE_LIMIT) });
   };
   let section = '';
   tree.blocks.forEach((node, block) => {
@@ -109,7 +116,7 @@ function read(work: Extract<Work, { kind: 'block' }>, add: Add): Work[] {
   switch (node.kind) {
     case 'paragraph':
     case 'heading':
-      return [{ kind: 'inlines', inlines: node.children, where, text: textOf([node]) }];
+      return [{ kind: 'inlines', inlines: node.children, where, said: [node] }];
     case 'quote':
     case 'alert':
       return each(node.children, where);
@@ -118,28 +125,28 @@ function read(work: Extract<Work, { kind: 'block' }>, add: Add): Work[] {
       return node.items.flatMap((item) => each(item.children, where));
     case 'table':
       return [node.head, ...node.rows].flatMap((row) => {
-        const text = textOf(row.map((cell) => paragraph(cell)));
-        return row.map((cell): Work => ({ kind: 'inlines', inlines: cell, where, text }));
+        const said = row.map((cell) => paragraph(cell));
+        return row.map((cell): Work => ({ kind: 'inlines', inlines: cell, where, said }));
       });
     case 'details':
       return [
-        { kind: 'inlines', inlines: node.summary, where, text: textOf([paragraph(node.summary)]) },
+        { kind: 'inlines', inlines: node.summary, where, said: [paragraph(node.summary)] },
         ...each(node.children, where),
       ];
     case 'excerpt':
-      add(where, node.target, proseAround(blocks, at) || BLOCK_WORDS);
+      add(where, node.target, orWords(proseAround(blocks, at), BLOCK_WORDS));
       return [];
     case 'walkthrough':
       return node.steps.flatMap((step, index) => {
         const inStep = { ...where, step: index };
-        add(inStep, step.target, textOf(step.children) || STEP_WORDS);
+        add(inStep, step.target, orWords(step.children, STEP_WORDS));
         return each(step.children, inStep);
       });
     case 'figure': {
-      const caption = textOf(node.caption);
+      const caption = orWords(node.caption, FIGURE_WORDS);
       for (const { target } of node.parts) {
         if (target.kind === 'code' && target.lines) {
-          add(where, { ...target, lines: target.lines }, caption || FIGURE_WORDS);
+          add(where, { ...target, lines: target.lines }, caption);
         }
       }
       return each(node.caption, where);
@@ -161,13 +168,13 @@ function read(work: Extract<Work, { kind: 'block' }>, add: Add): Work[] {
 
 /** Reads inlines for links to lines of code, each said with the words of what holds it. */
 function readInlines(work: Extract<Work, { kind: 'inlines' }>, add: Add): void {
-  const { where, text } = work;
+  const { where, said } = work;
   // Last first, so the first written is read first.
   const pending = work.inlines.toReversed();
   while (pending.length > 0) {
     const inline = pending.pop()!;
     if (inline.kind === 'link' && inline.target.kind === 'code' && inline.target.lines) {
-      add(where, { ...inline.target, lines: inline.target.lines }, text);
+      add(where, { ...inline.target, lines: inline.target.lines }, said);
     }
     if ('children' in inline) {
       for (let at = inline.children.length - 1; at >= 0; at--) pending.push(inline.children[at]!);
@@ -179,15 +186,20 @@ function readInlines(work: Extract<Work, { kind: 'inlines' }>, add: Add): void {
  * The prose a code block at `at` among `blocks` goes with: the paragraph, list or quote nearest
  * before it within its section, or else after it; none when there's none.
  */
-function proseAround(blocks: readonly OverviewBlock[], at: number): string {
+function proseAround(blocks: readonly OverviewBlock[], at: number): OverviewBlock[] {
   for (const step of [-1, 1]) {
     for (let index = at + step; index >= 0 && index < blocks.length; index += step) {
       const node = blocks[index]!;
       if (node.kind === 'heading') break;
-      if (isProse(node)) return textOf([node]);
+      if (isProse(node)) return [node];
     }
   }
-  return '';
+  return [];
+}
+
+/** `blocks`, if they have words, or else a paragraph of `words`. */
+function orWords(blocks: readonly OverviewBlock[], words: string): readonly OverviewBlock[] {
+  return textOf(blocks) === '' ? [paragraph([{ kind: 'text', value: words }])] : blocks;
 }
 
 function isProse(node: OverviewBlock): boolean {

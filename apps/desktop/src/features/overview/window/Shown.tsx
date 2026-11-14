@@ -18,7 +18,7 @@ import type {
 } from '@lo/artifact';
 import { Button } from '@lo/ui';
 import { Figure, type PartLink } from '@lo/ui/figures';
-import { MarkdownBlocks, secureLink, useRendering } from '@lo/ui/markdown';
+import { generationOf, MarkdownBlocks, secureLink, useRendering } from '@lo/ui/markdown';
 import {
   Held,
   OverviewDocument,
@@ -334,12 +334,14 @@ export function Shown({
   const context = useMemo<CodeContext>(
     () => ({
       tab: tab.id,
+      pull: tab,
+      tree: generationOf(parsed.tree),
       commit: header.commit,
       head,
       read: result.code,
       target: targetsOf(code, result.code),
     }),
-    [tab.id, header.commit, head, result.code, code],
+    [tab, parsed.tree, header.commit, head, result.code, code],
   );
   // The lines the code blocks show that the check found, which the banner counts the changed of.
   const blocks = useMemo(() => codeBlocksIn(parsed.tree), [parsed.tree]);

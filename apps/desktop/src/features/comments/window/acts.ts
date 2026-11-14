@@ -14,7 +14,7 @@ import { notify } from '../../../window/commands/notices.tsx';
 import { writingDiff } from '../../diff/window/shared.ts';
 import { tabState, type PullTab } from '../../tab/window/shared.ts';
 import type { ActRefusal, ActRow, ActsView, ThreadRow } from '../contract.ts';
-import { canWrite, claimBriefly, knowPull, loginOf, offline, openAt } from './boxes.ts';
+import { canWrite, claimBriefly, IN_DIFF, knowPull, loginOf, offline, openAt } from './boxes.ts';
 import { main } from './main.ts';
 import { threadOf } from './placing.ts';
 import { held, shownAt } from './threads.ts';
@@ -168,7 +168,7 @@ export function reply(tab: PullTab, target: ThreadKeyTarget): void {
   }
   knowPull(tab);
   diff.openThread(row.id, true);
-  openAt(tab.id, diff, { kind: 'reply', thread: row.id }, 'review');
+  openAt(tab.id, diff, IN_DIFF, { kind: 'reply', thread: row.id }, 'review');
 }
 
 /** Whether every comment of a thread waits in your pending review: nothing's on GitHub yet. */
@@ -299,7 +299,7 @@ export async function edit(tab: PullTab, target: ThreadKeyTarget, comment?: stri
   }
   knowPull(tab);
   diff.openThread(row.id, true);
-  openAt(view, diff, place, 'review', chosen.body);
+  openAt(view, diff, IN_DIFF, place, 'review', chosen.body);
 }
 
 /** What the dialog that asks before a comment is deleted shows, while it's open. */

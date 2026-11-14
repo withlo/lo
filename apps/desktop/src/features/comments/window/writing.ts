@@ -1,17 +1,20 @@
 // Writing comments in a view's diff, worked out: where a comment on the cursor's line, the lines
-// `v` selected or a file goes, as GitHub takes it and as main keeps its draft; where a draft's box
-// goes in the diff as drawn, a reply's or an edit's in its thread; and what a box's frame says of
-// where it is and how sending it stands, and why a change to a thread wasn't made.
+// `v` selected or a file goes, as GitHub takes it and as main keeps its draft; where one on an
+// overview's code block goes; where a draft's box goes in the diff as drawn, a reply's or an
+// edit's in its thread; and what a box's frame says of where it is and how sending it stands, and
+// why a change to a thread wasn't made.
 
 import { CommentableLines, Line, type Lines, type Screen } from '@lo/review';
 import type { OnFile, Place, Span } from '@lo/ui/code';
 
 import { clockOf, savedWhen } from '../../../window/time.ts';
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
+import type { CommentOnHead, FileWhy } from '../../overview/window/shared.ts';
 import type {
   ActRefusal,
   Commentable,
   CommentLinesRow,
+  ConversationPlaceRow,
   DraftPlaceRow,
   HunkRow,
   SendRefusal,
@@ -99,12 +102,12 @@ function lineRow(line: Line): CommentLinesRow['end'] {
 
 /**
  * The place main keeps the draft of a comment by: on `lines` of `file`, or on the file without
- * them, at the head the diff's newer column shows.
+ * them, at `head`, the head the diff's newer column shows.
  */
-export function placeOf(drawn: DrawnDiff, path: string, lines: Lines | undefined): ThreadPlaceRow {
+export function placeOf(head: string, path: string, lines: Lines | undefined): ThreadPlaceRow {
   return {
     kind: 'thread',
-    commit: drawn.at.toLowerCase(),
+    commit: head.toLowerCase(),
     path,
     lines: lines
       ? { start: lines.start ? lineRow(lines.start) : null, end: lineRow(lines.end) }
@@ -116,6 +119,9 @@ export function placeOf(drawn: DrawnDiff, path: string, lines: Lines | undefined
 function lineKey(each: CommentLinesRow['end'] | null): string {
   return each ? `${each.side}${each.number}` : '';
 }
+
+/** The place of the comment box on the pull request itself: one a pull request. */
+export const ON_PULL: ConversationPlaceRow = { kind: 'conversation' };
 
 /** A key for a draft's place: the same for the same place, however its object was made. */
 export function placeKey(place: DraftPlaceRow): string {
@@ -134,6 +140,8 @@ export function placeKey(place: DraftPlaceRow): string {
       return JSON.stringify([place.kind, place.thread]);
     case 'edit':
       return JSON.stringify([place.kind, place.thread, place.comment]);
+    case 'conversation':
+      return JSON.stringify([place.kind]);
     default:
       throw new Error(`a draft's place Lo doesn't know: ${JSON.stringify(place satisfies never)}`);
   }
@@ -151,6 +159,8 @@ export function boxAt(
   place: DraftPlaceRow,
   placed: (thread: string) => boolean = () => false,
 ): { at: Place | Span | OnFile | { thread: string } } | undefined {
+  // The pull request's own box isn't in the diff.
+  if (place.kind === 'conversation') return undefined;
   if (place.kind !== 'thread')
     return placed(place.thread) ? { at: { thread: place.thread } } : undefined;
   if (place.commit.toLowerCase() !== drawn.at.toLowerCase()) return undefined;
@@ -174,10 +184,11 @@ function sideWords(side: 'LEFT' | 'RIGHT'): string {
 
 /**
  * Where a box's comment goes, as its head says: "On line 41, new side", "On lines 39–41, new side",
- * "On the file", "Reply to mira-chen's thread", "Edit your comment". `author` started the thread a
- * reply is in, if GitHub still has the account.
+ * "On the file", "Reply to mira-chen's thread", "Edit your comment", "On the pull request".
+ * `author` started the thread a reply is in, if GitHub still has the account.
  */
 export function whereText(place: DraftPlaceRow, author?: string | null): string {
+  if (place.kind === 'conversation') return 'On the pull request';
   if (place.kind === 'reply') {
     return author ? `Reply to ${author}’s thread` : 'Reply to the thread';
   }
@@ -423,3 +434,151 @@ export const IN_A_LAYER = 'Comment in a layer';
 /** Why a suggestion can't go on the older side. */
 export const NEW_SIDE_ONLY =
   'Suggestions work on the new side only, since GitHub applies them there';
+
+/**
+ * Why a comment on a code block's lines goes on their file: GitHub takes line comments only on
+ * lines in its diff (`notInDiff`); Lo couldn't read which lines it takes (`noLines`); the lines
+ * `changed` since the overview's commit; they're on the `older` side, which Lo doesn't map past
+ * that commit; Lo can't tell where they are at the head (`unknown`); or the pull request deletes
+ * the file (`deleted`), which GitHub still takes a comment on.
+ */
+export type OnFileWhy = 'notInDiff' | 'noLines' | FileWhy | 'deleted';
+
+/**
+ * Why a comment on a code block's lines goes on the pull request itself: the pull request leaves
+ * their file alone (`untouched`), or the file is gone at the head, and GitHub takes no comment on it
+ * (`gone`).
+ */
+export type OnPullWhy = 'untouched' | 'gone';
+
+/** Why a comment on a code block's lines goes elsewhere than those lines, as main keeps it. */
+export type BlockWhy = OnFileWhy | OnPullWhy;
+
+/** Why a comment goes where `goes` says, if that's not the block's lines. */
+export function whyOf(goes: BlockComment): BlockWhy | null {
+  return goes.kind === 'lines' ? null : goes.why;
+}
+
+/**
+ * What a comment on a code block's lines goes on: the lines at the head on screen they are, a
+ * comment on their file, or one on the pull request itself, each saying why.
+ */
+export type BlockComment =
+  | { readonly kind: 'lines'; readonly lines: Lines }
+  | { readonly kind: 'file'; readonly why: OnFileWhy }
+  | { readonly kind: 'pull'; readonly why: OnPullWhy };
+
+/**
+ * Where a comment on a code block's lines goes, as GitHub takes it, from where they are at the head
+ * on screen (`onHead`) and what GitHub takes on their file there (`takes`, none where main couldn't
+ * read it): on those lines, where they're there unchanged and GitHub takes a comment on them;
+ * otherwise on the file, where the pull request changes or deletes it, or where Lo can't tell;
+ * otherwise on the pull request itself, as for a file it leaves alone, or one gone.
+ */
+export function blockComment(
+  onHead: CommentOnHead,
+  takes: CommentableLines | undefined,
+): BlockComment {
+  if (onHead.kind === 'gone') {
+    return takes?.takesFileComment()
+      ? { kind: 'file', why: 'deleted' }
+      : { kind: 'pull', why: 'gone' };
+  }
+  if (takes && !takes.takesFileComment()) return { kind: 'pull', why: 'untouched' };
+  if (onHead.kind === 'file') return { kind: 'file', why: onHead.why };
+  const { side, from, to } = onHead;
+  const at: Place | Span =
+    from === to ? { file: '', side, line: to } : { file: '', side, from, to };
+  const lines = linesAt(takes, at);
+  if (lines) return { kind: 'lines', lines };
+  return { kind: 'file', why: takes ? 'notInDiff' : 'noLines' };
+}
+
+/**
+ * What the reader calls the revisions a comment on a code block is between: the one the overview
+ * describes (`written`) and the head on screen (`now`), as `r1` and `r2`.
+ */
+export interface BlockRevisions {
+  readonly written: string;
+  readonly now: string;
+}
+
+/** `text` with its first letter lowered, to follow a comma. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+/** What a box on a code block's lines says of a comment on their file, as GitHub refused them. */
+export const ON_FILE_NOT_IN_DIFF = 'On the file, since GitHub takes line comments only in the diff';
+
+/**
+ * What a box on a code block's lines says of where its comment, at `place`, goes, when that's not
+ * those lines at the overview's commit: their file or the pull request, and `why`; or, with no
+ * `why`, the lines at a newer head. Nothing when its place says it all.
+ */
+export function blockWhere(
+  why: BlockWhy | null,
+  place: DraftPlaceRow,
+  names: BlockRevisions,
+): string | undefined {
+  if (why === null) {
+    const onLines = place.kind === 'thread' && place.lines !== null;
+    return !onLines || names.written === names.now
+      ? undefined
+      : `${whereText(place)}, at ${names.now}`;
+  }
+  return whyWords(why, names);
+}
+
+/** What a box on a code block's lines says of a comment on their file or the pull request, and why. */
+function whyWords(why: BlockWhy, names: BlockRevisions): string {
+  switch (why) {
+    case 'untouched':
+      return 'On the pull request, since it doesn’t change this file';
+    case 'gone':
+      return `On the pull request, since this file is gone at ${names.now}`;
+    case 'notInDiff':
+      return ON_FILE_NOT_IN_DIFF;
+    case 'noLines':
+      return 'On the file, since Lo couldn’t read which lines GitHub takes comments on';
+    case 'changed':
+      return `On the file, since these lines changed after ${names.written}`;
+    case 'older':
+      return `On the file, since Lo maps only new-side lines from ${names.written} to ${names.now}`;
+    case 'unknown':
+      return `On the file, since Lo can’t tell where these lines are at ${names.now}`;
+    case 'deleted':
+      return 'On the file, which this pull request deletes';
+    default:
+      why satisfies never;
+      throw new Error(`Lo doesn't know why a comment goes elsewhere: ${String(why)}`);
+  }
+}
+
+/**
+ * What's said once a comment written on a code block is sent, where it won't show under the block:
+ * on the pull request, on the file, or on lines of a newer head than `written`, the overview's
+ * commit. `pending` when it went into your pending review. Nothing when it shows under the block.
+ */
+export function sentFromBlock(
+  place: DraftPlaceRow,
+  written: string,
+  pending: boolean,
+  names: BlockRevisions,
+): { readonly title: string; readonly body: string } | undefined {
+  if (place.kind === 'conversation') {
+    return { title: 'Posted on the pull request', body: 'It shows in the timeline.' };
+  }
+  if (place.kind !== 'thread') return undefined;
+  if (!place.lines) {
+    return {
+      title: pending ? 'Added to your review, on the file' : 'Posted on the file',
+      body: `${place.path}. It shows under the file’s header in the diff.`,
+    };
+  }
+  if (place.commit.toLowerCase() === written.toLowerCase()) return undefined;
+  return {
+    title: pending ? `Added to your review, at ${names.now}` : `Posted at ${names.now}`,
+    body: `${place.path}, ${lowerFirst(whereText(place))}. It shows in the diff; this block shows ${names.written}.`,
+  };
+}

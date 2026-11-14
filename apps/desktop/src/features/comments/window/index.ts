@@ -6,30 +6,42 @@
 // comments: the keys that open a comment box in the diff, the box's frame, its draft, which main
 // keeps until it's sent, and the files attached to it; and acting on threads, in the diff and the
 // panel: replying, resolving, and editing and deleting your comments, with the dialog that asks
-// before a delete. What it keeps of a view goes as the view's tab closes.
+// before a delete. The threads on an overview's code blocks are drawn under their lines too, and
+// `c` there opens a box under them. What it keeps of a view goes as the view's tab closes.
 
-import { handlers, type HeaderTarget, type LineTarget } from '@lo/ui/commands';
+import { handlers, type HeaderTarget, type LineTarget, type Target } from '@lo/ui/commands';
 import { createElement } from 'react';
 
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { onDiffDrawn, setThreader, threadsChanged, writingDiff } from '../../diff/window/shared.ts';
+import {
+  blockLines,
+  blockThreadsChanged,
+  isCodeBlock,
+  onOverviewChanged,
+  setBlockThreads,
+} from '../../overview/window/shared.ts';
 import { setLayerCounts } from '../../stacks/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
 import { activeTab, dialogs, right, type PullTab } from '../../tab/window/shared.ts';
 import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
 import { edit, remove, reply, resolve, takeActs, type ThreadKeyTarget } from './acts.ts';
+import { threadsOnBlock } from './blocks.ts';
 import {
   canWrite,
   catchUpDrafts,
   comment,
+  commentOnBlock,
   commentOnFile,
   offering,
   frameWith,
   keepBoxesOf,
   knowPull,
   restore,
+  reopenAll,
+  restoreBlock,
   saveAll,
   takeDrafts,
   takeOffer,
@@ -78,12 +90,33 @@ function enabled(check: () => PullTab | string) {
   };
 }
 
+/** The pull request's tab on screen, where a comment can be written on `target`, a code block's. */
+function onBlock(target: Target): PullTab | string {
+  const tab = writable();
+  if (typeof tab === 'string') return tab;
+  const found = blockLines(tab.id, target);
+  return typeof found === 'string' ? found : tab;
+}
+
+/** Says tab `view`'s threads changed, wherever they're drawn: its diff and its code blocks. */
+function changed(view: string): void {
+  threadsChanged(view);
+  blockThreadsChanged(view);
+}
+
 /** Opens a box as `c`, `C` or `s` do. */
 function writing(how: 'review' | 'now', suggest = false) {
   return (target: LineTarget | HeaderTarget): void => {
     const tab = inDiff();
     if (typeof tab !== 'string') void comment(tab, target, how, suggest);
   };
+}
+
+/** Whether view `view`'s threads' first read has ended: asked of main once, if it's said nothing. */
+function settled(view: string): boolean {
+  const threads = held.get(view).threads;
+  if (threads === undefined) catchUp(view, () => changed(view));
+  return threads !== undefined && threads.status !== 'loading';
 }
 
 /** Acts on a thread as `r`, `x`, `i` or `dd` do. */
@@ -99,6 +132,21 @@ export default {
     comment: { run: writing('review'), enabled: enabled(inDiff) },
     commentNow: { run: writing('now'), enabled: enabled(inDiff) },
     suggest: { run: writing('review', true), enabled: enabled(inDiff) },
+    commentOnBlock: {
+      run: (target) => {
+        const tab = onBlock(target);
+        if (typeof tab !== 'string') void commentOnBlock(tab, target, 'review');
+      },
+      enabled: (target) => {
+        const tab = onBlock(target);
+        return typeof tab === 'string' ? tab : true;
+      },
+      // On a block's menu, only a code block's.
+      listed: (target) => {
+        const tab = activeTab();
+        return target.kind !== 'block' || (tab?.kind === 'pull' && isCodeBlock(tab.id, target));
+      },
+    },
     commentOnFile: {
       run: (target) => {
         const tab = writable();
@@ -168,17 +216,20 @@ export default {
       void checkUploads(view);
       queueMicrotask(() => restore(view));
     });
+    // A draft written on a block opens under it while the overview has it, and otherwise where it
+    // would with none: which, as the overview changes.
+    onOverviewChanged(() => queueMicrotask(reopenAll));
     // What waits to be saved is saved as the window goes.
     window.addEventListener('pagehide', saveAll);
     main().subscribe('threads', (view) => {
-      if (takeThreads(view)) threadsChanged(view.id);
+      if (takeThreads(view)) changed(view.id);
     });
     main().subscribe('review', takeReview);
     main().subscribe('acts', takeActs);
     setThreader({
       threadsIn(view, drawn) {
         // A view drawn before main said anything of it asks main once.
-        if (held.get(view).threads === undefined) catchUp(view, () => threadsChanged(view));
+        if (held.get(view).threads === undefined) catchUp(view, () => changed(view));
         const before = countsIn(view);
         const placed = placedIn(view, drawn);
         if (!sameCounts(before, placed.byKey)) fileCountsChanged(view);
@@ -188,11 +239,20 @@ export default {
         knowPull(tab);
         return renderThreads(tab, toggle);
       },
-      settled(view) {
-        const threads = held.get(view).threads;
-        if (threads === undefined) catchUp(view, () => threadsChanged(view));
-        return threads !== undefined && threads.status !== 'loading';
+      settled,
+    });
+    setBlockThreads({
+      threadsOn(block) {
+        const threads = held.get(block.tab).threads;
+        if (threads === undefined) catchUp(block.tab, () => changed(block.tab));
+        return threads?.status === 'run' ? [] : threadsOnBlock(threads?.threads ?? [], block);
       },
+      settled,
+      render(tab, toggle) {
+        knowPull(tab);
+        return renderThreads(tab, toggle);
+      },
+      drawn: restoreBlock,
     });
     setFileCounts({ countsIn });
     setLayerCounts({

@@ -161,6 +161,8 @@ beforeEach(() => {
 function contextOf(state: CodeState, read: CodeRead = { kind: 'read', commit: COMMIT, files: [] }) {
   return {
     tab,
+    pull: { id: tab, kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 },
+    tree: 1,
     commit: COMMIT,
     read,
     target: () => ({ code: state, answer: undefined }),

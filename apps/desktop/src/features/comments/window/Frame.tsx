@@ -76,12 +76,24 @@ function buttonLabel(state: BoxState, how: 'review' | 'now'): string {
 
 /**
  * The foot's buttons: the main one, as `c` or `C` opened the box, last. An edit's has one, which
- * saves it.
+ * saves it. A comment on the pull request itself joins no review, so its one button posts it, with
+ * `⌘⏎` as `⌥⏎` does.
  */
 function footOf(box: Box, state: BoxState, why: string | undefined): CommentBoxFoot {
   const waiting = sendingNow(state);
   const blank = state.text.trim() === '';
   const disabled = why !== undefined || waiting || blank;
+  if (state.place.kind === 'conversation') {
+    const post: CommentBoxAction = {
+      label: 'Comment',
+      keys: labels('cmd+enter'),
+      primary: true,
+      disabled,
+      why,
+      onClick: () => void send(box, 'now'),
+    };
+    return { mode: modes[state.mode], actions: [post] };
+  }
   if (state.place.kind === 'edit') {
     const save: CommentBoxAction = {
       label: 'Save the edit',
@@ -142,7 +154,7 @@ function Head({ box, composer }: { box: Box; composer: Composer }): ReactNode {
           box.set({ previewing: on });
         },
         previewKeys: labels('cmd+shift+v'),
-        where: whereText(place, started),
+        where: state.where ?? whereText(place, started),
         account:
           login === undefined
             ? undefined

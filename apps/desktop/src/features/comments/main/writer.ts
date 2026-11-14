@@ -16,7 +16,9 @@
 // GitHub's text still that one, so it never overwrites an edit made elsewhere since. A delete goes
 // only while such a read finds the comment as the question showed it. Each whose answer is lost is
 // settled the same way as a comment, from a read made a while after, and never sent again by
-// itself. Nothing here calls Electron.
+// itself. A comment on the pull request itself, in its conversation, takes its turn the same way and
+// posts at once, joining no review; one whose answer was lost is looked for in the timeline read
+// afresh, only its newest page where Lo keeps it. Nothing here calls Electron.
 
 import {
   type Cached,
@@ -26,6 +28,7 @@ import {
   type PollEvent,
   type Poller,
   PullRef,
+  type PullRequestTimeline,
   type ReadKind,
   type ReadMark,
   REVIEW_THREADS,
@@ -33,6 +36,7 @@ import {
   type ReviewWrite,
   type ReviewWriteRefusal,
   type Sent,
+  TIMELINE,
   describeReviewRefusal,
   reviewThreads,
 } from '@lo/github';
@@ -54,6 +58,7 @@ import type {
   ActsView,
   Change,
   DeleteAsked,
+  DraftHomeRow,
   DraftPlaceRow,
   DraftRow,
   DraftsView,
@@ -64,6 +69,7 @@ import type {
   ThreadRow,
 } from '../contract.ts';
 import { actRefusal, asAsked, changeRefused, inThread, readComment } from './acting.ts';
+import { holdsPullComment, postOnPull } from './conversation.ts';
 import { type DraftStore, type Kept, placeJson } from './drafts.ts';
 import { threadRows } from './threads.ts';
 
@@ -71,6 +77,8 @@ import { threadRows } from './threads.ts';
 export type WriterPoller = Pick<
   Poller,
   | 'sendReview'
+  | 'addConversationComment'
+  | 'timeline'
   | 'resolveThread'
   | 'editComment'
   | 'deleteComment'
@@ -200,7 +208,7 @@ export function writeRefusal(refusal: ReviewWriteRefusal): SendRefusal {
  */
 function threadOn(thread: ThreadRow, place: DraftPlaceRow): boolean {
   if (place.kind === 'reply') return thread.id === place.thread;
-  if (place.kind === 'edit') return false;
+  if (place.kind === 'edit' || place.kind === 'conversation') return false;
   if (thread.path !== place.path) return false;
   const { lines } = place;
   if (lines === null) return thread.subject === 'FILE';
@@ -322,14 +330,17 @@ export class Writer {
     };
   }
 
-  /** Keeps `text` as the draft at `place` on view `id`, as typed: blank removes it. */
-  save(id: string, place: DraftPlaceRow, text: string): void {
+  /**
+   * Keeps `text` as the draft at `place` on view `id`, as typed: blank removes it. `home`, when
+   * it's given, is the overview's code block its box was written on, or none.
+   */
+  save(id: string, place: DraftPlaceRow, text: string, home?: DraftHomeRow | null): void {
     const { login, pull } = this.#writing(id);
     const key = this.#key({ login, pull }, place);
     // What's typed after it didn't post says nothing more of it. Whether one Lo can't tell of
     // posted still stands.
     if (this.#sending.get(key) === 'notPosted') this.#sending.delete(key);
-    if (this.#options.drafts.save(login, pull, place, text)) this.#changed({ login, pull });
+    if (this.#options.drafts.save(login, pull, place, text, home)) this.#changed({ login, pull });
   }
 
   /**
@@ -608,6 +619,7 @@ export class Writer {
     this.#sending.set(key, 'sending');
     this.#changed(target);
     const poller = await this.#options.poller(login);
+    if (place.kind === 'conversation') return this.#sendOnPull(target, key, place, text, poller);
     const details = poller.pullRequest(pull)?.details;
     const read = await this.#reviewRead(poller, pull);
     if (!details) {
@@ -692,6 +704,45 @@ export class Writer {
     }
     this.#unsent(target, key, place);
     return { kind: 'refused', refusal: { kind: 'github', message: 'GitHub didn’t take it.' } };
+  }
+
+  /**
+   * Posts `text` on the pull request itself, from the draft at `place`, in its turn: it joins no
+   * review, so it posts at once however it was sent. Its answer lost, Lo looks for it in the
+   * timeline, as for any comment.
+   */
+  async #sendOnPull(
+    target: Target,
+    key: string,
+    place: DraftPlaceRow,
+    text: string,
+    poller: WriterPoller,
+  ): Promise<SendOutcome> {
+    const { login, pull } = target;
+    const details = poller.pullRequest(pull)?.details;
+    if (!details) {
+      this.#settled(target, key, null);
+      const message = 'Lo hasn’t read the pull request from GitHub yet. Send it once it has.';
+      return { kind: 'refused', refusal: { kind: 'github', message } };
+    }
+    // From here it may be on GitHub, until GitHub says otherwise: a restart keeps that.
+    const sentAt = this.#now();
+    this.#options.drafts.markSent(login, pull, place, text, sentAt);
+    this.#changed(target);
+    let sent;
+    try {
+      sent = await postOnPull(poller, pull, details.id, text);
+    } catch (error) {
+      if (!(error instanceof GithubError) || !error.mayHavePosted()) throw error;
+      this.#lost(target, key, place, text, sentAt);
+      return { kind: 'lost' };
+    }
+    if (typeof sent !== 'string') {
+      this.#unsent(target, key, place);
+      return { kind: 'refused', refusal: writeRefusal(sent) };
+    }
+    this.#posted(target, key, place, text);
+    return { kind: 'sent', pending: false, joined: false, thread: null, landedOn: null };
   }
 
   /**
@@ -914,6 +965,29 @@ export class Writer {
   }
 
   /**
+   * `pull`'s timeline as read afresh after now, as `#reviewRead` reads your pending review: never
+   * what the poller had, which may be from before the write, even from before Lo started. The
+   * poller keeps it, from now if it didn't, and reads it again; only its newest page, joined to what
+   * it had, with when it was made. `again` when no such read came in time, to look again in a while.
+   */
+  async #timelineNow(
+    poller: WriterPoller,
+    pull: PullRef,
+  ): Promise<Cached<Pick<PullRequestTimeline, 'items'>> | 'again'> {
+    let mark = poller.readAfresh(pull, TIMELINE);
+    if (!mark) {
+      // Not kept, as for a pull request whose timeline isn't on screen: kept from now. What it
+      // answers at once may be what an earlier run kept, so it says nothing of the write.
+      await poller.timeline(pull);
+      mark = poller.readAfresh(pull, TIMELINE);
+    }
+    if (!mark) return 'again';
+    const readWait = this.#options.readWait ?? READ_WAIT;
+    const read = await this.#readAfter(poller, pull, TIMELINE, mark, this.#now() + readWait);
+    return typeof read === 'object' ? read : 'again';
+  }
+
+  /**
    * What the read of `kind` kept for `pull` holds once a run that started after `mark` has
    * finished with it, or why there's none by `deadline`: `stale`, when the read is no longer the
    * one marked, `failed` or `late`.
@@ -996,6 +1070,29 @@ export class Writer {
         this.#options.drafts.markSent(login, pull, place, null);
         const now = { notTaken: 'notPosted', changed: 'changed', gone: 'gone' } as const;
         this.#settled(target, key, now[after.kind]);
+        return undefined;
+      };
+      this.#lookAfter(login, at, still, look, unknown);
+      return;
+    }
+    if (place.kind === 'conversation') {
+      const look = async (poller: WriterPoller) => {
+        const read = await this.#timelineNow(poller, pull);
+        if (!still() || read === 'again') return still() ? 'again' : undefined;
+        // Only a read made the wait after it was sent, once GitHub has stored it, says whether it
+        // posted.
+        if (read.fetchedAt < at + (this.#options.settleAfter ?? SETTLE_AFTER)) return 'again';
+        const timeline = read.value;
+        // When it was sent, by GitHub's clock.
+        const ahead = await poller.readOnce((client) => Promise.resolve(client.githubAhead()));
+        const sentThere = at + (ahead ?? 0);
+        if (!still()) return undefined;
+        if (holdsPullComment(timeline, login, text, sentThere, CLOCK_SLACK)) {
+          this.#posted(target, key, place, text);
+        } else {
+          this.#options.drafts.markSent(login, pull, place, null);
+          this.#settled(target, key, 'notPosted');
+        }
         return undefined;
       };
       this.#lookAfter(login, at, still, look, unknown);
@@ -1164,6 +1261,7 @@ export class Writer {
       sending: this.#standing(this.#key(target, kept.place), kept) ?? null,
       sent: kept.sent,
       base: kept.base,
+      home: kept.home,
     };
   }
 

@@ -3,7 +3,8 @@
 // tabs, folds and the glossary, each under its section, as plain text; and the ids that bring the
 // reader back to each.
 
-import { parseArtifact } from '@lo/artifact';
+import { parseArtifact, type OverviewBlock } from '@lo/artifact';
+import { plainText } from '@lo/markdown';
 import { describe, expect, it } from 'vitest';
 
 import { explainedId, explanationsOf, NOTE_LIMIT, readExplainedId } from './explained.ts';
@@ -13,6 +14,11 @@ const HEADER = '---\nformat: 1\npr: 80\ncommit: a08fba8e2a6dd7a5b35a34d1c1efd71a
 /** The tree of an overview whose text, after its header, is `body`, whatever the check finds. */
 function treeOf(body: string) {
   return parseArtifact(`${HEADER}${body}`).tree;
+}
+
+/** The words of `blocks`, as the plain text has them. */
+function words(blocks: readonly OverviewBlock[]): string {
+  return plainText({ blocks: [...blocks], notes: [], diagnostics: [] });
 }
 
 /** What each explanation points at and says, in short. */
@@ -140,6 +146,38 @@ ${long} [here](code:a.ts#L1) and [here again](code:a.ts#L1).
     const text = found[0]?.text ?? '';
     expect(text.length).toBeLessThanOrEqual(NOTE_LIMIT + 1);
     expect(text).toMatch(/^word word .* word…$/);
+    // The same words as blocks, cut short alike, for a note to draw.
+    expect(words(found[0]?.content ?? [])).toBe(text);
+  });
+
+  it('keeps the blocks the words are in, to draw as the overview does', () => {
+    const [step, code] = explanationsOf(
+      treeOf(`## How it works
+
+:::walkthrough Steps
+:::step src/a.ts#L1-L2
+Splits **each** line on \`\\n\`.
+:::
+:::
+
+:::code src/b.ts#L1
+:::
+`),
+    );
+    expect(step?.content).toEqual([
+      {
+        kind: 'paragraph',
+        children: [
+          { kind: 'text', value: 'Splits ' },
+          { kind: 'strong', children: [{ kind: 'text', value: 'each' }] },
+          { kind: 'text', value: ' line on ' },
+          { kind: 'inlineCode', value: '\\n' },
+          { kind: 'text', value: '.' },
+        ],
+      },
+    ]);
+    expect(words(code?.content ?? [])).toBe(code?.text);
+    expect(code?.text).toBe('A code block in the overview shows these lines.');
   });
 });
 
