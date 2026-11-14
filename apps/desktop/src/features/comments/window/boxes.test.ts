@@ -907,17 +907,39 @@ describe('a box on a code block', () => {
     restore(VIEW);
     expect(again.drawn).toEqual([]);
     // `e` in the diff, as a press sends it: Lo's command takes it.
+    const before = commanded;
     for (const type of ['keydown', 'keyup']) {
       const init = { key: 'e', code: 'KeyE', bubbles: true, cancelable: true };
       document.body.dispatchEvent(new KeyboardEvent(type, init));
     }
-    expect(commanded).toBe(1);
+    expect(commanded).toBe(before + 1);
     // The lines come, and the box opens on them, as it was, unfocused.
     coming = false;
     restore(VIEW);
     expect(again.drawn.map(({ at, options }) => [at, options?.focus])).toEqual([
       [{ file: 'f0', side: 'new', line: 5 }, false],
     ]);
+  });
+
+  test('drawn again with its lines still coming, a box that had focus opens without it while a key Lo’s command took is held', async () => {
+    const { box, drawn } = await opened();
+    box.set({ focused: true });
+    takenDown(box, drawn[0]!.composer);
+    let coming = true;
+    const again = fakeDiff(() => coming);
+    restore(VIEW);
+    // `e` pressed and held: Lo's command takes it, and it isn't let go yet.
+    const init = { key: 'e', code: 'KeyE', bubbles: true, cancelable: true };
+    const before = commanded;
+    document.body.dispatchEvent(new KeyboardEvent('keydown', init));
+    expect(commanded).toBe(before + 1);
+    // The lines come meanwhile, and the box opens on them unfocused.
+    coming = false;
+    restore(VIEW);
+    expect(again.drawn.map(({ at, options }) => [at, options?.focus])).toEqual([
+      [{ file: 'f0', side: 'new', line: 5 }, false],
+    ]);
+    document.body.dispatchEvent(new KeyboardEvent('keyup', init));
   });
 
   test('drawn again without its line, a box opens under its file’s header there, still on its line, though its block is back', async () => {

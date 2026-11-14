@@ -21,7 +21,14 @@
 
 import { Lines, Screen, suggestionBlock, takesSuggestion } from '@lo/review';
 import type { Composer, ComposerEvents, KeptBox, Mode, Send } from '@lo/ui/code';
-import type { BoxTarget, Handler, HeaderTarget, LineTarget, Target } from '@lo/ui/commands';
+import {
+  type BoxTarget,
+  type Handler,
+  type HeaderTarget,
+  KEY_EVENT,
+  type LineTarget,
+  type Target,
+} from '@lo/ui/commands';
 
 import { announce, notice, notify, withdraw } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
@@ -602,10 +609,10 @@ interface Kept {
 
 /**
  * What the reader does that moves on from a box the diff took down: a key, a click, the wheel. A key
- * one of Lo's commands takes goes no further than the key listener's `keydown`, so a key counts as
- * it's let go too, which nothing stops.
+ * one of Lo's commands takes goes no further than the key listener's `keydown`, which tells the
+ * focused element first (`KEY_EVENT`).
  */
-const INPUT = ['keydown', 'keyup', 'pointerdown', 'wheel'] as const;
+const INPUT = ['keydown', KEY_EVENT, 'pointerdown', 'wheel'] as const;
 
 /** How many keys, clicks and wheel turns the reader has made, since Lo first needed to know. */
 let inputs = 0;
