@@ -597,6 +597,45 @@ describe('targets', () => {
     });
   });
 
+  test('inline, lines selected on one side take the other side’s between them, as they show', () => {
+    const shown = open(events(), { layout: 'inline' });
+    shown.reveal(onLine('a', 'new', 36));
+    const changes = vimIn('Changes');
+    const row = changes.text.slice(0, changes.cursor).split('\n').length;
+    // Down past the line deleted after new line 36, to new line 37.
+    changes.keys('V', ...String(row + 2).split(''), 'G');
+    expect(shown.keyState().target).toEqual({
+      kind: 'line',
+      at: { file: 'a', side: 'new', from: 36, to: 37 },
+      across: [
+        { file: 'a', side: 'new', from: 36, to: 36 },
+        { file: 'a', side: 'old', from: 35, to: 35 },
+        { file: 'a', side: 'new', from: 37, to: 37 },
+      ],
+    });
+  });
+
+  test('a count takes that many lines from the cursor’s as they show, as v does', () => {
+    const shown = open(events(), { layout: 'inline' });
+    shown.reveal(onLine('a', 'old', 35));
+    const changes = vimIn('Changes');
+    const row = changes.text.slice(0, changes.cursor).split('\n').length;
+    changes.keys('3');
+    const counted = shown.keyState().target;
+    expect(counted).toMatchObject({
+      at: { file: 'a', side: 'old', line: 35 },
+      across: [
+        { file: 'a', side: 'old', from: 35, to: 35 },
+        { file: 'a', side: 'new', from: 37, to: 38 },
+      ],
+    });
+    shown.clearPending();
+    changes.keys('V', ...String(row + 2).split(''), 'G');
+    const across = 'across' in counted ? counted.across : undefined;
+    expect(across).toHaveLength(2);
+    expect(shown.keyState().target).toMatchObject({ across });
+  });
+
   test('a right-click on a thread is its menu', () => {
     const on = events();
     const shown = open(on);

@@ -1,7 +1,21 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { marksFrom, nextUnviewed } from './viewed.ts';
+import type * as RevisionsShared from '../../revisions/window/shared.ts';
+import type { Drawn } from './tabs.ts';
+import { markViewed, marksFrom, nextUnviewed } from './viewed.ts';
+
+// The viewed marks, as `e` reads and toggles them, by path.
+const marks = vi.hoisted(() => new Set<string>());
+vi.mock('../../revisions/window/shared.ts', async (original) => ({
+  ...(await original<typeof RevisionsShared>()),
+  toggleViewed: (_tab: string, file: { path: { text: string } }) => {
+    if (marks.delete(file.path.text)) return { kind: 'clearing' };
+    marks.add(file.path.text);
+    return { kind: 'marking' };
+  },
+  passedOver: (_marks: unknown, path: { text: string }) => marks.has(path.text),
+}));
 
 const order = ['d0', 'd1', 'd2', 'd3'];
 
@@ -41,5 +55,38 @@ describe('what 3e marks', () => {
       marks: ['d2', 'd3', 'd1'],
       next: undefined,
     });
+  });
+});
+
+/** A diff of `ids`, the file at the cursor `at`, and where each mark it heard sends the cursor. */
+function diffOf(ids: readonly string[], at: string) {
+  const went: [string, boolean, string | undefined][] = [];
+  const entries = ids.map((id) => ({ id, versions: { path: { text: id }, previous: null } }));
+  const fake = {
+    tab: 't1',
+    order: ids,
+    fileAt: () => at,
+    loader: { snapshot: () => ({ ready: { entries } }) },
+    viewedHere: (id: string, marked: boolean, next: string | undefined) => {
+      went.push([id, marked, next]);
+    },
+  };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only what `e` reads is here.
+  return { drawn: fake as unknown as Drawn, went };
+}
+
+describe('e in the diff', () => {
+  const line = { kind: 'line', at: { file: 'd1', side: 'new', line: 1 } } as const;
+
+  it('alone, marks the file or clears its mark; with a count, even 1e, only marks', () => {
+    marks.clear();
+    marks.add('d1');
+    const { drawn, went } = diffOf(order, 'd1');
+    markViewed(drawn, line, 1);
+    expect([...marks].toSorted()).toEqual(['d1', 'd2']);
+    expect(went).toEqual([['d2', true, 'd3']]);
+    markViewed(drawn, line);
+    expect([...marks].toSorted()).toEqual(['d2']);
+    expect(went.at(-1)).toEqual(['d1', false, undefined]);
   });
 });

@@ -27,8 +27,10 @@ export interface LineTarget {
   kind: 'line';
   at: Place | Span;
   /**
-   * The lines `v` selected when they cross files or sides, as they show, a run of lines of one
-   * file on one side each. `at` is then the cursor's line, for what acts on one line.
+   * The lines a key takes, as they show, where they're more than one run of lines of one file on
+   * one side: those `v` selected, inline the other side's between them too; or, with a count, as
+   * `4yy` takes, that many from the cursor's. `at` is the cursor's line, or the lines `v` selected
+   * when they start and end on one side of one file, for what acts on those.
    */
   across?: readonly Span[];
   /** The thread `]t` landed on, or the only one on the cursor's line. */

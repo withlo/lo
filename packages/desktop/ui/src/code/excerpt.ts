@@ -52,6 +52,7 @@ import {
   onVimMode,
   passToVim,
   setVimKeys,
+  vimCount,
   vimMode,
   vimPending,
 } from './keys.ts';
@@ -564,9 +565,14 @@ class Excerpt implements ExcerptView {
 
   // Keys -------------------------------------------------------------------------------------
 
-  keyState(): { mode: Mode; pending: boolean; target: Target } {
+  keyState(): { mode: Mode; pending: boolean; count: number | undefined; target: Target } {
     const view = this.#view;
-    return { mode: vimMode(view), pending: vimPending(view), target: this.#target() };
+    return {
+      mode: vimMode(view),
+      pending: vimPending(view),
+      count: vimCount(view),
+      target: this.#target(),
+    };
   }
 
   passKeys(keys: readonly string[]): void {
@@ -582,28 +588,51 @@ class Excerpt implements ExcerptView {
   }
 
   /**
-   * What a key acts on: the cursor's line, or the lines `v` selected when they're all on one side;
-   * the header of an excerpt with no lines.
+   * What a key acts on: the cursor's line, or the lines `v` selected when they start and end on
+   * one side; the header of an excerpt with no lines. As the diff's do, the lines a key takes as
+   * they show are `across` where they're more than one run of one side's: those `v` selected, the
+   * other side's between them too; and with a count, as `4yy` takes, that many from the cursor's.
    */
   #target(): LineTarget | HeaderTarget {
-    const { doc, selection } = this.#view.state;
+    const view = this.#view;
+    const { doc, selection } = view.state;
     const { head, anchor } = selection.main;
     const line = doc.lineAt(head);
-    if (vimMode(this.#view) === 'visual') {
-      const from = this.#spot(doc.lineAt(anchor).number);
-      const to = this.#spot(line.number);
-      if (from.kind === 'line' && to.kind === 'line' && from.at.side === to.at.side) {
-        const { side } = to.at;
-        const span = {
-          file: this.#id,
-          side,
-          from: Math.min(from.at.line, to.at.line),
-          to: Math.max(from.at.line, to.at.line),
-        };
-        return { kind: 'line', at: span };
-      }
+    const target = this.#targetAt(line.number, head - line.from);
+    if (vimMode(view) !== 'visual') {
+      const count = vimCount(view);
+      if (count === undefined || count < 2 || target.kind !== 'line') return target;
+      const last = Math.min(doc.lines, line.number + count - 1);
+      return { ...target, across: this.#spansIn(line.number, last) };
     }
-    return this.#targetAt(line.number, head - line.from);
+    const anchorLine = doc.lineAt(anchor).number;
+    const from = this.#spot(anchorLine);
+    const to = this.#spot(line.number);
+    const across = this.#spansIn(anchorLine, line.number);
+    if (from.kind === 'line' && to.kind === 'line' && from.at.side === to.at.side) {
+      const span: Span = {
+        file: this.#id,
+        side: to.at.side,
+        from: Math.min(from.at.line, to.at.line),
+        to: Math.max(from.at.line, to.at.line),
+      };
+      return isOnly(across, span) ? { kind: 'line', at: span } : { kind: 'line', at: span, across };
+    }
+    return target.kind === 'line' && across.length > 0 ? { ...target, across } : target;
+  }
+
+  /** The lines document lines `from` to `to` show, either way round: a run of one side's each. */
+  #spansIn(from: number, to: number): Span[] {
+    const spans: Span[] = [];
+    for (let line = Math.min(from, to); line <= Math.max(from, to); line++) {
+      const spot = this.#spot(line);
+      if (spot.kind !== 'line') continue;
+      const { side, line: number } = spot.at;
+      const last = spans.at(-1);
+      if (last?.side === side && last.to === number - 1) last.to = number;
+      else spans.push({ file: this.#id, side, from: number, to: number });
+    }
+    return spans;
   }
 
   /** What a key or a click on document line `line` acts on: its line and thread, or the header. */
@@ -696,4 +725,16 @@ function docLinesOf(numbers: readonly number[]): { first: number; lines: number[
     lines[number - first] = index + 1;
   });
   return { first, lines };
+}
+
+/** Whether `spans` are `span` alone. */
+function isOnly(spans: readonly Span[], span: Span): boolean {
+  const [only] = spans;
+  return (
+    spans.length === 1 &&
+    only?.file === span.file &&
+    only.side === span.side &&
+    only.from === span.from &&
+    only.to === span.to
+  );
 }

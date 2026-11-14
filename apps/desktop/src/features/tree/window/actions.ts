@@ -133,10 +133,10 @@ export function markable(tab: string, key: string): true | string {
 /**
  * `e` on the file `key`: marks it viewed, or clears its mark. Marking moves the keyboard to the next
  * changed file that isn't viewed, in the panel's order, round the end, past any `e` can't mark.
- * With a count, `3e` marks three: `key` first unless it's viewed, then the next that aren't. It
- * clears no mark.
+ * With a count, `3e` marks three: `key` first unless it's viewed, then the next that aren't; `1e`
+ * marks one. A count clears no mark.
  */
-export function markViewed(tab: string, key: string, count = 1): void {
+export function markViewed(tab: string, key: string, count?: number): void {
   const changes = states.get(tab)?.changes ?? [];
   const byKey = new Map(changes.map((change) => [keyOf(change.path), change]));
   if (!byKey.has(key)) {
@@ -149,8 +149,8 @@ export function markViewed(tab: string, key: string, count = 1): void {
     return !change || passedOver(viewedMarksOf(tab), change.path, change.previous);
   };
   const order = shown.get(tab)?.order ?? [];
-  let at: string | undefined = count > 1 && done(key) ? nextIn(order, key, done) : key;
-  for (let left = count; left > 0 && at !== undefined; left--) {
+  let at: string | undefined = count !== undefined && done(key) ? nextIn(order, key, done) : key;
+  for (let left = count ?? 1; left > 0 && at !== undefined; left--) {
     const change = byKey.get(at);
     if (!change) return;
     const toggled = toggleViewed(tab, { path: change.path, previous: change.previous });

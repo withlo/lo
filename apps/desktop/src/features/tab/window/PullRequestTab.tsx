@@ -1,6 +1,6 @@
 // A pull request's tab: its header, its banners, the left panel, the middle sheet, with what goes
 // across its top, and the right panel other features fill, and its status bar, which ends with
-// Vim's mode while code has focus. Until the diff and the threads arrive, the middle says what's
+// the keys held for a command still to come, and Vim's mode while code has focus. Until the diff and the threads arrive, the middle says what's
 // coming.
 
 import {
@@ -9,12 +9,14 @@ import {
   Spinner,
   StatusBar,
   StatusItem,
+  StatusKeys,
   StatusMode,
   type HeaderConnection,
 } from '@lo/ui';
 import { focusedMode, onFocusedMode } from '@lo/ui/code';
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 
+import { registry } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
 import { Slot, useViews } from '../../../window/slots.tsx';
 import { contract as settings } from '../../settings/contract.ts';
@@ -228,10 +230,22 @@ function LocalItem({ local }: { local: LocalState | undefined }): ReactNode {
   }
 }
 
-/** Vim's mode in the code view that has focus, while one has, as the status bar's end shows it. */
+const onHeldKeys = (listener: () => void) => registry().onHeldKeys(listener);
+const heldKeys = () => registry().heldKeys();
+
+/**
+ * The keys held for a command still to come, and Vim's mode in the code view that has focus,
+ * while one has, as the status bar's end shows them.
+ */
 function FocusedMode() {
+  const held = useSyncExternalStore(onHeldKeys, heldKeys);
   const mode = useSyncExternalStore(onFocusedMode, focusedMode);
-  return mode === undefined ? null : <StatusMode name={mode} />;
+  return (
+    <>
+      {held !== '' && <StatusKeys keys={held} />}
+      {mode !== undefined && <StatusMode name={mode} />}
+    </>
+  );
 }
 
 /** A pull request's tab, as its kind draws it. */

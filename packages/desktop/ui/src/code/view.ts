@@ -1854,8 +1854,10 @@ class View implements DiffView {
 
   /**
    * What a key acts on in `pane`: the cursor's line, or the lines `v` selected, and a thread; or
-   * the header the cursor is on. Lines selected across files or sides are the cursor's line, with
-   * each file's and side's lines of them `across`.
+   * the header the cursor is on. The lines a key takes as they show are `across` where they're
+   * more than one run of one file's lines on one side: those `v` selected, the other side's
+   * between them too, inline; and with a count, as `4yy` takes, that many from the cursor's.
+   * Selected across files or sides, they're the cursor's line, for what acts on one.
    */
   #targetOf(pane: Pane): LineTarget | HeaderTarget {
     const view = this.#viewOf(pane);
@@ -1864,15 +1866,23 @@ class View implements DiffView {
     const headLine = doc.lineAt(head);
     const at = this.#placeAt(pane, headLine.number);
     const target = this.#lineTarget(at, head - headLine.from);
-    if (vimMode(view) !== 'visual') return target;
+    if (vimMode(view) !== 'visual') {
+      const count = vimCount(view);
+      if (count === undefined || count < 2 || target.kind !== 'line') return target;
+      const last = Math.min(doc.lines, headLine.number + count - 1);
+      return { ...target, across: this.#spansIn(pane, headLine.number, last) };
+    }
     const anchorLine = doc.lineAt(anchor).number;
     const other = this.#placeAt(pane, anchorLine);
+    const across = this.#spansIn(pane, anchorLine, headLine.number);
     if (other.file === at.file && other.side === at.side) {
       const from = Math.max(1, Math.min(at.line, other.line));
       const to = Math.max(1, at.line, other.line);
-      return { kind: 'line', at: { file: this.#ids[at.file]!, side: at.side, from, to } };
+      const span: Span = { file: this.#ids[at.file]!, side: at.side, from, to };
+      return across.length === 0 || isOnly(across, span)
+        ? { kind: 'line', at: span }
+        : { kind: 'line', at: span, across };
     }
-    const across = this.#spansIn(pane, anchorLine, headLine.number);
     const [first] = across;
     const last = across.at(-1);
     if (!first || !last) return target;
@@ -3214,4 +3224,16 @@ function drawnRows(view: EditorView): Map<string, number> {
     if (key) tops.set(key, element.getBoundingClientRect().top);
   }
   return tops;
+}
+
+/** Whether `spans` are `span` alone. */
+function isOnly(spans: readonly Span[], span: Span): boolean {
+  const [only] = spans;
+  return (
+    spans.length === 1 &&
+    only?.file === span.file &&
+    only.side === span.side &&
+    only.from === span.from &&
+    only.to === span.to
+  );
 }

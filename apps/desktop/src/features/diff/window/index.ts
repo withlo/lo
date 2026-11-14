@@ -52,8 +52,10 @@ function onScreen(): Drawn | string {
 }
 
 /** Runs `act` on the diff on screen. */
-function withDiff<T = undefined>(act: (drawn: Drawn, target: T, count: number) => unknown) {
-  return (target: T, count = 1): void => {
+function withDiff<T = undefined>(
+  act: (drawn: Drawn, target: T, count: number | undefined) => unknown,
+) {
+  return (target: T, count?: number): void => {
     const drawn = onScreen();
     if (typeof drawn !== 'string') void act(drawn, target, count);
   };
@@ -107,10 +109,10 @@ function wholeLines(whole: WholeOn): readonly string[] | undefined {
 
 /** Runs `act` on the whole file on screen, if there is one, or on the diff on screen. */
 function inCode<T>(
-  onWhole: (whole: WholeOn, target: T, count: number) => unknown,
-  onDiff: (drawn: Drawn, target: T, count: number) => unknown,
+  onWhole: (whole: WholeOn, target: T, count: number | undefined) => unknown,
+  onDiff: (drawn: Drawn, target: T, count: number | undefined) => unknown,
 ) {
-  return (target: T, count = 1): void => {
+  return (target: T, count?: number): void => {
     const whole = wholeOnScreen();
     if (whole) void onWhole(whole, target, count);
     else withDiff(onDiff)(target, count);

@@ -5,10 +5,11 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createRegistry, registry } from '../../../window/commands/registry.ts';
+import type * as RevisionsShared from '../../revisions/window/shared.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { Changed, TreeState } from '../contract.ts';
-import { closeRow, move, openRow, setAll, show, showable } from './actions.ts';
+import { closeRow, markViewed, move, openRow, setAll, show, showable } from './actions.ts';
 import { Files } from './Files.tsx';
 import feature from './index.ts';
 import { fileOrder, followFile, onShowFile } from './shared.ts';
@@ -19,6 +20,18 @@ const screen = vi.hoisted(() => ({ tab: undefined as unknown }));
 vi.mock('../../tab/window/shared.ts', async (original) => ({
   ...(await original<typeof TabShared>()),
   activeTab: () => screen.tab,
+}));
+
+// The viewed marks, as `e` reads and toggles them, by path.
+const marks = vi.hoisted(() => new Set<string>());
+vi.mock('../../revisions/window/shared.ts', async (original) => ({
+  ...(await original<typeof RevisionsShared>()),
+  toggleViewed: (_tab: string, file: { path: { text: string } }) => {
+    if (marks.delete(file.path.text)) return { kind: 'clearing' };
+    marks.add(file.path.text);
+    return { kind: 'marking' };
+  },
+  passedOver: (_marks: unknown, path: { text: string }) => marks.has(path.text),
 }));
 
 beforeAll(() => {
@@ -243,6 +256,18 @@ describe('the tree’s keys', () => {
     run('tree.show');
     expect(row('src')?.getAttribute('aria-expanded')).toBe('true');
     expect(focus.get(TAB.id)).toBe('src');
+  });
+
+  it('e marks a file or clears its mark, and with a count, even 1e, only marks', () => {
+    render();
+    marks.clear();
+    marks.add('src/format.ts');
+    onTestFinished(() => marks.clear());
+    act(() => markViewed(TAB.id, 'src/format.ts', 1));
+    expect(marks.has('src/format.ts')).toBe(true);
+    expect(marks.size).toBe(2);
+    act(() => markViewed(TAB.id, 'src/format.ts'));
+    expect(marks.has('src/format.ts')).toBe(false);
   });
 
   it('open and close every folder, the keyboard going to the outermost one', () => {

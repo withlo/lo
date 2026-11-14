@@ -426,6 +426,7 @@ describe('counts', () => {
       },
       mode: { label: 'Tree or review order', group: 'Files', keys: ['t'], when: { scope: 'tree' } },
       openAll: { label: 'Open all', group: 'Files', keys: ['z R'], when: { scope: 'tree' } },
+      middle: { label: 'Back to the middle view', group: 'Panels', keys: ['esc'] },
       palette: { label: 'Every action', group: 'Find', keys: ['cmd+shift+p'] },
     },
     { scopes: ['tree'] },
@@ -498,12 +499,14 @@ describe('counts', () => {
       'hold',
       'run counted.openAll',
     ]);
-    // Esc drops it.
+    // Esc drops it, and does nothing else: alone, it's a command of its own.
     expect(type(['3', 'esc', 'j'], tree, { bindings }).said).toEqual([
       'hold',
       'stop',
       'run counted.down',
     ]);
+    expect(type(['esc'], tree, { bindings }).said).toEqual(['run counted.middle']);
+    expect(type(['z', 'esc'], tree, { bindings }).said).toEqual(['hold', 'stop']);
   });
 
   test('a count waits as a held key does, and only where a command of the scope’s takes one', () => {

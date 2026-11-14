@@ -30,8 +30,11 @@ export function nextUnviewed(
   return undefined;
 }
 
-/** `e` on `target` in the diff drawn as `drawn`, or with a count, `3e`. */
-export function markViewed(drawn: Drawn, target: LineTarget | HeaderTarget, count = 1): void {
+/**
+ * `e` on `target` in the diff drawn as `drawn`, which marks the file viewed or clears its mark; or
+ * with a count, `3e` or `1e`, which only marks.
+ */
+export function markViewed(drawn: Drawn, target: LineTarget | HeaderTarget, count?: number): void {
   const id = drawn.fileAt(target);
   const entries = new Map(
     (drawn.loader.snapshot().ready?.entries ?? []).map((entry) => [entry.id, entry]),
@@ -41,7 +44,7 @@ export function markViewed(drawn: Drawn, target: LineTarget | HeaderTarget, coun
     notify('Mark viewed', 'The diff is still loading, so there’s no file to mark viewed yet.');
     return;
   }
-  if (count > 1) {
+  if (count !== undefined) {
     markMany(drawn, entries, id, count);
     return;
   }

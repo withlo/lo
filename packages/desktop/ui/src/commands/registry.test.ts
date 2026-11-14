@@ -360,11 +360,14 @@ function counting() {
       },
     }),
   ).map((command) => ({ ...command, handler: { run: heard(command.id) } }));
-  const commands = testCommands().map((command) =>
-    command.id === 'diff.markViewed'
-      ? { ...command, count: 'files', handler: { run: heard(command.id) } }
-      : command,
-  );
+  const commands = testCommands().map((command) => {
+    if (command.id === 'diff.markViewed') {
+      return { ...command, count: 'files', handler: { run: heard(command.id) } };
+    }
+    return command.id === 'diff.copyLine'
+      ? { ...command, count: 'lines', handler: { run: heard(command.id) } }
+      : command;
+  });
   return { counts, ...setup({ commands: [...commands, ...down] }) };
 }
 
@@ -376,12 +379,16 @@ describe('counts', () => {
     view.count = 3;
     expect(press(['e'], scope('diff', view))).toEqual(['stop']);
     expect(view.log).toEqual(['clearPending']);
-    // Without one, once; from a menu or the palette, once too.
+    // Without one, none, from a menu or the palette too; and `1` is a count of its own.
     expect(press(['e'], scope('diff', view))).toEqual(['stop']);
     registry.run('diff.markViewed', place(2));
+    view.pending = true;
+    view.count = 1;
+    expect(press(['e'], scope('diff', view))).toEqual(['stop']);
     expect(counts).toEqual([
       ['diff.markViewed', 3],
-      ['diff.markViewed', 1],
+      ['diff.markViewed', undefined],
+      ['diff.markViewed', undefined],
       ['diff.markViewed', 1],
     ]);
   });
@@ -393,8 +400,39 @@ describe('counts', () => {
     expect(press(['j'], scope('tree'))).toEqual(['stop']);
     expect(counts).toEqual([
       ['rows.down', 12],
-      ['rows.down', 1],
+      ['rows.down', undefined],
     ]);
+  });
+});
+
+describe('the keys held', () => {
+  test('are said as they’re held, after Vim’s count, and no longer once they run or go', () => {
+    const { registry, press } = counting();
+    const heard: string[] = [];
+    registry.onHeldKeys(() => heard.push(registry.heldKeys()));
+    const view = new FakeView();
+    view.pending = true;
+    view.count = 2;
+    press(['y'], scope('diff', view));
+    expect(registry.heldKeys()).toBe('2y');
+    press(['y'], scope('diff', view));
+    expect(registry.heldKeys()).toBe('');
+    view.pending = false;
+    view.count = undefined;
+    press(['g'], scope('diff', view));
+    expect(registry.heldKeys()).toBe('g');
+    registry.leave(view);
+    expect(heard).toEqual(['2y', '', 'g', '']);
+  });
+
+  test('elsewhere, a count held is said, and the keys after it', () => {
+    const { registry, press } = counting();
+    press(['3'], scope('tree'));
+    expect(registry.heldKeys()).toBe('3');
+    press(['z'], scope('tree'));
+    expect(registry.heldKeys()).toBe('3z');
+    press(['esc'], scope('tree'));
+    expect(registry.heldKeys()).toBe('');
   });
 });
 

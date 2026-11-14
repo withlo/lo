@@ -291,6 +291,8 @@ export function match(
   if (pending) {
     // The held key repeating: it's still one press.
     if (press.repeat && pending.strokes.at(-1)?.id === stroke.id) return { pending, outcome: STOP };
+    // `Esc` after a count drops it, and does nothing else, as in Vim.
+    if (counting && stroke.id === 'esc') return { pending: undefined, outcome: STOP };
     const strokes = [...pending.strokes, stroke];
     const found = bindings.find(strokes, focus);
     if (found.command) {

@@ -727,10 +727,11 @@ Copying is always `y` plus a letter; there's no single-key `y`. `⌃o` returns f
 took you: from the code back to the overview block, from a definition back to the diff.
 
 A count typed before a key repeats it, as in Vim, for `e`, `yy`, `]s` and `[s`, and `j` and `k` in
-the file tree: `3e` marks three files viewed, and `2yy` copies two lines. A count before any other
-key in the code goes to Vim with it. In the file tree, `gg`, `G`, `PgUp` and `PgDn` move as in the
-overview, and `⏎` on a folder opens or closes it; in the stack tree, `+` goes back down to the
-files.
+the file tree: `3e` marks three files viewed, and `2yy` copies two lines as they show. A count
+before any other key in the code goes to Vim with it, and `Esc` drops one. The status bar shows the
+keys typed so far of a command still to come, as Vim does. In the file tree, `gg`, `G`, `PgUp` and
+`PgDn` move as in the overview, and `⏎` on a folder opens or closes it; in the stack tree, `+` goes
+back down to the files.
 
 **On Linux,** Ctrl takes the place of `⌘` in every key above, and the app shows each platform its
 own. Vim's `⌃` keys keep their meanings, so two keys differ from what that rule would give, on both

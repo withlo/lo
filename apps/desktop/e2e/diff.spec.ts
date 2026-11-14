@@ -308,9 +308,14 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
   await focusDiff(page);
   const clipboard = () => app.evaluate(({ clipboard: board }) => board.readText());
 
-  await test.step('Vim’s mode, in the status bar while the diff has focus', async () => {
+  await test.step('Vim’s mode, in the status bar while the diff has focus, and a key held', async () => {
     const status = page.locator('footer[aria-label="Status"]');
     await expect(status).toContainText('NORMAL');
+    const held = status.locator('[title="Keys typed so far"]');
+    await press(page, 'g');
+    await expect(held).toHaveText('g');
+    await press(page, 'Escape');
+    await expect(held).toHaveCount(0);
     await press(page, 'Shift+V');
     await expect(status).toContainText('V-LINE');
     await press(page, 'Escape');

@@ -260,15 +260,17 @@ A key that starts one of Lo's sequences waits for the rest. In a code view it wa
 takes, as Vim's own `y` and `g` do, and a key that doesn't go on with it goes to Vim after it, so
 `y w` still yanks a word. Anywhere else it waits up to 1 s, and if the rest doesn't come it's
 dropped, and the next key counts on its own. A chord Lo runs drops the waiting key, as do `Esc`,
-focus leaving, a click and a tab switch.
+focus leaving, a click and a tab switch. The status bar shows the keys waiting, after any count, as
+Vim shows a command it's waiting on the rest of.
 
 `Tab` doesn't move focus out of a scope; only dialogs and forms keep the browser's `Tab`.
 
 ## Counts
 
 Digits typed just before a key are a count, as in Vim, for the commands that take one: `3 e` marks
-three files viewed. Before any other key a count is dropped, and the key runs once; in a code view
-it goes on to Vim with the key, so `3 j` still moves three lines.
+three files viewed, and `1 e` one, where `e` alone clears a mark. Before any other key a count is
+dropped, and the key runs once; in a code view it goes on to Vim with the key, so `3 j` still moves
+three lines. `Esc` drops a count and does nothing else.
 
 | Action                   | Keys     | Counts | Where                                                                                  | Command                |
 | ------------------------ | -------- | ------ | -------------------------------------------------------------------------------------- | ---------------------- |
