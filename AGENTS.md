@@ -809,6 +809,19 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   the box closes; not found, or not read, the box says so. While the read can't be made, as offline,
   it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
   is sent again by itself, and nothing is sent while GitHub can't be reached.
+- Files dropped on a box, pasted into it or picked with "Attach" (`⌘⇧A`), ten at a time, are
+  attached (`window/uploads.ts`): each goes in at the cursor at once as a placeholder, the
+  background process checks it and takes its metadata out (`comments.prepare`) from the bytes of the
+  window's own `File`, and `comments.upload` hands those bytes to main, which never reads a path the
+  window names. Main checks the kind, size and first bytes again, and that the account can write to
+  the repository, then uploads through the poller's `upload`, one at a time for each account, saying
+  how far it has gone on `comments.uploads`; `comments.cancelUpload` gives one up. The placeholder
+  becomes the file's Markdown, or goes when it's refused, fails or is cancelled. When GitHub answers
+  Not Found though the account can write, main reads gh's token for that login (`accounts.github`'s
+  `ghToken`) for that upload alone, never keeping or logging it, and sends it once more; without gh,
+  the view's boxes take no more uploads, and an image's `https` address pasted or dropped goes in as
+  an image. Nothing is uploaded again by itself, and a comment, or a review's summary, isn't sent
+  while a file is on its way into it.
 
 ### Submitting a review
 
@@ -824,7 +837,8 @@ command's handler may say something after its label (`detail`).
   says so before anything is sent. A banner says once when your pending review sits on another
   revision than the one on screen.
 - The summary box is the comment box's editor (`createComposer`). Main keeps its text with the
-  comments' drafts (`comments.drafts`, as a `summary` place), saved as it's typed.
+  comments' drafts (`comments.drafts`, as a `summary` place), saved as it's typed. Files are
+  attached to it as to any comment box, through the comments' `window/shared.ts`.
 - `review.submit` sends in its turn among the comments' writes to the pull request
   (`comments.reviews`' `inTurn`), with the poller's `sendReview`. The summary is marked sent, with
   when, as a comment's draft is. When GitHub's answer is lost, nothing more is sent until a fresh

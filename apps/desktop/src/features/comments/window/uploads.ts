@@ -426,7 +426,7 @@ async function refuseUnread(attaching: Attaching, file: File): Promise<void> {
   } catch (error) {
     why = describe(error);
   }
-  attaching.say(`upload-refused-${file.name}`, `Lo didn’t attach ${file.name}: ${why}.`);
+  attaching.say(`upload-refused-${uploadKey()}`, `Lo didn’t attach ${file.name}: ${why}.`);
 }
 
 /** Prepares `file` in the background process, then uploads it through main. */
@@ -447,6 +447,11 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
     return;
   }
   if (attachment.cancelled) return;
+  // An upload before it found the view takes none: the box says so, and this one isn't sent.
+  if (offViews.has(box.view)) {
+    attaching.remove(attachment);
+    return;
+  }
   if (prepared.kind === 'refused') {
     failed(`Lo didn’t attach ${name}: ${prepared.why}.`);
     return;

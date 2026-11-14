@@ -270,11 +270,14 @@ describe('attaching', () => {
 
   test('where gh’s sign-in is needed, the view’s boxes take no more uploads', async () => {
     const box = boxWith('', 'v2');
-    attachFiles(box, [png()]);
+    attachFiles(box, [png(), png('second.png')]);
     await settle();
     asked.answers[0]!({ kind: 'refused', refusal: { kind: 'needsGh' } });
     await settle();
+    // The file after it in the drop isn't sent either.
     expect(box.text()).toBe('');
+    expect(asked.upload).toHaveLength(1);
+    expect(uploadsRunning(box)).toBe(false);
     expect(whyNoAttach('v2')).toBe(
       'Uploads here need gh’s sign-in, since GitHub takes none with Lo’s. Paste an image’s web address instead.',
     );
