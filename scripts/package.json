@@ -9,9 +9,20 @@
   },
   "dependencies": {
     "@nx/devkit": "24.0.5",
-    "oxc-parser": "0.158.0"
+    "oxc-parser": "0.158.0",
+    "yaml": "2.9.0"
   },
   "nx": {
-    "name": "scripts"
+    "name": "scripts",
+    "targets": {
+      "test": {
+        "inputs": [
+          "default",
+          "^production",
+          "{workspaceRoot}/vitest.config.ts",
+          "{workspaceRoot}/.github/workflows/publish.yml"
+        ]
+      }
+    }
   }
 }
