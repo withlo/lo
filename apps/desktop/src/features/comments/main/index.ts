@@ -6,7 +6,8 @@
 // `comments.bodies`; and the images in posts, and avatars, which the window loads only on the image
 // scheme, served here from GitHub's image hosts (`./images.ts`). An image in a post is fetched, and
 // kept, as the account its pull request's tab acts as, whose token goes only to GitHub's address
-// for an attachment.
+// for an attachment. And the files attached to comments, uploaded as the window hands them over
+// (`./uploads.ts`).
 
 import { parseOid } from '@lo/git';
 import { app, net, session } from 'electron';
@@ -28,6 +29,7 @@ import { CommentableReads } from './commentable.ts';
 import { DraftStore } from './drafts.ts';
 import { IMAGE_LIMITS, ImageError, Images } from './images.ts';
 import { ThreadReads } from './threads.ts';
+import { Uploads } from './uploads.ts';
 import { Writer } from './writer.ts';
 
 /**
@@ -43,6 +45,7 @@ let stopServing: (() => void) | undefined;
 let reads: ThreadReads | undefined;
 let writer: Writer | undefined;
 let commentable: CommentableReads | undefined;
+let uploads: Uploads | undefined;
 const stops: (() => void)[] = [];
 
 /** What `start` made, for a handler: the window asks nothing before main has started. */
@@ -89,6 +92,10 @@ export default defineFeature(contract, {
     commentable: ({ id, commit, path, previous }) =>
       started(commentable).read(id, commit, path, previous),
     send: ({ id, place, text, how }) => started(writer).send(id, place, text, how),
+    upload: ({ id, upload, name, bytes }) => started(uploads).upload(id, upload, name, bytes),
+    cancelUpload({ id, upload }) {
+      started(uploads).cancel(id, upload);
+    },
   },
   start({ use, publish, database }) {
     const service = use(tabs);
@@ -111,6 +118,13 @@ export default defineFeature(contract, {
       log: (line) => log(`writing: ${line}`),
     });
     writer = writing;
+    uploads = new Uploads({
+      poller: (login) => use(github).poller(login),
+      view: (id) => service.pull(id),
+      ghToken: (login) => use(github).ghToken(login),
+      publish: (progress) => publish('uploads', progress),
+      log: (line) => log(`uploading: ${line}`),
+    });
     commentable = new CommentableReads({
       view: (id) => service.pull(id),
       poller: (login) => use(github).poller(login),
@@ -202,6 +216,8 @@ export default defineFeature(contract, {
     reads = undefined;
     writer?.stop();
     writer = undefined;
+    uploads?.stop();
+    uploads = undefined;
     commentable = undefined;
     stopServing?.();
     stopServing = undefined;

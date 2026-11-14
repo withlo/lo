@@ -32,7 +32,7 @@ import { buildOf } from './build.ts';
 import { Gh } from './gh.ts';
 import { Github } from './github.ts';
 import { Grants } from './grants.ts';
-import { importFromGh, listGh, rereadFromGh } from './importing.ts';
+import { ghTokenForUpload, importFromGh, listGh, rereadFromGh } from './importing.ts';
 import { SignIns } from './signin.ts';
 
 /**
@@ -140,6 +140,7 @@ export default defineFeature(contract, {
       build: thisBuild(),
       log,
       reread: rereadFromGh({ gh, fetch, urls, log }),
+      ghToken: ghTokenForUpload({ gh, fetch, urls, log }),
     });
     const signIns = new SignIns({
       fetch,

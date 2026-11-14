@@ -2,7 +2,9 @@
 // your pending review, which main reads for the view on screen and sends each time they change;
 // and the HTML GitHub renders for posts, which threads and the timeline show in place of their
 // Markdown. The comments you write: the drafts main keeps of each comment box, which lines GitHub
-// takes a comment on, and sending one, which only the reader does. The window asks for the posts on
+// takes a comment on, and sending one, which only the reader does; and the files attached to them,
+// whose bytes the window hands over from its own `File`s, which main uploads to GitHub with how far
+// each has gone. The window asks for the posts on
 // screen or near it, and keeps what comes back in its memory only. It loads the images in posts,
 // and avatars, on the image scheme (`ipc/images.ts`), which the feature serves in main, so nothing
 // of that goes through a request.
@@ -277,6 +279,59 @@ export type SendOutcome =
   | { kind: 'refused'; refusal: SendRefusal }
   | { kind: 'lost' };
 
+/**
+ * The most bytes a file attached to a comment may hold: GitHub's limit for a video, the largest it
+ * takes of anything. Each kind's own limit is checked as well.
+ */
+export const ATTACHMENT_LIMIT = 100 * 1024 * 1024;
+
+/** The window's name for an upload, which it cancels it by and hears how far it has gone under. */
+export const uploadId = z.string().regex(/^[A-Za-z0-9-]{1,64}$/);
+
+/** A file's name as GitHub takes an attachment's: one line, with no folder. */
+export const fileName = z
+  .string()
+  .min(1)
+  .max(255)
+  .regex(/^[^/\\\p{Cc}]+$/u);
+
+/**
+ * Why main didn't upload a file, before anything was sent, as the box says it: `file`, a file
+ * GitHub doesn't take, with why in a few words; `cantWrite`, as the account can't write to the
+ * repository `repo`, which GitHub's uploads need; `needsGh`, as GitHub took no upload with Lo's
+ * sign-in and gh has none for the account; `paused`, as GitHub asked Lo to hold off writing until
+ * `until`; `signIn`, for a view that acts as nobody; `run`, for a run of a stack's layers.
+ */
+export type UploadRefusal =
+  | { kind: 'file'; why: string }
+  | { kind: 'cantWrite'; repo: string }
+  | { kind: 'needsGh' }
+  | { kind: 'paused'; until: number }
+  | { kind: 'signIn' }
+  | { kind: 'run' };
+
+/**
+ * What came of an upload: `uploaded`, with the Markdown that shows the file, and whether it went
+ * with gh's sign-in, after GitHub took none with Lo's (`viaGh`); `refused`, with nothing sent;
+ * `cancelled`, as the window asked, when GitHub may have it anyway; or `failed`, with why in a
+ * sentence, as when GitHub's answer was lost, and it may have the file anyway. It's never sent again
+ * by itself.
+ */
+export type UploadOutcome =
+  | { kind: 'uploaded'; markdown: string; viaGh: boolean }
+  | { kind: 'refused'; refusal: UploadRefusal }
+  | { kind: 'cancelled' }
+  | { kind: 'failed'; message: string };
+
+/** How far an upload of a view's has gone: `sent` bytes of `total`. */
+export const uploadProgress = z.strictObject({
+  id: tabId,
+  upload: uploadId,
+  sent: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+});
+export type UploadProgressRow = z.output<typeof uploadProgress>;
+
 export const contract = defineContract('comments', {
   requests: {
     /**
@@ -342,6 +397,28 @@ export const contract = defineContract('comments', {
       }),
       reply: reply<SendOutcome>(),
     },
+    /**
+     * Uploads `bytes`, the file `name` attached to a comment on view `id`'s pull request, to its
+     * repository as its account, once main has checked its kind, size and first bytes again; the
+     * window prepared it from its own `File`. One goes at a time for each account, and `uploads`
+     * says how far it has gone, as `upload`. Never sent again by itself.
+     */
+    upload: {
+      input: z.strictObject({
+        id: tabId,
+        upload: uploadId,
+        name: fileName,
+        bytes: z
+          .instanceof(Uint8Array)
+          .refine((bytes) => bytes.byteLength <= ATTACHMENT_LIMIT, 'The file is too large.'),
+      }),
+      reply: reply<UploadOutcome>(),
+    },
+    /**
+     * Gives up upload `upload` of view `id`: one waiting for its turn is never sent, and one being
+     * sent is cancelled, though GitHub may have it anyway.
+     */
+    cancelUpload: { input: z.strictObject({ id: tabId, upload: uploadId }), reply: reply<void>() },
   },
   topics: {
     /** A view's review threads, each time they change. */
@@ -350,5 +427,7 @@ export const contract = defineContract('comments', {
     review: reviewView,
     /** The drafts of a view's account on its pull request, each time they change. */
     drafts: draftsView,
+    /** How far an upload has gone, as main's `fetch` tells, every so often while it's sent. */
+    uploads: uploadProgress,
   },
 });
