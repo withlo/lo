@@ -39,6 +39,14 @@ export const USER_AGENT = 'lo';
 /** GitHub gives up on a request after 10 s; this leaves room for a slow network. */
 const TIMEOUT_MS = 30_000;
 
+/**
+ * How long GitHub's answer may take to begin, in milliseconds. GitHub gives up on a request after
+ * 10 s and says so, so an answer that hasn't begun 5 s after that never will: the connection has
+ * stalled, or whatever is at the other end doesn't answer. Waiting longer would hold the account's
+ * queue, and every request behind it.
+ */
+export const ANSWER_START_MS = 15_000;
+
 /** The REST API answers a renamed repository with a redirect to the same host. */
 const MAX_REDIRECTS = 3;
 
@@ -77,11 +85,19 @@ export type RequestGate = () => Promise<() => void>;
 export type UploadProgress = (sent: number, total: number) => void;
 
 /**
- * What a client hands its `fetch`: a `RequestInit`, and how to report how much of the body has
- * been sent, which a `fetch` that can't tell, such as the platform's own, ignores.
+ * What a client hands its `fetch`: a `RequestInit`, how to report how much of the body has been
+ * sent, which a `fetch` that can't tell, such as the platform's own, ignores, and how to say the
+ * answer has begun.
  */
 export interface FetchInit extends RequestInit {
   uploadProgress?: UploadProgress | undefined;
+  /**
+   * Hears that the answer has begun: its status and headers came. A `fetch` that resolves only
+   * once the whole body has come calls it as they come, so an answer on its way isn't taken for
+   * one that never began ({@link ANSWER_START_MS}). One that resolves as they come, as the
+   * platform's own does, needn't.
+   */
+  answerBegan?: (() => void) | undefined;
 }
 
 export interface ClientOptions {
@@ -161,7 +177,12 @@ export interface SendOptions {
   condition?: Condition;
   /** Statuses answered rather than thrown, for a request whose refusals carry a body Lo reads. */
   answers?: readonly number[] | undefined;
-  /** How long to wait for the whole answer, in milliseconds: 30 s unless said otherwise. */
+  /**
+   * How long to wait for the whole answer, in milliseconds: 30 s unless said otherwise. A request
+   * that doesn't say also gives up when the answer hasn't begun within {@link ANSWER_START_MS}; one
+   * that does, such as an upload, whose answer begins only once its body has gone, waits as long
+   * as it says.
+   */
   timeoutMs?: number | undefined;
   /** Whether to follow a redirect to where the token may go. On unless turned off. */
   followRedirects?: boolean | undefined;
@@ -499,27 +520,53 @@ export class GithubClient {
     }
     let response: Response;
     let bytes: Uint8Array;
-    const timeout = AbortSignal.timeout(options.timeoutMs ?? TIMEOUT_MS);
     const given = options.signal;
+    // Given up on when the whole answer takes too long, or, for a request with no wait of its own,
+    // when the answer hasn't begun in time: an answer lost either way, so the request's turn in
+    // the queue ends, and a write that timed out may still have been done.
+    const late = new AbortController();
+    let lateWhy: string | undefined;
+    const limit = (ms: number, what: string) =>
+      setTimeout(() => {
+        lateWhy = `${what} within ${ms / 1000} s`;
+        late.abort(new DOMException(lateWhy, 'TimeoutError'));
+      }, ms);
+    const whole = limit(options.timeoutMs ?? TIMEOUT_MS, "the whole answer didn't come");
+    const start =
+      options.timeoutMs === undefined
+        ? limit(ANSWER_START_MS, "the answer didn't begin")
+        : undefined;
+    const began = () => clearTimeout(start);
     const init: FetchInit = {
       method,
       headers,
       body: body === undefined || typeof body === 'string' ? body : new Uint8Array(body),
       redirect: 'manual',
-      signal: given ? AbortSignal.any([timeout, given]) : timeout,
+      signal: given ? AbortSignal.any([late.signal, given]) : late.signal,
       uploadProgress: options.uploadProgress,
+      answerBegan: began,
     };
     try {
       response = await this.#fetch(url, init);
+      began();
       bytes = new Uint8Array(await response.arrayBuffer());
     } catch (error) {
       if (error instanceof GithubError) throw error;
       // Given up on by whoever sent it, which isn't the network failing.
       if (given?.aborted) throw abandoned(given);
+      if (lateWhy !== undefined) {
+        throw new GithubError(
+          { kind: 'network', failure: 'lost', message: lateWhy },
+          { cause: error },
+        );
+      }
       throw new GithubError(
         { kind: 'network', failure: this.#classify(error), message: describeThrown(error) },
         { cause: error },
       );
+    } finally {
+      clearTimeout(whole);
+      clearTimeout(start);
     }
     if (options.token === undefined) {
       const state = this.#shared.state;

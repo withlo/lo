@@ -1,9 +1,16 @@
 import { MemoryStore, Replay, replayFetch, type Interaction, type Json } from '@lo/testing';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import { GithubClient, USER_AGENT, type FetchInit, type OnUnauthorized } from './client.ts';
+import {
+  ANSWER_START_MS,
+  GithubClient,
+  USER_AGENT,
+  type FetchInit,
+  type OnUnauthorized,
+} from './client.ts';
 import { GithubError } from './errors.ts';
 import { unchecked } from './json.ts';
+import { RequestQueue } from './poll/queue.ts';
 import { Token } from './token.ts';
 
 /** A response to replay: method, URL, status, headers and body. */
@@ -505,4 +512,104 @@ test('a request given up fails with the reason, and one given up first is never 
     cancelled,
   );
   expect(sent).toEqual(['https://uploads.github.com/user-attachments/assets']);
+});
+
+/**
+ * A `fetch` that never answers, as over a connection that stalled, until its request is given up;
+ * one whose answer begins, given `begins`, though its body never comes. It notes what it was sent.
+ */
+function stalled(sent: string[], begins = false): typeof globalThis.fetch {
+  return (input, init?: FetchInit) => {
+    sent.push(new Request(input, init).url);
+    if (begins) init?.answerBegan?.();
+    return new Promise((_resolve, reject) => {
+      const signal = init?.signal;
+      signal?.addEventListener(
+        'abort',
+        () => {
+          const reason: unknown = signal.reason;
+          reject(reason instanceof Error ? reason : new Error('given up'));
+        },
+        { once: true },
+      );
+    });
+  };
+}
+
+/** What `promise` settled with, or nothing yet. */
+function settled<T>(promise: Promise<T>): { error?: unknown; value?: T; done: boolean } {
+  const state: { error?: unknown; value?: T; done: boolean } = { done: false };
+  promise.then(
+    (value) => Object.assign(state, { value, done: true }),
+    (error: unknown) => Object.assign(state, { error, done: true }),
+  );
+  return state;
+}
+
+test('a request whose answer never begins is given up as lost, and the queue goes on', async () => {
+  vi.useFakeTimers();
+  try {
+    const sent: string[] = [];
+    const answers = replay(['GET', 'https://api.github.com/user', 200, {}, '{}']);
+    const queue = new RequestQueue(0);
+    const fetch: typeof globalThis.fetch = (input, init) =>
+      new Request(input, init).url.endsWith('/hangs')
+        ? stalled(sent)(input, init)
+        : answers(input, init);
+    const github = client(fetch).gated(queue.gate());
+    const hung = settled(github.get('/hangs', json));
+    const next = settled(github.get('/user', json));
+    await vi.advanceTimersByTimeAsync(ANSWER_START_MS - 1);
+    // Still waiting, and everything behind it with it.
+    expect([hung.done, next.done]).toEqual([false, false]);
+    expect(answers.seen).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(hung.error).toBeInstanceOf(GithubError);
+    const error = hung.error instanceof GithubError ? hung.error : undefined;
+    expect(error?.detail).toEqual({
+      kind: 'network',
+      failure: 'lost',
+      message: "the answer didn't begin within 15 s",
+    });
+    // A read tries again later; a write may have been done, so it's never sent again by itself.
+    expect(error?.isRetryable()).toBe(true);
+    expect(error?.mayHavePosted()).toBe(true);
+    expect(next).toEqual({ value: {}, done: true });
+    expect(sent).toEqual(['https://api.github.com/hangs']);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('an answer that has begun, or a request with a limit of its own, waits as long as that', async () => {
+  vi.useFakeTimers();
+  try {
+    const sent: string[] = [];
+    // Its headers came, but its body never does: the whole answer's 30 s.
+    const begun = settled(client(stalled(sent, true)).get('/user', json));
+    // An upload's answer begins only once its body has gone: its own limit alone.
+    const upload = settled(
+      client(stalled(sent)).send('POST', 'https://uploads.github.com/user-attachments/assets', {
+        body: new Uint8Array(4),
+        timeoutMs: 60_000,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(30_000 - 1);
+    expect([begun.done, upload.done]).toEqual([false, false]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(begun.error).toMatchObject({
+      detail: {
+        kind: 'network',
+        failure: 'lost',
+        message: "the whole answer didn't come within 30 s",
+      },
+    });
+    await vi.advanceTimersByTimeAsync(30_000 - 1);
+    expect(upload.done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(upload.error).toMatchObject({ detail: { kind: 'network', failure: 'lost' } });
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
 });

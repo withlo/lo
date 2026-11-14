@@ -77,7 +77,7 @@ import {
   type RateLimitState,
   type Tier,
 } from './governor.ts';
-import { abandoned, RequestQueue } from './queue.ts';
+import { abandoned, RequestQueue, type ReadPriority, type ReadPriorityNow } from './queue.ts';
 import {
   addToStackIn,
   createStackIn,
@@ -411,6 +411,12 @@ interface ReadState {
   afresh: boolean;
   /** Whether what the cache holds is still loading, which the read waits for. */
   loading: boolean;
+  /**
+   * Who waits on its first run, while it has no value: someone looking at the screen, as a view
+   * drawing what it reads does (`foreground`), runs it ahead of every poll, at the front of the
+   * account's queue. Nothing once a run has ended.
+   */
+  first: ReadPriorityNow | undefined;
 }
 
 let readIds = 0;
@@ -477,6 +483,8 @@ interface ReadJob {
   generation: number;
   /** When it started. */
   started: number;
+  /** The priority its requests take their turns at in the account's queue. */
+  priority: ReadPriorityNow;
 }
 
 /** One poll: a few requests run back to back in the account's queue. */
@@ -621,6 +629,11 @@ async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
 /** A sorted copy of `items`, by `key`. */
 function sorted<T>(items: Iterable<T>, compare: (a: T, b: T) => number): T[] {
   return [...items].toSorted(compare);
+}
+
+/** A read's priority as it stands now. */
+function priorityNow(priority: ReadPriorityNow): ReadPriority {
+  return typeof priority === 'function' ? priority() : priority;
 }
 
 /**
@@ -963,11 +976,18 @@ export class Poller {
    * can go between them. Each time the value changes, a `read` event says so, and each time GitHub
    * gives the same value again, a `confirmed` event does. A read is kept for as long as `pull` is
    * watched; asking again replaces its `request`.
+   *
+   * `first` says who waits on its first run while Lo has nothing of it: someone looking at the
+   * screen (`foreground`, or a function that says so whenever the queue comes free) has it run
+   * ahead of every poll as soon as it's due, its requests at the front of the account's queue, as
+   * an opening tab's overview reads are. Only that run: the read's polls after it, and its tries
+   * again after a failure, wait their turn.
    */
   async readCached<T>(
     pull: PullRef,
     kind: ReadKind<T>,
     request: (client: GithubClient, known: T | undefined) => Promise<T>,
+    first?: ReadPriorityNow,
   ): Promise<Cached<T> | undefined> {
     const { state, loaded } = this.#watching(pull);
     const run: ReadFn = (client, known) =>
@@ -975,6 +995,10 @@ export class Poller {
     const existing = state.reads.get(kind.name);
     if (existing) {
       existing.run = run;
+      if (first !== undefined && existing.value === undefined) {
+        existing.first = first;
+        this.#wake();
+      }
       await loaded;
       return this.cachedRead(pull, kind);
     }
@@ -993,6 +1017,7 @@ export class Poller {
       againAt: undefined,
       afresh: false,
       loading: true,
+      first,
     };
     state.reads.set(kind.name, read);
     this.#wake();
@@ -1041,10 +1066,14 @@ export class Poller {
   /**
    * `pull`'s review threads, each with every comment, as {@link Poller.readCached} keeps them, read
    * as this account. They're read again after a push, when a thread is added, deleted, resolved or
-   * unresolved, or gains or loses a comment, and on the 5-minute refresh.
+   * unresolved, or gains or loses a comment, and on the 5-minute refresh. `first` says who waits on
+   * the first read, as a view drawing them does.
    */
-  reviewThreads(pull: PullRef): Promise<Cached<ReviewThreadList> | undefined> {
-    return this.readCached(pull, REVIEW_THREADS, (client) => reviewThreads(client, pull));
+  reviewThreads(
+    pull: PullRef,
+    first?: ReadPriorityNow,
+  ): Promise<Cached<ReviewThreadList> | undefined> {
+    return this.readCached(pull, REVIEW_THREADS, (client) => reviewThreads(client, pull), first);
   }
 
   /**
@@ -1996,7 +2025,9 @@ export class Poller {
         written: state.written,
       }));
     }
-    // The open pull request's reads, once its check says what they watch.
+    // The open pull request's reads, once its check says what they watch. One someone on screen
+    // waits on for its first value goes ahead of everything else due, the first of them if several.
+    let lead: typeof next;
     if (
       open &&
       openState &&
@@ -2021,11 +2052,14 @@ export class Poller {
           at = at === undefined ? read.againAt : Math.min(at, read.againAt);
         // A read that keeps failing waits longer each time, whatever made it due.
         if (at !== undefined && read.retryAt !== undefined) at = Math.max(at, read.retryAt);
-        if (at !== undefined && (next === undefined || at < next.at)) {
-          next = {
+        if (at === undefined) continue;
+        const first = read.value === undefined ? read.first : undefined;
+        const awaited = first !== undefined && priorityNow(first) === 'foreground' && at <= now;
+        if (awaited ? lead === undefined : next === undefined || at < next.at) {
+          const chosen = {
             at,
             job: {
-              kind: 'read',
+              kind: 'read' as const,
               pull: open,
               read: {
                 name,
@@ -2034,14 +2068,18 @@ export class Poller {
                 stamp: current,
                 generation: read.generation,
                 started: now,
+                priority: first ?? 'background',
               },
             },
             ticket: 0,
             forced: false,
           };
+          if (awaited) lead = chosen;
+          else next = chosen;
         }
       }
     }
+    if (lead) next = lead;
     // While the limit is low, intervals are longer and some tiers aren't polled at all. Wake at its
     // reset, when they're back.
     const untilReset =
@@ -2107,8 +2145,8 @@ export class Poller {
   async #run(job: Job, client: GithubClient): Promise<Settled<Outcome>> {
     switch (job.kind) {
       case 'read': {
-        const gated = client.gated(this.#queue.gate());
         const { read } = job;
+        const gated = client.gated(this.#queue.gate(read.priority));
         return settle(
           read.run(gated, read.known).then((value): Outcome => ({
             kind: 'read',
@@ -2173,6 +2211,11 @@ export class Poller {
     const wall = this.#config.now();
     const target = targetOf(job);
     const read = job.kind === 'read' ? job.read.name : undefined;
+    if (job.kind === 'read') {
+      // Whatever came of it, a run someone may have waited on is over: what follows are polls.
+      const kept = this.#pulls.get(job.pull.key)?.reads.get(job.read.name);
+      if (kept) kept.first = undefined;
+    }
     let writes: CacheWrite[] = [];
     if (answered(result)) this.#offline = undefined;
     if (result.ok) {
