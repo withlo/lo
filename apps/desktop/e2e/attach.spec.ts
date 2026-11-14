@@ -308,7 +308,7 @@ test('while an upload is held on its way, nothing is sent; its row stays as tall
   await expect.poll(() => gate.holding, { timeout: 20_000 }).toBe(1);
   await page.reload();
   await expect(box.locator('.cm-content')).toContainText(
-    '![lo-attachment](uploading lo-attachment.png…)',
+    /!\[Uploading lo-attachment\.png…\]\(lo-upload:[0-9a-f]{16}\)/,
     { timeout: 20_000 },
   );
   await expect(box).toContainText(

@@ -820,13 +820,16 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   one the reader took out meanwhile leaves its row offering "Insert". When GitHub answers Not Found
   though the account can write, main reads gh's token for that login (`accounts.github`'s `ghToken`)
   for that upload alone, never keeping or logging it, and sends it once more. Once a view's diff is
-  drawn, `comments.attachable` says whether its account can write to the repository. Where it can't,
-  or GitHub takes no uploads with Lo's sign-in and gh has none, the view's boxes take no file, and
-  an image's `https` address pasted or dropped goes in as an image. Nothing is uploaded again by
-  itself. A comment, or a review's summary, isn't sent while a file is on its way into it, nor while
-  its text holds a placeholder whose upload isn't under way, as after a restart; the box names the
-  file, and the reader takes the placeholder out. A box's uploads are given up as its draft goes,
-  and a summary's files go once the review is submitted.
+  drawn, `comments.attachable` says whether its account can write to the repository, read with the
+  account's client outside its poller's queue, so no read waits on it. Where it can't, or GitHub
+  takes no uploads with Lo's sign-in and gh has none, the view's boxes take no file, and an image's
+  `https` address pasted or dropped goes in as an image; a file dropped before main said goes in,
+  and out again before it's sent. Nothing is uploaded again by itself. A placeholder's address holds
+  a token made for its upload (`lo-upload:` and 16 hex digits), so only one Lo wrote counts as one.
+  A comment, or a review's summary, isn't sent while a file is on its way into it, nor while its
+  text holds a placeholder whose upload isn't under way, as after a restart; the box names the file,
+  and the reader takes the placeholder out. A box's uploads are given up as its draft goes, and a
+  summary's files go once the review is submitted.
 
 ### Submitting a review
 

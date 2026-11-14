@@ -546,16 +546,44 @@ describe('files attached', () => {
 
   test('a restored draft holding a placeholder whose upload isn’t under way isn’t sent until it’s taken out', async () => {
     const { drawn } = fakeDiff();
-    const text = 'Repro: ![shot](uploading shot.png…)';
-    takeDrafts({ id: VIEW, drafts: [row(onLines(null, 5), text, { savedAt: 1 })] });
-    const box = boxIn(drawn[0]!);
+    // As Lo wrote it before it quit, and partly edited.
+    const placeholder = '![Uploading shot.png…](lo-upload:9f86d081884c7d65)';
+    const edited = '[Uploading old.png…](lo-upload:0123456789abcdef';
+    const text = `Repro: ${placeholder}`;
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(null, 5), text, { savedAt: 1 }),
+        row(onLines(null, 7), `Before: ${edited}`, { savedAt: 1 }),
+      ],
+    });
+    const [box, other] = [boxIn(drawn[0]!), boxIn(drawn[1]!)];
     await send(box, 'review');
+    await send(other, 'review');
     expect(asked('comments.send')).toEqual([]);
     // Nothing takes it out but the reader.
     expect(drawn[0]!.composer.text).toBe(text);
     drawn[0]!.composer.replace(7, text.length, '');
     await send(box, 'review');
     expect(asked('comments.send')).toHaveLength(1);
+  });
+
+  test('text that only reads like a placeholder is sent as it is', async () => {
+    const { drawn } = fakeDiff();
+    const texts = [
+      'Retries stall while uploading big files… then time out.',
+      '[notes](uploading guide.md)',
+      '```suggestion\nlog.info("uploading %d files…", count);\n```',
+    ];
+    takeDrafts({
+      id: VIEW,
+      drafts: texts.map((text, at) => row(onLines(null, 3 + at), text, { savedAt: 1 })),
+    });
+    for (const each of drawn) await send(boxIn(each), 'review');
+    const sent = asked('comments.send').map((input) =>
+      typeof input === 'object' && input !== null && 'text' in input ? input.text : undefined,
+    );
+    expect(sent).toEqual(texts);
   });
 
   test('a box closed with nothing in it gives up what’s uploading, and nothing goes into its draft', async () => {

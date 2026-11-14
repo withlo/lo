@@ -12,6 +12,7 @@
 // comments, uploaded as the window hands them over (`./uploads.ts`).
 
 import { parseOid } from '@lo/git';
+import { attachmentTarget } from '@lo/github';
 import { app, net, session } from 'electron';
 
 import { readImageAddress } from '../../../ipc/images.ts';
@@ -135,6 +136,7 @@ export default defineFeature(contract, {
     writer = writing;
     uploads = new Uploads({
       poller: (login) => use(github).poller(login),
+      target: async (login, repo) => attachmentTarget(await use(github).client(login), repo),
       view: (id) => service.pull(id),
       ghToken: (login) => use(github).ghToken(login),
       publish: (progress) => publish('uploads', progress),

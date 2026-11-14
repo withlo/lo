@@ -5,13 +5,15 @@
 // time, saying how far it has gone. Once it's uploaded, the placeholder becomes the Markdown that
 // shows it, or, where the placeholder went meanwhile, its row offers to insert it; refused, failed
 // or cancelled, it goes. The box lists each file meanwhile, warns that uploads stay reachable, and
-// says what Lo took out of each, or that it couldn't, and why it didn't attach one. Its comment
-// isn't sent while one uploads, nor while its text holds a placeholder whose upload isn't under
-// way, as after Lo restarts; it says which, and the reader takes it out. Main says once a view
-// whether its account can write to the repository, which uploads need. Where it can't, or GitHub
-// takes no uploads with Lo's sign-in and gh has none, "Attach" is off in the view's boxes, nothing
-// dropped goes in, and an image's `https` address pasted or dropped goes in as an image. Nothing is
-// uploaded again by itself.
+// says what Lo took out of each, or that it couldn't, and why it didn't attach one. Each
+// placeholder's address holds a token made for its upload alone, so only one Lo wrote is taken for
+// a placeholder: its comment isn't sent while one uploads, nor while its text holds a placeholder
+// whose upload isn't under way, as after Lo restarts; it says which, and the reader takes it out.
+// Main says once a view whether its account can write to the repository, which uploads need,
+// without holding up anything else. Where it can't, or GitHub takes no uploads with Lo's sign-in
+// and gh has none, "Attach" is off in the view's boxes, nothing dropped goes in, and an image's
+// `https` address pasted or dropped goes in as an image; files dropped before it said go in, and
+// out again before they're sent. Nothing is uploaded again by itself.
 
 import type { Metadata } from '@lo/github';
 import type { Composer } from '@lo/ui/code';
@@ -85,6 +87,8 @@ interface Attachment {
   readonly key: string;
   readonly name: string;
   readonly size: string;
+  /** Its placeholder's token, made for it alone. */
+  readonly token: string;
   /** What stands in its place in the text until it's uploaded. */
   readonly placeholder: string;
   progress: number | undefined;
@@ -206,9 +210,7 @@ export function uploadsHold(
   const attaching = attachings.get(box);
   if ((attaching?.running.length ?? 0) > 0) return { kind: 'running' };
   const found = strandedIn(attaching, text);
-  return found.length === 0
-    ? undefined
-    : { kind: 'stranded', text: strandedText(attaching, found) };
+  return found.size === 0 ? undefined : { kind: 'stranded', text: strandedText(attaching, found) };
 }
 
 /** What a box says of `hold`, why it isn't sent: `uploading` while a file is on its way in. */
@@ -218,60 +220,70 @@ export function holdText(hold: UploadsHold | undefined, uploading: string): stri
 }
 
 /**
- * What marks an upload's placeholder in a box's text, whole or partly edited: where its address
- * starts, or its file's name with the ellipsis after it.
+ * What marks a placeholder Lo wrote, whole or partly edited: its address, which holds a token made
+ * for its upload alone, 64 random bits that nothing typed or pasted holds by chance.
  */
-const MARK = /\]\(uploading |uploading [^\n…]{1,300}…/g;
+const TOKEN = /lo-upload:([0-9a-f]{16})(?![0-9a-z])/g;
 
-/** The name of a file in its placeholder, from where its mark starts, without its count. */
-const NAMED = /^(?:\]\()?uploading ([^\n…]{1,300}?)(?: \(\d+\))?…/;
+/** A placeholder's alt text and address, with its file's name, as the alt escapes it, and token. */
+const NAMED = /\[Uploading ((?:\\[^\n]|[^\]\\\n]){1,300})…\]\(lo-upload:([0-9a-f]{16})/g;
+
+/** A new token for an upload's placeholder. */
+function newToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
 
 /**
- * The placeholders in `text`, whole or partly edited, whose uploads aren't under way in `attaching`,
- * each by the name of its file, or nothing for one that names none.
+ * The placeholders in `text`, whole or partly edited, whose uploads aren't under way in `attaching`:
+ * each by its token, with its file's name where its alt text still says it.
  */
-function strandedIn(attaching: Attaching | undefined, text: string): (string | undefined)[] {
-  const under: [number, number][] = [];
-  for (const file of attaching?.running ?? []) {
-    let at = text.indexOf(file.placeholder);
-    while (at !== -1) {
-      under.push([at, at + file.placeholder.length]);
-      at = text.indexOf(file.placeholder, at + 1);
-    }
+function strandedIn(
+  attaching: Attaching | undefined,
+  text: string,
+): Map<string, string | undefined> {
+  const under = new Set(attaching?.running.map((file) => file.token));
+  const named = new Map<string, string>();
+  for (const [, name, token] of text.matchAll(NAMED)) {
+    if (name !== undefined && token !== undefined) named.set(token, name.replace(/\\(.)/g, '$1'));
   }
-  const found: (string | undefined)[] = [];
-  for (const match of text.matchAll(MARK)) {
-    const at = match.index;
-    if (under.some(([from, to]) => at >= from && at < to)) continue;
-    found.push(NAMED.exec(text.slice(at, at + 320))?.[1]);
+  const found = new Map<string, string | undefined>();
+  for (const [, token] of text.matchAll(TOKEN)) {
+    if (token !== undefined && !under.has(token)) found.set(token, named.get(token));
   }
   return found;
 }
 
 /** What a box says of the placeholders `found` in its text, whose uploads aren't under way. */
-function strandedText(attaching: Attaching | undefined, found: (string | undefined)[]): string {
-  const unplaced = new Set(
-    (attaching?.files ?? []).filter((file) => file.unplaced).map((file) => shownName(file.name)),
+function strandedText(
+  attaching: Attaching | undefined,
+  found: ReadonlyMap<string, string | undefined>,
+): string {
+  const unplaced = new Map(
+    (attaching?.files ?? [])
+      .filter((file) => file.unplaced)
+      .map((file) => [file.token, file.name] as const),
   );
-  const changed: string[] = [];
-  const lost: string[] = [];
+  const changed = new Set<string>();
+  const lost = new Set<string>();
   let unnamed = false;
-  for (const name of new Set(found)) {
-    if (name === undefined) unnamed = true;
-    else if (unplaced.has(name)) changed.push(name);
-    else lost.push(name);
+  for (const [token, name] of found) {
+    const mine = unplaced.get(token);
+    if (mine !== undefined) changed.add(mine);
+    else if (name === undefined) unnamed = true;
+    else lost.add(name);
   }
   const said: string[] = [];
-  if (lost.length > 0) {
-    const one = lost.length === 1;
+  if (lost.size > 0) {
+    const one = lost.size === 1;
     said.push(
-      `${listed(lost)} didn’t finish uploading. Attach ${one ? 'it' : 'them'} again, and take out ${one ? 'its placeholder' : 'their placeholders'}.`,
+      `${listed([...lost])} didn’t finish uploading. Attach ${one ? 'it' : 'them'} again, and take out ${one ? 'its placeholder' : 'their placeholders'}.`,
     );
   }
-  if (changed.length > 0) {
-    const one = changed.length === 1;
+  if (changed.size > 0) {
+    const one = changed.size === 1;
     said.push(
-      `Lo didn’t put ${listed(changed)} in, as ${one ? 'its placeholder' : 'their placeholders'} changed. Take ${one ? 'it' : 'them'} out, and “Insert” puts ${one ? 'the file' : 'each'} at the cursor.`,
+      `Lo didn’t put ${listed([...changed])} in, as ${one ? 'its placeholder' : 'their placeholders'} changed. Take ${one ? 'it' : 'them'} out, and “Insert” puts ${one ? 'the file' : 'each'} at the cursor.`,
     );
   }
   if (unnamed) said.push('Take out what’s left of an upload’s placeholder.');
@@ -392,21 +404,14 @@ export function altOf(name: string): string {
   return alt === '' ? 'image' : alt;
 }
 
-/** File `name` as its placeholder names it. */
-function shownName(name: string): string {
-  return name.replace(/[()\r\n]/g, ' ');
-}
-
 /**
- * What stands in for file `name` in the text until it's uploaded, told apart from any other
- * placeholder in `text`: `![retry storm](uploading retry-storm.gif…)`.
+ * What stands in for file `name` in the text until it's uploaded, with `token`, made for its upload
+ * alone: `![Uploading retry-storm.gif…](lo-upload:9f86d081884c7d65)`. Only Lo writes one, so only a
+ * placeholder holds a comment back.
  */
-export function placeholderFor(name: string, text: string): string {
-  const shown = shownName(name);
-  for (let count = 1; ; count++) {
-    const placeholder = `![${altOf(name)}](uploading ${shown}${count === 1 ? '' : ` (${count})`}…)`;
-    if (!text.includes(placeholder)) return placeholder;
-  }
+export function placeholderFor(name: string, token: string): string {
+  const shown = name.replace(/[\r\n]/g, ' ').replace(/[\\[\]]/g, '\\$&');
+  return `![Uploading ${shown}…](lo-upload:${token})`;
 }
 
 /** A change to a box's text: what goes in place of the text from `from` to `to`. */
@@ -530,18 +535,11 @@ function takes(file: File): boolean {
 /**
  * Attaches `files`, dropped on `box`, pasted into it or picked: each a placeholder at the cursor at
  * once, while no more than ten are on their way into the box, then prepared and uploaded in turn.
- * Where main hasn't said yet whether the account can upload, they wait until it has.
+ * Where main hasn't said yet whether the account can upload, they go in all the same; where it
+ * then says it can't, they go before they're sent, and the box says why.
  */
 export function attachFiles(box: Attachable, files: readonly File[]): void {
-  const waiting = checkUploads(box.view);
-  if (waiting) {
-    void waiting.then(() => attachNow(box, files));
-    return;
-  }
-  attachNow(box, files);
-}
-
-function attachNow(box: Attachable, files: readonly File[]): void {
+  void checkUploads(box.view);
   const attaching = attachingOf(box);
   // What the box said of the files it didn't attach last time goes, as more come.
   attaching.said = [];
@@ -563,15 +561,15 @@ function attachNow(box: Attachable, files: readonly File[]): void {
       `Lo attaches ${FILES_AT_ONCE} files at a time, so it left out ${rest} ${rest === 1 ? 'file' : 'files'}.`,
     );
   }
-  const text = box.composer?.text ?? box.state.text;
   const coming: { file: File; attachment: Attachment }[] = [];
   for (const file of taken) {
-    const placeholders = coming.map(({ attachment }) => attachment.placeholder).join('\n');
+    const token = newToken();
     const attachment: Attachment = {
       key: uploadKey(),
       name: file.name,
       size: sizeText(file.size),
-      placeholder: placeholderFor(file.name, `${text}\n${placeholders}`),
+      token,
+      placeholder: placeholderFor(file.name, token),
       progress: undefined,
       stage: 'preparing',
       cancelled: false,

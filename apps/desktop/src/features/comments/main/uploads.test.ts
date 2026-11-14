@@ -81,6 +81,8 @@ function setUp(
 ) {
   const sent: { repo: RepoRef; name: string; token: string | undefined }[] = [];
   const targets: RepoRef[] = [];
+  /** What was read with the account's client, outside the poller. */
+  const checked: string[] = [];
   const progress: UploadProgressRow[] = [];
   const logged: string[] = [];
   let ghAsked = 0;
@@ -88,7 +90,6 @@ function setUp(
   const poller: UploadsPoller = {
     attachmentTarget(repo) {
       targets.push(repo);
-      if (options.unreadable) return Promise.reject(options.unreadable);
       return Promise.resolve({ repositoryId: 1448580221, canWrite });
     },
     upload(repo, file, uploadOptions = {}) {
@@ -100,6 +101,11 @@ function setUp(
   };
   const uploads = new Uploads({
     poller: () => Promise.resolve(poller),
+    target(login, repo) {
+      checked.push(`${login} ${repo.key}`);
+      if (options.unreadable) return Promise.reject(options.unreadable);
+      return Promise.resolve({ repositoryId: 1448580221, canWrite });
+    },
     view: (id) => (id === 't1' ? (options.view ?? info()) : undefined),
     ghToken: () => {
       ghAsked += 1;
@@ -108,7 +114,7 @@ function setUp(
     publish: (row) => progress.push(row),
     log: (line) => logged.push(line),
   });
-  return { uploads, sent, targets, progress, logged, ghAsked: () => ghAsked };
+  return { uploads, sent, targets, checked, progress, logged, ghAsked: () => ghAsked };
 }
 
 describe('checking a file again before it goes', () => {
@@ -135,10 +141,13 @@ describe('checking a file again before it goes', () => {
 });
 
 describe('whether the account can upload', () => {
-  test('is what GitHub says of its writing to the pull request’s repository', async () => {
+  test('is what GitHub says of its writing to the pull request’s repository, read once outside the poller’s queue', async () => {
     const can = setUp([]);
     expect(await can.uploads.check('t1')).toEqual({ kind: 'open', login: 'rozed-bot' });
-    expect(can.targets.map((repo) => repo.key)).toEqual([new RepoRef('rozed-dev', 'e2e').key]);
+    expect(await can.uploads.check('t1')).toEqual({ kind: 'open', login: 'rozed-bot' });
+    // Nothing in the account's queue waits on it.
+    expect(can.targets).toEqual([]);
+    expect(can.checked).toEqual([`rozed-bot ${new RepoRef('rozed-dev', 'e2e').key}`]);
     expect(await setUp([], { canWrite: false }).uploads.check('t1')).toEqual({
       kind: 'cantWrite',
       login: 'rozed-bot',
@@ -160,8 +169,11 @@ describe('whether the account can upload', () => {
     expect(
       await Promise.all([nobody, run, offline].map(({ uploads }) => uploads.check('t1'))),
     ).toEqual([{ kind: 'unknown' }, { kind: 'unknown' }, { kind: 'unknown' }]);
-    expect([...nobody.targets, ...run.targets]).toEqual([]);
-    expect(offline.logged).toEqual([
+    expect([...nobody.checked, ...run.checked]).toEqual([]);
+    // What couldn't be read is read again when it's asked again.
+    await offline.uploads.check('t1');
+    expect(offline.checked).toHaveLength(2);
+    expect(offline.logged.slice(0, 1)).toEqual([
       "reading whether rozed-bot can upload to rozed-dev/e2e: couldn't reach GitHub: offline",
     ]);
   });

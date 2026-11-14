@@ -7,9 +7,11 @@
 // it won't take Lo's sign-in for uploads, gh's token for the account is read for that upload alone,
 // and it's sent once more with that. Nothing else sends one again: an upload can't be undone. The
 // window asks first whether the account can write there at all (`check`), so a box where it can't
-// takes no file. Nothing here calls Electron.
+// takes no file: read with the account's client, outside its poller's queue, so no read waits on
+// it, and kept once GitHub has answered. Nothing here calls Electron.
 
 import {
+  type AttachmentTarget,
   attachmentKind,
   attachmentMarkdown,
   bytesAgree,
@@ -33,6 +35,11 @@ export type UploadsPoller = Pick<Poller, 'upload' | 'attachmentTarget'>;
 export interface UploadsOptions {
   /** The poller of each account, as the accounts feature provides it. */
   readonly poller: (login: string) => Promise<UploadsPoller>;
+  /**
+   * Where attachments to `repo` go for account `login`, and whether it can write there, read with
+   * the account's client, outside its poller's queue.
+   */
+  readonly target: (login: string, repo: RepoRef) => Promise<AttachmentTarget>;
   /** What main has of a view now, or nothing once it's closed. */
   readonly view: (id: string) => PullTabInfo | undefined;
   /**
@@ -90,6 +97,8 @@ export class Uploads {
   readonly #options: UploadsOptions;
   /** What gives up each upload under way, by its view and the window's name for it. */
   readonly #running = new Map<string, AbortController>();
+  /** What GitHub said of each account's writing to each repository, by login and repository. */
+  readonly #targets = new Map<string, Promise<AttachmentTarget>>();
   #stopped = false;
 
   constructor(options: UploadsOptions) {
@@ -127,7 +136,7 @@ export class Uploads {
 
   /**
    * Whether view `id`'s account can upload to its pull request's repository, as GitHub says: read
-   * once for each account and repository, by the poller.
+   * once for each account and repository, outside the poller's queue, so nothing waits on it.
    */
   async check(id: string): Promise<AttachCheck> {
     const info = this.#options.view(id);
@@ -137,8 +146,7 @@ export class Uploads {
     const { login } = acting;
     const { owner, name } = info.repository;
     try {
-      const poller = await this.#options.poller(login);
-      const target = await poller.attachmentTarget(new RepoRef(owner, name));
+      const target = await this.#target(login, new RepoRef(owner, name));
       return target.canWrite === false
         ? { kind: 'cantWrite', login, repo: name }
         : { kind: 'open', login };
@@ -148,6 +156,21 @@ export class Uploads {
       );
       return { kind: 'unknown' };
     }
+  }
+
+  /** What GitHub says of `login`'s writing to `repo`: asked once, and again if it couldn't be. */
+  #target(login: string, repo: RepoRef): Promise<AttachmentTarget> {
+    const key = `${login}\n${repo.key}`;
+    let target = this.#targets.get(key);
+    if (!target) {
+      const reading = this.#options.target(login, repo);
+      target = reading;
+      this.#targets.set(key, reading);
+      reading.catch(() => {
+        if (this.#targets.get(key) === reading) this.#targets.delete(key);
+      });
+    }
+    return target;
   }
 
   /** Gives up view `id`'s upload `upload`, if it's under way. */
