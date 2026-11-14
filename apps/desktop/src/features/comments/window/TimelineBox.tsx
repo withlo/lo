@@ -16,8 +16,9 @@ import {
   type Box,
   bringToTimeline,
   catchUpDrafts,
+  drawnInTimeline,
   knowPull,
-  sendingNow,
+  leftTimeline,
   timelineBox,
   timelineBoxes,
   timelineEvents,
@@ -59,11 +60,7 @@ function TimelineComposer({
       timelineEvents(box, back),
       timelineFrame(box),
     );
-    box.composer = made;
-    box.drawnIn = 'timeline';
-    box.left = back;
-    made.hold(sendingNow(box.state));
-    box.set({ mode: made.mode });
+    drawnInTimeline(box, made, back);
     // In insert mode at once, so no key typed meanwhile goes to the timeline instead.
     if (box.focusOnOpen) {
       box.focusOnOpen = false;
@@ -71,12 +68,10 @@ function TimelineComposer({
     }
     return () => {
       box.saveNow();
+      // Unless it was closed already, as once it was sent, or taken elsewhere; one still open, as
+      // the timeline goes, opens where it opens now, as under its block if the overview has it.
+      leftTimeline(box, made);
       if (box.left === back) box.left = undefined;
-      // Closed already, as once it was sent, or taken elsewhere.
-      if (box.composer !== made) return;
-      box.composer = undefined;
-      box.drawnIn = undefined;
-      made.dismiss();
     };
   }, [box, nonce, label]);
   return <div ref={host} />;
@@ -125,10 +120,21 @@ export interface PullBoxProps {
 }
 
 /**
+ * What the box's place says while the pull request's draft opens elsewhere: under the code block it
+ * was written on, or, while Lo is still checking whether the overview has that block, in no box yet.
+ */
+const AWAY: Readonly<Record<'block' | 'waits', string>> = {
+  block: 'Your comment on the pull request is open under its code block in the overview.',
+  waits:
+    'Lo is still checking the overview. Your comment on the pull request opens under its code block if the overview still has it, or here if not.',
+};
+
+/**
  * The box at the end of tab `tab`'s timeline, which comments on the pull request itself: its draft
  * as main keeps it, restored after a restart, and a new, empty box once GitHub takes the comment.
  * `c` in the timeline puts focus in it. While the draft opens under the code block it was written
- * on, it says so in the box's place, and `c` brings it here.
+ * on, or waits for Lo to tell whether it does, it says so in the box's place, and `c` brings it
+ * here.
  */
 export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
   const view = tab.id;
@@ -157,9 +163,7 @@ export function PullBox({ tab, leave, keys }: PullBoxProps): ReactNode {
           <TimelineComposer box={box} label="Comment on the pull request" leave={leave} />
         ) : (
           <div className="flex flex-wrap items-center gap-x-8 gap-y-4 py-4 text-fg-muted text-small">
-            <span>
-              Your comment on the pull request is open under its code block in the overview.
-            </span>
+            <span>{AWAY[away ?? 'block']}</span>
             <Button variant="ghost" size="sm" onClick={() => bringToTimeline(view)}>
               Write it here
               {keys && <Key keys={keys} decorative />}
