@@ -69,7 +69,7 @@ function TimelineComposer({
     return () => {
       box.saveNow();
       // Unless it was closed already, as once it was sent, or taken elsewhere; one still open, as
-      // the pull request's draft once its block is back in the overview, opens where it opens now.
+      // the timeline goes, opens where it opens now, as under its block if the overview has it.
       leftTimeline(box, made);
       if (box.left === back) box.left = undefined;
     };

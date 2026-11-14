@@ -229,8 +229,10 @@ export class Checking {
         this.#failed = true;
         const why = error instanceof Error ? error.message : String(error);
         this.#parts.log(`Lo couldn't check the overview of tab ${this.#id}:`, error);
-        // What was shown of the commit stays, until a check succeeds.
-        if (this.#published !== undefined) return;
+        // What was shown of the commit stays, until a check succeeds. Of one nothing was shown of
+        // yet, as a newer commit than the last result's, why is said, so it isn't left looking as
+        // though it's still being checked.
+        if (this.#told) return;
         const key = `${commit.id} ${commit.source} failed`;
         this.#published = key;
         this.#parts.publish({ kind: 'failed', key, commit, why });

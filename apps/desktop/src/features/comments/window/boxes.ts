@@ -7,16 +7,17 @@
 // request's own box at its end, and an edit of your comment there in its card. A draft opens in one
 // box only: under the block it was written on while the tab's overview has that block, and
 // otherwise where a draft of its place opens, in the diff for lines and a file, and in the timeline
-// for the pull request; while Lo can't tell whether the overview has the block, a draft drawn stays
-// where it is, and one that isn't waits. A draft main restored reopens there, unfocused, once its
-// view's diff draws its line, its block is drawn or its timeline is, and so does a box the diff or
-// a block took down as it was drawn again, or the timeline let go, and, after the window is loaded
-// again, every draft's. Text is saved 300 ms after typing stops, and at once as the box closes or
-// the window goes. While it's sent, and until Lo knows whether it posted, its text is held as it
-// is. A box goes once what it sent is on GitHub, or its draft is discarded; `Esc Esc` closes it and
-// keeps the draft for the next box there. Files dropped on it, pasted into it or picked are
-// attached (`./uploads.ts`). It isn't sent while one is on its way in, nor while its text holds a
-// placeholder whose upload isn't, and its uploads are given up as its draft goes.
+// for the pull request. A box showing a draft keeps it while it's open, whatever the overview does,
+// and a draft in no box waits while Lo can't tell whether the overview has its block. A draft main
+// restored reopens there, unfocused, once its view's diff draws its line, its block is drawn or its
+// timeline is, and so does a box the diff or a block took down as it was drawn again, or the
+// timeline let go as it went, and, after the window is loaded again, every draft's. Text is saved
+// 300 ms after typing stops, and at once as the box closes or the window goes. While it's sent, and
+// until Lo knows whether it posted, its text is held as it is. A box goes once what it sent is on
+// GitHub, or its draft is discarded; `Esc Esc` closes it and keeps the draft for the next box
+// there. Files dropped on it, pasted into it or picked are attached (`./uploads.ts`). It isn't sent
+// while one is on its way in, nor while its text holds a placeholder whose upload isn't, and its
+// uploads are given up as its draft goes.
 
 import { Lines, Screen, suggestionBlock, takesSuggestion } from '@lo/review';
 import type { Composer, ComposerEvents, Mode, Send } from '@lo/ui/code';
@@ -173,16 +174,15 @@ function opensAt(box: Box): Opens {
 }
 
 /**
- * Whether box `box` is the draft the box at the end of its view's timeline keeps: a comment on the
- * pull request itself with no home, or whose block the tab's overview doesn't have now. While Lo
- * can't tell, as while the overview is read again or checked, the timeline keeps the draft it's
- * drawing, so nothing on screen moves, and one it isn't drawing waits: it opens in one box only.
+ * Whether box `box` is the draft the box at the end of its view's timeline keeps: the one it's
+ * showing, while it's open, whatever the overview does, so nothing on screen moves and focus stays;
+ * otherwise a comment on the pull request itself with no home, or whose block the tab's overview
+ * doesn't have now. Not one that waits while Lo can't tell: it opens in one box only.
  */
 function isPullsOwn(box: Box): boolean {
   if (box.state.place.kind !== 'conversation') return false;
-  const under = opensUnderBlock(box.view, homeRow(box.home));
-  if (under === 'unknown') return box.composer !== undefined && box.drawnIn === 'timeline';
-  return !under;
+  if (box.composer !== undefined && box.drawnIn === 'timeline') return true;
+  return opensUnderBlock(box.view, homeRow(box.home)) === false;
 }
 
 /**
@@ -1320,15 +1320,16 @@ export function drawnInTimeline(box: Box, composer: Composer, left: () => void):
 }
 
 /**
- * The timeline stopped drawing `composer`, `box`'s editor, as once the box isn't the timeline's.
- * Unless it was closed already or taken elsewhere, it's taken down, focus in it going where the box
- * says, and a box still open opens where it opens now: under the code block it was written on, once
- * the overview has the block again, though the block was drawn while the timeline still had it.
+ * The timeline stopped drawing `composer`, `box`'s editor, as when the timeline goes. Unless it was
+ * closed already or taken elsewhere, it's taken down, and a box still open opens where it opens now:
+ * under the code block it was written on, if the overview has it now, though the block was drawn
+ * while the timeline still had the draft.
  */
 export function leftTimeline(box: Box, composer: Composer): void {
   if (box.composer !== composer) return;
+  box.composer = undefined;
   box.drawnIn = undefined;
-  takeAway(box, 'dismiss');
+  composer.dismiss();
   if (box.open) queueMicrotask(() => reopen(box.view));
 }
 

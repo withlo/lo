@@ -721,8 +721,9 @@ changes shows as it comes.
   find out whether it posted, and never posts it again by itself. `Esc` gives focus back to the list
   and keeps the draft. While your comment on the PR is open under an overview's code block, the box
   says so, and `c` brings it here. While Lo is still checking the overview for that block, the box
-  says that instead. A draft already in the box stays there, with your focus, while the overview is
-  read again or checked, and moves under its block only once the overview has it.
+  says that instead. A draft the box shows stays in it while it's open, with your focus, whatever
+  the overview does. It opens under its block again, if the overview has it, only once the timeline
+  goes, as after a restart.
 - **Your comments.** Your own comments on the PR say so and have Edit and Delete, also on their
   right-click menu. `i` on one opens a box with its text in its card, and `dd` asks first, as a
   review comment's delete does. Each reads the comment again first and goes only if GitHub still has

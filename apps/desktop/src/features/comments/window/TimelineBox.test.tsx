@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // The box at the end of a pull request's timeline, for the pull request's draft written on a code
 // block of the overview: what it says in the box's place while the draft isn't its own, the draft it
-// keeps while the overview is read again or checked, and the draft it lets go under its block once
-// the overview has the block again.
+// shows, which it keeps whatever the overview does, and that draft opening under its block once the
+// timeline goes.
 
 import type { Composer, ComposerEvents, ComposerInit } from '@lo/ui/code';
 import { act } from 'react';
@@ -185,18 +185,25 @@ async function settle(): Promise<void> {
 
 const unmounts: (() => void)[] = [];
 
-/** The box drawn at the end of the timeline, once the page's nonce has come. */
-async function drawBox(): Promise<HTMLElement> {
-  const container = document.createElement('div');
-  document.body.append(container);
-  const root = createRoot(container);
+/**
+ * The box drawn at the end of the timeline, once the page's nonce has come, and what takes the
+ * timeline away.
+ */
+async function drawBox(): Promise<{ box: HTMLElement; unmount: () => void }> {
+  const box = document.createElement('div');
+  document.body.append(box);
+  const root = createRoot(box);
   act(() => root.render(<PullBox tab={tab()} leave={() => {}} />));
-  unmounts.push(() => {
+  let mounted = true;
+  const unmount = () => {
+    if (!mounted) return;
+    mounted = false;
     act(() => root.unmount());
-    container.remove();
-  });
+    box.remove();
+  };
+  unmounts.push(unmount);
   await settle();
-  return container;
+  return { box, unmount };
 }
 
 /** The overview changed: each view's drafts open where they open now, as the window has it. */
@@ -221,7 +228,7 @@ afterEach(() => {
 test('while Lo is still checking the overview, the box says so, not that the draft is under its block', async () => {
   overview.has.set(KEY, 'unknown');
   takeDrafts({ id: VIEW, drafts: [draft()] });
-  const box = await drawBox();
+  const { box } = await drawBox();
   expect(box.textContent).toContain(
     'Lo is still checking the overview. Your comment on the pull request opens under its code block if the overview still has it, or here if not.',
   );
@@ -236,37 +243,38 @@ test('while Lo is still checking the overview, the box says so, not that the dra
   expect(editors.drawn).toEqual([]);
 });
 
-test('the draft it shows stays, with focus, while the overview is read again and checked without its block', async () => {
+test('the draft it shows stays, with its text and focus, while the overview goes from lacking its block to having it', async () => {
   overview.has.set(KEY, false);
   takeDrafts({ id: VIEW, drafts: [draft()] });
   await drawBox();
   const [drawn] = editors.drawn;
   expect(drawn?.field.value).toBe('On the pull request');
   drawn?.field.focus();
+  // Read again, then checked, the overview has the block, drawn: no input comes meanwhile.
   overview.has.set(KEY, 'unknown');
   await overviewChanged();
-  overview.has.set(KEY, false);
+  overview.has.delete(KEY);
+  const block = drawBlock();
+  restoreBlock(block.writing);
   await overviewChanged();
   expect(editors.drawn).toEqual([drawn]);
   expect(drawn?.dismissed).toBe(false);
+  expect(drawn?.field.value).toBe('On the pull request');
   expect(document.activeElement).toBe(drawn?.field);
+  expect(block.texts).toEqual([]);
 });
 
-test('once the overview has its block again, the draft goes under it, though the block was drawn first', async () => {
+test('once the timeline goes, a draft it showed opens under its block, though the block was drawn first', async () => {
   overview.has.set(KEY, false);
   takeDrafts({ id: VIEW, drafts: [draft()] });
-  const box = await drawBox();
+  const { unmount } = await drawBox();
   const [drawn] = editors.drawn;
-  // The block is drawn while the timeline still has the draft, which it leaves there.
   const block = drawBlock();
   restoreBlock(block.writing);
-  await settle();
-  expect(block.texts).toEqual([]);
-  // The window hears the overview changed: the timeline lets the draft go, and the block takes it.
   await overviewChanged();
+  expect(block.texts).toEqual([]);
+  unmount();
+  await settle();
   expect(drawn?.dismissed).toBe(true);
   expect(block.texts).toEqual(['On the pull request']);
-  expect(box.textContent).toContain(
-    'Your comment on the pull request is open under its code block in the overview.',
-  );
 });
