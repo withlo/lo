@@ -20,6 +20,17 @@ version=$(jq -r .version skill/checker/package.json)
 # The registry takes a scoped name with its slash escaped.
 escaped=$(printf '%s' "$name" | sed 's|/|%2F|')
 
+# npm drops a version's build metadata when it publishes, so 1.2.3+build goes out as 1.2.3 and the
+# registry answers only to 1.2.3. Lo's skill runs the checker by the version written here, and the
+# lookups below ask npm for it as written, so a version with build metadata is refused.
+case $version in
+  *+*)
+    echo "$name's version, $version, has build metadata, which npm drops when it publishes." >&2
+    echo "Give skill/checker/package.json a version without it." >&2
+    exit 1
+    ;;
+esac
+
 # curl's options for the registry: a bound on each try, and a few more tries on a timeout, a refused
 # connection, a 429 or a 5xx.
 fetch() {
