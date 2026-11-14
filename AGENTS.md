@@ -401,9 +401,12 @@ repositories, which account opens a repository, and the pull requests opened lat
 - Each account's requests go one at a time through its poller's queue. One whose answer hasn't begun
   within 15 s (GitHub gives up on a request after 10 s), or hasn't all come within 30 s, is given up
   as an answer lost, so the queue goes on: a read is tried again later, and a write may have been
-  done, so it's never sent again by itself. An upload has a limit of its own. A view's first read of
-  its review threads goes ahead of polls and of the tab's other reads while it's on screen, as an
-  opening tab's overview reads do, since the diff's first draw waits on it.
+  done, so it's never sent again by itself. An upload has a limit of its own. The one exception to
+  the queue is the read of whether an account can write to a repository, which attachments ask first
+  (`comments.attachable`): it's read with the account's client, outside the queue, with the same
+  limits, so nothing waits on it. A view's first read of its review threads goes ahead of polls and
+  of the tab's other reads while it's on screen, as an opening tab's overview reads do, since the
+  diff's first draw waits on it.
 - Each account's poller keeps what it read in the database, read back only by the build of Lo that
   wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
@@ -809,6 +812,27 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   the box closes; not found, or not read, the box says so. While the read can't be made, as offline,
   it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
   is sent again by itself, and nothing is sent while GitHub can't be reached.
+- Files dropped on a box, pasted into it or picked with "Attach" (`⌘⇧A`), ten on their way into a
+  box at a time, are attached (`window/uploads.ts`): each goes in at the cursor at once as a
+  placeholder, the background process checks it and takes its metadata out (`comments.prepare`) from
+  the bytes of the window's own `File`, and `comments.upload` hands those bytes to main, which never
+  reads a path the window names. Main checks the kind, size and first bytes again, and that the
+  account can write to the repository, then uploads through the poller's `upload`, one at a time for
+  each account, saying how far it has gone on `comments.uploads`; `comments.cancelUpload` gives one
+  up. The placeholder becomes the file's Markdown, or goes when it's refused, fails or is cancelled;
+  one the reader took out meanwhile leaves its row offering "Insert". When GitHub answers Not Found
+  though the account can write, main reads gh's token for that login (`accounts.github`'s `ghToken`)
+  for that upload alone, never keeping or logging it, and sends it once more. Once a view's diff is
+  drawn, `comments.attachable` says whether its account can write to the repository, read with the
+  account's client outside its poller's queue, so no read waits on it. Where it can't, or GitHub
+  takes no uploads with Lo's sign-in and gh has none, the view's boxes take no file, and an image's
+  `https` address pasted or dropped goes in as an image; a file dropped before main said goes in,
+  and out again before it's sent. Nothing is uploaded again by itself. A placeholder's address holds
+  a token made for its upload (`lo-upload:` and 16 hex digits), so only one Lo wrote counts as one.
+  A comment, or a review's summary, isn't sent while a file is on its way into it, nor while its
+  text holds a placeholder whose upload isn't under way, as after a restart; the box names the file,
+  and the reader takes the placeholder out. A box's uploads are given up as its draft goes, and a
+  summary's files go once the review is submitted.
 
 ### Acting on review threads
 
@@ -850,7 +874,8 @@ command's handler may say something after its label (`detail`).
   says so before anything is sent. A banner says once when your pending review sits on another
   revision than the one on screen.
 - The summary box is the comment box's editor (`createComposer`). Main keeps its text with the
-  comments' drafts (`comments.drafts`, as a `summary` place), saved as it's typed.
+  comments' drafts (`comments.drafts`, as a `summary` place), saved as it's typed. Files are
+  attached to it as to any comment box, through the comments' `window/shared.ts`.
 - `review.submit` sends in its turn among the comments' writes to the pull request
   (`comments.reviews`' `inTurn`), with the poller's `sendReview`. The summary is marked sent, with
   when, as a comment's draft is. When GitHub's answer is lost, nothing more is sent until a fresh

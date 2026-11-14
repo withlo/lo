@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // The comment boxes of a view's diff: opened from `c`, `C` and `s`, refused where GitHub takes no
-// comment, restored from main's drafts, saved as they're typed in, and closed once what they sent
-// is on GitHub.
+// comment, restored from main's drafts, saved as they're typed in, closed once what they sent is on
+// GitHub, and held while a file attached to them is on its way in.
 
 import type {
   BoxFrame,
@@ -26,7 +26,9 @@ import type {
   DraftRow,
   SendOutcome,
   ThreadRow,
+  UploadOutcome,
 } from '../contract.ts';
+import type { PrepareInput, Prepared } from '../jobs.ts';
 import * as acts from './acts.ts';
 import {
   act,
@@ -44,11 +46,28 @@ import {
   type Box,
 } from './boxes.ts';
 import { landed } from './landed.ts';
+import type * as Main from './main.ts';
 import * as threads from './threads.ts';
 import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
 let VIEW = 'v0';
+
+// The background process prepares each file attached as it is.
+vi.mock('./main.ts', async (original) => ({
+  ...(await original<typeof Main>()),
+  commentsJobs: () => ({
+    prepare: ({ name, bytes }: PrepareInput): Promise<Prepared> =>
+      Promise.resolve({
+        kind: 'prepared',
+        name,
+        bytes: new Uint8Array(bytes ?? []),
+        size: '8 bytes',
+        metadata: { kind: 'image', removed: { location: false, other: false, embedded: false } },
+        paidPlan: false,
+      }),
+  }),
+}));
 
 const said = vi.hoisted(() => ({ pull: undefined as unknown, run: undefined as unknown }));
 vi.mock('../../tab/window/shared.ts', async (original) => ({
@@ -523,6 +542,102 @@ describe('sending', () => {
     expect(drawn[0]!.composer.closed).toBeUndefined();
     takeDrafts({ id: VIEW, drafts: [] });
     expect(drawn[0]!.composer.closed).toBe('close');
+  });
+});
+
+/** The window's name for each upload main was asked for. */
+function uploadIds(): unknown[] {
+  return asked('comments.upload').map((input) =>
+    typeof input === 'object' && input !== null && 'upload' in input ? input.upload : undefined,
+  );
+}
+
+/** A PNG's first bytes, as a file dropped on a box. */
+function png(): File {
+  return new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], 'shot.png');
+}
+
+describe('files attached', () => {
+  /** Each upload's answer, given by the test once main is asked. */
+  const uploads: ((outcome: UploadOutcome) => void)[] = [];
+
+  beforeEach(() => {
+    uploads.length = 0;
+    answers['comments.attachable'] = () => ({ kind: 'open', login: 'rozed-bot' });
+    answers['comments.upload'] = () =>
+      new Promise<UploadOutcome>((resolve) => {
+        uploads.push(resolve);
+      });
+    answers['comments.cancelUpload'] = () => undefined;
+    answers['comments.send'] = () => ({ kind: 'refused', refusal: { kind: 'notInDiff' } });
+  });
+
+  test('nothing is sent while one is on its way in, by `⌘⏎` or a button, and it goes once it’s in', async () => {
+    const { drawn, box } = await opened();
+    drawn[0]!.on.files?.([png()]);
+    await vi.waitFor(() => expect(uploadIds()).toHaveLength(1));
+    drawn[0]!.on.submit('review');
+    await send(box, 'now');
+    expect(asked('comments.send')).toEqual([]);
+    uploads[0]!({ kind: 'uploaded', markdown: '![shot](https://example.com/a.png)', viaGh: false });
+    await vi.waitFor(async () => {
+      await send(box, 'review');
+      expect(asked('comments.send')).toHaveLength(1);
+    });
+  });
+
+  test('a restored draft holding a placeholder whose upload isn’t under way isn’t sent until it’s taken out', async () => {
+    const { drawn } = fakeDiff();
+    // As Lo wrote it before it quit, and partly edited.
+    const placeholder = '![Uploading shot.png…](lo-upload:9f86d081884c7d65)';
+    const edited = '[Uploading old.png…](lo-upload:0123456789abcdef';
+    const text = `Repro: ${placeholder}`;
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(null, 5), text, { savedAt: 1 }),
+        row(onLines(null, 7), `Before: ${edited}`, { savedAt: 1 }),
+      ],
+    });
+    const [box, other] = [boxIn(drawn[0]!), boxIn(drawn[1]!)];
+    await send(box, 'review');
+    await send(other, 'review');
+    expect(asked('comments.send')).toEqual([]);
+    // Nothing takes it out but the reader.
+    expect(drawn[0]!.composer.text).toBe(text);
+    drawn[0]!.composer.replace(7, text.length, '');
+    await send(box, 'review');
+    expect(asked('comments.send')).toHaveLength(1);
+  });
+
+  test('text that only reads like a placeholder is sent as it is', async () => {
+    const { drawn } = fakeDiff();
+    const texts = [
+      'Retries stall while uploading big files… then time out.',
+      '[notes](uploading guide.md)',
+      '```suggestion\nlog.info("uploading %d files…", count);\n```',
+    ];
+    takeDrafts({
+      id: VIEW,
+      drafts: texts.map((text, at) => row(onLines(null, 3 + at), text, { savedAt: 1 })),
+    });
+    for (const each of drawn) await send(boxIn(each), 'review');
+    const sent = asked('comments.send').map((input) =>
+      typeof input === 'object' && input !== null && 'text' in input ? input.text : undefined,
+    );
+    expect(sent).toEqual(texts);
+  });
+
+  test('a box closed with nothing in it gives up what’s uploading, and nothing goes into its draft', async () => {
+    const { drawn } = await opened();
+    drawn[0]!.on.files?.([png()]);
+    await vi.waitFor(() => expect(uploadIds()).toHaveLength(1));
+    drawn[0]!.on.change('');
+    drawn[0]!.on.close(false);
+    expect(asked('comments.cancelUpload')).toEqual([{ id: VIEW, upload: uploadIds()[0] }]);
+    uploads[0]!({ kind: 'uploaded', markdown: '![shot](https://example.com/a.png)', viaGh: false });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(asked('comments.draft')).toEqual([{ id: VIEW, place: onLines(null, 5), text: '' }]);
   });
 });
 

@@ -55,6 +55,8 @@ export interface GithubOptions {
    * such an account is signed out.
    */
   reread?: ((login: string) => Promise<Token | undefined>) | undefined;
+  /** Reads gh's token for an account for one upload ({@link GithubAccess.ghToken}). Without it, none. */
+  ghToken?: ((login: string) => Promise<Token | undefined>) | undefined;
 }
 
 /** The {@link GithubAccess} the accounts feature provides, with what only the feature itself does. */
@@ -65,6 +67,7 @@ export class Github implements GithubAccess {
   readonly #fetch: typeof globalThis.fetch;
   readonly #log: (message: string) => void;
   readonly #poll: Partial<PollConfig> | undefined;
+  readonly #ghToken: ((login: string) => Promise<Token | undefined>) | undefined;
   readonly #loaded: Promise<Accounts>;
   /** Each account's poller, by lowercased login. */
   readonly #pollers = new Map<string, Poller>();
@@ -89,6 +92,7 @@ export class Github implements GithubAccess {
     this.#fetch = fetch;
     this.#log = log;
     this.#poll = options.poll;
+    this.#ghToken = options.ghToken;
     this.anonymous = new GithubClient({ fetch, urls: this.urls });
     const web = { fetch, urls: this.urls };
     this.#loaded = Accounts.load({
@@ -139,6 +143,10 @@ export class Github implements GithubAccess {
     return accounts.accountForRepo(repo, (login) =>
       this.#pollers.get(login.toLowerCase())?.queue.gate(),
     );
+  }
+
+  async ghToken(login: string): Promise<Token | undefined> {
+    return this.#ghToken?.(login);
   }
 
   async rememberAccountForOwner(owner: string, login: string): Promise<void> {

@@ -6,7 +6,9 @@
 // draft's. Text is saved 300 ms after typing stops, and at once as the box closes or the window
 // goes. While it's sent, and until Lo knows whether it posted, its text is held as it is. A box
 // goes once what it sent is on GitHub, or its draft is discarded; `Esc Esc` closes it and keeps the
-// draft for the next box there.
+// draft for the next box there. Files dropped on it, pasted into it or picked are attached
+// (`./uploads.ts`). It isn't sent while one is on its way in, nor while its text holds a
+// placeholder whose upload isn't, and its uploads are given up as its draft goes.
 
 import { Lines, suggestionBlock, takesSuggestion } from '@lo/review';
 import type { Composer, ComposerEvents, Mode, Send } from '@lo/ui/code';
@@ -31,6 +33,7 @@ import { screenOf } from './placing.ts';
 import type { PostPull } from './Post.tsx';
 import { landed } from './landed.ts';
 import { held, shownAt } from './threads.ts';
+import { attachFiles, draggingOver, endUploads, pickFiles, uploadsHold } from './uploads.ts';
 import {
   boxAt,
   commentableOn,
@@ -159,6 +162,15 @@ export class Box {
   /** Whether its text is waiting to be saved. */
   get saving(): boolean {
     return this.#save !== undefined;
+  }
+
+  /**
+   * Puts `text` in as its text while it isn't drawn, as when an upload's placeholder becomes its
+   * Markdown, and saves it once typing would have stopped.
+   */
+  rewrite(text: string): void {
+    this.set({ text, restored: undefined });
+    this.saveSoon();
   }
 
   /** Forgets the text waiting to be saved, as when its draft is discarded or sent. */
@@ -296,9 +308,11 @@ function eventsOf(box: Box): ComposerEvents {
         box.saveNow();
         return;
       }
-      // Nothing to keep: its draft goes, unless main is still settling what it sent. An edit's
-      // keeps its draft even with no text, so it goes as discarded.
+      // Nothing to keep: its draft goes, unless main is still settling what it sent, and nothing
+      // still uploading goes into it. An edit's keeps its draft even with no text, so it goes as
+      // discarded.
       box.dropSave();
+      endUploads(box);
       if (box.sentMark || box.state.busy) return;
       boxesOf(box.view).delete(box.key);
       holdDropped(box);
@@ -310,6 +324,16 @@ function eventsOf(box: Box): ComposerEvents {
     },
     preview(on) {
       box.set({ previewing: on });
+    },
+    // Nothing is attached while its text is held, as while it's sent.
+    attach() {
+      if (!sendingNow(box.state)) pickFiles(box);
+    },
+    files(files) {
+      if (!sendingNow(box.state)) attachFiles(box, files);
+    },
+    dragging(count) {
+      draggingOver(box, count);
     },
   };
 }
@@ -638,7 +662,7 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
 export async function send(box: Box, how: Send): Promise<void> {
   const { view } = box;
   const { place, text } = box.state;
-  if (sendingNow(box.state)) return;
+  if (sendingNow(box.state) || uploadsHold(box) !== undefined) return;
   if (text.trim() === '' || offline(view) || canWrite(view) !== true) return;
   box.dropSave();
   box.lastHow = how;
@@ -735,6 +759,7 @@ export function act(box: Box, offer: Offer): void {
  */
 function drop(box: Box): void {
   const { view, key } = box;
+  endUploads(box);
   boxesOf(view).delete(key);
   box.dropSave();
   box.open = false;
