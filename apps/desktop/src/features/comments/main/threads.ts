@@ -51,8 +51,6 @@ export interface ThreadReadsOptions {
   readonly compared: (id: string) => Compared | null;
   readonly publishThreads: (view: ThreadsView) => void;
   readonly publishReview: (view: ReviewView) => void;
-  /** Hears each read of a view's threads, and when GitHub gave it. */
-  readonly onRead?: (id: string, threads: readonly ThreadRow[], fetchedAt: number) => void;
   readonly log: (line: string) => void;
 }
 
@@ -300,8 +298,7 @@ export class ThreadReads {
     ]);
     if (!this.#current(followed)) return;
     if (threads.status === 'rejected') this.#fail(followed, describe(threads.reason));
-    else if (threads.value)
-      this.#takeThreads(followed, threads.value.value, threads.value.fetchedAt);
+    else if (threads.value) this.#takeThreads(followed, threads.value.value);
     if (review.status === 'rejected') {
       this.#options.log(`reading the pending review: ${describe(review.reason)}`);
     } else if (review.value) this.#takeReview(followed, review.value.value);
@@ -327,7 +324,7 @@ export class ThreadReads {
         if (!event.pull.equals(followed.pull)) return;
         if (event.name === REVIEW_THREADS.name) {
           const cached = poller.cachedRead(followed.pull, REVIEW_THREADS);
-          if (cached) this.#takeThreads(followed, cached.value, cached.fetchedAt);
+          if (cached) this.#takeThreads(followed, cached.value);
         } else if (event.name === PENDING_REVIEW.name) {
           const cached = poller.cachedRead(followed.pull, PENDING_REVIEW);
           if (cached) this.#takeReview(followed, cached.value);
@@ -351,7 +348,7 @@ export class ThreadReads {
     }
   }
 
-  #takeThreads(followed: Followed, list: ReviewThreadList, fetchedAt: number): void {
+  #takeThreads(followed: Followed, list: ReviewThreadList): void {
     if (followed.threadsRead === list) return;
     followed.threadsRead = list;
     followed.threads = {
@@ -362,11 +359,6 @@ export class ThreadReads {
       problem: null,
     };
     this.#sendThreads(followed);
-    try {
-      this.#options.onRead?.(followed.id, followed.threads.threads, fetchedAt);
-    } catch (error) {
-      this.#options.log(`hearing the threads read: ${describe(error)}`);
-    }
   }
 
   #takeReview(followed: Followed, read: PendingReviewRead): void {

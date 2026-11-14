@@ -154,8 +154,10 @@ test.describe('with a write recorded', () => {
     await expect(box.locator('.mode-chip')).toHaveText('INSERT');
     await page.keyboard.type('Does the first wait need a cap?');
     await page.keyboard.press(`${cmd}+Enter`);
-    // The box goes, and the thread GitHub made comes under the line, pending.
+    // The box goes, its room held until the reader's next key, and then the thread GitHub made
+    // comes under the line, pending.
     await expect(box).toHaveCount(0, { timeout: 20_000 });
+    await page.keyboard.press('Shift');
     await expect.poll(() => threadsUnder(page, 'src/backoff.ts', 2), { timeout: 20_000 }).toBe(2);
     const thread = page
       .locator('[data-lo-diff] [role="group"]')
@@ -177,8 +179,10 @@ test.describe('with a comment posted at once recorded', () => {
     await expect(primary).toContainText('Comment now');
     await page.keyboard.type('Is two the right start?');
     await primary.click();
-    // The box goes, and the thread GitHub made comes under the line, posted.
+    // The box goes, its room held until the reader's next key, and then the thread GitHub made
+    // comes under the line, posted.
     await expect(box).toHaveCount(0, { timeout: 20_000 });
+    await page.keyboard.press('Shift');
     await expect.poll(() => threadsUnder(page, 'src/backoff.ts', 2), { timeout: 20_000 }).toBe(2);
     const thread = page
       .locator('[data-lo-diff] [role="group"]')

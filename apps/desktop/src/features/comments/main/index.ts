@@ -133,7 +133,6 @@ export default defineFeature(contract, {
       },
       publishThreads: (view) => publish('threads', view),
       publishReview: (view) => publish('review', view),
-      onRead: (id, rows, fetchedAt) => writing.threadsRead(id, rows, fetchedAt),
       log: (line) => log(`threads: ${line}`),
     });
     reads = threads;

@@ -95,6 +95,8 @@ export class DraftStore {
   readonly #now: () => number;
   /** Each account's drafts on each pull request, by {@link keyOf}, then by {@link placeJson}. */
   readonly #kept = new Map<string, Map<string, Kept>>();
+  /** The account and pull request each {@link keyOf} names. */
+  readonly #named = new Map<string, { account: string; pull: PullRef }>();
 
   /** The drafts in `database`, each marked restored. */
   constructor(database: Database, now: () => number = Date.now) {
@@ -127,6 +129,17 @@ export class DraftStore {
     return [...own.entries()]
       .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([, kept]) => kept);
+  }
+
+  /** Every draft marked sent, with its account and pull request. */
+  marked(): { account: string; pull: PullRef; kept: Kept }[] {
+    const found: { account: string; pull: PullRef; kept: Kept }[] = [];
+    for (const [key, own] of this.#kept) {
+      const named = this.#named.get(key);
+      if (!named) continue;
+      for (const kept of own.values()) if (kept.sent !== null) found.push({ ...named, kept });
+    }
+    return found;
   }
 
   /** The draft at `place`, if there is one. */
@@ -179,7 +192,10 @@ export class DraftStore {
     const was = own?.get(json);
     if (!was) return undefined;
     own!.delete(json);
-    if (own!.size === 0) this.#kept.delete(keyOf(account, pull));
+    if (own!.size === 0) {
+      this.#kept.delete(keyOf(account, pull));
+      this.#named.delete(keyOf(account, pull));
+    }
     this.#database
       .prepare(
         'DELETE FROM comments_drafts WHERE account = ? AND owner = ? AND repo = ? AND number = ? AND place = ?',
@@ -228,7 +244,9 @@ export class DraftStore {
   /** Forgets every draft of `account`, as it's removed. */
   forget(account: string): void {
     for (const key of this.#kept.keys()) {
-      if (key.startsWith(`${lower(account)}|`)) this.#kept.delete(key);
+      if (!key.startsWith(`${lower(account)}|`)) continue;
+      this.#kept.delete(key);
+      this.#named.delete(key);
     }
     this.#database.prepare('DELETE FROM comments_drafts WHERE account = ?').run(account);
   }
@@ -239,6 +257,7 @@ export class DraftStore {
     if (!own) {
       own = new Map();
       this.#kept.set(key, own);
+      this.#named.set(key, { account, pull });
     }
     return own;
   }

@@ -133,6 +133,30 @@ function poller(
   const told = (name: string) => {
     for (const listener of listeners) listener({ kind: 'read', pull: PULL, name });
   };
+  /** What a read of the threads made now gets, and how far GitHub's clock is ahead. */
+  const threads: { now: ReviewThreadList | Error; ahead: number | undefined } = {
+    now: { nodes: [], missing: 0 },
+    ahead: undefined,
+  };
+  /** When each read of the threads was made. */
+  const readAt: number[] = [];
+  /** A client that answers the threads' query from `threads.now`. */
+  const client = {
+    githubAhead: () => threads.ahead,
+    graphqlWithErrors() {
+      const { now } = threads;
+      if (now instanceof Error) return Promise.reject(now);
+      const reviewThreads = {
+        totalCount: now.nodes.length,
+        pageInfo: { hasNextPage: false, endCursor: null },
+        nodes: now.nodes,
+      };
+      return Promise.resolve({
+        data: { repository: { pullRequest: { reviewThreads } } },
+        errors: [],
+      });
+    },
+  };
   const fake = {
     pullRequest: () => ({ details: { id: 'PR_94', headRefOid: HEAD } }),
     cachedRead: () => ({ value: pending, fetchedAt: 0 }),
@@ -151,6 +175,10 @@ function poller(
     },
     readSince: (_pull: PullRef, kind: { name: string }) =>
       since.get(kind.name) ?? { kind: 'stale' },
+    readOnce<T>(request: (made: typeof client) => Promise<T>): Promise<T> {
+      readAt.push(Date.now());
+      return request(client);
+    },
     onEvent(listener: (event: PollEvent) => void) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -161,21 +189,12 @@ function poller(
     poller: fake as unknown as WriterPoller,
     sent,
     afresh,
-    /** The threads read again after the mark, as the poller tells it. */
-    reads(threads: ReviewThreadList): void {
-      since.set('ReviewThreads', { kind: 'read', read: { value: threads, fetchedAt: Date.now() } });
-      told('ReviewThreads');
-    },
+    threads,
+    readAt,
     /** Your pending review read again after the mark, as the poller tells it. */
     reviewReads(read: PendingReviewRead): void {
       since.set('PendingReview', { kind: 'read', read: { value: read, fetchedAt: Date.now() } });
       told('PendingReview');
-    },
-    failsToRead(): void {
-      for (const listener of listeners) {
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- its error isn't read.
-        listener({ kind: 'readFailed', pull: PULL, name: 'ReviewThreads' } as unknown as PollEvent);
-      }
     },
   };
 }
@@ -354,79 +373,95 @@ function lost(): GithubError {
 }
 
 describe('a lost answer', () => {
-  test('marks the draft sent, and once the threads are read again, finds it and lets it go', async () => {
+  test('is looked for with a read made the wait after it was sent, which finds what came late', async () => {
     vi.useFakeTimers();
     const fake = poller([lost()]);
     const { made, last } = writer(fake);
+    const sentAt = Date.now();
     expect(await made.send('t1', onLine(), 'Lost?', 'review')).toEqual({ kind: 'lost' });
     expect(last()).toMatchObject([{ sending: 'checking', sent: 'Lost?' }]);
-    // Not before the wait, whatever's read.
-    await vi.advanceTimersByTimeAsync(9_000);
+    // GitHub stores it a while after; nothing is read before the wait.
+    await vi.advanceTimersByTimeAsync(5_000);
+    fake.threads.now = { nodes: [node('src/backoff.ts', 'Lost?\n')], missing: 0 };
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(fake.readAt).toEqual([]);
     expect(last()).toMatchObject([{ sending: 'checking' }]);
     await vi.advanceTimersByTimeAsync(1_000);
-    fake.reads({ nodes: [node('src/backoff.ts', 'Lost?\n')], missing: 0 });
-    await vi.waitFor(() => expect(last()).toEqual([]));
+    expect(fake.readAt).toEqual([sentAt + 10_000]);
+    expect(last()).toEqual([]);
     expect(fake.sent).toHaveLength(1);
   });
 
-  test('says it didn’t post when it isn’t there, and that Lo can’t tell when the read fails', async () => {
+  test('says it didn’t post when it isn’t there; offline, keeps checking; refused, says Lo can’t tell', async () => {
     vi.useFakeTimers();
     const missing = poller([lost()]);
     const notThere = writer(missing);
     await notThere.made.send('t1', onLine(), 'Lost?', 'review');
+    missing.threads.now = { nodes: [node('src/backoff.ts', 'Something else')], missing: 0 };
     await vi.advanceTimersByTimeAsync(10_000);
-    missing.reads({ nodes: [node('src/backoff.ts', 'Something else')], missing: 0 });
-    await vi.waitFor(() =>
-      expect(notThere.last()).toMatchObject([{ sending: 'notPosted', sent: null, text: 'Lost?' }]),
-    );
-    const failing = poller([lost()]);
-    const unknown = writer(failing);
+    expect(notThere.last()).toMatchObject([{ sending: 'notPosted', sent: null, text: 'Lost?' }]);
+    // Offline, the read can't be made: it's still being checked, and Lo looks again in a while.
+    const away = poller([lost()]);
+    const offline = writer(away);
+    await offline.made.send('t1', onLine(), 'Lost?', 'review');
+    away.threads.now = new GithubError({ kind: 'network', failure: 'offline', message: 'down' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(away.readAt).toHaveLength(1);
+    expect(offline.last()).toMatchObject([{ sending: 'checking', sent: 'Lost?' }]);
+    away.threads.now = { nodes: [node('src/backoff.ts', 'Lost?')], missing: 0 };
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(away.readAt).toHaveLength(2);
+    expect(offline.last()).toEqual([]);
+    // Refused, as when the pull request can't be read, Lo can't tell, and says so.
+    const refusing = poller([lost()]);
+    const unknown = writer(refusing);
     await unknown.made.send('t1', onLine(), 'Lost?', 'review');
+    refusing.threads.now = new GithubError({ kind: 'notFound', message: 'gone' });
     await vi.advanceTimersByTimeAsync(10_000);
-    failing.failsToRead();
-    await vi.waitFor(() =>
-      expect(unknown.last()).toMatchObject([{ sending: 'unknown', sent: 'Lost?' }]),
-    );
+    expect(unknown.last()).toMatchObject([{ sending: 'unknown', sent: 'Lost?' }]);
     // Nothing was sent again; the reader may send it anyway.
-    expect([...missing.sent, ...failing.sent]).toHaveLength(2);
+    expect([...missing.sent, ...away.sent, ...refusing.sent]).toHaveLength(3);
   });
 
-  test('one lost before a restart is checked, and can’t be sent, until a read settles it', async () => {
+  test('is judged by GitHub’s clock, whatever this computer’s says', async () => {
+    vi.useFakeTimers();
+    const fake = poller([lost()]);
+    const { made, last } = writer(fake);
+    // This computer's clock is five minutes fast.
+    fake.threads.ahead = -5 * 60_000;
+    const sentAt = Date.now();
+    await made.send('t1', onLine(), 'Lost?', 'review');
+    const madeThere = new Date(sentAt - 5 * 60_000 + 1_000).toISOString();
+    fake.threads.now = { nodes: [node('src/backoff.ts', 'Lost?', false, madeThere)], missing: 0 };
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(last()).toEqual([]);
+  });
+
+  test('one lost before a restart is checked, and can’t be sent, until Lo’s own read settles it', async () => {
     vi.useFakeTimers();
     const database = fresh();
     const before = writer(poller([lost()]), info(), database);
+    const sentAt = Date.now();
     expect(await before.made.send('t1', onLine(), 'Lost?', 'review')).toEqual({ kind: 'lost' });
     before.made.stop();
-    const sentAt = Date.now();
     await vi.advanceTimersByTimeAsync(1_000);
     const fake = poller([]);
-    const { made, last } = writer(fake, info(), database);
-    expect(last()).toMatchObject([{ restored: true, sending: 'checking', sent: 'Lost?' }]);
-    expect(await made.send('t1', onLine(), 'Lost?', 'review')).toEqual({
+    fake.threads.now = { nodes: [node('src/backoff.ts', 'Something else')], missing: 0 };
+    // Its view isn't on screen, nor its threads read: Lo looks for it anyway.
+    const { last, drafts } = writer(fake, info({ id: 'other' }), database);
+    const shown = writer(poller([]), info(), database);
+    expect(shown.last()).toMatchObject([{ restored: true, sending: 'checking', sent: 'Lost?' }]);
+    expect(await shown.made.send('t1', onLine(), 'Lost?', 'review')).toEqual({
       kind: 'refused',
       refusal: { kind: 'github', message: 'Lo is still looking whether it posted.' },
     });
-    expect(fake.sent).toEqual([]);
-    const rows = threadRowsOf({ nodes: [node('src/backoff.ts', 'Something else')], missing: 0 });
-    made.threadsRead('t1', rows, sentAt + 10_000);
-    expect(last()).toMatchObject([{ sending: 'notPosted', sent: null, text: 'Lost?' }]);
-  });
-
-  test('one lost before Lo started settles only against a read fetched the wait after it was sent', () => {
-    const database = fresh();
-    new DraftStore(database, () => 1_000).save('rozed-bot', PULL, ON_FILE, 'Lost before.');
-    new DraftStore(database).markSent('rozed-bot', PULL, ON_FILE, 'Lost before.', 50_000);
-    const { made, last } = writer(poller([]), info(), database);
-    expect(last()).toMatchObject([{ restored: true, sending: 'checking', sent: 'Lost before.' }]);
-    const thread = { nodes: [node('docs/usage.md', 'Lost before.', true)], missing: 0 };
-    const rows = threadRowsOf(thread);
-    // Fetched after it was last typed in, but before it was sent, as from the poll cache.
-    made.threadsRead('t1', rows, 20_000);
-    // Fetched after it was sent, but within the wait.
-    made.threadsRead('t1', rows, 55_000);
-    expect(last()).toHaveLength(1);
-    made.threadsRead('t1', rows, 60_000);
-    expect(last()).toEqual([]);
+    shown.made.stop();
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(fake.readAt).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fake.readAt).toEqual([sentAt + 10_000]);
+    expect(drafts.get('rozed-bot', PULL, onLine())).toMatchObject({ text: 'Lost?', sent: null });
+    expect(last()).toMatchObject([{ sending: 'notPosted' }]);
   });
 
   test('discarded while Lo checks, it’s gone, and what Lo finds brings nothing back', async () => {
@@ -437,9 +472,9 @@ describe('a lost answer', () => {
     expect(last()).toMatchObject([{ sending: 'checking' }]);
     made.discard('t1', onLine());
     expect(last()).toEqual([]);
+    fake.threads.now = { nodes: [node('src/backoff.ts', 'Something else')], missing: 0 };
     await vi.advanceTimersByTimeAsync(10_000);
-    fake.reads({ nodes: [node('src/backoff.ts', 'Something else')], missing: 0 });
-    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.readAt).toEqual([]);
     expect(last()).toEqual([]);
     expect(new DraftStore(database).of('rozed-bot', PULL)).toEqual([]);
   });

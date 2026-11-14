@@ -1249,6 +1249,34 @@ describe('threads', () => {
     expect(document.activeElement).toBe(vimIn('After').content);
   });
 
+  test('a box closed on screen as its answer came keeps its room, and what it sent waits there, until input', async () => {
+    const shown = open();
+    const { render } = plain();
+    const box = shown.compose(at('a', 'new', 4), 'Sent', composerEvents());
+    shown.focus();
+    onScreen(['line 4'], ['sent']);
+    // The box, and what takes its place, are on screen too.
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      return boxOrThread(this) ? oneRect(new DOMRect(0, 100, 400, 80)) : noRects();
+    });
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.classList.contains('lo-diffview')) return new DOMRect(0, 0, 800, 600);
+      return boxOrThread(this) ? new DOMRect(0, 100, 400, 80) : new DOMRect();
+    });
+    box.close();
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+    expect(parent!.querySelector<HTMLElement>('.lo-diffcomposer-room')?.style.height).toBe('80px');
+    shown.setThreads([thread('sent', at('a', 'new', 4))], render);
+    expect(drawnThreads()).toEqual([]);
+    // The reader's next key: the room goes, and what was sent comes.
+    press(scroller(), 'j');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(parent!.querySelector('.lo-diffcomposer-room')).toBeNull();
+    expect(drawnThreads()).toEqual(['sent']);
+  });
+
   test('a box held, as while it’s sent, takes no change to its text until it’s let go', () => {
     const shown = open();
     const box = shown.compose(at('a', 'new', 4), 'Sent as it is', composerEvents());
@@ -1353,6 +1381,11 @@ function onScreen(lines: string[], threads: string[] = [], top = 100) {
     return new DOMRect(0, screen.threads.has(id) ? top : 5000, 400, 40);
   });
   return screen;
+}
+
+/** Whether `element` is in a comment box, the room one left, or a thread. */
+function boxOrThread(element: Element): boolean {
+  return element.closest('.lo-diffcomposer, .lo-diffcomposer-room, [data-thread-id]') !== null;
 }
 
 /** The thread `element` is in, if it's in one. */

@@ -798,10 +798,11 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   after the last one's answer. The box's text is held, read-only, while it's sent. A refusal keeps
   the draft and says why in the box. From the send until GitHub's answer, the draft is marked sent,
   with when, in the database. When the answer is lost, the mark stays, a restart included, and the
-  draft can't be sent again until the threads, fetched no sooner than 10 s after it was sent, settle
-  it: found among your comments made since, the box closes; not found, or not read, the box says so.
-  Text changed since it was sent stays as the draft. Nothing is sent again by itself, and nothing is
-  sent while GitHub can't be reached.
+  draft can't be sent again until main's own read of the threads, made 10 s or more after it was
+  sent, settles it, even after a restart: found among your comments made since, by GitHub's clock,
+  the box closes; not found, or not read, the box says so. While the read can't be made, as offline,
+  it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
+  is sent again by itself, and nothing is sent while GitHub can't be reached.
 
 ### Images from GitHub
 

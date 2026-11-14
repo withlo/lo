@@ -119,7 +119,7 @@ import {
   shownRuns,
 } from './rows.ts';
 import { type ThreadHost, Threads } from './threads.ts';
-import { NOTE_BLOCK_ATTRIBUTE, type NoteDraw, ThreadSizes } from './widgets.ts';
+import { type BoxHost, NOTE_BLOCK_ATTRIBUTE, type NoteDraw, ThreadSizes } from './widgets.ts';
 
 /** Opens a diff view of `init`'s files in `parent`, which tells `on` what happens in it. */
 export function createDiffView(parent: HTMLElement, init: DiffInit, on: DiffEvents): DiffView {
@@ -527,7 +527,15 @@ class View implements DiffView {
   readonly #letGo = (): void => {
     this.#holding = undefined;
     this.#jumped = undefined;
+    // What changes while the input is handled is the reader's doing.
+    this.#hearing = true;
+    setTimeout(() => {
+      this.#hearing = false;
+    });
   };
+
+  /** The reader's key, click or wheel is being handled. */
+  #hearing = false;
 
   /** Room above the first file that keeps what's on screen in place as the box moves up. */
   readonly #slack = document.createElement('div');
@@ -774,6 +782,13 @@ class View implements DiffView {
    * what comes there next is what the reader sent.
    */
   readonly #boxClosed = new Set<string>();
+
+  /**
+   * The room comment boxes took on screen, kept empty, by their keys: boxes their callers closed
+   * with no input of the reader's, as their answers came. What's on screen stays as it was, and
+   * what comes under their lines waits, until the reader's next input, or until it's off screen.
+   */
+  readonly #rooms = new Map<string, { place: At; room: BoxHost }>();
 
   openThread(id: string, open: boolean | 'toggle'): boolean {
     const host = this.#hosts.get(id);
@@ -1178,6 +1193,7 @@ class View implements DiffView {
    * off it now, change as they wait to.
    */
   readonly #letNotesGo = (): void => {
+    this.#letRoomsGo((room) => !this.#onScreen(room));
     this.#letHeldGo((note) => !this.#noteOnScreen(note));
     this.#letThreadsGo('off', false);
     // A closed box's line scrolled off screen: what comes there now is no longer the reader's.
@@ -1199,13 +1215,36 @@ class View implements DiffView {
   readonly #afterInput = (): void => {
     if (this.#settling !== undefined) return;
     const notes = this.#notes.some((note) => note.next !== undefined);
-    if (!notes && this.#held.size === 0 && this.#waiting.size === 0) return;
+    if (!notes && this.#held.size === 0 && this.#waiting.size === 0 && this.#rooms.size === 0) {
+      return;
+    }
     this.#settling = setTimeout(() => {
       this.#settling = undefined;
+      this.#letRoomsGo(() => true);
       this.#letHeldGo((note) => this.#noteOnScreen(note) && this.#noteStuck(note));
       this.#letThreadsGo('stuck', false);
     });
   };
+
+  /**
+   * The room kept where boxes were, for those `free` lets go, goes, and what came under their lines
+   * comes, what's at the top of the screen staying where it is.
+   */
+  #letRoomsGo(free: (room: HTMLElement) => boolean): void {
+    const going = [...this.#rooms].filter(([, { room }]) => free(room.dom));
+    if (going.length === 0) return;
+    const keys = new Set<string>();
+    for (const [key, { place }] of going) {
+      this.#rooms.delete(key);
+      keys.add(waitKey(place.file, `${place.side}:${place.line}`));
+    }
+    const lines = this.#freeLines((file, key) => keys.has(waitKey(file, key)));
+    this.#keepUnasked(() => {
+      for (const file of new Set(going.map(([, { place }]) => place.file))) this.#refresh(file);
+      this.#showLines(lines);
+    });
+    this.#dropThreads();
+  }
 
   /** Whether no scroll can take note `note` off screen. */
   #noteStuck(note: OpenNote): boolean {
@@ -1936,6 +1975,8 @@ class View implements DiffView {
       if (options.focus !== false) open.box.focus();
       return open.box.composer;
     }
+    // A box opened where one's room is kept: the room, and what waited under its line, go first.
+    if (this.#rooms.has(key)) this.#letRoomsGo((room) => room === this.#rooms.get(key)?.room.dom);
     const thread = 'thread' in at ? at.thread : this.#threadAt(place);
     let target: LineTarget | HeaderTarget;
     if (place.line === 0) {
@@ -2044,7 +2085,16 @@ class View implements DiffView {
     const active = document.activeElement;
     const inBox = box.hasFocus;
     const nowhere = active === null || active === document.body;
-    if (sent) this.#keepUnasked(() => this.#refresh(place.file));
+    if (sent && !this.#hearing && this.#onScreen(box.dom)) {
+      // Closed on screen as its answer came: its room stays, empty, and what it sent waits there,
+      // until the reader's next input.
+      const room = document.createElement('div');
+      room.className = 'lo-diffcomposer-room';
+      room.style.height = `${box.dom.getBoundingClientRect().height}px`;
+      this.#boxClosed.delete(waitKey(place.file, `${place.side}:${place.line}`));
+      this.#rooms.set(key, { place, room: { dom: room, attach: (parent) => parent.append(room) } });
+      this.#refresh(place.file);
+    } else if (sent) this.#keepUnasked(() => this.#refresh(place.file));
     else this.#keepLine(place, () => this.#refresh(place.file));
     if (inBox || (!sent && nowhere)) {
       const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
@@ -2556,7 +2606,11 @@ class View implements DiffView {
       const id = placeKey({ file, side, line });
       byPlace.set(key, { id, side, line, threads: hosts, drawing: this.#drawing });
     }
-    for (const { box, place } of this.#boxes.values()) {
+    const boxes = [
+      ...[...this.#rooms.values()].map(({ place, room }) => ({ place, box: room })),
+      ...this.#boxes.values(),
+    ];
+    for (const { box, place } of boxes) {
       if (place.file !== file) continue;
       const { side, line } = place;
       const key = `${side}:${line}`;
@@ -2770,7 +2824,9 @@ class View implements DiffView {
   /** Draws the files with threads or comment boxes again, so the editors showing take them. */
   #moveBoxes(): void {
     this.#drawing++;
-    const files = new Set([...this.#boxes.values()].map(({ place }) => place.file));
+    const files = new Set(
+      [...this.#boxes.values(), ...this.#rooms.values()].map(({ place }) => place.file),
+    );
     this.#threads.forEach((byPlace, file) => {
       if (byPlace.size > 0) files.add(file);
     });
