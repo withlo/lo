@@ -25,7 +25,14 @@ const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
 /** The cassette, recorded from the app on the comments fixture. */
 const CASSETTE = 'app_comments';
 
-const test = base.extend<{ github: ReplayServer; githubOrigin: string; remote: string }>({
+const test = base.extend<{
+  github: ReplayServer;
+  githubOrigin: string;
+  remote: string;
+  /** Whether the remote is written only once the test says, so the local copy comes late. */
+  lateRemote: boolean;
+}>({
+  lateRemote: [false, { option: true }],
   // oxlint-disable-next-line no-empty-pattern
   github: async ({}, use) => {
     const server = await serveReplay(CASSETTE);
@@ -37,9 +44,9 @@ const test = base.extend<{ github: ReplayServer; githubOrigin: string; remote: s
     await use(front.origin);
     await front.close();
   },
-  // oxlint-disable-next-line no-empty-pattern
-  remote: async ({}, use) => {
-    await use(writeCommentsRemote(test.info().outputPath('remote')));
+  remote: async ({ lateRemote }, use) => {
+    const folder = test.info().outputPath('remote');
+    await use(lateRemote ? `file://${folder}` : writeCommentsRemote(folder));
   },
   launch: async ({ githubOrigin, remote }, use) => {
     const tokenFile = test.info().outputPath('token');
@@ -353,14 +360,16 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
       });
     }
   });
-  // Once it's scrolled there: at the top, give or take a thread's room above it.
+  // Once it's scrolled there and still: at the top, below the file's header.
+  let before = Number.NaN;
   await expect
     .poll(async () => {
       const y = await lineTop(page);
-      return y >= 0 && y < 100;
+      const still = y === before;
+      before = y;
+      return still && y >= 0 && y < 100;
     })
     .toBe(true);
-  const before = await lineTop(page);
 
   await test.step('opens and closes, leaving the diff’s lines where they were', async () => {
     const toggle = page.locator('[data-lo-right-toggle]');
@@ -447,23 +456,37 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
   });
 });
 
-test('the last thread asked for is the one the diff shows', async ({ page }) => {
-  test.setTimeout(60_000);
-  const id = await open(page, COMMENTS_PULL.number);
-  await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
-  await settled(page);
-  await page.keyboard.press(PANEL);
-  await expect.poll(() => rows(page)).toHaveLength(10);
-  for (let step = 0; step < 3; step++) await page.keyboard.press('j');
-  await expect(focusedRow(page)).toContainText('r1 · line 9');
-  // The outdated thread asks for r1's whole diff; before it comes, a thread the diff on screen
-  // shows is asked for, and stays.
-  await page.keyboard.press('Enter');
-  await page.keyboard.press('j');
-  await page.keyboard.press('Enter');
-  await expect.poll(() => cursor(page), { timeout: 20_000 }).toBe('src/backoff.ts new 15');
-  // r1 was called off: nothing is coming, and the whole pull request is what's compared.
-  await expect.poll(() => compared(page, id), { timeout: 20_000 }).toBe('whole');
-  await expect.poll(() => placed(page)).toEqual(AT_HEAD);
-  await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 15');
+test.describe('while the local copy is still coming', () => {
+  // So r1's whole diff, which needs it, stays coming until the test lets it come.
+  test.use({ lateRemote: true });
+
+  test('the last thread asked for is the one the diff shows', async ({ page }) => {
+    test.setTimeout(60_000);
+    const id = await open(page, COMMENTS_PULL.number);
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
+    await settled(page);
+    await page.keyboard.press(PANEL);
+    await expect.poll(() => rows(page)).toHaveLength(10);
+    for (let step = 0; step < 3; step++) await page.keyboard.press('j');
+    await expect(focusedRow(page)).toContainText('r1 · line 9');
+    // The outdated thread asks for r1's whole diff; before it comes, a thread the diff on screen
+    // shows is asked for, and stays.
+    await page.keyboard.press('Enter');
+    await expect.poll(() => compared(page, id)).toBe('coming');
+    await page.keyboard.press('j');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 15');
+    // r1 was called off: nothing is coming, and the whole pull request is what's compared, before
+    // and after the local copy comes.
+    await expect.poll(() => compared(page, id)).toBe('whole');
+    writeCommentsRemote(test.info().outputPath('remote'));
+    await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+    await expect(page.locator('footer').getByText('GitHub’s diff', { exact: true })).toHaveCount(
+      0,
+      { timeout: 30_000 },
+    );
+    expect(await compared(page, id)).toBe('whole');
+    await expect.poll(() => placed(page)).toEqual(AT_HEAD);
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 15');
+  });
 });

@@ -17,6 +17,7 @@ import { registry } from '../../../window/commands/registry.ts';
 import { diffStateOf, showThread as showInDiff, type ShowWhen } from '../../diff/window/shared.ts';
 import {
   comparedIn,
+  comparisonComing,
   compareTo,
   revisionLabel,
   revisionsOf,
@@ -183,7 +184,8 @@ export function showThread(tab: PullTab, id: string): void {
   shownRows.set(tab.id, id);
   const here = onScreenNow(tab.id, row);
   // Before the diff is drawn, it shows the thread once it is, if it has it.
-  const plan = here === undefined ? HERE : planShow(row, here, revisionsOf(tab.id));
+  const plan =
+    here === undefined ? HERE : planShow(row, here, revisionsOf(tab.id), comparisonComing(tab.id));
   switch (plan.kind) {
     case 'here':
       show(tab.id, row, 'now');
@@ -255,15 +257,16 @@ const HERE: ShowPlan = { kind: 'here' };
 
 /**
  * How `⏎` shows `row`, which the diff on screen shows or not, `here`, as `known`, the view's
- * revisions, say what's compared and what's coming. The last thread asked for wins: a comparison
- * that's coming for an earlier one is called off, or replaced.
+ * revisions, say what's compared, and `coming`, what's compared once what's asked for comes. The
+ * last thread asked for wins: a comparison that's coming for an earlier one is called off, or
+ * replaced.
  */
 export function planShow(
   row: ThreadRow,
   here: boolean,
   known: ComparisonView | undefined,
+  coming: Compared | undefined,
 ): ShowPlan {
-  const coming = known?.pending ?? undefined;
   const now = comparedIn(known);
   if (here) return coming && now ? { kind: 'callOff', compared: now } : HERE;
   const elsewhere = comparisonFor(row, known);

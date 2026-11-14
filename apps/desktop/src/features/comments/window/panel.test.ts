@@ -103,23 +103,23 @@ describe('⏎ on a thread', () => {
   const outdated = row();
 
   it('shows one the diff on screen shows there', () => {
-    expect(planShow(outdated, true, revisions())).toEqual({ kind: 'here' });
+    expect(planShow(outdated, true, revisions(), undefined)).toEqual({ kind: 'here' });
     // Before the revisions are read, too.
-    expect(planShow(outdated, true, undefined)).toEqual({ kind: 'here' });
+    expect(planShow(outdated, true, undefined, undefined)).toEqual({ kind: 'here' });
   });
 
   it('compares the revision one is on, for one the diff on screen doesn’t show', () => {
-    expect(planShow(outdated, false, revisions())).toEqual({
+    expect(planShow(outdated, false, revisions(), undefined)).toEqual({
       kind: 'compare',
       compared: first,
       label: 'r1',
     });
     // That revision's whole diff on screen doesn't show it either.
-    expect(planShow(outdated, false, revisions({ comparison: first }))).toEqual({
+    expect(planShow(outdated, false, revisions({ comparison: first }), undefined)).toEqual({
       kind: 'why',
       why: 'This thread’s lines aren’t in the diff on screen.',
     });
-    expect(planShow(row({ writtenOn: null }), false, revisions())).toEqual({
+    expect(planShow(row({ writtenOn: null }), false, revisions(), undefined)).toEqual({
       kind: 'why',
       why: 'GitHub no longer has the commit this thread is on.',
     });
@@ -127,16 +127,16 @@ describe('⏎ on a thread', () => {
 
   it('shows the last thread asked for, calling off a comparison an earlier one asked for', () => {
     // `⏎` on the outdated thread asked for r1's whole diff, which hasn't come yet.
-    const coming = revisions({ comparison: whole, pending: first });
+    const known = revisions({ comparison: whole });
     // Then `⏎` on a thread the diff on screen shows: it stays, and r1 is called off.
-    expect(planShow(row({ outdated: false, line: 15 }), true, coming)).toEqual({
+    expect(planShow(row({ outdated: false, line: 15 }), true, known, first)).toEqual({
       kind: 'callOff',
       compared: whole,
     });
     // Or on another on r1: it shows once r1 comes.
-    expect(planShow(row({ id: 'T2' }), false, coming)).toEqual({ kind: 'coming' });
+    expect(planShow(row({ id: 'T2' }), false, known, first)).toEqual({ kind: 'coming' });
     // Or on one on r2: r2's whole diff takes r1's place.
-    expect(planShow(row({ writtenOn: SECOND }), false, coming)).toEqual({
+    expect(planShow(row({ writtenOn: SECOND }), false, known, first)).toEqual({
       kind: 'compare',
       compared: { from: null, to: SECOND },
       label: 'r2',

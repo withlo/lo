@@ -1,10 +1,30 @@
-// How another feature reads what a pull request's tab compares, and how a place in the tab's
-// history names it, to compare it again on going back.
+// How another feature reads what a pull request's tab compares and what's coming, compares
+// another pair, the last asked for winning, and how a place in the tab's history names a
+// comparison, to compare it again on going back.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { ComparisonView } from '../contract.ts';
-import { comparedIn, comparisonName, comparisonNamed, sameCompared } from './shared.ts';
+import {
+  comparedIn,
+  comparisonComing,
+  comparisonName,
+  comparisonNamed,
+  compareTo,
+  sameCompared,
+} from './shared.ts';
+import { views } from './store.ts';
+
+/** Main's answers to each comparison asked for, which the test gives when it likes. */
+const answers: (() => void)[] = [];
+vi.mock('./main.ts', () => ({
+  main: () => ({
+    compare: () =>
+      new Promise<void>((resolve) => {
+        answers.push(resolve);
+      }),
+  }),
+}));
 
 const FIRST = 'f'.repeat(40);
 const HEAD = 'h'.repeat(40);
@@ -60,5 +80,32 @@ describe('what a tab compares', () => {
     expect(sameCompared({ from: null, to: HEAD }, { from: null, to: HEAD })).toBe(true);
     expect(sameCompared({ from: FIRST, to: HEAD }, { from: null, to: HEAD })).toBe(false);
     expect(sameCompared(undefined, { from: null, to: HEAD })).toBe(false);
+  });
+});
+
+describe('comparing another pair', () => {
+  const whole = { from: null, to: HEAD };
+  const first = { from: null, to: FIRST };
+
+  it('is coming as soon as it’s asked for, and asking for what’s on screen calls it off', async () => {
+    views.set('asking', view({ id: 'asking', comparison: whole }));
+    expect(compareTo('asking', whole, 'Show the thread')).toBe('now');
+    expect(compareTo('asking', first, 'Show the thread')).toBe('coming');
+    // Before main says so.
+    expect(comparisonComing('asking')).toEqual(first);
+    expect(compareTo('asking', first, 'Show the thread')).toBe('coming');
+    expect(compareTo('asking', whole, 'Show the thread')).toBe('now');
+    expect(comparisonComing('asking')).toBeUndefined();
+    // Main took both; what it says from then on is what's coming.
+    for (const answer of answers.splice(0)) answer();
+    await Promise.resolve();
+    views.set('asking', view({ id: 'asking', comparison: whole, pending: first }));
+    expect(comparisonComing('asking')).toEqual(first);
+  });
+
+  it('can’t be before the revisions are read', () => {
+    expect(compareTo('unread', first, 'Show the thread')).toEqual({
+      why: 'Lo hasn’t read the pull request’s revisions yet.',
+    });
   });
 });

@@ -169,10 +169,26 @@ export function comparisonHere(tab: string): string | undefined {
 }
 
 /**
+ * What each tab asked main to compare, until main has taken it: the window knows it's coming before
+ * main says so.
+ */
+const asked = new Map<string, Compared>();
+
+/**
+ * What tab `tab` compares once what's asked for comes, when that's another comparison than the one
+ * on screen: asked for here and not yet taken by main, or main's.
+ */
+export function comparisonComing(tab: string): Compared | undefined {
+  const view = views.get(tab);
+  const coming = asked.get(tab) ?? view?.pending ?? undefined;
+  return coming && !sameCompared(coming, comparedIn(view)) ? coming : undefined;
+}
+
+/**
  * Has tab `tab` compare `compared`, as the reader asked: `now` when that's on screen and nothing
  * else is coming, `coming` when it's asked for, or why it can't be. One asked for after another
- * takes its place, so the last asked for is what shows. Main's refusal comes as a note titled
- * `title`.
+ * takes its place, so the last asked for is what shows: asked for what's on screen, what was coming
+ * is called off. Main's refusal comes as a note titled `title`.
  */
 export function compareTo(
   tab: string,
@@ -183,13 +199,18 @@ export function compareTo(
   if (!view || view.status !== 'ready') {
     return { why: view?.problem ?? 'Lo hasn’t read the pull request’s revisions yet.' };
   }
-  const pending = view.pending ?? undefined;
-  if (sameCompared(pending, compared)) return 'coming';
+  const coming = comparisonComing(tab);
+  if (sameCompared(coming, compared)) return 'coming';
   const now = sameCompared(comparedIn(view), compared);
-  if (now && pending === undefined) return 'now';
+  if (now && coming === undefined) return 'now';
+  asked.set(tab, compared);
+  const taken = () => {
+    if (asked.get(tab) === compared) asked.delete(tab);
+  };
   main()
     .compare({ id: tab, ...compared })
-    .catch((error: unknown) => {
+    .then(taken, (error: unknown) => {
+      taken();
       notify(
         title,
         error instanceof IpcError ? error.message : 'Lo couldn’t compare them. Try again.',
