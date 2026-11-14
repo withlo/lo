@@ -160,15 +160,20 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Panels
 
-| Action                                          | Keys                              | Where                               | Command         |
-| ----------------------------------------------- | --------------------------------- | ----------------------------------- | --------------- |
-| Next layer in the stack                         | `j`, `↓`                          | In `stack`                          | `stacks.down`   |
-| Previous layer in the stack                     | `k`, `↑`                          | In `stack`                          | `stacks.up`     |
-| Show this layer                                 | `⏎`                               | In `stack`                          | `stacks.show`   |
-| Choose a run from here                          | `v`                               | In `stack`                          | `stacks.choose` |
-| View the stack up to here as one diff           | None: in its menu and the palette | Anywhere                            | `stacks.upTo`   |
-| Stop choosing a run, or back to the middle view | `Esc`                             | In `stack`                          | `stacks.cancel` |
-| Left panel                                      | `⌘\`                              | Anywhere but `dialog` and `palette` | `tab.leftPanel` |
+| Action                                          | Keys                              | Where                               | Command                   |
+| ----------------------------------------------- | --------------------------------- | ----------------------------------- | ------------------------- |
+| Next thread in the panel                        | `j`, `↓`                          | In `threads`                        | `comments.nextThread`     |
+| Previous thread in the panel                    | `k`, `↑`                          | In `threads`                        | `comments.previousThread` |
+| Show the thread in the diff                     | `⏎`                               | In `threads`                        | `comments.showThread`     |
+| Unresolved, all or your threads                 | `f`                               | In `threads`                        | `comments.filterThreads`  |
+| Next layer in the stack                         | `j`, `↓`                          | In `stack`                          | `stacks.down`             |
+| Previous layer in the stack                     | `k`, `↑`                          | In `stack`                          | `stacks.up`               |
+| Show this layer                                 | `⏎`                               | In `stack`                          | `stacks.show`             |
+| Choose a run from here                          | `v`                               | In `stack`                          | `stacks.choose`           |
+| View the stack up to here as one diff           | None: in its menu and the palette | Anywhere                            | `stacks.upTo`             |
+| Stop choosing a run, or back to the middle view | `Esc`                             | In `stack`                          | `stacks.cancel`           |
+| Left panel                                      | `⌘\`                              | Anywhere but `dialog` and `palette` | `tab.leftPanel`           |
+| Threads panel                                   | `⌘⇧\`                             | Anywhere but `dialog` and `palette` | `tab.rightPanel`          |
 
 ## Diff view
 
@@ -252,6 +257,7 @@ comment box and another elsewhere.
 | `file`      | A whole file, a code view.                                                            |
 | `peek`      | A peek at code elsewhere, such as a definition, a code view.                          |
 | `box`       | A comment box, a code view with an insert mode.                                       |
+| `threads`   | Named by `comments`.                                                                  |
 | `recent`    | Named by `open`.                                                                      |
 | `overview`  | Named by `overview`.                                                                  |
 | `revisions` | Named by `revisions`.                                                                 |

@@ -20,11 +20,11 @@ import {
   type ThreadView,
   type Viewport,
 } from '@lo/ui/code';
-import { plainTarget } from '@lo/ui/commands';
+import { plainTarget, type Entry as HistoryEntry } from '@lo/ui/commands';
 
 import { openMenu } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle } from '../../../window/commands/registry.ts';
-import { type ShownMarks, viewedMarkOf } from '../../revisions/window/shared.ts';
+import { comparisonHere, type ShownMarks, viewedMarkOf } from '../../revisions/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import { followFile } from '../../tree/window/shared.ts';
 import type { Start } from '../contract.ts';
@@ -33,6 +33,7 @@ import { diffFileOf, headerOf, startWith } from './files.ts';
 import type { Entry, Loader, Moved, Shown } from './loader.ts';
 import { main } from './main.ts';
 import { setDrawn, takeReveal } from './tabs.ts';
+import { drawnName, shown as shownWanted, wantedIn } from './wanted.ts';
 import {
   type DiffThreads,
   type DrawnDiff,
@@ -251,6 +252,12 @@ let draws = 0;
 export function draw(options: DrawOptions): Drawing {
   draws += 1;
   const { parent, tab, loader, entries, at, comparison, compareFrom } = options;
+  /** A place in this view, as the tab's history keeps it: with the comparison it's in. */
+  const entryAt = (target: Target): HistoryEntry => ({
+    view: 'diff',
+    at: target,
+    within: comparisonHere(tab.id),
+  });
   const keys = registry();
   let marks = options.marks;
   /** The files as they are now, as `update` last gave them. */
@@ -441,7 +448,7 @@ export function draw(options: DrawOptions): Drawing {
         if (showing) followFile(tab.id, loader.ids.keyOf(id));
         settle();
       },
-      jumped: (from) => keys.history.record({ view: 'diff', at: from }),
+      jumped: (from) => keys.history.record(entryAt(from)),
       load(id) {
         // `za` on a file kept out: the reader's to have now.
         const waiting = pending.get(id);
@@ -456,7 +463,7 @@ export function draw(options: DrawOptions): Drawing {
       // "Read it in the overview": a jump, from the line the note is under.
       explained(block, line) {
         if (explainer()?.read(tab.id, block)) {
-          keys.history.record({ view: 'diff', at: { kind: 'line', at: line } });
+          keys.history.record(entryAt({ kind: 'line', at: line }));
         }
       },
     },
@@ -496,6 +503,27 @@ export function draw(options: DrawOptions): Drawing {
     if ([...counted].some((id) => !sameCounts(before.counts.get(id), next.counts.get(id)))) {
       take(latest);
     }
+    showWanted();
+  };
+  /**
+   * What the diff waits to show, once this view is on screen and can: a thread another feature
+   * asked for, once it has it, opened, its line at the top of the screen, with focus staying where
+   * it is; or a place in the tab's history, in a view of another comparison than the one it was
+   * asked for in front of, with the cursor on it and focus in it.
+   */
+  const showWanted = () => {
+    const wanted = wantedIn(tab.id);
+    if (showing === undefined || wanted === undefined) return;
+    if (wanted.kind === 'thread') {
+      if (!view.openThread(wanted.thread, true)) return;
+      shownWanted(tab.id);
+      view.revealAtTop({ kind: 'thread', thread: wanted.thread });
+      return;
+    }
+    if (wanted.left === drawnName(at, comparison)) return;
+    shownWanted(tab.id);
+    view.reveal(wanted.target);
+    view.focus();
   };
   // Each file's diff and highlighting came with it.
   view.setMoves(shownMoves);
@@ -638,7 +666,7 @@ export function draw(options: DrawOptions): Drawing {
       }),
       setMiddle({
         focus: () => view.focus(),
-        here: () => ({ view: 'diff', at: view.keyState().target }),
+        here: () => entryAt(view.keyState().target),
         // An overview's note open in the diff closes on `Esc` in the diff.
         escape: () => parent.contains(document.activeElement) && view.closeNote(),
       }),
@@ -655,6 +683,7 @@ export function draw(options: DrawOptions): Drawing {
     else if (waiting && !samePlace(waiting.target, view.keyState().target)) {
       view.reveal(waiting.target);
     }
+    showWanted();
     // Focus that's nowhere in particular, or left behind in a middle view now hidden, comes to the
     // diff, as it does to any middle view.
     const focused = document.activeElement;

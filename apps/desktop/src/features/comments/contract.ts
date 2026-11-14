@@ -111,10 +111,15 @@ export type ThreadRow = z.output<typeof reviewThread>;
 
 /**
  * The comparison of two revisions a view shows, as the revisions feature made it: by its key, as
- * the diff names it, from the older revision's head, and whether the older side is that revision
- * replayed onto the newer one's base, so its lines are no commit's.
+ * the diff names it, from the older revision's head, or none when it's from the base, as a
+ * revision's whole diff is, and whether the older side is that revision replayed onto the newer
+ * one's base, so its lines are no commit's.
  */
-export const compared = z.strictObject({ key: comparisonKey, from: oid, replayed: z.boolean() });
+export const compared = z.strictObject({
+  key: comparisonKey,
+  from: oid.nullable(),
+  replayed: z.boolean(),
+});
 export type Compared = z.output<typeof compared>;
 
 /**

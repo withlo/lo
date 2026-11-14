@@ -1,8 +1,8 @@
 // What the diff shares with other features' window code: the slot over the diff, where what it
 // compares is said; showing the diff, and a place in it or the file whole; how many files it shows; one file of it beside
 // another view; the lines another feature explains, which the diff marks; the review threads
-// another feature places under its lines, and the comment boxes it opens there; and diffing texts
-// another feature has, as the diff's own files are diffed.
+// another feature places under its lines, showing one of them, and the comment boxes it opens
+// there; and diffing texts another feature has, as the diff's own files are diffed.
 
 import type {
   BoxFrame,
@@ -23,10 +23,12 @@ import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
 import { Beside } from './Beside.tsx';
 import { changed, explainWith, type Explainer } from './explained.ts';
 import { diffJobs } from './main.ts';
-import { showPlace as showCode } from './places.ts';
+import { showPlace as showCode, showThread as showThreadAt, type ShowWhen } from './places.ts';
 import { drawnFor, keysDiff, loaderOf, onDrawn, useSnapshot } from './tabs.ts';
 import { changed as changedThreads, type DrawnDiff, threadWith, type Threader } from './threads.ts';
 import { DIFF_VIEW } from './whole.ts';
+
+export type { ShowWhen } from './places.ts';
 
 export type { ExplainedLines, Explainer } from './explained.ts';
 export type { DiffThreads, DrawnDiff, ThreadCounts, ThreadedFile, Threader } from './threads.ts';
@@ -203,6 +205,19 @@ export function writingDiff(tab: string, keys = false): WritingDiff | undefined 
  */
 export function onDiffDrawn(listener: (tab: string) => void): () => void {
   return onDrawn(listener);
+}
+
+/**
+ * Shows review thread `thread` in pull request's tab `tab`'s diff, as the threads panel does: opens
+ * it and puts its line at the top of the screen, a jump `⌃o` comes back from. Focus stays where it
+ * is. `when` says when: `now`, in the diff on screen, saying whether it has the thread; `drawn`,
+ * once the diff is drawn anew, as when another comparison that shows it is coming; or `both`, now
+ * and again if the diff is drawn anew, as when a comparison that was coming is called off. A diff
+ * not on screen comes on screen and shows it once it's drawn with it. What waits is dropped once
+ * the reader does anything else.
+ */
+export function showThread(tab: string, thread: string, when: ShowWhen = 'now'): boolean {
+  return showThreadAt(tab, thread, when);
 }
 
 /**

@@ -5,6 +5,9 @@
 // Each file's header and its row in the tree count them, `]t` and `[t` walk them, and `za` opens
 // or collapses the one the cursor is on. Comments are drawn as GitHub renders them, images and all.
 // A renamed file's thread under one of its old lines shows there. A stack's layer shows its own
+// threads. The threads panel, `⌘⇧\`, lists them, without moving the diff's lines, and shows one in
+// the diff, an outdated one in the whole diff of the revision it was written on, which `⌃o` and
+// `⌃i` compare again; the last thread asked for wins. The stack's rows count each layer's unresolved
 // threads.
 
 import { writeFileSync } from 'node:fs';
@@ -22,7 +25,14 @@ const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
 /** The cassette, recorded from the app on the comments fixture. */
 const CASSETTE = 'app_comments';
 
-const test = base.extend<{ github: ReplayServer; githubOrigin: string; remote: string }>({
+const test = base.extend<{
+  github: ReplayServer;
+  githubOrigin: string;
+  remote: string;
+  /** Whether the remote is written only once the test says, so the local copy comes late. */
+  lateRemote: boolean;
+}>({
+  lateRemote: [false, { option: true }],
   // oxlint-disable-next-line no-empty-pattern
   github: async ({}, use) => {
     const server = await serveReplay(CASSETTE);
@@ -34,9 +44,9 @@ const test = base.extend<{ github: ReplayServer; githubOrigin: string; remote: s
     await use(front.origin);
     await front.close();
   },
-  // oxlint-disable-next-line no-empty-pattern
-  remote: async ({}, use) => {
-    await use(writeCommentsRemote(test.info().outputPath('remote')));
+  remote: async ({ lateRemote }, use) => {
+    const folder = test.info().outputPath('remote');
+    await use(lateRemote ? `file://${folder}` : writeCommentsRemote(folder));
   },
   launch: async ({ githubOrigin, remote }, use) => {
     const tokenFile = test.info().outputPath('token');
@@ -82,6 +92,23 @@ function placed(page: Page): Promise<string[]> {
   });
 }
 
+/**
+ * The threads the whole pull request's diff, at its latest push, draws under their lines, and the
+ * file's own under its header.
+ */
+const AT_HEAD = [
+  'docs/usage.md file',
+  'src/backoff.ts new 15',
+  'src/backoff.ts new 17',
+  'src/backoff.ts new 2',
+  'src/backoff.ts new 5',
+  'src/backoff.ts new 8',
+  'src/queue.ts new 10',
+  'src/queue.ts new 35',
+  'src/retry.ts new 16',
+  'src/retry.ts old 2',
+];
+
 /** Where the diff's cursor is: its file's path, its side and its line. */
 function cursor(page: Page): Promise<string | undefined> {
   return page.evaluate(() => {
@@ -103,6 +130,68 @@ const card = (page: Page, words: string) =>
 const openCard = (page: Page, words: string) =>
   card(page, words).locator('button[aria-expanded="false"]');
 
+/** The threads panel. */
+const panel = (page: Page) => page.locator('[data-lo-threads]');
+
+/** The rows the threads panel lists: each one's file and where it says the thread is. */
+function rows(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('[data-lo-threads] [role="option"]')].map(
+      (row) =>
+        `${row.closest('[role="group"]')?.getAttribute('aria-label')} ${row.querySelector('.code-small')?.textContent}`,
+    ),
+  );
+}
+
+/** The row the keyboard is on in the threads panel. */
+const focusedRow = (page: Page) => panel(page).locator('[role="option"][aria-selected="true"]');
+
+/** The threads panel's filter that says `name`: its word and its count. */
+const filter = (page: Page, name: string) => panel(page).getByRole('tab', { name, exact: true });
+
+/** Whether focus is in the threads panel's list. */
+function inPanel(page: Page): Promise<boolean> {
+  return page.evaluate(() => document.activeElement?.closest('[data-lo-scope="threads"]') !== null);
+}
+
+/** How far below the top of the diff's box src/backoff.ts's new line 10 is drawn, to the pixel. */
+function lineTop(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const diff = window.loDiff;
+    const file = diff?.files.find((each) => each.path === 'src/backoff.ts')?.id;
+    const box = document.querySelector('.lo-diffview')?.getBoundingClientRect().top;
+    if (!diff || file === undefined || box === undefined) return Number.NaN;
+    const at = diff.probe.spotTop({ kind: 'line', at: { file, side: 'new', line: 10 } });
+    return at === undefined ? Number.NaN : Math.round(at - box);
+  });
+}
+
+/** How far src/backoff.ts's new line 10 has moved since it was `before` below the diff's top. */
+async function moved(page: Page, before: number): Promise<number> {
+  return Math.abs((await lineTop(page)) - before);
+}
+
+/** `⌘⇧\`, which opens and closes the threads panel. */
+const PANEL = `${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+Backslash`;
+
+/**
+ * What tab `id` compares, as main says: `whole` for the whole pull request, `coming` while another
+ * comparison is on its way, or `other`.
+ */
+function compared(page: Page, id: string): Promise<string> {
+  return page.evaluate(async (tab) => {
+    const reply = await window.lo.invoke('revisions.list', { id: tab });
+    const view: unknown = reply.ok ? reply.value : undefined;
+    if (typeof view !== 'object' || view === null) return 'other';
+    if (!('pending' in view) || !('comparison' in view) || !('shown' in view)) return 'other';
+    if (view.pending !== null) return 'coming';
+    const { comparison } = view;
+    if (typeof comparison !== 'object' || comparison === null) return 'other';
+    if (!('from' in comparison) || !('to' in comparison)) return 'other';
+    return comparison.from === null && comparison.to === view.shown ? 'whole' : 'other';
+  }, id);
+}
+
 /** Waits for the middle view to take focus, as it does once it's drawn, so keys reach it. */
 async function settled(page: Page): Promise<void> {
   await expect
@@ -119,20 +208,7 @@ test('draws threads under their lines, resolved ones collapsed, and counts them'
   await open(page, COMMENTS_PULL.number);
   // Every thread on a line the diff of the latest push shows, and the one on docs/usage.md, which
   // is on the file, under its header: the outdated one isn't.
-  await expect
-    .poll(() => placed(page), { timeout: 20_000 })
-    .toEqual([
-      'docs/usage.md file',
-      'src/backoff.ts new 15',
-      'src/backoff.ts new 17',
-      'src/backoff.ts new 2',
-      'src/backoff.ts new 5',
-      'src/backoff.ts new 8',
-      'src/queue.ts new 10',
-      'src/queue.ts new 35',
-      'src/retry.ts new 16',
-      'src/retry.ts old 2',
-    ]);
+  await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
   // The threads on the first screen come with it. An unresolved thread is open, its text drawn as
   // GitHub renders it, a suggestion as the change it suggests; the resolved one is collapsed to one
   // line.
@@ -232,4 +308,232 @@ onStacks('a layer of a stack shows its own threads', async ({ page }) => {
     .toEqual(['src/plans.ts']);
   await expect.poll(() => placed(page)).toEqual([]);
   await expect(card(page, 'GitHub rounds each 100 nodes up')).toHaveCount(0);
+});
+
+onStacks(
+  'the threads panel shows the layer on screen’s threads, and the stack counts each layer’s',
+  async ({ page }) => {
+    test.setTimeout(60_000);
+    await open(page, STACK.b);
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
+    await settled(page);
+    await page.keyboard.press(PANEL);
+    await expect.poll(() => rows(page)).toEqual(['src/cost.ts new 5']);
+    // #B's row, the layer on screen, counts its unresolved thread.
+    const stack = page.locator('[data-lo-scope="stack"]');
+    await expect(
+      stack.locator('[aria-current="true"]').getByRole('img', { name: '1 unresolved thread' }),
+    ).toBeVisible();
+
+    // Esc goes back to the diff, whose keys walk the stack.
+    await page.keyboard.press('Escape');
+    await settled(page);
+    await page.keyboard.press('[');
+    await page.keyboard.press('s');
+    await expect
+      .poll(() => page.evaluate(() => window.loDiff?.files.map((file) => file.path)), {
+        timeout: 20_000,
+      })
+      .toEqual(['src/plans.ts']);
+    // #A, the layer below, has none of its own, and #B's row, off screen now, still counts its one,
+    // as read with the layers.
+    await expect(panel(page)).toContainText('No unresolved threads.');
+    await expect(stack.locator('[aria-current="true"]')).toHaveAttribute(
+      'data-key',
+      String(STACK.a),
+    );
+    await expect(
+      stack
+        .locator(`[role="treeitem"][data-key="${STACK.b}"]`)
+        .getByRole('img', { name: '1 unresolved thread' }),
+    ).toBeVisible();
+    await expect(stack.getByRole('img', { name: /unresolved/ })).toHaveCount(1);
+  },
+);
+
+test('the threads panel lists the threads and shows one in the diff', async ({ page }) => {
+  test.setTimeout(60_000);
+  await open(page, COMMENTS_PULL.number);
+  await expect.poll(() => placed(page), { timeout: 20_000 }).toHaveLength(10);
+  await settled(page);
+  // Down the diff a way, so the line at the top is one a change of width could move. It stays
+  // where it is as the panel opens and closes, as it does for the left panel.
+  await page.evaluate(() => {
+    const file = window.loDiff?.files.find((each) => each.path === 'src/backoff.ts')?.id;
+    if (file) {
+      window.loDiff?.scrollTo({
+        at: { kind: 'line', at: { file, side: 'new', line: 10 } },
+        offset: 0,
+      });
+    }
+  });
+  // Once it's scrolled there and still: at the top, below the file's header.
+  let before = Number.NaN;
+  await expect
+    .poll(async () => {
+      const y = await lineTop(page);
+      const still = y === before;
+      before = y;
+      return still && y >= 0 && y < 100;
+    })
+    .toBe(true);
+
+  await test.step('opens and closes, leaving the diff’s lines where they were', async () => {
+    const toggle = page.locator('[data-lo-right-toggle]');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await page.keyboard.press(PANEL);
+    await expect(panel(page)).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => inPanel(page)).toBe(true);
+    await expect.poll(() => moved(page, before)).toBeLessThanOrEqual(1);
+    // Closed, focus goes back to the diff.
+    await page.keyboard.press(PANEL);
+    await expect(panel(page)).toHaveCount(0);
+    await settled(page);
+    await expect.poll(() => moved(page, before)).toBeLessThanOrEqual(1);
+    // Open again, with focus on its list.
+    await page.keyboard.press(PANEL);
+    await expect.poll(() => inPanel(page)).toBe(true);
+    await expect.poll(() => moved(page, before)).toBeLessThanOrEqual(1);
+  });
+
+  await test.step('lists the unresolved threads by file, the outdated one by where it was written', async () => {
+    await expect
+      .poll(() => rows(page))
+      .toEqual([
+        'docs/usage.md On the file',
+        'src/backoff.ts new 2',
+        'src/backoff.ts new 8',
+        'src/backoff.ts r1 · line 9',
+        'src/backoff.ts new 15',
+        'src/backoff.ts new 17',
+        'src/queue.ts new 10',
+        'src/queue.ts new 10–35',
+        'src/retry.ts old 2',
+        'src/retry.ts new 16',
+      ]);
+    await expect(filter(page, 'Unresolved 10')).toHaveAttribute('aria-selected', 'true');
+    await expect(filter(page, 'All 11')).toBeVisible();
+    // The header's toggle counts them too.
+    await expect(page.locator('[data-lo-right-toggle]')).toHaveAccessibleName(
+      'Threads panel 10 unresolved',
+    );
+  });
+
+  await test.step('shows the thread the keyboard is on in the diff, keeping focus', async () => {
+    await page.keyboard.press('j');
+    await page.keyboard.press('j');
+    await expect(focusedRow(page)).toContainText('new 8');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
+    await expect(focusedRow(page)).toHaveAttribute('aria-current', 'true');
+    expect(await inPanel(page)).toBe(true);
+  });
+
+  await test.step('shows an outdated thread in the whole diff of the revision it was written on', async () => {
+    await page.keyboard.press('j');
+    await expect(focusedRow(page)).toContainText('r1 · line 9');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => cursor(page), { timeout: 20_000 }).toBe('src/backoff.ts new 9');
+    expect(await placed(page)).toContain('src/backoff.ts new 9');
+    await expect(card(page, 'This grows without bound')).toBeVisible();
+    // It says what it compared, and how to go back.
+    const note = page.getByRole('status').filter({ hasText: 'Comparing base → r1' });
+    await expect(note).toContainText(/This thread is on r1\. \S+ goes back\./);
+  });
+
+  await test.step('goes back to the comparison and the place it left with ⌃o, and on with ⌃i', async () => {
+    await page.keyboard.press('Control+o');
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
+    await page.keyboard.press('Control+i');
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toContain('src/backoff.ts new 9');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 9');
+    // Back to the panel's list, where its keys work.
+    await panel(page).locator('[data-lo-scope="threads"]').focus();
+  });
+
+  await test.step('lists every thread with f, and closes', async () => {
+    await page.keyboard.press('f');
+    await expect(filter(page, 'All 11')).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(async () => (await rows(page)).length).toBe(11);
+    await page.keyboard.press(PANEL);
+    await expect(panel(page)).toHaveCount(0);
+    await settled(page);
+  });
+});
+
+test.describe('while the local copy is still coming', () => {
+  // So r1's whole diff, which needs it, stays coming until the test lets it come.
+  test.use({ lateRemote: true });
+
+  test('the last thread asked for is the one the diff shows', async ({ page }) => {
+    test.setTimeout(60_000);
+    const id = await open(page, COMMENTS_PULL.number);
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
+    await settled(page);
+    await page.keyboard.press(PANEL);
+    await expect.poll(() => rows(page)).toHaveLength(10);
+    for (let step = 0; step < 3; step++) await page.keyboard.press('j');
+    await expect(focusedRow(page)).toContainText('r1 · line 9');
+    // The outdated thread asks for r1's whole diff; before it comes, a thread the diff on screen
+    // shows is asked for, and stays.
+    await page.keyboard.press('Enter');
+    await expect.poll(() => compared(page, id)).toBe('coming');
+    await page.keyboard.press('j');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 15');
+    // r1 was called off: nothing is coming, and the whole pull request is what's compared, before
+    // and after the local copy comes.
+    await expect.poll(() => compared(page, id)).toBe('whole');
+    writeCommentsRemote(test.info().outputPath('remote'));
+    await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+    await expect(page.locator('footer').getByText('GitHub’s diff', { exact: true })).toHaveCount(
+      0,
+      { timeout: 30_000 },
+    );
+    expect(await compared(page, id)).toBe('whole');
+    await expect.poll(() => placed(page)).toEqual(AT_HEAD);
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 15');
+  });
+
+  test('⌃o calls off a comparison still coming, and takes back what it said', async ({ page }) => {
+    test.setTimeout(60_000);
+    const id = await open(page, COMMENTS_PULL.number);
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
+    await settled(page);
+    await page.keyboard.press(PANEL);
+    await expect.poll(() => rows(page)).toHaveLength(10);
+    // new 8, then new 15, past the outdated thread between them.
+    await page.keyboard.press('j');
+    await page.keyboard.press('j');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
+    await page.keyboard.press('j');
+    await page.keyboard.press('j');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 15');
+    // The outdated thread asks for r1's whole diff, which needs the local copy, so it's coming.
+    await page.keyboard.press('k');
+    await expect(focusedRow(page)).toContainText('r1 · line 9');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => compared(page, id)).toBe('coming');
+    const note = page.getByRole('status').filter({ hasText: 'Comparing base → r1' });
+    await expect(note).toBeVisible();
+    // Going back is the last move: r1 is called off, and so is what was said of it.
+    await page.keyboard.press('Control+o');
+    await expect.poll(() => compared(page, id)).toBe('whole');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
+    await expect(note).toHaveCount(0);
+    // Nor does r1 come with the local copy.
+    writeCommentsRemote(test.info().outputPath('remote'));
+    await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+    await expect(page.locator('footer').getByText('GitHub’s diff', { exact: true })).toHaveCount(
+      0,
+      { timeout: 30_000 },
+    );
+    expect(await compared(page, id)).toBe('whole');
+    await expect.poll(() => placed(page)).toEqual(AT_HEAD);
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
+  });
 });

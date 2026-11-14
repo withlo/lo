@@ -25,6 +25,7 @@ function row(number: number, below: number[], head = `stack/${number}`): Row {
     needsRebase: false,
     overview: null,
     viewed: null,
+    threads: null,
   };
 }
 

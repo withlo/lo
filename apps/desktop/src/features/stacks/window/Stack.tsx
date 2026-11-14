@@ -1,9 +1,9 @@
 // The stack, at the top of a pull request's tab's left panel, above the files: its tree, a row a
-// layer, with each layer's review, checks, place in the merge queue, overview and viewed count, the
-// offer to make the chain a GitHub stack while Lo could, and what Lo couldn't read. A run of layers
-// being chosen, or on screen as one diff, shares a band, and while it's chosen the tree says which
-// layers and what the keys do. Nothing shows while there's no stack, and nothing holds its place
-// while Lo looks for one.
+// layer, with each layer's review, checks, place in the merge queue, overview, viewed count and
+// unresolved threads, the offer to make the chain a GitHub stack while Lo could, and what Lo
+// couldn't read. A run of layers being chosen, or on screen as one diff, shares a band, and while
+// it's chosen the tree says which layers and what the keys do. Nothing shows while there's no
+// stack, and nothing holds its place while Lo looks for one.
 
 import {
   Button,
@@ -27,6 +27,7 @@ import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.
 import { useViewedCount } from '../../tree/window/shared.ts';
 import type { Checks, Link, Review, Row } from '../contract.ts';
 import { makeStack } from './actions.ts';
+import { useLayerCount } from './counts.ts';
 import { catchUp, choosing, focused, keyboardLayer, stacks } from './layers.ts';
 import { chainIn, choiceNote, type NoteKeys } from './runs.ts';
 import { showTarget, stackTarget, stopChoosing, takeRefocus } from './walk.ts';
@@ -83,20 +84,23 @@ function noteKeys(): NoteKeys {
 
 /**
  * What the layer on screen's viewed count says: of the files its diff shows, as `e` marks them, with
- * whether there may be more than GitHub has listed.
+ * whether there may be more than GitHub has listed; and how many of its review threads are
+ * unresolved, once they're read.
  */
 export interface OnScreen {
   readonly count:
     { readonly viewed: number; readonly total: number; readonly partial: boolean } | undefined;
   readonly overview: OverviewMark | undefined;
+  readonly threads?: number | undefined;
 }
 
 /**
  * `row` as the tree draws it: its text without what would turn its direction around, and the layer
- * on screen's overview and viewed count from its tab, which change as it's read.
+ * on screen's overview, viewed count and unresolved threads from its tab, which change as they're
+ * read; until its threads are, what was read with the layers.
  */
 export function layerOf(row: Row, onScreen: OnScreen): StackTreeLayer {
-  const { viewed } = row;
+  const { viewed, threads } = row;
   return {
     key: String(row.number),
     number: row.number,
@@ -117,6 +121,12 @@ export function layerOf(row: Row, onScreen: OnScreen): StackTreeLayer {
       : viewed?.source === 'layers'
         ? { viewed: viewed.viewed, total: viewed.files, partial: !viewed.complete }
         : undefined,
+    threads:
+      row.current && onScreen.threads !== undefined
+        ? { unresolved: onScreen.threads }
+        : threads === null
+          ? undefined
+          : { unresolved: threads.unresolved, partial: !threads.complete },
     branch: row.branch,
     sitsOn: row.on ?? undefined,
   };
@@ -137,6 +147,7 @@ export function Stack({ tab }: { tab: PullTab }) {
   const choice = useTabState(choosing, tab.id);
   const overview = useOverviewMark(tab.id);
   const count = useViewedCount(tab.id);
+  const threads = useLayerCount(tab.id);
 
   useEffect(() => {
     if (stacks.get(tab.id) === undefined) catchUp(tab.id);
@@ -172,7 +183,7 @@ export function Stack({ tab }: { tab: PullTab }) {
   }, [take]);
 
   if (view?.kind !== 'stack') return null;
-  const onScreen = { count, overview };
+  const onScreen = { count, overview, threads };
   // A run on screen, or being chosen, is a band; it has no one layer on screen.
   const band = choice
     ? (chainIn(view.rows, choice.anchor, choice.end) ?? [choice.anchor])

@@ -24,6 +24,7 @@ function row(number: number, path: number[], current = false): Row {
     needsRebase: false,
     overview: null,
     viewed: null,
+    threads: null,
   };
 }
 

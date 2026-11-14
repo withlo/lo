@@ -94,6 +94,14 @@ function pull(number: number, base: string, head: string, stack?: NativeStackEnt
   };
 }
 
+/** The states of a layer's threads, as GitHub gives them: `resolved` resolved, then the rest. */
+function states(resolved: number, unresolved: number) {
+  return [
+    ...Array.from({ length: resolved }, () => ({ isResolved: true })),
+    ...Array.from({ length: unresolved }, () => ({ isResolved: false })),
+  ];
+}
+
 describe("a tab's stack", () => {
   it('is its tree, in the order ]s walks it, saying how each layer sits', async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
@@ -120,6 +128,7 @@ describe("a tab's stack", () => {
       needsRebase: false,
       overview: null,
       viewed: { source: 'layers', viewed: 0, files: 1, complete: true },
+      threads: { unresolved: 0, threads: 0, complete: true },
     });
     // The layer on screen counts from its tab's files; d changes a's, b's and c's files, and its own.
     expect(view.rows.map((row) => row.viewed)).toEqual([
@@ -244,6 +253,34 @@ describe("a tab's stack", () => {
       [null, null, { source: 'tab' }],
       [null, null, null],
       [null, null, null],
+    ]);
+    expect(rowsOf(view).map(({ threads }) => threads)).toEqual([null, null, null, null, null]);
+  });
+
+  it("counts each layer's unresolved threads among the first 100 GitHub gives", async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    const layers = found.layers;
+    if (!layers) throw new Error('no layers');
+    let changed = changeLayer(layers, 2, (layer) => ({
+      ...layer,
+      reviewThreads: { totalCount: 3, nodes: states(1, 2) },
+    }));
+    changed = changeLayer(changed, 4, (layer) => ({
+      ...layer,
+      reviewThreads: { totalCount: 1, nodes: states(0, 1) },
+    }));
+    changed = changeLayer(changed, 5, (layer) => ({
+      ...layer,
+      reviewThreads: { totalCount: 150, nodes: states(97, 3) },
+    }));
+    const { view } = viewOf(input(found, 4, { layers: changed }));
+    expect(rowsOf(view).map(({ number, threads }) => [number, threads])).toEqual([
+      [2, { unresolved: 2, threads: 3, complete: true }],
+      [3, { unresolved: 0, threads: 0, complete: true }],
+      // The layer on screen's too: the window counts it from its threads once it has them.
+      [4, { unresolved: 1, threads: 1, complete: true }],
+      [6, { unresolved: 0, threads: 0, complete: true }],
+      [5, { unresolved: 3, threads: 150, complete: false }],
     ]);
   });
 });

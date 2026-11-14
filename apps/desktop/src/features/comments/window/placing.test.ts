@@ -136,6 +136,30 @@ test('the left column shows the base, a revision, or no commit at all', () => {
   expect(screenOf(comparing, { key: 'r0..r2', from: OLDER, replayed: false }).left.kind).not.toBe(
     'revision',
   );
+  // A revision compared from the base is its whole diff, the base's lines on the left.
+  expect(screenOf(comparing, { key: 'r1..r2', from: null, replayed: false })).toEqual(
+    Screen.full(HEAD),
+  );
+});
+
+test('an outdated thread shows where it was written in that revision’s whole diff', () => {
+  const outdated = row({
+    outdated: true,
+    side: 'LEFT',
+    line: null,
+    originalLine: 9,
+    currentOn: OLDER,
+    writtenOn: OLDER,
+  });
+  // The whole pull request at the head leaves it to the panel.
+  expect(placeThreads([outdated], drawn([file()]), null).threads).toEqual([]);
+  const written = drawn([file()], { at: OLDER, comparison: 'base..r1' });
+  const placed = placeThreads([outdated], written, {
+    key: 'base..r1',
+    from: null,
+    replayed: false,
+  });
+  expect(placed.threads.map(({ at }) => at)).toEqual([{ file: 'd0', side: 'old', line: 9 }]);
 });
 
 test('a thread’s version changes with what it shows', () => {

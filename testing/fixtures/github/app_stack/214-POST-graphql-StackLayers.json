@@ -18,19 +18,19 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4989",
-      "x-ratelimit-reset": "1794564299",
+      "x-ratelimit-remaining": "4996",
+      "x-ratelimit-reset": "1794616605",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "11"
+      "x-ratelimit-used": "4"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4989,
-          "used": 11,
-          "resetAt": "2026-11-13T10:04:59Z"
+          "remaining": 4996,
+          "used": 4,
+          "resetAt": "2026-11-14T00:36:45Z"
         },
         "nodes": [
           {
@@ -78,8 +78,12 @@
               ]
             },
             "reviewThreads": {
-              "totalCount": 0,
-              "nodes": []
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "isResolved": false
+                }
+              ]
             },
             "movedFrom": {
               "nodes": []
