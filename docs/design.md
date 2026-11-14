@@ -481,8 +481,9 @@ A repo's or a user's instructions can drop, add or reorder everything except the
   takes line comments only in the diff, the lines changed after the overview's revision, or Lo can't
   tell where they are now. Once sent, a comment that won't show under the block says where it went.
   A comment on the PR itself is posted at once, since it joins no review. A draft keeps the block it
-  was written from, and reopens there after a restart. Threads that arrive, grow or go while a block
-  is on screen move nothing you're reading.
+  was written from, and reopens there after a restart while the overview still has that block;
+  otherwise it opens where it would have without one, in the diff for lines and files. Threads that
+  arrive, grow or go while a block is on screen move nothing you're reading.
 - **From the block to the code.** Following a block jumps to the diff at that spot, or to the
   whole-file view when the code is outside the diff. `⌃o` returns to the same place in the overview.
   A menu and a key open the code beside the overview instead.

@@ -43,6 +43,8 @@ export interface DrawnBlock {
   readonly from: string | null;
   /** The lines it points at, at `commit`, within the file. */
   readonly lines: { readonly start: number; readonly end: number };
+  /** The lines its `:::code` names, as its key has them, past the file's end or not. */
+  readonly named: { readonly start: number; readonly end: number };
 }
 
 /** A code block on screen, where a comment is written under one of its lines. */

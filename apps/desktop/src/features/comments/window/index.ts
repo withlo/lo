@@ -19,6 +19,7 @@ import {
   blockLines,
   blockThreadsChanged,
   isCodeBlock,
+  onOverviewChanged,
   setBlockThreads,
 } from '../../overview/window/shared.ts';
 import { setLayerCounts } from '../../stacks/window/shared.ts';
@@ -39,6 +40,7 @@ import {
   keepBoxesOf,
   knowPull,
   restore,
+  reopenAll,
   restoreBlock,
   saveAll,
   takeDrafts,
@@ -214,6 +216,9 @@ export default {
       void checkUploads(view);
       queueMicrotask(() => restore(view));
     });
+    // A draft written on a block opens under it while the overview has it, and otherwise where it
+    // would with none: which, as the overview changes.
+    onOverviewChanged(() => queueMicrotask(reopenAll));
     // What waits to be saved is saved as the window goes.
     window.addEventListener('pagehide', saveAll);
     main().subscribe('threads', (view) => {

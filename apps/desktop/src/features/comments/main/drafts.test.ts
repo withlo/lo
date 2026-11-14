@@ -66,6 +66,8 @@ test('a draft keeps the code block it was written from through a restart, until 
     path: 'a.ts',
     block: { start: 2, end: 8 },
     at: { side: 'new' as const, from: 4, to: 4 },
+    why: 'untouched' as const,
+    head: R1,
   };
   const onPull: DraftPlaceRow = { kind: 'conversation' };
   expect(store.save('rozed-bot', PULL, onPull, 'From a block', home)).toBe(true);

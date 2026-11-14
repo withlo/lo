@@ -351,6 +351,7 @@ function ExcerptCode({
       commit,
       from: from === '' ? null : from,
       lines: { start, end: Math.max(start, Math.min(end, code.lines.new.length)) },
+      named: { start, end },
     };
     let rendering: { threader: object; render: RenderThread } | undefined;
     const threads = () => {

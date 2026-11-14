@@ -52,7 +52,9 @@ import {
   restore,
   SAVE_AFTER,
   send,
+  reopenAll,
   takeDrafts,
+  takenDown,
   takeOffer,
   replying,
   type Box,
@@ -117,6 +119,8 @@ vi.mock('../../diff/window/shared.ts', () => ({
 const overview = vi.hoisted(() => ({
   /** The blocks drawn, by their keys. */
   blocks: new Map<string, unknown>(),
+  /** Whether the tab's overview has each block, by its key, drawn or not; else, whether it's drawn. */
+  has: new Map<string, boolean | 'unknown'>(),
   /** What `c` on a block names: the block and its lines. */
   found: undefined as unknown,
   /** Where the lines are at the head on screen. */
@@ -127,6 +131,7 @@ vi.mock('../../overview/window/shared.ts', async (original) => ({
   blockLines: () => overview.found,
   commentOnHead: () => Promise.resolve(overview.onHead),
   writingBlock: (_tab: string, key: string) => overview.blocks.get(key),
+  blockInOverview: (_tab: string, key: string) => overview.has.get(key) ?? overview.blocks.has(key),
   revisionName: (_tab: string, commit: string) => (commit === HEAD ? 'r2' : 'r1'),
 }));
 
@@ -236,11 +241,15 @@ function fakeBlock() {
     commit: OLDER,
     from: null,
     lines: { start: 3, end: 9 },
+    named: { start: 3, end: 9 },
   };
   const writing: WritingBlock = {
     block,
     compose(at, draft, on, _frame, options) {
-      const open = drawn.find((each) => lineOf(each.at) === lineOf(at) && !each.composer.closed);
+      const open = drawn.find(
+        (each) =>
+          sideOf(each.at) === at.side && lineOf(each.at) === lineOf(at) && !each.composer.closed,
+      );
       if (open) {
         if (options?.focus !== false) open.composer.focus();
         return open.composer;
@@ -254,6 +263,11 @@ function fakeBlock() {
   return { drawn, writing, block };
 }
 
+/** The side of a box's line or span. */
+function sideOf(at: unknown): unknown {
+  return typeof at === 'object' && at !== null && 'side' in at ? at.side : undefined;
+}
+
 /** The line a box on `at`, a line or a span, goes under: its last. */
 function lineOf(at: unknown): number | undefined {
   if (typeof at !== 'object' || at === null) return undefined;
@@ -261,16 +275,19 @@ function lineOf(at: unknown): number | undefined {
   return 'to' in at && typeof at.to === 'number' ? at.to : undefined;
 }
 
-/** `c` on the fake block's line `line`, or lines `from` to `to`, which are at `onHead` at the head. */
+/**
+ * `c` on the fake block's line `line`, or lines `from` to `to`, on `side`, which are at `onHead` at
+ * the head.
+ */
 async function onBlock(
   writing: WritingBlock,
-  lines: { from: number; to: number },
+  lines: { from: number; to: number; side?: 'old' | 'new' },
   onHead: CommentOnHead,
   how: 'review' | 'now' = 'review',
 ): Promise<void> {
-  const { from, to } = lines;
+  const { from, to, side = 'new' } = lines;
   const at: Place | Span =
-    from === to ? { file: 'x0', side: 'new', line: to } : { file: 'x0', side: 'new', from, to };
+    from === to ? { file: 'x0', side, line: to } : { file: 'x0', side, from, to };
   overview.found = { writing, at };
   overview.onHead = onHead;
   const target: LineTarget = { kind: 'line', at };
@@ -278,8 +295,20 @@ async function onBlock(
 }
 
 /** The home of a draft written from the fake block's lines `from` to `to`. */
-function blockHome(from: number, to = from): DraftHomeRow {
-  return { commit: OLDER, path: PATH, block: { start: 3, end: 9 }, at: { side: 'new', from, to } };
+function blockHome(
+  from: number,
+  to = from,
+  why: DraftHomeRow['why'] = null,
+  side: 'old' | 'new' = 'new',
+): DraftHomeRow {
+  return {
+    commit: OLDER,
+    path: PATH,
+    block: { start: 3, end: 9 },
+    at: { side, from, to },
+    why,
+    head: HEAD,
+  };
 }
 
 /** A box the reader shut with `Esc Esc`, keeping its text, or not. */
@@ -324,6 +353,11 @@ function onLines(start: number | null, end: number): DraftPlaceRow {
   };
 }
 
+/** A comment on `src/backoff.ts` as a whole, at `HEAD`. */
+function onTheFile(): DraftPlaceRow {
+  return { kind: 'thread', commit: HEAD, path: 'src/backoff.ts', lines: null };
+}
+
 function row(place: DraftPlaceRow, text: string, changes: Partial<DraftRow> = {}): DraftRow {
   return {
     place,
@@ -362,6 +396,7 @@ beforeEach(() => {
   answers['comments.draft'] = () => undefined;
   answers['comments.discard'] = () => undefined;
   overview.blocks.clear();
+  overview.has.clear();
 });
 
 afterEach(() => {
@@ -720,6 +755,98 @@ describe('a box on a code block', () => {
       [{ file: 'x0', side: 'new', line: 5 }, false, 'On the line'],
       [{ file: 'x0', side: 'new', line: 7 }, false, 'On the pull request'],
     ]);
+  });
+
+  test('after a restart, a draft says again why it goes where it does', async () => {
+    const block = fakeBlock();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onTheFile(), 'On the file', { savedAt: 1, home: blockHome(6, 6, 'changed') }),
+        row({ kind: 'conversation' }, 'On the pull request', {
+          savedAt: 2,
+          home: blockHome(8, 8, 'untouched'),
+        }),
+      ],
+    });
+    await Promise.resolve();
+    expect(block.drawn.map((each) => boxIn(each).state.where)).toEqual([
+      'On the file, since these lines changed after r1',
+      'On the pull request, since it doesn’t change this file',
+    ]);
+  });
+
+  test('a draft whose block the overview no longer has opens where one with none would', async () => {
+    const block = fakeBlock();
+    const onDiff = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(null, 5), 'On the line', { savedAt: 1, home: blockHome(5) }),
+        row(onTheFile(), 'On the file', { savedAt: 2, home: blockHome(6, 6, 'changed') }),
+        row({ kind: 'conversation' }, 'On the pull request', {
+          savedAt: 3,
+          home: blockHome(7, 7, 'untouched'),
+        }),
+      ],
+    });
+    await Promise.resolve();
+    expect(block.drawn.map((each) => lineOf(each.at))).toEqual([5, 6, 7]);
+    expect(onDiff.drawn).toEqual([]);
+    // The overview moves to a newer push: its block, a newer one's, isn't this one, which goes with
+    // its boxes. Lines and a file open in the diff; the pull request's is the timeline's.
+    overview.blocks.clear();
+    overview.has.set(block.block.key, false);
+    for (const each of block.drawn) takenDown(boxIn(each), each.composer);
+    await Promise.resolve();
+    expect(onDiff.drawn.map(({ at, composer }) => [at, composer.text])).toEqual([
+      [{ file: 'f0', side: 'new', line: 5 }, 'On the line'],
+      [{ file: 'f0' }, 'On the file'],
+    ]);
+    expect(block.drawn).toHaveLength(3);
+    // Each in one box only: its block drawn again, the boxes stay where they are.
+    const again = fakeBlock();
+    reopenAll();
+    await Promise.resolve();
+    expect(again.drawn).toEqual([]);
+    expect(onDiff.drawn).toHaveLength(2);
+  });
+
+  test('a draft waits while Lo can’t tell whether the overview has its block', async () => {
+    const onDiff = fakeDiff();
+    const key = blockKey(OLDER, PATH, 3, 9);
+    overview.has.set(key, 'unknown');
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'On the line', { savedAt: 1, home: blockHome(5) })],
+    });
+    await Promise.resolve();
+    expect(onDiff.drawn).toEqual([]);
+    // The overview, checked, has another commit's blocks.
+    overview.has.set(key, false);
+    reopenAll();
+    expect(onDiff.drawn.map((each) => each.composer.text)).toEqual(['On the line']);
+  });
+
+  test('a box on a line of one side doesn’t take `c` on that number on the other', async () => {
+    const { drawn, writing } = fakeBlock();
+    await onBlock(
+      writing,
+      { from: 6, to: 6 },
+      { kind: 'lines', path: PATH, side: 'new', from: 6, to: 6 },
+    );
+    await onBlock(
+      writing,
+      { from: 6, to: 6, side: 'old' },
+      { kind: 'file', path: PATH, why: 'older' },
+    );
+    expect(drawn.map((each) => each.at)).toEqual([
+      { file: 'x0', side: 'new', line: 6 },
+      { file: 'x0', side: 'old', line: 6 },
+    ]);
+    expect(boxIn(drawn[1]!).state.where).toBe(
+      'On the file, since Lo maps only new-side lines from r1 to r2',
+    );
   });
 
   test('a draft on the pull request with no block stays kept, shut and unsent', async () => {

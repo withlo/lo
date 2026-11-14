@@ -208,16 +208,39 @@ export const draftPlace = z.discriminatedUnion('kind', [
 export type DraftPlaceRow = z.output<typeof draftPlace>;
 
 /**
+ * Why a comment written on a code block's lines goes elsewhere: on their file, as GitHub takes line
+ * comments only in the diff (`notInDiff`), Lo couldn't read which lines it takes (`noLines`), the
+ * lines changed since the overview's commit (`changed`), they're on the older side (`older`), Lo
+ * can't tell where they are at the head (`unknown`), or the pull request deletes the file
+ * (`deleted`); or on the pull request, as it leaves the file alone (`untouched`), or the file is
+ * gone at the head (`gone`).
+ */
+export const blockWhy = z.enum([
+  'notInDiff',
+  'noLines',
+  'changed',
+  'older',
+  'unknown',
+  'deleted',
+  'untouched',
+  'gone',
+]);
+
+/**
  * Where a draft's box was written, when that's an overview's code block rather than the diff: the
  * block, by the commit the overview describes and the file and lines it points at, and the lines
- * the comment was written under, there, on their side. Its box opens again under that block,
- * whatever its place: lines at the head, the file, or the pull request.
+ * the comment was written under, there, on their side; with why the comment goes elsewhere than
+ * those lines, if it does, and the head on screen as that was worked out. Its box opens again under
+ * that block, whatever its place, while the tab's overview has the block; otherwise where a draft
+ * of its place opens.
  */
 export const draftHome = z.strictObject({
   commit: oid,
   path,
   block: z.strictObject({ start: lineNumber, end: lineNumber }),
   at: z.strictObject({ side: z.enum(['old', 'new']), from: lineNumber, to: lineNumber }),
+  why: blockWhy.nullable(),
+  head: oid,
 });
 export type DraftHomeRow = z.output<typeof draftHome>;
 

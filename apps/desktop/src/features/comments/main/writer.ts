@@ -965,19 +965,26 @@ export class Writer {
   }
 
   /**
-   * `pull`'s timeline as read after now: where the poller keeps it, read again, only its newest
-   * page, joined to what it had; otherwise read now, and kept from then. `again` when it couldn't be
-   * read in time, to look again in a while.
+   * `pull`'s timeline as read afresh after now, as `#reviewRead` reads your pending review: never
+   * what the poller had, which may be from before the write, even from before Lo started. The
+   * poller keeps it, from now if it didn't, and reads it again; only its newest page, joined to what
+   * it had, with when it was made. `again` when no such read came in time, to look again in a while.
    */
   async #timelineNow(
     poller: WriterPoller,
     pull: PullRef,
-  ): Promise<Pick<PullRequestTimeline, 'items'> | 'again'> {
-    const mark = poller.readAfresh(pull, TIMELINE);
-    if (!mark) return (await poller.timeline(pull))?.value ?? 'again';
+  ): Promise<Cached<Pick<PullRequestTimeline, 'items'>> | 'again'> {
+    let mark = poller.readAfresh(pull, TIMELINE);
+    if (!mark) {
+      // Not kept, as for a pull request whose timeline isn't on screen: kept from now. What it
+      // answers at once may be what an earlier run kept, so it says nothing of the write.
+      await poller.timeline(pull);
+      mark = poller.readAfresh(pull, TIMELINE);
+    }
+    if (!mark) return 'again';
     const readWait = this.#options.readWait ?? READ_WAIT;
     const read = await this.#readAfter(poller, pull, TIMELINE, mark, this.#now() + readWait);
-    return typeof read === 'object' ? read.value : 'again';
+    return typeof read === 'object' ? read : 'again';
   }
 
   /**
@@ -1070,8 +1077,12 @@ export class Writer {
     }
     if (place.kind === 'conversation') {
       const look = async (poller: WriterPoller) => {
-        const timeline = await this.#timelineNow(poller, pull);
-        if (!still() || timeline === 'again') return still() ? 'again' : undefined;
+        const read = await this.#timelineNow(poller, pull);
+        if (!still() || read === 'again') return still() ? 'again' : undefined;
+        // Only a read made the wait after it was sent, once GitHub has stored it, says whether it
+        // posted.
+        if (read.fetchedAt < at + (this.#options.settleAfter ?? SETTLE_AFTER)) return 'again';
+        const timeline = read.value;
         // When it was sent, by GitHub's clock.
         const ahead = await poller.readOnce((client) => Promise.resolve(client.githubAhead()));
         const sentThere = at + (ahead ?? 0);

@@ -150,11 +150,13 @@ function poller(
   /** When each read of the threads was made. */
   const readAt: number[] = [];
   /**
-   * The pull request's timeline, as a read of it made now gets it; whether the poller keeps it, as
-   * for a view that shows it; and how many times it was read outright.
+   * The pull request's timeline, as a read of it made now gets it; what the poller has of it from
+   * before, as an earlier run of Lo kept, which it answers at once; whether it keeps it, as for a
+   * view that shows it; and how many times it was asked for outright.
    */
   const timeline = {
     items: [] as PullRequestTimeline['items'],
+    cached: [] as PullRequestTimeline['items'],
     kept: false,
     reads: 0,
   };
@@ -194,8 +196,10 @@ function poller(
       return Promise.resolve(answer);
     },
     timeline() {
+      // What it had, from before; kept from now, and read again as the poller reads.
       timeline.reads += 1;
-      return Promise.resolve({ value: { items: timeline.items }, fetchedAt: Date.now() });
+      timeline.kept = true;
+      return Promise.resolve({ value: { items: timeline.cached }, fetchedAt: 0 });
     },
     readAfresh(_pull: PullRef, kind: { name: string }): ReadMark | undefined {
       // A read the poller doesn't keep has nothing to mark.
@@ -442,6 +446,8 @@ const BLOCK: DraftHomeRow = {
   path: 'src/backoff.ts',
   block: { start: 3, end: 9 },
   at: { side: 'new', from: 5, to: 5 },
+  why: 'changed',
+  head: HEAD,
 };
 
 describe('a draft written from a code block', () => {
@@ -574,16 +580,20 @@ describe('a lost answer', () => {
     expect(last()).toMatchObject([{ sending: 'notPosted' }]);
   });
 
-  test('on the pull request, is looked for in its timeline: found, the draft goes; not, it stays', async () => {
+  test('on the pull request, is looked for in a read of its timeline made after the wait, never one kept from before', async () => {
     vi.useFakeTimers();
     const onPull: DraftPlaceRow = { kind: 'conversation' };
-    // Where the poller doesn't keep the timeline, it's read once, now.
+    // Where the poller doesn't keep the timeline, what it had from before says nothing: it keeps it
+    // from now, and what it reads next settles it.
     const found = poller([lost()]);
     const posted = writer(found);
     expect(await posted.made.send('t1', onPull, 'Lost?', 'now')).toEqual({ kind: 'lost' });
     found.timeline.items = [pullComment('rozed-bot', 'Lost?', aMomentOn())];
     await vi.advanceTimersByTimeAsync(10_000);
     expect(found.timeline.reads).toBe(1);
+    expect(posted.last()).toMatchObject([{ sending: 'checking', sent: 'Lost?' }]);
+    found.timelineRead();
+    await vi.advanceTimersByTimeAsync(0);
     expect(posted.last()).toEqual([]);
     // Where it keeps it, it's read again from then, only its newest page, and nothing more.
     const missing = poller([lost()]);
@@ -598,6 +608,7 @@ describe('a lost answer', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(missing.timeline.reads).toBe(0);
     expect(notPosted.last()).toMatchObject([{ sending: 'notPosted', sent: null, text: 'Lost?' }]);
+    expect([...found.posted, ...missing.posted]).toHaveLength(2);
   });
 
   test.each([
@@ -617,11 +628,16 @@ describe('a lost answer', () => {
       before.made.save('t1', onPull, 'Lost?', BLOCK);
       expect(await before.made.send('t1', onPull, 'Lost?', 'now')).toEqual({ kind: 'lost' });
       before.made.stop();
+      // The poller has the timeline an earlier run kept, from before the write.
       const fake = poller([]);
+      fake.timeline.cached = [pullComment('rozed-bot', 'Older', '2026-01-01T00:00:00Z')];
       fake.timeline.items = [pullComment('rozed-bot', body, aMomentOn())];
       const { last } = writer(fake, info(), database);
       expect(last()).toMatchObject([{ restored: true, sending: 'checking', home: BLOCK }]);
       await vi.advanceTimersByTimeAsync(10_000);
+      expect(last()).toMatchObject([{ sending: 'checking' }]);
+      fake.timelineRead();
+      await vi.advanceTimersByTimeAsync(0);
       expect(last()).toEqual(after);
     },
   );

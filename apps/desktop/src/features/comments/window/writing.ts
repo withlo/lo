@@ -451,6 +451,14 @@ export type OnFileWhy = 'notInDiff' | 'noLines' | FileWhy | 'deleted';
  */
 export type OnPullWhy = 'untouched' | 'gone';
 
+/** Why a comment on a code block's lines goes elsewhere than those lines, as main keeps it. */
+export type BlockWhy = OnFileWhy | OnPullWhy;
+
+/** Why a comment goes where `goes` says, if that's not the block's lines. */
+export function whyOf(goes: BlockComment): BlockWhy | null {
+  return goes.kind === 'lines' ? null : goes.why;
+}
+
 /**
  * What a comment on a code block's lines goes on: the lines at the head on screen they are, a
  * comment on their file, or one on the pull request itself, each saying why.
@@ -504,33 +512,31 @@ function lowerFirst(text: string): string {
 export const ON_FILE_NOT_IN_DIFF = 'On the file, since GitHub takes line comments only in the diff';
 
 /**
- * What a box on a code block's lines says of where its comment goes, when that's not those lines
- * at the overview's commit: their file or the pull request, and why; or the lines at a newer head.
- * Nothing when its place says it all.
+ * What a box on a code block's lines says of where its comment, at `place`, goes, when that's not
+ * those lines at the overview's commit: their file or the pull request, and `why`; or, with no
+ * `why`, the lines at a newer head. Nothing when its place says it all.
  */
 export function blockWhere(
-  goes: BlockComment,
+  why: BlockWhy | null,
   place: DraftPlaceRow,
   names: BlockRevisions,
 ): string | undefined {
-  switch (goes.kind) {
-    case 'lines':
-      return names.written === names.now ? undefined : `${whereText(place)}, at ${names.now}`;
-    case 'pull':
-      return goes.why === 'untouched'
-        ? 'On the pull request, since it doesn’t change this file'
-        : `On the pull request, since this file is gone at ${names.now}`;
-    case 'file':
-      return onFileWords(goes.why, names);
-    default:
-      goes satisfies never;
-      return undefined;
+  if (why === null) {
+    const onLines = place.kind === 'thread' && place.lines !== null;
+    return !onLines || names.written === names.now
+      ? undefined
+      : `${whereText(place)}, at ${names.now}`;
   }
+  return whyWords(why, names);
 }
 
-/** What a box on a code block's lines says of a comment on their file, and why it's there. */
-function onFileWords(why: OnFileWhy, names: BlockRevisions): string {
+/** What a box on a code block's lines says of a comment on their file or the pull request, and why. */
+function whyWords(why: BlockWhy, names: BlockRevisions): string {
   switch (why) {
+    case 'untouched':
+      return 'On the pull request, since it doesn’t change this file';
+    case 'gone':
+      return `On the pull request, since this file is gone at ${names.now}`;
     case 'notInDiff':
       return ON_FILE_NOT_IN_DIFF;
     case 'noLines':
@@ -545,7 +551,7 @@ function onFileWords(why: OnFileWhy, names: BlockRevisions): string {
       return 'On the file, which this pull request deletes';
     default:
       why satisfies never;
-      throw new Error(`Lo doesn't know why a comment goes on the file: ${String(why)}`);
+      throw new Error(`Lo doesn't know why a comment goes elsewhere: ${String(why)}`);
   }
 }
 

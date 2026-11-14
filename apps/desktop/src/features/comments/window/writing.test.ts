@@ -24,6 +24,7 @@ import {
   sendingNote,
   sentFromBlock,
   whereText,
+  whyOf,
 } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
@@ -140,32 +141,24 @@ describe('a comment on a code block’s lines', () => {
   test('says where it goes and why, where that isn’t the block’s lines', () => {
     const names = { written: 'r1', now: 'r2' };
     const onFile = placeOf(HEAD, path, undefined);
-    const words = (goes: Parameters<typeof blockWhere>[0]) => blockWhere(goes, onFile, names);
-    expect(words({ kind: 'file', why: 'changed' })).toBe(
-      'On the file, since these lines changed after r1',
-    );
-    expect(words({ kind: 'file', why: 'notInDiff' })).toBe(
+    const words = (why: Parameters<typeof blockWhere>[0]) => blockWhere(why, onFile, names);
+    expect(words('changed')).toBe('On the file, since these lines changed after r1');
+    expect(words('notInDiff')).toBe(
       'On the file, since GitHub takes line comments only in the diff',
     );
-    expect(words({ kind: 'file', why: 'older' })).toBe(
-      'On the file, since Lo maps only new-side lines from r1 to r2',
+    expect(words('noLines')).toBe(
+      'On the file, since Lo couldn’t read which lines GitHub takes comments on',
     );
-    expect(words({ kind: 'file', why: 'unknown' })).toBe(
-      'On the file, since Lo can’t tell where these lines are at r2',
-    );
-    expect(words({ kind: 'file', why: 'deleted' })).toBe(
-      'On the file, which this pull request deletes',
-    );
-    expect(words({ kind: 'pull', why: 'untouched' })).toBe(
-      'On the pull request, since it doesn’t change this file',
-    );
-    expect(words({ kind: 'pull', why: 'gone' })).toBe(
-      'On the pull request, since this file is gone at r2',
-    );
+    expect(words('older')).toBe('On the file, since Lo maps only new-side lines from r1 to r2');
+    expect(words('unknown')).toBe('On the file, since Lo can’t tell where these lines are at r2');
+    expect(words('deleted')).toBe('On the file, which this pull request deletes');
+    expect(words('untouched')).toBe('On the pull request, since it doesn’t change this file');
+    expect(words('gone')).toBe('On the pull request, since this file is gone at r2');
     const lines = placeOf(HEAD, path, { end: Line.right(5) });
-    const at = { kind: 'lines', lines: { end: Line.right(5) } } as const;
-    expect(blockWhere(at, lines, { written: 'r2', now: 'r2' })).toBeUndefined();
-    expect(blockWhere(at, lines, names)).toBe('On line 5, new side, at r2');
+    expect(blockWhere(null, lines, { written: 'r2', now: 'r2' })).toBeUndefined();
+    expect(blockWhere(null, lines, names)).toBe('On line 5, new side, at r2');
+    expect(whyOf({ kind: 'lines', lines: { end: Line.right(5) } })).toBeNull();
+    expect(whyOf({ kind: 'pull', why: 'gone' })).toBe('gone');
   });
 
   test('once sent, says where a comment that won’t show under the block went', () => {

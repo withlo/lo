@@ -1,17 +1,18 @@
 // What the overview shares with other features' window code: its mark for a tab, as the header's
-// view switch shows it, which the stack's tree shows for the layer on screen; and the review
-// threads another feature places and draws on its code blocks, with the comments written there.
+// view switch shows it, which the stack's tree shows for the layer on screen; the review threads
+// another feature places and draws on its code blocks, with the comments written there; and
+// whether a tab's overview has a block now, and when that may have changed.
 
 import type { Target } from '@lo/ui/commands';
 
 import { usePull } from '../../tab/window/shared.ts';
-import { markOf, newestHead, type MarkKind } from './facts.ts';
+import { markOf, newestHead, standingOf, type MarkKind } from './facts.ts';
 import { blockAt, drawnIn } from './follow.ts';
 import { useStanding } from './hooks.ts';
 import type { CommentOnHead } from './mapping.ts';
 import { commentLinesOnHead } from './since.ts';
-import { labelOf } from './stale.ts';
-import { revisions } from './store.ts';
+import { codeBlocksIn, labelOf } from './stale.ts';
+import { checked, revisions, states } from './store.ts';
 import {
   blockKey as keyOfBlock,
   blockLinesOf,
@@ -83,6 +84,32 @@ export function isCodeBlock(tab: string, target: Target): boolean {
  */
 export function blockKey(commit: string, path: string, start: number, end: number): string {
   return keyOfBlock(commit, path, start, end);
+}
+
+/**
+ * Whether tab `tab`'s overview has the code block known by `key` (`DrawnBlock.key`) now, drawn or
+ * not: `unknown` while Lo is still reading or checking it.
+ */
+export function blockInOverview(tab: string, key: string): boolean | 'unknown' {
+  if (writingBlockKeyed(tab, key)) return true;
+  const standing = standingOf(states.get(tab), checked.get(tab));
+  if (standing.kind === 'reading' || standing.kind === 'checking') return 'unknown';
+  if (standing.kind !== 'shown') return false;
+  const { commit } = standing.header;
+  return codeBlocksIn(standing.parsed.tree).some(
+    ({ path, lines }) => keyOfBlock(commit, path, lines.start, lines.end) === key,
+  );
+}
+
+/**
+ * Calls `listener` as any tab's overview changes, as main reads it or it's checked: which blocks
+ * it has may have changed. Returns a function that stops it.
+ */
+export function onOverviewChanged(listener: () => void): () => void {
+  const stops = [states.subscribe(listener), checked.subscribe(listener)];
+  return () => {
+    for (const stop of stops) stop();
+  };
 }
 
 /** What the reader calls the revision whose head is `commit`, in tab `tab`: `r3`, or its short id. */

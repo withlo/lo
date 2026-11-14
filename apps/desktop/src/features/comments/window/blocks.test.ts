@@ -47,6 +47,7 @@ function block(overrides: Partial<DrawnBlock> = {}): DrawnBlock {
     commit: HEAD,
     from: null,
     lines: { start: 3, end: 6 },
+    named: { start: 3, end: 6 },
     ...overrides,
   };
 }
