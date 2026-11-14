@@ -827,7 +827,7 @@ describe('a box on a code block', () => {
     });
     await Promise.resolve();
     expect(block.drawn.map((each) => each.composer.text)).toEqual(['On the pull request']);
-    expect(timelineBoxes.get(VIEW)).toMatchObject({ own: undefined, away: true });
+    expect(timelineBoxes.get(VIEW)).toMatchObject({ own: undefined, away: 'block' });
     // The overview moves to a newer push, whose blocks this one isn't.
     overview.blocks.clear();
     overview.has.set(block.block.key, false);
@@ -835,7 +835,7 @@ describe('a box on a code block', () => {
     await Promise.resolve();
     const own = timelineBoxes.get(VIEW).own;
     expect(own?.state.text).toBe('On the pull request');
-    expect(timelineBoxes.get(VIEW).away).toBe(false);
+    expect(timelineBoxes.get(VIEW).away).toBeUndefined();
     expect(timelineBox(VIEW, { kind: 'conversation' })).toBe(own);
     // Once: nowhere else, however often the overview changes.
     reopenAll();
@@ -861,14 +861,14 @@ describe('a box on a code block', () => {
     });
     await Promise.resolve();
     expect(block.drawn.map((each) => each.composer.text)).toEqual(['On the pull request']);
-    expect(timelineBoxes.get(VIEW)).toMatchObject({ own: undefined, away: true });
+    expect(timelineBoxes.get(VIEW)).toMatchObject({ own: undefined, away: 'block' });
     expect(timelineBox(VIEW, { kind: 'conversation' })).toBeUndefined();
     // Still unknown while the overview is read again: it waits, and isn't the timeline's either.
     overview.has.set(block.block.key, 'unknown');
     overview.blocks.clear();
     reopenAll();
     await Promise.resolve();
-    expect(timelineBoxes.get(VIEW)).toMatchObject({ own: undefined, away: true });
+    expect(timelineBoxes.get(VIEW)).toMatchObject({ own: undefined, away: 'waits' });
   });
 
   test('a draft waits while Lo can’t tell whether the overview has its block', async () => {
