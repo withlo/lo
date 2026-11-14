@@ -7,10 +7,12 @@ import { describe, expect, test } from 'vitest';
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
 import type { Commentable, DraftPlaceRow } from '../contract.ts';
 import {
+  actText,
   boxAt,
   commentableOn,
   hunksOf,
   linesAt,
+  notesOf,
   placeKey,
   placeOf,
   offersOf,
@@ -113,6 +115,17 @@ describe('a draft’s place', () => {
       whereText({ ...onLines, lines: { start: null, end: { side: 'LEFT', number: 41 } } }),
     ).toBe('On line 41, old side');
     expect(whereText({ ...onLines, lines: null })).toBe('On the file');
+    expect(whereText({ kind: 'reply', thread: 'T1' }, 'mira-chen')).toBe(
+      'Reply to mira-chen’s thread',
+    );
+    expect(whereText({ kind: 'reply', thread: 'T1' }, null)).toBe('Reply to the thread');
+    expect(whereText({ kind: 'edit', thread: 'T1', comment: 'C1' })).toBe('Edit your comment');
+  });
+
+  test('a reply’s is its thread’s, and an edit’s its comment’s, whatever the revision', () => {
+    expect(placeKey({ kind: 'reply', thread: 'T1' })).not.toBe(
+      placeKey({ kind: 'edit', thread: 'T1', comment: 'C1' }),
+    );
   });
 });
 
@@ -152,6 +165,14 @@ describe('where a draft’s box goes', () => {
     expect(boxAt(drawn, Screen.between(BASE, HEAD), { ...place, lines: left })).toBeUndefined();
     const since = { ...drawn, files: [file({ since: true })] };
     expect(boxAt(since, Screen.full(HEAD), { ...place, lines: left })).toBeUndefined();
+  });
+
+  test('a reply’s, or an edit’s, right after its thread, while the diff has the thread', () => {
+    const reply: DraftPlaceRow = { kind: 'reply', thread: 'T1' };
+    expect(boxAt(drawn, Screen.full(HEAD), reply, (id) => id === 'T1')?.at).toEqual({
+      thread: 'T1',
+    });
+    expect(boxAt(drawn, Screen.full(HEAD), reply)).toBeUndefined();
   });
 
   test('a renamed file’s draft is by its new path, and a deleted file’s by its old one', () => {
@@ -195,6 +216,39 @@ describe('a box’s notes', () => {
       offersOf({ restored: 1, refusal: { kind: 'headMoved', head: null }, sending: 'unknown' }),
     ).toEqual(['discard', 'loadNewer', 'sendAnyway']);
     expect(offersOf({ ...none, refusal: { kind: 'paused', until: 0 } })).toEqual([]);
+  });
+
+  test('an edit’s refusals keep its text, and offer to discard it to start again', () => {
+    const edit = { kind: 'edit', thread: 'T1', comment: 'C1' } as const;
+    expect(
+      notesOf({ place: edit, restored: undefined, refusal: { kind: 'changed' }, sending: null }, 0),
+    ).toMatchObject([
+      {
+        text: 'It was edited on GitHub since you started. Your text is kept here; copy it, then edit again.',
+        offers: ['discard'],
+      },
+    ]);
+    expect(sendingNote('checking', true)?.text).toBe(
+      'GitHub’s answer was lost. Lo is checking whether it saved the edit.',
+    );
+    expect(sendingNote('gone', true)?.offers).toEqual(['discard']);
+    const until = new Date(2026, 10, 13, 14, 5).getTime();
+    expect(refusalNote({ kind: 'paused', until }, 'edit').text).toMatch(/ Save it then\.$/);
+  });
+
+  test('a change to a thread that wasn’t made says why, in Lo’s words', () => {
+    expect(actText({ kind: 'theirs', author: 'ravi-k' }, 'delete')).toBe(
+      'It’s ravi-k’s comment. You can edit and delete only your own.',
+    );
+    expect(actText({ kind: 'notAllowed', reasons: ['LOCKED'] }, 'edit')).toBe(
+      'GitHub doesn’t let you edit it: the conversation is locked.',
+    );
+    expect(actText({ kind: 'cantResolve', resolved: false }, 'unresolve')).toMatch(
+      /^GitHub doesn’t let you unresolve this thread\./,
+    );
+    expect(actText({ kind: 'changed' }, 'delete')).toBe(
+      'It changed on GitHub since you asked. Look at it again, then delete it.',
+    );
   });
 
   test('sending says it waits, or what came of an answer that was lost', () => {

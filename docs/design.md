@@ -604,14 +604,35 @@ a fork is someone else's code, even in a repo you trust.
 - **In the diff.** Threads appear under their line, and a file's threads under its header.
   Unresolved threads start open, and resolved ones start collapsed. `za` on a thread opens or
   collapses it. A file's header and its row in the file tree count its threads.
-- **Threads.** You can reply, resolve and unresolve, and edit or delete your own comments.
+- **Threads.** You can reply, resolve and unresolve, and edit or delete your own comments, from the
+  thread's buttons, its right-click menu or its keys. A key acts on the thread `]t` landed on, or
+  the only thread on the cursor's line, or under the file's header; where a line has more than one,
+  Lo says to pick one with `]t`. `r` opens a reply box right after the thread, whose buttons add the
+  reply to your pending review or post it at once. `x` resolves the thread, or unresolves it, here
+  and in the threads panel, where GitHub lets you. `i` opens a box with your newest comment's text,
+  and saving it replaces the comment on GitHub. `dd` asks first, showing the comment's first line,
+  whether it leaves your pending review and whether its thread goes with it: `⏎` deletes it and
+  `Esc` leaves it, and a held or repeated key never confirms. Lo changes only your own comments,
+  even where GitHub would let you change someone else's: theirs are for GitHub's page. A reply box
+  and a comment box on the same line can both be open.
+- **Edits and deletes.** An edit keeps the text it started from with its draft, through a restart.
+  GitHub's edit doesn't check what it replaces, so before saving Lo reads the comment again, and
+  saves only if GitHub's text is still the one the edit started from. If it was edited elsewhere
+  meanwhile, Lo keeps your text in the box to copy, and saves nothing. A delete likewise reads the
+  comment first, and goes only if it's still as the question showed it. Resolving, edits and deletes
+  are writes like any comment: one at a time to a PR, never while GitHub has asked Lo to hold off,
+  and refused offline. What your own write changes in a thread shows at once, without moving the
+  line you're on.
 - **Writing.** The comment box is a CodeMirror editor with Markdown highlighting, Vim keys and a
   preview toggle. Its head says where the comment goes and which account it's from, and its foot has
   Vim's mode and the buttons that send. While a comment is sent, its text can't be changed. One
   write to a PR goes at a time, so a second comment waits for the first's answer. When GitHub's
   answer is lost, Lo reads your comments to find out whether it posted, after a restart too, and
-  until it knows, the comment can't be sent again. Lo never sends it again by itself. A comment that
-  GitHub puts on a newer push than the one it was written on is labeled "On a newer push".
+  until it knows, the comment can't be sent again. Lo never sends it again by itself. The same goes
+  for a lost answer to an edit, a resolve or a delete: Lo reads the comment or the thread again
+  after a while to see whether it went, says it's checking meanwhile, and if it can't tell, says so
+  and offers to try again. A comment that GitHub puts on a newer push than the one it was written on
+  is labeled "On a newer push".
 - **Suggestions.** `s` opens the comment box with the selected lines in a `suggestion` block, ready
   to edit. It works on the new side only, because GitHub can only apply suggestions there. Applying
   them happens on GitHub.
@@ -647,14 +668,14 @@ the thread, where it is, its replies and whether it's resolved. Outdated threads
 the revision and line they were written on. It lists the unresolved threads at first, and `f` steps
 to all threads, then to yours: the ones you started or replied in.
 
-`j` and `k` move through it. `⏎` or a click shows the thread in the diff, opened, at the top of the
-screen, and focus stays in the panel. It's a jump, so `⌃o` goes back. A thread the diff on screen
-doesn't show, such as an outdated one, shows in the whole diff of the revision it's on, which Lo
-compares first, saying so: "Comparing base → r1". `⌃o` then goes back to the comparison before and
-the place in it, and `⌃i` comes forward again. The last move wins: a comparison still coming is
-called off, with what Lo said of it, when the diff on screen shows the next thread asked for, or
-when `⌃o` or `⌃i` goes elsewhere first. A file-level thread shows its file's header. In the diff,
-`]t` and `[t` jump between threads.
+`j` and `k` move through it, and `x` resolves or unresolves the thread the keyboard is on. `⏎` or a
+click shows the thread in the diff, opened, at the top of the screen, and focus stays in the panel.
+It's a jump, so `⌃o` goes back. A thread the diff on screen doesn't show, such as an outdated one,
+shows in the whole diff of the revision it's on, which Lo compares first, saying so: "Comparing base
+→ r1". `⌃o` then goes back to the comparison before and the place in it, and `⌃i` comes forward
+again. The last move wins: a comparison still coming is called off, with what Lo said of it, when
+the diff on screen shows the next thread asked for, or when `⌃o` or `⌃i` goes elsewhere first. A
+file-level thread shows its file's header. In the diff, `]t` and `[t` jump between threads.
 
 ### Timeline
 
@@ -727,27 +748,27 @@ Vim-style single keys by default, from CodeMirror's Vim package. Arrow keys also
 diff is editable, so Vim's insert mode exists only in comment boxes. Every key can be remapped in
 the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 
-| What            | Keys                                                                                                                                                                                                                                                                                                         |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Move            | `j`/`k` line, `w`/`b` word, `gg`/`G` top and bottom                                                                                                                                                                                                                                                          |
-| Jump            | `]c`/`[c` change, `]f`/`[f` file, `]t`/`[t` thread, `]s`/`[s` stack layer                                                                                                                                                                                                                                    |
-| Act             | `v` select lines, `c` comment, `C` comment right away, `s` suggest, `e` mark viewed, `Tab` switch side                                                                                                                                                                                                       |
-| Threads         | `r` reply, `x` resolve or unresolve, `i` edit your comment, `dd` delete your comment                                                                                                                                                                                                                         |
-| Code            | `gd` definition, `gr` references, `K` type hover, `gh` inline type hints, `⌃o`/`⌃i` back and forward                                                                                                                                                                                                         |
-| Copy and open   | `yy` the line, `yl` a link to it, `yp` the file's path, `gf` the whole file, `gx` on GitHub                                                                                                                                                                                                                  |
-| Review          | `m` merge panel, `a` merge when ready (in the merge panel), `⌘⏎` submit review, `⌘⇧⏎` approve and ship, `gq` the merge queue, `gS` make this a GitHub stack                                                                                                                                                  |
-| Find            | `⌘L` open PR (`⌘O` too on macOS), `⌘P` files, `⌘⇧P` command palette, `/` search, `n`/`N` next and previous match                                                                                                                                                                                             |
-| View            | `` ` `` next middle view (overview, diff, timeline), `~` previous, `gv` compare revisions                                                                                                                                                                                                                    |
-| Files           | `-` go to the file tree at the file on screen, and `-` again up to the stack tree. In the tree: `t` tree or review order, `f` changed files only, `l`/`h` (or `→`/`←`) open and close a folder, `zR`/`zM` open and close all, `⏎` show the file, `e` mark viewed, `Esc` back                                 |
-| Overview        | `]b`/`[b` next and previous block, `⏎` follow a block to its code, `o` open its code beside the overview (`o` again or `Esc` to close), `Tab` next part of a figure, `←`/`→` walkthrough step or tab, `ya` copy a prompt for an agent                                                                        |
-| Timeline        | `j`/`k` move between events, `Tab` through its links and buttons, `Esc` back to the list, `gx` open the one you're on on GitHub                                                                                                                                                                              |
-| Panels          | `⌘\` left panel, `⌘⇧\` threads panel. In the threads panel: `j`/`k` move, `⏎` show the thread in the diff, `f` unresolved, all or yours. In the stack tree: `j`/`k` move, `⏎` show the layer, `gx` open it on GitHub, `Esc` back, `v` choose a run of layers, `j`/`k` to grow it, `⏎` to view it as one diff |
-| Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file or the thread at the cursor                                                                                                                |
-| Comment box     | `⌘⏎` add to review, `⌥⏎` comment now, `⌘⇧V` write or preview, `Esc` leave insert mode, `Esc Esc` close and keep the draft                                                                                                                                                                                    |
-| Merge queue     | `x` remove, `J` jump to the front, `a` auto-merge, `⏎` open the PR                                                                                                                                                                                                                                           |
-| Revision picker | `j`/`k` move, `Space` set an end, `⏎` compare                                                                                                                                                                                                                                                                |
-| Palettes        | `⏎` open, `⌘⏎` the other way (a new window, the whole file), `Tab` changed files only in the file finder, `⌥⏎` show an action's key                                                                                                                                                                          |
-| Tabs and window | `⌘1`–`⌘9` a tab, `⌘⇧]`/`⌘⇧[` or `⌃⇥`/`⌃⇧⇥` next and previous tab, `⌘W` close the tab, `⌘,` settings, `?` every key, `Menu` or `⇧F10` the right-click menu of what has focus, `g ,` open the keymap file                                                                                                      |
+| What            | Keys                                                                                                                                                                                                                                                                                                                                   |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Move            | `j`/`k` line, `w`/`b` word, `gg`/`G` top and bottom                                                                                                                                                                                                                                                                                    |
+| Jump            | `]c`/`[c` change, `]f`/`[f` file, `]t`/`[t` thread, `]s`/`[s` stack layer                                                                                                                                                                                                                                                              |
+| Act             | `v` select lines, `c` comment, `C` comment right away, `s` suggest, `e` mark viewed, `Tab` switch side                                                                                                                                                                                                                                 |
+| Threads         | `r` reply, `x` resolve or unresolve, `i` edit your comment, `dd` delete your comment                                                                                                                                                                                                                                                   |
+| Code            | `gd` definition, `gr` references, `K` type hover, `gh` inline type hints, `⌃o`/`⌃i` back and forward                                                                                                                                                                                                                                   |
+| Copy and open   | `yy` the line, `yl` a link to it, `yp` the file's path, `gf` the whole file, `gx` on GitHub                                                                                                                                                                                                                                            |
+| Review          | `m` merge panel, `a` merge when ready (in the merge panel), `⌘⏎` submit review, `⌘⇧⏎` approve and ship, `gq` the merge queue, `gS` make this a GitHub stack                                                                                                                                                                            |
+| Find            | `⌘L` open PR (`⌘O` too on macOS), `⌘P` files, `⌘⇧P` command palette, `/` search, `n`/`N` next and previous match                                                                                                                                                                                                                       |
+| View            | `` ` `` next middle view (overview, diff, timeline), `~` previous, `gv` compare revisions                                                                                                                                                                                                                                              |
+| Files           | `-` go to the file tree at the file on screen, and `-` again up to the stack tree. In the tree: `t` tree or review order, `f` changed files only, `l`/`h` (or `→`/`←`) open and close a folder, `zR`/`zM` open and close all, `⏎` show the file, `e` mark viewed, `Esc` back                                                           |
+| Overview        | `]b`/`[b` next and previous block, `⏎` follow a block to its code, `o` open its code beside the overview (`o` again or `Esc` to close), `Tab` next part of a figure, `←`/`→` walkthrough step or tab, `ya` copy a prompt for an agent                                                                                                  |
+| Timeline        | `j`/`k` move between events, `Tab` through its links and buttons, `Esc` back to the list, `gx` open the one you're on on GitHub                                                                                                                                                                                                        |
+| Panels          | `⌘\` left panel, `⌘⇧\` threads panel. In the threads panel: `j`/`k` move, `⏎` show the thread in the diff, `x` resolve or unresolve, `f` unresolved, all or yours. In the stack tree: `j`/`k` move, `⏎` show the layer, `gx` open it on GitHub, `Esc` back, `v` choose a run of layers, `j`/`k` to grow it, `⏎` to view it as one diff |
+| Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file or the thread at the cursor                                                                                                                                          |
+| Comment box     | `⌘⏎` add to review, `⌥⏎` comment now, `⌘⇧V` write or preview, `Esc` leave insert mode, `Esc Esc` close and keep the draft                                                                                                                                                                                                              |
+| Merge queue     | `x` remove, `J` jump to the front, `a` auto-merge, `⏎` open the PR                                                                                                                                                                                                                                                                     |
+| Revision picker | `j`/`k` move, `Space` set an end, `⏎` compare                                                                                                                                                                                                                                                                                          |
+| Palettes        | `⏎` open, `⌘⏎` the other way (a new window, the whole file), `Tab` changed files only in the file finder, `⌥⏎` show an action's key                                                                                                                                                                                                    |
+| Tabs and window | `⌘1`–`⌘9` a tab, `⌘⇧]`/`⌘⇧[` or `⌃⇥`/`⌃⇧⇥` next and previous tab, `⌘W` close the tab, `⌘,` settings, `?` every key, `Menu` or `⇧F10` the right-click menu of what has focus, `g ,` open the keymap file                                                                                                                                |
 
 Copying is always `y` plus a letter; there's no single-key `y`. `⌃o` returns from anywhere a key
 took you: from the code back to the overview block, from a definition back to the diff.

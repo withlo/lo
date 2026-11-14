@@ -1,0 +1,640 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.github.com/graphql",
+    "operation": "ReviewThreads",
+    "variables": {
+      "owner": "rozed-dev",
+      "name": "e2e",
+      "number": 94,
+      "first": 100,
+      "after": null
+    },
+    "query_sha256": "89476c194892866c84d28316d05a62244432d190b6b0fce18fc3df748b08fb5d"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4933",
+      "x-ratelimit-reset": "1794621242",
+      "x-ratelimit-resource": "graphql",
+      "x-ratelimit-used": "67"
+    },
+    "body": {
+      "data": {
+        "rateLimit": {
+          "cost": 1,
+          "limit": 5000,
+          "remaining": 4933,
+          "used": 67,
+          "resetAt": "2026-11-14T01:54:02Z"
+        },
+        "repository": {
+          "pullRequest": {
+            "reviewThreads": {
+              "totalCount": 11,
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODo0NlrOtz1AWQ=="
+              },
+              "nodes": [
+                {
+                  "id": "PRRT_kwDOVleUfc63PS-1",
+                  "path": "src/backoff.ts",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 17,
+                  "startLine": 17,
+                  "originalLine": 14,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODoxMVrPAAAAARA8tZg="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy1mA",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: `random` defaults to `Math.random`, so a test can pass its own.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:11Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567381400",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc63PTAP",
+                  "path": "src/queue.ts",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": "RIGHT",
+                  "line": 35,
+                  "startLine": 10,
+                  "originalLine": 35,
+                  "originalStartLine": 10,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODoxMlrPAAAAARA8tjE="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy2MQ",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: Four at once, and each retried: a failing job can hold a slot for a while now.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:12Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567381553",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc63PTBO",
+                  "path": "src/retry.ts",
+                  "subjectType": "LINE",
+                  "diffSide": "LEFT",
+                  "startDiffSide": null,
+                  "line": 2,
+                  "startLine": 2,
+                  "originalLine": 2,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODoxMlrPAAAAARA8tpk="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy2mQ",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: The fixed second is gone; `backoff.ts` decides now.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:12Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567381657",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc63PTCS",
+                  "path": "docs/usage.md",
+                  "subjectType": "FILE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 1,
+                  "startLine": null,
+                  "originalLine": 1,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODoxM1rPAAAAARA8txU="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy3FQ",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: The last line still says a second apart.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:13Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567381781",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc63PTEW",
+                  "path": "src/backoff.ts",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 5,
+                  "startLine": 5,
+                  "originalLine": 5,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": true,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": false,
+                  "viewerCanUnresolve": true,
+                  "comments": {
+                    "totalCount": 2,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODoxNVrPAAAAARA8uF4="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy32A",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: Is doubling enough?",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:14Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567381976",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      },
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy4Xg",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: It is for three tries.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:15Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567382110",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc63PTHq",
+                  "path": "src/retry.ts",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 16,
+                  "startLine": 16,
+                  "originalLine": 16,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 4,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODoyMFrPAAAAARA8vBI="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy5Lg",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: Should the jitter cover the whole delay?",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:16Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567382318",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      },
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy5mw",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: Full jitter spreads clients out the most.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:17Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567382427",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      },
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy6mA",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: It can also wait almost nothing.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:19Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567382680",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      },
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy8Eg",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: Fine for three tries. Keeping it.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:20Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567383058",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc63PTSJ",
+                  "path": "src/backoff.ts",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 2,
+                  "startLine": 2,
+                  "originalLine": 2,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODoyMlrPAAAAARA8vRI="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy9Eg",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: Start a little higher?\n\n```suggestion\nconst FIRST = 500;\n```",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:22Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567383314",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc63PTUg",
+                  "path": "src/backoff.ts",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 15,
+                  "startLine": 15,
+                  "originalLine": 12,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODoyM1rPAAAAARA8veY="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy95g",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: The spread, as measured:\n\n![two by two](https://github.com/user-attachments/assets/08c730b3-f0b0-4c7d-93a2-95f8d167d0d9)",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:23Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567383526",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc63PTWX",
+                  "path": "src/queue.ts",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 10,
+                  "startLine": 10,
+                  "originalLine": 10,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODoyM1rPAAAAARA8vpI="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy-kg",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: Four at once, like this:\n\n![spinning](https://upload.wikimedia.org/wikipedia/commons/b/b1/Loading_icon.gif)",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:23Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567383698",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc63PTYG",
+                  "path": "src/backoff.ts",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": null,
+                  "startLine": null,
+                  "originalLine": 9,
+                  "originalStartLine": null,
+                  "isOutdated": true,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODoyNFrPAAAAARA8vzI="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDy_Mg",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: This grows without bound: after ten tries it waits over four minutes.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:24Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567383858",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        },
+                        "originalCommit": {
+                          "oid": "df679fae278ca2498e20e066e4bbd5456aa9748b"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOVleUfc63PUBZ",
+                  "path": "src/backoff.ts",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 8,
+                  "startLine": 8,
+                  "originalLine": 8,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": true,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xM1QxODo1ODo0NlrPAAAAARA8zyI="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOVleUfc8AAAABEDzPIg",
+                        "author": {
+                          "__typename": "User",
+                          "login": "rozed-bot"
+                        },
+                        "body": "Fixture C: Thirty seconds is longer than most callers wait for a job.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-13T18:58:46Z",
+                        "url": "https://github.com/rozed-dev/e2e/pull/94#discussion_r4567387938",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": true,
+                        "viewerCanDelete": true,
+                        "commit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        },
+                        "originalCommit": {
+                          "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
