@@ -71,7 +71,7 @@ export type Prepared =
   | {
       kind: 'prepared';
       name: string;
-      bytes: Uint8Array;
+      bytes: Uint8Array<ArrayBuffer>;
       size: string;
       metadata: Metadata;
       paidPlan: boolean;

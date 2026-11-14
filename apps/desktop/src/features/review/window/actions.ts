@@ -1,10 +1,14 @@
 // What the review's key, the status bar's item and the dialog do: open the dialog on the pull
-// request on screen, read what it shows, keep its summary as it's typed, and submit. Held keys and
-// a second press while one is sent submit nothing more, and nothing goes while GitHub can't be
-// reached or Lo waits to know whether a review whose answer was lost was submitted.
+// request on screen, read what it shows, keep its summary as it's typed, with the files attached
+// to it, and submit. Held keys and a second press while one is sent submit nothing more, and
+// nothing goes while GitHub can't be reached, a file attached to the summary is on its way in, or
+// Lo waits to know whether a review whose answer was lost was submitted.
+
+import type { Composer } from '@lo/ui/code';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { announce, notify } from '../../../window/commands/notices.tsx';
+import { type Attachable, uploadsRunning } from '../../comments/window/shared.ts';
 import { pullOf, runOf, activeTab, type PullTab } from '../../tab/window/shared.ts';
 import { IN_A_LAYER, SIGN_IN, type ReviewEventRow, type Submission } from '../contract.ts';
 import { main, revisions as revisionsClient, tabs } from './main.ts';
@@ -16,6 +20,54 @@ export const SAVE_AFTER = 300;
 
 /** What the command, the dialog and the notes call submitting. */
 export const TITLE = 'Submit review';
+
+/** Why the dialog's main button is off while a file attached to the summary uploads. */
+export const UPLOADING = 'Uploading. Submit the review once the files are in.';
+
+/**
+ * A view's summary as a comment box files are attached to: it outlives the dialog, so a file still
+ * uploading as the dialog closes takes its place in the summary kept.
+ */
+class SummaryBox implements Attachable {
+  readonly id: string;
+  readonly view: string;
+  /** The summary's editor, while the dialog shows it. */
+  composer: Composer | undefined;
+  #text = '';
+
+  constructor(view: string) {
+    this.view = view;
+    this.id = `lo-summary-${view}`;
+  }
+
+  get state(): { readonly text: string } {
+    return { text: this.composer?.text ?? this.#text };
+  }
+
+  /** The summary's text, as it was typed or the dialog opened with it. */
+  heard(text: string): void {
+    this.#text = text;
+  }
+
+  rewrite(text: string): void {
+    this.#text = text;
+    const { dialog } = reviewStore.getState();
+    if (dialog?.view === this.view) typed(text);
+    else save(this.view, text);
+  }
+}
+
+const summaries = new Map<string, SummaryBox>();
+
+/** View `view`'s summary, as a comment box files are attached to. */
+export function summaryBox(view: string): SummaryBox {
+  let box = summaries.get(view);
+  if (!box) {
+    box = new SummaryBox(view);
+    summaries.set(view, box);
+  }
+  return box;
+}
 
 /** Why view `view` can't submit a review at all, or `true`. */
 export function canSubmit(view: string): true | string {
@@ -83,6 +135,7 @@ export function typed(text: string): void {
   const { dialog } = reviewStore.getState();
   if (!dialog) return;
   const { view } = dialog;
+  summaryBox(view).heard(text);
   changeDialog(view, { text, refusal: undefined });
   if (saving) clearTimeout(saving.timer);
   saving = {
@@ -123,6 +176,7 @@ export function whyNot(): string | undefined {
   const can = canSubmit(dialog.view);
   if (can !== true) return can;
   if (offline(dialog.view)) return OFFLINE;
+  if (uploadsRunning(summaryBox(dialog.view))) return UPLOADING;
   return undefined;
 }
 

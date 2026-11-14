@@ -41,13 +41,16 @@ export function prepareFile({ name, bytes }: PrepareInput): Prepared {
       throw new RefusedAttachment({ reason: 'tooLarge', limit: uploadLimit(kind) });
     }
     const file = prepareAttachment(name, bytes);
-    const whole =
-      file.bytes.byteOffset === 0 && file.bytes.byteLength === file.bytes.buffer.byteLength;
+    const { buffer, byteOffset, byteLength } = file.bytes;
+    // What's sent on is memory of its own, never a view into a larger buffer.
+    const own =
+      buffer instanceof ArrayBuffer && byteOffset === 0 && byteLength === buffer.byteLength
+        ? new Uint8Array(buffer)
+        : file.bytes.slice();
     return {
       kind: 'prepared',
       name: file.name,
-      // What's sent on is its own memory, never a view into a larger buffer.
-      bytes: whole ? file.bytes : file.bytes.slice(),
+      bytes: own,
       size: formatSize(file.bytes.length),
       metadata: file.metadata,
       paidPlan: needsPaidPlan(file),

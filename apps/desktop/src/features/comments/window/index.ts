@@ -37,6 +37,7 @@ import { inPanel, moveRow, onThread, showTarget, stepFilter } from './panel.ts';
 import { ThreadsPanel, UnresolvedCount, unresolvedOf } from './ThreadsPanel.tsx';
 import { renderThreads } from './render.ts';
 import { keepOnly } from './store.ts';
+import { keepUploadsOf, takeProgress } from './uploads.ts';
 import {
   catchUp,
   countsIn,
@@ -126,8 +127,10 @@ export default {
       const kept = new Set(viewIds(open));
       keepOnly(kept);
       keepBoxesOf(kept);
+      keepUploadsOf(kept);
     });
     main().subscribe('drafts', takeDrafts);
+    main().subscribe('uploads', takeProgress);
     frameWith(frameOf);
     onDiffDrawn((view) => {
       catchUpDrafts(view);

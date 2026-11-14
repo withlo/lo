@@ -54,9 +54,6 @@ export function checkedFile(
   bytes: Uint8Array,
 ): PreparedAttachment | { refusal: UploadRefusal } {
   const kind = attachmentKind(name);
-  const refused = (refusal: Parameters<typeof describeRefusal>[0]) => ({
-    refusal: { kind: 'file' as const, why: describeRefusal(refusal) },
-  });
   if (kind === undefined) return refused({ reason: 'unsupported' });
   if (bytes.length === 0) return refused({ reason: 'empty' });
   const limit = uploadLimit(kind);
@@ -65,6 +62,11 @@ export function checkedFile(
   // Its metadata was taken out in the background process, as the window prepared it; the upload
   // sends the bytes as they are.
   return { name, kind, bytes, metadata: { kind: 'asIs' } };
+}
+
+/** A file refused for `refusal`, as the box says it. */
+function refused(refusal: Parameters<typeof describeRefusal>[0]): { refusal: UploadRefusal } {
+  return { refusal: { kind: 'file', why: describeRefusal(refusal) } };
 }
 
 /** Whether GitHub answered Not Found, as it does an upload it won't take from a token. */

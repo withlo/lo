@@ -51,15 +51,19 @@ type Answer = (options: UploadOptions) => Promise<string | PollerRefusal>;
 
 const answers = {
   taken: (): Promise<string> => Promise.resolve(ASSET),
-  refused: (error: unknown) => (): Promise<string> => Promise.reject(error),
+  refused: (error: Error) => (): Promise<string> => Promise.reject(error),
   /** Hears it half sent, then waits until it's given up. */
   hanging: ({ signal, progress }: UploadOptions): Promise<string> => {
     progress?.(1, 2);
     return new Promise((_resolve, reject) => {
-      signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      signal?.addEventListener(
+        'abort',
+        () => reject(signal.reason instanceof Error ? signal.reason : new Error('given up')),
+        { once: true },
+      );
     });
   },
-} satisfies Record<string, Answer | ((error: unknown) => Answer)>;
+} satisfies Record<string, Answer | ((error: Error) => Answer)>;
 
 /**
  * Uploads through a poller that answers each upload with the next of `given`, where the account can
@@ -153,7 +157,7 @@ describe('uploading', () => {
       kind: 'refused',
       refusal: { kind: 'file' },
     });
-    const nobody = setUp([], { view: info({ acting: { kind: 'nobody' } }) });
+    const nobody = setUp([], { view: info({ acting: { kind: 'anonymous' } }) });
     expect(await nobody.uploads.upload('t1', 'u1', 'shot.png', PNG)).toEqual({
       kind: 'refused',
       refusal: { kind: 'signIn' },

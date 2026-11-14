@@ -12,6 +12,7 @@
 import type { Metadata } from '@lo/github';
 import type { Composer } from '@lo/ui/code';
 
+import { clockOf } from '../../../window/time.ts';
 import { pullOf, runOf } from '../../tab/window/shared.ts';
 import {
   ATTACHMENT_LIMIT,
@@ -21,7 +22,7 @@ import {
 } from '../contract.ts';
 import type { Prepared } from '../jobs.ts';
 import { commentsJobs, main } from './main.ts';
-import { clockOf, type BoxNote } from './writing.ts';
+import type { BoxNote } from './writing.ts';
 
 /** The most files a box attaches at once. */
 export const FILES_AT_ONCE = 10;
@@ -534,7 +535,8 @@ export function cancelUpload(box: Attachable, key: string): void {
 
 /** Gives up every file still on its way into `box`, as its draft is discarded. */
 export function cancelUploads(box: Attachable): void {
-  for (const file of [...(attachings.get(box)?.files ?? [])]) cancelUpload(box, file.key);
+  // A copy: each one cancelled leaves the list.
+  for (const file of (attachings.get(box)?.files ?? []).slice()) cancelUpload(box, file.key);
 }
 
 /** Files are dragged over `box`: how many, or 0 once they're dropped or leave. */
