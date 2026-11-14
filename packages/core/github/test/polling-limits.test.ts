@@ -511,6 +511,42 @@ test('opening a pr while offline tries at once', async () => {
   expect(t.status().offline).toBeUndefined();
 });
 
+/**
+ * A read someone on screen waits on goes ahead of what's due, but never of a poll that's tried at
+ * once, as coming back to the foreground forces one, whatever the backoff: it waits for that poll.
+ */
+test('coming back to the foreground while offline tries at once, a read waited on or not', async () => {
+  const t = await Polling.start('offline_waited', recorded());
+  void t.poller.setOpen(pr(1));
+  await t.run();
+  await t.runUntil(10);
+  t.http.offline = true;
+  await t.runUntil(20);
+  expect(t.status().offline?.retryAt).toBe(wall(40));
+  t.poller.setForeground(false);
+  let runs = 0;
+  const waited = { name: 'Waited', watched: ['/headRefOid'] };
+  void t.poller.readCached(
+    pr(1),
+    waited,
+    () => {
+      runs += 1;
+      return Promise.resolve(1);
+    },
+    'foreground',
+  );
+  await t.runUntil(25);
+  t.requests();
+  // The network is back, and Lo comes to the foreground: the open PR is polled now, not at 40 s,
+  // and the read goes once it has.
+  t.http.offline = false;
+  t.poller.setForeground(true);
+  await t.run();
+  expect(t.requests()[0]).toEqual([25, 'GET /pulls/1 (since)']);
+  expect(t.status().offline).toBeUndefined();
+  expect(runs).toBe(1);
+});
+
 const BAD_CREDENTIALS =
   '{"message":"Bad credentials","documentation_url":"https://docs.github.com/rest","status":"401"}';
 

@@ -2026,7 +2026,9 @@ export class Poller {
       }));
     }
     // The open pull request's reads, once its check says what they watch. One someone on screen
-    // waits on for its first value goes ahead of everything else due, the first of them if several.
+    // waits on for its first value goes ahead of everything else due, the first of them if several,
+    // but never of a poll that's tried at once whatever the backoff (opening a pull request, or
+    // coming back to the foreground): that one goes first, and the read after it.
     let lead: typeof next;
     if (
       open &&
@@ -2079,7 +2081,7 @@ export class Poller {
         }
       }
     }
-    if (lead) next = lead;
+    if (lead && !next?.forced) next = lead;
     // While the limit is low, intervals are longer and some tiers aren't polled at all. Wake at its
     // reset, when they're back.
     const untilReset =
