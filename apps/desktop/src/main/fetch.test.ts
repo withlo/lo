@@ -169,6 +169,22 @@ describe('netFetch', () => {
     await expect(answered).rejects.toThrow('net::ERR_CONNECTION_CLOSED');
   });
 
+  it('says the answer has begun once its headers come, before its body has', async () => {
+    const { fetch, made } = fake();
+    let began = 0;
+    const init: FetchInit = { answerBegan: () => (began += 1) };
+    const answered = fetch('https://api.github.com/user', init);
+    const request = await made();
+    expect(began).toBe(0);
+    const answer = new FakeAnswer(200);
+    request.emit('response', answer);
+    expect(began).toBe(1);
+    answer.emit('data', Buffer.from('{}'));
+    answer.emit('end');
+    expect((await answered).status).toBe(200);
+    expect(began).toBe(1);
+  });
+
   it('cancels a request given up on, with the reason it was given up', async () => {
     const { fetch, made } = fake();
     const controller = new AbortController();

@@ -28,8 +28,28 @@ export function useTabPanels(tab: string): Panels {
  */
 export const viewCounts = { left: 0, middle: 0, right: 0 };
 
-/** The middle views' ids, in their order, as the tab last drew them, to show one by its id. */
-export const middleIds: { ids: readonly string[] } = { ids: [] };
+/**
+ * The middle views' ids, in their order, as the tab last drew them, to show one by its id, and
+ * which of them have a label: the header's switch lists those, and `` ` `` steps through them.
+ */
+export const middleIds: { ids: readonly string[]; labeled: readonly boolean[] } = {
+  ids: [],
+  labeled: [],
+};
+
+/**
+ * The middle view `step` on from view `at` among those `labeled` says have a label, round the ends,
+ * as `` ` `` (1) and `~` (-1) step: from one without a label, the next or previous one with.
+ * `at` itself when no other has one.
+ */
+export function stepAmong(at: number, step: 1 | -1, labeled: readonly boolean[]): number {
+  const count = labeled.length;
+  for (let moved = 1; moved <= count; moved++) {
+    const next = (((at + step * moved) % count) + count) % count;
+    if (labeled[next] && next !== at) return next;
+  }
+  return at;
+}
 
 /**
  * The right panel, the window's: whether it's open, which it is in every pull request's tab, each

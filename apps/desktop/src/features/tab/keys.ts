@@ -99,7 +99,10 @@ export default defineCommands('tab', {
     when: outside,
     bar: { menu: 'View', order: 20 },
   },
-  /** The next of a pull request's middle views: overview, diff, timeline, round the end. */
+  /**
+   * The next of a pull request's middle views the header's switch lists: overview, diff, timeline,
+   * round the end. A file whole isn't one of them: it opens from a file, and `⌃o` goes back.
+   */
   nextView: {
     label: 'Next middle view',
     group: 'View',

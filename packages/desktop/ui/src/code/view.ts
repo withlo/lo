@@ -92,6 +92,7 @@ import {
   ownChange,
   passToVim,
   setVimKeys,
+  vimCount,
   vimMode,
   vimPending,
 } from './keys.ts';
@@ -1888,10 +1889,11 @@ class View implements DiffView {
 
   // Keys -------------------------------------------------------------------------------------
 
-  keyState(): { mode: Mode; pending: boolean; target: Target } {
+  keyState(): { mode: Mode; pending: boolean; count: number | undefined; target: Target } {
     const pane = this.#activePane();
     const view = this.#viewOf(pane);
-    return { mode: vimMode(view), pending: vimPending(view), target: this.#targetOf(pane) };
+    const target = this.#targetOf(pane);
+    return { mode: vimMode(view), pending: vimPending(view), count: vimCount(view), target };
   }
 
   passKeys(keys: readonly string[]): void {
@@ -1908,7 +1910,10 @@ class View implements DiffView {
 
   /**
    * What a key acts on in `pane`: the cursor's line, or the lines `v` selected, and a thread; or
-   * the header the cursor is on.
+   * the header the cursor is on. The lines a key takes as they show are `across` where they're
+   * more than one run of one file's lines on one side: those `v` selected, the other side's
+   * between them too, inline; and with a count, as `4yy` takes, that many from the cursor's.
+   * Selected across files or sides, they're the cursor's line, for what acts on one.
    */
   #targetOf(pane: Pane): LineTarget | HeaderTarget {
     const view = this.#viewOf(pane);
@@ -1916,15 +1921,55 @@ class View implements DiffView {
     const { head, anchor } = selection.main;
     const headLine = doc.lineAt(head);
     const at = this.#placeAt(pane, headLine.number);
-    if (vimMode(view) === 'visual') {
-      const other = this.#placeAt(pane, doc.lineAt(anchor).number);
-      if (other.file === at.file && other.side === at.side) {
-        const from = Math.max(1, Math.min(at.line, other.line));
-        const to = Math.max(1, at.line, other.line);
-        return { kind: 'line', at: { file: this.#ids[at.file]!, side: at.side, from, to } };
+    const target = this.#lineTarget(at, head - headLine.from);
+    if (vimMode(view) !== 'visual') {
+      const count = vimCount(view);
+      if (count === undefined || count < 2 || target.kind !== 'line') return target;
+      const last = Math.min(doc.lines, headLine.number + count - 1);
+      return { ...target, across: this.#spansIn(pane, headLine.number, last) };
+    }
+    const anchorLine = doc.lineAt(anchor).number;
+    const other = this.#placeAt(pane, anchorLine);
+    const across = this.#spansIn(pane, anchorLine, headLine.number);
+    if (other.file === at.file && other.side === at.side) {
+      const from = Math.max(1, Math.min(at.line, other.line));
+      const to = Math.max(1, at.line, other.line);
+      const span: Span = { file: this.#ids[at.file]!, side: at.side, from, to };
+      return across.length === 0 || isOnly(across, span)
+        ? { kind: 'line', at: span }
+        : { kind: 'line', at: span, across };
+    }
+    const [first] = across;
+    const last = across.at(-1);
+    if (!first || !last) return target;
+    // From a line to a header: the lines of one file on one side after all.
+    if (across.length === 1) return { kind: 'line', at: first };
+    if (target.kind === 'line') return { ...target, across };
+    // The cursor on a header: the line it's beside.
+    const down = headLine.number >= anchorLine;
+    const end = down ? last : first;
+    const line = down ? end.to : end.from;
+    return { kind: 'line', at: { file: end.file, side: end.side, line }, across };
+  }
+
+  /**
+   * The file lines document lines `from` to `to` of `pane` show, either way round, in the order
+   * they show: a run of lines of one file on one side each, past headers.
+   */
+  #spansIn(pane: Pane, from: number, to: number): Span[] {
+    const spans: Span[] = [];
+    for (let line = Math.min(from, to); line <= Math.max(from, to); line++) {
+      const at = this.#placeAt(pane, line);
+      if (at.line === 0) continue;
+      const file = this.#ids[at.file]!;
+      const last = spans.at(-1);
+      if (last?.file === file && last.side === at.side && last.to === at.line - 1) {
+        last.to = at.line;
+      } else {
+        spans.push({ file, side: at.side, from: at.line, to: at.line });
       }
     }
-    return this.#lineTarget(at, head - headLine.from);
+    return spans;
   }
 
   /** What a key or a click at `at` acts on: the line and its thread, or the header. */
@@ -3315,4 +3360,16 @@ function drawnRows(view: EditorView): Map<string, number> {
     if (key) tops.set(key, element.getBoundingClientRect().top);
   }
   return tops;
+}
+
+/** Whether `spans` are `span` alone. */
+function isOnly(spans: readonly Span[], span: Span): boolean {
+  const [only] = spans;
+  return (
+    spans.length === 1 &&
+    only?.file === span.file &&
+    only.side === span.side &&
+    only.from === span.from &&
+    only.to === span.to
+  );
 }

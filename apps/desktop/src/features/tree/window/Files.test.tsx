@@ -1,16 +1,38 @@
 // @vitest-environment jsdom
+import { NO_TARGET } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { createRegistry } from '../../../window/commands/registry.ts';
+import { createRegistry, registry } from '../../../window/commands/registry.ts';
+import type * as RevisionsShared from '../../revisions/window/shared.ts';
+import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { Changed, TreeState } from '../contract.ts';
-import { closeRow, move, openRow, setAll, show, showable } from './actions.ts';
+import { closeRow, markViewed, move, openRow, setAll, show, showable } from './actions.ts';
 import { Files } from './Files.tsx';
 import feature from './index.ts';
 import { fileOrder, followFile, onShowFile } from './shared.ts';
 import { choices, focus, onScreen, showState, shown, states } from './store.ts';
+
+// The tab on screen, for the keys that act on it; the tab feature isn't loaded.
+const screen = vi.hoisted(() => ({ tab: undefined as unknown }));
+vi.mock('../../tab/window/shared.ts', async (original) => ({
+  ...(await original<typeof TabShared>()),
+  activeTab: () => screen.tab,
+}));
+
+// The viewed marks, as `e` reads and toggles them, by path.
+const marks = vi.hoisted(() => new Set<string>());
+vi.mock('../../revisions/window/shared.ts', async (original) => ({
+  ...(await original<typeof RevisionsShared>()),
+  toggleViewed: (_tab: string, file: { path: { text: string } }) => {
+    if (marks.delete(file.path.text)) return { kind: 'clearing' };
+    marks.add(file.path.text);
+    return { kind: 'marking' };
+  },
+  passedOver: (_marks: unknown, path: { text: string }) => marks.has(path.text),
+}));
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -65,6 +87,13 @@ afterEach(() => {
   for (const store of [states, focus, onScreen]) store.set(TAB.id, undefined);
   choices.set(TAB.id, { mode: 'tree', changedOnly: false, opened: new Set(), closed: new Set() });
 });
+
+/** Runs command `id` as its key does, with the count typed before it, if any. */
+function run(id: string, count?: number): void {
+  act(() => {
+    registry().run(id, NO_TARGET, count);
+  });
+}
 
 /** The panel for #80's tab, showing `state`. */
 function render(state: TreeState = LOCAL) {
@@ -188,6 +217,57 @@ describe('the tree’s keys', () => {
     expect(focus.get(TAB.id)).toBe('assets');
     act(() => move(TAB.id, -1));
     expect(focus.get(TAB.id)).toBe('assets');
+  });
+
+  it('move by a count, to the first and last rows, and a page at a time', () => {
+    render();
+    screen.tab = TAB;
+    onTestFinished(() => {
+      screen.tab = undefined;
+    });
+    const rows = (shown.get(TAB.id)?.rows ?? []).filter((row) => row.kind !== 'group');
+    const keyAt = (index: number) => rows.at(index)?.key;
+    run('tree.down', 3);
+    expect(focus.get(TAB.id)).toBe(keyAt(2));
+    run('tree.bottom');
+    expect(focus.get(TAB.id)).toBe(keyAt(-1));
+    run('tree.up', 2);
+    expect(focus.get(TAB.id)).toBe(keyAt(-3));
+    run('tree.down', 99);
+    expect(focus.get(TAB.id)).toBe(keyAt(-1));
+    run('tree.top');
+    expect(focus.get(TAB.id)).toBe(keyAt(0));
+    // jsdom lays nothing out, so a page is a row.
+    run('tree.pageDown');
+    expect(focus.get(TAB.id)).toBe(keyAt(1));
+    run('tree.pageUp');
+    expect(focus.get(TAB.id)).toBe(keyAt(0));
+  });
+
+  it('⏎ on a folder opens it, or closes an open one, as a click does', () => {
+    const { row } = render();
+    screen.tab = TAB;
+    onTestFinished(() => {
+      screen.tab = undefined;
+    });
+    act(() => focus.set(TAB.id, 'src'));
+    run('tree.show');
+    expect(row('src')?.getAttribute('aria-expanded')).toBe('false');
+    run('tree.show');
+    expect(row('src')?.getAttribute('aria-expanded')).toBe('true');
+    expect(focus.get(TAB.id)).toBe('src');
+  });
+
+  it('e marks a file or clears its mark, and with a count, even 1e, only marks', () => {
+    render();
+    marks.clear();
+    marks.add('src/format.ts');
+    onTestFinished(() => marks.clear());
+    act(() => markViewed(TAB.id, 'src/format.ts', 1));
+    expect(marks.has('src/format.ts')).toBe(true);
+    expect(marks.size).toBe(2);
+    act(() => markViewed(TAB.id, 'src/format.ts'));
+    expect(marks.has('src/format.ts')).toBe(false);
   });
 
   it('open and close every folder, the keyboard going to the outermost one', () => {

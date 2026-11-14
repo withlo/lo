@@ -1,7 +1,7 @@
 // The file tree's keys: `-` goes to the tree at the file on screen, and in the tree single keys act
-// on it: the tree or review order, changed files only, moving, opening and closing folders,
-// showing a file, and marking it viewed. A file's right-click menu opens it whole, copies its path,
-// opens it on GitHub or marks it viewed.
+// on it: the tree or review order, changed files only, moving, as in the overview, with counts,
+// opening and closing folders, showing a file, and marking it viewed. A file's right-click menu
+// opens it whole, copies its path, opens it on GitHub or marks it viewed.
 // `⌘P` finds any file in the repository by name, and in the finder `Tab` lists the changed files
 // only and `⌘⏎` opens the highlighted file whole.
 
@@ -66,11 +66,30 @@ export default defineCommands(
       keys: ['j', 'down'],
       when: tree,
       repeat: true,
+      count: 'rows',
     },
     up: {
       label: 'Previous row of the tree',
       group: 'Files',
       keys: ['k', 'up'],
+      when: tree,
+      repeat: true,
+      count: 'rows',
+    },
+    top: { label: 'First row of the tree', group: 'Files', keys: ['g g', 'home'], when: tree },
+    bottom: { label: 'Last row of the tree', group: 'Files', keys: ['G', 'end'], when: tree },
+    /** A page of rows on, as many as the tree shows. */
+    pageDown: {
+      label: 'Page down the tree',
+      group: 'Files',
+      keys: ['pagedown'],
+      when: tree,
+      repeat: true,
+    },
+    pageUp: {
+      label: 'Page up the tree',
+      group: 'Files',
+      keys: ['pageup'],
       when: tree,
       repeat: true,
     },
@@ -93,8 +112,9 @@ export default defineCommands(
     openAll: { label: 'Open every folder', group: 'Files', keys: ['z R'], when: tree },
     closeAll: { label: 'Close every folder', group: 'Files', keys: ['z M'], when: tree },
     /**
-     * Shows the file: a changed one at the top of the diff. On a folder, opens or closes it. Not a
-     * jump of its own: showing a file records one, as a click does, and a folder moves nothing.
+     * Shows the file: a changed one at the top of the diff. On a folder, opens or closes it, as a
+     * click does. Not a jump of its own: showing a file records one, as a click does, and a folder
+     * moves nothing.
      */
     show: {
       label: 'Show the file',
@@ -105,7 +125,8 @@ export default defineCommands(
     },
     /**
      * Marks the changed file viewed, or clears its mark. Marking goes on to the next changed file
-     * that isn't viewed, in the panel's order, round the end.
+     * that isn't viewed, in the panel's order, round the end. A count marks that many, and clears
+     * none, as in the diff.
      */
     markViewed: {
       label: 'Mark viewed',
@@ -113,6 +134,7 @@ export default defineCommands(
       keys: ['e'],
       targets: ['file'],
       when: tree,
+      count: 'files',
       menu: { on: 'file', order: 5 },
     },
     /** Opens the file whole and read-only, changed or not. */
