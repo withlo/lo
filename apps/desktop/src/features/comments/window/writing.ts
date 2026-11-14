@@ -9,7 +9,7 @@ import type { OnFile, Place, Span } from '@lo/ui/code';
 
 import { clockOf, savedWhen } from '../../../window/time.ts';
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
-import type { CommentOnHead } from '../../overview/window/shared.ts';
+import type { CommentOnHead, FileWhy } from '../../overview/window/shared.ts';
 import type {
   ActRefusal,
   Commentable,
@@ -435,37 +435,144 @@ export const IN_A_LAYER = 'Comment in a layer';
 export const NEW_SIDE_ONLY =
   'Suggestions work on the new side only, since GitHub applies them there';
 
-/** What a box on a code block's lines says of a comment on their file, which it falls back to. */
-export const ON_FILE_FROM_BLOCK = 'On the file, since GitHub takes line comments only in the diff';
+/**
+ * Why a comment on a code block's lines goes on their file: GitHub takes line comments only on
+ * lines in its diff (`notInDiff`); Lo couldn't read which lines it takes (`noLines`); the lines
+ * `changed` since the overview's commit; they're on the `older` side, which Lo doesn't map past
+ * that commit; Lo can't tell where they are at the head (`unknown`); or the pull request deletes
+ * the file (`deleted`), which GitHub still takes a comment on.
+ */
+export type OnFileWhy = 'notInDiff' | 'noLines' | FileWhy | 'deleted';
+
+/**
+ * Why a comment on a code block's lines goes on the pull request itself: the pull request leaves
+ * their file alone (`untouched`), or the file is gone at the head, and GitHub takes no comment on it
+ * (`gone`).
+ */
+export type OnPullWhy = 'untouched' | 'gone';
 
 /**
  * What a comment on a code block's lines goes on: the lines at the head on screen they are, a
- * comment on their file, or one on the pull request itself.
+ * comment on their file, or one on the pull request itself, each saying why.
  */
 export type BlockComment =
   | { readonly kind: 'lines'; readonly lines: Lines }
-  | { readonly kind: 'file' }
-  | { readonly kind: 'pull' };
+  | { readonly kind: 'file'; readonly why: OnFileWhy }
+  | { readonly kind: 'pull'; readonly why: OnPullWhy };
 
 /**
  * Where a comment on a code block's lines goes, as GitHub takes it, from where they are at the head
  * on screen (`onHead`) and what GitHub takes on their file there (`takes`, none where main couldn't
  * read it): on those lines, where they're there unchanged and GitHub takes a comment on them;
- * otherwise on the file, where the pull request changes it, or where Lo can't tell; otherwise on
- * the pull request itself, as for a file it leaves alone, or one gone.
+ * otherwise on the file, where the pull request changes or deletes it, or where Lo can't tell;
+ * otherwise on the pull request itself, as for a file it leaves alone, or one gone.
  */
 export function blockComment(
   onHead: CommentOnHead,
   takes: CommentableLines | undefined,
 ): BlockComment {
-  if (onHead.kind === 'gone') return { kind: 'pull' };
-  if (takes && !takes.takesFileComment()) return { kind: 'pull' };
-  if (onHead.kind === 'lines') {
-    const { side, from, to } = onHead;
-    const at: Place | Span =
-      from === to ? { file: '', side, line: to } : { file: '', side, from, to };
-    const lines = linesAt(takes, at);
-    if (lines) return { kind: 'lines', lines };
+  if (onHead.kind === 'gone') {
+    return takes?.takesFileComment()
+      ? { kind: 'file', why: 'deleted' }
+      : { kind: 'pull', why: 'gone' };
   }
-  return { kind: 'file' };
+  if (takes && !takes.takesFileComment()) return { kind: 'pull', why: 'untouched' };
+  if (onHead.kind === 'file') return { kind: 'file', why: onHead.why };
+  const { side, from, to } = onHead;
+  const at: Place | Span =
+    from === to ? { file: '', side, line: to } : { file: '', side, from, to };
+  const lines = linesAt(takes, at);
+  if (lines) return { kind: 'lines', lines };
+  return { kind: 'file', why: takes ? 'notInDiff' : 'noLines' };
+}
+
+/**
+ * What the reader calls the revisions a comment on a code block is between: the one the overview
+ * describes (`written`) and the head on screen (`now`), as `r1` and `r2`.
+ */
+export interface BlockRevisions {
+  readonly written: string;
+  readonly now: string;
+}
+
+/** `text` with its first letter lowered, to follow a comma. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+/** What a box on a code block's lines says of a comment on their file, as GitHub refused them. */
+export const ON_FILE_NOT_IN_DIFF = 'On the file, since GitHub takes line comments only in the diff';
+
+/**
+ * What a box on a code block's lines says of where its comment goes, when that's not those lines
+ * at the overview's commit: their file or the pull request, and why; or the lines at a newer head.
+ * Nothing when its place says it all.
+ */
+export function blockWhere(
+  goes: BlockComment,
+  place: DraftPlaceRow,
+  names: BlockRevisions,
+): string | undefined {
+  switch (goes.kind) {
+    case 'lines':
+      return names.written === names.now ? undefined : `${whereText(place)}, at ${names.now}`;
+    case 'pull':
+      return goes.why === 'untouched'
+        ? 'On the pull request, since it doesn’t change this file'
+        : `On the pull request, since this file is gone at ${names.now}`;
+    case 'file':
+      return onFileWords(goes.why, names);
+    default:
+      goes satisfies never;
+      return undefined;
+  }
+}
+
+/** What a box on a code block's lines says of a comment on their file, and why it's there. */
+function onFileWords(why: OnFileWhy, names: BlockRevisions): string {
+  switch (why) {
+    case 'notInDiff':
+      return ON_FILE_NOT_IN_DIFF;
+    case 'noLines':
+      return 'On the file, since Lo couldn’t read which lines GitHub takes comments on';
+    case 'changed':
+      return `On the file, since these lines changed after ${names.written}`;
+    case 'older':
+      return `On the file, since Lo maps only new-side lines from ${names.written} to ${names.now}`;
+    case 'unknown':
+      return `On the file, since Lo can’t tell where these lines are at ${names.now}`;
+    case 'deleted':
+      return 'On the file, which this pull request deletes';
+    default:
+      why satisfies never;
+      throw new Error(`Lo doesn't know why a comment goes on the file: ${String(why)}`);
+  }
+}
+
+/**
+ * What's said once a comment written on a code block is sent, where it won't show under the block:
+ * on the pull request, on the file, or on lines of a newer head than `written`, the overview's
+ * commit. `pending` when it went into your pending review. Nothing when it shows under the block.
+ */
+export function sentFromBlock(
+  place: DraftPlaceRow,
+  written: string,
+  pending: boolean,
+  names: BlockRevisions,
+): { readonly title: string; readonly body: string } | undefined {
+  if (place.kind === 'conversation') {
+    return { title: 'Posted on the pull request', body: 'It shows in the timeline.' };
+  }
+  if (place.kind !== 'thread') return undefined;
+  if (!place.lines) {
+    return {
+      title: pending ? 'Added to your review, on the file' : 'Posted on the file',
+      body: `${place.path}. It shows under the file’s header in the diff.`,
+    };
+  }
+  if (place.commit.toLowerCase() === written.toLowerCase()) return undefined;
+  return {
+    title: pending ? `Added to your review, at ${names.now}` : `Posted at ${names.now}`,
+    body: `${place.path}, ${lowerFirst(whereText(place))}. It shows in the diff; this block shows ${names.written}.`,
+  };
 }

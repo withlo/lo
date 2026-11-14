@@ -47,6 +47,7 @@ test('a draft is saved as typed, comes back restored, and blank text removes it'
       sent: null,
       sentAt: null,
       base: null,
+      home: null,
     },
   ]);
   const again = new DraftStore(db);
@@ -55,6 +56,30 @@ test('a draft is saved as typed, comes back restored, and blank text removes it'
   ]);
   expect(again.save('rozed-bot', PULL, on(R1, 'a.ts', 4), '  ')).toBe(true);
   expect(new DraftStore(db).of('rozed-bot', PULL)).toEqual([]);
+});
+
+test('a draft keeps the code block it was written from through a restart, until it’s moved', () => {
+  const db = database();
+  const store = new DraftStore(db, () => 500);
+  const home = {
+    commit: R1,
+    path: 'a.ts',
+    block: { start: 2, end: 8 },
+    at: { side: 'new' as const, from: 4, to: 4 },
+  };
+  const onPull: DraftPlaceRow = { kind: 'conversation' };
+  expect(store.save('rozed-bot', PULL, onPull, 'From a block', home)).toBe(true);
+  // The same text with the same home changes nothing; no home given keeps it.
+  expect(store.save('rozed-bot', PULL, onPull, 'From a block', home)).toBe(false);
+  expect(store.save('rozed-bot', PULL, onPull, 'From a block, still')).toBe(true);
+  expect(new DraftStore(db).of('rozed-bot', PULL)).toMatchObject([
+    { place: onPull, text: 'From a block, still', home, restored: true },
+  ]);
+  // Moved to the diff, it has none; a home Lo can't read is none too.
+  expect(store.save('rozed-bot', PULL, onPull, 'From a block, still', null)).toBe(true);
+  expect(new DraftStore(db).of('rozed-bot', PULL)).toMatchObject([{ home: null }]);
+  db.prepare('UPDATE comments_drafts SET home = ?').run('{"commit":"nope"}');
+  expect(new DraftStore(db).of('rozed-bot', PULL)).toMatchObject([{ home: null }]);
 });
 
 test('a place of a kind Lo doesn’t know is kept in the database and never opened', () => {

@@ -214,10 +214,11 @@ describe('commentOnHead', () => {
     expect(commentOnHead(since, 'src/a.ts', { side: 'old', from: 4, to: 6 })).toEqual({
       kind: 'file',
       path: 'src/b.ts',
+      why: 'older',
     });
   });
 
-  it('goes on the file where a line changed, or one was added between them', () => {
+  it('goes on the file, as changed, where a line changed, or one was added between them', () => {
     const old = numbered(10);
     const changedLine = [...old.slice(0, 4), 'changed 5', ...old.slice(5)];
     expect(
@@ -226,7 +227,7 @@ describe('commentOnHead', () => {
         from: 4,
         to: 6,
       }),
-    ).toEqual({ kind: 'file', path: 'src/a.ts' });
+    ).toEqual({ kind: 'file', path: 'src/a.ts', why: 'changed' });
     const between = [...old.slice(0, 4), 'added', ...old.slice(4)];
     expect(
       commentOnHead(changed(text(old), text(between)), 'src/a.ts', {
@@ -234,14 +235,15 @@ describe('commentOnHead', () => {
         from: 4,
         to: 6,
       }),
-    ).toEqual({ kind: 'file', path: 'src/a.ts' });
+    ).toEqual({ kind: 'file', path: 'src/a.ts', why: 'changed' });
   });
 
-  it('goes on the file while Lo can’t tell, and nowhere on it once it’s gone', () => {
+  it('goes on the file while Lo can’t tell, and nowhere once the file’s gone, saying which', () => {
     const lines = { side: 'new' as const, from: 1, to: 2 };
     expect(commentOnHead({ kind: 'unknown', why: 'Offline.' }, 'src/a.ts', lines)).toEqual({
       kind: 'file',
       path: 'src/a.ts',
+      why: 'unknown',
     });
     expect(
       commentOnHead(
@@ -249,8 +251,11 @@ describe('commentOnHead', () => {
         'src/a.ts',
         lines,
       ),
-    ).toEqual({ kind: 'file', path: 'src/b.bin' });
-    expect(commentOnHead({ kind: 'deleted' }, 'src/a.ts', lines)).toEqual({ kind: 'gone' });
+    ).toEqual({ kind: 'file', path: 'src/b.bin', why: 'unknown' });
+    expect(commentOnHead({ kind: 'deleted' }, 'src/a.ts', lines)).toEqual({
+      kind: 'gone',
+      path: 'src/a.ts',
+    });
   });
 });
 

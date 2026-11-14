@@ -2,6 +2,7 @@ import {
   GithubError,
   type PendingReviewRead,
   type PollEvent,
+  type PullRequestTimeline,
   PullRef,
   type ReadMark,
   type ReviewThread,
@@ -15,7 +16,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { openDatabase } from '../../../main/database.ts';
 import { migrate } from '../../../main/migrations.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { DraftPlaceRow, DraftsView, ThreadPlaceRow } from '../contract.ts';
+import type { DraftHomeRow, DraftPlaceRow, DraftsView, ThreadPlaceRow } from '../contract.ts';
 import { holdsPullComment } from './conversation.ts';
 import { DraftStore } from './drafts.ts';
 import { threadRows as threadRowsOf } from './threads.ts';
@@ -148,6 +149,15 @@ function poller(
   };
   /** When each read of the threads was made. */
   const readAt: number[] = [];
+  /**
+   * The pull request's timeline, as a read of it made now gets it; whether the poller keeps it, as
+   * for a view that shows it; and how many times it was read outright.
+   */
+  const timeline = {
+    items: [] as PullRequestTimeline['items'],
+    kept: false,
+    reads: 0,
+  };
   /** A client that answers the threads' query from `threads.now`. */
   const client = {
     githubAhead: () => threads.ahead,
@@ -183,7 +193,13 @@ function poller(
       if (answer === undefined) throw new Error('No answer left.');
       return Promise.resolve(answer);
     },
-    readAfresh(_pull: PullRef, kind: { name: string }): ReadMark {
+    timeline() {
+      timeline.reads += 1;
+      return Promise.resolve({ value: { items: timeline.items }, fetchedAt: Date.now() });
+    },
+    readAfresh(_pull: PullRef, kind: { name: string }): ReadMark | undefined {
+      // A read the poller doesn't keep has nothing to mark.
+      if (kind.name === 'Timeline' && !timeline.kept) return undefined;
       afresh.push(kind.name);
       since.set(kind.name, { kind: 'waiting' });
       return { read: 1, generation: afresh.length };
@@ -207,6 +223,13 @@ function poller(
     afresh,
     threads,
     readAt,
+    timeline,
+    /** The timeline the poller keeps read again after the mark, as the poller tells it. */
+    timelineRead(): void {
+      const value = { items: timeline.items };
+      since.set('Timeline', { kind: 'read', read: { value, fetchedAt: Date.now() } });
+      told('Timeline');
+    },
     /** Your pending review read again after the mark, as the poller tells it. */
     reviewReads(read: PendingReviewRead): void {
       since.set('PendingReview', { kind: 'read', read: { value: read, fetchedAt: Date.now() } });
@@ -413,6 +436,47 @@ describe('sending', () => {
   });
 });
 
+/** A code block of the overview at `OLDER`, on `src/backoff.ts`'s lines 3 to 9, written from its line 5. */
+const BLOCK: DraftHomeRow = {
+  commit: OLDER,
+  path: 'src/backoff.ts',
+  block: { start: 3, end: 9 },
+  at: { side: 'new', from: 5, to: 5 },
+};
+
+describe('a draft written from a code block', () => {
+  test('keeps the block as its home, whatever its place, after a restart', () => {
+    const database = fresh();
+    const before = writer(poller([]), info(), database);
+    const onPull: DraftPlaceRow = { kind: 'conversation' };
+    before.made.save('t1', onLine(), 'On the line.', BLOCK);
+    before.made.save('t1', ON_FILE, 'On the file.', BLOCK);
+    before.made.save('t1', onPull, 'On the pull request.', BLOCK);
+    before.made.save('t1', onLine(OLDER), 'In the diff.', null);
+    before.made.stop();
+    const after = writer(poller([]), info(), database);
+    expect(after.last()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ place: onLine(), home: BLOCK, restored: true }),
+        expect.objectContaining({ place: ON_FILE, home: BLOCK, restored: true }),
+        expect.objectContaining({ place: onPull, home: BLOCK, restored: true }),
+        expect.objectContaining({ place: onLine(OLDER), home: null, restored: true }),
+      ]),
+    );
+    expect(after.last()).toHaveLength(4);
+    // Saved with no home given, it keeps the one it has; moved to the diff, it has none.
+    after.made.save('t1', onLine(), 'On the line, still.');
+    expect(after.drafts.get('rozed-bot', PULL, onLine())).toMatchObject({ home: BLOCK });
+    after.made.save('t1', onLine(), 'On the line, still.', null);
+    expect(after.drafts.get('rozed-bot', PULL, onLine())).toMatchObject({ home: null });
+  });
+});
+
+/** A second from now, as GitHub says when something was made. */
+function aMomentOn(): string {
+  return new Date(Date.now() + 1_000).toISOString();
+}
+
 /** An error whose answer was lost: the write may have posted. */
 function lost(): GithubError {
   return new GithubError({ kind: 'network', failure: 'lost', message: 'reset' });
@@ -509,6 +573,58 @@ describe('a lost answer', () => {
     expect(drafts.get('rozed-bot', PULL, onLine())).toMatchObject({ text: 'Lost?', sent: null });
     expect(last()).toMatchObject([{ sending: 'notPosted' }]);
   });
+
+  test('on the pull request, is looked for in its timeline: found, the draft goes; not, it stays', async () => {
+    vi.useFakeTimers();
+    const onPull: DraftPlaceRow = { kind: 'conversation' };
+    // Where the poller doesn't keep the timeline, it's read once, now.
+    const found = poller([lost()]);
+    const posted = writer(found);
+    expect(await posted.made.send('t1', onPull, 'Lost?', 'now')).toEqual({ kind: 'lost' });
+    found.timeline.items = [pullComment('rozed-bot', 'Lost?', aMomentOn())];
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(found.timeline.reads).toBe(1);
+    expect(posted.last()).toEqual([]);
+    // Where it keeps it, it's read again from then, only its newest page, and nothing more.
+    const missing = poller([lost()]);
+    missing.timeline.kept = true;
+    const notPosted = writer(missing);
+    await notPosted.made.send('t1', onPull, 'Lost?', 'now');
+    missing.timeline.items = [pullComment('rozed-bot', 'Something else', aMomentOn())];
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(missing.afresh).toContain('Timeline');
+    expect(notPosted.last()).toMatchObject([{ sending: 'checking' }]);
+    missing.timelineRead();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(missing.timeline.reads).toBe(0);
+    expect(notPosted.last()).toMatchObject([{ sending: 'notPosted', sent: null, text: 'Lost?' }]);
+  });
+
+  test.each([
+    ['found, the draft goes', 'Lost?', []],
+    [
+      'not found, it stays, kept with its block',
+      'Something else',
+      [expect.objectContaining({ sending: 'notPosted', text: 'Lost?', sent: null, home: BLOCK })],
+    ],
+  ])(
+    'on the pull request, lost before a restart, is looked for after it: %s',
+    async (_, body, after) => {
+      vi.useFakeTimers();
+      const onPull: DraftPlaceRow = { kind: 'conversation' };
+      const database = fresh();
+      const before = writer(poller([lost()]), info(), database);
+      before.made.save('t1', onPull, 'Lost?', BLOCK);
+      expect(await before.made.send('t1', onPull, 'Lost?', 'now')).toEqual({ kind: 'lost' });
+      before.made.stop();
+      const fake = poller([]);
+      fake.timeline.items = [pullComment('rozed-bot', body, aMomentOn())];
+      const { last } = writer(fake, info(), database);
+      expect(last()).toMatchObject([{ restored: true, sending: 'checking', home: BLOCK }]);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(last()).toEqual(after);
+    },
+  );
 
   test('discarded while Lo checks, it’s gone, and what Lo finds brings nothing back', async () => {
     vi.useFakeTimers();

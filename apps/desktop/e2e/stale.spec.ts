@@ -284,10 +284,9 @@ test('says it was written for r1 from its first frame, and flags the block on li
       .getByRole('menuitem', { name: /^Comment on these lines/ })
       .click();
     const onFile = parser.locator('.lo-diffcomposer');
-    await expect(onFile).toContainText(
-      'On the file, since GitHub takes line comments only in the diff',
-      { timeout: 20_000 },
-    );
+    await expect(onFile).toContainText('On the file, since these lines changed after r1', {
+      timeout: 20_000,
+    });
     await expect(onFile.locator('.mode-chip')).toHaveText('INSERT');
     for (const key of ['Escape', 'Escape']) await page.keyboard.press(key);
     await expect(boxes).toHaveCount(0);
@@ -298,7 +297,9 @@ test('says it was written for r1 from its first frame, and flags the block on li
     await readme.locator('.cm-line:visible').first().click();
     await page.keyboard.press('c');
     const onPull = readme.locator('.lo-diffcomposer');
-    await expect(onPull).toContainText('On the pull request', { timeout: 20_000 });
+    await expect(onPull).toContainText('On the pull request, since it doesn’t change this file', {
+      timeout: 20_000,
+    });
     for (const key of ['Escape', 'Escape']) await page.keyboard.press(key);
     await expect(boxes).toHaveCount(0);
   });

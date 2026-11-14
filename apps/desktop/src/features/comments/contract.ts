@@ -205,8 +205,19 @@ export const draftPlace = z.discriminatedUnion('kind', [
 ]);
 export type DraftPlaceRow = z.output<typeof draftPlace>;
 
-/** A new thread's place, of those a draft may have. */
-export type ThreadPlaceRow = Extract<DraftPlaceRow, { kind: 'thread' }>;
+/**
+ * Where a draft's box was written, when that's an overview's code block rather than the diff: the
+ * block, by the commit the overview describes and the file and lines it points at, and the lines
+ * the comment was written under, there, on their side. Its box opens again under that block,
+ * whatever its place: lines at the head, the file, or the pull request.
+ */
+export const draftHome = z.strictObject({
+  commit: oid,
+  path,
+  block: z.strictObject({ start: lineNumber, end: lineNumber }),
+  at: z.strictObject({ side: z.enum(['old', 'new']), from: lineNumber, to: lineNumber }),
+});
+export type DraftHomeRow = z.output<typeof draftHome>;
 
 /** An edit's place, of those a draft may have. */
 export type EditPlaceRow = Extract<DraftPlaceRow, { kind: 'edit' }>;
@@ -232,7 +243,8 @@ export type Sending = z.output<typeof sending>;
 /**
  * A comment box's draft: where it is, its text, when it was last saved, whether it was saved before
  * Lo started, and how sending it stands, with the text sent when GitHub's answer was lost. An
- * edit's has `base`, the comment's text on GitHub when the edit started.
+ * edit's has `base`, the comment's text on GitHub when the edit started. One written on an
+ * overview's code block has `home`, the block.
  */
 export const draftRow = z.strictObject({
   place: draftPlace,
@@ -242,6 +254,7 @@ export const draftRow = z.strictObject({
   sending: sending.nullable(),
   sent: z.string().max(BODY_LIMIT).nullable(),
   base: z.string().max(BODY_LIMIT).nullable(),
+  home: draftHome.nullable(),
 });
 export type DraftRow = z.output<typeof draftRow>;
 
@@ -409,11 +422,17 @@ export const contract = defineContract('comments', {
     },
     /**
      * Keeps `text` as the draft of the comment box at `place` on view `id`'s pull request, for its
-     * account: blank text removes it. Fails as `missing` for no such view, and as `refused` for one
-     * that acts as nobody.
+     * account: blank text removes it. `home`, when it's given, is the code block the box was
+     * written on, or none; otherwise the draft keeps the one it has. Fails as `missing` for no such
+     * view, and as `refused` for one that acts as nobody.
      */
     draft: {
-      input: z.strictObject({ id: tabId, place: draftPlace, text: z.string().max(BODY_LIMIT) }),
+      input: z.strictObject({
+        id: tabId,
+        place: draftPlace,
+        text: z.string().max(BODY_LIMIT),
+        home: draftHome.nullable().optional(),
+      }),
       reply: reply<void>(),
     },
     /** Removes the draft at `place` on view `id`'s pull request, as "Discard" does. */

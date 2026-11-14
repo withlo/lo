@@ -344,7 +344,7 @@ function ExcerptCode({
     // The threads on its lines, drawn with it, and as they change; and the comments written on it.
     const block: DrawnBlock = {
       tab,
-      key: blockKey(blockIdOf(parent, tree) ?? '', path, start, end),
+      key: blockKey(commit, path, start, end),
       block: blockIdOf(parent, tree) ?? '',
       file: id,
       path,

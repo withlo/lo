@@ -58,6 +58,7 @@ import type {
   ActsView,
   Change,
   DeleteAsked,
+  DraftHomeRow,
   DraftPlaceRow,
   DraftRow,
   DraftsView,
@@ -329,14 +330,17 @@ export class Writer {
     };
   }
 
-  /** Keeps `text` as the draft at `place` on view `id`, as typed: blank removes it. */
-  save(id: string, place: DraftPlaceRow, text: string): void {
+  /**
+   * Keeps `text` as the draft at `place` on view `id`, as typed: blank removes it. `home`, when
+   * it's given, is the overview's code block its box was written on, or none.
+   */
+  save(id: string, place: DraftPlaceRow, text: string, home?: DraftHomeRow | null): void {
     const { login, pull } = this.#writing(id);
     const key = this.#key({ login, pull }, place);
     // What's typed after it didn't post says nothing more of it. Whether one Lo can't tell of
     // posted still stands.
     if (this.#sending.get(key) === 'notPosted') this.#sending.delete(key);
-    if (this.#options.drafts.save(login, pull, place, text)) this.#changed({ login, pull });
+    if (this.#options.drafts.save(login, pull, place, text, home)) this.#changed({ login, pull });
   }
 
   /**
@@ -1246,6 +1250,7 @@ export class Writer {
       sending: this.#standing(this.#key(target, kept.place), kept) ?? null,
       sent: kept.sent,
       base: kept.base,
+      home: kept.home,
     };
   }
 

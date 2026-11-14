@@ -327,7 +327,7 @@ export async function commentLinesOnHead(
 ): Promise<CommentOnHead> {
   if (pullOf(tab)?.shown === commit) return commentOnHead('same', path, lines);
   const compared = comparedIn(tab);
-  if (compared?.commit !== commit) return { kind: 'file', path };
+  if (compared?.commit !== commit) return { kind: 'file', path, why: 'unknown' };
   const since = await fileSince(tab, commit, compared.head, path, { soon: true });
   return commentOnHead(since, path, lines);
 }

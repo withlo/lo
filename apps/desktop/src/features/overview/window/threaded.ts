@@ -27,9 +27,8 @@ export interface DrawnBlock {
   /** The pull request's tab, by its view's id. */
   readonly tab: string;
   /**
-   * What the block is known by while its overview is on screen: its id, as the block keys name it,
-   * with the file and lines it points at, which tell apart two code blocks in one block of the
-   * article.
+   * What the block is known by, a restart included: the commit the overview describes and the file
+   * and lines it points at ({@link blockKey}).
    */
   readonly key: string;
   /** Its id, as the block keys and menus name it. */
@@ -144,9 +143,12 @@ export function threadsSettled(tab: string, wait = WAIT_FOR_THREADS): Promise<vo
   });
 }
 
-/** The key of a block that points at `path`'s lines `start` to `end`, in block `block`. */
-export function blockKey(block: string, path: string, start: number, end: number): string {
-  return JSON.stringify([block, path, start, end]);
+/**
+ * The key of a code block that points at `path`'s lines `start` to `end`, of an overview that
+ * describes `commit`.
+ */
+export function blockKey(commit: string, path: string, start: number, end: number): string {
+  return JSON.stringify([commit.toLowerCase(), path, start, end]);
 }
 
 /** A block drawn, and its code view. */

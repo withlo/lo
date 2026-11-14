@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// The comment boxes of a view's diff: opened from `c`, `C` and `s`, refused where GitHub takes no
-// comment, restored from main's drafts, saved as they're typed in, and closed once what they sent
-// is on GitHub.
+// The comment boxes of a view's diff and its overview's code blocks: opened from `c`, `C` and `s`,
+// refused where GitHub takes no comment, restored from main's drafts where they were written, saved
+// as they're typed in, and closed once what they sent is on GitHub.
 
 import type {
   BoxFrame,
@@ -10,18 +10,28 @@ import type {
   ComposeOptions,
   OnFile,
   Place,
+  Span,
 } from '@lo/ui/code';
+import type { LineTarget } from '@lo/ui/commands';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { notice } from '../../../window/commands/notices.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
 import type { DrawnDiff, WritingDiff } from '../../diff/window/shared.ts';
+import type * as OverviewShared from '../../overview/window/shared.ts';
+import {
+  blockKey,
+  type CommentOnHead,
+  type DrawnBlock,
+  type WritingBlock,
+} from '../../overview/window/shared.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab, PullView } from '../../tab/window/shared.ts';
 import type {
   ActOutcome,
   ActRow,
   Commentable,
+  DraftHomeRow,
   DraftPlaceRow,
   DraftRow,
   SendOutcome,
@@ -32,6 +42,7 @@ import {
   act,
   canWrite,
   comment,
+  commentOnBlock,
   frameWith,
   keepBoxesOf,
   offering,
@@ -48,6 +59,7 @@ import * as threads from './threads.ts';
 import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
+const OLDER = 'b'.repeat(40);
 let VIEW = 'v0';
 
 const said = vi.hoisted(() => ({ pull: undefined as unknown, run: undefined as unknown }));
@@ -62,7 +74,13 @@ interface Drawn {
   at: unknown;
   on: ComposerEvents;
   options: ComposeOptions | undefined;
-  composer: Composer & { text: string; held: boolean; closed?: 'close' | 'dismiss' };
+  composer: Composer & {
+    text: string;
+    held: boolean;
+    /** How many times it was focused. */
+    focused: number;
+    closed?: 'close' | 'dismiss';
+  };
 }
 
 const diff = vi.hoisted(() => ({
@@ -73,7 +91,54 @@ const diff = vi.hoisted(() => ({
 vi.mock('../../diff/window/shared.ts', () => ({
   writingDiff: (_view: string, keys = false) => (keys && !diff.keys ? undefined : diff.current),
   showDiff: (view: string) => diff.shown.push(view),
+  diffStateOf: () => undefined,
 }));
+
+const overview = vi.hoisted(() => ({
+  /** The blocks drawn, by their keys. */
+  blocks: new Map<string, unknown>(),
+  /** What `c` on a block names: the block and its lines. */
+  found: undefined as unknown,
+  /** Where the lines are at the head on screen. */
+  onHead: undefined as unknown,
+}));
+vi.mock('../../overview/window/shared.ts', async (original) => ({
+  ...(await original<typeof OverviewShared>()),
+  blockLines: () => overview.found,
+  commentOnHead: () => Promise.resolve(overview.onHead),
+  writingBlock: (_tab: string, key: string) => overview.blocks.get(key),
+  revisionName: (_tab: string, commit: string) => (commit === HEAD ? 'r2' : 'r1'),
+}));
+
+/** A box drawn in a fake diff or block, which says how it was focused and closed. */
+function composerOf(draft: string, on: ComposerEvents): Drawn['composer'] {
+  const composer = {
+    text: draft,
+    mode: 'insert' as const,
+    previewing: false,
+    focused: 0,
+    focus() {
+      composer.focused += 1;
+    },
+    insert: vi.fn<(text: string) => void>(),
+    replace(from: number, to: number, text: string) {
+      composer.text = composer.text.slice(0, from) + text + composer.text.slice(to);
+      on.change(composer.text);
+    },
+    preview: vi.fn<(on: boolean) => void>(),
+    held: false,
+    hold(held: boolean) {
+      composer.held = held;
+    },
+    close() {
+      composer.closed = 'close';
+    },
+    dismiss() {
+      composer.closed = 'dismiss';
+    },
+  } as Drawn['composer'];
+  return composer;
+}
 
 /** A diff that draws boxes, as the code view does, but for lines it doesn't draw yet. */
 function fakeDiff(missing: (at: unknown) => boolean = () => false) {
@@ -109,28 +174,7 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
         (each) => JSON.stringify(each.at) === JSON.stringify(at) && !each.composer.closed,
       );
       if (open) return open.composer;
-      const composer = {
-        text: draft,
-        mode: 'insert' as const,
-        previewing: false,
-        focus: vi.fn<() => void>(),
-        insert: vi.fn<(text: string) => void>(),
-        replace(from: number, to: number, text: string) {
-          composer.text = composer.text.slice(0, from) + text + composer.text.slice(to);
-          on.change(composer.text);
-        },
-        preview: vi.fn<(on: boolean) => void>(),
-        held: false,
-        hold(held: boolean) {
-          composer.held = held;
-        },
-        close() {
-          composer.closed = 'close';
-        },
-        dismiss() {
-          composer.closed = 'dismiss';
-        },
-      } as Drawn['composer'];
+      const composer = composerOf(draft, on);
       drawn.push({ at, on, options, composer });
       return composer;
     },
@@ -153,6 +197,75 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false) {
 /** A line or header, as a key. */
 function where(at: Place | OnFile): string {
   return 'line' in at ? `${at.file}:${at.side}:${at.line}` : at.file;
+}
+
+const PATH = 'src/backoff.ts';
+
+/**
+ * A code block of the overview at `OLDER`, on `src/backoff.ts`'s lines 3 to 9, that draws boxes as
+ * an excerpt does: one under a line, which `c` there again gives.
+ */
+function fakeBlock() {
+  const drawn: Drawn[] = [];
+  const block: DrawnBlock = {
+    tab: VIEW,
+    key: blockKey(OLDER, PATH, 3, 9),
+    block: 'b0',
+    file: 'x0',
+    path: PATH,
+    commit: OLDER,
+    from: null,
+    lines: { start: 3, end: 9 },
+  };
+  const writing: WritingBlock = {
+    block,
+    compose(at, draft, on, _frame, options) {
+      const open = drawn.find((each) => lineOf(each.at) === lineOf(at) && !each.composer.closed);
+      if (open) {
+        if (options?.focus !== false) open.composer.focus();
+        return open.composer;
+      }
+      const composer = composerOf(draft, on);
+      drawn.push({ at, on, options, composer });
+      return composer;
+    },
+  };
+  overview.blocks.set(block.key, writing);
+  return { drawn, writing, block };
+}
+
+/** The line a box on `at`, a line or a span, goes under: its last. */
+function lineOf(at: unknown): number | undefined {
+  if (typeof at !== 'object' || at === null) return undefined;
+  if ('line' in at && typeof at.line === 'number') return at.line;
+  return 'to' in at && typeof at.to === 'number' ? at.to : undefined;
+}
+
+/** `c` on the fake block's line `line`, or lines `from` to `to`, which are at `onHead` at the head. */
+async function onBlock(
+  writing: WritingBlock,
+  lines: { from: number; to: number },
+  onHead: CommentOnHead,
+  how: 'review' | 'now' = 'review',
+): Promise<void> {
+  const { from, to } = lines;
+  const at: Place | Span =
+    from === to ? { file: 'x0', side: 'new', line: to } : { file: 'x0', side: 'new', from, to };
+  overview.found = { writing, at };
+  overview.onHead = onHead;
+  const target: LineTarget = { kind: 'line', at };
+  await commentOnBlock(tab(), target, how);
+}
+
+/** The home of a draft written from the fake block's lines `from` to `to`. */
+function blockHome(from: number, to = from): DraftHomeRow {
+  return { commit: OLDER, path: PATH, block: { start: 3, end: 9 }, at: { side: 'new', from, to } };
+}
+
+/** A box the reader shut with `Esc Esc`, keeping its text, or not. */
+function shut(drawn: Drawn, keep: boolean): void {
+  drawn.composer.closed = 'close';
+  drawn.on.close(keep);
 }
 
 const answers: Record<string, (input: unknown) => unknown> = {};
@@ -200,6 +313,7 @@ function row(place: DraftPlaceRow, text: string, changes: Partial<DraftRow> = {}
     sending: null,
     sent: null,
     base: null,
+    home: null,
     ...changes,
   };
 }
@@ -227,6 +341,7 @@ beforeEach(() => {
   answers['comments.commentable'] = () => IN_DIFF;
   answers['comments.draft'] = () => undefined;
   answers['comments.discard'] = () => undefined;
+  overview.blocks.clear();
 });
 
 afterEach(() => {
@@ -330,7 +445,9 @@ describe('drafts', () => {
     vi.advanceTimersByTime(SAVE_AFTER - 1);
     expect(asked('comments.draft')).toEqual([]);
     vi.advanceTimersByTime(1);
-    expect(asked('comments.draft')).toEqual([{ id: VIEW, place: onLines(null, 5), text: 'Hello' }]);
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onLines(null, 5), text: 'Hello', home: null },
+    ]);
     on.change('Hello there');
     on.close(true);
     expect(asked('comments.draft')).toHaveLength(2);
@@ -342,7 +459,9 @@ describe('drafts', () => {
     const { drawn } = fakeDiff();
     await comment(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 5 } }, 'review');
     drawn[0]!.on.close(false);
-    expect(asked('comments.draft')).toEqual([{ id: VIEW, place: onLines(null, 5), text: '' }]);
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onLines(null, 5), text: '', home: null },
+    ]);
   });
 
   test('a draft restored as Lo started reopens unfocused once its line is drawn', async () => {
@@ -456,6 +575,185 @@ async function opened() {
   fake.drawn[0]!.on.change('Ship it?');
   return { ...fake, box: boxIn(fake.drawn[0]!) };
 }
+
+describe('a box on a code block', () => {
+  test('`c` on a block’s line opens a box under it, on those lines at the head, kept with the block', async () => {
+    const { drawn, writing } = fakeBlock();
+    await onBlock(
+      writing,
+      { from: 5, to: 5 },
+      { kind: 'lines', path: PATH, side: 'new', from: 5, to: 5 },
+    );
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]).toMatchObject({
+      at: { file: 'x0', side: 'new', line: 5 },
+      options: { focus: true },
+    });
+    const box = boxIn(drawn[0]!);
+    expect(box.state.place).toEqual(onLines(null, 5));
+    // The block shows r1; the comment goes on the lines at r2, and its head says so.
+    expect(box.state.where).toBe('On line 5, new side, at r2');
+    drawn[0]!.on.change('Mine');
+    shut(drawn[0]!, true);
+    expect(asked('comments.draft')).toEqual([
+      { id: VIEW, place: onLines(null, 5), text: 'Mine', home: blockHome(5) },
+    ]);
+  });
+
+  test('it goes on the file, or the pull request, saying why, where it can’t go on the lines', async () => {
+    const { drawn, writing } = fakeBlock();
+    await onBlock(writing, { from: 4, to: 4 }, { kind: 'file', path: PATH, why: 'changed' });
+    expect(boxIn(drawn[0]!).state).toMatchObject({
+      place: { kind: 'thread', commit: HEAD, path: PATH, lines: null },
+      where: 'On the file, since these lines changed after r1',
+    });
+    // The pull request deletes the file: GitHub still takes a comment on it, by its old path.
+    await onBlock(writing, { from: 6, to: 6 }, { kind: 'gone', path: 'src/old.ts' });
+    expect(boxIn(drawn[1]!).state).toMatchObject({
+      place: { kind: 'thread', path: 'src/old.ts', lines: null },
+      where: 'On the file, which this pull request deletes',
+    });
+    expect(asked('comments.commentable')).toContainEqual({
+      id: VIEW,
+      commit: HEAD,
+      path: 'src/old.ts',
+      previous: null,
+    });
+    // It leaves the file alone: the comment goes on the pull request.
+    answers['comments.commentable'] = () => ({ kind: 'notInDiff' });
+    await onBlock(
+      writing,
+      { from: 8, to: 8 },
+      { kind: 'lines', path: 'docs/usage.md', side: 'new', from: 8, to: 8 },
+    );
+    expect(boxIn(drawn[2]!).state).toMatchObject({
+      place: { kind: 'conversation' },
+      where: 'On the pull request, since it doesn’t change this file',
+    });
+  });
+
+  test('`c` on a line a box is open on, as one on a range ending there, focuses that box', async () => {
+    const { drawn, writing } = fakeBlock();
+    const onRange = { kind: 'lines', path: PATH, side: 'new', from: 4, to: 6 } as const;
+    await onBlock(writing, { from: 4, to: 6 }, onRange);
+    const first = drawn[0]!;
+    const focused = first.composer.focused;
+    await onBlock(writing, { from: 6, to: 6 }, { ...onRange, from: 6 });
+    expect(drawn).toHaveLength(1);
+    expect(first.composer.focused).toBe(focused + 1);
+    // Once it's shut, `c` there opens one of its own.
+    shut(first, true);
+    await onBlock(writing, { from: 6, to: 6 }, { ...onRange, from: 6 });
+    expect(drawn).toHaveLength(2);
+    expect(boxIn(drawn[1]!).state.place).toEqual(onLines(null, 6));
+    // And so in the diff.
+    const onDiff = fakeDiff();
+    const span = { kind: 'line', at: { file: 'f0', side: 'new', from: 4, to: 6 } } as const;
+    await comment(tab(), span, 'review');
+    const before = onDiff.drawn[0]!.composer.focused;
+    await comment(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 6 } }, 'review');
+    expect(onDiff.drawn).toHaveLength(1);
+    expect(onDiff.drawn[0]!.composer.focused).toBe(before + 1);
+  });
+
+  test('a box moves between its block and the diff with its text, and its draft’s home with it', async () => {
+    const block = fakeBlock();
+    const onDiff = fakeDiff();
+    const onLine = { kind: 'lines', path: PATH, side: 'new', from: 5, to: 5 } as const;
+    await onBlock(block.writing, { from: 5, to: 5 }, onLine);
+    block.drawn[0]!.on.change('Mine');
+    await comment(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 5 } }, 'review');
+    expect(block.drawn[0]!.composer.closed).toBe('dismiss');
+    expect(onDiff.drawn.map((each) => each.composer.text)).toEqual(['Mine']);
+    expect(asked('comments.draft').at(-1)).toEqual({
+      id: VIEW,
+      place: onLines(null, 5),
+      text: 'Mine',
+      home: null,
+    });
+    await onBlock(block.writing, { from: 5, to: 5 }, onLine);
+    expect(onDiff.drawn[0]!.composer.closed).toBe('dismiss');
+    expect(block.drawn).toHaveLength(2);
+    expect(block.drawn[1]!.composer.text).toBe('Mine');
+    expect(asked('comments.draft').at(-1)).toMatchObject({ text: 'Mine', home: blockHome(5) });
+  });
+
+  test('after a restart, a draft written from a block reopens under it, whatever its place', async () => {
+    const block = fakeBlock();
+    const onDiff = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(null, 5), 'On the line', { savedAt: 1, restored: true, home: blockHome(5) }),
+        row({ kind: 'conversation' }, 'On the pull request', {
+          savedAt: 2,
+          restored: true,
+          home: blockHome(7),
+        }),
+      ],
+    });
+    await Promise.resolve();
+    expect(onDiff.drawn).toEqual([]);
+    expect(
+      block.drawn.map(({ at, options, composer }) => [at, options?.focus, composer.text]),
+    ).toEqual([
+      [{ file: 'x0', side: 'new', line: 5 }, false, 'On the line'],
+      [{ file: 'x0', side: 'new', line: 7 }, false, 'On the pull request'],
+    ]);
+  });
+
+  test('a draft on the pull request with no block stays kept, shut and unsent', async () => {
+    vi.useFakeTimers();
+    const onDiff = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [row({ kind: 'conversation' }, 'Kept', { savedAt: 1, restored: true })],
+    });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(onDiff.drawn).toEqual([]);
+    expect(bridge.calls.map(([name]) => name)).not.toContain('comments.draft');
+    expect(bridge.calls.map(([name]) => name)).not.toContain('comments.send');
+  });
+
+  test('sent, a comment that won’t show under its block says where it went', async () => {
+    const { drawn, writing } = fakeBlock();
+    answers['comments.send'] = (): SendOutcome => ({
+      kind: 'sent',
+      pending: true,
+      joined: false,
+      thread: null,
+      landedOn: null,
+    });
+    await onBlock(writing, { from: 4, to: 4 }, { kind: 'file', path: PATH, why: 'unknown' });
+    drawn[0]!.on.change('On the file.');
+    await send(boxIn(drawn[0]!), 'review');
+    expect(drawn[0]!.composer.closed).toBe('close');
+    expect(notice()).toMatchObject({
+      title: 'Added to your review, on the file',
+      body: 'src/backoff.ts. It shows under the file’s header in the diff.',
+    });
+    answers['comments.commentable'] = () => ({ kind: 'notInDiff' });
+    answers['comments.send'] = (): SendOutcome => ({
+      kind: 'sent',
+      pending: false,
+      joined: false,
+      thread: null,
+      landedOn: null,
+    });
+    await onBlock(
+      writing,
+      { from: 6, to: 6 },
+      { kind: 'lines', path: 'docs/usage.md', side: 'new', from: 6, to: 6 },
+      'now',
+    );
+    drawn[1]!.on.change('On the pull request.');
+    await send(boxIn(drawn[1]!), 'now');
+    expect(notice()).toMatchObject({
+      title: 'Posted on the pull request',
+      body: 'It shows in the timeline.',
+    });
+  });
+});
 
 describe('sending', () => {
   test('sent, the box closes as after a send, and a thread on a newer push is marked', async () => {

@@ -340,8 +340,11 @@ class View implements DiffView {
   #lastPane: Pane = 'new';
   /** The side that last had the cursor, which a header in the inline layout, on both, keeps. */
   #lastSide: Side = 'new';
-  /** The thread `]t` last landed on, while the cursor stays on its line. */
-  #landed: (At & { thread: string }) | undefined;
+  /**
+   * The thread `]t` last landed on, while the cursor stays on its line, with the key of the line or
+   * header it was drawn under then.
+   */
+  #landed: (At & { thread: string; drawn: string }) | undefined;
   /** Above 0 while the view changes its own documents, which says nothing until it's done. */
   #quiet = 0;
   /** What the events last said, so each says only what changed. */
@@ -2040,17 +2043,27 @@ class View implements DiffView {
    */
   #threadAt(at: At): string | undefined {
     const landed = this.#landed;
-    // A file's threads are under its header, whichever side the cursor is on.
+    // A file's threads are under its header, whichever side the cursor is on. The one landed on
+    // counts while it's drawn where it was: one taken away since is no key's.
     if (
       landed &&
       landed.file === at.file &&
       landed.line === at.line &&
-      (at.line === 0 || landed.side === at.side)
+      (at.line === 0 || landed.side === at.side) &&
+      this.#drawnKey(at.file, landed.thread) === landed.drawn
     ) {
       return landed.thread;
     }
     const threads = this.#threads[at.file]?.get(at.line === 0 ? 'new:0' : `${at.side}:${at.line}`);
     return threads?.length === 1 ? threads[0]!.id : undefined;
+  }
+
+  /** The key of the line or header thread `id` is drawn under in file `file`, while it's drawn. */
+  #drawnKey(file: number, id: string): string | undefined {
+    for (const [key, threads] of this.#threads[file] ?? []) {
+      if (threads.some((thread) => thread.id === id)) return key;
+    }
+    return undefined;
   }
 
   // Comments ---------------------------------------------------------------------------------
@@ -3182,12 +3195,14 @@ class View implements DiffView {
       if (left === 0) break;
     }
     if (found === undefined) return undefined;
-    this.#land({ ...this.#placeAt(pane, found.line), thread: found.thread });
+    const place = this.#placeAt(pane, found.line);
+    const drawn = this.#drawnKey(place.file, found.thread);
+    this.#land(drawn === undefined ? undefined : { ...place, thread: found.thread, drawn });
     return found.line;
   }
 
   /** Lands on a thread, as `]t` does, or on none: its card shows the keyboard is on it. */
-  #land(next: (At & { thread: string }) | undefined): void {
+  #land(next: (At & { thread: string; drawn: string }) | undefined): void {
     const was = this.#landed;
     this.#landed = next;
     if (was?.thread === next?.thread) return;

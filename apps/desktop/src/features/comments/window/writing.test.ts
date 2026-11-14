@@ -2,7 +2,7 @@
 // where one on a code block's lines goes, falling back to the file and then the pull request;
 // where a draft's box goes in a diff as drawn; and what a box's frame says.
 
-import { Screen } from '@lo/review';
+import { Line, Screen } from '@lo/review';
 import { describe, expect, test } from 'vitest';
 
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
@@ -10,6 +10,7 @@ import type { Commentable, DraftPlaceRow } from '../contract.ts';
 import {
   actText,
   blockComment,
+  blockWhere,
   boxAt,
   commentableOn,
   hunksOf,
@@ -21,6 +22,7 @@ import {
   refusalNote,
   restoredNote,
   sendingNote,
+  sentFromBlock,
   whereText,
 } from './writing.ts';
 
@@ -110,19 +112,78 @@ describe('a comment on a code block’s lines', () => {
   test('goes on the file where GitHub takes none on those lines, they changed, or Lo can’t tell', () => {
     expect(blockComment({ kind: 'lines', path, side: 'new', from: 30, to: 34 }, takes)).toEqual({
       kind: 'file',
+      why: 'notInDiff',
     });
-    expect(blockComment({ kind: 'file', path }, takes)).toEqual({ kind: 'file' });
     expect(blockComment({ kind: 'lines', path, side: 'new', from: 4, to: 6 }, undefined)).toEqual({
       kind: 'file',
+      why: 'noLines',
     });
+    for (const why of ['changed', 'older', 'unknown'] as const) {
+      expect(blockComment({ kind: 'file', path, why }, takes)).toEqual({ kind: 'file', why });
+    }
+  });
+
+  test('goes on a file the pull request deletes, which GitHub still takes one on', () => {
+    expect(blockComment({ kind: 'gone', path }, takes)).toEqual({ kind: 'file', why: 'deleted' });
   });
 
   test('goes on the pull request for a file it leaves alone, or one gone', () => {
     const untouched = commentableOn(Screen.full(HEAD), { kind: 'notInDiff' });
     expect(blockComment({ kind: 'lines', path, side: 'new', from: 4, to: 6 }, untouched)).toEqual({
       kind: 'pull',
+      why: 'untouched',
     });
-    expect(blockComment({ kind: 'gone' }, takes)).toEqual({ kind: 'pull' });
+    expect(blockComment({ kind: 'gone', path }, untouched)).toEqual({ kind: 'pull', why: 'gone' });
+    expect(blockComment({ kind: 'gone', path }, undefined)).toEqual({ kind: 'pull', why: 'gone' });
+  });
+
+  test('says where it goes and why, where that isn’t the block’s lines', () => {
+    const names = { written: 'r1', now: 'r2' };
+    const onFile = placeOf(HEAD, path, undefined);
+    const words = (goes: Parameters<typeof blockWhere>[0]) => blockWhere(goes, onFile, names);
+    expect(words({ kind: 'file', why: 'changed' })).toBe(
+      'On the file, since these lines changed after r1',
+    );
+    expect(words({ kind: 'file', why: 'notInDiff' })).toBe(
+      'On the file, since GitHub takes line comments only in the diff',
+    );
+    expect(words({ kind: 'file', why: 'older' })).toBe(
+      'On the file, since Lo maps only new-side lines from r1 to r2',
+    );
+    expect(words({ kind: 'file', why: 'unknown' })).toBe(
+      'On the file, since Lo can’t tell where these lines are at r2',
+    );
+    expect(words({ kind: 'file', why: 'deleted' })).toBe(
+      'On the file, which this pull request deletes',
+    );
+    expect(words({ kind: 'pull', why: 'untouched' })).toBe(
+      'On the pull request, since it doesn’t change this file',
+    );
+    expect(words({ kind: 'pull', why: 'gone' })).toBe(
+      'On the pull request, since this file is gone at r2',
+    );
+    const lines = placeOf(HEAD, path, { end: Line.right(5) });
+    const at = { kind: 'lines', lines: { end: Line.right(5) } } as const;
+    expect(blockWhere(at, lines, { written: 'r2', now: 'r2' })).toBeUndefined();
+    expect(blockWhere(at, lines, names)).toBe('On line 5, new side, at r2');
+  });
+
+  test('once sent, says where a comment that won’t show under the block went', () => {
+    const names = { written: 'r1', now: 'r2' };
+    expect(sentFromBlock({ kind: 'conversation' }, BASE, false, names)).toEqual({
+      title: 'Posted on the pull request',
+      body: 'It shows in the timeline.',
+    });
+    expect(sentFromBlock(placeOf(HEAD, path, undefined), BASE, true, names)).toEqual({
+      title: 'Added to your review, on the file',
+      body: 'src/backoff.ts. It shows under the file’s header in the diff.',
+    });
+    const lines = placeOf(HEAD, path, { end: Line.right(5) });
+    expect(sentFromBlock(lines, HEAD, false, names)).toBeUndefined();
+    expect(sentFromBlock(lines, BASE, false, names)).toEqual({
+      title: 'Posted at r2',
+      body: 'src/backoff.ts, on line 5, new side. It shows in the diff; this block shows r1.',
+    });
   });
 
   test('a comment on the pull request says so, and has no box in the diff', () => {

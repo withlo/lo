@@ -10,6 +10,8 @@ import { blockAt, drawnIn } from './follow.ts';
 import { useStanding } from './hooks.ts';
 import type { CommentOnHead } from './mapping.ts';
 import { commentLinesOnHead } from './since.ts';
+import { labelOf } from './stale.ts';
+import { revisions } from './store.ts';
 import {
   blockLinesOf,
   blockThreadsWith,
@@ -20,8 +22,9 @@ import {
   type WritingBlock,
 } from './threaded.ts';
 
-export type { CommentOnHead } from './mapping.ts';
+export type { CommentOnHead, FileWhy } from './mapping.ts';
 export type { BlockLines, BlockThreads, DrawnBlock, WritingBlock } from './threaded.ts';
+export { blockKey } from './threaded.ts';
 
 /**
  * Whether there's an overview: one for the newest push (`current`), for an older one (`stale`), one
@@ -62,7 +65,8 @@ export function blockThreadsChanged(tab: string): void {
  * as its key or menu names it, the lines it points at. Or why there's none.
  */
 export function blockLines(tab: string, target: Target): BlockLines | string {
-  if (!drawnIn(tab)) return 'There’s no overview on screen.';
+  // A line is a drawn block's, or one of a view that takes no comment, as the whole file's.
+  if (target.kind !== 'line' && !drawnIn(tab)) return 'There’s no overview on screen.';
   return blockLinesOf(tab, target);
 }
 
@@ -73,6 +77,11 @@ export function isCodeBlock(tab: string, target: Target): boolean {
   return blockAt(overview, target)?.querySelector('[data-lo-excerpt]') != null;
 }
 
+/** What the reader calls the revision whose head is `commit`, in tab `tab`: `r3`, or its short id. */
+export function revisionName(tab: string, commit: string): string {
+  return labelOf(revisions.get(tab), commit);
+}
+
 /** Tab `tab`'s code block known by `key` (`DrawnBlock.key`), while it's drawn. */
 export function writingBlock(tab: string, key: string): WritingBlock | undefined {
   return writingBlockKeyed(tab, key);
@@ -81,9 +90,9 @@ export function writingBlock(tab: string, key: string): WritingBlock | undefined
 /**
  * Where lines `from` to `to` on `side` of the file at `path`, at `commit`, the commit tab `tab`'s
  * overview describes, are for a comment at the head on screen: the same lines, each there
- * unchanged; the file, where they changed, Lo can't tell, or the overview is for a commit other
- * than the head's or the one Lo compares it with; or nowhere, with the file gone. It waits for Lo
- * to work out how the file changed.
+ * unchanged; the file, saying why: they changed, they're on the older side, or Lo can't tell, as
+ * for an overview of a commit other than the head's or the one Lo compares it with; or nowhere,
+ * with the file gone. It waits for Lo to work out how the file changed.
  */
 export function commentOnHead(
   tab: string,

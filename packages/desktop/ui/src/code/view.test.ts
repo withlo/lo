@@ -1476,6 +1476,27 @@ describe('threads', () => {
     expect(landed).toEqual(['one', 'two', 'on b', 'also on b', 'two']);
   });
 
+  test('a thread ]t landed on that’s no longer drawn there is no key’s to act on', () => {
+    const shown = open();
+    shown.setThreads(
+      [thread('one', at('a', 'new', 4)), thread('two', at('a', 'new', 4))],
+      plain().render,
+    );
+    shown.reveal(onLine('a', 'new', 1));
+    shown.jump('thread', 2);
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'two' });
+    // It went, as when it was deleted: the line's only thread is what keys act on.
+    shown.setThreads([thread('one', at('a', 'new', 4))], plain().render);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 4));
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'one' });
+    // Back beside another, it's not the one landed on until ]t lands on it again.
+    shown.setThreads(
+      [thread('one', at('a', 'new', 4)), thread('three', at('a', 'new', 4))],
+      plain().render,
+    );
+    expect(shown.keyState().target).not.toHaveProperty('thread');
+  });
+
   test('a thread waiting to come under a line on screen isn’t drawn there for a key to act on', () => {
     const shown = open();
     const screen = onScreen(['line 4']);
