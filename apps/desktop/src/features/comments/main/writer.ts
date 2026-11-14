@@ -23,6 +23,7 @@ import {
   type ReadMark,
   type ReviewWrite,
   type ReviewWriteRefusal,
+  type Sent,
   describeReviewRefusal,
   reviewThreads,
 } from '@lo/github';
@@ -102,6 +103,21 @@ export const CLOCK_SLACK = 5_000;
 interface Target {
   readonly login: string;
   readonly pull: PullRef;
+}
+
+/**
+ * A write's turn on a pull request, which {@link Writer.inTurn} hands it: the account and pull
+ * request, the account's poller, and your pending review as read after the last write's answer.
+ */
+export interface Turn extends Target {
+  readonly poller: WriterPoller;
+  /** Your pending review, or nothing when it couldn't be read. */
+  readonly review: PendingReviewRead | undefined;
+  /**
+   * Sends `write` with the poller, so the next write in turn plans from your pending review as
+   * read after its answer.
+   */
+  send(write: ReviewWrite): Promise<Sent | ReviewWriteRefusal>;
 }
 
 function describe(error: unknown): string {
@@ -330,6 +346,46 @@ export class Writer {
     this.#lastWrite.set(pull, run);
     void run.finally(() => {
       if (this.#lastWrite.get(pull) === run) this.#lastWrite.delete(pull);
+    });
+    return run;
+  }
+
+  /**
+   * Runs `write` as the next write to view `id`'s pull request, as its account, once the last one
+   * has its answer, as a review submitted does: comments sent meanwhile wait for it, and the next
+   * write plans from your pending review as read after what it sent. Throws an `IpcError` for no
+   * such view, or one that can't write.
+   */
+  inTurn<T>(id: string, write: (turn: Turn) => Promise<T>): Promise<T> {
+    const target = this.#writing(id);
+    const { login, pull } = target;
+    const key = pull.key;
+    const before = this.#lastWrite.get(key);
+    const run = (before ?? Promise.resolve()).then(async () => {
+      const poller = await this.#options.poller(login);
+      const review = await this.#reviewRead(poller, pull);
+      return write({
+        login,
+        pull,
+        poller,
+        review,
+        send: async (each) => {
+          try {
+            return await poller.sendReview(pull, each);
+          } finally {
+            this.#written.add(key);
+          }
+        },
+      });
+    });
+    // The next write waits for this one's answer, whatever it is.
+    const settled = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.#lastWrite.set(key, settled);
+    void settled.then(() => {
+      if (this.#lastWrite.get(key) === settled) this.#lastWrite.delete(key);
     });
     return run;
   }

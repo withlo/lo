@@ -16,26 +16,26 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4958",
-      "x-ratelimit-reset": "1794605193",
+      "x-ratelimit-remaining": "4970",
+      "x-ratelimit-reset": "1794621239",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "42"
+      "x-ratelimit-used": "30"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4958,
-          "used": 42,
-          "resetAt": "2026-11-13T21:26:33Z"
+          "remaining": 4970,
+          "used": 30,
+          "resetAt": "2026-11-14T01:53:59Z"
         },
         "repository": {
           "pullRequest": {
             "reviews": {
               "nodes": [
                 {
-                  "id": "PRR_kwDOVleUfc8AAAABX47hOw",
+                  "id": "PRR_kwDOVleUfc8AAAABX66xPg",
                   "commit": {
                     "oid": "cd44b64496be1a5e43c30aa48c8ed98edbbd7b3c"
                   },

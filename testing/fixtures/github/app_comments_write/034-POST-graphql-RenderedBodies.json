@@ -9,7 +9,7 @@
       "number": 94,
       "description": false,
       "ids": [
-        "PRRC_kwDOVleUfc8AAAABEFGpGg"
+        "PRRC_kwDOVleUfc8AAAABEDy95g"
       ]
     },
     "query_sha256": "285b3a71ef24563ae33870f157b845fcb0e9fc71ff54b6235fa3b18c95041504"
@@ -19,29 +19,11 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4941",
-      "x-ratelimit-reset": "1794605106",
+      "x-ratelimit-remaining": "4964",
+      "x-ratelimit-reset": "1794621242",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "59"
+      "x-ratelimit-used": "36"
     },
-    "body": {
-      "data": {
-        "rateLimit": {
-          "cost": 1,
-          "limit": 5000,
-          "remaining": 4941,
-          "used": 59,
-          "resetAt": "2026-11-13T21:25:06Z"
-        },
-        "repository": {},
-        "nodes": [
-          {
-            "__typename": "PullRequestReviewComment",
-            "id": "PRRC_kwDOVleUfc8AAAABEFGpGg",
-            "bodyHTML": "<p dir=\"auto\">Does the first wait need a cap?</p>"
-          }
-        ]
-      }
-    }
+    "body_text": "{\"data\":{\"rateLimit\":{\"cost\":1,\"limit\":5000,\"remaining\":4964,\"used\":36,\"resetAt\":\"2026-11-14T01:54:02Z\"},\"repository\":{},\"nodes\":[{\"__typename\":\"PullRequestReviewComment\",\"id\":\"PRRC_kwDOVleUfc8AAAABEDy95g\",\"bodyHTML\":\"<p dir=\\\"auto\\\">Fixture C: The spread, as measured:</p>\\n<p dir=\\\"auto\\\"><a target=\\\"_blank\\\" rel=\\\"noopener noreferrer\\\" href=\\\"https://private-user-images.githubusercontent.com/353226052/699308503-08c730b3-f0b0-4c7d-93a2-95f8d167d0d9.png?jwt=REDACTED\"><img src=\\\"https://private-user-images.githubusercontent.com/353226052/699308503-08c730b3-f0b0-4c7d-93a2-95f8d167d0d9.png?jwt=REDACTED\" alt=\\\"two by two\\\" style=\\\"max-width: 100%;\\\"></a></p>\"}]}}"
   }
 }

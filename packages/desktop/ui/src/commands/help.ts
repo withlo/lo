@@ -160,12 +160,17 @@ export function paletteItems(registry: Registry, scope: string, target: Target):
       .filter((command) => command.group === group)
       .map((command) => ({
         id: command.id,
-        label: command.label,
+        label: withDetail(command.label, registry.detail(command.id, target)),
         group,
         keys: liveKeys(registry, command)[0],
         shortcut: liveShortcut(registry, command),
       })),
   );
+}
+
+/** A command's label with what its handler says of it now, if anything: "Submit review · 3 pending". */
+function withDetail(label: string, detail: string | undefined): string {
+  return detail === undefined || detail === '' ? label : `${label} · ${detail}`;
 }
 
 /** A palette item that matches what's typed, with the letters of its label that matched. */

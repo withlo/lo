@@ -15,23 +15,23 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4960",
-      "x-ratelimit-reset": "1794605193",
+      "x-ratelimit-remaining": "4967",
+      "x-ratelimit-reset": "1794621242",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "40"
+      "x-ratelimit-used": "33"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4960,
-          "used": 40,
-          "resetAt": "2026-11-13T21:26:33Z"
+          "remaining": 4967,
+          "used": 33,
+          "resetAt": "2026-11-14T01:54:02Z"
         },
         "repository": {
           "pullRequest": {
-            "updatedAt": "2026-11-13T18:59:53Z",
+            "updatedAt": "2026-11-13T23:39:22Z",
             "state": "OPEN",
             "isDraft": false,
             "baseRefName": "comments/base",
@@ -43,8 +43,8 @@
             "checkCounts": null,
             "mergeQueueEntry": null,
             "timelineItems": {
-              "updatedAt": "2026-11-13T21:16:49Z",
-              "totalCount": 21
+              "updatedAt": "2026-11-14T01:04:17Z",
+              "totalCount": 23
             },
             "revisionEvents": {
               "filteredCount": 0
@@ -151,8 +151,8 @@
             "changedFiles": 4,
             "lastEditedAt": null,
             "timelineEvents": {
-              "filteredCount": 17,
-              "updatedAt": "2026-11-13T21:16:49Z"
+              "filteredCount": 19,
+              "updatedAt": "2026-11-14T01:04:17Z"
             }
           }
         }

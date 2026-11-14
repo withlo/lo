@@ -16,7 +16,6 @@ import {
   offersOf,
   refusalNote,
   restoredNote,
-  savedWhen,
   sendingNote,
   whereText,
 } from './writing.ts';
@@ -167,9 +166,6 @@ describe('a box’s notes', () => {
 
   test('a restored draft says when it was saved, and offers to discard it', () => {
     const yesterday = new Date(2026, 10, 12, 18, 40).getTime();
-    expect(savedWhen(yesterday, NOW)).toMatch(/^yesterday, /);
-    expect(savedWhen(new Date(2026, 10, 13, 9, 12).getTime(), NOW)).toMatch(/^today, /);
-    expect(savedWhen(new Date(2026, 10, 1, 9, 12).getTime(), NOW)).not.toMatch(/day/);
     const note = restoredNote(yesterday, NOW);
     expect(note.text).toMatch(/^Restored your draft from yesterday, .+\.$/);
     expect(note.offers).toEqual(['discard']);

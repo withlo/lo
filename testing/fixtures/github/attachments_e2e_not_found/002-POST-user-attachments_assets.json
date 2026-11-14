@@ -1,0 +1,18 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://uploads.github.com/user-attachments/assets?name=lo-attachment.png&content_type=image%2Fpng&repository_id=1448580221",
+    "body_sha256": "6391d23f40a2096677e345c128c55d66970b4cd95b4359d5626b4256f67a859c"
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "message": "Not Found",
+      "request_id": "D460:10A2F9:4C9E40:691342:6AF15B69",
+      "documentation_url": "https://docs.github.com/rest"
+    }
+  }
+}

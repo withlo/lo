@@ -1,5 +1,8 @@
 {
-  "description": "What the app's comment-writing test reads from GitHub and writes there, recorded from the app with writes and the comments fixture's git: rozed-dev/e2e#94, opened on its diff; c on line 2 of src/backoff.ts, a comment typed, and ⌘⏎, which started rozed-bot's pending review with it as a thread; the threads and the pending review read again after, and the polls repeated while it stayed open.",
-  "recorded_at": "2026-11-13T22:35:32Z",
-  "repo": "rozed-dev/e2e"
+  "description": "What the app's comment-writing test reads from GitHub and writes there, recorded from the app with writes and the comments fixture's git: rozed-dev/e2e#94, opened on its diff; c on line 2 of src/backoff.ts, a comment typed, and ⌘⏎, which started rozed-bot's pending review with it as a thread; the threads and the pending review read again after; then ⌘⏎ again, a summary typed and ⌘⏎, which submitted the review as a comment, the only verdict GitHub takes from the pull request's author; what was read again after that, and the polls repeated while it stayed open.",
+  "recorded_at": "2026-11-14T01:04:51Z",
+  "repo": "rozed-dev/e2e",
+  "added": {
+    "YourReviews": "2026-11-14T01:05:05Z"
+  }
 }

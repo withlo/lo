@@ -810,6 +810,30 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   it stays checking and main tries again. Text changed since it was sent stays as the draft. Nothing
   is sent again by itself, and nothing is sent while GitHub can't be reached.
 
+### Submitting a review
+
+The `review` feature submits your review of the pull request on screen: `⌘⏎` anywhere in its tab but
+a comment box, a dialog, the palette or a menu, or the status bar's "3 pending · ⌘⏎", opens the
+submit dialog (`tab.dialogs`). The palette says the count too, "Submit review · 3 pending": a
+command's handler may say something after its label (`detail`).
+
+- The dialog asks main what it shows as it opens (`review.dialog`): your pending review and its
+  comments, the revision on screen, and whether you opened the pull request, in which case only
+  Comment is offered. `window/model.ts` words the verdicts, the refusals and the notes, as plain
+  functions tested alone, and plans the review with `@lo/review`'s `YourReview`, so what can't go
+  says so before anything is sent. A banner says once when your pending review sits on another
+  revision than the one on screen.
+- The summary box is the comment box's editor (`createComposer`). Main keeps its text with the
+  comments' drafts (`comments.drafts`, as a `summary` place), saved as it's typed.
+- `review.submit` sends in its turn among the comments' writes to the pull request
+  (`comments.reviews`' `inTurn`), with the poller's `sendReview`. The summary is marked sent, with
+  when, as a comment's draft is. When GitHub's answer is lost, nothing more is sent until a fresh
+  read of your reviews (`YourReviews`), made 10 s or more after the send, says whether it was
+  submitted, by GitHub's clock, even after a restart; when GitHub refuses that read, only "Submit
+  anyway" sends. Once it's submitted, the summary goes, a toast names the verdict, and the threads
+  and the timeline read again. A tab acting as nobody or showing a run of layers can't submit, nor
+  can one offline, or while GitHub asked Lo to hold off.
+
 ### Images from GitHub
 
 The window shows an image from outside Lo only as `<img src="lo-image://…">`, which main serves.
