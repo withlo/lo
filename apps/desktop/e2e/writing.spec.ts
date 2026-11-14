@@ -33,20 +33,23 @@ const cmd = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 const test = base.extend<{
   cassette: string;
+  /** The GraphQL operation whose connection drops once its request has come, if any. */
+  cut: string | undefined;
   github: ReplayServer;
   front: BodiesServer;
   githubOrigin: string;
   remote: string;
 }>({
   cassette: ['app_comments', { option: true }],
+  cut: [undefined, { option: true }],
   github: async ({ cassette }, use) => {
     const answers = recorded(cassette).interactions.map(({ interaction }) => interaction);
     const server = await serveReplay(new Replay(cassette, answers));
     await use(server);
     await server.close();
   },
-  front: async ({ cassette, github }, use) => {
-    const front = await serveBodies(cassette, new URL(github.urls.api).origin);
+  front: async ({ cassette, cut, github }, use) => {
+    const front = await serveBodies(cassette, new URL(github.urls.api).origin, { cut });
     await use(front);
     await front.close();
   },
@@ -163,6 +166,30 @@ test.describe('with a write recorded', () => {
       .locator('[data-lo-diff] [role="group"]')
       .filter({ hasText: 'Does the first wait need a cap?' });
     await expect(thread).toContainText('Pending');
+  });
+});
+
+test.describe('when the connection drops once a comment has gone', () => {
+  test.use({ cassette: 'app_comments_write', cut: 'AddPullRequestReview' });
+
+  test('the comment goes to GitHub once, and Lo looks for it', async ({ page, front }) => {
+    const tab = await open(page);
+    await onLineTwo(page);
+    await page.keyboard.press('c');
+    await expect(boxes(page)).toHaveCount(1);
+    await page.keyboard.type('Does the first wait need a cap?');
+    await page.keyboard.press(`${cmd}+Enter`);
+    // Its answer lost, it may have posted: Lo looks for it rather than send it again.
+    await expect
+      .poll(
+        async () =>
+          JSON.stringify(
+            await page.evaluate((id) => window.lo.invoke('comments.current', { id }), tab),
+          ),
+        { timeout: 20_000 },
+      )
+      .toContain('"sending":"checking"');
+    expect(front.operations.filter((name) => name === 'AddPullRequestReview')).toHaveLength(1);
   });
 });
 

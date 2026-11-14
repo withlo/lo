@@ -11,7 +11,7 @@
  * See [GitHub's docs](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#refreshing-an-access-token-with-a-refresh-token).
  */
 
-import { GITHUB_URLS, USER_AGENT, type GitHubUrls } from './client.ts';
+import { GITHUB_URLS, USER_AGENT, type FetchInit, type GitHubUrls } from './client.ts';
 import { CLIENT_ID, classifyNetworkError, GithubError, summarizeBody } from './errors.ts';
 import { RenewalError, type Grant, type Refresh } from './grant.ts';
 import { isRecord } from './graphql.ts';
@@ -75,7 +75,7 @@ export async function postForm(
   for (const [name, value] of form) body.append(name, value);
   const timeout = AbortSignal.timeout(TIMEOUT_MS);
   try {
-    const response = await options.fetch(`${webAddress(options.urls)}${path}`, {
+    const init: FetchInit = {
       method: 'POST',
       headers: {
         // Without it GitHub answers form-encoded.
@@ -86,7 +86,11 @@ export async function postForm(
       body: body.toString(),
       redirect: 'manual',
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-    });
+      // Every form is a write: a renewal spends the refresh token, and a sign-in's poll may hand
+      // over its token.
+      once: true,
+    };
+    const response = await options.fetch(`${webAddress(options.urls)}${path}`, init);
     return { status: response.status, body: await response.text() };
   } catch (error) {
     if (signal?.aborted) throw abortReason(signal);

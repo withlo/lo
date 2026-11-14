@@ -77,11 +77,20 @@ export type RequestGate = () => Promise<() => void>;
 export type UploadProgress = (sent: number, total: number) => void;
 
 /**
- * What a client hands its `fetch`: a `RequestInit`, and how to report how much of the body has
- * been sent, which a `fetch` that can't tell, such as the platform's own, ignores.
+ * What a client hands its `fetch`: a `RequestInit`, how to report how much of the body has been
+ * sent, which a `fetch` that can't tell, such as the platform's own, ignores, and whether it's a
+ * write.
  */
 export interface FetchInit extends RequestInit {
   uploadProgress?: UploadProgress | undefined;
+  /**
+   * Whether the request is a write, which GitHub may do twice if it's sent twice, so the `fetch`
+   * must send it at most once, whatever the network does: never again by itself, as Chromium's
+   * network stack does a request whose reused connection drops before any of the answer came. A
+   * write that gets no answer fails, and the client counts its answer as lost
+   * ({@link GithubError.mayHavePosted}).
+   */
+  once?: boolean | undefined;
 }
 
 export interface ClientOptions {
@@ -171,6 +180,11 @@ export interface SendOptions {
    * still have reached GitHub.
    */
   signal?: AbortSignal | undefined;
+  /**
+   * Whether the request is a write, sent at most once ({@link FetchInit.once}): every method but
+   * `GET` and `HEAD` is unless it says otherwise, as a GraphQL query, which is a `POST`, does.
+   */
+  once?: boolean | undefined;
   /** Hears how much of the body has been sent, when the client's `fetch` can tell. */
   uploadProgress?: UploadProgress | undefined;
   /**
@@ -520,6 +534,7 @@ export class GithubClient {
       redirect: 'manual',
       signal: given ? AbortSignal.any([timeout, given]) : timeout,
       uploadProgress: options.uploadProgress,
+      once: method !== 'GET' && method !== 'HEAD' && (options.once ?? true),
     };
     try {
       response = await this.#fetch(url, init);
@@ -662,7 +677,10 @@ export class GithubClient {
     const query = String(document);
     const operationName = /\b(?:query|mutation|subscription)\s+(\w+)/.exec(query)?.[1];
     const body = JSON.stringify({ query, operationName, variables });
-    return this.#request('POST', '/graphql', { body }, (answer) => {
+    // A document that starts as a query is a read, though it's a `POST`. Anything else, a mutation
+    // above all, is sent at most once.
+    const once = !/^\s*query\b/.test(query);
+    return this.#request('POST', '/graphql', { body, once }, (answer) => {
       let decoded: GraphQLResponse;
       try {
         decoded = decodeGraphQL(answer.text());

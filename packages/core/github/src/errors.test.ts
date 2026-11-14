@@ -65,6 +65,7 @@ test('only a failure to connect means github cant be reached', () => {
     nodeFailure('UNABLE_TO_VERIFY_LEAF_SIGNATURE'),
     chromiumFailure('ERR_CERT_AUTHORITY_INVALID'),
     chromiumFailure('ERR_PROXY_AUTH_UNSUPPORTED'),
+    chromiumFailure('ERR_NO_SUPPORTED_PROXIES'),
   ]) {
     expect(classifyNetworkError(thrown)).toBe('refused');
   }

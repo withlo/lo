@@ -475,7 +475,7 @@ export function classifyNetworkError(error: unknown): NetworkFailure {
   }
   if (
     has(
-      /\b(CERT_\w+|ERR_TLS_\w+|ERR_SSL_\w+|UNABLE_TO_\w+|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN)\b|ERR_(CERT_\w+|SSL_\w+|PROXY_AUTH\w*|BAD_SSL_CLIENT_AUTH_CERT)\b/,
+      /\b(CERT_\w+|ERR_TLS_\w+|ERR_SSL_\w+|UNABLE_TO_\w+|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN)\b|ERR_(CERT_\w+|SSL_\w+|PROXY_AUTH\w*|BAD_SSL_CLIENT_AUTH_CERT|NO_SUPPORTED_PROXIES)\b/,
     )
   ) {
     return 'refused';

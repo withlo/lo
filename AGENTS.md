@@ -394,10 +394,17 @@ repositories, which account opens a repository, and the pull requests opened lat
   Linux what decides is how the ciphertext is marked, never the store `safeStorage` reports, which
   is only the one chosen for the desktop: Chromium marks its built-in key's `v10`, the Secret
   Service's and KWallet's `v11` and the portal's `v12`, and Lo refuses `v10`.
-- Every request to GitHub goes through Chromium's network stack (`src/main/fetch.ts`, on
+- Every read from GitHub goes through Chromium's network stack (`src/main/fetch.ts`, on
   `net.request`), so it takes the system's proxy, with nothing kept in Chromium's cache and no
   cookie. Electron's `net.fetch` isn't used: it fails a redirect GitHub's client asks to see, and
   the client follows redirects itself, only to where the token may go.
+- Every write (a request the client marks `once`: each but a `GET` or a GraphQL query, and each form
+  posted to GitHub's website) is sent at most once, over Node's HTTP client on a connection of its
+  own (`src/main/once.ts`), never through Chromium, which sends a request again by itself when the
+  kept-alive connection it reused drops before the answer. It goes through the proxy Chromium names
+  for the address (`session.resolveProxy`: direct, HTTP, HTTPS, SOCKS4 or SOCKS5), and trusts the
+  system's certificate authorities and Node's own. A write whose connection drops fails as an answer
+  lost, so it may have posted.
 - Each account's poller keeps what it read in the database, read back only by the build of Lo that
   wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
